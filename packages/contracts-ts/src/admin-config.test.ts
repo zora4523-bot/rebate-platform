@@ -251,6 +251,30 @@ describe('examples', () => {
     expect(description).toContain('only then are the versions compared');
   });
 
+  it('[CT-02i] withdraw.auto_payout.enabled can only be turned off: true is 20001 [value] (BR-WDR-30)', () => {
+    const op = operation('put', `${SW}/{key}`);
+    const description = op.description.replace(/\s+/g, ' ');
+    expect(description).toContain(
+      '`withdraw.auto_payout.enabled` can only be turned off from the console',
+    );
+    expect(description).toContain('`true` is 20001 with `data.fields=[value]`');
+    const raw = op.responses['4XX']!.content!['application/json']!.examples!;
+    expect(raw['autoPayoutEnableRefused']?.value).toMatchObject({
+      code: 20001,
+      data: { fields: ['value'] },
+    });
+    const list = operation('get', SW).description.replace(/\s+/g, ' ');
+    expect(list).toContain('`withdraw.auto_payout.enabled` means it can only be turned off');
+    const editable = (
+      contract.components.schemas['AdminKillSwitch'] as {
+        properties: Record<string, { description: string }>;
+      }
+    ).properties['admin_editable']!.description.replace(/\s+/g, ' ');
+    expect(editable).toContain(
+      '`withdraw.auto_payout.enabled` true means it can only be turned off',
+    );
+  });
+
   it('[CT-02i] rollback rejects an unknown version as [to_version]', () => {
     const fields = errorExamples(operation('post', `${CI}/{key}/rollback`))
       .filter((e) => e.code === 20001)

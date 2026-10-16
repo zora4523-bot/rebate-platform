@@ -2063,7 +2063,8 @@ export interface paths {
          *     `page_size` ≤ 200): the current value (null = never written, the registered `default`
          *     applies), the value type and, for `enum`, the allowed values, the permission points of
          *     which any one may change it (`permissions`), whether the console may change it at all
-         *     (`admin_editable`; false for `agent.whitelist_only` and `agent.model_route`), and the
+         *     (`admin_editable`; false for `agent.whitelist_only` and `agent.model_route`; true for
+         *     `withdraw.auto_payout.enabled` means it can only be turned off, `true` is refused), and the
          *     `version` that PUT /admin/v1/kill-switches/{key} takes as `expected_version`. Rows the
          *     account may not change are still listed, so the console can show them read only.
          */
@@ -2092,7 +2093,10 @@ export interface paths {
          *     `switch.all` or `switch.payout`; `pay.enabled` and `pay.channel_enabled.<pay_channel>`
          *     need `switch.all` or `switch.pay`; every other switch, `withdraw.auto_payout.enabled`
          *     included, needs `switch.all`. Lacking it is 10403 with
-         *     `data.reason=admin_permission_denied`. Step-up: totp tier for every key, clearing
+         *     `data.reason=admin_permission_denied`. `withdraw.auto_payout.enabled` can only be turned
+         *     off from the console (BR-WDR-30: off is the safe direction): `false` follows the rules
+         *     here, `true` is 20001 with `data.fields=[value]`; turning it on needs the owner's
+         *     confirmation, a separate flow outside this operation. Step-up: totp tier for every key, clearing
          *     `payout.queue_paused` and `payout.channel_paused.<channel>` included (04 §11.2, BR-ID-34):
          *     without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`.
          *     A key the server has not registered, or one the console may not change
@@ -5033,7 +5037,11 @@ export interface components {
             options: components["schemas"]["AdminConfigOptions"];
             /** @description Permission points of which any one may change the switch (04 §11.2). */
             permissions: components["schemas"]["AdminPermissionKey"][];
-            /** @description false = the console shows the switch read only and a change is 20001 [key]. */
+            /**
+             * @description false = the console shows the switch read only and a change is 20001 [key]. For
+             *     `withdraw.auto_payout.enabled` true means it can only be turned off: the console offers
+             *     `false` only and a change to `true` is 20001 [value] (BR-WDR-30).
+             */
             admin_editable: boolean;
             version: components["schemas"]["AdminConfigVersionNumber"];
             /** @description Username of the admin who last changed it; null = never changed or set by the system. */
