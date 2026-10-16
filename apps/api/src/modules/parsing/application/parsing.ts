@@ -369,6 +369,31 @@ export function createParsing(options: ParsingOptions): ParsingService {
     if (seen.has(dedupKey)) return null;
     const product = await resolver.detail(identified.value, context);
     if (!product.ok) return { kind: 'error', hit, error_code: product.code };
+    if (options.priceHistory !== undefined) {
+      const { item } = product.value;
+      try {
+        void Promise.resolve(
+          options.priceHistory.record({
+            appId: context.appId,
+            platform: item.platform,
+            productKey: identified.value.resolvedKey,
+            skuKey: item.skuId ?? null,
+            sourceKind: 'quote',
+            outcome: 'ok',
+            priceFen: item.price_fen,
+            couponFen: item.coupon_fen,
+            finalPriceFen: item.final_price_fen,
+            priceStatus: item.price_status ?? 'ok',
+            inStock: true,
+            fresh: true,
+            userScoped: false,
+            goodsSignPlan: null,
+          }),
+        ).catch(() => undefined);
+      } catch {
+        // History failure must not fail this hit or prevent later hits from being processed.
+      }
+    }
     const result = await options.cards.assemble({
       item: product.value.item,
       ref: product.value.ref,

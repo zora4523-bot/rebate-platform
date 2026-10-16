@@ -53,6 +53,7 @@ export interface ProductDetailRequest {
  * (BR-PROD-07 熔断降级, BR-PRICE-11): the card is stale=true with the entry's quoted_at.
  */
 const STALE_DETAILS = new WeakSet<object>();
+const FRESH_DETAILS = new WeakSet<object>();
 
 /** Marks a detail answer as a stale cache entry (infra/product-cache.ts). */
 export function markStaleDetail<T extends UnionItemDetail>(item: T): T {
@@ -66,8 +67,8 @@ export function markStaleDetail<T extends UnionItemDetail>(item: T): T {
  * marked answer is handed to the price history recorder (BR-WATCH-19 (1)).
  */
 export function markFreshDetail<T extends UnionItemDetail>(item: T): T {
-  void item;
-  throw new Error('NotImplemented: markFreshDetail');
+  FRESH_DETAILS.add(item);
+  return item;
 }
 
 export interface ProductDetailUpstream {
@@ -270,6 +271,31 @@ export async function getProduct(
   if (derived !== productKey) refExpired('response derives another product key');
   const responseRaw = detailRawItemId(item, jdMode);
   if (responseRaw === undefined) refExpired('response carries no raw item id');
+
+  if (options.priceHistory !== undefined && FRESH_DETAILS.has(item) && !STALE_DETAILS.has(item)) {
+    try {
+      void Promise.resolve(
+        options.priceHistory.record({
+          appId,
+          platform: item.platform,
+          productKey: derived,
+          skuKey: item.skuId ?? null,
+          sourceKind: 'detail',
+          outcome: 'ok',
+          priceFen: item.price_fen,
+          couponFen: item.coupon_fen,
+          finalPriceFen: item.final_price_fen,
+          priceStatus: item.price_status ?? 'ok',
+          inStock: true,
+          fresh: true,
+          userScoped: false,
+          goodsSignPlan: null,
+        }),
+      ).catch(() => undefined);
+    } catch {
+      // A broken optional recorder must not change the detail's response or error path.
+    }
+  }
 
   const ref: ProductRef = {
     appId,

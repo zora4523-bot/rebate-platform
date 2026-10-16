@@ -4,12 +4,15 @@ import type { Kysely } from 'kysely';
 import {
   createCatalog,
   createItemRefService,
+  createKyselyPriceSnapshotStore,
+  createPriceHistoryRecorder,
   GovernedUnion,
   RebateQuoter,
   SourceLinkReader,
   type Catalog,
   type CatalogWarning,
   type ItemRefService,
+  type PriceSnapshotRecorder,
 } from '../catalog/index.ts';
 import {
   APP_CONFIG,
@@ -25,6 +28,7 @@ import {
 import { createParsing } from './application/parsing.ts';
 import {
   PARSING_FACTORY,
+  PARSING_PRICE_HISTORY,
   ParseInputController,
   type ParsingFactory,
 } from './http/public/parse-input.controller.ts';
@@ -144,6 +148,25 @@ export class ParsingModule {
             db === undefined ? UNAVAILABLE_CONFIG : configReader(db, clock),
         },
         { provide: PARSING_FACTORY, useValue: options.createParsing ?? createParsing },
+        {
+          // Singleton across requests, separate from catalog's two write slots.
+          provide: PARSING_PRICE_HISTORY,
+          inject: [{ token: DB, optional: true }, CLOCK, ParsingConfigReader, ROOT_LOGGER],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            clock: Clock,
+            config: ParsingConfigReader,
+            logger: RootLogger,
+          ): PriceSnapshotRecorder | undefined =>
+            db === undefined
+              ? undefined
+              : createPriceHistoryRecorder({
+                  store: createKyselyPriceSnapshotStore(db),
+                  clock,
+                  config,
+                  logger,
+                }),
+        },
         {
           provide: PARSING_ROUTE_PORTS,
           inject: [
