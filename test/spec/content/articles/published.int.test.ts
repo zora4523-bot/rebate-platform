@@ -14,7 +14,7 @@ import {
   useHarness,
 } from './kit.ts';
 
-const h = useHarness('published');
+const h = useHarness('published', () => import('@couli/db/testing'));
 
 it('[AC-F1-02f#1] only status exactly "published" with published_at set and not in the future counts as published', async () => {
   const appId = newAppId();

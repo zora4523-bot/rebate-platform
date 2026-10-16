@@ -16,7 +16,7 @@ import {
   validate,
 } from './kit.ts';
 
-const h = useHarness('detail');
+const h = useHarness('detail', () => import('@couli/db/testing'));
 
 it('[AC-F1-02f#7] a published article is returned whole, anonymously, and passes ArticleResponse', async () => {
   const appId = newAppId();

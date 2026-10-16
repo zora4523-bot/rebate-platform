@@ -89,17 +89,32 @@ export interface Harness {
   get(appId: string, url: string): Promise<Response>;
 }
 
+// The kit never imports the testcontainers entry (depcruise testcontainers-only-in-int-tests):
+// each *.int.test.ts passes `() => import(<db testing entry>)`, seen here only structurally.
+interface TestDatabase {
+  urlFor(role: 'couli_app'): string;
+  drop(): Promise<unknown>;
+}
+interface TestRedis {
+  readonly url: string;
+  stop(): Promise<unknown>;
+}
+export interface TestingEntry {
+  createTestDatabase(): Promise<TestDatabase>;
+  acquireTestRedis(): Promise<TestRedis>;
+}
+
 /** Registers hooks for one api app over a fresh test database; the clock resets before each test. */
-export function useHarness(name: string): Harness {
-  let database: Awaited<ReturnType<(typeof import('@couli/db/testing'))['createTestDatabase']>>;
-  let redis: Awaited<ReturnType<(typeof import('@couli/db/testing'))['acquireTestRedis']>>;
+export function useHarness(name: string, load: () => Promise<TestingEntry>): Harness {
+  let database: TestDatabase | undefined;
+  let redis: TestRedis | undefined;
   let db: Kysely<DB> | undefined;
   let app: HttpApp | undefined;
   let directory: string | undefined;
   const clock = new FixedClock(NOW);
 
   beforeAll(async () => {
-    const testing = await import('@couli/db/testing');
+    const testing = await load();
     database = await testing.createTestDatabase();
     db = createDb({ connectionString: database.urlFor('couli_app'), max: 4 });
     redis = await testing.acquireTestRedis();

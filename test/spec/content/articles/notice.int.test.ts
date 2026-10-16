@@ -16,7 +16,7 @@ import {
   type Summary,
 } from './kit.ts';
 
-const h = useHarness('notice');
+const h = useHarness('notice', () => import('@couli/db/testing'));
 
 it('[AC-F1-02f#5] a notice item carries NoticeItem from the current revision; content_version is notice_content_version, not version', async () => {
   const appId = newAppId();

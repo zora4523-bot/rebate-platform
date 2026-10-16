@@ -14,7 +14,7 @@ import {
   useHarness,
 } from './kit.ts';
 
-const h = useHarness('paging');
+const h = useHarness('paging', () => import('@couli/db/testing'));
 
 /** `ms` from NOW plus `micros` extra microseconds (0–999), as ISO text with six fractional digits. */
 function micro(ms: number, micros: number): string {
