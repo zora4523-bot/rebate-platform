@@ -42,7 +42,7 @@ export type { SessionPushTokens } from './application/push-tokens.ts';
 export type { AccountAssetsPort, AccountRiskPort } from './application/bind-phone.ts';
 // Stage ⑫ step-up check (BR-ID-08, B1-02y): app.module hands the check to RiskModule; the handlers
 // of the four x-step-up operations run their idempotent call through withStepUp.
-export { createStepUpCheck, withStepUp } from './application/step-up-verify.ts';
+export { STEP_UP_CHECK, createStepUpCheck, withStepUp } from './application/step-up-verify.ts';
 export type { StepUpCheckOptions, StepUpHttpRequest } from './application/step-up-verify.ts';
 // The token stages ② ③ (BR-ID-01) for the api entry's request check plan (app.module).
 export { TOKEN_CHECK } from './application/tokens.ts';

@@ -192,6 +192,61 @@ export async function signScopedToken(
     .sign(keys.privateKey);
 }
 
+/** Verified step-up claims; sid deliberately does not participate in the business binding. */
+export interface StepUpClaims {
+  readonly uid: string;
+  readonly app_id: string;
+  readonly device_id: string;
+  readonly action: string;
+  readonly jti: string;
+  readonly exp: number;
+}
+
+/** Same local keys / issuer as access tokens, but a separate audience and rejection code. */
+export function createStepUpTokenVerifier(keys: TokenKeyProvider, clock: Clock) {
+  const publicKeys = new Map(keys.publicKeys);
+  return async (token: string): Promise<StepUpClaims> => {
+    const reject = () => new RequestRejection(10003, 403, '需要二次验证');
+    let payload: JWTPayload;
+    try {
+      ({ payload } = await jwtVerify(
+        token,
+        (header) => {
+          const key = header.kid === undefined ? undefined : publicKeys.get(header.kid);
+          if (key === undefined) throw new errors.JWKSNoMatchingKey();
+          return key;
+        },
+        {
+          algorithms: ['ES256'],
+          issuer: ISSUER,
+          audience: STEP_UP_AUDIENCE,
+          typ: 'JWT',
+          requiredClaims: ['iat', 'exp'],
+          clockTolerance: 0,
+          currentDate: clock.now(),
+        },
+      ));
+    } catch (error) {
+      if (error instanceof errors.JOSEError) throw reject();
+      throw error;
+    }
+    const { uid, app_id, device_id, action, jti, exp } = payload;
+    if (
+      payload.aud !== STEP_UP_AUDIENCE ||
+      !isClaim(uid) ||
+      !isClaim(app_id) ||
+      !isClaim(device_id) ||
+      !isClaim(action) ||
+      !isClaim(jti) ||
+      typeof exp !== 'number' ||
+      !Number.isSafeInteger(exp * 1000)
+    ) {
+      throw reject();
+    }
+    return Object.freeze({ uid, app_id, device_id, action, jti, exp });
+  };
+}
+
 /** The claims of a verified h5_token payload, or null when one is missing or malformed. */
 function h5ClaimsOf(payload: JWTPayload): H5Claims | null {
   const { uid, app_id: appId, sid, device_id: deviceId, scp } = payload;

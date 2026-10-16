@@ -1,8 +1,7 @@
 // Stage ⑫ of the request decision order: the user-side step-up check of the four x-step-up
 // operations (规划/08 BR-ID-08, BR-ID-01 判定顺序 ⑫ 10003; 04 §5 step-up row; 02 §18
-// step_up_token row; task B1-02y, orchestrator ruling §9.3). Skeleton of the rule-test stage: the
-// names and shapes below are the contract the rule tests in test/spec/identity/step-up-verify/**
-// use; the bodies are the implementer's.
+// step_up_token row; task B1-02y, orchestrator ruling §9.3). The public entry points follow the
+// frozen rule-test skeleton in test/spec/identity/step-up-verify/**.
 //
 // When: only on the four x-step-up operations, keyed by the idempotent request's method and path
 // (a fixed copy of 04 §5): POST /v1/withdrawals → withdraw, PUT /v1/me/payout-account →
@@ -33,15 +32,58 @@
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`, no decorators.
-import type {
-  Clock,
-  IdempotencyPostMissCheck,
-  IdempotentResponse,
-  RedisHandle,
-  RootLogger,
-  TokenPrincipal,
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
+import type { StepUpAction } from '@couli/contracts-ts';
+import {
+  RequestRejection,
+  idempotencyPostMissTransaction,
+  type Clock,
+  type IdempotencyPostMissCheck,
+  type IdempotentResponse,
+  type RedisHandle,
+  type RootLogger,
+  type TokenPrincipal,
 } from '../../platform/index.ts';
-import type { TokenKeyProvider } from './access-tokens.ts';
+import { createStepUpTokenVerifier, type TokenKeyProvider } from './access-tokens.ts';
+
+export const STEP_UP_CHECK = Symbol('STEP_UP_CHECK');
+
+/** Fixed copy of contracts' x-step-up operations (04 §5), as in risk-state.ts. */
+const ACTIONS: ReadonlyMap<string, StepUpAction> = new Map([
+  ['POST /v1/withdrawals', 'withdraw'],
+  ['PUT /v1/me/payout-account', 'payout_account_change'],
+  ['POST /v1/me/phone', 'phone_change'],
+  ['POST /v1/me/deletion', 'account_deletion'],
+]);
+
+// RedisNamespace supplies whole seconds in ARGV[1]. Subtract the rounding excess (ARGV[3])
+// so the atomic reservation uses precisely the remaining milliseconds, including partial seconds.
+const RESERVE = `
+local ttl = tonumber(ARGV[1]) * 1000 - tonumber(ARGV[3])
+if redis.call('SET', KEYS[1], ARGV[2], 'NX', 'PX', ttl) then return 1 end
+return 0
+`;
+// Ownership is compared for both outcomes. KEEPTTL preserves the reservation's original expiry;
+// a delayed completion must never extend its lifetime or overwrite another request's owner.
+const SETTLE = `
+if redis.call('GET', KEYS[1]) ~= ARGV[2] then return 0 end
+if ARGV[3] == 'consume' then
+  redis.call('SET', KEYS[1], 'consumed', 'XX', 'KEEPTTL')
+else
+  redis.call('DEL', KEYS[1])
+end
+return 1
+`;
+
+interface StepUpScope {
+  readonly request: StepUpHttpRequest;
+  settle?: (success: boolean) => Promise<void>;
+}
+
+const SCOPE = new AsyncLocalStorage<StepUpScope>();
+const required = () => new RequestRejection(10003, 403, '需要二次验证');
+const unavailable = () => new RequestRejection(50001, 500, '服务端错误');
 
 /**
  * The HTTP side of one request as its controller holds it after stages ① ② ③: the Fastify request
@@ -50,6 +92,7 @@ import type { TokenKeyProvider } from './access-tokens.ts';
 export interface StepUpHttpRequest {
   readonly headers: Readonly<Record<string, string | readonly string[] | undefined>>;
   readonly principal?: TokenPrincipal;
+  readonly verifiedDevice?: { readonly appId: string; readonly deviceId: string };
 }
 
 export interface StepUpCheckOptions {
@@ -67,8 +110,80 @@ export interface StepUpCheckOptions {
  * judged outside any withStepUp call fails closed.
  */
 export function createStepUpCheck(options: StepUpCheckOptions): IdempotencyPostMissCheck {
-  void options;
-  throw new Error('NotImplemented: createStepUpCheck');
+  const verify = createStepUpTokenVerifier(options.keys, options.clock);
+  return async (command) => {
+    const action = ACTIONS.get(`${command.method} ${command.path}`);
+    if (action === undefined) return;
+    const scope = SCOPE.getStore();
+    const principal = scope?.request.principal;
+    if (scope === undefined || principal === undefined) throw required();
+    // Do not let a caller accidentally check one authenticated user and execute for another.
+    if (command.appId !== principal.app_id || command.actor.userId !== principal.uid) {
+      throw required();
+    }
+    const device = scope.request.verifiedDevice;
+    if (
+      device !== undefined &&
+      (device.appId !== principal.app_id || device.deviceId !== principal.device_id)
+    ) {
+      throw required();
+    }
+    if (action === 'phone_change') {
+      const trx = idempotencyPostMissTransaction();
+      if (trx === undefined) throw unavailable();
+      const user = await trx
+        .withSchema('app')
+        .selectFrom('users')
+        .select('phone_hmac')
+        .where('app_id', '=', principal.app_id)
+        .where('id', '=', principal.uid)
+        .executeTakeFirst();
+      if (user === undefined) throw required();
+      if (user.phone_hmac === null) return;
+    }
+    const token = scope.request.headers['x-step-up-token'];
+    if (typeof token !== 'string' || token.length === 0) throw required();
+    const claims = await verify(token);
+    if (
+      claims.uid !== principal.uid ||
+      claims.app_id !== principal.app_id ||
+      claims.device_id !== principal.device_id ||
+      claims.action !== action
+    ) {
+      throw required();
+    }
+    const remainingMs = claims.exp * 1000 - options.clock.now().getTime();
+    if (remainingMs <= 0) throw required();
+    // One wrapper is one business request; never replace an outstanding reservation.
+    if (scope.settle !== undefined) throw unavailable();
+    const owner = randomUUID();
+    const ttlSeconds = Math.ceil(remainingMs / 1000);
+    let reserved: unknown;
+    try {
+      if (options.redis === null) throw unavailable();
+      reserved = await options.redis.namespace('step_up').eval(RESERVE, {
+        keys: [claims.jti],
+        args: [owner, String(ttlSeconds * 1000 - remainingMs)],
+        ttlSeconds,
+      });
+    } catch {
+      // Do not expose Redis errors or token-derived keys to the HTTP error logger.
+      throw unavailable();
+    }
+    if (reserved === 0) throw required();
+    if (reserved !== 1) throw unavailable();
+    scope.settle = async (success) => {
+      try {
+        await options.redis!.namespace('step_up').eval(SETTLE, {
+          keys: [claims.jti],
+          args: [owner, success ? 'consume' : 'release'],
+          ttlSeconds,
+        });
+      } catch {
+        options.logger.warn({ event: 'step_up_settlement_failed' }, 'step-up settlement failed');
+      }
+    };
+  };
 }
 
 /**
@@ -84,7 +199,22 @@ export function withStepUp(
   request: StepUpHttpRequest,
   execute: () => Promise<IdempotentResponse>,
 ): Promise<IdempotentResponse> {
-  void request;
-  void execute;
-  throw new Error('NotImplemented: withStepUp');
+  const scope: StepUpScope = { request };
+  return SCOPE.run(scope, async () => {
+    let success = false;
+    try {
+      const response = await execute();
+      if (response.source === 'handler' && response.status >= 200 && response.status < 300) {
+        const envelope: unknown = JSON.parse(response.body);
+        success =
+          typeof envelope === 'object' &&
+          envelope !== null &&
+          'code' in envelope &&
+          envelope.code === 0;
+      }
+      return response;
+    } finally {
+      await scope.settle?.(success);
+    }
+  });
 }

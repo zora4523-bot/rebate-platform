@@ -35,6 +35,7 @@ import {
 import { createTipsService, type TipsService } from './application/tips.ts';
 import { createMeService, type MeService, type MeReadPorts } from './application/me.ts';
 import { createH5TokenService, type H5TokenService } from './application/h5-token.ts';
+import { STEP_UP_CHECK, createStepUpCheck } from './application/step-up-verify.ts';
 import {
   createOauthAttemptService,
   type OauthAttemptService,
@@ -427,6 +428,16 @@ export class IdentityModule {
             createTokenService({ clock, keys }),
         },
         {
+          provide: STEP_UP_CHECK,
+          inject: [TOKEN_KEYS, CLOCK, ROOT_LOGGER, { token: REDIS, optional: true }],
+          useFactory: (
+            keys: TokenKeyProvider,
+            clock: Clock,
+            logger: RootLogger,
+            redis?: RedisHandle,
+          ) => createStepUpCheck({ keys, clock, logger, redis: redis ?? null }),
+        },
+        {
           provide: TOKEN_CHECK,
           inject: [TOKEN_SERVICE, { token: DB, optional: true }],
           useFactory: (tokens: TokenService, db?: Kysely<Database>): RequestCheck =>
@@ -648,7 +659,7 @@ export class IdentityModule {
           ): Logout => createLogout({ db, clock, pushTokens }),
         },
       ],
-      exports: [DEVICE_SIGNING_KEYS, TOKEN_CHECK],
+      exports: [DEVICE_SIGNING_KEYS, TOKEN_CHECK, STEP_UP_CHECK],
     };
   }
 }

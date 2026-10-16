@@ -41,6 +41,7 @@ import {
   IdentityModule,
   ME_READ_PORTS,
   TOKEN_CHECK,
+  STEP_UP_CHECK,
   createSmsSender,
   smsSenderToken,
   createIdentityAttrCodeReader,
@@ -106,6 +107,7 @@ import {
   type Clock,
   type FieldCrypto,
   type EventBus,
+  type IdempotencyPostMissCheck,
   type PlatformOptions,
   type RedisHandle,
   type RootLogger,
@@ -833,6 +835,10 @@ function parsingPorts(): DynamicModule {
 function riskModule(identity: DynamicModule): DynamicModule {
   return RiskModule.forRoot({
     imports: [identity],
+    beforeRateLimit: {
+      inject: [STEP_UP_CHECK],
+      useFactory: (check: IdempotencyPostMissCheck) => [check],
+    },
     minimumVersions: {
       inject: [CLOCK, { token: DB, optional: true }],
       // pooled: the guard's cached reader; on: a fresh reader over the idempotency claim's

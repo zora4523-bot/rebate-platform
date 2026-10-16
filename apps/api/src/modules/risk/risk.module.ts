@@ -111,6 +111,7 @@ import {
 export const MINIMUM_VERSION_CHECK = Symbol('MINIMUM_VERSION_CHECK');
 const MINIMUM_VERSION_READER = Symbol('MINIMUM_VERSION_READER');
 const MINIMUM_VERSION_HOOK = Symbol('MINIMUM_VERSION_HOOK');
+const BEFORE_RATE_LIMIT = Symbol('BEFORE_RATE_LIMIT');
 /** Whether stage ④a is in force on this entry: true exactly when a reader is wired. */
 const MINIMUM_VERSION_GATE = Symbol('MINIMUM_VERSION_GATE');
 const RATE_LIMIT_THRESHOLDS = Symbol('RATE_LIMIT_THRESHOLDS');
@@ -350,6 +351,9 @@ export class RiskModule {
       imports: [...options.imports],
       controllers: [AppealsController],
       providers: [
+        options.beforeRateLimit === undefined
+          ? { provide: BEFORE_RATE_LIMIT, useValue: [] }
+          : { provide: BEFORE_RATE_LIMIT, ...options.beforeRateLimit },
         ...sameDeviceProviders,
         appealsConfig,
         {
@@ -494,7 +498,7 @@ export class RiskModule {
                 : RATE_LIMIT_SCOPE_INTERCEPTOR,
         },
         {
-          // ④a's hook first, then ⑤'s, then ⑬'s: registration order is the judgement order.
+          // ④a → ⑤ → optional ⑥–⑫ → ⑬: registration order is the judgement order.
           provide: MINIMUM_VERSION_HOOK,
           inject: [
             MINIMUM_VERSION_CHECK,
@@ -503,6 +507,7 @@ export class RiskModule {
             RISK_STATE_SERVICE,
             RATE_LIMIT_SERVICE,
             RATE_LIMIT_THRESHOLDS,
+            BEFORE_RATE_LIMIT,
             { token: IDEMPOTENCY, optional: true },
           ],
           useFactory: (
@@ -512,6 +517,7 @@ export class RiskModule {
             riskState: RiskStateService | null,
             rateLimit: RateLimitService | null,
             limits: RateLimitThresholdReaders | null,
+            beforeRateLimit: readonly IdempotencyPostMissCheck[],
             idempotency?: Idempotency,
           ) => {
             if (enabled && idempotency !== undefined) {
@@ -526,6 +532,11 @@ export class RiskModule {
                 idempotency,
                 createRiskStatePostMissCheck(riskState),
               );
+            }
+            if (idempotency !== undefined) {
+              for (const additionalCheck of beforeRateLimit) {
+                registerIdempotencyPostMissCheck(idempotency, additionalCheck);
+              }
             }
             if (rateLimit !== null && idempotency !== undefined) {
               registerIdempotencyPostMissCheck(
