@@ -1,0 +1,23 @@
+id: CT-15n
+repo: rebate-platform
+title: 契约：补 PATCH /v1/me（updateMe，只收 nickname；20001 nickname_sensitive、30415；成功回 EmptyResponse）与 POST /v1/auth/merge（mergeAccount，merge_ticket 换手机号账号令牌；30411、签名 + 幂等；成功回 LoginResponse），两条都标 planned（x-implementation）
+type: contract
+# 草稿 2026-10-16（身份与风控线 identity-lane，第二批第一波；调研 IDENTITY-batch2/research.md §2.2，裁定 D7、D8）。
+# 依据：04 §6.1 两行（PATCH /v1/me 标记列空：不签名、不幂等；POST /v1/auth/merge：login、S I），08 BR-ID-06（并号）、BR-ID-39（昵称）、BR-ID-01 细则版本策略表（PATCH /v1/me 受约束；merge 受约束），由编排者摘入。
+# 两条 x-min-version-gate: true、x-session-scopes 只 full；错误码只用已登记的；tags identity。重生成 openapi.gen.ts 与 apps/api 的 auth / signing / min-version 路由生成物（它们收录 planned 操作）。占契约槽（B3-lane/notices.md）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.1']
+deps: [CT-15j]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo

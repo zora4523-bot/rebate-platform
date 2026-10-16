@@ -1,0 +1,26 @@
+id: B1-02d
+repo: rebate-platform
+title: identity 第三方登录 POST /v1/auth/login/wechat、/apple：消费授权尝试 → 经 ThirdPartyIdentityPort 换取身份（扩出 open_id、Apple refresh_token）→ 查找或建号 → user_oauth → 两条同意 → login_logs → 会话（login_method）→ 推送绑定；受限登录 10405 no_account；并发首次登录重读；Apple refresh_token 加密存；去两条 planned
+type: impl
+# 草稿 2026-10-16（身份与风控线 identity-lane，第二批第一波，最优先：挡三端 APP-05b）。调研 IDENTITY-batch2/research.md §1.4，裁定 D5、D6、D20、D21（华为本批不做）。
+# 依据：08 BR-ID-04 细则（授权尝试、先校验后消费、请求体、Apple、微信、失败处理、最小化、并发首次登录、可验证能力表）、BR-ID-01 细则「受限登录」、BR-ID-27（status=deleting → 10007 processing）、BR-ID-05、BR-ID-37、03 §3.5；10 AC-S1-67、AC-S1-130。BR-ID-04 全文超任务书 24KB，由编排者摘入第 9 节。
+# 复用：OauthAttemptService.consume（B1-02f）、建号核心（B1-02i）、短信登录的会话 / 同意 / login_logs / 推送绑定路径（B1-02j、B1-12b）。假适配器只在 local / test，其余环境不注入 → 50305。真实微信 / Apple 适配器另列（等规格与负责人凭据）。
+# Codex 实现（approvals #30、#31）：Claude 子代理先写规则测试 → Codex 新只读会话过审 → Codex 实现 → 编排者机械提交去 planned（Couli-Mechanical: contract-codegen）→ Claude 新子代理评审。契约槽排队。
+refs: []
+refs_hash: {}
+deps: [B1-02w, B1-02f, B1-02i, B1-02j, B1-12b]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+mechanical_paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/oauth-login/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/oauth-login/**'
+status: todo

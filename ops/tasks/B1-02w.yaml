@@ -1,0 +1,24 @@
+id: B1-02w
+repo: rebate-platform
+title: 迁移 0033：user_oauth 加 apple_refresh_token_cipher（bytea，可空）与 revoked_at（可空），sessions 加 login_method（可空，取值 sms / wechat / apple / huawei / merge），授权写在本迁移；不回填旧行
+type: impl
+# 草稿 2026-10-16（身份与风控线 identity-lane，第二批第一波；调研 couli-runs/IDENTITY-batch2/research.md §3、裁定 decision-orchestrator.md D5、D19）。
+# 依据：04 §3.2 user_oauth、sessions 行（A-02 login_method、A-08 Apple refresh_token、A-09 revoked_at），08 BR-ID-04 细则「Apple」「Apple 撤销授权」由编排者摘入。
+# 第三方登录 B1-02d 要写 Apple refresh_token 密文与 login_method，并号 B1-20c 写 login_method=merge。迁移号 0033（0032 已由资金线 B2-01d 登记），落地前主干若已有 0033 再改号。
+# 新迁移以 SET LOCAL lock_timeout / statement_timeout 开头；不在资金 / 归属表上；couli_app 的 user_oauth 已有全表 CRUD，sessions 只需表级 INSERT（已有）。login_method 加 CHECK（NOT VALID + VALIDATE 或可空列直接 CHECK，按 squawk 规则）。
+# 编排者在沙箱外跑 remote-snapshot.sh 生成 db/schema.sql 与 db.gen.ts。迁移归 approvals #19（Claude 实现、Codex 写规则测试）。
+refs: []
+refs_hash: {}
+deps: [B1-02a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/identity/oauth-session-columns/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/identity/oauth-session-columns/**'
+status: todo

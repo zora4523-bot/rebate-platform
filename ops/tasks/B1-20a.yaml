@@ -1,0 +1,26 @@
+id: B1-20a
+repo: rebate-platform
+title: identity 绑手机 POST /v1/me/phone 首次绑定：bind 验证码、手机号规范化、44001 先于 30411、已注销账号的号可绑；第三方空号满足并号条件时 30411 带 reason=mergeable 与 merge_ticket（Redis 5 分钟，绑 uid 与目标 phone_hmac）；更换分支本任务一律 10003；去 bindPhone 的 planned
+type: impl
+# 草稿 2026-10-16（身份与风控线 identity-lane，第二批第一波；APP-05b 的绑手机 / 并号确认）。调研 IDENTITY-batch2/research.md §1.3，裁定 D2、D11。
+# 依据：08 BR-ID-06（正文与细则：并号条件、merge_ticket、判定顺序）、BR-ID-08（更换须 step-up，本任务不做更换）、02 §18 merge_ticket 存法；10 AC-S1-59 ①–③，由编排者摘入。
+# 并号条件里的「无订单 / 无余额流水 / 无上下级」：identity 定义只读端口，app.module 组装缺省（无流水、订单经只读计数），带 TODO blocked on ledger / growth（先例 B1-02m）。签名 + 幂等走 executeInTransaction。
+# 更换手机号（step-up、30414、deleted_identities）另列 B1-20b；并号 POST /v1/auth/merge 另列 B1-20c（等 CT-15n）。Codex 实现，流程同 B1-02d。契约槽排队。
+refs: []
+refs_hash: {}
+deps: [B1-02e, B1-02i, B1-03d]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+mechanical_paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/bind-phone/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/bind-phone/**'
+status: todo
