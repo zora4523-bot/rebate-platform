@@ -271,6 +271,11 @@ ordinary:
     - pending_confirm.title
     - pending_track_card.desc
     - pending_track_card.title
+    - price_trend.empty
+    - price_trend.source
+    - price_trend.source.general
+    - price_trend.title
+    - price_trend.title.general
     - settings.clear_cache
     - settings.clear_cache.confirm
     - settings.clear_cache.confirm_cancel

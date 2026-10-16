@@ -1333,6 +1333,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/products/{product_key}/price-trend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Price trend of one product
+         * @description Final price of the last 30 days for the folded price-trend module of the product detail
+         *     page (规划/01 F-PROD-14; BR-WATCH-05, BR-WATCH-19, BR-PROD-03). Read only from
+         *     price_snapshot; never reads the watch observation tables or any third-party service, so
+         *     nothing about the product's current state (off shelf, ref expired) is reported here.
+         *     One point per natural day in +08:00, the last record of that day; records of one day
+         *     from several sources rank detail, then search, then quote. `start_date` is the date of the
+         *     first record in the window (plain date, BR-TEXT-11), `window_days` is 30. Fewer than
+         *     `price_trend.min_distinct_days` distinct dates, or the platform's key_stability not yet
+         *     stable_7d, gives status=no_data with empty points and null start_date (the client shows
+         *     price_trend.empty); an unknown product key is the same no_data. `source_key` is
+         *     price_trend.source, or price_trend.source.general for a product whose detail quote
+         *     carries no coupon (BR-PRICE-04); the title key follows the same choice. A `platform`
+         *     that is not a platform code, or a product key that does not belong to it, is 20001 with
+         *     data.fields.
+         */
+        get: operations["getProductPriceTrend"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/inputs/parse": {
         parameters: {
             query?: never;
@@ -3970,6 +4003,45 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["ProductCard"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        PriceTrendPoint: {
+            /**
+             * Format: date
+             * @description Natural day in +08:00 (YYYY-MM-DD).
+             */
+            date: string;
+            final_price_fen: components["schemas"]["Fen"];
+        };
+        ProductPriceTrend: {
+            /**
+             * @description ok = points to draw; no_data = show price_trend.empty.
+             * @enum {string}
+             */
+            status: "ok" | "no_data";
+            /** @description One point per day in date order; empty when status=no_data. */
+            points: components["schemas"]["PriceTrendPoint"][];
+            /**
+             * Format: date
+             * @description Date of the first record in the window; null when status=no_data.
+             */
+            start_date: string | null;
+            /**
+             * Format: int32
+             * @description Window length in days, 30.
+             * @enum {integer}
+             */
+            window_days: 30;
+            /**
+             * @description Text key of the source line (price_trend.source.general for a product without coupon).
+             * @enum {string}
+             */
+            source_key: "price_trend.source" | "price_trend.source.general";
+        };
+        ProductPriceTrendResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["ProductPriceTrend"];
             trace_id: components["schemas"]["TraceId"];
         };
         ParseInputRequest: {
@@ -8432,6 +8504,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getProductPriceTrend: {
+        parameters: {
+            query: {
+                /** @description Platform of the product (enum platform). */
+                platform: components["schemas"]["PlatformCode"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path: {
+                /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
+                product_key: components["parameters"]["ProductKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The price trend, or no_data. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductPriceTrendResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

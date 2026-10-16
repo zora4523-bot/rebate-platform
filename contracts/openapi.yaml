@@ -3850,6 +3850,95 @@ paths:
           $ref: '#/components/responses/ClientError'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /v1/products/{product_key}/price-trend:
+    get:
+      operationId: getProductPriceTrend
+      tags:
+        - trade
+      summary: Price trend of one product
+      description: |
+        Final price of the last 30 days for the folded price-trend module of the product detail
+        page (规划/01 F-PROD-14; BR-WATCH-05, BR-WATCH-19, BR-PROD-03). Read only from
+        price_snapshot; never reads the watch observation tables or any third-party service, so
+        nothing about the product's current state (off shelf, ref expired) is reported here.
+        One point per natural day in +08:00, the last record of that day; records of one day
+        from several sources rank detail, then search, then quote. `start_date` is the date of the
+        first record in the window (plain date, BR-TEXT-11), `window_days` is 30. Fewer than
+        `price_trend.min_distinct_days` distinct dates, or the platform's key_stability not yet
+        stable_7d, gives status=no_data with empty points and null start_date (the client shows
+        price_trend.empty); an unknown product key is the same no_data. `source_key` is
+        price_trend.source, or price_trend.source.general for a product whose detail quote
+        carries no coupon (BR-PRICE-04); the title key follows the same choice. A `platform`
+        that is not a platform code, or a product key that does not belong to it, is 20001 with
+        data.fields.
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes: []
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/ProductKey'
+        - name: platform
+          in: query
+          required: true
+          description: Platform of the product (enum platform).
+          schema:
+            $ref: '#/components/schemas/PlatformCode'
+      responses:
+        '200':
+          description: The price trend, or no_data.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPriceTrendResponse'
+              examples:
+                ok:
+                  summary: Enough records
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      status: ok
+                      points:
+                        - date: '2026-09-20'
+                          final_price_fen: 3290
+                        - date: '2026-09-24'
+                          final_price_fen: 2990
+                        - date: '2026-10-01'
+                          final_price_fen: 2890
+                      start_date: '2026-09-20'
+                      window_days: 30
+                      source_key: price_trend.source
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                no_data:
+                  summary: Not enough records
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      status: no_data
+                      points: []
+                      start_date: null
+                      window_days: 30
+                      source_key: price_trend.source.general
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /v1/inputs/parse:
     post:
       operationId: parseInput
@@ -11399,6 +11488,75 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/ProductCard'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    PriceTrendPoint:
+      type: object
+      additionalProperties: false
+      required:
+        - date
+        - final_price_fen
+      properties:
+        date:
+          type: string
+          format: date
+          description: Natural day in +08:00 (YYYY-MM-DD).
+        final_price_fen:
+          $ref: '#/components/schemas/Fen'
+    ProductPriceTrend:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - points
+        - start_date
+        - window_days
+        - source_key
+      properties:
+        status:
+          type: string
+          description: ok = points to draw; no_data = show price_trend.empty.
+          enum:
+            - ok
+            - no_data
+        points:
+          type: array
+          description: One point per day in date order; empty when status=no_data.
+          items:
+            $ref: '#/components/schemas/PriceTrendPoint'
+        start_date:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: Date of the first record in the window; null when status=no_data.
+        window_days:
+          type: integer
+          format: int32
+          description: Window length in days, 30.
+          enum:
+            - 30
+        source_key:
+          type: string
+          description: Text key of the source line (price_trend.source.general for a product without coupon).
+          enum:
+            - price_trend.source
+            - price_trend.source.general
+    ProductPriceTrendResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/ProductPriceTrend'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     ParseInputRequest:
