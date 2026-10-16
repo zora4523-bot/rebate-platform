@@ -1,0 +1,23 @@
+id: B1-06zb
+repo: rebate-platform
+title: 授权页刷新按所用账号取推广位：GET bindings 拼多多备案查询取 self_buy 推广位时带 unionAccountId（所用账号），不再取到他账号的推广位；账号无 self_buy 推广位时按查询失败投影
+type: impl
+# 草稿 2026-10-16（W1 第十棒）。来源：followups「B1-06x 实现（10-14）授权页刷新（union-bindings-pdd.ts）取 self_buy 推广位不按所用账号筛选」。口径同 B1-19d（getActivePid 的 unionAccountId，open 已按所用账号取）。
+# 前置：B1-06x 冻结用例 test/spec/linking/bindings-pdd-query/activation.int.test.ts [AC-B1-06x#1] 断言 getActivePid 恰以 {appId, platform, pidScene, purpose} 调用（不带账号），已由 test-change #540 放宽为包含这四项、[AC-B1-06x#2] 的推广位替身改为按账号应答（期望值不变，先例 #442 / #515）。
+# 做法：refresh() 已按 reads.authAccountId 得到所用账号；pddAuthorityIdentity 取推广位时传 unionAccountId=该账号；该账号无 active self_buy 推广位 → 与现有「无推广位」同口径（记 warn、按库内投影 200、不写库、不调上游）。open 路径不变（B1-19d 已按账号）。
+# 依据：BR-ATTR-08（推广位按场景取）、BR-ID-22（拼多多备案按推广位）；B1-19d 台账注释。由编排者摘入任务书。
+# 风险：linking RV2（用户授权）。linking/** 串行。
+refs: []
+refs_hash: {}
+deps: [B1-06x, B1-19d]
+paths:
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/linking/bindings-pdd-account/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/bindings-pdd-account/**'
+status: todo
+pr: null

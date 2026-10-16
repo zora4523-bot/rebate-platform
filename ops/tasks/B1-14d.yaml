@@ -19,5 +19,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/union/resilience-wiring/**：登记表参数生效、查询熔断可识别 circuit_open、恢复；保留既有联盟规则测试'
-status: todo
-pr: null
+status: done
+pr: 544
