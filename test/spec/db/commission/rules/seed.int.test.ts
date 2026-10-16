@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { sql } from 'kysely';
@@ -7,7 +8,7 @@ import { TIMEOUT, close, open, requireTables, sqlState, type Harness, type Row }
 
 let h: Harness;
 beforeAll(async () => {
-  h = await open();
+  h = await open(createTestDatabase);
 }, TIMEOUT);
 afterAll(async () => {
   await close(h);
@@ -120,7 +121,7 @@ it(
     await seed(h);
     const first = await snapshot(h);
     expect(first.versions).toHaveLength(1);
-    const fresh = await open();
+    const fresh = await open(createTestDatabase);
     try {
       await requireTables(fresh.app);
       for (const [key, value] of [

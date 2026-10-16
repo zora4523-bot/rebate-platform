@@ -5,7 +5,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { expect } from 'vitest';
 
@@ -30,14 +29,20 @@ export const UPDATE_COLUMNS = [
 ];
 export type Row = Record<string, unknown>;
 
+/** The one-shot database the integration test creates (@couli/db/testing stays in *.int.test.ts). */
+export interface OneShotDatabase {
+  urlFor(role: 'couli_app' | 'couli_readonly'): string;
+  drop(): Promise<void>;
+}
+
 export interface Harness {
-  database: TestDatabase;
+  database: OneShotDatabase;
   app: Kysely<DB>;
   readonly: Kysely<DB>;
 }
 
-export async function open(): Promise<Harness> {
-  const database = await createTestDatabase();
+export async function open(create: () => Promise<OneShotDatabase>): Promise<Harness> {
+  const database = await create();
   return {
     database,
     app: createDb({ connectionString: database.urlFor('couli_app'), max: 2 }),

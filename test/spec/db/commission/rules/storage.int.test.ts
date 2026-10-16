@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
@@ -26,7 +27,7 @@ import {
 
 let h: Harness;
 beforeAll(async () => {
-  h = await open();
+  h = await open(createTestDatabase);
 }, TIMEOUT);
 afterAll(async () => {
   await close(h);
