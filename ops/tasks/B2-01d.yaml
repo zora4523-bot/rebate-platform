@@ -1,0 +1,36 @@
+id: B2-01d
+repo: rebate-platform
+title: 迁移：分佣规则三表 commission_rule_versions（版本级 status / effective_from / indirect_enabled）、commission_rules（平台 × 等级 × 订单类型三项比例）、commission_rule_reserves（每版本 × 平台 reserve_bp）及授权；种子 db/seeds/0002 写占位版本与 commission.platforms、union.pdd.* 配置
+type: migration
+# 2026-10-16 资金线 funds-quote 入账（05 B2-01「迁移含 r_indirect_bp / indirect_enabled、commission_rule_reserves」；splits 两列随 B2-01g）。真实报价器（B2-03c）读这三表。
+# 依据 04 §3.2 三表行、§2.5 commission_rules.status；BR-CALC-05/06/07/11 正文与细则。要点：version 级字段（status draft|published|revoked、effective_from、
+# indirect_enabled 默认 false、base_version_id、drafter_id、publisher_id、published_at、revoked_at、indirect_approver_id、indirect_approved_at）放 versions（04 允许上移）；
+# rules 唯一 (rule_version_id, platform, level, order_type)，level ∈ L1/L2/L3、order_type ∈ self/share，三项比例 smallint NOT NULL（r_indirect_bp DEFAULT 0），各 CHECK 0–8000；
+# reserves 唯一 (rule_version_id, platform)，reserve_bp smallint NOT NULL CHECK 0–10000；published 须有 effective_from；同 app 已发布版本 effective_from 唯一（部分唯一索引兜底，
+# 严格递增与跨表校验由发布接口做，B2-03f）。三表带 app_id；约束、索引写明名字（资金表，db/AGENTS.md 第 11 条）；couli_app 三表授 SELECT, INSERT（种子由受保护测试 F1-02a kit 以 couli_app 执行）；rules、reserves 不授 UPDATE / DELETE；
+# versions 只授 status、publisher_id、published_at、revoked_at、indirect_approver_id、indirect_approved_at 列 UPDATE（effective_from、indirect_enabled 不可改）；couli_readonly 只 SELECT。种子直接写 published 是初值，不经 transition()（needs.md 记 CT-04）；ON CONFLICT 覆盖部分唯一索引。种子（合成 app_id couli，可重复执行）：一个已发布版本 effective_from 2026-01-01T00:00:00+08:00、
+# indirect_enabled=false、18 行 5000/1000/0、3 行 reserve 0（BR-CALC-06 默认种子）；config_items commission.platforms=[taobao,jd,pdd]、union.pdd.self_buy_factor_bp=7500、
+# union.pdd.account_level_factor_bp=10000（BR-CALC-17 默认，待核实）。迁移号取落地时主干最大号 +1，以 SET LOCAL lock_timeout / statement_timeout 开头；两段式（db/AGENTS.md）。
+refs: [BR-CALC-02, BR-CALC-05, BR-CALC-06, BR-CALC-07, BR-CALC-11, BR-CALC-17]
+refs_hash:
+  BR-CALC-02: 0ffe8a4d0b65
+  BR-CALC-05: 14f3b5bfa113
+  BR-CALC-06: 8cc9b9a9afc7
+  BR-CALC-07: dabd48fba586
+  BR-CALC-11: 0bdd7a33eb83
+  BR-CALC-17: c717a001ea25
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/seeds/0002_commission-rules.sql'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/commission/rules/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/commission/rules/**'
+status: todo
+pr: null

@@ -1,0 +1,34 @@
+id: B2-03d
+repo: rebate-platform
+title: 装配真实返利报价器：app.module 在 APP_ENV=prod 或任一联盟端点 live 时把 RebateQuoter 换成 commission 的真实报价器（其余环境仍为演示报价器）；开放（open）的报价预读改为真实报价器自带的预读（版本、等级、配置键），去掉 DEMO_QUOTE_KEYS 的 TODO
+type: impl
+# 2026-10-16 资金线 funds-quote 入账。为什么：api 只要任一联盟端点 live 就按 live 装配，演示报价器在 live 下拒绝（受保护测试 test/spec/catalog/card/demo-quote.test.ts），
+# 拼多多 staging 切 live 被挡（HANDOFF 拼多多一节）。W1 followups B1-06w：报价器配置预读键清单写在 app.module，换真实报价器要同步。
+# 做法：app.module.ts 的 RebateQuoter 工厂按 (appEnv, unionModeOf(endpoints)) 选报价器；真实报价器需要数据库句柄，没有 DB 而又要真实报价器 → 拒绝启动（不回退演示）。
+# LINK_OPEN_PORTS.quoteReads.prepare 改为调用真实报价器的 prepare（演示时仍预读 DEMO_QUOTE_KEYS）；linking 的 LinkOpenQuoteReads.prepare 参数由 appId 扩为开放读取计划
+# （LinkOpenReadPlan），link-open-wiring.ts 照传；link-open-reads.ts 导出通用 openScopedReader，app.module 用它包 commission 的规则读取端口。验收：prepare 之后 quote() 不再触库，
+# 时钟在预读与报价之间前进时开放仍成功、报价不触库；未预读的读取按 OpenReadNotPrepared 失败。不改 linking 其余逻辑、不改 catalog 卡片组装。预期行为：prod 在后台发布接口落地前无已发布版本，报价 fail-closed。
+# outside_needed：切 live 前在 staging 跑一次 db/seeds/0002，并确认 tech_fee_bp、rebate.taobao.compare_rate_ratio_bp 已配置。
+# 风险 RV2（linking 与 app.module）。Codex 写规则测试，Claude 过审，Opus 实现，Codex 资金评审。
+refs: [BR-CALC-20]
+refs_hash:
+  BR-CALC-20: b6075c494b94
+deps: [B2-03c]
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/app.module.test.ts'
+  - 'apps/api/src/modules/linking/application/link-open-wiring.ts'
+  - 'apps/api/src/modules/linking/application/link-open-wiring.test.ts'
+  - 'apps/api/src/modules/linking/linking.module.ts'
+  - 'apps/api/src/modules/linking/application/link-open-reads.ts'
+  - 'apps/api/src/modules/linking/application/link-open-reads.test.ts'
+  - 'apps/api/src/modules/linking/index.ts'
+test_paths:
+  - 'test/spec/commission/wiring/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/commission/wiring/**'
+status: todo
+pr: null

@@ -1,0 +1,38 @@
+id: B2-03a
+repo: rebate-platform
+title: packages/domain：splitCommission()（本人 / 分享 / 直推 / 间推份额、平台留存与预留，间推只在 indirect_enabled 时、同人与缺层归平台、forfeited 恒 0）与 quoteRebate()（报价 = splitCommission(B_quote) 的本人份额）纯函数；specs/commission-examples.csv 与参考实现差分
+type: impl
+# 2026-10-16 资金线 funds-quote 入账（05 B2-03「预估计算纯函数、splitCommission() indirect 分支、先扣 reserve_bp」与 B2-01「commission-examples.csv」）。
+# 输入（调用方已按 BR-CALC-06 / 12 取好）：n_base_fen（可为负）、reserve_bp、tlj_deduct_fen（首版恒 0）、order_type、indirect_enabled、各角色比例与受益人
+# （本人必有；直推、间推可缺；每人带 user_id 与快照时状态 active | forfeited）。输出：reserve_fen、base_fen、按角色的份额（受益人、ratio_bp、amount_fen）、
+# platform_retain_fen、异常提示（间推受益人与本人或直推同人 → 归平台）。全部金额只经 @couli/money（mulDivFloor、applyReserve、splitByBp、subFen）。
+# 任务书超 24KB，按 B3-05b 先例手工生成：refs 全留台账（评审范围），任务书第 2 节只渲染一部分、其余放 2b 摘录。
+# 测试阶段（Codex）：规则测试 + 属性测试（10 §5.3：关闭时无 indirect、Σ份额 ≤ B、受益人深度 ≤ 2、B + reserve_fen + min(tlj, after_reserve) = max(0, N_base)，B>0 时 Σ份额 + 留存 + 预留 + 淘礼金扣除 = max(0, N_base)；
+# 每份 ≥ 0、相同输入相同输出、reserve_bp=0 时等于不扣预留）；specs/commission-examples.csv（BR-CALC-21 列出的分账类算例，08 已给数的行 source=08）与朴素参考实现
+# test/spec/reference/split.ref.ts 做逐分差分。csv 由 Claude 新子代理只按输入列盲算比对；不一致行与 5 条大白话代表例交编排问负责人（规划/11 §4.2、§7.3 第 8 项）。
+# **代表例经负责人确认前不派实现**（规划/11 §4.2）。风险 RV2（packages/domain）：Codex 写测试，Claude 过审，Opus 实现，Codex 资金评审。
+refs: [BR-CALC-02, BR-CALC-04, BR-CALC-05, BR-CALC-08, BR-CALC-13, BR-CALC-20, BR-CALC-24]
+refs_hash:
+  BR-CALC-02: 0ffe8a4d0b65
+  BR-CALC-04: 6a3c3082b870
+  BR-CALC-05: 14f3b5bfa113
+  BR-CALC-08: fb23c78c03db
+  BR-CALC-13: b581d0457eca
+  BR-CALC-20: b6075c494b94
+  BR-CALC-24: beb6d9309066
+deps: []
+paths:
+  - 'packages/domain/src/**'
+test_paths:
+  - 'test/spec/domain/commission/**'
+  - 'test/properties/domain/commission/**'
+  - 'test/spec/reference/split.ref.ts'
+  - 'specs/commission-examples.csv'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/commission/**'
+  - 'test/properties/domain/commission/**'
+status: todo
+pr: null

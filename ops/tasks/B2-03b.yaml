@@ -1,0 +1,29 @@
+id: B2-03b
+repo: rebate-platform
+title: union 报价 N 纯函数 quoteN()：按券后价与佣金率算 gross、扣技术服务费得 N_quote（BR-CALC-20），拼多多自购 / 分享按 self_buy_factor_bp 与 account_level_factor_bp 换算（BR-CALC-17，一次乘完再一次 floor）；淘宝、京东两种订单类型同口径
+type: impl
+# 2026-10-16 资金线 funds-quote 入账（05 B2-03「预估计算按平台 × 等级 × 订单类型」中平台口径一段）。为什么放 union：硬规则 7「平台差异止于联盟适配器」，
+# BR-CALC-20「各平台自购 / 分享口径差异在 Adapter 内换算，计佣层不感知平台差异」。只加 union/domain 下一个纯函数并从 union/index.ts 导出，不改适配器与注册表。
+# 输入：platform、final_price_fen、commission_rate_bp（UnionItem 已有）、order_type self|share、tech_fee_bp、拼多多两个系数（调用方从配置读好传入）。
+# 全部经 @couli/money：gross = mulDivFloor(final, rate, 10000)；fee = mulDivFloor(gross, tech_fee, 10000)；N = subFen(gross, fee)；拼多多自购 mulBpBpFloor(N, self, level)、
+# 分享 mulDivFloor(N, level, 10000)。拼多多「分享口径佣金」取扣费后的 N 还是扣费前的 gross 见 couli-runs/B2-03b/decision-orchestrator.md（金额口径，待编排裁定，裁定前不派实现）。
+# 淘宝 promotion_type 1 / 2 与京东 PLUS 口径未验证（CAP-TB-04、CAP-JD-04），两种订单类型同取商品接口佣金率（BR-CALC-20「取可得口径中的较低值」）。
+# 风险：apps/api/src/modules/union/** → RV2。Codex 写规则测试，Claude 过审，Opus 实现，Codex 资金评审。
+refs: [BR-CALC-17, BR-CALC-20]
+refs_hash:
+  BR-CALC-17: c717a001ea25
+  BR-CALC-20: b6075c494b94
+deps: [B2-01c]
+paths:
+  - 'apps/api/src/modules/union/domain/quote-n.ts'
+  - 'apps/api/src/modules/union/domain/quote-n.test.ts'
+  - 'apps/api/src/modules/union/index.ts'
+test_paths:
+  - 'test/spec/union/quote-n/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/quote-n/**'
+status: todo
+pr: null
