@@ -1,0 +1,30 @@
+id: B2-03g
+repo: rebate-platform
+title: commission 分佣快照写入端口 createCommissionSnapshot(trx, input)：按 paid_at 选规则版本、splitCommission 分账，在调用方事务内写 commission_splits 与 v1 的 amounts / beneficiary_events / totals（四段金额），重放幂等；受益人经注入的解析器端口
+type: impl
+# 2026-10-17 资金线 funds-quote 入账（编排 05:5x；05 B2-03「分佣快照」，订单线 B1-08k 调用）。依据 BR-CALC-10 存储与时点、BR-CALC-11 按 paid_at 选版本（含「早于第一个版本 → 用第一个并告警」）、
+# BR-CALC-12 等级与上级取 paid_at 时刻、BR-CALC-13 快照时受益人判定（不存在或已注销 → forfeited，banned/frozen/appealing 记 active）、BR-CALC-27 四段金额（默认值：非淘礼金 tlj_redpacket_fen=0）、BR-CALC-02/04/05/24 分账。
+# 端口：输入（app_id、order_id、platform、paid_at、paid_at_source、order_type=buy_type、activity_type、n_base_fen、subsidy_commission_fen、owner_user_id）；版本取法与 B2-03c 一致（selectRuleVersion），
+# 金额只经 @couli/domain splitCommission；平台在所选版本缺行 → 返回 pending（调用方进待处理表并告警，不生成快照）；同 order_id 已有快照 → 返回已有、不重写（唯一约束兜底）。
+# 受益人解析器 SnapshotBeneficiaryResolver（paid_at 时刻的本人等级、直推 / 间推及其等级与快照时状态）只定义端口与内存假实现，不在本任务实现——level_change_logs / relation_change_logs 尚无表，
+# 过渡取法待编排裁定（couli-runs/FUNDS-quote/progress.md）。时间只读注入 Clock；写入只在调用方传入的 Kysely 事务里做，不自开事务。
+# 风险 RV2（commission）。Codex 写规则测试（含连库 *.int.test.ts），Claude 过审，Opus 实现，Codex money 评审。
+refs: [BR-CALC-10, BR-CALC-11, BR-CALC-12, BR-CALC-13, BR-CALC-27]
+refs_hash:
+  BR-CALC-10: 1848b1fb0a51
+  BR-CALC-11: 0bdd7a33eb83
+  BR-CALC-12: 9d2db9a9f415
+  BR-CALC-13: b581d0457eca
+  BR-CALC-27: ff78446ad011
+deps: [B2-01g, B2-03c]
+paths:
+  - 'apps/api/src/modules/commission/**'
+test_paths:
+  - 'test/spec/commission/snapshot/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/commission/snapshot/**'
+status: todo
+pr: null
