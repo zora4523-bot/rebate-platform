@@ -1,0 +1,19 @@
+id: B2-03h
+repo: rebate-platform
+title: 测试修改：B2-03f 属性测试 [AC-B2-03f#34]、[AC-B2-03f#35] 加显式超时 600_000（与长跑上限一致），断言与次数不变
+type: test-change
+# 2026-10-16 资金线 funds-quote（编排会话 22:3x 要求）。起因：publish.prop.test.ts 在 CI「Property tests, 100k runs」里贴着 test/vitest.config.ts 的单条 15 秒默认时限，
+# 别线 PR 上 [AC-B2-03f#35] 偶发超时。只在两条 it 上加第三参数 600_000（先例 test/properties/money/add-sub/arithmetic.prop.test.ts 用 120_000；这里取长跑配置的 600 秒，
+# 免得 100 万次长跑被更短的显式时限截断）。不改生成器、numRuns（仍只经 propParams()）、断言与期望。不削弱资金测试。
+# 第一类保护路径（test/properties/**）：按 approvals #24 与编排授权由本线核对后加 owner-approved 标签；非 task/ 分支、不碰资金实现路径，按 approvals #12 免证据文件。
+refs: []
+refs_hash: {}
+deps: [B2-03f]
+paths:
+  - 'test/properties/domain/commission-publish/publish.prop.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null
