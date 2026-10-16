@@ -1,0 +1,78 @@
+{
+  "multiplier": 3,
+  "base_urls": {
+    "api": "http://127.0.0.1:3000",
+    "stream": "http://127.0.0.1:3001",
+    "admin": "http://127.0.0.1:3002"
+  },
+  "app_version": "0.0.0",
+  "requests": {
+    "convert": {
+      "platform": "jd",
+      "product_key": "jd:i_100012043978",
+      "scene": "h5",
+      "installed": "unknown"
+    },
+    "agent_sse": { "text": "搜索纸巾", "context": {} }
+  },
+  "scenarios": {
+    "search": {
+      "service": "api",
+      "method": "GET",
+      "path": "/v1/products/search?platform=jd&q=load",
+      "executor": "ramping-arrival-rate",
+      "peak": 30,
+      "ramp_up": "30s",
+      "hold": "2m",
+      "latency_metric": "http_req_duration",
+      "p95_ms": 1500,
+      "error_rate": 0.01,
+      "request_timeout": "10s",
+      "pre_allocated_vus": 180,
+      "max_vus": 900
+    },
+    "convert": {
+      "service": "api",
+      "method": "POST",
+      "path": "/v1/links/convert",
+      "executor": "ramping-arrival-rate",
+      "peak": 15,
+      "ramp_up": "30s",
+      "hold": "2m",
+      "latency_metric": "http_req_duration",
+      "p95_ms": 1500,
+      "error_rate": 0.01,
+      "request_timeout": "10s",
+      "pre_allocated_vus": 90,
+      "max_vus": 450
+    },
+    "agent_sse": {
+      "service": "stream",
+      "method": "POST",
+      "path": "/v1/agent/sessions/{session_id}/messages",
+      "executor": "ramping-vus",
+      "peak": 50,
+      "ramp_up": "30s",
+      "hold": "2m",
+      "latency_metric": "http_req_waiting",
+      "p95_ms": 1000,
+      "error_rate": 0.01,
+      "request_timeout": "60s"
+    },
+    "sync": {
+      "service": "admin",
+      "method": "POST",
+      "path": "/admin/v1/order-syncs",
+      "executor": "ramping-arrival-rate",
+      "peak": 5,
+      "ramp_up": "30s",
+      "hold": "2m",
+      "latency_metric": "http_req_duration",
+      "p95_ms": 3000,
+      "error_rate": 0.01,
+      "request_timeout": "10s",
+      "pre_allocated_vus": 60,
+      "max_vus": 150
+    }
+  }
+}

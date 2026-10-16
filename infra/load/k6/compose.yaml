@@ -1,0 +1,22 @@
+name: couli-load
+
+services:
+  k6:
+    # TODO(规划/11 §4.5): 写入已核实的多架构镜像摘要 — blocked on 编排者联网核实 grafana/k6:1.3.0。
+    image: grafana/k6:1.3.0@sha256:3ddc8b1a33a2c3d8edc6e99b6a762ae36cba08788463458f5e6a7703e14eb77d
+    # The gateway container must have ONLY an internal network.
+    network_mode: container:${LOAD_TARGET_CONTAINER:?填写隔离测试网内的本地网关容器名称}
+    working_dir: /load
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ./:/load:ro
+      - ${LOAD_FIXTURES_FILE:?填写隔离环境临时夹具的绝对路径}:/load/fixtures.json:ro
+    environment:
+      LOAD_API_BASE_URL: ${LOAD_API_BASE_URL:-http://127.0.0.1:3000}
+      LOAD_STREAM_BASE_URL: ${LOAD_STREAM_BASE_URL:-http://127.0.0.1:3001}
+      LOAD_ADMIN_BASE_URL: ${LOAD_ADMIN_BASE_URL:-http://127.0.0.1:3002}
+      K6_NO_USAGE_REPORT: 'true'
+      K6_WEB_DASHBOARD: 'false'
+    command: ['run', '--no-usage-report', '/load/script.ts']
