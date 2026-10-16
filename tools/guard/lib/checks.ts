@@ -11,6 +11,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonFile } from '../../lib/fsx.ts';
 import { changedBetweenCommits, changedFiles, listTree, showFile, tryGit } from '../../lib/git.ts';
+import type { Change } from '../../lib/git.ts';
+import { loadCodexImplMechanical } from '../../lib/codex-impl-tasks.ts';
 import { loadLegacyTasks, ruleTestScope } from '../../lib/legacy-tasks.ts';
 import { specRepo, trustedRoot } from '../../lib/paths.ts';
 import { loadTask, parseTaskFile, TASK_ID_PATTERN } from '../../lib/task-file.ts';
@@ -30,6 +32,12 @@ import type { ProtectedHit } from './protected.ts';
 import { checkCoverage } from './risk-map-coverage.ts';
 import { loadRiskMap } from './risk.ts';
 import { lintSchema } from './schema-lint.ts';
+import {
+  MECHANICAL_TRAILER,
+  MECHANICAL_VALUE,
+  mechanicalProblems,
+  parseRangeLog,
+} from './mechanical.ts';
 import { authorProblems, checkAuthorPaths } from './spec-base.ts';
 import { checkSpecRef } from './spec-ref.ts';
 import { addOnlyViolations, scanTree } from './test-guard.ts';
@@ -276,6 +284,86 @@ export function pathGuardCheck(
   };
 }
 
+/**
+ * Path guard of a task branch in guard-git (`run.ts git --task`), from `from` (the spec_commit or
+ * the base) to HEAD plus the working tree. Without a commit marked `Couli-Mechanical:
+ * contract-codegen` in the range it is pathGuardCheck, unchanged. With one (ops/approvals.yaml
+ * id 31): every unmarked commit and the working tree are held to the ledger `paths`, each marked
+ * commit to the mechanical rules (lib/mechanical.ts); a merge commit in the range fails closed.
+ * `allowed` is the trusted list's `mechanical_paths` (tools/guard/codex-impl-tasks.json).
+ */
+export function taskPathGuardCheck(
+  root: string,
+  from: string,
+  task: { paths: readonly string[]; type: string; mechanical_paths: readonly string[] },
+  allowed: readonly string[] = loadCodexImplMechanical(trustedRoot()),
+): CheckResult {
+  const whole = pathGuardCheck(root, from, task.paths, task.type);
+  const log = tryGit(
+    [
+      'log',
+      '-z',
+      `--format=%H%x1f%P%x1f%(trailers:key=${MECHANICAL_TRAILER},valueonly,separator=%x1e)`,
+      `${from}..HEAD`,
+      '--',
+    ],
+    { cwd: root },
+  );
+  if (log.status !== 0) {
+    return result('path-guard', [`cannot list the commits ${from.slice(0, 12)}..HEAD`]);
+  }
+  const commits = parseRangeLog(log.stdout);
+  const marked = commits.filter((c) => c.mechanical.length > 0);
+  if (marked.length === 0) return whole.check;
+
+  const problems: string[] = [];
+  const unmarked: Change[] = [];
+  for (const commit of commits) {
+    const label = `commit ${commit.sha.slice(0, 12)}`;
+    if (commit.parents.length !== 1) {
+      problems.push(
+        `${label}: a merge or root commit next to a ${MECHANICAL_TRAILER} commit (rebase the branch; fail-closed)`,
+      );
+      continue;
+    }
+    const parent = commit.parents[0] ?? '';
+    const changes = changedBetweenCommits(parent, commit.sha, { cwd: root });
+    if (commit.mechanical.length === 0) {
+      unmarked.push(...changes);
+      continue;
+    }
+    if (commit.mechanical.some((v) => v !== MECHANICAL_VALUE)) {
+      problems.push(
+        `${label}: ${MECHANICAL_TRAILER} must be exactly "${MECHANICAL_VALUE}" (got "${commit.mechanical.join(', ')}")`,
+      );
+      continue;
+    }
+    const show = (ref: string) => (path: string) => {
+      const res = tryGit(['show', `${ref}:${path}`], { cwd: root });
+      return res.status === 0 ? res.stdout : null;
+    };
+    problems.push(
+      ...mechanicalProblems(label, changes, {
+        ledger: task.mechanical_paths,
+        allowed,
+        before: show(parent),
+        after: show(commit.sha),
+      }),
+    );
+  }
+  unmarked.push(...changedFiles('HEAD', { cwd: root }));
+  const detail = checkPaths(unmarked, task.paths, []);
+  problems.unshift(...detail.violations.map((v) => `${v.path}: ${v.reason}`));
+  return result('path-guard', problems, [
+    `${marked.length} commit(s) marked ${MECHANICAL_TRAILER}: ${MECHANICAL_VALUE} checked against the mechanical_paths ` +
+      '(ops/approvals.yaml id 31); every other commit and the working tree against the task paths',
+    ...detail.out_of_scope_ops_docs.map(
+      (p) => `${p}: out-of-scope change under ops/ or docs/ (to be reverted by the orchestrator)`,
+    ),
+    ...whole.detail.protected_hits.map((h) => `${h.path}: protected path, class ${h.class}`),
+  ]);
+}
+
 /** Class 1 of the trusted protected-path list: every rule-test asset (fragments removed). */
 export function ruleTestAssets(): string[] {
   return loadProtected(trustedRoot()).class1_add_only.map((g) => splitFragment(g).glob);
@@ -422,15 +510,23 @@ export function trustedTask(id: string): {
   paths: string[];
   type: string;
   test_paths: string[];
+  mechanical_paths: string[];
   tester: string;
 } {
   const task = loadTask(id, trustedRoot());
-  return { paths: task.paths, type: task.type, test_paths: task.test_paths, tester: task.tester };
+  return {
+    paths: task.paths,
+    type: task.type,
+    test_paths: task.test_paths,
+    mechanical_paths: task.mechanical_paths,
+    tester: task.tester,
+  };
 }
 
 export type GuardTask = {
   paths: string[];
   test_paths: string[];
+  mechanical_paths: string[];
   tester: string;
   type: string;
   source: 'trusted' | 'head';
@@ -465,6 +561,7 @@ export function guardTask(id: string, root: string, base: string): GuardTask {
   return {
     paths: task.paths,
     test_paths: task.test_paths,
+    mechanical_paths: task.mechanical_paths,
     tester: task.tester,
     type: task.type,
     source: 'head',

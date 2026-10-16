@@ -17,6 +17,10 @@
 //     path-guard-author checks --base..spec_commit against the rule-test author's paths
 //     (lib/spec-base.ts). Without a usable spec_commit, path-guard runs from --base as before.
 //     protected-paths and test-guard always run from --base.
+//     Commits of that range marked `Couli-Mechanical: contract-codegen` (ops/approvals.yaml id 31)
+//     are held to the ledger's mechanical_paths instead (planned markers removed from the
+//     contract, files regenerated; lib/mechanical.ts), every other commit to the task paths
+//     (lib/checks.ts taskPathGuardCheck). path-guard.ts (post-run.sh) keeps the task paths only.
 //     The task ledger comes from the trusted root; only when the trusted root has no
 //     ops/tasks/<id>.yaml and the PR adds it (absent at --base, present at HEAD) is the head's
 //     copy used (owner decision 2026-10-02, ops/approvals.yaml id 17, lib/checks.ts guardTask).
@@ -32,7 +36,6 @@ import {
   bannedTermsSpecCheck,
   hiddenUnicodeCheck,
   lockfileCheck,
-  pathGuardCheck,
   protectedPathsCheck,
   protectedSyncCheck,
   riskMapCoverageCheck,
@@ -41,6 +44,7 @@ import {
   specRepoRequired,
   testGuardCheck,
   guardTask,
+  taskPathGuardCheck,
   waiveProblems,
 } from './lib/checks.ts';
 import { UsageError, parseArgs, report, resolveRoot, runCli } from './lib/cli.ts';
@@ -154,7 +158,7 @@ async function runGit(argv: string[]): Promise<number> {
         "checked as the rule-test author's (path-guard-author)";
       results.push(
         runCheck('path-guard', () => {
-          const check = pathGuardCheck(root, specCommit, task.paths, task.type).check;
+          const check = taskPathGuardCheck(root, specCommit, task);
           return { ...check, notices: [...ledgerNotes, note, ...check.notices] };
         }),
       );
@@ -167,7 +171,7 @@ async function runGit(argv: string[]): Promise<number> {
       const note = `implementer scope starts at the base: ${spec.reason}`;
       results.push(
         runCheck('path-guard', () => {
-          const check = pathGuardCheck(root, base, task.paths, task.type).check;
+          const check = taskPathGuardCheck(root, base, task);
           return { ...check, notices: [...ledgerNotes, note, ...check.notices] };
         }),
       );

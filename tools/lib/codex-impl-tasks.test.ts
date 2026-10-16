@@ -11,6 +11,7 @@ import {
   isCodexFirst,
   isCodexImplTask,
   loadCodexImplForbidden,
+  loadCodexImplMechanical,
   loadCodexImplTasks,
 } from './codex-impl-tasks.ts';
 import { repoRoot } from './paths.ts';
@@ -102,6 +103,44 @@ it('[approvals 23] forbidden_paths cover every funds and attribution path of evi
         forbidden.some((f) => globsMayOverlap(g, f)),
         g,
       ).toBe(true);
+    }
+  }
+});
+
+it('[approvals 31] mechanical_paths are exact files, each generated file under a required drift check, the contract the only other', () => {
+  const mechanical = loadCodexImplMechanical(repoRoot());
+  expect(mechanical).toContain('contracts/openapi.yaml');
+  const forbidden = loadCodexImplForbidden(repoRoot());
+  const contractsWorkflow = readFileSync(
+    join(repoRoot(), '.github', 'workflows', 'contracts.yml'),
+    'utf8',
+  );
+  for (const path of mechanical) {
+    // One file each, no glob: a glob would let a mechanical commit reach more than it names.
+    expect(path, 'a mechanical path is one file').toMatch(/^[A-Za-z0-9._/-]+$/);
+    if (path.startsWith('contracts/') || path.startsWith('packages/contracts-ts/')) {
+      // The contract and its client stay out of reach of a Codex ledger's paths.
+      expect(
+        forbidden.some((f) => globsMayOverlap(path, f)),
+        path,
+      ).toBe(true);
+    }
+    if (path === 'contracts/openapi.yaml') continue;
+    expect(path, 'any other mechanical path is a generated file').toMatch(/\.gen\.ts$/);
+    if (path.startsWith('packages/contracts-ts/')) {
+      // contracts-gate runs `pnpm contracts:check` (codegen --check) when this directory changes.
+      expect(contractsWorkflow).toContain(
+        'git diff --quiet "$base" HEAD -- contracts packages/contracts-ts',
+      );
+      expect(contractsWorkflow).toContain('pnpm contracts:check');
+    } else {
+      // A generated file outside the contracts workflow needs a test of ci-gate comparing it with
+      // a fresh generation (contract-routes.test.ts for route-schemas.gen.ts).
+      const dir = path.slice(0, path.lastIndexOf('/'));
+      const test = readFileSync(join(repoRoot(), dir, 'contract-routes.test.ts'), 'utf8');
+      expect(test).toContain(
+        "expect(await readFile(routeSchemasFile, 'utf8')).toBe(await routeSchemasSource());",
+      );
     }
   }
 });

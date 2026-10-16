@@ -54,6 +54,8 @@
 
 没有证据文件、JSON 不对、`task` 不符、`spec_commit` 不是提交或不在基线与头提交之间时，path-guard 照旧从 `--base` 算（规则测试会被判越界，即失败关闭），并在提示里写明原因。protected-paths 与 test-guard 不受影响，始终从 `--base` 算。基线前进后任务分支要变基到新基线，证据文件的 `spec_commit` 随之更新，否则不是基线的后代。
 
+契约机械提交（`ops/approvals.yaml` 第 31 条，编排会话按规划/11 §7.3 第 11 项决定，落实第 30 条）：Codex 实现的接口任务须在同一 PR 去掉 `contracts/openapi.yaml` 的 `x-implementation: planned` 并重生成，这一步由 Claude 单独提交，提交信息的结尾块带 trailer `Couli-Mechanical: contract-codegen`。path-guard 的范围（`spec_commit` 或 `--base` 到头提交）里有这种提交时按提交分开查（`guard/lib/checks.ts` 的 `taskPathGuardCheck`，规则在 `guard/lib/mechanical.ts`）：没带 trailer 的提交与工作区照旧只许任务 `paths`；带 trailer 的提交只许同时落在台账 `mechanical_paths` 与可信根 `codex-impl-tasks.json` 的 `mechanical_paths` 里的文件，只能修改（不能新增、删除、改名），契约文件只能删 `x-implementation: planned` 行（至少一行），`*.gen.ts` 与 codegen 是否一致由必过检查 contracts-gate（`codegen --check`）与 ci-gate（`contract-routes.test.ts`）判；trailer 值不是 `contract-codegen`、台账没有 `mechanical_paths`、范围里有合并提交都失败。范围里没有这种提交时行为不变。`path-guard.ts`（`post-run.sh` 用的）不认 trailer，始终只认 `paths`，所以机械提交要在 Codex 的运行都结束之后再提交。
+
 任务分支自带的台账（负责人 2026-10-02 决定，`ops/approvals.yaml` 第 17 条）：`run.ts git --task <编号>` 的台账照旧从可信根读；只有可信根没有 `ops/tasks/<编号>.yaml`、而 PR 自己新增了它（`--base` 里没有、`--cwd` 的头提交里有，未提交的不算）时，才从头提交读，并在 path-guard 的提示里写明。编号只来自 `task/<编号>` 分支名，所以一个分支只能带上自己任务的台账，改不了基线上已有的台账；protected-paths、test-guard 与其余数据仍从可信根读。基线上已有这份台账而可信根没有（可信副本过期）时直接报错。实现是 `guard/lib/checks.ts` 的 `guardTask`。台账目录 `ops/tasks/**` 在 `ops/risk-map.yaml` 里是 RV0，只改台账的 PR 不需要证据文件。
 
 retry 怎么查（`guard/lib/test-guard.ts`；编排会话 2026-10-03 按 `ops/approvals.yaml` 第 16 条收窄，原先把测试文件里任何一行 `retry:` 都当成 Vitest 的重试选项，被测接口的字段叫 `retry` 也会被拦）：

@@ -26,6 +26,14 @@ export type TaskFile = {
    * needs it (default split of 2026-10-05, ops/approvals.yaml id 19; 规划/11 §2.3 step 2).
    */
   test_paths: string[];
+  /**
+   * Codex implementation ledgers only (ops/approvals.yaml id 31): the generated or marker files
+   * a Claude commit marked `Couli-Mechanical: contract-codegen` may change in the same pull
+   * request (remove `x-implementation: planned` from the contract and regenerate). Never handed
+   * to Codex and never part of `paths`; optional, [] when absent. Allowed values: the
+   * `mechanical_paths` of tools/guard/codex-impl-tasks.json (task.ts check).
+   */
+  mechanical_paths: string[];
   impl: 'codex' | 'claude';
   tester: 'codex' | 'claude' | 'none';
   accept: string[];
@@ -64,6 +72,7 @@ const KNOWN_KEYS = new Set([
   'deps',
   'paths',
   'test_paths',
+  'mechanical_paths',
   'impl',
   'tester',
   'accept',
@@ -133,6 +142,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
       key !== 'pr' &&
       key !== 'contract_sections' &&
       key !== 'test_paths' &&
+      key !== 'mechanical_paths' &&
       !Object.hasOwn(doc, key)
     ) {
       problems.push(`${key}: missing`);
@@ -178,6 +188,13 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
   for (const glob of testPaths) {
     const problem = pathProblem(glob);
     if (problem) problems.push(`test_paths: "${glob}" ${problem}`);
+  }
+  const mechanicalPaths = Object.hasOwn(doc, 'mechanical_paths')
+    ? stringList(doc, 'mechanical_paths', problems, { nonEmpty: true })
+    : [];
+  for (const glob of mechanicalPaths) {
+    const problem = pathProblem(glob);
+    if (problem) problems.push(`mechanical_paths: "${glob}" ${problem}`);
   }
   const accept = Object.hasOwn(doc, 'accept')
     ? stringList(doc, 'accept', problems, { nonEmpty: true })
@@ -253,6 +270,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
     deps,
     paths,
     test_paths: testPaths,
+    mechanical_paths: mechanicalPaths,
     impl: impl as TaskFile['impl'],
     tester: tester as TaskFile['tester'],
     accept,

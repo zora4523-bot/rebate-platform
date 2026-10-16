@@ -55,5 +55,11 @@
     "ops/**",
     "specs/commission-examples.csv"
   ],
-  "//forbidden_paths": "A listed ledger whose paths may reach any of these (funds, attribution, payout, orders, migrations, contracts, clients, gates; a superset of MONEY_PATHS in tools/ci/evidence-check.ts) is refused by task.ts check whatever its suffix: those parts stay with id 19 (Claude review S2-1, Codex review GT-23a round 2, 2026-10-06). Only type impl is let through."
+  "//forbidden_paths": "A listed ledger whose paths may reach any of these (funds, attribution, payout, orders, migrations, contracts, clients, gates; a superset of MONEY_PATHS in tools/ci/evidence-check.ts) is refused by task.ts check whatever its suffix: those parts stay with id 19 (Claude review S2-1, Codex review GT-23a round 2, 2026-10-06). Only type impl is let through.",
+  "mechanical_paths": [
+    "contracts/openapi.yaml",
+    "packages/contracts-ts/src/openapi.gen.ts",
+    "apps/api/src/modules/platform/validation/route-schemas.gen.ts"
+  ],
+  "//mechanical_paths": "Since 2026-10-16 (ops/approvals.yaml id 31, decided by the orchestrator under 规划/11 §7.3 row 11 to carry out id 30; rebate-platform #522): an interface task implemented by Codex must leave planned in the same pull request, so a listed ledger may name some of these in its own mechanical_paths (never in paths: forbidden_paths still refuse contracts/** and packages/contracts-ts/**). Codex never writes them. Only a Claude commit carrying the trailer `Couli-Mechanical: contract-codegen` may change them, and such a commit may change nothing else; guard-git (tools/guard/lib/mechanical.ts) checks that the contract file only loses `x-implementation: planned` lines and that a *.gen.ts file is only modified; that the generated files equal a fresh `pnpm contracts:codegen` is checked by the required checks contracts-gate (codegen --check) and ci-gate (contract-routes.test.ts). Every other commit of the task branch is still held to the ledger paths."
 }
