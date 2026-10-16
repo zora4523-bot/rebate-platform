@@ -1,0 +1,23 @@
+id: B1-02y
+repo: rebate-platform
+title: 用户侧二次验证校验（判定顺序 ⑫）：X-Step-Up-Token 验签（aud=step_up、uid、device_id、action 与接口对应、未过期）不过 10003；jti 一次性，Redis 预占、业务成功才核销、失败释放；挂幂等未命中之后（命中回放不校验）；按契约 x-step-up 声明作用于各接口
+type: impl
+# 草稿 2026-10-16（身份与风控线 identity-lane，第二批第一波；更换手机号 B1-20b、注销申请 B1-15c 的前置）。调研 IDENTITY-batch2/research.md §0 第 3 条，裁定 D12。
+# 依据：08 BR-ID-08（step_up_token 5 分钟、绑定 uid + device_id + action、只在 2xx 且 code=0 时核销、幂等命中直接回放不校验、缺失一律 10003）、BR-ID-01 判定顺序 ⑫，由编排者摘入。签发已在 B1-02f（step-up.ts），本任务只做校验与核销。
+# 挂钩先例：risk-state-gate（⑤）、最低版本守卫（④a）的请求计划与幂等 post-miss 两处接法。Redis 不可用 50001。Codex 实现，流程同 B1-02d；本任务不去任何 planned（无 mechanical_paths）。
+# 2026-10-16 补：⑫ 须在 ④a、⑤ 之后、⑬ 之前，而这几段由 risk.module.ts 同一工厂按顺序注册，paths 加 risk.module.ts（只让该工厂接受「⑤ 之后、⑬ 之前」的检查列表，不改 risk 既有判定）。
+refs: []
+refs_hash: {}
+deps: [B1-02f, B1-03c]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/risk/risk.module.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/step-up-verify/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/step-up-verify/**'
+status: todo

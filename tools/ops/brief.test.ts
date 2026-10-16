@@ -12,6 +12,7 @@ import {
 } from './brief.ts';
 import type { GenerateOptions } from './brief.ts';
 import { findRule } from './spec.ts';
+import { isCodexFirst, loadCodexImplTasks } from '../lib/codex-impl-tasks.ts';
 import { bumpAttempt, updateState } from './state.ts';
 import {
   CLI_TIMEOUT,
@@ -472,8 +473,12 @@ it(
     // Expectations below are computed from the ledger entry, so they hold for whichever
     // task is first in the ledger (no task id or ledger content is written here).
     const ruleTests = task.accept.filter((a) => !/^(pnpm|node|npx|bash|sh)\s/.test(a));
+    // A ledger moved to a Codex implementation (codex-impl-tasks.json) gets the first-implementation
+    // wording, where the list is followed by the verification note in brackets instead of a full stop.
     expect(text).toContain(
-      `必须变绿的规则测试：${ruleTests.length === 0 ? '无' : ruleTests.map((t) => `\`${t}\``).join('、')}。`,
+      `必须变绿的规则测试：${ruleTests.length === 0 ? '无' : ruleTests.map((t) => `\`${t}\``).join('、')}${
+        isCodexFirst(task, loadCodexImplTasks(repoRoot())) ? '（' : '。'
+      }`,
     );
     // Every AGENTS.md on the static prefix of an allowed path is embedded in full.
     for (const path of task.paths) {

@@ -1,0 +1,25 @@
+id: B1-02z
+repo: rebate-platform
+title: identity GET /v1/me：身份等级（从库判定）、手机脱敏、昵称头像、invite_code（封禁时 null）、inviter_bound、invite_backfill（BR-INV-07 a/b/c + 开关）、余额摘要（端口，缺省 0）、联盟授权状态（经 linking 只读入口）、实名（缺省 none）、need_reconsent、risk；接受 deletion_only；去 getMe 的 planned
+type: impl
+# 草稿 2026-10-16（身份与风控线 identity-lane，第二批第一波；「我的」页、强更页、注销页都读）。调研 IDENTITY-batch2/research.md §1.2，裁定 D2、D3、D4、D16、D17。
+# 依据：04 §6.1 GET /v1/me 行与 Me schema，08 BR-ID-01（等级定义、受限会话）、BR-ID-12（need_reconsent）、BR-INV-07 (a)(b)(c) 与 BR-INV-03 细则 ②、BR-INV-18 例、BR-ID-31 / 27 白名单；01 F-INV-10，10 AC-S1-68、AC-S1-61 ⑦，由编排者摘入。
+# 别的模块只经只读端口：余额（ledger 未建，缺省 0 + TODO）、订单计数、联盟授权（linking 导出的只读读取）、风控状态（risk 只读）。不返回等级 L1–L3（OPS-20）。Codex 实现，流程同 B1-02d。契约槽排队。
+refs: []
+refs_hash: {}
+deps: [B1-02m, B1-03h, B1-02f]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+mechanical_paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/me/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/me/**'
+status: todo
