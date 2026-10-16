@@ -17,6 +17,8 @@ paths:
   - 'specs/fund-term-keys.yaml'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
 impl: claude
 tester: none
 accept:
