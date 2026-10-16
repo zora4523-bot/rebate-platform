@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
+import {
+  createMediaStore,
+  MEDIA_STORE,
+  type MediaStore,
+} from '../../../../../apps/api/src/modules/platform/media/index.ts';
 import { grant, seed } from '../../../admin/accounts/kit.ts';
 import { factory, signedIn, useHarness } from '../../../admin/auth/kit.ts';
 import { guardOf } from '../../../admin/guard-mount/kit.ts';
@@ -113,10 +118,18 @@ it('[AC-F1-06x#10] 媒体公开地址缺失时上传返回 50001 且不泄露 up
   });
   h.apps.push(app);
   await app.init();
-  const response = await upload({ ...f, app });
-  await rejected(response, 'uploads', 50001);
-  expect(JSON.stringify(response.json())).not.toContain('upload_id');
-  expect((await snapshot(h, f.appId)).versions).toEqual([]);
+  const unavailable = createMediaStore('staging', undefined, f.overrides.logger);
+  const put = vi
+    .spyOn(app.get<MediaStore>(MEDIA_STORE), 'put')
+    .mockImplementation(unavailable.put.bind(unavailable));
+  try {
+    const response = await upload({ ...f, app });
+    await rejected(response, 'uploads', 50001);
+    expect(JSON.stringify(response.json())).not.toContain('upload_id');
+    expect((await snapshot(h, f.appId)).versions).toEqual([]);
+  } finally {
+    put.mockRestore();
+  }
 });
 
 it('[AC-F1-06x#11] 跨 app 上传与保存只采用已验证身份，不接受 body 注入作者或 app_id', async () => {

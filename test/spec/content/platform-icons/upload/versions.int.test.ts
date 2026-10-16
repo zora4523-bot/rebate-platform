@@ -237,6 +237,44 @@ it('[AC-F1-06x#17] 同 upload 重试返回当前版本；先幂等后确认，�
   expect(await snapshot(h, f.appId)).toEqual(before);
 });
 
+it('[AC-F1-06x#23] 草稿重放不补登来源、不改变清洗确认，版本、标识与审计全部保持原状', async () => {
+  const f = await setup(h);
+  const row = await pending(h, f, { sanitized: true });
+  const first = await success<Version>(
+    await create(f, { upload_id: row.id, sanitized_confirmed: true }),
+    'versions',
+  );
+  expect(first).toMatchObject({
+    source_url: null,
+    downloaded_on: null,
+    publishable: false,
+    ever_published: false,
+    revision: 1,
+  });
+  // A different authorized actor and time expose accidental updated_* writes on replay.
+  const editor = await seed(h, f.appId, { isSuper: true });
+  const session = await signedIn(f, editor);
+  const before = await snapshot(h, f.appId);
+  expect(before.versions).toHaveLength(1);
+  expect(before.audits.filter((a) => a.action === 'version_create')).toHaveLength(1);
+  f.clock.advanceMs(1000);
+  const replay = await success<Version>(
+    await create(
+      { ...f, token: session.admin_token },
+      { upload_id: row.id, ...REGISTERED, sanitized_confirmed: false },
+    ),
+    'versions',
+  );
+  expect(replay).toEqual(first);
+  expect(replay).toMatchObject({
+    source_url: null,
+    downloaded_on: null,
+    publishable: false,
+    revision: 1,
+  });
+  expect(await snapshot(h, f.appId)).toEqual(before);
+});
+
 it.each([
   {},
   { upload_id: 'not-a-uuid' },
