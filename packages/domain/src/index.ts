@@ -1,3 +1,12 @@
+export { splitCommission, quoteRebate } from './commission/commission.ts';
+export type {
+  CommissionBeneficiary,
+  CommissionShare,
+  CommissionWarning,
+  QuoteRebateInput,
+  SplitCommissionInput,
+  SplitCommissionResult,
+} from './commission/commission.ts';
 export {
   deriveProductKey,
   ProductKeyInvalid,
