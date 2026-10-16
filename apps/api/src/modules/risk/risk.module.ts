@@ -51,6 +51,7 @@ import {
   type EventBus,
   type FieldCrypto,
   type Idempotency,
+  type IdempotencyPostMissCheck,
   type RedisHandle,
   type RootLogger,
 } from '../platform/index.ts';
@@ -174,6 +175,16 @@ export interface RiskModuleOptions {
       'inject' | 'useFactory'
     >;
   };
+  /**
+   * Post-miss checks judged after stage ⑤ and before stage ⑬ (BR-ID-01 ⑥–⑫; today identity's ⑫
+   * step-up check, B1-02y), built by app.module. Registered on IDEMPOTENCY in list order right
+   * after ⑤'s hook (after ④a's when ⑤ is not installed, first when neither is) and before ⑬'s.
+   * Absent or empty: the registrations and their order are exactly as without this option.
+   */
+  readonly beforeRateLimit?: Pick<
+    FactoryProvider<readonly IdempotencyPostMissCheck[]>,
+    'inject' | 'useFactory'
+  >;
   /**
    * BR-ID-37 同设备多账号 (B1-03k): identity's login reader and the configuration port bound to a
    * handle (content's reader over the caller's transaction), both assembled by app.module. Absent:
