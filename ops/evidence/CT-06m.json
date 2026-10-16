@@ -1,0 +1,35 @@
+{
+  "task": "CT-06m",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "dd226dadf4001a0cd163505cf6e5a0efa550dbfc",
+  "red_tests": [],
+  "risk_note": "RV2 (gate config). .squawk.toml excluded_rules gains prefer-bigint-over-smallint (ratio columns smallint per 规划/04 §3.2 and 08 BR-CALC-05, bounded by CHECK; money *_fen columns still forced to bigint by tools/ci/lint-migrations.ts); the protected wiring test's pinned exclusion list gains the same entry (title two -> three), no assertion removed. Orchestrator decision 2026-10-16 15:5x (option a). Ledger tester: none, so no red run. Commits split: the pinned-list test change is the test(spec) commit (spec_commit), .squawk.toml is the implementation after it.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 2 pass with no findings; round 1 also concluded pass but was voided by the wrapper's position assertion (the orchestrator created an unrelated branch during the run)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "292fbb234d09cf57c7cb63804fef72e0f31d1c15",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  }
+}
