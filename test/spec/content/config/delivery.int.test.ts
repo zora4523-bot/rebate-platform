@@ -137,6 +137,19 @@ it('[AC-F1-02c#2] 有效非缺省配置按键读取，不遗漏 free-form、字�
   });
 });
 
+it.each(['bind_phone_guide', 'before_buy_tip'] as const)(
+  '[AC-F1-02c#2] invite.%s 单独关闭时不影响另一个缺省开启的开关',
+  async (key) => {
+    const id = await configured(h, { [`invite.${key}`]: false });
+    expect((await success(h.app, id)).invite).toEqual({
+      required: false,
+      backfill_hours: 168,
+      bind_phone_guide: key !== 'bind_phone_guide',
+      before_buy_tip: key !== 'before_buy_tip',
+    });
+  },
+);
+
 it.each(Object.keys(REQUIRED))(
   '[AC-F1-02c#3] 必填键 %s 缺失：50001、ErrorEnvelope 与错误日志',
   async (key) => {
@@ -245,6 +258,20 @@ it.each([undefined, false, true, 'off', 0, null] as const)(
   },
 );
 
+it.each([
+  ['earnings.dashboard.enabled', true, false],
+  ['external_page.union_host_block', false, true],
+] as const)(
+  '[AC-F1-02c#7] 只关闭 %s 时两个派生 flags 各自跟随自己的配置源',
+  async (key, unionHostBlock, dashboardVisible) => {
+    const id = await configured(h, { [key]: false });
+    expect((await success(h.app, id)).features.flags).toEqual({
+      'external_page.union_host_block': unionHostBlock,
+      'earnings.dashboard.visible': dashboardVisible,
+    });
+  },
+);
+
 it('[AC-F1-02c#8] agent 白名单按每次请求登录态判定，含 deletion_only，不泄露名单与备案号', async () => {
   const id = await configured(h, { 'agent.enabled': true, 'agent.whitelist_only': 'on' });
   const member = await session(h, id, await registerDevice(h, id), 'deletion_only');
@@ -277,6 +304,21 @@ it.each([undefined, 'on', false, 1, 'true'] as const)(
       ...(enabled === undefined ? {} : { 'agent.enabled': enabled }),
     });
     expect((await success(h.app, id)).agent.enabled).toBe(false);
+  },
+);
+
+it.each([undefined, false, 'on', true] as const)(
+  '[AC-F1-02c#9] 白名单开启时 agent.enabled=%j 仍约束名单内登录用户，名单外始终关闭',
+  async (enabled) => {
+    const id = await configured(h, {
+      'agent.whitelist_only': true,
+      ...(enabled === undefined ? {} : { 'agent.enabled': enabled }),
+    });
+    const member = await session(h, id, await registerDevice(h, id));
+    const outsider = await session(h, id, await registerDevice(h, id));
+    await seedConfig(h.db, id, { 'agent.whitelist_user_ids': [member.user.id] });
+    expect((await success(h.app, id, member.headers)).agent.enabled).toBe(enabled === true);
+    expect((await success(h.app, id, outsider.headers)).agent.enabled).toBe(false);
   },
 );
 
@@ -420,7 +462,7 @@ it.each([
   { version: 'v2', percent_bp: 1.5 },
   { version: 'v2', percent_bp: '10000' },
 ] satisfies (Json | undefined)[])(
-  '[AC-F1-02c#18] 灰度缺失或形状非法 %j 回稳定版；非法配置有 warn',
+  '[AC-F1-02c#18] 灰度缺失、null 或形状非法 %j 回稳定版；仅非法非 null 配置要求 warn',
   async (value) => {
     const id = await configured(h, value === undefined ? {} : { 'h5_release.canary': value });
     const start = h.logs.length;
@@ -428,7 +470,9 @@ it.each([
       (await success(h.app, id, { 'x-device-id': '019a0000-0000-7000-8000-000000000001' }))
         .h5_release,
     ).toEqual({ version: 'stable-v1' });
-    if (value !== undefined) expectLog(h.logs.slice(start), 40, 'h5_release.canary');
+    if (value !== undefined && value !== null) {
+      expectLog(h.logs.slice(start), 40, 'h5_release.canary');
+    }
   },
 );
 
