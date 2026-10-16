@@ -120,7 +120,20 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     });
     expect(QUEUE_CATALOG[riskScan - 1]?.name).toBe('agent-trace');
   }
-  expect(QUEUE_CATALOG.filter((queue) => queue.name !== 'risk-scan')).toStrictEqual([
+  // B1-08g: order-sync (incremental order sync windows), when present, is exactly this entry,
+  // right before order-rescan. Everything else stays exact.
+  const orderSync = QUEUE_CATALOG.findIndex((queue) => queue.name === 'order-sync');
+  if (orderSync !== -1) {
+    expect(QUEUE_CATALOG[orderSync]).toStrictEqual({
+      name: 'order-sync',
+      ...DEFAULT,
+      policy: 'exclusive',
+    });
+    expect(QUEUE_CATALOG[orderSync + 1]?.name).toBe('order-rescan');
+  }
+  expect(
+    QUEUE_CATALOG.filter((queue) => queue.name !== 'risk-scan' && queue.name !== 'order-sync'),
+  ).toStrictEqual([
     { name: 'order-rescan', ...DEFAULT },
     { name: 'settle', ...DEFAULT, policy: 'exclusive' },
     { name: 'payout', ...DEFAULT, policy: 'exclusive' },
@@ -155,9 +168,17 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
     expect(scans).toStrictEqual([w('risk-scan', 1)]);
     expect(ENTRY_PLAN.worker.at(-1)).toStrictEqual(w('risk-scan', 1));
   }
+  // B1-08g: order-sync, when planned, is worker-only with concurrency 1, first in the worker list.
+  const syncs = ENTRY_PLAN.worker.filter((work) => work.queue === 'order-sync');
+  if (syncs.length > 0) {
+    expect(syncs).toStrictEqual([w('order-sync', 1)]);
+    expect(ENTRY_PLAN.worker[0]).toStrictEqual(w('order-sync', 1));
+  }
   expect({
     ...ENTRY_PLAN,
-    worker: ENTRY_PLAN.worker.filter((work) => work.queue !== 'risk-scan'),
+    worker: ENTRY_PLAN.worker.filter(
+      (work) => work.queue !== 'risk-scan' && work.queue !== 'order-sync',
+    ),
   }).toStrictEqual({
     api: [],
     stream: [],
