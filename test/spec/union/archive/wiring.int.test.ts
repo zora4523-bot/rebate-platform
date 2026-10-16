@@ -144,6 +144,34 @@ it('[AC-B1-04p-WIRING#2] 可选 DB 缺席不包装归档、不增加启动日志
     expect(live.logger.warn).not.toHaveBeenCalled();
     expect(live.logger.error).not.toHaveBeenCalled();
     expect(await rows(reader, h.appId)).toEqual([]);
+    const archived = await assemble(h.clock, db);
+    try {
+      expect(archived.logger.warn).not.toHaveBeenCalled();
+      expect(archived.logger.error).not.toHaveBeenCalled();
+      const result = await outcome(() =>
+        archived.registry.get('pdd').queryPddAuthority!(
+          new TestIdentity(undefined, { appId: h.appId }),
+          {
+            appId: h.appId,
+            requestId: 'fake-with-db',
+            purpose: 'online',
+          },
+        ),
+      );
+      expect(result).toEqual({ authorized: true });
+      expect(fetchDouble).toHaveBeenCalledTimes(3);
+      const stored = await rows(reader, h.appId);
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({
+        app_id: h.appId,
+        kind: 'authority',
+        error_code: null,
+      });
+      expect(archived.logger.warn).not.toHaveBeenCalled();
+      expect(archived.logger.error).not.toHaveBeenCalled();
+    } finally {
+      await archived.context.close();
+    }
   } finally {
     await live.context.close();
   }
