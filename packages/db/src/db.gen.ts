@@ -305,6 +305,61 @@ export interface CommissionRuleVersions {
   status: Generated<string>;
 }
 
+export interface CommissionSplitAmounts {
+  amount_fen: ColumnType<bigint, bigint, bigint>;
+  app_id: string;
+  base_fen: ColumnType<bigint, bigint, bigint>;
+  commission_version: number;
+  created_at: Generated<Timestamp>;
+  order_id: string;
+  role: string;
+  user_id: string;
+}
+
+export interface CommissionSplitBeneficiaryEvents {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  event_seq: Generated<ColumnType<bigint, bigint, bigint>>;
+  order_id: string;
+  reason: string | null;
+  role: string;
+  status: string;
+  user_id: string;
+}
+
+export interface CommissionSplits {
+  activity_type: string | null;
+  app_id: string;
+  base_fen: ColumnType<bigint, bigint, bigint>;
+  beneficiaries: Json;
+  created_at: Generated<Timestamp>;
+  order_id: string;
+  order_type: string;
+  paid_at: Timestamp;
+  paid_at_source: string;
+  platform_retain_fen: ColumnType<bigint, bigint, bigint>;
+  raw_n_fen: ColumnType<bigint, bigint, bigint>;
+  rebate_mode: string | null;
+  reserve_bp: number;
+  reserve_fen: ColumnType<bigint, bigint, bigint>;
+  rule_version_id: string;
+  subsidy_commission_fen: ColumnType<bigint, bigint, bigint>;
+  tlj_deduct_fen: ColumnType<bigint, bigint, bigint>;
+}
+
+export interface CommissionSplitTotals {
+  app_id: string;
+  base_fen: ColumnType<bigint, bigint, bigint>;
+  commission_version: number;
+  created_at: Generated<Timestamp>;
+  n_total_fen: ColumnType<bigint, bigint, bigint>;
+  order_id: string;
+  platform_est_profit_fen: ColumnType<bigint, bigint, bigint> | null;
+  pre_base_deduct_fen: ColumnType<bigint, bigint, bigint>;
+  tlj_redpacket_fen: ColumnType<bigint, bigint, bigint> | null;
+  user_share_total_fen: ColumnType<bigint, bigint, bigint>;
+}
+
 export interface ConfigItems {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1114,6 +1169,10 @@ export interface DB {
   commission_rule_reserves: CommissionRuleReserves;
   commission_rule_versions: CommissionRuleVersions;
   commission_rules: CommissionRules;
+  commission_split_amounts: CommissionSplitAmounts;
+  commission_split_beneficiary_events: CommissionSplitBeneficiaryEvents;
+  commission_split_totals: CommissionSplitTotals;
+  commission_splits: CommissionSplits;
   config_item_versions: ConfigItemVersions;
   config_items: ConfigItems;
   consent_records: ConsentRecords;
