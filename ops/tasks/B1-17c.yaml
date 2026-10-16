@@ -18,6 +18,7 @@ paths:
   - 'apps/api/src/modules/catalog/application/search-service.ts'
   - 'apps/api/src/modules/catalog/application/detail-service.ts'
   - 'apps/api/src/modules/catalog/catalog.module.ts'
+  - 'apps/api/src/modules/catalog/index.ts'
   - 'apps/api/src/modules/parsing/application/parsing.ts'
   - 'apps/api/src/modules/parsing/parsing.module.ts'
   - 'apps/api/src/modules/parsing/http/public/parse-input.controller.ts'
