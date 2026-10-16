@@ -26,6 +26,12 @@ import {
   type TokenService,
 } from './application/access-tokens.ts';
 import { createConsentService, type ConsentService } from './application/consents.ts';
+import {
+  createBindPhoneService,
+  type BindPhoneService,
+  type AccountAssetsPort,
+  type AccountRiskPort,
+} from './application/bind-phone.ts';
 import { createTipsService, type TipsService } from './application/tips.ts';
 import { createH5TokenService, type H5TokenService } from './application/h5-token.ts';
 import {
@@ -68,6 +74,7 @@ import { identityRiskPorts, type IdentityRiskPorts } from './application/risk-po
 import { createSmsRiskPorts, type SmsRiskPorts } from './application/sms-risk-ports.ts';
 import type { MinimumVersionReader } from './application/session-scope.ts';
 import {
+  BIND_PHONE,
   CONSENTS,
   H5_TOKENS,
   IDENTITY_CONFIG,
@@ -84,6 +91,7 @@ import {
   TOKEN_SERVICE,
 } from './application/tokens.ts';
 import { ConsentsController } from './http/public/consents.controller.ts';
+import { BindPhoneController } from './http/public/bind-phone.controller.ts';
 import { DevicesController } from './http/public/devices.controller.ts';
 import { H5TokenController } from './http/public/h5-token.controller.ts';
 import { OauthAttemptsController } from './http/public/oauth-attempts.controller.ts';
@@ -108,6 +116,8 @@ import { createSmsHmac } from './infra/sms-hmac.ts';
 export type IdentityConfigReader = SmsConfigReader & MinimumVersionReader;
 
 export interface IdentityModuleOptions {
+  readonly accountAssets?: Omit<FactoryProvider<AccountAssetsPort>, 'provide'>;
+  readonly accountRisk?: Omit<FactoryProvider<AccountRiskPort | null>, 'provide'>;
   /**
    * Builds the identity configuration port (IdentityConfigReader): content's reader, assembled by
    * app.module (content implements the port's shape and imports nothing of identity). Null when
@@ -226,6 +236,8 @@ const SMS_RISK = Symbol('IDENTITY_SMS_RISK');
 const SMS_RISK_PORTS = Symbol('IDENTITY_SMS_RISK_PORTS');
 /** The push token port as app.module builds it (IdentityModuleOptions.pushTokens), or null. */
 const PUSH_TOKENS = Symbol('IDENTITY_PUSH_TOKENS');
+const ACCOUNT_ASSETS = Symbol('IDENTITY_ACCOUNT_ASSETS');
+const ACCOUNT_RISK = Symbol('IDENTITY_ACCOUNT_RISK');
 
 @Module({})
 export class IdentityModule {
@@ -233,6 +245,7 @@ export class IdentityModule {
     return {
       module: IdentityModule,
       controllers: [
+        BindPhoneController,
         DevicesController,
         SmsCodesController,
         SmsLoginController,
@@ -245,6 +258,40 @@ export class IdentityModule {
         TipsController,
       ],
       providers: [
+        options.accountAssets === undefined
+          ? { provide: ACCOUNT_ASSETS, useValue: null }
+          : { ...options.accountAssets, provide: ACCOUNT_ASSETS },
+        options.accountRisk === undefined
+          ? { provide: ACCOUNT_RISK, useValue: null }
+          : { ...options.accountRisk, provide: ACCOUNT_RISK },
+        {
+          provide: BIND_PHONE,
+          inject: [
+            CLOCK,
+            SMS_CODES,
+            BLOCKLIST_SERVICE,
+            ACCOUNT_ASSETS,
+            ACCOUNT_RISK,
+            { token: FIELD_CRYPTO, optional: true },
+            { token: REDIS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            sms: SmsCodeService | null,
+            blocklist: BlocklistService | null,
+            assets: AccountAssetsPort | null,
+            risk: AccountRiskPort | null,
+            crypto?: FieldCrypto,
+            redis?: RedisHandle,
+          ): BindPhoneService | null =>
+            sms === null ||
+            assets === null ||
+            risk === null ||
+            crypto === undefined ||
+            redis === undefined
+              ? null
+              : createBindPhoneService({ clock, sms, blocklist, assets, risk, crypto, redis }),
+        },
         // Read once while the entry starts; a missing or malformed list stops the entry.
         { provide: INVALID_DEVICE_HASHES, useFactory: () => loadInvalidDeviceHashSeeds() },
         DevicesRepository,
