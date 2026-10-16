@@ -660,6 +660,24 @@ export interface Platforms {
   updated_at: Generated<Timestamp>;
 }
 
+export interface PriceSnapshot {
+  app_id: string;
+  coupon_fen: ColumnType<bigint, bigint, bigint>;
+  created_at: Generated<Timestamp>;
+  final_price_fen: ColumnType<bigint, bigint, bigint>;
+  first_observed_at: Timestamp;
+  goods_sign_plan: string | null;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  in_stock: boolean;
+  last_observed_at: Timestamp;
+  observation_count: number;
+  platform: string;
+  price_fen: ColumnType<bigint, bigint, bigint>;
+  product_key: string;
+  sku_key: string | null;
+  source_kind: string;
+}
+
 export interface ProcessedEvents {
   consumer: string;
   created_at: Generated<Timestamp>;
@@ -984,6 +1002,7 @@ export interface DB {
   platform_icon_versions: PlatformIconVersions;
   platform_icons: PlatformIcons;
   platforms: Platforms;
+  price_snapshot: PriceSnapshot;
   processed_events: ProcessedEvents;
   product_key_aliases: ProductKeyAliases;
   product_refs: ProductRefs;
