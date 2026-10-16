@@ -7,9 +7,9 @@ type: impl
 # 要点：按端与渠道取行（渠道无行时的回退、是否需要更新的判定按裁定）；没有配置行时契约无错误码可用，按裁定处理并记 needs.md。
 # 去掉 checkAppVersion 的 planned 由机械提交做。契约槽同 F1-02c。
 # 2026-10-16 改为 Codex 实现（未开工）：ops/approvals.yaml 第 30、31 条；Claude 子代理先写规则测试 → Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 编排者机械提交（只删 planned + pnpm contracts:codegen，Couli-Mechanical: contract-codegen）→ Claude 新子代理评审。
-refs: [BR-ID-01]
-refs_hash:
-  BR-ID-01: b464ea6197bc
+# refs 置空（2026-10-16）：BR-ID-01 连细则与一跳引用展开后任务书超 24KB，brief.ts 拒写；照 F1-02c 先例，规则要点由编排者摘入任务书第 9 节（couli-runs/F1-02e/excerpt.md）。
+refs: []
+refs_hash: {}
 deps: [F1-02b, F1-02c]
 paths:
   - 'apps/api/src/modules/content/**'
