@@ -21,6 +21,7 @@ import type { CatalogCardEntry } from './application/card-entry.ts';
 import { CatalogError } from './domain/rules.ts';
 import type { Catalog, ProductRef } from './domain/types.ts';
 import type { CatalogConfigReader, Viewer, ViewerContext } from './ports.ts';
+import type { PriceSnapshotRecorder } from './price-history/types.ts';
 
 export type SearchProductsQuery = operations['searchProducts']['parameters']['query'];
 export type SearchProductsData = components['schemas']['SearchProductsData'];
@@ -68,6 +69,12 @@ export interface SearchUpstreamPage {
    * (has_more keeps the union's value).
    */
   readonly cursorUnsaved?: boolean;
+  /**
+   * B1-17c: true only when this page is a fresh union return (set by the union side the module
+   * wires under the cache; a cache hit or a stale entry never carries it). Only such a page is
+   * handed to the price history recorder (BR-WATCH-19 (1)).
+   */
+  readonly fresh?: boolean;
 }
 
 /** Adapter/cache seam: B1-05g owns caching, not this use case. No product-pool fallback. */
@@ -121,6 +128,12 @@ export interface SearchProductsOptions {
   readonly cursors: SearchCursorCodec;
   readonly newSessionId: () => string;
   readonly logger: Pick<Logger, 'warn'>;
+  /**
+   * B1-17c: the price history hook (BR-WATCH-19 (1), source_kind search). Absent, search behaves
+   * exactly as before. Present, every candidate of a page with fresh === true is handed to
+   * record() once (not awaited; a throw is swallowed; the response never changes).
+   */
+  readonly priceHistory?: PriceSnapshotRecorder;
 }
 
 /** BR-PRICE-15: price bounds in fen, both ends inclusive. */
@@ -414,6 +427,42 @@ interface Continued {
   readonly promotionSlot: string;
 }
 
+/** Observe the entire fresh page, before delivery filters; alias lookup is also best effort. */
+function recordSearchPage(
+  page: SearchUpstreamPage,
+  appId: string,
+  options: SearchProductsOptions,
+): void {
+  const recorder = options.priceHistory;
+  if (recorder === undefined || page.fresh !== true || page.stale === true) return;
+  for (const { item, ref } of page.items) {
+    const key = ref.productKey;
+    if (key === null) continue;
+    // Do not wait for history-only alias reads, or let a failed read affect the search.
+    void Promise.resolve()
+      .then(() => options.catalog.resolveProductKey(key))
+      .then((productKey) =>
+        recorder.record({
+          appId,
+          platform: item.platform,
+          productKey,
+          skuKey: item.skuId ?? null,
+          sourceKind: 'search',
+          outcome: 'ok',
+          priceFen: item.price_fen,
+          couponFen: item.coupon_fen,
+          finalPriceFen: item.final_price_fen,
+          priceStatus: item.price_status ?? 'ok',
+          inStock: true,
+          fresh: true,
+          userScoped: false,
+          goodsSignPlan: null,
+        }),
+      )
+      .catch(() => undefined);
+  }
+}
+
 /** Session read → upstream page(s) → cards → link registration of delivered cards → session write. */
 async function searchPages(
   normalized: SessionQuery,
@@ -557,6 +606,7 @@ async function searchPages(
   let hasMore = page.hasMore;
   // D6-8: a page whose union cursor could not be remembered gets no next_cursor in this response.
   let cursorLost = page.cursorUnsaved === true;
+  recordSearchPage(page, appId, options);
   await take(page.items, page.stale === true);
 
   // BR-PRICE-08: at most one refill page; has_more follows the last upstream page. The refill
@@ -592,6 +642,7 @@ async function searchPages(
       lastPage = startPage + 1;
       hasMore = refill.hasMore;
       if (refill.cursorUnsaved === true) cursorLost = true;
+      recordSearchPage(refill, appId, options);
       await take(refill.items, refill.stale === true);
     }
   }
@@ -706,6 +757,7 @@ async function fallback(
     return [];
   }
   const cardsOut: ProductCard[] = [];
+  recordSearchPage(page, appId, options);
   const keys = new Set<string>();
   for (const { item, ref } of page.items) {
     if (cardsOut.length >= FALLBACK_LIMIT) break;

@@ -21,6 +21,7 @@ import type { ItemRefService } from './application/item-ref.ts';
 import { CatalogError, isFresh } from './domain/rules.ts';
 import type { Catalog, ProductCapabilities, ProductRef, RequestRawRef } from './domain/types.ts';
 import type { CatalogConfigReader, ViewerContext } from './ports.ts';
+import type { PriceSnapshotRecorder } from './price-history/types.ts';
 
 export interface ProductDetailQuery {
   readonly product_key: string;
@@ -52,10 +53,21 @@ export interface ProductDetailRequest {
  * (BR-PROD-07 熔断降级, BR-PRICE-11): the card is stale=true with the entry's quoted_at.
  */
 const STALE_DETAILS = new WeakSet<object>();
+const FRESH_DETAILS = new WeakSet<object>();
 
 /** Marks a detail answer as a stale cache entry (infra/product-cache.ts). */
 export function markStaleDetail<T extends UnionItemDetail>(item: T): T {
   STALE_DETAILS.add(item);
+  return item;
+}
+
+/**
+ * B1-17c: marks a detail answer as a fresh union return (the module marks what the union side
+ * under the cache returns; a cache hit or a stale entry is never marked) and returns it. Only a
+ * marked answer is handed to the price history recorder (BR-WATCH-19 (1)).
+ */
+export function markFreshDetail<T extends UnionItemDetail>(item: T): T {
+  FRESH_DETAILS.add(item);
   return item;
 }
 
@@ -71,6 +83,12 @@ export interface ProductDetailOptions {
   readonly itemRefs: ItemRefService;
   readonly cards: CatalogCardEntry;
   readonly upstream: ProductDetailUpstream;
+  /**
+   * B1-17c: the price history hook (BR-WATCH-19 (1), source_kind detail). Absent, the detail
+   * behaves exactly as before. Present, a union answer marked by markFreshDetail is handed to
+   * record() once (not awaited; a throw is swallowed; the response never changes).
+   */
+  readonly priceHistory?: PriceSnapshotRecorder;
 }
 
 export type ProductDetailData = components['schemas']['ProductResponse']['data'];
@@ -253,6 +271,31 @@ export async function getProduct(
   if (derived !== productKey) refExpired('response derives another product key');
   const responseRaw = detailRawItemId(item, jdMode);
   if (responseRaw === undefined) refExpired('response carries no raw item id');
+
+  if (options.priceHistory !== undefined && FRESH_DETAILS.has(item) && !STALE_DETAILS.has(item)) {
+    try {
+      void Promise.resolve(
+        options.priceHistory.record({
+          appId,
+          platform: item.platform,
+          productKey: derived,
+          skuKey: item.skuId ?? null,
+          sourceKind: 'detail',
+          outcome: 'ok',
+          priceFen: item.price_fen,
+          couponFen: item.coupon_fen,
+          finalPriceFen: item.final_price_fen,
+          priceStatus: item.price_status ?? 'ok',
+          inStock: true,
+          fresh: true,
+          userScoped: false,
+          goodsSignPlan: null,
+        }),
+      ).catch(() => undefined);
+    } catch {
+      // A broken optional recorder must not change the detail's response or error path.
+    }
+  }
 
   const ref: ProductRef = {
     appId,

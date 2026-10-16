@@ -22,6 +22,7 @@ import { createCatalog } from './application/catalog.ts';
 import { CatalogDetailService } from './application/detail-service.ts';
 import { createItemRefService, type ItemRefService } from './application/item-ref.ts';
 import { CatalogSearchService } from './application/search-service.ts';
+import { markFreshDetail, type ProductDetailUpstream } from './detail.ts';
 import type { Catalog, CatalogWarning } from './domain/types.ts';
 import { ProductController } from './http/public/product.controller.ts';
 import { SearchController } from './http/public/search.controller.ts';
@@ -50,7 +51,11 @@ import {
   createGuestViewerContext,
   type Viewer,
 } from './ports.ts';
-import type { SearchCursorCodec, SearchSessionStore } from './search.ts';
+import type { SearchCursorCodec, SearchSessionStore, SearchUpstream } from './search.ts';
+import { createPriceSnapshotRecorder } from './price-history/recorder.ts';
+import { createKyselyPriceSnapshotStore } from './price-history/store.ts';
+import type { PriceSnapshotRecorder, PriceSnapshotStore } from './price-history/types.ts';
+import type { Logger } from 'pino';
 
 /** Nest injection token of the Catalog service. */
 export const CATALOG = Symbol('CATALOG');
@@ -59,6 +64,7 @@ const ITEM_REFS = Symbol('CATALOG_ITEM_REFS');
 const QUERY_PIDS = Symbol('CATALOG_QUERY_PIDS');
 const SEARCH_SESSIONS = Symbol('CATALOG_SEARCH_SESSIONS');
 const SEARCH_CURSORS = Symbol('CATALOG_SEARCH_CURSORS');
+const PRICE_HISTORY = Symbol('CATALOG_PRICE_HISTORY');
 
 type PidReader = Pick<UnionPidService, 'getActivePid'>;
 
@@ -134,6 +140,63 @@ const GUEST_VIEWER: FactoryProvider<ViewerContext> = {
   },
 };
 
+/** B1-17c: what createPriceHistoryRecorder is built from. */
+export interface PriceHistoryWiring {
+  /** The single writer of price_snapshot: createKyselyPriceSnapshotStore(DB) in the modules. */
+  readonly store: PriceSnapshotStore;
+  readonly clock: Clock;
+  /** price_snapshot.touch_min_interval_minutes is read through it (createPriceSnapshotRecorder). */
+  readonly config: Pick<CatalogConfigReader, 'configValue'>;
+  readonly logger: Pick<Logger, 'warn'>;
+}
+
+/**
+ * B1-17c: the price history recorder the modules hand to the three hooks (search, detail, quote;
+ * BR-WATCH-19 (1)). It is createPriceSnapshotRecorder (B1-17b, reused, never copied: same skips,
+ * same failure counting and warn, same drain) over `store` behind a concurrency cap: at most 2
+ * store.write calls are in flight at any time, later writes wait in arrival order and start as
+ * earlier ones settle (fulfilled or rejected). B1-17b followup: every write opens its own
+ * transaction and queues on an advisory lock, so without the cap a burst of fresh union returns
+ * could hold the API's whole pool. A queued write still counts for drain().
+ * CatalogModule and ParsingModule build it from the DB handle (createKyselyPriceSnapshotStore),
+ * CLOCK, their configuration reader and ROOT_LOGGER; without a DB handle they wire no recorder
+ * and the three hooks stay off.
+ */
+export function createPriceHistoryRecorder(wiring: PriceHistoryWiring): PriceSnapshotRecorder {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  const store: PriceSnapshotStore = {
+    async write(input) {
+      if (active >= 2) {
+        await new Promise<void>((resolve) => waiting.push(resolve));
+      } else {
+        active += 1;
+      }
+      try {
+        return await wiring.store.write(input);
+      } finally {
+        const next = waiting.shift();
+        // Transfer the occupied slot directly to the oldest waiter, including on failure.
+        if (next === undefined) active -= 1;
+        else next();
+      }
+    },
+  };
+  return createPriceSnapshotRecorder({ ...wiring, store });
+}
+
+/** Mark only the union side: cache hits reconstruct pages/items without these markers. */
+function freshSearchUpstream(upstream: SearchUpstream): SearchUpstream {
+  return {
+    search: async (input) => ({ ...(await upstream.search(input)), fresh: true }),
+    materialFeed: async (input) => ({ ...(await upstream.materialFeed(input)), fresh: true }),
+  };
+}
+
+function freshDetailUpstream(upstream: ProductDetailUpstream): ProductDetailUpstream {
+  return { detail: async (input) => markFreshDetail(await upstream.detail(input)) };
+}
+
 /**
  * Catalog (规划/02 §4.1): platform dictionary, product_refs, aliases and the category blocklist.
  * Assembles two of its five ports here:
@@ -190,6 +253,25 @@ export class CatalogModule {
           inject: [{ token: DB, optional: true }, CLOCK],
           useFactory: (db: Kysely<Database> | undefined, clock: Clock): CatalogConfigReader =>
             db === undefined ? UNAVAILABLE_CONFIG : configReader(db, clock),
+        },
+        {
+          // Singleton: all search and detail requests share the same two write slots.
+          provide: PRICE_HISTORY,
+          inject: [{ token: DB, optional: true }, CLOCK, CatalogConfigReader, ROOT_LOGGER],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            clock: Clock,
+            config: CatalogConfigReader,
+            logger: RootLogger,
+          ): PriceSnapshotRecorder | undefined =>
+            db === undefined
+              ? undefined
+              : createPriceHistoryRecorder({
+                  store: createKyselyPriceSnapshotStore(db),
+                  clock,
+                  config,
+                  logger,
+                }),
         },
         viewerContext,
         {
@@ -259,6 +341,7 @@ export class CatalogModule {
             QUERY_PIDS,
             SEARCH_SESSIONS,
             SEARCH_CURSORS,
+            PRICE_HISTORY,
             { token: REDIS, optional: true },
           ],
           useFactory: (
@@ -275,6 +358,7 @@ export class CatalogModule {
             pids: PidReader,
             sessions: SearchSessionStore,
             cursors: SearchCursorCodec,
+            priceHistory: PriceSnapshotRecorder | undefined,
             redis?: RedisHandle,
           ): CatalogSearchService =>
             new CatalogSearchService({
@@ -293,13 +377,15 @@ export class CatalogModule {
                 logger,
               }),
               upstream: cacheSearchUpstream(
-                createUnionSearchUpstream({
-                  union,
-                  catalog,
-                  config,
-                  clock,
-                  ledger: redis === undefined ? null : redis.namespace(SEARCH_REDIS_NAMESPACE),
-                }),
+                freshSearchUpstream(
+                  createUnionSearchUpstream({
+                    union,
+                    catalog,
+                    config,
+                    clock,
+                    ledger: redis === undefined ? null : redis.namespace(SEARCH_REDIS_NAMESPACE),
+                  }),
+                ),
                 {
                   redis: redis === undefined ? null : redis.namespace(PRODUCT_CACHE_NAMESPACE),
                   clock,
@@ -310,6 +396,7 @@ export class CatalogModule {
               cursors,
               newSessionId: randomUUID,
               logger,
+              ...(priceHistory === undefined ? {} : { priceHistory }),
             }),
         },
         {
@@ -326,6 +413,7 @@ export class CatalogModule {
             SourceLinkReader,
             GovernedUnion,
             ITEM_REFS,
+            PRICE_HISTORY,
             { token: REDIS, optional: true },
           ],
           useFactory: (
@@ -339,6 +427,7 @@ export class CatalogModule {
             sourceLinks: SourceLinkReader,
             union: GovernedUnion,
             itemRefs: ItemRefService,
+            priceHistory: PriceSnapshotRecorder | undefined,
             redis?: RedisHandle,
           ): CatalogDetailService =>
             new CatalogDetailService({
@@ -356,11 +445,15 @@ export class CatalogModule {
                 itemRefs,
                 logger,
               }),
-              upstream: cacheDetailUpstream(createUnionDetailUpstream({ union }), {
-                redis: redis === undefined ? null : redis.namespace(PRODUCT_CACHE_NAMESPACE),
-                clock,
-                config,
-              }),
+              upstream: cacheDetailUpstream(
+                freshDetailUpstream(createUnionDetailUpstream({ union })),
+                {
+                  redis: redis === undefined ? null : redis.namespace(PRODUCT_CACHE_NAMESPACE),
+                  clock,
+                  config,
+                },
+              ),
+              ...(priceHistory === undefined ? {} : { priceHistory }),
             }),
         },
       ],

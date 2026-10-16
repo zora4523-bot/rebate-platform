@@ -16,7 +16,13 @@
 import type { components } from '@couli/contracts-ts';
 import type { Logger } from 'pino';
 import { deriveProductKey, ProductKeyUnderivable } from '@couli/domain';
-import type { Catalog, CatalogCardEntry, ProductCard, ProductRef } from '../../catalog/index.ts';
+import type {
+  Catalog,
+  CatalogCardEntry,
+  PriceSnapshotRecorder,
+  ProductCard,
+  ProductRef,
+} from '../../catalog/index.ts';
 import {
   GovernanceError,
   getLinkPatterns,
@@ -81,6 +87,13 @@ export interface ParsingOptions {
   readonly linkPatterns?: LinkPatternsSpec;
   /** Warning sink of a hit isolated by a non-business failure (flat fields only, no input text). */
   readonly logger?: Pick<Logger, 'warn'>;
+  /**
+   * B1-17c: the price history hook (BR-WATCH-19 (1), source_kind quote). Absent, parsing behaves
+   * exactly as before. Present, every successful union detail of a hit (a fresh getItem answer;
+   * the query carries no viewer identity) is handed to record() once (not awaited; a throw is
+   * swallowed; the results never change).
+   */
+  readonly priceHistory?: PriceSnapshotRecorder;
 }
 
 /** Internal D33 result; price_unavailable is deliberately not a fabricated wire card. */
@@ -356,6 +369,31 @@ export function createParsing(options: ParsingOptions): ParsingService {
     if (seen.has(dedupKey)) return null;
     const product = await resolver.detail(identified.value, context);
     if (!product.ok) return { kind: 'error', hit, error_code: product.code };
+    if (options.priceHistory !== undefined) {
+      const { item } = product.value;
+      try {
+        void Promise.resolve(
+          options.priceHistory.record({
+            appId: context.appId,
+            platform: item.platform,
+            productKey: identified.value.resolvedKey,
+            skuKey: item.skuId ?? null,
+            sourceKind: 'quote',
+            outcome: 'ok',
+            priceFen: item.price_fen,
+            couponFen: item.coupon_fen,
+            finalPriceFen: item.final_price_fen,
+            priceStatus: item.price_status ?? 'ok',
+            inStock: true,
+            fresh: true,
+            userScoped: false,
+            goodsSignPlan: null,
+          }),
+        ).catch(() => undefined);
+      } catch {
+        // History failure must not fail this hit or prevent later hits from being processed.
+      }
+    }
     const result = await options.cards.assemble({
       item: product.value.item,
       ref: product.value.ref,

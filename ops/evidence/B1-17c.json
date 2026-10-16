@@ -1,0 +1,120 @@
+{
+  "task": "B1-17c",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "4c0cf1f619c719472af102ab0f7b73e5fced7f9f",
+  "red_tests": [
+    "test/spec/catalog/price-history-hooks/detail.test.ts > [AC-B1-17c#6] 详情：联盟新鲜返回交出一条 detail 观测（字段逐项，不含查看者），写入器写入",
+    "test/spec/catalog/price-history-hooks/detail.test.ts > [AC-B1-17c#7] 详情：缓存命中（未标新鲜）与 stale 结果不落库，只有新鲜返回写入",
+    "test/spec/catalog/price-history-hooks/detail.test.ts > [AC-B1-17c#8] 详情：上游失败与价格异常的结果与未装配钩子逐项一致，且都不落库",
+    "test/spec/catalog/price-history-hooks/detail.test.ts > [AC-B1-17c#9] 详情：记录器抛错或 record 永不返回时，响应与未装配钩子逐项一致（交出即返回、不 await）",
+    "test/spec/catalog/price-history-hooks/parsing-wiring-requests.test.ts > [AC-B1-17c#21] ParsingModule：三个解析请求各交出三条可写观测，写事务合计最多 2 个在途（上限按进程而非按请求），其余随释放补上",
+    "test/spec/catalog/price-history-hooks/parsing-wiring.test.ts > [AC-B1-17c#17] ParsingModule：有 DB 句柄时路由把模块装配的记录器交给 createParsing，可写观测经它写库；无 DB 时不交",
+    "test/spec/catalog/price-history-hooks/parsing.test.ts > [AC-B1-17c#10] 链接识别：联盟详情返回交出一条 quote 观测（字段逐项，不含查看者与请求号），写入器写入，不转链",
+    "test/spec/catalog/price-history-hooks/parsing.test.ts > [AC-B1-17c#11] 链接识别：一条消息多个命中，下架失败与拼多多不落库，结果与未装配钩子逐项一致",
+    "test/spec/catalog/price-history-hooks/parsing.test.ts > [AC-B1-17c#12] 链接识别：价格异常命中不落库，同消息正常命中照写",
+    "test/spec/catalog/price-history-hooks/parsing.test.ts > [AC-B1-17c#13] 链接识别：记录器抛错或 record 永不返回时，结果与未装配钩子逐项一致（交出即返回、不 await）",
+    "test/spec/catalog/price-history-hooks/search-delivery.test.ts > [AC-B1-17c#18] 搜索：被价格上限、无返利、limit 截断滤掉的新鲜候选与补页候选同样交出并写入，响应只含交付的卡片",
+    "test/spec/catalog/price-history-hooks/search-delivery.test.ts > [AC-B1-17c#19] 搜索：续页里被会话去重排除的新鲜候选同样交出并写入，响应只含未下发过的卡片",
+    "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#1] 搜索：联盟新鲜返回的每个候选各交出一条 search 观测（字段逐项，不含查看者与推广位），写入器写入",
+    "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#2] 搜索：缓存命中页与 stale 页不落库，只有新鲜返回页写入",
+    "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#3] 搜索：价格异常与拼多多（统一 DTO 无 goods_sign 计划）不落库，同页正常候选照写",
+    "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#4] 搜索：上游失败时错误与未装配钩子逐项一致，失败查询不落库",
+    "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#5] 搜索：记录器抛错或 record 永不返回时，响应与未装配钩子逐项一致（交出即返回、不 await）",
+    "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#22] 搜索：上游候选不带 skuId 时观测的 skuKey 为 null，带 skuId 的候选取该值",
+    "test/spec/catalog/price-history-hooks/wiring-requests.test.ts > [AC-B1-17c#20] 真实 AppModule：三个不同关键词的搜索同时缓存未命中，写事务合计最多 2 个在途（上限按进程而非按请求），其余随释放补上",
+    "test/spec/catalog/price-history-hooks/wiring.test.ts > [AC-B1-17c#14] 装配层并发上限：同时在途的 store 写入不超过 2，其余按到达顺序排队，失败也释放名额；跳过与失败计数沿用写入器",
+    "test/spec/catalog/price-history-hooks/wiring.test.ts > [AC-B1-17c#15] 真实 AppModule：搜索与详情的联盟新鲜返回经模块装配的记录器写库，缓存命中不写，响应不等写库",
+    "test/spec/catalog/price-history-hooks/wiring.test.ts > [AC-B1-17c#16] 真实 AppModule：一页 5 个新鲜候选同时最多 2 个写事务在途，其余随释放补上"
+  ],
+  "risk_note": "RV1 paths (catalog search / detail, parsing) with rule tests (test/spec, RV2 by PR): price history hooks for BR-WATCH-19 (05 B1-17 third part), Codex implementation under ops/approvals.yaml id 30. Search hands every writable fresh union candidate (including ones filtered from the response) to the B1-17b recorder as source_kind search, detail as detail, link parsing as quote; cache hits and stale results are not handed over; observations carry no user, device or slot identifier, goodsSignPlan null (the writer refuses pdd), skuKey from the union DTO skuId or null; record is not awaited and recorder failures never change a response; one process-level recorder per module with at most 2 write transactions in flight; convert not hooked, linking untouched. Rule test run 3 corrected one expectation (skuKey follows the fixture's skuId) after CI; the implementation commit is unchanged. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4c0cf1f619c719472af102ab0f7b73e5fced7f9f",
+      "tree": "ba131dc67fc27ea7ed55759b3d3d22213bc603c6",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T17:08:41Z",
+      "finished_at": "2026-10-16T17:08:53Z",
+      "gate": {
+        "commit": "940dd9864ee7d7492d9db1ae075b92cd3ec3bc6f",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/catalog/price-history-hooks/detail.test.ts > [AC-B1-17c#6] 详情：联盟新鲜返回交出一条 detail 观测（字段逐项，不含查看者），写入器写入",
+        "test/spec/catalog/price-history-hooks/detail.test.ts > [AC-B1-17c#7] 详情：缓存命中（未标新鲜）与 stale 结果不落库，只有新鲜返回写入",
+        "test/spec/catalog/price-history-hooks/detail.test.ts > [AC-B1-17c#8] 详情：上游失败与价格异常的结果与未装配钩子逐项一致，且都不落库",
+        "test/spec/catalog/price-history-hooks/detail.test.ts > [AC-B1-17c#9] 详情：记录器抛错或 record 永不返回时，响应与未装配钩子逐项一致（交出即返回、不 await）",
+        "test/spec/catalog/price-history-hooks/parsing-wiring-requests.test.ts > [AC-B1-17c#21] ParsingModule：三个解析请求各交出三条可写观测，写事务合计最多 2 个在途（上限按进程而非按请求），其余随释放补上",
+        "test/spec/catalog/price-history-hooks/parsing-wiring.test.ts > [AC-B1-17c#17] ParsingModule：有 DB 句柄时路由把模块装配的记录器交给 createParsing，可写观测经它写库；无 DB 时不交",
+        "test/spec/catalog/price-history-hooks/parsing.test.ts > [AC-B1-17c#10] 链接识别：联盟详情返回交出一条 quote 观测（字段逐项，不含查看者与请求号），写入器写入，不转链",
+        "test/spec/catalog/price-history-hooks/parsing.test.ts > [AC-B1-17c#11] 链接识别：一条消息多个命中，下架失败与拼多多不落库，结果与未装配钩子逐项一致",
+        "test/spec/catalog/price-history-hooks/parsing.test.ts > [AC-B1-17c#12] 链接识别：价格异常命中不落库，同消息正常命中照写",
+        "test/spec/catalog/price-history-hooks/parsing.test.ts > [AC-B1-17c#13] 链接识别：记录器抛错或 record 永不返回时，结果与未装配钩子逐项一致（交出即返回、不 await）",
+        "test/spec/catalog/price-history-hooks/search-delivery.test.ts > [AC-B1-17c#18] 搜索：被价格上限、无返利、limit 截断滤掉的新鲜候选与补页候选同样交出并写入，响应只含交付的卡片",
+        "test/spec/catalog/price-history-hooks/search-delivery.test.ts > [AC-B1-17c#19] 搜索：续页里被会话去重排除的新鲜候选同样交出并写入，响应只含未下发过的卡片",
+        "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#1] 搜索：联盟新鲜返回的每个候选各交出一条 search 观测（字段逐项，不含查看者与推广位），写入器写入",
+        "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#2] 搜索：缓存命中页与 stale 页不落库，只有新鲜返回页写入",
+        "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#3] 搜索：价格异常与拼多多（统一 DTO 无 goods_sign 计划）不落库，同页正常候选照写",
+        "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#4] 搜索：上游失败时错误与未装配钩子逐项一致，失败查询不落库",
+        "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#5] 搜索：记录器抛错或 record 永不返回时，响应与未装配钩子逐项一致（交出即返回、不 await）",
+        "test/spec/catalog/price-history-hooks/search.test.ts > [AC-B1-17c#22] 搜索：上游候选不带 skuId 时观测的 skuKey 为 null，带 skuId 的候选取该值",
+        "test/spec/catalog/price-history-hooks/wiring-requests.test.ts > [AC-B1-17c#20] 真实 AppModule：三个不同关键词的搜索同时缓存未命中，写事务合计最多 2 个在途（上限按进程而非按请求），其余随释放补上",
+        "test/spec/catalog/price-history-hooks/wiring.test.ts > [AC-B1-17c#14] 装配层并发上限：同时在途的 store 写入不超过 2，其余按到达顺序排队，失败也释放名额；跳过与失败计数沿用写入器",
+        "test/spec/catalog/price-history-hooks/wiring.test.ts > [AC-B1-17c#15] 真实 AppModule：搜索与详情的联盟新鲜返回经模块装配的记录器写库，缓存命中不写，响应不等写库",
+        "test/spec/catalog/price-history-hooks/wiring.test.ts > [AC-B1-17c#16] 真实 AppModule：一页 5 个新鲜候选同时最多 2 个写事务在途，其余随释放补上"
+      ],
+      "expected": [
+        "test/spec/catalog/price-history-hooks/detail.test.ts",
+        "test/spec/catalog/price-history-hooks/parsing-wiring-requests.test.ts",
+        "test/spec/catalog/price-history-hooks/parsing-wiring.test.ts",
+        "test/spec/catalog/price-history-hooks/parsing.test.ts",
+        "test/spec/catalog/price-history-hooks/search-delivery.test.ts",
+        "test/spec/catalog/price-history-hooks/search.test.ts",
+        "test/spec/catalog/price-history-hooks/wiring-requests.test.ts",
+        "test/spec/catalog/price-history-hooks/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "41ab92533017b4a36fe660fbbafad8c7c8bbfc1afba1c1c8a571d019e213ecff"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with three S2 (alias lookups outside the write cap, unbounded waiting queue, detail key not alias-normalised) tracked in couli-runs/B1-17c/followups.md"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by a Claude subagent (3 runs) reviewed by fresh Codex read-only sessions: round 1 two S1 fixed; round 2 two new S1 needing a deliberately wrong implementation downgraded to S2 under approvals 18 and checked in code review; run 3 corrected one expectation exposed by CI (orchestrator ruling, no assertion weakened)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "66e726b2643e32c8fb6c98780c324bc9312ff7cf",
+    "test/spec": "676ae78ae065a89eeb3c4254018bf9967596b116",
+    "specs": "e3bb9aaad4133100875640f64e420a0f3631d5e1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "66e726b2643e32c8fb6c98780c324bc9312ff7cf"
+  }
+}

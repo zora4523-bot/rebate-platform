@@ -1,7 +1,11 @@
-import { Controller, HttpCode, HttpException, Inject, Post, Req } from '@nestjs/common';
+import { Controller, HttpCode, HttpException, Inject, Optional, Post, Req } from '@nestjs/common';
 import { RouteSchema } from '@nestjs/platform-fastify';
 import type { Schema } from '@couli/contracts-ts';
-import { createCatalogCardEntry, createGuestViewerContext } from '../../../catalog/index.ts';
+import {
+  createCatalogCardEntry,
+  createGuestViewerContext,
+  type PriceSnapshotRecorder,
+} from '../../../catalog/index.ts';
 import {
   CLOCK,
   ROOT_LOGGER,
@@ -27,6 +31,7 @@ export type ParsingFactory = typeof createParsing;
 
 /** Nest injection token of the ParsingFactory. */
 export const PARSING_FACTORY = Symbol('PARSING_FACTORY');
+export const PARSING_PRICE_HISTORY = Symbol('PARSING_PRICE_HISTORY');
 
 type ParseInputResponse = Schema<'ParseInputResponse'>;
 type ParseResult = Schema<'ParseResult'>;
@@ -78,6 +83,7 @@ export class ParseInputController {
   readonly #clock: Clock;
   readonly #logger: RootLogger;
   readonly #createParsing: ParsingFactory;
+  readonly #priceHistory: PriceSnapshotRecorder | undefined;
 
   constructor(
     config: ParsingConfigReader,
@@ -86,6 +92,7 @@ export class ParseInputController {
     clock: Clock,
     logger: RootLogger,
     createParsing: ParsingFactory,
+    priceHistory?: PriceSnapshotRecorder,
   ) {
     this.#config = config;
     this.#ports = ports;
@@ -93,6 +100,7 @@ export class ParseInputController {
     this.#clock = clock;
     this.#logger = logger.child({ module: 'parsing' });
     this.#createParsing = createParsing;
+    this.#priceHistory = priceHistory;
   }
 
   /**
@@ -125,6 +133,7 @@ export class ParseInputController {
       clock: this.#clock,
       getGovernedAdapter: this.#ports.getGovernedAdapter,
       logger: this.#logger,
+      ...(this.#priceHistory === undefined ? {} : { priceHistory: this.#priceHistory }),
     });
     const results = await parsing.parseInput(request.body.text, {
       appId,
@@ -154,6 +163,8 @@ Inject(ParsingLinkRegistrars)(ParseInputController, undefined, 2);
 Inject(CLOCK)(ParseInputController, undefined, 3);
 Inject(ROOT_LOGGER)(ParseInputController, undefined, 4);
 Inject(PARSING_FACTORY)(ParseInputController, undefined, 5);
+Inject(PARSING_PRICE_HISTORY)(ParseInputController, undefined, 6);
+Optional()(ParseInputController, undefined, 6);
 const parseMethod = Object.getOwnPropertyDescriptor(ParseInputController.prototype, 'parse')!;
 Post('inputs/parse')(ParseInputController.prototype, 'parse', parseMethod);
 HttpCode(200)(ParseInputController.prototype, 'parse', parseMethod);
