@@ -46,32 +46,13 @@
 import type { ClientPlatform, Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
-import {
-  isVersionGatedPlatform,
-  type Clock,
-  type FieldCrypto,
-  type RootLogger,
-} from '../../platform/index.ts';
-import {
-  LOGIN_LOGS_DEVICE_ID_CONTEXT,
-  LOGIN_MERGE_CHANNEL,
-  LOGIN_PAGE_CHANNEL,
-  LOGIN_PAGE_TYPES,
-  SMS_LOGIN_METHOD,
-  loginMergeCopies,
-  normalizeInviteCode,
-} from '../domain/login.ts';
+import type { Clock, FieldCrypto, RootLogger } from '../../platform/index.ts';
+import { normalizeInviteCode } from '../domain/login.ts';
+import { completeLogin, type FirstAppLoginReview } from './login-completion.ts';
+export type { FirstAppLoginReview } from './login-completion.ts';
 import { normalize_phone } from '../domain/normalize-phone.ts';
 import { PHONE_BLIND_INDEX_CONTEXT } from '../domain/registration.ts';
-import {
-  deviceConsentRecords,
-  insertConsentRecords,
-  lockUserConsents,
-  userConsentRecords,
-  type NewConsentRecord,
-} from '../infra/consent-records.ts';
 import { deviceHashOf, findAccountByPhone, type LoginAccount } from '../infra/login-accounts.ts';
-import { hasLoginLog, insertLoginLog } from '../infra/login-logs.ts';
 import type { TokenService } from './access-tokens.ts';
 import {
   snapshotRegistrationConfig,
@@ -81,7 +62,6 @@ import {
 } from './registration.ts';
 import type { SessionPushTokens } from './push-tokens.ts';
 import { sessionScope, type MinimumVersionReader } from './session-scope.ts';
-import { createSession } from './sessions.ts';
 import type { SmsCodeService, SmsConfigReader } from './sms-codes.ts';
 
 export { LOGIN_LOGS_DEVICE_ID_CONTEXT } from '../domain/login.ts';
@@ -112,25 +92,6 @@ export type SmsLoginResult =
         readonly min_supported_version: string | null;
       };
     };
-
-/** B1-11 supplies the review; identity selects landing-bound users with no login_logs.
- * Invoke on App platforms only, in the same transaction as the first successful login log.
- * This port cannot create a relationship. Absence means no work (no landing binds exist yet).
- */
-export interface FirstAppLoginReview {
-  review(
-    trx: Transaction<DB>,
-    input: {
-      readonly app_id: string;
-      readonly user_id: string;
-      /** blindIndex(verifiedDevice.deviceId, 'login_logs.device_id').
-       * Implementation exports LOGIN_LOGS_DEVICE_ID_CONTEXT from identity/index.ts.
-       * Test-stage skeletons cannot declare initialized constants.
-       */
-      readonly device_id_hash: string;
-    },
-  ): Promise<void>;
-}
 
 export interface SmsLoginOptions {
   readonly db: Kysely<DB>;
@@ -194,7 +155,7 @@ export interface SmsLoginService {
   /** Scope → normalize → consume SMS → lookup → register/existing branch.
    * Own the PG transaction: registration, login consents/merge, growth review, log and session.
    * SMS consumption remains effective even when the PG transaction rejects or rolls back.
-   * Pass login_method=sms when the session primitive supports the registered schema field.
+   * Writes login_method=sms on the session.
    */
   login(command: SmsLoginCommand): Promise<SmsLoginResult>;
 }
@@ -229,13 +190,6 @@ function refusal(blocked: {
     : { code: 44001, data: { risk_msg_code: blocked.data.risk_msg_code } };
 }
 
-/** A Date at `ms` without constructing one from the wall clock (the Clock rule of apps/api). */
-function instantAt(like: Date, ms: number): Date {
-  const result = structuredClone(like);
-  result.setTime(ms);
-  return result;
-}
-
 interface Signed {
   readonly user_id: string;
   readonly is_new_user: boolean;
@@ -244,108 +198,7 @@ interface Signed {
 }
 
 export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService {
-  const { db, clock, crypto, logger, versions, sms, registration, tokens } = options;
-
-  /** Login-page consents, login_merge, login log, first-App-login review and the session. */
-  async function signIn(
-    trx: Transaction<DB>,
-    command: SmsLoginCommand,
-    account: LoginAccount,
-    scope: SessionScope,
-  ): Promise<Schema<'TokenPair'>> {
-    const { app_id: appId, device_id: deviceId, body } = command;
-    const userId = account.id;
-    // BR-ID-12: one user's logins on several devices merge one after another (lockUserConsents).
-    await lockUserConsents(trx, appId, userId);
-    const now = clock.now();
-    // consent_at is a contract date-time (client clock), stored as reported.
-    const clientAt = instantAt(now, Date.parse(body.consent_at));
-    // BR-ID-04: two user-level records of the login page, version as reported by the client.
-    await insertConsentRecords(
-      trx,
-      LOGIN_PAGE_TYPES.map((type): NewConsentRecord => ({
-        app_id: appId,
-        subject_type: 'user',
-        user_id: userId,
-        device_id: null,
-        type,
-        version: body.legal_versions[type],
-        channel: LOGIN_PAGE_CHANNEL,
-        accepted: true,
-        client_at: clientAt,
-        server_at: now,
-        created_at: now,
-      })),
-    );
-    // BR-ID-12 login_merge: this installation's device-level current states.
-    const copies = loginMergeCopies(
-      await deviceConsentRecords(trx, appId, deviceId),
-      await userConsentRecords(trx, appId, userId),
-    );
-    await insertConsentRecords(
-      trx,
-      copies.map((record): NewConsentRecord => ({
-        app_id: appId,
-        subject_type: 'user',
-        user_id: userId,
-        device_id: null,
-        type: record.type,
-        version: record.version,
-        channel: LOGIN_MERGE_CHANNEL,
-        accepted: record.accepted,
-        client_at: record.client_at,
-        server_at: now,
-        created_at: now,
-      })),
-    );
-    const deviceIdHash = crypto.blindIndex(deviceId, LOGIN_LOGS_DEVICE_ID_CONTEXT);
-    const firstLogin = !(await hasLoginLog(trx, appId, userId));
-    // BR-ID-37: the device_hash of this request's verified device row, for the same-device check.
-    const deviceHash = (await deviceHashOf(trx, appId, deviceId)) ?? null;
-    await insertLoginLog(trx, {
-      app_id: appId,
-      user_id: userId,
-      device_id_hash: deviceIdHash,
-      device_hash: deviceHash,
-      ip: command.client_ip,
-      method: SMS_LOGIN_METHOD,
-      created_at: now,
-    });
-    // BR-INV-09: only an App login, only a landing-bound user, only the first login log.
-    const review = options.firstAppLoginReview;
-    if (
-      review !== undefined &&
-      firstLogin &&
-      isVersionGatedPlatform(command.platform) &&
-      account.parent_bind_source === 'landing'
-    ) {
-      await review.review(trx, { app_id: appId, user_id: userId, device_id_hash: deviceIdHash });
-    }
-    // TODO(规划/11 §2.3): sessions.login_method='sms' — blocked on the sessions.login_method column (04 §3.2, not in db/schema.sql yet)
-    const pushTokens = options.pushTokens;
-    const session = await createSession(
-      trx,
-      { uid: userId, app_id: appId, device_id: deviceId, scp: scope },
-      { clock, tokens },
-      pushTokens === undefined
-        ? undefined
-        : (sameTransaction, issued) =>
-            pushTokens.bind(sameTransaction, {
-              app_id: appId,
-              user_id: userId,
-              device_id: deviceId,
-              sid: issued.sid,
-            }),
-    );
-    // The expiries the session primitive actually issued (JWT exp, refresh_tokens.expire_at).
-    return {
-      session_scope: session.session_scope,
-      access_token: session.access_token,
-      access_expires_at: session.access_expires_at.toISOString(),
-      refresh_token: session.refresh_token,
-      refresh_expires_at: session.refresh_expires_at.toISOString(),
-    };
-  }
+  const { db, crypto, logger, versions, sms, registration } = options;
 
   /** Step 4: the branch of the account lookup, then signIn. Throws LoginAbort to roll back. */
   async function inTransaction(
@@ -365,7 +218,7 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
         user_id: existing.id,
         is_new_user: false,
         ...ignored,
-        tokens: await signIn(trx, command, existing, scope),
+        tokens: await completeLogin(trx, command, existing, scope, 'sms', options),
       };
     }
     // BR-ID-01 受限登录: no account is created, bound or merged.
@@ -412,7 +265,7 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
         user_id: winner.id,
         is_new_user: false,
         ...ignored,
-        tokens: await signIn(trx, command, winner, scope),
+        tokens: await completeLogin(trx, command, winner, scope, 'sms', options),
       };
     }
     if (registered.code === 44001) {
@@ -436,7 +289,7 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
       user_id: registered.user_id,
       is_new_user: true,
       ...(registered.invite_bind === undefined ? {} : { invite_bind: registered.invite_bind }),
-      tokens: await signIn(trx, command, account, scope),
+      tokens: await completeLogin(trx, command, account, scope, 'sms', options),
     };
   }
 

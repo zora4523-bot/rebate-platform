@@ -32,6 +32,7 @@ import { STEP_UP_AUDIENCE, signScopedToken, type TokenKeyProvider } from './acce
 import { configuredSeconds, instantPlus } from './config-seconds.ts';
 import type { OauthAttemptService } from './oauth-attempts.ts';
 import type { SmsCodeService, SmsConfigReader } from './sms-codes.ts';
+import { replaceAppleRefreshToken } from '../infra/oauth-accounts.ts';
 
 export type ThirdPartyCredentials =
   | { readonly provider: 'wechat'; readonly code: string }
@@ -46,9 +47,14 @@ export type ThirdPartyCredentials =
 export interface ThirdPartyIdentityPort {
   exchange(
     input: ThirdPartyCredentials & { readonly nonce: string },
-  ): Promise<
-    { readonly union_id: string } | { readonly unavailable: true } | { readonly invalid: true }
-  >;
+  ): Promise<ThirdPartyIdentity | { readonly unavailable: true } | { readonly invalid: true }>;
+}
+
+/** Credentials have already been verified by the adapter; never accept a client identity. */
+export interface ThirdPartyIdentity {
+  readonly union_id: string;
+  readonly open_id?: string;
+  readonly apple_refresh_token?: string;
 }
 
 export interface StepUpCommand {
@@ -212,6 +218,25 @@ export function createStepUpService(options: StepUpOptions): StepUpService {
       .executeTakeFirst();
     if (binding === undefined || binding.union_id !== identity.union_id) {
       return { code: 20004, data: { reason: 'identity_mismatch' } };
+    }
+    if (body.provider === 'apple' && identity.apple_refresh_token !== undefined) {
+      const refreshToken = identity.apple_refresh_token;
+      // Read configuration and sign before taking a pooled transaction connection.
+      // The token is returned only after the binding update commits.
+      const issued = await issue(principal, body.action);
+      return db.transaction().execute(async (trx) => {
+        await replaceAppleRefreshToken(
+          trx,
+          {
+            app_id: principal.app_id,
+            user_id: principal.uid,
+            union_id: identity.union_id,
+            refresh_token: refreshToken,
+          },
+          { clock, crypto },
+        );
+        return issued;
+      });
     }
     return issue(principal, body.action);
   }

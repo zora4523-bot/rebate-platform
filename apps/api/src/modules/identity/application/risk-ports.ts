@@ -26,6 +26,7 @@ import { PHONE_BLIND_INDEX_CONTEXT } from '../domain/registration.ts';
 import type { RegistrationOptions } from './registration.ts';
 import type { SmsHooks, SmsPurpose } from './sms-codes.ts';
 import type { SmsLoginOptions } from './sms-login.ts';
+import type { OauthLoginOptions } from './oauth-login.ts';
 
 /** Rule codes of identity's own refusals (orchestrator ruling B1-03d, to be registered in 06). */
 export const SMS_BLOCKED_PREFIX_RULE = 'SMS_BLOCKED_PREFIX';
@@ -38,6 +39,7 @@ const ACCOUNT_DELETION_ACTION = 'account_deletion';
 export interface IdentityRiskPorts {
   readonly smsHooks: Pick<SmsHooks, 'phoneBlocklist' | 'blockedPrefix'>;
   readonly login: Pick<SmsLoginOptions, 'registrationBlocklist' | 'recordDeviceLimit'>;
+  readonly oauthLogin: Pick<OauthLoginOptions, 'registrationBlocklist' | 'recordDeviceLimit'>;
   readonly registration: Pick<RegistrationOptions, 'allowBlockedRegistration'>;
 }
 
@@ -45,8 +47,33 @@ function requestTypeOf(purpose: SmsPurpose): 'register' | null {
   return purpose === 'login' ? 'register' : null;
 }
 
+/** Fail closed: never manufacture a related phone to satisfy the registration audit schema. */
+function oauthRiskRecordingUnavailable(): Promise<void> {
+  // TODO(规划/11 §2.3): record phone-less registration hits through risk — blocked on BlockedRequest.related_phone and risk_hits_related_phone_check requiring a phone for register.
+  return Promise.reject(new Error('identity: phone-less registration risk recording unavailable'));
+}
+
 export function identityRiskPorts(risk: BlocklistService, crypto: FieldCrypto): IdentityRiskPorts {
   return {
+    oauthLogin: {
+      async registrationBlocklist(trx, input) {
+        // This existing read port requires a phone digest. Empty is not a phone HMAC;
+        // only device hits are applicable to a third-party registration.
+        const block = await risk.matchRegistration(trx, {
+          ...input,
+          phone_hmac: '',
+          related_phone: '',
+        });
+        const hits = block?.hits.filter((hit) => hit.dimension === 'device') ?? [];
+        if (block === null || hits.length === 0) return null;
+        return {
+          code: 44001,
+          data: block.data,
+          record: oauthRiskRecordingUnavailable,
+        };
+      },
+      recordDeviceLimit: oauthRiskRecordingUnavailable,
+    },
     smsHooks: {
       async phoneBlocklist(request) {
         if (request.purpose === 'step_up' && request.action === ACCOUNT_DELETION_ACTION) {

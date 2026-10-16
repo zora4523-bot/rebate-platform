@@ -37,6 +37,7 @@ export const REFRESH = Symbol('REFRESH');
 
 /** The OauthAttemptService (oauth-attempts.ts); null when the process has no database or Redis. */
 export const OAUTH_ATTEMPTS = Symbol('OAUTH_ATTEMPTS');
+export const OAUTH_LOGIN = Symbol('OAUTH_LOGIN');
 
 /**
  * The ThirdPartyIdentityPort (step-up.ts) app.module may hand to IdentityModule.forRoot; null

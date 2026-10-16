@@ -1,5 +1,5 @@
 // Fake third-party identity adapter of the ThirdPartyIdentityPort (BR-ID-04; orchestrator ruling
-// B1-02d §9.3 #6, D6). Skeleton of the rule-test stage: the implementation is B1-02d's.
+// B1-02d §9.3 #6, D6).
 //
 // - createFakeThirdPartyIdentity: local and test only (any other APP_ENV throws, like the fake SMS
 //   sender). It reads only its own credential convention and imitates no provider's messages:
@@ -16,11 +16,36 @@
 // relative imports, no decorators.
 import type { RootLogger } from '../../platform/index.ts';
 import type { ThirdPartyIdentityPort } from '../application/step-up.ts';
+import { randomBytes } from 'node:crypto';
 
 /** Only local / test may construct this adapter. */
 export function createFakeThirdPartyIdentity(appEnv: string): ThirdPartyIdentityPort {
-  void appEnv;
-  throw new Error('NotImplemented: createFakeThirdPartyIdentity');
+  if (appEnv !== 'local' && appEnv !== 'test') {
+    throw new Error('identity: fake third-party identity is local/test only');
+  }
+  return {
+    exchange(input) {
+      const credential = input.provider === 'wechat' ? input.code : input.authorization_code;
+      if (!credential.startsWith('fake:')) return Promise.resolve({ unavailable: true });
+      const prefix = `fake:${input.provider}:`;
+      if (!credential.startsWith(prefix)) return Promise.resolve({ invalid: true });
+      if (input.provider === 'apple' && input.identity_token !== credential) {
+        return Promise.resolve({ invalid: true });
+      }
+      const identity = credential.slice(prefix.length);
+      if (identity === 'unavailable') return Promise.resolve({ unavailable: true });
+      if (identity === '' || identity === 'invalid') return Promise.resolve({ invalid: true });
+      // Empty identity deliberately exercises the application's malformed-provider response.
+      if (identity === 'no-union') return Promise.resolve({ union_id: '' });
+      return Promise.resolve({
+        union_id: identity,
+        ...(input.provider === 'wechat' ? { open_id: `fake-open:${identity}` } : {}),
+        ...(input.provider === 'apple'
+          ? { apple_refresh_token: `fake-refresh:${randomBytes(32).toString('hex')}` }
+          : {}),
+      });
+    },
+  };
 }
 
 /** The entry's port: the fake in local / test, null elsewhere (one warn when null). */
@@ -28,7 +53,7 @@ export function createThirdPartyIdentity(
   appEnv: string,
   logger: Pick<RootLogger, 'warn'>,
 ): ThirdPartyIdentityPort | null {
-  void appEnv;
-  void logger;
-  throw new Error('NotImplemented: createThirdPartyIdentity');
+  if (appEnv === 'local' || appEnv === 'test') return createFakeThirdPartyIdentity(appEnv);
+  logger.warn('third_party_identity_unconfigured');
+  return null;
 }
