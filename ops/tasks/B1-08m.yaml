@@ -1,0 +1,25 @@
+id: B1-08m
+repo: rebate-platform
+title: 待跟单卡：listPendingTracks 与 dismissPendingTrack——按每次打开尝试选卡（有 link_jump 上报的优先）、订单完成按尝试（attr_at 不早于 open 成功时刻减容差）、关闭写 link_open_attempts.dismissed_at；去契约 planned
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# 05 B1-08 行、BR-ATTR-21 细则「待跟单卡按实际外跳选」「待跟单卡的完成与关闭按尝试」、AC-S1-55 ⑥～⑪；linking 侧 attempt_id 下发与 link_jump 上报开工前核对现状。契约槽 ④。
+refs: [BR-ATTR-21]
+refs_hash:
+  BR-ATTR-21: 0679f900972f
+deps: [B1-08h]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/orders/pending-tracks/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/pending-tracks/**'
+status: todo
+pr: null

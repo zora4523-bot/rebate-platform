@@ -1,0 +1,24 @@
+id: B1-08b
+repo: rebate-platform
+title: 门禁登记新模块 orders：ops/risk-map.yaml 加 apps/api/src/modules/orders/** 为 RV2（impl claude、tester codex、review claude+codex，同 union），重生成根 AGENTS.md 分工表，加 orders/AGENTS.md 与一行 @AGENTS.md 的 CLAUDE.md，tools/guard/lib/risk.test.ts 同步
+type: guard-change
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# 为什么：risk-map-coverage 要求每个 apps/api/src/modules/* 目录有明确规则；apps/api/AGENTS.md 要求订单模块自带 AGENTS.md；三处都是保护路径第三类，订单实现任务改不了，故先行（先例 B2-03e #520）。
+# 不放宽任何门禁（未登记路径本就默认 RV2）。模块 AGENTS.md ≤60 行、不写数值与公式：职责（同步、映射、归因、状态迁移、来源回填、列表与详情）、表的写者（02 §4.1 orders 行）、
+# 时间只读 Clock、会计日只用 packages/domain、状态字段只经生成的 transition()、金额只经 @couli/money、依据指针（02 §7、04 §3.2、08 BR-ATTR / BR-FUND-01/02）。由编排者直接写；Codex 评审；按 #24 加标签。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'ops/risk-map.yaml'
+  - 'AGENTS.md'
+  - 'apps/api/src/modules/orders/AGENTS.md'
+  - 'apps/api/src/modules/orders/CLAUDE.md'
+  - 'tools/guard/lib/risk.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

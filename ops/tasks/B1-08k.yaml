@@ -1,0 +1,21 @@
+id: B1-08k
+repo: rebate-platform
+title: 分佣快照调用：订单首次「已归因且 platform_status ∈ {PAID, RECEIVED, SETTLED}」时在同一事务调 commission 快照端口
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# BR-CALC-10。blocked：commission 的快照生成接口与 commission_splits 表尚无任务（资金线 B2-03 未拆部分），BR-CALC-27 四段金额待决策；资金线立项后把其任务号加进 deps。本线不写四段金额列。
+refs: []
+refs_hash: {}
+deps: [B1-08h]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/commission-snapshot/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/commission-snapshot/**'
+status: todo
+pr: null
