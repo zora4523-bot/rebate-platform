@@ -49,7 +49,7 @@ info:
     with admin or super also 10001 and 10403 (data.reason=admin_permission_denied). An operation
     guarded by a permission point (enum admin_permission) names it in its description
     (「Permission point `<key>`」); console writes use CAS where state is replaced (20902 with
-    data.resource) and carry no Idempotency-Key (04 §6.6).
+    data.resource) and, except the original-route refund, carry no Idempotency-Key (04 §6.6).
 servers:
   - url: http://127.0.0.1:3100
     description: Local `api` entry (API_HOST / API_PORT defaults).
@@ -5510,7 +5510,6 @@ paths:
         version that has ever been published keeps its registration as published and is 20001
         with `data.fields=[version]`, like an unknown version.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -5603,7 +5602,6 @@ paths:
         one (`[source_url]`, `[downloaded_on]`, or `[source_url, downloaded_on]` when both are
         missing); an unknown version is 20001 with `data.fields=[version]`.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -5662,7 +5660,7 @@ paths:
                     revision: 1
                     created_by: ops-yi
                     created_at: '2026-10-08T15:00:00+08:00'
-                  latest_version: 2
+                  latest_version: 3
                   updated_by: ops-yi
                   updated_at: '2026-10-09T10:05:00+08:00'
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
@@ -5706,7 +5704,6 @@ paths:
         shows the built-in image (with a matching revision) succeeds without change, revision
         bump or audit.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

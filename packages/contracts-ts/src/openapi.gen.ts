@@ -9692,7 +9692,7 @@ export interface operations {
                      *           "created_by": "ops-yi",
                      *           "created_at": "2026-10-08T15:00:00+08:00"
                      *         },
-                     *         "latest_version": 2,
+                     *         "latest_version": 3,
                      *         "updated_by": "ops-yi",
                      *         "updated_at": "2026-10-09T10:05:00+08:00"
                      *       },

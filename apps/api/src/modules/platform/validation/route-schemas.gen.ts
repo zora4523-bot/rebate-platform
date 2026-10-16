@@ -2820,5 +2820,190 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "required": [],
       "additionalProperties": false
     }
+  },
+  "adminUpdatePlatformIconVersion": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Platform mark key (enum platform_icon_key, BR-TEXT-24 细则标识键表); the keys of /v1/config\n`platform_icons` (ConfigPlatformIcons) are the same list.\n",
+          "enum": [
+            "taobao",
+            "tmall",
+            "jd",
+            "pdd",
+            "wechat",
+            "wechat_pay",
+            "alipay",
+            "wecom"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "key",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "The version's revision as shown plus at least one of the two registrations.",
+      "additionalProperties": false,
+      "required": [
+        "expected_revision"
+      ],
+      "minProperties": 2,
+      "properties": {
+        "expected_revision": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "description": "The version's `revision` as the console showed it; a mismatch is 20902."
+        },
+        "source_url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://",
+          "maxLength": 2048,
+          "description": "Official brand or asset download page the file was taken from (BR-TEXT-24 细则「必填登记」)."
+        },
+        "downloaded_on": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    }
+  },
+  "adminPublishPlatformIcon": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Platform mark key (enum platform_icon_key, BR-TEXT-24 细则标识键表); the keys of /v1/config\n`platform_icons` (ConfigPlatformIcons) are the same list.\n",
+          "enum": [
+            "taobao",
+            "tmall",
+            "jd",
+            "pdd",
+            "wechat",
+            "wechat_pay",
+            "alipay",
+            "wecom"
+          ]
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "expected_revision"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "description": "Version to publish; older than the current one = rollback."
+        },
+        "expected_revision": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The mark's `revision` as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminRestoreBuiltinPlatformIcon": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Platform mark key (enum platform_icon_key, BR-TEXT-24 细则标识键表); the keys of /v1/config\n`platform_icons` (ConfigPlatformIcons) are the same list.\n",
+          "enum": [
+            "taobao",
+            "tmall",
+            "jd",
+            "pdd",
+            "wechat",
+            "wechat_pay",
+            "alipay",
+            "wecom"
+          ]
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_revision"
+      ],
+      "properties": {
+        "expected_revision": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The mark's `revision` as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
   }
 } as const;
