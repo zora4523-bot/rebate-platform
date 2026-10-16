@@ -1,0 +1,24 @@
+id: B1-28a
+repo: rebate-platform
+title: 迁移：favorites 收藏表（app_id、user_id、platform、product_key、created_at；唯一 (app_id, user_id, platform, product_key)；按 (app_id, user_id, created_at DESC, id) 取页的索引）与授权（couli_app SELECT / INSERT / DELETE，不给 UPDATE）
+type: migration
+# 2026-10-16 入账（be-codex）。05 B1-28 拆为 a（本迁移，Claude）、b（收藏用例，Codex）、c（收藏路由与详情 favorited，碰契约，Claude）；热销榜另行入账（频道白名单为空）。
+# 依据：04 §3.2 favorites 行（唯一键、只存商品引用与时间、不存价格链接口令、用户删除即物理删除、注销完成时随账号删除、写者 catalog）、BR-ID-30 细则 ⑱（收藏记录留存）。
+# 不建外键到 users（注销删除由 identity 的删除流程经 catalog 端口执行，另开任务；04 写「随账号删除」）。id uuid 由应用生成（db/AGENTS.md 第 6 条，不写 uuidv7() 默认值）；created_at 由应用 Clock 写入，可带 now() 默认。
+# 迁移号落地时取主干最大号 +1 并在 B3-lane/notices.md 登记；SET LOCAL lock_timeout / statement_timeout 开头；两段式同 F1-06n。
+refs: []
+refs_hash: {}
+deps: [B1-17a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/catalog/favorites/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/catalog/favorites/**'
+status: todo
+pr: null

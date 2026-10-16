@@ -1,0 +1,24 @@
+id: CT-22b
+repo: rebate-platform
+title: 契约：收藏四个接口（GET /v1/me/favorites 游标分页、PUT / DELETE /v1/me/favorites/{platform}/{product_key}、POST /v1/me/favorites/batch-delete）均 planned，商品详情响应加 favorited；texts.default.json 加 20001.favorites_full 与 favorite.* / favorites.empty
+type: contract
+# 2026-10-16 入账（be-codex）。05 CT-22 拆分第二段（第一段 CT-22a 价格走势）；热销榜（/v1/rank/hot、rank_platforms、material-channels 频道，白名单现为空）与分享页字段、routes.json 新路由留 CT-22c 等后续。
+# 依据：04 §6.3 收藏两行（形状、幂等、上限 20001 data.reason=favorites_full、batch-delete 最多 100 项、invalid 卡只含标题与图）、04 §3.2 favorites 行、BR-TEXT-14 表 B 20001.favorites_full 与表 C「收藏」行（原文由编排者摘入任务书）。
+# 鉴权 login；PUT / DELETE / batch-delete 走幂等（04 列 I：Idempotency-Key 写法同现有幂等接口）；product_card 复用搜索的 ProductCard 形状，invalid 项的卡按 04 只含标题与图（形状写法由实现者按现有 schema 组合，不新造价格字段）。
+# favorited 加在 GET /v1/products/{product_key} 的响应上（未登录为 false），只增不改（oasdiff 非破坏）；该操作已实现，所以 favorited 必须设为可选或带默认值，实现由 B1-28c 补（不让已实现路由的契约测试变红，实现者核对 contract.test.ts）。
+# 契约全局串行：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 登记占槽。风险：contracts RV1。
+refs: []
+refs_hash: {}
+contract_sections: ['3.2', '6.3']
+deps: [CT-22a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/texts.default.json'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

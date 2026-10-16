@@ -1,0 +1,32 @@
+id: B1-17c
+repo: rebate-platform
+title: 价格变更历史三处钩子：搜索（source_kind=search）、商品详情（detail）、链接识别 / 查返利（quote）在拿到联盟新鲜返回后把每个可写商品交给 B1-17b 的写入器（不等待、不改响应、不影响失败路径）；转链暂不写（relation_id，BR-WATCH-19）
+type: impl
+# 2026-10-16 入账（be-codex，规划/11 §1.1 2026-10-16 条）。05 B1-17 的第三段。
+# 依据 BR-WATCH-19 正文与细则「例」：转链带 relation_id，09 CAP-*-13 未证实价格与其无关 → 不写（证实后另开任务加 convert 钩子，linking 属 Codex 禁区，届时由 Claude 实现）。
+# 搜索与详情的上游请求只带查询推广位、不带查看者身份（catalog/search.ts SearchUpstreamRequest、detail.ts upstream.detail 参数），按「不带用户级参数」写；缓存命中、stale 结果、价格异常与上游失败不写。
+# 拼多多先不写：统一 DTO（union/domain/types.ts UnionItem）不带 goods_sign_plan，BR-WATCH-19 要求只写通用计划结果并记计划，标不出就不写（宁缺不错）；in_stock 无字段，成功带价返回记 true。裁定见 BE-codex/decision-orchestrator.md 第 6 条。
+# 写入器在 module 里按入口装配（catalog.module、parsing.module）；钩子关掉（写入器未装配）时三处接口行为与现在逐字节一致（BR-WATCH-19 验收「与关闭钩子相比」）。
+# 必须复用：B1-17b 的 createPriceHistoryRecorder（经 catalog/index.ts）；不复制游程或可写判定逻辑。子模块不从本模块 index.ts 导入（教训 16）。
+refs: [BR-WATCH-19]
+refs_hash:
+  BR-WATCH-19: d14905e58b39
+deps: [B1-17b, B1-05j, B1-05e, B1-07b]
+paths:
+  - 'apps/api/src/modules/catalog/search.ts'
+  - 'apps/api/src/modules/catalog/detail.ts'
+  - 'apps/api/src/modules/catalog/application/search-service.ts'
+  - 'apps/api/src/modules/catalog/application/detail-service.ts'
+  - 'apps/api/src/modules/catalog/catalog.module.ts'
+  - 'apps/api/src/modules/parsing/application/parsing.ts'
+  - 'apps/api/src/modules/parsing/parsing.module.ts'
+  - 'apps/api/src/modules/parsing/http/public/parse-input.controller.ts'
+test_paths:
+  - 'test/spec/catalog/price-history-hooks/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/price-history-hooks/**'
+status: todo
+pr: null

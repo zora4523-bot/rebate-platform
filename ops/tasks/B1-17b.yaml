@@ -1,0 +1,28 @@
+id: B1-17b
+repo: rebate-platform
+title: catalog：价格变更历史写入器——游程判定（与最新行比四值、不同插新行、相同且距上次触达 ≥ touch_min_interval 才前移 last_observed_at 与 observation_count）、事务级 advisory lock 串行、可写判定（失败 / 异常价 / 缓存或过期结果 / 带用户级参数不写）、响应后异步写入且失败只计数不重试
+type: impl
+# 2026-10-16 入账（be-codex，规划/11 §1.1「2026-10-16 起未开工任务默认 Codex 实现」、§7.3 第 15 项）。05 B1-17 的第二段；表由 B1-17a 建，三处钩子接线在 B1-17c。
+# 流程：Claude 子代理先写规则测试（test_paths，先红；纯判定用属性测试，advisory lock 与游程用连库测试）→ Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → Claude 新子代理评审。
+# 依据 BR-WATCH-05（游程、advisory lock、失败查询不写）、BR-WATCH-19（异步写入、写失败只计数不重试、不影响接口 P95、不含用户标识、只写不带用户级参数的返回、拼多多只写通用计划 goods_sign 并记 goods_sign_plan），
+#   08 09_WATCH 参数表 price_snapshot.touch_min_interval_minutes（默认 10）；价格异常判定复用 union 的 isPriceAnomaly（BR-PRICE-01，B1-05i）。
+# 写者：price_snapshot 唯一写者是 catalog（02 §4.1 未列，回写见 BE-codex/needs.md）；对外只经 catalog/index.ts 导出 createPriceHistoryRecorder 与观测类型；时间只读注入的 Clock。
+# 必须复用：@couli/db 的 Kysely 实例与生成类型、platform/clock、platform 配置读取的现有做法（同 catalog/infra/product-cache.ts 读 search.cache.stale_max_age_s）、union 的 isPriceAnomaly；不自写第二种数据访问或定时器。
+# 子模块不得从 catalog/index.ts 导入（depcruise no-circular，教训 16）；不在源码写字面 BOM / U+2028。
+refs: [BR-WATCH-05, BR-WATCH-19]
+refs_hash:
+  BR-WATCH-05: 93ee2a377963
+  BR-WATCH-19: d14905e58b39
+deps: [B1-17a, B1-05i]
+paths:
+  - 'apps/api/src/modules/catalog/price-history/**'
+  - 'apps/api/src/modules/catalog/index.ts'
+test_paths:
+  - 'test/spec/catalog/price-history/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/price-history/**'
+status: todo
+pr: null

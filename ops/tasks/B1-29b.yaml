@@ -1,0 +1,25 @@
+id: B1-29b
+repo: rebate-platform
+title: 价格走势路由：GET /v1/products/{product_key}/price-trend 控制器挂进 CatalogModule（鉴权 none、参数校验来自契约、调用 B1-29a 的 getPriceTrend）；去掉该操作的 planned，重生成 route-schemas.gen.ts 与 openapi.gen.ts
+type: impl
+# 2026-10-16 入账（be-codex）。05 B1-29 第二段；碰 contracts/ 与生成物（Codex 禁区，codex-impl-tasks.json forbidden_paths），所以 Claude 实现、Codex 写测试与评审。
+# 依据：04 §6.3 price-trend 行、CT-22a 的契约形状；单独接口、不拖慢商品详情（不改 product.controller）。响应过契约校验（src/contract.test.ts 做法）。
+# 契约槽：去掉 planned 前在 couli-runs/B3-lane/notices.md 登记占槽，合并后登记释放。packages/contracts-ts 下若有断言该操作 planned 的测试只改那一条。
+refs: []
+refs_hash: {}
+deps: [B1-29a, B1-17c, CT-22a]
+paths:
+  - 'apps/api/src/modules/catalog/http/public/price-trend.controller.ts'
+  - 'apps/api/src/modules/catalog/catalog.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+test_paths:
+  - 'test/spec/catalog/price-trend-route/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/price-trend-route/**'
+status: todo
+pr: null
