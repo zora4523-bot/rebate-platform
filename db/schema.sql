@@ -2070,6 +2070,170 @@ CREATE TABLE app.order_settlements (
 
 
 --
+-- Name: order_status_history; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_status_history (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    order_id uuid NOT NULL,
+    field text NOT NULL,
+    from_status text,
+    event text NOT NULL,
+    to_status text NOT NULL,
+    source text NOT NULL,
+    at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT order_status_history_field_check CHECK ((field = ANY (ARRAY['platform'::text, 'rebate'::text]))),
+    CONSTRAINT order_status_history_source_check CHECK ((source = ANY (ARRAY['sync'::text, 'admin'::text, 'claim'::text, 'system'::text])))
+);
+
+
+--
+-- Name: order_status_history_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.order_status_history ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.order_status_history_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: order_sync_counters; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_sync_counters (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    date date NOT NULL,
+    counter text NOT NULL,
+    count bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT order_sync_counters_count_check CHECK ((count >= 0)),
+    CONSTRAINT order_sync_counters_counter_check CHECK ((counter = ANY (ARRAY['attr_param_invalid'::text, 'attr_binding_miss'::text, 'order_sync_no_mtime'::text])))
+);
+
+
+--
+-- Name: order_sync_counters_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.order_sync_counters ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.order_sync_counters_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: order_sync_drop_keys; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_sync_drop_keys (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    sub_order_id text NOT NULL,
+    reason text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT order_sync_drop_keys_reason_check CHECK ((reason <> ''::text))
+);
+
+
+--
+-- Name: order_sync_drop_keys_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.order_sync_drop_keys ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.order_sync_drop_keys_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: order_sync_drops; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_sync_drops (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    date date NOT NULL,
+    reason text NOT NULL,
+    count bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT order_sync_drops_count_check CHECK ((count >= 0)),
+    CONSTRAINT order_sync_drops_reason_check CHECK ((reason <> ''::text))
+);
+
+
+--
+-- Name: order_sync_drops_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.order_sync_drops ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.order_sync_drops_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: order_sync_pending; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.order_sync_pending (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    sub_order_id text NOT NULL,
+    order_id uuid,
+    reason text NOT NULL,
+    raw_status text,
+    raw_payload_id bigint,
+    detail text,
+    detected_at timestamp with time zone NOT NULL,
+    status text NOT NULL,
+    resolved_by uuid,
+    resolved_at timestamp with time zone,
+    resolution_note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT order_sync_pending_reason_check CHECK ((reason = ANY (ARRAY['UNMAPPED_STATUS'::text, 'UNFREEZE_SIGNAL'::text, 'ILLEGAL_TRANSITION'::text, 'NO_RECEIVED_AT'::text, 'CLAWBACK_NO_COMMISSION'::text, 'SERVICE_FEE_RATE_MISSING'::text, 'RULE_VERSION_PLATFORM_MISSING'::text, 'TLJ_FACE_VALUE_UNMATCHED'::text, 'AMOUNT_PARSE_FAILED'::text]))),
+    CONSTRAINT order_sync_pending_status_check CHECK ((status = ANY (ARRAY['open'::text, 'resolved'::text, 'dismissed'::text])))
+);
+
+
+--
+-- Name: order_sync_pending_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.order_sync_pending ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.order_sync_pending_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: orders; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -2715,6 +2879,39 @@ CREATE TABLE app.sessions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     login_method text,
     CONSTRAINT sessions_login_method_check CHECK ((login_method = ANY (ARRAY['sms'::text, 'wechat'::text, 'apple'::text, 'huawei'::text, 'merge'::text])))
+);
+
+
+--
+-- Name: sync_cursors; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.sync_cursors (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    union_account_id uuid NOT NULL,
+    query_kind text NOT NULL,
+    scene text NOT NULL,
+    cursor_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT sync_cursors_query_kind_check CHECK ((query_kind <> ''::text)),
+    CONSTRAINT sync_cursors_scene_check CHECK ((scene <> ''::text))
+);
+
+
+--
+-- Name: sync_cursors_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.sync_cursors ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.sync_cursors_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -3756,6 +3953,70 @@ ALTER TABLE ONLY app.order_settlements
 
 
 --
+-- Name: order_status_history order_status_history_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_status_history
+    ADD CONSTRAINT order_status_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_sync_counters order_sync_counters_day_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_counters
+    ADD CONSTRAINT order_sync_counters_day_key UNIQUE (app_id, platform, date, counter);
+
+
+--
+-- Name: order_sync_counters order_sync_counters_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_counters
+    ADD CONSTRAINT order_sync_counters_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_sync_drop_keys order_sync_drop_keys_dedup_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_drop_keys
+    ADD CONSTRAINT order_sync_drop_keys_dedup_key UNIQUE (app_id, platform, sub_order_id, reason);
+
+
+--
+-- Name: order_sync_drop_keys order_sync_drop_keys_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_drop_keys
+    ADD CONSTRAINT order_sync_drop_keys_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_sync_drops order_sync_drops_day_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_drops
+    ADD CONSTRAINT order_sync_drops_day_key UNIQUE (app_id, platform, date, reason);
+
+
+--
+-- Name: order_sync_drops order_sync_drops_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_drops
+    ADD CONSTRAINT order_sync_drops_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_sync_pending order_sync_pending_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_pending
+    ADD CONSTRAINT order_sync_pending_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: orders orders_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -3993,6 +4254,22 @@ ALTER TABLE ONLY app.sessions
 
 ALTER TABLE ONLY app.sessions
     ADD CONSTRAINT sessions_sid_key UNIQUE (app_id, sid);
+
+
+--
+-- Name: sync_cursors sync_cursors_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.sync_cursors
+    ADD CONSTRAINT sync_cursors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sync_cursors sync_cursors_stream_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.sync_cursors
+    ADD CONSTRAINT sync_cursors_stream_key UNIQUE (app_id, platform, union_account_id, query_kind, scene);
 
 
 --
@@ -4573,6 +4850,20 @@ CREATE INDEX order_rights_order_idx ON app.order_rights USING btree (app_id, ord
 
 
 --
+-- Name: order_status_history_order_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX order_status_history_order_idx ON app.order_status_history USING btree (app_id, order_id, at);
+
+
+--
+-- Name: order_sync_pending_open_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX order_sync_pending_open_key ON app.order_sync_pending USING btree (app_id, platform, sub_order_id, reason) WHERE (status = 'open'::text);
+
+
+--
 -- Name: orders_link_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -5091,6 +5382,20 @@ CREATE TRIGGER order_settlements_append_only BEFORE DELETE OR UPDATE ON app.orde
 
 
 --
+-- Name: order_status_history order_status_history_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER order_status_history_append_only BEFORE DELETE OR UPDATE ON app.order_status_history FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: order_sync_drop_keys order_sync_drop_keys_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER order_sync_drop_keys_append_only BEFORE DELETE OR UPDATE ON app.order_sync_drop_keys FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
 -- Name: orders orders_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -5458,6 +5763,22 @@ ALTER TABLE ONLY app.order_settlements
 
 
 --
+-- Name: order_status_history order_status_history_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_status_history
+    ADD CONSTRAINT order_status_history_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: order_sync_pending order_sync_pending_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_sync_pending
+    ADD CONSTRAINT order_sync_pending_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
 -- Name: orders orders_identity_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -5631,6 +5952,14 @@ ALTER TABLE ONLY app.sessions
 
 ALTER TABLE ONLY app.sessions
     ADD CONSTRAINT sessions_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: sync_cursors sync_cursors_union_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.sync_cursors
+    ADD CONSTRAINT sync_cursors_union_account_fkey FOREIGN KEY (app_id, platform, union_account_id) REFERENCES app.union_accounts(app_id, platform, id);
 
 
 --
@@ -7288,6 +7617,46 @@ GRANT SELECT ON TABLE app.order_settlements TO couli_readonly;
 
 
 --
+-- Name: TABLE order_status_history; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.order_status_history TO couli_app;
+GRANT SELECT ON TABLE app.order_status_history TO couli_readonly;
+
+
+--
+-- Name: TABLE order_sync_counters; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.order_sync_counters TO couli_app;
+GRANT SELECT ON TABLE app.order_sync_counters TO couli_readonly;
+
+
+--
+-- Name: TABLE order_sync_drop_keys; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.order_sync_drop_keys TO couli_app;
+GRANT SELECT ON TABLE app.order_sync_drop_keys TO couli_readonly;
+
+
+--
+-- Name: TABLE order_sync_drops; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.order_sync_drops TO couli_app;
+GRANT SELECT ON TABLE app.order_sync_drops TO couli_readonly;
+
+
+--
+-- Name: TABLE order_sync_pending; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.order_sync_pending TO couli_app;
+GRANT SELECT ON TABLE app.order_sync_pending TO couli_readonly;
+
+
+--
 -- Name: TABLE orders; Type: ACL; Schema: app; Owner: -
 --
 
@@ -7941,6 +8310,14 @@ GRANT UPDATE(revoke_reason) ON TABLE app.sessions TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.sessions TO couli_app;
+
+
+--
+-- Name: TABLE sync_cursors; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.sync_cursors TO couli_app;
+GRANT SELECT ON TABLE app.sync_cursors TO couli_readonly;
 
 
 --
