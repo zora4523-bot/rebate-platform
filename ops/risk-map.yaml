@@ -65,6 +65,12 @@ rules:
     impl: claude
     tester: codex
     review: claude+codex
+  # commission: 返利规则版本与报价（资金，规划/02 §4.1、规划/11 §1.1 资金行）为 RV2，分工同 union（B2-03e，2026-10-16）。
+  - path: 'apps/api/src/modules/commission/**'
+    risk: RV2
+    impl: claude
+    tester: codex
+    review: claude+codex
   # admin、content: 规划/11 §1.1 没有单列，按 §1.2「未列入白名单的任何路径」为 RV2；分工按 2026-10-05 改定的通则。
   - path: 'apps/api/src/modules/admin/**'
     risk: RV2
