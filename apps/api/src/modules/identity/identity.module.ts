@@ -26,6 +26,7 @@ import {
   type TokenService,
 } from './application/access-tokens.ts';
 import { createConsentService, type ConsentService } from './application/consents.ts';
+import { createTipsService, type TipsService } from './application/tips.ts';
 import { createH5TokenService, type H5TokenService } from './application/h5-token.ts';
 import {
   createOauthAttemptService,
@@ -77,6 +78,7 @@ import {
   SMS_LOGIN,
   STEP_UP,
   THIRD_PARTY_IDENTITY,
+  TIPS,
   TOKEN_CHECK,
   TOKEN_KEYS,
   TOKEN_SERVICE,
@@ -90,6 +92,7 @@ import { LogoutController } from './http/public/logout.controller.ts';
 import { RefreshController } from './http/public/refresh.controller.ts';
 import { SmsCodesController } from './http/public/sms-codes.controller.ts';
 import { SmsLoginController } from './http/public/sms-login.controller.ts';
+import { TipsController } from './http/public/tips.controller.ts';
 import { DevicesRepository } from './infra/devices.repository.ts';
 import { deviceHashOf } from './infra/login-accounts.ts';
 import { createSmsSender, smsSenderToken } from './infra/fake-sms.ts';
@@ -192,7 +195,7 @@ function h5ReadOnlyRejection(request: RequestCheckInput): HttpException {
 /**
  * Identity (规划/02 §4.1): devices, SMS codes, SMS login (B1-02j), session tokens, refresh rotation
  * (B1-02k), logout, and (B1-02f) third-party authorization attempts, step-up, h5_token and consent
- * records. Served by the `api` entry (/v1). The database handle, the field cipher
+ * records, and (B1-02s) the one-time tip read states. Served by the `api` entry (/v1). The database handle, the field cipher
  * and Redis are optional at construction so that entries built without them (isolated HTTP unit
  * tests) still register the routes; a request that needs them fails at request time instead
  * (50001).
@@ -239,6 +242,7 @@ export class IdentityModule {
         StepUpController,
         H5TokenController,
         ConsentsController,
+        TipsController,
       ],
       providers: [
         // Read once while the entry starts; a missing or malformed list stops the entry.
@@ -555,6 +559,12 @@ export class IdentityModule {
           inject: [CLOCK, { token: DB, optional: true }],
           useFactory: (clock: Clock, db?: Kysely<Database>): ConsentService | null =>
             db === undefined ? null : createConsentService({ db, clock }),
+        },
+        {
+          provide: TIPS,
+          inject: [CLOCK, { token: DB, optional: true }],
+          useFactory: (clock: Clock, db?: Kysely<Database>): TipsService | null =>
+            db === undefined ? null : createTipsService({ db, clock }),
         },
         {
           provide: LOGOUT,

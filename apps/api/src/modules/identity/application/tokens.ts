@@ -52,3 +52,8 @@ export const H5_TOKENS = Symbol('H5_TOKENS');
 
 /** The ConsentService (consents.ts); null when the process has no database. */
 export const CONSENTS = Symbol('CONSENTS');
+
+// Nest token of the one-time tips wiring (B1-02s, identity.module.ts).
+
+/** The TipsService (tips.ts); null when the process has no database. */
+export const TIPS = Symbol('TIPS');
