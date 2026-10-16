@@ -5,7 +5,7 @@ type: impl
 # 2026-10-16 入账（后台后端线 admin-backend，编排会话 10-16 20:3x 派「后台配置中心与紧急开关后端」：05 F1-10 后端部分、05 F1-02「含 kill switches」；解开 QA-05c）。
 # 依据 04 §3.2 config_items / kill_switches、§10（回滚、版本与操作记录）、§10.2（服务端 10 秒内生效、修改需 step-up 并告警）、§11.2 config.* / switch.*、§5 / §7（20902 CAS、10003 step-up）；02 §10、§14；01 F-ADM-13、F-CFG-04 / 07；08 BR-WDR-17、BR-INV-21。
 # 规划未定处的编排者裁定见 couli-runs/F1-10a/decision-orchestrator.md（编号即下文「裁定 N」）：开关仍存 config_items 由注册表区分（裁定 1），开关键进程内缓存 ≤5 秒直读 PG（裁定 2），历史表 config_item_versions（裁定 3），expected_version CAS（裁定 4），任一权限点守卫（裁定 5）。
-# 要点：注册表放 content/domain（纯数据 + 查询函数，按通配写法如 convert.enabled.<platform> 匹配）；CachedContentReader.configValue 对开关键用 ≤5 秒 TTL（注入 Clock，可测），非开关键保持 CONTENT_CACHE_TTL_MS；不引入 Redis（裁定 2）；暂缓项见裁定 9；需额外校验而本组不做的键仍登记为开关（照样 ≤5 秒缓存、10 秒生效），但标记「后台暂不可改」（台账评审 r2 S2；agent.whitelist_only 改 off 需核对登记编号 BR-AI-12、agent.page_guide.routes 候选集校验、external_hosts 的 union_host 校验；台账评审 S2-1），留给做校验的任务。与 content-client 线 F1-02c～f 同改 content/**，后落地者变基（台账评审 S2-5）。
+# 要点：注册表放 content/domain（纯数据 + 查询函数，按通配写法如 convert.enabled.<platform> 匹配）；CachedContentReader.configValue 对开关键用 ≤5 秒 TTL（注入 Clock，可测），非开关键保持 CONTENT_CACHE_TTL_MS；不引入 Redis（裁定 2）；暂缓项见裁定 9；权限点按 04 §11.2 的清单逐键登记、不按前缀推（台账评审 r3 S1：withdraw.enabled 属 switch.payout）；需额外校验而本组不做的开关键 agent.whitelist_only 仍登记为开关（照样 ≤5 秒缓存、10 秒生效），但标记「后台暂不可改」（台账评审 r2 S2；agent.whitelist_only 改 off 需核对登记编号 BR-AI-12、agent.page_guide.routes 与 external_hosts 是配置项、不是开关，不进开关注册表，由 F1-10e 的配置注册表登记并标「后台暂不可改」（台账评审 r3 S2）；台账评审 S2-1），留给做校验的任务。与 content-client 线 F1-02c～f 同改 content/**，后落地者变基（台账评审 S2-5）。
 refs: []
 refs_hash: {}
 deps: []
