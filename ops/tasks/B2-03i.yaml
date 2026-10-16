@@ -1,0 +1,19 @@
+id: B2-03i
+repo: rebate-platform
+title: 测试修改：[AC-B2-03f#34]、[AC-B2-03f#35] 显式超时由 600_000 收口为 300_000（实测 ×3），断言与次数不变
+type: test-change
+# 2026-10-17 资金线 funds-quote（编排会话 02:0x：followups 里 #34/#35 超时按实际耗时 ×3 收口）。实测（#568 CI）：10 万次单条最长 6.8 秒，长跑 100 万次单条最长 91.6 秒，
+# ×3 ≈ 275 秒 → 300_000。原拟随 B2-03d 一起改，但规则测试先红检查会要求该文件也先红、而落在 spec_commit 之后又违反只增不改，故单开（先例 B2-03h #568）。
+# 只改两个数字；不改生成器、次数（仍只经 propParams()）、断言与期望，不削弱资金测试。第一类保护路径：按 approvals #24 与编排授权由本线核对后加 owner-approved 标签；
+# 非 task/ 分支、不碰资金实现路径，按 approvals #12 免证据文件。
+refs: []
+refs_hash: {}
+deps: [B2-03h]
+paths:
+  - 'test/properties/domain/commission-publish/publish.prop.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null
