@@ -107,5 +107,6 @@ export {
 } from './ports.ts';
 export type { RebateQuote, RegisterLinkInput, Viewer } from './ports.ts';
 export { CATALOG, CatalogModule } from './catalog.module.ts';
+export { createPriceHistoryRecorder, type PriceHistoryWiring } from './catalog.module.ts';
 export * from './price-history/index.ts';
 export type { CatalogConfigReaderFactory } from './catalog.module.ts';

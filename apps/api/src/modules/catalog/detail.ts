@@ -21,6 +21,7 @@ import type { ItemRefService } from './application/item-ref.ts';
 import { CatalogError, isFresh } from './domain/rules.ts';
 import type { Catalog, ProductCapabilities, ProductRef, RequestRawRef } from './domain/types.ts';
 import type { CatalogConfigReader, ViewerContext } from './ports.ts';
+import type { PriceSnapshotRecorder } from './price-history/types.ts';
 
 export interface ProductDetailQuery {
   readonly product_key: string;
@@ -59,6 +60,16 @@ export function markStaleDetail<T extends UnionItemDetail>(item: T): T {
   return item;
 }
 
+/**
+ * B1-17c: marks a detail answer as a fresh union return (the module marks what the union side
+ * under the cache returns; a cache hit or a stale entry is never marked) and returns it. Only a
+ * marked answer is handed to the price history recorder (BR-WATCH-19 (1)).
+ */
+export function markFreshDetail<T extends UnionItemDetail>(item: T): T {
+  void item;
+  throw new Error('NotImplemented: markFreshDetail');
+}
+
 export interface ProductDetailUpstream {
   detail(request: ProductDetailRequest): Promise<UnionItemDetail>;
 }
@@ -71,6 +82,12 @@ export interface ProductDetailOptions {
   readonly itemRefs: ItemRefService;
   readonly cards: CatalogCardEntry;
   readonly upstream: ProductDetailUpstream;
+  /**
+   * B1-17c: the price history hook (BR-WATCH-19 (1), source_kind detail). Absent, the detail
+   * behaves exactly as before. Present, a union answer marked by markFreshDetail is handed to
+   * record() once (not awaited; a throw is swallowed; the response never changes).
+   */
+  readonly priceHistory?: PriceSnapshotRecorder;
 }
 
 export type ProductDetailData = components['schemas']['ProductResponse']['data'];

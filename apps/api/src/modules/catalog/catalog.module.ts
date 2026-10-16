@@ -51,6 +51,8 @@ import {
   type Viewer,
 } from './ports.ts';
 import type { SearchCursorCodec, SearchSessionStore } from './search.ts';
+import type { PriceSnapshotRecorder, PriceSnapshotStore } from './price-history/types.ts';
+import type { Logger } from 'pino';
 
 /** Nest injection token of the Catalog service. */
 export const CATALOG = Symbol('CATALOG');
@@ -133,6 +135,33 @@ const GUEST_VIEWER: FactoryProvider<ViewerContext> = {
       : new UnscopedViewerContext();
   },
 };
+
+/** B1-17c: what createPriceHistoryRecorder is built from. */
+export interface PriceHistoryWiring {
+  /** The single writer of price_snapshot: createKyselyPriceSnapshotStore(DB) in the modules. */
+  readonly store: PriceSnapshotStore;
+  readonly clock: Clock;
+  /** price_snapshot.touch_min_interval_minutes is read through it (createPriceSnapshotRecorder). */
+  readonly config: Pick<CatalogConfigReader, 'configValue'>;
+  readonly logger: Pick<Logger, 'warn'>;
+}
+
+/**
+ * B1-17c: the price history recorder the modules hand to the three hooks (search, detail, quote;
+ * BR-WATCH-19 (1)). It is createPriceSnapshotRecorder (B1-17b, reused, never copied: same skips,
+ * same failure counting and warn, same drain) over `store` behind a concurrency cap: at most 2
+ * store.write calls are in flight at any time, later writes wait in arrival order and start as
+ * earlier ones settle (fulfilled or rejected). B1-17b followup: every write opens its own
+ * transaction and queues on an advisory lock, so without the cap a burst of fresh union returns
+ * could hold the API's whole pool. A queued write still counts for drain().
+ * CatalogModule and ParsingModule build it from the DB handle (createKyselyPriceSnapshotStore),
+ * CLOCK, their configuration reader and ROOT_LOGGER; without a DB handle they wire no recorder
+ * and the three hooks stay off.
+ */
+export function createPriceHistoryRecorder(wiring: PriceHistoryWiring): PriceSnapshotRecorder {
+  void wiring;
+  throw new Error('NotImplemented: createPriceHistoryRecorder');
+}
 
 /**
  * Catalog (规划/02 §4.1): platform dictionary, product_refs, aliases and the category blocklist.
