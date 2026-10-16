@@ -9,8 +9,11 @@
 // the viewer's app scope, nothing is cached across quotes. The quote instant is taken once,
 // before any port is read, and the version is selected at that instant: the list read afterwards
 // always contains the version in force then, while a version that becomes effective (or is
-// revoked) during the reads is never picked from a list that may already be stale. Scoped (after prepare()): quotes only
-// answer from the values pre-read by the latest prepare(), never touch a port again (the link
+// revoked) during the reads is never picked from a list that may already be stale. Scoped (after
+// prepare()): quotes only answer from the values pre-read by the latest prepare(), never touch a
+// port or the clock again; the prepare instant (taken before its reads) is the quote instant of
+// the whole scope (BR-CALC-20), so crossing a version's effective_from inside the scope never
+// switches to a version that was not yet in force at prepare time (the link
 // open transaction must not borrow another connection); a viewer outside that scope, or a
 // failed prepare(), rejects. Every failure rejects the quote; nothing ever quotes as 0.
 //
@@ -67,6 +70,8 @@ interface QuoteInputs {
 /** Everything one prepare() pre-read for one app scope. */
 interface PreparedScope {
   readonly appId: string;
+  /** The scope's quote instant: read before prepare() reads any port (BR-CALC-20). */
+  readonly preparedAt: Date;
   readonly versions: readonly RuleVersion[];
   readonly levels: ReadonlyMap<string, UserLevel>;
   readonly config: ReadonlyMap<string, unknown>;
@@ -240,9 +245,9 @@ export function createCommissionRebateQuoter(
     return { at, versions, level, config: values };
   }
 
-  // Scoped mode: production wiring must not call prepare(). TODO(规划/11 §2.3): 删除或改为无状态
-  // — blocked on 规则测试 test-change（冻结规则测试要求 prepare 之后跨生效时刻换用新版本，此处
-  // 的版本列表来自 prepare 时刻，报价时刻在其后读时钟）。
+  // Scoped mode: production wiring must not call prepare() (the scope is shared process state).
+  // TODO(规划/11 §2.3): 删除或改为无状态 — blocked on 后续任务.
+  // Every time-dependent decision uses scope.preparedAt; the clock is not read here.
   function scopedInputs(scope: PreparedScope | null, viewer: Viewer): QuoteInputs {
     if (scope === null) {
       throw new Error('commission quote: no prepared scope (last prepare failed or is pending)');
@@ -260,7 +265,7 @@ export function createCommissionRebateQuoter(
       }
       level = prepared;
     }
-    return { at: clock.now(), versions: scope.versions, level, config: scope.config };
+    return { at: scope.preparedAt, versions: scope.versions, level, config: scope.config };
   }
 
   async function quote(
@@ -277,8 +282,7 @@ export function createCommissionRebateQuoter(
     return compute(item, ctx, inputs);
   }
 
-  // 生产装配不得调用 prepare()。TODO(规划/11 §2.3): 删除或改为无状态 — blocked on 规则测试
-  // test-change.
+  // 生产装配不得调用 prepare()。TODO(规划/11 §2.3): 删除或改为无状态 — blocked on 后续任务.
   async function prepare(appId: string, userIds: readonly string[]): Promise<void> {
     // The previous scope stops answering immediately; only this call's result may replace it.
     generation += 1;
@@ -291,6 +295,8 @@ export function createCommissionRebateQuoter(
         throw new TypeError('commission prepare: user ids must be non-empty strings');
       }
     }
+    // The scope's quote instant: read before any port, never during or after the reads.
+    const preparedAt = clock.now();
     const [versions, levelList, values] = await Promise.all([
       rules.publishedVersions(scopeAppId),
       Promise.all(ids.map((userId) => readLevel(scopeAppId, userId))),
@@ -310,6 +316,7 @@ export function createCommissionRebateQuoter(
       mode: 'scoped',
       scope: {
         appId: scopeAppId,
+        preparedAt,
         versions: [...versions],
         levels: new Map(ids.map((id, i) => [id, levelList[i]!])),
         config: values,

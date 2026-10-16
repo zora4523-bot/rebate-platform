@@ -101,3 +101,25 @@ it('[AC-B2-03c-UNIT#5] live 报价在等级读取期间跨过生效时刻也不�
   const next = await quoter.quote(ITEM, { appId: APP, userId: 'u1', deviceId: null }, NORMAL);
   expect(next.rebateMaxFen).toBe(400n);
 });
+
+it('[AC-B2-03c-UNIT#6] prepare 在读端口之前取作用域报价时刻：预读期间与之后跨过 v2 生效时刻都仍用 v1', async () => {
+  const clock = new FixedClock('2026-10-31T23:59:59.100+08:00');
+  const quoter = createCommissionRebateQuoter({
+    rules: {
+      publishedVersions: async () => {
+        // 预读慢：返回前时钟已到次日 00:00:00.100。
+        clock.set('2026-11-01T00:00:00.100+08:00');
+        return [V1, V2];
+      },
+    },
+    levels: { levelOf: async () => 'L1' },
+    config,
+    clock,
+  });
+  await quoter.prepare(APP, ['u1']);
+  // v1 本人 = floor(1000 × 5000 / 10000) = 500；用预读后时刻或报价时刻选版本会得 v2 的 400。
+  const viewer = { appId: APP, userId: 'u1', deviceId: null };
+  expect((await quoter.quote(ITEM, viewer, NORMAL)).rebateMaxFen).toBe(500n);
+  clock.set('2026-11-02T00:00:00+08:00');
+  expect((await quoter.quote(ITEM, viewer, NORMAL)).rebateMaxFen).toBe(500n);
+});
