@@ -1,7 +1,6 @@
 // B1-02d: first and repeated third-party login over the real AppModule (BR-ID-04, AC-S1-67 ①⑮).
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { ROOT } from '../../risk/signature/kit.ts';
 import {
   CONSENT_AT,
   DEVICE_LOG_CONTEXT,
@@ -31,12 +30,9 @@ afterAll(async () => {
   await closeOauthKit(kit);
 });
 
-async function defaultAvatar(): Promise<string> {
-  const registration = (await import(
-    new URL('apps/api/src/modules/identity/application/registration.ts', ROOT).href
-  )) as typeof import('../../../../apps/api/src/modules/identity/application/registration.ts');
-  return registration.registrationConstants().DEFAULT_AVATAR;
-}
+// The default avatar every new account gets (B1-02z ruling D22), written out here instead of read
+// from the implementation, so a wrong or empty default in the registration core fails this test.
+const DEFAULT_AVATAR = 'avatar:default';
 
 /** The writes of one successful login for (user, this device), at the kit's Clock instant. */
 async function assertLoginWrites(f: Fixture, provider: Provider, data: LoginData) {
@@ -120,7 +116,7 @@ it.each(['wechat', 'apple'] as const)(
     expect(user).toMatchObject({
       id: data.user_id,
       nickname: `用户${data.user_id.slice(-4)}`,
-      avatar: await defaultAvatar(),
+      avatar: DEFAULT_AVATAR,
       status: 'normal',
       register_method: provider,
       registered_channel: 'appstore',
