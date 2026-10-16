@@ -23,5 +23,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/load/k6/*.test.ts'
-status: todo
-pr: null
+status: done
+pr: 527
