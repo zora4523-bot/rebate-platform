@@ -1,0 +1,98 @@
+{
+  "task": "B1-02u",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "e1e8f278c8b630612343d0452424c0ca3570d663",
+  "red_tests": [
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#1] L1 按契约等级原样返回",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#2] L2 按契约等级原样返回",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#3] L3 按契约等级原样返回",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#4] 同 app 有其他用户时，查不到指定 userId 返回 null",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#5] 同一个 userId 在别的 app 不可见，查询顺序不造成串租户",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#6] status=deleting 仍返回等级",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#7] status=deleted 仍返回等级",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#8] 风控封禁用户仍返回等级，是否报价由调用方决定",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#9] 非法等级 \"L4\" 抛错且不回落、不泄漏用户字段",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#10] 非法等级 \"l1\" 抛错且不回落、不泄漏用户字段",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#11] 非法等级 \" L2 \" 抛错且不回落、不泄漏用户字段",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#12] 非法等级 \"\" 抛错且不回落、不泄漏用户字段",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#13] 非法等级 \"logged_in\" 抛错且不回落、不泄漏用户字段",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#14] 数据库连接关闭后仍抛原始错误，不转成 null 或默认等级",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#15] 同一 reader 每次读取最新等级，非法新值也不能使用旧缓存",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#16] 不缓存缺失结果或已删除用户的等级",
+    "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#17] 存在、缺失和非法等级均只查一次，在只读事务中不写任何表"
+  ],
+  "risk_note": "RV1 (identity read-only port users.level for the funds lane's real quoter, B2-03). levelOf({appId, userId}) runs one query on app.users by (app_id, id); absent → null; a stored value outside L1/L2/L3 throws (no fallback level, fail-closed); database errors propagate; no status filter, no cache, no writes, no config. Full verification by the required CI checks (ops/approvals.yaml id 21). Mechanical fix by the orchestrator in the rule-test commit: one code comment in reader.int.test.ts named the admin URL variable and tripped test-guard admin-url-only-in-global-setup; the comment was reworded (no assertion, vector or title changed) and the red run repeated on the new spec commit.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e1e8f278c8b630612343d0452424c0ca3570d663",
+      "tree": "f111f1bd702d065ace7d6cb1dbdffe2035af0c6d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T08:50:47Z",
+      "finished_at": "2026-10-16T08:50:54Z",
+      "red_tests": [
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#1] L1 按契约等级原样返回",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#2] L2 按契约等级原样返回",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#3] L3 按契约等级原样返回",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#4] 同 app 有其他用户时，查不到指定 userId 返回 null",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#5] 同一个 userId 在别的 app 不可见，查询顺序不造成串租户",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#6] status=deleting 仍返回等级",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#7] status=deleted 仍返回等级",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#8] 风控封禁用户仍返回等级，是否报价由调用方决定",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#9] 非法等级 \"L4\" 抛错且不回落、不泄漏用户字段",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#10] 非法等级 \"l1\" 抛错且不回落、不泄漏用户字段",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#11] 非法等级 \" L2 \" 抛错且不回落、不泄漏用户字段",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#12] 非法等级 \"\" 抛错且不回落、不泄漏用户字段",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#13] 非法等级 \"logged_in\" 抛错且不回落、不泄漏用户字段",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#14] 数据库连接关闭后仍抛原始错误，不转成 null 或默认等级",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#15] 同一 reader 每次读取最新等级，非法新值也不能使用旧缓存",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#16] 不缓存缺失结果或已删除用户的等级",
+        "test/spec/identity/user-level/reader.int.test.ts > [AC-B1-02u#17] 存在、缺失和非法等级均只查一次，在只读事务中不写任何表"
+      ],
+      "expected": ["test/spec/identity/user-level/reader.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a696c37ecdd6be46363e9dfbf230c2a9301a080a73625d9bffc476f22f2ab0c3"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass (0 findings); an orchestrator-requested unit test file outside the task paths was dropped afterwards, implementation unchanged"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run; 17 tests in 1 file red for the right reason on the test runner) reviewed by a fresh Claude subagent: round 1 pass (out of scope S2: users.level has no database CHECK)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "a5a736ab802592d1b4716c6d011b7f5f531cddad",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  }
+}

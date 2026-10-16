@@ -1,4 +1,11 @@
 // Public surface of the identity module. Other modules import only from this file.
+export { createUserLevelReader } from './ports/user-level.ts';
+export type {
+  UserLevel,
+  UserLevelSubject,
+  UserLevelReader,
+  UserLevelReaderOptions,
+} from './ports/user-level.ts';
 export { createAiConsentReader } from './ports/ai-consent.ts';
 export type {
   AiConsentSubject,
