@@ -1,0 +1,104 @@
+{
+  "task": "B1-17a",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "39325e7216472fdb0bd386ef6811d9dcf71aa31b",
+  "red_tests": [
+    "test/spec/db/catalog/price-snapshot/access.int.test.ts > [AC-B1-17a#12] app can lock, insert multiple runs and touch only the latest row in one transaction",
+    "test/spec/db/catalog/price-snapshot/access.int.test.ts > [AC-B1-17a#13] app UPDATE is restricted to the two touch columns; DELETE and TRUNCATE are denied",
+    "test/spec/db/catalog/price-snapshot/access.int.test.ts > [AC-B1-17a#14] readonly can SELECT only and payout cannot access history",
+    "test/spec/db/catalog/price-snapshot/access.int.test.ts > [AC-B1-17a#15] direct DEFAULT and runtime-month access cannot bypass mutation restrictions",
+    "test/spec/db/catalog/price-snapshot/partitions.int.test.ts > [AC-B1-17a#8] history is RANGE partitioned on first_observed_at with the composite primary key",
+    "test/spec/db/catalog/price-snapshot/partitions.int.test.ts > [AC-B1-17a#10] the latest-row partitioned index starts with app, product, source and descending first observation",
+    "test/spec/db/catalog/price-snapshot/partitions.int.test.ts > [AC-B1-17a#11] maint ensures an idempotent UTC month and first observation routes both boundaries",
+    "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#9] migrations create only a DEFAULT partition",
+    "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#1] history columns carry integer prices and run metadata without SQL observation clocks",
+    "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#2] history has no user, device, attribution or personalized channel columns",
+    "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#16] MVP migrations do not create P1 watch or observation tables",
+    "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#3] every required column rejects explicit NULL, including identity and created_at",
+    "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#4] source_kind accepts all five sources and rejects unknown or failure kinds",
+    "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#5] price shape rejects nonpositive prices and negative coupons without imposing a price equation",
+    "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#6] runs require positive counts and last_observed_at at or after first_observed_at",
+    "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#7] optional SKU and goods_sign_plan round-trip, including out-of-stock history"
+  ],
+  "risk_note": "RV2 (db/migrations; price change history for BR-WATCH-05 / BR-WATCH-19, 05 B1-17 first part). Migration 0030 creates app.price_snapshot partitioned by RANGE (first_observed_at) with only its DEFAULT partition (month partitions at runtime via app.ensure_month_partition, whose allow-list and MONTH_PARTITIONED_TABLES gain price_snapshot; function body copied unchanged from 0029). 15 columns, no user identifier of any kind; named CHECKs (source_kind set, price_fen > 0, coupon_fen >= 0, final_price_fen > 0, last_observed_at >= first_observed_at, observation_count >= 1); primary key (id, first_observed_at); index (app_id, product_key, source_kind, first_observed_at DESC). Grants: couli_app SELECT/INSERT plus UPDATE on last_observed_at and observation_count only, no DELETE/TRUNCATE; couli_readonly SELECT. 13-month retention left to a follow-up. schema.sql and db.gen.ts from pnpm db:snapshot on the AWS test machine. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "39325e7216472fdb0bd386ef6811d9dcf71aa31b",
+      "tree": "130d0b29d4ccfd6ad2b4adf3be1d76092332b840",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T10:59:15Z",
+      "finished_at": "2026-10-16T10:59:22Z",
+      "gate": {
+        "commit": "cad7f635ce7c496a20cb7349656fe0f914b4757a",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/catalog/price-snapshot/access.int.test.ts > [AC-B1-17a#12] app can lock, insert multiple runs and touch only the latest row in one transaction",
+        "test/spec/db/catalog/price-snapshot/access.int.test.ts > [AC-B1-17a#13] app UPDATE is restricted to the two touch columns; DELETE and TRUNCATE are denied",
+        "test/spec/db/catalog/price-snapshot/access.int.test.ts > [AC-B1-17a#14] readonly can SELECT only and payout cannot access history",
+        "test/spec/db/catalog/price-snapshot/access.int.test.ts > [AC-B1-17a#15] direct DEFAULT and runtime-month access cannot bypass mutation restrictions",
+        "test/spec/db/catalog/price-snapshot/partitions.int.test.ts > [AC-B1-17a#8] history is RANGE partitioned on first_observed_at with the composite primary key",
+        "test/spec/db/catalog/price-snapshot/partitions.int.test.ts > [AC-B1-17a#10] the latest-row partitioned index starts with app, product, source and descending first observation",
+        "test/spec/db/catalog/price-snapshot/partitions.int.test.ts > [AC-B1-17a#11] maint ensures an idempotent UTC month and first observation routes both boundaries",
+        "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#9] migrations create only a DEFAULT partition",
+        "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#1] history columns carry integer prices and run metadata without SQL observation clocks",
+        "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#2] history has no user, device, attribution or personalized channel columns",
+        "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#16] MVP migrations do not create P1 watch or observation tables",
+        "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#3] every required column rejects explicit NULL, including identity and created_at",
+        "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#4] source_kind accepts all five sources and rejects unknown or failure kinds",
+        "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#5] price shape rejects nonpositive prices and negative coupons without imposing a price equation",
+        "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#6] runs require positive counts and last_observed_at at or after first_observed_at",
+        "test/spec/db/catalog/price-snapshot/shape.int.test.ts > [AC-B1-17a#7] optional SKU and goods_sign_plan round-trip, including out-of-stock history"
+      ],
+      "expected": [
+        "test/spec/db/catalog/price-snapshot/access.int.test.ts",
+        "test/spec/db/catalog/price-snapshot/partitions.int.test.ts",
+        "test/spec/db/catalog/price-snapshot/shape.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "3a4decfcd848d22282a1a8b6717c780fdffcaf9213c547949f2cde5282b16360"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "16 rule tests by Codex (2 runs) reviewed by fresh Claude subagents: round 1 fail (S1: no assertion that the P1 watch tables are not created; S2: column allow-list), fixed in the second test run; round 2 pass"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "a340fed01ea04b1216d4345bb5144743ad59ba26",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "30fab521fff65c53a7cd8e38f340b9ea40c14dbf",
+    "test/spec": "909d79d513ec2b6bfaf09b970eb9dec5edab11ea",
+    "specs": "d132032ab94a9b89610f6453d3cc274de9221f2f"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "30fab521fff65c53a7cd8e38f340b9ea40c14dbf"
+  }
+}

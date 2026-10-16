@@ -494,7 +494,7 @@ BEGIN
 
   -- Allow-list of month-partitioned tables (ADR-0001 §4.2 #5). Extend it in the migration
   -- that creates the next partitioned table.
-  IF p_table NOT IN ('event_log', 'orders', 'union_raw_payloads') THEN
+  IF p_table NOT IN ('event_log', 'orders', 'union_raw_payloads', 'price_snapshot') THEN
     RAISE EXCEPTION 'ensure_month_partition: table "%" is not month-partitioned', p_table
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
@@ -2334,6 +2334,79 @@ CREATE TABLE app.platforms (
 
 
 --
+-- Name: price_snapshot; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.price_snapshot (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    product_key text NOT NULL,
+    sku_key text,
+    source_kind text NOT NULL,
+    price_fen bigint NOT NULL,
+    coupon_fen bigint NOT NULL,
+    final_price_fen bigint NOT NULL,
+    in_stock boolean NOT NULL,
+    goods_sign_plan text,
+    first_observed_at timestamp with time zone NOT NULL,
+    last_observed_at timestamp with time zone NOT NULL,
+    observation_count integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT price_snapshot_coupon_fen_check CHECK ((coupon_fen >= 0)),
+    CONSTRAINT price_snapshot_final_price_fen_check CHECK ((final_price_fen > 0)),
+    CONSTRAINT price_snapshot_observation_count_check CHECK ((observation_count >= 1)),
+    CONSTRAINT price_snapshot_observed_order_check CHECK ((last_observed_at >= first_observed_at)),
+    CONSTRAINT price_snapshot_price_fen_check CHECK ((price_fen > 0)),
+    CONSTRAINT price_snapshot_source_kind_check CHECK ((source_kind = ANY (ARRAY['search'::text, 'detail'::text, 'quote'::text, 'convert'::text, 'watch'::text])))
+)
+PARTITION BY RANGE (first_observed_at);
+
+
+--
+-- Name: price_snapshot_default; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.price_snapshot_default (
+    id bigint CONSTRAINT price_snapshot_id_not_null NOT NULL,
+    app_id text CONSTRAINT price_snapshot_app_id_not_null NOT NULL,
+    platform text CONSTRAINT price_snapshot_platform_not_null NOT NULL,
+    product_key text CONSTRAINT price_snapshot_product_key_not_null NOT NULL,
+    sku_key text,
+    source_kind text CONSTRAINT price_snapshot_source_kind_not_null NOT NULL,
+    price_fen bigint CONSTRAINT price_snapshot_price_fen_not_null NOT NULL,
+    coupon_fen bigint CONSTRAINT price_snapshot_coupon_fen_not_null NOT NULL,
+    final_price_fen bigint CONSTRAINT price_snapshot_final_price_fen_not_null NOT NULL,
+    in_stock boolean CONSTRAINT price_snapshot_in_stock_not_null NOT NULL,
+    goods_sign_plan text,
+    first_observed_at timestamp with time zone CONSTRAINT price_snapshot_first_observed_at_not_null NOT NULL,
+    last_observed_at timestamp with time zone CONSTRAINT price_snapshot_last_observed_at_not_null NOT NULL,
+    observation_count integer CONSTRAINT price_snapshot_observation_count_not_null NOT NULL,
+    created_at timestamp with time zone DEFAULT now() CONSTRAINT price_snapshot_created_at_not_null NOT NULL,
+    CONSTRAINT price_snapshot_coupon_fen_check CHECK ((coupon_fen >= 0)),
+    CONSTRAINT price_snapshot_final_price_fen_check CHECK ((final_price_fen > 0)),
+    CONSTRAINT price_snapshot_observation_count_check CHECK ((observation_count >= 1)),
+    CONSTRAINT price_snapshot_observed_order_check CHECK ((last_observed_at >= first_observed_at)),
+    CONSTRAINT price_snapshot_price_fen_check CHECK ((price_fen > 0)),
+    CONSTRAINT price_snapshot_source_kind_check CHECK ((source_kind = ANY (ARRAY['search'::text, 'detail'::text, 'quote'::text, 'convert'::text, 'watch'::text])))
+);
+
+
+--
+-- Name: price_snapshot_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.price_snapshot ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.price_snapshot_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: processed_events; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3136,6 +3209,13 @@ ALTER TABLE ONLY app.orders ATTACH PARTITION app.orders_default DEFAULT;
 
 
 --
+-- Name: price_snapshot_default; Type: TABLE ATTACH; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.price_snapshot ATTACH PARTITION app.price_snapshot_default DEFAULT;
+
+
+--
 -- Name: union_raw_payloads_default; Type: TABLE ATTACH; Schema: app; Owner: -
 --
 
@@ -3618,6 +3698,22 @@ ALTER TABLE ONLY app.platforms
 
 ALTER TABLE ONLY app.platforms
     ADD CONSTRAINT platforms_pkey PRIMARY KEY (code);
+
+
+--
+-- Name: price_snapshot price_snapshot_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.price_snapshot
+    ADD CONSTRAINT price_snapshot_pkey PRIMARY KEY (id, first_observed_at);
+
+
+--
+-- Name: price_snapshot_default price_snapshot_default_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.price_snapshot_default
+    ADD CONSTRAINT price_snapshot_default_pkey PRIMARY KEY (id, first_observed_at);
 
 
 --
@@ -4396,6 +4492,20 @@ CREATE UNIQUE INDEX payout_accounts_current_user_key ON app.payout_accounts USIN
 
 
 --
+-- Name: price_snapshot_latest_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX price_snapshot_latest_idx ON ONLY app.price_snapshot USING btree (app_id, product_key, source_kind, first_observed_at DESC);
+
+
+--
+-- Name: price_snapshot_default_app_id_product_key_source_kind_first_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX price_snapshot_default_app_id_product_key_source_kind_first_idx ON app.price_snapshot_default USING btree (app_id, product_key, source_kind, first_observed_at DESC);
+
+
+--
 -- Name: product_refs_platform_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -4708,6 +4818,20 @@ ALTER INDEX app.orders_user_paid_idx ATTACH PARTITION app.orders_default_app_id_
 --
 
 ALTER INDEX app.orders_pkey ATTACH PARTITION app.orders_default_pkey;
+
+
+--
+-- Name: price_snapshot_default_app_id_product_key_source_kind_first_idx; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.price_snapshot_latest_idx ATTACH PARTITION app.price_snapshot_default_app_id_product_key_source_kind_first_idx;
+
+
+--
+-- Name: price_snapshot_default_pkey; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.price_snapshot_pkey ATTACH PARTITION app.price_snapshot_default_pkey;
 
 
 --
@@ -7046,6 +7170,28 @@ GRANT UPDATE(stage) ON TABLE app.platforms TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.platforms TO couli_app;
+
+
+--
+-- Name: TABLE price_snapshot; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.price_snapshot TO couli_app;
+GRANT SELECT ON TABLE app.price_snapshot TO couli_readonly;
+
+
+--
+-- Name: COLUMN price_snapshot.last_observed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(last_observed_at) ON TABLE app.price_snapshot TO couli_app;
+
+
+--
+-- Name: COLUMN price_snapshot.observation_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(observation_count) ON TABLE app.price_snapshot TO couli_app;
 
 
 --
