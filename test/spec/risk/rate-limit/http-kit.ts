@@ -161,22 +161,23 @@ export async function withHttp(
   // the fixture one (a second registration of the same route would make Fastify refuse to start).
   // The route decorators keep their metadata on the method function, so the replacement carries a
   // copy of it; the original method is put back in the finally below.
-  const convertProto = await import(
-    new URL('apps/api/src/modules/linking/http/public/convert.controller.ts', ROOT).href
-  ).then(
-    (module: Record<string, unknown>) =>
-      (module['LinkConvertController'] as { prototype: { convert(req: Request): unknown } })
-        .prototype,
-    () => undefined,
+  // markTipRead gets the same treatment once identity ships TipsController (B1-02s) for
+  // POST /v1/me/tips/:tip_key/read. Convention the real method must keep: its first parameter is
+  // the Fastify request taken with @Req() (Nest keeps parameter metadata on the prototype by method
+  // name, so the swapped-in function receives exactly what the real method would); the fixture
+  // reads req.id from it for trace_id.
+  const convertProto = await realPrototype<'convert'>(
+    'apps/api/src/modules/linking/http/public/convert.controller.ts',
+    'LinkConvertController',
+  );
+  const tipsProto = await realPrototype<'markTipRead'>(
+    'apps/api/src/modules/identity/http/public/tips.controller.ts',
+    'TipsController',
   );
   const realConvert = convertProto?.convert;
-  const metadata = Reflect as unknown as {
-    getMetadataKeys(target: object): unknown[];
-    getMetadata(key: unknown, target: object): unknown;
-    defineMetadata(key: unknown, value: unknown, target: object): void;
-  };
+  const realTip = tipsProto?.markTipRead;
   for (const [name, path] of [
-    ['tip', 'me/tips/:tip_key/read'],
+    ...(tipsProto === undefined ? ([['tip', 'me/tips/:tip_key/read']] as const) : []),
     ...(convertProto === undefined ? ([['convert', 'links/convert']] as const) : []),
   ] as const) {
     const descriptor = Object.getOwnPropertyDescriptor(PlannedEndpoints.prototype, name)!;
@@ -202,11 +203,14 @@ export async function withHttp(
   let app: HttpApp | undefined;
   try {
     if (convertProto !== undefined && realConvert !== undefined) {
-      const fixtureConvert = (req: Request) => PlannedEndpoints.prototype.convert(req);
-      for (const key of metadata.getMetadataKeys(realConvert)) {
-        metadata.defineMetadata(key, metadata.getMetadata(key, realConvert), fixtureConvert);
-      }
-      convertProto.convert = fixtureConvert;
+      convertProto.convert = withMetadataOf(realConvert, (req: Request) =>
+        PlannedEndpoints.prototype.convert(req),
+      );
+    }
+    if (tipsProto !== undefined && realTip !== undefined) {
+      tipsProto.markTipRead = withMetadataOf(realTip, (req: Request) =>
+        PlannedEndpoints.prototype.tip(req),
+      );
     }
     app = (await buildApp(db, dir, suite.server.url, clock, logger)) as HttpApp;
     await app.init();
@@ -281,12 +285,41 @@ export async function withHttp(
   } finally {
     spy.mockRestore();
     if (convertProto !== undefined && realConvert !== undefined) convertProto.convert = realConvert;
+    if (tipsProto !== undefined && realTip !== undefined) tipsProto.markTipRead = realTip;
     try {
       await app?.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   }
+}
+
+/** Prototype of a real controller once its module exists; undefined while the route is planned. */
+async function realPrototype<M extends string>(
+  path: string,
+  exportName: string,
+): Promise<Record<M, (req: Request) => unknown> | undefined> {
+  return import(new URL(path, ROOT).href).then(
+    (module: Record<string, unknown>) =>
+      (module[exportName] as { prototype: Record<M, (req: Request) => unknown> }).prototype,
+    () => undefined,
+  );
+}
+/** Copies every Reflect metadata entry of the real handler (route, HTTP code, route schema) onto
+ * the fixture handler, so Nest registers the real route with the fixture body. */
+function withMetadataOf(
+  real: (req: Request) => unknown,
+  fixture: (req: Request) => unknown,
+): (req: Request) => unknown {
+  const metadata = Reflect as unknown as {
+    getMetadataKeys(target: object): unknown[];
+    getMetadata(key: unknown, target: object): unknown;
+    defineMetadata(key: unknown, value: unknown, target: object): void;
+  };
+  for (const key of metadata.getMetadataKeys(real)) {
+    metadata.defineMetadata(key, metadata.getMetadata(key, real), fixture);
+  }
+  return fixture;
 }
 
 export interface HttpFixture {
