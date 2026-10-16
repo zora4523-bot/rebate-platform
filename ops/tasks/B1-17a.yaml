@@ -1,0 +1,30 @@
+id: B1-17a
+repo: rebate-platform
+title: 迁移：price_snapshot 价格变更历史表（按月分区、只建 DEFAULT 分区、游程编码列、不含用户标识）、取最新行的索引与按列授权；ensure_month_partition 允许名单加该表
+type: migration
+# 2026-10-16 入账（后端常规任务线 be-codex，任务书 briefs/BE-codex-lane.md 候选 1）。05 B1-17 拆为 a（本迁移，Claude 实现）、b（写入器，Codex）、c（三处钩子，Codex）。
+# 依据：BR-WATCH-05（游程规则、advisory lock、观测与历史分表）、BR-WATCH-19（不含用户标识、拼多多记 goods_sign_plan）、04 附录 A price_snapshot 行、08 09_WATCH 细则「price_snapshot（按月分区，保留 13 个月）」。
+# 列（04 附录 A）：app_id、product_key、sku_key（可空）、source_kind（search / detail / quote / convert / watch，CHECK）、price_fen、coupon_fen、final_price_fen（bigint）、in_stock（boolean）、
+#   first_observed_at、last_observed_at（应用 Clock 写入，无默认值）、observation_count（≥1）；另加 platform 与 goods_sign_plan（可空，只拼多多填；BR-WATCH-19「记录 goods_sign_plan」，04 未列，形状回写见 couli-runs/BE-codex/needs.md）。
+#   id bigint identity，主键 (id, first_observed_at)，按 first_observed_at RANGE 分区；索引 (app_id, product_key, source_kind, first_observed_at DESC)（写入器取最新行、B1-29 读 30 天窗口）。不建任何用户标识列。
+# 授权：couli_app SELECT、INSERT，UPDATE 只给 last_observed_at、observation_count 两列（游程只前移这两列）；不给 DELETE / TRUNCATE；couli_readonly SELECT。表名加进 app.ensure_month_partition 允许名单与 packages/db/src/partitions.ts。
+# 13 个月留存（删过期分区）不在本任务：与 union_raw_payloads 的 F5-1 同做法，另开后续任务（followups）。迁移号落地时取主干最大号 +1 并在 B3-lane/notices.md 登记；以 SET LOCAL lock_timeout / statement_timeout 开头（db/AGENTS.md）。两段式同 F1-06n。
+refs: [BR-WATCH-05, BR-WATCH-19]
+refs_hash:
+  BR-WATCH-05: 93ee2a377963
+  BR-WATCH-19: d14905e58b39
+deps: [B1-04a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'packages/db/src/partitions.ts'
+test_paths:
+  - 'test/spec/db/catalog/price-snapshot/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/catalog/price-snapshot/**'
+status: todo
+pr: null

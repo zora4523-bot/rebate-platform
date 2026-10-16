@@ -1,0 +1,24 @@
+id: CT-22a
+repo: rebate-platform
+title: 契约：GET /v1/products/{product_key}/price-trend（x-implementation planned；参数 platform；返回 status ok / no_data、points[{date, final_price_fen}]、start_date、window_days、source_key）与 texts.default.json 的 price_trend.title / .source / .empty / .title.general / .source.general
+type: contract
+# 2026-10-16 入账（be-codex，任务书 briefs/BE-codex-lane.md 候选 2）。05 CT-22 拆分：本任务只做价格走势部分；收藏、热销榜、分享页字段、favorites 表、routes.json、material-channels 等其余部分留给 CT-22b（随 B1-28 入账）。
+# 依据：04 §6.3 price-trend 行（形状、no_data 条件、只读 price_snapshot、不读第三方）、BR-TEXT-14 表 C「价格走势」两行（文案原文由编排者摘入任务书）、BR-TEXT-11（start_date 纯日期 YYYY-MM-DD）、BR-PRICE-04（无券商品用 .general 两句）。
+# source_key 取值只能是 price_trend.source 或 price_trend.source.general（枚举）；date、start_date 用 format date；final_price_fen 是整数分（金额 JSON 表示同其他 *_fen 字段）；no_data 时 points 为空数组、start_date 为 null。
+# 鉴权 none（游客可看，04 §6.3 鉴权列）；错误码只用已有的（参数不合法 20001 fields、商品不存在 / 平台不符沿用详情接口的码，按 04 §7 由实现者核对）。只增不改已有形状（oasdiff 非破坏）。
+# 契约全局串行：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 末尾登记占槽，合并后登记释放。合并后由编排者回写 04（若形状有补全）。风险：contracts RV1。
+refs: []
+refs_hash: {}
+contract_sections: ['6.3']
+deps: [CT-02h]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/texts.default.json'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
