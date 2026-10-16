@@ -18,7 +18,7 @@ export type {
   SwitchSpec,
   SwitchValueType,
 } from './domain/switch-registry.ts';
-export { switchCacheTtlMs } from './domain/cache-policy.ts';
+export { SWITCH_CACHE_TTL_MS, switchCacheTtlMs } from './domain/cache-policy.ts';
 // F1-06w: the admin console's platform mark reads, loaded by app.module on the admin entry only.
 export { ContentAdminModule } from './content-admin.module.ts';
 export { publishedPlatformIcons } from './application/published-platform-icons.ts';

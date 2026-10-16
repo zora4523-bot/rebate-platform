@@ -18,7 +18,7 @@ export type SwitchValueType =
   | { readonly kind: 'object' };
 
 /**
- * A default as written in the 04 §10.2 default column: true for on / false, false for off /
+ * A default as written in the 04 §10.2 default column: true for on, false for off /
  * false, an enum value for an enum; null where the column leaves it undecided
  * (「on / off」, 「见 BR-PROD-10 细则」) and for every object-valued switch (agent.model_route).
  */
@@ -47,13 +47,102 @@ export interface SwitchSpec {
   readonly systemWritten: boolean;
 }
 
+const ALL: readonly SwitchPermission[] = Object.freeze(['switch.all']);
+const PAYOUT: readonly SwitchPermission[] = Object.freeze(['switch.all', 'switch.payout']);
+const PAY: readonly SwitchPermission[] = Object.freeze(['switch.all', 'switch.pay']);
+const BOOLEAN: SwitchValueType = Object.freeze({ kind: 'boolean' });
+
+/** Freeze every nested value as well as the entry: callers share this pure-data registry. */
+function spec(
+  pattern: string,
+  defaultValue: SwitchDefault,
+  permissions: readonly SwitchPermission[],
+  options: {
+    readonly valueType?: SwitchValueType;
+    readonly defaultOverrides?: Readonly<Record<string, SwitchDefault>>;
+    readonly adminEditable?: boolean;
+    readonly systemWritten?: boolean;
+  } = {},
+): SwitchSpec {
+  const valueType = options.valueType ?? BOOLEAN;
+  return Object.freeze({
+    pattern,
+    valueType: Object.freeze(
+      valueType.kind === 'enum'
+        ? { kind: 'enum' as const, values: Object.freeze([...valueType.values]) }
+        : { ...valueType },
+    ),
+    defaultValue,
+    defaultOverrides: Object.freeze({ ...options.defaultOverrides }),
+    permissions: Object.freeze([...permissions]),
+    adminEditable: options.adminEditable ?? true,
+    systemWritten: options.systemWritten ?? false,
+  });
+}
+
+// 规划/04 §10.2 defaults and §11.2 permissions are recorded per key, never inferred by prefix.
+const REGISTRY: readonly SwitchSpec[] = Object.freeze([
+  spec('convert.enabled.<platform>', false, ALL),
+  spec('convert.off_reason.<platform>', 'not_launched', ALL, {
+    valueType: { kind: 'enum', values: ['not_launched', 'maintenance'] },
+  }),
+  spec('search.enabled.<platform>', null, ALL),
+  spec('parse.tpwd.enabled', true, ALL),
+  spec('pdd.direct_convert.enabled', false, ALL),
+  spec('agent.enabled', true, ALL),
+  // Enabling public access requires the registration-number check owned by the agent module.
+  spec('agent.whitelist_only', true, ALL, { adminEditable: false }),
+  // RouteSelection belongs to agent; the default-column label "primary" is not that object.
+  spec('agent.model_route', null, ALL, {
+    valueType: { kind: 'object' },
+    adminEditable: false,
+  }),
+  spec('agent.tools.<name>.enabled', true, ALL),
+  spec('agent.page_guide.enabled', true, ALL),
+  spec('withdraw.enabled', true, PAYOUT),
+  spec('withdraw.auto_payout.enabled', false, ALL),
+  spec('payout.enabled', true, PAYOUT),
+  // System writes also require the same version comparison and history as admin writes.
+  spec('payout.queue_paused', false, PAYOUT, { systemWritten: true }),
+  spec('payout.channel_enabled.<channel>', null, PAYOUT, {
+    defaultOverrides: { alipay: true, bank_card: false, wechat: false },
+  }),
+  spec('payout.channel_paused.<channel>', false, PAYOUT, { systemWritten: true }),
+  spec('pay.enabled', null, PAY),
+  spec('pay.channel_enabled.<pay_channel>', null, PAY),
+  spec('settle.auto.enabled', true, ALL, { systemWritten: true }),
+  spec('credit.enabled.<platform>', false, ALL),
+  spec('claims.enabled', true, ALL),
+  spec('order_sync.promo_mode', false, ALL),
+  spec('jev.enabled', false, ALL),
+  spec('tlj.enabled', false, ALL),
+  spec('growth.invite_bind.enabled', true, ALL),
+  spec('watch.enabled.<platform>', false, ALL),
+]);
+
+const PLACEHOLDERS = new Set(['<platform>', '<channel>', '<pay_channel>', '<name>']);
+const PATTERNS = REGISTRY.map((entry) => ({ entry, segments: entry.pattern.split('.') }));
+
 /** Every registered switch, one entry per key or key pattern of 04 §10.2. */
 export function switchRegistry(): readonly SwitchSpec[] {
-  throw new Error('NotImplemented: switchRegistry');
+  return REGISTRY;
 }
 
 /** The registered switch `key` belongs to, or null when `key` is not an emergency switch. */
 export function switchSpecOf(key: string): SwitchSpec | null {
-  void key;
-  throw new Error('NotImplemented: switchSpecOf');
+  const parts = key.split('.');
+  for (const { entry, segments } of PATTERNS) {
+    if (
+      segments.length === parts.length &&
+      segments.every((segment, index) => {
+        const part = parts[index];
+        if (!PLACEHOLDERS.has(segment)) return segment === part;
+        // Reject every disallowed character, including a final newline (JS `$` permits it).
+        return part !== undefined && part.length > 0 && !/[^a-z0-9_]/u.test(part);
+      })
+    ) {
+      return entry;
+    }
+  }
+  return null;
 }

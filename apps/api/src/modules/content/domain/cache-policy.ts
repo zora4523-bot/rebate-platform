@@ -5,6 +5,9 @@
 /** How long an entry is served after the load that produced it started. */
 export const CONTENT_CACHE_TTL_MS = 60_000;
 
+/** Emergency switches refresh from PostgreSQL at most five seconds after a load starts. */
+export const SWITCH_CACHE_TTL_MS = 5_000;
+
 /**
  * Whether an entry whose load started at `loadedAtMs` may still be served at `nowMs`: only while
  * its age is in [0, ttlMs). It has expired at age >= ttlMs. A clock that is now before the load
@@ -21,5 +24,5 @@ export function isFresh(loadedAtMs: number, nowMs: number, ttlMs: number): boole
  * §10.2). Every other key keeps CONTENT_CACHE_TTL_MS.
  */
 export function switchCacheTtlMs(): number {
-  throw new Error('NotImplemented: switchCacheTtlMs');
+  return SWITCH_CACHE_TTL_MS;
 }
