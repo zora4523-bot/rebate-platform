@@ -111,3 +111,4 @@ export { createPriceHistoryRecorder, type PriceHistoryWiring } from './catalog.m
 export * from './price-history/index.ts';
 export * from './price-trend/index.ts';
 export type { CatalogConfigReaderFactory } from './catalog.module.ts';
+export * from './favorites/index.ts';
