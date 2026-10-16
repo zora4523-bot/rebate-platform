@@ -16,4 +16,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/risk/min-version/**'
-status: todo
+status: done
+pr: 537

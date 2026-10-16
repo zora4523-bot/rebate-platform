@@ -18,4 +18,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/risk/min-version/**'
   - 'test/spec/risk/rate-limit/**'
-status: todo
+status: done
+pr: 518
