@@ -130,7 +130,11 @@ it.each(['pending_auth', 'invalid'] as const)(
       pidScene: 'self_buy',
       purpose: 'convert',
     });
-    f.getActivePid.mockResolvedValue({ ...slot!, union_account_id: selected });
+    // B1-06zb: an account-scoped lookup only ever returns that account's slot (B1-19d); the
+    // unscoped lookup still answers with the other account's slot. Expectations unchanged.
+    f.getActivePid.mockImplementation(async (query) =>
+      query.unionAccountId === undefined ? { ...slot!, union_account_id: selected } : slot,
+    );
     await listed(await f.list(), 'active');
     expect(await f.bindings()).toEqual([
       expect.objectContaining({
