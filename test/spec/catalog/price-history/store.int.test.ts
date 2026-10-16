@@ -457,6 +457,9 @@ it('[AC-B1-17b#42] 并发：同键 8 个同时写入同价（3 轮新键）只�
 
 it('[AC-B1-17b#43] 数据库不可用：record 不抛、drain 完成，只尝试一次、计数 + 1、warn code=PRICE_SNAPSHOT_WRITE_FAILED，无行写入', async () => {
   const deadDb = createDb({ connectionString: database.urlFor('couli_app'), max: 1 });
+  // Kysely's destroy() is a no-op on a driver that was never initialised; run one query first so
+  // destroyDb really ends the pool (orchestrator's mechanical fix, B1-17b CI verify-int run 1).
+  await sql`SELECT 1`.execute(deadDb);
   await destroyDb(deadDb);
   const store = createKyselyPriceSnapshotStore(deadDb);
   const spied = {
