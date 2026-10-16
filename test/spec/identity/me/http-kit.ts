@@ -3,17 +3,68 @@
 // here calls a B1-02z skeleton. Every fixture uses a fresh app_id, and every row it needs is in
 // place before the first GET of that user, so no read cache (risk ≤60 s, content config) can hold
 // an older value. Sources: 04 §6.1, §2.5; 08 BR-ID-01, BR-ID-12, BR-INV-07, BR-INV-18, BR-INV-21;
-// task brief §9.3.
+// task brief §9.3 (item 13: orchestrator rulings D22 / D23 on the default avatar address).
 import { randomBytes, randomUUID } from 'node:crypto';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sql } from 'kysely';
 import { expect } from 'vitest';
-import type { Response } from '../sms-codes/http-kit.ts';
+import { buildApp, type Response } from '../sms-codes/http-kit.ts';
+import { memoryLogger } from '../sms-codes/kit.ts';
 import { seedUser } from '../registration/kit.ts';
-import { openKit, closeKit, type Kit } from '../tips/http-kit.ts';
-
-export { openKit, closeKit, type Kit };
+import { openSuite, closeSuite } from '../session/kit.ts';
+import { closeKit as closeTipsKit, NOW, type Kit as TipsKit } from '../tips/http-kit.ts';
 
 const ROOT = new URL('../../../../', import.meta.url);
+type ClockModule = typeof import('../../../../apps/api/src/modules/platform/clock/index.ts');
+type ValidatorModule =
+  typeof import('../../../../apps/api/src/modules/platform/validation/index.ts');
+
+/** The tips kit plus the pino lines the api wrote (one JSON object per line). */
+export type Kit = TipsKit & { lines: string[] };
+
+/** Same app as test/spec/identity/tips (real AppModule), keeping the in-memory log lines. */
+export async function openKit(): Promise<Kit> {
+  // openSuite -> createTestDatabase (@couli/db/testing); no hard-coded database address.
+  const suite = await openSuite();
+  const base = fileURLToPath(new URL('.tmp/', ROOT));
+  mkdirSync(base, { recursive: true });
+  const dir = mkdtempSync(join(base, 'b1-02z-'));
+  let app: TipsKit['app'] | undefined;
+  try {
+    const { FixedClock } = (await import(
+      new URL('apps/api/src/modules/platform/clock/index.ts', ROOT).href
+    )) as ClockModule;
+    const { createValidatorCompiler } = (await import(
+      new URL('apps/api/src/modules/platform/validation/index.ts', ROOT).href
+    )) as ValidatorModule;
+    const clock = new FixedClock(NOW);
+    const { logger, lines } = memoryLogger();
+    app = (await buildApp(suite.db, dir, suite.server.url, clock, logger)) as TipsKit['app'];
+    await app.init();
+    const requireApi = createRequire(new URL('apps/api/package.json', ROOT));
+    const parser = requireApi('@readme/openapi-parser') as {
+      dereference(path: string, options: object): Promise<TipsKit['document']>;
+    };
+    const document = await parser.dereference(
+      fileURLToPath(new URL('contracts/openapi.yaml', ROOT)),
+      { resolve: { external: false } },
+    );
+    return { suite, app, dir, clock, document, compile: createValidatorCompiler(), lines };
+  } catch (error) {
+    await app?.close();
+    await closeSuite(suite);
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+export async function closeKit(kit: Kit | undefined): Promise<void> {
+  await closeTipsKit(kit);
+}
+
 export const ME = '/v1/me';
 /** A whole second, so 168 h later is the boundary itself whatever precision is kept. */
 export const CREATED = '2031-05-06T07:08:09.000Z';
@@ -22,6 +73,10 @@ export const HOUR = 3_600_000;
 export const BACKFILL_MS = 168 * HOUR;
 /** domain/registration.ts DEFAULT_AVATAR: what a new account is created with. */
 export const DEFAULT_AVATAR = 'avatar:default';
+/** Config key holding the per-app default avatar address (brief §9.3 item 13, D22 / D23). */
+export const AVATAR_KEY = 'me.default_avatar_url';
+/** What fixture() writes to AVATAR_KEY for every new app unless told otherwise. */
+export const DEFAULT_AVATAR_URL = 'https://cdn.example.test/avatar/default.png';
 export const NICKNAME = '凑狸用户 8000';
 export type Scope = 'full' | 'deletion_only';
 export type Platform = 'taobao' | 'pdd';
@@ -53,9 +108,14 @@ export interface UserOptions {
   parentId?: string;
   selfBindUsed?: boolean;
   avatar?: string;
+  /** AVATAR_KEY of a new app: undefined → DEFAULT_AVATAR_URL, null → no config row. */
+  avatarUrl?: string | null;
 }
 
-/** A new app (app_versions row) and one user created at CREATED; the Clock is CREATED + 1 h. */
+/**
+ * A new app (app_versions row, and AVATAR_KEY unless avatarUrl is null) and one user created at
+ * CREATED; the Clock is CREATED + 1 h.
+ */
 export async function fixture(kit: Kit, options: UserOptions = {}) {
   kit.clock.set(instant(HOUR));
   const appId = options.appId ?? `me_${randomBytes(12).toString('hex')}`;
@@ -77,6 +137,8 @@ export async function fixture(kit: Kit, options: UserOptions = {}) {
         store_listings: JSON.stringify([]),
       })
       .execute();
+    const avatarUrl = options.avatarUrl === undefined ? DEFAULT_AVATAR_URL : options.avatarUrl;
+    if (avatarUrl !== null) await config(kit, appId, AVATAR_KEY, avatarUrl);
   }
   const uid = await seedUser(db, appId, {
     method: options.method ?? 'wechat',
@@ -176,6 +238,33 @@ export function envelope(kit: Kit, response: Response, code = 0): unknown {
   const validate = kit.compile({ schema, httpPart: 'body' });
   expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
   return body.data;
+}
+
+/** A 50001 answer: HTTP 500 and the contract's 5XX envelope (no data). */
+export function serverError(kit: Kit, response: Response): void {
+  expect(response.statusCode).toBe(500);
+  const body = response.json<{ code: number }>();
+  expect(body).toMatchObject({
+    code: 50001,
+    msg: expect.any(String),
+    trace_id: expect.any(String),
+  });
+  const operation = kit.document.paths[ME]!['get']! as {
+    responses: Record<string, { content: Record<string, { schema: Record<string, unknown> }> }>;
+  };
+  const schema = operation.responses['5XX']!.content['application/json']!.schema;
+  const validate = kit.compile({ schema, httpPart: 'body' });
+  expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
+}
+
+/** The pino lines written since `from` (kit.lines.length taken before the request). */
+export function linesSince(kit: Kit, from: number): string[] {
+  return kit.lines.slice(from);
+}
+
+/** pino level 40 lines among the given ones. */
+export function warnings(lines: string[]): string[] {
+  return lines.filter((line) => (JSON.parse(line) as { level?: unknown }).level === 40);
 }
 
 /** GET /v1/me data: HTTP 200, code 0, and the body passes the contract schema. */

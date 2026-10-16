@@ -2,11 +2,14 @@
 // no code), so every case is red on an assertion until the implementation and the mechanical
 // removal of x-implementation: planned. Rule sources: BR-ID-01 (identity level from the database),
 // BR-ID-12 (need_reconsent), BR-INV-07 (a)(b)(c) + BR-INV-21 (invite_backfill and the switch),
-// BR-INV-18 (banned → invite_code null), OPS-12 (risk), OPS-20 (no user level); brief §9.3.
+// BR-INV-18 (banned → invite_code null), OPS-12 (risk), OPS-20 (no user level); brief §9.3
+// (item 13, D22 / D23: the sentinel avatar answers the app's me.default_avatar_url).
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
+  AVATAR_KEY,
   BACKFILL_MS,
   DEFAULT_AVATAR,
+  DEFAULT_AVATAR_URL,
   HOUR,
   ME,
   NICKNAME,
@@ -21,11 +24,14 @@ import {
   envelope,
   fixture,
   instant,
+  linesSince,
   me,
   openKit,
   operation,
   order,
   riskState,
+  serverError,
+  warnings,
   type Kit,
 } from './http-kit.ts';
 
@@ -52,7 +58,7 @@ it('[AC-B1-02z#1] 新微信号：member、未绑手机、默认昵称头像、�
   expect(data).toEqual({
     user_id: f.uid,
     nickname: NICKNAME,
-    avatar_url: DEFAULT_AVATAR,
+    avatar_url: DEFAULT_AVATAR_URL,
     invite_code: row.invite_code,
     inviter_bound: false,
     invite_backfill: { eligible: true, deadline_at: expect.any(String) },
@@ -456,4 +462,65 @@ it('[AC-B1-02z#33] 契约 getMe 已实现：不再标 planned，接受 full 与 
   expect(op['x-implementation']).toBeUndefined();
   expect(op['x-session-scopes']).toEqual(['full', 'deletion_only']);
   expect(op['x-auth']).toBe('login');
+});
+
+it('[AC-B1-02z#34] 默认头像哨兵 avatar:default → avatar_url 为本 app 配置的 me.default_avatar_url，库里的哨兵不变', async () => {
+  const f = await fixture(kit, { avatar: DEFAULT_AVATAR });
+  const data = me(kit, await f.get());
+  expect(data.avatar_url).toBe(DEFAULT_AVATAR_URL);
+  expect(data.avatar_url).not.toBe(DEFAULT_AVATAR);
+  expect((await f.row()).avatar).toBe(DEFAULT_AVATAR);
+  // deletion_only answers the same address.
+  expect(me(kit, await f.get('deletion_only')).avatar_url).toBe(DEFAULT_AVATAR_URL);
+});
+
+it('[AC-B1-02z#35] 哨兵头像而本 app 没有 me.default_avatar_url → 50001，记一条告警，日志不含 user_id、昵称、手机号', async () => {
+  const f = await fixture(kit, { phone: true, method: 'sms', avatarUrl: null });
+  await f.session();
+  const row = await f.row();
+  const from = kit.lines.length;
+  serverError(kit, await f.get());
+  const lines = linesSince(kit, from);
+  expect(warnings(lines)).toHaveLength(1);
+  const written = lines.join('\n');
+  expect(written).not.toContain(f.uid);
+  expect(written).not.toContain(NICKNAME);
+  expect(written).not.toContain(row.phone_hmac!);
+  // The user row is not changed by the failed read.
+  expect(await f.row()).toEqual(row);
+});
+
+for (const [label, value] of [
+  ['http:// 地址', 'http://cdn.example.test/avatar/default.png'],
+  ['相对路径', '/static/avatar/default.png'],
+] as const) {
+  it(`[AC-B1-02z#36] me.default_avatar_url 不是 https 绝对地址（${label}）→ 哨兵头像用户得 50001 并记一条告警`, async () => {
+    const f = await fixture(kit, { avatarUrl: value });
+    await f.session();
+    const from = kit.lines.length;
+    serverError(kit, await f.get());
+    const lines = linesSince(kit, from);
+    expect(warnings(lines)).toHaveLength(1);
+    expect(lines.join('\n')).not.toContain(f.uid);
+  });
+}
+
+it('[AC-B1-02z#37] me.default_avatar_url 按 app 取：两个 app 配不同地址，各自的哨兵用户各得本 app 的地址', async () => {
+  const firstUrl = 'https://cdn.example.test/avatar/app-one.png';
+  const secondUrl = 'https://static.example.test/brand-two/default-avatar.png';
+  const first = await fixture(kit, { avatarUrl: firstUrl });
+  const second = await fixture(kit, { avatarUrl: secondUrl });
+  const firstPeer = await fixture(kit, { appId: first.appId });
+  expect(me(kit, await first.get()).avatar_url).toBe(firstUrl);
+  expect(me(kit, await second.get()).avatar_url).toBe(secondUrl);
+  expect(me(kit, await firstPeer.get()).avatar_url).toBe(firstUrl);
+  const rows = await kit.suite.db
+    .withSchema('app')
+    .selectFrom('config_items')
+    .select(['app_id', 'value'])
+    .where('key', '=', AVATAR_KEY)
+    .where('app_id', 'in', [first.appId, second.appId])
+    .orderBy('app_id')
+    .execute();
+  expect(rows).toHaveLength(2);
 });
