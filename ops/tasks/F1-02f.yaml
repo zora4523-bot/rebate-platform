@@ -6,7 +6,8 @@ type: impl
 # contracts/openapi.yaml listArticles / getArticle、ArticleSummary（Notice / Plain）、NoticeItem（不可关闭的公告必须有 end_at）、30701。
 # 规则摘录与裁定见 couli-runs/F1-02f/decision-orchestrator.md，摘入任务书第 9 节（「已发布」的 status 取值、NoticeItem 的 text / target 来源、排序与游标、非法 article_id 按 30701）。
 # 台账评审 S2：BR-ID-11 里的服务端 IP 限流（risk 模块）与客户端首启闸门不在本任务 paths，规则测试评审按 out_of_scope 处理。
-# 去掉两条的 planned，重生成两个生成物。契约槽同 F1-02c。
+# 去掉两条的 planned 由机械提交做。契约槽同 F1-02c。
+# 2026-10-16 改为 Codex 实现（未开工）：ops/approvals.yaml 第 30、31 条；Claude 子代理先写规则测试 → Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → 编排者机械提交（只删 planned + pnpm contracts:codegen，Couli-Mechanical: contract-codegen）→ Claude 新子代理评审。
 refs: [BR-TEXT-13, BR-ID-11]
 refs_hash:
   BR-TEXT-13: 87d129361c25
@@ -15,13 +16,14 @@ deps: [F1-02a, F1-02c]
 paths:
   - 'apps/api/src/modules/content/**'
   - 'apps/api/src/app.module.ts'
+mechanical_paths:
   - 'contracts/openapi.yaml'
-  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
 test_paths:
   - 'test/spec/content/articles/**'
-impl: claude
-tester: codex
+impl: codex
+tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/content/articles/**'
