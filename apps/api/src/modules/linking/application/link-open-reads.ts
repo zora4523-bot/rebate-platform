@@ -51,6 +51,20 @@ function through<T>(reader: object, key: string, what: string, load: () => Promi
   return value;
 }
 
+/** B2-03d: generic entry to the per-open read scope, shared by quote ports. */
+export function openScopedReader<T>(
+  reader: object,
+  key: string,
+  what: string,
+  load: () => Promise<T>,
+): Promise<T> {
+  void reader;
+  void key;
+  void what;
+  void load;
+  throw new Error('NotImplemented: openScopedReader');
+}
+
 /**
  * Runs one open: `prepare` pre-reads through the wrapped readers (no transaction is open yet),
  * then `run` executes with the reads locked to what was pre-read.

@@ -55,6 +55,7 @@ export type {
 export { createTaobaoLinkOpen } from './application/link-open-taobao.ts';
 export type { TaobaoLinkOpenOptions } from './application/link-open-taobao.ts';
 export { openScopedConfig } from './application/link-open-reads.ts';
+export { openScopedReader } from './application/link-open-reads.ts';
 export { loadLinkOpenApps } from './infra/apps-json.ts';
 export { createLinkOpenRequote } from './application/link-open-requote.ts';
 export type {
