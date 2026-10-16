@@ -842,6 +842,7 @@ export interface Sessions {
   created_at: Generated<Timestamp>;
   device_id: string;
   id: string;
+  login_method: string | null;
   revoke_reason: string | null;
   revoked_at: Timestamp | null;
   sid: string;
@@ -961,11 +962,13 @@ export interface UnionRawPayloads {
 
 export interface UserOauth {
   app_id: string;
+  apple_refresh_token_cipher: Buffer | null;
   created_at: Generated<Timestamp>;
   id: string;
   merged_from_user_id: string | null;
   open_id: string | null;
   provider: string;
+  revoked_at: Timestamp | null;
   row_version: Generated<number>;
   union_id: string;
   updated_at: Generated<Timestamp>;
