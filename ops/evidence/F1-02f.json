@@ -1,0 +1,115 @@
+{
+  "task": "F1-02f",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "a5bafa93a4bc994d5c46e3e2ea4a716c86e9c402",
+  "red_tests": [
+    "test/spec/content/articles/detail.int.test.ts > [AC-F1-02f#7] a published article is returned whole, anonymously, and passes ArticleResponse",
+    "test/spec/content/articles/detail.int.test.ts > [AC-F1-02f#7] ids that are not lowercase canonical UUIDs are 404 / 30701, never 500",
+    "test/spec/content/articles/detail.int.test.ts > [AC-F1-02f#7] an unknown UUID or another app’s article is 404 / 30701",
+    "test/spec/content/articles/detail.int.test.ts > [AC-F1-02f#7] an id above 64 characters or a version below 1 fails route validation with 20001",
+    "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#5] a notice item carries NoticeItem from the current revision; content_version is notice_content_version, not version",
+    "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#5] notice_content_version is reported as stored even when it differs from both 1 and version",
+    "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#5] help, rule and agreement items have no notice key and ignore the notice columns",
+    "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#6] the notice list holds only items inside [published_at, notice_end_at); detail ignores the window",
+    "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#6] excluded notices are filtered before paging, so every non-final page is full",
+    "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#9] results are read fresh per request: a new article shows up without moving the clock",
+    "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] one full page lists the current versions by published_at DESC, id DESC",
+    "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] paging with limit=1 visits every article once, in order, ending with next_cursor null",
+    "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] paging with limit=2 visits every article once, in order, ending with next_cursor null",
+    "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] paging with limit=3 visits every article once, in order, ending with next_cursor null",
+    "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] the last full page still says next_cursor null when nothing follows",
+    "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] without limit at most 20 items come back; limit=50 returns all 21",
+    "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] a cursor from another category, or a malformed cursor, is 400 / 20001 with fields [cursor]",
+    "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] limit outside 1–50 is 400 / 20001",
+    "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#1] only status exactly \"published\" with published_at set and not in the future counts as published",
+    "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#1] a scheduled article becomes visible once the injected clock reaches published_at",
+    "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#2] the current version is the highest published revision; drafts, scheduled and unknown versions are 30701",
+    "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#2] when only the first revision is a draft, a later published revision is current and the draft stays unreadable",
+    "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#3] the category comes from the current version: help v1 then rule v2 lists only under rule",
+    "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#8] another app’s published articles never enter this app’s list or detail"
+  ],
+  "risk_note": "RV2 (content client read APIs; contract). GET /v1/articles (category, cursor paging by published_at microseconds + id with the category in the cursor; 20001 fields=[cursor] on a foreign or broken cursor) and GET /v1/articles/{article_id} (optional version): published versions only (status 'published' and published_at <= now from the injected Clock), the highest published version per article, notices carry NoticeItem with the half-open window and malformed non-closable rows without end_at excluded in SQL; non-canonical lowercase UUID ids are 30701 without a database query; app_id isolation; read-only, no cache, no funds. Codex implementation (ledger impl: codex, approvals 30); the contract change (listArticles, getArticle leave x-implementation planned; route-schemas.gen.ts regenerated) is the orchestrator's mechanical commit with Couli-Mechanical: contract-codegen (approvals 31). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a5bafa93a4bc994d5c46e3e2ea4a716c86e9c402",
+      "tree": "fb95a02b050f9ead8789a32bf1010039ccb590b9",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T19:57:57Z",
+      "finished_at": "2026-10-16T19:58:05Z",
+      "red_tests": [
+        "test/spec/content/articles/detail.int.test.ts > [AC-F1-02f#7] a published article is returned whole, anonymously, and passes ArticleResponse",
+        "test/spec/content/articles/detail.int.test.ts > [AC-F1-02f#7] ids that are not lowercase canonical UUIDs are 404 / 30701, never 500",
+        "test/spec/content/articles/detail.int.test.ts > [AC-F1-02f#7] an unknown UUID or another app’s article is 404 / 30701",
+        "test/spec/content/articles/detail.int.test.ts > [AC-F1-02f#7] an id above 64 characters or a version below 1 fails route validation with 20001",
+        "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#5] a notice item carries NoticeItem from the current revision; content_version is notice_content_version, not version",
+        "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#5] notice_content_version is reported as stored even when it differs from both 1 and version",
+        "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#5] help, rule and agreement items have no notice key and ignore the notice columns",
+        "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#6] the notice list holds only items inside [published_at, notice_end_at); detail ignores the window",
+        "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#6] excluded notices are filtered before paging, so every non-final page is full",
+        "test/spec/content/articles/notice.int.test.ts > [AC-F1-02f#9] results are read fresh per request: a new article shows up without moving the clock",
+        "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] one full page lists the current versions by published_at DESC, id DESC",
+        "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] paging with limit=1 visits every article once, in order, ending with next_cursor null",
+        "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] paging with limit=2 visits every article once, in order, ending with next_cursor null",
+        "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] paging with limit=3 visits every article once, in order, ending with next_cursor null",
+        "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] the last full page still says next_cursor null when nothing follows",
+        "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] without limit at most 20 items come back; limit=50 returns all 21",
+        "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] a cursor from another category, or a malformed cursor, is 400 / 20001 with fields [cursor]",
+        "test/spec/content/articles/paging.int.test.ts > [AC-F1-02f#4] limit outside 1–50 is 400 / 20001",
+        "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#1] only status exactly \"published\" with published_at set and not in the future counts as published",
+        "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#1] a scheduled article becomes visible once the injected clock reaches published_at",
+        "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#2] the current version is the highest published revision; drafts, scheduled and unknown versions are 30701",
+        "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#2] when only the first revision is a draft, a later published revision is current and the draft stays unreadable",
+        "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#3] the category comes from the current version: help v1 then rule v2 lists only under rule",
+        "test/spec/content/articles/published.int.test.ts > [AC-F1-02f#8] another app’s published articles never enter this app’s list or detail"
+      ],
+      "expected": [
+        "test/spec/content/articles/detail.int.test.ts",
+        "test/spec/content/articles/notice.int.test.ts",
+        "test/spec/content/articles/paging.int.test.ts",
+        "test/spec/content/articles/published.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "1ef91bff67e61c26c7b76b0906775c360a6c18a0ac03214e65d848248931b7c6"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "fresh Claude subagent, round 1 pass with no findings (bound to the head after the mechanical commit)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "24 rule tests in 4 files by a Claude subagent reviewed by a fresh Codex read-only session: round 1 pass with no findings"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6875085aaa560985594fed987c2caeba34f571eb",
+    "test/spec": "1ee8a561f57f36234c37b8eeb4c9c33fcb7e5a0c",
+    "specs": "4b37a92670828e2b8c3e0734ecb85eb5371a7277"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "6875085aaa560985594fed987c2caeba34f571eb"
+  }
+}
