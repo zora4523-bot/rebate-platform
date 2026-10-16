@@ -10,6 +10,15 @@ import { CachedContentReader, type ContentReader } from './application/content-r
 import { createKyselyContentStore } from './infra/kysely-content-store.ts';
 
 export type { ConfigValue, ContentConfig, ContentReader } from './application/content-reader.ts';
+// F1-10b: emergency switch registry (规划/04 §10.2) and the switch read cache lifetime.
+export { switchRegistry, switchSpecOf } from './domain/switch-registry.ts';
+export type {
+  SwitchDefault,
+  SwitchPermission,
+  SwitchSpec,
+  SwitchValueType,
+} from './domain/switch-registry.ts';
+export { switchCacheTtlMs } from './domain/cache-policy.ts';
 // F1-06w: the admin console's platform mark reads, loaded by app.module on the admin entry only.
 export { ContentAdminModule } from './content-admin.module.ts';
 export { publishedPlatformIcons } from './application/published-platform-icons.ts';
