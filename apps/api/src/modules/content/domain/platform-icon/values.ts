@@ -25,24 +25,40 @@ const KEYWORDS: Readonly<Record<string, readonly string[]>> = {
   'clip-rule': ['nonzero', 'evenodd'],
 };
 
-function isColor(value: string): boolean {
-  return (
-    value === 'currentColor' ||
-    HEX_COLOR.test(value) ||
-    RGB_COLOR.test(value) ||
-    NAMED_COLORS.has(value)
-  );
+/** ASCII-only lower case: CSS keywords are ASCII case-insensitive, never locale- or Unicode-folded. */
+function asciiLower(value: string): string {
+  return value.replace(/[A-Z]/g, (letter) => String.fromCharCode(letter.charCodeAt(0) + 32));
 }
 
-/** `none`, a colour, or `url(#id)` with an optional `none` / colour fallback. */
-function isPaint(value: string): boolean {
-  if (value === 'none' || isColor(value)) return true;
+/**
+ * The canonical attribute form of a colour, or null when the value is not one. Keywords and the
+ * rgb( function name match ASCII case-insensitively and are written as `currentColor`, the
+ * lower-case colour name and `rgb(`; hex colours are case-insensitive already and stay as given.
+ */
+function colorValue(value: string): string | null {
+  if (HEX_COLOR.test(value)) return value;
+  const lower = asciiLower(value);
+  if (lower === 'currentcolor') return 'currentColor';
+  if (NAMED_COLORS.has(lower)) return lower;
+  if (RGB_COLOR.test(lower)) return `rgb(${value.slice('rgb('.length)}`;
+  return null;
+}
+
+/**
+ * `none`, a colour, or `url(#id)` with an optional `none` / colour fallback; returns the attribute
+ * form (colours canonical, the url reference — whose id is case-sensitive — unchanged) or null.
+ */
+function paintValue(value: string): string | null {
+  if (value === 'none') return value;
+  const color = colorValue(value);
+  if (color !== null) return color;
   const space = value.indexOf(' ');
   const reference = space < 0 ? value : value.slice(0, space);
-  if (!LOCAL_URL.test(reference)) return false;
-  if (space < 0) return true;
+  if (!LOCAL_URL.test(reference)) return null;
+  if (space < 0) return reference;
   const fallback = value.slice(space + 1);
-  return fallback === 'none' || isColor(fallback);
+  const fallbackValue = fallback === 'none' ? fallback : colorValue(fallback);
+  return fallbackValue === null ? null : `${reference} ${fallbackValue}`;
 }
 
 function isNonNegativeLength(value: string): boolean {
@@ -109,42 +125,42 @@ function convertTransform(value: string): string {
 
 /**
  * Returns the attribute value for a whitelisted declaration (whitespace collapsed; transform
- * rewritten in SVG syntax), or rejects the document when SVG would read it differently.
+ * rewritten in SVG syntax; colours in canonical form), or rejects the document when SVG would read it differently.
  */
 export function presentationValue(property: string, value: string): string {
   const collapsed = value.trim().replace(/\s+/g, ' ');
   if (property === 'transform') return convertTransform(collapsed);
   if (collapsed === 'inherit') return collapsed;
-  let valid: boolean;
+  let converted: string | null;
   switch (property) {
     case 'fill':
     case 'stroke':
-      valid = isPaint(collapsed);
+      converted = paintValue(collapsed);
       break;
     case 'stop-color':
-      valid = isColor(collapsed);
+      converted = colorValue(collapsed);
       break;
     case 'stroke-width':
-      valid = isNonNegativeLength(collapsed);
+      converted = isNonNegativeLength(collapsed) ? collapsed : null;
       break;
     case 'stroke-dasharray':
-      valid = isDashArray(collapsed);
+      converted = isDashArray(collapsed) ? collapsed : null;
       break;
     case 'stroke-miterlimit':
-      valid = NON_NEGATIVE.test(collapsed) && Number(collapsed) >= 1;
+      converted = NON_NEGATIVE.test(collapsed) && Number(collapsed) >= 1 ? collapsed : null;
       break;
     case 'opacity':
     case 'fill-opacity':
     case 'stroke-opacity':
     case 'stop-opacity':
       // SVG 1.1 opacity is a bare number; CSS percentages are not read by the attribute.
-      valid = NUMBER_ONLY.test(collapsed);
+      converted = NUMBER_ONLY.test(collapsed) ? collapsed : null;
       break;
     default:
-      valid = KEYWORDS[property]?.includes(collapsed) ?? false;
+      converted = (KEYWORDS[property]?.includes(collapsed) ?? false) ? collapsed : null;
   }
-  if (!valid) unconvertible(`${property} value has no faithful SVG attribute form`);
-  return collapsed;
+  if (converted === null) unconvertible(`${property} value has no faithful SVG attribute form`);
+  return converted;
 }
 
 // ------------------------------------------------------------------ transform attribute

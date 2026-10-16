@@ -465,7 +465,6 @@ it.each([
   ['fill', 'rgba(0,0,0,0.5)'],
   ['fill', 'hsl(0, 100%, 50%)'],
   ['fill', '#ff000080'],
-  ['fill', 'RED'],
   ['fill', 'notacolor'],
   ['fill', 'transparent'],
   ['fill', 'red blue'],
@@ -488,6 +487,49 @@ it.each([
       svg(
         `<defs><linearGradient id="g"><stop offset="0"/></linearGradient></defs><${tag} style="${name}: ${value}"/>`,
       ),
+    ),
+  ).toBe('icon_svg_unconvertible');
+});
+
+// ---------------------------------------------------------------- round 4: colour keyword case
+
+it.each([
+  ['fill: currentcolor', 'fill', 'currentColor'],
+  ['fill:CurrentColor', 'fill', 'currentColor'],
+  ['fill: CURRENTCOLOR', 'fill', 'currentColor'],
+  ['stroke:RED', 'stroke', 'red'],
+  ['stroke: DarkSlateGray', 'stroke', 'darkslategray'],
+  ['fill: RGB(255, 0, 0)', 'fill', 'rgb(255, 0, 0)'],
+  ['fill: Rgb(100%,0%,0%)', 'fill', 'rgb(100%,0%,0%)'],
+  ['fill: #ABCDEF', 'fill', '#ABCDEF'],
+  ['fill:url(#Grad) RED', 'fill', 'url(#Grad) red'],
+  ['stroke: url(#Grad) CurrentColor', 'stroke', 'url(#Grad) currentColor'],
+  ['fill: url(#Grad)', 'fill', 'url(#Grad)'],
+])(
+  '[AC-F1-06v] colour keywords match ASCII case-insensitively and are written canonically: %s',
+  (declaration, name, value) => {
+    const source = `<defs><linearGradient id="Grad"/></defs><path d="M0 0L1 1" style="${declaration}"/>`;
+    expect(all(clean(svg(source)).document, 'path')[0]!.getAttribute(name)).toBe(value);
+  },
+);
+
+it('[AC-F1-06v] stop-color keyword case is canonicalized too', () => {
+  const source =
+    '<defs><linearGradient id="g"><stop offset="0" style="stop-color: NAVY"/></linearGradient></defs>';
+  expect(all(clean(svg(source)).document, 'stop')[0]!.getAttribute('stop-color')).toBe('navy');
+});
+
+it.each([
+  ['fill', 'notacolor'],
+  ['fill', 'NOTACOLOR'],
+  // U+212A KELVIN SIGN lower-cases to "k" under Unicode folding; ASCII-only matching rejects it.
+  ['fill', '\u212Ahaki'],
+  ['fill', 'url(#Grad) NOTACOLOR'],
+  ['fill', 'RGBA(0,0,0,0.5)'],
+])('[AC-F1-06v] non-colours stay unconvertible whatever their case: %s: %s', (name, value) => {
+  expect(
+    rejected(
+      svg(`<defs><linearGradient id="Grad"/></defs><path d="M0 0" style="${name}: ${value}"/>`),
     ),
   ).toBe('icon_svg_unconvertible');
 });
