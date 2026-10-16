@@ -9,12 +9,16 @@ assume_in_transaction = true
 # Excluded after a trial run over 0001–0018 (CT-06a):
 # - prefer-bigint-over-int: ratios (_bp) and counters are `integer` by ADR-0001 §4. Money columns
 #   (`*_fen`) must still be bigint: tools/ci/lint-migrations.ts rejects any other type itself.
+# - prefer-bigint-over-smallint: ratio columns (_bp) are `smallint` where 规划/04 §3.2 and 08 BR-CALC-05 say
+#   so (commission_rules r_*_bp, commission_rule_reserves reserve_bp), bounded by CHECK 0–8000 / 0–10000;
+#   ADR-0001 §4 fixes ratios as integer basis points without a width. Money columns are unaffected (see above).
+#   Added by CT-06m (2026-10-16, orchestrator decision; B2-01d).
 # - require-concurrent-index-creation: impossible inside the transaction the runner opens
 #   (packages/db/scripts/migrate.ts); an index on a large existing table needs its own
 #   out-of-transaction step (not supported yet).
 # Kept on purpose: require-lock-timeout and require-statement-timeout — every new migration starts
 # with `SET LOCAL lock_timeout = '…'; SET LOCAL statement_timeout = '…';` (db/AGENTS.md rule 11).
-excluded_rules = ["prefer-bigint-over-int", "require-concurrent-index-creation"]
+excluded_rules = ["prefer-bigint-over-int", "prefer-bigint-over-smallint", "require-concurrent-index-creation"]
 
 # Which files are linted is decided by tools/ci/lint-migrations.ts: merged migrations never change
 # (db/AGENTS.md rule 2), so the files that predate this gate (0001–0018, the baseline in that script, plus its FROZEN_AFTER_BASELINE list)

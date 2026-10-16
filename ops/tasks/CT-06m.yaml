@@ -1,0 +1,22 @@
+id: CT-06m
+repo: rebate-platform
+title: 迁移门禁：.squawk.toml 的 excluded_rules 加 prefer-bigint-over-smallint（比例列按规划用 smallint，由 CHECK 限界），受保护测试 wiring.test.ts 的排除清单同步
+type: guard-change
+# 2026-10-16 入账（资金线 funds-quote；编排会话 15:5x 裁定方案 a）。起因：B2-01d 迁移按 04 §3.2 与 08 BR-CALC-05 把 r_own_bp / r_direct_bp / r_indirect_bp / reserve_bp
+# 建为 smallint（CHECK 0–8000 / 0–10000），squawk 的 prefer-bigint-over-smallint 拒绝，资金表又不接受 squawk-ignore。ADR-0001 §4 只定比例为万分之一整数、未定宽度。
+# 理由同已排除的 prefer-bigint-over-int；金额 *_fen 仍由 tools/ci/lint-migrations.ts 强制 bigint，不放松资金约束。属规划/11 §7.3 第 11 项门禁小改动。
+# test/spec/db/lint-migrations/wiring.test.ts 逐项锁定排除清单（[AC-CT-06a#27]），同步加一项；只改期望清单、不删断言。第二类、第一类保护路径：按 approvals #24
+# 与编排会话 2026-10-16 14:4x 授权由本线核对头提交后加 owner-approved 标签并合并。编排者直接写，Codex 评审。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.squawk.toml'
+  - 'test/spec/db/lint-migrations/wiring.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/lint-migrations/**'
+status: done
+pr: 543
