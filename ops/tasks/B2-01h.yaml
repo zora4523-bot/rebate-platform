@@ -1,0 +1,26 @@
+id: B2-01h
+repo: rebate-platform
+title: packages/domain 账务纯函数：orderKey()、08 已给格式的 uniq_key 构造（CREDIT、PLATFORM:CREDIT、PLATFORM:FORFEIT、CLAWBACK:{rights_event_id}、:REVERSE）、validateVoucher()（≥2 条、bigint、Σ=0）、applyEntries()（余额与冻结推导、frozen ≥ 0）、mayGoNegative()
+type: impl
+# 2026-10-17 资金线入账（ledger-plan.md §2.1）。只写纯函数，不连库、不读时钟；金额只经 @couli/money（addFen / subFen）。uniq_key 只做 08 原文已给出格式的那几种（BR-FUND-05、BR-CALC-13 的 FORFEIT 键），其余随 ledger-rules.md（B2-01i）。
+# 负余额只放行 BR-FUND-10 列出的情形（扣回、补差负向等），其余写后为负即拒（BR-FUND-16）。属性测试：任意合法凭证 Σ=0、applyEntries 逐笔与一次性结果相同、frozen 恒 ≥ 0。
+# 风险 RV2（packages/domain）。Codex 写规则 / 属性测试，Claude 过审，Opus 实现，Codex money 评审。
+refs: [BR-FUND-05, BR-FUND-10, BR-FUND-16]
+refs_hash:
+  BR-FUND-05: f69410c13896
+  BR-FUND-10: cac661152bb2
+  BR-FUND-16: 26bf83a019b1
+deps: [B2-01b]
+paths:
+  - 'packages/domain/src/**'
+test_paths:
+  - 'test/spec/domain/ledger/**'
+  - 'test/properties/domain/ledger/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/ledger/**'
+  - 'test/properties/domain/ledger/**'
+status: todo
+pr: null
