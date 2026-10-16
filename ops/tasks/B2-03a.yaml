@@ -34,5 +34,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/domain/commission/**'
   - 'test/properties/domain/commission/**'
-status: todo
-pr: null
+status: done
+pr: 538
