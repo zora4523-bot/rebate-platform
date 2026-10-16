@@ -1,0 +1,20 @@
+id: F1-02g
+repo: rebate-platform
+title: F1-02c 规则测试 [AC-F1-02c#1]、[AC-F1-02c#21] 对 platform_icons 放宽为「不存在或 {}」——F1-02d 开始下发该键后两条冻结断言必红，其余断言不变
+type: test-change
+# 2026-10-16 入账（内容模块客户端接口线 content-client）。F1-02c 裁定 12 把 platform_icons 划给 F1-02d，Codex 写的 F1-02c 规则测试因此断言该键不存在
+# （#1 整体 toEqual、#21 not.toHaveProperty）；F1-02d（#583）按契约总下发 platform_icons（无已发布标识时为 {}），这两条在 F1-02d 分支上必红。
+# 在 F1-02d 的规则测试提交里改会被 path-guard-author 拒（别的任务的冻结测试），放在实现之后会被 evidence-check 拒（spec_commit 之后改规则测试）。
+# 做法：两处改为 platform_icons ∈ {不存在, {}}（主干现在与 F1-02d 合并后都成立），#21「同名配置行被忽略」的意图保留（配置里的 {taobao:{}} 不会被接受），其余断言一字不改。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-02c]
+paths:
+  - 'test/spec/content/config/delivery.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 588
