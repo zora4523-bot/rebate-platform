@@ -1,0 +1,27 @@
+id: B1-02s
+repo: rebate-platform
+title: 提示条已读接口：GET /v1/me/tips（jump_tip 按平台、inviter_before_buy 不分平台）、POST /v1/me/tips/{tip_key}/read（已有行不改 read_at）、DELETE /v1/me/tips/jump_tip（清空该用户全部平台 jump_tip 已读）；identity 写 user_tip_reads
+type: impl
+# 草稿 2026-10-16（身份与风控线 identity-lane；内容客户端线转交，负责人点名「我的」页提示条）。契约 CT-15j 已合并（getTips / markTipRead / resetTip，实现时去掉 x-implementation: planned）；02 §4.1 路由与表 user_tip_reads 归 identity（迁移 0008 写者注释同）。
+# 依据：BR-ATTR-21（JumpTip 每用户每平台一次、服务端按 user_id + platform 记已读、设置里可重新打开）、BR-INV-03 细则 ②（inviter_before_buy 每个账号一次、换设备不重复）；04 §3.2 user_tip_reads 行与 §6.1 三接口行、10 AC-S1-17 由编排者摘入。
+# 编排者裁定：① GET 的 jump_tip 只列有已读记录的平台（未读平台不出现，契约允许 absent）；inviter_before_buy 无记录为 null。② 表里不分平台的 tip 存 platform=''（04 §3.2）。③ POST 重复调用 INSERT … ON CONFLICT DO NOTHING，read_at 取注入的 Clock；jump_tip 缺 platform → 20001 data.fields=[platform]（契约），inviter_before_buy 带的请求体忽略。
+# ④ DELETE 只删 tip_key=jump_tip 的行，无记录也回 0。⑤ 只按令牌的 app_id、user_id 读写；游客 10001、版本闸门 10405、封禁 10006、限流都由已有全局守卫负责，本任务不另写，规则测试只抽查装配。
+# 命名约定（B1-02t 的冻结测试按此替换真实处理函数，不得改名）：控制器文件 apps/api/src/modules/identity/http/public/tips.controller.ts，类 TipsController，方法 getTips / markTipRead / resetTip，在 IdentityModule 注册。
+# 须在 B1-02t 合并之后实现（两份风控冻结测试为 planned 的 markTipRead 自注册桩路由，真实路由上线即 Fastify 重复声明）。改 openapi.yaml 走契约槽（couli-runs/B3-lane/notices.md）。风险 RV1（identity + 契约生成物）。
+refs: [BR-ATTR-21]
+refs_hash:
+  BR-ATTR-21: 0679f900972f
+deps: [CT-15j, B1-02h, B1-03c, B1-02t]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+test_paths:
+  - 'test/spec/identity/tips/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/tips/**'
+status: todo
