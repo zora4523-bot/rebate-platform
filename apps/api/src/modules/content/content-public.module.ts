@@ -10,15 +10,18 @@ import { type DynamicModule, type FactoryProvider, Module } from '@nestjs/common
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
 import {
+  APP_CONFIG,
   CLOCK,
   DB,
   getLinkPatterns,
   ROOT_LOGGER,
+  type AppConfig,
   type Clock,
   type RootLogger,
 } from '../platform/index.ts';
 import { ClientConfigService, ConfigViewerContext } from './application/client-config.ts';
 import { CachedContentReader, type ContentReader } from './application/content-reader.ts';
+import { publishedPlatformIcons } from './application/published-platform-icons.ts';
 import type { ClientConfig } from './domain/client-config.ts';
 import { ConfigController } from './http/public/config.controller.ts';
 import { createKyselyContentStore } from './infra/kysely-content-store.ts';
@@ -42,17 +45,29 @@ export class ContentPublicModule {
       providers: [
         {
           provide: ClientConfigService,
-          inject: [{ token: DB, optional: true }, CLOCK, ROOT_LOGGER],
+          inject: [{ token: DB, optional: true }, CLOCK, ROOT_LOGGER, APP_CONFIG],
           useFactory: (
             db: Kysely<Database> | undefined,
             clock: Clock,
             logger: RootLogger,
+            config: AppConfig,
           ): ClientConfigService =>
             new ClientConfigService({
               reader:
                 db === undefined
                   ? UNAVAILABLE_READER
                   : new CachedContentReader(createKyselyContentStore(db), clock),
+              platformIcons: (appId) => {
+                if (db === undefined) {
+                  return Promise.reject(
+                    new Error('content: platform icon reads need the database'),
+                  );
+                }
+                return publishedPlatformIcons(
+                  { db, mediaPublicBaseUrl: config.mediaPublicBaseUrl },
+                  appId,
+                );
+              },
               linkPatterns: () => getLinkPatterns() as NonNullable<ClientConfig['link_patterns']>,
               logger: logger.child({ module: 'content' }),
             }),
