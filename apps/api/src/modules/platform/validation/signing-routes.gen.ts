@@ -48,6 +48,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "POST",
+    "path": "/v1/auth/merge",
+    "signed": true
+  },
+  {
+    "method": "POST",
     "path": "/v1/auth/step-up",
     "signed": true
   },
@@ -168,6 +173,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/me",
+    "signed": false
+  },
+  {
+    "method": "PATCH",
     "path": "/v1/me",
     "signed": false
   },

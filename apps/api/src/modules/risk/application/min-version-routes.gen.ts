@@ -99,6 +99,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "mergeAccount",
+    "method": "POST",
+    "path": "/v1/auth/merge",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "stepUp",
     "method": "POST",
     "path": "/v1/auth/step-up",
@@ -353,6 +363,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "sessionScopes": [
       "full",
       "deletion_only"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "updateMe",
+    "method": "PATCH",
+    "path": "/v1/me",
+    "gate": true,
+    "sessionScopes": [
+      "full"
     ],
     "idempotent": false
   },
