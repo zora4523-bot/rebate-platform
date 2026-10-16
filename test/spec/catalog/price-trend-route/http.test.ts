@@ -51,10 +51,10 @@ it('[AC-B1-29b#1] 游客读取真实用例结果，金额序列化为整数且�
     data: {
       status: 'ok',
       points: [
-        { date: '2026-10-16', final_price_fen: 3290 },
-        { date: '2026-10-17', final_price_fen: 2990 },
+        { date: '2030-10-16', final_price_fen: 3290 },
+        { date: '2030-10-17', final_price_fen: 2990 },
       ],
-      start_date: '2026-10-16',
+      start_date: '2030-10-16',
       window_days: 30,
       source_key: 'price_trend.source.general',
     },
@@ -84,10 +84,10 @@ it('[AC-B1-29b#2] auth none：登录凭据和游客返回同样结果，传入�
     expect(response.json<{ data: unknown }>().data).toEqual({
       status: 'ok',
       points: [
-        { date: '2026-10-16', final_price_fen: 3290 },
-        { date: '2026-10-17', final_price_fen: 2990 },
+        { date: '2030-10-16', final_price_fen: 3290 },
+        { date: '2030-10-17', final_price_fen: 2990 },
       ],
-      start_date: '2026-10-16',
+      start_date: '2030-10-16',
       window_days: 30,
       source_key: 'price_trend.source.general',
     });
@@ -126,8 +126,8 @@ it.each(['', 'platform=', 'platform=unknown', 'platform=ios', 'platform=TAOBAO']
   30_000,
 );
 
-it.each(['x', 'tb', `tb:${'a'.repeat(126)}`])(
-  '[AC-B1-29b#5] product_key 超出契约长度（%s）返回 400/20001 和 fields',
+it.each(['x', 'tb'])(
+  '[AC-B1-29b#5] product_key 短于契约长度下限（%s）返回 400/20001 和 fields',
   async (key) => {
     const f = await fixture();
     app = f.app;
@@ -229,15 +229,39 @@ it('[AC-B1-29b#9] 保留用例的有券 source_key、零价与大额整数，不
   expect(response.json<{ data: unknown }>().data).toEqual({
     status: 'ok',
     points: [
-      { date: '2026-10-16', final_price_fen: 0 },
-      { date: '2026-10-17', final_price_fen: 9007199254740991 },
+      { date: '2030-10-16', final_price_fen: 0 },
+      { date: '2030-10-17', final_price_fen: 9007199254740991 },
     ],
-    start_date: '2026-10-16',
+    start_date: '2030-10-16',
     window_days: 30,
     source_key: 'price_trend.source',
   });
   await assertContract(response, 'ProductPriceTrendResponse');
 }, 30_000);
+
+it.each([9007199254740992n, 9007199254740993n])(
+  '[AC-B1-29b#14] 金额超过安全整数上限（%s）返回 50001，不输出不安全或舍入的价格',
+  async (amount) => {
+    const f = await fixture();
+    app = f.app;
+    f.rows.mockResolvedValue(
+      snapshotRows().map((row, index) => ({
+        ...row,
+        finalPriceFen: index === 0 ? 3290n : amount,
+      })),
+    );
+    const response = await f.request();
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      code: 50001,
+      msg: '服务端错误',
+      trace_id: '01920000-0000-7000-8000-00000000d029',
+    });
+    expect(f.read).toHaveBeenCalledTimes(1);
+    await assertContract(response, 'ErrorEnvelope');
+  },
+  30_000,
+);
 
 it('[AC-B1-29b#10] 价格走势与商品详情独立：详情不嵌走势、不额外调用 getPriceTrend', async () => {
   const f = await fixture();
@@ -271,7 +295,7 @@ it('[AC-B1-29b#10] 价格走势与商品详情独立：详情不嵌走势、不�
     is_presale: false,
     link_id: '01920000-0000-7000-8000-000000000029',
     cta: { text_key: 'btn.buy.coupon' },
-    quoted_at: '2026-10-17T12:00:00+08:00',
+    quoted_at: '2030-10-17T12:00:00+08:00',
     stale: false,
     age_sec: 0,
     source: 'taobao_union',

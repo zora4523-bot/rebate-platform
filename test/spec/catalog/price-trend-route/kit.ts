@@ -78,7 +78,7 @@ export const detailCard: ProductDetailData = {
   is_presale: false,
   link_id: '01920000-0000-7000-8000-000000000029',
   cta: { text_key: 'btn.buy.coupon' },
-  quoted_at: '2026-10-17T12:00:00+08:00',
+  quoted_at: '2030-10-17T12:00:00+08:00',
   stale: false,
   age_sec: 0,
   source: 'taobao_union',
@@ -105,15 +105,15 @@ export function snapshotRows(couponFen = 0n): PriceTrendRow[] {
       sourceKind: 'detail',
       couponFen,
       finalPriceFen: 3290n,
-      firstObservedAt: new Date('2026-10-16T02:00:00.000Z'),
-      lastObservedAt: new Date('2026-10-16T02:00:00.000Z'),
+      firstObservedAt: new Date('2030-10-16T02:00:00.000Z'),
+      lastObservedAt: new Date('2030-10-16T02:00:00.000Z'),
     },
     {
       sourceKind: 'detail',
       couponFen,
       finalPriceFen: 2990n,
-      firstObservedAt: new Date('2026-10-17T02:00:00.000Z'),
-      lastObservedAt: new Date('2026-10-17T02:00:00.000Z'),
+      firstObservedAt: new Date('2030-10-17T02:00:00.000Z'),
+      lastObservedAt: new Date('2030-10-17T02:00:00.000Z'),
     },
   ];
 }
@@ -123,7 +123,8 @@ export function snapshotRows(couponFen = 0n): PriceTrendRow[] {
  * CatalogModule and has no I/O methods; unrelated modules still start without a DB handle.
  */
 export async function fixture() {
-  const clock = new FixedClock('2026-10-17T04:00:00.000Z');
+  // Keep snapshots far from the real date so using a system clock yields no_data.
+  const clock = new FixedClock('2030-10-17T04:00:00.000Z');
   const rows = vi.fn<PriceTrendStore['rows']>(async () => snapshotRows());
   const keyStability = vi.fn<PriceTrendStore['keyStability']>(async () => 'stable_7d');
   const configValue = vi.fn<CatalogConfigReader['configValue']>(async () => ({
