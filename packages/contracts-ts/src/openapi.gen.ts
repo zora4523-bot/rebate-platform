@@ -2048,6 +2048,234 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/kill-switches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Registered emergency switches and their current values
+         * @description Permission point: any of `switch.all`, `switch.payout` or `switch.pay` (04 §11.2; read
+         *     only, no step-up). One row per switch the server has registered (04 §10.2, one row per
+         *     concrete key such as `convert.enabled.taobao`), in registry order, page by page (`page`,
+         *     `page_size` ≤ 200): the current value (null = never written, the registered `default`
+         *     applies), the value type and, for `enum`, the allowed values, the permission points of
+         *     which any one may change it (`permissions`), whether the console may change it at all
+         *     (`admin_editable`; false for `agent.whitelist_only` and `agent.model_route`), and the
+         *     `version` that PUT /admin/v1/kill-switches/{key} takes as `expected_version`. Rows the
+         *     account may not change are still listed, so the console can show them read only.
+         */
+        get: operations["adminListKillSwitches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/kill-switches/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change one emergency switch
+         * @description Permission point by key (04 §11.2), any one of the listed points suffices:
+         *     `withdraw.enabled`, `payout.enabled`, `payout.queue_paused`,
+         *     `payout.channel_enabled.<channel>` and `payout.channel_paused.<channel>` need
+         *     `switch.all` or `switch.payout`; `pay.enabled` and `pay.channel_enabled.<pay_channel>`
+         *     need `switch.all` or `switch.pay`; every other switch, `withdraw.auto_payout.enabled`
+         *     included, needs `switch.all`. Lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier for every key, clearing
+         *     `payout.queue_paused` and `payout.channel_paused.<channel>` included (04 §11.2, BR-ID-34):
+         *     without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`.
+         *     A key the server has not registered, or one the console may not change
+         *     (`agent.whitelist_only`, `agent.model_route`; `admin_editable=false`), is 20001 with
+         *     `data.fields=[key]`; a value of the wrong type or outside `options` is 20001 with
+         *     `data.fields=[value]`. CAS: `expected_version` is the switch's `version` the console
+         *     showed (0 for a switch never written); every change adds 1 and a mismatch → 20902 with
+         *     `data.resource=kill_switch`, refresh and retry (04 §6.6). Writing the value the switch
+         *     already has with a matching version succeeds without change, version bump, audit or
+         *     alert. `reason` is optional (at most 200 characters) and kept in the audit record.
+         *     Every change is written to the audit log (action kill_switch_change, before and after
+         *     values) and pushes an alert; it takes effect on every server instance within 10 seconds
+         *     (04 §10.2). No Idempotency-Key (04 §6.6).
+         */
+        put: operations["adminUpdateKillSwitch"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/config-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Registered configuration items and their current values
+         * @description Permission point: any of `config.general`, `config.risk` or `config.business` (04 §11.2;
+         *     read only, no step-up). One row per configuration key the server has registered (04 §10),
+         *     in registry order, page by page (`page`, `page_size` ≤ 200): the current value (null =
+         *     never written, the server's built-in default applies), the value type and, for `enum`,
+         *     the allowed values, the permission point that guards changing it (`permission`), whether
+         *     the console may change it (`admin_editable`; false for `agent.page_guide.routes` and
+         *     `external_hosts` until their editors ship) and the `version` that the writes take as
+         *     `expected_version`. Emergency switches (04 §10.2) are not here but under
+         *     /admin/v1/kill-switches.
+         */
+        get: operations["adminListConfigItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/config-items/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change several configuration items at once
+         * @description Permission point: the one point that guards every key of the batch (`config.general`,
+         *     `config.risk` or `config.business`, 04 §11.2); a batch mixing keys of different points
+         *     is 20001 with `data.fields=[items]`, as is a key listed twice. Step-up by that point
+         *     (04 §11.2, BR-ID-34): none for `config.general`; totp tier for `config.risk` and
+         *     `config.business` (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+         *     `data.tier=totp`). The whole batch takes effect or nothing does (05 F1-10): first every
+         *     key and value is checked (unregistered or not admin-editable keys, values of the wrong
+         *     type, outside `options` or failing the key's own rule such as the candidate set of
+         *     BR-AI-01 细则「页面引导」), and any failure is 20001 with `data.fields` listing every
+         *     failing key; only then are the versions compared, and any mismatch is 20902 with
+         *     `data.resource=config_item` and nothing applied. Each changed key gets its version plus
+         *     1, a history version and an audit record (action config_item_change) carrying the
+         *     shared `reason`; the change pushes an alert. Values take effect as each key's reader
+         *     re-reads it (within that key's cache period), never retroactively (04 §10). No
+         *     Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminBatchUpdateConfigItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/config-items/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One configuration item
+         * @description Permission point: any of `config.general`, `config.risk` or `config.business` (04 §11.2;
+         *     read only, no step-up). The item as listed by GET /admin/v1/config-items. A key the
+         *     server has not registered is 20001 with `data.fields=[key]`.
+         */
+        get: operations["adminGetConfigItem"];
+        /**
+         * Change one configuration item
+         * @description Permission point: the point that guards the key (its `permission`: `config.general`,
+         *     `config.risk` or `config.business`, 04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up by that point (04 §11.2, BR-ID-34): none
+         *     for `config.general`; totp tier for `config.risk` and `config.business` (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). A key the server has not
+         *     registered, or one the console may not change (`admin_editable=false`:
+         *     `agent.page_guide.routes`, `external_hosts`), is 20001 with `data.fields=[key]`; a value
+         *     of the wrong type, outside `options` or failing the key's own rule is 20001 with
+         *     `data.fields=[value]`. CAS: `expected_version` is the item's `version` the console showed
+         *     (0 for an item never written); a change adds 1 and stores a history version, and a
+         *     mismatch → 20902 with `data.resource=config_item`, refresh and retry (04 §6.6). Writing
+         *     the value the item already has with a matching version succeeds without change. `reason`
+         *     is optional (at most 200 characters) and kept with the history version. Every change is
+         *     written to the audit log (action config_item_change, before and after values) and
+         *     pushes an alert; it takes effect as the key's reader re-reads it (within that key's
+         *     cache period), never retroactively (04 §10). No Idempotency-Key (04 §6.6).
+         */
+        put: operations["adminUpdateConfigItem"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/config-items/{key}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Version history of one configuration item
+         * @description Permission point: any of `config.general`, `config.risk` or `config.business` (04 §11.2;
+         *     read only, no step-up). Every stored version of the item, newest first, page by page
+         *     (`page`, `page_size` ≤ 200), with the value, who wrote it (null = written by the system)
+         *     and the reason given; any older version can be restored with POST
+         *     /admin/v1/config-items/{key}/rollback. A key the server has not registered is 20001 with
+         *     `data.fields=[key]`.
+         */
+        get: operations["adminListConfigItemVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/config-items/{key}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Roll one configuration item back to an older version
+         * @description Permission point and step-up as for PUT /admin/v1/config-items/{key}: the key's point
+         *     (`config.general`, `config.risk` or `config.business`, 04 §11.2); totp tier for
+         *     `config.risk` and `config.business`, none for `config.general` (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Writes the value of
+         *     `to_version` as a new version (the current version plus 1); history is never rewritten.
+         *     `to_version` must be a stored version lower than the current one, otherwise 20001 with
+         *     `data.fields=[to_version]`; the restored value is checked against the key's current rule
+         *     like a new value (for example the candidate set of BR-AI-01 细则「页面引导」 for
+         *     `agent.page_guide.routes`), and a value that no longer passes is 20001 with
+         *     `data.fields=[to_version]` and nothing changes. An unregistered or not admin-editable key
+         *     is 20001 with `data.fields=[key]`. CAS: `expected_version` is the item's current
+         *     `version`; a mismatch → 20902 with `data.resource=config_item`. Written to the audit log
+         *     (action config_item_rollback) and pushes an alert; takes effect like a change (04 §10).
+         *     No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminRollbackConfigItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agent/sessions": {
         parameters: {
             query?: never;
@@ -4766,6 +4994,187 @@ export interface components {
              */
             expected_revision: number;
         };
+        /**
+         * @description A configuration or emergency-switch key (04 §10, §10.2): dotted segments, concrete per
+         *     platform or channel (`convert.enabled.taobao`); the server's registry decides which keys
+         *     exist.
+         */
+        AdminConfigKey: string;
+        /**
+         * @description Any JSON value of the key's `value_type` (an `enum` value is one of `options`); checked by
+         *     the server against the key's registered type and rule, a mismatch → 20001 with
+         *     data.fields=[value].
+         */
+        AdminConfigValue: unknown;
+        /**
+         * @description Type of a configuration or switch value: boolean, enum (a string out of `options`), object
+         *     (a JSON object or array, such as a list of routes or hosts), number or string.
+         * @enum {string}
+         */
+        AdminConfigValueType: "boolean" | "enum" | "object" | "number" | "string";
+        /** @description Allowed values when `value_type` is enum; null for every other type. */
+        AdminConfigOptions: string[] | null;
+        /**
+         * Format: int32
+         * @description Version of the key's current value: 0 = never written (value null, the default applies);
+         *     plus 1 on every change or rollback, never going back. The CAS value `expected_version`
+         *     of the writes.
+         */
+        AdminConfigVersionNumber: number;
+        /** @description Optional free-text reason, kept in the audit record and the history version. */
+        AdminConfigReason: string;
+        /** @description A registered emergency switch (04 §10.2) and its current value. */
+        AdminKillSwitch: {
+            key: components["schemas"]["AdminConfigKey"];
+            /** @description Current value; null = never written, `default` applies. */
+            value: components["schemas"]["AdminConfigValue"] | null;
+            default: components["schemas"]["AdminConfigValue"];
+            value_type: components["schemas"]["AdminConfigValueType"];
+            options: components["schemas"]["AdminConfigOptions"];
+            /** @description Permission points of which any one may change the switch (04 §11.2). */
+            permissions: components["schemas"]["AdminPermissionKey"][];
+            /** @description false = the console shows the switch read only and a change is 20001 [key]. */
+            admin_editable: boolean;
+            version: components["schemas"]["AdminConfigVersionNumber"];
+            /** @description Username of the admin who last changed it; null = never changed or set by the system. */
+            updated_by: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        AdminKillSwitchPage: {
+            /** @description Registered switches in registry order. */
+            items: components["schemas"]["AdminKillSwitch"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminKillSwitchPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminKillSwitchPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminKillSwitchResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminKillSwitch"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminKillSwitchUpdateRequest: {
+            value: components["schemas"]["AdminConfigValue"];
+            /** @description The switch's `version` as the console showed it; a mismatch is 20902. */
+            expected_version: components["schemas"]["AdminConfigVersionNumber"];
+            reason?: components["schemas"]["AdminConfigReason"];
+        };
+        /** @description A registered configuration item (04 §10) and its current value. */
+        AdminConfigItem: {
+            key: components["schemas"]["AdminConfigKey"];
+            /** @description Current value; null = never written, the server's built-in default applies. */
+            value: components["schemas"]["AdminConfigValue"] | null;
+            value_type: components["schemas"]["AdminConfigValueType"];
+            options: components["schemas"]["AdminConfigOptions"];
+            /** @description The config.* point that guards changing the item, and so its step-up tier. */
+            permission: components["schemas"]["AdminPermissionKey"];
+            /** @description false = the console shows the item read only and a change is 20001 [key]. */
+            admin_editable: boolean;
+            version: components["schemas"]["AdminConfigVersionNumber"];
+            /** @description Username of the admin who last changed it; null = never changed or set by the system. */
+            updated_by: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        AdminConfigItemPage: {
+            /** @description Registered configuration items in registry order. */
+            items: components["schemas"]["AdminConfigItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminConfigItemPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminConfigItemPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminConfigItemResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminConfigItem"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminConfigItemList: {
+            /** @description Every item of the batch, in request order. */
+            items: components["schemas"]["AdminConfigItem"][];
+        };
+        AdminConfigItemListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminConfigItemList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description One stored version of a configuration item (config_item_versions). */
+        AdminConfigItemVersion: {
+            /** Format: int32 */
+            version: number;
+            value: components["schemas"]["AdminConfigValue"];
+            /** @description Username of the admin who wrote the version; null = written by the system. */
+            updated_by: string | null;
+            reason: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminConfigItemVersionPage: {
+            /** @description Newest version first. */
+            items: components["schemas"]["AdminConfigItemVersion"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminConfigItemVersionPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminConfigItemVersionPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminConfigItemUpdateRequest: {
+            value: components["schemas"]["AdminConfigValue"];
+            /** @description The item's `version` as the console showed it; a mismatch is 20902. */
+            expected_version: components["schemas"]["AdminConfigVersionNumber"];
+            reason?: components["schemas"]["AdminConfigReason"];
+        };
+        AdminConfigItemBatchEntry: {
+            key: components["schemas"]["AdminConfigKey"];
+            value: components["schemas"]["AdminConfigValue"];
+            /** @description The item's `version` as the console showed it; any mismatch is 20902 for the whole batch. */
+            expected_version: components["schemas"]["AdminConfigVersionNumber"];
+        };
+        AdminConfigItemBatchRequest: {
+            /** @description Keys of one permission point, each at most once. */
+            items: components["schemas"]["AdminConfigItemBatchEntry"][];
+            reason?: components["schemas"]["AdminConfigReason"];
+        };
+        AdminConfigItemRollbackRequest: {
+            /**
+             * Format: int32
+             * @description The stored version whose value becomes the new current value; must be older than the current one.
+             */
+            to_version: number;
+            /**
+             * Format: int32
+             * @description The item's current `version` as the console showed it; a mismatch is 20902.
+             */
+            expected_version: number;
+            reason?: components["schemas"]["AdminConfigReason"];
+        };
         /** @description An Agent conversation (agent_sessions; owner and expiry per BR-AI-20). */
         AgentSession: {
             session_id: components["schemas"]["Id"];
@@ -5030,6 +5439,19 @@ export interface components {
         PlatformIconKeyPath: components["schemas"]["PlatformIconKey"];
         /** @description Version of the mark, counted per mark from 1; unknown → 20001 with data.fields=[version]. */
         PlatformIconVersionPath: number;
+        /**
+         * @description A configuration or emergency-switch key as registered by the server (04 §10, §10.2), dotted
+         *     and concrete (`convert.enabled.taobao`, not `convert.enabled.<platform>`); an unregistered
+         *     key → 20001 with data.fields=[key].
+         */
+        ConfigKeyPath: components["schemas"]["AdminConfigKey"];
+        /**
+         * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+         *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+         *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+         *     optional). Only on admin console operations; app operations use StepUpToken.
+         */
+        AdminStepUpToken: string;
         /** @description session_id. A session that does not exist or is not the caller's is 30504 either way (BR-AI-20). */
         AgentSessionId: components["schemas"]["Id"];
         /** @description run_id from meta.run_id or a history turn. */
@@ -10079,6 +10501,666 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not restored (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListKillSwitches: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of registered switches. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "key": "withdraw.enabled",
+                     *             "value": true,
+                     *             "default": true,
+                     *             "value_type": "boolean",
+                     *             "options": null,
+                     *             "permissions": [
+                     *               "switch.all",
+                     *               "switch.payout"
+                     *             ],
+                     *             "admin_editable": true,
+                     *             "version": 3,
+                     *             "updated_by": "ops-yi",
+                     *             "updated_at": "2026-10-09T10:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "key": "convert.off_reason.pdd",
+                     *             "value": null,
+                     *             "default": "not_launched",
+                     *             "value_type": "enum",
+                     *             "options": [
+                     *               "not_launched",
+                     *               "maintenance"
+                     *             ],
+                     *             "permissions": [
+                     *               "switch.all"
+                     *             ],
+                     *             "admin_editable": true,
+                     *             "version": 0,
+                     *             "updated_by": null,
+                     *             "updated_at": null
+                     *           },
+                     *           {
+                     *             "key": "agent.whitelist_only",
+                     *             "value": true,
+                     *             "default": true,
+                     *             "value_type": "boolean",
+                     *             "options": null,
+                     *             "permissions": [
+                     *               "switch.all"
+                     *             ],
+                     *             "admin_editable": false,
+                     *             "version": 1,
+                     *             "updated_by": null,
+                     *             "updated_at": "2026-10-08T09:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 3
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminKillSwitchPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUpdateKillSwitch: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /**
+                 * @description A configuration or emergency-switch key as registered by the server (04 §10, §10.2), dotted
+                 *     and concrete (`convert.enabled.taobao`, not `convert.enabled.<platform>`); an unregistered
+                 *     key → 20001 with data.fields=[key].
+                 */
+                key: components["parameters"]["ConfigKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminKillSwitchUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The switch as it is now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "key": "withdraw.enabled",
+                     *         "value": false,
+                     *         "default": true,
+                     *         "value_type": "boolean",
+                     *         "options": null,
+                     *         "permissions": [
+                     *           "switch.all",
+                     *           "switch.payout"
+                     *         ],
+                     *         "admin_editable": true,
+                     *         "version": 4,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-09T10:05:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminKillSwitchResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListConfigItems: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of registered configuration items. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "key": "favorites.max_per_user",
+                     *             "value": 200,
+                     *             "value_type": "number",
+                     *             "options": null,
+                     *             "permission": "config.general",
+                     *             "admin_editable": true,
+                     *             "version": 2,
+                     *             "updated_by": "ops-yi",
+                     *             "updated_at": "2026-10-09T10:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "key": "withdraw.daily_count_per_user",
+                     *             "value": null,
+                     *             "value_type": "number",
+                     *             "options": null,
+                     *             "permission": "config.business",
+                     *             "admin_editable": true,
+                     *             "version": 0,
+                     *             "updated_by": null,
+                     *             "updated_at": null
+                     *           },
+                     *           {
+                     *             "key": "agent.page_guide.routes",
+                     *             "value": [
+                     *               "Wallet",
+                     *               "WithdrawRecords"
+                     *             ],
+                     *             "value_type": "object",
+                     *             "options": null,
+                     *             "permission": "config.general",
+                     *             "admin_editable": false,
+                     *             "version": 1,
+                     *             "updated_by": "ops-yi",
+                     *             "updated_at": "2026-10-08T09:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 3
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminConfigItemPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminBatchUpdateConfigItems: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "items": [
+                 *         {
+                 *           "key": "withdraw.daily_count_per_user",
+                 *           "value": 1,
+                 *           "expected_version": 0
+                 *         },
+                 *         {
+                 *           "key": "withdraw.monthly_count_per_user",
+                 *           "value": 10,
+                 *           "expected_version": 0
+                 *         }
+                 *       ],
+                 *       "reason": "上线前填写提现次数"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminConfigItemBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Every item of the batch as it is now, in request order. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "key": "withdraw.daily_count_per_user",
+                     *             "value": 1,
+                     *             "value_type": "number",
+                     *             "options": null,
+                     *             "permission": "config.business",
+                     *             "admin_editable": true,
+                     *             "version": 1,
+                     *             "updated_by": "ops-yi",
+                     *             "updated_at": "2026-10-09T10:05:00+08:00"
+                     *           },
+                     *           {
+                     *             "key": "withdraw.monthly_count_per_user",
+                     *             "value": 10,
+                     *             "value_type": "number",
+                     *             "options": null,
+                     *             "permission": "config.business",
+                     *             "admin_editable": true,
+                     *             "version": 1,
+                     *             "updated_by": "ops-yi",
+                     *             "updated_at": "2026-10-09T10:05:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminConfigItemListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Nothing changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetConfigItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description A configuration or emergency-switch key as registered by the server (04 §10, §10.2), dotted
+                 *     and concrete (`convert.enabled.taobao`, not `convert.enabled.<platform>`); an unregistered
+                 *     key → 20001 with data.fields=[key].
+                 */
+                key: components["parameters"]["ConfigKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The configuration item. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "key": "favorites.max_per_user",
+                     *         "value": 200,
+                     *         "value_type": "number",
+                     *         "options": null,
+                     *         "permission": "config.general",
+                     *         "admin_editable": true,
+                     *         "version": 2,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-09T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminConfigItemResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUpdateConfigItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /**
+                 * @description A configuration or emergency-switch key as registered by the server (04 §10, §10.2), dotted
+                 *     and concrete (`convert.enabled.taobao`, not `convert.enabled.<platform>`); an unregistered
+                 *     key → 20001 with data.fields=[key].
+                 */
+                key: components["parameters"]["ConfigKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "value": 300,
+                 *       "expected_version": 2,
+                 *       "reason": "收藏上限调到 300"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminConfigItemUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The configuration item as it is now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "key": "favorites.max_per_user",
+                     *         "value": 300,
+                     *         "value_type": "number",
+                     *         "options": null,
+                     *         "permission": "config.general",
+                     *         "admin_editable": true,
+                     *         "version": 3,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-09T10:05:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminConfigItemResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListConfigItemVersions: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description A configuration or emergency-switch key as registered by the server (04 §10, §10.2), dotted
+                 *     and concrete (`convert.enabled.taobao`, not `convert.enabled.<platform>`); an unregistered
+                 *     key → 20001 with data.fields=[key].
+                 */
+                key: components["parameters"]["ConfigKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of versions, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "version": 2,
+                     *             "value": 200,
+                     *             "updated_by": "ops-yi",
+                     *             "reason": null,
+                     *             "created_at": "2026-10-09T10:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "version": 1,
+                     *             "value": 150,
+                     *             "updated_by": "ops-yi",
+                     *             "reason": "开发期占位值",
+                     *             "created_at": "2026-10-08T09:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminConfigItemVersionPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRollbackConfigItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /**
+                 * @description A configuration or emergency-switch key as registered by the server (04 §10, §10.2), dotted
+                 *     and concrete (`convert.enabled.taobao`, not `convert.enabled.<platform>`); an unregistered
+                 *     key → 20001 with data.fields=[key].
+                 */
+                key: components["parameters"]["ConfigKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "to_version": 1,
+                 *       "expected_version": 3,
+                 *       "reason": "回到上一版"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminConfigItemRollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description The configuration item with the restored value as its new version. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "key": "favorites.max_per_user",
+                     *         "value": 150,
+                     *         "value_type": "number",
+                     *         "options": null,
+                     *         "permission": "config.general",
+                     *         "admin_editable": true,
+                     *         "version": 4,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-09T10:10:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminConfigItemResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not rolled back (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

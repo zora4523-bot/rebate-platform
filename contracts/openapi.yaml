@@ -76,6 +76,8 @@ tags:
     description: Admin accounts, read-only for now; super admin only (04 §6.6 admins, §11).
   - name: admin-content
     description: Admin content operations; platform mark replacement images (permission point content.platform_icon, BR-TEXT-24).
+  - name: admin-config
+    description: Admin configuration center and emergency switches (permission points config.* and switch.*, 04 §10, §10.2, §11.2; F1-10).
   - name: agent
     description: Agent sessions, history, the reply stream, stop, feedback and report (04 §6.5, §8).
 paths:
@@ -5988,6 +5990,758 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/kill-switches:
+    get:
+      operationId: adminListKillSwitches
+      tags:
+        - admin-config
+      summary: Registered emergency switches and their current values
+      description: |
+        Permission point: any of `switch.all`, `switch.payout` or `switch.pay` (04 §11.2; read
+        only, no step-up). One row per switch the server has registered (04 §10.2, one row per
+        concrete key such as `convert.enabled.taobao`), in registry order, page by page (`page`,
+        `page_size` ≤ 200): the current value (null = never written, the registered `default`
+        applies), the value type and, for `enum`, the allowed values, the permission points of
+        which any one may change it (`permissions`), whether the console may change it at all
+        (`admin_editable`; false for `agent.whitelist_only` and `agent.model_route`), and the
+        `version` that PUT /admin/v1/kill-switches/{key} takes as `expected_version`. Rows the
+        account may not change are still listed, so the console can show them read only.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of registered switches.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminKillSwitchPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - key: withdraw.enabled
+                      value: true
+                      default: true
+                      value_type: boolean
+                      options: null
+                      permissions:
+                        - switch.all
+                        - switch.payout
+                      admin_editable: true
+                      version: 3
+                      updated_by: ops-yi
+                      updated_at: '2026-10-09T10:00:00+08:00'
+                    - key: convert.off_reason.pdd
+                      value: null
+                      default: not_launched
+                      value_type: enum
+                      options:
+                        - not_launched
+                        - maintenance
+                      permissions:
+                        - switch.all
+                      admin_editable: true
+                      version: 0
+                      updated_by: null
+                      updated_at: null
+                    - key: agent.whitelist_only
+                      value: true
+                      default: true
+                      value_type: boolean
+                      options: null
+                      permissions:
+                        - switch.all
+                      admin_editable: false
+                      version: 1
+                      updated_by: null
+                      updated_at: '2026-10-08T09:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 3
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/kill-switches/{key}:
+    put:
+      operationId: adminUpdateKillSwitch
+      tags:
+        - admin-config
+      summary: Change one emergency switch
+      description: |
+        Permission point by key (04 §11.2), any one of the listed points suffices:
+        `withdraw.enabled`, `payout.enabled`, `payout.queue_paused`,
+        `payout.channel_enabled.<channel>` and `payout.channel_paused.<channel>` need
+        `switch.all` or `switch.payout`; `pay.enabled` and `pay.channel_enabled.<pay_channel>`
+        need `switch.all` or `switch.pay`; every other switch, `withdraw.auto_payout.enabled`
+        included, needs `switch.all`. Lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Step-up: totp tier for every key, clearing
+        `payout.queue_paused` and `payout.channel_paused.<channel>` included (04 §11.2, BR-ID-34):
+        without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`.
+        A key the server has not registered, or one the console may not change
+        (`agent.whitelist_only`, `agent.model_route`; `admin_editable=false`), is 20001 with
+        `data.fields=[key]`; a value of the wrong type or outside `options` is 20001 with
+        `data.fields=[value]`. CAS: `expected_version` is the switch's `version` the console
+        showed (0 for a switch never written); every change adds 1 and a mismatch → 20902 with
+        `data.resource=kill_switch`, refresh and retry (04 §6.6). Writing the value the switch
+        already has with a matching version succeeds without change, version bump, audit or
+        alert. `reason` is optional (at most 200 characters) and kept in the audit record.
+        Every change is written to the audit log (action kill_switch_change, before and after
+        values) and pushes an alert; it takes effect on every server instance within 10 seconds
+        (04 §10.2). No Idempotency-Key (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/ConfigKeyPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminKillSwitchUpdateRequest'
+            examples:
+              pause:
+                summary: Pause every withdrawal request
+                value:
+                  value: false
+                  expected_version: 3
+                  reason: 打款通道异常，暂停提现
+              maintenance:
+                summary: Mark the pdd conversion stop as maintenance (first write)
+                value:
+                  value: maintenance
+                  expected_version: 0
+      responses:
+        '200':
+          description: The switch as it is now.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminKillSwitchResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  key: withdraw.enabled
+                  value: false
+                  default: true
+                  value_type: boolean
+                  options: null
+                  permissions:
+                    - switch.all
+                    - switch.payout
+                  admin_editable: true
+                  version: 4
+                  updated_by: ops-yi
+                  updated_at: '2026-10-09T10:05:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                keyInvalid:
+                  $ref: '#/components/examples/AdminConfigKeyInvalid'
+                valueInvalid:
+                  $ref: '#/components/examples/AdminConfigValueInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminKillSwitchConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/config-items:
+    get:
+      operationId: adminListConfigItems
+      tags:
+        - admin-config
+      summary: Registered configuration items and their current values
+      description: |
+        Permission point: any of `config.general`, `config.risk` or `config.business` (04 §11.2;
+        read only, no step-up). One row per configuration key the server has registered (04 §10),
+        in registry order, page by page (`page`, `page_size` ≤ 200): the current value (null =
+        never written, the server's built-in default applies), the value type and, for `enum`,
+        the allowed values, the permission point that guards changing it (`permission`), whether
+        the console may change it (`admin_editable`; false for `agent.page_guide.routes` and
+        `external_hosts` until their editors ship) and the `version` that the writes take as
+        `expected_version`. Emergency switches (04 §10.2) are not here but under
+        /admin/v1/kill-switches.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of registered configuration items.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConfigItemPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - key: favorites.max_per_user
+                      value: 200
+                      value_type: number
+                      options: null
+                      permission: config.general
+                      admin_editable: true
+                      version: 2
+                      updated_by: ops-yi
+                      updated_at: '2026-10-09T10:00:00+08:00'
+                    - key: withdraw.daily_count_per_user
+                      value: null
+                      value_type: number
+                      options: null
+                      permission: config.business
+                      admin_editable: true
+                      version: 0
+                      updated_by: null
+                      updated_at: null
+                    - key: agent.page_guide.routes
+                      value:
+                        - Wallet
+                        - WithdrawRecords
+                      value_type: object
+                      options: null
+                      permission: config.general
+                      admin_editable: false
+                      version: 1
+                      updated_by: ops-yi
+                      updated_at: '2026-10-08T09:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 3
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/config-items/batch:
+    post:
+      operationId: adminBatchUpdateConfigItems
+      tags:
+        - admin-config
+      summary: Change several configuration items at once
+      description: |
+        Permission point: the one point that guards every key of the batch (`config.general`,
+        `config.risk` or `config.business`, 04 §11.2); a batch mixing keys of different points
+        is 20001 with `data.fields=[items]`, as is a key listed twice. Step-up by that point
+        (04 §11.2, BR-ID-34): none for `config.general`; totp tier for `config.risk` and
+        `config.business` (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+        `data.tier=totp`). The whole batch takes effect or nothing does (05 F1-10): first every
+        key and value is checked (unregistered or not admin-editable keys, values of the wrong
+        type, outside `options` or failing the key's own rule such as the candidate set of
+        BR-AI-01 细则「页面引导」), and any failure is 20001 with `data.fields` listing every
+        failing key; only then are the versions compared, and any mismatch is 20902 with
+        `data.resource=config_item` and nothing applied. Each changed key gets its version plus
+        1, a history version and an audit record (action config_item_change) carrying the
+        shared `reason`; the change pushes an alert. Values take effect as each key's reader
+        re-reads it (within that key's cache period), never retroactively (04 §10). No
+        Idempotency-Key (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminConfigItemBatchRequest'
+            example:
+              items:
+                - key: withdraw.daily_count_per_user
+                  value: 1
+                  expected_version: 0
+                - key: withdraw.monthly_count_per_user
+                  value: 10
+                  expected_version: 0
+              reason: 上线前填写提现次数
+      responses:
+        '200':
+          description: Every item of the batch as it is now, in request order.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConfigItemListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - key: withdraw.daily_count_per_user
+                      value: 1
+                      value_type: number
+                      options: null
+                      permission: config.business
+                      admin_editable: true
+                      version: 1
+                      updated_by: ops-yi
+                      updated_at: '2026-10-09T10:05:00+08:00'
+                    - key: withdraw.monthly_count_per_user
+                      value: 10
+                      value_type: number
+                      options: null
+                      permission: config.business
+                      admin_editable: true
+                      version: 1
+                      updated_by: ops-yi
+                      updated_at: '2026-10-09T10:05:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Nothing changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                itemsInvalid:
+                  $ref: '#/components/examples/AdminConfigBatchItemsInvalid'
+                mixedPermissions:
+                  $ref: '#/components/examples/AdminConfigBatchMixedPermissions'
+                conflict:
+                  $ref: '#/components/examples/AdminConfigItemConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/config-items/{key}:
+    get:
+      operationId: adminGetConfigItem
+      tags:
+        - admin-config
+      summary: One configuration item
+      description: |
+        Permission point: any of `config.general`, `config.risk` or `config.business` (04 §11.2;
+        read only, no step-up). The item as listed by GET /admin/v1/config-items. A key the
+        server has not registered is 20001 with `data.fields=[key]`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/ConfigKeyPath'
+      responses:
+        '200':
+          description: The configuration item.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConfigItemResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  key: favorites.max_per_user
+                  value: 200
+                  value_type: number
+                  options: null
+                  permission: config.general
+                  admin_editable: true
+                  version: 2
+                  updated_by: ops-yi
+                  updated_at: '2026-10-09T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unknownKey:
+                  $ref: '#/components/examples/AdminConfigKeyInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    put:
+      operationId: adminUpdateConfigItem
+      tags:
+        - admin-config
+      summary: Change one configuration item
+      description: |
+        Permission point: the point that guards the key (its `permission`: `config.general`,
+        `config.risk` or `config.business`, 04 §11.2); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Step-up by that point (04 §11.2, BR-ID-34): none
+        for `config.general`; totp tier for `config.risk` and `config.business` (without a valid
+        totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). A key the server has not
+        registered, or one the console may not change (`admin_editable=false`:
+        `agent.page_guide.routes`, `external_hosts`), is 20001 with `data.fields=[key]`; a value
+        of the wrong type, outside `options` or failing the key's own rule is 20001 with
+        `data.fields=[value]`. CAS: `expected_version` is the item's `version` the console showed
+        (0 for an item never written); a change adds 1 and stores a history version, and a
+        mismatch → 20902 with `data.resource=config_item`, refresh and retry (04 §6.6). Writing
+        the value the item already has with a matching version succeeds without change. `reason`
+        is optional (at most 200 characters) and kept with the history version. Every change is
+        written to the audit log (action config_item_change, before and after values) and
+        pushes an alert; it takes effect as the key's reader re-reads it (within that key's
+        cache period), never retroactively (04 §10). No Idempotency-Key (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/ConfigKeyPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminConfigItemUpdateRequest'
+            example:
+              value: 300
+              expected_version: 2
+              reason: 收藏上限调到 300
+      responses:
+        '200':
+          description: The configuration item as it is now.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConfigItemResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  key: favorites.max_per_user
+                  value: 300
+                  value_type: number
+                  options: null
+                  permission: config.general
+                  admin_editable: true
+                  version: 3
+                  updated_by: ops-yi
+                  updated_at: '2026-10-09T10:05:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                keyInvalid:
+                  $ref: '#/components/examples/AdminConfigKeyInvalid'
+                valueInvalid:
+                  $ref: '#/components/examples/AdminConfigValueInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminConfigItemConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/config-items/{key}/versions:
+    get:
+      operationId: adminListConfigItemVersions
+      tags:
+        - admin-config
+      summary: Version history of one configuration item
+      description: |
+        Permission point: any of `config.general`, `config.risk` or `config.business` (04 §11.2;
+        read only, no step-up). Every stored version of the item, newest first, page by page
+        (`page`, `page_size` ≤ 200), with the value, who wrote it (null = written by the system)
+        and the reason given; any older version can be restored with POST
+        /admin/v1/config-items/{key}/rollback. A key the server has not registered is 20001 with
+        `data.fields=[key]`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/ConfigKeyPath'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of versions, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConfigItemVersionPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - version: 2
+                      value: 200
+                      updated_by: ops-yi
+                      reason: null
+                      created_at: '2026-10-09T10:00:00+08:00'
+                    - version: 1
+                      value: 150
+                      updated_by: ops-yi
+                      reason: 开发期占位值
+                      created_at: '2026-10-08T09:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unknownKey:
+                  $ref: '#/components/examples/AdminConfigKeyInvalid'
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/config-items/{key}/rollback:
+    post:
+      operationId: adminRollbackConfigItem
+      tags:
+        - admin-config
+      summary: Roll one configuration item back to an older version
+      description: |
+        Permission point and step-up as for PUT /admin/v1/config-items/{key}: the key's point
+        (`config.general`, `config.risk` or `config.business`, 04 §11.2); totp tier for
+        `config.risk` and `config.business`, none for `config.general` (without a valid
+        totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Writes the value of
+        `to_version` as a new version (the current version plus 1); history is never rewritten.
+        `to_version` must be a stored version lower than the current one, otherwise 20001 with
+        `data.fields=[to_version]`; the restored value is checked against the key's current rule
+        like a new value (for example the candidate set of BR-AI-01 细则「页面引导」 for
+        `agent.page_guide.routes`), and a value that no longer passes is 20001 with
+        `data.fields=[to_version]` and nothing changes. An unregistered or not admin-editable key
+        is 20001 with `data.fields=[key]`. CAS: `expected_version` is the item's current
+        `version`; a mismatch → 20902 with `data.resource=config_item`. Written to the audit log
+        (action config_item_rollback) and pushes an alert; takes effect like a change (04 §10).
+        No Idempotency-Key (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/ConfigKeyPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminConfigItemRollbackRequest'
+            example:
+              to_version: 1
+              expected_version: 3
+              reason: 回到上一版
+      responses:
+        '200':
+          description: The configuration item with the restored value as its new version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConfigItemResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  key: favorites.max_per_user
+                  value: 150
+                  value_type: number
+                  options: null
+                  permission: config.general
+                  admin_editable: true
+                  version: 4
+                  updated_by: ops-yi
+                  updated_at: '2026-10-09T10:10:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not rolled back (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                keyInvalid:
+                  $ref: '#/components/examples/AdminConfigKeyInvalid'
+                unknownVersion:
+                  $ref: '#/components/examples/AdminConfigVersionInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminConfigItemConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /v1/agent/sessions:
     post:
       operationId: createAgentSession
@@ -6802,6 +7556,29 @@ components:
         type: integer
         format: int32
         minimum: 1
+    ConfigKeyPath:
+      name: key
+      in: path
+      required: true
+      description: |
+        A configuration or emergency-switch key as registered by the server (04 §10, §10.2), dotted
+        and concrete (`convert.enabled.taobao`, not `convert.enabled.<platform>`); an unregistered
+        key → 20001 with data.fields=[key].
+      schema:
+        $ref: '#/components/schemas/AdminConfigKey'
+    AdminStepUpToken:
+      name: X-Step-Up-Token
+      in: header
+      required: false
+      description: |
+        step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+        tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+        tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+        optional). Only on admin console operations; app operations use StepUpToken.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 2048
     AgentSessionId:
       name: id
       in: path
@@ -7270,6 +8047,76 @@ components:
         msg: 状态已变化，请刷新后重试
         data:
           resource: platform_icon
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminStepUpRequiredTotp:
+      summary: 10003 the operation needs a totp-tier step-up token
+      value:
+        code: 10003
+        msg: 这项操作需要二次验证，请输入动态码
+        data:
+          tier: totp
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminConfigKeyInvalid:
+      summary: 20001 key not registered, or not changeable from the console
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - key
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminConfigValueInvalid:
+      summary: 20001 value of the wrong type, outside options or failing the key's rule
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - value
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminConfigVersionInvalid:
+      summary: 20001 to_version unknown, not older than the current one, or no longer valid
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - to_version
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminConfigBatchItemsInvalid:
+      summary: 20001 every batch key whose key or value failed the check (nothing applied)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - withdraw.daily_count_per_user
+            - withdraw.monthly_count_per_user
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminConfigBatchMixedPermissions:
+      summary: 20001 the batch mixes keys of different permission points, or repeats a key
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - items
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminConfigItemConflict:
+      summary: 20902 the item was changed by someone else (version moved on)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: config_item
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminKillSwitchConflict:
+      summary: 20902 the switch was changed by someone else (version moved on)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: kill_switch
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     SearchProductsOk:
       summary: One page of taobao results
@@ -13082,6 +13929,455 @@ components:
           format: int32
           minimum: 0
           description: The mark's `revision` as the console showed it; a mismatch is 20902.
+    AdminConfigKey:
+      type: string
+      description: |
+        A configuration or emergency-switch key (04 §10, §10.2): dotted segments, concrete per
+        platform or channel (`convert.enabled.taobao`); the server's registry decides which keys
+        exist.
+      minLength: 1
+      maxLength: 128
+      pattern: '^[a-z][a-z0-9_]*(\.[A-Za-z0-9_]+)*$'
+    AdminConfigValue:
+      description: |
+        Any JSON value of the key's `value_type` (an `enum` value is one of `options`); checked by
+        the server against the key's registered type and rule, a mismatch → 20001 with
+        data.fields=[value].
+    AdminConfigValueType:
+      type: string
+      description: |
+        Type of a configuration or switch value: boolean, enum (a string out of `options`), object
+        (a JSON object or array, such as a list of routes or hosts), number or string.
+      enum:
+        - boolean
+        - enum
+        - object
+        - number
+        - string
+    AdminConfigOptions:
+      type:
+        - array
+        - 'null'
+      description: Allowed values when `value_type` is enum; null for every other type.
+      items:
+        type: string
+        minLength: 1
+        maxLength: 64
+    AdminConfigVersionNumber:
+      type: integer
+      format: int32
+      minimum: 0
+      description: |
+        Version of the key's current value: 0 = never written (value null, the default applies);
+        plus 1 on every change or rollback, never going back. The CAS value `expected_version`
+        of the writes.
+    AdminConfigReason:
+      type: string
+      minLength: 1
+      maxLength: 200
+      description: Optional free-text reason, kept in the audit record and the history version.
+    AdminKillSwitch:
+      type: object
+      description: A registered emergency switch (04 §10.2) and its current value.
+      additionalProperties: false
+      required:
+        - key
+        - value
+        - default
+        - value_type
+        - options
+        - permissions
+        - admin_editable
+        - version
+        - updated_by
+        - updated_at
+      properties:
+        key:
+          $ref: '#/components/schemas/AdminConfigKey'
+        value:
+          description: Current value; null = never written, `default` applies.
+          anyOf:
+            - $ref: '#/components/schemas/AdminConfigValue'
+            - type: 'null'
+        default:
+          $ref: '#/components/schemas/AdminConfigValue'
+        value_type:
+          $ref: '#/components/schemas/AdminConfigValueType'
+        options:
+          $ref: '#/components/schemas/AdminConfigOptions'
+        permissions:
+          type: array
+          description: Permission points of which any one may change the switch (04 §11.2).
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AdminPermissionKey'
+        admin_editable:
+          type: boolean
+          description: false = the console shows the switch read only and a change is 20001 [key].
+        version:
+          $ref: '#/components/schemas/AdminConfigVersionNumber'
+        updated_by:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Username of the admin who last changed it; null = never changed or set by the system.
+        updated_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    AdminKillSwitchPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Registered switches in registry order.
+          items:
+            $ref: '#/components/schemas/AdminKillSwitch'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminKillSwitchPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminKillSwitchPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminKillSwitchResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminKillSwitch'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminKillSwitchUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - value
+        - expected_version
+      properties:
+        value:
+          $ref: '#/components/schemas/AdminConfigValue'
+        expected_version:
+          allOf:
+            - $ref: '#/components/schemas/AdminConfigVersionNumber'
+          description: The switch's `version` as the console showed it; a mismatch is 20902.
+        reason:
+          $ref: '#/components/schemas/AdminConfigReason'
+    AdminConfigItem:
+      type: object
+      description: A registered configuration item (04 §10) and its current value.
+      additionalProperties: false
+      required:
+        - key
+        - value
+        - value_type
+        - options
+        - permission
+        - admin_editable
+        - version
+        - updated_by
+        - updated_at
+      properties:
+        key:
+          $ref: '#/components/schemas/AdminConfigKey'
+        value:
+          description: Current value; null = never written, the server's built-in default applies.
+          anyOf:
+            - $ref: '#/components/schemas/AdminConfigValue'
+            - type: 'null'
+        value_type:
+          $ref: '#/components/schemas/AdminConfigValueType'
+        options:
+          $ref: '#/components/schemas/AdminConfigOptions'
+        permission:
+          allOf:
+            - $ref: '#/components/schemas/AdminPermissionKey'
+          description: The config.* point that guards changing the item, and so its step-up tier.
+        admin_editable:
+          type: boolean
+          description: false = the console shows the item read only and a change is 20001 [key].
+        version:
+          $ref: '#/components/schemas/AdminConfigVersionNumber'
+        updated_by:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Username of the admin who last changed it; null = never changed or set by the system.
+        updated_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    AdminConfigItemPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Registered configuration items in registry order.
+          items:
+            $ref: '#/components/schemas/AdminConfigItem'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminConfigItemPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminConfigItemPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminConfigItemResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminConfigItem'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminConfigItemList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          description: Every item of the batch, in request order.
+          items:
+            $ref: '#/components/schemas/AdminConfigItem'
+    AdminConfigItemListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminConfigItemList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminConfigItemVersion:
+      type: object
+      description: One stored version of a configuration item (config_item_versions).
+      additionalProperties: false
+      required:
+        - version
+        - value
+        - updated_by
+        - reason
+        - created_at
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        value:
+          $ref: '#/components/schemas/AdminConfigValue'
+        updated_by:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Username of the admin who wrote the version; null = written by the system.
+        reason:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+        created_at:
+          type: string
+          format: date-time
+    AdminConfigItemVersionPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Newest version first.
+          items:
+            $ref: '#/components/schemas/AdminConfigItemVersion'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminConfigItemVersionPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminConfigItemVersionPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminConfigItemUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - value
+        - expected_version
+      properties:
+        value:
+          $ref: '#/components/schemas/AdminConfigValue'
+        expected_version:
+          allOf:
+            - $ref: '#/components/schemas/AdminConfigVersionNumber'
+          description: The item's `version` as the console showed it; a mismatch is 20902.
+        reason:
+          $ref: '#/components/schemas/AdminConfigReason'
+    AdminConfigItemBatchEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - value
+        - expected_version
+      properties:
+        key:
+          $ref: '#/components/schemas/AdminConfigKey'
+        value:
+          $ref: '#/components/schemas/AdminConfigValue'
+        expected_version:
+          allOf:
+            - $ref: '#/components/schemas/AdminConfigVersionNumber'
+          description: The item's `version` as the console showed it; any mismatch is 20902 for the whole batch.
+    AdminConfigItemBatchRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          description: Keys of one permission point, each at most once.
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/AdminConfigItemBatchEntry'
+        reason:
+          $ref: '#/components/schemas/AdminConfigReason'
+    AdminConfigItemRollbackRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - to_version
+        - expected_version
+      properties:
+        to_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: The stored version whose value becomes the new current value; must be older than the current one.
+        expected_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: The item's current `version` as the console showed it; a mismatch is 20902.
+        reason:
+          $ref: '#/components/schemas/AdminConfigReason'
     AgentSession:
       type: object
       description: An Agent conversation (agent_sessions; owner and expiry per BR-AI-20).
