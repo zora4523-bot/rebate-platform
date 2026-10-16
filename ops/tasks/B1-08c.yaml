@@ -7,6 +7,7 @@ type: migration
 # 按 04 §3.2 各行全量写（编排者摘行进任务书）；sync_cursors 唯一 (app_id, platform, union_account_id, query_kind, scene)（02 §7.1）；order_sync_counters 唯一 (app_id, platform, date, counter)。
 # order_sync_pending 的 reason 与处置状态 04 写「由契约线登记」、未登记（12 §9 S-07）：本迁移按 04 该行列举的原因建命名 CHECK，处置状态 open / resolved / dismissed（待编排裁定 ①，orders-plan.md）；同一子订单同一 reason 未处置时唯一（04 该行）。
 # 订单类表只预建不删除（BR-ID-30 ⑰）；order_status_history 只插入（触发器同 0007）；授权写在建对象的那条迁移里。迁移号 0035（事先在 notices 定号）。两段式：编排者在测试机跑 remote-snapshot 提交生成物。
+# 2026-10-17 补：lint-migrations 按 order 前缀把 order_sync_* 与 order_status_history 判为资金 / 归属表，tools/ci/lint-migrations.test.ts「classifies every table」的名单须同步加这五张表（只加行，属收紧；先例 D7-22 B1-06y），故加进 paths，合并时按 #24 加标签。
 refs: []
 refs_hash: {}
 deps: [B1-08a]
@@ -15,6 +16,7 @@ paths:
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
   - 'packages/db/src/partitions.ts'
+  - 'tools/ci/lint-migrations.test.ts'
 test_paths:
   - 'test/spec/db/orders-sync/**'
 impl: claude
