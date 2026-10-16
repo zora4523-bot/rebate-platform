@@ -23,7 +23,7 @@ export type {
 } from './application/parsing.ts';
 export { classifyParsingUrl } from './domain/link-patterns.ts';
 export type { LinkPatternCategory, ParsingUrlMatch } from './domain/link-patterns.ts';
-export { extractCandidates, MAX_CANDIDATES } from './domain/candidates.ts';
+export { extractCandidates, findCandidateSpans, MAX_CANDIDATES } from './domain/candidates.ts';
 export type { Candidate } from './domain/candidates.ts';
 export { ParsingConfigReader, ParsingLinkRegistrars } from './ports.ts';
 export type { ParseScene } from './ports.ts';
