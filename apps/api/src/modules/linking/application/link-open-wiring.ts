@@ -49,10 +49,12 @@ export interface LinkOpenEnvironment {
 
 /**
  * Pre-reads of a dependency the open's card re-check calls inside its transaction (the quoter's
- * configuration), run with the open's own pre-reads before the transaction (B1-06m).
+ * rule versions, viewer levels and configuration), run with the open's own pre-reads before the
+ * transaction (B1-06m). B2-03d: it gets the whole plan, so the caller and every owner identity
+ * can be pre-read; failures are settled here and surface where the transaction reads them.
  */
 export interface LinkOpenQuoteReads {
-  prepare(appId: string): Promise<void>;
+  prepare(plan: LinkOpenReadPlan): Promise<void>;
 }
 
 export type WiredLinkOpenOptions = Omit<LinkOpenRequoteOptions, 'conversion'> &
@@ -158,7 +160,7 @@ export function createWiredConversion(options: WiredLinkOpenOptions): WiredConve
     async prepare(plan: LinkOpenReadPlan): Promise<void> {
       await Promise.allSettled([
         base.prepare(plan),
-        ...(quoteReads === undefined ? [] : [quoteReads.prepare(plan.appId)]),
+        ...(quoteReads === undefined ? [] : [quoteReads.prepare(plan)]),
       ]);
     },
     async convert(input: JdPddConversionInput): Promise<LinkOpenJump> {

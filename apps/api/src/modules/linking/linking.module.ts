@@ -120,12 +120,13 @@ const LINK_OPEN_PROCESS = Symbol('LINK_OPEN_PROCESS');
  * B1-06w: what the open needs from other modules, assembled by the composition root so linking
  * imports neither the union registry nor catalog's providers. None of them may take a database
  * connection while the open holds its transaction (B1-06m): the union adapters call HTTP, the
- * quoter's configuration is pre-read through quoteReads, the item_ref issuer only encrypts.
+ * quoter's rule versions, viewer levels and configuration are pre-read through quoteReads, the
+ * item_ref issuer only encrypts.
  */
 export interface LinkOpenPorts {
   /** The process's governed union adapters (one per platform, B1-05j). */
   readonly union: { adapter(platform: RegisteredPlatform): UnionAdapter };
-  /** The quoter of catalog's card entry (the demo quoter until B2-03). */
+  /** The quoter of catalog's card entry (commission's real quoter in prod / live, B2-03d). */
   readonly quoter: CardRebateQuoter;
   readonly itemRefs: Pick<ItemRefService, 'issue'>;
   readonly quoteReads: LinkOpenQuoteReads;
