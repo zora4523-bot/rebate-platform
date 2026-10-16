@@ -65,6 +65,26 @@ export class AdminPlatformIconsController {
     this.#writer = writer;
   }
 
+  async upload(
+    request: PlatformIconsRequest,
+    key: string,
+  ): Promise<Schema<'AdminPlatformIconUploadResponse'>> {
+    void request;
+    void key;
+    throw new Error('NotImplemented: AdminPlatformIconsController.upload');
+  }
+
+  async create(
+    request: PlatformIconsRequest,
+    key: string,
+    body: Schema<'AdminPlatformIconVersionCreateRequest'>,
+  ): Promise<Schema<'AdminPlatformIconVersionResponse'>> {
+    void request;
+    void key;
+    void body;
+    throw new Error('NotImplemented: AdminPlatformIconsController.create');
+  }
+
   /** adminListPlatformIcons: every mark of the admin's app, in enum order. */
   async list(request: PlatformIconsRequest): Promise<Schema<'AdminPlatformIconListResponse'>> {
     let response: Schema<'AdminPlatformIconListResponse'> | undefined;
