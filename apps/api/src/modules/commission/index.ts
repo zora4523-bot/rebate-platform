@@ -1,9 +1,6 @@
 export { createCommissionRebateQuoter } from './application/rebate-quoter.ts';
-export type {
-  COMMISSION_QUOTE_CONFIG_KEYS,
-  CommissionQuoteContext,
-  CommissionRebateQuoter,
-} from './application/types.ts';
+export { COMMISSION_QUOTE_CONFIG_KEYS } from './application/types.ts';
+export type { CommissionQuoteContext, CommissionRebateQuoter } from './application/types.ts';
 export type { CommissionRebateQuoterOptions } from './application/rebate-quoter.ts';
 export { selectRuleVersion, selectQuoteTerms } from './domain/rules.ts';
 export type {

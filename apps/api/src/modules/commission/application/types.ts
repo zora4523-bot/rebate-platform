@@ -7,9 +7,7 @@ import type {
 } from '../../catalog/index.ts';
 import type { UnionItem } from '../../union/index.ts';
 
-/** Type-only in the test-stage skeleton (no const declarations allowed by task §3).
- * The implementation exports the runtime list with this same name and tuple type.
- */
+/** Configuration keys a quote reads (all in the viewer's app scope); prepare() pre-reads all. */
 export type COMMISSION_QUOTE_CONFIG_KEYS = readonly [
   'commission.platforms',
   'tech_fee_bp',
@@ -17,6 +15,14 @@ export type COMMISSION_QUOTE_CONFIG_KEYS = readonly [
   'union.pdd.self_buy_factor_bp',
   'union.pdd.account_level_factor_bp',
 ];
+
+export const COMMISSION_QUOTE_CONFIG_KEYS: COMMISSION_QUOTE_CONFIG_KEYS = Object.freeze([
+  'commission.platforms',
+  'tech_fee_bp',
+  'rebate.taobao.compare_rate_ratio_bp',
+  'union.pdd.self_buy_factor_bp',
+  'union.pdd.account_level_factor_bp',
+] as const);
 
 /** Cards supply self; the commission port also accepts callers' share quotes. */
 export interface CommissionQuoteContext extends Omit<CardQuoteContext, 'buyType'> {
