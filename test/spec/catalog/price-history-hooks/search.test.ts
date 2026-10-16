@@ -11,6 +11,13 @@ import { UnionError } from '../../../../apps/api/src/modules/union/index.ts';
 import { QUERY, candidate, fixture } from '../search/kit.ts';
 import { byKey, hangingRecorder, hookRecorder, outcome, textOf, throwingRecorder } from './kit.ts';
 
+function withoutSku(name: string): SearchCandidate {
+  const base = candidate(name);
+  const { skuId, ...item } = base.item;
+  void skuId;
+  return { ...base, item };
+}
+
 function anomaly(name: string): SearchCandidate {
   const base = candidate(name);
   return { ...base, item: { ...base.item, price_status: 'anomaly' } };
@@ -32,7 +39,7 @@ it('[AC-B1-17c#1] 搜索：联盟新鲜返回的每个候选各交出一条 sear
       appId: 'synthetic-app',
       platform: 'taobao',
       productKey: 'tb:synthetic-a',
-      skuKey: null,
+      skuKey: 'synthetic-a',
       sourceKind: 'search',
       outcome: 'ok',
       priceFen: 1200n,
@@ -48,7 +55,7 @@ it('[AC-B1-17c#1] 搜索：联盟新鲜返回的每个候选各交出一条 sear
       appId: 'synthetic-app',
       platform: 'taobao',
       productKey: 'tb:synthetic-b',
-      skuKey: null,
+      skuKey: 'synthetic-b',
       sourceKind: 'search',
       outcome: 'ok',
       priceFen: 1500n,
@@ -159,3 +166,19 @@ it('[AC-B1-17c#5] 搜索：记录器抛错或 record 永不返回时，响应与
   expect(throwing.record).toHaveBeenCalledTimes(2);
   expect(hanging.record).toHaveBeenCalledTimes(2);
 }, 5000);
+
+it('[AC-B1-17c#22] 搜索：上游候选不带 skuId 时观测的 skuKey 为 null，带 skuId 的候选取该值', async () => {
+  const f = fixture();
+  const hook = hookRecorder(f.clock);
+  f.pages.set(1, {
+    items: [withoutSku('n'), candidate('s')],
+    hasMore: false,
+    fresh: true,
+  });
+  await searchProducts(QUERY, { ...f.options, priceHistory: hook.recorder });
+  await hook.recorder.drain();
+  expect(byKey(hook.observations).map((row) => [row.productKey, row.skuKey])).toEqual([
+    ['tb:synthetic-n', null],
+    ['tb:synthetic-s', 'synthetic-s'],
+  ]);
+});
