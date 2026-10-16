@@ -64,8 +64,9 @@ export interface AdminPermissionPrincipal {
 export interface AdminPermissionRequest {
   /** Trusted server-injected account/session/grants, never request body fields. */
   readonly principal: AdminPermissionPrincipal;
-  readonly permission: string;
+  readonly permission: string | readonly string[];
   readonly operation?: string;
+  readonly readOnly?: boolean;
   readonly headers: Readonly<Record<string, string | readonly string[] | undefined>>;
   /** trace_id of the error envelopes (the request id); a fresh UUID when absent. */
   readonly traceId?: string;
@@ -216,12 +217,27 @@ export function createAdminPermissionGuard(deps: {
 
   return {
     async run(request, business) {
-      const { principal, permission, operation } = request;
+      const { principal, permission, operation, readOnly } = request;
       const traceId = request.traceId ?? randomUUID();
-      if (!principal.isSuper && !principal.permissions.includes(permission)) {
+      const points = typeof permission === 'string' ? [permission] : permission;
+      const [first] = points;
+      if (first === undefined) throw new Error('admin: empty permission selection');
+
+      // Validate every point of a write list, even those this account does not hold.
+      // A read deliberately never resolves tiers (including operation-specific overrides).
+      let tier: AdminStepUpTier | null = null;
+      if (typeof permission !== 'string' && readOnly !== true) {
+        tier = requiredStepUpTier(first, operation);
+        if (points.some((point) => requiredStepUpTier(point, operation) !== tier)) {
+          throw new Error('admin: permission selection has differing step-up tiers');
+        }
+      }
+      if (!principal.isSuper && !points.some((point) => principal.permissions.includes(point))) {
         throw permissionDenied(traceId);
       }
-      const tier = requiredStepUpTier(permission, operation);
+      if (readOnly === true) return await business();
+      // Preserve single-point writes: check the permission before resolving its tier.
+      if (typeof permission === 'string') tier = requiredStepUpTier(permission, operation);
       if (tier === null) return await business();
       if (tier === 'sms' && !principal.hasVerifyPhone) throw stepUpRequired(tier, traceId, true);
 

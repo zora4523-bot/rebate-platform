@@ -61,13 +61,11 @@ export class AdminOperationGuardImpl extends AdminOperationGuard {
     this.#deps = deps;
   }
 
-  // TODO(规划/11 §2): F1-10c widens the port (a list of permission points, readOnly); this
-  // implementation still takes one point only — blocked on F1-10c's implementation round.
   override async run(
-    input: AdminOperationInput & { readonly permission: string },
+    input: AdminOperationInput,
     business: (actor: AdminActor) => Promise<AdminOperationResponse>,
   ): Promise<AdminOperationResponse> {
-    const { request, permission, operation } = input;
+    const { request, permission, operation, readOnly } = input;
     const principal = adminPrincipal(request);
     if (principal === undefined) {
       // Not a client error: a business route that is not x-auth admin / super used the guard.
@@ -98,7 +96,8 @@ export class AdminOperationGuardImpl extends AdminOperationGuard {
         },
         permission,
         ...(operation === undefined ? {} : { operation }),
-        headers: headersOf(request),
+        ...(readOnly === undefined ? {} : { readOnly }),
+        headers: readOnly === true ? {} : headersOf(request),
         traceId,
       },
       () => business(actor),

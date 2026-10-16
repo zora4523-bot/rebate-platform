@@ -22,7 +22,7 @@ export interface AdminOperationInput {
   /**
    * Permission key of specs/permissions.yaml, or a non-empty list of keys of which the account
    * must hold any one (F1-10c). A list on a write must share one step-up tier; an empty list or
-   * a list of differing tiers is a programming error (50001).
+   * a write list of differing tiers is a programming error (50001).
    */
   readonly permission: AdminPermissionSelector;
   /** Operation under the permission, when its step-up tier departs from the permission's. */
