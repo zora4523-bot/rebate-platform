@@ -23,4 +23,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/content/config-icons/**'
-status: todo
+status: done
+pr: 583
