@@ -12,9 +12,9 @@ export class FavoriteError extends Error {
   readonly data: FavoriteErrorData;
 
   constructor(data: FavoriteErrorData, message?: string) {
-    super('NotImplemented: FavoriteError');
-    void data;
-    void message;
-    throw new Error('NotImplemented: FavoriteError');
+    super(message ?? data.reason ?? 'Invalid favorites request');
+    this.name = 'FavoriteError';
+    this.code = 20001;
+    this.data = data;
   }
 }
