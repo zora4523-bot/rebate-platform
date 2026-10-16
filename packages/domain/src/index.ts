@@ -1,4 +1,14 @@
 export { splitCommission, quoteRebate } from './commission/commission.ts';
+export { validateRuleVersion } from './commission/publish-validation.ts';
+export type {
+  RuleVersionDraft,
+  RuleVersionReserve,
+  RuleVersionRow,
+  RuleVersionValidationCode,
+  RuleVersionValidationError,
+  ValidateRuleVersionInput,
+  ValidateRuleVersionResult,
+} from './commission/publish-validation.ts';
 export type {
   CommissionBeneficiary,
   CommissionShare,
