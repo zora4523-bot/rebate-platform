@@ -1,10 +1,11 @@
-// The Codex-first task list (owner 2026-10-06, ops/approvals.yaml id 23).
+// The Codex-first task list (owner 2026-10-06, ops/approvals.yaml id 23; owner 2026-10-16, id 30).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { findApproval, parseApprovals } from '../guard/lib/approvals.ts';
 import { MONEY_PATHS } from '../ci/evidence-check.ts';
 import { globsMayOverlap } from '../ops/overlap.ts';
+import { archivedTaskIds } from '../ops/task.ts';
 import {
   CODEX_IMPL_TASKS_FILE,
   isCodexFirst,
@@ -13,27 +14,41 @@ import {
   loadCodexImplTasks,
 } from './codex-impl-tasks.ts';
 import { repoRoot } from './paths.ts';
+import { listTaskIds } from './task-file.ts';
 
-it('[approvals 23] lists only tasks of 规划/11 §7.3 row 14, per split task where the row is narrowed, and points at a granted approval', () => {
+it('[approvals 23, 30] lists tasks of 规划/11 §7.3 row 14, per split task where the row is narrowed, and other tasks only one by one under row 15; each rests on a granted approval', () => {
   const doc = JSON.parse(readFileSync(join(repoRoot(), CODEX_IMPL_TASKS_FILE), 'utf8')) as {
     approval: number;
     tasks: string[];
   };
   expect(doc.tasks.length).toBeGreaterThan(0);
   expect(loadCodexImplTasks(repoRoot())).toEqual(doc.tasks);
-  // Rows the exception covers whole, and rows it covers only in part (split tasks named one by one).
-  const whole = ['B3-02', 'B3-03', 'QA-06'];
-  const partial = ['B3-07', 'B1-14', 'QA-05', 'QA-09'];
-  for (const entry of doc.tasks) {
-    const row = entry.replace(/[a-z]+$/, '');
-    expect([...whole, ...partial], entry).toContain(row);
-    if (partial.includes(row))
-      expect(entry, 'a narrowed row is listed per split task').not.toBe(row);
-  }
   const approvals = parseApprovals(readFileSync(join(repoRoot(), 'ops', 'approvals.yaml'), 'utf8'));
   const entry = findApproval(approvals, doc.approval);
   expect(entry?.granted).toBe(true);
   expect(entry?.row).toBe(14);
+  // Row 14: rows the exception covers whole, and rows it covers only in part (split tasks named
+  // one by one).
+  const whole = ['B3-02', 'B3-03', 'QA-06'];
+  const partial = ['B3-07', 'B1-14', 'QA-05', 'QA-09'];
+  // Row 15 (id 30): any other task not yet started, listed under the id of its ledger (ops/tasks
+  // or its archive), never as a bare 规划/05 row, which would also let through split tasks
+  // already started. Whether a task had started is checked by the orchestrator when listing it.
+  const unstarted = approvals.approvals.filter((a) => a.row === 15 && a.granted);
+  const ledgers = new Set([...listTaskIds(repoRoot()), ...archivedTaskIds(repoRoot())]);
+  for (const task of doc.tasks) {
+    const row = task.replace(/[a-z]+$/, '');
+    if ([...whole, ...partial].includes(row)) {
+      if (partial.includes(row))
+        expect(task, 'a narrowed row is listed per split task').not.toBe(row);
+      continue;
+    }
+    expect(
+      unstarted.length,
+      `${task}: outside row 14 needs a granted approval of row 15`,
+    ).toBeGreaterThan(0);
+    expect(ledgers.has(task), `${task}: a task of row 15 is listed under its ledger id`).toBe(true);
+  }
 });
 
 it('[approvals 23] an entry with a suffix lists that task only; one without lists the whole row', () => {
