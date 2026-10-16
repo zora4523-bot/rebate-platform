@@ -107,6 +107,35 @@ it('[approvals 23] forbidden_paths cover every funds and attribution path of evi
   }
 });
 
+it('[approvals 33] the H5 and admin frontends are open to a Codex ledger; every other client and gate stays forbidden', () => {
+  const forbidden = loadCodexImplForbidden(repoRoot());
+  for (const open of ['apps/h5/src/pages/home.tsx', 'apps/admin/src/main.tsx']) {
+    expect(
+      forbidden.some((f) => globsMayOverlap(open, f)),
+      open,
+    ).toBe(false);
+  }
+  for (const closed of [
+    'apps/ios/App.swift',
+    'apps/android/app/build.gradle',
+    'apps/harmony/entry/index.ets',
+    'contracts/openapi.yaml',
+    'db/migrations/0001_init.sql',
+    'packages/money/src/index.ts',
+    'packages/domain/src/index.ts',
+    'apps/api/src/modules/payout/payout.service.ts',
+    '.github/workflows/ci.yml',
+    'tools/ops/task.ts',
+    'ops/approvals.yaml',
+    'specs/commission-examples.csv',
+  ]) {
+    expect(
+      forbidden.some((f) => globsMayOverlap(closed, f)),
+      closed,
+    ).toBe(true);
+  }
+});
+
 it('[approvals 31] mechanical_paths are exact files, each generated file under a required drift check, the contract the only other', () => {
   const mechanical = loadCodexImplMechanical(repoRoot());
   expect(mechanical).toContain('contracts/openapi.yaml');
