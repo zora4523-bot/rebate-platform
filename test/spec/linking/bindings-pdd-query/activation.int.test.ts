@@ -30,12 +30,15 @@ it.each(['absent', 'unbound', 'pending_auth', 'invalid', 'released'] as const)(
     expect(JSON.stringify(f.query.mock.calls[0])).not.toContain(f.a.userId);
     expect(JSON.stringify(f.query.mock.calls[0])).not.toMatch(/user_id|device_id/);
     expect(ctx).toMatchObject({ appId: f.appId, requestId: f.traceId, purpose: 'online' });
-    expect(f.getActivePid).toHaveBeenCalledWith({
-      appId: f.appId,
-      platform: 'pdd',
-      pidScene: 'self_buy',
-      purpose: 'convert',
-    });
+    // B1-06zb: the refresh may also pass the account in use (unionAccountId); these four stay fixed.
+    expect(f.getActivePid).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appId: f.appId,
+        platform: 'pdd',
+        pidScene: 'self_buy',
+        purpose: 'convert',
+      }),
+    );
     expect(f.attrCode).toHaveBeenCalledWith(f.appId, f.a.userId);
     expect(f.get.mock.calls.every(([platform]) => platform === 'pdd')).toBe(true);
     const rows = await f.bindings();
@@ -127,7 +130,11 @@ it.each(['pending_auth', 'invalid'] as const)(
       pidScene: 'self_buy',
       purpose: 'convert',
     });
-    f.getActivePid.mockResolvedValue({ ...slot!, union_account_id: selected });
+    // B1-06zb: an account-scoped lookup only ever returns that account's slot (B1-19d); the
+    // unscoped lookup still answers with the other account's slot. Expectations unchanged.
+    f.getActivePid.mockImplementation(async (query) =>
+      query.unionAccountId === undefined ? { ...slot!, union_account_id: selected } : slot,
+    );
     await listed(await f.list(), 'active');
     expect(await f.bindings()).toEqual([
       expect.objectContaining({
