@@ -614,6 +614,66 @@ export interface OrderSettlements {
   source: string;
 }
 
+export interface OrderStatusHistory {
+  app_id: string;
+  at: Timestamp;
+  created_at: Generated<Timestamp>;
+  event: string;
+  field: string;
+  from_status: string | null;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  order_id: string;
+  source: string;
+  to_status: string;
+}
+
+export interface OrderSyncCounters {
+  app_id: string;
+  count: ColumnType<bigint, bigint, bigint>;
+  counter: string;
+  created_at: Generated<Timestamp>;
+  date: Timestamp;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  platform: string;
+}
+
+export interface OrderSyncDropKeys {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  platform: string;
+  reason: string;
+  sub_order_id: string;
+}
+
+export interface OrderSyncDrops {
+  app_id: string;
+  count: ColumnType<bigint, bigint, bigint>;
+  created_at: Generated<Timestamp>;
+  date: Timestamp;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  platform: string;
+  reason: string;
+}
+
+export interface OrderSyncPending {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  detail: string | null;
+  detected_at: Timestamp;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  order_id: string | null;
+  platform: string;
+  raw_payload_id: ColumnType<bigint, bigint, bigint> | null;
+  raw_status: string | null;
+  reason: string;
+  resolution_note: string | null;
+  resolved_at: Timestamp | null;
+  resolved_by: string | null;
+  status: string;
+  sub_order_id: string;
+}
+
 export interface PayoutAccountChanges {
   app_id: string;
   changed_at: Timestamp;
@@ -850,6 +910,18 @@ export interface Sessions {
   user_id: string;
 }
 
+export interface SyncCursors {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  cursor_at: Timestamp;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  platform: string;
+  query_kind: string;
+  scene: string;
+  union_account_id: string;
+  updated_at: Timestamp;
+}
+
 export interface UnionAccounts {
   account_name: string;
   alert_stage: Generated<string>;
@@ -1058,6 +1130,11 @@ export interface DB {
   order_keys: OrderKeys;
   order_rights: OrderRights;
   order_settlements: OrderSettlements;
+  order_status_history: OrderStatusHistory;
+  order_sync_counters: OrderSyncCounters;
+  order_sync_drop_keys: OrderSyncDropKeys;
+  order_sync_drops: OrderSyncDrops;
+  order_sync_pending: OrderSyncPending;
   orders: Orders;
   payout_account_changes: PayoutAccountChanges;
   payout_account_verify_attempts: PayoutAccountVerifyAttempts;
@@ -1076,6 +1153,7 @@ export interface DB {
   risk_judgements: RiskJudgements;
   risk_rules: RiskRules;
   sessions: Sessions;
+  sync_cursors: SyncCursors;
   union_accounts: UnionAccounts;
   union_auth_sessions: UnionAuthSessions;
   union_binding_conflicts: UnionBindingConflicts;
