@@ -97,7 +97,7 @@ it('[AC-B2-03c#30] prepare 导出完整预读键清单，三平台多查看者�
   ]).toEqual(counts);
 });
 
-it('[AC-B2-03c#31] prepare 预读全部版本，跨生效时刻仍在内存按当前 Clock 选新版本', async () => {
+it('[AC-B2-03c#31] prepare 时刻即报价时刻：跨过预读时尚未生效版本的生效时刻仍用预读时已生效的版本（BR-CALC-20、BR-CALC-11）', async () => {
   const f = fixture();
   f.clock.set('2026-10-31T23:59:59+08:00');
   f.versions.set(APP, [
@@ -114,7 +114,9 @@ it('[AC-B2-03c#31] prepare 预读全部版本，跨生效时刻仍在内存按�
   f.levelOf.mockClear();
   expect((await f.quoter.quote(item(), viewer(), NORMAL)).rebateMaxFen).toBe(500n);
   f.clock.advanceMs(1000);
-  expect((await f.quoter.quote(item(), viewer(), NORMAL)).rebateMaxFen).toBe(400n);
+  // Orchestrator test-change 2026-10-16 (option A): the prepare instant is the quote instant, so a
+  // version that was not yet effective at prepare time must not be switched to inside the scope.
+  expect((await f.quoter.quote(item(), viewer(), NORMAL)).rebateMaxFen).toBe(500n);
   expect(f.publishedVersions).not.toHaveBeenCalled();
   expect(f.configValue).not.toHaveBeenCalled();
   expect(f.levelOf).not.toHaveBeenCalled();
@@ -188,4 +190,25 @@ it('[AC-B2-03c#35] 两个独立报价器的预读值不串用', async () => {
     b.quoter.quote(item(), who, NORMAL),
   ]);
   expect(results.map((r) => r.rebateMaxFen)).toEqual([550n, 540n]);
+});
+
+it('[AC-B2-03c#45] prepare 后被撤销的未来版本：跨过其生效时刻报价仍按预读时已生效的版本，不用缓存里的未来版本', async () => {
+  const f = fixture();
+  f.clock.set('2026-10-31T23:59:58+08:00');
+  f.versions.set(APP, [
+    version(),
+    version({
+      rule_version_id: 'revoked-later',
+      effective_from: new Date(NOW),
+      rules: version().rules.map((r) => ({ ...r, r_own_bp: 4000 })),
+    }),
+  ]);
+  await f.quoter.prepare(APP, []);
+  // An administrator revokes the not-yet-effective version after the pre-read (BR-CALC-11).
+  f.versions.set(APP, [version()]);
+  f.publishedVersions.mockClear();
+  f.clock.advanceMs(3000);
+  // v1: N_quote 1000, reserve 0, r_own 5000 -> 500 (the cached v2 would give 400).
+  expect((await f.quoter.quote(item(), viewer(), NORMAL)).rebateMaxFen).toBe(500n);
+  expect(f.publishedVersions).not.toHaveBeenCalled();
 });
