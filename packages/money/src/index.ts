@@ -8,6 +8,7 @@ import { InvalidAmount, InvalidRatio } from './errors.ts';
 export { addFen, subFen, type SubFenOptions } from './add-sub.ts';
 export { formatYuan, formatYuanAdmin, formatYuanRange } from './display.ts';
 export { InvalidAmount, InvalidRatio } from './errors.ts';
+export { mulBpBpFloor } from './mul-bp-bp.ts';
 
 /** Result of splitByBp: one floor amount per input ratio (same order) and what is left. */
 export type SplitResult = {
