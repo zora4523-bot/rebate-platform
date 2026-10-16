@@ -324,41 +324,78 @@ it('[AC-F1-10d#23] §9.2 #3 历史行写不进（新版本号已被占用）时�
   expect(alertLines(f.lines, mark)).toEqual([]);
 });
 
-it('[AC-F1-10d#24] §9.2 #4 每次改动打一条 warn 级 config_change_alert：带键、前后值、操作者与 trace，不含其他配置值；被拒的改动不打', async () => {
-  const f = await setup(h);
-  const key = 'withdraw.enabled';
-  await seedSwitch(h, f.appId, key, true, 1);
-  await seedSwitch(h, f.appId, 'config.invite.backfill_hours', 'sentinel-other-config-value', 1);
-  await seedSwitch(h, f.appId, 'payout.enabled', 'sentinel-other-switch-value', 1);
-  const caller = await member(h, f, ['switch.payout']);
-  const token = await stepUp(f, caller);
-  const mark = f.lines.length;
-  await rejected(
-    await put(f.app, caller, key, { value: 'off', expected_version: 1 }, token),
-    'update',
-    20001,
-    { fields: ['value'] },
-  );
-  await conflict(await put(f.app, caller, key, { value: false, expected_version: 7 }, token));
-  await rejected(
-    await put(f.app, caller, key, { value: false, expected_version: 1 }, null),
-    'update',
-    10003,
-    {
-      tier: 'totp',
-    },
-  );
-  expect(alertLines(f.lines, mark)).toEqual([]);
-  const trace = randomUUID();
-  await updated(await put(f.app, caller, key, { value: false, expected_version: 1 }, token, trace));
-  const alerts = alertLines(f.lines, mark);
-  expect(alerts).toHaveLength(1);
-  expectAlert(alerts[0]!, { key, from: true, to: false, trace, actor: caller.account });
-  const text = JSON.stringify(alerts[0]);
-  expect(text).not.toContain('sentinel-other-config-value');
-  expect(text).not.toContain('sentinel-other-switch-value');
-  expect(text).not.toContain(token);
-});
+it.each([
+  ['withdraw.enabled', 'switch.payout', [false]],
+  // BR-INV-21: turning the invite binding off and on again both alert.
+  ['growth.invite_bind.enabled', 'switch.all', [false, true]],
+  ['pay.enabled', 'switch.pay', [false, true]],
+  ['claims.enabled', 'switch.all', [false]],
+  ['parse.tpwd.enabled', 'switch.all', [false, true]],
+] as const)(
+  '[AC-F1-10d#24] §9.2 #4 / BR-INV-21 %s（持 %s）每次成功改动恰打一条 warn 级 config_change_alert：带键、前后值、操作者与 trace，不含其他配置值；被拒与同值空操作不打',
+  async (key, point, steps) => {
+    const f = await setup(h);
+    await seedSwitch(h, f.appId, key, true, 1);
+    await seedSwitch(h, f.appId, 'config.invite.backfill_hours', 'sentinel-other-config-value', 1);
+    await seedSwitch(h, f.appId, 'agent.enabled', 'sentinel-other-switch-value', 1);
+    const caller = await member(h, f, [point]);
+    let token = await stepUp(f, caller);
+    let mark = f.lines.length;
+    await rejected(
+      await put(f.app, caller, key, { value: 'off', expected_version: 1 }, token),
+      'update',
+      20001,
+      { fields: ['value'] },
+    );
+    await conflict(await put(f.app, caller, key, { value: false, expected_version: 7 }, token));
+    await rejected(
+      await put(f.app, caller, key, { value: false, expected_version: 1 }, null),
+      'update',
+      10003,
+      { tier: 'totp' },
+    );
+    expect(alertLines(f.lines, mark)).toEqual([]);
+    let current: boolean = true;
+    let version = 1;
+    for (const [index, next] of steps.entries()) {
+      if (index > 0) token = await stepUp(f, caller);
+      mark = f.lines.length;
+      const trace = randomUUID();
+      expect(
+        await updated(
+          await put(f.app, caller, key, { value: next, expected_version: version }, token, trace),
+        ),
+      ).toMatchObject({ key, value: next, version: version + 1 });
+      const alerts = alertLines(f.lines, mark);
+      expect(alerts).toHaveLength(1);
+      expectAlert(alerts[0]!, { key, from: current, to: next, trace, actor: caller.account });
+      const text = JSON.stringify(alerts[0]);
+      expect(text).not.toContain('sentinel-other-config-value');
+      expect(text).not.toContain('sentinel-other-switch-value');
+      expect(text).not.toContain(token);
+      current = next;
+      version += 1;
+    }
+    // Refused changes and a same-value no-op (ruling 13) after the changes stay silent.
+    token = await stepUp(f, caller);
+    mark = f.lines.length;
+    await conflict(
+      await put(f.app, caller, key, { value: !current, expected_version: version - 1 }, token),
+    );
+    await rejected(
+      await put(f.app, caller, key, { value: 1, expected_version: version }, token),
+      'update',
+      20001,
+      { fields: ['value'] },
+    );
+    expect(
+      await updated(
+        await put(f.app, caller, key, { value: current, expected_version: version }, token),
+      ),
+    ).toMatchObject({ key, value: current, version });
+    expect(alertLines(f.lines, mark)).toEqual([]);
+  },
+);
 
 it.each([
   ['withdraw.enabled', true, false],
