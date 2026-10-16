@@ -16,11 +16,13 @@ import {
 } from '../platform/index.ts';
 import type { TaobaoPriceWarning } from './domain/taobao-price.ts';
 import { UnionError, type CallCtx, type UnionEndpoint } from './domain/types.ts';
+import { createArchivingTransport } from './infra/archive.ts';
 import { loadUnionEndpoints } from './infra/endpoints.ts';
 import { createUnionHttpTransport } from './infra/http-transport.ts';
 import type { PddQueryIdentity } from './infra/pdd/pdd-adapter.ts';
 import type { PddWarning } from './infra/pdd/response.ts';
 import { createUnionRegistry, type UnionRegistry } from './infra/registry.ts';
+import type { UnionTransport } from './infra/replay.ts';
 import { readActivePddQueryPid } from './pids/query-reader.ts';
 
 /** Nest injection tokens provided by `UnionModule`. */
@@ -49,6 +51,7 @@ export const UNION_ENDPOINTS_DIR = fileURLToPath(
  * pdd with mode=live (B1-04t): local / test refuse to start, prod refuses until KMS exists, staging
  * reads PDD_CLIENT_SECRET_FILE once here and assembles the real PddUnionAdapter over the HTTPS
  * transport (registry option `pddLive`); a failure stops the entry before it serves anything.
+ * B1-04p: with the optional DB that HTTPS transport writes one union_raw_payloads row per request.
  * TODO(规划/11 §4.5): 配额桶容量与 Redis 令牌桶 — blocked on CAP-TB-12、CAP-JD-12、CAP-PDD-12 配额口径
  * TODO(规划/11 §4.5): jd / taobao 凭据读取 — blocked on 推广位 / siteId
  */
@@ -83,6 +86,28 @@ function logPddWarning(logger: RootLogger, warning: PddWarning): void {
 /** Filled by the UNION_QUERY_PID_SOURCE provider; `db` stays undefined without a database. */
 interface QueryPidSource {
   db: Kysely<Database> | undefined;
+}
+
+/**
+ * B1-04p: the pdd live HTTPS transport wrapped in the raw payload archive. The database is read
+ * from the same optional source per request: without one the request goes straight through, no
+ * row and no log (startup and calls stay as before B1-04p); with one every request is archived.
+ */
+function archivedTransport(
+  inner: UnionTransport,
+  source: QueryPidSource,
+  clock: Clock,
+  logger: RootLogger,
+): UnionTransport {
+  let archived: { readonly db: Kysely<Database>; readonly transport: UnionTransport } | undefined;
+  return (request) => {
+    const db = source.db;
+    if (db === undefined) return inner(request);
+    if (archived?.db !== db) {
+      archived = { db, transport: createArchivingTransport(inner, { db, clock, logger }) };
+    }
+    return archived.transport(request);
+  };
 }
 
 function queryRefused(reason: string): UnionError {
@@ -140,7 +165,7 @@ async function startUnionRegistry(
     ...options,
     pddLive: {
       credentials,
-      transport: createUnionHttpTransport(),
+      transport: archivedTransport(createUnionHttpTransport(), source, clock, logger),
       warn: (warning: PddWarning) => logPddWarning(logger, warning),
       queryIdentity: pddQueryIdentity(source, customParameters),
     },

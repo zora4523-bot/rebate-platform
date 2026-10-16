@@ -28,7 +28,7 @@ import {
   type UnionOrder,
   type UpstreamGate,
 } from '../../domain/types.ts';
-import type { UnionTransport, UnionTransportResponse } from '../replay.ts';
+import type { ArchiveContext, UnionTransport, UnionTransportResponse } from '../replay.ts';
 import { pddParameterText, signPddParameters, type PddParameters } from './sign.ts';
 import { pddEnvelopeKey, unwrapPddResponse, type PddWarning } from './response.ts';
 import {
@@ -112,6 +112,33 @@ const PUBLIC_PARAMETERS: ReadonlySet<string> = new Set([
 
 type WireValue = string | number | boolean;
 
+/**
+ * B1-04p：每次上游请求的归档用途（union_raw_payloads.kind）。订单类 = order，转链 = convert，
+ * 备案查询与备案链接 = authority，其余（商品、短链展开、推广位等）= query。
+ */
+const ORDER_METHODS: ReadonlySet<string> = new Set([
+  PDD_ORDER_INCREMENT,
+  PDD_ORDER_RANGE,
+  PDD_ORDER_DETAIL,
+]);
+const AUTHORITY_METHODS: ReadonlySet<string> = new Set([
+  PDD_AUTHORITY_QUERY,
+  PDD_RP_PROM_URL_GENERATE,
+]);
+
+export function pddArchiveKind(method: string): string {
+  if (ORDER_METHODS.has(method)) return 'order';
+  if (method === PDD_PROMOTION_URL_GENERATE) return 'convert';
+  if (AUTHORITY_METHODS.has(method)) return 'authority';
+  return 'query';
+}
+
+/** 调用上下文的 app（服务端注入的 ctx.appId）与该方法的用途；没有 app 时不带归档上下文。 */
+function archiveContext(method: string, ctx: CallCtx | undefined): ArchiveContext | undefined {
+  const appId = ctx?.appId;
+  return typeof appId === 'string' ? { appId, kind: pddArchiveKind(method) } : undefined;
+}
+
 /** 订单接口的一次上游请求（B1-04w：见 PddUnionAdapter#orderSender）。 */
 type OrderSender = (method: string, parameters: PddParameters) => Promise<unknown>;
 
@@ -141,9 +168,27 @@ export class PddUnionAdapter implements UnionAdapter {
     this.#queryIdentity = options.queryIdentity;
   }
 
-  /** Internal request foundation; not exported through the union module's public port. */
-  async request(method: string, parameters: PddParameters, signal?: AbortSignal): Promise<unknown> {
-    return unwrapPddResponse(method, await this.#send(method, parameters, signal), this.#warn);
+  /**
+   * Internal request foundation; not exported through the union module's public port. The
+   * optional `archive` (B1-04p) rides on the transport request for the archiving transport only;
+   * a direct call without it sends no archive context.
+   */
+  async request(
+    method: string,
+    parameters: PddParameters,
+    signal?: AbortSignal,
+    archive?: ArchiveContext,
+  ): Promise<unknown> {
+    return unwrapPddResponse(
+      method,
+      await this.#send(method, parameters, signal, archive),
+      this.#warn,
+    );
+  }
+
+  /** 公开端口的请求：带上 ctx.appId 与该方法的归档用途。 */
+  #call(method: string, parameters: PddParameters, ctx: CallCtx): Promise<unknown> {
+    return this.request(method, parameters, ctx?.signal, archiveContext(method, ctx));
   }
 
   /**
@@ -154,8 +199,9 @@ export class PddUnionAdapter implements UnionAdapter {
     method: string,
     parameters: PddParameters,
     signal: AbortSignal | undefined,
+    archive: ArchiveContext | undefined,
   ): Promise<unknown> {
-    const response = await this.#send(method, parameters, signal);
+    const response = await this.#send(method, parameters, signal, archive);
     unwrapPddResponse(method, response, this.#warn);
     return parsePddOrderEnvelope(response.body, pddEnvelopeKey(method)!);
   }
@@ -165,6 +211,7 @@ export class PddUnionAdapter implements UnionAdapter {
     method: string,
     parameters: PddParameters,
     signal: AbortSignal | undefined,
+    archive: ArchiveContext | undefined,
   ): Promise<UnionTransportResponse> {
     // 先做不需要凭据的同步检查，再取凭据：取凭据之前不 await 别的东西。
     if (pddEnvelopeKey(method) === undefined) {
@@ -194,6 +241,7 @@ export class PddUnionAdapter implements UnionAdapter {
         headers: { 'content-type': 'application/json' },
         body,
         ...(signal === undefined ? {} : { signal }),
+        ...(archive === undefined ? {} : { archive }),
       });
     } catch (error) {
       if (error instanceof UnionError) throw error;
@@ -261,7 +309,7 @@ export class PddUnionAdapter implements UnionAdapter {
     const cursor = q.cursor === undefined ? undefined : parseSearchCursor(q.cursor);
     const identity = await this.#identity('searchItems', ctx);
     const page = cursor?.page ?? 1;
-    const envelope = await this.request(
+    const envelope = await this.#call(
       PDD_GOODS_SEARCH,
       {
         keyword: q.keyword,
@@ -270,7 +318,7 @@ export class PddUnionAdapter implements UnionAdapter {
         ...(cursor?.listId == null ? {} : { list_id: cursor.listId }),
         ...identity,
       },
-      ctx.signal,
+      ctx,
     );
     const rows = goodsRows(envelope, 'search');
     const items = this.#mapRows(rows, 'search', PDD_GOODS_SEARCH);
@@ -289,11 +337,7 @@ export class PddUnionAdapter implements UnionAdapter {
       throw new UnionError('invalid_dto', 'pdd getItem: goods_sign is required', 'pdd');
     }
     const identity = await this.#identity('getItem', ctx);
-    const envelope = await this.request(
-      PDD_GOODS_DETAIL,
-      { goods_sign: sign, ...identity },
-      ctx.signal,
-    );
+    const envelope = await this.#call(PDD_GOODS_DETAIL, { goods_sign: sign, ...identity }, ctx);
     const rows = goodsRows(envelope, 'detail');
     if (rows.length === 0) {
       throw new UnionError('item_unavailable', 'pdd getItem: no goods detail returned', 'pdd');
@@ -314,10 +358,10 @@ export class PddUnionAdapter implements UnionAdapter {
     const link = raw.trim();
     const identity = await this.#identity('resolveLink', ctx);
     const find = async (keyword: string): Promise<ResolvedLink | null> => {
-      const envelope = await this.request(
+      const envelope = await this.#call(
         PDD_GOODS_SEARCH,
         { keyword, page: 1, page_size: PDD_SEARCH_PAGE_SIZE, ...identity },
-        ctx.signal,
+        ctx,
       );
       const rows = goodsRows(envelope, 'search');
       return rows.length === 0 ? null : { item: pddGoodsRef(rows[0]) };
@@ -327,11 +371,7 @@ export class PddUnionAdapter implements UnionAdapter {
     if (/^https?:\/\//i.test(link)) {
       let expanded: string | null = null;
       try {
-        const envelope = await this.request(
-          PDD_URL_SHORT_PARSE,
-          { original_url: link },
-          ctx.signal,
-        );
+        const envelope = await this.#call(PDD_URL_SHORT_PARSE, { original_url: link }, ctx);
         const value =
           typeof envelope === 'object' && envelope !== null
             ? (envelope as Record<string, unknown>).url
@@ -355,10 +395,10 @@ export class PddUnionAdapter implements UnionAdapter {
   async materialFeed(req: MaterialReq, ctx: CallCtx): Promise<Page<UnionItem>> {
     const offset = req?.cursor === undefined ? 0 : parseFeedCursor(req.cursor);
     const identity = await this.#identity('materialFeed', ctx);
-    const envelope = await this.request(
+    const envelope = await this.#call(
       PDD_GOODS_RECOMMEND,
       { channel_type: PDD_FEED_CHANNEL, offset, limit: PDD_FEED_LIMIT, ...identity },
-      ctx.signal,
+      ctx,
     );
     const rows = goodsRows(envelope, 'feed');
     const items = this.#mapRows(rows, 'feed', PDD_GOODS_RECOMMEND);
@@ -377,7 +417,7 @@ export class PddUnionAdapter implements UnionAdapter {
   async convert(req: ConvertReq, identity: UnionIdentity, ctx: CallCtx): Promise<ConvertResult> {
     const goodsSign = convertGoodsSign(req?.item);
     const { promotionSlot, customParameters } = pddIdentityParameters(identity, 'convert');
-    const envelope = await this.request(
+    const envelope = await this.#call(
       PDD_PROMOTION_URL_GENERATE,
       {
         p_id: promotionSlot,
@@ -387,7 +427,7 @@ export class PddUnionAdapter implements UnionAdapter {
         generate_schema_url: true,
         generate_short_url: true,
       },
-      ctx.signal,
+      ctx,
     );
     return mapConvertResult(envelope);
   }
@@ -398,10 +438,10 @@ export class PddUnionAdapter implements UnionAdapter {
       identity,
       'queryPddAuthority',
     );
-    const envelope = await this.request(
+    const envelope = await this.#call(
       PDD_AUTHORITY_QUERY,
       { pid: promotionSlot, custom_parameters: customParameters },
-      ctx.signal,
+      ctx,
     );
     return { authorized: mapAuthorized(envelope) };
   }
@@ -413,7 +453,7 @@ export class PddUnionAdapter implements UnionAdapter {
    */
   async pddAuthorityUrl(identity: UnionIdentity, ctx: CallCtx): Promise<PddAuthorityUrl> {
     const { promotionSlot, customParameters } = pddIdentityParameters(identity, 'pddAuthorityUrl');
-    const envelope = await this.request(
+    const envelope = await this.#call(
       PDD_RP_PROM_URL_GENERATE,
       {
         channel_type: PDD_AUTHORITY_CHANNEL,
@@ -421,7 +461,7 @@ export class PddUnionAdapter implements UnionAdapter {
         custom_parameters: customParameters,
         generate_schema_url: true,
       },
-      ctx.signal,
+      ctx,
     );
     return mapAuthorityUrl(envelope);
   }
@@ -448,10 +488,13 @@ export class PddUnionAdapter implements UnionAdapter {
   #orderSender(ctx: CallCtx): OrderSender {
     const gate: UpstreamGate | undefined = ctx?.gateUpstream;
     if (gate === undefined) {
-      return (method, parameters) => this.#requestOrders(method, parameters, ctx?.signal);
+      return (method, parameters) =>
+        this.#requestOrders(method, parameters, ctx?.signal, archiveContext(method, ctx));
     }
     return (method, parameters) =>
-      gate((signal) => this.#requestOrders(method, parameters, signal));
+      gate((signal) =>
+        this.#requestOrders(method, parameters, signal, archiveContext(method, ctx)),
+      );
   }
 
   async #listIncrement(
@@ -541,6 +584,7 @@ export class PddUnionAdapter implements UnionAdapter {
       PDD_ORDER_DETAIL,
       { order_sn: orderSn },
       ctx?.signal,
+      archiveContext(PDD_ORDER_DETAIL, ctx),
     );
     return mapPddOrder(envelope, 'detail');
   }

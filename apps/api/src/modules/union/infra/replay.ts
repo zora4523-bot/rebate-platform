@@ -35,6 +35,16 @@ export interface UnionReplayRequest {
   readonly signal?: AbortSignal;
 }
 
+/**
+ * B1-04p: who a transport request is made for and why, read only by the archiving transport
+ * (archive.ts) to write union_raw_payloads. Never sent upstream.
+ */
+export interface ArchiveContext {
+  readonly appId: string;
+  /** order / convert / authority / query (open text, see archive.ts). */
+  readonly kind: string;
+}
+
 export interface UnionTransportRequest {
   readonly platform: RegisteredPlatform;
   readonly url: string;
@@ -42,6 +52,8 @@ export interface UnionTransportRequest {
   readonly headers: Readonly<Record<string, string>>;
   readonly body?: string;
   readonly signal?: AbortSignal;
+  /** B1-04p: archive context; transports never put it on the wire. */
+  readonly archive?: ArchiveContext;
 }
 
 export interface UnionTransportResponse {
