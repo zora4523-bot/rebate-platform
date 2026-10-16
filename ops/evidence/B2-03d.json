@@ -1,0 +1,109 @@
+{
+  "task": "B2-03d",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "7df35ba4beb83bb7d44652cf60f77d194d354087",
+  "red_tests": [
+    "test/spec/commission/wiring/assembly.test.ts > [AC-B2-03d#1] AppModule 选择矩阵：local/test/staging × demo/replay/live 与 prod 全模式",
+    "test/spec/commission/wiring/assembly.test.ts > [AC-B2-03d#2] 任意一个平台 live 就选真实报价器，包括非首位端点与混合 replay",
+    "test/spec/commission/wiring/assembly.test.ts > [AC-B2-03d#3] prod 或任一 live 没有 DB 时装配即报缺库，不回退演示；其余环境可装配",
+    "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#4] 开放预读覆盖调用方和所有归属身份、全部真实配置键；事务报价三个端口零读取",
+    "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#5] 预读时刻截断未来版本：跨生效时间且未来版本已撤销仍按原版本报价",
+    "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#6] 未预读的 app、user 和配置键一律 OpenReadNotPrepared，不借连接也不回退等级",
+    "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#7] 开放外逐次直读，开放结束后恢复直读，guest 使用 L1 而不查用户等级",
+    "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#8] 两个并发开放的 app/user 预读隔离，期间搜索卡片直读最新值",
+    "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#9] 预读失败全部接管：事务真正读到失败端口时才原样抛错，其他身份不受影响",
+    "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#15] 版本读取期间跨越生效点，开放仍以开始预读时的 Clock 截断未来版本",
+    "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#16] 无已发布规则时真实报价失败，不能回退可用的演示规则或伪造零返利",
+    "test/spec/commission/wiring/prepare-instant.test.ts > [AC-B2-03d#17] 装配后才生效的 v3 在首次开放可见，复核卡与同刻开放外搜索卡均报 450 分",
+    "test/spec/commission/wiring/prepare-instant.test.ts > [AC-B2-03d#18] 同一装配两次开放之间跨过 v4 生效点，第二次重新取预读时刻并报 400 分",
+    "test/spec/commission/wiring/read-plan.test.ts > [AC-B2-03d#13] conversion.prepare 原样传完整计划给 quoteReads，失败留到事务内消费",
+    "test/spec/commission/wiring/read-plan.test.ts > [AC-B2-03d#14] 打开他人分享链接：预读计划保留归属用户，另带实际调用方 userId",
+    "test/spec/commission/wiring/scoped-reader.test.ts > [AC-B2-03d#10] 通用读取入口从 linking 公开，开放外每次直读，开放内同 reader/key 合并预读",
+    "test/spec/commission/wiring/scoped-reader.test.ts > [AC-B2-03d#11] 相同键不同端口不会串值，未准备的新键或新端口在锁定后拒绝读取",
+    "test/spec/commission/wiring/scoped-reader.test.ts > [AC-B2-03d#12] 失败预读也记忆原错误，下一开放重新读取，失败不污染其他作用域"
+  ],
+  "risk_note": "RV2 (app.module, linking). Real rebate quoter wired: APP_ENV=prod or any live union endpoint -> commission createCommissionRebateQuoter (rule reader, identity level reader, QUOTE_CONFIG); otherwise the demo quoter (protected demo-quote test unchanged); real quoter without a DB handle fails at start-up, never falls back. Inside a link open the rule, level and config ports are wrapped by linking's openScopedReader (pre-read, then answers only from it; unprepared reads fail with OpenReadNotPrepared; outside an open they read through); rule versions are cut at this open's own pre-read instant, so a version effective or revoked after the pre-read is never used. The quoter's prepare() is not called in production (process-wide state, follow-up). LinkOpenReadPlan carries callerUserId (the requote card's viewer is the caller). Two 'blocked on B2-03' TODOs removed.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "7df35ba4beb83bb7d44652cf60f77d194d354087",
+      "tree": "e5dc7d220ffdead222c1652b887ff924acabbc5f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T18:06:59Z",
+      "finished_at": "2026-10-16T18:07:05Z",
+      "gate": {
+        "commit": "92c63f3478c2af8985f74814c870c1536a431069",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/commission/wiring/assembly.test.ts > [AC-B2-03d#1] AppModule 选择矩阵：local/test/staging × demo/replay/live 与 prod 全模式",
+        "test/spec/commission/wiring/assembly.test.ts > [AC-B2-03d#2] 任意一个平台 live 就选真实报价器，包括非首位端点与混合 replay",
+        "test/spec/commission/wiring/assembly.test.ts > [AC-B2-03d#3] prod 或任一 live 没有 DB 时装配即报缺库，不回退演示；其余环境可装配",
+        "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#4] 开放预读覆盖调用方和所有归属身份、全部真实配置键；事务报价三个端口零读取",
+        "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#5] 预读时刻截断未来版本：跨生效时间且未来版本已撤销仍按原版本报价",
+        "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#6] 未预读的 app、user 和配置键一律 OpenReadNotPrepared，不借连接也不回退等级",
+        "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#7] 开放外逐次直读，开放结束后恢复直读，guest 使用 L1 而不查用户等级",
+        "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#8] 两个并发开放的 app/user 预读隔离，期间搜索卡片直读最新值",
+        "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#9] 预读失败全部接管：事务真正读到失败端口时才原样抛错，其他身份不受影响",
+        "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#15] 版本读取期间跨越生效点，开放仍以开始预读时的 Clock 截断未来版本",
+        "test/spec/commission/wiring/open-quotes.test.ts > [AC-B2-03d#16] 无已发布规则时真实报价失败，不能回退可用的演示规则或伪造零返利",
+        "test/spec/commission/wiring/prepare-instant.test.ts > [AC-B2-03d#17] 装配后才生效的 v3 在首次开放可见，复核卡与同刻开放外搜索卡均报 450 分",
+        "test/spec/commission/wiring/prepare-instant.test.ts > [AC-B2-03d#18] 同一装配两次开放之间跨过 v4 生效点，第二次重新取预读时刻并报 400 分",
+        "test/spec/commission/wiring/read-plan.test.ts > [AC-B2-03d#13] conversion.prepare 原样传完整计划给 quoteReads，失败留到事务内消费",
+        "test/spec/commission/wiring/read-plan.test.ts > [AC-B2-03d#14] 打开他人分享链接：预读计划保留归属用户，另带实际调用方 userId",
+        "test/spec/commission/wiring/scoped-reader.test.ts > [AC-B2-03d#10] 通用读取入口从 linking 公开，开放外每次直读，开放内同 reader/key 合并预读",
+        "test/spec/commission/wiring/scoped-reader.test.ts > [AC-B2-03d#11] 相同键不同端口不会串值，未准备的新键或新端口在锁定后拒绝读取",
+        "test/spec/commission/wiring/scoped-reader.test.ts > [AC-B2-03d#12] 失败预读也记忆原错误，下一开放重新读取，失败不污染其他作用域"
+      ],
+      "expected": [
+        "test/spec/commission/wiring/assembly.test.ts",
+        "test/spec/commission/wiring/open-quotes.test.ts",
+        "test/spec/commission/wiring/prepare-instant.test.ts",
+        "test/spec/commission/wiring/read-plan.test.ts",
+        "test/spec/commission/wiring/scoped-reader.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8e867e47871becea60c9047dfd7134ed8a016993b47c236ca6979b5309064f75"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "wiring rule tests by Codex in 2 runs (16 + prepare-instant, 18 red); round 1 fail (1 S1: the pre-read instant must refresh per open), round 2 pass."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6875085aaa560985594fed987c2caeba34f571eb",
+    "test/spec": "d5e14f289ca60b49eddb35aeb1301b0ea153cd83",
+    "specs": "e3bb9aaad4133100875640f64e420a0f3631d5e1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "6875085aaa560985594fed987c2caeba34f571eb"
+  }
+}
