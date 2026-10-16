@@ -1682,7 +1682,7 @@ CREATE TABLE app.commission_split_totals (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT commission_split_totals_base_fen_check CHECK ((base_fen >= 0)),
     CONSTRAINT commission_split_totals_commission_version_check CHECK ((commission_version >= 1)),
-    CONSTRAINT commission_split_totals_platform_est_profit_fen_check CHECK ((((tlj_redpacket_fen IS NULL) AND (platform_est_profit_fen IS NULL)) OR (platform_est_profit_fen = ((n_total_fen - user_share_total_fen) - tlj_redpacket_fen)))),
+    CONSTRAINT commission_split_totals_platform_est_profit_fen_check CHECK ((((tlj_redpacket_fen IS NULL) AND (platform_est_profit_fen IS NULL)) OR ((tlj_redpacket_fen IS NOT NULL) AND (platform_est_profit_fen IS NOT NULL) AND (platform_est_profit_fen = ((n_total_fen - user_share_total_fen) - tlj_redpacket_fen))))),
     CONSTRAINT commission_split_totals_pre_base_deduct_fen_check CHECK ((pre_base_deduct_fen = (n_total_fen - base_fen))),
     CONSTRAINT commission_split_totals_tlj_redpacket_fen_check CHECK (((tlj_redpacket_fen IS NULL) OR (tlj_redpacket_fen >= 0))),
     CONSTRAINT commission_split_totals_user_share_total_fen_check CHECK (((user_share_total_fen >= 0) AND (user_share_total_fen <= base_fen)))
