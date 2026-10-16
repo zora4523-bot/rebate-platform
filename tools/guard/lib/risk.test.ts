@@ -125,8 +125,8 @@ describe('riskOfPath: literal paths', () => {
       'RV1',
     );
     expect(riskOfPath('packages/money/src/index.ts', map, cfg).rule).toBe('packages/money/**');
-    expect(riskOfPath('apps/api/src/modules/ledger/post.ts', map, cfg)).toEqual({
-      path: 'apps/api/src/modules/ledger/post.ts',
+    expect(riskOfPath('apps/api/src/modules/settlement/post.ts', map, cfg)).toEqual({
+      path: 'apps/api/src/modules/settlement/post.ts',
       risk: 'RV2',
       rule: 'default',
       protected: null,
