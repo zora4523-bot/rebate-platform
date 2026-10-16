@@ -20,6 +20,8 @@
 //   malformed, the port missing / failing / answering malformed, the write failing) is never an
 //   error of this read: a warn is logged (flat fields, no attr_code, no user identity) and the page
 //   answers the stored projection with 200. Nothing here writes link_logs.
+// B1-06zb: the self_buy slot is the account in use's (pddAuthorityIdentity unionAccountId, as the
+// open does); that account having none is the no-slot failure above, never another account's slot.
 // Taobao is never queried. No concurrency cap or timeout is added to the query yet (followup:
 // before the real pdd adapter); same-user concurrent GETs converge on the unique index + CAS.
 // TODO(规划/11 §4.5): BR-ID-22 的 (user, pid) 粒度 — blocked on union_bindings 加 pid 维度的迁移
@@ -69,7 +71,7 @@ export function createUnionBindingsWithPddQuery(
       }
       const identity = await pddAuthorityIdentity(
         { pids, attrCodes, logger },
-        { appId, userId, pidScene: SCENE, traceId, events: EVENTS },
+        { appId, userId, pidScene: SCENE, unionAccountId: accountId, traceId, events: EVENTS },
       );
       if (typeof identity === 'string') return;
       const authorized = await queryPddAuthority(
