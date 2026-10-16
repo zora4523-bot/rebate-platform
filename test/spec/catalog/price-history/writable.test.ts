@@ -128,13 +128,68 @@ const ORDER = [
   'pdd_without_plan',
 ] as const;
 
+/** 0, 1, odd values, around 2^31 / 2^32 / 2^53 and up to 2^62, besides ordinary prices. */
+const amountArb = fc.oneof(
+  fc.constantFrom(
+    -1n,
+    0n,
+    1n,
+    2n,
+    3n,
+    4501n,
+    2_147_483_647n,
+    2_147_483_648n,
+    2_147_483_649n,
+    4_294_967_296n,
+    4_294_967_297n,
+    9_007_199_254_740_993n,
+  ),
+  fc.bigInt({ min: -2n, max: 20_000n }),
+  fc.bigInt({ min: 0n, max: 2n ** 62n }),
+);
+
+it.each([
+  ['price 1, coupon 0, final 1', { priceFen: 1n, couponFen: 0n, finalPriceFen: 1n }, null],
+  [
+    'price 2^31 + 1, coupon 0',
+    { priceFen: 2_147_483_649n, couponFen: 0n, finalPriceFen: 2_147_483_649n },
+    null,
+  ],
+  [
+    'price 2^32 + 2, coupon 1, final 2^32 + 1',
+    { priceFen: 4_294_967_298n, couponFen: 1n, finalPriceFen: 4_294_967_297n },
+    null,
+  ],
+  [
+    'price 2^32 + 2, coupon 1, final 1（低 32 位相同仍异常）',
+    { priceFen: 4_294_967_298n, couponFen: 1n, finalPriceFen: 1n },
+    'price_anomaly',
+  ],
+  [
+    'price 2^53 + 2, coupon 1, final 2^53（双精度下相同仍异常）',
+    { priceFen: 9_007_199_254_740_994n, couponFen: 1n, finalPriceFen: 9_007_199_254_740_992n },
+    'price_anomaly',
+  ],
+  [
+    'price 2^32 + 1, coupon 2^32 + 1（截断后 1 与 1 仍属 coupon ≥ price）',
+    { priceFen: 4_294_967_297n, couponFen: 4_294_967_297n, finalPriceFen: 1n },
+    'price_anomaly',
+  ],
+] as const)(
+  '[AC-B1-17b#46] 金额边界按整数分精确判定：%s',
+  (_name, fields, expected) => {
+    expect(priceSnapshotSkipReason(observation(fields))).toBe(expected);
+  },
+  10_000,
+);
+
 const observationArb = fc
   .record({
     platform: fc.constantFrom('taobao', 'jd', 'pdd'),
     sourceKind: fc.constantFrom('search', 'detail', 'quote', 'convert', 'watch'),
     outcome: fc.constantFrom('ok', 'ok', 'ok', 'failed', 'timeout', 'rate_limited'),
-    priceFen: fc.bigInt({ min: -2n, max: 20_000n }),
-    coupon: fc.bigInt({ min: -2n, max: 20_000n }),
+    priceFen: amountArb,
+    coupon: amountArb,
     finalMode: fc.constantFrom('exact', 'exact', 'off'),
     finalOff: fc.bigInt({ min: -3n, max: 3n }),
     priceStatus: fc.constantFrom('ok', 'ok', 'ok', 'anomaly'),

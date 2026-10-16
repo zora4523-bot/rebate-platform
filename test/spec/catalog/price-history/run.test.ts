@@ -211,12 +211,78 @@ it('[AC-B1-17b#9] 判定不修改传入的最新行与观测（冻结输入下�
   expect(latest.observationCount).toBe(1);
 }, 10_000);
 
-const valuesArb = fc.constantFrom(
+/** Amounts that collide when truncated to 32 bits (2^32 + 1 vs 1, 2^31 + 1 vs -2^31 + 1) or
+ * rounded to a double (2^53 + 1 vs 2^53), plus 0, 1 and odd values. */
+const TRUNC_1 = 4_294_967_297n; // 2^32 + 1, low 32 bits = 1
+const OVER_INT32 = 2_147_483_649n; // 2^31 + 1
+const DOUBLE_EDGE = 9_007_199_254_740_992n; // 2^53
+const boundaryValuesArb = fc.constantFrom(
   vals(4500n),
   vals(3900n),
   vals(4500n, { couponFen: 500n, finalPriceFen: 4000n }),
   vals(4500n, { inStock: false }),
+  vals(1n),
+  vals(TRUNC_1),
+  vals(OVER_INT32),
+  vals(OVER_INT32, { couponFen: 1n, finalPriceFen: OVER_INT32 - 1n }),
+  vals(OVER_INT32 + 2n, { couponFen: 3n, finalPriceFen: OVER_INT32 - 1n }),
+  vals(DOUBLE_EDGE),
+  vals(DOUBLE_EDGE + 1n),
+  vals(4501n, { couponFen: 0n, finalPriceFen: 4501n }),
+  vals(4501n, { couponFen: 1n, finalPriceFen: 4500n }),
+  vals(4501n, { couponFen: TRUNC_1, finalPriceFen: 4500n }),
+  vals(4501n, { couponFen: 1n, finalPriceFen: TRUNC_1 }),
+  vals(0n),
 );
+const randomValuesArb = fc
+  .record({
+    price: fc.oneof(fc.bigInt({ min: 0n, max: 9n }), fc.bigInt({ min: 0n, max: 2n ** 62n })),
+    coupon: fc.oneof(fc.constant(0n), fc.bigInt({ min: 0n, max: 2n ** 40n })),
+    final: fc.oneof(fc.constant(1n), fc.bigInt({ min: 0n, max: 2n ** 62n })),
+    inStock: fc.boolean(),
+  })
+  .map((r): PriceSnapshotValues => ({
+    priceFen: r.price,
+    couponFen: r.coupon,
+    finalPriceFen: r.final,
+    inStock: r.inStock,
+  }));
+const valuesArb = fc.oneof(
+  { arbitrary: boundaryValuesArb, weight: 4 },
+  { arbitrary: randomValuesArb, weight: 1 },
+);
+it.each([
+  ['price_fen 1 → 2^31 + 1', vals(1n), vals(OVER_INT32)],
+  ['price_fen 1 → 2^32 + 1（低 32 位相同）', vals(1n), vals(TRUNC_1)],
+  ['price_fen 2^53 → 2^53 + 1（转双精度相同）', vals(DOUBLE_EDGE), vals(DOUBLE_EDGE + 1n)],
+  [
+    'coupon_fen 1 → 2^32 + 1',
+    vals(4501n, { couponFen: 1n, finalPriceFen: 4500n }),
+    vals(4501n, { couponFen: TRUNC_1, finalPriceFen: 4500n }),
+  ],
+  [
+    'final_price_fen 1 → 2^32 + 1',
+    vals(4501n, { couponFen: 1n, finalPriceFen: 1n }),
+    vals(4501n, { couponFen: 1n, finalPriceFen: TRUNC_1 }),
+  ],
+  ['price_fen 0 → 1', vals(0n), vals(1n)],
+  ['price_fen 4501 → 4500（奇偶差 1）', vals(4501n), vals(4500n)],
+] as const)(
+  '[AC-B1-17b#45] 金额按整数分精确比较（不截断为 32 位、不转双精度）：%s → 插入新行',
+  (_name, before, after) => {
+    const latest = run(before, at('08:00'), at('08:00'), 3);
+    expect(decidePriceRun(latest, { values: after, observedAt: at('08:30') }, 10)).toEqual({
+      kind: 'insert',
+    });
+    expect(decidePriceRun(latest, { values: { ...before }, observedAt: at('08:30') }, 10)).toEqual({
+      kind: 'touch',
+      lastObservedAt: at('08:30'),
+      observationCount: 4,
+    });
+  },
+  10_000,
+);
+
 const stepArb = fc.integer({ min: -20 * MINUTE, max: 40 * MINUTE });
 const sequenceArb = fc
   .array(fc.record({ values: valuesArb, step: stepArb }), { minLength: 1, maxLength: 40 })
