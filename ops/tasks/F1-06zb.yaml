@@ -1,0 +1,26 @@
+id: F1-06zb
+repo: rebate-platform
+title: 后台前端接真后端联调：auth provider、me/permissions 与 data provider 对真实 /admin/v1 后台入口跑通登录（密码 → 动态码、首次改密与绑定身份验证器）、权限读取、退出与会话失效，错误码与契约逐条对照；开发服务器代理 /admin/v1 到本地 API，入口去掉过时的占位
+type: impl
+# 2026-10-16 入账（前端线 f1-frontend-7；编号由编排定，原计划的 F1-06q 已被后台后端线占用）。
+# 后端 F1-06k（auth 六个接口 #379）、F1-06l（step-up 与 me/permissions）、F1-06m（admins #391）已合并，契约里这些接口都不再 planned；
+# 前端 F1-06h / F1-06g 只对契约示例夹具开发过。规则测试用真后台入口（test/spec/admin/auth 的 harness：真库、Fastify inject）作 fetch，
+# 把 apps/admin 的 createAuthProvider / createDataProvider / permissionsFromMe 接上去，逐步走通，并核对 F1-06h 处理的每个错误码在真入口上的 code、reason、HTTP 状态与 data.fields。
+# 开发服务器：vite 的 server.proxy 把 /admin/v1 转到环境变量给的本地 API 地址（缺省不代理，仍是预览账号）；main.tsx 生产路径的「权限接口未接」占位已不生效（浏览器路由时 App 自带 guard 读 /me/permissions），改为如实。
+# staging 真连要负责人配 ADMIN_TOKEN_SIGNING_KEY、ADMIN_IP_ALLOWLIST、ADMIN_CORS_ORIGIN，不在本任务。找到前后端不一致的：前端按契约改；后端与契约不一致的记 followups 转后台后端线，不在本任务改 apps/api。
+refs: []
+refs_hash: {}
+deps: [F1-06h, F1-06g, F1-06k, F1-06l, F1-06r]
+paths:
+  - 'apps/admin/src/providers/**'
+  - 'apps/admin/src/main.tsx'
+  - 'apps/admin/vite.config.ts'
+  - 'apps/admin/src/texts/login.ts'
+test_paths:
+  - 'test/spec/frontend/admin-live/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-live/**'
+status: todo
