@@ -41,16 +41,22 @@ it('[AC-B1-01zy#6] 任意多段粘连口令、引号及转义组合均不泄露�
         `host=db.invalid ${body} dbname=couli`,
         `postgres://u@h/db?${body} dbname=couli`,
       ];
+      // Every check of the run is evaluated in plain code and asserted once (same checks and
+      // inputs as before; one expect per run keeps the 1,000,000-run tier inside its limit).
+      const problems: string[] = [];
       for (const input of inputs) {
         for (const output of [redactCredentials(input), describeError(new Error(input))]) {
           for (const secret of secrets) {
-            expect(output.includes(secret), 'no password fragment may survive').toBe(false);
+            if (output.includes(secret)) problems.push(`password fragment survived: ${secret}`);
           }
-          expect(output.includes('***'), 'use the existing redaction marker').toBe(true);
-          expect(output.includes('application_name=public-app')).toBe(true);
-          expect(output.includes('dbname=couli')).toBe(true);
+          if (!output.includes('***')) problems.push('existing redaction marker missing');
+          if (!output.includes('application_name=public-app')) {
+            problems.push('application_name=public-app lost');
+          }
+          if (!output.includes('dbname=couli')) problems.push('dbname=couli lost');
         }
       }
+      expect(problems, 'no password fragment may survive; safe fields kept').toEqual([]);
     }),
     params,
   );
@@ -78,15 +84,22 @@ it('[AC-B1-01zy#7] 两个 URL 入口均隐藏任意重复 OAuth 口令且保留�
         const input =
           `postgres://u@db.invalid/couli?${query}` +
           '&oauth_client_id=public-client&sslmode=require';
+        // Same checks as before, asserted once per run (see [AC-B1-01zy#6]).
+        const problems: string[] = [];
         for (const output of [redactCredentials(input), redactPgUrl(input)]) {
           for (const { secret } of pairs) {
-            expect(output.includes(secret), 'no password fragment may survive').toBe(false);
+            if (output.includes(secret)) problems.push(`password fragment survived: ${secret}`);
           }
-          expect(output.includes('***'), 'use the existing redaction marker').toBe(true);
-          expect(output.includes('postgres://u@db.invalid/couli?')).toBe(true);
-          expect(output.includes('oauth_client_id=public-client')).toBe(true);
-          expect(output.includes('sslmode=require')).toBe(true);
+          for (const kept of [
+            '***',
+            'postgres://u@db.invalid/couli?',
+            'oauth_client_id=public-client',
+            'sslmode=require',
+          ]) {
+            if (!output.includes(kept)) problems.push(`missing: ${kept}`);
+          }
         }
+        expect(problems, 'no password fragment may survive; safe fields kept').toEqual([]);
       },
     ),
     propParams(),
