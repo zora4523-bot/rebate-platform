@@ -19,5 +19,7 @@ export function windowStart(now: Date): Date {
 }
 
 export function dayLabel(now: Date, day: number): string {
-  return dateAt(now, day * DAY_MS).toISOString().slice(0, 10);
+  return dateAt(now, day * DAY_MS)
+    .toISOString()
+    .slice(0, 10);
 }
