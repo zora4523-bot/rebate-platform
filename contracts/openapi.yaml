@@ -1740,7 +1740,6 @@ paths:
       x-session-scopes:
         - full
         - deletion_only
-      x-implementation: planned
       x-error-codes: []
       security: []
       parameters:
@@ -1808,7 +1807,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 30701
       security: []
