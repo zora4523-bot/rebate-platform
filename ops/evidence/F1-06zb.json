@@ -1,0 +1,110 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-live/dev-proxy.test.ts > [AC-F1-06zb#13] 未配目标不代理，HTTP(S) 只代理原路径 /admin/v1，非法地址被拒绝",
+    "test/spec/frontend/admin-live/dev-proxy.test.ts > [AC-F1-06zb#14] Vite 导出的 server.proxy 调用导入的 devProxy 并传入 COULI_ADMIN_API_TARGET",
+    "test/spec/frontend/admin-live/entry-source.test.ts > [AC-F1-06zb#15] main 不再保留权限接口未接入的文字或 PermissionsProvider 拒绝占位",
+    "test/spec/frontend/admin-live/entry-source.test.ts > [AC-F1-06zb#16] App 导入并调用统一 createAdminApi，不再直接组装 auth 与 data provider",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#1] 已绑定超管经密码与动态码登录，权限快照及用户名与真实入口一致",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#2] 首次登录先改密再取真实密钥绑定，完成前无令牌且服务端记录已绑定",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#3] 密码错误 10008，连续错误锁定 10009，锁定截止时间原样交给登录页",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#4] 真入口拒绝错误动态码，20002 totp_invalid 对应登录词典",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#5] 登录票超过五分钟后交码，10001 login_ticket_expired 回到密码步骤",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#6] 绑定错误码 20002 totp_bind_invalid 保留绑定步骤且服务端未绑定",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#7] 非白名单 IP 的 10403 admin_ip_not_allowed 显示对应词典键",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#8] 超管 data 列表携带当前令牌与分页参数，返回真实账号及 total",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#9] 非超管读账号列表收到 10403 admin_permission_denied，但登录会话仍有效",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#10] 退出同时清除本地会话与撤销服务端旧令牌，权限加载不能返回旧缓存",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#11] 服务端撤销会话后每次权限加载重新请求，拒绝并清除前端令牌",
+    "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#12] data 收到服务端会话失效 10001 时联动 auth 清除会话"
+  ],
+  "risk_note": "Admin front end against the real /admin/v1 entry. createAdminApi (apps/admin/src/providers/admin-api.ts) now gathers what App.tsx built inline: the auth guard, the token-carrying data provider (only HTTP 200 with code 0 extends the idle period, BR-ID-34; 10001 from data ends the session through auth.onError) and permission loading from /me/permissions; createAdminDataProvider for callers with their own authProvider or the memory router. devProxy (src/dev-proxy.ts) proxies only /admin/v1 to COULI_ADMIN_API_TARGET (http/https absolute URLs only), vite.config.ts uses it and defines VITE_ADMIN_LIVE so the dev server signs in for real when a target is set; main.tsx drops the not-wired permissions placeholder. No apps/api or contract change; no front-end/back-end mismatch found (20001 on change_password returns fields new_password, as marked on the login page). Rule tests by Codex in one call (red/1 on the test machine, 16 tests; live.int.test.ts drives the real admin entry through the test/spec/admin/auth harness with a real database and Fastify inject), spec-test review by a fresh Claude subagent passed with two S2 carried into the implementation brief. Implementation by Opus 5.5 in one round (test machine verify-fast/2 and full verify/1 exit 0). Reviews: Codex only (approvals id 27). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings; money checklist n/a (no amounts, no database writes)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent; pass with two S2 (idle period extended only on 200 with code 0; 20001 fields on change_password) written into the implementation brief and covered by the implementer's unit tests"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "30fab521fff65c53a7cd8e38f340b9ea40c14dbf"
+  },
+  "task": "F1-06zb",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "2fb788085ed4c864369fed61db530b7f4a95ca66",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2fb788085ed4c864369fed61db530b7f4a95ca66",
+      "tree": "d085a2667ae11121926d769a95394aeb103c5ae3",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T10:54:45Z",
+      "finished_at": "2026-10-16T10:54:57Z",
+      "gate": {
+        "commit": "cad7f635ce7c496a20cb7349656fe0f914b4757a",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/frontend/admin-live/dev-proxy.test.ts > [AC-F1-06zb#13] 未配目标不代理，HTTP(S) 只代理原路径 /admin/v1，非法地址被拒绝",
+        "test/spec/frontend/admin-live/dev-proxy.test.ts > [AC-F1-06zb#14] Vite 导出的 server.proxy 调用导入的 devProxy 并传入 COULI_ADMIN_API_TARGET",
+        "test/spec/frontend/admin-live/entry-source.test.ts > [AC-F1-06zb#15] main 不再保留权限接口未接入的文字或 PermissionsProvider 拒绝占位",
+        "test/spec/frontend/admin-live/entry-source.test.ts > [AC-F1-06zb#16] App 导入并调用统一 createAdminApi，不再直接组装 auth 与 data provider",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#1] 已绑定超管经密码与动态码登录，权限快照及用户名与真实入口一致",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#2] 首次登录先改密再取真实密钥绑定，完成前无令牌且服务端记录已绑定",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#3] 密码错误 10008，连续错误锁定 10009，锁定截止时间原样交给登录页",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#4] 真入口拒绝错误动态码，20002 totp_invalid 对应登录词典",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#5] 登录票超过五分钟后交码，10001 login_ticket_expired 回到密码步骤",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#6] 绑定错误码 20002 totp_bind_invalid 保留绑定步骤且服务端未绑定",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#7] 非白名单 IP 的 10403 admin_ip_not_allowed 显示对应词典键",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#8] 超管 data 列表携带当前令牌与分页参数，返回真实账号及 total",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#9] 非超管读账号列表收到 10403 admin_permission_denied，但登录会话仍有效",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#10] 退出同时清除本地会话与撤销服务端旧令牌，权限加载不能返回旧缓存",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#11] 服务端撤销会话后每次权限加载重新请求，拒绝并清除前端令牌",
+        "test/spec/frontend/admin-live/live.int.test.ts > [AC-F1-06zb#12] data 收到服务端会话失效 10001 时联动 auth 清除会话"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-live/dev-proxy.test.ts",
+        "test/spec/frontend/admin-live/entry-source.test.ts",
+        "test/spec/frontend/admin-live/live.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "95176277601c36957bd6a6997bcbc6eec4a5370b9e914392f317dca66305121a"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d926d48a1f772fec7d8238e78147c687f5e7f00d951ecfe1f82a3d5da3430222"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "a340fed01ea04b1216d4345bb5144743ad59ba26",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "30fab521fff65c53a7cd8e38f340b9ea40c14dbf",
+    "test/spec": "73d69841b915b13961a7069bf0591905a3bac374",
+    "specs": "d132032ab94a9b89610f6453d3cc274de9221f2f"
+  }
+}
