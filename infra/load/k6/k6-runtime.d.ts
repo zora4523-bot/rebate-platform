@@ -9,6 +9,7 @@ declare module 'k6' {
 declare module 'k6/http' {
   export interface Response {
     status: number;
+    error_code: number;
     body: string | null;
     headers: Record<string, string>;
   }

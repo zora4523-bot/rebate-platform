@@ -14,7 +14,7 @@ interface SuiteConfig extends LoadConfig {
   app_version: string;
   requests: {
     convert: Record<string, unknown>;
-    agent_sse: { text: string; context: Record<string, unknown> };
+    agent_sse: { text: string; context?: Record<string, unknown> };
   };
 }
 
@@ -28,9 +28,6 @@ interface Fixture {
 
 interface Fixtures {
   users: Fixture[];
-  admin_token: string;
-  // Supplied by the local sync implementation, never guessed from a platform API.
-  sync_body: Record<string, unknown>;
 }
 
 const config = JSON.parse(open('./config.json')) as SuiteConfig;
@@ -74,21 +71,29 @@ for (const user of fixtures.users) {
   sessions.add(user.session_id);
   devices.add(user.device_id);
 }
-if (
-  typeof fixtures.admin_token !== 'string' ||
-  !/^[\x21-\x7e]+$/.test(fixtures.admin_token) ||
-  !isRecord(fixtures.sync_body) ||
-  Object.keys(fixtures.sync_body).length === 0
-) {
-  throw new Error(
-    'fixtures.json needs a local admin_token and a nonempty sync_body from the sync contract',
+// Context is optional, but when present the contract permits exactly one entry context.
+function validContext(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value) || Object.keys(value).length !== 1) return false;
+  if (typeof value['product_key'] === 'string')
+    return [...value['product_key']].length >= 3 && [...value['product_key']].length <= 128;
+  if (typeof value['order_id'] === 'string')
+    return [...value['order_id']].length >= 1 && [...value['order_id']].length <= 64;
+  return (
+    typeof value['text'] === 'string' &&
+    [...value['text']].length >= 1 &&
+    [...value['text']].length <= 2000
   );
 }
+
 if (
   !/^\d+\.\d+\.\d+$/.test(config.app_version) ||
   !isRecord(config.requests?.convert) ||
+  !isRecord(config.requests?.agent_sse) ||
   typeof config.requests?.agent_sse?.text !== 'string' ||
-  !isRecord(config.requests.agent_sse.context)
+  config.requests.agent_sse.text.length === 0 ||
+  !Object.keys(config.requests.agent_sse).every((key) => key === 'text' || key === 'context') ||
+  !validContext(config.requests.agent_sse.context)
 ) {
   throw new Error('config.json needs app_version and convert / agent_sse request parameters');
 }
@@ -114,7 +119,7 @@ function uuid(): string {
 }
 
 function businessOk(response: Response): boolean {
-  if (response.status !== 200 || response.body === null) return false;
+  if (response.status !== 200 || response.error_code || response.body === null) return false;
   try {
     const body: unknown = JSON.parse(response.body);
     return isRecord(body) && body['code'] === 0 && 'data' in body;
@@ -123,18 +128,22 @@ function businessOk(response: Response): boolean {
   }
 }
 
-function streamOk(response: Response): boolean {
+function streamOk(response: Response, sessionId: string): boolean {
   const contentType =
     Object.entries(response.headers).find(([key]) => key.toLowerCase() === 'content-type')?.[1] ??
     '';
   if (
     response.status !== 200 ||
+    response.error_code ||
     !/^text\/event-stream(?:;|$)/i.test(contentType) ||
     response.body === null
   )
     return false;
   // k6/http buffers the body: this validates completion but does not timestamp individual frames.
-  const blocks = response.body.replace(/\r\n/g, '\n').split('\n\n');
+  const blocks = response.body.replace(/\r\n?/g, '\n').split('\n\n');
+  // An event without its final empty line was never dispatched by an SSE client.
+  const tail = blocks.pop()!;
+  if (tail.split('\n').some((line) => line !== '' && !line.startsWith(':'))) return false;
   let meta = false;
   let done = false;
   let previousId = 0;
@@ -144,28 +153,58 @@ function streamOk(response: Response): boolean {
       .filter((line) => line.startsWith('data:'))
       .map((line) => line.slice(5).trimStart())
       .join('\n');
-    if (data === '') continue; // SSE comments / heartbeat
+    if (data === '') {
+      if (lines.some((line) => line !== '' && !line.startsWith(':'))) return false;
+      continue; // SSE comments / heartbeat
+    }
     const event = lines
       .find((line) => line.startsWith('event:'))
       ?.slice(6)
       .trim();
-    const id = Number(
+    const rawId =
       lines
         .find((line) => line.startsWith('id:'))
         ?.slice(3)
-        .trim(),
-    );
-    if (done || !Number.isSafeInteger(id) || id <= previousId || event === 'error') return false;
+        .trim() ?? '';
+    const id = Number(rawId);
+    if (
+      done ||
+      !/^[1-9][0-9]*$/.test(rawId) ||
+      !Number.isSafeInteger(id) ||
+      id <= previousId ||
+      !['meta', 'text.delta', 'tool.status', 'card', 'suggestions', 'done'].includes(event ?? '')
+    )
+      return false;
     previousId = id;
     try {
       const payload: unknown = JSON.parse(data);
       if (!isRecord(payload)) return false;
       if (!meta && event !== 'meta') return false;
       if (event === 'meta') {
-        if (meta || payload['duplicate'] === true) return false;
+        if (
+          meta ||
+          payload['session_id'] !== sessionId ||
+          (payload['duplicate'] !== undefined && payload['duplicate'] !== false) ||
+          !['run_id', 'message_id', 'prompt_version', 'model_label', 'ai_label'].every(
+            (key) => typeof payload[key] === 'string' && payload[key].length > 0,
+          )
+        )
+          return false;
         meta = true;
       }
-      if (event === 'done') done = true;
+      if (['text.delta', 'tool.status', 'card'].includes(event ?? '') && payload['seq'] !== id)
+        return false;
+      if (event === 'done') {
+        // Only a normal completion counts as a successful capacity sample.
+        if (
+          payload['finish_reason'] !== 'stop' ||
+          typeof payload['quota_left'] !== 'number' ||
+          !Number.isInteger(payload['quota_left']) ||
+          payload['quota_left'] < 0
+        )
+          return false;
+        done = true;
+      }
     } catch {
       return false;
     }
@@ -178,29 +217,27 @@ function run(name: ScenarioName): void {
   const user = fixtures.users[exec.vu.idInTest - 1];
   if (user === undefined)
     exec.test.abort('No fixture for this VU; distributed execution needs a complete fixture set');
-  const path = s.path.replace('{session_id}', user.session_id);
+  const path = s.path.replace('{id}', user.session_id);
   const data =
     name === 'convert'
       ? config.requests.convert
       : name === 'agent_sse'
         ? { ...config.requests.agent_sse, client_msg_id: uuid() }
-        : name === 'sync'
-          ? fixtures.sync_body
-          : null;
+        : null;
   const body = data === null ? null : JSON.stringify(data);
   const headers: Record<string, string> = {
     'X-App-Id': user.app_id,
     'X-Platform': 'h5',
     'X-App-Version': config.app_version,
     'X-Device-Id': user.device_id,
-    Authorization: 'Bearer ' + (name === 'sync' ? fixtures.admin_token : user.access_token),
+    Authorization: 'Bearer ' + user.access_token,
     Accept: name === 'agent_sse' ? 'text/event-stream' : 'application/json',
   };
   if (body !== null) {
     headers['Content-Type'] = 'application/json';
-    headers['Idempotency-Key'] = uuid();
   }
   if (name === 'convert') {
+    headers['Idempotency-Key'] = uuid();
     // Transport timestamp is the k6 wall clock; never a business / accounting clock.
     const ts = String(Math.floor(Date.now() / 1000));
     const nonce = randomHex();
@@ -222,7 +259,8 @@ function run(name: ScenarioName): void {
     responseCallback: http.expectedStatuses(200),
   });
   check(response, {
-    [name + ': valid business response']: name === 'agent_sse' ? streamOk : businessOk,
+    [name + ': valid business response']: (value) =>
+      name === 'agent_sse' ? streamOk(value, user.session_id) : businessOk(value),
   });
 }
 
@@ -234,7 +272,4 @@ export function convert(): void {
 }
 export function agent_sse(): void {
   run('agent_sse');
-}
-export function sync(): void {
-  run('sync');
 }

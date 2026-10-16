@@ -1,12 +1,12 @@
-// k6 load-test options for QA-06a (规划/05 QA-06: search, link convert, Agent SSE and order sync at
+// k6 load-test options for QA-06a (规划/05 QA-06: search, link convert and Agent SSE at
 // 3 x peak; upstreams are the QA-05a WireMock in infra/fault, never a real union API — 09 README
 // §0.2 hard rule 5). Pure module: no Node built-ins, so the k6 entry script.ts (run by the
 // grafana/k6 container, k6 >= 1.0 runs TypeScript) and the rule tests both import it. Scenario
 // parameters and thresholds live in config.json next to this file; peaks point at 01 §7.3, P95
 // targets at 01 §7.1.
 
-/** The four scenarios of 规划/05 QA-06; each is also the name of the exec function in script.ts. */
-export type ScenarioName = 'search' | 'convert' | 'agent_sse' | 'sync';
+/** Each scenario is also the name of its exec function in script.ts. */
+export type ScenarioName = 'search' | 'convert' | 'agent_sse';
 
 /** Which local base URL a scenario hits (api. / stream. / admin. entries of 02 §3). */
 export type ServiceName = 'api' | 'stream' | 'admin';
@@ -59,6 +59,8 @@ export interface K6Scenario {
   preAllocatedVUs?: number;
   maxVUs?: number;
   startVUs?: number;
+  gracefulStop: string;
+  gracefulRampDown?: string;
 }
 
 export interface K6Options {
@@ -67,7 +69,7 @@ export interface K6Options {
   maxRedirects: number;
 }
 
-export const scenarioNames: readonly ScenarioName[] = ['search', 'convert', 'agent_sse', 'sync'];
+export const scenarioNames: readonly ScenarioName[] = ['search', 'convert', 'agent_sse'];
 const services: readonly ServiceName[] = ['api', 'stream', 'admin'];
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -124,7 +126,7 @@ export function configProblems(config: LoadConfig): string[] {
     const issue = (message: string): void => {
       problems.push(`${name}: ${message}`);
     };
-    const service = name === 'sync' ? 'admin' : name === 'agent_sse' ? 'stream' : 'api';
+    const service = name === 'agent_sse' ? 'stream' : 'api';
     if (s.service !== service || !localBase(config.base_urls?.[service]))
       issue(`missing or invalid service ${service}`);
     if (s.method !== (name === 'search' ? 'GET' : 'POST')) issue('invalid method');
@@ -141,7 +143,7 @@ export function configProblems(config: LoadConfig): string[] {
     if (s.latency_metric !== (name === 'agent_sse' ? 'http_req_waiting' : 'http_req_duration'))
       issue('invalid latency_metric');
     if (!positiveInteger(s.p95_ms)) issue('p95_ms must be a positive integer');
-    const cap = name === 'agent_sse' ? 1000 : name === 'sync' ? Infinity : 1500;
+    const cap = name === 'agent_sse' ? 1000 : 1500;
     if (s.p95_ms > cap) issue(`p95_ms exceeds ${cap}`);
     if (!Number.isFinite(s.error_rate) || s.error_rate <= 0 || s.error_rate >= 1)
       issue('error_rate must be between 0 and 1 exclusively');
@@ -172,14 +174,18 @@ export function buildOptions(config: LoadConfig): K6Options {
     const scenario: K6Scenario = {
       executor: s.executor,
       exec: name,
+      gracefulStop: s.request_timeout ?? '60s',
       stages: [
         { duration: s.ramp_up, target },
         { duration: s.hold, target },
         { duration: s.ramp_up, target: 0 },
       ],
     };
-    if (s.executor === 'ramping-vus') scenario.startVUs = 0;
-    else {
+    if (s.executor === 'ramping-vus') {
+      scenario.startVUs = 0;
+      // Let in-flight streams complete their checks during ramp-down, up to their timeout.
+      scenario.gracefulRampDown = scenario.gracefulStop;
+    } else {
       scenario.startRate = 0;
       scenario.timeUnit = '1s';
       scenario.preAllocatedVUs = s.pre_allocated_vus ?? target;
