@@ -13,7 +13,7 @@ let writer: Kysely<DB> | undefined;
 let readerDb: Kysely<DB>;
 
 beforeAll(async () => {
-  // Shared globalSetup reads TEST_PG_ADMIN_URL; clone its migrated one-shot template.
+  // The shared global setup owns the admin connection; clone its migrated one-shot template.
   // Only integration runner / container may execute this file, never the Codex host.
   database = await createTestDatabase();
   writer = createDb({ connectionString: database.urlFor('couli_app') });
