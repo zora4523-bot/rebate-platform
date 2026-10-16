@@ -2,7 +2,12 @@ import { type DynamicModule, type Provider, Module, Scope } from '@nestjs/common
 import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
-import { ADMIN_CHECK, AdminAuthModule, AdminModule } from './modules/admin/index.ts';
+import {
+  ADMIN_CHECK,
+  AdminAuthModule,
+  AdminModule,
+  createAuditWriter,
+} from './modules/admin/index.ts';
 import { AgentModule } from './modules/agent/index.ts';
 import {
   CatalogModule,
@@ -69,6 +74,7 @@ import {
   PlatformModule,
   REDIS,
   ROOT_LOGGER,
+  SENSITIVE_KEYS,
   createMemoryQuotaLimiter,
   quotaShares,
   systemScheduler,
@@ -713,9 +719,17 @@ export class AppModule {
         // The /admin/v1 login routes, the admin request check and CORS policy (F1-06k); step-up
         // and me/permissions (F1-06l), whose sms tier sends through identity's SMS sender.
         ...(options.entry === 'admin' ? [adminAuthModule()] : []),
-        // content's /admin/v1 routes (platform marks, F1-06w), guarded through platform's
-        // AdminOperationGuard, which adminAuthModule provides on this entry only.
-        ...(options.entry === 'admin' ? [ContentAdminModule.forAdmin()] : []),
+        // content's /admin/v1 routes (platform marks, F1-06w / F1-06y), guarded through
+        // platform's AdminOperationGuard, which adminAuthModule provides on this entry only. Its
+        // writes append audit rows through admin's writer bound to their own transaction.
+        ...(options.entry === 'admin'
+          ? [
+              ContentAdminModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+              }),
+            ]
+          : []),
         ...(identity === undefined ? [] : [identity, riskModule(identity)]),
         ...(union === undefined ? [] : [union]),
         // Freeze expiry and the daily risk alerts (BR-ID-36, B1-03j): the risk-scan queue's

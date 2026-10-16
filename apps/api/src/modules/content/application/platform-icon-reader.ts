@@ -94,7 +94,7 @@ function pageParam(value: unknown, fallback: number, min: number, max: number): 
   return Number.isSafeInteger(number) && number >= min && number <= max ? number : null;
 }
 
-function formatOf(format: string): MediaFormat {
+export function formatOf(format: string): MediaFormat {
   if (format !== 'svg' && format !== 'png') {
     throw new Error(`platform icon read: stored format ${format} is neither svg nor png`);
   }
@@ -118,30 +118,9 @@ export class PlatformIconReader {
     ]);
     const byKey = new Map(rows.map((row) => [row.key, row]));
     return {
-      items: KEYS.map((key): Icon => {
-        const row = byKey.get(key);
-        const latestVersion = latest.get(key) ?? null;
-        if (row === undefined) {
-          return {
-            key,
-            current_version: null,
-            revision: 0,
-            current: null,
-            latest_version: latestVersion,
-            updated_by: null,
-            updated_at: null,
-          };
-        }
-        return {
-          key,
-          current_version: row.currentVersion,
-          revision: row.revision,
-          current: row.current === null ? null : this.#version(row.current),
-          latest_version: latestVersion,
-          updated_by: row.updatedBy,
-          updated_at: row.updatedAt === null ? null : row.updatedAt.toISOString(),
-        };
-      }),
+      items: KEYS.map((key): Icon =>
+        platformIconOf(key, byKey.get(key), latest.get(key) ?? null, this.#mediaPublicBaseUrl),
+      ),
     };
   }
 
@@ -171,29 +150,62 @@ export class PlatformIconReader {
       pageSize,
     );
     return {
-      items: items.map((row) => this.#version(row)),
+      items: items.map((row) => platformIconVersionOf(row, this.#mediaPublicBaseUrl)),
       page,
       page_size: pageSize,
       total,
     };
   }
+}
 
-  #version(row: PlatformIconVersionRow): Version {
-    const format = formatOf(row.format);
+/** One mark as the console shows it; no row means the built-in image at revision 0. */
+export function platformIconOf(
+  key: Key,
+  row: PlatformIconRow | undefined,
+  latestVersion: number | null,
+  mediaPublicBaseUrl: string | undefined,
+): Icon {
+  if (row === undefined) {
     return {
-      version: row.version,
-      url: mediaUrlOf(this.#mediaPublicBaseUrl, row.sha256, format),
-      sha256: row.sha256,
-      format,
-      bytes: row.bytes,
-      sanitized: row.sanitized,
-      source_url: row.sourceUrl,
-      downloaded_on: row.downloadedOn,
-      publishable: row.sourceUrl !== null && row.downloadedOn !== null,
-      ever_published: row.everPublished,
-      revision: row.revision,
-      created_by: row.createdBy,
-      created_at: row.createdAt.toISOString(),
+      key,
+      current_version: null,
+      revision: 0,
+      current: null,
+      latest_version: latestVersion,
+      updated_by: null,
+      updated_at: null,
     };
   }
+  return {
+    key,
+    current_version: row.currentVersion,
+    revision: row.revision,
+    current: row.current === null ? null : platformIconVersionOf(row.current, mediaPublicBaseUrl),
+    latest_version: latestVersion,
+    updated_by: row.updatedBy,
+    updated_at: row.updatedAt === null ? null : row.updatedAt.toISOString(),
+  };
+}
+
+/** One saved version as the console shows it; url from MEDIA_PUBLIC_BASE_URL and the digest. */
+export function platformIconVersionOf(
+  row: PlatformIconVersionRow,
+  mediaPublicBaseUrl: string | undefined,
+): Version {
+  const format = formatOf(row.format);
+  return {
+    version: row.version,
+    url: mediaUrlOf(mediaPublicBaseUrl, row.sha256, format),
+    sha256: row.sha256,
+    format,
+    bytes: row.bytes,
+    sanitized: row.sanitized,
+    source_url: row.sourceUrl,
+    downloaded_on: row.downloadedOn,
+    publishable: row.sourceUrl !== null && row.downloadedOn !== null,
+    ever_published: row.everPublished,
+    revision: row.revision,
+    created_by: row.createdBy,
+    created_at: row.createdAt.toISOString(),
+  };
 }

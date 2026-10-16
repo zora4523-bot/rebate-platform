@@ -56,8 +56,17 @@ const OPERATIONS = [
   ['post', `${BASE}/{key}/restore-builtin`, [10001, 10403, 20001, 20902]],
 ] as const;
 
-/** Implemented by F1-06w (the two reads); the five writes stay planned. */
-const IMPLEMENTED = new Set<string>([BASE, `${BASE}/{key}/versions`].map((path) => `get ${path}`));
+/**
+ * Implemented: the two reads (F1-06w) and registration, publish and restore-builtin (F1-06y);
+ * upload and save stay planned.
+ */
+const IMPLEMENTED = new Set<string>([
+  `get ${BASE}`,
+  `get ${BASE}/{key}/versions`,
+  `patch ${BASE}/{key}/versions/{version}`,
+  `post ${BASE}/{key}/publish`,
+  `post ${BASE}/{key}/restore-builtin`,
+]);
 
 /** Codes every admin operation may return without listing them (openapi info.description). */
 const ADMIN_COMMON = [10403, 20001, 42901, 50001];
