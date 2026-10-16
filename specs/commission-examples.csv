@@ -1,0 +1,39 @@
+id,source,rule,n_base_fen,reserve_bp,tlj_deduct_fen,order_type,indirect_enabled,r_own_bp,r_direct_bp,r_indirect_bp,has_direct,has_indirect,owner_status,direct_status,indirect_status,same_person,expected_reserve_fen,expected_base_fen,expected_own_fen,expected_direct_fen,expected_indirect_fen,expected_platform_retain_fen,quote,note
+C01,08,BR-CALC-04,1234,0,0,self,false,5000,1000,0,true,false,active,active,active,none,0,1234,617,123,0,494,false,用户自己买：联盟给12.34元；用户得6.17元；邀请人得1.23元；平台留4.94元。
+C02,08,BR-CALC-04,1234,0,0,self,false,5000,1000,0,false,false,active,active,active,none,0,1234,617,0,0,617,false,用户自己买且没有邀请人：联盟给12.34元；用户得6.17元；平台留6.17元。
+C03,08,BR-CALC-04,1,0,0,self,false,5000,1000,0,true,false,active,active,active,none,0,1,0,0,0,1,false,联盟只给1分钱：每个人分别向下取整后都为零；这1分归平台。
+C04,08,BR-CALC-24,2000,0,0,share,false,5000,1000,0,true,false,active,active,active,none,0,2000,1000,200,0,800,false,分享带来20元佣金：分享者得10元；分享者的邀请人得2元；平台留8元；购买者不分账。
+C05,08,BR-CALC-24,2000,0,0,share,false,5000,1000,0,false,false,active,active,active,none,0,2000,1000,0,0,1000,false,分享者没有邀请人：20元佣金中分享者得10元；平台留10元。
+C06,08,BR-CALC-24,2000,0,0,share,true,5000,1000,500,true,true,active,active,active,none,0,2000,1000,200,100,700,false,分享单开启间推：分享者得10元；上一级得2元；上两级得1元；平台留7元。
+C07,derived,BR-CALC-02,0,1500,0,self,true,5000,1000,500,true,true,active,active,active,none,0,0,0,0,0,0,false,联盟佣金为零：用户和平台都没有所得；预留也为零。
+C08,derived,BR-CALC-02,-1234,1500,0,self,true,5000,1000,500,true,true,active,active,active,none,0,0,0,0,0,0,false,联盟返回负数：计算基数和预留都按零处理；本函数不产生负份额。
+C09,08,BR-CALC-04,1000,1500,0,self,false,5000,1000,0,true,false,active,active,active,none,150,850,425,85,0,340,false,联盟给10元先预留1.50元：用户得4.25元；邀请人得0.85元；平台合计4.90元。
+C10,08,BR-CALC-04,1000,1500,0,self,false,6500,1000,0,true,false,active,active,active,none,150,850,552,85,0,213,false,用户比例提高到65%：扣预留后用户得5.52元；邀请人仍得0.85元；平台合计3.63元。
+C11,derived,BR-CALC-02,1452,1500,0,self,false,5000,1000,0,true,false,active,active,active,none,218,1234,617,123,0,494,false,联盟给14.52元：预留含尾差共2.18元；剩12.34元分账；平台预留加留存共7.12元。
+C12,08,BR-CALC-04,1000,1500,0,self,true,5000,1000,500,true,true,active,active,active,none,150,850,425,85,42,298,false,10元佣金先预留1.50元再分三人：4.25元和0.85元及0.42元；平台合计4.48元。
+C13,08,BR-CALC-05,1234,0,0,self,true,5000,1000,500,true,true,active,active,active,none,0,1234,617,123,61,433,false,开启间推且有两层邀请人：12.34元分出6.17元和1.23元及0.61元；平台留4.33元。
+C14,08,BR-CALC-05,1000,0,0,self,false,5000,1000,0,true,true,active,active,active,none,0,1000,500,100,0,400,false,间推关闭：即使有上两级邀请人也不分给他；用户得5元；上一级得1元；平台留4元。
+C15,derived,BR-CALC-05,1000,0,0,self,false,5000,1000,500,true,true,active,active,active,none,0,1000,500,100,0,400,false,防御性输入带了间推比例但开关关闭：仍不产生间推份额；平台留4元。
+C16,derived,BR-CALC-05,1000,0,0,self,true,5000,1000,500,true,false,active,active,active,none,0,1000,500,100,0,400,false,只有上一级邀请人：用户得5元；上一级得1元；没有上两级的那份归平台。
+C17,derived,BR-CALC-05,1000,0,0,self,true,5000,1000,500,false,true,active,active,active,none,0,1000,500,0,0,500,false,缺少上一级关系时不能跳级分账：即使传了上两级资料也不给份额；平台留5元。
+C18,derived,BR-CALC-13,1000,0,0,self,true,5000,1000,500,true,true,active,active,forfeited,none,0,1000,500,100,0,400,false,上两级已失效：他的0.50元归平台；用户和上一级仍得5元和1元。
+C19,derived,BR-CALC-13,1000,0,0,self,true,5000,1000,500,true,true,active,forfeited,active,none,0,1000,500,0,50,450,false,上一级已失效但上两级有效：上一级的1元归平台；上两级仍得0.50元；不把1元转给他。
+C20,derived,BR-CALC-13,1000,0,0,self,true,5000,1000,500,true,true,forfeited,active,active,none,0,1000,0,100,50,850,false,本人已判失效：本人的5元归平台；两位有效邀请人仍分别得1元和0.50元。
+C21,derived,BR-CALC-05,1000,0,0,self,true,5000,1000,500,true,true,active,active,active,owner,0,1000,500,100,0,400,false,上两级资料误指向用户本人：取消间推并提示异常；本人只得5元；平台留4元。
+C22,derived,BR-CALC-05,1000,0,0,share,true,5000,1000,500,true,true,active,active,active,direct,0,1000,500,100,0,400,false,上两级与上一级是同一人：上一级只拿1元；间推归平台并提示异常。
+C23,08,BR-CALC-08,1235,0,0,self,false,5000,1000,0,true,false,active,active,active,none,0,1235,617,123,0,495,false,12.35元分别分给用户和邀请人：各自向下取整到6.17元和1.23元；平台留4.95元。
+C24,08,BR-CALC-08,9,0,0,self,false,5000,1000,0,true,false,active,active,active,none,0,9,4,0,0,5,false,联盟给9分钱：用户得4分；邀请人不足1分取零；平台留5分。
+C25,derived,BR-CALC-02,1000,1500,100,self,true,5000,1000,500,true,true,active,active,active,none,150,750,375,75,37,263,false,演示淘礼金normal扣1元：先预留1.50元再扣1元；分佣基数7.50元；首版调用方仍传零扣除。
+C26,derived,BR-CALC-02,1000,1500,900,self,true,5000,1000,500,true,true,active,active,active,none,150,0,0,0,0,0,false,淘礼金扣除大于预留后余额：分佣基数截为零；原预留1.50元不变；不产生负份额。
+C27,08,BR-CALC-20,539,1500,0,self,false,5000,0,0,false,false,active,active,active,none,81,458,229,0,0,229,true,报价推广者收入5.39元：扣预留后剩4.58元；展示返利2.29元；相同输入入账也应为2.29元。
+C28,08,BR-CALC-20,539,0,0,self,false,5000,0,0,false,false,active,active,active,none,0,539,269,0,0,270,true,报价收入5.39元且不预留：本人返利2.69元；不在这里重复扣技术服务费。
+C29,derived,BR-CALC-20,300,0,0,self,false,5000,0,0,false,false,active,active,active,none,0,300,150,0,0,150,true,拼多多自购示例：调用方提供3元推广者收入；本人返利1.50元；这里不猜平台报文。
+C30,derived,BR-CALC-02,1,1500,0,self,true,5000,1000,500,true,true,active,active,active,none,1,0,0,0,0,0,false,佣金1分且预留15%：扣后基数向下取整为零；整整1分归预留。
+C31,derived,BR-CALC-02,1000,10000,0,self,true,5000,1000,500,true,true,active,active,active,none,1000,0,0,0,0,0,false,平台预留100%：10元全部进预留；留存和所有用户份额为零。
+C32,derived,BR-CALC-08,9007199254740993,0,0,self,true,5000,1000,500,true,true,active,active,active,none,0,9007199254740993,4503599627370496,900719925474099,450359962737049,3152519739159349,false,超大金额只作整数精度测试：每份仍逐分准确；不能转成浮点数后计算。
+C33,derived,BR-CALC-13,2000,0,0,share,true,5000,1000,500,true,true,forfeited,forfeited,forfeited,none,0,2000,0,0,0,2000,false,三位受益人都已失效：20元全归平台留存；不改派给任何其他人。
+C34,derived,BR-CALC-02,1000,1500,850,self,true,5000,1000,500,true,true,active,active,active,none,150,0,0,0,0,0,false,淘礼金恰好扣完预留后的8.50元：基数为零；平台仍保留1.50元预留。
+# out_of_scope：入账时banned或frozen或minor的判定及held补入账属于结算任务；本函数只接受调用方给定的active或forfeited。
+# out_of_scope：部分退款和结算调整的差额记账、注销后扣回、申诉恢复补发及首次入账幂等由账务任务验证；本任务只验证重新给定N后的应得份额。
+# out_of_scope：比价、预售、跨规则版本与跨等级边界的选择由调用方完成；这里只使用已选比例；不构造第三层祖先输入。
+# out_of_scope：淘礼金none模式由调用方转换为零基数；补贴过滤、四段利润和各平台quoteN的真实报文口径属于联盟适配器及后续任务。
