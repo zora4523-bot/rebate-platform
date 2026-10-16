@@ -1,0 +1,94 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-antd-stepup/login-steps.test.ts > [AC-F1-06r-LOGIN-STEPS#1] 登录步骤可读，当前步从账号密码移到动态码",
+    "test/spec/frontend/admin-antd-stepup/login-steps.test.ts > [AC-F1-06r-LOGIN-STEPS#2] 绑定流程保留具名 antd 步骤，完成页清除当前步",
+    "test/spec/frontend/admin-antd-stepup/menu-tokens.test.ts > [AC-F1-06r-MENU-TOKENS#1] Menu 项高不超过 36，选中底色随 CSS 令牌变化",
+    "test/spec/frontend/admin-antd-stepup/modal.test.ts > [AC-F1-06r-MODAL#2] totp 使用可见的 antd 遮罩，点击遮罩不取消验证",
+    "test/spec/frontend/admin-antd-stepup/modal.test.ts > [AC-F1-06r-MODAL#1] totp 使用 antd 弹窗、按钮与输入框，失败提示仍可读",
+    "test/spec/frontend/admin-antd-stepup/modal.test.ts > [AC-F1-06r-MODAL#2] sms 使用可见的 antd 遮罩，点击遮罩不取消验证",
+    "test/spec/frontend/admin-antd-stepup/modal.test.ts > [AC-F1-06r-MODAL#1] sms 使用 antd 弹窗、按钮与输入框，失败提示仍可读",
+    "test/spec/frontend/admin-antd-stepup/source.test.ts > [AC-F1-06r-SOURCE#1] step-up 从 antd 导入并以 JSX 渲染 Modal 和 Button，不关闭内置遮罩",
+    "test/spec/frontend/admin-antd-stepup/source.test.ts > [AC-F1-06r-SOURCE#2] step-up 无手写 portal、原生基础控件或仿造的 ant 类名",
+    "test/spec/frontend/admin-antd-stepup/source.test.ts > [AC-F1-06r-SOURCE#3] step-up.css 删除或至多 40 个非空行，目录内不覆盖 antd 选择器"
+  ],
+  "risk_note": "RV2 by path (apps/admin globs match the funds rule; no money logic). Step-up modal rebuilt on antd Modal per plan 03 §9.1 (createPortal, handwritten mask, focus trap and 215 lines of CSS removed): centered 480 wide, antd mask kept, not closable by outside click, close button named 关闭, footer antd Buttons (no auto-inserted space, no loading icon so the primary button keeps its name), no open animation; the existing contract kept by the component itself: application root inert + aria-hidden while open (antd portal excluded), Tab loop inside a modalRender wrapper (rc-dialog sentinels excluded; from the focused title Tab goes to the close button first), Esc, focus back to the trigger, monotonic clock, Retry-After and resend countdowns, in-flight results dropped after cancel. StepUpGate on antd Button / Flex / Typography; step-up.css 19 lines. Login antd Steps get the step-list name and aria-current=step (F1-06p review S2). theme.ts components.Menu: item height 32, selected colours from token variables. StepUpModal unit tests get a 15 s per-test timeout (antd in jsdom, as F1-06za). Rule tests by Codex in two calls (round 2 after the Claude spec-test S1s: antd mask kept and not closable by outside click), red first in the container (red/4 on the formatting-only amended spec commit, 10 tests). Implementation by Opus 5.5 in three rounds. Reviews: Codex only (approvals id 27). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 1 fail (S1: Tab from the focused title skipped the close button), fixed in round 2 together with the primary button name under antd loading; round 2 pass, no findings; round 3 (unit-test timeout only) pass, no findings; money checklist n/a"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents; round 1 fail (S1 outside click could close the dialog, S1 mask={false} plus a handwritten mask passed; S2 bind step current label), Codex round 2 fixed modal / source / login-steps tests; round 2 pass, no findings"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "6772798f8ec23a61a89aecc9f32ef213bba95274"
+  },
+  "task": "F1-06r",
+  "spec_ref": "7c268cb097cb90e0504e2bef474fb5c2cdb6565b",
+  "spec_commit": "02dfb045db53039c984008d2609a06798022ac7c",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "02dfb045db53039c984008d2609a06798022ac7c",
+      "tree": "98d5dd204cb14f3eb0505b658564c0c642c6f48a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T07:52:22Z",
+      "finished_at": "2026-10-16T07:52:29Z",
+      "gate": {
+        "commit": "9f38a6f0a1900644245a65f46fd863f813aad9df",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-antd-stepup/login-steps.test.ts > [AC-F1-06r-LOGIN-STEPS#1] 登录步骤可读，当前步从账号密码移到动态码",
+        "test/spec/frontend/admin-antd-stepup/login-steps.test.ts > [AC-F1-06r-LOGIN-STEPS#2] 绑定流程保留具名 antd 步骤，完成页清除当前步",
+        "test/spec/frontend/admin-antd-stepup/menu-tokens.test.ts > [AC-F1-06r-MENU-TOKENS#1] Menu 项高不超过 36，选中底色随 CSS 令牌变化",
+        "test/spec/frontend/admin-antd-stepup/modal.test.ts > [AC-F1-06r-MODAL#2] totp 使用可见的 antd 遮罩，点击遮罩不取消验证",
+        "test/spec/frontend/admin-antd-stepup/modal.test.ts > [AC-F1-06r-MODAL#1] totp 使用 antd 弹窗、按钮与输入框，失败提示仍可读",
+        "test/spec/frontend/admin-antd-stepup/modal.test.ts > [AC-F1-06r-MODAL#2] sms 使用可见的 antd 遮罩，点击遮罩不取消验证",
+        "test/spec/frontend/admin-antd-stepup/modal.test.ts > [AC-F1-06r-MODAL#1] sms 使用 antd 弹窗、按钮与输入框，失败提示仍可读",
+        "test/spec/frontend/admin-antd-stepup/source.test.ts > [AC-F1-06r-SOURCE#1] step-up 从 antd 导入并以 JSX 渲染 Modal 和 Button，不关闭内置遮罩",
+        "test/spec/frontend/admin-antd-stepup/source.test.ts > [AC-F1-06r-SOURCE#2] step-up 无手写 portal、原生基础控件或仿造的 ant 类名",
+        "test/spec/frontend/admin-antd-stepup/source.test.ts > [AC-F1-06r-SOURCE#3] step-up.css 删除或至多 40 个非空行，目录内不覆盖 antd 选择器"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-antd-stepup/login-steps.test.ts",
+        "test/spec/frontend/admin-antd-stepup/menu-tokens.test.ts",
+        "test/spec/frontend/admin-antd-stepup/modal.test.ts",
+        "test/spec/frontend/admin-antd-stepup/source.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "9a7e07b192d7b49113e2ec4849c50a351b4789744cdaec7c4f802aa4143270c2"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "380b971e961a412a6d75ec9af3e16c9f402160d5",
+    "packages/domain": "afea8f99253bc50cbc7cf9f6a6f39ec6ca7a8787",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6772798f8ec23a61a89aecc9f32ef213bba95274",
+    "test/spec": "a383bd3e77e1248db5b29c7eedd2b14a1c227d5c",
+    "specs": "5974685683fdc744c01b71d72b9ff4ff83c9c64e"
+  }
+}

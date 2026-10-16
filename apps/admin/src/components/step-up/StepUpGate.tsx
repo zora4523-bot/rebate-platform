@@ -1,4 +1,5 @@
 import { useId, type ReactElement } from 'react';
+import { Button, Flex, Typography } from 'antd';
 import { stepUpTexts } from '../../texts/step-up.ts';
 import type { StepUpGateProps, StepUpTier } from './types.ts';
 import './step-up.css';
@@ -45,21 +46,22 @@ export function StepUpGate(props: StepUpGateProps): ReactElement {
   }
 
   return (
-    <span className="step-up-gate">
-      <button
-        type="button"
-        className={className ?? 'step-up-button step-up-button-primary'}
+    <Flex vertical align="flex-start" gap={4} className="step-up-gate">
+      <Button
+        type="primary"
+        autoInsertSpace={false}
+        {...(className === undefined ? {} : { className })}
         aria-disabled={state.blocked ? true : undefined}
         aria-describedby={state.blocked ? reasonId : undefined}
         onClick={handleClick}
       >
         {children}
-      </button>
+      </Button>
       {state.blocked ? (
-        <span id={reasonId} className="step-up-gate-reason">
+        <Typography.Text id={reasonId} type="secondary" className="step-up-gate-reason">
           {state.reason}
-        </span>
+        </Typography.Text>
       ) : null}
-    </span>
+    </Flex>
   );
 }

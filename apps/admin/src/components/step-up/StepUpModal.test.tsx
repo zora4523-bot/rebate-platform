@@ -4,6 +4,10 @@ import { stepUpTexts } from '../../texts/step-up.ts';
 import { StepUpModal } from './StepUpModal.tsx';
 import type { StepUpModalProps, StepUpResult } from './types.ts';
 
+// antd Modal 在 jsdom 下注入样式后 getComputedStyle 变慢，单条可能超过默认 5 秒；
+// 与 test 包 F1-06za 一致放宽到 15 秒（apps/admin 的 vitest 配置是保护路径，不在此改）。
+vi.setConfig({ testTimeout: 15_000 });
+
 function props(overrides: Partial<StepUpModalProps> = {}): StepUpModalProps {
   return {
     open: true,
