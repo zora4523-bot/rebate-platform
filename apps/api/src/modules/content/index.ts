@@ -17,6 +17,9 @@ export type {
   PublishedPlatformIconOptions,
   PublishedPlatformIcons,
 } from './application/published-platform-icons.ts';
+// F1-02c: GET /v1/config, loaded by app.module on the api entry only with identity's viewer.
+export { ContentPublicModule } from './content-public.module.ts';
+export type { ContentPublicPorts } from './content-public.module.ts';
 
 export interface ContentReaderOptions {
   /** Primary handle (ADR-0001 §4.2 #11); the reader only reads. */

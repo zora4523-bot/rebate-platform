@@ -25,7 +25,11 @@ import {
   type CatalogWarning,
   type RegisterLinkInput,
 } from './modules/catalog/index.ts';
-import { ContentAdminModule, createContentReader } from './modules/content/index.ts';
+import {
+  ContentAdminModule,
+  ContentPublicModule,
+  createContentReader,
+} from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
 import {
   IdentityModule,
@@ -729,6 +733,11 @@ export class AppModule {
                   createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
               }),
             ]
+          : []),
+        // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
+        // identity's request viewer (token principal, else the X-App-Id guest).
+        ...(options.entry === 'api'
+          ? [ContentPublicModule.forApi({ viewerContext: identityViewer })]
           : []),
         ...(identity === undefined ? [] : [identity, riskModule(identity)]),
         ...(union === undefined ? [] : [union]),
