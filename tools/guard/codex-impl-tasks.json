@@ -20,7 +20,9 @@
     "B1-17b",
     "B1-17c",
     "B1-29a",
-    "B1-28b"
+    "B1-28b",
+    "F1-02e",
+    "F1-02f"
   ],
   "forbidden_paths": [
     "contracts/**",
