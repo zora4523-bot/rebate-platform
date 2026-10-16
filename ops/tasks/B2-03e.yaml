@@ -1,0 +1,22 @@
+id: B2-03e
+repo: rebate-platform
+title: 门禁登记新模块 commission：ops/risk-map.yaml 加 apps/api/src/modules/commission/** 为 RV2（impl claude、tester codex、review claude+codex，同 union），重生成根 AGENTS.md 分工表，加 apps/api/src/modules/commission/AGENTS.md 与一行 @AGENTS.md 的 CLAUDE.md
+type: guard-change
+# 2026-10-16 资金线 funds-quote 入账（#513 评审 S1-2）。为什么：verify:fast 的 guard:static 里 risk-map-coverage 要求每个 apps/api/src/modules/* 目录有明确规则，
+# apps/api/AGENTS.md 要求资金模块自带 AGENTS.md；三处都是保护路径第三类，B2-03c 改不了，故先行。不放宽任何门禁（未登记路径本就默认 RV2）。
+# 模块 AGENTS.md ≤60 行、不写数值与公式：职责（规则版本、报价，后续快照）、只读本模块的表、金额只经 @couli/money / @couli/domain、时间只读 Clock、依据指针（02 §4.1、08 BR-CALC）。
+# 由编排者直接写（不派实现子代理）；Codex 评审；合并前按任务书「资金类改动停下等编排」交编排会话加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'ops/risk-map.yaml'
+  - 'AGENTS.md'
+  - 'apps/api/src/modules/commission/AGENTS.md'
+  - 'apps/api/src/modules/commission/CLAUDE.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

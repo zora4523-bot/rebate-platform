@@ -6,7 +6,9 @@ type: impl
 # 拼多多 staging 切 live 被挡（HANDOFF 拼多多一节）。W1 followups B1-06w：报价器配置预读键清单写在 app.module，换真实报价器要同步。
 # 做法：app.module.ts 的 RebateQuoter 工厂按 (appEnv, unionModeOf(endpoints)) 选报价器；真实报价器需要数据库句柄，没有 DB 而又要真实报价器 → 拒绝启动（不回退演示）。
 # LINK_OPEN_PORTS.quoteReads.prepare 改为调用真实报价器的 prepare（演示时仍预读 DEMO_QUOTE_KEYS）；linking 的 LinkOpenQuoteReads.prepare 参数由 appId 扩为开放读取计划
-# （appId + 各身份 userId），link-open-wiring.ts 照传。只动装配与这一个端口签名，不改 linking 其余逻辑、不改 catalog 卡片组装。
+# （LinkOpenReadPlan），link-open-wiring.ts 照传；link-open-reads.ts 导出通用 openScopedReader，app.module 用它包 commission 的规则读取端口。验收：prepare 之后 quote() 不再触库，
+# 未预读的读取按 OpenReadNotPrepared 失败。不改 linking 其余逻辑、不改 catalog 卡片组装。预期行为：prod 在后台发布接口落地前无已发布版本，报价 fail-closed。
+# outside_needed：切 live 前在 staging 跑一次 db/seeds/0002，并确认 tech_fee_bp、rebate.taobao.compare_rate_ratio_bp 已配置。
 # 风险 RV2（linking 与 app.module）。Codex 写规则测试，Claude 过审，Opus 实现，Codex 资金评审。
 refs: [BR-CALC-20]
 refs_hash:
@@ -18,6 +20,9 @@ paths:
   - 'apps/api/src/modules/linking/application/link-open-wiring.ts'
   - 'apps/api/src/modules/linking/application/link-open-wiring.test.ts'
   - 'apps/api/src/modules/linking/linking.module.ts'
+  - 'apps/api/src/modules/linking/application/link-open-reads.ts'
+  - 'apps/api/src/modules/linking/application/link-open-reads.test.ts'
+  - 'apps/api/src/modules/linking/index.ts'
 test_paths:
   - 'test/spec/commission/wiring/**'
 impl: claude
