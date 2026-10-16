@@ -8,14 +8,16 @@ type: impl
 # ④ DELETE 只删 tip_key=jump_tip 的行，无记录也回 0。⑤ 只按令牌的 app_id、user_id 读写；游客 10001、版本闸门 10405、封禁 10006、限流都由已有全局守卫负责，本任务不另写，规则测试只抽查装配。
 # 命名约定（B1-02t 的冻结测试按此替换真实处理函数，不得改名）：控制器文件 apps/api/src/modules/identity/http/public/tips.controller.ts，类 TipsController，方法 getTips / markTipRead / resetTip，在 IdentityModule 注册。
 # 须在 B1-02t 合并之后实现（两份风控冻结测试为 planned 的 markTipRead 自注册桩路由，真实路由上线即 Fastify 重复声明）。改 openapi.yaml 走契约槽（couli-runs/B3-lane/notices.md）。风险 RV1（identity + 契约生成物）。
+# 2026-10-16 实现第 1 轮补：契约 markTipRead 请求体选填（inviter_before_buy 无体），routeSchemaOf 按冻结测试拒收选填体，去掉 planned 后生成脚本失败；paths 加 generate-route-schemas.ts（选填 JSON 体不生成 body 部分，由处理函数按契约校验）。platform 路径 RV2，整体按 RV2，代码评审 money 档。
 refs: []
 refs_hash: {}
-deps: [CT-15j, B1-02h, B1-03c, B1-02t]
+deps: [CT-15j, B1-02h, B1-03c, B1-02t, B1-02v]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'contracts/openapi.yaml'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/scripts/generate-route-schemas.ts'
 test_paths:
   - 'test/spec/identity/tips/**'
 impl: claude
