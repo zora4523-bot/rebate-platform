@@ -1,11 +1,11 @@
 id: F1-10c
 repo: rebate-platform
-title: platform / admin：AdminOperationGuard 支持只读的「任一权限点」——只读操作可传权限点数组，持有其中任一即放行、不做二次验证、不消耗令牌；写操作仍传单个权限点，既有行为（按 specs/permissions.yaml 的档位要令牌）不变
+title: platform / admin：AdminOperationGuard 支持「任一权限点」——只读操作可传权限点数组，持有其中任一即放行、不做二次验证、不消耗令牌；写操作也可传数组（持有任一即可），但数组内各点档位须相同、按该共同档位要令牌，档位不同为编程错误 50001；单个权限点的既有行为不变
 type: impl
 # 2026-10-16 入账（后台后端线 admin-backend，编排会话 10-16 20:3x 派「后台配置中心与紧急开关后端」：05 F1-10 后端部分、05 F1-02「含 kill switches」；解开 QA-05c）。
 # 依据 04 §3.2 config_items / kill_switches、§10（回滚、版本与操作记录）、§10.2（服务端 10 秒内生效、修改需 step-up 并告警）、§11.2 config.* / switch.*、§5 / §7（20902 CAS、10003 step-up）；02 §10、§14；01 F-ADM-13、F-CFG-04 / 07；08 BR-WDR-17、BR-INV-21。
 # 规划未定处的编排者裁定见 couli-runs/F1-10a/decision-orchestrator.md（编号即下文「裁定 N」）：开关仍存 config_items 由注册表区分（裁定 1），开关键进程内缓存 ≤5 秒直读 PG（裁定 2），历史表 config_item_versions（裁定 3），expected_version CAS（裁定 4），任一权限点守卫（裁定 5）。
-# 要点：platform/http/admin-guard.ts 端口类型扩展（运行时导出名单不变，冻结测试 wiring-nest 固定 platform/http/index.ts 的 6 个运行时导出）；只读模式（如入参 readOnly: true 或独立方法）只能配权限点数组且不判档位（04 §11.2 只要求修改做二次验证；台账评审 S1-1）；不改 specs/permissions.yaml（冻结测试 test/spec/admin/permissions/expected.ts 独立核对档位）；超管全有；10403 admin_permission_denied 与 10003 data.tier 口径同 F1-06l / F1-06u（裁定 5）。
+# 要点：platform/http/admin-guard.ts 端口类型扩展（运行时导出名单不变，冻结测试 wiring-nest 固定 platform/http/index.ts 的 6 个运行时导出）；只读模式（如入参 readOnly: true 或独立方法）不判档位；写操作数组档位须相同（switch.* 三项都是 totp；台账评审 r2 S1）（04 §11.2 只要求修改做二次验证；台账评审 S1-1）；不改 specs/permissions.yaml（冻结测试 test/spec/admin/permissions/expected.ts 独立核对档位）；超管全有；10403 admin_permission_denied 与 10003 data.tier 口径同 F1-06l / F1-06u（裁定 5）。
 refs: []
 refs_hash: {}
 deps: []
