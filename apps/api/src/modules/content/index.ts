@@ -1,8 +1,7 @@
 // Public surface of the content module; other modules import only from this file.
 // Task F1-02b: read-only entry for the minimum supported version (app_versions, by platform and
-// channel) and for business configuration (config_items, cached, with its version). The
-// contract and refresh semantics are recorded in test/spec/content/read/kit.ts. Writes, HTTP
-// routes and the version comparison belong to later tasks.
+// channel) and for business configuration (config_items, cached, with its version).
+// F1-02e adds whole version rows using the same cache as the minimum-version reads.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { Clock } from '../platform/index.ts';
@@ -19,6 +18,7 @@ export type {
   SwitchValueType,
 } from './domain/switch-registry.ts';
 export { SWITCH_CACHE_TTL_MS, switchCacheTtlMs } from './domain/cache-policy.ts';
+export type { AppVersionRow } from './domain/app-version.ts';
 // F1-06w: the admin console's platform mark reads, loaded by app.module on the admin entry only.
 export { ContentAdminModule } from './content-admin.module.ts';
 export { publishedPlatformIcons } from './application/published-platform-icons.ts';
@@ -43,5 +43,6 @@ export interface ContentReaderOptions {
  * shared by every caller.
  */
 export function createContentReader(options: ContentReaderOptions): ContentReader {
-  return new CachedContentReader(createKyselyContentStore(options.db), options.clock);
+  const store = createKyselyContentStore(options.db);
+  return new CachedContentReader(store, options.clock, store);
 }

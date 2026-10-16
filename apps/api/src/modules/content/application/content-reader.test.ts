@@ -1,9 +1,28 @@
 import { expect, it } from 'vitest';
 import { FixedClock } from '../../platform/index.ts';
 import { CONTENT_CACHE_TTL_MS } from '../domain/cache-policy.ts';
-import { CachedContentReader, type ContentConfig, type ContentStore } from './content-reader.ts';
+import type { AppVersionRow } from '../domain/app-version.ts';
+import {
+  CachedContentReader,
+  type AppVersionRowStore,
+  type ContentConfig,
+  type ContentStore,
+} from './content-reader.ts';
 
 const START = '2031-05-06T07:08:09.000Z';
+
+function versionRow(minimum: string | null): AppVersionRow {
+  return {
+    latest_version: '9.0.0',
+    min_supported_version: minimum,
+    recommended_version: null,
+    update_title: 'Update',
+    update_notes: '',
+    store_url: 'market://details?id=app',
+    default_store: 'default',
+    store_listings: [{ store: 'default', listed_version: null }],
+  };
+}
 
 // In-memory store: records every read, can fail, and can hold reads until released.
 function fakeStore() {
@@ -29,7 +48,20 @@ function fakeStore() {
       return found === undefined ? null : structuredClone(found);
     },
   };
-  return { store, calls, versions, configs, control };
+  const rowStore: AppVersionRowStore = {
+    async appVersionsByChannel(appId, platform) {
+      calls.push(`rows ${appId} ${platform}`);
+      if (control.hold !== null) await control.hold;
+      if (control.failure !== null) throw control.failure;
+      return new Map(
+        [...(versions.get(`${appId} ${platform}`) ?? [])].map(([channel, minimum]) => [
+          channel,
+          versionRow(minimum),
+        ]),
+      );
+    },
+  };
+  return { store, rowStore, calls, versions, configs, control };
 }
 
 it('[AC-F1-02b] h5 and admin are not judged: null without reading the store', async () => {
@@ -225,4 +257,60 @@ it('[AC-F1-02b] callers get their own copy: mutating a result does not change la
     version: 4,
   });
   expect(f.calls).toHaveLength(1);
+});
+
+it('[AC-F1-02e#7] full-row and minimum reads share expiry and isolate returned listings', async () => {
+  const f = fakeStore();
+  f.versions.set('app android', new Map([['official', '1.0.0']]));
+  const clock = new FixedClock(START);
+  const reader = new CachedContentReader(f.store, clock, f.rowStore);
+  expect(await reader.minSupportedVersion('app', 'android', 'official')).toBe('1.0.0');
+  const first = await reader.appVersion('app', 'android', 'official');
+  expect(first).toEqual(versionRow('1.0.0'));
+  (first!.store_listings as unknown[]).push({ store: 'injected', listed_version: null });
+  f.versions.set('app android', new Map([['official', '2.0.0']]));
+  expect(await reader.appVersion('app', 'android', 'official')).toEqual(versionRow('1.0.0'));
+  expect(f.calls).toHaveLength(1);
+  clock.advanceMs(CONTENT_CACHE_TTL_MS);
+  expect(await reader.appVersion('app', 'android', 'official')).toEqual(versionRow('2.0.0'));
+  expect(await reader.minSupportedVersion('app', 'android', 'official')).toBe('2.0.0');
+  expect(f.calls).toEqual(['rows app android', 'rows app android']);
+});
+
+it('[AC-F1-02e#2] an absent channel never loads or selects a default row', async () => {
+  const f = fakeStore();
+  f.versions.set('app android', new Map([['official', '1.0.0']]));
+  const reader = new CachedContentReader(f.store, new FixedClock(START), f.rowStore);
+  expect(await reader.appVersion('app', 'android', null)).toBeNull();
+  expect(f.calls).toEqual([]);
+});
+
+it('[AC-F1-02e#7] a failed full-row refresh cannot reuse the expired row', async () => {
+  const f = fakeStore();
+  f.versions.set('app android', new Map([['official', '1.0.0']]));
+  const clock = new FixedClock(START);
+  const reader = new CachedContentReader(f.store, clock, f.rowStore);
+  expect(await reader.appVersion('app', 'android', 'official')).toEqual(versionRow('1.0.0'));
+  clock.advanceMs(CONTENT_CACHE_TTL_MS);
+  f.control.failure = new Error('database unavailable');
+  await expect(reader.appVersion('app', 'android', 'official')).rejects.toThrow(
+    'database unavailable',
+  );
+  clock.advanceMs(-CONTENT_CACHE_TTL_MS / 2);
+  await expect(reader.minSupportedVersion('app', 'android', 'official')).rejects.toThrow(
+    'database unavailable',
+  );
+  expect(f.calls).toEqual(['rows app android', 'rows app android', 'rows app android']);
+});
+
+it('[AC-F1-02e#7] without the row port minimum reads work but full-row reads reject', async () => {
+  const f = fakeStore();
+  f.versions.set('app android', new Map([['official', '1.0.0']]));
+  const reader = new CachedContentReader(f.store, new FixedClock(START));
+  expect(await reader.minSupportedVersion('app', 'android', 'official')).toBe('1.0.0');
+  await expect(reader.appVersion('app', 'android', 'official')).rejects.toThrow(
+    'full version reads need the app version row store',
+  );
+  expect(await reader.minSupportedVersion('app', 'android', 'official')).toBe('1.0.0');
+  expect(f.calls).toEqual(['versions app android']);
 });
