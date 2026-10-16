@@ -1,0 +1,112 @@
+{
+  "task": "F1-02e",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "5f00975bc7070bd2c5698f4cae012b67987e54b1",
+  "red_tests": [
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] every column of the (app, platform, channel) row is returned verbatim and passes the contract",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] null minimum and recommended versions are returned as null, not \"\" nor latest",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] platform ios / channel appstore is looked up like any other (no platform gating)",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] platform harmony / channel agc is looked up like any other (no platform gating)",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] platform h5 / channel official is looked up like any other (no platform gating)",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] platform admin / channel official is looked up like any other (no platform gating)",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#2] the exact channel row is chosen; no fallback to another channel, platform or app",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#2] a row that exists only for another app is never returned",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#3] X-App-Version below minimum, equal to minimum and above latest yields the same 200 body",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#4] stores keep the written order and are not sorted or reordered by default_store",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#4] default_store missing from the listings is appended last with listed_version null",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#4] empty listings produce exactly the default_store entry",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#4] extra element keys are dropped and a missing listed_version becomes null",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (listed_version is not SemVer) is rejected as a whole with 50001",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (store is empty) is rejected as a whole with 50001",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (store appears twice) is rejected as a whole with 50001",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (an element is not an object) is rejected as a whole with 50001",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (store_url is not a URI) is rejected as a whole with 50001",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (default_store is empty) is rejected as a whole with 50001",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a non-http absolute URI such as market:// is a valid store_url",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#6] missing X-Device-Id, missing X-Platform or an unknown X-Channel is 400 / 20001",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#6] a well-formed but never-registered X-Device-Id is accepted (200)",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#7] a changed row is served from the 60 s cache until the injected clock reaches the TTL",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#7] after the row leaves its channel, the cached row expires and the check returns 50001",
+    "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#8] no Authorization header is needed and no download address field is returned"
+  ],
+  "risk_note": "RV2 (content client read API; contract). GET /v1/app-versions/check (x-auth none, deletion_only accepted): the exact (X-Platform, X-Channel) app_versions row of the caller's app_id, no channel fallback, shaped as AppVersionCheck; malformed rows and missing rows are 50001 with a logged warning; X-Device-Id is only format-checked (the route is unsigned); whole-row reads through an optional AppVersionRowStore that shares content's 60 s row cache with the minimum-version read, ContentStore unchanged (F1-10b frozen tests implement it). Read-only, no funds. Codex implementation in 3 rounds (implementation, rebase conflict resolution with F1-10b / F1-02d, decision 12); the contract change (checkAppVersion leaves x-implementation planned; route-schemas.gen.ts regenerated) is the orchestrator's mechanical commit with Couli-Mechanical: contract-codegen (approvals 31). The rule-test kit was restructured by the Claude test author before the implementation (only *.int.test.ts imports @couli/db/testing; assertions unchanged). The kit's freshAppId() used a hyphen that the contract X-App-Id pattern ^[a-z0-9_]+$ rejects (every request 20001); the orchestrator changed it to an underscore in a test(spec) commit before the implementation (precedent F1-02c #22), assertions unchanged. After F1-02f merged, the orchestrator rebased this branch: content-public.module.ts was a union of two additive provider lists (merged by hand, re-reviewed in round 2) and route-schemas.gen.ts was regenerated. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "5f00975bc7070bd2c5698f4cae012b67987e54b1",
+      "tree": "4c9c4f14d2be2f0a84b71c77d475020bcaabe2d3",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T20:53:05Z",
+      "finished_at": "2026-10-16T20:53:18Z",
+      "red_tests": [
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] every column of the (app, platform, channel) row is returned verbatim and passes the contract",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] null minimum and recommended versions are returned as null, not \"\" nor latest",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] platform ios / channel appstore is looked up like any other (no platform gating)",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] platform harmony / channel agc is looked up like any other (no platform gating)",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] platform h5 / channel official is looked up like any other (no platform gating)",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#1] platform admin / channel official is looked up like any other (no platform gating)",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#2] the exact channel row is chosen; no fallback to another channel, platform or app",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#2] a row that exists only for another app is never returned",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#3] X-App-Version below minimum, equal to minimum and above latest yields the same 200 body",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#4] stores keep the written order and are not sorted or reordered by default_store",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#4] default_store missing from the listings is appended last with listed_version null",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#4] empty listings produce exactly the default_store entry",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#4] extra element keys are dropped and a missing listed_version becomes null",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (listed_version is not SemVer) is rejected as a whole with 50001",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (store is empty) is rejected as a whole with 50001",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (store appears twice) is rejected as a whole with 50001",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (an element is not an object) is rejected as a whole with 50001",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (store_url is not a URI) is rejected as a whole with 50001",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a dirty row (default_store is empty) is rejected as a whole with 50001",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#5] a non-http absolute URI such as market:// is a valid store_url",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#6] missing X-Device-Id, missing X-Platform or an unknown X-Channel is 400 / 20001",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#6] a well-formed but never-registered X-Device-Id is accepted (200)",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#7] a changed row is served from the 60 s cache until the injected clock reaches the TTL",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#7] after the row leaves its channel, the cached row expires and the check returns 50001",
+        "test/spec/content/app-versions/check.int.test.ts > [AC-F1-02e#8] no Authorization header is needed and no download address field is returned"
+      ],
+      "expected": ["test/spec/content/app-versions/check.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "bfd215c66c08d20d794b5b837e9e0c7a06f9a0a1bc531a55e7a20318ef926a25"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "fresh Claude subagents: round 1 pass; after the rebase onto F1-02f the orchestrator union-merged content-public.module.ts (articles and app-versions providers) and regenerated route-schemas.gen.ts, round 2 pass on that head; one S2 (check endpoint and risk gate use separate reader instances, up to 60 s apart) tracked in followups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "25 rule tests by a Claude subagent reviewed by a fresh Codex read-only session: round 1 pass with no findings; kit restructured afterwards for the dependency rule with assertions unchanged"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6875085aaa560985594fed987c2caeba34f571eb",
+    "test/spec": "94fcad1b746bbb99cc5598ac8f49e0ff688c1548",
+    "specs": "4b37a92670828e2b8c3e0734ecb85eb5371a7277"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "6875085aaa560985594fed987c2caeba34f571eb"
+  }
+}

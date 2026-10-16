@@ -26,6 +26,7 @@ function service(
   const errors: unknown[] = [];
   const apps = new Set<string>();
   const reader: ContentReader = {
+    appVersion: () => Promise.resolve(null),
     minSupportedVersion: () => Promise.resolve(null),
     configValue: (appId, key) => {
       apps.add(appId);

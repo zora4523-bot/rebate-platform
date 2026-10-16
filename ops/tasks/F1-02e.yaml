@@ -25,4 +25,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/content/app-versions/**'
-status: todo
+status: done
+pr: 608

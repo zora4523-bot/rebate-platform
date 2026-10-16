@@ -3,6 +3,7 @@ import type { DB } from '@couli/db';
 import type { Clock } from '../../platform/index.ts';
 import { CONTENT_CACHE_TTL_MS, switchCacheTtlMs } from '../domain/cache-policy.ts';
 import { switchSpecOf } from '../domain/switch-registry.ts';
+import type { AppVersionRow } from '../domain/app-version.ts';
 import { isVersionGatedPlatform } from '../domain/version-gate.ts';
 import { TtlCache } from './ttl-cache.ts';
 
@@ -22,6 +23,12 @@ export interface ContentConfig {
  * with an expired value instead.
  */
 export interface ContentReader {
+  /** Exact row, on every platform; absent channel/row means null, never a fallback. */
+  appVersion(
+    appId: string,
+    platform: ClientPlatform,
+    channel: string | null,
+  ): Promise<AppVersionRow | null>;
   /**
    * min_supported_version of the app_versions row of (appId, platform, channel). null when the
    * platform is not judged (h5, admin: the database is not read), when that row does not exist
@@ -47,22 +54,35 @@ export interface ContentStore {
   configItem(appId: string, key: string): Promise<ContentConfig | null>;
 }
 
+/** Optional full-row read port; existing ContentStore implementations remain compatible. */
+export interface AppVersionRowStore {
+  /** channel → full app_versions row of (appId, platform). */
+  appVersionsByChannel(
+    appId: string,
+    platform: ClientPlatform,
+  ): Promise<ReadonlyMap<string, AppVersionRow>>;
+}
+
 /**
  * ContentReader with registered switches cached for switchCacheTtlMs() and other reads for
- * CONTENT_CACHE_TTL_MS (rule in TtlCache). Minimum
- * versions are cached per (appId, platform) with every channel of that platform, so the cache
+ * CONTENT_CACHE_TTL_MS (rule in TtlCache). Whole version
+ * rows are cached per (appId, platform), shared by both version reads, so the cache
  * holds only rows that exist however many distinct channels callers ask for; missing config keys
  * are cached like present ones. One instance per process shares its cache across requests.
  */
 export class CachedContentReader implements ContentReader {
   private readonly store: ContentStore;
-  private readonly versions: TtlCache<ReadonlyMap<string, string | null>>;
+  private readonly rowStore: AppVersionRowStore | undefined;
+  private readonly versions: TtlCache<ReadonlyMap<string, AppVersionRow>>;
+  private readonly minimumVersions: TtlCache<ReadonlyMap<string, string | null>>;
   private readonly configs: TtlCache<ContentConfig | null>;
   private readonly switches: TtlCache<ContentConfig | null>;
 
-  constructor(store: ContentStore, clock: Clock) {
+  constructor(store: ContentStore, clock: Clock, rowStore?: AppVersionRowStore) {
     this.store = store;
+    this.rowStore = rowStore;
     this.versions = new TtlCache(clock, CONTENT_CACHE_TTL_MS);
+    this.minimumVersions = new TtlCache(clock, CONTENT_CACHE_TTL_MS);
     this.configs = new TtlCache(clock, CONTENT_CACHE_TTL_MS);
     this.switches = new TtlCache(clock, switchCacheTtlMs());
   }
@@ -73,10 +93,34 @@ export class CachedContentReader implements ContentReader {
     channel: string,
   ): Promise<string | null> {
     if (!isVersionGatedPlatform(platform)) return null;
-    const byChannel = await this.versions.get(cacheKey(appId, platform), () =>
-      this.store.minSupportedVersionsByChannel(appId, platform),
+    if (this.rowStore === undefined) {
+      const byChannel = await this.minimumVersions.get(cacheKey(appId, platform), () =>
+        this.store.minSupportedVersionsByChannel(appId, platform),
+      );
+      return byChannel.get(channel) ?? null;
+    }
+    const byChannel = await this.versionRows(appId, platform);
+    return byChannel.get(channel)?.min_supported_version ?? null;
+  }
+
+  async appVersion(
+    appId: string,
+    platform: ClientPlatform,
+    channel: string | null,
+  ): Promise<AppVersionRow | null> {
+    if (channel === null) return null;
+    const row = (await this.versionRows(appId, platform)).get(channel);
+    return row === undefined ? null : structuredClone(row);
+  }
+
+  private versionRows(appId: string, platform: ClientPlatform) {
+    const rowStore = this.rowStore;
+    if (rowStore === undefined) {
+      throw new Error('content: full version reads need the app version row store');
+    }
+    return this.versions.get(cacheKey(appId, platform), () =>
+      rowStore.appVersionsByChannel(appId, platform),
     );
-    return byChannel.get(channel) ?? null;
   }
 
   async configValue(appId: string, key: string): Promise<ContentConfig | null> {

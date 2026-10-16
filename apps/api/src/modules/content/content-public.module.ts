@@ -1,4 +1,5 @@
-// content's /v1 client routes (F1-02c, F1-02f): config and articles. app.module imports this module on
+// content's /v1 client routes (F1-02c, F1-02e, F1-02f): config, app-versions check and articles.
+// app.module imports this module on
 // the api entry only and passes identity's request viewer as the ConfigViewerContext provider
 // (content never imports identity). Config reads use a process-wide ContentReader; article reads
 // always query the primary handle DB afresh. Without a database handle the routes still
@@ -21,18 +22,23 @@ import {
 } from '../platform/index.ts';
 import { ClientConfigService, ConfigViewerContext } from './application/client-config.ts';
 import { ArticleReader } from './application/article-reader.ts';
+import { AppVersionCheckService } from './application/app-version-check.ts';
 import { CachedContentReader, type ContentReader } from './application/content-reader.ts';
 import { publishedPlatformIcons } from './application/published-platform-icons.ts';
 import type { ClientConfig } from './domain/client-config.ts';
 import { ConfigController } from './http/public/config.controller.ts';
 import { ArticlesController } from './http/public/articles.controller.ts';
 import { createKyselyArticleStore } from './infra/kysely-article-store.ts';
+import { AppVersionsController } from './http/public/app-versions.controller.ts';
 import { createKyselyContentStore } from './infra/kysely-content-store.ts';
 
 const UNAVAILABLE_READER: ContentReader = {
+  appVersion: () => Promise.reject(new Error('content: version reads need the database')),
   minSupportedVersion: () => Promise.reject(new Error('content: config reads need the database')),
   configValue: () => Promise.reject(new Error('content: config reads need the database')),
 };
+
+const CONTENT_READER = Symbol('CONTENT_READER');
 
 export interface ContentPublicPorts {
   /** Request-scoped provider of the caller (identity's viewer on the api entry). */
@@ -44,7 +50,7 @@ export class ContentPublicModule {
   static forApi(ports: ContentPublicPorts): DynamicModule {
     return {
       module: ContentPublicModule,
-      controllers: [ConfigController, ArticlesController],
+      controllers: [ConfigController, ArticlesController, AppVersionsController],
       providers: [
         {
           provide: ArticleReader,
@@ -53,19 +59,25 @@ export class ContentPublicModule {
             new ArticleReader(db === undefined ? null : createKyselyArticleStore(db), clock),
         },
         {
+          provide: CONTENT_READER,
+          inject: [{ token: DB, optional: true }, CLOCK],
+          useFactory: (db: Kysely<Database> | undefined, clock: Clock): ContentReader => {
+            if (db === undefined) return UNAVAILABLE_READER;
+            const store = createKyselyContentStore(db);
+            return new CachedContentReader(store, clock, store);
+          },
+        },
+        {
           provide: ClientConfigService,
-          inject: [{ token: DB, optional: true }, CLOCK, ROOT_LOGGER, APP_CONFIG],
+          inject: [CONTENT_READER, { token: DB, optional: true }, ROOT_LOGGER, APP_CONFIG],
           useFactory: (
+            reader: ContentReader,
             db: Kysely<Database> | undefined,
-            clock: Clock,
             logger: RootLogger,
             config: AppConfig,
           ): ClientConfigService =>
             new ClientConfigService({
-              reader:
-                db === undefined
-                  ? UNAVAILABLE_READER
-                  : new CachedContentReader(createKyselyContentStore(db), clock),
+              reader,
               platformIcons: (appId) => {
                 if (db === undefined) {
                   return Promise.reject(
@@ -80,6 +92,12 @@ export class ContentPublicModule {
               linkPatterns: () => getLinkPatterns() as NonNullable<ClientConfig['link_patterns']>,
               logger: logger.child({ module: 'content' }),
             }),
+        },
+        {
+          provide: AppVersionCheckService,
+          inject: [CONTENT_READER, ROOT_LOGGER],
+          useFactory: (reader: ContentReader, logger: RootLogger): AppVersionCheckService =>
+            new AppVersionCheckService(reader, logger.child({ module: 'content' })),
         },
         { ...ports.viewerContext, provide: ConfigViewerContext },
       ],

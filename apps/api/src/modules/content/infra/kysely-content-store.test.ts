@@ -37,19 +37,36 @@ async function fixture(rows: unknown[]) {
   return { store: createKyselyContentStore(db), queries };
 }
 
-it('[AC-F1-02b] minimum versions: one SELECT of app_versions scoped by app and platform', async () => {
+it('[AC-F1-02b] minimum versions: the original read port still scopes by app and platform', async () => {
   const f = await fixture([
     { channel: 'official', min_supported_version: '2.10.0' },
     { channel: 'huawei', min_supported_version: null },
   ]);
-  const byChannel = await f.store.minSupportedVersionsByChannel('app_1', 'android');
-  expect([...byChannel]).toEqual([
+  expect([...(await f.store.minSupportedVersionsByChannel('app_1', 'android'))]).toEqual([
     ['official', '2.10.0'],
     ['huawei', null],
   ]);
   expect(f.queries).toHaveLength(1);
   expect(f.queries[0]?.sql).toBe(
     'select "channel", "min_supported_version" from "app"."app_versions" where "app_id" = $1 and "platform" = $2',
+  );
+  expect(f.queries[0]?.parameters).toEqual(['app_1', 'android']);
+});
+
+it('[AC-F1-02e#1] version rows: one SELECT scoped by app and platform', async () => {
+  const rows = [
+    { channel: 'official', min_supported_version: '2.10.0' },
+    { channel: 'huawei', min_supported_version: null },
+  ];
+  const f = await fixture(rows);
+  const byChannel = await f.store.appVersionsByChannel('app_1', 'android');
+  expect([...byChannel]).toEqual([
+    ['official', rows[0]],
+    ['huawei', rows[1]],
+  ]);
+  expect(f.queries).toHaveLength(1);
+  expect(f.queries[0]?.sql).toBe(
+    'select * from "app"."app_versions" where "app_id" = $1 and "platform" = $2',
   );
   expect(f.queries[0]?.parameters).toEqual(['app_1', 'android']);
 });
