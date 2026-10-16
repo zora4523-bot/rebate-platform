@@ -7,6 +7,8 @@ type: impl
 # 前端 F1-06h / F1-06g 只对契约示例夹具开发过。规则测试用真后台入口（test/spec/admin/auth 的 harness：真库、Fastify inject）作 fetch，
 # 把 apps/admin 的 createAuthProvider / createDataProvider / permissionsFromMe 接上去，逐步走通，并核对 F1-06h 处理的每个错误码在真入口上的 code、reason、HTTP 状态与 data.fields。
 # 开发服务器：vite 的 server.proxy 把 /admin/v1 转到环境变量给的本地 API 地址（缺省不代理，仍是预览账号）；main.tsx 生产路径的「权限接口未接」占位已不生效（浏览器路由时 App 自带 guard 读 /me/permissions），改为如实。
+# 2026-10-16 补：为让规则测试先红，把 App.tsx 里内联的 auth / data provider 组装抽成 providers 里新的 createAdminApi（骨架先抛 NotImplemented，App 与规则测试都经它），
+# vite 代理配置抽成纯函数 src/dev-proxy.ts（vite.config.ts 引用），所以 paths 加 App.tsx 与 dev-proxy.ts。
 # staging 真连要负责人配 ADMIN_TOKEN_SIGNING_KEY、ADMIN_IP_ALLOWLIST、ADMIN_CORS_ORIGIN，不在本任务。找到前后端不一致的：前端按契约改；后端与契约不一致的记 followups 转后台后端线，不在本任务改 apps/api。
 refs: []
 refs_hash: {}
@@ -14,6 +16,8 @@ deps: [F1-06h, F1-06g, F1-06k, F1-06l, F1-06r]
 paths:
   - 'apps/admin/src/providers/**'
   - 'apps/admin/src/main.tsx'
+  - 'apps/admin/src/App.tsx'
+  - 'apps/admin/src/dev-proxy.ts'
   - 'apps/admin/vite.config.ts'
   - 'apps/admin/src/texts/login.ts'
 test_paths:
