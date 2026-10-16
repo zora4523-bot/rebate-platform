@@ -71,12 +71,20 @@ export function assertQuery(statement: CompiledQuery, appId: string): void {
   expect(equality(statement, 'status')).toBe('active');
 }
 
-/** Real Kysely compilation; in-memory driver refuses writes and unscoped reads. No PG/socket. */
+/** Real Kysely compilation; in-memory driver refuses writes (except the B1-04p archive insert,
+ * recorded in `archived`) and unscoped reads. No PG/socket. */
 export function pidDatabase(initial: Candidate[] = [candidate()]) {
   let rows = initial;
   const statements: CompiledQuery[] = [];
+  // B1-04p: each upstream request is archived into union_raw_payloads through the same handle.
+  // Those inserts are recorded apart and never count as query-identity reads.
+  const archived: CompiledQuery[] = [];
   const connection: DatabaseConnection = {
     async executeQuery<R>(statement: CompiledQuery): Promise<QueryResult<R>> {
+      if (/^insert into "app"\."union_raw_payloads"/i.test(statement.sql)) {
+        archived.push(statement);
+        return { rows: [{ id: BigInt(archived.length) }] as R[], numAffectedRows: 1n };
+      }
       statements.push(statement);
       const appId = equality(statement, 'app_id');
       expect(appId).toBeTypeOf('string');
@@ -114,6 +122,7 @@ export function pidDatabase(initial: Candidate[] = [candidate()]) {
   return {
     db,
     statements,
+    archived,
     replace: (next: Candidate[]) => {
       rows = next;
     },
