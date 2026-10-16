@@ -1293,7 +1293,14 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         );
       }
       if (conversion.prepare !== undefined) {
-        reads.push(conversion.prepare({ appId, platform, identities: plan.identities }));
+        reads.push(
+          conversion.prepare({
+            appId,
+            platform,
+            callerUserId: caller.userId,
+            identities: plan.identities,
+          }),
+        );
       }
     }
     // A read that failed fails again where the open uses it, as it did when read in place.
@@ -1459,6 +1466,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
           conversion.prepare({
             appId,
             platform,
+            callerUserId: caller.userId,
             identities: [
               { userId: caller.userId, pidScene: pidSceneOf(CONVERT_SCENE), noRebate: false },
             ],

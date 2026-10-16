@@ -26,6 +26,12 @@ import {
   type RegisterLinkInput,
 } from './modules/catalog/index.ts';
 import {
+  COMMISSION_QUOTE_CONFIG_KEYS,
+  createCommissionRebateQuoter,
+  createRuleSetReader,
+  type RuleSetReader,
+} from './modules/commission/index.ts';
+import {
   ContentAdminModule,
   ContentPublicModule,
   createContentReader,
@@ -40,11 +46,13 @@ import {
   createIdentityCallerContext,
   createIdentityViewerContext,
   createSameDeviceLoginReader,
+  createUserLevelReader,
   type IdentityAttrCodeReader,
   type IdentityConfigReader,
   type IdentityContext,
   type IdentityRequest,
   type SessionPushTokens,
+  type UserLevelReader,
 } from './modules/identity/index.ts';
 import {
   LINK_LANDING_PORTS,
@@ -52,11 +60,15 @@ import {
   LINK_REGISTRATIONS,
   LinkingModule,
   createUnavailableAttrCodeReader,
+  inOpenReads,
   loadLinkOpenApps,
   openScopedConfig,
+  openScopedReader,
   type LinkConvertPorts,
   type LinkLandingPorts,
   type LinkOpenPorts,
+  type LinkOpenQuoteReads,
+  type LinkOpenReadPlan,
   type LinkRegistrations,
 } from './modules/linking/index.ts';
 import {
@@ -328,14 +340,122 @@ const QUOTE_CONFIG = Symbol('QUOTE_CONFIG');
 /**
  * Every key the demo quoter reads (card-assembler.ts: its rule, the tech fee and the taobao
  * compare ratio). An open pre-reads them before its transaction (B1-06m); a key missing here
- * fails that open's re-check closed instead of borrowing a second connection.
- * TODO(规划/11 §4.5): 真实报价器自带预读清单 — blocked on B2-03（佣金规则与用户等级）
+ * fails that open's re-check closed instead of borrowing a second connection. The commission
+ * quoter's keys are its own COMMISSION_QUOTE_CONFIG_KEYS.
  */
 const DEMO_QUOTE_KEYS = [
   DEMO_QUOTE_RULE_KEY,
   'tech_fee_bp',
   'rebate.taobao.compare_rate_ratio_bp',
 ] as const;
+
+/** The process quoter and the pre-reads an open makes for it (LINK_OPEN_PORTS.quoteReads). */
+interface QuoterWiring {
+  readonly quoter: RebateQuoter;
+  readonly quoteReads: LinkOpenQuoteReads;
+}
+
+const QUOTER_WIRING = Symbol('QUOTER_WIRING');
+
+/**
+ * B2-03d: the commission rule versions as an open sees them. Outside an open every call reads
+ * straight through (the quoter selects at its own quote instant). Inside an open the read is
+ * memoized per app by the open's scope, and cut at the open's own pre-read instant (the Clock
+ * read before the port, each open anew): a version that only becomes effective after that
+ * instant is invisible for the whole open, so a future version revoked after the pre-read can
+ * never be quoted from (BR-CALC-11, BR-CALC-20); the quoter then selects the latest version in
+ * force from what is left.
+ */
+function openScopedRules(rules: RuleSetReader, clock: Clock): RuleSetReader {
+  return {
+    publishedVersions: (appId) =>
+      openScopedReader(rules, JSON.stringify([appId]), 'commission rule versions', async () => {
+        if (!inOpenReads()) return rules.publishedVersions(appId);
+        const at = clock.now().getTime();
+        const versions = await rules.publishedVersions(appId);
+        return versions.filter((version) => version.effective_from.getTime() <= at);
+      }),
+  };
+}
+
+/** B2-03d: user levels, memoized per (app, user) inside an open; read through elsewhere. */
+function openScopedLevels(levels: UserLevelReader): UserLevelReader {
+  return {
+    levelOf: (subject) =>
+      openScopedReader(levels, JSON.stringify([subject.appId, subject.userId]), 'user level', () =>
+        levels.levelOf({ appId: subject.appId, userId: subject.userId }),
+      ),
+  };
+}
+
+/** The non-guest viewers an open may quote for: the caller and every owner identity. */
+function planUsers(plan: LinkOpenReadPlan): string[] {
+  const users = new Set<string>();
+  if (plan.callerUserId !== null) users.add(plan.callerUserId);
+  for (const identity of plan.identities) {
+    if (identity.userId !== null) users.add(identity.userId);
+  }
+  return [...users];
+}
+
+/**
+ * B2-03d (BR-CALC-20): the process RebateQuoter. APP_ENV=prod or any live union endpoint takes
+ * commission's real quoter over the rule versions, user levels and quote configuration, each
+ * wrapped in the open's read scope; it needs the database handle and refuses to start without
+ * one (never the demo quoter instead). Every other environment keeps the demo quoter.
+ * The real quoter's own prepare() is never called: it would switch the one shared quoter to a
+ * single open's scope, so concurrent opens and search cards would answer for each other. An
+ * open's pre-reads go through the wrapped ports instead (the AsyncLocalStorage scope of
+ * link-open-reads.ts), so inside an open's transaction the quoter answers only from them and
+ * outside an open it reads straight through. Pre-read failures are settled and surface where
+ * the transaction reads them (B1-06m).
+ */
+function assembleQuoter(
+  config: AppConfig,
+  endpoints: readonly UnionEndpoint[],
+  quoteConfig: CatalogConfigReader,
+  clock: Clock,
+  db?: Kysely<Database>,
+): QuoterWiring {
+  if (config.appEnv !== 'prod' && unionModeOf(endpoints) !== 'live') {
+    return {
+      quoter: createDemoRebateQuoter({
+        appEnv: config.appEnv,
+        unionMode: unionModeOf(endpoints),
+        config: quoteConfig,
+        ruleConfigKey: DEMO_QUOTE_RULE_KEY,
+      }),
+      quoteReads: {
+        prepare: async (plan) => {
+          await Promise.allSettled(
+            DEMO_QUOTE_KEYS.map((key) => quoteConfig.configValue(plan.appId, key)),
+          );
+        },
+      },
+    };
+  }
+  if (db === undefined) {
+    throw new Error(
+      'quoter: the commission rebate quoter (prod or a live union endpoint) needs a database handle',
+    );
+  }
+  const rules = openScopedRules(createRuleSetReader({ db }), clock);
+  const levels = openScopedLevels(createUserLevelReader({ db }));
+  const quoter = createCommissionRebateQuoter({ rules, levels, config: quoteConfig, clock });
+  return {
+    quoter,
+    quoteReads: {
+      prepare: async (plan) => {
+        const { appId } = plan;
+        await Promise.allSettled([
+          rules.publishedVersions(appId),
+          ...planUsers(plan).map((userId) => levels.levelOf({ appId, userId })),
+          ...COMMISSION_QUOTE_CONFIG_KEYS.map((key) => quoteConfig.configValue(appId, key)),
+        ]);
+      },
+    },
+  };
+}
 
 /**
  * Jump paths verified per platform and client for prod (B1-06e fund review S2): none yet, so a
@@ -401,9 +521,9 @@ class CatalogPortsModule {}
  * each other (no forwardRef):
  * - GovernedUnion: union adapters wrapped once per process (also for later parsing wiring);
  * - LinkRegistrar: linking's card registration in the search scene (BR-PRICE-12), per request;
- * - RebateQuoter: the demo quoter (BR-CALC-20 with synthetic rule values). It refuses prod and
- *   live union endpoints, so such an entry does not start;
- *   TODO(规划/11 §4.5): 真实报价器 — blocked on B2-03（佣金规则与用户等级）
+ * - RebateQuoter: commission's real quoter under APP_ENV=prod or any live union endpoint (it
+ *   needs the database handle), the demo quoter (synthetic rule values) elsewhere; one process
+ *   quoter shared by search, detail, parse cards and the open (assembleQuoter, B2-03d);
  * - LINK_OPEN_PORTS: linking's open (B1-06w) — the same governed adapters and quoter, an
  *   item_ref issuer, contracts/apps.json and the prod-verified jump paths; and the convert's
  *   catalog, item_ref verifier and parsing's by-URL port (B1-06i);
@@ -440,26 +560,20 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
             : openScopedConfig(createContentReader({ db, clock })),
       },
       {
+        provide: QUOTER_WIRING,
+        inject: [APP_CONFIG, UNION_ENDPOINTS, QUOTE_CONFIG, CLOCK, { token: DB, optional: true }],
+        useFactory: assembleQuoter,
+      },
+      {
         provide: RebateQuoter,
-        inject: [APP_CONFIG, UNION_ENDPOINTS, QUOTE_CONFIG],
-        useFactory: (
-          config: AppConfig,
-          endpoints: readonly UnionEndpoint[],
-          quoteConfig: CatalogConfigReader,
-        ): RebateQuoter =>
-          createDemoRebateQuoter({
-            appEnv: config.appEnv,
-            unionMode: unionModeOf(endpoints),
-            config: quoteConfig,
-            ruleConfigKey: DEMO_QUOTE_RULE_KEY,
-          }),
+        inject: [QUOTER_WIRING],
+        useFactory: (wiring: QuoterWiring): RebateQuoter => wiring.quoter,
       },
       {
         provide: LINK_OPEN_PORTS,
         inject: [
           GovernedUnion,
-          RebateQuoter,
-          QUOTE_CONFIG,
+          QUOTER_WIRING,
           APP_CONFIG,
           CLOCK,
           ROOT_LOGGER,
@@ -468,8 +582,7 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
         ],
         useFactory: (
           union: GovernedUnion,
-          quoter: RebateQuoter,
-          quoteConfig: CatalogConfigReader,
+          wiring: QuoterWiring,
           config: AppConfig,
           clock: Clock,
           logger: RootLogger,
@@ -484,15 +597,9 @@ function catalogPorts(union: DynamicModule, linking: DynamicModule): DynamicModu
           const itemRefs = createItemRefService({ crypto: crypto ?? processItemRefCipher() });
           return {
             union,
-            quoter,
+            quoter: wiring.quoter,
             itemRefs,
-            quoteReads: {
-              prepare: async (appId) => {
-                await Promise.allSettled(
-                  DEMO_QUOTE_KEYS.map((key) => quoteConfig.configValue(appId, key)),
-                );
-              },
-            },
+            quoteReads: wiring.quoteReads,
             apps: loadLinkOpenApps(),
             verifiedPaths: VERIFIED_JUMP_PATHS,
             ...(db === undefined

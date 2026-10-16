@@ -35,7 +35,19 @@ export class OpenReadNotPrepared extends Error {
   }
 }
 
-function through<T>(reader: object, key: string, what: string, load: () => Promise<T>): Promise<T> {
+/**
+ * B2-03d: the per-open read scope, open to other modules' ports (the commission quoter's rule
+ * versions and user levels). Outside an open it reads straight through; while an open pre-reads
+ * it memoizes by (reader object, key), so the same key on another reader never answers for it;
+ * once the open's scope is locked only memoized reads answer (a failed pre-read answers with its
+ * original error) and anything else rejects with OpenReadNotPrepared.
+ */
+export function openScopedReader<T>(
+  reader: object,
+  key: string,
+  what: string,
+  load: () => Promise<T>,
+): Promise<T> {
   const store = scope.getStore();
   if (store === undefined) return load();
   let byKey = store.memo.get(reader);
@@ -51,18 +63,15 @@ function through<T>(reader: object, key: string, what: string, load: () => Promi
   return value;
 }
 
-/** B2-03d: generic entry to the per-open read scope, shared by quote ports. */
-export function openScopedReader<T>(
-  reader: object,
-  key: string,
-  what: string,
-  load: () => Promise<T>,
-): Promise<T> {
-  void reader;
-  void key;
-  void what;
-  void load;
-  throw new Error('NotImplemented: openScopedReader');
+const through = openScopedReader;
+
+/**
+ * B2-03d: whether the caller runs inside an open's read scope (pre-reading or locked). A wrapped
+ * reader uses it to shape what it memoizes for the open (the quoter's rule versions are cut at
+ * the open's own pre-read instant) while reads outside an open stay unchanged.
+ */
+export function inOpenReads(): boolean {
+  return scope.getStore() !== undefined;
 }
 
 /**
@@ -132,6 +141,11 @@ export interface LinkOpenReadIdentity {
 export interface LinkOpenReadPlan {
   readonly appId: string;
   readonly platform: string;
+  /**
+   * B2-03d: the user opening the link (null for a guest). The open's re-quoted card is quoted
+   * for this viewer, who need not be among the owner identities, so their reads are pre-read too.
+   */
+  readonly callerUserId: string | null;
   readonly identities: readonly LinkOpenReadIdentity[];
 }
 
