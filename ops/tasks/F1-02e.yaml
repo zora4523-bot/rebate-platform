@@ -1,0 +1,26 @@
+id: F1-02e
+repo: rebate-platform
+title: content：GET /v1/app-versions/check——按 X-Platform、X-Channel 读 app_versions（复用 F1-02b 只读入口，补整行读取），返回 AppVersionCheck；去掉 checkAppVersion 的 planned
+type: impl
+# 2026-10-16 入账（内容模块客户端接口线 content-client）。依据 04 §6.2 app-versions 行与 §3.2 app_versions 行、08 BR-ID-01 细则「最低支持版本的接口层拦截」、
+# contracts/openapi.yaml checkAppVersion 与 AppVersionCheck（x-auth none，接受 deletion_only）。规则摘录与裁定见 couli-runs/F1-02e/decision-orchestrator.md，摘入任务书第 9 节。
+# 要点：按端与渠道取行（渠道无行时的回退、是否需要更新的判定按裁定）；没有配置行时契约无错误码可用，按裁定处理并记 needs.md。
+# 去掉 checkAppVersion 的 planned，重生成两个生成物。契约槽同 F1-02c。
+refs: [BR-ID-01]
+refs_hash:
+  BR-ID-01: b464ea6197bc
+deps: [F1-02b, F1-02c]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+test_paths:
+  - 'test/spec/content/app-versions/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/app-versions/**'
+status: todo

@@ -1,0 +1,32 @@
+id: F1-02c
+repo: rebate-platform
+title: content：GET /v1/config 下发（04 §10.1 契约里的全部键，platform_icons 除外）——ContentPublicModule 只挂 api 入口，开关派生 platform_status / search_status，agent 开放判定与 h5_release 分桶读登录态；去掉 getConfig 的 planned
+type: impl
+# 2026-10-16 入账（内容模块客户端接口线 content-client，任务书 couli-runs/briefs/CONTENT-client-lane.md §0 第 1 项）。宿主 05 F1-02 客户端部分。
+# 依据 04 §10.1（顶层键）、§10.2（convert.enabled / convert.off_reason / search.enabled 派生）、§6.2 config 行；08 BR-PROD-10、BR-ATTR-17、BR-ATTR-29、BR-AI-12、BR-TEXT-07、BR-TEXT-12、BR-ID-12、BR-INV-07；
+# contracts/openapi.yaml getConfig 与 Config* schema（x-auth optional，接受 deletion_only，不签名）。04 §10.1 原文约 17KB，不进 refs，
+# 规则摘录与编排者裁定见 couli-runs/F1-02c/decision-orchestrator.md（编号即「裁定 N」），由编排者摘入任务书第 9 节。
+# 要点：各键读 config_items（经 content-reader，按裁定定键名与缺省）；flags 合并派生的 external_page.union_host_block 与 earnings.dashboard.visible；
+# platform_status / search_status 覆盖 PlatformCode 全部平台；claim.window_days 由 claim.window_hours 向下取整到天、不足 1 天或未配置为 null；
+# agent.enabled = agent.enabled 且（非 whitelist_only 或登录用户在 agent.whitelist_user_ids）；h5_release 按 user_id、无则 device_id 哈希分桶，都没有给稳定版。
+# 契约里没有的 lkg_max_age_sec、config_version、bridge_disabled_methods、features.rank_platforms 与 bridge_origins 签名不做（记 couli-runs/CONTENT-client/needs.md 待规划 / 契约回写）。
+# platform_icons 归 F1-02d。新建 content/http/public 控制器与 ContentPublicModule.forApi，登录态照 app.module 的 identityViewer 端口注入，content 不 import identity。
+# 去掉 getConfig 的 planned，重生成 route-schemas.gen.ts 与 openapi.gen.ts。契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 台账评审 S2：h5_release 未登录分桶的 device_id 取法见裁定（identityViewer 对未验签请求不给 deviceId）；冻结测试 test/spec/identity/token/bootstrap.test.ts 挑「第一个未实现、不签名的 optional 操作」当桩，现挑中 getConfig，落地前核对它仍绿。
+refs: []
+refs_hash: {}
+deps: [F1-02b]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+test_paths:
+  - 'test/spec/content/config/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/config/**'
+status: todo
