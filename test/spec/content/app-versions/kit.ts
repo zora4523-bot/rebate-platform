@@ -58,17 +58,25 @@ export interface Harness {
   clock: FixedClock;
 }
 
+/**
+ * Structural view of the test database / Redis helpers. Only *.int.test.ts may import the
+ * testcontainers entry (.dependency-cruiser.cjs testcontainers-only-in-int-tests), so the test
+ * file loads it and hands this kit a loader; the kit never names that module.
+ */
+export interface TestInfra {
+  createTestDatabase(): Promise<{ urlFor(role: 'couli_app'): string; drop(): Promise<unknown> }>;
+  acquireTestRedis(): Promise<{ url: string; stop(): Promise<unknown> }>;
+}
+
 /** Registers beforeAll/afterAll; the returned object is filled once beforeAll has run. */
-export function harness(): Harness {
+export function harness(loadInfra: () => Promise<TestInfra>): Harness {
   const h = {} as Harness;
-  let database:
-    Awaited<ReturnType<(typeof import('@couli/db/testing'))['createTestDatabase']>> | undefined;
-  let redis:
-    Awaited<ReturnType<(typeof import('@couli/db/testing'))['acquireTestRedis']>> | undefined;
+  let database: Awaited<ReturnType<TestInfra['createTestDatabase']>> | undefined;
+  let redis: Awaited<ReturnType<TestInfra['acquireTestRedis']>> | undefined;
   let directory: string | undefined;
 
   beforeAll(async () => {
-    const testing = await import('@couli/db/testing');
+    const testing = await loadInfra();
     database = await testing.createTestDatabase();
     h.db = createDb({ connectionString: database.urlFor('couli_app'), max: 4 });
     redis = await testing.acquireTestRedis();

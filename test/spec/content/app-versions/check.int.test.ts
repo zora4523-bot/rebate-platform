@@ -16,7 +16,8 @@ import {
   seed,
 } from './kit.ts';
 
-const h = harness();
+// Only this *.int.test.ts loads the testcontainers entry; the kit receives it as a loader.
+const h = harness(() => import('@couli/db/testing'));
 
 it('[AC-F1-02e#1] every column of the (app, platform, channel) row is returned verbatim and passes the contract', async () => {
   const appId = freshAppId();
