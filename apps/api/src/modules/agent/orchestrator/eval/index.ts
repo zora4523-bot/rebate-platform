@@ -8,7 +8,7 @@ import { numberCard } from '../../stream/run/index.ts';
 import type { RunBody, RunBodyResult, RunContext } from '../../stream/run/index.ts';
 import { StreamWriter } from '../../stream/writer/index.ts';
 import type { MetaData, StreamEvent, StreamEventInput } from '../../stream/writer/index.ts';
-import type { OrchestratorTrace, RunTraceSink } from '../core/ports.ts';
+import type { OrchestratorTrace, RunTraceSink, ToolTraceFragment } from '../core/ports.ts';
 
 // Structural equivalents of evals' public shapes; no runtime/package dependency on evals.
 export interface EvalInput {
@@ -61,6 +61,11 @@ export interface EvalBindings {
   readonly transport: VendorTransport;
   readonly trace: RunTraceSink;
   readonly tool: EvalPorts['tool'];
+  /** Receiver for trace fragments of searches the core does not collect: wire it as the
+   * degraded path's onTrace (DegradedPathDeps), so the no-model keyword search's card_sources
+   * and link_registrations join this turn's trace next to the run's own. Always supplied by
+   * createEvalAgent; optional only for wiring that builds bindings itself. */
+  readonly toolTrace?: (fragment: ToolTraceFragment) => void;
 }
 
 export interface EvalRun {
@@ -85,6 +90,9 @@ export interface EvalAgentDeps {
  * caught it: a recording gap must never become a successful fallback evaluation. Any other
  * model failure (429, network, ...) is ordinary fault handling left to the router and RunBody
  * (backup model, no-model degrade), and the collected frames and trace are returned as usual.
+ * Fragments received through bindings.toolTrace (the degraded keyword search) are merged into
+ * the turn's card_sources / link_registrations after the run's own, unchanged, the same way the
+ * core collects ToolOutcome.trace (card_id is the tool's, matching the delivered card numbers).
  * State is per invocation.
  */
 export function createEvalAgent(
@@ -103,6 +111,7 @@ export function createEvalAgent(
       }
     };
     const traces: OrchestratorTrace[] = [];
+    const fragments: ToolTraceFragment[] = [];
     const run = await deps.createRun(structuredClone(input), {
       transport: createPortTransport(model),
       trace: {
@@ -111,6 +120,9 @@ export function createEvalAgent(
         },
       },
       tool: ports.tool,
+      toolTrace: (fragment) => {
+        fragments.push(structuredClone(fragment));
+      },
     });
 
     let frames: EvalTurnOutput['frames'];
@@ -121,7 +133,7 @@ export function createEvalAgent(
       throw error;
     }
     if (misses.length > 0) throw misses[0];
-    return { frames, trace: toEvalTrace(traces.at(-1) ?? null) };
+    return { frames, trace: toEvalTrace(traces.at(-1) ?? null, fragments) };
   };
 }
 
@@ -157,27 +169,42 @@ function argsRecord(args: unknown): Record<string, unknown> {
   return structuredClone(args) as Record<string, unknown>;
 }
 
-/** The run's own trace, copied; no trace recorded means no intent and no tool calls. */
-function toEvalTrace(trace: OrchestratorTrace | null): EvalTurnOutput['trace'] {
-  if (trace === null) return { intent: null, tool_calls: [] };
+/** The run's own trace, copied, then the received fragments; no trace recorded means no intent
+ * and no tool calls. Evidence lists appear only when the run or a fragment supplied one. */
+function toEvalTrace(
+  trace: OrchestratorTrace | null,
+  fragments: readonly ToolTraceFragment[],
+): EvalTurnOutput['trace'] {
+  const parts: readonly ToolTraceFragment[] = trace === null ? fragments : [trace, ...fragments];
+  const hasSources = parts.some((part) => part.card_sources !== undefined);
+  const hasLinks = parts.some((part) => part.link_registrations !== undefined);
   return {
-    intent: evalIntent(trace.intent),
-    tool_calls: trace.tool_calls.map((call) => ({
-      name: call.name,
-      args: argsRecord(call.args),
-      status: call.status,
-    })),
-    ...(trace.card_sources === undefined
-      ? {}
-      : {
-          card_sources: trace.card_sources.map((source) => ({
-            card_id: source.card_id,
-            fields: { ...source.fields },
+    intent: trace === null ? null : evalIntent(trace.intent),
+    tool_calls:
+      trace === null
+        ? []
+        : trace.tool_calls.map((call) => ({
+            name: call.name,
+            args: argsRecord(call.args),
+            status: call.status,
           })),
-        }),
-    ...(trace.link_registrations === undefined
-      ? {}
-      : { link_registrations: trace.link_registrations.map((entry) => ({ ...entry })) }),
+    ...(hasSources
+      ? {
+          card_sources: parts.flatMap((part) =>
+            (part.card_sources ?? []).map((source) => ({
+              card_id: source.card_id,
+              fields: { ...source.fields },
+            })),
+          ),
+        }
+      : {}),
+    ...(hasLinks
+      ? {
+          link_registrations: parts.flatMap((part) =>
+            (part.link_registrations ?? []).map((entry) => ({ ...entry })),
+          ),
+        }
+      : {}),
   };
 }
 

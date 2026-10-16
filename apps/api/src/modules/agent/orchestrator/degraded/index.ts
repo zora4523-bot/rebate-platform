@@ -10,12 +10,20 @@ import type {
   OrchestratorTools,
   PathInput,
   ToolContext,
+  ToolTraceFragment,
 } from '../core/ports.ts';
 
 export interface DegradedPathDeps {
   readonly tools: Pick<OrchestratorTools, 'enabledSearchPlatforms' | 'searchKeyword'>;
   readonly texts: Pick<AgentRunTexts, 'text'>;
   readonly errorMsg: (appId: string, code: number) => Promise<string>;
+  /** Optional receiver of the keyword search's trace fragment (card_sources,
+   * link_registrations), handed over unchanged as the core does for ToolOutcome.trace: the
+   * card_id values are the tool's own, not remapped here. Wired by the evaluation adapter
+   * (EvalBindings.toolTrace) so the degraded cards keep their evidence (BR-AI-21). Production
+   * trace collection for the degraded path belongs to the core (see the follow-up task); this
+   * hook is best effort and never changes the run's result. */
+  readonly onTrace?: (fragment: ToolTraceFragment) => void;
 }
 
 type Done = Extract<RunBodyResult, { kind: 'done' }>;
@@ -36,6 +44,15 @@ function toolContext(request: PathInput, ctx: RunContext): ToolContext {
   };
 }
 
+function reportTrace(deps: DegradedPathDeps, fragment: ToolTraceFragment): void {
+  if (deps.onTrace === undefined) return;
+  try {
+    deps.onTrace(fragment);
+  } catch {
+    // Trace is best effort; it never changes the run's result.
+  }
+}
+
 /** BR-AI-14: plan from proceed.modelText, using the B3-02d planner/outcome functions.
  * Forward tool cards through ctx.card; empty outcomes emit an agent.degraded.empty notice.
  * An absent platform result throws; abort suppresses subsequent output after every await.
@@ -44,7 +61,9 @@ function toolContext(request: PathInput, ctx: RunContext): ToolContext {
  * retryable=true follows contracts/error-codes.yaml: 50302 has retry_kind `later`.
  * No trace is recorded here: the keyword search is not a model-requested tool call, so it has
  * no place in OrchestratorTrace.tool_calls (traceMask'd model call args), and the run's single
- * trace (attempts, intent null, prompt version) is written by the core in its finally.
+ * trace (attempts, intent null, prompt version) is written by the core in its finally. The
+ * search's own card_sources / link_registrations go to deps.onTrace when wired; production
+ * trace is collected by the core (follow-up task).
  */
 export function createDegradedPath(deps: DegradedPathDeps): DegradedPath {
   return {
@@ -63,6 +82,8 @@ export function createDegradedPath(deps: DegradedPathDeps): DegradedPath {
       if (plan !== null && plan.platforms.length > 0) {
         const searched = await deps.tools.searchKeyword(plan, toolContext(request, ctx));
         if (signal.aborted) return stopped();
+        // Same point as the core's tool path: after the search returns, before any card write.
+        if (searched.trace !== undefined) reportTrace(deps, searched.trace);
         results = searched.results;
         cards = searched.cards;
       }
