@@ -71,11 +71,9 @@ it.each([{}, { source_url: SOURCE }, { downloaded_on: DATE }, REGISTERED])(
     expect(facts).toMatchObject({ key: 'jd', version: 1, upload_id: pendingRow.id });
     expect(JSON.stringify(facts)).not.toMatch(/<svg|base64|"file"/i);
     expect((await snapshot(h, f.appId)).uploads).toEqual(before.uploads);
-    await h.db
-      .updateTable('admin_users')
-      .set({ login_name: `renamed-${randomUUID()}` })
-      .where('id', '=', f.actor.id)
-      .execute();
+    // couli_app cannot update login_name; verify the persisted author snapshot directly.
+    expect((await saved(h, f.appId)).created_by).toBe(f.actor.username);
+    expect(data.created_by).toBe(f.actor.username);
     expect((await history(f, 'jd')).items[0]!.created_by).toBe(f.actor.username);
   },
 );
