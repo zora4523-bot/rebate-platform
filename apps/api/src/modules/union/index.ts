@@ -42,6 +42,8 @@ export type {
   UnionRefund,
 } from './domain/types.ts';
 export { makeUnionItem, makeUnionOrder } from './domain/dto.ts';
+export { quoteN } from './domain/quote-n.ts';
+export type { PddQuoteFactors, QuoteNInput } from './domain/quote-n.ts';
 export { mapTaobaoPrice, isPriceAnomaly } from './domain/taobao-price.ts';
 export type {
   PriceAnomalyReason,
