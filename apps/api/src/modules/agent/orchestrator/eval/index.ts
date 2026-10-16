@@ -81,21 +81,24 @@ export interface EvalAgentDeps {
 /** BR-AI-21: collect real RunBody output via a RunContext and the SSE writer/card numbering.
  * Emit supplied meta, then body frames unchanged, then its done/error terminal. Collect the
  * run's trace without inventing intent/tools/sources/registrations (unknown intent -> null).
- * Model port rejections must escape unchanged, even if the gateway/router caught them;
- * recording gaps must never become successful fallback evaluations. State is per invocation.
+ * A recording miss on this turn's model port escapes unchanged, even if the gateway/router
+ * caught it: a recording gap must never become a successful fallback evaluation. Any other
+ * model failure (429, network, ...) is ordinary fault handling left to the router and RunBody
+ * (backup model, no-model degrade), and the collected frames and trace are returned as usual.
+ * State is per invocation.
  */
 export function createEvalAgent(
   deps: EvalAgentDeps,
 ): (input: EvalInput, ports: EvalPorts) => Promise<EvalTurnOutput> {
   return async (input, ports) => {
-    // Every rejection of this turn's model port, kept even when the router turns it into a
-    // degraded answer: a recording gap must surface as the case's error, never as a pass.
-    const portFailures: unknown[] = [];
+    // Recording misses of this turn's model port, kept even when the router turns them into a
+    // degraded answer. Other port errors are not kept: they take the normal failure route.
+    const misses: unknown[] = [];
     const model = async (request: ModelRequestShape): Promise<unknown> => {
       try {
         return await ports.model(request);
       } catch (error) {
-        portFailures.push(error);
+        if (isRecordingMiss(error)) misses.push(error);
         throw error;
       }
     };
@@ -114,12 +117,20 @@ export function createEvalAgent(
     try {
       frames = await collect(run);
     } catch (error) {
-      if (portFailures.length > 0) throw portFailures[0];
+      if (misses.length > 0) throw misses[0];
       throw error;
     }
-    if (portFailures.length > 0) throw portFailures[0];
+    if (misses.length > 0) throw misses[0];
     return { frames, trace: toEvalTrace(traces.at(-1) ?? null) };
   };
+}
+
+/** Structural check for packages/evals' RecordingMiss (apps/api does not depend on evals):
+ * an Error named 'RecordingMiss' carrying its string kind and key. */
+export function isRecordingMiss(error: unknown): boolean {
+  if (!(error instanceof Error) || error.name !== 'RecordingMiss') return false;
+  const fields = error as Error & { kind?: unknown; key?: unknown };
+  return typeof fields.kind === 'string' && typeof fields.key === 'string';
 }
 
 function evalIntents(): readonly EvalIntent[] {

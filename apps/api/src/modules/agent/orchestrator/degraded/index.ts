@@ -41,6 +41,10 @@ function toolContext(request: PathInput, ctx: RunContext): ToolContext {
  * An absent platform result throws; abort suppresses subsequent output after every await.
  * All-platform failure maps to error 50302, fallback=search_page, fallback_q=plan.q.
  * Proceed notices are emitted by the core only and never repeated here.
+ * retryable=true follows contracts/error-codes.yaml: 50302 has retry_kind `later`.
+ * No trace is recorded here: the keyword search is not a model-requested tool call, so it has
+ * no place in OrchestratorTrace.tool_calls (traceMask'd model call args), and the run's single
+ * trace (attempts, intent null, prompt version) is written by the core in its finally.
  */
 export function createDegradedPath(deps: DegradedPathDeps): DegradedPath {
   return {
@@ -72,6 +76,7 @@ export function createDegradedPath(deps: DegradedPathDeps): DegradedPath {
           error: {
             code: outcome.code,
             msg,
+            // error-codes.yaml 50302: retry_kind later -> retryable.
             retryable: true,
             fallback: 'search_page',
             fallback_q: outcome.fallback.q,
