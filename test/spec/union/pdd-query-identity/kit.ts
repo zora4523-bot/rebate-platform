@@ -83,7 +83,7 @@ export function pidDatabase(initial: Candidate[] = [candidate()]) {
     async executeQuery<R>(statement: CompiledQuery): Promise<QueryResult<R>> {
       if (/^insert into "app"\."union_raw_payloads"/i.test(statement.sql)) {
         archived.push(statement);
-        return { rows: [] };
+        return { rows: [{ id: BigInt(archived.length) }] as R[], numAffectedRows: 1n };
       }
       statements.push(statement);
       const appId = equality(statement, 'app_id');
