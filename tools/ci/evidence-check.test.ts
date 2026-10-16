@@ -1044,3 +1044,139 @@ it('[approvals 27] the side that did not implement reviews; the other entry is o
   expect(checkEvidence({ ...input, head: onlyClaude }).problems).toEqual([]);
   git(repo, ['checkout', '-q', branchBack]);
 });
+
+it('[approvals 32] a pure migration rename hotfix needs no task branch and no evidence; anything more is refused', () => {
+  const back = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const UP = '-- Up Migration\n';
+  // Main after two lines both merged a 0002 (the 0025 / 0031 collisions of 2026-10-09 / -16).
+  git(repo, ['checkout', '-q', '-b', 'mig-main', base]);
+  write(repo, {
+    'db/migrations/0001_init.sql': `${UP}create table app.a (id int);\n`,
+    'db/migrations/0002_favorites.sql': `${UP}create table app.f (id int);\n`,
+    'db/migrations/0002_commission-rules.sql': `${UP}create table app.c (id int);\n`,
+    'db/schema.sql': '-- applied: 0001_init.sql, 0002_commission-rules.sql, 0002_favorites.sql\n',
+    'docs/migrations.md': 'see db/migrations/0002_favorites.sql\n',
+    'tools/x.ts': "export const file = '0002_favorites.sql';\n",
+  });
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'collision']);
+  const mainHead = git(repo, ['rev-parse', 'HEAD']);
+
+  /** A branch from mig-main: `mv` renames (git mv), then `files` written, then `rm` removed. */
+  const hotfix = (
+    name: string,
+    change: { mv?: [string, string][]; files?: Record<string, string>; rm?: string[] },
+  ): string => {
+    git(repo, ['checkout', '-q', '-B', `${name}-work`, mainHead]);
+    for (const [from, to] of change.mv ?? []) git(repo, ['mv', from, to]);
+    write(repo, change.files ?? {});
+    for (const path of change.rm ?? []) git(repo, ['rm', '-q', path]);
+    git(repo, ['add', '-A']);
+    git(repo, ['commit', '-q', '--allow-empty', '-m', name]);
+    return git(repo, ['rev-parse', 'HEAD']);
+  };
+  const run = (head: string, headRef = 'fix/migration-0002-collision') =>
+    checkEvidence({ prDir: repo, base: mainHead, head, headRef, trusted: TRUSTED });
+  const MV: [string, string] = [
+    'db/migrations/0002_favorites.sql',
+    'db/migrations/0003_favorites.sql',
+  ];
+  const REFS = {
+    'db/schema.sql': '-- applied: 0001_init.sql, 0002_commission-rules.sql, 0003_favorites.sql\n',
+    'docs/migrations.md': 'see db/migrations/0003_favorites.sql\n',
+  };
+
+  // Positive: the rename alone, and the rename with its file-name references updated.
+  const plain = hotfix('plain', { mv: [MV] });
+  const plainReport = run(plain);
+  expect(plainReport.problems).toEqual([]);
+  expect(plainReport).toMatchObject({ ok: true, risk: 'RV2', task: null, migration_rename: true });
+  expect(plainReport.notices.join('\n')).toContain('pure migration rename hotfix');
+  const withRefs = hotfix('refs', { mv: [MV], files: REFS });
+  expect(run(withRefs)).toMatchObject({ ok: true, migration_rename: true });
+
+  const refused = (head: string, needle: string, headRef?: string): void => {
+    const report = run(head, headRef);
+    expect(report, needle).toMatchObject({ ok: false, migration_rename: false });
+    expect(report.notices.join('\n'), needle).toContain(needle);
+  };
+  // The branch name does not match: the normal rule (task branch / money path) applies.
+  const wrongBranch = run(plain, 'fix/migration-0031-renames');
+  expect(wrongBranch).toMatchObject({ ok: false, migration_rename: false });
+  expect(wrongBranch.problems.join('\n')).toContain('task/<id>');
+  refused(plain, 'no two migrations numbered 0005', 'fix/migration-0005-collision');
+  // The SQL content changed along with the rename: no longer an exact rename (a deletion and an
+  // addition under -M100%).
+  refused(
+    hotfix('edited', {
+      mv: [MV],
+      files: { 'db/migrations/0003_favorites.sql': `${UP}create table app.f (id bigint);\n` },
+    }),
+    'db/migrations/0003_favorites.sql (A): a migration may only be renamed',
+  );
+  // A migration added, or deleted.
+  refused(
+    hotfix('added', { mv: [MV], files: { 'db/migrations/0004_more.sql': `${UP}select 1;\n` } }),
+    'db/migrations/0004_more.sql (A): a migration may only be renamed',
+  );
+  refused(
+    hotfix('deleted', { rm: ['db/migrations/0002_favorites.sql'] }),
+    'db/migrations/0002_favorites.sql (D)',
+  );
+  // An existing migration edited in place.
+  refused(
+    hotfix('in-place', {
+      mv: [MV],
+      files: { 'db/migrations/0001_init.sql': `${UP}create table app.a (id bigint);\n` },
+    }),
+    'db/migrations/0001_init.sql (M)',
+  );
+  // Still a duplicate, or a gap, after the rename.
+  refused(
+    hotfix('still-dup', {
+      mv: [['db/migrations/0002_favorites.sql', 'db/migrations/0001_favorites.sql']],
+    }),
+    'without a duplicate or a gap (0001, 0001, 0002)',
+  );
+  refused(
+    hotfix('gap', {
+      mv: [['db/migrations/0002_favorites.sql', 'db/migrations/0004_favorites.sql']],
+    }),
+    'without a duplicate or a gap (0001, 0002, 0004)',
+  );
+  // A migration of another number renamed, or a malformed new name.
+  refused(
+    hotfix('other', { mv: [['db/migrations/0001_init.sql', 'db/migrations/0003_init.sql']] }),
+    'only a migration numbered 0002 may be renamed',
+  );
+  refused(
+    hotfix('bad-name', {
+      mv: [['db/migrations/0002_favorites.sql', 'db/migrations/0003_Fav.sql']],
+    }),
+    'the new name is not db/migrations/NNNN_kebab-name.sql',
+  );
+  // Another code path changed, even only by the file name; a reference file changed beyond the name.
+  refused(
+    hotfix('code', {
+      mv: [MV],
+      files: { 'tools/x.ts': "export const file = '0003_favorites.sql';\n", 'tools/y.ts': '' },
+    }),
+    'tools/y.ts (A): only migration renames and file-name references may change',
+  );
+  refused(
+    hotfix('docs-extra', {
+      mv: [MV],
+      files: { 'docs/migrations.md': 'see db/migrations/0003_favorites.sql (moved)\n' },
+    }),
+    'docs/migrations.md: changes other than replacing the renamed file names',
+  );
+  refused(
+    hotfix('money', {
+      mv: [MV],
+      files: { 'packages/money/src/index.ts': 'export const a = 9;\n' },
+    }),
+    'packages/money/src/index.ts',
+  );
+  refused(hotfix('nothing', {}), 'no migration was renamed');
+  git(repo, ['checkout', '-q', back]);
+});
