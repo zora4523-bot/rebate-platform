@@ -64,7 +64,10 @@ export function idemFixture(
       else if (text.includes('current_setting')) rows = [{ value: '0' }];
       else if (/^select\b/i.test(text) && text.includes('app_versions')) {
         events.push('minimum-read');
-        rows = [{ channel: 'app_store', min_supported_version: minimum }];
+        rows = [
+          { channel: 'app_store', min_supported_version: minimum },
+          { channel: 'appstore', min_supported_version: minimum },
+        ];
       } else if (/^select\b/i.test(text) && text.includes('idempotency_keys')) {
         events.push('lookup');
         rows = row === undefined ? [] : [row];
