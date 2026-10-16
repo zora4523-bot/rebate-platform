@@ -108,4 +108,5 @@ export {
 export type { RebateQuote, RegisterLinkInput, Viewer } from './ports.ts';
 export { CATALOG, CatalogModule } from './catalog.module.ts';
 export * from './price-history/index.ts';
+export * from './price-trend/index.ts';
 export type { CatalogConfigReaderFactory } from './catalog.module.ts';
