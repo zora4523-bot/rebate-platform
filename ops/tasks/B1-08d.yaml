@@ -1,0 +1,22 @@
+id: B1-08d
+repo: rebate-platform
+title: packages/domain 会计日与结算月函数：按 +08:00 的自然日（计数日、BR-ATTR-19 自然日）、结算月与 paid_month 归月，订单线与月结共用
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# AGENTS.md 硬规则 5：会计日与结算月只用 packages/domain 提供的函数；现在 packages/domain 没有（orders-sources.md 6.6）。纯函数、输入为 Date（来自注入的 Clock），不读系统时区。
+# 开工前核对别线是否已有同名函数（B1-29a 只引用）；资金包规则测试写顶层 it、不套 describe（规划/11 §4.3）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'packages/domain/**'
+test_paths:
+  - 'test/spec/domain/calendar/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/calendar/**'
+status: todo
+pr: null

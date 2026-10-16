@@ -1,0 +1,22 @@
+id: B1-08g
+repo: rebate-platform
+title: 订单同步调度与水位：按同步流 (platform, union_account_id, query_kind, scene) 推进 sync_cursors；窗口投递时固定、整窗处理完才推进；singletonKey 去重、重试与死信；熔断期间不投递；站长授权失效期间依赖授权的流暂停、恢复后从水位补拉；每页先归档报文再交流水线端口
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# 02 §7.1 全部；12 §9 S-02、S-05、S-06；BR-ID-24 ④。队列只经 JobQueue；singletonKey 按 02 §7.1 去重键（待编排裁定 ②）；哪些接口依赖站长授权按默认（待编排裁定 ④）。
+# 流水线（B1-08h）以端口注入，本任务测试用假实现；订单补拉属 approvals 30 列明的 Claude 实现项。
+refs: []
+refs_hash: {}
+deps: [B1-08b, B1-08c, B1-08e]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/sync/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/sync/**'
+status: todo
+pr: null

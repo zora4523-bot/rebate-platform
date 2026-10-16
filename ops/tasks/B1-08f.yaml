@@ -1,0 +1,23 @@
+id: B1-08f
+repo: rebate-platform
+title: 平台状态映射：specs/order-status-map/<platform>.csv（演示、拼多多）与 orders/domain 映射函数——原始状态码到内部事件 PLATFORM_*，处罚类码到 PLATFORM_PUNISH，表外码报 UNMAPPED_STATUS
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# 02 §7.2、BR-FUND-02（待验证）细则「映射表之外的状态码」；未实测的行在 csv 标 verified=false（待编排裁定 ③），不按猜测补码。内部事件编码与 08 §13.2 一致。
+refs: [BR-FUND-02]
+refs_hash:
+  BR-FUND-02: bffd22853853
+deps: [B1-08b, B1-08e]
+paths:
+  - 'specs/order-status-map/**'
+  - 'apps/api/src/modules/orders/domain/**'
+test_paths:
+  - 'test/spec/orders/status-map/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/status-map/**'
+status: todo
+pr: null

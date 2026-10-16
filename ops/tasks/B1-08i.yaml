@@ -1,0 +1,22 @@
+id: B1-08i
+repo: rebate-platform
+title: 订单平台状态迁移：同步更新按映射事件经 transition() CAS 迁移；表外事件与 P10 倒退整条不落订单列、进 order_sync_pending 并同事务写 order_illegal_transition；order_status_history 只插入；状态变化的领域事件同事务入队
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# 04 §4.1、02 §18「状态迁移」「领域事件」；rebate_status 的写者是 settlement（12 §9 S-10），本任务不写。
+refs: [BR-FUND-01]
+refs_hash:
+  BR-FUND-01: 4ae34e30997f
+deps: [B1-08h]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/platform-status/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/platform-status/**'
+status: todo
+pr: null

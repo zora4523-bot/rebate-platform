@@ -1,0 +1,22 @@
+id: B1-08j
+repo: rebate-platform
+title: 订单来源回填：按订单当时 user_id 重配 link_logs，写 source_scene、link_id、agent_session_id、source_match（exact 按平台开关 attr.click_code.<platform>）
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# W_backfill 等窗口见 BR-ATTR-13；淘宝 item_id 口径待实测（08/04_ATTR §4.3 第 5 条）。
+refs: [BR-ATTR-15]
+refs_hash:
+  BR-ATTR-15: b40eaa5f48e3
+deps: [B1-08h]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/source-backfill/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/source-backfill/**'
+status: todo
+pr: null

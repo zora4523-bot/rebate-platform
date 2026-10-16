@@ -1,0 +1,25 @@
+id: B1-08h
+repo: rebate-platform
+title: 归因流水线主事务（每子订单一事务）：advisory 锁、App 归属（推广位白名单与 sync_start_at）、order_keys 取 order_id、orders upsert（attr_at 首次定死、content_hash 短路）、用户归属（attr_code、淘宝按 attr_at 时点绑定）、buy_type 与 scene_basis、丢弃与计数、未归因池；首态经 transition()
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# 02 §7.3、§18「同一订单的并发处理」；12 §9 S-01、S-13。订单归属核心（approvals 30 Claude 实现）。08 未写清的取值按 orders-plan.md 待编排裁定 ⑤ ⑥ 默认值。
+refs: [BR-ATTR-01, BR-ATTR-02, BR-ATTR-22, BR-ATTR-25]
+refs_hash:
+  BR-ATTR-01: f1627d31a3fb
+  BR-ATTR-02: 51413f8a9a8a
+  BR-ATTR-22: fef8d1c35cf2
+  BR-ATTR-25: d3560ccebcdb
+deps: [B1-08f, B1-08g, B1-08d, CT-04a]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/attribution/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/attribution/**'
+status: todo
+pr: null

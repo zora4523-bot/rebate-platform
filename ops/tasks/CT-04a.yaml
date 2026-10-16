@@ -1,0 +1,24 @@
+id: CT-04a
+repo: rebate-platform
+title: 状态机（订单两份）：specs/state-machines/order-platform.yaml（P1–P15）与 order-rebate.yaml（R1–R14）按 08 BR-FUND-01 转写，加 TS 生成器生成枚举与 transition()（含一致性测试）
+type: contract
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# 05 CT-04 的订单部分（04 §4：yaml 放 specs/state-machines/，由它生成后端枚举与 transition()；迁移表只在 08 维护，本任务只转写）。withdrawal.yaml 与 Swift / Kotlin / ArkTS 生成器不在本任务（交编排另派）。
+# 生成物放 packages/domain/src/state-machines/*.gen.ts，生成脚本 packages/domain/scripts/（不改 package.json scripts，用 node 直接运行；一致性由 packages/domain 测试比对）。契约槽 ④（B3-lane/notices.md）。
+refs: [BR-FUND-01]
+refs_hash:
+  BR-FUND-01: 4ae34e30997f
+deps: []
+paths:
+  - 'specs/state-machines/**'
+  - 'packages/domain/**'
+test_paths:
+  - 'test/spec/state-machines/order/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/state-machines/order/**'
+status: todo
+pr: null

@@ -1,0 +1,23 @@
+id: B1-08e
+repo: rebate-platform
+title: union 订单形状跨平台归一：UnionOrder 补子订单号、父单号、推广位、归因参数、原始状态码、定金 / 付款 / 收货 / 结算 / 修改时间、预估与结算佣金（演示与拼多多适配器实现，淘宝 / 京东留 TODO）；归档传输把 union_raw_payloads 行 id 带回调用方
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# 硬规则 7：平台差异止于联盟适配器——订单流水线要的字段在 union 侧归一（orders-sources.md 7.0、6.4）。拼多多字段只用 B1-04w 已有映射；演示适配器只生成合成订单；不伪造平台报文。
+# 02 §7.1 / 04 §3.2：orders.raw_payload_id 逻辑引用 union_raw_payloads，归档插入 returning id 经传输响应带回、listOrders 每页带上（followup B1-04p）。
+# 淘宝 / 京东：TODO(规划/11 §4.5) blocked on 推广位 / siteId。
+refs: []
+refs_hash: {}
+deps: [B1-04w, B1-04p]
+paths:
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/union/orders-shape/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/orders-shape/**'
+status: todo
+pr: null

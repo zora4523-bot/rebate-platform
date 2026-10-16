@@ -1,0 +1,24 @@
+id: B1-08l
+repo: rebate-platform
+title: 订单列表与详情接口：GET /v1/orders（scope、status_group、display_status、platform、q、paid_month，order.user_query_months 过滤，分享单 masked_order_no 服务端生成）与 GET /v1/orders/{order_id}（timeline、deposit_paid 节点、product_key）；检索与分享单投影做成与 B3-08 共用的查询函数；去契约 planned
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。拆分方案 couli-runs/W1-search-linking/orders-plan.md，依据摘录 orders-sources.md（SPEC_REF 逐字）。
+# 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
+# 05 B1-08 行；BR-TEXT-02 细则「订单的检索范围与分享单的投影」、BR-FUND-17 display_status 派生、BR-ID-30 ⑰。契约槽 ④；契约若缺字段先开 CT 任务。
+refs: []
+refs_hash: {}
+deps: [B1-08h, B1-08d]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/orders/list-detail/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/list-detail/**'
+status: todo
+pr: null
