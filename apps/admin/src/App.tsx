@@ -37,14 +37,13 @@ import { AdminsPage } from './pages/admins/index.ts';
 import { LoginPage } from './pages/login/index.ts';
 import {
   createAccessControl,
-  permissionsFromMe,
   type AccessControl,
   type PermissionSnapshot,
   type PermissionsProvider,
 } from './providers/access-control/index.ts';
 import { createRefineAccessControl } from './providers/access-control/refine.ts';
-import { createAuthProvider, type AdminAuthProvider } from './providers/auth/index.ts';
-import { createDataProvider } from './providers/data/index.ts';
+import { createAdminApi, createAdminDataProvider, type AdminApi } from './providers/admin-api.ts';
+import type { AdminAuthProvider } from './providers/auth/index.ts';
 import {
   findMenuItem,
   getAdminMenuGroups,
@@ -94,38 +93,20 @@ export interface AdminAppOptions extends AdminShellOptions {
   readonly authProvider?: AdminAuthProvider;
 }
 
-function defaultAuthProvider(): AdminAuthProvider {
-  return createAuthProvider({
-    api: { baseUrl: window.location.origin, fetch: (input, init) => globalThis.fetch(input, init) },
+/** The browser entry's own guard and data provider against /admin/v1 on this origin. */
+function defaultAdminApi(): AdminApi {
+  return createAdminApi({
+    baseUrl: window.location.origin,
+    fetch: (input, init) => globalThis.fetch(input, init),
     manualStart: true,
   });
 }
 
-/** Success is HTTP 200 with code 0; only that extends the idle period (BR-ID-34). */
-async function recordIfSucceeded(response: Response, auth: AdminAuthProvider): Promise<void> {
-  try {
-    const body: unknown = await response.json();
-    if (typeof body === 'object' && body !== null && 'code' in body && body.code === 0)
-      auth.recordSuccessfulRequest();
-  } catch {
-    // Not an envelope: the data provider reports it; the idle period is not extended.
-  }
-}
-
 function defaultDataProvider(auth: AdminAuthProvider | undefined): DataProvider {
-  return createDataProvider({
+  return createAdminDataProvider({
     baseUrl: window.location.origin,
-    fetch: async (input, init) => {
-      const response = await globalThis.fetch(input, init);
-      if (auth !== undefined && response.status === 200)
-        void recordIfSucceeded(response.clone(), auth);
-      return response;
-    },
-    getToken: () => auth?.getToken() ?? null,
-    onError: (error) => {
-      // 10001 without a reason ends the session; the guard then shows the login page.
-      void auth?.onError(error);
-    },
+    fetch: (input, init) => globalThis.fetch(input, init),
+    auth,
   });
 }
 
@@ -183,14 +164,17 @@ function AdminApp({ options }: { readonly options: AdminAppOptions }) {
   const [theme] = useState(() => createAntdTheme());
   // The own guard is built without timers; only the instance React keeps starts them (effect) and
   // stops them on unmount, so a render React throws away (StrictMode) never clears the session.
-  const [ownAuth] = useState(() =>
+  const [ownApi] = useState(() =>
     options.authProvider === undefined && options.router === 'browser'
-      ? defaultAuthProvider()
+      ? defaultAdminApi()
       : undefined,
   );
+  const ownAuth = ownApi?.auth;
   useEffect(() => ownAuth?.start(), [ownAuth]);
   const auth = options.authProvider ?? ownAuth;
-  const [dataProvider] = useState(() => options.dataProvider ?? defaultDataProvider(auth));
+  const [dataProvider] = useState(
+    () => options.dataProvider ?? ownApi?.data ?? defaultDataProvider(auth),
+  );
   const [state, setState] = useState<PermissionState>({ status: 'loading' });
   const [signedInName, setSignedInName] = useState<string | undefined>(undefined);
   const latestRequest = useRef(0);
@@ -210,15 +194,14 @@ function AdminApp({ options }: { readonly options: AdminAppOptions }) {
 
   // With its own guard the app reads permissions (and the account name) from /me/permissions.
   const permissionsProvider = useMemo<PermissionsProvider>(() => {
-    if (ownAuth === undefined) return options.permissionsProvider;
+    if (ownApi === undefined) return options.permissionsProvider;
     return async () => {
       // Every load (first render, 刷新权限) asks the server again, never the cached answer.
-      const me = await ownAuth.getIdentity({ refresh: true });
-      if (me === null) throw new Error('admin session ended');
-      setSignedInName(me.username);
-      return permissionsFromMe(me);
+      const { snapshot, username } = await ownApi.loadPermissions();
+      setSignedInName(username);
+      return snapshot;
     };
-  }, [ownAuth, options.permissionsProvider]);
+  }, [ownApi, options.permissionsProvider]);
   const account =
     signedInName === undefined
       ? options.account
