@@ -12,6 +12,7 @@ type: impl
 # 契约里没有的 lkg_max_age_sec、config_version、bridge_disabled_methods、features.rank_platforms 与 bridge_origins 签名不做（记 couli-runs/CONTENT-client/needs.md 待规划 / 契约回写）。
 # platform_icons 归 F1-02d。新建 content/http/public 控制器与 ContentPublicModule.forApi，登录态照 app.module 的 identityViewer 端口注入，content 不 import identity。
 # 去掉 getConfig 的 planned，重生成 route-schemas.gen.ts 与 openapi.gen.ts。契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 台账评审 S2：h5_release 未登录分桶的 device_id 取法见裁定（identityViewer 对未验签请求不给 deviceId）；冻结测试 test/spec/identity/token/bootstrap.test.ts 挑「第一个未实现、不签名的 optional 操作」当桩，现挑中 getConfig，落地前核对它仍绿。
 refs: []
 refs_hash: {}
 deps: [F1-02b]

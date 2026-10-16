@@ -6,6 +6,7 @@ type: impl
 # contracts/openapi.yaml ConfigPlatformIcons / ConfigPlatformIcon（url 必须 https、sha256 64 位小写十六进制、version ≥ 1；对象可为空）。
 # 要点：恢复内置或从未发布的键不出现；发布 / 回滚 / 恢复内置后下一次 GET /v1/config 随之变化（admin 与 api 是不同进程，不做进程内缓存，F1-06y 裁定 11）；
 # url 用 F1-06z 媒体端口 mediaUrlOf 的结果（与后台读接口同源）；跨 app_id 隔离。不改契约（Config.platform_icons 已是可选键），不占契约槽。
+# 台账评审 S2：api 入口未配 MEDIA_PUBLIC_BASE_URL（mediaUrlOf 抛错）时只省略 platform_icons 并记日志，不让整份 /v1/config 失败（客户端回落包内内置图）。
 refs: [BR-TEXT-24]
 refs_hash:
   BR-TEXT-24: 0cda692fd39e
