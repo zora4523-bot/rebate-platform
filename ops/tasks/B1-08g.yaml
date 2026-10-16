@@ -6,11 +6,13 @@ type: impl
 # 分工：apps/api/src/modules/orders/** 在 codex-impl-tasks.json forbidden_paths，approvals 30 订单归属 / 补拉 / 迁移 / 契约留 Claude → impl claude、tester codex（决定 D10-15）。
 # 02 §7.1 全部；12 §9 S-02、S-05、S-06；BR-ID-24 ④。队列只经 JobQueue；singletonKey 按 02 §7.1 去重键（待编排裁定 ②）；哪些接口依赖站长授权按默认（待编排裁定 ④）。
 # 流水线（B1-08h）以端口注入，本任务测试用假实现；订单补拉属 approvals 30 列明的 Claude 实现项。
+# 2026-10-17 补：新增 order-sync 队列要改 platform/queue/catalog.ts（队列目录与入口计划），故加进 paths；冻结的队列契约测试由 test-change 放宽（先例 B1-03s）。本任务只做增量同步，回扫 / 手动同步 / 大促另立任务（D10-29）。
 refs: []
 refs_hash: {}
 deps: [B1-08b, B1-08c, B1-08e]
 paths:
   - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
 test_paths:
   - 'test/spec/orders/sync/**'
 impl: claude
