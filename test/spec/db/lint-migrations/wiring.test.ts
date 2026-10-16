@@ -14,14 +14,18 @@ it('[AC-CT-06a#26] lint:migrations 调用包装脚本且 verify:fast 串联此�
   expect(pkg.scripts['verify:fast']?.split(/\s*&&\s*/)).toContain('pnpm run lint:migrations');
 });
 
-it('[AC-CT-06a#27] 配置使用 PG 18 与单事务，仅排除两个指定规则', () => {
+it('[AC-CT-06a#27] 配置使用 PG 18 与单事务，仅排除三个指定规则', () => {
   const config = requiredText('.squawk.toml').replace(/#.*$/gm, '');
   expect(config).toMatch(/^pg_version\s*=\s*["']18\.0["']\s*$/m);
   expect(config).toMatch(/^assume_in_transaction\s*=\s*true\s*$/m);
   const exclusions = config.match(/^excluded_rules\s*=\s*\[([^\]]*)\]/m);
   expect(exclusions).not.toBeNull();
   const rules = [...exclusions![1]!.matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
-  expect(rules.sort()).toEqual(['prefer-bigint-over-int', 'require-concurrent-index-creation']);
+  expect(rules.sort()).toEqual([
+    'prefer-bigint-over-int',
+    'prefer-bigint-over-smallint',
+    'require-concurrent-index-creation',
+  ]);
 });
 
 it('[AC-CT-06a#28] .squawk.toml 登记为第二类保护路径，CI 内嵌清单同步', () => {
