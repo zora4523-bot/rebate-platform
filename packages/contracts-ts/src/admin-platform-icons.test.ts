@@ -57,12 +57,14 @@ const OPERATIONS = [
 ] as const;
 
 /**
- * Implemented: the two reads (F1-06w) and registration, publish and restore-builtin (F1-06y);
- * upload and save stay planned.
+ * Implemented: the two reads (F1-06w), registration, publish and restore-builtin (F1-06y), and
+ * upload and save (F1-06x): all seven.
  */
 const IMPLEMENTED = new Set<string>([
   `get ${BASE}`,
   `get ${BASE}/{key}/versions`,
+  `post ${BASE}/{key}/uploads`,
+  `post ${BASE}/{key}/versions`,
   `patch ${BASE}/{key}/versions/{version}`,
   `post ${BASE}/{key}/publish`,
   `post ${BASE}/{key}/restore-builtin`,

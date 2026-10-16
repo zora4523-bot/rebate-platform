@@ -1,5 +1,6 @@
 // content's admin console routes: GET /admin/v1/platform-icons and its version history (F1-06w);
-// registration, publish / rollback and restore-builtin (F1-06y).
+// registration, publish / rollback and restore-builtin (F1-06y); upload and save as version
+// (F1-06x), whose cleaned files go to platform's MEDIA_STORE (provided globally by PlatformModule).
 // app.module imports this module on the admin entry only; the api and stream entries do not
 // serve /admin/v1. Permission checks go through platform's AdminOperationGuard, which the admin
 // module provides globally on the admin entry (content never imports admin).
@@ -16,14 +17,21 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import {
   APP_CONFIG,
   CLOCK,
   DB,
+  MEDIA_STORE,
   type AppConfig,
   type AuditPort,
   type Clock,
+  type MediaStore,
 } from '../platform/index.ts';
+import {
+  PlatformIconUploader,
+  type PlatformIconUploadStore,
+} from './application/platform-icon-uploader.ts';
 import { PlatformIconReader, type PlatformIconStore } from './application/platform-icon-reader.ts';
 import {
   PlatformIconWriter,
@@ -32,6 +40,7 @@ import {
 import { AdminPlatformIconsController } from './http/admin/platform-icons.controller.ts';
 import {
   createKyselyPlatformIconStore,
+  createKyselyPlatformIconUploadStore,
   createKyselyPlatformIconWriteStore,
 } from './infra/kysely-platform-icon-store.ts';
 
@@ -54,6 +63,14 @@ const NO_DATABASE: PlatformIconStore = {
 const NO_DATABASE_WRITES: PlatformIconWriteStore = {
   transaction: () => Promise.reject(new Error('content: platform icon writes need the database')),
 };
+
+const NO_DATABASE_UPLOADS: PlatformIconUploadStore = {
+  configValue: () => Promise.reject(new Error('content: platform icon uploads need the database')),
+  insertUpload: () => Promise.reject(new Error('content: platform icon uploads need the database')),
+};
+
+/** Monotonic milliseconds for the SVG conversion budget (not business time). */
+const monotonicMs = (): number => performance.now();
 
 @Module({})
 export class ContentAdminModule {
@@ -86,6 +103,25 @@ export class ContentAdminModule {
               clock,
               config.mediaPublicBaseUrl,
             ),
+        },
+        {
+          provide: PlatformIconUploader,
+          inject: [APP_CONFIG, CLOCK, MEDIA_STORE, { token: DB, optional: true }],
+          useFactory: (
+            config: AppConfig,
+            clock: Clock,
+            media: MediaStore,
+            db?: Kysely<Database>,
+          ): PlatformIconUploader =>
+            new PlatformIconUploader({
+              store:
+                db === undefined ? NO_DATABASE_UPLOADS : createKyselyPlatformIconUploadStore(db),
+              media,
+              clock,
+              mediaPublicBaseUrl: config.mediaPublicBaseUrl,
+              newId: randomUUID,
+              monotonicMs,
+            }),
         },
       ],
     };

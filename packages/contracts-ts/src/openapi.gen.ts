@@ -1873,13 +1873,14 @@ export interface paths {
          *     original: the console shows 「已清除不安全内容」 and the operator confirms the preview
          *     before saving. Rejections are 20001 with `data.fields=[file]` and an admin-only
          *     `data.reason` (shown next to the field with admin text, not in the user dictionary):
-         *     `icon_format_invalid` (not SVG or PNG, cannot be parsed, PNG side below 512 px or not
-         *     transparent), `icon_too_large` (above the configured limit) and `icon_svg_unconvertible`
-         *     (style sheet with complex selectors, `@` rules or declarations outside the list, a
-         *     `url(...)` outside the document, a reference cycle or external reference, or a conversion
-         *     limit hit: more than 5000 elements, nesting deeper than 8, output above four times the
-         *     limit, longer than 2 seconds; the console says 「请换一份不含样式表或外部引用的官方 SVG，
-         *     或改传 PNG」). A request body above the global limit stays 413 with `data.fields=[body]`.
+         *     `icon_format_invalid` (not SVG or PNG, cannot be parsed, PNG side below 512 px or above
+         *     4096 px, or not transparent), `icon_too_large` (above the configured limit) and
+         *     `icon_svg_unconvertible` (style sheet with complex selectors, `@` rules or declarations
+         *     outside the list, a `url(...)` outside the document, a reference cycle or external
+         *     reference, or a conversion limit hit: more than 5000 elements, nesting deeper than 8, output
+         *     above four times the limit, longer than 2 seconds; the console says
+         *     「请换一份不含样式表或外部引用的官方 SVG， 或改传 PNG」). A request body above the global limit stays 413 with
+         *     `data.fields=[body]`.
          */
         post: operations["adminUploadPlatformIcon"];
         delete?: never;
