@@ -107,32 +107,48 @@ export interface KeywordMatcher {
 // A hit right after 「非」 is a negation (「非处方药」 is a product search, not 「处方药」).
 const NEGATION = '非';
 
-// BR-AI-18 / AI-15: only requests FOR advice are refused; a product search is not (「帮我找法律咨询
-// 方面的书」 is a book search). An advice hit is a product search when, in the same clause, a
-// shopping verb comes before it and a product noun follows it right away. Questions such as
-// 「今天该买哪只股票」「告诉我买入时机」 have no product noun after the hit and stay refused.
+// BR-AI-18 / AI-15: only requests FOR advice are refused; a product search is not. The decision is
+// per clause (split at ，。！？；、 and line breaks). A clause with an advice hit is a product
+// search when, after the advice words themselves are taken out, it still shows a shopping intent
+// and a product (a product noun anywhere, or a measure word followed by more text):
+//   「帮我找一本讲怎么治疗失眠的书」「推荐几本投资建议类的书籍」 → product search, passes.
+//   「失眠吃什么药」「这个合同有没有法律问题」「想要个法律建议」 → no product left, refused.
+// The one exception is investment: a clause naming an investment target (股票, 基金, 币, 理财产品,
+// 期货) together with a which / when-to-buy question, or with no reading material at all, is
+// investment advice even with a shopping verb (「今天该买哪只股票」「推荐一只基金」).
 const CLAUSE_END = /[，。！？；,.!?;、\n]/u;
-const SHOPPING_VERB = /找|买|购|推荐|有没有卖|想要|要一?本|来一?本|搜/u;
-const PRODUCT_AFTER =
-  /^(?:方面|相关|类|之类|主题|专业)?的?(?:书|书籍|图书|教材|教程|读物|课程|手册|杂志|绘本|资料|工具书|入门书|专著)/u;
+const SHOPPING_INTENT = /帮我找|找一|找本|找个|找款|找|买|购|推荐|求购|有没有卖|想要|哪里能买|搜/u;
+const PRODUCT_NOUN =
+  /书|教材|教程|读物|课程|手册|杂志|绘本|资料|专著|器|仪|机|药盒|贴|垫|枕|灯|盒|包|套装/u;
+/** A measure word counts as a product only when something follows it (「想要个」 alone does not). */
+const MEASURE_WORD = /[本款个件台套只盒瓶支把双张][\p{Script=Han}A-Za-z0-9]/u;
+const INVESTMENT_TARGET = /股票|基金|币|理财产品|期货/u;
+const INVESTMENT_QUESTION = /买哪|买什么|该不该买|什么时候买|哪只|推荐一只|推荐一支/u;
+const READING_MATERIAL = /书|教材|教程|读物|课程|杂志|专著/u;
 
-function clauseAround(text: string, at: number, length: number): { start: number; end: number } {
+function clauseAround(text: string, at: number, length: number): string {
   let start = at;
   while (start > 0 && !CLAUSE_END.test(text.charAt(start - 1))) start -= 1;
   let end = at + length;
   while (end < text.length && !CLAUSE_END.test(text.charAt(end))) end += 1;
-  return { start, end };
+  return text.slice(start, end);
 }
 
-function isProductSearch(text: string, at: number, word: string): boolean {
-  const { start, end } = clauseAround(text, at, word.length);
-  return (
-    SHOPPING_VERB.test(text.slice(start, at)) &&
-    PRODUCT_AFTER.test(text.slice(at + word.length, end))
-  );
+function isProductSearchClause(clause: string, adviceWords: readonly string[]): boolean {
+  if (INVESTMENT_TARGET.test(clause)) {
+    if (INVESTMENT_QUESTION.test(clause) || !READING_MATERIAL.test(clause)) return false;
+  }
+  // Advice words go first, so their own characters (买入时机, 推荐股票) never count as intent or product.
+  let rest = clause;
+  for (const word of adviceWords) rest = rest.split(word).join('｜');
+  return SHOPPING_INTENT.test(rest) && (PRODUCT_NOUN.test(rest) || MEASURE_WORD.test(rest));
 }
 
-function containsWord(text: string, word: string, exempt?: typeof isProductSearch): boolean {
+function containsWord(
+  text: string,
+  word: string,
+  exempt?: (text: string, at: number, word: string) => boolean,
+): boolean {
   let at = text.indexOf(word);
   while (at !== -1) {
     const negated = at > 0 && text[at - 1] === NEGATION;
@@ -147,10 +163,12 @@ export function createKeywordMatcher(lists: InputKeywordLists): KeywordMatcher {
     advice: lists.advice.map(normalizeForKeywords).filter((word) => word.length > 0),
     prohibited: lists.prohibited.map(normalizeForKeywords).filter((word) => word.length > 0),
   };
+  const productSearch = (text: string, at: number, word: string): boolean =>
+    isProductSearchClause(clauseAround(text, at, word.length), groups.advice);
   return {
     hits: (group, text) =>
       groups[group].some((word) =>
-        containsWord(text, word, group === 'advice' ? isProductSearch : undefined),
+        containsWord(text, word, group === 'advice' ? productSearch : undefined),
       ),
   };
 }

@@ -12,7 +12,7 @@ export function pageGuideParamPatterns(): PageGuideParamPatterns {
   return {
     patterns: [
       '\\p{L}[\\p{L}\\p{N}_]*\\s*[=＝]\\s*[^\\s=＝]',
-      '(?:\\p{L}[\\p{L}\\p{N}_]*:|[A-Za-z_][A-Za-z0-9_]*：)\\s*[^\\s:：]',
+      '(?:\\p{L}[\\p{L}\\p{N}_]*:|(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]*\\s*[:：])\\s*[^\\s:：]',
       '(?:单号|编号|流水号)\\s*[:：]?\\s*(?=[A-Za-z0-9-]*\\d)[A-Za-z0-9-]{4,}',
       '(?<![A-Za-z])[Ii][Dd]\\s*[:：]?\\s*(?=[A-Za-z0-9-]*\\d)[A-Za-z0-9-]{4,}',
       '(?<!\\d)\\d{11,}(?!\\d)',

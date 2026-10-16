@@ -43,6 +43,15 @@ describe('[AC-B3-05d][BR-AI-18] advice pre-check lets product searches through (
     '帮我找血压计',
     '买一本理财入门书',
     '想要一个家用血压计',
+    '帮我找一本讲怎么治疗失眠的书',
+    '帮我找治疗失眠的书',
+    '买个助眠仪',
+    '推荐一款讲法律咨询入门的课程',
+    '找本讲是什么病会头痛的科普书',
+    '有没有卖讲官司怎么打的教材',
+    '哪里能买到讲投资建议的书',
+    '求购一本股票投资入门书',
+    '想要一台治疗方案演示用的投影机',
   ])('proceeds: %s', async (text) => {
     expect((await check(text)).kind).toBe('proceed');
   });
@@ -54,6 +63,16 @@ describe('[AC-B3-05d][BR-AI-18] advice pre-check lets product searches through (
     '帮我找本书，顺便告诉我感冒吃什么药',
     '我想买书，请给我法律建议',
     '推荐一只基金投资',
+    '失眠吃什么药',
+    '该吃什么药',
+    '想要个法律建议',
+    '今天该买哪只股票',
+    '帮我推荐一只基金',
+    '推荐一款理财产品，给点投资建议',
+    '什么时候买基金合适，买入时机怎么看',
+    '推荐一本讲买什么基金的书',
+    '帮我诊断一下头痛是什么病',
+    '劳动纠纷怎么起诉',
   ])('refuses advice: %s', async (text) => {
     expect(await check(text)).toEqual({
       kind: 'refuse',
@@ -61,6 +80,29 @@ describe('[AC-B3-05d][BR-AI-18] advice pre-check lets product searches through (
       finishReason: 'safety',
     });
   });
+});
+
+describe('[AC-B3-05d][BR-AI-01] parameter writing tolerates whitespace around : and =', () => {
+  it.each([
+    '打开订单列表，status : pending',
+    '打开订单列表，status:pending',
+    '打开订单列表，status　：　pending',
+    '打开订单列表，status=pending',
+    '打开订单列表，status = pending',
+    '打开订单列表，status　＝　pending',
+    '打开钱包，名称:合成值',
+  ])('paramsRequested: %s', async (text) => {
+    const result = await check(text);
+    expect(result).toMatchObject({ kind: 'proceed', paramsRequested: true });
+  });
+
+  it.each(['分享文案：合成正文', '问题：钱包在哪', '我的问题 ： 提现记录在哪看', '钱包在哪'])(
+    'no parameter: %s',
+    async (text) => {
+      const result = await check(text);
+      expect(result).toMatchObject({ kind: 'proceed', paramsRequested: false });
+    },
+  );
 });
 
 describe('[AC-B3-05d][BR-AI-18] prohibited list covers every F-PROD-08 category', () => {
