@@ -637,12 +637,9 @@ it('[AC-F1-02c#22] 各 app 配置和缓存隔离，他 app 的必填键不能补
     expect(data.h5_release).toEqual({ version: `${owner}-stable` });
   }
   const incomplete = appId();
-  await seedConfig(h.db, incomplete, { ...REQUIRED, texts: { owner: 'incomplete' } });
-  await h.db
-    .deleteFrom('config_items')
-    .where('app_id', '=', incomplete)
-    .where('key', '=', 'kf')
-    .execute();
+  const { kf: _kf, ...withoutKf } = REQUIRED;
+  void _kf;
+  await seedConfig(h.db, incomplete, { ...withoutKf, texts: { owner: 'incomplete' } });
   await failure(await read(h.app, incomplete));
 });
 
