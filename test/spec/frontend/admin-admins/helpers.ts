@@ -1,9 +1,14 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { configure, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, vi } from 'vitest';
 import { createAdminShell, type AdminAppOptions } from '../../../../apps/admin/src/App.tsx';
 import { createDataProvider } from '../../../../apps/admin/src/providers/data/index.ts';
 import type { Schema } from '../../../../packages/contracts-ts/src/index.ts';
 import { ADMIN_PAGE, BASE_URL, jsonResponse, requestFrom } from '../admin-data/fixtures.ts';
+
+// The first antd Table render of a file (cold CSS-in-JS in jsdom) took 4.5 s on a loaded CI
+// runner, past the 1 s default window of waitFor / findBy: LIST#1 failed now and then (F1-06zc).
+// A wider window for this directory's waits only; every assertion stays as it was.
+configure({ asyncUtilTimeout: 10_000 });
 
 export type Account = Schema<'AdminAccount'>;
 

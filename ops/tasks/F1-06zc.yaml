@@ -1,0 +1,19 @@
+id: F1-06zc
+repo: rebate-platform
+title: 后台账号列表规则测试（test/spec/frontend/admin-admins）偶发失败修正：testing-library 异步等待窗口由默认 1 秒放宽到 10 秒，断言不变
+type: test-change
+# 2026-10-16 入账（前端线 f1-frontend-7；编排会话 19:1x 通知：list.test.ts 在主干与 #530、#534、#538 的 CI 上偶发失败，重跑即过）。
+# 失败的是每个文件的第一条 [AC-F1-06i-LIST#1]（CI 实测 4.5 秒，后面几条 0.6–1 秒）：antd Table 在 jsdom 里首次渲染要冷启动 CSS-in-JS，
+# 负载高的 runner 上超过 waitFor 的默认 1 秒窗口，helpers.ts 的 tableWith 报「expected null not to be null」。只在 helpers.ts 里
+# configure({ asyncUtilTimeout: 10_000 })（list / states 两个文件都导入它），不改任何断言；单条超时仍是 F1-06za 的 15 秒。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>），按 approvals 第 12 条走非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-06i]
+paths:
+  - 'test/spec/frontend/admin-admins/helpers.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
