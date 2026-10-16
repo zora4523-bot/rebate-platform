@@ -3,8 +3,8 @@ repo: rebate-platform
 title: identity 导出用户等级只读端口：按 (app_id, user_id) 读 users.level，查不到返回 null；只读、不缓存，供资金线真实返利报价器按查看者等级取比例
 type: impl
 # 草稿 2026-10-16（身份与风控线 identity-lane；资金线 funds-quote 2026-10-16 06:00 UTC 在 B3-lane/notices.md 请求，台账 PR #513 的 B2-03 用）。
-# 依据：02 §4.1 users 归 identity（他模块只经 identity index 的只读端口取）；等级取值见 contracts/enums/identity.yaml identity_level。BR-CALC-20 只作理解用（取比例归资金线），不嵌入任务书。
-# 形状（编排者定）：ports/user-level.ts 的 createUserLevelReader({ db }) → levelOf({ appId, userId }) → Promise<IdentityLevel | null>，经 identity/index.ts 导出；
+# 依据：02 §4.1 users 归 identity（他模块只经 identity index 的只读端口取）；等级取值是 user_level（L1 / L2 / L3，04 §2.5；注意不是 identity_level）。BR-CALC-20 只作理解用（取比例归资金线），不嵌入任务书。
+# 形状（编排者定）：ports/user-level.ts 的 createUserLevelReader({ db }) → levelOf({ appId, userId }) → Promise<UserLevel | null>（UserLevel = L1 | L2 | L3，取契约生成的枚举类型），经 identity/index.ts 导出；
 # 单条主键查询；不认识的取值抛错（不默认成某一级，资金 fail-closed）；不写任何表。先例 B1-02r（createAiConsentReader）。风险 RV1（identity）。
 refs: []
 refs_hash: {}
