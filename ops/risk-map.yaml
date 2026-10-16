@@ -71,6 +71,12 @@ rules:
     impl: claude
     tester: codex
     review: claude+codex
+  # orders: 订单同步、映射、归因与状态（订单归属，规划/02 §4.1、规划/11 §1.1 第 3 行）为 RV2，分工同 union（B1-08b，2026-10-17）。
+  - path: 'apps/api/src/modules/orders/**'
+    risk: RV2
+    impl: claude
+    tester: codex
+    review: claude+codex
   # admin、content: 规划/11 §1.1 没有单列，按 §1.2「未列入白名单的任何路径」为 RV2；分工按 2026-10-05 改定的通则。
   - path: 'apps/api/src/modules/admin/**'
     risk: RV2
