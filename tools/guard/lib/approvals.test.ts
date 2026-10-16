@@ -122,10 +122,11 @@ describe('ops/approvals.yaml of this repository', () => {
     expect(later.map((a) => a.id)).toEqual(later.map((_, i) => 10 + i));
     for (const approval of later) {
       expect(approval.row).toBeGreaterThanOrEqual(0);
-      // §7.3 has rows 0–14 in the planning repository since couli#59 (3ce7405): row 12, the
+      // §7.3 has rows 0–15 in the planning repository since couli#114 (87238fa): row 12, the
       // default split of 2026-10-05, is itself the approval id 19 records; rows 13 and 14 are
-      // ids 22 and 23 (2026-10-06).
-      expect(approval.row).toBeLessThanOrEqual(14);
+      // ids 22 and 23 (2026-10-06); row 15, tasks not yet started go to Codex, is id 30
+      // (2026-10-16).
+      expect(approval.row).toBeLessThanOrEqual(15);
       expect(approval.note).not.toBe('');
     }
   });

@@ -188,3 +188,9 @@ approvals:
     granted: true
     date: '2026-10-15'
     note: '负责人在对话里直接对 pdd-lane（账号 4）作答：问「探测谁跑」选「授权你代我跑」（选项说明由编排会话拟写，含只读、≤40 次、密钥只在脚本进程里读、补登记 approvals）；同日首轮代跑 10 次（cap-tests/2026-10-15/pdd/）；本条所在的 PR 按第 24 条由编排会话加标签'
+  - id: 30
+    row: 15
+    title: '未开工的任务默认改由 Codex 实现：已开工的任务（已提交规则测试或实现：有 spec_commit、test(spec) 提交或实现提交；只认领、只写任务书不算）保持原分工（第 19、27 条）；未开工的任务入账或开工前改为台账 impl: codex、tester: claude，任务号逐个加进 tools/guard/codex-impl-tasks.json（门禁可信根），流程同第 23 条：Claude 子代理先写规则测试（先红）→ Codex 新只读会话过审测试 → Codex 经 codex-run.sh impl --phase impl 实现 → Claude 新子代理代码评审（第 27 条：实现方之外的一家）；改派不改风险级与合并门槛；资金、订单归属、打款、订单补拉、数据库恢复与主库切换、发布流水线接入、迁移、契约仍按第 19 条由 Claude 实现（codex-impl-tasks.json 的 forbidden_paths 照旧，task.ts check 拒收 paths 碰到它们的 Codex 台账）；三端原生 App 的新任务也改由 Codex 实现（原生仓库不受本仓库门禁约束，构建与模拟器验证由编排者在沙箱外跑，先在一端试行）；各线把新任务号加进 codex-impl-tasks.json 的 PR 命中保护路径，按第 24 条由编排会话核对头提交后加标签'
+    granted: true
+    date: '2026-10-16'
+    note: '负责人原话「现有的任务 保留claude。执行 就是还有没开始的 可以安排 codex 来执行 可以提高开发效率」（对话中给编排会话，经编排会话转达）；编排会话追问范围（第 23 条即 2026-10-06 例外的安全边界是否放开）后负责人选「边界外 + 三端原生」；「已开工」的界定（已提交规则测试或实现，只认领、只写任务书不算）按规划 couli#115；规划依据：规划仓库 PR couli#114（合并提交 87238fa）与 couli#115（合并提交 ec0a30f），规划/11 §1.1「2026-10-16 起：未开工的任务默认由 Codex 实现」与原生三端条、§7.3 第 15 项，docs/changes/20261016-未开工任务改由Codex实现.md；落在本分支 chore/approvals-codex-unstarted（ops/approvals.yaml；tools/guard/codex-impl-tasks.json 的说明与 tasks；tools/lib/codex-impl-tasks.test.ts、tools/guard/lib/approvals.test.ts 随第 15 行同步）；同分支把内容模块线未开工的 F1-02d 改为 Codex 实现（台账 impl: codex、tester: claude，任务号加进清单）；F1-02e、F1-02f 同样未开工，但须在同一 PR 去掉 contracts/openapi.yaml 的 x-implementation: planned 并重生成 packages/contracts-ts/src/openapi.gen.ts 与 route-schemas.gen.ts（apps/api/src/contract.test.ts 要求已实现的接口有路由、planned 的没有），contracts/**、packages/contracts-ts/** 在 forbidden_paths，而路径守卫按台账 paths 整体检查 spec_commit 之后的全部提交、不分提交者，暂留 Claude；本条所在的 PR 按第 24 条由编排会话加标签'
