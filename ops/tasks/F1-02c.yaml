@@ -29,4 +29,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/content/config/**'
-status: todo
+status: done
+pr: 565
