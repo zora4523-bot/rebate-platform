@@ -1,0 +1,29 @@
+id: F1-06zd
+repo: rebate-platform
+title: 后台「平台标识」页（一）：侧栏「运营」组末尾加菜单（权限点 content.platform_icon），8 个标识键列表（当前生效、浅 / 深底 16·24·32px 预览并排内置图、来源登记、最近变更）、版本历史抽屉（分页、空态）、发布 / 回滚 / 恢复内置确认与结果、20902 状态已变化
+type: impl
+# 2026-10-17 入账（前端线 f1-frontend-7）。负责人 2026-10-16「放开吧 看是你要规划好 看着codex」：H5 / 后台新任务由 Codex 实现（ops/approvals.yaml 第 30 条，规划/11 §1.1、§7.3 第 15 项）；
+# Claude 子代理先写规则测试与浏览器测试（先红），Codex 新只读会话过审测试，Codex 实现，编排者与定稿画板逐屏截图比对，Claude 新子代理评审。
+# 后端 F1-06w（读）、F1-06y（补登来源、发布 / 回滚、恢复内置）已合并，契约 CT-17g 的 7 个操作都不再 planned。画板（design-hifi/project/，第 20 轮，Codex 对抗 3 轮 PASS）：
+# AdmPlatformIcons、AdmPlatformIconHistory、AdmPlatformIconHistoryEmpty、AdmPlatformIconPublishConfirm、AdmPlatformIconRollbackConfirm、AdmPlatformIconRestoreConfirm、
+# AdmPlatformIconPublished、AdmPlatformIconRestored、AdmPlatformIconConflict；决定 decisions-r20-platform-icons.md；文案为代理补全（needs.md admin.platform_icon.*，待负责人看）。
+# 用 antd 组件（Table、Drawer、Modal、Alert、Tag、Button、Pagination、Result；03 §9.1，手写替代记 S1），经 F1-06g 的 data provider 与 F1-06zb 的 createAdminApi 取数；预览一律 <img> 加载清洗后的 url。
+# 上传、清洗预览、存为版本、补登来源在 F1-06ze。
+refs: [BR-TEXT-24]
+refs_hash:
+  BR-TEXT-24: 0cda692fd39e
+deps: [F1-06w, F1-06y, F1-06zb, F1-06r]
+paths:
+  - 'apps/admin/src/pages/platform-icons/**'
+  - 'apps/admin/src/texts/platform-icons.ts'
+  - 'apps/admin/src/resources/index.ts'
+  - 'apps/admin/src/texts/menu.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-platform-icons/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-platform-icons/**'
+status: todo

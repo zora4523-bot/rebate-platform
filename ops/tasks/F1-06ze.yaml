@@ -1,0 +1,24 @@
+id: F1-06ze
+repo: rebate-platform
+title: 后台「平台标识」页（二）：上传替换图（一次一个键，SVG 或 PNG，multipart）、上传与清洗中可取消、清洗后预览（已清除不安全内容须勾选确认）、文件未通过三种 20001 提示、来源登记后存为版本、给未发布版本补登 / 修改来源
+type: impl
+# 2026-10-17 入账（前端线 f1-frontend-7）；分工同 F1-06zd（approvals 第 30 条：Codex 实现、Claude 写规则测试、Codex 过审测试、Claude 评审）。
+# 后端 F1-06x（上传与存为版本，multipart、清洗、upload_id 有效期）、F1-06y（补登来源 PATCH，revision CAS）已合并。画板：AdmPlatformIconUpload、AdmPlatformIconUploading、
+# AdmPlatformIconUploadCleaned、AdmPlatformIconUploadInvalid、AdmPlatformIconSaved、AdmPlatformIconSourceRegister；错误码与提示句对照见 decisions-r20-platform-icons.md §3。
+# multipart 若 F1-06g 的 data provider 不支持（custom 只发 JSON），在 providers/data 内补 FormData 支持，不改既有行为。大小上限句取配置 content.platform_icon.max_bytes 的当前值。
+refs: [BR-TEXT-24]
+refs_hash:
+  BR-TEXT-24: 0cda692fd39e
+deps: [F1-06zd, F1-06x]
+paths:
+  - 'apps/admin/src/pages/platform-icons/**'
+  - 'apps/admin/src/texts/platform-icons.ts'
+  - 'apps/admin/src/providers/data/**'
+test_paths:
+  - 'test/spec/frontend/admin-platform-icons-upload/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-platform-icons-upload/**'
+status: todo
