@@ -17,12 +17,20 @@
 // limit here: its duration is bounded by the caller (order-sync), which may abort between
 // requests with its own `ctx.signal`. Every other operation, and listOrders of an adapter that
 // does not declare it, keeps one token per attempt of the whole call.
+// B1-14d: the online governor takes its whole policy (timeout, retries, breaker) from the public
+// resilience registry row `union.search` (规划/02 §14; default `unionPolicy('online')`), read once
+// when the adapter is assembled. The registry has no offline row, so the offline governor keeps
+// `unionPolicy('offline')`. A breaker that is open fails the call with
+// `GovernanceError('circuit_open')` before anything is sent; catalog / linking own the degrade.
+// TODO(规划/11 §4.5): app.module 按配置传登记表覆盖 — blocked on 配置项未定（B1-14d 只接登记表默认值）
 import {
   createGovernor,
+  createResilienceRegistry,
   unionPolicy,
   type CallKind,
   type Governor,
   type QuotaLimiter,
+  type ResilienceRegistry,
   type Scheduler,
 } from '../../platform/index.ts';
 import {
@@ -41,6 +49,11 @@ export interface GovernedAdapterOptions {
   readonly scheduler: Scheduler;
   /** Must match endpoint.quotaKey. Shared instances allow account-wide quota sharing. */
   readonly quota: QuotaLimiter;
+  /**
+   * B1-14d: source of the online policy (row `union.search`). Absent: the registry defaults,
+   * which equal `unionPolicy('online')`.
+   */
+  readonly resilience?: ResilienceRegistry;
 }
 
 /** Wraps every supported operation; optional operations the adapter lacks stay absent. */
@@ -48,7 +61,7 @@ export function createGovernedAdapter(
   adapter: UnionAdapter,
   options: GovernedAdapterOptions,
 ): UnionAdapter {
-  const { endpoint, scheduler, quota } = options;
+  const { endpoint, scheduler, quota, resilience } = options;
   if (adapter.platform !== endpoint.platform) {
     throw new UnionError(
       'invalid_endpoint',
@@ -64,8 +77,9 @@ export function createGovernedAdapter(
     );
   }
   const deps = { scheduler, quota };
+  const onlinePolicy = (resilience ?? createResilienceRegistry()).entry('union.search').policy;
   const governors = {
-    online: createGovernor(`union:${endpoint.platform}:online`, unionPolicy('online'), deps),
+    online: createGovernor(`union:${endpoint.platform}:online`, onlinePolicy, deps),
     offline: createGovernor(`union:${endpoint.platform}:offline`, unionPolicy('offline'), deps),
   };
   const governorFor = (ctx: CallCtx): Governor =>
