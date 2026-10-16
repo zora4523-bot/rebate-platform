@@ -316,6 +316,17 @@ export interface ConfigItems {
   version: Generated<number>;
 }
 
+export interface ConfigItemVersions {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  key: string;
+  reason: string | null;
+  updated_by: string;
+  updated_by_admin_id: string | null;
+  value: Json;
+  version: number;
+}
+
 export interface ConsentRecords {
   accepted: boolean;
   app_id: string;
@@ -1028,6 +1039,7 @@ export interface DB {
   commission_rule_reserves: CommissionRuleReserves;
   commission_rule_versions: CommissionRuleVersions;
   commission_rules: CommissionRules;
+  config_item_versions: ConfigItemVersions;
   config_items: ConfigItems;
   consent_records: ConsentRecords;
   device_registrations: DeviceRegistrations;

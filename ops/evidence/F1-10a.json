@@ -1,0 +1,87 @@
+{
+  "task": "F1-10a",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "d771a07328d371c8e2780f6014ee7a5e6d0ddf84",
+  "red_tests": [
+    "test/spec/db/content/config-history/backfill.int.test.ts > [AC-F1-10a#10] table creation, backfill and grants to all three roles share one migration",
+    "test/spec/db/content/config-history/backfill.int.test.ts > [AC-F1-10a#11] backfill copies every current version once, with original JSON, actor and updated_at",
+    "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#1] history columns preserve types and required/nullable fields",
+    "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#2] omitted created_at is transaction now, optional actor and reason are NULL",
+    "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#3] version rejects zero and negatives and accepts positive integer boundaries",
+    "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#4] duplicate triples fail, while each primary-key component distinguishes rows",
+    "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#5] JSON values and administrator/name/reason snapshots round-trip unchanged",
+    "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#6] history has no config_items FK and accepts the existing unconstrained key shapes",
+    "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#7] each role has exactly its allowed table privileges",
+    "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#8] app inserts and all three roles read, but UPDATE and DELETE fail with 42501",
+    "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#9] kill switches remain config_items keys, with no separate kill_switches table"
+  ],
+  "risk_note": "RV2 (migration). Migration 0033 creates app.config_item_versions, the append-only history of configuration items and kill switches (app_id, key, version >= 1, value jsonb, updated_by snapshot, updated_by_admin_id uuid nullable, reason nullable, created_at; primary key (app_id, key, version); no foreign keys, no trigger). Grants: couli_app SELECT and INSERT only, couli_readonly and couli_payout SELECT. Backfill: one top-level INSERT ... SELECT copies every current config_items row as the history row of its version (ON CONFLICT DO NOTHING). No kill_switches table (kill switches stay keys of config_items). schema.sql and db.gen.ts regenerated on the test machine. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d771a07328d371c8e2780f6014ee7a5e6d0ddf84",
+      "tree": "320dc6088fd6d43aafaab95ca8cc83f4747a9c73",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T16:02:35Z",
+      "finished_at": "2026-10-16T16:02:40Z",
+      "red_tests": [
+        "test/spec/db/content/config-history/backfill.int.test.ts > [AC-F1-10a#10] table creation, backfill and grants to all three roles share one migration",
+        "test/spec/db/content/config-history/backfill.int.test.ts > [AC-F1-10a#11] backfill copies every current version once, with original JSON, actor and updated_at",
+        "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#1] history columns preserve types and required/nullable fields",
+        "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#2] omitted created_at is transaction now, optional actor and reason are NULL",
+        "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#3] version rejects zero and negatives and accepts positive integer boundaries",
+        "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#4] duplicate triples fail, while each primary-key component distinguishes rows",
+        "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#5] JSON values and administrator/name/reason snapshots round-trip unchanged",
+        "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#6] history has no config_items FK and accepts the existing unconstrained key shapes",
+        "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#7] each role has exactly its allowed table privileges",
+        "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#8] app inserts and all three roles read, but UPDATE and DELETE fail with 42501",
+        "test/spec/db/content/config-history/history.int.test.ts > [AC-F1-10a#9] kill switches remain config_items keys, with no separate kill_switches table"
+      ],
+      "expected": [
+        "test/spec/db/content/config-history/backfill.int.test.ts",
+        "test/spec/db/content/config-history/history.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "6db39a493044e11e857439957603eaa6c99ca9a52303c3014b9acc452475af45"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "11 rule tests by Codex (1 run) reviewed by a fresh Claude subagent: round 1 pass, 1 S2 to follow-ups (the backfill test only recognises a top-level INSERT INTO app.config_item_versions)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "66e726b2643e32c8fb6c98780c324bc9312ff7cf",
+    "test/spec": "e0c4326b2c901740815980866619dfddc89f17de",
+    "specs": "e3bb9aaad4133100875640f64e420a0f3631d5e1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "66e726b2643e32c8fb6c98780c324bc9312ff7cf"
+  }
+}
