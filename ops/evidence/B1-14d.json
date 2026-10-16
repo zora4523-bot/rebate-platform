@@ -1,0 +1,110 @@
+{
+  "task": "B1-14d",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "2c1c2e72688a9e9b5c478e4ae21cbb5894fe72ca",
+  "red_tests": [
+    "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#4] QA-05a timeout 达到覆盖阈值后抛可识别 circuit_open，既不发请求也不取配额",
+    "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#4] QA-05a rate_limited 达到覆盖阈值后抛可识别 circuit_open，既不发请求也不取配额",
+    "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#4] QA-05a server_error 达到覆盖阈值后抛可识别 circuit_open，既不发请求也不取配额",
+    "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#4] QA-05a connection_reset 达到覆盖阈值后抛可识别 circuit_open，既不发请求也不取配额",
+    "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#5] 覆盖 windowMs：恰好过期的失败不计入新窗口，当前窗口达到 minRequests 才打开",
+    "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#6] 整份 breaker 生效：75% 边界不打开，超过 75% 后拒绝下一次调用",
+    "test/spec/union/resilience-wiring/isolation.test.ts > [AC-B1-14d#9] 在线采用覆盖时限，order_sync 仍为每次 10 秒与两次重试",
+    "test/spec/union/resilience-wiring/isolation.test.ts > [AC-B1-14d#10] 在线打开不影响离线；离线仍可重试成功，且不重置在线熔断",
+    "test/spec/union/resilience-wiring/isolation.test.ts > [AC-B1-14d#11] 离线按默认 20 次打开，仍允许在线按登记表时限调用",
+    "test/spec/union/resilience-wiring/isolation.test.ts > [AC-B1-14d#12] 登记表允许读重试一次时，真实 convert 仍只发一次，读按覆盖退避",
+    "test/spec/union/resilience-wiring/isolation.test.ts > [AC-B1-14d#13] 业务拒绝不重试、不打开熔断；窗口过期后真正故障按新阈值打开",
+    "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#1] 在线使用 union.search 的 timeoutMs=80，边界前仍等待，边界上取消且不重试",
+    "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#1] 在线使用 union.search 的 timeoutMs=140，边界前仍等待，边界上取消且不重试",
+    "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#2] 幂等读应用 retries.maxRetries=0 及覆盖的指数退避和上限",
+    "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#2] 幂等读应用 retries.maxRetries=1 及覆盖的指数退避和上限",
+    "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#2] 幂等读应用 retries.maxRetries=2 及覆盖的指数退避和上限",
+    "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#3] 缺省登记表与显式默认表保留 3 秒及两次重试，注入覆盖能改变同一调用",
+    "test/spec/union/resilience-wiring/recovery.test.ts > [AC-B1-14d#7] openMs 内拒绝查询，到点后恢复发送并持续成功",
+    "test/spec/union/resilience-wiring/recovery.test.ts > [AC-B1-14d#8] openMs 到点清空窗口，失败重新攒满 minRequests 才再次熔断"
+  ],
+  "risk_note": "RV2 (union/**). createGovernedAdapter takes an optional public ResilienceRegistry (default createResilienceRegistry()); the online governor uses the whole policy of row union.search (default equal to unionPolicy('online'), so behaviour is unchanged without overrides), read once at assembly; the offline governor keeps unionPolicy('offline'). An open breaker fails with GovernanceError('circuit_open') before sending and without a quota token; platform breaker semantics (no half-open; closed with an empty window after openMs) unchanged. Degrades stay in catalog / linking. No money, attribution, contract or migration change; production config overrides are not wired (TODO).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2c1c2e72688a9e9b5c478e4ae21cbb5894fe72ca",
+      "tree": "9595b95c15cb6a531eef659b8d953bd5f03e9aaa",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-16T10:53:30Z",
+      "finished_at": "2026-10-16T10:53:34Z",
+      "gate": {
+        "commit": "cad7f635ce7c496a20cb7349656fe0f914b4757a",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#4] QA-05a timeout 达到覆盖阈值后抛可识别 circuit_open，既不发请求也不取配额",
+        "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#4] QA-05a rate_limited 达到覆盖阈值后抛可识别 circuit_open，既不发请求也不取配额",
+        "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#4] QA-05a server_error 达到覆盖阈值后抛可识别 circuit_open，既不发请求也不取配额",
+        "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#4] QA-05a connection_reset 达到覆盖阈值后抛可识别 circuit_open，既不发请求也不取配额",
+        "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#5] 覆盖 windowMs：恰好过期的失败不计入新窗口，当前窗口达到 minRequests 才打开",
+        "test/spec/union/resilience-wiring/breaker.test.ts > [AC-B1-14d#6] 整份 breaker 生效：75% 边界不打开，超过 75% 后拒绝下一次调用",
+        "test/spec/union/resilience-wiring/isolation.test.ts > [AC-B1-14d#9] 在线采用覆盖时限，order_sync 仍为每次 10 秒与两次重试",
+        "test/spec/union/resilience-wiring/isolation.test.ts > [AC-B1-14d#10] 在线打开不影响离线；离线仍可重试成功，且不重置在线熔断",
+        "test/spec/union/resilience-wiring/isolation.test.ts > [AC-B1-14d#11] 离线按默认 20 次打开，仍允许在线按登记表时限调用",
+        "test/spec/union/resilience-wiring/isolation.test.ts > [AC-B1-14d#12] 登记表允许读重试一次时，真实 convert 仍只发一次，读按覆盖退避",
+        "test/spec/union/resilience-wiring/isolation.test.ts > [AC-B1-14d#13] 业务拒绝不重试、不打开熔断；窗口过期后真正故障按新阈值打开",
+        "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#1] 在线使用 union.search 的 timeoutMs=80，边界前仍等待，边界上取消且不重试",
+        "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#1] 在线使用 union.search 的 timeoutMs=140，边界前仍等待，边界上取消且不重试",
+        "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#2] 幂等读应用 retries.maxRetries=0 及覆盖的指数退避和上限",
+        "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#2] 幂等读应用 retries.maxRetries=1 及覆盖的指数退避和上限",
+        "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#2] 幂等读应用 retries.maxRetries=2 及覆盖的指数退避和上限",
+        "test/spec/union/resilience-wiring/policy.test.ts > [AC-B1-14d#3] 缺省登记表与显式默认表保留 3 秒及两次重试，注入覆盖能改变同一调用",
+        "test/spec/union/resilience-wiring/recovery.test.ts > [AC-B1-14d#7] openMs 内拒绝查询，到点后恢复发送并持续成功",
+        "test/spec/union/resilience-wiring/recovery.test.ts > [AC-B1-14d#8] openMs 到点清空窗口，失败重新攒满 minRequests 才再次熔断"
+      ],
+      "expected": [
+        "test/spec/union/resilience-wiring/breaker.test.ts",
+        "test/spec/union/resilience-wiring/isolation.test.ts",
+        "test/spec/union/resilience-wiring/policy.test.ts",
+        "test/spec/union/resilience-wiring/recovery.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "161ccb1926dfe7980700c7b522c8bf3a26a5ba32bde302829d136c817a94ee7e"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings (approvals 27: Codex only)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (2 runs, 5 files, 19 tests; QA-05a buildMappings('union.pdd') fault shapes). The second run only rewrote the recovery cases after the orchestrator corrected the brief (no half-open state in the platform governor, D10-11). Round 1 pass with no findings."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "a340fed01ea04b1216d4345bb5144743ad59ba26",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "30fab521fff65c53a7cd8e38f340b9ea40c14dbf",
+    "test/spec": "987aa9c1b0176182fd0fd34b27c3a5b1584a3697",
+    "specs": "d132032ab94a9b89610f6453d3cc274de9221f2f"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "30fab521fff65c53a7cd8e38f340b9ea40c14dbf"
+  }
+}

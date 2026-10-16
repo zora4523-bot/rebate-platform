@@ -1,5 +1,9 @@
 import { expect, it, vi } from 'vitest';
-import type { QuotaLimiter, Scheduler } from '../../platform/index.ts';
+import {
+  createResilienceRegistry,
+  type QuotaLimiter,
+  type Scheduler,
+} from '../../platform/index.ts';
 import {
   createGovernedAdapter,
   makeUnionItem,
@@ -92,6 +96,18 @@ it.each(['upstream_unavailable', 'rate_limited'] as const)(
     expect(attempts()).toBe(3);
   },
 );
+
+it('[AC-B1-14d-UNIT#1] 在线重试次数取登记表 union.search 行；离线仍按 unionPolicy(offline)', async () => {
+  const resilience = createResilienceRegistry({ 'union.search': { retries: { maxRetries: 0 } } });
+  const { adapter, attempts } = failingAdapter('upstream_unavailable');
+  const port = createGovernedAdapter(adapter, { endpoint, scheduler, quota, resilience });
+  const ref = { platform: 'jd', itemId: 'item-A' } as const;
+  await expect(port.getItem(ref, online)).rejects.toMatchObject({ code: 'upstream_unavailable' });
+  expect(attempts()).toBe(1);
+  const offline: CallCtx = { ...online, purpose: 'order_sync' };
+  await expect(port.getItem(ref, offline)).rejects.toMatchObject({ code: 'upstream_unavailable' });
+  expect(attempts()).toBe(4);
+});
 
 it('[AC-B1-04b-UNIT#3] 业务拒绝不计入熔断：大量拒绝之后调用仍到达适配器', async () => {
   let calls = 0;
