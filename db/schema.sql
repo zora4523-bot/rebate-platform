@@ -2712,7 +2712,9 @@ CREATE TABLE app.sessions (
     revoked_at timestamp with time zone,
     revoke_reason text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    login_method text,
+    CONSTRAINT sessions_login_method_check CHECK ((login_method = ANY (ARRAY['sms'::text, 'wechat'::text, 'apple'::text, 'huawei'::text, 'merge'::text])))
 );
 
 
@@ -2944,6 +2946,9 @@ CREATE TABLE app.user_oauth (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    apple_refresh_token_cipher bytea,
+    revoked_at timestamp with time zone,
+    CONSTRAINT user_oauth_apple_refresh_token_provider_check CHECK (((apple_refresh_token_cipher IS NULL) OR (provider = 'apple'::text))),
     CONSTRAINT user_oauth_provider_check CHECK ((provider = ANY (ARRAY['wechat'::text, 'apple'::text, 'huawei'::text])))
 );
 
