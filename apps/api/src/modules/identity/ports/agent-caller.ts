@@ -1,3 +1,5 @@
+// Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
+// for type-only imports. Read-only; logs nothing (no phone number or raw device ID can leak).
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 
@@ -21,6 +23,26 @@ export interface AgentCallerReaderOptions {
  * This port additionally excludes revoked devices as required by B1-02x §9.
  */
 export function createAgentCallerReader(options: AgentCallerReaderOptions): AgentCallerReader {
-  void options;
-  throw new Error('NotImplemented: createAgentCallerReader');
+  const { db } = options;
+  return {
+    async phoneBound(appId, userId) {
+      const row = await db
+        .selectFrom('users')
+        .select('phone_hmac')
+        .where('app_id', '=', appId)
+        .where('id', '=', userId)
+        .executeTakeFirst();
+      return row !== undefined && row.phone_hmac !== null;
+    },
+    async deviceHash(appId, deviceId) {
+      const row = await db
+        .selectFrom('devices')
+        .select('device_hash')
+        .where('app_id', '=', appId)
+        .where('id', '=', deviceId)
+        .where('revoked_at', 'is', null)
+        .executeTakeFirst();
+      return row?.device_hash ?? null;
+    },
+  };
 }
