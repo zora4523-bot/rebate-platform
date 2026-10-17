@@ -129,6 +129,11 @@ it('[AC-F1-06i-PAGE#1] antd 分页显示总数，第二页重新 GET 并替换�
   expect(within(main).getByText('共 21 条')).toBeTruthy();
   const pagination = main.querySelector<HTMLElement>('.ant-pagination');
   expect(pagination).not.toBeNull();
+  // The page sets loading=false in the same batch as the rows, but antd Spin drops its blur
+  // wrapper (`.ant-spin-blur`, pointer-events: none over the pagination) only in a later
+  // effect-driven render. On a loaded CI runner that render can still be pending when the rows
+  // are visible, and user-event then refuses the click (#593, #595, #633). Wait for it here.
+  await waitFor(() => expect(main.querySelector('.ant-spin-blur')).toBeNull());
   await userEvent.click(within(pagination!).getByText('2', { exact: true }));
   const table = await tableWith('owner');
   expect(requestSummary(h.requests)).toEqual([
