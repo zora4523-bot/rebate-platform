@@ -26,7 +26,32 @@ export interface MessageReaderOptions {
   readonly db: Kysely<Database>;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function createMessageReader(options: MessageReaderOptions): MessageReader {
-  void options;
-  throw new Error('NotImplemented: createMessageReader');
+  const db = options.db.withSchema('app');
+  return {
+    async get(query) {
+      // The contract Id only constrains length; avoid a PostgreSQL uuid cast error.
+      if (!UUID.test(query.message_id)) return null;
+      const row = await db
+        .selectFrom('inbox_messages')
+        .select(['message_id', 'code', 'title', 'body', 'created_at', 'read_at', 'route'])
+        .where('app_id', '=', query.app_id)
+        .where('user_id', '=', query.user_id)
+        .where('message_id', '=', query.message_id)
+        .executeTakeFirst();
+      if (row === undefined) return null;
+      return {
+        message_id: row.message_id,
+        code: row.code,
+        title: row.title,
+        body: row.body,
+        created_at: row.created_at.toISOString(),
+        read_at: row.read_at?.toISOString() ?? null,
+        // RouteTarget is checked when saved, as specified by the contract.
+        route: row.route as InboxMessageView['route'],
+      };
+    },
+  };
 }
