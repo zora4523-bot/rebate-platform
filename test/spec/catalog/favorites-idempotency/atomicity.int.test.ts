@@ -189,16 +189,16 @@ it('[AC-B1-28e#6] 批量删除后 completed 写失败：整批恢复，同键首
     });
     expect(await f.favorites()).toEqual([]);
     expect(await f.records()).toEqual([{ status: 'completed' }]);
-    await f.seed('tb:favorite001', '01920000-0000-7000-8000-000000000201');
-    await f.seed('tb:favorite002', '01920000-0000-7000-8000-000000000202');
+    await f.seed('tb:favorite001', '01920000-0000-7000-8000-000000000301');
+    await f.seed('tb:favorite002', '01920000-0000-7000-8000-000000000302');
     f.clock.set(laterTime);
     expect(await f.call('batchDelete', 'later-trace')).toEqual({
       status: 200,
       body: '{"code":0,"msg":"","data":{},"trace_id":"original-trace"}',
     });
     expect((await f.favorites()).map((row) => row.id)).toEqual([
-      '01920000-0000-7000-8000-000000000201',
-      '01920000-0000-7000-8000-000000000202',
+      '01920000-0000-7000-8000-000000000301',
+      '01920000-0000-7000-8000-000000000302',
     ]);
     const tooMany = await f.call('batchDelete', 'batch-limit', {
       headers: { 'idempotency-key': 'batch-over-limit', 'x-channel': 'appstore' },
@@ -213,8 +213,8 @@ it('[AC-B1-28e#6] 批量删除后 completed 写失败：整批恢复，同键首
     expect(JSON.parse(tooMany.body)).toMatchObject({ code: 20001, data: { fields: ['items'] } });
     expect(await f.records('batch-over-limit')).toEqual([]);
     expect((await f.favorites()).map((row) => row.id)).toEqual([
-      '01920000-0000-7000-8000-000000000201',
-      '01920000-0000-7000-8000-000000000202',
+      '01920000-0000-7000-8000-000000000301',
+      '01920000-0000-7000-8000-000000000302',
     ]);
     expect(
       await f.call('batchDelete', 'batch-boundary', {
