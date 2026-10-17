@@ -10,7 +10,7 @@
 
 | 脚本 | 做什么 | 出处 |
 | --- | --- | --- |
-| `task.ts check [编号…]` | 校验 `ops/tasks/*.yaml`：字段、文件名、≤40 行、编号前缀在 05 里存在、`refs` 存在且 `refs_hash` 与规划原文一致、依赖存在、RV2 的实现与规则测试作者不是同一家。`pnpm ops:task:check` | 11 §2.1 |
+| `task.ts check [编号…]` | 校验 `ops/tasks/*.yaml`：字段、文件名、≤40 行、编号前缀在 05 里存在、`refs` 存在且 `refs_hash` 与规划原文一致、依赖存在、RV2 的实现与规则测试作者不是同一家、契约任务列全生成物（见下文「契约生成物」）。`pnpm ops:task:check` | 11 §2.1 |
 | `task.ts show <编号> --json` | 任务字段（平铺）加算出的 `risk`、`ask`、`risk_paths` | 11 §1.2 |
 | `task.ts hash <编号>` | 打印可直接粘贴的 `refs_hash` 段 | 11 §5.3 |
 | `state.ts get\|set\|claim\|release\|bump-attempt\|settle\|opus-run\|migrate <编号>` | 在途状态 `couli-runs/state/<编号>.json`（先写临时文件再改名）；领任务 `couli-runs/claims/<编号>/`，租约 20 分钟，`claim --renew` 续期，过期才能被别的会话接手。轮次与失败熔断见下文「轮次怎么计」「失败熔断」；`bump-attempt` 在熔断打开时退出 3 | 11 §2.1、§2.2、§2.5 |
@@ -88,6 +88,13 @@
 | 整仓库 `typecheck + test:int + db:check` 段（24 条连库集成测试、快照与类型漂移比对，全部通过） | 30 秒（整次 65 秒） |
 
 容器里的 Node 是镜像 `node:24-bookworm-slim` 当时的版本（实测 24.21.0），宿主是 24.15.0；都在 `engines` 范围内。完整的 `pnpm verify` 一次跑通留给集成步骤，届时把耗时回填到这里。
+
+### 契约生成物（`task.ts check`，CT-06n）
+
+- `status: todo` 的台账，`paths` 只要碰到 `contracts/openapi.yaml`（字面写出或被 `contracts/**` 之类的 glob 匹配），`paths` ∪ `mechanical_paths` 就必须同时覆盖四份生成物：`packages/contracts-ts/src/openapi.gen.ts`、`apps/api/src/modules/platform/http/auth-routes.gen.ts`、`apps/api/src/modules/platform/validation/signing-routes.gen.ts`、`apps/api/src/modules/risk/application/min-version-routes.gen.ts`（字面相同或被 glob 匹配，如 `packages/contracts-ts/**`）。缺任一就报错，错误信息列出要补的路径。起因：CT-15n、CT-02i、CT-22a、CT-22b 增删 planned 操作要重生成三份路由表，台账没列，中途补台账（#563、#605）。
+- 只看 `paths`：三份路由表连 planned 操作也列，只删 `x-implementation: planned` 不改变它们（`openapi.gen.ts` 也不变，变的只有 `route-schemas.gen.ts`；B1-29b 实测，与生成脚本一致）。所以 Codex 实现台账只在 `mechanical_paths` 里写 `contracts/openapi.yaml`（第 31 条，三文件规则不变）时不强制。`route-schemas.gen.ts` 只列已实现的操作，归实现它的任务，不在强制之列。
+- `status: done` 的台账不追溯。CT-06n 之前已入账、还没做完而缺这几份的 11 个台账（B1-08l、B1-08m、B1-11e、B1-11j、B1-13d、B1-13h、CT-04b、CT-07a、F1-09d、F1-09e、F1-09f）写在 `task.ts` 的 `CONTRACT_GENERATED_EXEMPT` 里豁免；清单冻结，新台账不进清单，直接列全生成物。
+- `brief.ts`：`paths` 碰到 `contracts/openapi.yaml` 的任务，第 3 节路径清单后加一句提示：增删操作（含 planned）后要重跑 `pnpm codegen` 与 apps/api 下 generate-auth-routes / generate-signing-routes / generate-min-version-routes / generate-route-schemas 脚本。
 
 ### 任务书（`brief.ts`）
 

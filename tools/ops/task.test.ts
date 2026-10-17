@@ -6,7 +6,10 @@ import {
   checkTask,
   checkTasks,
   computeRefsHash,
+  CONTRACT_GENERATED,
+  CONTRACT_GENERATED_EXEMPT,
   MAX_TASK_LINES,
+  missingContractGenerated,
   showTask,
 } from './task.ts';
 import type { CheckOptions, RiskReport } from './task.ts';
@@ -535,6 +538,7 @@ it('[ops/approvals.yaml id 31] mechanical_paths: only on a Codex implementation 
     ]);
     expect(checkTask('X1-02o', opts('RV1'))).toEqual([
       'paths: "contracts/openapi.yaml" reaches "contracts/**", which stays with the default split (ops/approvals.yaml id 19), not a Codex implementation',
+      'paths: reach "contracts/openapi.yaml", so they must also cover the files regenerated from it (CT-06n); add: packages/contracts-ts/src/openapi.gen.ts, apps/api/src/modules/platform/http/auth-routes.gen.ts, apps/api/src/modules/platform/validation/signing-routes.gen.ts, apps/api/src/modules/risk/application/min-version-routes.gen.ts',
     ]);
     expect(checkTask('X1-01q', opts('RV1'))).toEqual([
       'mechanical_paths: only a Codex implementation ledger (tools/guard/codex-impl-tasks.json) names them; a Claude implementation lists those files in paths',
@@ -556,4 +560,98 @@ it('[ops/approvals.yaml id 31] mechanical_paths: only on a Codex implementation 
     }
     removeDir(`${root}/tools/guard/codex-impl-tasks.json`);
   }
+});
+
+it('[CT-06n] an open ledger whose paths reach contracts/openapi.yaml covers the files regenerated from it', () => {
+  const ROUTES =
+    "\n  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'\n  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'\n  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'";
+  const contractTask = (id: string, fields: Record<string, string>): string =>
+    taskYaml({
+      id,
+      type: 'contract',
+      impl: 'claude',
+      tester: 'none',
+      refs: '[]',
+      refs_hash: '{}',
+      ...fields,
+    });
+  const ids = ['X1-01s', 'X1-01t', 'X1-01u', 'X1-01v', 'X1-01w', 'B1-08l', 'B1-08z'];
+  writeFiles(root, {
+    // Literal paths: all four generated files listed.
+    'ops/tasks/X1-01s.yaml': contractTask('X1-01s', {
+      paths: `\n  - 'contracts/openapi.yaml'\n  - 'packages/contracts-ts/src/openapi.gen.ts'${ROUTES}`,
+    }),
+    // Globs cover them as well; a glob over contracts/ triggers the rule like the literal path.
+    'ops/tasks/X1-01t.yaml': contractTask('X1-01t', {
+      paths:
+        "\n  - 'contracts/**'\n  - 'packages/contracts-ts/**'\n  - 'apps/api/src/modules/{platform,risk}/**'",
+    }),
+    // The route tables missing: refused with the list of what to add.
+    'ops/tasks/X1-01u.yaml': contractTask('X1-01u', {
+      paths:
+        "\n  - 'contracts/openapi.yaml'\n  - 'packages/contracts-ts/**'\n  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'",
+    }),
+    // A done ledger is history: not checked.
+    'ops/tasks/X1-01v.yaml': contractTask('X1-01v', {
+      status: 'done',
+      pr: '7',
+      paths: "\n  - 'contracts/openapi.yaml'",
+    }),
+    // No contract in paths: nothing to cover.
+    'ops/tasks/X1-01w.yaml': contractTask('X1-01w', { paths: "\n  - 'contracts/README.md'" }),
+    // An open ledger of the frozen exemption list, and a sibling that is not on it.
+    'ops/tasks/B1-08l.yaml': contractTask('B1-08l', { paths: "\n  - 'contracts/openapi.yaml'" }),
+    'ops/tasks/B1-08z.yaml': contractTask('B1-08z', { paths: "\n  - 'contracts/openapi.yaml'" }),
+  });
+  const withB1 = memorySpec({
+    '规划/08_业务规则/01_DEMO.md': RULES,
+    '规划/05_里程碑与任务拆分.md': `${PLAN}| B1-08 | 第三个 |\n`,
+  });
+  const o: CheckOptions = { root, spec: withB1, risk: fixedRisk('RV1') };
+  const message = (missing: readonly string[]): string =>
+    `paths: reach "contracts/openapi.yaml", so they must also cover the files regenerated from it (CT-06n); add: ${missing.join(', ')}`;
+  try {
+    expect(checkTask('X1-01s', o)).toEqual([]);
+    expect(checkTask('X1-01t', o)).toEqual([]);
+    expect(checkTask('X1-01u', o)).toEqual([message(CONTRACT_GENERATED.slice(1))]);
+    expect(checkTask('X1-01v', o)).toEqual([]);
+    expect(checkTask('X1-01w', o)).toEqual([]);
+    expect(checkTask('B1-08l', o)).toEqual([]);
+    expect(checkTask('B1-08z', o)).toEqual([message(CONTRACT_GENERATED)]);
+    // Only `paths` triggers the rule (a mechanical commit only removes planned markers, which
+    // leaves the route tables unchanged); `mechanical_paths` still count as coverage.
+    expect(
+      missingContractGenerated({
+        status: 'todo',
+        paths: ['apps/api/src/modules/content/**'],
+        mechanical_paths: ['contracts/openapi.yaml'],
+      }),
+    ).toEqual([]);
+    expect(
+      missingContractGenerated({
+        status: 'todo',
+        paths: ['contracts/openapi.yaml', 'apps/api/src/modules/{platform,risk}/**'],
+        mechanical_paths: ['packages/contracts-ts/src/openapi.gen.ts'],
+      }),
+    ).toEqual([]);
+  } finally {
+    for (const id of ids) removeDir(`${root}/ops/tasks/${id}.yaml`);
+  }
+});
+
+it('[CT-06n] the exemption list is frozen at the open ledgers written before the check', () => {
+  // A new ledger never joins it: it lists the generated files instead.
+  expect([...CONTRACT_GENERATED_EXEMPT]).toEqual([
+    'B1-08l',
+    'B1-08m',
+    'B1-11e',
+    'B1-11j',
+    'B1-13d',
+    'B1-13h',
+    'CT-04b',
+    'CT-07a',
+    'F1-09d',
+    'F1-09e',
+    'F1-09f',
+  ]);
 });

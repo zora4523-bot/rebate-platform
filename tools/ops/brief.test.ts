@@ -633,3 +633,35 @@ it('[approvals 23] a listed impl: codex, tester: claude ledger gets the Codex-fi
     removeDir(join(root, 'tools', 'guard', 'codex-impl-tasks.json'));
   }
 });
+
+it('[CT-06n] a task that may change contracts/openapi.yaml is told which generators to rerun', () => {
+  writeFiles(root, {
+    'ops/tasks/X1-09.yaml': taskYaml({
+      id: 'X1-09',
+      paths: "\n  - 'contracts/openapi.yaml'\n  - 'packages/contracts-ts/**'",
+    }),
+  });
+  try {
+    const text = readFileSync(generateBrief('X1-09', opts({ attempt: 1 })), 'utf8');
+    const section3 = text.slice(text.indexOf('## 3. 可以改的路径'), text.indexOf('## 4. 不能改的'));
+    expect(section3).toContain('- `contracts/openapi.yaml`\n- `packages/contracts-ts/**`\n\n');
+    expect(section3).toContain('新增或删除操作（含 planned）后要重跑 `pnpm codegen`');
+    for (const name of [
+      'generate-auth-routes',
+      'generate-signing-routes',
+      'generate-min-version-routes',
+      'generate-route-schemas',
+      '`packages/contracts-ts/src/openapi.gen.ts`',
+      '`apps/api/src/modules/platform/http/auth-routes.gen.ts`',
+      '`apps/api/src/modules/platform/validation/signing-routes.gen.ts`',
+      '`apps/api/src/modules/risk/application/min-version-routes.gen.ts`',
+    ]) {
+      expect(section3).toContain(name);
+    }
+    // A task outside the contract gets no hint.
+    const plain = readFileSync(generateBrief('X1-01', opts({ attempt: 1 })), 'utf8');
+    expect(plain).not.toContain('generate-auth-routes');
+  } finally {
+    removeDir(join(root, 'ops', 'tasks', 'X1-09.yaml'));
+  }
+});
