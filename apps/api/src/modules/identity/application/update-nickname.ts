@@ -39,7 +39,6 @@ export interface UpdateNicknameService {
 
 export function createUpdateNicknameService(options: UpdateNicknameOptions): UpdateNicknameService {
   const { clock, logger, review } = options;
-  const db = options.db.withSchema('app');
   const segmenter = new Intl.Segmenter('und', { granularity: 'grapheme' });
   const userQuery = (connection: Kysely<DB>, command: UpdateNicknameCommand) =>
     connection
@@ -61,6 +60,7 @@ export function createUpdateNicknameService(options: UpdateNicknameOptions): Upd
         return { code: 20001, data: { fields: ['nickname'] } };
       }
 
+      const db = options.db.withSchema('app');
       const current = await userQuery(db, command).executeTakeFirstOrThrow();
       if (nickname === current.nickname) return { code: 0 };
       if (
