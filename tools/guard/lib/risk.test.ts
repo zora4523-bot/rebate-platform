@@ -24,6 +24,7 @@ describe('ops/risk-map.yaml', () => {
       'apps/api/src/modules/admin/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/content/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/linking/** RV2 claude/codex/claude+codex',
+      'apps/api/src/modules/growth/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/catalog/** RV1 claude/codex/codex',
       'apps/api/src/modules/parsing/** RV1 claude/codex/codex',
       'apps/api/src/modules/notification/** RV1 claude/codex/codex',

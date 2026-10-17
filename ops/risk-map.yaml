@@ -100,6 +100,12 @@ rules:
     impl: claude
     tester: codex
     review: claude+codex
+  # growth: 邀请关系与等级（归属：上级关系、等级日志）为 RV2，分工同 linking（B1-11o，2026-10-18）。
+  - path: 'apps/api/src/modules/growth/**'
+    risk: RV2
+    impl: claude
+    tester: codex
+    review: claude+codex
   # catalog、parsing: 规划/11 §1.1 第 4 行「其他交易模块」为 RV1，分工同 identity、risk（2026-10-05 改定）。
   - path: 'apps/api/src/modules/catalog/**'
     risk: RV1
