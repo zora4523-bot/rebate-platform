@@ -1836,6 +1836,42 @@ CREATE TABLE app.daily_balances (
 
 
 --
+-- Name: deleted_identities; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.deleted_identities (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    reason text NOT NULL,
+    phone_hmac text,
+    device_hash text,
+    deleted_at timestamp with time zone NOT NULL,
+    expire_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT deleted_identities_device_hash_check CHECK (((device_hash IS NULL) OR (device_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT deleted_identities_expiry_check CHECK ((expire_at > deleted_at)),
+    CONSTRAINT deleted_identities_identifier_check CHECK ((num_nonnulls(phone_hmac, device_hash) >= 1)),
+    CONSTRAINT deleted_identities_phone_changed_check CHECK (((reason <> 'phone_changed'::text) OR ((phone_hmac IS NOT NULL) AND (device_hash IS NULL)))),
+    CONSTRAINT deleted_identities_phone_hmac_check CHECK (((phone_hmac IS NULL) OR (phone_hmac ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT deleted_identities_reason_check CHECK ((reason = ANY (ARRAY['account_deleted'::text, 'phone_changed'::text])))
+);
+
+
+--
+-- Name: deleted_identities_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.deleted_identities ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.deleted_identities_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: device_registrations; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3097,6 +3133,32 @@ CREATE TABLE app.push_tokens (
 
 
 --
+-- Name: realname; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.realname (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    name_cipher bytea,
+    id_no_cipher bytea,
+    id_no_hmac text,
+    birth_date_cipher bytea,
+    status text NOT NULL,
+    provider text,
+    verified_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT realname_id_no_hmac_check CHECK (((id_no_hmac IS NULL) OR (id_no_hmac ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT realname_provider_check CHECK (((provider IS NULL) OR (provider ~ '[^[:space:]]'::text))),
+    CONSTRAINT realname_status_check CHECK ((status = ANY (ARRAY['none'::text, 'verified'::text, 'failed'::text]))),
+    CONSTRAINT realname_unverified_cleared_check CHECK (((status = 'verified'::text) OR ((name_cipher IS NULL) AND (id_no_cipher IS NULL) AND (id_no_hmac IS NULL) AND (birth_date_cipher IS NULL)))),
+    CONSTRAINT realname_verified_check CHECK (((status <> 'verified'::text) OR ((name_cipher IS NOT NULL) AND (id_no_cipher IS NOT NULL) AND (id_no_hmac IS NOT NULL) AND (birth_date_cipher IS NOT NULL) AND (provider IS NOT NULL) AND (verified_at IS NOT NULL))))
+);
+
+
+--
 -- Name: refresh_tokens; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4238,6 +4300,14 @@ ALTER TABLE ONLY app.daily_balances
 
 
 --
+-- Name: deleted_identities deleted_identities_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.deleted_identities
+    ADD CONSTRAINT deleted_identities_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: device_registrations device_registrations_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -4723,6 +4793,30 @@ ALTER TABLE ONLY app.push_tokens
 
 ALTER TABLE ONLY app.push_tokens
     ADD CONSTRAINT push_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: realname realname_app_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.realname
+    ADD CONSTRAINT realname_app_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: realname realname_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.realname
+    ADD CONSTRAINT realname_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: realname realname_user_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.realname
+    ADD CONSTRAINT realname_user_key UNIQUE (app_id, user_id);
 
 
 --
@@ -5309,6 +5403,27 @@ CREATE INDEX consent_records_user_type_idx ON app.consent_records USING btree (a
 
 
 --
+-- Name: deleted_identities_device_hash_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX deleted_identities_device_hash_idx ON app.deleted_identities USING btree (app_id, device_hash) WHERE (device_hash IS NOT NULL);
+
+
+--
+-- Name: deleted_identities_expire_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX deleted_identities_expire_at_idx ON app.deleted_identities USING btree (expire_at);
+
+
+--
+-- Name: deleted_identities_phone_hmac_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX deleted_identities_phone_hmac_idx ON app.deleted_identities USING btree (app_id, phone_hmac) WHERE (phone_hmac IS NOT NULL);
+
+
+--
 -- Name: device_registrations_device_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -5614,6 +5729,13 @@ CREATE UNIQUE INDEX push_tokens_live_token_key ON app.push_tokens USING btree (a
 --
 
 CREATE INDEX push_tokens_user_bound_sid_idx ON app.push_tokens USING btree (app_id, user_id, bound_sid);
+
+
+--
+-- Name: realname_verified_id_no_hmac_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX realname_verified_id_no_hmac_key ON app.realname USING btree (app_id, id_no_hmac) WHERE (status = 'verified'::text);
 
 
 --
@@ -6749,6 +6871,14 @@ ALTER TABLE ONLY app.push_tokens
 
 ALTER TABLE ONLY app.push_tokens
     ADD CONSTRAINT push_tokens_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: realname realname_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.realname
+    ADD CONSTRAINT realname_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -8285,6 +8415,14 @@ GRANT SELECT ON TABLE app.daily_balances TO couli_readonly;
 
 
 --
+-- Name: TABLE deleted_identities; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE ON TABLE app.deleted_identities TO couli_app;
+GRANT SELECT ON TABLE app.deleted_identities TO couli_readonly;
+
+
+--
 -- Name: TABLE device_registrations; Type: ACL; Schema: app; Owner: -
 --
 
@@ -9133,6 +9271,109 @@ GRANT UPDATE(row_version) ON TABLE app.push_tokens TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.push_tokens TO couli_app;
+
+
+--
+-- Name: TABLE realname; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.realname TO couli_app;
+
+
+--
+-- Name: COLUMN realname.id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE app.realname TO couli_readonly;
+
+
+--
+-- Name: COLUMN realname.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.realname TO couli_readonly;
+
+
+--
+-- Name: COLUMN realname.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(user_id) ON TABLE app.realname TO couli_readonly;
+
+
+--
+-- Name: COLUMN realname.name_cipher; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(name_cipher) ON TABLE app.realname TO couli_app;
+
+
+--
+-- Name: COLUMN realname.id_no_cipher; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(id_no_cipher) ON TABLE app.realname TO couli_app;
+
+
+--
+-- Name: COLUMN realname.id_no_hmac; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(id_no_hmac) ON TABLE app.realname TO couli_app;
+
+
+--
+-- Name: COLUMN realname.birth_date_cipher; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(birth_date_cipher) ON TABLE app.realname TO couli_app;
+
+
+--
+-- Name: COLUMN realname.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.realname TO couli_app;
+GRANT SELECT(status) ON TABLE app.realname TO couli_readonly;
+
+
+--
+-- Name: COLUMN realname.provider; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(provider) ON TABLE app.realname TO couli_app;
+GRANT SELECT(provider) ON TABLE app.realname TO couli_readonly;
+
+
+--
+-- Name: COLUMN realname.verified_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(verified_at) ON TABLE app.realname TO couli_app;
+GRANT SELECT(verified_at) ON TABLE app.realname TO couli_readonly;
+
+
+--
+-- Name: COLUMN realname.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.realname TO couli_app;
+GRANT SELECT(row_version) ON TABLE app.realname TO couli_readonly;
+
+
+--
+-- Name: COLUMN realname.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.realname TO couli_readonly;
+
+
+--
+-- Name: COLUMN realname.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.realname TO couli_app;
+GRANT SELECT(updated_at) ON TABLE app.realname TO couli_readonly;
 
 
 --
