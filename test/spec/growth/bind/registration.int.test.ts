@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { seedUser } from '../../identity/registration/kit.ts';
 import { validate } from '../../identity/sms-login/http-kit.ts';
 import { phone } from '../../risk/sms-risk/kit.ts';
+import { keys } from '../../risk/rate-limit/kit.ts';
 import { withHttp, type HttpFixture } from '../../risk/sms-risk/http-kit.ts';
 import {
   openSuite,
@@ -143,9 +144,47 @@ it('[AC-B1-11d#42] 真短信新号：正常邀请绑定与注册审计同事务'
 
 it('[AC-B1-11d#43] 真短信新号：格式错误 30401 由 growth 处理且不消费机会', async () => {
   await withHttp(suite, {}, async (f) => {
+    await inviter(f);
     const p = await prepared(f);
     const uid = await answer(await p.login('ABCDE'), { result: 'failed', code: 30401 });
     await unbound(f, uid);
+    const before = await row(suite.kit.db, f.id, uid);
+    const id = await identity();
+    const phoneHmac = f.crypto.blindIndex(p.number, id.PHONE_BLIND_INDEX_CONTEXT);
+    expect(before.phone_hmac).toBe(phoneHmac);
+    await withFixture(suite, async (base) => {
+      const stored = await keys(base.raw, `*${f.id}:2031-05-06:${phoneHmac}`);
+      expect(stored).toHaveLength(1);
+      expect(await base.raw.call('GET', stored[0]!)).toBe('1');
+      try {
+        const binder = await base.binder({ clock: f.clock, crypto: f.crypto });
+        const bind = (invite_code: string) =>
+          suite.kit.db.transaction().execute((trx) =>
+            binder.bind(trx, {
+              channel: 'backfill',
+              app_id: f.id,
+              user_id: uid,
+              invite_code,
+              device_id: p.client.deviceId,
+            }),
+          );
+        // Registration's SAVEPOINT rollback must not undo its Redis failure count.
+        for (const count of ['2', '3', '4', '5']) {
+          expect(await bind('BAD')).toEqual({ result: 'failed', code: 30401 });
+          expect(await base.raw.call('GET', stored[0]!)).toBe(count);
+        }
+        expect(await bind(CODE)).toEqual({
+          result: 'failed',
+          code: 42901,
+          retry_after_seconds: 25200,
+        });
+        expect(await base.raw.call('GET', stored[0]!)).toBe('5');
+        expect(await row(suite.kit.db, f.id, uid)).toEqual(before);
+        await unbound(f, uid);
+      } finally {
+        await base.raw.call('DEL', ...stored);
+      }
+    });
   });
 });
 

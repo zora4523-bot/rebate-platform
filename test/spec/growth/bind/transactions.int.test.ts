@@ -11,6 +11,7 @@ import {
   loginLog,
   identity,
   logs,
+  row,
   NOW,
   OTHER_CODE,
   type Suite,
@@ -128,19 +129,19 @@ it('[AC-B1-11d#35] 两个请求均读到未绑定后争抢不同码，只能一�
       release = resolve;
     });
     let arrivals = 0;
-    const binder = await f.binder({
-      async readRisk(trx, subject) {
-        const state = await f.deps.readRisk(trx, subject);
-        arrivals++;
-        if (arrivals === 2) release();
-        await ready;
-        return state;
-      },
-    });
+    const binder = await f.binder();
     const before = await f.row();
     const answers = await Promise.all(
       [f.command.invite_code, OTHER_CODE].map((invite_code) =>
-        f.db.transaction().execute((trx) => binder.bind(trx, { ...f.command, invite_code })),
+        f.db.transaction().execute(async (trx) => {
+          // Synchronize before bind can acquire locks: waiting inside readRisk can deadlock
+          // an implementation that locks the user row before reading the inviter's risk.
+          expect(await row(trx, f.app, f.userId)).toEqual(before);
+          arrivals++;
+          if (arrivals === 2) release();
+          await ready;
+          return binder.bind(trx, { ...f.command, invite_code });
+        }),
       ),
     );
     expect(arrivals).toBe(2);

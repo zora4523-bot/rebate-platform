@@ -16,6 +16,7 @@ import {
   OTHER_CODE,
   OWN_CODE,
   DEVICE_CONTEXT,
+  NOW,
   type Suite,
 } from './kit.ts';
 
@@ -191,6 +192,63 @@ it('[AC-B1-11d#17] normal 且已绑手机邀请人成功；缺省实名端口不
     await bound(f);
   });
 });
+
+it('[AC-B1-11d#52] 已实名邀请人距满 18 岁还差一天，30401 且不写数据库', async () => {
+  await withFixture(suite, async (f) => {
+    const verifiedBirthDate = vi.fn<NonNullable<typeof f.deps.verifiedBirthDate>>(
+      async () => '2013-05-07',
+    );
+    await failed(f, 30401, {}, { verifiedBirthDate });
+    expect(verifiedBirthDate).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      app_id: f.app,
+      user_id: f.parentId,
+    });
+    expect(verifiedBirthDate.mock.calls[0]![0].isTransaction).toBe(true);
+  });
+});
+
+it.each(['2013-05-06', null])(
+  '[AC-B1-11d#53] 实名生日 %j：当天满 18 岁或未实名均可绑定',
+  async (birthday) => {
+    await withFixture(suite, async (f) => {
+      const before = await f.row();
+      const verifiedBirthDate = vi.fn<NonNullable<typeof f.deps.verifiedBirthDate>>(
+        async () => birthday,
+      );
+      expect(await f.bind({}, { verifiedBirthDate })).toEqual({
+        result: 'bound',
+        parent_id: f.parentId,
+        bound_at: new Date(NOW),
+      });
+      expect(verifiedBirthDate).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+        app_id: f.app,
+        user_id: f.parentId,
+      });
+      expect(verifiedBirthDate.mock.calls[0]![0].isTransaction).toBe(true);
+      expect(await f.row()).toEqual({
+        ...before,
+        parent_id: f.parentId,
+        parent_bind_source: 'backfill',
+        parent_bound_at: new Date(NOW),
+        self_bind_used: true,
+        updated_at: new Date(NOW),
+        row_version: before.row_version + 1,
+      });
+      expect(await f.logs()).toEqual([
+        {
+          app_id: f.app,
+          user_id: f.userId,
+          from_parent_id: null,
+          to_parent_id: f.parentId,
+          source: 'backfill',
+          operator: `user:${f.userId}`,
+          reason: null,
+          at: new Date(NOW),
+        },
+      ]);
+    });
+  },
+);
 
 it('[AC-B1-11d#18] 自己的邀请码 30403', async () => {
   await withFixture(suite, async (f) => {
