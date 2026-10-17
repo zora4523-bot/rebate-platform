@@ -6268,7 +6268,6 @@ paths:
         `version` that PUT /admin/v1/kill-switches/{key} takes as `expected_version`. Rows the
         account may not change are still listed, so the console can show them read only.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -6384,7 +6383,6 @@ paths:
         values) and pushes an alert; it takes effect on every server instance within 10 seconds
         (04 §10.2). No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
