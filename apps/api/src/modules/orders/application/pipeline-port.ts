@@ -45,7 +45,8 @@ const NO_PARAMS: UnionOrderAttrParams = {
 };
 
 // TODO(规划/11 §4.5): 淘宝 SITE_MISMATCH 判定 — blocked on 淘宝订单映射（无 site_id）。
-// TODO(规划/11 §4.5): attr_binding_conflict、order_illegal_transition 事件入队 — blocked on platform 事件名登记；只记日志。
+// 首次入库的 attr_binding_conflict、order_illegal_transition 目前只记日志。
+// TODO(规划/11 §4.5): 订单告警事件同事务入队 — blocked on B1-08o（platform EVENT_NAMES 登记）
 export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
   const log = deps.logger;
 

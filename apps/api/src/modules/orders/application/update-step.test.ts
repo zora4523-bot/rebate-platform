@@ -63,6 +63,8 @@ const map: StatusMap = {
       [
         ['paid', 'PLATFORM_PAID'],
         ['received', 'PLATFORM_RECEIVED'],
+        ['rights', 'PLATFORM_RIGHTS'],
+        ['punish', 'PLATFORM_PUNISH'],
       ] as [string, PlatformStatusEvent][]
     ).map(([code, event]) => [code, { event, source: 'unit', verified: false, note: '' }]),
   ),
@@ -142,11 +144,11 @@ function deps(order: string[]): OrderUpdateDeps {
     users: { findByAttrCode: vi.fn(() => Promise.resolve(null)) },
     bindings: { findByRelation: vi.fn(() => Promise.resolve([])) },
     rebate: {
-      onUpdated: vi.fn(() => {
+      onUpdated: vi.fn<OrderUpdateDeps['rebate']['onUpdated']>(() => {
         order.push('rebate');
         return Promise.resolve();
       }),
-      onUnmappedStatus: vi.fn(() => {
+      onUnmappedStatus: vi.fn<OrderUpdateDeps['rebate']['onUnmappedStatus']>(() => {
         order.push('unmapped');
         return Promise.resolve();
       }),
@@ -212,4 +214,53 @@ it('[AC-B1-08i#U8] P10 倒退整条拒收：只写待处理（含说明），不
     log.filter((sql) => sql.startsWith('insert into "app"."order_sync_pending"')),
   ).toHaveLength(1);
   expect(order).toEqual([]);
+});
+
+it('[AC-B1-08i#U9] P8 维权与处罚：change 相同，第三参数带各自的映射事件与原始码供 settlement 选 order_rights 类型', async () => {
+  const calls: Parameters<OrderUpdateDeps['rebate']['onUpdated']>[] = [];
+  for (const raw of ['rights', 'punish'] as const) {
+    const { db } = scriptedDb(
+      () => 1n,
+      () => current,
+    );
+    const order: string[] = [];
+    const d = deps(order);
+    const step = createOrderUpdateStep(d);
+    const outcome = await db
+      .transaction()
+      .execute((trx) => step.apply(trx, current, incoming({ raw_status: raw }), ctx));
+    expect(outcome).toEqual({ kind: 'updated', order_id: current.order_id });
+    expect(order).toEqual(['rebate', 'event']);
+    const onUpdated = vi.mocked(d.rebate.onUpdated);
+    expect(onUpdated).toHaveBeenCalledTimes(1);
+    const call = onUpdated.mock.calls[0];
+    if (call) calls.push(call);
+  }
+  const [rights, punish] = calls;
+  expect(rights?.[1]).toMatchObject({ from_status: 'RECEIVED', to_status: 'RECEIVED', rule: 'P8' });
+  expect(punish?.[1]).toEqual(rights?.[1]);
+  expect(rights?.[2]).toEqual({ event: 'PLATFORM_RIGHTS', raw_status: 'rights' });
+  expect(punish?.[2]).toEqual({ event: 'PLATFORM_PUNISH', raw_status: 'punish' });
+});
+
+it('[AC-B1-08i#U10] 表外码未入账：onUnmappedStatus 与 onUpdated 的第三参数同为事件空、原始码原样', async () => {
+  const { db } = scriptedDb(
+    () => 1n,
+    () => current,
+  );
+  const order: string[] = [];
+  const d = deps(order);
+  const step = createOrderUpdateStep(d);
+  const outcome = await db
+    .transaction()
+    .execute((trx) => step.apply(trx, current, incoming({ raw_status: ' Unit-Unknown ' }), ctx));
+  expect(outcome).toEqual({ kind: 'updated', order_id: current.order_id });
+  expect(order).toEqual(['unmapped', 'rebate', 'event']);
+  const source = { event: null, raw_status: ' Unit-Unknown ' };
+  expect(vi.mocked(d.rebate.onUnmappedStatus).mock.calls[0]?.[2]).toEqual(source);
+  expect(vi.mocked(d.rebate.onUpdated).mock.calls[0]?.[2]).toEqual(source);
+  expect(vi.mocked(d.rebate.onUpdated).mock.calls[0]?.[1]).toMatchObject({
+    to_status: 'RECEIVED',
+    rule: null,
+  });
 });
