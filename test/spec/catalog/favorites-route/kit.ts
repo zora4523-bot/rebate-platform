@@ -36,7 +36,7 @@ export const headers = {
   'x-app-id': 'synthetic_favorites',
   'x-platform': 'ios',
   'x-app-version': '1.2.3',
-  'x-channel': 'app_store',
+  'x-channel': 'appstore',
   'x-device-id': '01920000-0000-7000-8000-00000000d001',
   'x-trace-id': '01920000-0000-7000-8000-00000000d028',
 };
