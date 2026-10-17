@@ -1,0 +1,26 @@
+id: F1-09b
+repo: rebate-platform
+title: content 纯函数：页面选版本与过滤——按 device_id 灰度分桶选全量 / 灰度版本（无 device_id 给全量）、section 按端 min_app_version 门槛过滤（只做「不低于」）、condition 人群匹配
+type: impl
+# 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/pages-plan.md §1、§3、§4 R2–R5）。宿主 05 F1-02 pages 行（发布 / 灰度 / 门槛 / 人群）。
+# 依据 04 §3.2 l.386（device_id 哈希分桶，OPS-05）、§6.2 l.498（按 X-Platform + X-App-Version 过滤，TECH-07）、03 §6.1（condition 四种、服务端只下发命中 section）；
+# 08 BR-ID-11 细则（首页人群与灰度）、BR-INV-23（人群不用会员口径）——refs 置空，规则摘录由编排者摘入任务书第 9 节（先例 #547、#580）。
+# 分工：impl claude、tester codex。依据编排会话 2026-10-17 指令「分桶 / 门槛 / 拦截规则由 Opus 实现」，属 ops/approvals.yaml 第 30 条「未开工默认 Codex」的例外（pages-plan.md §4 R12），故不进 codex-impl-tasks.json。
+# 要点：分桶复用 domain/client-config.ts 的 h5Bucket(app_id, device_id)（10000 桶），bucket < gray_percent×100 拿灰度版，gray_percent=100 即全量（R2、R3）；
+# 门槛按 X-Platform 取本端值，版本比较复用 platform/client-version 的 compareClientVersions；section 无 min_app_version 不过滤，本端键缺或 null 本端不下发，
+# X-Platform 非三端不过滤，X-App-Version 解析不了则带门槛的 section 全不下发（R4）；condition 本任务只判 login，其余条件非 any 的 section 先不下发（R5，F1-09g 补齐）。
+# R2–R5 采用默认（编排者默认，待编排复核，见 couli-runs/CONTENT-client/decisions-pending.md）。纯函数，不读库、不读时钟；不接 HTTP（F1-09d）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/content/domain/pages/select/**'
+test_paths:
+  - 'test/spec/content/pages-select/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/pages-select/**'
+status: todo
+pr: null

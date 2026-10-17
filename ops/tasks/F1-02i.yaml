@@ -1,0 +1,26 @@
+id: F1-02i
+repo: rebate-platform
+title: F1-02c 规则测试 [AC-F1-02c#1]、[AC-F1-02c#21] 对 lkg_max_age_sec、config_version、bridge_disabled_methods、features.rank_platforms 放宽为「不存在或按 04 缺省 / 不取同名配置行」——F1-02h 下发四键后两条冻结断言必红，其余断言不变
+type: test-change
+# 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/CT-02k/contract-delta.md §2、§5）。照 F1-02g 先例（#588）。
+# 现状（test/spec/content/config/delivery.int.test.ts，主干 1a619bfe）：
+# #1（51–89 行）只把 platform_icons 剔出后对整个 data toEqual，四键一旦下发即红。改法：同 platform_icons 写法先单独断言再剔出——
+#   lkg_max_age_sec ∈ {不存在, 604800}；config_version 不存在或为满足契约 pattern 的字符串；bridge_disabled_methods ∈ {不存在, []}；
+#   features 剔出 rank_platforms 后 toEqual 原三项，rank_platforms ∈ {不存在, []}（specs/material-channels.yaml 现 channels: []，派生为空）。
+# #21（602–625 行）配置行注入 lkg_max_age_sec=1、config_version='private'、bridge_disabled_methods=['login']、rank_platforms / features.rank_platforms，
+#   现断言 617–623 行四键 not.toHaveProperty、624 行 features 无 rank_platforms。改法：保留「同名配置行被忽略」意图——
+#   lkg_max_age_sec ∈ {不存在, 604800}（不是 1）；config_version 不存在或 ≠ 'private'；bridge_disabled_methods ∈ {不存在, []}；
+#   顶层 rank_platforms 仍不存在（它只在 features 下）；features.rank_platforms ∈ {不存在, []}（不是 ['jd'] / ['taobao']）。其余断言（link_patterns、platform_icons）一字不改。
+# 前提（F1-02h 须照此取键）：lkg 读 config.lkg_max_age_sec（02:631），禁用桥方法读 bridge.disabled_methods（#21 注入的 ['login'] 也不合方法名 pattern），rank_platforms 只从 material-channels 派生。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走非 task 分支、不带证据文件；Codex 只读评审。
+refs: []
+refs_hash: {}
+deps: [CT-02k]
+paths:
+  - 'test/spec/content/config/delivery.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

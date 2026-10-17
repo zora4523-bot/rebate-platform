@@ -1,0 +1,33 @@
+id: CT-02k
+repo: rebate-platform
+title: 契约：/v1/config 补 lkg_max_age_sec、config_version、bridge_disabled_methods、features.rank_platforms（均可选）；getConfig 加 If-None-Match / ETag / 304；checkAppVersion 说明写明无配置行回 50001（schema 不动）
+type: contract
+# 2026-10-17 入账（内容模块客户端接口线 content-client，needs 第 1、5 条）。依据与逐行改法见 couli-runs/CONTENT-client/CT-02k/contract-delta.md（§1 改动、§2 兼容），由编排者摘入任务书第 9 节。
+# 依据 04 §10.1（04:839 rank_platforms、04:844-846 三键）、02:631（GET /v1/config，ETag）、03 §4.3 / §4.7 / §5.3；只增不改（04 §5）：新键只加 properties、不进 required。
+# 要点：Config 加 lkg_max_age_sec（int32 ≥1，说明写缺省 604800）、config_version（1–64，^[0-9A-Za-z._:-]+$）、bridge_disabled_methods（uniqueItems，items 按 bridge.schema.json 方法名 pattern，不用 enum）；
+# ConfigFeatures 加 rank_platforms（PlatformCode 数组，按频道白名单派生，不是开关）；新组件 parameters/IfNoneMatch、headers/ConfigETag（强 ETag，去引号即 config_version），200 带 ETag，新增 304（无 body，带 X-Trace-Id、ETag）；
+# checkAppVersion 只补说明「本端本渠道无配置行（含无 X-Channel）→ 50001」，x-error-codes 仍 []（50001 是公共码，README 第 10 条）。
+# 待裁定 1–6 采用稿中默认（编排者默认，待编排复核，见 couli-runs/CONTENT-client/decisions-pending.md）：① ETag = 最终 data 规范化 JSON 的 sha256 前 32 位 hex，写进说明；
+# ② 无配置行保持 50001；③ rank_platforms 在本任务加（05 原划 CT-22c，合并前在 B3-lane/notices.md 告知 be-codex 线）；④ 不加 Cache-Control；⑤ 90403 method_disabled、⑥ X-Device-Id 10402 两条不在本任务。
+# 不含 bridge_origins 签名、公告 target、页面操作（页面归 CT-02l）。不改任何测试：F1-02c #1 / #21 到 F1-02h 下发时才红，由 F1-02i 先放宽。
+# getConfig 已非 planned，route-schemas.gen.ts 会多 if-none-match 头，须同 PR 重生成（先例 CT 任务 paths 没有它）；auth / signing / min-version 三份生成物按 pnpm contracts:codegen 结果，无变化不提交。
+# contract_sections 只列 6.2：再加 10.1（约 17KB）任务书约 29KB 超 24KB；10.1 的 features / lkg_max_age_sec / config_version / bridge_disabled_methods 四行由编排者摘入任务书。
+# 占契约槽（改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 登记，合并后释放）。oasdiff 预期非破坏，以 CI 为准；须跑 contracts:lint 核对 304 / 头组件写法（契约无先例）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.2']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

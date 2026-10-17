@@ -1,0 +1,26 @@
+id: F1-09c
+repo: rebate-platform
+title: content 纯函数：页面保存 / 发布校验——ExternalPage 主机命中 union_host 拦截（开关 external_page.union_host_block）、外链个人数据占位、资金路由带参数、未登记路由、notice_bar 与 union_material 数据源白名单，违规给 20001 与字段路径
+type: impl
+# 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/pages-plan.md §1、§3）。宿主 05 F1-09（频道白名单与公告数据源服务端再校验）、F1-02（拦联盟域名）。
+# 依据 04 §6.6 pages 行、§10.1 l.865 跳转目标 {route, params}；08 BR-ATTR-29 ①（第三方页容器内的平台页面与商品链接）、BR-ID-33 细则「外链不带个人数据」、BR-WDR-01 细则（四个资金路由不带参数）、
+# BR-TEXT-13 细则（公告条数据源）、BR-TEXT-17 细则「联盟物料频道」（白名单服务端再校验）——BR-ATTR-29 单条约 21KB，refs 置空，规则摘录由编排者摘入任务书第 9 节（先例 #547、#580）。
+# 分工：impl claude、tester codex。依据编排会话 2026-10-17 指令「分桶 / 门槛 / 拦截规则由 Opus 实现」，属 ops/approvals.yaml 第 30 条「未开工默认 Codex」的例外（pages-plan.md §4 R12），故不进 codex-impl-tasks.json。
+# 要点：ExternalPage url 主机命中 link-patterns 的 union_host（整域含子域），规则作为参数传入（便于合成向量测试；现 specs/link-patterns.yaml rules: []，真实域名待 parsing 任务，不臆造）；
+# 开关值由调用方传入（缺失按 on，同 client-config.ts 写法），off 不拦；外链占位语法、Withdraw / PayoutAccount / LaborAgreement / RealName 带参数、route 不在 routes.json、
+# notice_bar 的 api 数据源不是公告 CMS、union_material 频道不在 specs/material-channels.yaml 的 selectable 项 → 20001，data.fields 指 JSON 路径。
+# 纯函数，不读库、不接 HTTP（F1-09f 保存与发布时调用）；section 的 props 形状校验待 CT-07a（R6），本任务不做。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/content/domain/pages/validate/**'
+test_paths:
+  - 'test/spec/content/pages-validate/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/pages-validate/**'
+status: todo
+pr: null
