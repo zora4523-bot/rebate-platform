@@ -4,6 +4,7 @@
 # id 10 起是负责人在对话里逐次给出的批准（不是 §7.3 的行），row 填它所依据的 §7.3 行（4 = 命中保护路径先问负责人）。
 # id 19 本身就是 §7.3 的第 12 行（2026-10-05 的默认分工），row 填 12；spec_ref 随之推进到含该行的规划提交（第 0–9 行不变）。
 # id 27 是同一第 12 行的修订（2026-10-09 评审只用 Codex），row 同样填 12。
+# id 34 本身就是 §7.3 的第 16 行（2026-10-17 实现回到 Claude、Codex 只评审），row 填 16；它停用第 15 行（id 30）的默认分工：第 30 条保留、加 superseded_by: 34，第 31、33 条只对已开工的 Codex 任务继续有效。
 # 保护路径（规划/11 §4.4 第三类）：改动须负责人确认。
 source: '规划/11_开发协作与自主推进.md §7.3'
 spec_ref: 'b89ca4e745ae935d30f9b850e4c99cc6d6f19b7e'
@@ -193,6 +194,7 @@ approvals:
     title: '未开工的任务默认改由 Codex 实现：已开工的任务（已提交规则测试或实现：有 spec_commit、test(spec) 提交或实现提交；只认领、只写任务书不算）保持原分工（第 19、27 条）；未开工的任务入账或开工前改为台账 impl: codex、tester: claude，任务号逐个加进 tools/guard/codex-impl-tasks.json（门禁可信根），流程同第 23 条：Claude 子代理先写规则测试（先红）→ Codex 新只读会话过审测试 → Codex 经 codex-run.sh impl --phase impl 实现 → Claude 新子代理代码评审（第 27 条：实现方之外的一家）；改派不改风险级与合并门槛；资金、订单归属、打款、订单补拉、数据库恢复与主库切换、发布流水线接入、迁移、契约仍按第 19 条由 Claude 实现（codex-impl-tasks.json 的 forbidden_paths 照旧，task.ts check 拒收 paths 碰到它们的 Codex 台账）；三端原生 App 的新任务也改由 Codex 实现（原生仓库不受本仓库门禁约束，构建与模拟器验证由编排者在沙箱外跑，先在一端试行）；各线把新任务号加进 codex-impl-tasks.json 的 PR 命中保护路径，按第 24 条由编排会话核对头提交后加标签'
     granted: true
     date: '2026-10-16'
+    superseded_by: 34
     note: '负责人原话「现有的任务 保留claude。执行 就是还有没开始的 可以安排 codex 来执行 可以提高开发效率」（对话中给编排会话，经编排会话转达）；编排会话追问范围（第 23 条即 2026-10-06 例外的安全边界是否放开）后负责人选「边界外 + 三端原生」；「已开工」的界定（已提交规则测试或实现，只认领、只写任务书不算）按规划 couli#115；规划依据：规划仓库 PR couli#114（合并提交 87238fa）与 couli#115（合并提交 ec0a30f），规划/11 §1.1「2026-10-16 起：未开工的任务默认由 Codex 实现」与原生三端条、§7.3 第 15 项，docs/changes/20261016-未开工任务改由Codex实现.md；落在本分支 chore/approvals-codex-unstarted（ops/approvals.yaml；tools/guard/codex-impl-tasks.json 的说明与 tasks；tools/lib/codex-impl-tasks.test.ts、tools/guard/lib/approvals.test.ts 随第 15 行同步）；同分支把内容模块线未开工的 F1-02d 改为 Codex 实现（台账 impl: codex、tester: claude，任务号加进清单）；F1-02e、F1-02f 同样未开工，但须在同一 PR 去掉 contracts/openapi.yaml 的 x-implementation: planned 并重生成 packages/contracts-ts/src/openapi.gen.ts 与 route-schemas.gen.ts（apps/api/src/contract.test.ts 要求已实现的接口有路由、planned 的没有），contracts/**、packages/contracts-ts/** 在 forbidden_paths，而路径守卫按台账 paths 整体检查 spec_commit 之后的全部提交、不分提交者，暂留 Claude；本条所在的 PR 按第 24 条由编排会话加标签'
   - id: 31
     row: 11
@@ -212,3 +214,9 @@ approvals:
     granted: true
     date: '2026-10-16'
     note: '负责人原话「放开吧 看是你要规划好 看着codex」（2026-10-16 晚，编排会话问「要不要把 H5 和后台前端也放开给 Codex 实现」时作答）；规划依据：规划仓库 PR couli#118（合并提交 033abb1），规划/11 §1.1「2026-10-16 晚负责人再放开 H5 与管理后台前端」、§7.3 第 15 项备注、docs/changes/20261016-未开工任务改由Codex实现.md §1.1；落在分支 chore/codex-frontend-paths（tools/guard/codex-impl-tasks.json、tools/lib/codex-impl-tasks.test.ts、ops/approvals.yaml）；本条所在的 PR 按第 24 条由编排会话核对头提交后加标签'
+  - id: 34
+    row: 16
+    title: '实现回到 Claude，Codex 只做对抗评审：① 新认领的任务一律由 Claude 实现，默认 Claude Opus 5.5 子代理（claude-opus-5-5）；困难任务（归因流水线、账本记账、Agent 编排核心、三端资金页、跨模块事务等）由编排会话指定用 Opus 5.5 高推理（effort high / xhigh）或 Fable 5.1（claude-fable-5-1），台账 impl 仍写 claude、模型写在注释；② 第 30 条「未开工的任务默认改由 Codex 实现」自本条起停用（条目保留，加 superseded_by: 34）；③ 第 31 条机械提交规则只对本条生效前已列入 tools/guard/codex-impl-tasks.json 且已开工（界定同第 30 条：有 spec_commit、test(spec) 提交或实现提交）的 Codex 实现任务继续有效，做完为止、不中途换人；清单冻结、不再新增任务号（tools/lib/codex-impl-tasks.test.ts 以冻结集校验，只许删不许增），清单里尚未开工的任务下次台账 PR 改回 impl: claude、tester: codex 并从清单移除；清单外的新台账 impl 必须为 claude（task.ts check 照旧拒收）；④ 第 27 条（代码评审只由实现方之外的一家做：Claude 写的实现只由 Codex 新只读会话对抗评审，Codex 写的由 Claude 新子代理评审）与 Codex 写规则测试（先写、先红，资金类必须）、Codex 过审 Claude 写的规则测试（spec-test）的分工不变；⑤ 第 33 条 H5 与管理后台前端的 Codex 实现同样停止新增，已开工的做完；apps/h5/**、apps/admin/** 不回 forbidden_paths（清单冻结即足够，回填会拒收在途台账），截图对照定稿设计稿的流程不变。回到 Claude 实现的任务按第 19、27 条分工'
+    granted: true
+    date: '2026-10-17'
+    note: '负责人原话「codex 做完手动的开发任务，接下来的主要开发还是安排其他账号的 Claude 5.5 opus 模型；困难的工作你也可以安排更高级的推理或者模型来执行开发；codex 负责对抗 review」（2026-10-17 17:2x，对话中给编排会话，经编排会话转达）；执行口径 ①–⑤（已派出 / 已开工的 Codex 实现任务做完为止、不中途换人；困难任务的例子与模型档位；清单冻结）由编排会话按原话拟写，登记在 couli-runs/B3-lane/notices.md 2026-10-17 17:3x 条，不是负责人原话；规划依据：规划仓库 PR couli#123，规划/11 §1.1「2026-10-17 起：实现回到 Claude，Codex 只做对抗评审」、§7.3 第 16 项，docs/changes/20261017-实现回到Claude_Codex只评审.md；落在本分支 chore/approvals-34-impl-back-to-claude（ops/approvals.yaml；tools/guard/codex-impl-tasks.json 的说明；tools/lib/codex-impl-tasks.ts 与 tools/lib/codex-impl-tasks.test.ts 的冻结集校验；tools/guard/lib/approvals.test.ts 行号上限随第 16 行同步；tools/ops/task.ts 注释；tools/README.md、tools/agent/README.md）；本条所在的 PR 按第 24 条由编排会话核对头提交后加标签'

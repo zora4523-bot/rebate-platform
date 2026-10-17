@@ -1,7 +1,11 @@
 // Tasks moved to a Codex implementation with Claude rule tests (owner 2026-10-06,
 // ops/approvals.yaml id 23; 规划/11 §1.1 例外, §7.3 row 14), and since 2026-10-16 every task not
 // yet started (owner, ops/approvals.yaml id 30; 规划/11 §1.1, §7.3 row 15), listed one by one
-// under the id of its ledger. The list is tools/guard/codex-impl-tasks.json, read from the trusted
+// under the id of its ledger. Since 2026-10-17 (owner, ops/approvals.yaml id 34; 规划/11 §1.1, §7.3
+// row 16) implementation is back with Claude and the list is frozen: id 30 is superseded, nothing
+// is added, the listed tasks already started finish as Codex implementations (ids 31, 33) and the
+// rest go back to impl: claude at their next ledger PR; the frozen set lives in the test file.
+// The list is tools/guard/codex-impl-tasks.json, read from the trusted
 // root by the gates. The exception is granted per split task, not per 规划/05 row: an entry with a
 // lowercase suffix (B1-14a) lists that one task; an entry without (B3-02) is a row the exception
 // covers whole, with all its split tasks. A missing or broken file lists nothing (fail-closed:

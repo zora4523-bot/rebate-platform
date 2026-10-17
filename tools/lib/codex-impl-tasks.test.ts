@@ -1,4 +1,5 @@
-// The Codex-first task list (owner 2026-10-06, ops/approvals.yaml id 23; owner 2026-10-16, id 30).
+// The Codex-first task list (owner 2026-10-06, ops/approvals.yaml id 23; owner 2026-10-16, id 30;
+// frozen since 2026-10-17, id 34: implementation is back with Claude, Codex reviews only).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
@@ -17,7 +18,67 @@ import {
 import { repoRoot } from './paths.ts';
 import { listTaskIds } from './task-file.ts';
 
-it('[approvals 23, 30] lists tasks of 规划/11 §7.3 row 14, per split task where the row is narrowed, and other tasks only one by one under row 15; each rests on a granted approval', () => {
+// The list as it stood when the owner moved implementation back to Claude (2026-10-17,
+// ops/approvals.yaml id 34, superseding id 30). A listed task already started finishes as a
+// Codex implementation (ids 31, 33); one not yet started goes back to impl: claude at its next
+// ledger PR and leaves the list. Entries may only be removed from here, never added.
+const FROZEN_2026_10_17 = [
+  'B3-02',
+  'B3-03',
+  'QA-06',
+  'B3-07a',
+  'B3-07b',
+  'B1-14a',
+  'B1-14b',
+  'B1-14c',
+  'QA-05a',
+  'QA-05b',
+  'QA-05c',
+  'QA-09a',
+  'QA-09b',
+  'QA-09c',
+  'F1-02d',
+  'B1-17b',
+  'B1-17c',
+  'B1-29a',
+  'B1-28b',
+  'F1-02e',
+  'F1-02f',
+  'F1-10b',
+  'F1-10c',
+  'F1-10d',
+  'F1-10e',
+  'B1-02d',
+  'B1-20a',
+  'B1-02z',
+  'B1-02y',
+  'F1-06zd',
+  'F1-06ze',
+  'F1-02h',
+  'B1-12c',
+  'B1-12d',
+  'B1-11b',
+  'B1-20d',
+  'F1-07b',
+];
+
+it('[approvals 34] the list is frozen since 2026-10-17: no entry outside the set of that day (removals only)', () => {
+  const doc = JSON.parse(readFileSync(join(repoRoot(), CODEX_IMPL_TASKS_FILE), 'utf8')) as {
+    tasks: string[];
+  };
+  const approvals = parseApprovals(readFileSync(join(repoRoot(), 'ops', 'approvals.yaml'), 'utf8'));
+  expect(findApproval(approvals, 34)?.granted, 'id 34 (row 16) is granted').toBe(true);
+  expect(findApproval(approvals, 34)?.row).toBe(16);
+  for (const task of doc.tasks) {
+    expect(
+      FROZEN_2026_10_17.includes(task),
+      `${task}: not in the frozen list of 2026-10-17; a new task is a Claude implementation (ops/approvals.yaml id 34)`,
+    ).toBe(true);
+  }
+  expect(new Set(doc.tasks).size, 'no duplicate entry').toBe(doc.tasks.length);
+});
+
+it('[approvals 23, 30, 34] lists tasks of 规划/11 §7.3 row 14, per split task where the row is narrowed, and other tasks only one by one under row 15 (frozen by row 16 since 2026-10-17); each rests on a granted approval', () => {
   const doc = JSON.parse(readFileSync(join(repoRoot(), CODEX_IMPL_TASKS_FILE), 'utf8')) as {
     approval: number;
     tasks: string[];
