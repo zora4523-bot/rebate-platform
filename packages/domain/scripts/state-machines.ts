@@ -2,6 +2,7 @@
 // packages/domain/src/state-machines/<name>.gen.ts（枚举常量、只读迁移表与 transition<Name>()）。
 //   node packages/domain/scripts/state-machines.ts            写出生成物
 //   node packages/domain/scripts/state-machines.ts --verify   只比对，生成物过期时退出 1，不写文件
+// yaml 行可选 alternatives（「到」列多结果）：只有含它的机器生成 transition 第三参数 outcome。
 // renderStateMachine(yamlText) 是纯函数：同一输入总是得到同一文本；守卫只当文字写进表里，不求值。
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -12,7 +13,7 @@ const GENERATE_COMMAND = 'node packages/domain/scripts/state-machines.ts';
 const SPECIAL_KINDS = ['backward', 'same_state'] as const;
 const ROW_KINDS = ['transition', ...SPECIAL_KINDS] as const;
 const TOP_KEYS = ['name', 'field', 'states', 'events', 'transitions', 'stages', 'event_states'];
-const ROW_KEYS = ['id', 'kind', 'from', 'event', 'to', 'guard', 'test_id'];
+const ROW_KEYS = ['id', 'kind', 'from', 'event', 'to', 'alternatives', 'guard', 'test_id'];
 const NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const CODE_RE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/;
 // 状态值与库表取值一致：大写蛇形（订单）或小写蛇形（如 commission_rule_versions.status）。
@@ -30,6 +31,7 @@ interface Row {
   from: (string | null)[];
   event: string | null;
   to: string;
+  alternatives: string[] | undefined;
   guard: string;
   test_id: string;
 }
@@ -137,7 +139,17 @@ function parseRow(value: unknown, i: number, states: string[], events: string[])
     if (to !== 'same' && !states.includes(to)) fail(`${where}.to "${to}" is not in states`);
     if (to === 'same' && from.includes(null)) fail(`${where}: to: same needs an existing state`);
   }
-  return { id, kind, from, event, to, guard, test_id: testId };
+  let alternatives: string[] | undefined;
+  if (value['alternatives'] !== undefined) {
+    // 「到」列有多个结果的行：to 是基准值，alternatives 列出其余可选结果，由 transition 第三参数选定。
+    if (special || to === 'same') fail(`${where}: alternatives need a fixed target state`);
+    alternatives = stateList(value['alternatives'], `${where}.alternatives`);
+    for (const alt of alternatives) {
+      if (!states.includes(alt)) fail(`${where}.alternatives "${alt}" is not in states`);
+      if (alt === to) fail(`${where}.alternatives repeats to "${to}"`);
+    }
+  }
+  return { id, kind, from, event, to, alternatives, guard, test_id: testId };
 }
 
 function parseMachine(yamlText: string): Machine {
@@ -217,9 +229,9 @@ function renderRow(row: Row): string {
     `    from: ${list(row.from)},`,
     `    event: ${literal(row.event)},`,
     `    to: ${literal(row.to)},`,
-    `    guard: ${literal(row.guard)},`,
-    `    test_id: ${literal(row.test_id)},`,
   );
+  if (row.alternatives !== undefined) lines.push(`    alternatives: ${list(row.alternatives)},`);
+  lines.push(`    guard: ${literal(row.guard)},`, `    test_id: ${literal(row.test_id)},`);
   return `  {\n${lines.join('\n')}\n  },`;
 }
 
@@ -249,6 +261,40 @@ function renderSpecial(m: Machine, constant: string): string[] {
   return out;
 }
 
+function renderOutcomeTransition(
+  base: string,
+  constant: string,
+  state: string,
+  event: string,
+  result: string,
+): string[] {
+  return [
+    '// outcome（可选）：该行的处置结果，须是 to 或 alternatives 之一；不传时取 to（基准值）。',
+    `export function transition${base}(`,
+    `  from: ${state} | null,`,
+    `  event: ${event},`,
+    `  outcome?: ${state},`,
+    `): ${result} {`,
+    `  for (const row of ${constant}_TRANSITIONS) {`,
+    "    if (row.kind === 'backward' || row.kind === 'same_state') continue;",
+    '    if (row.event !== event || !row.from.includes(from)) continue;',
+    "    if (row.to === 'same') {",
+    '      if (outcome !== undefined && outcome !== from) {',
+    "        return { ok: false, reason: 'illegal', id: null };",
+    '      }',
+    `      return { ok: true, to: from as ${state}, id: row.id, noop: true };`,
+    '    }',
+    '    if (outcome === undefined || outcome === row.to) {',
+    '      return { ok: true, to: row.to, id: row.id, noop: false };',
+    '    }',
+    '    if (row.alternatives?.includes(outcome) === true) {',
+    '      return { ok: true, to: outcome, id: row.id, noop: false };',
+    '    }',
+    "    return { ok: false, reason: 'illegal', id: null };",
+    '  }',
+  ];
+}
+
 export function renderStateMachine(yamlText: string): string {
   const m = parseMachine(yamlText);
   const base = pascal(m.name);
@@ -257,6 +303,8 @@ export function renderStateMachine(yamlText: string): string {
   const event = `${base}Event`;
   const row = `${base}TransitionRow`;
   const result = `${base}TransitionResult`;
+  // 只有含备选目标的机器才生成 alternatives 字段与第三参数；其余机器的生成物逐字不变。
+  const outcomes = m.transitions.some((r) => r.alternatives !== undefined);
   const parts: string[] = [
     `// 生成物，勿手改。来源：specs/state-machines/${m.name}.yaml（字段 ${m.field}）。`,
     `// 改 yaml 后重新生成：${GENERATE_COMMAND}（--verify 只比对）。`,
@@ -276,6 +324,7 @@ export function renderStateMachine(yamlText: string): string {
     `  readonly from: readonly (${state} | null | '*')[];`,
     `  readonly event: ${event} | null;`,
     `  readonly to: ${state} | 'same';`,
+    ...(outcomes ? [`  readonly alternatives?: readonly ${state}[];`] : []),
     '  readonly guard: string;',
     '  readonly test_id: string;',
     '}',
@@ -300,15 +349,19 @@ export function renderStateMachine(yamlText: string): string {
     `  | { ok: true; to: ${state}; id: string; noop: boolean }`,
     `  | { ok: false; reason: 'illegal' | 'backward'; id: string | null };`,
     '',
-    `export function transition${base}(from: ${state} | null, event: ${event}): ${result} {`,
-    `  for (const row of ${constant}_TRANSITIONS) {`,
-    "    if (row.kind === 'backward' || row.kind === 'same_state') continue;",
-    '    if (row.event !== event || !row.from.includes(from)) continue;',
-    "    if (row.to === 'same') {",
-    `      return { ok: true, to: from as ${state}, id: row.id, noop: true };`,
-    '    }',
-    '    return { ok: true, to: row.to, id: row.id, noop: false };',
-    '  }',
+    ...(outcomes
+      ? renderOutcomeTransition(base, constant, state, event, result)
+      : [
+          `export function transition${base}(from: ${state} | null, event: ${event}): ${result} {`,
+          `  for (const row of ${constant}_TRANSITIONS) {`,
+          "    if (row.kind === 'backward' || row.kind === 'same_state') continue;",
+          '    if (row.event !== event || !row.from.includes(from)) continue;',
+          "    if (row.to === 'same') {",
+          `      return { ok: true, to: from as ${state}, id: row.id, noop: true };`,
+          '    }',
+          '    return { ok: true, to: row.to, id: row.id, noop: false };',
+          '  }',
+        ]),
     ...renderSpecial(m, constant),
     "  return { ok: false, reason: 'illegal', id: null };",
     '}',

@@ -1,0 +1,127 @@
+# 提现状态 withdrawals.status 的状态机（规划/04 §4.2；规划/08 BR-WDR-08 迁移表 W1–W11）。
+# 迁移表只在 08 维护；本文件按 SPEC_REF 逐行转写，生成 packages/domain/src/state-machines/withdrawal.gen.ts
+# （node packages/domain/scripts/state-machines.ts；--verify 只比对）。生成物勿手改，改这里再生成。
+#
+# 写法约定（CT-04a 编排口径 D10-26）：
+# - from 中 null 表示「—」（入库首态，提现单尚未创建）；to 为 same 表示「不变」。
+# - guard 是原文「守卫」列文字；「从」列带的条件（如「且 needs_manual=false」）写在 guard 开头。
+#   guard 只作说明，transition() 不求值；守卫、CAS、记账与副作用由调用方负责。
+# - 原文事件均有编码，照抄。
+# - 「到」列有多个结果的（W10：PAID_API / FAILED），to 写第一个作基准值，alternatives 列出其余结果；
+#   调用方把处置结果作为 transition() 第三参数传入（须是 to 或 alternatives 之一，否则拒绝），不传时取基准值。
+#
+# 原文正文要点（逐字摘录）：
+# 终态为 REJECTED、PAID_API、PAID_MANUAL、FAILED；进入终态后，状态与金额都不得再改。
+# 每次迁移用 `UPDATE … WHERE id=? AND status=?` 做比较并交换（CAS）；影响 0 行即视为并发冲突，不写任何分录，
+# 后台接口返回 20902（状态已变化，请刷新后重试；`data.resource=withdrawal`）。
+# needs_manual=true 的单只能经 W10 结束。
+# W2（APPROVE）与 W4（EXECUTE）可由系统按自动到账规则组执行（actor=system:auto_payout，BR-WDR-30），
+# 守卫与人工执行相同，不新增状态。
+# 微信零钱单在 PAYING 期间另记通道子状态（withdrawals.channel_state），只细分 PAYING，不新增提现状态与迁移（BR-WDR-33 ⑤）。
+# 每条迁移对应的分录见 BR-WDR-09；测试 ID 为 SM-WDR-W1…W11。
+name: withdrawal
+field: status
+states: [PENDING_REVIEW, APPROVED, REJECTED, PAYING, PAID_API, PAID_MANUAL, FAILED]
+events:
+  - APPLY
+  - APPROVE
+  - REJECT
+  - EXECUTE
+  - CHANNEL_SUCCESS
+  - CHANNEL_FAIL
+  - CHANNEL_UNKNOWN
+  - MANUAL_PAID
+  - HOLD
+  - MANUAL_RESOLVE
+  - CHANNEL_SUCCESS_PROVEN
+transitions:
+  # W1 | — | APPLY | BR-WDR-03 全部通过 | PENDING_REVIEW
+  - id: W1
+    from: [null]
+    event: APPLY
+    to: PENDING_REVIEW
+    guard: 'BR-WDR-03 全部通过'
+    test_id: SM-WDR-W1
+  # W2 | PENDING_REVIEW | APPROVE | BR-WDR-10；available_fen ≥ 0 且 blocked_reason 为空（BR-WDR-05 (a)）；
+  # 风控冻结与 withdraw_holds 不影响审核通过 | APPROVED
+  # 执行者：人工审核，或系统按自动到账规则组执行（actor=system:auto_payout，BR-WDR-30），守卫、CAS、分录相同。
+  - id: W2
+    from: [PENDING_REVIEW]
+    event: APPROVE
+    to: APPROVED
+    guard: 'BR-WDR-10；available_fen ≥ 0 且 blocked_reason 为空（BR-WDR-05 (a)）；风控冻结与 withdraw_holds 不影响审核通过'
+    test_id: SM-WDR-W2
+  # W3 | PENDING_REVIEW / APPROVED | REJECT | 必填原因码；从 APPROVED 驳回时不得有 pending/success/unknown 转账尝试（BR-WDR-10）；
+  # hold_reason=payer_side_after_transfer 的单须先有一次查询结果为「订单不存在」或清单内的明确失败（BR-WDR-17）；
+  # 系统驳回 NEGATIVE_BALANCE 只针对没有任何转账尝试的单（BR-WDR-05 (a)） | REJECTED
+  - id: W3
+    from: [PENDING_REVIEW, APPROVED]
+    event: REJECT
+    to: REJECTED
+    guard: '必填原因码；从 APPROVED 驳回时不得有 pending/success/unknown 转账尝试（BR-WDR-10）；hold_reason=payer_side_after_transfer 的单须先有一次查询结果为「订单不存在」或清单内的明确失败（BR-WDR-17）；系统驳回 NEGATIVE_BALANCE 只针对没有任何转账尝试的单（BR-WDR-05 (a)）'
+    test_id: SM-WDR-W3
+  # W4 | APPROVED | EXECUTE | BR-WDR-11、12（含该单没有任何转账尝试、available_fen ≥ 0、blocked_reason 为空）；execute_seq +1 | PAYING
+  # 执行者：人工执行，或系统按自动到账规则组执行（actor=system:auto_payout，BR-WDR-30），守卫、CAS、分录相同。
+  - id: W4
+    from: [APPROVED]
+    event: EXECUTE
+    to: PAYING
+    guard: 'BR-WDR-11、12（含该单没有任何转账尝试、available_fen ≥ 0、blocked_reason 为空）；execute_seq +1'
+    test_id: SM-WDR-W4
+  # W5 | PAYING 且 needs_manual=false | CHANNEL_SUCCESS | BR-WDR-14、28 | PAID_API
+  - id: W5
+    from: [PAYING]
+    event: CHANNEL_SUCCESS
+    to: PAID_API
+    guard: 'needs_manual=false；BR-WDR-14、28'
+    test_id: SM-WDR-W5
+  # W6 | PAYING 且 needs_manual=false | CHANNEL_FAIL | BR-WDR-14、28 | FAILED
+  - id: W6
+    from: [PAYING]
+    event: CHANNEL_FAIL
+    to: FAILED
+    guard: 'needs_manual=false；BR-WDR-14、28'
+    test_id: SM-WDR-W6
+  # W7 | PAYING | CHANNEL_UNKNOWN | — | PAYING（排入查询；T+24h 置 needs_manual 并停止自动查询）
+  - id: W7
+    from: [PAYING]
+    event: CHANNEL_UNKNOWN
+    to: same
+    guard: '—'
+    test_id: SM-WDR-W7
+  # W8 | APPROVED | MANUAL_PAID | BR-WDR-16；hold_reason=payer_side_after_transfer 的单须先有一次查询结果为
+  # 「订单不存在」或清单内的明确失败（BR-WDR-17） | PAID_MANUAL
+  - id: W8
+    from: [APPROVED]
+    event: MANUAL_PAID
+    to: PAID_MANUAL
+    guard: 'BR-WDR-16；hold_reason=payer_side_after_transfer 的单须先有一次查询结果为「订单不存在」或清单内的明确失败（BR-WDR-17）'
+    test_id: SM-WDR-W8
+  # W9 | PAYING | HOLD | 发出转账前复核未过（BR-WDR-13 ③），或转账返回付款方侧码（BR-WDR-17、28） |
+  # APPROVED（写 hold_reason、hold_at；清空 executor_id、executed_at）
+  - id: W9
+    from: [PAYING]
+    event: HOLD
+    to: APPROVED
+    guard: '发出转账前复核未过（BR-WDR-13 ③），或转账返回付款方侧码（BR-WDR-17、28）'
+    test_id: SM-WDR-W9
+  # W10 | PAYING 且 needs_manual=true | MANUAL_RESOLVE | BR-WDR-15 | PAID_API / FAILED
+  # 「到」按人工处置结果分流（BR-WDR-15）：to 写基准值 PAID_API，alternatives 列出 FAILED；
+  # 判失败时调用方以 transitionWithdrawal('PAYING', 'MANUAL_RESOLVE', 'FAILED') 经第三参数传入。
+  - id: W10
+    from: [PAYING]
+    event: MANUAL_RESOLVE
+    to: PAID_API
+    alternatives: [FAILED]
+    guard: 'needs_manual=true；BR-WDR-15；到 PAID_API / FAILED 由调用方按处置结果分流'
+    test_id: SM-WDR-W10
+  # W11 | APPROVED 且 hold_reason=payer_side_after_transfer | CHANNEL_SUCCESS_PROVEN | 该单唯一的转账尝试 result=fail；
+  # 通道成功凭证（查询返回成功，或含该 out_biz_no 的账单行，金额 = net_fen）；有权限者 step-up（权限点同 W10 未知处置）；
+  # 开关 payout.proven_success_writeoff.enabled=on |
+  # PAID_API（写成功分录，BR-WDR-09；追加一条 kind=query、result=success 的尝试记录，不改原记录）
+  - id: W11
+    from: [APPROVED]
+    event: CHANNEL_SUCCESS_PROVEN
+    to: PAID_API
+    guard: 'hold_reason=payer_side_after_transfer；该单唯一的转账尝试 result=fail；通道成功凭证（查询返回成功，或含该 out_biz_no 的账单行，金额 = net_fen）；有权限者 step-up（权限点同 W10 未知处置）；开关 payout.proven_success_writeoff.enabled=on'
+    test_id: SM-WDR-W11

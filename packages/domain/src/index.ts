@@ -105,3 +105,15 @@ export type {
   CommissionRuleVersionTransitionResult,
   CommissionRuleVersionTransitionRow,
 } from './state-machines/commission-rule-version.gen.ts';
+export {
+  WITHDRAWAL_EVENTS,
+  WITHDRAWAL_STATES,
+  WITHDRAWAL_TRANSITIONS,
+  transitionWithdrawal,
+} from './state-machines/withdrawal.gen.ts';
+export type {
+  WithdrawalState,
+  WithdrawalEvent,
+  WithdrawalTransitionResult,
+  WithdrawalTransitionRow,
+} from './state-machines/withdrawal.gen.ts';
