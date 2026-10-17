@@ -1,4 +1,4 @@
-import type { Clock, JobPayload, JobQueue } from '../../platform/index.ts';
+import type { Clock, JobPayload, JobQueue, RootLogger } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionAdapter } from '../../union/index.ts';
 
 export interface SyncStream {
@@ -41,7 +41,11 @@ export interface SyncSchedulerDeps {
   readonly queue: JobQueue;
   readonly cursors: SyncCursorStore;
   readonly access: SyncAccessPort;
+  /** Flat fields only (platform, account, window bounds); never order numbers or buyers. */
+  readonly logger?: SyncLogger;
 }
+
+export type SyncLogger = Pick<RootLogger, 'info' | 'warn' | 'error'>;
 
 export interface SyncRegistry {
   get(platform: RegisteredPlatform): Pick<UnionAdapter, 'listOrders'>;
