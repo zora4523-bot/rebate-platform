@@ -20,7 +20,7 @@ const MS_PER_DAY = 86_400_000;
 const OFFSET_MS = 8 * MS_PER_HOUR;
 
 // Unicode White_Space 全集（含 U+0085、U+3000），另加 JS \s 里的 U+FEFF 与零宽 U+200B–U+200D。
-const STRIPPED = /[\p{White_Space}​-‍﻿]/gu;
+const STRIPPED = /[\p{White_Space}\u200B-\u200D\uFEFF]/gu;
 // BR-INV-01：32 个字符 23456789ABCDEFGHJKLMNPQRSTUVWXYZ（去掉 0/O/1/I），长度恰为 6。
 const INVITE_CODE = /^[2-9A-HJ-NP-Z]{6}$/;
 
