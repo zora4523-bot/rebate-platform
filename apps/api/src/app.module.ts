@@ -42,6 +42,8 @@ import {
   ME_READ_PORTS,
   TOKEN_CHECK,
   STEP_UP_CHECK,
+  IDENTITY_LEVEL_CHECKS,
+  createDefaultRealnameStatusReader,
   createSmsSender,
   createThirdPartyIdentity,
   smsSenderToken,
@@ -57,6 +59,7 @@ import {
   type IdentityRequest,
   type SessionPushTokens,
   type UserLevelReader,
+  type IdentityLevelChecks,
   type AccountAssetsPort,
   type AccountRiskPort,
   type MeReadPorts,
@@ -212,6 +215,7 @@ function requestChecks(options: PlatformOptions): Provider {
  * BR-ID-07 细则「推送令牌与会话」), assembled here over the Clock so identity never imports
  * notification (and notification nothing of identity): login binds, logout, the refresh reuse
  * revocation and the revocation entries by user / by device unbind, in the session's transaction.
+ * Its real-name status port (stage ⑨, B1-02za) is the default reader (none) until B1-13d.
  */
 function identityModule(): DynamicModule {
   return IdentityModule.forRoot({
@@ -362,6 +366,9 @@ function identityModule(): DynamicModule {
         unbind: (trx, session) => unbindPushTokensForSession(trx, session, clock),
       }),
     },
+    // Stage ⑨'s real-name status port (B1-02za): always none until app.realname is read.
+    // TODO(规划/11 §2.3): 实名状态读 app.realname — blocked on B1-13d
+    realnameStatus: { useFactory: createDefaultRealnameStatusReader },
   });
 }
 
@@ -842,9 +849,18 @@ function parsingPorts(): DynamicModule {
 function riskModule(identity: DynamicModule): DynamicModule {
   return RiskModule.forRoot({
     imports: [identity],
+    // ⑧ ⑨ identity level (B1-02za) before ⑫ step-up (B1-02y) on the idempotent path; the level
+    // guard alone between ⑤ and ⑬ on the non-idempotent path.
     beforeRateLimit: {
-      inject: [STEP_UP_CHECK],
-      useFactory: (check: IdempotencyPostMissCheck) => [check],
+      inject: [IDENTITY_LEVEL_CHECKS, STEP_UP_CHECK],
+      useFactory: (level: IdentityLevelChecks, stepUp: IdempotencyPostMissCheck) => [
+        level.postMiss,
+        stepUp,
+      ],
+    },
+    beforeRateLimitGuards: {
+      inject: [IDENTITY_LEVEL_CHECKS],
+      useFactory: (level: IdentityLevelChecks) => [level.guard],
     },
     minimumVersions: {
       inject: [CLOCK, { token: DB, optional: true }],
