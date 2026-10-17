@@ -1,0 +1,22 @@
+id: B1-02za
+repo: rebate-platform
+title: 身份等级守卫（判定顺序 ⑧ 未绑手机 10005、⑨ 未实名 30304）：按契约 x-auth phone / realname 逐请求从库判定（phone_hmac 非空；实名经 identity 的只读端口，缺省 none），挂在 ⑤ 之后、⑫ 之前（risk.module 同一工厂的检查列表）
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二波第一批；编排 13:5x 派工；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-ID-01 判定顺序与等级定义（从库判定、不读 JWT）、04 §2.5 identity_level，由编排者摘入。B1-02h 台账注明 ⑦⑧⑨ 是缺口；⑦ 隐私 10004 不在本任务（E2）。growth 的 /v1/me/inviter、/v1/invites/me 与 B1-13 的收款账号接口最先用到。
+# 模型：Opus 5.5。挂钩先例 B1-02y（risk.module beforeRateLimit 列表）。实名表未建前实名状态端口缺省 none（B1-13d 接表）。
+refs: []
+refs_hash: {}
+deps: [B1-02y, B1-03h, B1-02z]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/risk/risk.module.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/identity-level/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/identity-level/**'
+status: todo

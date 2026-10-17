@@ -1,0 +1,21 @@
+id: B1-13b
+repo: rebate-platform
+title: 迁移 0042：identity 的 realname（04 §3.2 列、两个唯一、加密列 bytea、status 取 realname_status）与 deleted_identities（reason account_deleted / phone_changed、phone_hmac、device_hash、deleted_at、expire_at），授权写在本迁移
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二波第一批；编排 13:5x 派工；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：04 §3.2 realname、deleted_identities 行，08 BR-ID-28（保留期）、BR-WDR 实名相关，由编排者摘入。0042 已在 notices 登记（E5：两表合建）；落地等 0038–0041 连号。迁移归 approvals #19。编排者跑 remote-snapshot.sh。
+refs: []
+refs_hash: {}
+deps: [B1-02a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/realname/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/realname/**'
+status: todo

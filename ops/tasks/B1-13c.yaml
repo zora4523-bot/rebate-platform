@@ -1,0 +1,20 @@
+id: B1-13c
+repo: rebate-platform
+title: packages/domain 身份证件纯函数：18 位身份证格式与校验位（GB 11643）、出生日期提取、ageAt / reachedAgeAt（第 N 个生日次日 00:00 +08:00、2 月 29 日规则）、实名 / 收款人姓名规范化（BR-WDR-02 ①）、Luhn 与 12–19 位卡号校验
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二波第一批；编排 13:5x 派工；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-WDR-02、BR-ID 实名相关条目，由编排者摘入。纯函数，时间由调用方传入；B1-13d、B1-13e、B1-13f、B1-11c（年龄）共用。模型：Opus 5.5。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'packages/domain/src/identity-docs/**'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/domain/realname/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/realname/**'
+status: todo

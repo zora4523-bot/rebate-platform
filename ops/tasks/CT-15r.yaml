@@ -1,0 +1,23 @@
+id: CT-15r
+repo: rebate-platform
+title: 契约：实名与劳务协议三条（POST /v1/me/realname submitRealname、GET /v1/me/labor-agreement getLaborAgreement、POST /v1/me/labor-agreement/sign signLaborAgreement），全部 planned；重生成 openapi.gen.ts 与三份路由生成物
+type: contract
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二波第一批；编排 13:5x 派工；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：04 §6.1 对应三行，08 BR-WDR-31（劳务协议）、BR-ID 实名相关、BR-ID-01 细则版本策略表，由编排者摘入。新增操作类契约按 notices 排队占槽。
+# 04 §6.1 全文嵌入会让任务书超 24KB：派工时照 CT-15n 先例手工组装（临时点名小节生成骨架、换成说明，附第 9 节摘录）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.1']
+deps: [CT-15n]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
