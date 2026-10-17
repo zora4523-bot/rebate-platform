@@ -1,0 +1,105 @@
+{
+  "task": "B2-02d",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "75af3c39bfac2c71fe67200a0c9cb902c76b4dc2",
+  "red_tests": [
+    "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#12] couli_app 可插入、读取、更新当日所有金额和计算时刻，其他子户日期不变",
+    "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#13] couli_app 可以用主键冲突更新重跑快照，始终保留一行",
+    "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#14] couli_app DELETE 被权限拒绝 42501，原行保留",
+    "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#15] readonly 可读，INSERT、UPDATE、DELETE 均返回 42501",
+    "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#16] payout 与 maint 不能读取或写入日余额，均返回 42501",
+    "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#17] 有效授权严格限定 app 读写更新、readonly 读取，无额外表级或列级权限",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#1] 日余额各维度必填，金额为 bigint、日期和计算时刻类型正确",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#2] 主键精确包含 app、账户、子户和会计日，重复写入被拒",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#3] 两个并发写入相同日余额键，仅一个成功",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#4] 借方与贷方分别拒绝 -1，接受 0 和 1，更新同样受约束",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#5] 两种子户均可保存负期初负期末与超过 2^53 的整数分",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#6] 不用 CHECK 拦截期初与发生额、期末的差异，留给日终不变量检查",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#7] 子户仅接受 available 和 frozen，拒绝越界值",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#8] 外键拒绝不存在的账户和跨 app 账户",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#9] 外键按 app_id 和 account_id 对应账本账户，更新删除均不级联",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#10] computed_at 无默认值、不可省略，原样保留显式计算时刻",
+    "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#11] 0038 迁移以正超时开头，约束与独立索引均显式命名"
+  ],
+  "risk_note": "RV2 (db). Migration 0038 creates app.daily_balances (ledger-plan D9 option A, BR-FUND-19 1): primary key (app_id, account_id, sub_account, accounting_date), opening_fen / closing_fen bigint (may be negative), debit_fen / credit_fen bigint >= 0, sub_account in (available, frozen), computed_at and accounting_date without defaults (written by the B2-02j day-end runner from the injected Clock), (app_id, account_id) foreign key to ledger_accounts without cascade, no opening + movement = closing CHECK (that equation is the day-end invariant, not a table constraint). couli_app SELECT / INSERT / table-level UPDATE (re-runs overwrite the day's row; decision 19), no DELETE; couli_readonly SELECT only; payout / maint none. Named constraints, lock_timeout then statement_timeout. lint-migrations funds-table lock list gains daily_balances. Generated schema.sql / db.gen.ts by db:snapshot on the test machine. No application code.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "75af3c39bfac2c71fe67200a0c9cb902c76b4dc2",
+      "tree": "d1c3c3b763fb01c1e8e890f32dd46f4d01068509",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T08:35:09Z",
+      "finished_at": "2026-10-17T08:35:17Z",
+      "gate": {
+        "commit": "d625d66c07522e6d5c56bb7d7fa43a6b2fccb920",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#12] couli_app 可插入、读取、更新当日所有金额和计算时刻，其他子户日期不变",
+        "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#13] couli_app 可以用主键冲突更新重跑快照，始终保留一行",
+        "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#14] couli_app DELETE 被权限拒绝 42501，原行保留",
+        "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#15] readonly 可读，INSERT、UPDATE、DELETE 均返回 42501",
+        "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#16] payout 与 maint 不能读取或写入日余额，均返回 42501",
+        "test/spec/db/ledger/daily/access.int.test.ts > [AC-B2-02d#17] 有效授权严格限定 app 读写更新、readonly 读取，无额外表级或列级权限",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#1] 日余额各维度必填，金额为 bigint、日期和计算时刻类型正确",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#2] 主键精确包含 app、账户、子户和会计日，重复写入被拒",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#3] 两个并发写入相同日余额键，仅一个成功",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#4] 借方与贷方分别拒绝 -1，接受 0 和 1，更新同样受约束",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#5] 两种子户均可保存负期初负期末与超过 2^53 的整数分",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#6] 不用 CHECK 拦截期初与发生额、期末的差异，留给日终不变量检查",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#7] 子户仅接受 available 和 frozen，拒绝越界值",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#8] 外键拒绝不存在的账户和跨 app 账户",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#9] 外键按 app_id 和 account_id 对应账本账户，更新删除均不级联",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#10] computed_at 无默认值、不可省略，原样保留显式计算时刻",
+        "test/spec/db/ledger/daily/storage.int.test.ts > [AC-B2-02d#11] 0038 迁移以正超时开头，约束与独立索引均显式命名"
+      ],
+      "expected": [
+        "test/spec/db/ledger/daily/access.int.test.ts",
+        "test/spec/db/ledger/daily/storage.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a31930a2a5f0bfec0a56770ab5e6eb6eb71e7aa3a1ed081864f2f229721cf47f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings; its out-of-scope item was base drift (approvals 34 added on main after the fork point)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex (17 red); round 1 pass with two S2 (table-level UPDATE grant and timeout order are pinned; followed in the implementation, decision 19)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8ab6d8a94c906160d9ab5ec57ae5d3511763601d",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "e2cb9c82527fbdb333c05f144ad5c49552300436",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
