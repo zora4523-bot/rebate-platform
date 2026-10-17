@@ -1,0 +1,35 @@
+{
+  "task": "CT-02j",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "87d6707943ae99fa15cd465552e12b8a56846168",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml, error-codes.yaml, enums/identity.yaml): adds the admin users and operations, all x-implementation planned: GET /admin/v1/users (user.list), GET /admin/v1/users/lookup (user.lookup only), GET /admin/v1/users/{user_id} (user.list or user.lookup; masked fields per BR-ID-33), POST /admin/v1/users/{user_id}/reveal (phone only this batch, pii.reveal_phone, totp, audited every time, no-store), PUT /admin/v1/users/{user_id}/risk-state (ban / unban with risk.ban, freeze / unfreeze with risk.freeze, totp; appealing 44004; expected_row_version CAS where null only creates the first record, 20902 resource user_risk_state), POST /admin/v1/users/{user_id}/union-bindings/{platform}/reset|disable|enable (union.binding_reset / union.binding_disable, totp, reason required, CAS 20902 resource union_binding, state not allowed 30154; new rows of a platform continue its version numbers). New error codes 30154 (HTTP 422) and 44004 (HTTP 403), admin only; enum risk_reason_category. Regenerated openapi.gen.ts, enums.gen.ts, error-codes.gen.ts and the auth, signing and minimum-version route tables. contracts-ts tests check shapes only, never x-implementation. Orchestrator rulings in couli-runs/ADMIN-backend/f107-plan.md. tester none; implementation by an Opus 5.5 subagent in two runs. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 fail (S1: no risk-state record shown as row_version 0 collided with the first inserted row's 0, so two consoles could overwrite each other; fixed in implementation run 2 with null for no record), round 2 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8ab6d8a94c906160d9ab5ec57ae5d3511763601d",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "b1d21982f01cac101950cb02596da06fdf626386",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
