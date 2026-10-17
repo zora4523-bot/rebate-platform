@@ -73,6 +73,23 @@ export async function handleOrderSyncWindow(
     window_end: win.window_end,
     attempt: job.attempt,
   };
+  // D10-36: the adapter's credentials belong to one account per platform; a window of any other
+  // account would fetch someone else's orders and advance this account's cursor. Finish without
+  // fetching or advancing; retrying cannot change the answer.
+  if (deps.access.queryableAccount !== undefined) {
+    const queryable = await deps.access.queryableAccount(win.platform);
+    if (queryable !== win.union_account_id) {
+      deps.logger?.error(
+        {
+          ...fields,
+          union_account_id: win.union_account_id,
+          reason: queryable === null ? 'no_queryable_account' : 'not_queryable_account',
+        },
+        'order_sync_window_account_mismatch',
+      );
+      return;
+    }
+  }
   // BR-ID-24 ④: a job already queued when site auth lapsed is taken off without fetching; the
   // cursor stays at window_start, so the scheduler re-dispatches from there after re-auth.
   if (!(await deps.access.siteAuthAvailable(win))) {

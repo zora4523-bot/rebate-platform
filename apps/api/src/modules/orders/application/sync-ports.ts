@@ -34,6 +34,15 @@ export interface SyncAccessPort {
   siteAuthAvailable(account: SyncAccount | SyncStream): Promise<boolean>;
   /** Status of the offline governor, never the online governor. */
   offlineCircuitOpen(platform: RegisteredPlatform): Promise<boolean>;
+  /**
+   * The union_account_id whose credentials this deployment's adapter for `platform` actually
+   * queries (registry.get(platform) holds one credential set per platform); null when the
+   * platform has no queryable account. When provided, the scheduler dispatches windows only for
+   * that account and the handler refuses windows of any other account, so account B's cursor is
+   * never advanced by a fetch of account A's orders (D10-36).
+   * Optional only for test fakes: the production wiring (B1-08n) MUST provide it.
+   */
+  queryableAccount?(platform: RegisteredPlatform): Promise<string | null>;
 }
 
 export interface SyncSchedulerDeps {

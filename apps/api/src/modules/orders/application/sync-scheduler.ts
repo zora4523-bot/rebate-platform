@@ -33,11 +33,22 @@ export async function scheduleOrderSync(
     }
     return open;
   };
+  const queryable = new Map<RegisteredPlatform, Promise<string | null>>();
+  const queryableAccount = (p: RegisteredPlatform): Promise<string | null> | undefined => {
+    const port = deps.access;
+    if (port.queryableAccount === undefined) return undefined;
+    let id = queryable.get(p);
+    if (id === undefined) {
+      id = port.queryableAccount(p);
+      queryable.set(p, id);
+    }
+    return id;
+  };
   let failure: { error: unknown } | undefined;
   for (const account of accounts) {
     if (!platforms.includes(account.platform)) continue;
     try {
-      await scheduleAccount(deps, account, circuitOpen);
+      await scheduleAccount(deps, account, circuitOpen, queryableAccount);
     } catch (error) {
       deps.logger?.error(
         { platform: account.platform, account: account.union_account_id, err: error },
@@ -53,10 +64,28 @@ async function scheduleAccount(
   deps: SyncSchedulerDeps,
   account: SyncAccount,
   circuitOpen: (p: RegisteredPlatform) => Promise<boolean>,
+  queryableAccount: (p: RegisteredPlatform) => Promise<string | null> | undefined,
 ): Promise<void> {
   const cap = INCREMENT_WINDOW_CAP_MS[account.platform];
   if (cap === undefined) return;
   const fields = { platform: account.platform, account: account.union_account_id };
+  // D10-36: the adapter queries one credential set per platform; any other enabled account of the
+  // same platform would fetch the credential owner's orders yet advance its own cursor.
+  const queryablePromise = queryableAccount(account.platform);
+  if (queryablePromise !== undefined) {
+    const queryable = await queryablePromise;
+    if (queryable !== account.union_account_id) {
+      deps.logger?.warn(
+        {
+          platform: account.platform,
+          union_account_id: account.union_account_id,
+          reason: queryable === null ? 'no_queryable_account' : 'not_queryable_account',
+        },
+        'order_sync_account_skipped',
+      );
+      return;
+    }
+  }
   if (await circuitOpen(account.platform)) {
     deps.logger?.info(fields, 'order_sync_skipped_circuit_open');
     return;
