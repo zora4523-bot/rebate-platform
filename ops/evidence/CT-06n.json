@@ -1,0 +1,35 @@
+{
+  "task": "CT-06n",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "6a55309f17e44f5447630e22a33817d933c84784",
+  "red_tests": [],
+  "risk_note": "RV2 gate change (tightening, tools/ops only). task.ts check now requires a status: todo ledger whose paths reach contracts/openapi.yaml (literal or glob) to cover packages/contracts-ts/src/openapi.gen.ts and the auth / signing / min-version route tables through paths or mechanical_paths, naming each missing file; a contract only in mechanical_paths is not enforced (the three route generators list planned operations too, so removing planned leaves them unchanged). Eleven in-flight ledgers that predate the check sit in a frozen exemption list locked by a test. brief.ts adds a regeneration reminder for such tasks; README synced. Opus implementation, container verify:fast green on attempt 2. Tester none (guard-change), so no red run. Labelled by the lane orchestrator under approvals #24 (none of the four reserved categories).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "023ae60da1ee01444c0579ff4da9e4fb2b0619ea",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "ab0bdcc5c07c096b42a2296b491a4cb5e5b6d0ab",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
