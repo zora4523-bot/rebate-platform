@@ -249,6 +249,9 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
   // Owner 2026-10-06 (ops/approvals.yaml id 23): a task of tools/guard/codex-impl-tasks.json may
   // instead name impl: codex with tester: claude (Claude writes the rule tests first, Codex
   // implements); every other new ledger keeps the default split.
+  // Owner 2026-10-17 (ops/approvals.yaml id 34): implementation is back with Claude and the list
+  // is frozen (no new entry; tools/lib/codex-impl-tasks.test.ts), so a new ledger outside it must
+  // name impl: claude; a listed ledger already started finishes as a Codex implementation.
   const legacy = loadLegacyTasks(root);
   const codexFirst = isCodexFirst(task, loadCodexImplTasks(root));
   if (codexFirst) {

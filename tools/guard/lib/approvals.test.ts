@@ -125,8 +125,9 @@ describe('ops/approvals.yaml of this repository', () => {
       // §7.3 has rows 0–15 in the planning repository since couli#114 (87238fa): row 12, the
       // default split of 2026-10-05, is itself the approval id 19 records; rows 13 and 14 are
       // ids 22 and 23 (2026-10-06); row 15, tasks not yet started go to Codex, is id 30
-      // (2026-10-16).
-      expect(approval.row).toBeLessThanOrEqual(15);
+      // (2026-10-16); row 16, implementation back with Claude and Codex reviews only, is id 34
+      // (2026-10-17, superseding id 30).
+      expect(approval.row).toBeLessThanOrEqual(16);
       expect(approval.note).not.toBe('');
     }
   });
