@@ -232,3 +232,46 @@ it('[AC-F1-07b#32] 已注销用户的详情照常可见', async () => {
   const data = await ok<Detail>(await get(f, detailUrl(gone.id)), DETAIL);
   expect(normalDetail(data)).toEqual(detail(gone));
 });
+
+it('[AC-F1-07b#33] 有当前行（pending_auth / active / invalid / blocked）时取当前行，即便 released 历史行同刻或更晚且 id 更大', async () => {
+  const f = await setup(h);
+  const target = await user(h, f.appId);
+  // Per platform: one current row and a released history row whose created_at is the same or
+  // later and whose id is larger, so "created_at, id descending" alone would pick the history.
+  const cases = [
+    { platform: 'taobao' as const, status: 'pending_auth' as const, later: false },
+    { platform: 'jd' as const, status: 'active' as const, later: true },
+    { platform: 'pdd' as const, status: 'invalid' as const, later: false },
+    { platform: 'meituan' as const, status: 'blocked' as const, later: true },
+  ];
+  const expected = [];
+  for (const [i, c] of cases.entries()) {
+    const ids = [randomUUID(), randomUUID()].sort();
+    const createdAt = at(100 + i * 10);
+    const current = await binding(h, target, c.platform, {
+      id: ids[0]!,
+      status: c.status,
+      createdAt,
+      rowVersion: 2 + i,
+    });
+    await binding(h, target, c.platform, {
+      id: ids[1]!,
+      status: 'released',
+      createdAt: c.later ? at(500 + i * 10) : createdAt,
+      rowVersion: 9,
+      reason: '历史绑定',
+    });
+    expected.push(current);
+  }
+  const response = await get(f, detailUrl(target.id));
+  const data = await ok<Detail>(response, DETAIL);
+  for (const c of cases) {
+    const shown = data.union_bindings.filter((b) => b.platform === c.platform);
+    expect(
+      shown.map((b) => [b.status, b.row_version]),
+      c.platform,
+    ).toEqual([[c.status, 2 + cases.indexOf(c)]]);
+  }
+  expect(normalDetail(data)).toEqual(detail(target, NO_RISK, expected));
+  noPlaintext(f, [target], response);
+});
