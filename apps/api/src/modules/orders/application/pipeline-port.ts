@@ -3,7 +3,7 @@
 // - 已存在：app 不同 → 零写入、P1 告警；同 App → 乱序（可选）→ content_hash 短路 → updateStep（B1-08i）。
 // - 新子订单：① App 归属（推广位白名单）→ attr_at（定金优先）→ 同步起点 → 首态（表外码 / 非法首态只写
 //   pending，不建行）→ ② 用户归属 → ④ buy_type → 写 order_keys、orders、history（+ NO_RECEIVED_AT）、
-//   未归因计数 → rebate.onImported（同事务）。①、无付款时间、同步起点之前 → 只记丢弃计数。
+//   未归因计数、无 mtime 计数（开启排序时）→ rebate.onImported（同事务）。①、无付款时间、同步起点之前 → 只记丢弃计数。
 // 日志只打平铺字段（platform、app_id、reason、outcome），不打子订单号与买家参数。
 import { accountingDate } from '@couli/domain';
 import type { DB } from '@couli/db';
@@ -81,6 +81,26 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
     return { kind: 'dropped', reason };
   }
 
+  /** BR-ATTR-01：开启乱序判定（attr.mtime_ordering）而平台没有返回修改时间。 */
+  function missingMtime(order: UnionOrder, platform: RegisteredPlatform): boolean {
+    return (deps.mtimeOrdering?.(platform) ?? false) && (order.modified_at ?? null) === null;
+  }
+
+  /** order_sync_no_mtime(platform, date) +1，date = attr_at 的 +08:00 日；随调用方事务提交或回滚。 */
+  async function countNoMtime(
+    trx: Transaction<DB>,
+    ctx: OrderPipelineContext,
+    platform: RegisteredPlatform,
+    attrAt: Date,
+  ): Promise<void> {
+    await bumpCounter(trx, {
+      app_id: ctx.app_id,
+      platform,
+      date: accountingDate(attrAt),
+      counter: 'order_sync_no_mtime',
+    });
+  }
+
   async function existing(
     trx: Transaction<DB>,
     key: OrderKeyRow,
@@ -104,12 +124,7 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
     if (ordering) {
       const incomingMtime = order.modified_at ?? null;
       if (incomingMtime === null) {
-        await bumpCounter(trx, {
-          app_id: ctx.app_id,
-          platform,
-          date: accountingDate(current.attr_at),
-          counter: 'order_sync_no_mtime',
-        });
+        await countNoMtime(trx, ctx, platform, current.attr_at);
       } else if (
         current.platform_modified_at !== null &&
         incomingMtime.getTime() < current.platform_modified_at.getTime()
@@ -282,6 +297,9 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
         counter: user.counter,
       });
     }
+    // BR-ATTR-01（D10-39）：开启乱序判定而首次入库也没有 platform_modified_at → 照常按 content_hash
+    // 入库，同事务计一次 order_sync_no_mtime；丢弃与只进待处理（不建行）的不计。
+    if (missingMtime(order, platform)) await countNoMtime(trx, ctx, platform, attrAt);
     await deps.rebate.onImported(trx, {
       app_id: ctx.app_id,
       order_id: orderId,
