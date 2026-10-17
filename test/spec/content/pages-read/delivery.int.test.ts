@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb } from '@couli/db';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { headers } from '../config/kit.ts';
@@ -349,7 +350,8 @@ it.each(['public', 'risk'] as const)(
       const response = await h.app.inject({
         method: 'GET',
         url: '/v1/app-versions/check',
-        headers: { ...headers(id), 'x-channel': 'appstore' },
+        // checkAppVersion requires X-Device-Id (contract DeviceId); only its format is checked there.
+        headers: { ...headers(id), 'x-channel': 'appstore', 'x-device-id': randomUUID() },
       });
       expect(response.statusCode).toBe(200);
       await validate(response, '/v1/app-versions/check');
