@@ -13,11 +13,7 @@ import {
   type LoginCompletionOptions,
 } from './login-completion.ts';
 import type { OauthAttemptService } from './oauth-attempts.ts';
-import {
-  snapshotRegistrationConfig,
-  type DeviceLimitContext,
-  type RegistrationService,
-} from './registration.ts';
+import { snapshotRegistrationConfig, type RegistrationService } from './registration.ts';
 import { sessionScope, type MinimumVersionReader } from './session-scope.ts';
 import type { SmsConfigReader } from './sms-codes.ts';
 import type { ThirdPartyIdentity, ThirdPartyIdentityPort } from './step-up.ts';
@@ -58,9 +54,7 @@ export interface OauthLoginOptions extends LoginCompletionOptions {
   ) => Promise<{
     readonly code: 44001;
     readonly data?: { readonly risk_msg_code: string };
-    readonly record?: () => Promise<void>;
   } | null>;
-  readonly recordDeviceLimit?: (input: DeviceLimitContext) => Promise<void>;
 }
 export interface OauthLoginService {
   login(command: OauthLoginCommand): Promise<OauthLoginResult>;
@@ -68,11 +62,9 @@ export interface OauthLoginService {
 
 class LoginAbort extends Error {
   readonly result: Exclude<OauthLoginResult, { code: 0 }> | 'no_account';
-  readonly afterRollback: (() => Promise<void>) | undefined;
-  constructor(result: LoginAbort['result'], afterRollback?: () => Promise<void>) {
+  constructor(result: LoginAbort['result']) {
     super('identity: OAuth login rolled back');
     this.result = result;
-    this.afterRollback = afterRollback;
   }
 }
 
@@ -191,10 +183,11 @@ export function createOauthLoginService(options: OauthLoginOptions): OauthLoginS
           device_hash: deviceHash,
         });
         if (blocked != null) {
-          throw new LoginAbort(
-            { code: 44001, ...(blocked.data === undefined ? {} : { data: blocked.data }) },
-            blocked.record,
-          );
+          // D24: phone-less registration refusals roll back without a blocked_request audit.
+          throw new LoginAbort({
+            code: 44001,
+            ...(blocked.data === undefined ? {} : { data: blocked.data }),
+          });
         }
         const registered = await options.registration.register(trx, {
           app_id: appId,
@@ -212,11 +205,8 @@ export function createOauthLoginService(options: OauthLoginOptions): OauthLoginS
         });
         if ('outcome' in registered) throw new LoginAbort({ code: 50001 });
         if (registered.code === 44001) {
-          const record = options.recordDeviceLimit;
-          throw new LoginAbort(
-            { code: 44001 },
-            record === undefined ? undefined : () => record(registered),
-          );
+          // D24 applies to the device registration limit as well: there is no related phone.
+          throw new LoginAbort({ code: 44001 });
         }
         if (registered.code !== 0) throw new LoginAbort({ code: 50001 });
         const now = clock.now();
@@ -260,12 +250,6 @@ export function createOauthLoginService(options: OauthLoginOptions): OauthLoginS
         if (!(error instanceof LoginAbort)) {
           // Database messages may quote third-party identifiers; expose no error detail.
           logger.error({ provider }, 'oauth_login_failed');
-          return { code: 50001 };
-        }
-        try {
-          await error.afterRollback?.();
-        } catch {
-          logger.error({ provider }, 'oauth_login_risk_record_failed');
           return { code: 50001 };
         }
         if (error.result !== 'no_account') return error.result;

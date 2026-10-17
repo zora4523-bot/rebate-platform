@@ -39,18 +39,12 @@ const ACCOUNT_DELETION_ACTION = 'account_deletion';
 export interface IdentityRiskPorts {
   readonly smsHooks: Pick<SmsHooks, 'phoneBlocklist' | 'blockedPrefix'>;
   readonly login: Pick<SmsLoginOptions, 'registrationBlocklist' | 'recordDeviceLimit'>;
-  readonly oauthLogin: Pick<OauthLoginOptions, 'registrationBlocklist' | 'recordDeviceLimit'>;
+  readonly oauthLogin: Pick<OauthLoginOptions, 'registrationBlocklist'>;
   readonly registration: Pick<RegistrationOptions, 'allowBlockedRegistration'>;
 }
 
 function requestTypeOf(purpose: SmsPurpose): 'register' | null {
   return purpose === 'login' ? 'register' : null;
-}
-
-/** Fail closed: never manufacture a related phone to satisfy the registration audit schema. */
-function oauthRiskRecordingUnavailable(): Promise<void> {
-  // TODO(规划/11 §2.3): record phone-less registration hits through risk — blocked on BlockedRequest.related_phone and risk_hits_related_phone_check requiring a phone for register.
-  return Promise.reject(new Error('identity: phone-less registration risk recording unavailable'));
 }
 
 export function identityRiskPorts(risk: BlocklistService, crypto: FieldCrypto): IdentityRiskPorts {
@@ -66,13 +60,12 @@ export function identityRiskPorts(risk: BlocklistService, crypto: FieldCrypto): 
         });
         const hits = block?.hits.filter((hit) => hit.dimension === 'device') ?? [];
         if (block === null || hits.length === 0) return null;
+        // B1-02d D24: no phone to associate with a blocked_request; return only the refusal.
         return {
           code: 44001,
           data: block.data,
-          record: oauthRiskRecordingUnavailable,
         };
       },
-      recordDeviceLimit: oauthRiskRecordingUnavailable,
     },
     smsHooks: {
       async phoneBlocklist(request) {
