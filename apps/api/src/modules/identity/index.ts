@@ -1,4 +1,6 @@
 // Public surface of the identity module. Other modules import only from this file.
+export { createInviteLoginDevicesReader } from './ports/invite-login-devices.ts';
+export type { InviteLoginDevicesReader } from './ports/invite-login-devices.ts';
 export { createUserLevelReader } from './ports/user-level.ts';
 export type {
   UserLevel,
