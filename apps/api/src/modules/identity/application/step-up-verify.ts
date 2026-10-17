@@ -107,13 +107,28 @@ export interface StepUpCheckOptions {
 /**
  * Stage ⑫ as an idempotency post-miss check (registered through RiskModule's `beforeRateLimit`).
  * It reads the request's step-up context from the enclosing withStepUp call; an x-step-up request
- * judged outside any withStepUp call fails closed.
+ * judged outside any withStepUp call fails closed, except a first phone binding.
  */
 export function createStepUpCheck(options: StepUpCheckOptions): IdempotencyPostMissCheck {
   const verify = createStepUpTokenVerifier(options.keys, options.clock);
   return async (command) => {
     const action = ACTIONS.get(`${command.method} ${command.path}`);
     if (action === undefined) return;
+    // First binding needs no step-up context; read the authenticated command's user on the
+    // claim transaction before requiring the wrapper used for phone changes.
+    if (action === 'phone_change') {
+      const trx = idempotencyPostMissTransaction();
+      if (trx === undefined) throw unavailable();
+      const user = await trx
+        .withSchema('app')
+        .selectFrom('users')
+        .select('phone_hmac')
+        .where('app_id', '=', command.appId)
+        .where('id', '=', command.actor.userId)
+        .executeTakeFirst();
+      if (user === undefined) throw required();
+      if (user.phone_hmac === null) return;
+    }
     const scope = SCOPE.getStore();
     const principal = scope?.request.principal;
     if (scope === undefined || principal === undefined) throw required();
@@ -127,19 +142,6 @@ export function createStepUpCheck(options: StepUpCheckOptions): IdempotencyPostM
       (device.appId !== principal.app_id || device.deviceId !== principal.device_id)
     ) {
       throw required();
-    }
-    if (action === 'phone_change') {
-      const trx = idempotencyPostMissTransaction();
-      if (trx === undefined) throw unavailable();
-      const user = await trx
-        .withSchema('app')
-        .selectFrom('users')
-        .select('phone_hmac')
-        .where('app_id', '=', principal.app_id)
-        .where('id', '=', principal.uid)
-        .executeTakeFirst();
-      if (user === undefined) throw required();
-      if (user.phone_hmac === null) return;
     }
     const token = scope.request.headers['x-step-up-token'];
     if (typeof token !== 'string' || token.length === 0) throw required();
