@@ -5,18 +5,16 @@ import {
 } from '../../../../apps/api/src/modules/orders/domain/status-map.ts';
 import { HEADER, requiredStatusCsv } from './fixtures.ts';
 
-// 编排者补充 D10-27：文档推定，未经 CAP-PDD-07 实测；不是负责人已批准的声明。
+// D10-31 修订：CAP-PDD-07 实测前，4、10 不进表，只有 5 算已结算。
 const EXPECTED = [
   ['0', 'PLATFORM_PAID'],
   ['1', 'PLATFORM_PAID'],
   ['2', 'PLATFORM_RECEIVED'],
   ['3', 'PLATFORM_RECEIVED'],
-  ['4', 'PLATFORM_INVALID'],
   ['5', 'PLATFORM_SETTLED'],
-  ['10', 'PLATFORM_PUNISH'],
 ] as const;
 
-it('[AC-B1-08f#1] BR-FUND-02：拼多多 CSV 只列指定的七个文档码，均未实测', () => {
+it('[AC-B1-08f#1] BR-FUND-02：拼多多 CSV 恰好五个文档码，均未实测，4 与 10 不进表', () => {
   const csv = requiredStatusCsv('pdd');
   const [header, ...lines] = csv.trimEnd().split(/\r?\n/);
   expect(header).toBe(HEADER);
@@ -42,20 +40,19 @@ it('[AC-B1-08f#1] BR-FUND-02：拼多多 CSV 只列指定的七个文档码，�
 });
 
 it.each(EXPECTED)(
-  '[AC-B1-08f#2] BR-FUND-02 / D10-27：拼多多原始码 %s → %s，保留未验证标记',
+  '[AC-B1-08f#2] BR-FUND-02 / D10-31：拼多多原始码 %s → %s，保留未验证标记',
   (rawCode, event) => {
     const map = loadStatusMap('pdd', requiredStatusCsv('pdd'));
     expect(mapPlatformStatus(map, rawCode)).toEqual({ kind: 'event', event, verified: false });
   },
 );
 
-it('[AC-B1-08f#3] BR-FUND-02：处罚码 10 不得按失效处理，审核成功 3 不得按已结算处理', () => {
+it('[AC-B1-08f#3] BR-FUND-02：实测前 4、10 均未映射，只有 5 算已结算，3 不算', () => {
   const map = loadStatusMap('pdd', requiredStatusCsv('pdd'));
-  expect(mapPlatformStatus(map, '10')).toEqual({
-    kind: 'event',
-    event: 'PLATFORM_PUNISH',
-    verified: false,
-  });
+  expect(map.entries.has('4')).toBe(false);
+  expect(map.entries.has('10')).toBe(false);
+  expect(mapPlatformStatus(map, '4')).toEqual({ kind: 'unmapped', rawCode: '4' });
+  expect(mapPlatformStatus(map, '10')).toEqual({ kind: 'unmapped', rawCode: '10' });
   expect(mapPlatformStatus(map, '3')).toEqual({
     kind: 'event',
     event: 'PLATFORM_RECEIVED',
@@ -66,7 +63,7 @@ it('[AC-B1-08f#3] BR-FUND-02：处罚码 10 不得按失效处理，审核成功
   ).toEqual(['5']);
 });
 
-it.each(['6', '9', '11', '99', '05', '5.0', ' 5 ', '', 'PLATFORM_SETTLED', null])(
+it.each(['4', '6', '9', '10', '11', '99', '05', '5.0', ' 5 ', '', 'PLATFORM_SETTLED', null])(
   '[AC-B1-08f#4] BR-FUND-02：拼多多表外码 %s 保留原码交调用方处理 UNMAPPED_STATUS',
   (rawCode) => {
     const map = loadStatusMap('pdd', requiredStatusCsv('pdd'));

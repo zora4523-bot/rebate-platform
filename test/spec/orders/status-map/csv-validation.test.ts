@@ -3,7 +3,7 @@ import {
   loadStatusMap,
   mapPlatformStatus,
 } from '../../../../apps/api/src/modules/orders/domain/status-map.ts';
-import { DEMO_CSV, HEADER } from './fixtures.ts';
+import { SYNTHETIC_CSV, HEADER } from './fixtures.ts';
 
 it('[AC-B1-08f#9] BR-FUND-02：CSV 支持 UTF-8 备注、引号转义、CRLF，布尔值不按字符串真值读取', () => {
   const csv = [
@@ -12,7 +12,7 @@ it('[AC-B1-08f#9] BR-FUND-02：CSV 支持 UTF-8 备注、引号转义、CRLF，�
     'b,PLATFORM_RECEIVED,demo,true,演示收货',
     '',
   ].join('\r\n');
-  const map = loadStatusMap('demo', csv);
+  const map = loadStatusMap('pdd', csv);
   expect(map.entries.get('a')).toEqual({
     event: 'PLATFORM_PUNISH',
     source: 'demo',
@@ -51,11 +51,11 @@ it.each([
   ]),
 ])('[AC-B1-08f#10] BR-FUND-02：拒绝无效 CSV（%s），不能悄悄跳过坏行或覆盖重复码', (_label, csv) => {
   // 先要求合法输入成功：抛任何错误的骨架不得满足下面的拒绝断言。
-  const valid = loadStatusMap('demo', DEMO_CSV);
-  expect(mapPlatformStatus(valid, 'demo-paid')).toEqual({
+  const valid = loadStatusMap('pdd', SYNTHETIC_CSV);
+  expect(mapPlatformStatus(valid, 'x-paid')).toEqual({
     kind: 'event',
     event: 'PLATFORM_PAID',
     verified: false,
   });
-  expect(() => loadStatusMap('demo', csv)).toThrow();
+  expect(() => loadStatusMap('pdd', csv)).toThrow();
 });
