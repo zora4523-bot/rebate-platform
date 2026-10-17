@@ -51,6 +51,7 @@ import {
   type EventBus,
   type FieldCrypto,
   type Idempotency,
+  type IdempotencyPostMissCheck,
   type RedisHandle,
   type RootLogger,
 } from '../platform/index.ts';
@@ -110,6 +111,7 @@ import {
 export const MINIMUM_VERSION_CHECK = Symbol('MINIMUM_VERSION_CHECK');
 const MINIMUM_VERSION_READER = Symbol('MINIMUM_VERSION_READER');
 const MINIMUM_VERSION_HOOK = Symbol('MINIMUM_VERSION_HOOK');
+const BEFORE_RATE_LIMIT = Symbol('BEFORE_RATE_LIMIT');
 /** Whether stage ④a is in force on this entry: true exactly when a reader is wired. */
 const MINIMUM_VERSION_GATE = Symbol('MINIMUM_VERSION_GATE');
 const RATE_LIMIT_THRESHOLDS = Symbol('RATE_LIMIT_THRESHOLDS');
@@ -174,6 +176,16 @@ export interface RiskModuleOptions {
       'inject' | 'useFactory'
     >;
   };
+  /**
+   * Post-miss checks judged after stage ⑤ and before stage ⑬ (BR-ID-01 ⑥–⑫; today identity's ⑫
+   * step-up check, B1-02y), built by app.module. Registered on IDEMPOTENCY in list order right
+   * after ⑤'s hook (after ④a's when ⑤ is not installed, first when neither is) and before ⑬'s.
+   * Absent or empty: the registrations and their order are exactly as without this option.
+   */
+  readonly beforeRateLimit?: Pick<
+    FactoryProvider<readonly IdempotencyPostMissCheck[]>,
+    'inject' | 'useFactory'
+  >;
   /**
    * BR-ID-37 同设备多账号 (B1-03k): identity's login reader and the configuration port bound to a
    * handle (content's reader over the caller's transaction), both assembled by app.module. Absent:
@@ -292,6 +304,11 @@ function chainGuards(first: StageGuard, ...rest: readonly (StageGuard | null)[])
 
 @Module({})
 export class RiskModule {
+  /** Read-only scope presence for downstream HTTP post-miss checks (also used by ④a and ⑤). */
+  static hasHttpRequestScope(): boolean {
+    return MINIMUM_VERSION_SCOPE.getStore() !== undefined;
+  }
+
   /**
    * Provides SIGNATURE_CHECK, the stage ① request check that app.module places first in
    * REQUEST_CHECKS. Without a REDIS provider the check still refuses an invalid request with
@@ -339,6 +356,9 @@ export class RiskModule {
       imports: [...options.imports],
       controllers: [AppealsController],
       providers: [
+        options.beforeRateLimit === undefined
+          ? { provide: BEFORE_RATE_LIMIT, useValue: [] }
+          : { provide: BEFORE_RATE_LIMIT, ...options.beforeRateLimit },
         ...sameDeviceProviders,
         appealsConfig,
         {
@@ -483,7 +503,7 @@ export class RiskModule {
                 : RATE_LIMIT_SCOPE_INTERCEPTOR,
         },
         {
-          // ④a's hook first, then ⑤'s, then ⑬'s: registration order is the judgement order.
+          // ④a → ⑤ → optional ⑥–⑫ → ⑬: registration order is the judgement order.
           provide: MINIMUM_VERSION_HOOK,
           inject: [
             MINIMUM_VERSION_CHECK,
@@ -492,6 +512,7 @@ export class RiskModule {
             RISK_STATE_SERVICE,
             RATE_LIMIT_SERVICE,
             RATE_LIMIT_THRESHOLDS,
+            BEFORE_RATE_LIMIT,
             { token: IDEMPOTENCY, optional: true },
           ],
           useFactory: (
@@ -501,6 +522,7 @@ export class RiskModule {
             riskState: RiskStateService | null,
             rateLimit: RateLimitService | null,
             limits: RateLimitThresholdReaders | null,
+            beforeRateLimit: readonly IdempotencyPostMissCheck[],
             idempotency?: Idempotency,
           ) => {
             if (enabled && idempotency !== undefined) {
@@ -515,6 +537,11 @@ export class RiskModule {
                 idempotency,
                 createRiskStatePostMissCheck(riskState),
               );
+            }
+            if (idempotency !== undefined) {
+              for (const additionalCheck of beforeRateLimit) {
+                registerIdempotencyPostMissCheck(idempotency, additionalCheck);
+              }
             }
             if (rateLimit !== null && idempotency !== undefined) {
               registerIdempotencyPostMissCheck(

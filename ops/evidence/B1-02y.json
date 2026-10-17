@@ -1,0 +1,112 @@
+{
+  "task": "B1-02y",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "259b08681ecf22205a565f664a0c7d71217dcdde",
+  "red_tests": [
+    "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#10] 成功后同一 token 换新幂等键再提交返回 10003，业务只执行一次",
+    "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#11] 业务返回已存储的非零码（30412）后，同一 token 换新键可再用一次",
+    "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#12] 业务返回不存储的错误码（20002）后，沿用原幂等键与同一 token 重提通过",
+    "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#13] 业务抛错回滚后，同一 token 沿用原键重提通过，成功后才核销",
+    "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#14] 同键回放返回原响应且不校验 token：过期、已核销或不带 token 都回放；换请求体是 20901",
+    "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#15] 两个不同幂等键并发提交同一 token：只有一个进入业务，另一个 10003",
+    "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#16] 校验时 Redis 不可用返回 50001、业务不执行、token 未被占用",
+    "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#17] 收尾时 Redis 失败只写一条 warn、响应不变；该 token 仍不可再用；日志不含 token 与 jti",
+    "test/spec/identity/step-up-verify/order.int.test.ts > [AC-B1-02y#18] 版本过低（④a 10405）先命中时不校验、不占用 token；升级后沿用原键通过，之后该 token 不可再用",
+    "test/spec/identity/step-up-verify/order.int.test.ts > [AC-B1-02y#19] 封禁（⑤ 10006）先命中时不占用 token；解封后同一 token 通过一次",
+    "test/spec/identity/step-up-verify/order.int.test.ts > [AC-B1-02y#20] 限流桶已满时先回 10003 而不是 42901；token 有效时才轮到限流",
+    "test/spec/identity/step-up-verify/order.int.test.ts > [AC-B1-02y#21] 未带 Idempotency-Key 的请求由幂等先拒（20001），不进入 ⑫、不占用 token",
+    "test/spec/identity/step-up-verify/order.int.test.ts > [AC-B1-02y#22] 已作废的幂等键（20903）不校验、不占用 token；同一 token 换新键通过一次",
+    "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#1] 缺少 X-Step-Up-Token 返回 10003，业务不执行",
+    "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#2] 乱码、空串与三段非 JWT 的 token 返回 10003",
+    "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#3] 篡改签名或载荷的 token 返回 10003",
+    "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#4] 别的密钥签的、alg=none 的、签发者不对的 token 返回 10003",
+    "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#5] access_token 与 aud=h5 的 token 冒充 step_up_token 返回 10003",
+    "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#6] 按注入的 Clock 判过期：签发后第 299 秒通过，第 300 秒整返回 10003",
+    "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#7] action 与接口不对应返回 10003：withdraw 的 token 调注销、account_deletion 的调提现",
+    "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#8] 绑定别的 uid、别的设备、别的 app 的 token 返回 10003",
+    "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#9] 缺 jti、缺 action 或缺 device_id 的 token 返回 10003"
+  ],
+  "risk_note": "RV2 (identity plus app.module.ts and risk.module.ts). Stage ⑫ user-side step-up check (BR-ID-08): X-Step-Up-Token verified with the access-token keys and issuer, aud=step_up, uid / app / device / action bound to the access token, expiry by the injected Clock (10003); the jti is reserved in Redis for the token's remaining life, consumed only when the business result is 2xx and code 0, released otherwise; Redis down at check → 50001; idempotency replays, 40901, 20901, 20903 are not checked; registered after ⑤ and before ⑬ through RiskModule's optional beforeRateLimit (risk's own order unchanged without it). A first phone binding (POST /v1/me/phone without a bound phone) passes without a withStepUp scope (round 2). No contract change. Full verification by the required CI checks (ops/approvals.yaml id 21). Round 3 (after the first landing's CI): stage ⑫ skips calls without an HTTP request scope, exactly as ④a and ⑤ do (frozen B1-02g abandon-route tests write completed records by calling the idempotency service directly); an HTTP request outside withStepUp still answers 10003.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "259b08681ecf22205a565f664a0c7d71217dcdde",
+      "tree": "ffb259a59f597ee756fa53550a6df3da33ebcaf7",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T03:24:56Z",
+      "finished_at": "2026-10-17T03:25:03Z",
+      "red_tests": [
+        "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#10] 成功后同一 token 换新幂等键再提交返回 10003，业务只执行一次",
+        "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#11] 业务返回已存储的非零码（30412）后，同一 token 换新键可再用一次",
+        "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#12] 业务返回不存储的错误码（20002）后，沿用原幂等键与同一 token 重提通过",
+        "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#13] 业务抛错回滚后，同一 token 沿用原键重提通过，成功后才核销",
+        "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#14] 同键回放返回原响应且不校验 token：过期、已核销或不带 token 都回放；换请求体是 20901",
+        "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#15] 两个不同幂等键并发提交同一 token：只有一个进入业务，另一个 10003",
+        "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#16] 校验时 Redis 不可用返回 50001、业务不执行、token 未被占用",
+        "test/spec/identity/step-up-verify/once.int.test.ts > [AC-B1-02y#17] 收尾时 Redis 失败只写一条 warn、响应不变；该 token 仍不可再用；日志不含 token 与 jti",
+        "test/spec/identity/step-up-verify/order.int.test.ts > [AC-B1-02y#18] 版本过低（④a 10405）先命中时不校验、不占用 token；升级后沿用原键通过，之后该 token 不可再用",
+        "test/spec/identity/step-up-verify/order.int.test.ts > [AC-B1-02y#19] 封禁（⑤ 10006）先命中时不占用 token；解封后同一 token 通过一次",
+        "test/spec/identity/step-up-verify/order.int.test.ts > [AC-B1-02y#20] 限流桶已满时先回 10003 而不是 42901；token 有效时才轮到限流",
+        "test/spec/identity/step-up-verify/order.int.test.ts > [AC-B1-02y#21] 未带 Idempotency-Key 的请求由幂等先拒（20001），不进入 ⑫、不占用 token",
+        "test/spec/identity/step-up-verify/order.int.test.ts > [AC-B1-02y#22] 已作废的幂等键（20903）不校验、不占用 token；同一 token 换新键通过一次",
+        "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#1] 缺少 X-Step-Up-Token 返回 10003，业务不执行",
+        "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#2] 乱码、空串与三段非 JWT 的 token 返回 10003",
+        "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#3] 篡改签名或载荷的 token 返回 10003",
+        "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#4] 别的密钥签的、alg=none 的、签发者不对的 token 返回 10003",
+        "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#5] access_token 与 aud=h5 的 token 冒充 step_up_token 返回 10003",
+        "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#6] 按注入的 Clock 判过期：签发后第 299 秒通过，第 300 秒整返回 10003",
+        "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#7] action 与接口不对应返回 10003：withdraw 的 token 调注销、account_deletion 的调提现",
+        "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#8] 绑定别的 uid、别的设备、别的 app 的 token 返回 10003",
+        "test/spec/identity/step-up-verify/token.int.test.ts > [AC-B1-02y#9] 缺 jti、缺 action 或缺 device_id 的 token 返回 10003"
+      ],
+      "expected": [
+        "test/spec/identity/step-up-verify/once.int.test.ts",
+        "test/spec/identity/step-up-verify/order.int.test.ts",
+        "test/spec/identity/step-up-verify/token.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "7b571e39af7b677271ec619064c9703066417886149dc994778d0906ef026f0e"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "fresh Claude subagents (Codex implemented, approvals 27): round 1 pass (S2 first-binding order, raised by the orchestrator because B1-20a binds without withStepUp; fixed in round 2), round 2 pass (S2: first-binding phone read without lock, to fix before B1-20b); round 3 pass (S2: ⑫ relies on ④a / ⑤ / ⑬ being assembled to open the HTTP scope)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by a Claude subagent (22 tests in 3 files red for the right reason on the test runner) reviewed by a fresh Codex read-only session: round 1 pass"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6875085aaa560985594fed987c2caeba34f571eb",
+    "test/spec": "1a444ebca95658ef09793faa16da1f9e75e6430b",
+    "specs": "4b37a92670828e2b8c3e0734ecb85eb5371a7277"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "6875085aaa560985594fed987c2caeba34f571eb"
+  }
+}
