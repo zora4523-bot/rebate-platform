@@ -21,4 +21,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/identity-level/**'
-status: todo
+status: done
+pr: 676
