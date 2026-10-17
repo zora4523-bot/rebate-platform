@@ -290,3 +290,21 @@ it('[AC-B1-02za#23] ④正在处理的同键返回 40901，不提前执行身份
   await refusal(await c.send('PUT'), 403, 10005);
   expect(f.handled(c.uid)).toBe(0);
 });
+
+it('[AC-B1-02za#24] PUT 未绑手机 10005 不写幂等记录，绑定后同键重新判定为 30304', async () => {
+  const c = await client(f);
+  const key = randomUUID();
+  await refusal(await c.send('PUT', PAYOUT, { key }), 403, 10005);
+  expect(
+    await db
+      .withSchema('app')
+      .selectFrom('idempotency_keys')
+      .select('id')
+      .where('app_id', '=', c.appId)
+      .where('key', '=', key)
+      .execute(),
+  ).toEqual([]);
+  await c.bind(true);
+  await refusal(await c.send('PUT', PAYOUT, { key }), 422, 30304);
+  expect(f.handled(c.uid)).toBe(0);
+});

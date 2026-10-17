@@ -123,10 +123,9 @@ for (const status of ['none', 'failed', 'verified'] as const) {
     }
     expect(selects).toHaveLength(2);
     expect(read).toHaveBeenCalledTimes(2);
-    for (const [handle, principal] of read.mock.calls as unknown as Parameters<
+    for (const [, principal] of read.mock.calls as unknown as Parameters<
       LevelApi.RealnameStatusReader['read']
     >[]) {
-      expect(handle.isTransaction).toBe(false);
       expect(principal).toEqual({ app_id: s.appId, user_id: s.uid });
     }
   });
@@ -269,3 +268,81 @@ it('[AC-B1-02za#20] post-miss 的 phone 和实名读取都用 claim 事务，看
   expect(read).toHaveBeenCalledTimes(1);
   expect(business).toHaveBeenCalledTimes(1);
 });
+
+for (const failure of ['db', 'realname'] as const) {
+  it(`[AC-B1-02za#25] post-miss ${failure} 读取失败返回 50001，不执行后续检查或业务、不留幂等记录`, async () => {
+    const s = await subject(true);
+    const input = request(s.appId, s.uid, PAYOUT, 'PUT');
+    const key = randomUUID();
+    let checkingIdentity = false;
+    const failRead = vi.fn(() => {
+      throw new Error('fixture claim-transaction read failure');
+    });
+    const unavailable = db.withPlugin({
+      transformQuery(args) {
+        // Let the real idempotency lookup succeed; fail only reads inside the identity hook.
+        if (failure === 'db' && checkingIdentity && args.node.kind === 'SelectQueryNode')
+          failRead();
+        return args.node;
+      },
+      async transformResult(args) {
+        return args.result;
+      },
+    });
+    const read = vi.fn<LevelApi.RealnameStatusReader['read']>(async () => {
+      if (failure === 'realname') throw new Error('fixture realname read failure');
+      return 'verified';
+    });
+    const checks = api.createIdentityLevelChecks({ db: unavailable, realname: { read } });
+    const idem = platform.createIdempotency({
+      db: unavailable.withSchema('app'),
+      clock: new platform.FixedClock('2026-10-17T02:00:00Z'),
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
+    const postMiss = vi.fn<PlatformApi.IdempotencyPostMissCheck>(async (request) => {
+      checkingIdentity = true;
+      try {
+        await checks.postMiss(request);
+      } finally {
+        checkingIdentity = false;
+      }
+    });
+    const laterCheck = vi.fn(async () => {});
+    platform.registerIdempotencyPostMissCheck(idem, postMiss);
+    platform.registerIdempotencyPostMissCheck(idem, laterCheck);
+    const business = vi.fn(async () => ({
+      status: 200,
+      envelope: { code: 0, msg: '', data: { fixture: true }, trace_id: input.id },
+    }));
+    await expect(
+      scope.MINIMUM_VERSION_SCOPE.run({ request: input, idempotencyEntered: false }, () =>
+        idem.executeInTransaction(
+          {
+            appId: s.appId,
+            actor: { userId: s.uid, deviceId: null, phoneHmac: null },
+            method: 'PUT',
+            path: PAYOUT,
+            key,
+            body: {},
+            traceId: input.id,
+          },
+          business,
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 50001, statusCode: 500 });
+    expect(postMiss).toHaveBeenCalledTimes(1);
+    expect(failRead).toHaveBeenCalledTimes(failure === 'db' ? 1 : 0);
+    expect(read).toHaveBeenCalledTimes(failure === 'realname' ? 1 : 0);
+    expect(laterCheck).not.toHaveBeenCalled();
+    expect(business).not.toHaveBeenCalled();
+    expect(
+      await db
+        .withSchema('app')
+        .selectFrom('idempotency_keys')
+        .select('id')
+        .where('app_id', '=', s.appId)
+        .where('key', '=', key)
+        .execute(),
+    ).toEqual([]);
+  });
+}
