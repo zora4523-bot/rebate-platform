@@ -1,7 +1,7 @@
 // CT-02i: /admin/v1/kill-switches and /admin/v1/config-items, the admin configuration center and
-// emergency switches (04 §10, §10.2, §11.2; 05 F1-10). All eight operations are planned. Reads the
-// dereferenced contract and validates every example with the API workspace's strict Ajv (same
-// loader as admin-platform-icons.test.ts).
+// emergency switches (04 §10, §10.2, §11.2; 05 F1-10). x-implementation is not asserted, so the
+// F1-10d / F1-10e implementations can drop planned. Reads the dereferenced contract and validates
+// every example with the API workspace's strict Ajv (same loader as admin-platform-icons.test.ts).
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -109,11 +109,10 @@ const compile = (name: string) => ajv.compile(contract.components.schemas[name]!
 
 describe('configuration center and emergency switch operations (04 §10.2, §11.2)', () => {
   it.each(OPERATIONS)(
-    '[CT-02i] %s %s (%s) is a planned admin operation without Idempotency-Key',
+    '[CT-02i] %s %s (%s) is an admin operation without Idempotency-Key',
     (method, path, operationId, codes) => {
       const op = operation(method, path);
       expect(op.operationId).toBe(operationId);
-      expect(op['x-implementation']).toBe('planned');
       expect(op['x-auth']).toBe('admin');
       expect(op.security).toEqual([{ adminBearerAuth: [] }]);
       expect(op.tags).toEqual(['admin-config']);
