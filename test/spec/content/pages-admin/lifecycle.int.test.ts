@@ -184,6 +184,14 @@ it('[AC-F1-09f#6] 按发布时间回滚：先发 v2 再发 v1，退回 v2，保�
   await publish(f, 'home', 4, 1);
   const before = await snapshot(h, f.appId);
   const v1 = await version(f);
+  // v2 虽仍 published，但已不是当前全量；v3 是未发布草稿，两者都不能回滚。
+  for (const number of [2, 3]) {
+    f.clock.advanceMs(1000);
+    await fields(await send(f, 'rollback', 'home', { version: number, expected_revision: 5 }), [
+      'version',
+    ]);
+    expect(await snapshot(h, f.appId)).toEqual(before);
+  }
   f.clock.advanceMs(1000);
   expect(
     await success(await send(f, 'rollback', 'home', { version: 1, expected_revision: 5 })),

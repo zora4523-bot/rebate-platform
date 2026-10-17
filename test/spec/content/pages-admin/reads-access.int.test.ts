@@ -3,6 +3,7 @@ import { AdminOperationGuard } from '../../../../apps/api/src/modules/platform/i
 import { useHarness } from '../../admin/auth/kit.ts';
 import {
   detail,
+  fields,
   member,
   publish,
   rejected,
@@ -151,6 +152,21 @@ const BODIES = {
   gray: { gray_percent: 50, expected_revision: 4 },
   rollback: { version: 2, expected_revision: 4 },
 };
+
+it.each(['detail', 'versions', 'version', ...WRITES] as const)(
+  '[AC-F1-09f#32] %s 拒绝大写、空名称和超长 page_key，fields 精确且不留写入',
+  async (op) => {
+    const f = await setup(h);
+    const before = await snapshot(h, f.appId);
+    const body =
+      op in BODIES ? { ...BODIES[op as keyof typeof BODIES], expected_revision: 0 } : undefined;
+    for (const key of ['Home', 'custom:', `custom:${'a'.repeat(58)}`]) {
+      f.clock.advanceMs(1000);
+      await fields(await send(f, op, key, body), ['page_key']);
+      expect(await snapshot(h, f.appId)).toEqual(before);
+    }
+  },
+);
 
 it.each(Object.keys(ROUTES) as Operation[])(
   '[AC-F1-09f#13] %s 无登录为 10001、缺 content.page 为 10403，不能凭其他内容权限访问',
