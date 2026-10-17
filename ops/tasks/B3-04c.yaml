@@ -1,0 +1,27 @@
+id: B3-04c
+repo: rebate-platform
+title: Agent 工具第三段：get_rebate_quote 与确定性 resolve_link（调 parsing）、register_links（只登记 link 与报价快照，不预转链）；情境入口 context.product_key 校验与重新取数
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，plan.md §3.4）。供 B3-05e 确定性路径与模型调用 get_rebate_quote 共用。前置 B1-07（parsing）、B1-05（出卡入口）、B1-06（登记）均已 done。
+# 依据：BR-AI-04（数据源表、同一张卡同一次取数、必需字段、未验证能力的处理）；BR-AI-01 A 级表（resolve_link 只处理 parse_input 取出的链接、模型不可调；register_links 模型不可见、TRADE-03 不预转链）；
+#   BR-AI-05（context.product_key 由服务端校验格式并从 catalog 重新取数，模型改写即 invalid_args）。
+# 复用 parsing index 的 createParsing / parseUrl 与 catalog index 的 createCatalogCardEntry（active_query 场景：价格不可得时失败关闭，不出金额）。
+# rebate_quote 卡的 material 字段（素材场景）属 B3-07，本段一律 null。
+# 分工：清单外新台账，Codex 先写规则测试，Opus 实现，Codex 评审。风险 RV1。
+refs: [BR-AI-04, BR-AI-01, BR-AI-05]
+refs_hash:
+  BR-AI-04: a07587a282ba
+  BR-AI-01: b624c86b4643
+  BR-AI-05: ee8fd647fd43
+deps: [B3-04a, B1-07b, B1-05i]
+paths:
+  - 'apps/api/src/modules/agent/tools/quote/**'
+test_paths:
+  - 'test/spec/agent/tools-quote/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-quote/**'
+status: todo
+pr: null
