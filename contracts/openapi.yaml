@@ -7298,7 +7298,6 @@ paths:
         `expected_version`. Emergency switches (04 §10.2) are not here but under
         /admin/v1/kill-switches.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7399,7 +7398,6 @@ paths:
         re-reads it (within that key's cache period), never retroactively (04 §10). No
         Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -7497,7 +7495,6 @@ paths:
         read only, no step-up). The item as listed by GET /admin/v1/config-items. A key the
         server has not registered is 20001 with `data.fields=[key]`.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7574,7 +7571,6 @@ paths:
         pushes an alert; it takes effect as the key's reader re-reads it (within that key's
         cache period), never retroactively (04 §10). No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -7661,7 +7657,6 @@ paths:
         /admin/v1/config-items/{key}/rollback. A key the server has not registered is 20001 with
         `data.fields=[key]`.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7746,7 +7741,6 @@ paths:
         (action config_item_rollback) and pushes an alert; takes effect like a change (04 §10).
         No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003

@@ -24,5 +24,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/content/config-items/**'
-status: todo
-pr: null
+status: done
+pr: 656
