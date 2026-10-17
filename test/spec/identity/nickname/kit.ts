@@ -125,6 +125,14 @@ export async function nicknameFixture(kit: Kit, options: NicknameOptions = {}) {
   return {
     ...f,
     nickname,
+    /**
+     * Drop the cached session: the next patch() signs in again (new device, new session) at the
+     * clock of that moment. Access tokens live 2 h, so a test that moves the clock by days calls
+     * this before each later request.
+     */
+    renew(): void {
+      token = undefined;
+    },
     /** PATCH /v1/me with this user's full session and the given JSON body. */
     async patch(body: unknown): Promise<Response> {
       const t = await session();

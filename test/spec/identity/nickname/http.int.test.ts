@@ -2,7 +2,8 @@
 // the local seed-list review over infra/sensitive-words.nickname.txt, which must name SEED_WORD).
 // Red before implementation: updateMe is x-implementation planned, so no route is registered and
 // PATCH /v1/me answers Fastify's 404; every case fails on its first status / envelope assertion.
-// Sources: 08 BR-ID-39 (+ 细则); 04 §6.1; 10 AC-S1-61; task brief §9.3 #1–#4, #7, #9, §9.4.
+// Sources: 08 BR-ID-39 (+ 细则, incl. the 10-03 / 10-10 / 10-20 → 10-25 example); 04 §6.1;
+// 10 AC-S1-61; task brief §9.3 #1–#4, #7, #9, §9.4.
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   changeLines,
@@ -150,6 +151,32 @@ it('[AC-B1-20d#8] 库里是本月（+08:00）已满 3 次 → 30415，不改库'
   const before = await columns(f);
   exhaustedError(kit, await f.patch({ nickname: '小狸' }));
   await unchanged(f, before);
+});
+
+it('[AC-B1-20d#17] 同月跨日累计（+08:00）：10-03、10-10、10-20 各成功改一次，10-25 第 4 次 → 30415；11-01 起可再改、计数从 1 起', async () => {
+  const f = await nicknameFixture(kit, { nickname: '狸零' });
+  // Each instant is 10:00 +08:00 (02:00Z) of that day; a new session per day (tokens live 2 h).
+  for (const [instant, nickname, count] of [
+    ['2031-10-03T02:00:00.000Z', '狸一', 1],
+    ['2031-10-10T02:00:00.000Z', '狸二', 2],
+    ['2031-10-20T02:00:00.000Z', '狸三', 3],
+  ] as const) {
+    kit.clock.set(instant);
+    f.renew();
+    ok(kit, await f.patch({ nickname }));
+    expect(await columns(f)).toMatchObject({ nickname, month: '2031-10', count });
+  }
+  kit.clock.set('2031-10-25T02:00:00.000Z');
+  f.renew();
+  const before = await columns(f);
+  exhaustedError(kit, await f.patch({ nickname: '狸四' }));
+  await unchanged(f, before);
+  expect(before).toMatchObject({ nickname: '狸三', month: '2031-10', count: 3 });
+  // 2031-11-01T00:00:00.001+08:00 = 2031-10-31T16:00:00.001Z: UTC is still October.
+  kit.clock.set('2031-10-31T16:00:00.001Z');
+  f.renew();
+  ok(kit, await f.patch({ nickname: '狸四' }));
+  expect(await columns(f)).toMatchObject({ nickname: '狸四', month: '2031-11', count: 1 });
 });
 
 it('[AC-B1-20d#9] 建号时的系统默认昵称不计次：默认昵称用户本月仍有 3 次，改回默认形态也计次', async () => {
