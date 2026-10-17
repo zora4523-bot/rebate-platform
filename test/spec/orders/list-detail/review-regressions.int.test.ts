@@ -9,7 +9,7 @@ import { at, fixture, ids, queries } from './kit.ts';
 import { withHttp } from './http-kit.ts';
 import { validate } from './schema-kit.ts';
 
-// createTestDatabase uses TEST_PG_ADMIN_URL via the integration global setup. Application
+// createTestDatabase gets its admin connection from the integration global setup. Application
 // reads and fixture writes use couli_app; no live platform adapter or listener is involved.
 let database: TestDatabase | undefined;
 let db: Kysely<DB>;
