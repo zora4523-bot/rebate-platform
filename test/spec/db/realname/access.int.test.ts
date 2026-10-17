@@ -119,9 +119,11 @@ it('[AC-B1-13b#20] tombstones allow couli_app insert/read/delete but forbid ever
     'expire_at',
     'created_at',
   ]) {
+    // ALWAYS identity rejects id = id before privilege checks; DEFAULT is valid SQL here.
+    const value = field === 'id' ? sql`DEFAULT` : sql.ref(field);
     expect(
       await sqlState(
-        sql`UPDATE app.deleted_identities SET ${sql.ref(field)} = ${sql.ref(field)}
+        sql`UPDATE app.deleted_identities SET ${sql.ref(field)} = ${value}
       WHERE app_id = ${row['app_id']}`.execute(h.app),
       ),
       field,
@@ -165,7 +167,7 @@ it('[AC-B1-13b#22] effective table and column grants exactly match the two-role 
   await ready(h.app, 'realname');
   await ready(h.app, 'deleted_identities');
   for (const table of ['realname', 'deleted_identities'] as const) {
-    for (const role of ['couli_app', 'couli_readonly']) {
+    for (const role of ['couli_app', 'couli_readonly', 'couli_payout', 'couli_maint']) {
       for (const privilege of [
         'SELECT',
         'INSERT',
@@ -179,7 +181,7 @@ it('[AC-B1-13b#22] effective table and column grants exactly match the two-role 
           role === 'couli_app'
             ? ['SELECT', 'INSERT'].includes(privilege) ||
               (table === 'deleted_identities' && privilege === 'DELETE')
-            : table === 'deleted_identities' && privilege === 'SELECT';
+            : role === 'couli_readonly' && table === 'deleted_identities' && privilege === 'SELECT';
         const result = await sql<{ allowed: boolean }>`SELECT has_table_privilege(
           ${role}, ${`app.${table}`}, ${privilege}) AS allowed`.execute(h.app);
         expect(result.rows, `${role}/${table}/${privilege}`).toEqual([{ allowed }]);
@@ -192,7 +194,8 @@ it('[AC-B1-13b#22] effective table and column grants exactly match the two-role 
                 (table === 'realname' &&
                   privilege === 'UPDATE' &&
                   UPDATE_COLUMNS.includes(column.name))
-              : privilege === 'SELECT' &&
+              : role === 'couli_readonly' &&
+                privilege === 'SELECT' &&
                 (table === 'deleted_identities' || READ_COLUMNS.includes(column.name));
           const result = await sql<{ allowed: boolean }>`SELECT has_column_privilege(
             ${role}, ${`app.${table}`}, ${column.name}, ${privilege}) AS allowed`.execute(h.app);

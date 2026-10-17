@@ -169,34 +169,63 @@ it('[AC-B1-13b#4] named indexes enforce verified-only uniqueness and cover tombs
   const real = await indexes('realname');
   const deleted = await indexes('deleted_identities');
   const shape = (index: (typeof real)[number]) => ({
+    name: index.name,
     unique: index.unique,
     keys: index.keys,
     predicate: predicate(index.predicate),
   });
   expect(real.map(shape)).toEqual(
     expect.arrayContaining([
-      { unique: true, keys: ['app_id', 'id_no_hmac'], predicate: "status = 'verified'" },
+      {
+        name: 'realname_verified_id_no_hmac_key',
+        unique: true,
+        keys: ['app_id', 'id_no_hmac'],
+        predicate: "status = 'verified'",
+      },
     ]),
   );
   expect(deleted.map(shape)).toEqual(
     expect.arrayContaining([
-      { unique: false, keys: ['app_id', 'phone_hmac'], predicate: 'phone_hmac IS NOT NULL' },
-      { unique: false, keys: ['app_id', 'device_hash'], predicate: 'device_hash IS NOT NULL' },
-      { unique: false, keys: ['expire_at'], predicate: null },
+      {
+        name: 'deleted_identities_phone_hmac_idx',
+        unique: false,
+        keys: ['app_id', 'phone_hmac'],
+        predicate: 'phone_hmac IS NOT NULL',
+      },
+      {
+        name: 'deleted_identities_device_hash_idx',
+        unique: false,
+        keys: ['app_id', 'device_hash'],
+        predicate: 'device_hash IS NOT NULL',
+      },
+      {
+        name: 'deleted_identities_expire_at_idx',
+        unique: false,
+        keys: ['expire_at'],
+        predicate: null,
+      },
     ]),
   );
   expect(deleted.filter((index) => index.unique).map((index) => index.keys)).toEqual([['id']]);
-  for (const [table, list] of [
-    ['realname', real],
-    ['deleted_identities', deleted],
+  for (const index of [...real, ...deleted]) {
+    expect(index.valid && index.ready, index.name).toBe(true);
+  }
+  // Fixed names are the migration contract, never expectations derived from the catalog.
+  for (const [table, names] of [
+    ['realname', ['realname_verified_id_no_hmac_key']],
+    [
+      'deleted_identities',
+      [
+        'deleted_identities_phone_hmac_idx',
+        'deleted_identities_device_hash_idx',
+        'deleted_identities_expire_at_idx',
+      ],
+    ],
   ] as const) {
-    for (const index of list) {
-      expect(index.valid && index.ready, index.name).toBe(true);
+    for (const name of names) {
       const lookup = await sql<{ name: string }>`SELECT indexname AS name FROM pg_indexes
-        WHERE schemaname = 'app' AND tablename = ${table} AND indexname = ${index.name}`.execute(
-        h.app,
-      );
-      expect(lookup.rows).toEqual([{ name: index.name }]);
+        WHERE schemaname = 'app' AND tablename = ${table} AND indexname = ${name}`.execute(h.app);
+      expect(lookup.rows).toEqual([{ name }]);
     }
   }
 });
