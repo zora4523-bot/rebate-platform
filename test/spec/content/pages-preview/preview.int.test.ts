@@ -98,9 +98,11 @@ it.each(['draft', 'published', 'rolled_back'] as const)(
 it('[AC-F1-09e#4] 未知页 30701；已存页缺少版本 20001 fields=[version]；拒绝均无写入', async () => {
   const f = await setup(h);
   await seedVersion(h, f, 1);
+  // The requested version exists in this app, but only on a different page.
+  await seedVersion(h, f, 2, 'draft', 'custom:other', [{ id: 'other-page-v2' }]);
   const before = await snapshot(h, f);
   await rejected(await issue(f, 1, 'custom:missing'), 'issue', 30701);
-  const missingVersion = await issue(f, 2);
+  const missingVersion = await issue(f, 2, 'home');
   await rejected(missingVersion, 'issue', 20001);
   expect(missingVersion.response.json()).toMatchObject({ data: { fields: ['version'] } });
   expect(await snapshot(h, f)).toEqual(before);
@@ -209,11 +211,17 @@ it('[AC-F1-09e#10] 到期前 1ms 可读，到期瞬间及之后 30701，无缓�
 
 it('[AC-F1-09e#11] 错 token、另一已存在页、另一 app、过期一律同一 30701 信封，失败无写入', async () => {
   const f = await setup(h);
-  await seedVersion(h, f, 1);
-  await seedVersion(h, f, 1, 'draft', 'custom:other');
   const other = { ...f, appId: appId() };
-  await seedVersion(h, other, 1);
+  // Insert distinct competing versions first: omitting either scope must not read them.
+  await seedVersion(h, f, 1, 'draft', 'custom:other', [{ id: 'other-page-v1' }]);
+  await seedVersion(h, other, 1, 'draft', 'home', [{ id: 'other-app-v1' }]);
+  await seedVersion(h, f, 1);
   const result = await issued(await issue(f, 1));
+  expect(await previewed(await read(f, result.token))).toEqual({
+    page_key: 'home',
+    version: 1,
+    sections: SECTIONS,
+  });
   const before = await snapshot(h, f);
   const otherBefore = await snapshot(h, other);
   const unknown = await rejected(await read(f, 'x'.repeat(43)), 'preview', 30701);
