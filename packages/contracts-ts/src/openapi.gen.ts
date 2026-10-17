@@ -2005,10 +2005,11 @@ export interface paths {
          *     `data.fields=[user_id]`. Non-sensitive fields only: the phone number is masked 3 + 4
          *     (BR-ID-33) and the full number is only shown through POST
          *     /admin/v1/users/{user_id}/reveal. `risk` is the user_risk_state row (state normal with
-         *     `row_version` 0 and nulls when the user has none yet); its `row_version` is the
-         *     `expected_row_version` of PUT /admin/v1/users/{user_id}/risk-state. `union_bindings` has
-         *     one entry per platform the user has a binding row on, each with the `row_version` that the
-         *     reset / disable / enable operations take as `expected_row_version`. Orders, balance,
+         *     nulls and `row_version` null when the user has none yet; a row, even a first one at
+         *     row_version 0, always has an integer); its `row_version` is the `expected_row_version` of
+         *     PUT /admin/v1/users/{user_id}/risk-state. `union_bindings` has one entry per platform the
+         *     user has a binding row on (the platform's latest row), each with the `row_version` that
+         *     the reset / disable / enable operations take as `expected_row_version`. Orders, balance,
          *     ledger and withdrawals of the user come with the order and fund consoles and are not part
          *     of this schema yet.
          */
@@ -2076,9 +2077,13 @@ export interface paths {
          *     `reason`); `unban` only from banned; `unfreeze` only from frozen. A banned user is not
          *     frozen directly (unban first); an appealing user is refused for every action, the appeal
          *     is concluded through the appeal console instead (BR-ID-36).
-         *     CAS: `expected_row_version` is `risk.row_version` of GET /admin/v1/users/{user_id} (0 when
-         *     the user has no risk-state row yet); a mismatch → 20902 with
-         *     `data.resource=user_risk_state`, refresh and retry (04 §6.6).
+         *     CAS: `expected_row_version` is `risk.row_version` of GET /admin/v1/users/{user_id}. null
+         *     means "the console saw no risk-state row" and only creates the user's first row while
+         *     there is still none; an integer only matches the row's current `row_version`. Every other
+         *     case is 20902 with `data.resource=user_risk_state`, refresh and retry (04 §6.6): null
+         *     while a row exists (row_version 0 included, someone created it meanwhile), an integer
+         *     while there is no row, or an integer other than the current one. State rules are judged
+         *     on the state as read (no row = normal).
          *     Effects (BR-ID-31, BR-ID-36), in one transaction with the state change: `ban` revokes
          *     every session and refresh token of the user and sets the user's active and invalid union
          *     bindings to blocked with blocked_reason ban (a binding already blocked keeps its reason);
@@ -2125,7 +2130,11 @@ export interface paths {
          *     authorization again (30101).
          *     CAS: `expected_row_version` is the binding's `row_version` from GET
          *     /admin/v1/users/{user_id}; a mismatch → 20902 with `data.resource=union_binding`, refresh
-         *     and retry (04 §6.6). Writes an audit record (action union_binding_reset, before and after
+         *     and retry (04 §6.6).
+         *     A binding row created later on the same platform (after a release) never reuses a
+         *     row_version the platform's earlier rows had: it starts after the highest one, so a stale
+         *     value never matches the newer row.
+         *     Writes an audit record (action union_binding_reset, before and after
          *     status, reason). The response is the binding as it is now. No Idempotency-Key (04 §6.6).
          */
         post: operations["adminResetUserUnionBinding"];
@@ -2159,7 +2168,8 @@ export interface paths {
          *     …/union-bindings/{platform}/enable brings it back. While it is blocked the user's purchase
          *     entry answers 30153 (BR-ID-17, BR-ID-18).
          *     CAS: `expected_row_version` is the binding's `row_version`; a mismatch → 20902 with
-         *     `data.resource=union_binding` (04 §6.6). Writes an audit record (action
+         *     `data.resource=union_binding` (04 §6.6). As for reset, a later binding row on the platform
+         *     never reuses an earlier row's row_version. Writes an audit record (action
          *     union_binding_disable, before and after status, reason). The response is the binding as
          *     it is now. No Idempotency-Key (04 §6.6).
          */
@@ -2192,7 +2202,8 @@ export interface paths {
          *     that platform is 30154 without data (a binding blocked for ban comes back through unban
          *     only). The binding becomes invalid: the user authorizes again before rebates resume.
          *     CAS: `expected_row_version` is the binding's `row_version`; a mismatch → 20902 with
-         *     `data.resource=union_binding` (04 §6.6). Writes an audit record (action
+         *     `data.resource=union_binding` (04 §6.6). As for reset, a later binding row on the platform
+         *     never reuses an earlier row's row_version. Writes an audit record (action
          *     union_binding_enable, before and after status, reason). The response is the binding as it
          *     is now. No Idempotency-Key (04 §6.6).
          */
@@ -5658,7 +5669,8 @@ export interface components {
         };
         /**
          * @description The user's user_risk_state row as the console sees it (no rule details). A user without a
-         *     row reads as state normal, nulls and row_version 0.
+         *     row reads as state normal, nulls and row_version null; a row always has an integer
+         *     row_version (0 for a first row).
          */
         AdminUserRiskState: {
             state: components["schemas"]["AdminUserRiskStateCode"];
@@ -5674,7 +5686,8 @@ export interface components {
             changed_by: string | null;
             /** Format: date-time */
             changed_at: string | null;
-            row_version: components["schemas"]["AdminRowVersion"];
+            /** @description null when the user has no risk-state row yet. */
+            row_version: components["schemas"]["AdminRowVersion"] | null;
         };
         AdminUserRiskStateResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -5780,8 +5793,12 @@ export interface components {
              *     absent = without end (BR-ID-36). Given with another action → 20001.
              */
             frozen_until?: string | null;
-            /** @description risk.row_version as the console showed it (0 when the user has no row); a mismatch is 20902. */
-            expected_row_version: components["schemas"]["AdminRowVersion"];
+            /**
+             * @description risk.row_version as the console showed it; null = no row seen, only accepted while the
+             *     user still has no row. Any mismatch (null against an existing row, an integer against
+             *     no row or another version) is 20902.
+             */
+            expected_row_version: components["schemas"]["AdminRowVersion"] | null;
         };
         AdminUserUnionBindingActionRequest: {
             reason: components["schemas"]["AdminUserReason"];
@@ -11024,7 +11041,7 @@ export interface operations {
                      *           "frozen_until": null,
                      *           "changed_by": null,
                      *           "changed_at": null,
-                     *           "row_version": 0
+                     *           "row_version": null
                      *         },
                      *         "union_bindings": [
                      *           {

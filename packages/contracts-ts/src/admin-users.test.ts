@@ -228,7 +228,10 @@ describe('error codes and examples', () => {
     for (const [method, path] of WRITES.filter(([, p]) => !p.endsWith('/reveal'))) {
       const resource = path.endsWith('/risk-state') ? 'user_risk_state' : 'union_binding';
       const conflicts = errorExamples(operation(method, path)).filter((e) => e.code === 20902);
-      expect(conflicts, path).toEqual([expect.objectContaining({ data: { resource } })]);
+      expect(conflicts.length, path).toBeGreaterThan(0);
+      for (const conflict of conflicts) {
+        expect(conflict, path).toEqual(expect.objectContaining({ data: { resource } }));
+      }
       expect(operation(method, path).description, path).toContain(`\`data.resource=${resource}\``);
     }
   });
@@ -254,6 +257,7 @@ describe('bodies and rows', () => {
     expect(validate({ ...ban, reason: '' })).toBe(false);
     expect(validate({ ...ban, reason: 'x'.repeat(201) })).toBe(false);
     expect(validate({ ...ban, expected_row_version: -1 })).toBe(false);
+    expect(validate({ ...ban, expected_row_version: null })).toBe(true);
     expect(validate({ ...ban, state: 'banned' })).toBe(false);
     for (const field of ['action', 'reason', 'expected_row_version']) {
       const partial: Record<string, unknown> = { ...ban };
@@ -268,6 +272,7 @@ describe('bodies and rows', () => {
     expect(binding({ reason: '错绑' })).toBe(false);
     expect(binding({ expected_row_version: 0 })).toBe(false);
     expect(binding({ reason: '错绑', expected_row_version: 0, platform: 'taobao' })).toBe(false);
+    expect(binding({ reason: '错绑', expected_row_version: null })).toBe(false);
     const reveal = compile('AdminUserRevealRequest');
     expect(reveal({ field: 'phone', reason: '核对' })).toBe(true);
     expect(reveal({ field: 'id_no', reason: '核对' })).toBe(false);
@@ -291,6 +296,25 @@ describe('bodies and rows', () => {
     expect(row({ ...item, risk_state: 'deleted' })).toBe(false);
   });
 
+  it('[CT-02j] a risk state without a row has row_version null; a row has an integer ≥ 0', () => {
+    const state = compile('AdminUserRiskState');
+    const none = {
+      state: 'normal',
+      reason_category: null,
+      reason: null,
+      frozen_until: null,
+      changed_by: null,
+      changed_at: null,
+      row_version: null,
+    };
+    expect(state(none)).toBe(true);
+    expect(state({ ...none, row_version: 0 })).toBe(true);
+    expect(state({ ...none, row_version: -1 })).toBe(false);
+    const noVersion: Record<string, unknown> = { ...none };
+    delete noVersion['row_version'];
+    expect(state(noVersion)).toBe(false);
+  });
+
   it('[CT-02j] a binding row carries blocked_reason only from its enum and its row_version', () => {
     const row = compile('AdminUserUnionBinding');
     const binding = {
@@ -307,6 +331,7 @@ describe('bodies and rows', () => {
     expect(row({ ...binding, status: 'active', blocked_reason: null })).toBe(true);
     expect(row({ ...binding, blocked_reason: 'cooling' })).toBe(false);
     expect(row({ ...binding, relation_id: '123' })).toBe(false);
+    expect(row({ ...binding, row_version: null })).toBe(false);
     const noVersion: Record<string, unknown> = { ...binding };
     delete noVersion['row_version'];
     expect(row(noVersion)).toBe(false);
