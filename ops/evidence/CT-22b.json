@@ -1,0 +1,35 @@
+{
+  "task": "CT-22b",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "117347a2a19ecc6fcf611a573a21d4924f141807",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml, error-codes.yaml, texts.default.json, specs/fund-term-keys.yaml): adds listFavorites (GET /v1/me/favorites, opaque cursor), addFavorite (PUT /v1/me/favorites/{platform}/{product_key}, idempotent), removeFavorite (DELETE, idempotent), batchDeleteFavorites (POST /v1/me/favorites/batch-delete, ≤100 items), all x-implementation planned with auth login; invalid items carry a title-and-image card; getProduct gains an optional favorited; 20001 registers reason favorites_full; text keys 20001.favorites_full, favorite.add / added / removed / invalid and favorites.empty classified in fund-term-keys; regenerated openapi.gen.ts, error-codes.gen.ts and the auth / signing / min-version route tables. 04 §3.2 / §6.3 favorites rows. tester none (contract task); implementation by an Opus 5.5 subagent in one run; Codex contract review round 1 passed with one S2 (invalid and card shape not cross-constrained) in couli-runs/CT-22b/followups.md. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass; one S2 tracked in followups"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8ab6d8a94c906160d9ab5ec57ae5d3511763601d",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "8338cd2b0ab1ca1839d245887989d0461391a248",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
