@@ -1,0 +1,125 @@
+{
+  "task": "F1-09d",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "22a8b44ec9e88300a8d4e45d5ac164ecc26f0cd2",
+  "red_tests": [
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#1] 无页面、合法但不存在的 custom:x、只有草稿均为 30701",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#2] 非法 page_key HOME 返回 20001 且 fields 仅为 page_key",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#2] 非法 page_key custom: 返回 20001 且 fields 仅为 page_key",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#2] 非法 page_key custom:A 返回 20001 且 fields 仅为 page_key",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#2] 非法 page_key custom:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 返回 20001 且 fields 仅为 page_key",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#2] 非法 page_key aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 返回 20001 且 fields 仅为 page_key",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#3] home 无设备号、无令牌、无签名取指针全量版，ttl 固定 300",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#3] custom:x 无设备号、无令牌、无签名取指针全量版，ttl 固定 300",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#3] custom:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 无设备号、无令牌、无签名取指针全量版，ttl 固定 300",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#4] 指针指向 draft 不下发，即便另有 published 版本也不回退",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#4] 指针指向 rolled_back 不下发，即便另有 published 版本也不回退",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#5] sha256 前八字节桶 k−1 命中灰度、k 命中全量，重复请求一致",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#6] 无设备头在 99% 灰度下仍取全量，登录不退回 user_id 或令牌设备号分桶",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#7] 同设备换登录用户、或移除令牌，灰度版本保持一致",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#8] 灰度命中未发布版本时 30701，不静默降到全量",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#9] 每端按自身门槛过滤且等值可见，h5 不过滤，响应过滤不缓存",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#10] login yes/no/any 每次按令牌判定，暂未接入的人群条件不下发",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#11] 过滤后为空仍返回 200 和 sections []",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#12] deletion_only 返回 10405，游客仍可读",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#13] 修改指针后 59999ms 仍旧版，到 60000ms 刷新且命中不续期",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#14] 页面指针和版本缓存都隔离 app_id 与 page_key",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#15] 没有 DB 仍注册路由，每次 50001",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#20] public 先读后，版本检查与风控共用同一份最低版本缓存",
+    "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#20] risk 先读后，版本检查与风控共用同一份最低版本缓存",
+    "test/spec/content/pages-read/reader.test.ts > [AC-F1-09d#16] 空设备字符串等同缺省设备，仍取全量版",
+    "test/spec/content/pages-read/reader.test.ts > [AC-F1-09d#17] 指针与版本内容都缓存 60000ms，命中不延长有效期",
+    "test/spec/content/pages-read/reader.test.ts > [AC-F1-09d#18] 缓存保存原 sections，每次同时按版本门槛和登录态重新筛选",
+    "test/spec/content/pages-read/reader.test.ts > [AC-F1-09d#19] 指针存在但版本存储无该行时不可下发"
+  ],
+  "risk_note": "RV2 (content client page API; contract planned removal). GET /v1/pages/{page_key}: version pick and section filter through the merged F1-09b functions (gray bucket by X-Device-Id only, full version without a device id, per-platform min_app_version gate, login condition), ttl_sec 300; malformed page_key 20001 by the contract route check, no page / no published version 30701, empty sections still 200; caches hold raw rows only (pointer by app_id + page_key, version content by app_id + page_key + version, 60 s, injected Clock). F1-02e followup: one ContentReader per app shared by the risk minimum-version gate and the content public module (risk/** untouched). getPage leaves planned (mechanical, no contract slot). Rule test #20 was mechanically fixed by the orchestrator in a test(spec) commit before the implementation (it called /v1/app-versions/check without the contract-required X-Device-Id; assertions unchanged). No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "22a8b44ec9e88300a8d4e45d5ac164ecc26f0cd2",
+      "tree": "fb061854258fc3ba1dd73e1f7948364310eae1bf",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T22:53:37Z",
+      "finished_at": "2026-10-17T22:53:58Z",
+      "red_tests": [
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#1] 无页面、合法但不存在的 custom:x、只有草稿均为 30701",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#2] 非法 page_key HOME 返回 20001 且 fields 仅为 page_key",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#2] 非法 page_key custom: 返回 20001 且 fields 仅为 page_key",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#2] 非法 page_key custom:A 返回 20001 且 fields 仅为 page_key",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#2] 非法 page_key custom:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 返回 20001 且 fields 仅为 page_key",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#2] 非法 page_key aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 返回 20001 且 fields 仅为 page_key",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#3] home 无设备号、无令牌、无签名取指针全量版，ttl 固定 300",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#3] custom:x 无设备号、无令牌、无签名取指针全量版，ttl 固定 300",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#3] custom:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 无设备号、无令牌、无签名取指针全量版，ttl 固定 300",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#4] 指针指向 draft 不下发，即便另有 published 版本也不回退",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#4] 指针指向 rolled_back 不下发，即便另有 published 版本也不回退",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#5] sha256 前八字节桶 k−1 命中灰度、k 命中全量，重复请求一致",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#6] 无设备头在 99% 灰度下仍取全量，登录不退回 user_id 或令牌设备号分桶",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#7] 同设备换登录用户、或移除令牌，灰度版本保持一致",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#8] 灰度命中未发布版本时 30701，不静默降到全量",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#9] 每端按自身门槛过滤且等值可见，h5 不过滤，响应过滤不缓存",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#10] login yes/no/any 每次按令牌判定，暂未接入的人群条件不下发",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#11] 过滤后为空仍返回 200 和 sections []",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#12] deletion_only 返回 10405，游客仍可读",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#13] 修改指针后 59999ms 仍旧版，到 60000ms 刷新且命中不续期",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#14] 页面指针和版本缓存都隔离 app_id 与 page_key",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#15] 没有 DB 仍注册路由，每次 50001",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#20] public 先读后，版本检查与风控共用同一份最低版本缓存",
+        "test/spec/content/pages-read/delivery.int.test.ts > [AC-F1-09d#20] risk 先读后，版本检查与风控共用同一份最低版本缓存",
+        "test/spec/content/pages-read/reader.test.ts > [AC-F1-09d#16] 空设备字符串等同缺省设备，仍取全量版",
+        "test/spec/content/pages-read/reader.test.ts > [AC-F1-09d#17] 指针与版本内容都缓存 60000ms，命中不延长有效期",
+        "test/spec/content/pages-read/reader.test.ts > [AC-F1-09d#18] 缓存保存原 sections，每次同时按版本门槛和登录态重新筛选",
+        "test/spec/content/pages-read/reader.test.ts > [AC-F1-09d#19] 指针存在但版本存储无该行时不可下发"
+      ],
+      "expected": [
+        "test/spec/content/pages-read/delivery.int.test.ts",
+        "test/spec/content/pages-read/reader.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "d4efdc0cc0cc87feb8487fc329cd7b698e6f64131f35e85e4d8a934fbe8e08bc"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "f4426707cdef486810cd4636ed9ec0e182e256bdf138600f5117e89aa8b7b5b6"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 runs) reviewed by fresh Claude subagents: r1 fail (S1 version cache missing page_key), r2 fail (pointer cache regression), r3 pass under a self-approved exception round (couli-runs F1-09d/exception-spec-round-3.md)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "dc319fdb936fc9ae340f459936e53f5d5567efe5",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "03acef41c4b29d92440400fd946325668f20c011",
+    "specs": "3030daffce230ca321928167ab05aa0b6a68efe6"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
