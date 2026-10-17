@@ -106,17 +106,16 @@ it('[AC-B3-04b#3][BR-AI-04] 一个平台失败不吞掉其他平台商品，不�
 
 it('[AC-B3-04b#4][BR-AI-08] 价格复筛比较组卡到手价，闭区间保留两端、剔除上下界之外', async () => {
   const rows = [
-    candidate('tb:synthetic-low', 999),
-    candidate('tb:synthetic-min', 1000),
-    candidate('jd:synthetic-max', 2000, 'jd'),
+    // BR-AI-08：券前价在区间内但到手价低于下界，必须剔除。
+    candidate('tb:synthetic-low', 999, 'taobao', { price_fen: 1500n, coupon_fen: 501n }),
+    // 到手价恰在两端，券前价却超过上界，必须保留；候选与卡片使用同一报价。
+    candidate('tb:synthetic-min', 1000, 'taobao', { price_fen: 9000n, coupon_fen: 8000n }),
+    candidate('jd:synthetic-max', 2000, 'jd', { price_fen: 3000n, coupon_fen: 1000n }),
     candidate('pdd:synthetic-high', 2001, 'pdd'),
   ];
   const h = fixture(rows);
   // 券前价不在区间，仍应保留；不能按券前价或预计净价筛选。
-  h.quotes.set(
-    rows[1]!.ref.productKey,
-    card(rows[1]!, { price_fen: 9000, coupon_fen: 8000, est_net_price_fen: 900 }),
-  );
+  h.quotes.set(rows[1]!.ref.productKey, card(rows[1]!, { est_net_price_fen: 900 }));
   const result = await h.run({ q: '合成商品', price_min_fen: 1000, price_max_fen: 2000 });
   expect(keys(result).toSorted()).toEqual(['jd:synthetic-max', 'tb:synthetic-min']);
   expect(h.registered.toSorted()).toEqual(['jd:synthetic-max', 'tb:synthetic-min']);
@@ -142,13 +141,14 @@ it('[AC-B3-04b#6][BR-AI-09] 相同 product_key 仅一张，同名同价但跨平
 
 it('[AC-B3-04b#7][BR-AI-09] relevance 按上游名次交错，同名次按到手价再按 key，默认 K=8', async () => {
   const h = fixture([
-    candidate('tb:synthetic-a1', 9000),
+    // BR-AI-09：同名次的券前价次序与到手价 / key 次序相反。
+    candidate('tb:synthetic-a1', 9000, 'taobao', { price_fen: 9500n, coupon_fen: 500n }),
     candidate('tb:synthetic-a2', 100),
-    candidate('tb:synthetic-a3', 500),
-    candidate('jd:synthetic-b1', 9000, 'jd'),
+    candidate('tb:synthetic-a3', 500, 'taobao', { price_fen: 700n, coupon_fen: 200n }),
+    candidate('jd:synthetic-b1', 9000, 'jd', { price_fen: 10000n, coupon_fen: 1000n }),
     candidate('jd:synthetic-b2', 200, 'jd'),
-    candidate('jd:synthetic-b3', 500, 'jd'),
-    candidate('pdd:synthetic-c1', 8000, 'pdd'),
+    candidate('jd:synthetic-b3', 500, 'jd', { price_fen: 800n, coupon_fen: 300n }),
+    candidate('pdd:synthetic-c1', 8000, 'pdd', { price_fen: 11000n, coupon_fen: 3000n }),
     candidate('pdd:synthetic-c2', 300, 'pdd'),
     candidate('pdd:synthetic-c3', 600, 'pdd'),
   ]);
@@ -189,9 +189,10 @@ it('[AC-B3-04b#9][BR-AI-09] rebate_desc 依次比较返利下界、上界、到�
   const rows = [
     candidate('tb:synthetic-a', 2000),
     candidate('tb:synthetic-b', 600),
-    candidate('jd:synthetic-c', 800, 'jd'),
-    candidate('jd:synthetic-d', 700, 'jd'),
-    candidate('pdd:synthetic-e', 600, 'pdd'),
+    // BR-AI-09：返利上下界同值时，到手价升序与券前价升序相反。
+    candidate('jd:synthetic-c', 800, 'jd', { price_fen: 1000n, coupon_fen: 200n }),
+    candidate('jd:synthetic-d', 700, 'jd', { price_fen: 1100n, coupon_fen: 400n }),
+    candidate('pdd:synthetic-e', 600, 'pdd', { price_fen: 1200n, coupon_fen: 600n }),
   ];
   const h = fixture(rows);
   const ranges = [
@@ -218,7 +219,11 @@ it('[AC-B3-04b#9][BR-AI-09] rebate_desc 依次比较返利下界、上界、到�
     'tb:synthetic-b',
     'tb:synthetic-a',
   ]);
-  const tied = fixture([candidate('tb:synthetic-z'), candidate('jd:synthetic-a', 1000, 'jd')]);
+  // 到手价也相同时按 key，不能再比较券前价。
+  const tied = fixture([
+    candidate('tb:synthetic-z', 1000, 'taobao', { price_fen: 1500n, coupon_fen: 500n }),
+    candidate('jd:synthetic-a', 1000, 'jd', { price_fen: 2000n, coupon_fen: 1000n }),
+  ]);
   expect(keys(await tied.run({ q: '合成商品', sort: 'rebate_desc' }))).toEqual([
     'jd:synthetic-a',
     'tb:synthetic-z',
@@ -228,8 +233,9 @@ it('[AC-B3-04b#9][BR-AI-09] rebate_desc 依次比较返利下界、上界、到�
 it('[AC-B3-04b#10][BR-AI-09] final_price_asc 跨平台排序，同价按 key，与上游名次及返利无关', async () => {
   const h = fixture([
     candidate('tb:synthetic-z', 900),
-    candidate('tb:synthetic-b', 100),
-    candidate('jd:synthetic-a', 100, 'jd'),
+    // BR-AI-09：到手价更低的商品券前价更高，同到手价时 key 仍优先。
+    candidate('tb:synthetic-b', 100, 'taobao', { price_fen: 1000n, coupon_fen: 900n }),
+    candidate('jd:synthetic-a', 100, 'jd', { price_fen: 1100n, coupon_fen: 1000n }),
   ]);
   expect(keys(await h.run({ q: '合成商品', sort: 'final_price_asc' }))).toEqual([
     'jd:synthetic-a',
@@ -241,8 +247,15 @@ it('[AC-B3-04b#10][BR-AI-09] final_price_asc 跨平台排序，同价按 key，�
 it('[AC-B3-04b#11][BR-AI-09] sales_desc 以销量降序，同销量按价格与 key', async () => {
   const h = fixture([
     { ...candidate('tb:synthetic-z', 100), sales: 1 },
-    { ...candidate('tb:synthetic-b', 500), sales: 30 },
-    { ...candidate('jd:synthetic-a', 500, 'jd'), sales: 30 },
+    // BR-AI-09：同销量下，按到手价和 key 得到的次序与券前价次序相反。
+    {
+      ...candidate('tb:synthetic-b', 500, 'taobao', { price_fen: 1000n, coupon_fen: 500n }),
+      sales: 30,
+    },
+    {
+      ...candidate('jd:synthetic-a', 500, 'jd', { price_fen: 1100n, coupon_fen: 600n }),
+      sales: 30,
+    },
     { ...candidate('pdd:synthetic-c', 600, 'pdd'), sales: 30 },
   ]);
   expect(keys(await h.run({ q: '合成商品', sort: 'sales_desc' }))).toEqual([

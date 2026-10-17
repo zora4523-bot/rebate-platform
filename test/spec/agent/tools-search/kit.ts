@@ -48,14 +48,15 @@ export function candidate(
   key: string,
   price = 1000,
   platform: Platform = 'taobao',
+  quote?: { price_fen: bigint; coupon_fen: bigint },
 ): AgentSearchCandidate {
   return {
     item: {
       platform,
       item_id: key,
       title: `合成商品 ${key}`,
-      price_fen: BigInt(price),
-      coupon_fen: 0n,
+      price_fen: quote?.price_fen ?? BigInt(price),
+      coupon_fen: quote?.coupon_fen ?? 0n,
       final_price_fen: BigInt(price),
       commission_rate_bp: 1000n,
       quoted_at: NOW,
