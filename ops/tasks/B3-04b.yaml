@@ -1,0 +1,28 @@
+id: B3-04b
+repo: rebate-platform
+title: Agent 工具第二段：search_products——多平台并发（只查搜索开关开启的平台）、服务端价格闭区间复筛、跨平台去重、relevance 交错合并与排序枚举、出卡只登记不转链、游客按平台开关 login_required、模型只见卡片引用；降级用 searchKeyword
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，plan.md §3.4）。05 B3-04 行主体；前置 B1-05（catalog 搜索用例、出卡入口、item_ref）、B1-06（linking 登记）台账均已 done。
+# 依据：BR-AI-08（参数口径、服务端在 Adapter 返回后再筛一遍；放宽在 B3-05g）；BR-AI-09（relevance 的交错合并与同值次序、排序枚举、合并层不得有佣金权重、不做个性化）；
+#   BR-AI-11（游客 login_required 按 agent.guest_login_to_view.<platform>，默认关）；另摘 BR-AI-04（必需字段缺失不出卡、搜索缓存年龄上限）、BR-AI-05（模型可见字段）、BR-PROD-10 细则「按平台的搜索开关」、BR-AI-18 禁售（模型抽取的 q 命中不调搜索、结果按类目黑名单过滤）。
+# 复用 catalog index 的 searchProducts / createCatalogCardEntry（retrieval 场景，价格异常跳过）；Agent 流里的 product_card 比搜索接口严（04 §8.3 末段，契约 agent-stream.schema.json），差异在本段补齐或拒绝出卡。
+# card_id 由 RunManager 编号（本段出 UnnumberedCard）；只为实际下发的卡登记 link（B1-05j 的 deferLink 先例）。searchKeyword 供 B3-05c：按平台返回 ok / 失败，供 resolveDegradedOutcome 判定。
+# match_tag、spec_text、benefit_tags 的判定在 B3-04d；本段先按 matched 以外字段留空或按契约必填的最保守值，派发前与 B3-04d 对齐。
+# 分工：清单外新台账，Codex 先写规则测试，Opus 实现，Codex 评审。风险 RV1。refs 连一跳超 24KB，编排者手工生成任务书。refs_hash 入账前用 node tools/ops/task.ts hash B3-04b 生成。
+refs: [BR-AI-08, BR-AI-09, BR-AI-11]
+refs_hash:
+  BR-AI-08: e932a052720f
+  BR-AI-09: b0aaba683658
+  BR-AI-11: 0ce4651ba7c3
+deps: [B3-04a, B1-05j, B1-06c]
+paths:
+  - 'apps/api/src/modules/agent/tools/search/**'
+test_paths:
+  - 'test/spec/agent/tools-search/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-search/**'
+status: todo
+pr: null
