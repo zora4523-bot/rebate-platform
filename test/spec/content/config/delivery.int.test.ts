@@ -53,7 +53,21 @@ it('[AC-F1-02c#1] 最小有效配置下发所有约定键、规划缺省与完�
   const data = await success(h.app, id);
   // platform_icons belongs to F1-02d: absent before it, {} once delivered (no published mark here).
   expect([undefined, {}]).toContainEqual(data.platform_icons);
-  expect({ ...data, platform_icons: undefined }).toEqual({
+  // F1-02h keys: absent before it, the 04 §10.1 default once delivered.
+  expect([undefined, 604_800]).toContainEqual(data.lkg_max_age_sec);
+  expect([undefined, []]).toContainEqual(data.bridge_disabled_methods);
+  expect([undefined, []]).toContainEqual(data.features.rank_platforms);
+  expect(
+    data.config_version === undefined || /^[0-9A-Za-z._:-]{1,64}$/.test(data.config_version),
+  ).toBe(true);
+  expect({
+    ...data,
+    platform_icons: undefined,
+    lkg_max_age_sec: undefined,
+    config_version: undefined,
+    bridge_disabled_methods: undefined,
+    features: { ...data.features, rank_platforms: undefined },
+  }).toEqual({
     dict_version: '0',
     h5_base_url: REQUIRED['h5_base_url'],
     h5_release: { version: 'stable-v1' },
@@ -613,15 +627,13 @@ it('[AC-F1-02c#21] link_patterns 只取平台规格表，忽略同名配置及�
   expect(data.link_patterns).toEqual(getLinkPatterns());
   // platform_icons never comes from a same-named config row: absent before F1-02d, {} after it.
   expect([undefined, {}]).toContainEqual(data.platform_icons);
-  for (const key of [
-    'lkg_max_age_sec',
-    'config_version',
-    'bridge_disabled_methods',
-    'rank_platforms',
-  ]) {
-    expect(data).not.toHaveProperty(key);
-  }
-  expect(data.features).not.toHaveProperty('rank_platforms');
+  // F1-02h reads config.lkg_max_age_sec, bridge.disabled_methods and the channel whitelist,
+  // and derives config_version from the ETag: the same-named rows above never show through.
+  expect([undefined, 604_800]).toContainEqual(data.lkg_max_age_sec);
+  expect(data.config_version).not.toBe('private');
+  expect([undefined, []]).toContainEqual(data.bridge_disabled_methods);
+  expect(data).not.toHaveProperty('rank_platforms');
+  expect([undefined, []]).toContainEqual(data.features.rank_platforms);
 });
 
 it('[AC-F1-02c#22] 各 app 配置和缓存隔离，他 app 的必填键不能补齐本 app', async () => {
