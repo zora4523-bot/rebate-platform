@@ -35,6 +35,7 @@ import {
   ContentAdminModule,
   ContentPublicModule,
   createContentReader,
+  type ContentReader,
 } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
 import {
@@ -849,8 +850,10 @@ function parsingPorts(): DynamicModule {
  * identity's login reader and content's configuration reader bound to the caller's handle.
  * Appeals (POST / GET /v1/me/appeals, B1-03i): the deadline calendar through content's reader
  * bound to the submission's transaction.
+ * The guard's pooled minimum-version reader is the same instance as the one behind GET
+ * /v1/app-versions/check (F1-02e followup), so both answer from one cache.
  */
-function riskModule(identity: DynamicModule): DynamicModule {
+function riskModule(identity: DynamicModule, contentReader: SharedContentReader): DynamicModule {
   return RiskModule.forRoot({
     imports: [identity],
     // ⑧ ⑨ identity level (B1-02za) before ⑫ step-up (B1-02y) on the idempotent path; the level
@@ -874,7 +877,7 @@ function riskModule(identity: DynamicModule): DynamicModule {
         db === undefined
           ? null
           : {
-              pooled: createContentReader({ db, clock }),
+              pooled: contentReader(db, clock),
               on: (handle) => createContentReader({ db: handle, clock }),
             },
     },
@@ -957,6 +960,24 @@ function adminAuthModule(): DynamicModule {
  * request, and its users.attr_code reader for linking's AttrCodeReader (unavailable without a
  * database handle, as linking's default). identity implements the ports structurally.
  */
+/**
+ * F1-02e followup: one cached content reader per assembled app, handed to both risk's
+ * minimum-version gate (pooled) and ContentPublicModule (GET /v1/app-versions/check, GET
+ * /v1/config), so an admin change to a minimum version reaches both at the same refresh.
+ */
+type SharedContentReader = (db: Kysely<Database>, clock: Clock) => ContentReader;
+function sharedContentReader(): SharedContentReader {
+  let shared:
+    | { readonly db: Kysely<Database>; readonly clock: Clock; readonly reader: ContentReader }
+    | undefined;
+  return (db, clock) => {
+    if (shared === undefined || shared.db !== db || shared.clock !== clock) {
+      shared = { db, clock, reader: createContentReader({ db, clock }) };
+    }
+    return shared.reader;
+  };
+}
+
 const identityViewer = {
   scope: Scope.REQUEST,
   inject: [REQUEST],
@@ -978,7 +999,8 @@ export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
     // One module object for both imports, so Nest builds the identity module once.
     const identity = options.entry === 'api' ? identityModule() : undefined;
-    const risk = identity === undefined ? undefined : riskModule(identity);
+    const contentReader = sharedContentReader();
+    const risk = identity === undefined ? undefined : riskModule(identity, contentReader);
     // One module object per import: Nest builds union and linking once.
     const union =
       options.entry === 'api' || options.entry === 'worker' ? UnionModule.forRoot() : undefined;
@@ -1014,10 +1036,18 @@ export class AppModule {
         // audited through the global AUDIT_PORT before the value is returned.
         ...(options.entry === 'admin' ? [IdentityAdminModule.forAdmin()] : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
-        // identity's request viewer (token principal, else the X-App-Id guest).
+        // identity's request viewer (token principal, else the X-App-Id guest). GET
+        // /v1/pages/{page_key} (F1-09d) reads the same viewer for its login condition.
         ...(options.entry === 'api'
           ? [
-              ContentPublicModule.forApi({ viewerContext: identityViewer }),
+              ContentPublicModule.forApi({
+                viewerContext: identityViewer,
+                contentReader: {
+                  inject: [CLOCK, { token: DB, optional: true }],
+                  useFactory: (clock: Clock, db?: Kysely<Database>): ContentReader | null =>
+                    db === undefined ? null : contentReader(db, clock),
+                },
+              }),
               NotificationModule.forApi((db, clock) => createContentReader({ db, clock })),
               // GET /v1/orders and /v1/orders/{order_id} over the shared OrderQueries (B1-08l):
               // content's configuration reader and linking's order-link reader as its ports.
