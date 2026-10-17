@@ -8,4 +8,6 @@ export type {
   BalanceSelection,
   AccountBalance,
 } from './application/ledger.ts';
-export { LedgerModule } from './ledger.module.ts';
+export { LedgerError } from './application/errors.ts';
+export type { LedgerErrorCode } from './application/errors.ts';
+export { LEDGER, LedgerModule } from './ledger.module.ts';
