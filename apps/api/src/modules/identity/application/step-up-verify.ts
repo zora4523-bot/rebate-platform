@@ -46,6 +46,7 @@ import {
   type TokenPrincipal,
 } from '../../platform/index.ts';
 import { createStepUpTokenVerifier, type TokenKeyProvider } from './access-tokens.ts';
+import { RiskModule } from '../../risk/index.ts';
 
 export const STEP_UP_CHECK = Symbol('STEP_UP_CHECK');
 
@@ -106,12 +107,13 @@ export interface StepUpCheckOptions {
 
 /**
  * Stage ⑫ as an idempotency post-miss check (registered through RiskModule's `beforeRateLimit`).
- * It reads the request's step-up context from the enclosing withStepUp call; an x-step-up request
- * judged outside any withStepUp call fails closed, except a first phone binding.
+ * Like ④a and ⑤, it skips calls outside an HTTP request. Within HTTP it reads the step-up context
+ * from the enclosing withStepUp call; a missing wrapper fails closed, except a first phone binding.
  */
 export function createStepUpCheck(options: StepUpCheckOptions): IdempotencyPostMissCheck {
   const verify = createStepUpTokenVerifier(options.keys, options.clock);
   return async (command) => {
+    if (!RiskModule.hasHttpRequestScope()) return;
     const action = ACTIONS.get(`${command.method} ${command.path}`);
     if (action === undefined) return;
     // First binding needs no step-up context; read the authenticated command's user on the

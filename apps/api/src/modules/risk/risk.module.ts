@@ -304,6 +304,11 @@ function chainGuards(first: StageGuard, ...rest: readonly (StageGuard | null)[])
 
 @Module({})
 export class RiskModule {
+  /** Read-only scope presence for downstream HTTP post-miss checks (also used by ④a and ⑤). */
+  static hasHttpRequestScope(): boolean {
+    return MINIMUM_VERSION_SCOPE.getStore() !== undefined;
+  }
+
   /**
    * Provides SIGNATURE_CHECK, the stage ① request check that app.module places first in
    * REQUEST_CHECKS. Without a REDIS provider the check still refuses an invalid request with
