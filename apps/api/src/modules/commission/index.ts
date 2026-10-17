@@ -12,3 +12,14 @@ export type {
 } from './domain/rules.ts';
 export { createRuleSetReader } from './infra/rule-set-reader.ts';
 export type { RuleSetReaderOptions } from './infra/rule-set-reader.ts';
+export { createCommissionSnapshot } from './application/snapshot.ts';
+export type {
+  SnapshotBeneficiary,
+  SnapshotBeneficiaries,
+  SnapshotBeneficiaryResolver,
+  CreateCommissionSnapshotInput,
+  CommissionSnapshotDependencies,
+  CommissionSnapshot,
+  CreateCommissionSnapshotResult,
+} from './application/snapshot.ts';
+export { createInMemoryBeneficiaryResolver } from './infra/in-memory-beneficiary-resolver.ts';
