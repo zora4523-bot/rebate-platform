@@ -1,0 +1,58 @@
+{
+  "page_key": "home",
+  "version": 1,
+  "ttl_sec": 300,
+  "sections": [
+    {
+      "id": "material_scroll",
+      "type": "product_scroll",
+      "version": 1,
+      "data_source": {
+        "kind": "union_material",
+        "channels": [
+          {
+            "platform": "jd",
+            "channel_id": "demo_channel_2"
+          }
+        ],
+        "mix": "interleave"
+      }
+    },
+    {
+      "id": "material_grid",
+      "type": "product_grid",
+      "version": 1,
+      "props": {
+        "columns": 1
+      },
+      "data_source": {
+        "kind": "union_material",
+        "channels": [
+          {
+            "platform": "pdd",
+            "channel_id": "demo_channel_3"
+          }
+        ]
+      }
+    },
+    {
+      "id": "feed",
+      "type": "feed_infinite",
+      "version": 1,
+      "data_source": {
+        "kind": "union_material",
+        "channels": [
+          {
+            "platform": "taobao",
+            "channel_id": "demo_channel_1"
+          },
+          {
+            "platform": "jd",
+            "channel_id": "demo_channel_2"
+          }
+        ],
+        "mix": "interleave"
+      }
+    }
+  ]
+}

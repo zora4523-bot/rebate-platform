@@ -1,0 +1,17 @@
+{
+  "page_key": "home",
+  "version": 1,
+  "ttl_sec": 300,
+  "sections": [
+    {
+      "id": "feed",
+      "type": "feed_infinite",
+      "version": 1,
+      "data_source": {
+        "kind": "union_material",
+        "platforms": ["taobao", "jd"],
+        "mix": "interleave"
+      }
+    }
+  ]
+}

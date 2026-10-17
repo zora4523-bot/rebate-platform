@@ -1,0 +1,110 @@
+{
+  "page_key": "home",
+  "version": 1,
+  "ttl_sec": 300,
+  "sections": [
+    {
+      "id": "cond_1",
+      "type": "product_grid",
+      "version": 2,
+      "props": {
+        "columns": 2,
+        "title": "今日爆款"
+      },
+      "data_source": {
+        "kind": "product_pool",
+        "pool_id": "pool_demo_daily",
+        "limit": 20
+      },
+      "condition": {
+        "login": "any"
+      }
+    },
+    {
+      "id": "cond_2",
+      "type": "product_grid",
+      "version": 2,
+      "props": {
+        "columns": 2,
+        "title": "今日爆款"
+      },
+      "data_source": {
+        "kind": "product_pool",
+        "pool_id": "pool_demo_daily",
+        "limit": 20
+      },
+      "condition": {
+        "login": "yes"
+      }
+    },
+    {
+      "id": "cond_3",
+      "type": "product_grid",
+      "version": 2,
+      "props": {
+        "columns": 2,
+        "title": "今日爆款"
+      },
+      "data_source": {
+        "kind": "product_pool",
+        "pool_id": "pool_demo_daily",
+        "limit": 20
+      },
+      "condition": {
+        "login": "no"
+      }
+    },
+    {
+      "id": "cond_4",
+      "type": "product_grid",
+      "version": 2,
+      "props": {
+        "columns": 2,
+        "title": "今日爆款"
+      },
+      "data_source": {
+        "kind": "product_pool",
+        "pool_id": "pool_demo_daily",
+        "limit": 20
+      },
+      "condition": {
+        "login": "yes",
+        "has_parent": "no",
+        "union_authorized": "yes",
+        "has_order": "any"
+      }
+    },
+    {
+      "id": "cond_5",
+      "type": "product_grid",
+      "version": 2,
+      "props": {
+        "columns": 2,
+        "title": "今日爆款"
+      },
+      "data_source": {
+        "kind": "product_pool",
+        "pool_id": "pool_demo_daily",
+        "limit": 20
+      },
+      "condition": {
+        "has_order": "no"
+      }
+    },
+    {
+      "id": "cond_6",
+      "type": "product_grid",
+      "version": 2,
+      "props": {
+        "columns": 2,
+        "title": "今日爆款"
+      },
+      "data_source": {
+        "kind": "product_pool",
+        "pool_id": "pool_demo_daily",
+        "limit": 20
+      },
+      "condition": {}
+    }
+  ]
+}
