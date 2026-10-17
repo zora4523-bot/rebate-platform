@@ -2,7 +2,8 @@ import { expect, it, vi } from 'vitest';
 import type { RunBodyInput } from '../../http/index.ts';
 import type { RedactedText } from '../../stream/admission/index.ts';
 import type { ModelOutcome } from '../../model-gateway/routing/index.ts';
-import type { RunContext } from '../../stream/run/index.ts';
+import type { RunContext, UnnumberedCard } from '../../stream/run/index.ts';
+import { cardReference } from './card-references.ts';
 import { createAgentRunBody, orchestratorLimitsDefaults } from './factories.ts';
 import type { AgentRunBodyDeps, OrchestratorTrace, ToolOutcome } from './ports.ts';
 import { intentOf, isStructuredText } from './run.ts';
@@ -424,3 +425,64 @@ it('[AC-B3-05b-format#5] isStructuredText', () => {
   expect(isStructuredText('合成说明 {"a":1}')).toBe(true);
   expect(isStructuredText('')).toBe(false);
 });
+
+it.each([
+  ['receipts', ['c41', 'c57'], { first: 'c41', second: 'c57', refs: ['c41', 'c57'] }],
+  ['one unconfirmed write', ['c41', undefined], { first: 'c41', refs: ['c41'] }],
+  ['a context without receipts', [undefined, undefined], { refs: [] }],
+] as const)(
+  '[B3-05i][BR-AI-05] modelView references follow the run context receipts: %s',
+  async (_label, receipts, expected) => {
+    const rounds = [
+      modelRound([
+        { t: 'tool_call', index: 0, call: call('a', 'search_products', '{}') },
+        { t: 'done', reason: 'tool_calls' },
+      ]),
+      modelRound([
+        { t: 'text_delta', text: '合成说明。' },
+        { t: 'done', reason: 'stop' },
+      ]),
+    ];
+    const issued: string[] = [];
+    const notice: UnnumberedCard = {
+      type: 'notice',
+      schema_version: 1,
+      data: { level: 'info', text_key: 'synthetic.notice', actions: [] },
+      fallback_text: 'synthetic',
+    };
+    const execute = vi.fn<AgentRunBodyDeps['tools']['execute']>(async (_call, ctx) => {
+      const refs = [0, 1].map((index) => cardReference(ctx, index));
+      issued.push(...refs);
+      return {
+        kind: 'ok',
+        cards: refs.map(() => notice),
+        modelView: { first: refs[0], second: refs[1], refs },
+        trace: { card_sources: refs.map((ref) => ({ card_id: ref, fields: { n: 1 } })) },
+      };
+    });
+    const traces: OrchestratorTrace[] = [];
+    const deps: AgentRunBodyDeps = {
+      ...baseDeps(rounds, execute),
+      trace: { record: (_runId, trace) => traces.push(trace) },
+    };
+    const pending: unknown[] = [...receipts];
+    const out = context();
+    // Receipt shapes are what is under test, hence the cast through unknown.
+    const card = (async (_card: UnnumberedCard, delivered?: (cardId: unknown) => void) => {
+      const receipt = pending.shift();
+      if (receipt !== undefined) delivered?.(receipt);
+    }) as unknown as RunContext['card'];
+    const result = await createAgentRunBody(deps)(input())({ ...out.ctx, card });
+    expect(result).toEqual({ kind: 'done', finishReason: 'stop' });
+    const messages = vi.mocked(deps.model.complete).mock.calls[1]?.[0].messages ?? [];
+    const tool = messages.find((message) => message.role === 'tool');
+    expect(JSON.parse(tool?.content ?? 'null')).toEqual(expected);
+    const delivered = receipts.filter((receipt) => receipt !== undefined);
+    // The trace omits card_sources when none is left.
+    expect(traces[0]?.card_sources ?? []).toEqual(
+      delivered.map((cardId) => ({ card_id: cardId, fields: { n: 1 } })),
+    );
+    const exposed = JSON.stringify({ chat: vi.mocked(deps.model.complete).mock.calls, traces });
+    for (const reference of issued) expect(exposed).not.toContain(reference);
+  },
+);

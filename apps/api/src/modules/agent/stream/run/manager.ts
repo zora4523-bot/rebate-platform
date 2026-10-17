@@ -168,7 +168,7 @@ async function run(
     suggestions(items): void {
       if (live()) write('suggestions', { items });
     },
-    async card(input): Promise<void> {
+    async card(input, delivered): Promise<void> {
       if (!live() || !connected) return;
       // Detach before awaiting a reservation. Serialize reservations and delivery so card ids
       // remain in delivery order even when the body calls card() concurrently.
@@ -180,6 +180,8 @@ async function run(
         const numbered = numberCard(snapshot.card, first);
         if (!write('card', numbered.card)) return;
         cardsDelivered += 1;
+        // B3-05i: the receipt, only for a frame actually written.
+        delivered?.(numbered.card.card_id);
         const facts = { ending: null, cardsDelivered };
         factsQueue = factsQueue.then(() => saveFacts(facts));
         await factsQueue;

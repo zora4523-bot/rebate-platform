@@ -27,6 +27,13 @@ import type {
 import type { RunBodyResult, RunContext, UnnumberedCard } from '../../stream/run/index.ts';
 import type { SuggestionsData } from '../../stream/writer/index.ts';
 
+// B3-05i: exported function port; tools inject cardReference(ctx, outcome.cards index).
+// Import from ./card-references.ts; see its contract for delivery/removal semantics.
+// Each execute call gets its own frozen copy of the run's placeholders table: that object's
+// identity binds references to the call, so wrappers must forward ctx.placeholders by reference.
+// Card ids come from RunContext.card's `delivered` receipt callback (the written frame's card_id);
+// a card without a receipt counts as undelivered and its references are removed.
+
 export interface OrchestratorLimits {
   readonly toolCalls: number;
   readonly modelRounds: number;

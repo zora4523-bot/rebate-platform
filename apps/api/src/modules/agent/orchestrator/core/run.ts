@@ -11,7 +11,10 @@ import type { AssembledToolCall, ChatMessage } from '../../model-gateway/openai-
 import type { AttemptRecord } from '../../model-gateway/routing/index.ts';
 import type { RunBodyResult, RunContext, UnnumberedCard } from '../../stream/run/index.ts';
 import { StreamProtocolError } from '../../stream/writer/index.ts';
+import { openCardCall } from './card-references.ts';
+import type { CardCall } from './card-references.ts';
 import { RunOutput } from './output.ts';
+import type { CardWrite } from './output.ts';
 import type {
   AgentRunBodyDeps,
   InputProceed,
@@ -212,14 +215,20 @@ class AgentRun {
 
   /** Writes a core card; an invalid card is dropped and the run goes on (B3-03b). */
   private async card(card: UnnumberedCard): Promise<boolean | Aborted> {
-    let written: boolean | Aborted;
+    const written = await this.deliver(card);
+    return written === ABORTED ? ABORTED : written.written;
+  }
+
+  /** card(), with the delivered frame's card_id for reference resolution (B3-05i). */
+  private async deliver(card: UnnumberedCard): Promise<CardWrite | Aborted> {
     try {
-      written = await this.wait(this.out.card(card));
+      return await this.wait(this.out.deliver(card));
     } catch (error) {
-      if (error instanceof StreamProtocolError && error.code === 'invalid_frame') return false;
+      if (error instanceof StreamProtocolError && error.code === 'invalid_frame') {
+        return { written: false, cardId: null };
+      }
       throw error;
     }
-    return written;
   }
 
   private async linkPath(proceed: InputProceed): Promise<RunBodyResult> {
@@ -422,28 +431,56 @@ class AgentRun {
     const start = await this.wait(texts.toolDisplay(this.appId, name, 'start', platform));
     if (start === ABORTED) return done('stop');
     this.out.status(name, 'start', start);
-    let outcome: ToolOutcome;
-    if (parsed.ok) {
-      const executed = await this.wait(
-        this.deps.tools.execute({ id: call.id, name, args: parsed.args }, this.toolContext()),
-      );
-      if (executed === ABORTED) return done('stop');
-      outcome = executed;
-    } else {
-      outcome = { kind: 'rejected', modelView: INVALID_ARGS };
+    // B3-05i: each call gets its own copy of the run's placeholders table; that object's identity
+    // binds cardReference to this call (card-references.ts header). Same entries, frozen.
+    const placeholders = Object.freeze({ ...this.placeholders });
+    const refs = openCardCall(call.id, placeholders);
+    try {
+      let outcome: ToolOutcome;
+      if (parsed.ok) {
+        const executed = await this.wait(
+          this.deps.tools.execute(
+            { id: call.id, name, args: parsed.args },
+            this.toolContext(placeholders),
+          ),
+        );
+        if (executed === ABORTED) return done('stop');
+        outcome = executed;
+      } else {
+        outcome = { kind: 'rejected', modelView: INVALID_ARGS };
+      }
+      // References are issued while execute runs; none can be added once the outcome is in.
+      refs.close();
+      const phase = outcome.kind === 'ok' ? 'end' : 'failed';
+      const display = await this.wait(texts.toolDisplay(this.appId, name, phase, platform));
+      if (display === ABORTED) return done('stop');
+      this.out.status(name, phase, display);
+      this.traceCall(name, parsed.args, outcome.kind);
+      if (outcome.kind === 'ok') {
+        const stop = await this.toolOutput(outcome, refs);
+        if (stop !== null) return stop;
+      }
+      // Only this resolved copy reaches the model (unchanged when no reference was issued).
+      return { view: refs.view(outcome.modelView) };
+    } finally {
+      refs.close();
     }
-    const phase = outcome.kind === 'ok' ? 'end' : 'failed';
-    const display = await this.wait(texts.toolDisplay(this.appId, name, phase, platform));
-    if (display === ABORTED) return done('stop');
-    this.out.status(name, phase, display);
-    this.traceCall(name, parsed.args, outcome.kind);
-    if (outcome.kind === 'ok') {
-      this.cardSources.push(...(outcome.trace?.card_sources ?? []));
-      this.linkRegistrations.push(...(outcome.trace?.link_registrations ?? []));
+  }
+
+  /**
+   * Cards and suggestions of a successful call, in order; a result means the run ends here.
+   * Each card's delivered frame card_id is recorded for this call's references (B3-05i).
+   */
+  private async toolOutput(
+    outcome: Extract<ToolOutcome, { readonly kind: 'ok' }>,
+    refs: CardCall,
+  ): Promise<RunBodyResult | null> {
+    try {
       for (const card of outcome.cards) {
-        const written = await this.card(card);
+        const written = await this.deliver(card);
         if (written === ABORTED) return done('stop');
-        if (written) this.delivered = true;
+        refs.delivered(written.cardId);
+        if (written.written) this.delivered = true;
         if (this.out.limitHit) return done('limit');
       }
       const suggestions = outcome.suggestions ?? [];
@@ -451,11 +488,18 @@ class AgentRun {
         if (this.out.suggestions(suggestions)) this.delivered = true;
         if (this.out.limitHit) return done('limit');
       }
+      return null;
+    } finally {
+      // On every exit (limit, cancellation, a thrown write), after delivery: the trace gets
+      // delivered card ids, and records naming an undelivered card's reference are left out.
+      this.cardSources.push(...refs.records(outcome.trace?.card_sources ?? [], ['card_id']));
+      this.linkRegistrations.push(
+        ...refs.records(outcome.trace?.link_registrations ?? [], ['link_id', 'product_key']),
+      );
     }
-    return { view: outcome.modelView };
   }
 
-  private toolContext(): ToolContext {
+  private toolContext(placeholders: Readonly<Record<string, string>>): ToolContext {
     const input = this.input;
     return {
       subject: input.caller,
@@ -463,7 +507,7 @@ class AgentRun {
       runId: input.runId,
       sessionId: input.sessionId,
       signal: this.signal,
-      placeholders: this.placeholders,
+      placeholders,
     };
   }
 

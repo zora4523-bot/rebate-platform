@@ -38,7 +38,9 @@ export interface RunContext {
   readonly cardsDelivered: number;
   text(delta: string): void;
   toolStatus(tool: string, phase: 'start' | 'end' | 'failed', displayText: string): void;
-  card(card: UnnumberedCard): Promise<void>;
+  /** `delivered`, when given, receives the frame's card_id once the numbered card was written
+   * (B3-05i: the orchestrator fills it into the tool's modelView); never when nothing was. */
+  card(card: UnnumberedCard, delivered?: (cardId: string) => void): Promise<void>;
   suggestions(items: SuggestionsData['items']): void;
 }
 
