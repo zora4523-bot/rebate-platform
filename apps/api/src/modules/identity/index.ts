@@ -57,6 +57,12 @@ export type {
 } from './identity.module.ts';
 // B1-12b: the push token port app.module builds from notification's commands.
 export type { SessionPushTokens } from './application/push-tokens.ts';
+export { createRecordInitialLevel } from './application/initial-level-log.ts';
+export type {
+  InitialLevelLog,
+  InitialLevelLogEntry,
+  RecordInitialLevel,
+} from './application/initial-level-log.ts';
 export type { AccountAssetsPort, AccountRiskPort } from './application/bind-phone.ts';
 // Stage ⑫ step-up check (BR-ID-08, B1-02y): app.module hands the check to RiskModule; the handlers
 // of the four x-step-up operations run their idempotent call through withStepUp.

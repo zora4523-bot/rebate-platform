@@ -73,6 +73,7 @@ import {
 import { createLogout, type Logout } from './application/logout.ts';
 import { createRefreshService, type RefreshService } from './application/refresh.ts';
 import { unbindRevoked, type SessionPushTokens } from './application/push-tokens.ts';
+import { createRecordInitialLevel, type InitialLevelLog } from './application/initial-level-log.ts';
 import {
   revokeSessionsByDevice,
   revokeSessionsByUser,
@@ -184,6 +185,8 @@ export interface IdentityModuleOptions {
    * default reader (createDefaultRealnameStatusReader: always none) is used.
    */
   readonly realnameStatus?: Omit<FactoryProvider<RealnameStatusReader>, 'provide'>;
+  /** Register-time level log, assembled by app.module so identity never imports growth. */
+  readonly initialLevelLog?: Omit<FactoryProvider<InitialLevelLog | null>, 'provide'>;
 }
 
 const REALNAME_STATUS_READER = Symbol('REALNAME_STATUS_READER');
@@ -265,6 +268,7 @@ const SMS_RISK = Symbol('IDENTITY_SMS_RISK');
 const SMS_RISK_PORTS = Symbol('IDENTITY_SMS_RISK_PORTS');
 /** The push token port as app.module builds it (IdentityModuleOptions.pushTokens), or null. */
 const PUSH_TOKENS = Symbol('IDENTITY_PUSH_TOKENS');
+const INITIAL_LEVEL_LOG = Symbol('IDENTITY_INITIAL_LEVEL_LOG');
 const ACCOUNT_ASSETS = Symbol('IDENTITY_ACCOUNT_ASSETS');
 const ACCOUNT_RISK = Symbol('IDENTITY_ACCOUNT_RISK');
 
@@ -339,6 +343,9 @@ export class IdentityModule {
         options.pushTokens === undefined
           ? { provide: PUSH_TOKENS, useValue: null }
           : { ...options.pushTokens, provide: PUSH_TOKENS },
+        options.initialLevelLog === undefined
+          ? { provide: INITIAL_LEVEL_LOG, useValue: null }
+          : { ...options.initialLevelLog, provide: INITIAL_LEVEL_LOG },
         // The internal revocation entries (merge, ban, admin revocation by user or by device), as
         // the Nest container hands them out: the provider token is identity's exported function
         // itself, the value takes only (trx, input) — the Clock and the push token unbinding of
@@ -496,6 +503,7 @@ export class IdentityModule {
             RISK_PORTS,
             SMS_RISK_PORTS,
             PUSH_TOKENS,
+            INITIAL_LEVEL_LOG,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -509,6 +517,7 @@ export class IdentityModule {
             risk: IdentityRiskPorts | null,
             smsRisk: SmsRiskPorts,
             pushTokens: SessionPushTokens | null,
+            initialLevelLog: InitialLevelLog | null,
             db?: Kysely<Database>,
             fieldCrypto?: FieldCrypto,
           ): SmsLoginService | null =>
@@ -530,6 +539,9 @@ export class IdentityModule {
                     sensitiveWords,
                     ...(risk === null ? {} : risk.registration),
                     ...smsRisk.registration,
+                    ...(initialLevelLog === null
+                      ? {}
+                      : { recordInitialLevel: createRecordInitialLevel(initialLevelLog) }),
                   }),
                   ...(risk === null ? {} : risk.login),
                   // Registration keys are snapshotted before the login transaction opens.
@@ -608,6 +620,7 @@ export class IdentityModule {
             RISK_PORTS,
             SMS_RISK_PORTS,
             PUSH_TOKENS,
+            INITIAL_LEVEL_LOG,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -622,6 +635,7 @@ export class IdentityModule {
             risk: IdentityRiskPorts | null,
             smsRisk: SmsRiskPorts,
             pushTokens: SessionPushTokens | null,
+            initialLevelLog: InitialLevelLog | null,
             db?: Kysely<Database>,
             fieldCrypto?: FieldCrypto,
           ): OauthLoginService | null =>
@@ -647,6 +661,9 @@ export class IdentityModule {
                     sensitiveWords,
                     ...(risk === null ? {} : risk.registration),
                     ...smsRisk.registration,
+                    ...(initialLevelLog === null
+                      ? {}
+                      : { recordInitialLevel: createRecordInitialLevel(initialLevelLog) }),
                   }),
                 }),
         },
