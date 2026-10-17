@@ -50,6 +50,12 @@ export interface SearchProductsDeps {
   readonly texts?: (appId: string, key: string) => Promise<string>;
 }
 
+/** Tool result for an inverted price range; the registry's rejected form only carries
+ * invalid_args, so this is an ok outcome with no card that B3-05g keys on. */
+export function priceRangeInvalidView(): { readonly error: 'price_range_invalid' } {
+  return { error: 'price_range_invalid' };
+}
+
 function prohibitedKey(): string {
   return 'agent.refuse.prohibited';
 }
@@ -164,7 +170,18 @@ export function createSearchProductsHandler(deps: SearchProductsDeps): ToolHandl
     audience: 'all',
     definition: searchProductsDefinition(deps.platforms),
     async run(args, ctx): Promise<ToolOutcome> {
-      const run = await runSearch(deps, requestFromArgs(args), ctx);
+      const request = requestFromArgs(args);
+      // BR-AI-08: min > max never searches nor registers. The clarify (three quick price
+      // options) and the drop-after-one-ask notice belong to the orchestrator (B3-05g), which
+      // recognizes this modelView; the tool itself never asks.
+      if (
+        request.priceMinFen !== undefined &&
+        request.priceMaxFen !== undefined &&
+        request.priceMinFen > request.priceMaxFen
+      ) {
+        return { kind: 'ok', modelView: priceRangeInvalidView(), cards: [] };
+      }
+      const run = await runSearch(deps, request, ctx);
       const cards = await outcomeCards(deps, ctx.appId, run.prohibited, run.cards);
       const items = modelItems(deps, run.cards, ctx);
       return {

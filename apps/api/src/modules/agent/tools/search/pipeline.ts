@@ -198,7 +198,8 @@ export async function runSearch(
   ]);
   const nowMs = deps.clock.now().getTime();
   const entry = deps.cardEntry(ctx);
-  const prepared = await Promise.all(
+  // A quote / item_ref failure drops only that item (allSettled), never the other platforms.
+  const settled = await Promise.allSettled(
     allowed.map(async (row): Promise<Prepared | null> => {
       const { candidate } = row;
       const result = await entry.assemble({
@@ -224,6 +225,22 @@ export async function runSearch(
           : async () => ({ link_id: linked!.link_id });
       return { ranked: row, card, commit };
     }),
+  );
+  // A platform whose every item failed to assemble counts as a failed platform (BR-AI-09
+  // platform failure), so the degraded path never reports it as an empty success.
+  const tried = new Map<Platform, { total: number; thrown: number }>();
+  settled.forEach((outcome, index) => {
+    const platform = allowed[index]!.candidate.item.platform;
+    const count = tried.get(platform) ?? { total: 0, thrown: 0 };
+    count.total += 1;
+    if (outcome.status === 'rejected') count.thrown += 1;
+    tried.set(platform, count);
+  });
+  for (const [platform, count] of tried) {
+    if (count.total > 0 && count.thrown === count.total) status.set(platform, 'failed');
+  }
+  const prepared = settled.map((outcome) =>
+    outcome.status === 'fulfilled' ? outcome.value : null,
   );
 
   const chosen = prepared
