@@ -1,6 +1,7 @@
 // B1-08h：归因流水线主事务（BR-ATTR-01；规划/02 §7.3、§18；D10-35）。每个子订单一个事务：
 // 第一句取该子订单的 advisory 锁，锁后重读 order_keys；判定全部完成后才写库。
 // - 已存在：app 不同 → 零写入、P1 告警；同 App → 乱序（可选）→ content_hash 短路 → updateStep（B1-08i）。
+// - 注入 events（B1-08i）时，首次入库在 rebate.onImported 之后同事务发 order.created。
 // - 新子订单：① App 归属（推广位白名单）→ attr_at（定金优先）→ 同步起点 → 首态（表外码 / 非法首态只写
 //   pending，不建行）→ ② 用户归属 → ④ buy_type → 写 order_keys、orders、history（+ NO_RECEIVED_AT）、
 //   未归因计数、无 mtime 计数（开启排序时）→ rebate.onImported（同事务）。①、无付款时间、同步起点之前 → 只记丢弃计数。
@@ -13,6 +14,7 @@ import type { RegisteredPlatform, UnionOrder, UnionOrderAttrParams } from '../..
 import { classifyBuyType, isKnownPidScene } from '../domain/attribution.ts';
 import { orderContentHash } from '../domain/content-hash.ts';
 import { planImportState } from '../domain/import-state.ts';
+import { rawItemId, rawPayloadId } from '../domain/order-fields.ts';
 import { mapPlatformStatus } from '../domain/status-map.ts';
 import { lockOrderKey } from '../infra/order-lock.ts';
 import {
@@ -42,23 +44,8 @@ const NO_PARAMS: UnionOrderAttrParams = {
   sub_union_id: null,
 };
 
-const DECIMAL = /^[0-9]+$/;
-
-function rawPayloadId(order: UnionOrder): bigint | null {
-  const value = order.raw_payload_id ?? null;
-  if (value === null) return null;
-  if (!DECIMAL.test(value))
-    throw new Error('INVALID_RAW_PAYLOAD_ID: raw_payload_id 不是十进制整数');
-  return BigInt(value);
-}
-
-/** 待编排裁定 8：raw_item_id（NOT NULL）回退顺序；全空写 ''（调用方告警）。 */
-function rawItemId(order: UnionOrder): string {
-  return order.goods_id ?? order.goods_sign ?? order.item_id ?? order.itemId ?? order.skuId ?? '';
-}
-
 // TODO(规划/11 §4.5): 淘宝 SITE_MISMATCH 判定 — blocked on 淘宝订单映射（无 site_id）。
-// TODO(规划/11 §4.5): attr_binding_conflict、order_illegal_transition 事件入队 — blocked on B1-08i；本任务只记日志。
+// TODO(规划/11 §4.5): attr_binding_conflict、order_illegal_transition 事件入队 — blocked on platform 事件名登记；只记日志。
 export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
   const log = deps.logger;
 
@@ -307,6 +294,12 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       attributed,
       platform_status: plan.platform_status,
       received_at: plan.received_at,
+    });
+    // B1-08i（D10-41 第 1 条；02 §11）：注入 events 时，order.created 与首次入库同一事务入队。
+    await deps.events?.publish(trx, {
+      appId: ctx.app_id,
+      name: 'order.created',
+      payload: { order_id: orderId, platform, platform_status: plan.platform_status, attributed },
     });
     log?.info({ platform, app_id: ctx.app_id, outcome: 'inserted', attributed }, 'order imported');
     return { kind: 'inserted', order_id: orderId };
