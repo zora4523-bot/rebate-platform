@@ -1,0 +1,18 @@
+id: B1-02zb
+repo: rebate-platform
+title: 测试修改：B1-02y 冻结测试 order [AC-B1-02y#18]、[AC-B1-02y#19] 与 token [AC-B1-02y#7] 经 POST /v1/withdrawals（x-auth realname）走提现，夹具用户无手机号、实名端口恒为 none，B1-02za 上线 ⑧ 10005 / ⑨ 30304 后被前置拦截；夹具改为建已绑手机的用户并注入恒为 verified 的实名读取器
+type: test-change
+# 草稿 2026-10-17（身份与风控线 identity-lane）。B1-02za 测试机完整验证 verify2：上述三条拿到 10005「需要绑定手机号」；Opus 诊断（couli-runs/B1-02za/followups.md）：08 BR-ID-01 ⑧ / ⑨ 先于 ⑫，contracts createWithdrawal x-auth: realname，新守卫判定正确，冲突在冻结夹具。
+# 改法（编排者定，甲案）：test/spec/identity/step-up-verify/kit.ts 的 user() 给用户写 phone_hmac（复用 registration/kit 已有造号或直接条件更新），并在测试 app 装配里把 IdentityModule 的实名状态读取换成恒为 verified（照 kit 内 PlatformModule.forRoot 的 spy 先例，finally 还原；注入口不存在时不报错、照旧）。
+# 断言、向量、标题不改，注释同步。改前（main）改后（叠 B1-02za）都要绿。不属削弱资金测试（只补前置条件，不删断言）；保护路径第一类改已有文件，走非 task/ 分支 test-change/B1-02zb，Codex 评审 pass 后按 approvals #24 加标签合并。B1-02za 依赖本任务。
+refs: []
+refs_hash: {}
+deps: [B1-02y]
+paths:
+  - 'test/spec/identity/step-up-verify/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/step-up-verify/**'
+status: todo

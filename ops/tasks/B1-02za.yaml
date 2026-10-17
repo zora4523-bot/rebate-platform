@@ -8,7 +8,7 @@ type: impl
 # 模型：Opus 5.5。挂钩先例 B1-02y（risk.module beforeRateLimit 列表）。实名表未建前实名状态端口缺省 none（B1-13d 接表）。
 refs: []
 refs_hash: {}
-deps: [B1-02y, B1-03h, B1-02z]
+deps: [B1-02y, B1-03h, B1-02z, B1-02zb]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/modules/risk/risk.module.ts'
