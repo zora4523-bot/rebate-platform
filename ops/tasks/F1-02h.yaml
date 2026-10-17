@@ -1,0 +1,29 @@
+id: F1-02h
+repo: rebate-platform
+title: content：GET /v1/config 下发 lkg_max_age_sec、config_version、bridge_disabled_methods、features.rank_platforms，响应带 ETag，If-None-Match 命中回 304
+type: impl
+# 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/CT-02k/contract-delta.md §1、§4、§5，CT-02k 合并后的 getConfig 契约）。宿主 05 F1-02 客户端部分。
+# 依据 04 §10.1（04:839、844-846）、02:631、03 §4.3 / §4.7 / §5.3；规则摘录由编排者摘入任务书第 9 节（04 §10.1 原文约 17KB，不进 refs，同 F1-02c）。
+# 要点：lkg_max_age_sec 读配置键 config.lkg_max_age_sec（键名照 02:631；不读同名键：F1-02i 放宽后的 #21 要求同名行被忽略），缺省 604800；
+#   bridge_disabled_methods 读 bridge.disabled_methods（04 未给键名，编排者默认，待编排复核），缺省 []；
+# 形状不对取缺省并 warn（同 F1-02c 裁定 4②）；features.rank_platforms = specs/material-channels.yaml 里有 selectable 频道的平台，按 PlatformCode 枚举序（现白名单空 → []）。
+# ETag：对最终 data（按人派生之后）做规范化 JSON 的 sha256 取前 32 位 hex，config_version 即该值、ETag 为其加引号（CT-02k 待裁定 ①，编排者默认，见 couli-runs/CONTENT-client/decisions-pending.md）；
+# config_version 自身不进哈希输入。If-None-Match 弱比较（去 W/ 前缀、支持逗号列表与 *）命中 → 304 无 body，带 ETag 与 X-Trace-Id；不加 Cache-Control（待裁定 ④）。
+# getConfig 已非 planned，不需机械提交，故无 mechanical_paths；app.module.ts 只在要改装配时动。
+# 2026-10-17 改为 Codex 实现（未开工，ops/approvals.yaml 第 30 条）：Claude 子代理先写规则测试 → Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → Claude 新子代理评审（第 27 条）。
+# 规则测试只能写在 test_paths；F1-02c 冻结测试的放宽由 F1-02i 先合并（path-guard-author 拒改别任务冻结测试）。
+refs: []
+refs_hash: {}
+deps: [CT-02k, F1-02i]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/content/config-etag/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/config-etag/**'
+status: todo
+pr: null

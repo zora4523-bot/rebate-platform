@@ -1,0 +1,34 @@
+id: CT-02l
+repo: rebate-platform
+title: 契约：页面补缺——GET /v1/pages/{page_key}（getPage，x-auth optional）与 /admin/v1/pages*（列表、详情与版本、存草稿 CAS、发布带 gray_percent、调灰度 / 转全量、回滚、签发预览 token）全部 planned；20902 data.resource 加 page；content.page 权限登记
+type: contract
+# 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/pages-plan.md §1 依据、§2 契约现状与缺口、§3 任务拆分）。不并入 CT-02k（范围是 config / 版本）。
+# 依据 04 §3.2 pages / page_versions / page_preview_tokens（l.386-387）、§6.2 l.498-499、§6.6 pages 行（含 ExternalPage 主机命中 union_host → 20001 data.fields）、§10.1 l.865 跳转目标、§11.2 content.page（step-up「–」）；
+# 03 §6.1 PageResponse 形状 {page_key, version, ttl_sec, sections[{id, type, version, min_app_version, props, data_source, condition}]}，condition 只用 login / has_parent / union_authorized / has_order；
+# 08 BR-ATTR-29 ①、BR-ID-11 细则（人群与灰度）、BR-ID-33 细则、BR-WDR-01 细则、BR-TEXT-17 细则——原文大（BR-ATTR-29 单条约 21KB），refs 置空，由编排者摘入任务书第 9 节（先例 #547、#580）。
+# 要点：getPage 带 OptionalDeviceId、X-Platform / X-App-Version，x-error-codes [30701]；min_app_version 按端 {ios, android, harmony}；page_key 形状 home 与 custom:[a-z0-9_-]{1,57}（R7）；
+# 后台写操作 x-auth admin、权限 content.page 写在 description、无 step-up；存草稿 / 发布 / 调灰度 / 回滚带 CAS 值（照 platform-icons 的 revision 写法），冲突 20902 resource=page；gray_percent 0..100 整数；
+# 保存与发布的校验失败 20001（data.fields 指 JSON 路径）；签发预览回 {token, page_key, version, expire_at}（R9）；previewPage 已有，不改。sections/{id}/items、CustomPage 路由、home-schema（CT-07a）不在本任务。
+# specs/permissions.yaml 的 operations 只登记档位与 step_up_tier 不同的操作：content.page 全无 step-up，预期仍为 []；契约作者核实后有变化才改并重生成 permissions.gen.ts。
+# 待裁定 R1–R12（pages-plan.md §4）采用默认（编排者默认，待编排复核，见 couli-runs/CONTENT-client/decisions-pending.md）；改 planned 操作须重生成 auth / signing / min-version 三份路由生成物（同 CT-15n、CT-02i）。
+# contract_sections 6.2 + 6.6 任务书约 22.8KB（上限 24KB），§3.2 两行、§10.1 l.865、§11.2 content.page 行由编排者摘入且须控制在 1.5KB 内。占契约槽（B3-lane/notices.md，排在 CT-02k 之后）。全部新增，oasdiff 预期非破坏。
+refs: []
+refs_hash: {}
+contract_sections: ['6.2', '6.6']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

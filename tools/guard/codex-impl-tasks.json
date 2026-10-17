@@ -32,7 +32,8 @@
     "B1-02z",
     "B1-02y",
     "F1-06zd",
-    "F1-06ze"
+    "F1-06ze",
+    "F1-02h"
   ],
   "forbidden_paths": [
     "contracts/**",
