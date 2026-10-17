@@ -15,4 +15,13 @@ export type {
 } from './application/push-token-report.ts';
 export { PushTokenController } from './http/public/push-token.controller.ts';
 export type { PushTokenHttpRequest } from './http/public/push-token.controller.ts';
+export { createMessageReader } from './application/message-read.ts';
+export type {
+  InboxMessageView,
+  MessageQuery,
+  MessageReader,
+  MessageReaderOptions,
+} from './application/message-read.ts';
+export { MessagesController } from './http/public/messages.controller.ts';
+export type { MessageHttpRequest } from './http/public/messages.controller.ts';
 export { NotificationModule } from './notification.module.ts';
