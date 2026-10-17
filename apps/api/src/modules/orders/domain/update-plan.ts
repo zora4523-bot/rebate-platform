@@ -30,7 +30,7 @@ export interface OrderUpdatePlan {
   readonly history: readonly ImportHistory[];
   readonly pending: 'ILLEGAL_TRANSITION' | 'UNMAPPED_STATUS' | 'NO_RECEIVED_AT' | null;
   readonly rule: string | null;
-  /** 本次报文映射到的事件；表外码为 null（供待处理说明与告警，不参与写库）。 */
+  /** 本次报文映射到的事件；表外码为 null（供待处理说明，并经 OrderStatusSource 交 settlement；不写 orders）。 */
   readonly event?: PlatformStatusEvent | null;
 }
 

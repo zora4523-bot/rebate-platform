@@ -6,6 +6,7 @@
 //   ORDER_CAS_CONFLICT。写序：UPDATE orders → history（按步序，只插入）→ pending → settlement 端口 → order.updated。
 // - 未归因（user_id 为空，含 VOID 的 R3b）每次重跑用户归属：命中且 locked=false 才写 user_id、user_basis=param。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
+//   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
 // 日志只打平铺字段（platform、app_id、reason、outcome、rule、event），不打子订单号与买家参数。
 import type { DB } from '@couli/db';
 import type { OrderPlatformState } from '@couli/domain';
@@ -13,6 +14,7 @@ import type { Selectable, Transaction } from 'kysely';
 import type { EventBus } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionOrder, UnionOrderAttrParams } from '../../union/index.ts';
 import { rawPayloadId } from '../domain/order-fields.ts';
+import type { PlatformStatusEvent } from '../domain/status-map.ts';
 import {
   planOrderSyncColumns,
   planOrderUpdate,
@@ -48,13 +50,36 @@ export interface UnmappedOrderInfo {
   readonly rebate_status: string;
 }
 
+/**
+ * 本次报文的平台状态来源（BR-FUND-01 P7 / P8、BR-FUND-02），作为 onUpdated / onUnmappedStatus 的第三个参数。
+ * P8 是 noop：维权与处罚都不改状态、rule 同为 P8，只有 event 能区分。settlement 据 event 选 order_rights 类型：
+ * PLATFORM_RIGHTS → RIGHTS，PLATFORM_PUNISH → PUNISH（原因码 PUNISH），P7 的 PLATFORM_INVALID →
+ * INVALID_AFTER_SETTLE；R6 / R8 的作废与扣回原因同样据 event 取，不从 rule 或 to_status 推断。
+ * 单独成参而不并入 change / info：两者的字段集由冻结规则测试逐字断言（AC-B1-08i#20 / #27）。
+ */
+export interface OrderStatusSource {
+  /** 原始码经映射表得到的内部事件（P5 / P14 补走中间步时仍是报文本身的事件，如 PLATFORM_SETTLED）；表外码为 null。 */
+  readonly event: PlatformStatusEvent | null;
+  /** 平台原始状态码，入参原样（不 trim、不归一）；平台未给为 null。 */
+  readonly raw_status: string | null;
+}
+
 export interface OrderUpdateDeps extends Pick<
   OrderPipelineDeps,
   'clock' | 'users' | 'bindings' | 'statusMaps' | 'logger'
 > {
+  /** settlement 实现（B1-08n 接线）；与本次写库同一事务调用，抛错整事务回滚。 */
   readonly rebate: {
-    onUpdated(trx: Transaction<DB>, change: OrderUpdateChange): Promise<void>;
-    onUnmappedStatus(trx: Transaction<DB>, info: UnmappedOrderInfo): Promise<void>;
+    onUpdated(
+      trx: Transaction<DB>,
+      change: OrderUpdateChange,
+      source: OrderStatusSource,
+    ): Promise<void>;
+    onUnmappedStatus(
+      trx: Transaction<DB>,
+      info: UnmappedOrderInfo,
+      source: OrderStatusSource,
+    ): Promise<void>;
   };
   readonly events: Pick<EventBus, 'publish'>;
   readonly regressionHold?: (platform: Parameters<OrderPipelineDeps['statusMaps']>[0]) => boolean;
@@ -77,7 +102,7 @@ function pendingDetail(plan: OrderUpdatePlan, from: string): string | null {
   return `order_illegal_transition ${plan.rule ?? 'illegal'} ${from}→${plan.event ?? '-'}`;
 }
 
-// TODO(规划/11 §4.5): 告警事件入队 — blocked on platform 事件名登记
+// TODO(规划/11 §4.5): 订单告警事件同事务入队 — blocked on B1-08o（platform EVENT_NAMES 登记）
 // TODO(规划/11 §4.5): 来源回填与分佣快照 — blocked on B1-08j、B1-08k
 export function createOrderUpdateStep(
   deps: OrderUpdateDeps,
@@ -205,27 +230,39 @@ export function createOrderUpdateStep(
         detail: pendingDetail(plan, from),
       });
     }
+    const source: OrderStatusSource = {
+      event: plan.event ?? null,
+      raw_status: incoming.raw_status ?? null,
+    };
     if (plan.pending === 'UNMAPPED_STATUS') {
-      await deps.rebate.onUnmappedStatus(trx, {
+      await deps.rebate.onUnmappedStatus(
+        trx,
+        {
+          app_id: current.app_id,
+          order_id: current.order_id,
+          attr_at: current.attr_at,
+          rebate_status: current.rebate_status,
+        },
+        source,
+      );
+    }
+    await deps.rebate.onUpdated(
+      trx,
+      {
         app_id: current.app_id,
         order_id: current.order_id,
         attr_at: current.attr_at,
-        rebate_status: current.rebate_status,
-      });
-    }
-    await deps.rebate.onUpdated(trx, {
-      app_id: current.app_id,
-      order_id: current.order_id,
-      attr_at: current.attr_at,
-      from_status: from,
-      to_status: plan.platform_status,
-      rule: plan.rule,
-      received_at: columns.received_at,
-      est_before: current.est_commission_fen,
-      est_after: columns.est_commission_fen,
-      settle_commission_fen: columns.settle_commission_fen,
-      attributed_now: attributedNow,
-    });
+        from_status: from,
+        to_status: plan.platform_status,
+        rule: plan.rule,
+        received_at: columns.received_at,
+        est_before: current.est_commission_fen,
+        est_after: columns.est_commission_fen,
+        settle_commission_fen: columns.settle_commission_fen,
+        attributed_now: attributedNow,
+      },
+      source,
+    );
     await deps.events.publish(trx, {
       appId: current.app_id,
       name: 'order.updated',
