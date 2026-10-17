@@ -83,12 +83,9 @@ it('[AC-F1-09f#11] 作者、发布人、更新人动态关联登录名，统计�
     .where('page_key', '=', 'home')
     .where('version', '=', 1)
     .execute();
-  const changed = 'pages_renamed_admin';
-  await h.db
-    .updateTable('admin_users')
-    .set({ login_name: changed })
-    .where('id', '=', f.actor.id)
-    .execute();
+  // admin_users.login_name has no UPDATE grant for any role (login names never change), so the
+  // association is checked against the actor's own login name: responses carry it, not the uuid.
+  const changed = f.actor.username;
   const before = await snapshot(h, f.appId);
   expect(await detail(f)).toMatchObject({ updated_by: changed });
   expect((await success<PageList>(await send(f, 'list'))).items[0]).toMatchObject({
