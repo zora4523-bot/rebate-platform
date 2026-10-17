@@ -494,7 +494,7 @@ BEGIN
 
   -- Allow-list of month-partitioned tables (ADR-0001 §4.2 #5). Extend it in the migration
   -- that creates the next partitioned table.
-  IF p_table NOT IN ('event_log', 'orders', 'union_raw_payloads', 'price_snapshot') THEN
+  IF p_table NOT IN ('event_log', 'orders', 'union_raw_payloads', 'price_snapshot', 'ledger_entries') THEN
     RAISE EXCEPTION 'ensure_month_partition: table "%" is not month-partitioned', p_table
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
@@ -1073,6 +1073,23 @@ CREATE FUNCTION pgboss.job_table_run_async(command_name text, version integer, c
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: account_balances; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.account_balances (
+    app_id text NOT NULL,
+    account_id uuid NOT NULL,
+    available_fen bigint NOT NULL,
+    frozen_fen bigint NOT NULL,
+    negative_since date,
+    version bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT account_balances_frozen_fen_check CHECK ((frozen_fen >= 0)),
+    CONSTRAINT account_balances_version_check CHECK ((version >= 0))
+);
+
 
 --
 -- Name: admin_permissions; Type: TABLE; Schema: app; Owner: -
@@ -1948,6 +1965,117 @@ CREATE TABLE app.inbox_messages (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: ledger_accounts; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.ledger_accounts (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    owner_type text NOT NULL,
+    owner_id text NOT NULL,
+    subject text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ledger_accounts_owner_id_check CHECK ((owner_id <> ''::text)),
+    CONSTRAINT ledger_accounts_owner_type_check CHECK ((owner_type = ANY (ARRAY['user'::text, 'platform'::text]))),
+    CONSTRAINT ledger_accounts_subject_check CHECK ((((owner_type = 'user'::text) AND (subject = 'USER_BALANCE'::text)) OR ((owner_type = 'platform'::text) AND (owner_id = 'platform'::text) AND (subject <> ''::text) AND (subject <> 'USER_BALANCE'::text))))
+);
+
+
+--
+-- Name: ledger_entries; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.ledger_entries (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    voucher_id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    sub_account text NOT NULL,
+    amount_fen bigint NOT NULL,
+    ledger_type text NOT NULL,
+    sub_type text,
+    income_type text,
+    balance_after_fen bigint,
+    account_version bigint,
+    booked_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ledger_entries_account_version_check CHECK ((account_version >= 1)),
+    CONSTRAINT ledger_entries_amount_fen_check CHECK ((amount_fen <> 0)),
+    CONSTRAINT ledger_entries_balance_after_check CHECK (((balance_after_fen IS NULL) = (account_version IS NULL))),
+    CONSTRAINT ledger_entries_income_type_check CHECK ((income_type = ANY (ARRAY['SERVICE_FEE'::text, 'INCIDENTAL'::text]))),
+    CONSTRAINT ledger_entries_ledger_type_check CHECK ((ledger_type = ANY (ARRAY['REBATE_CREDIT'::text, 'SHARE_CREDIT'::text, 'REFERRAL_CREDIT'::text, 'CLAWBACK'::text, 'SETTLE_ADJUST'::text, 'WITHDRAW_FREEZE'::text, 'WITHDRAW_PAID'::text, 'WITHDRAW_RETURN'::text, 'WITHDRAW_FEE'::text, 'TAX_WITHHOLD'::text, 'REWARD'::text, 'ADMIN_ADJUST'::text, 'BAD_DEBT_WRITEOFF'::text]))),
+    CONSTRAINT ledger_entries_sub_account_check CHECK ((sub_account = ANY (ARRAY['available'::text, 'frozen'::text]))),
+    CONSTRAINT ledger_entries_sub_type_check CHECK ((sub_type <> ''::text))
+)
+PARTITION BY RANGE (booked_at);
+
+
+--
+-- Name: ledger_entries_default; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.ledger_entries_default (
+    id bigint CONSTRAINT ledger_entries_id_not_null NOT NULL,
+    app_id text CONSTRAINT ledger_entries_app_id_not_null NOT NULL,
+    voucher_id uuid CONSTRAINT ledger_entries_voucher_id_not_null NOT NULL,
+    account_id uuid CONSTRAINT ledger_entries_account_id_not_null NOT NULL,
+    sub_account text CONSTRAINT ledger_entries_sub_account_not_null NOT NULL,
+    amount_fen bigint CONSTRAINT ledger_entries_amount_fen_not_null NOT NULL,
+    ledger_type text CONSTRAINT ledger_entries_ledger_type_not_null NOT NULL,
+    sub_type text,
+    income_type text,
+    balance_after_fen bigint,
+    account_version bigint,
+    booked_at timestamp with time zone CONSTRAINT ledger_entries_booked_at_not_null NOT NULL,
+    created_at timestamp with time zone DEFAULT now() CONSTRAINT ledger_entries_created_at_not_null NOT NULL,
+    CONSTRAINT ledger_entries_account_version_check CHECK ((account_version >= 1)),
+    CONSTRAINT ledger_entries_amount_fen_check CHECK ((amount_fen <> 0)),
+    CONSTRAINT ledger_entries_balance_after_check CHECK (((balance_after_fen IS NULL) = (account_version IS NULL))),
+    CONSTRAINT ledger_entries_income_type_check CHECK ((income_type = ANY (ARRAY['SERVICE_FEE'::text, 'INCIDENTAL'::text]))),
+    CONSTRAINT ledger_entries_ledger_type_check CHECK ((ledger_type = ANY (ARRAY['REBATE_CREDIT'::text, 'SHARE_CREDIT'::text, 'REFERRAL_CREDIT'::text, 'CLAWBACK'::text, 'SETTLE_ADJUST'::text, 'WITHDRAW_FREEZE'::text, 'WITHDRAW_PAID'::text, 'WITHDRAW_RETURN'::text, 'WITHDRAW_FEE'::text, 'TAX_WITHHOLD'::text, 'REWARD'::text, 'ADMIN_ADJUST'::text, 'BAD_DEBT_WRITEOFF'::text]))),
+    CONSTRAINT ledger_entries_sub_account_check CHECK ((sub_account = ANY (ARRAY['available'::text, 'frozen'::text]))),
+    CONSTRAINT ledger_entries_sub_type_check CHECK ((sub_type <> ''::text))
+);
+
+
+--
+-- Name: ledger_entries_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.ledger_entries ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.ledger_entries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: ledger_vouchers; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.ledger_vouchers (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    biz_type text NOT NULL,
+    biz_id text NOT NULL,
+    uniq_key text NOT NULL,
+    accounting_date date NOT NULL,
+    operator text NOT NULL,
+    memo text,
+    order_key text,
+    beneficiary_user_id uuid,
+    role text,
+    voucher_kind text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ledger_vouchers_biz_type_check CHECK ((biz_type <> ''::text)),
+    CONSTRAINT ledger_vouchers_uniq_key_check CHECK ((uniq_key <> ''::text))
 );
 
 
@@ -3597,6 +3725,13 @@ ALTER TABLE ONLY app.event_log ATTACH PARTITION app.event_log_default DEFAULT;
 
 
 --
+-- Name: ledger_entries_default; Type: TABLE ATTACH; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.ledger_entries ATTACH PARTITION app.ledger_entries_default DEFAULT;
+
+
+--
 -- Name: link_logs_default; Type: TABLE ATTACH; Schema: app; Owner: -
 --
 
@@ -3636,6 +3771,14 @@ ALTER TABLE ONLY pgboss.job ATTACH PARTITION pgboss.job_common DEFAULT;
 --
 
 ALTER TABLE ONLY public.pgmigrations ALTER COLUMN id SET DEFAULT nextval('public.pgmigrations_id_seq'::regclass);
+
+
+--
+-- Name: account_balances account_balances_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.account_balances
+    ADD CONSTRAINT account_balances_pkey PRIMARY KEY (account_id);
 
 
 --
@@ -3996,6 +4139,70 @@ ALTER TABLE ONLY app.idempotency_keys
 
 ALTER TABLE ONLY app.inbox_messages
     ADD CONSTRAINT inbox_messages_pkey PRIMARY KEY (message_id);
+
+
+--
+-- Name: ledger_accounts ledger_accounts_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.ledger_accounts
+    ADD CONSTRAINT ledger_accounts_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: ledger_accounts ledger_accounts_owner_subject_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.ledger_accounts
+    ADD CONSTRAINT ledger_accounts_owner_subject_key UNIQUE (app_id, owner_type, owner_id, subject);
+
+
+--
+-- Name: ledger_accounts ledger_accounts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.ledger_accounts
+    ADD CONSTRAINT ledger_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ledger_entries ledger_entries_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.ledger_entries
+    ADD CONSTRAINT ledger_entries_pkey PRIMARY KEY (id, booked_at);
+
+
+--
+-- Name: ledger_entries_default ledger_entries_default_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.ledger_entries_default
+    ADD CONSTRAINT ledger_entries_default_pkey PRIMARY KEY (id, booked_at);
+
+
+--
+-- Name: ledger_vouchers ledger_vouchers_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.ledger_vouchers
+    ADD CONSTRAINT ledger_vouchers_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: ledger_vouchers ledger_vouchers_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.ledger_vouchers
+    ADD CONSTRAINT ledger_vouchers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ledger_vouchers ledger_vouchers_uniq_key_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.ledger_vouchers
+    ADD CONSTRAINT ledger_vouchers_uniq_key_key UNIQUE (app_id, uniq_key);
 
 
 --
@@ -4950,6 +5157,62 @@ CREATE INDEX inbox_messages_user_created_idx ON app.inbox_messages USING btree (
 
 
 --
+-- Name: ledger_entries_account_booked_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX ledger_entries_account_booked_idx ON ONLY app.ledger_entries USING btree (app_id, account_id, booked_at DESC);
+
+
+--
+-- Name: ledger_entries_account_version_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX ledger_entries_account_version_idx ON ONLY app.ledger_entries USING btree (account_id, account_version) WHERE (account_version IS NOT NULL);
+
+
+--
+-- Name: ledger_entries_default_account_id_account_version_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX ledger_entries_default_account_id_account_version_idx ON app.ledger_entries_default USING btree (account_id, account_version) WHERE (account_version IS NOT NULL);
+
+
+--
+-- Name: ledger_entries_default_app_id_account_id_booked_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX ledger_entries_default_app_id_account_id_booked_at_idx ON app.ledger_entries_default USING btree (app_id, account_id, booked_at DESC);
+
+
+--
+-- Name: ledger_entries_voucher_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX ledger_entries_voucher_idx ON ONLY app.ledger_entries USING btree (app_id, voucher_id);
+
+
+--
+-- Name: ledger_entries_default_app_id_voucher_id_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX ledger_entries_default_app_id_voucher_id_idx ON app.ledger_entries_default USING btree (app_id, voucher_id);
+
+
+--
+-- Name: ledger_vouchers_accounting_date_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX ledger_vouchers_accounting_date_idx ON app.ledger_vouchers USING btree (app_id, accounting_date);
+
+
+--
+-- Name: ledger_vouchers_order_key_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX ledger_vouchers_order_key_idx ON app.ledger_vouchers USING btree (app_id, order_key) WHERE (order_key IS NOT NULL);
+
+
+--
 -- Name: link_logs_link_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -5391,6 +5654,34 @@ ALTER INDEX app.event_log_pkey ATTACH PARTITION app.event_log_default_pkey;
 
 
 --
+-- Name: ledger_entries_default_account_id_account_version_idx; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.ledger_entries_account_version_idx ATTACH PARTITION app.ledger_entries_default_account_id_account_version_idx;
+
+
+--
+-- Name: ledger_entries_default_app_id_account_id_booked_at_idx; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.ledger_entries_account_booked_idx ATTACH PARTITION app.ledger_entries_default_app_id_account_id_booked_at_idx;
+
+
+--
+-- Name: ledger_entries_default_app_id_voucher_id_idx; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.ledger_entries_voucher_idx ATTACH PARTITION app.ledger_entries_default_app_id_voucher_id_idx;
+
+
+--
+-- Name: ledger_entries_default_pkey; Type: INDEX ATTACH; Schema: app; Owner: -
+--
+
+ALTER INDEX app.ledger_entries_pkey ATTACH PARTITION app.ledger_entries_default_pkey;
+
+
+--
 -- Name: link_logs_default_app_id_link_id_created_at_idx; Type: INDEX ATTACH; Schema: app; Owner: -
 --
 
@@ -5517,6 +5808,20 @@ CREATE TRIGGER event_log_append_only BEFORE DELETE OR UPDATE ON app.event_log FO
 
 
 --
+-- Name: ledger_entries ledger_entries_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER ledger_entries_append_only BEFORE DELETE OR UPDATE ON app.ledger_entries FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: ledger_vouchers ledger_vouchers_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER ledger_vouchers_append_only BEFORE DELETE OR UPDATE ON app.ledger_vouchers FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
 -- Name: link_logs link_logs_append_only; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -5633,6 +5938,14 @@ CREATE TRIGGER union_pids_no_delete BEFORE DELETE ON app.union_pids FOR EACH ROW
 --
 
 CREATE TRIGGER union_raw_payloads_append_only BEFORE DELETE OR UPDATE ON app.union_raw_payloads FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: account_balances account_balances_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.account_balances
+    ADD CONSTRAINT account_balances_account_fkey FOREIGN KEY (app_id, account_id) REFERENCES app.ledger_accounts(app_id, id);
 
 
 --
@@ -5905,6 +6218,22 @@ ALTER TABLE ONLY app.devices
 
 ALTER TABLE ONLY app.inbox_messages
     ADD CONSTRAINT inbox_messages_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: ledger_entries ledger_entries_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE app.ledger_entries
+    ADD CONSTRAINT ledger_entries_account_fkey FOREIGN KEY (app_id, account_id) REFERENCES app.ledger_accounts(app_id, id);
+
+
+--
+-- Name: ledger_entries ledger_entries_voucher_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE app.ledger_entries
+    ADD CONSTRAINT ledger_entries_voucher_fkey FOREIGN KEY (app_id, voucher_id) REFERENCES app.ledger_vouchers(app_id, id);
 
 
 --
@@ -6480,6 +6809,42 @@ REVOKE ALL ON FUNCTION app.reject_union_binding_conflict_rewrite() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.reject_update_delete() FROM PUBLIC;
+
+
+--
+-- Name: TABLE account_balances; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.account_balances TO couli_app;
+GRANT SELECT ON TABLE app.account_balances TO couli_readonly;
+
+
+--
+-- Name: COLUMN account_balances.available_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(available_fen) ON TABLE app.account_balances TO couli_app;
+
+
+--
+-- Name: COLUMN account_balances.frozen_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(frozen_fen) ON TABLE app.account_balances TO couli_app;
+
+
+--
+-- Name: COLUMN account_balances.negative_since; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(negative_since) ON TABLE app.account_balances TO couli_app;
+
+
+--
+-- Name: COLUMN account_balances.version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(version) ON TABLE app.account_balances TO couli_app;
 
 
 --
@@ -7772,6 +8137,30 @@ GRANT UPDATE(row_version) ON TABLE app.inbox_messages TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.inbox_messages TO couli_app;
+
+
+--
+-- Name: TABLE ledger_accounts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.ledger_accounts TO couli_app;
+GRANT SELECT ON TABLE app.ledger_accounts TO couli_readonly;
+
+
+--
+-- Name: TABLE ledger_entries; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.ledger_entries TO couli_app;
+GRANT SELECT ON TABLE app.ledger_entries TO couli_readonly;
+
+
+--
+-- Name: TABLE ledger_vouchers; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.ledger_vouchers TO couli_app;
+GRANT SELECT ON TABLE app.ledger_vouchers TO couli_readonly;
 
 
 --

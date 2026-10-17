@@ -7,6 +7,7 @@ export const MONTH_PARTITIONED_TABLES = [
   'orders',
   'union_raw_payloads',
   'price_snapshot',
+  'ledger_entries',
 ] as const;
 
 export type MonthPartitionedTable = (typeof MONTH_PARTITIONED_TABLES)[number];

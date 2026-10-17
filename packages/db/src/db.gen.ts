@@ -23,6 +23,16 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AccountBalances {
+  account_id: string;
+  app_id: string;
+  available_fen: ColumnType<bigint, bigint, bigint>;
+  created_at: Generated<Timestamp>;
+  frozen_fen: ColumnType<bigint, bigint, bigint>;
+  negative_since: Timestamp | null;
+  version: ColumnType<bigint, bigint, bigint>;
+}
+
 export interface AdminPermissions {
   admin_id: string;
   app_id: string;
@@ -471,6 +481,47 @@ export interface InboxMessages {
   title: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
+}
+
+export interface LedgerAccounts {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  owner_id: string;
+  owner_type: string;
+  subject: string;
+}
+
+export interface LedgerEntries {
+  account_id: string;
+  account_version: ColumnType<bigint, bigint, bigint> | null;
+  amount_fen: ColumnType<bigint, bigint, bigint>;
+  app_id: string;
+  balance_after_fen: ColumnType<bigint, bigint, bigint> | null;
+  booked_at: Timestamp;
+  created_at: Generated<Timestamp>;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  income_type: string | null;
+  ledger_type: string;
+  sub_account: string;
+  sub_type: string | null;
+  voucher_id: string;
+}
+
+export interface LedgerVouchers {
+  accounting_date: Timestamp;
+  app_id: string;
+  beneficiary_user_id: string | null;
+  biz_id: string;
+  biz_type: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  memo: string | null;
+  operator: string;
+  order_key: string | null;
+  role: string | null;
+  uniq_key: string;
+  voucher_kind: string | null;
 }
 
 export interface LinkLogs {
@@ -1152,6 +1203,7 @@ export interface UserTipReads {
 }
 
 export interface DB {
+  account_balances: AccountBalances;
   admin_permissions: AdminPermissions;
   admin_users: AdminUsers;
   agent_cards: AgentCards;
@@ -1182,6 +1234,9 @@ export interface DB {
   favorites: Favorites;
   idempotency_keys: IdempotencyKeys;
   inbox_messages: InboxMessages;
+  ledger_accounts: LedgerAccounts;
+  ledger_entries: LedgerEntries;
+  ledger_vouchers: LedgerVouchers;
   link_logs: LinkLogs;
   link_open_attempts: LinkOpenAttempts;
   links: Links;
