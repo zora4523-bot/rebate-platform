@@ -1,0 +1,35 @@
+{
+  "task": "CT-02m",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "fc18f2b84f210d8e92c99d0cfe4411411b9e2742",
+  "red_tests": [],
+  "risk_note": "RV1 contract follow-up (packages/contracts-ts only): packages/contracts-ts/src/admin-config.test.ts (CT-02i, #600) no longer asserts that the eight config center and kill-switch operations are x-implementation planned, so that F1-10d / F1-10e (Codex implementation tasks whose paths may not touch packages/contracts-ts) can remove planned in their mechanical commits; every other assertion (no Idempotency-Key, x-idempotent absent, step-up header rules) is kept. No contract change. tester none; implementation by an Opus 5.5 subagent in one run. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8ab6d8a94c906160d9ab5ec57ae5d3511763601d",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "74943d10f8052aacb68c82a72a21e959377a8764",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
