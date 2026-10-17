@@ -3607,7 +3607,14 @@ paths:
             X-Trace-Id:
               $ref: '#/components/headers/TraceId'
             ETag:
-              $ref: '#/components/headers/ConfigETagOptional'
+              required: false
+              description: |
+                Strong ETag of the configuration on 200; without quotes it equals data.config_version
+                (04 §10.1). A server that delivers it always sends it; a client that finds it missing
+                treats the configuration as having no config_version and sends no If-None-Match.
+              schema:
+                type: string
+                pattern: '^"[0-9A-Za-z._:-]{1,64}"$'
           content:
             application/json:
               schema:
@@ -8987,15 +8994,6 @@ components:
     ConfigETag:
       required: true
       description: Strong ETag of the configuration; without quotes it equals data.config_version (04 §10.1).
-      schema:
-        type: string
-        pattern: '^"[0-9A-Za-z._:-]{1,64}"$'
-    ConfigETagOptional:
-      required: false
-      description: |
-        Strong ETag of the configuration on 200; without quotes it equals data.config_version
-        (04 §10.1). A server that delivers it always sends it; a client that finds it missing
-        treats the configuration as having no config_version and sends no If-None-Match.
       schema:
         type: string
         pattern: '^"[0-9A-Za-z._:-]{1,64}"$'

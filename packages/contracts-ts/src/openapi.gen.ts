@@ -6139,12 +6139,6 @@ export interface components {
         NoCache: "no-cache";
         /** @description Strong ETag of the configuration; without quotes it equals data.config_version (04 §10.1). */
         ConfigETag: string;
-        /**
-         * @description Strong ETag of the configuration on 200; without quotes it equals data.config_version
-         *     (04 §10.1). A server that delivers it always sends it; a client that finds it missing
-         *     treats the configuration as having no config_version and sends no If-None-Match.
-         */
-        ConfigETagOptional: string;
         /** @description The trace id of the request on every response, the same value as `trace_id` in the body (02 logging); echo of a well-formed X-Trace-Id request header, otherwise a generated UUID. */
         TraceId: components["schemas"]["TraceId"];
     };
@@ -9389,7 +9383,12 @@ export interface operations {
             200: {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
-                    ETag: components["headers"]["ConfigETagOptional"];
+                    /**
+                     * @description Strong ETag of the configuration on 200; without quotes it equals data.config_version
+                     *     (04 §10.1). A server that delivers it always sends it; a client that finds it missing
+                     *     treats the configuration as having no config_version and sends no If-None-Match.
+                     */
+                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
