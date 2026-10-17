@@ -1,0 +1,35 @@
+{
+  "task": "B2-02b",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "8aa49e72e700793b76fdd8176d165d32dddcd719",
+  "red_tests": [],
+  "risk_note": "RV2 (tools/ci gate). lint-migrations FUNDS_TABLE_NAMES gains daily_balances, asset_snapshots, bad_debt_writeoffs, admin_adjustments, recon_diffs and fund_ledger (no existing prefix matches them with startsWith), so these future funds tables get the funds-table protections before they are created; the classification test asserts each name. Tightens the gate; no logic change. Ledger tester: none, so no red run. Written by the lane orchestrator (funds-quote).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6875085aaa560985594fed987c2caeba34f571eb",
+    "test/spec": "94fcad1b746bbb99cc5598ac8f49e0ff688c1548",
+    "specs": "4b37a92670828e2b8c3e0734ecb85eb5371a7277"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "6875085aaa560985594fed987c2caeba34f571eb"
+  }
+}

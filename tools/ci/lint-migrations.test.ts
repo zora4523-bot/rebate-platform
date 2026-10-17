@@ -84,6 +84,13 @@ it('knows the funds and attribution tables by name, with or without schema and q
     'union_pids',
     'links',
     'link_logs',
+    // B2-02b: ledger / settlement tables no prefix matches.
+    'daily_balances',
+    'asset_snapshots',
+    'bad_debt_writeoffs',
+    'admin_adjustments',
+    'recon_diffs',
+    'fund_ledger',
   ]) {
     expect(isFundsTable(t), t).toBe(true);
   }

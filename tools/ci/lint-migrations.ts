@@ -137,6 +137,15 @@ export const FUNDS_TABLE_NAMES: readonly string[] = [
   'idempotency_keys',
   // appeals: an appeal closed as revoked raises the BR-FUND-22 appeal-restore error ticket (CT-06j).
   'appeals',
+  // Ledger and settlement tables whose names no prefix above matches (B2-02b, couli-runs ledger plan D17):
+  // daily balances and asset snapshots (BR-FUND-19), bad-debt write-offs, manual adjustments
+  // (BR-FUND-24), reconciliation diff tickets (BR-FUND-20 / BR-WDR-23) and the fund ledger view.
+  'daily_balances',
+  'asset_snapshots',
+  'bad_debt_writeoffs',
+  'admin_adjustments',
+  'recon_diffs',
+  'fund_ledger',
 ];
 
 /** Column types a money column (`*_fen`) may have (ADR-0001 §4: integer fen in bigint); anything else is refused. */
