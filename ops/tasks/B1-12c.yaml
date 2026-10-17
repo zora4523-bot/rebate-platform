@@ -1,0 +1,28 @@
+id: B1-12c
+repo: rebate-platform
+title: notification：POST /v1/devices/push-token（reportPushToken）——只有该设备最近一次登录的会话能写令牌值与绑定，否则忽略；同一令牌值已在别的设备行时按设备注册先后与会话创建时间决定是否收回；冲突窗口内刚换过行的持有行冻结、冻结期内上报不写；所有情况都回成功；去掉该操作的 planned
+type: impl
+# 2026-10-17 入账（be-codex，编排会话 10-16 20:1x 第二批①；approvals 第 30、31 条：Codex 实现、Claude 写测试与评审，去 planned 走 mechanical_paths 机械提交）。
+# 依据：契约 reportPushToken（CT-15j：x-auth login、不签名、不幂等、x-min-version-gate、10405）、04 §3.2 push_tokens 行（token_set_at 等）、08 BR-ID-07 细则「推送令牌与会话」（令牌值与绑定只由最近一次登录会话写、收回规则、冲突窗口 push.token_conflict_window_hours、冻结），由编排者摘入任务书。
+# 写者：push_tokens 属 notification（B1-12a/b）；控制器放 notification/http/public，NotificationModule 在 app.module 挂入（identity 只经已有端口，不改 identity/**，避免与身份线冲突）。provider 先是字符串（D-14）。
+# 必须复用：B1-12b 的 session-bindings（绑定代际、条件更新）、platform 的会话 / 设备头解析与 Clock、配置读取现有做法；不读 process.env。子模块不从 notification/index.ts 导入。
+refs: [BR-ID-07]
+refs_hash:
+  BR-ID-07: fd4ef192a90d
+deps: [B1-12b, CT-15j]
+paths:
+  - 'apps/api/src/modules/notification/**'
+  - 'apps/api/src/app.module.ts'
+mechanical_paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/notification/push-token-report/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/push-token-report/**'
+status: todo
+pr: null

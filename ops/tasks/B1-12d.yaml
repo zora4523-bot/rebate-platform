@@ -1,0 +1,26 @@
+id: B1-12d
+repo: rebate-platform
+title: notification：GET /v1/messages/{message_id}（getMessage）——推送点击回查：只返回登录账号自己的 inbox_messages 一条（message_id、code、title、body、created_at、read_at、route 或 null），不存在或他人的一律 30701 不区分；只读，不改 read_at；去掉该操作的 planned
+type: impl
+# 2026-10-17 入账（be-codex，编排会话 10-16 20:1x 第二批②；approvals 第 30、31 条）。表 inbox_messages 已在 schema（写者 notification，04 §3.2），本任务只读，不建表、不写。
+# 依据：契约 getMessage（CT-17b：x-auth login、30701、只读）、04 §3.2 inbox_messages 行、08 BR-ID-10 细则「推送点击的落点」（只本人、他人与不存在同码、不改已读），由编排者摘入任务书。所有查询带 app_id；时间只读 Clock。
+# 控制器放 notification/http/public，挂进 NotificationModule；与 B1-12c 同改 notification/** 与 app.module.ts，deps 串行。必须复用 B1-12c 落下的 notification 控制器装配方式。
+refs: []
+refs_hash: {}
+deps: [B1-12c, CT-17b]
+paths:
+  - 'apps/api/src/modules/notification/**'
+  - 'apps/api/src/app.module.ts'
+mechanical_paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/notification/message-read/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/message-read/**'
+status: todo
+pr: null
