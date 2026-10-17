@@ -1,18 +1,17 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import type { Schema } from '../../../../packages/contracts-ts/src/index.ts';
 import { expect, vi } from 'vitest';
 import { createTokenCheck } from '../../../../apps/api/src/modules/identity/application/access-tokens.ts';
-import {
-  OrderQueries,
-  OrdersModule,
-  type OrderSubject,
-} from '../../../../apps/api/src/modules/orders/index.ts';
+import { OrderQueries, type OrderSubject } from '../../../../apps/api/src/modules/orders/index.ts';
 import {
   FixedClock,
   REQUEST_CHECKS,
   createRootLogger,
   isContractSignedRoute,
   loadConfig,
+  type DbHandles,
   type RootLogger,
 } from '../../../../apps/api/src/modules/platform/index.ts';
 import { createSignatureCheck } from '../../../../apps/api/src/modules/risk/index.ts';
@@ -72,26 +71,42 @@ interface HttpApp {
   close(): Promise<unknown>;
   inject(input: { method: 'GET'; url: string; headers: Record<string, string> }): Promise<Response>;
 }
-interface ModuleShape {
-  providers?: unknown[];
-  [key: string]: unknown;
+interface TestingBuilder {
+  overrideProvider(token: unknown): { useValue(value: unknown): TestingBuilder };
+  compile(): Promise<{
+    createNestApplication(adapter: unknown, options: unknown): HttpApp;
+  }>;
 }
 export type Send = (url: string, headers?: Record<string, string | undefined>) => Promise<Response>;
 
 /** Real bootstrap and token middleware; only the read port and token dependencies are replaced. */
 export async function withHttp(
-  queries: OrderQueries,
+  queries: OrderQueries | undefined,
   subject: OrderSubject,
   check: (send: Send, logs: string[]) => Promise<void>,
+  dbHandles?: DbHandles,
 ) {
   const root = new URL('../../../../', import.meta.url);
-  const { AppModule } = (await import(new URL('apps/api/src/app.module.ts', root).href)) as {
-    AppModule: { forEntry(options: unknown): ModuleShape };
+  const requireApi = createRequire(new URL('apps/api/package.json', root));
+  const { NestFactory } = (await import(
+    pathToFileURL(requireApi.resolve('@nestjs/core')).href
+  )) as {
+    NestFactory: {
+      create(module: unknown, adapter: unknown, options: unknown): Promise<HttpApp>;
+    };
+  };
+  const { Test } = (await import(pathToFileURL(requireApi.resolve('@nestjs/testing')).href)) as {
+    Test: { createTestingModule(metadata: { imports: unknown[] }): TestingBuilder };
   };
   const { createHttpApp } = (await import(new URL('apps/api/src/bootstrap.ts', root).href)) as {
     createHttpApp(
       entry: 'api',
-      options: { config: ReturnType<typeof loadConfig>; clock: FixedClock; logger: RootLogger },
+      options: {
+        config: ReturnType<typeof loadConfig>;
+        clock: FixedClock;
+        logger: RootLogger;
+        dbHandles?: DbHandles;
+      },
     ): Promise<HttpApp>;
   };
   const clock = new FixedClock(NOW);
@@ -130,28 +145,21 @@ export async function withHttp(
     },
     sessions: { find: async () => ({ revoked_at: null }) },
   });
-  const originalRoot = AppModule.forEntry.bind(AppModule);
-  const originalOrders = OrdersModule.forRoot.bind(OrdersModule);
-  const moduleSpy = vi.spyOn(OrdersModule, 'forRoot').mockImplementation(() => {
-    const module = originalOrders();
-    return {
-      ...module,
-      providers: [...(module.providers ?? []), { provide: OrderQueries, useValue: queries }],
-    };
-  });
-  const rootSpy = vi.spyOn(AppModule, 'forEntry').mockImplementation((options) => {
-    const module = originalRoot(options);
-    return {
-      ...module,
-      providers: [
-        ...(module.providers ?? []),
-        {
-          provide: REQUEST_CHECKS,
-          useValue: { checks: [signature, tokenCheck], bufferWhen: isContractSignedRoute },
-        },
-      ],
-    };
-  });
+  // Compile the actual production module graph, then override by provider token. This works
+  // for static imports and dynamic modules regardless of when forRoot() was evaluated.
+  // With queries omitted the real OrderQueries provider and all linking wiring stay intact.
+  const factorySpy = vi
+    .spyOn(NestFactory, 'create')
+    .mockImplementation(async (module, adapter, options) => {
+      const builder = Test.createTestingModule({ imports: [module] });
+      builder.overrideProvider(REQUEST_CHECKS).useValue({
+        checks: [signature, tokenCheck],
+        bufferWhen: isContractSignedRoute,
+      });
+      if (queries !== undefined) builder.overrideProvider(OrderQueries).useValue(queries);
+      const compiled = await builder.compile();
+      return compiled.createNestApplication(adapter, options);
+    });
   let app: HttpApp | undefined;
   const logs: string[] = [];
   try {
@@ -159,6 +167,7 @@ export async function withHttp(
       createHttpApp('api', {
         config: loadConfig({ APP_ENV: 'test' }),
         clock,
+        ...(dbHandles === undefined ? {} : { dbHandles }),
         logger: createRootLogger(
           { entry: 'api', appEnv: 'test', level: 'info' },
           {
@@ -201,8 +210,7 @@ export async function withHttp(
     expect((await send('/v1/orders?scope=self')).statusCode).toBe(200);
     await check(send, logs);
   } finally {
-    rootSpy.mockRestore();
-    moduleSpy.mockRestore();
+    factorySpy.mockRestore();
     await app?.close();
   }
 }

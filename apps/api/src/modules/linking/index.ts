@@ -125,3 +125,5 @@ export type {
   LinkConvertUrlParser,
 } from './application/link-convert.ts';
 export type { LinkConvertPorts } from './linking.module.ts';
+export { createOrderLinkReader } from './application/order-link-reader.ts';
+export type { OrderLinkProducts } from './application/order-link-reader.ts';

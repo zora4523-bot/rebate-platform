@@ -38,6 +38,8 @@ const reasons: [Schema<'OrderReasonCode'> | null, string[]][] = [
   ['COMMISSION_ZERO', ['CONTACT_CS']],
   ['OTHER', ['CONTACT_CS']],
   ['BLACKLIST', ['APPEAL']],
+  ['NOT_TRACKED', ['CLAIM']],
+  ['RELATION_INVALID', ['REAUTH']],
   [null, []],
   ...(
     [
@@ -48,10 +50,8 @@ const reasons: [Schema<'OrderReasonCode'> | null, string[]][] = [
       'PRICE_COMPARE',
       'PRICE_PROTECT',
       'SETTLE_DIFF',
-      'NOT_TRACKED',
       'EXPIRED_CLICK',
       'OTHER_TLJ',
-      'RELATION_INVALID',
       'CANCELLED',
     ] as const
   ).map((reason): [Schema<'OrderReasonCode'>, string[]] => [reason, []]),
