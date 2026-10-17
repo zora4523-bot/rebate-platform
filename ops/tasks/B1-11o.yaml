@@ -1,0 +1,23 @@
+id: B1-11o
+repo: rebate-platform
+title: 门禁登记新模块 growth：ops/risk-map.yaml 加 apps/api/src/modules/growth/** 为 RV2（归属：上级关系与等级日志，同 linking），重生成根 AGENTS.md 分工表，同步 tools/guard/lib/risk.test.ts（必要时 guard-cli.test.ts 换用仍未登记的模块），加 growth/AGENTS.md 与一行 @AGENTS.md 的 CLAUDE.md
+type: guard-change
+# 2026-10-18 身份线 identity-lane 入账。B1-11b（growth 首建）测试机完整验证只败在 risk-map-coverage：apps/api/src/modules/growth 无规则。先例 B2-02a（#602）、B1-08b（#590）、B2-03e（#520）。
+# 收紧门禁（未登记路径本就 RV2），按 approvals #24 由本线核对四类后加 owner-approved 标签。模块 AGENTS.md ≤60 行、不写数值与公式：上级关系（parent_id）与等级（users.level）只由 growth 写、每次变更同事务写只插入日志、按时点回放、规则只在 08 BR-INV-*；identity 不 import growth（经端口注入）。
+# B1-11b 依赖本任务（B1-11b 的 paths 不含门禁文件）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'ops/risk-map.yaml'
+  - 'AGENTS.md'
+  - 'tools/guard/lib/risk.test.ts'
+  - 'tools/guard/guard-cli.test.ts'
+  - 'apps/api/src/modules/growth/AGENTS.md'
+  - 'apps/api/src/modules/growth/CLAUDE.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
