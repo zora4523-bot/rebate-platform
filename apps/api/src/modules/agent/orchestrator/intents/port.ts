@@ -177,7 +177,9 @@ class IntentHandler {
     }
   }
 
-  /** 判定顺序②: the model's label checked against the user's own text, raised only. */
+  /** 判定顺序②: between personal queries, page_guide and rule_qa a clear server reading of the
+   * user's text decides, in both directions; an unclear reading keeps the model's label. Other
+   * intents (out_of_scope, clarify, search …) are never re-labelled here. */
   private async decide(
     request: IntentRequest,
     raw: Exclude<ReturnType<typeof readRawIntent>, { kind: 'none' }>,
@@ -185,58 +187,74 @@ class IntentHandler {
     if (raw.kind === 'broken') return { kind: 'refuse', intent: null };
     const label = raw.value['agent_intent'];
     const valid = validateIntent(raw.value);
-    if (isCheckedLabel(label)) {
-      const checked = this.classifier.classify(request.input.text);
-      const personal = await this.personalFromText(request, checked, label);
-      if (personal !== null) {
-        const modelTopic = valid?.agent_intent === 'earnings_query' ? valid.topic : undefined;
-        const withdrawal = 'withdrawal' in checked && checked.withdrawal;
-        const topic = withdrawal ? 'withdrawal_progress' : (modelTopic ?? 'summary');
-        // The model's own object is forwarded unchanged only when its label is the one kept.
-        const model = valid !== null && valid.agent_intent === personal ? valid : null;
-        return { kind: 'personal', intent: personal, topic, model };
+    if (!isCheckedLabel(label)) {
+      if (valid === null) return { kind: 'refuse', intent: knownIntent(label) };
+      switch (valid.agent_intent) {
+        case 'out_of_scope':
+          return { kind: 'refuse', intent: 'out_of_scope' };
+        case 'clarify':
+          return { kind: 'clarify', slot: valid.slot };
+        default:
+          return { kind: 'continue', intent: valid };
       }
-      if (label === 'rule_qa' && checked.kind === 'page' && checked.route !== null) {
-        return { kind: 'guide', route: checked.route, extraFields: false };
-      }
+    }
+    const checked = this.classifier.classify(request.input.text);
+    const server = await this.serverIntent(request, checked, label);
+    if (server.intent === 'page_guide') {
+      // The model's own page_guide is always validated as sent (fields, route membership).
       if (label === 'page_guide') {
         const extraFields = Object.keys(raw.value).some(
           (key) => key !== 'agent_intent' && key !== 'guide_route',
         );
         return { kind: 'guide', route: raw.value['guide_route'], extraFields };
       }
+      return { kind: 'guide', route: server.route, extraFields: false };
     }
-    if (valid === null) return { kind: 'refuse', intent: knownIntent(label) };
-    switch (valid.agent_intent) {
-      case 'out_of_scope':
-        return { kind: 'refuse', intent: 'out_of_scope' };
-      case 'clarify':
-        return { kind: 'clarify', slot: valid.slot };
-      default:
-        return { kind: 'continue', intent: valid };
+    // The model's object is used only when its label is kept; a clear server reading otherwise
+    // builds its own object, an unclear one requires the model's object to be valid.
+    const own = valid !== null && valid.agent_intent === server.intent ? valid : null;
+    if (!server.clear && own === null) return { kind: 'refuse', intent: knownIntent(label) };
+    if (server.intent === 'rule_qa') {
+      return { kind: 'continue', intent: own ?? { agent_intent: 'rule_qa' } };
     }
+    const modelTopic = own?.agent_intent === 'earnings_query' ? own.topic : undefined;
+    const withdrawal = 'withdrawal' in checked && checked.withdrawal;
+    const topic = withdrawal ? 'withdrawal_progress' : (modelTopic ?? 'summary');
+    return { kind: 'personal', intent: server.intent, topic, model: own };
   }
 
-  /** Personal intent after the text check, or null when the message is not about own data. */
-  private async personalFromText(
+  /** The intent after 判定顺序②. `clear` is false when the model's label is merely kept. */
+  private async serverIntent(
     request: IntentRequest,
     checked: TextClass,
     label: CheckedLabel,
-  ): Promise<PersonalIntent | null> {
+  ): Promise<{
+    readonly intent: CheckedLabel;
+    readonly route: string | null;
+    readonly clear: boolean;
+  }> {
     switch (checked.kind) {
       case 'order':
-        return 'order_query';
+        return { intent: 'order_query', route: null, clear: true };
       case 'earnings':
-        return 'earnings_query';
+        return { intent: 'earnings_query', route: null, clear: true };
       case 'personal': {
-        // Elliptical follow-ups (那返了吗) continue a preceding order; otherwise own earnings,
-        // unless the model already chose one of the two personal intents.
+        // Own data without an order or account noun (那返了吗): a preceding order decides;
+        // otherwise the model's personal label, else own earnings (拿不准按查收益).
         const previous = await this.deps.continuation.previousIntent(request);
-        if (previous === 'order_query') return 'order_query';
-        return isPersonal(label) ? label : 'earnings_query';
+        if (previous === 'order_query') return { intent: 'order_query', route: null, clear: true };
+        return isPersonal(label)
+          ? { intent: label, route: null, clear: false }
+          : { intent: 'earnings_query', route: null, clear: true };
       }
-      default:
-        return isPersonal(label) ? label : null;
+      case 'rule':
+        return { intent: 'rule_qa', route: null, clear: true };
+      case 'page':
+        if (checked.route !== null)
+          return { intent: 'page_guide', route: checked.route, clear: true };
+        return { intent: label, route: null, clear: false };
+      case 'unknown':
+        return { intent: label, route: null, clear: false };
     }
   }
 
