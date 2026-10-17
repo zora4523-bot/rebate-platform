@@ -3,6 +3,12 @@ import type { DB } from '@couli/db';
 import type { Selectable, Transaction } from 'kysely';
 import type { Logger } from 'pino';
 import type { Clock } from '../../platform/index.ts';
+import { planSnapshot, selectSnapshotRuleVersion } from '../domain/snapshot.ts';
+import {
+  findSplit,
+  insertSnapshot,
+  readPublishedVersionsForShare,
+} from '../infra/snapshot-store.ts';
 
 export interface SnapshotBeneficiary {
   readonly userId: string;
@@ -60,13 +66,105 @@ export type CreateCommissionSnapshotResult =
  * 按秒选 paidAt 版本，早于首版告警回退；缺版本/所需规则/预留返回 pending 且零写入。
  * 四表同事务写 v1；唯一键竞争须保留调用方事务可用性，重放原样返回已有快照。
  */
-export function createCommissionSnapshot(
+export async function createCommissionSnapshot(
   trx: Transaction<DB>,
   input: CreateCommissionSnapshotInput,
   deps: CommissionSnapshotDependencies,
 ): Promise<CreateCommissionSnapshotResult> {
-  void trx;
-  void input;
-  void deps;
-  throw new Error('NotImplemented: createCommissionSnapshot');
+  const { clock, logger, beneficiaries } = deps;
+  const ctx = { app_id: input.appId, order_id: input.orderId };
+
+  // BR-CALC-10: a replay never rebuilds the snapshot, whatever the new input says.
+  const existing = await findSplit(trx, input.appId, input.orderId);
+  if (existing !== undefined) return { kind: 'existing', split: existing };
+
+  const versions = await readPublishedVersionsForShare(trx, input.appId);
+  const choice = selectSnapshotRuleVersion(versions, input.paidAt);
+  if (choice.kind === 'none') {
+    const reason = 'no published rule version';
+    logger.warn(
+      { ...ctx, code: 'COMMISSION_SNAPSHOT_PENDING', reason },
+      'commission snapshot pending',
+    );
+    return { kind: 'pending', reason };
+  }
+  const { version } = choice;
+  if (choice.beforeFirst) {
+    logger.warn(
+      {
+        ...ctx,
+        code: 'PAID_AT_BEFORE_FIRST_RULE_VERSION',
+        rule_version_id: version.rule_version_id,
+      },
+      'paid_at is earlier than the first rule version; using the first version',
+    );
+  }
+
+  const people = await beneficiaries.resolve(trx, {
+    appId: input.appId,
+    ownerUserId: input.ownerUserId,
+    paidAt: input.paidAt,
+  });
+  if (people.owner.userId !== input.ownerUserId) {
+    throw new Error('commission: beneficiary resolver returned a different owner');
+  }
+  for (const warning of people.warnings) {
+    logger.warn(
+      { ...ctx, code: warning.code, user_id: warning.userId ?? null },
+      'commission snapshot beneficiary warning',
+    );
+  }
+
+  const plan = planSnapshot({
+    version,
+    platform: input.platform,
+    orderType: input.orderType,
+    rebateMode: input.rebateMode,
+    nBaseFen: input.nBaseFen,
+    subsidyCommissionFen: input.subsidyCommissionFen,
+    tljDeductFen: input.tljDeductFen,
+    tljRedpacketFen: input.tljRedpacketFen,
+    people,
+  });
+  if (plan.kind === 'pending') {
+    logger.warn(
+      {
+        ...ctx,
+        code: 'COMMISSION_SNAPSHOT_PENDING',
+        rule_version_id: version.rule_version_id,
+        reason: plan.reason,
+      },
+      'commission snapshot pending',
+    );
+    return { kind: 'pending', reason: plan.reason };
+  }
+  for (const code of plan.warnings) {
+    logger.warn(
+      { ...ctx, code, rule_version_id: version.rule_version_id },
+      'commission snapshot warning',
+    );
+  }
+
+  const written = await insertSnapshot(trx, {
+    appId: input.appId,
+    orderId: input.orderId,
+    ruleVersionId: version.rule_version_id,
+    orderType: input.orderType,
+    activityType: input.activityType,
+    rebateMode: input.rebateMode,
+    paidAt: input.paidAt,
+    paidAtSource: input.paidAtSource,
+    rawNFen: input.nBaseFen,
+    subsidyCommissionFen: input.subsidyCommissionFen,
+    tljDeductFen: input.tljDeductFen,
+    plan,
+    createdAt: clock.now(),
+  });
+  if (written.kind === 'inserted') return { kind: 'created', split: written.split };
+  // A concurrent writer committed the same order first; its snapshot is the snapshot.
+  const winner = await findSplit(trx, input.appId, input.orderId);
+  if (winner === undefined) {
+    throw new Error('commission: snapshot key taken but no snapshot of this app is readable');
+  }
+  return { kind: 'existing', split: winner };
 }

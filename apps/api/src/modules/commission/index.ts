@@ -22,3 +22,4 @@ export type {
   CommissionSnapshot,
   CreateCommissionSnapshotResult,
 } from './application/snapshot.ts';
+export { createInMemoryBeneficiaryResolver } from './infra/in-memory-beneficiary-resolver.ts';
