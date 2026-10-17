@@ -42,7 +42,7 @@ import { isCodexFirst, loadCodexImplTasks } from '../lib/codex-impl-tasks.ts';
 import { loadLegacyTasks, ruleTestScope } from '../lib/legacy-tasks.ts';
 import { readState } from './state.ts';
 import type { TaskState } from './state.ts';
-import { readTask, riskOfPaths } from './task.ts';
+import { CONTRACT_GENERATED, CONTRACT_SOURCE, readTask, riskOfPaths } from './task.ts';
 import type { RiskReport } from './task.ts';
 
 /** 规划/11 §5.3: a brief over 24 KB means the task has to be split. */
@@ -355,6 +355,13 @@ export function renderBrief(input: BriefInput): string {
     );
   }
   for (const p of task.paths) out.push(`- \`${p}\``);
+  if (matchesAny(CONTRACT_SOURCE, task.paths)) {
+    // CT-06n: the route tables list planned operations too, so adding or removing one changes them.
+    out.push(
+      '',
+      `本任务可以改 \`${CONTRACT_SOURCE}\`：新增或删除操作（含 planned）后要重跑 \`pnpm codegen\`（\`packages/contracts-ts/src/openapi.gen.ts\`）与 apps/api 下的 generate-auth-routes / generate-signing-routes / generate-min-version-routes / generate-route-schemas 脚本（\`apps/api/src/modules/platform/http/scripts/\`、\`platform/validation/scripts/\`、\`risk/application/scripts/\`），生成物 ${CONTRACT_GENERATED.map((f) => `\`${f}\``).join('、')} 与 \`apps/api/src/modules/platform/validation/route-schemas.gen.ts\` 随之变化；生成物不在上面的清单里时不要手改，在输出的 \`blocked_reason\` 里写明缺哪份。`,
+    );
+  }
   out.push('');
 
   out.push('## 4. 不能改的', '');
