@@ -7,10 +7,16 @@
 // - The subject is the verified token only (app_id, uid, device_id); no header, query or body
 //   field names a user. The route schema comes from the contract; the three writes have no query
 //   parameter, so any query field is refused (20001) instead of being ignored.
-// - Writes run in platform idempotency's standard mode (the use cases open their own
-//   transactions); the stored response is written as is, so a replay equals the first answer.
+// - Writes run in platform idempotency's transactional mode (B1-28e, executeInTransaction): the
+//   use case runs inside runInFavoritesTransaction with the idempotency transaction, so the
+//   favorites write and the `completed` record commit together or not at all (a crash before the
+//   record is written leaves neither); the stored response is written as is, so a replay equals
+//   the first answer. A refusal (20001) is not stored and rolls everything back.
 // - A product key must parse against the platform dictionary and belong to the path's (or the
 //   item's) platform, as the detail route checks (BR-PROD-03), else 20001 naming the field.
+// - The add route reads the favorites cap (FavoritesService.favoritesCap) before opening the
+//   idempotency transaction and passes it in, so the transaction never waits for a second pool
+//   connection (the config reader's) while holding one.
 // - FavoriteError → 20001 with its data (reason favorites_full, or fields).
 // Without a database (no favorites service or idempotency primitive) the routes fail closed
 // (50001 by the global filter).
@@ -42,6 +48,10 @@ import {
 } from '../../../platform/index.ts';
 import type { Catalog, PlatformRecord } from '../../domain/types.ts';
 import { FavoriteError } from '../../favorites/errors.ts';
+import {
+  runInFavoritesTransaction,
+  type PrefetchedFavoritesCap,
+} from '../../favorites/transaction.ts';
 import type { FavoriteKey, FavoriteListItem, FavoritesService } from '../../favorites/types.ts';
 
 /** Nest injection token of the favorites route ports (built by CatalogModule). */
@@ -163,13 +173,14 @@ export class FavoritesController {
     body: unknown,
     principal: TokenPrincipal,
     work: () => Promise<HandlerResult>,
+    cap?: PrefetchedFavoritesCap,
   ): Promise<void> {
     const idempotency = this.#idempotency;
     if (idempotency === undefined) {
       throw new Error('catalog: favorites writes need the idempotency primitive');
     }
     const key = request.headers['idempotency-key'];
-    const result = await idempotency.execute(
+    const result = await idempotency.executeInTransaction(
       {
         appId: principal.app_id,
         actor: { userId: principal.uid, deviceId: principal.device_id, phoneHmac: null },
@@ -179,9 +190,9 @@ export class FavoritesController {
         body,
         traceId: request.id,
       },
-      async () => {
+      async (trx) => {
         try {
-          return await work();
+          return await runInFavoritesTransaction(trx, work, cap);
         } catch (error: unknown) {
           const refused = favoriteRefusal(error, request.id);
           if (refused === undefined) throw error;
@@ -225,27 +236,40 @@ export class FavoritesController {
     const { principal, favorites } = this.#session(request);
     const { platform, productKey } = await this.#target(request);
     const path = `/v1/me/favorites/${encodeURIComponent(platform)}/${encodeURIComponent(productKey)}`;
-    await this.#write(request, reply, 'PUT', path, undefined, principal, async () => {
-      const record = await favorites.addFavorite(
-        principal.app_id,
-        principal.uid,
-        platform,
-        productKey,
-      );
-      return {
-        status: 200,
-        envelope: {
-          code: 0,
-          msg: '',
-          data: {
-            platform: record.platform,
-            product_key: record.productKey,
-            favorited_at: record.favoritedAt.toISOString(),
+    // The cap is read before the idempotency transaction holds a pool connection: the config
+    // reader may need a connection from the same pool (pool exhaustion otherwise).
+    const capValue = await favorites.favoritesCap?.(principal.app_id);
+    const cap = capValue === undefined ? undefined : { appId: principal.app_id, value: capValue };
+    await this.#write(
+      request,
+      reply,
+      'PUT',
+      path,
+      undefined,
+      principal,
+      async () => {
+        const record = await favorites.addFavorite(
+          principal.app_id,
+          principal.uid,
+          platform,
+          productKey,
+        );
+        return {
+          status: 200,
+          envelope: {
+            code: 0,
+            msg: '',
+            data: {
+              platform: record.platform,
+              product_key: record.productKey,
+              favorited_at: record.favoritedAt.toISOString(),
+            },
+            trace_id: request.id,
           },
-          trace_id: request.id,
-        },
-      };
-    });
+        };
+      },
+      cap,
+    );
   }
 
   async remove(request: FavoritesRequest, reply: RawReply): Promise<void> {

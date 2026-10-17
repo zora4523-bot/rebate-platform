@@ -98,8 +98,19 @@ export interface FavoritesServiceOptions {
   readonly logger: Pick<Logger, 'warn'>;
 }
 
-/** The favorites use cases; every query is scoped by app_id. */
+/**
+ * The favorites use cases; every query is scoped by app_id. Called inside
+ * runInFavoritesTransaction (B1-28e), the writes use that transaction (per-user lock first, then
+ * the reads and writes) instead of opening their own; otherwise each opens one.
+ */
 export interface FavoritesService {
+  /**
+   * favorites.max_per_user of the app (readFavoritesCap: 200 on a missing / bad entry or a failed
+   * read; never rejects). The add route reads it before opening the idempotency transaction and
+   * hands it to runInFavoritesTransaction, so no second pool connection is requested while that
+   * transaction holds one. Optional: a stand-in without it lets addFavorite read the cap itself.
+   */
+  favoritesCap?(appId: string): Promise<number>;
   /**
    * Existing (app_id, user_id, platform, product_key) → the original record, nothing written.
    * Otherwise, in one transaction serialised per (app_id, user_id): count ≥ cap → FavoriteError

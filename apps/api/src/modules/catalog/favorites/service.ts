@@ -5,6 +5,7 @@ import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import { decodeFavoritesCursor, encodeFavoritesCursor } from './cursor.ts';
 import { FavoriteError } from './errors.ts';
 import { favoriteCardView, readFavoritesCap } from './rules.ts';
+import { outerFavoritesTransaction, prefetchedFavoritesCap } from './transaction.ts';
 import type {
   FavoriteCardView,
   FavoriteRecord,
@@ -58,20 +59,28 @@ export function createFavoritesService(options: FavoritesServiceOptions): Favori
       .update(JSON.stringify(['catalog.favorites', appId, userId.toLowerCase()]))
       .digest()
       .readBigInt64BE(0);
-    return db
-      .transaction()
-      .setIsolationLevel('read committed')
-      .execute(async (trx) => {
-        await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
-        return work(trx);
-      });
+    const locked = async (trx: Transaction<DB>): Promise<T> => {
+      await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
+      return work(trx);
+    };
+    // B1-28e: inside runInFavoritesTransaction the lock (transaction-scoped, so it is held
+    // until the outer commit or rollback) and the work run in the caller's transaction.
+    const outer = outerFavoritesTransaction();
+    if (outer !== undefined) return locked(outer);
+    return db.transaction().setIsolationLevel('read committed').execute(locked);
   }
 
   return {
+    favoritesCap(appId) {
+      return readFavoritesCap(config, appId);
+    },
+
     async addFavorite(appId, userId, platform, productKey) {
       // Read configuration before holding a database connection/lock: the reader may itself
-      // need a connection from the same pool. Existing records always precede the cap check.
-      const cap = await readFavoritesCap(config, appId);
+      // need a connection from the same pool. Inside the idempotency transaction the route has
+      // already read it before that transaction took its connection (prefetched cap). Existing
+      // records always precede the cap check.
+      const cap = prefetchedFavoritesCap(appId) ?? (await readFavoritesCap(config, appId));
       try {
         return await withUserLock(appId, userId, async (trx) => {
           const existing = await lookup(
@@ -90,24 +99,37 @@ export function createFavoritesService(options: FavoritesServiceOptions): Favori
             .where('user_id', '=', userId)
             .executeTakeFirstOrThrow();
           if (BigInt(count.n) >= BigInt(cap)) throw new FavoriteError({ reason: 'favorites_full' });
-          const row = await table
-            .insertInto('favorites')
-            .values({
-              id: randomUUID(),
-              app_id: appId,
-              user_id: userId,
-              platform,
-              product_key: productKey,
-              created_at: clock.now(),
-            })
+          const insert = table.insertInto('favorites').values({
+            id: randomUUID(),
+            app_id: appId,
+            user_id: userId,
+            platform,
+            product_key: productKey,
+            created_at: clock.now(),
+          });
+          if (outerFavoritesTransaction() === undefined) {
+            return record(await insert.returningAll().executeTakeFirstOrThrow());
+          }
+          // In the caller's transaction a 23505 would abort it (25P02 on any further query), so
+          // a writer outside this lock that raced the unique key is absorbed by ON CONFLICT and
+          // its committed row (visible to the next read committed statement) is returned.
+          const row = await insert
+            .onConflict((oc) =>
+              oc.columns(['app_id', 'user_id', 'platform', 'product_key']).doNothing(),
+            )
             .returningAll()
-            .executeTakeFirstOrThrow();
-          return record(row);
+            .executeTakeFirst();
+          if (row !== undefined) return record(row);
+          const raced = await lookup(trx, appId, userId, platform, productKey).executeTakeFirst();
+          if (raced === undefined)
+            throw new Error('catalog: favorite insert conflicted but no row');
+          return record(raced);
         });
       } catch (error: unknown) {
         // A writer outside this lock can still race the unique constraint. Read only after
-        // rollback (a transaction with a 23505 cannot query); never retry the insert.
-        if (isUniqueViolation(error)) {
+        // rollback (a transaction with a 23505 cannot query); never retry the insert. In the
+        // caller's transaction ON CONFLICT above prevents the 23505.
+        if (isUniqueViolation(error) && outerFavoritesTransaction() === undefined) {
           const existing = await lookup(db, appId, userId, platform, productKey).executeTakeFirst();
           if (existing !== undefined) return record(existing);
         }
