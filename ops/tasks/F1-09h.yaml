@@ -1,0 +1,27 @@
+id: F1-09h
+repo: rebate-platform
+title: 页面版本状态机 specs/state-machines/page-version.yaml（draft → published → rolled_back）与生成的 transition()；生成器登记新状态机
+type: impl
+# 2026-10-18 入账（content-client）。缘由：F1-09f Codex 代码评审 r2 S1——page_versions.status 是状态字段（硬规则 2：唯一写者 content，只经生成的 transition()），
+# approvals 状态机例外不含它，手写表不算。写法照 B2-03j（commission-rule-version）。状态值与 db/migrations/0039_pages.sql 的 page_versions_status_check 一致。
+# 迁移（04 §3.2 page_versions、pages-plan 默认，待编排复核 K2）：null → draft（DRAFT_SAVED 存草稿插入）；draft → published（PUBLISH，灰度或全量，每个版本只发布一次）；
+# published → rolled_back（ROLLBACK，灰度中或已全量的版本）；rolled_back 终态；调灰度 / 转全量只改 gray_percent，不是状态迁移。守卫只写成文字，服务层 F1-09f 落实。
+# 规则测试只测生成表与 transition() 的合法性；F1-09f 合并前改用本任务生成物（F1-09f 实现 r3）。Codex 写规则测试，Claude 过审，Opus 实现，Codex 评审。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'specs/state-machines/page-version.yaml'
+  - 'packages/domain/src/state-machines/page-version.gen.ts'
+  - 'packages/domain/src/state-machines/index.ts'
+  - 'packages/domain/src/index.ts'
+  - 'packages/domain/scripts/state-machines.ts'
+test_paths:
+  - 'test/spec/domain/state-machines/page-version/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/state-machines/page-version/**'
+status: todo
+pr: null

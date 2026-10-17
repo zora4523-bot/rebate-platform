@@ -1,0 +1,20 @@
+id: F1-02j
+repo: rebate-platform
+title: content：GET /v1/config 的 clipboard 按 ConfigClipboard 校验（consent_version 须为非空字符串，否则整键回 {} 并 warn）；features.flags 原样透传 clipboard.auto_read.<client>，服务端不补键不派生
+type: impl
+# 2026-10-18 入账（content-client；规划 couli#124，SPEC_REF 99cc36f，docs/changes/20261017-剪贴板自动识别改版.md）。依据 04 §10.1 clipboard 行、features 行与 config_items 表，
+# 08 BR-ID-16 正文门槛②③与细则「功能同意版本…分开记录」「服务端开关」；规则摘录由编排者摘入任务书第 9 节（原文过大，refs 置空，同 F1-02c / F1-02h）。
+# 要点：clipboard 只读 config_items `clipboard` 一键，值按契约 ConfigClipboard 校验；consent_version 缺失不补、不造缺省；不读 `clipboard.consent_version` 等拆开的行。
+# auto_read 不派生、缺键不下发（客户端缺键按开启）；基础字典里写的 true / false 原样下发；两个既有派生键不受影响。
+# 不动 F1-02c 冻结测试：#1 clipboard {}、#2 {enabled:false}、#20 非对象回 {} 都仍成立，无需 test-change。
+# 与 F1-02h（已合并 #694）同改 client-config.ts。consent_records 的 clipboard_auto_import（identity 线）不在本任务。
+refs: []
+refs_hash: {}
+deps: [CT-02o]
+paths: ['apps/api/src/modules/content/**']
+test_paths: ['test/spec/content/config-clipboard/**']
+impl: claude
+tester: codex
+accept: ['pnpm verify', 'test/spec/content/config-clipboard/**']
+status: todo
+pr: null
