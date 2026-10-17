@@ -1,0 +1,108 @@
+{
+  "task": "F1-09a",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "46387a55a986bf13357d166739b826c98cf37dbb",
+  "red_tests": [
+    "test/spec/db/content/pages/access.int.test.ts > [AC-F1-09a#18] effective table and column privileges match the complete business-role matrix",
+    "test/spec/db/content/pages/access.int.test.ts > [AC-F1-09a#19] PUBLIC receives neither table nor column privileges",
+    "test/spec/db/content/pages/access.int.test.ts > [AC-F1-09a#20] content can update only lifecycle fields, pointers, revision and preview usage",
+    "test/spec/db/content/pages/access.int.test.ts > [AC-F1-09a#21] immutable version content, identity, audit fields and token expiry reject UPDATE",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#6] page keys accept home/custom syntax with exact lowercase and length boundaries",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#7] versions start at one and sections must be a JSON array",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#8] statuses and publication metadata obey the complete nullability truth table",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#9] counters reject negative values and retain bigint precision independently",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#10] gray percent outside 0..100 is rejected by the named range check",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#11] gray version requires a distinct full version and a percent from 1 through 99",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#12] page revision and preview usage are nonnegative integers",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#13] preview tokens store exactly 64 lowercase hexadecimal characters",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#14] preview expiry is explicit and strictly within ten minutes of its Clock creation time",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#15] full, gray and preview references cannot borrow a version from another app or page",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#16] all four admin references reject missing accounts and accept existing accounts",
+    "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#17] primary keys reject duplicates and token hashes stay globally unique across apps",
+    "test/spec/db/content/pages/schema.int.test.ts > [AC-F1-09a#1] all columns have the declared types, nullability and defaults",
+    "test/spec/db/content/pages/schema.int.test.ts > [AC-F1-09a#2] omitted values produce draft, zero counters/revision and transaction timestamps",
+    "test/spec/db/content/pages/schema.int.test.ts > [AC-F1-09a#3] primary keys and checks exist under their prescribed names and are validated",
+    "test/spec/db/content/pages/schema.int.test.ts > [AC-F1-09a#4] named foreign keys retain full app/page identity and never cascade",
+    "test/spec/db/content/pages/schema.int.test.ts > [AC-F1-09a#5] ordinary tables have no user triggers, partitions or secondary indexes"
+  ],
+  "risk_note": "RV2 (migration 0039, new tables only; registered as 0040 and renamed after the funds lane released 0039, content unchanged). app.pages, app.page_versions, app.page_preview_tokens (04 §3.2): app_id on every table, named primary keys, checks and foreign keys (composite (app_id, page_key, version) pointers for the full and gray versions, MATCH SIMPLE, no cascades), paired gray check (gray version only with a full version, different from it, gray_percent 1..99), preview token expiry within 10 minutes of created_at; SET LOCAL lock_timeout / statement_timeout first; couli_app SELECT, INSERT and column-level UPDATE only, no DELETE / TRUNCATE for any role; couli_readonly SELECT. schema.sql and db.gen.ts regenerated with pnpm db:snapshot on the test machine. No funds or attribution tables. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "46387a55a986bf13357d166739b826c98cf37dbb",
+      "tree": "e253620b387d61ac156ebce1888c3fcbfc09ee5c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T16:25:11Z",
+      "finished_at": "2026-10-17T16:25:22Z",
+      "red_tests": [
+        "test/spec/db/content/pages/access.int.test.ts > [AC-F1-09a#18] effective table and column privileges match the complete business-role matrix",
+        "test/spec/db/content/pages/access.int.test.ts > [AC-F1-09a#19] PUBLIC receives neither table nor column privileges",
+        "test/spec/db/content/pages/access.int.test.ts > [AC-F1-09a#20] content can update only lifecycle fields, pointers, revision and preview usage",
+        "test/spec/db/content/pages/access.int.test.ts > [AC-F1-09a#21] immutable version content, identity, audit fields and token expiry reject UPDATE",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#6] page keys accept home/custom syntax with exact lowercase and length boundaries",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#7] versions start at one and sections must be a JSON array",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#8] statuses and publication metadata obey the complete nullability truth table",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#9] counters reject negative values and retain bigint precision independently",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#10] gray percent outside 0..100 is rejected by the named range check",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#11] gray version requires a distinct full version and a percent from 1 through 99",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#12] page revision and preview usage are nonnegative integers",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#13] preview tokens store exactly 64 lowercase hexadecimal characters",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#14] preview expiry is explicit and strictly within ten minutes of its Clock creation time",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#15] full, gray and preview references cannot borrow a version from another app or page",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#16] all four admin references reject missing accounts and accept existing accounts",
+        "test/spec/db/content/pages/constraints.int.test.ts > [AC-F1-09a#17] primary keys reject duplicates and token hashes stay globally unique across apps",
+        "test/spec/db/content/pages/schema.int.test.ts > [AC-F1-09a#1] all columns have the declared types, nullability and defaults",
+        "test/spec/db/content/pages/schema.int.test.ts > [AC-F1-09a#2] omitted values produce draft, zero counters/revision and transaction timestamps",
+        "test/spec/db/content/pages/schema.int.test.ts > [AC-F1-09a#3] primary keys and checks exist under their prescribed names and are validated",
+        "test/spec/db/content/pages/schema.int.test.ts > [AC-F1-09a#4] named foreign keys retain full app/page identity and never cascade",
+        "test/spec/db/content/pages/schema.int.test.ts > [AC-F1-09a#5] ordinary tables have no user triggers, partitions or secondary indexes"
+      ],
+      "expected": [
+        "test/spec/db/content/pages/access.int.test.ts",
+        "test/spec/db/content/pages/constraints.int.test.ts",
+        "test/spec/db/content/pages/schema.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ec9f4109cb9bc3a5ba9d414a83d3f7845b512bd13f0f6397fdc483b20c35d766"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "21 rule tests by Codex reviewed by a fresh Claude subagent: round 1 pass; one out-of-scope S2 (admin account foreign keys not app-scoped, same as 0028) noted for the orchestrator"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "b12d1c82c099ed9f61f3e6f5766c26762d2270e6",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "c4daa588de4fb60d9c3a538e656d78b6c7f22d94",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
