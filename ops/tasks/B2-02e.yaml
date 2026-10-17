@@ -1,0 +1,21 @@
+id: B2-02e
+repo: rebate-platform
+title: 账务不变量 SQL 第一批：BR-FUND-19 ①②③④⑦ 各一个文件（db/invariants/ledger/），每条输出检查行数与差异行
+type: impl
+# 2026-10-17 资金线入账（ledger-plan.md §2.1、D10、D18）。每条不变量一个文件，运行器（B2-02j）按目录执行；⑤⑥⑧ 依赖的表未建，随 B2-04 / B2-05 新增文件。
+# 按 2026-10-05 之后的默认分工（approvals 第 19 条）：Codex 先写规则测试——每条一份故意破坏的数据至少报 1 条差异、干净数据 0 差异，检查行数为 0 在测试中判失败（D18 A）；Opus 写不变量 SQL；Codex money 评审（approvals 第 27 条）。db/invariants 只能新增：写错只能新增替代文件。
+refs: [BR-FUND-19]
+refs_hash:
+  BR-FUND-19: 6c6cde3b3d84
+deps: [B2-02c, B2-02d]
+paths:
+  - 'db/invariants/ledger/**'
+test_paths:
+  - 'test/spec/db/ledger/invariants/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/ledger/invariants/**'
+status: todo
+pr: null
