@@ -24,6 +24,11 @@ import { createItemRefService, type ItemRefService } from './application/item-re
 import { CatalogSearchService } from './application/search-service.ts';
 import { markFreshDetail, type ProductDetailUpstream } from './detail.ts';
 import type { Catalog, CatalogWarning } from './domain/types.ts';
+import {
+  PRICE_TREND,
+  PriceTrendController,
+  type PriceTrendPorts,
+} from './http/public/price-trend.controller.ts';
 import { ProductController } from './http/public/product.controller.ts';
 import { SearchController } from './http/public/search.controller.ts';
 import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
@@ -54,6 +59,8 @@ import {
 import type { SearchCursorCodec, SearchSessionStore, SearchUpstream } from './search.ts';
 import { createPriceSnapshotRecorder } from './price-history/recorder.ts';
 import { createKyselyPriceSnapshotStore } from './price-history/store.ts';
+import { createKyselyPriceTrendStore } from './price-trend/store.ts';
+import type { PriceTrendStore } from './price-trend/types.ts';
 import type { PriceSnapshotRecorder, PriceSnapshotStore } from './price-history/types.ts';
 import type { Logger } from 'pino';
 
@@ -105,6 +112,17 @@ const UNAVAILABLE_CATALOG: Catalog = {
 
 const UNAVAILABLE_CONFIG: CatalogConfigReader = { configValue: unavailable };
 const UNAVAILABLE_PIDS: PidReader = { getActivePid: unavailable };
+const UNAVAILABLE_PRICE_TREND: PriceTrendStore = { keyStability: unavailable, rows: unavailable };
+
+/** Built on first read, not at startup: entries whose DB handle is a stand-in still start. */
+function lazyPriceTrendStore(db: Kysely<Database>): PriceTrendStore {
+  let store: PriceTrendStore | undefined;
+  const get = (): PriceTrendStore => (store ??= createKyselyPriceTrendStore(db));
+  return {
+    keyStability: (platform) => get().keyStability(platform),
+    rows: (query) => get().rows(query),
+  };
+}
 
 /** A request without an app scope has no viewer at all: every read of it fails closed. */
 class UnscopedViewerContext extends ViewerContext {
@@ -215,6 +233,9 @@ function freshDetailUpstream(upstream: ProductDetailUpstream): ProductDetailUpst
  * B1-05g: both union upstreams sit behind the Redis search / detail cache (infra/product-cache.ts;
  * without REDIS they read the union directly); search sessions are written by compare-and-swap and
  * cursors are signed with the deployment key.
+ * B1-29b: GET /v1/products/{product_key}/price-trend (PriceTrendController → getPriceTrend of
+ * B1-29a over the read-only price_snapshot store, CLOCK and the configuration reader); separate
+ * from the detail route, which never reads the trend.
  */
 @Module({})
 export class CatalogModule {
@@ -225,7 +246,7 @@ export class CatalogModule {
         : { ...ports.viewerContext, provide: ViewerContext };
     return {
       module: CatalogModule,
-      controllers: [SearchController, ProductController],
+      controllers: [SearchController, ProductController, PriceTrendController],
       providers: [
         {
           provide: CATALOG,
@@ -272,6 +293,23 @@ export class CatalogModule {
                   config,
                   logger,
                 }),
+        },
+        {
+          provide: PRICE_TREND,
+          inject: [{ token: DB, optional: true }, CATALOG, CLOCK, CatalogConfigReader],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            catalog: Catalog,
+            clock: Clock,
+            config: CatalogConfigReader,
+          ): PriceTrendPorts => ({
+            catalog,
+            options: {
+              store: db === undefined ? UNAVAILABLE_PRICE_TREND : lazyPriceTrendStore(db),
+              clock,
+              config,
+            },
+          }),
         },
         viewerContext,
         {
