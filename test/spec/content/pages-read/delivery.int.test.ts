@@ -136,7 +136,13 @@ it('[AC-F1-09d#6] 无设备头在 99% 灰度下仍取全量，登录也不退回
       { number: 2, sections: GRAY },
     ],
   });
-  const login = await session(h, id, await registerDevice(h, id));
+  const registered = await registerDevice(h, id);
+  let login = await session(h, id, registered);
+  // Ensure a user_id fallback would select gray, rather than occasionally passing by chance.
+  for (let i = 0; i < 100 && bucket(id, login.user.id) >= 9900; i += 1) {
+    login = await session(h, id, registered);
+  }
+  expect(bucket(id, login.user.id)).toBeLessThan(9900);
   expect((await success(h.app, id)).sections).toEqual(FULL);
   expect((await success(h.app, id, 'home', login.headers)).sections).toEqual(FULL);
 });
@@ -284,8 +290,8 @@ it('[AC-F1-09d#14] 页面指针和版本缓存都隔离 app_id 与 page_key', as
   await seedPage(h, other, { versions: [{ number: 1, sections: GRAY }] });
   await seedPage(h, mine, {
     key: 'custom:x',
-    current: 2,
-    versions: [{ number: 2, sections: [{ id: 'custom' }] }],
+    current: 1,
+    versions: [{ number: 1, sections: [{ id: 'custom' }] }],
   });
   expect((await success(h.app, mine)).sections).toEqual(FULL);
   expect((await success(h.app, other)).sections).toEqual(GRAY);
