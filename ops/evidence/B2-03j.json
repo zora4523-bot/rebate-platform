@@ -1,0 +1,118 @@
+{
+  "task": "B2-03j",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "c856de970c1b91bd68e8e1b7cb67aa7e5d293f9a",
+  "red_tests": [
+    "test/spec/domain/state-machines/commission-rule-version/cli.test.ts > [AC-B2-03j#11] --verify 接受与 YAML 一致的生成物且不改源文件或生成物",
+    "test/spec/domain/state-machines/commission-rule-version/cli.test.ts > [AC-B2-03j#12] 过期生成物 使 --verify 失败且不修复，正常生成后再次通过",
+    "test/spec/domain/state-machines/commission-rule-version/cli.test.ts > [AC-B2-03j#12] 缺失生成物 使 --verify 失败且不修复，正常生成后再次通过",
+    "test/spec/domain/state-machines/commission-rule-version/cli.test.ts > [AC-B2-03j#12] YAML 守卫变更 使 --verify 失败且不修复，正常生成后再次通过",
+    "test/spec/domain/state-machines/commission-rule-version/generator.test.ts > [AC-B2-03j#7] 生成器登记 commission-rule-version 且保留两种订单状态机",
+    "test/spec/domain/state-machines/commission-rule-version/generator.test.ts > [AC-B2-03j#8] render 的结果稳定、与生成物逐字一致并保留来源标记",
+    "test/spec/domain/state-machines/commission-rule-version/generator.test.ts > [AC-B2-03j#9] render 支持数据库小写状态且事件仍为大写，守卫只保留文字",
+    "test/spec/domain/state-machines/commission-rule-version/generator.test.ts > [AC-B2-03j#10] render 随 YAML 目标变化，不硬编码规则版本迁移",
+    "test/spec/domain/state-machines/commission-rule-version/source.test.ts > [AC-B2-03j#1] YAML 只有三个状态、三个大写事件及指定的三行迁移",
+    "test/spec/domain/state-machines/commission-rule-version/source.test.ts > [AC-B2-03j#2] 状态集合与 0032 的 commission_rule_versions_status_check 一致",
+    "test/spec/domain/state-machines/commission-rule-version/source.test.ts > [AC-B2-03j#3] 发布与撤销守卫保留规则文字，实际校验交给 B2-03k 服务层",
+    "test/spec/domain/state-machines/commission-rule-version/source.test.ts > [AC-B2-03j#4] 包入口导出的状态、事件与迁移表逐项等于 YAML",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#5] 包入口 逐项接受三行合法迁移且返回对应行号",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#5] 生成物 逐项接受三行合法迁移且返回对应行号",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 null + PUBLISH 拒绝迁移",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 null + REVOKE 拒绝迁移",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 draft + DRAFT_CREATED 拒绝迁移",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 draft + REVOKE 拒绝迁移",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 published + DRAFT_CREATED 拒绝迁移",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 published + PUBLISH 拒绝迁移",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 revoked + DRAFT_CREATED 拒绝迁移",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 revoked + PUBLISH 拒绝迁移",
+    "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 revoked + REVOKE 拒绝迁移"
+  ],
+  "risk_note": "RV2 (packages/domain). Rule-version state machine specs/state-machines/commission-rule-version.yaml (V1 null -> draft DRAFT_CREATED, V2 draft -> published PUBLISH, V3 published -> revoked REVOKE; every other pair rejected; guards are text only, enforced by the B2-03k service: BR-CALC-22 validation and trial report, step-up, effective_from >= publish instant and strictly greater than every published unrevoked version, revoke only before effective_from, BR-CALC-11) and the generated transitionCommissionRuleVersion() in packages/domain/src/state-machines/commission-rule-version.gen.ts, exported from packages/domain. The generator now discovers specs/state-machines/*.yaml (sorted) instead of a fixed list (decision 22), errors on an empty directory or a bad file name, checks that the yaml name equals the file name, and accepts lower snake-case state values (matching migration 0032) while forbidding a state named same. CT-04a frozen tests still pass.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c856de970c1b91bd68e8e1b7cb67aa7e5d293f9a",
+      "tree": "1886553ae3ffcaffaa7f68ffa69474983ea20c85",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T20:26:11Z",
+      "finished_at": "2026-10-17T20:26:15Z",
+      "gate": {
+        "commit": "6a55309f17e44f5447630e22a33817d933c84784",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/domain/state-machines/commission-rule-version/cli.test.ts > [AC-B2-03j#11] --verify 接受与 YAML 一致的生成物且不改源文件或生成物",
+        "test/spec/domain/state-machines/commission-rule-version/cli.test.ts > [AC-B2-03j#12] 过期生成物 使 --verify 失败且不修复，正常生成后再次通过",
+        "test/spec/domain/state-machines/commission-rule-version/cli.test.ts > [AC-B2-03j#12] 缺失生成物 使 --verify 失败且不修复，正常生成后再次通过",
+        "test/spec/domain/state-machines/commission-rule-version/cli.test.ts > [AC-B2-03j#12] YAML 守卫变更 使 --verify 失败且不修复，正常生成后再次通过",
+        "test/spec/domain/state-machines/commission-rule-version/generator.test.ts > [AC-B2-03j#7] 生成器登记 commission-rule-version 且保留两种订单状态机",
+        "test/spec/domain/state-machines/commission-rule-version/generator.test.ts > [AC-B2-03j#8] render 的结果稳定、与生成物逐字一致并保留来源标记",
+        "test/spec/domain/state-machines/commission-rule-version/generator.test.ts > [AC-B2-03j#9] render 支持数据库小写状态且事件仍为大写，守卫只保留文字",
+        "test/spec/domain/state-machines/commission-rule-version/generator.test.ts > [AC-B2-03j#10] render 随 YAML 目标变化，不硬编码规则版本迁移",
+        "test/spec/domain/state-machines/commission-rule-version/source.test.ts > [AC-B2-03j#1] YAML 只有三个状态、三个大写事件及指定的三行迁移",
+        "test/spec/domain/state-machines/commission-rule-version/source.test.ts > [AC-B2-03j#2] 状态集合与 0032 的 commission_rule_versions_status_check 一致",
+        "test/spec/domain/state-machines/commission-rule-version/source.test.ts > [AC-B2-03j#3] 发布与撤销守卫保留规则文字，实际校验交给 B2-03k 服务层",
+        "test/spec/domain/state-machines/commission-rule-version/source.test.ts > [AC-B2-03j#4] 包入口导出的状态、事件与迁移表逐项等于 YAML",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#5] 包入口 逐项接受三行合法迁移且返回对应行号",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#5] 生成物 逐项接受三行合法迁移且返回对应行号",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 null + PUBLISH 拒绝迁移",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 null + REVOKE 拒绝迁移",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 draft + DRAFT_CREATED 拒绝迁移",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 draft + REVOKE 拒绝迁移",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 published + DRAFT_CREATED 拒绝迁移",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 published + PUBLISH 拒绝迁移",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 revoked + DRAFT_CREATED 拒绝迁移",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 revoked + PUBLISH 拒绝迁移",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts > [AC-B2-03j#6] 非法组合 revoked + REVOKE 拒绝迁移"
+      ],
+      "expected": [
+        "test/spec/domain/state-machines/commission-rule-version/cli.test.ts",
+        "test/spec/domain/state-machines/commission-rule-version/generator.test.ts",
+        "test/spec/domain/state-machines/commission-rule-version/source.test.ts",
+        "test/spec/domain/state-machines/commission-rule-version/transition.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "22b8159c5aead46111bde75427b68f0254462d23f841a86305eb17208bb88ef9"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "unit rule tests by Codex (23 red); round 1 pass with one S2 (a fixed generator list would break the CT-04a two-file CLI fixture; resolved by directory discovery, decision 22)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "a0118d3f0bece306e75a87cdcc1ed083b775af7a",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "b98e766685c60bb20e2aa283f1571d8b3536f6af",
+    "specs": "dedddf339e9dd3adc8a99c6107119052d9280a97"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "packages/domain changes; the required longrun-run / longrun-props checks run on the PR head",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
