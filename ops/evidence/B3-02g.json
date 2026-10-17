@@ -1,0 +1,167 @@
+{
+  "task": "B3-02g",
+  "spec_ref": "b3924b14787b7944f1aac97332f0d7131070ed36",
+  "spec_commit": "00de8da41b3da338f733a93ede40606340f28973",
+  "risk_note": "RV2 from new frozen rule tests; Codex-first B3-02 exception under approvals23. Claude authored rules; independent Codex spec-test passed; Codex implemented; fresh Claude and separate Codex money reviews passed. Records assembled under the documented pre-generator exception.",
+  "red_tests": [
+    "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#9] B 同一 run：前一题缓存的端口在后一题里调用，按后一题来源决定是否外发（rewritten→synthetic 发出，synthetic→rewritten 零发送）",
+    "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#9] integration 同一 run：前一题缓存的端口在后一题里调用，按后一题来源决定是否外发（rewritten→synthetic 发出，synthetic→rewritten 零发送）",
+    "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#10] B 同一 run：rewritten 题留下的晚到调用在下一道 synthetic 题运行时发生，仍按 rewritten 零发送",
+    "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#10] integration 同一 run：rewritten 题留下的晚到调用在下一道 synthetic 题运行时发生，仍按 rewritten 零发送",
+    "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#11] 跨 run：上一次 run 已结束，其 rewritten 题的晚到调用在新 run 的 synthetic 题运行时发生，两边都零发送",
+    "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#12] 跨 run 缓存端口：旧 run synthetic 题的端口在新 run rewritten 题里调用，走新 run 的端口并按 rewritten 判许可（新 run 无许可）",
+    "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#12] 跨 run 缓存端口：旧 run synthetic 题的端口在新 run rewritten 题里调用，走新 run 的端口并按 rewritten 判许可（新 run 有精确许可）",
+    "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#13] 跨 run：已结束 run 中 rewritten 题的后台任务，用同 run synthetic 题先前缓存的端口晚到调用，仍按 rewritten 零发送",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#1] B：rewritten 题在精确匹配许可下发出，网关看到的数据类别是 rewritten_sample",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#1] integration：rewritten 题在精确匹配许可下发出，网关看到的数据类别是 rewritten_sample",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#2] B：rewritten 题在「没有任何许可」时零发送，Agent 得到 VendorError(rewritten_sample_not_allowed)",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#2] B：rewritten 题在「许可的业务空间不同」时零发送，Agent 得到 VendorError(rewritten_sample_not_allowed)",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#2] B：rewritten 题在「许可的用途不同」时零发送，Agent 得到 VendorError(rewritten_sample_not_allowed)",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#2] B：rewritten 题在「许可的模型不同」时零发送，Agent 得到 VendorError(rewritten_sample_not_allowed)",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#2] B：rewritten 题在「许可未书面确认不训练」时零发送，Agent 得到 VendorError(no_training_unconfirmed)",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#3] integration：real_link_sample 题经 qwen 端口零发送（data_class_not_allowed）",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#3] integration：aggregated_stats 题经 glm 端口零发送（owner_aggregate_not_approved）",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#4] B 同一 run：synthetic 题允许外发（数据类别 synthetic），随后的 rewritten 题无许可零发送",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#4] B 同一 run：vendor_synthetic 题允许外发（数据类别 synthetic），随后的 rewritten 题无许可零发送",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#4] B 同一 run：aggregated_stats 题允许外发（数据类别 owner_aggregate），随后的 rewritten 题无许可零发送",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：rewritten 题的请求自报 { provenance: 'synthetic' } 不能盖过题目来源，零发送，请求对象不被改写",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：rewritten 题的请求自报 { provenance: 'vendor_synthetic' } 不能盖过题目来源，零发送，请求对象不被改写",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：rewritten 题的请求自报 { dataClass: 'synthetic' } 不能盖过题目来源，零发送，请求对象不被改写",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：rewritten 题的请求自报 { provenance: 'synthetic', …(1) } 不能盖过题目来源，零发送，请求对象不被改写",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：real_link_sample 题的请求自报 { dataClass: 'public_product' } 不能盖过题目来源，零发送，请求对象不被改写",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：real_link_sample 题的请求自报 { provenance: 'synthetic' } 不能盖过题目来源，零发送，请求对象不被改写",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#6] B：冻结的请求照常发出且原对象不变（不加来源字段），来源仍取题目",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#6] integration：冻结的请求照常发出且原对象不变（不加来源字段），来源仍取题目",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#7] A：rewritten 题仍按旧规则录制键命中、无未用录制；同一道题在 B 模式无许可时零发送",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#8] GLM 端口：rewritten 题没有许可时零发送（千问以外厂商同样不放行）",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#14] B：两轮 rewritten 题、每轮连续两次模型调用，逐次按 rewritten 判许可（无许可）",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#14] B：两轮 rewritten 题、每轮连续两次模型调用，逐次按 rewritten 判许可（有精确许可）",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#14] integration：两轮 rewritten 题、每轮连续两次模型调用，逐次按 rewritten 判许可（无许可）",
+    "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#14] integration：两轮 rewritten 题、每轮连续两次模型调用，逐次按 rewritten 判许可（有精确许可）"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "dab599d782ca800733c2686c6c29c52304abe1e2",
+      "tree": "c14d41491af859fa9d12e2df477726bff125b474",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-08T11:52:24Z",
+      "finished_at": "2026-10-08T11:53:11Z",
+      "red_tests": [
+        "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#9] B 同一 run：前一题缓存的端口在后一题里调用，按后一题来源决定是否外发（rewritten→synthetic 发出，synthetic→rewritten 零发送）",
+        "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#9] integration 同一 run：前一题缓存的端口在后一题里调用，按后一题来源决定是否外发（rewritten→synthetic 发出，synthetic→rewritten 零发送）",
+        "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#10] B 同一 run：rewritten 题留下的晚到调用在下一道 synthetic 题运行时发生，仍按 rewritten 零发送",
+        "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#10] integration 同一 run：rewritten 题留下的晚到调用在下一道 synthetic 题运行时发生，仍按 rewritten 零发送",
+        "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#11] 跨 run：上一次 run 已结束，其 rewritten 题的晚到调用在新 run 的 synthetic 题运行时发生，两边都零发送",
+        "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#12] 跨 run 缓存端口：旧 run synthetic 题的端口在新 run rewritten 题里调用，走新 run 的端口并按 rewritten 判许可（新 run 无许可）",
+        "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#12] 跨 run 缓存端口：旧 run synthetic 题的端口在新 run rewritten 题里调用，走新 run 的端口并按 rewritten 判许可（新 run 有精确许可）",
+        "test/spec/evals-provenance/isolation.test.ts > [AC-B3-02g#13] 跨 run：已结束 run 中 rewritten 题的后台任务，用同 run synthetic 题先前缓存的端口晚到调用，仍按 rewritten 零发送",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#1] B：rewritten 题在精确匹配许可下发出，网关看到的数据类别是 rewritten_sample",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#1] integration：rewritten 题在精确匹配许可下发出，网关看到的数据类别是 rewritten_sample",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#2] B：rewritten 题在「没有任何许可」时零发送，Agent 得到 VendorError(rewritten_sample_not_allowed)",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#2] B：rewritten 题在「许可的业务空间不同」时零发送，Agent 得到 VendorError(rewritten_sample_not_allowed)",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#2] B：rewritten 题在「许可的用途不同」时零发送，Agent 得到 VendorError(rewritten_sample_not_allowed)",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#2] B：rewritten 题在「许可的模型不同」时零发送，Agent 得到 VendorError(rewritten_sample_not_allowed)",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#2] B：rewritten 题在「许可未书面确认不训练」时零发送，Agent 得到 VendorError(no_training_unconfirmed)",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#3] integration：real_link_sample 题经 qwen 端口零发送（data_class_not_allowed）",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#3] integration：aggregated_stats 题经 glm 端口零发送（owner_aggregate_not_approved）",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#4] B 同一 run：synthetic 题允许外发（数据类别 synthetic），随后的 rewritten 题无许可零发送",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#4] B 同一 run：vendor_synthetic 题允许外发（数据类别 synthetic），随后的 rewritten 题无许可零发送",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#4] B 同一 run：aggregated_stats 题允许外发（数据类别 owner_aggregate），随后的 rewritten 题无许可零发送",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：rewritten 题的请求自报 { provenance: 'synthetic' } 不能盖过题目来源，零发送，请求对象不被改写",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：rewritten 题的请求自报 { provenance: 'vendor_synthetic' } 不能盖过题目来源，零发送，请求对象不被改写",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：rewritten 题的请求自报 { dataClass: 'synthetic' } 不能盖过题目来源，零发送，请求对象不被改写",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：rewritten 题的请求自报 { provenance: 'synthetic', …(1) } 不能盖过题目来源，零发送，请求对象不被改写",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：real_link_sample 题的请求自报 { dataClass: 'public_product' } 不能盖过题目来源，零发送，请求对象不被改写",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#5] B：real_link_sample 题的请求自报 { provenance: 'synthetic' } 不能盖过题目来源，零发送，请求对象不被改写",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#6] B：冻结的请求照常发出且原对象不变（不加来源字段），来源仍取题目",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#6] integration：冻结的请求照常发出且原对象不变（不加来源字段），来源仍取题目",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#7] A：rewritten 题仍按旧规则录制键命中、无未用录制；同一道题在 B 模式无许可时零发送",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#8] GLM 端口：rewritten 题没有许可时零发送（千问以外厂商同样不放行）",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#14] B：两轮 rewritten 题、每轮连续两次模型调用，逐次按 rewritten 判许可（无许可）",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#14] B：两轮 rewritten 题、每轮连续两次模型调用，逐次按 rewritten 判许可（有精确许可）",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#14] integration：两轮 rewritten 题、每轮连续两次模型调用，逐次按 rewritten 判许可（无许可）",
+        "test/spec/evals-provenance/passthrough.test.ts > [AC-B3-02g#14] integration：两轮 rewritten 题、每轮连续两次模型调用，逐次按 rewritten 判许可（有精确许可）"
+      ],
+      "expected": [
+        "test/spec/evals-provenance/isolation.test.ts",
+        "test/spec/evals-provenance/passthrough.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "216366ef135fcdc072f758f9cb17b10349f1e205ad0bb16df608b125dd3e85cc"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "open_s2": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "commit": "83b94a3fc9f72bc62c146abe2ade1df99d767e3a",
+      "diff_base": "00de8da41b3da338f733a93ede40606340f28973",
+      "diff_sha256": "ca9f9744473e14d902327d56dde460a35dc9daa6e82223c06a32dd28a62ead26"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "open_s2": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "commit": "83b94a3fc9f72bc62c146abe2ade1df99d767e3a",
+      "diff_base": "00de8da41b3da338f733a93ede40606340f28973",
+      "diff_sha256": "ca9f9744473e14d902327d56dde460a35dc9daa6e82223c06a32dd28a62ead26"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "codex",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "original_spec_ref": "4070ad5c32fd39816636742a83e01b1476637454",
+    "original_base": "aaced450efd7f9c2fb3e929efc9c2af18e19d0f9",
+    "original_workspace_head": "46d0d7a182ae8ec0aef306cd517d88c63ae7e955",
+    "spec_commit": "00de8da41b3da338f733a93ede40606340f28973",
+    "reviewed_test_files_sha256": {
+      "test/spec/evals-provenance/isolation.test.ts": "4fad6bc7d06d20db5b9115018c1032b449bc3fd4511514789af79d43fe2ee8d2",
+      "test/spec/evals-provenance/passthrough.test.ts": "db3298697fd4bc8081850cb1be077ac6eb37d9d264f0fc4260833a680014063b",
+      "test/spec/evals-provenance/kit.ts": "ae13619dd265e4a7fa69c840edb6853d8f847117d6a846a0c383b50923d3b770"
+    },
+    "note": "Tests reviewed before the main rebase; exact file SHA256 values verified unchanged. BR-AI-14 delta only adds persisted termination/cancellation rules outside eval provenance scope. Final-base container red rerun passed."
+  },
+  "trees": {
+    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
+    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "test/spec": "f273a1ec99cfc54db4cecf26df381c9b740c660a",
+    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "mode": "github-actions",
+    "run_id": 37773450881,
+    "run_attempt": 1,
+    "commit": "83b94a3fc9f72bc62c146abe2ade1df99d767e3a",
+    "url": "https://github.com/zora4523-bot/rebate-platform/actions/runs/37773450881",
+    "log_sha256": "66068c88c5cba1483a721e1a6d083d6b628fed5b7ea1112e4eae6ac2bd21b4a7",
+    "note": "Actual PR #312 run; 8 property files and 37 tests passed with PROP_RUNS=1000000. Metadata updates do not alter these protected trees."
+  },
+  "agent_smoke": {
+    "executed": false,
+    "status": "blocked",
+    "note": "Private synthetic smoke and real AgentUnderTest/Orchestrator assembly are not ready. Keep draft until actual smoke succeeds; public rule tests and property runs are not substitutes."
+  }
+}
