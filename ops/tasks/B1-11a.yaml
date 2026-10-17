@@ -1,0 +1,22 @@
+id: B1-11a
+repo: rebate-platform
+title: 迁移 0041：growth 的 level_change_logs 与 relation_change_logs 两张只插入表（按 app_id、user_id、生效时刻回放的索引；触发器只禁止 UPDATE / DELETE；授权写在本迁移）
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane；编排 06:0x 派工「B1-11a 起」，资金线 B2-03g 受益人解析器依赖）。依据：04 §3.2 两表行、08 BR-INV-11、BR-INV-14、BR-CALC-12，由编排者摘入（couli-runs/B1-11a/excerpt.md）。
+# 列名与来源取值按裁定 D25–D28（couli-runs/IDENTITY-batch2/decision-orchestrator.md）；不回填旧账号。迁移号 0041（notices 已登记）。迁移归 approvals #19（Claude 实现、Codex 写规则测试）。
+# 编排者在沙箱外跑 remote-snapshot.sh 生成 db/schema.sql 与 db.gen.ts。growth 不在 risk-map 白名单，按 RV2。
+refs: []
+refs_hash: {}
+deps: [B1-02a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/growth/change-logs/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/growth/change-logs/**'
+status: todo

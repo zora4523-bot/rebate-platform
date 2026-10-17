@@ -1,0 +1,22 @@
+id: B1-11b
+repo: rebate-platform
+title: growth 模块首建：在调用方事务里追加等级 / 上级变更日志的写入端口，按时刻回放 levelAt / parentAt 的只读端口（资金线快照用）；建号核心 recordInitialLevel 接上，写 source=register 的初始等级日志
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane；编排 06:0x 派工）。依据：02 §4.1 growth 行、04 §3.2、08 BR-INV-11、BR-INV-14、BR-CALC-12，由编排者摘入（couli-runs/B1-11b/excerpt.md）；裁定 D25–D29。
+# 建号钩子入参不改（受保护测试 registration/hooks.int.test.ts 精确比对 {app_id,user_id,level,source:'register'}），effective_at 由 identity 在同一事务读 users.created_at；identity 不 import growth，写入端口由 app.module 注入（pushTokens 先例）。
+# 资金线 SnapshotBeneficiaryResolver 由资金线自己接 growth 的回放端口（D29）。邀请绑定（上级关系的产生）不在本任务。Codex 实现（approvals #30），Claude 写规则测试，Claude 新子代理评审。
+refs: []
+refs_hash: {}
+deps: [B1-11a, B1-02i]
+paths:
+  - 'apps/api/src/modules/growth/**'
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/growth/change-logs/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/growth/change-logs/**'
+status: todo
