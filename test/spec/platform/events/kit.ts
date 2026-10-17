@@ -30,7 +30,7 @@ export const EVENT_MESSAGES: Readonly<Record<EventErrorCode, string>> = {
   unknown_consumer: 'the consumer has no subscription',
 };
 
-/** The event list of 规划/02 §11, in order, copied by hand. */
+/** The event list of 规划/02 §11 (23 names at SPEC_REF 99cc36f), in order, copied by hand. */
 export const PLAN_02_EVENTS = [
   'order.created',
   'order.updated',
@@ -38,6 +38,7 @@ export const PLAN_02_EVENTS = [
   'order.invalidated',
   'order.clawed_back',
   'order.settle_adjusted',
+  'order.reassigned',
   'claim.resolved',
   'binding.changed',
   'member.registered',
@@ -50,7 +51,24 @@ export const PLAN_02_EVENTS = [
   'risk.state_changed',
   'appeal.resolved',
   'agent.run_finished',
+  'order.attr_param_changed',
+  'order.illegal_transition',
+  'order.attr_binding_conflict',
+  'order.blacklist_hit_after_credit',
 ] as const;
+
+/**
+ * Names 02 §11 gained after the event bus was first frozen (order.reassigned; the four alert / risk
+ * events of couli#125, D10-48). Until the task that registers each one lands it may be missing from
+ * EVENT_NAMES; once present it must sit at its 02 §11 position. Every other name is required.
+ */
+export const PLAN_02_PENDING: ReadonlySet<string> = new Set([
+  'order.reassigned',
+  'order.attr_param_changed',
+  'order.illegal_transition',
+  'order.attr_binding_conflict',
+  'order.blacklist_hit_after_credit',
+]);
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
