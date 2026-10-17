@@ -64,3 +64,11 @@ export {
   createPendingTracks,
 } from './application/pending-tracks.ts';
 export type { PendingTracksDeps } from './application/pending-tracks.ts';
+export { createOrderUpdateStep } from './application/update-step.ts';
+export type {
+  OrderUpdateDeps,
+  OrderUpdateChange,
+  UnmappedOrderInfo,
+} from './application/update-step.ts';
+export { planOrderUpdate, planOrderSyncColumns } from './domain/update-plan.ts';
+export type { OrderUpdatePlan, OrderSyncColumns, UpdateStateInput } from './domain/update-plan.ts';
