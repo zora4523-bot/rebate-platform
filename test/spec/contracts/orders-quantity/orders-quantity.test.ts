@@ -71,7 +71,8 @@ it.each([
     );
     const operation = at(doc, 'paths', path, 'get');
     expect(operation['operationId']).toBe(operationId);
-    expect(operation['x-implementation']).toBe('planned');
+    // CT-04b 不改实现状态：planned 或已由 B1-08l 实现（去掉 planned，键不存在）两种都接受。
+    expect([undefined, 'planned']).toContain(operation['x-implementation']);
   },
 );
 
