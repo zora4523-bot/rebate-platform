@@ -17,12 +17,14 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
+import type { Logger } from 'pino';
 import { randomUUID } from 'node:crypto';
 import {
   APP_CONFIG,
   CLOCK,
   DB,
   MEDIA_STORE,
+  ROOT_LOGGER,
   type AppConfig,
   type AuditPort,
   type Clock,
@@ -43,6 +45,9 @@ import {
   createKyselyPlatformIconUploadStore,
   createKyselyPlatformIconWriteStore,
 } from './infra/kysely-platform-icon-store.ts';
+import { KillSwitchAdmin, type KillSwitchStore } from './application/kill-switch-admin.ts';
+import { AdminKillSwitchesController } from './http/admin/kill-switches.controller.ts';
+import { createKyselyKillSwitchStore } from './infra/kysely-kill-switch-store.ts';
 
 /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
 export type ContentAuditWriterFactory = (db: Kysely<Database>, clock: Clock) => AuditPort;
@@ -69,6 +74,11 @@ const NO_DATABASE_UPLOADS: PlatformIconUploadStore = {
   insertUpload: () => Promise.reject(new Error('content: platform icon uploads need the database')),
 };
 
+const NO_DATABASE_SWITCHES: KillSwitchStore = {
+  rows: () => Promise.reject(new Error('content: kill switch reads need the database')),
+  transaction: () => Promise.reject(new Error('content: kill switch writes need the database')),
+};
+
 /** Monotonic milliseconds for the SVG conversion budget (not business time). */
 const monotonicMs = (): number => performance.now();
 
@@ -77,8 +87,20 @@ export class ContentAdminModule {
   static forAdmin(options: ContentAdminOptions): DynamicModule {
     return {
       module: ContentAdminModule,
-      controllers: [AdminPlatformIconsController],
+      controllers: [AdminPlatformIconsController, AdminKillSwitchesController],
       providers: [
+        {
+          provide: KillSwitchAdmin,
+          inject: [CLOCK, ROOT_LOGGER, { token: DB, optional: true }],
+          useFactory: (clock: Clock, logger: Logger, db?: Kysely<Database>): KillSwitchAdmin =>
+            new KillSwitchAdmin(
+              db === undefined
+                ? NO_DATABASE_SWITCHES
+                : createKyselyKillSwitchStore(db, (trx) => options.auditWriter(trx, clock)),
+              clock,
+              logger,
+            ),
+        },
         {
           provide: PlatformIconReader,
           inject: [APP_CONFIG, { token: DB, optional: true }],
