@@ -169,11 +169,12 @@ describe('configuration center and emergency switch operations (04 §10.2, §11.
     for (const [method, path] of WRITES) {
       expect(header(operation(method, path))).toMatchObject({ in: 'header', required: false });
     }
-    // Raw contract: the admin writes reference AdminStepUpToken, never the app StepUpToken.
+    // Raw contract: within the switch and config paths the writes reference AdminStepUpToken,
+    // never the app StepUpToken (other admin writes, such as CT-02j's, reference it too).
     const raw = readFileSync(new URL('../../../contracts/openapi.yaml', import.meta.url), 'utf8');
-    const admin = raw.match(/#\/components\/parameters\/AdminStepUpToken'/g) ?? [];
-    expect(admin.length).toBe(WRITES.length);
     const block = raw.slice(raw.indexOf(`  ${SW}:\n`), raw.indexOf(`  /v1/agent/sessions:\n`));
+    const admin = block.match(/#\/components\/parameters\/AdminStepUpToken'/g) ?? [];
+    expect(admin.length).toBe(WRITES.length);
     expect(block).not.toContain("parameters/StepUpToken'");
   });
 

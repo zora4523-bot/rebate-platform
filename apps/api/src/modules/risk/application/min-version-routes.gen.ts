@@ -752,6 +752,86 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListUsers",
+    "method": "GET",
+    "path": "/admin/v1/users",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminLookupUser",
+    "method": "GET",
+    "path": "/admin/v1/users/lookup",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetUser",
+    "method": "GET",
+    "path": "/admin/v1/users/:user_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRevealUserField",
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/reveal",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUpdateUserRiskState",
+    "method": "PUT",
+    "path": "/admin/v1/users/:user_id/risk-state",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminResetUserUnionBinding",
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/union-bindings/:platform/reset",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminDisableUserUnionBinding",
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/union-bindings/:platform/disable",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminEnableUserUnionBinding",
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/union-bindings/:platform/enable",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListPlatformIcons",
     "method": "GET",
     "path": "/admin/v1/platform-icons",

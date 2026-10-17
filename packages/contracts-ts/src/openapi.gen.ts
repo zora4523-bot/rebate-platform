@@ -1936,6 +1936,284 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Browse and filter users (non-sensitive fields only)
+         * @description Permission point `user.list` (04 §11.1; read only, no step-up); without it the console can
+         *     only look users up one by one through GET /admin/v1/users/lookup (`user.lookup`), and this
+         *     list is 10403 with `data.reason=admin_permission_denied`. Users of the console's app, newest
+         *     registration first, page by page (`page`, `page_size` ≤ 200), optionally filtered by
+         *     `risk_state`. Rows hold non-sensitive fields only: the phone number is masked 3 + 4
+         *     (`138****5678`, BR-ID-33) and the full number is only shown through POST
+         *     /admin/v1/users/{user_id}/reveal; no identity number, payout account, real name or raw
+         *     risk reason. Balances, orders and withdrawals of a user are not part of this contract yet.
+         */
+        get: operations["adminListUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Look one user up by user id or full phone number
+         * @description Permission point `user.lookup` only (04 §11.1; read only, no step-up): `user.list` alone
+         *     does not allow it (10403 with `data.reason=admin_permission_denied`). Exactly one of `uid`
+         *     (the user_id) or `phone` (the full number, normalised as in BR-ID-05 细则「手机号规范化」);
+         *     none or both is 20001 with `data.fields=[uid, phone]`, a phone that does not normalise is
+         *     20001 with `data.fields=[phone]` and `data.reason=phone_invalid`. Only users of the
+         *     console's app are found; no match is 20001 with `data.fields` naming the parameter given
+         *     (`[uid]` or `[phone]`). Returns the user as GET /admin/v1/users/{user_id} does, with the
+         *     phone number masked (the full number only through POST /admin/v1/users/{user_id}/reveal).
+         *     Lookup by order number comes with the order console.
+         */
+        get: operations["adminLookupUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One user with risk state and union bindings (masked)
+         * @description Permission point `user.list` or `user.lookup` (either is enough; 04 §11.1; read only, no
+         *     step-up). An unknown `user_id`, or one of another app, is 20001 with
+         *     `data.fields=[user_id]`. Non-sensitive fields only: the phone number is masked 3 + 4
+         *     (BR-ID-33) and the full number is only shown through POST
+         *     /admin/v1/users/{user_id}/reveal. `risk` is the user_risk_state row (state normal with
+         *     nulls and `row_version` null when the user has none yet; a row, even a first one at
+         *     row_version 0, always has an integer); its `row_version` is the `expected_row_version` of
+         *     PUT /admin/v1/users/{user_id}/risk-state. `union_bindings` has one entry per platform the
+         *     user has a binding row on (the platform's latest row), each with the `row_version` that
+         *     the reset / disable / enable operations take as `expected_row_version`. Orders, balance,
+         *     ledger and withdrawals of the user come with the order and fund consoles and are not part
+         *     of this schema yet.
+         */
+        get: operations["adminGetUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show one sensitive field of a user in full (audited)
+         * @description Permission point `pii.reveal_phone` for `field=phone` (04 §11.1, BR-ID-33); lacking it is
+         *     10403 with `data.reason=admin_permission_denied`. Step-up: totp tier (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Only `field=phone` for now:
+         *     the identity number and payout account (`pii.reveal_identity`) come with the real-name
+         *     and payout data. One field of one user per call; `reason` is required (1–200 characters).
+         *     Every call that returns a value writes its own audit record (action user_pii_reveal:
+         *     admin, user, field, reason; never the value) before the response is sent. An unknown
+         *     `user_id` is 20001 with `data.fields=[user_id]`; a user without a bound phone number is
+         *     20001 with `data.fields=[field]` (nothing to show, no audit record). The response carries
+         *     `Cache-Control: no-store` and the console shows the value without keeping it. No
+         *     Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminRevealUserField"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/risk-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Ban, unban, freeze or unfreeze a user
+         * @description Permission point by `action` (04 §11.2): `ban` and `unban` need `risk.ban`, `freeze` and
+         *     `unfreeze` need `risk.freeze`; lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier for every action (without a
+         *     valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). An unknown `user_id`
+         *     is 20001 with `data.fields=[user_id]`.
+         *     Body checks (20001 with `data.fields` naming the field): `reason` is required (1–200
+         *     characters); `reason_category` (enum risk_reason_category, BR-TEXT-23 细则「原因类别」) is
+         *     required for `ban` and `freeze` and not accepted for `unban` and `unfreeze`;
+         *     `frozen_until` is only accepted for `freeze`, null or absent means a freeze without end
+         *     (BR-ID-36), and a value must be later than the server's current time (no upper bound).
+         *     State rules (44004 without data otherwise): `ban` from normal or frozen; `freeze` from
+         *     normal or frozen (on a frozen user it rewrites `frozen_until`, `reason_category` and
+         *     `reason`); `unban` only from banned; `unfreeze` only from frozen. A banned user is not
+         *     frozen directly (unban first); an appealing user is refused for every action, the appeal
+         *     is concluded through the appeal console instead (BR-ID-36).
+         *     CAS: `expected_row_version` is `risk.row_version` of GET /admin/v1/users/{user_id}. null
+         *     means "the console saw no risk-state row" and only creates the user's first row while
+         *     there is still none; an integer only matches the row's current `row_version`. Every other
+         *     case is 20902 with `data.resource=user_risk_state`, refresh and retry (04 §6.6): null
+         *     while a row exists (row_version 0 included, someone created it meanwhile), an integer
+         *     while there is no row, or an integer other than the current one. State rules are judged
+         *     on the state as read (no row = normal).
+         *     Effects (BR-ID-31, BR-ID-36), in one transaction with the state change: `ban` revokes
+         *     every session and refresh token of the user and sets the user's active and invalid union
+         *     bindings to blocked with blocked_reason ban (a binding already blocked keeps its reason);
+         *     new withdrawal requests are refused with 10006, existing withdrawals are not changed; a
+         *     ban has no end. `unban` sets the bindings blocked for ban back to invalid (the user
+         *     authorizes again). `freeze` and `unfreeze` touch neither sessions nor bindings
+         *     (withdrawals 30303 and held credits follow from the state, BR-WDR-05, BR-CALC-13); a
+         *     freeze with `frozen_until` ends by itself at that time. Every action writes an audit
+         *     record (action user_risk_state_change, before and after state, reason category and
+         *     reason) and sends the in-app message RISK_STATE_CHANGED (BR-TEXT-23). The response is the
+         *     risk state as it is now. No Idempotency-Key (04 §6.6).
+         */
+        put: operations["adminUpdateUserRiskState"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/union-bindings/{platform}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset a user's union authorization (release the binding)
+         * @description Permission point `union.binding_reset` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier (without a valid totp-tier
+         *     `X-Step-Up-Token` → 10003 with `data.tier=totp`). For correcting a wrong binding (OPS-11;
+         *     users cannot rebind themselves, BR-ID-19). `reason` is required (1–200 characters, else
+         *     20001 with `data.fields=[reason]`). An unknown `user_id` is 20001 with
+         *     `data.fields=[user_id]`; a platform without user authorization (no union binding, such as
+         *     jd) is 20001 with `data.fields=[platform]`.
+         *     State rule (BR-ID-20): only an active or invalid binding is reset; a blocked one (any
+         *     blocked_reason), a released one, or no binding row on that platform is 30154 without data.
+         *     The binding becomes released with released_at = now and cooldown_until = released_at +
+         *     `bind.rebind_cooldown_days` (BR-ID-19; orders keep attributing by BR-ATTR-07); the user's
+         *     cached converted links are cleared (BR-AI-04 细则「转链缓存」), and the next purchase asks for
+         *     authorization again (30101).
+         *     CAS: `expected_row_version` is the binding's `row_version` from GET
+         *     /admin/v1/users/{user_id}; a mismatch → 20902 with `data.resource=union_binding`, refresh
+         *     and retry (04 §6.6).
+         *     A binding row created later on the same platform (after a release) never reuses a
+         *     row_version the platform's earlier rows had: it starts after the highest one, so a stale
+         *     value never matches the newer row.
+         *     Writes an audit record (action union_binding_reset, before and after
+         *     status, reason). The response is the binding as it is now. No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminResetUserUnionBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/union-bindings/{platform}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop rebates for a user's union binding (停用返利)
+         * @description Permission point `union.binding_disable` (04 §11.2, shared with enable); lacking it is
+         *     10403 with `data.reason=admin_permission_denied`. Step-up: totp tier (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). `reason` is required (1–200
+         *     characters, else 20001 with `data.fields=[reason]`). An unknown `user_id` is 20001 with
+         *     `data.fields=[user_id]`; a platform without user authorization (such as jd) is 20001 with
+         *     `data.fields=[platform]`.
+         *     State rule (BR-ID-20, OPS-11): only an active or invalid binding is disabled; a blocked
+         *     one (any blocked_reason, admin_disable included), a released one, or no binding row on
+         *     that platform is 30154 without data. The binding becomes blocked with blocked_reason
+         *     admin_disable; it is never released by itself and only POST
+         *     …/union-bindings/{platform}/enable brings it back. While it is blocked the user's purchase
+         *     entry answers 30153 (BR-ID-17, BR-ID-18).
+         *     CAS: `expected_row_version` is the binding's `row_version`; a mismatch → 20902 with
+         *     `data.resource=union_binding` (04 §6.6). As for reset, a later binding row on the platform
+         *     never reuses an earlier row's row_version. Writes an audit record (action
+         *     union_binding_disable, before and after status, reason). The response is the binding as
+         *     it is now. No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminDisableUserUnionBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/union-bindings/{platform}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore rebates for a disabled union binding (恢复返利)
+         * @description Permission point `union.binding_disable` (04 §11.2, shared with disable); lacking it is
+         *     10403 with `data.reason=admin_permission_denied`. Step-up: totp tier (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). `reason` is required (1–200
+         *     characters, else 20001 with `data.fields=[reason]`). An unknown `user_id` is 20001 with
+         *     `data.fields=[user_id]`; a platform without user authorization (such as jd) is 20001 with
+         *     `data.fields=[platform]`.
+         *     State rule (BR-ID-20): only a binding blocked with blocked_reason admin_disable is
+         *     enabled; any other status, a binding blocked for ban or deletion, or no binding row on
+         *     that platform is 30154 without data (a binding blocked for ban comes back through unban
+         *     only). The binding becomes invalid: the user authorizes again before rebates resume.
+         *     CAS: `expected_row_version` is the binding's `row_version`; a mismatch → 20902 with
+         *     `data.resource=union_binding` (04 §6.6). As for reset, a later binding row on the platform
+         *     never reuses an earlier row's row_version. Writes an audit record (action
+         *     union_binding_enable, before and after status, reason). The response is the binding as it
+         *     is now. No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminEnableUserUnionBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/platform-icons": {
         parameters: {
             query?: never;
@@ -5325,6 +5603,208 @@ export interface components {
             expected_version: number;
             reason?: components["schemas"]["AdminConfigReason"];
         };
+        /**
+         * @description Risk state of a user (enum risk_state; BR-ID-31, BR-ID-36).
+         * @enum {string}
+         */
+        AdminUserRiskStateCode: "normal" | "frozen" | "appealing" | "banned";
+        /**
+         * @description User-visible reason category of a ban or freeze (enum risk_reason_category; BR-TEXT-23 细则
+         *     「原因类别」, user text from the dictionary risk_reason.<category>).
+         * @enum {string}
+         */
+        AdminRiskReasonCategory: "malicious_rights" | "fraud_invite" | "abnormal_trade" | "account_security" | "other";
+        /**
+         * @description Distribution level of the user (enum user_level; not shown to the user, OPS-20).
+         * @enum {string}
+         */
+        AdminUserLevel: "L1" | "L2" | "L3";
+        /**
+         * @description Status of a union binding (enum union_binding_status; BR-ID-19, BR-ID-20).
+         * @enum {string}
+         */
+        AdminUnionBindingStatus: "unbound" | "pending_auth" | "active" | "invalid" | "released" | "blocked";
+        /**
+         * @description Why a binding is blocked (enum union_binding_blocked_reason; BR-ID-20).
+         * @enum {string}
+         */
+        AdminUnionBindingBlockedReason: "ban" | "admin_disable" | "deletion";
+        /**
+         * Format: int32
+         * @description row_version of the row as read (users' risk state, a union binding); plus 1 on every
+         *     change. The CAS value `expected_row_version` of the writes.
+         */
+        AdminRowVersion: number;
+        /** @description Required free-text reason, kept in the audit record. */
+        AdminUserReason: string;
+        /** @description Phone number masked 3 + 4 (`138****5678`, BR-ID-33); null when no phone is bound. */
+        AdminMaskedPhone: string | null;
+        /** @description A user row of the list; non-sensitive fields only (04 §11.1 user.list). */
+        AdminUserListItem: {
+            user_id: components["schemas"]["Id"];
+            nickname: string;
+            phone_masked: components["schemas"]["AdminMaskedPhone"];
+            level: components["schemas"]["AdminUserLevel"];
+            risk_state: components["schemas"]["AdminUserRiskStateCode"];
+            /**
+             * Format: date-time
+             * @description Registration time.
+             */
+            created_at: string;
+        };
+        AdminUserPage: {
+            items: components["schemas"]["AdminUserListItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminUserPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description The user's user_risk_state row as the console sees it (no rule details). A user without a
+         *     row reads as state normal, nulls and row_version null; a row always has an integer
+         *     row_version (0 for a first row).
+         */
+        AdminUserRiskState: {
+            state: components["schemas"]["AdminUserRiskStateCode"];
+            reason_category: components["schemas"]["AdminRiskReasonCategory"] | null;
+            /** @description Internal reason of the last change (console only, never shown to the user). */
+            reason: string | null;
+            /**
+             * Format: date-time
+             * @description End of a freeze; null for a freeze without end and for every other state.
+             */
+            frozen_until: string | null;
+            /** @description Admin username or `system` of the last change; null when there is no row. */
+            changed_by: string | null;
+            /** Format: date-time */
+            changed_at: string | null;
+            /** @description null when the user has no risk-state row yet. */
+            row_version: components["schemas"]["AdminRowVersion"] | null;
+        };
+        AdminUserRiskStateResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserRiskState"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description A union binding row of the user (union_bindings; BR-ID-19, BR-ID-20), without relation_id or
+         *     other union identifiers.
+         */
+        AdminUserUnionBinding: {
+            platform: components["schemas"]["PlatformCode"];
+            status: components["schemas"]["AdminUnionBindingStatus"];
+            /** @description Set when status is blocked, null otherwise. */
+            blocked_reason: components["schemas"]["AdminUnionBindingBlockedReason"] | null;
+            /** Format: date-time */
+            bound_at: string | null;
+            /** Format: date-time */
+            released_at: string | null;
+            /**
+             * Format: date-time
+             * @description End of the cooldown after a release (BR-ID-19); null unless released.
+             */
+            cooldown_until: string | null;
+            /** @description Reason of the last console change (reset, disable, enable); null when none. */
+            reason: string | null;
+            row_version: components["schemas"]["AdminRowVersion"];
+        };
+        AdminUserUnionBindingResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserUnionBinding"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description A user as the console sees it (04 §11.1): non-sensitive fields, the masked phone number,
+         *     the risk state and the union bindings. No identity number, payout account or real name.
+         */
+        AdminUserDetail: {
+            user_id: components["schemas"]["Id"];
+            nickname: string;
+            phone_masked: components["schemas"]["AdminMaskedPhone"];
+            invite_code: string;
+            /** @description user_id of the current inviter (users.parent_id); null when none is bound. */
+            inviter_user_id: components["schemas"]["Id"] | null;
+            level: components["schemas"]["AdminUserLevel"];
+            /** @description How the account was created (users.register_method), as stored. */
+            register_method: string;
+            /** @description Install channel at registration (users.registered_channel), as stored. */
+            registered_channel: string | null;
+            /**
+             * Format: date-time
+             * @description Registration time.
+             */
+            created_at: string;
+            risk: components["schemas"]["AdminUserRiskState"];
+            /** @description One entry per platform the user has a binding row on. */
+            union_bindings: components["schemas"]["AdminUserUnionBinding"][];
+        };
+        AdminUserDetailResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserDetail"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description The sensitive field to show in full. Only phone (permission point pii.reveal_phone) for
+         *     now; the identity number and payout account (pii.reveal_identity) come later.
+         * @enum {string}
+         */
+        AdminUserRevealField: "phone";
+        AdminUserRevealRequest: {
+            field: components["schemas"]["AdminUserRevealField"];
+            reason: components["schemas"]["AdminUserReason"];
+        };
+        AdminUserReveal: {
+            user_id: components["schemas"]["Id"];
+            field: components["schemas"]["AdminUserRevealField"];
+            /** @description The full value (for phone, the normalised 11-digit number). */
+            value: string;
+        };
+        AdminUserRevealResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUserReveal"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description ban and unban (permission point risk.ban), freeze and unfreeze (risk.freeze); 04 §11.2,
+         *     BR-ID-31, BR-ID-36.
+         * @enum {string}
+         */
+        AdminUserRiskStateAction: "ban" | "unban" | "freeze" | "unfreeze";
+        AdminUserRiskStateUpdateRequest: {
+            action: components["schemas"]["AdminUserRiskStateAction"];
+            /** @description Required for ban and freeze; not accepted for unban and unfreeze (20001). */
+            reason_category?: components["schemas"]["AdminRiskReasonCategory"];
+            reason: components["schemas"]["AdminUserReason"];
+            /**
+             * Format: date-time
+             * @description Only for freeze: end of the freeze, later than the server's current time; null or
+             *     absent = without end (BR-ID-36). Given with another action → 20001.
+             */
+            frozen_until?: string | null;
+            /**
+             * @description risk.row_version as the console showed it; null = no row seen, only accepted while the
+             *     user still has no row. Any mismatch (null against an existing row, an integer against
+             *     no row or another version) is 20902.
+             */
+            expected_row_version: components["schemas"]["AdminRowVersion"] | null;
+        };
+        AdminUserUnionBindingActionRequest: {
+            reason: components["schemas"]["AdminUserReason"];
+            /** @description The binding's row_version as the console showed it; a mismatch is 20902. */
+            expected_row_version: components["schemas"]["AdminRowVersion"];
+        };
         /** @description An Agent conversation (agent_sessions; owner and expiry per BR-AI-20). */
         AgentSession: {
             session_id: components["schemas"]["Id"];
@@ -5585,6 +6065,24 @@ export interface components {
         AdminPageSize: number;
         /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
         AdminIdPath: components["schemas"]["Id"];
+        /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+        AdminUserIdPath: components["schemas"]["Id"];
+        /**
+         * @description Platform of the user's union binding (enum platform). Only platforms with user
+         *     authorization have bindings (BR-ID-17); another platform, such as jd, → 20001 with
+         *     data.fields=[platform].
+         */
+        AdminUserUnionPlatformPath: components["schemas"]["PlatformCode"];
+        /** @description Only users in this risk state (enum risk_state; no row counts as normal); absent = all. */
+        AdminUserRiskStateFilter: components["schemas"]["AdminUserRiskStateCode"];
+        /** @description The user_id to look up; give exactly one of uid and phone (else 20001 with data.fields=[uid, phone]). */
+        AdminUserLookupUid: components["schemas"]["Id"];
+        /**
+         * @description The full phone number to look up, normalised as in BR-ID-05 细则「手机号规范化」 (not a
+         *     mainland mobile number → 20001 with data.fields=[phone] and data.reason=phone_invalid);
+         *     give exactly one of uid and phone.
+         */
+        AdminUserLookupPhone: components["schemas"]["Phone"];
         /** @description Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key]. */
         PlatformIconKeyPath: components["schemas"]["PlatformIconKey"];
         /** @description Version of the mark, counted per mark from 1; unknown → 20001 with data.fields=[version]. */
@@ -10409,6 +10907,608 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListUsers: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only users in this risk state (enum risk_state; no row counts as normal); absent = all. */
+                risk_state?: components["parameters"]["AdminUserRiskStateFilter"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of users, newest registration first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *             "nickname": "凑狸用户5678",
+                     *             "phone_masked": "138****5678",
+                     *             "level": "L1",
+                     *             "risk_state": "normal",
+                     *             "created_at": "2026-10-12T09:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *             "nickname": "凑狸用户0000",
+                     *             "phone_masked": null,
+                     *             "level": "L1",
+                     *             "risk_state": "frozen",
+                     *             "created_at": "2026-10-10T20:30:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminLookupUser: {
+        parameters: {
+            query?: {
+                /** @description The user_id to look up; give exactly one of uid and phone (else 20001 with data.fields=[uid, phone]). */
+                uid?: components["parameters"]["AdminUserLookupUid"];
+                /**
+                 * @description The full phone number to look up, normalised as in BR-ID-05 细则「手机号规范化」 (not a
+                 *     mainland mobile number → 20001 with data.fields=[phone] and data.reason=phone_invalid);
+                 *     give exactly one of uid and phone.
+                 */
+                phone?: components["parameters"]["AdminUserLookupPhone"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user found. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "nickname": "凑狸用户5678",
+                     *         "phone_masked": "138****5678",
+                     *         "invite_code": "K7QX2M",
+                     *         "inviter_user_id": null,
+                     *         "level": "L1",
+                     *         "register_method": "sms",
+                     *         "registered_channel": "appstore",
+                     *         "created_at": "2026-10-12T09:00:00+08:00",
+                     *         "risk": {
+                     *           "state": "normal",
+                     *           "reason_category": null,
+                     *           "reason": null,
+                     *           "frozen_until": null,
+                     *           "changed_by": null,
+                     *           "changed_at": null,
+                     *           "row_version": null
+                     *         },
+                     *         "union_bindings": [
+                     *           {
+                     *             "platform": "taobao",
+                     *             "status": "active",
+                     *             "blocked_reason": null,
+                     *             "bound_at": "2026-10-12T09:10:00+08:00",
+                     *             "released_at": null,
+                     *             "cooldown_until": null,
+                     *             "reason": null,
+                     *             "row_version": 0
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not found or not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetUser: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *         "nickname": "凑狸用户0000",
+                     *         "phone_masked": "139****0000",
+                     *         "invite_code": "P3RT8N",
+                     *         "inviter_user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "level": "L1",
+                     *         "register_method": "sms",
+                     *         "registered_channel": null,
+                     *         "created_at": "2026-10-10T20:30:00+08:00",
+                     *         "risk": {
+                     *           "state": "frozen",
+                     *           "reason_category": "abnormal_trade",
+                     *           "reason": "同设备多账号集中下单，人工复核中",
+                     *           "frozen_until": "2026-11-30T00:00:00+08:00",
+                     *           "changed_by": "ops-yi",
+                     *           "changed_at": "2026-10-15T11:00:00+08:00",
+                     *           "row_version": 1
+                     *         },
+                     *         "union_bindings": [
+                     *           {
+                     *             "platform": "taobao",
+                     *             "status": "blocked",
+                     *             "blocked_reason": "admin_disable",
+                     *             "bound_at": "2026-10-10T21:00:00+08:00",
+                     *             "released_at": null,
+                     *             "cooldown_until": null,
+                     *             "reason": "错绑核实中，先停用返利",
+                     *             "row_version": 2
+                     *           },
+                     *           {
+                     *             "platform": "pdd",
+                     *             "status": "released",
+                     *             "blocked_reason": null,
+                     *             "bound_at": "2026-10-11T08:00:00+08:00",
+                     *             "released_at": "2026-10-14T10:00:00+08:00",
+                     *             "cooldown_until": "2026-11-13T10:00:00+08:00",
+                     *             "reason": "用户反馈绑错账号，重置授权",
+                     *             "row_version": 1
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRevealUserField: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "field": "phone",
+                 *       "reason": "用户来电核对注册手机号"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminUserRevealRequest"];
+            };
+        };
+        responses: {
+            /** @description The full value of the field. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    /** @description Always no-store; the full value is not cached by any proxy or the browser. */
+                    "Cache-Control": "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "field": "phone",
+                     *         "value": "13800005678"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserRevealResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Nothing shown (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUpdateUserRiskState: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserRiskStateUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The user's risk state as it is now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserRiskStateResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminResetUserUnionBinding: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+                /**
+                 * @description Platform of the user's union binding (enum platform). Only platforms with user
+                 *     authorization have bindings (BR-ID-17); another platform, such as jd, → 20001 with
+                 *     data.fields=[platform].
+                 */
+                platform: components["parameters"]["AdminUserUnionPlatformPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "reason": "用户反馈绑错账号，重置授权",
+                 *       "expected_row_version": 0
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminUserUnionBindingActionRequest"];
+            };
+        };
+        responses: {
+            /** @description The binding as it is now (released). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "platform": "taobao",
+                     *         "status": "released",
+                     *         "blocked_reason": null,
+                     *         "bound_at": "2026-10-12T09:10:00+08:00",
+                     *         "released_at": "2026-10-15T11:00:00+08:00",
+                     *         "cooldown_until": "2026-11-14T11:00:00+08:00",
+                     *         "reason": "用户反馈绑错账号，重置授权",
+                     *         "row_version": 1
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserUnionBindingResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminDisableUserUnionBinding: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+                /**
+                 * @description Platform of the user's union binding (enum platform). Only platforms with user
+                 *     authorization have bindings (BR-ID-17); another platform, such as jd, → 20001 with
+                 *     data.fields=[platform].
+                 */
+                platform: components["parameters"]["AdminUserUnionPlatformPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "reason": "错绑核实中，先停用返利",
+                 *       "expected_row_version": 1
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminUserUnionBindingActionRequest"];
+            };
+        };
+        responses: {
+            /** @description The binding as it is now (blocked, admin_disable). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "platform": "taobao",
+                     *         "status": "blocked",
+                     *         "blocked_reason": "admin_disable",
+                     *         "bound_at": "2026-10-10T21:00:00+08:00",
+                     *         "released_at": null,
+                     *         "cooldown_until": null,
+                     *         "reason": "错绑核实中，先停用返利",
+                     *         "row_version": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserUnionBindingResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminEnableUserUnionBinding: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+                /**
+                 * @description Platform of the user's union binding (enum platform). Only platforms with user
+                 *     authorization have bindings (BR-ID-17); another platform, such as jd, → 20001 with
+                 *     data.fields=[platform].
+                 */
+                platform: components["parameters"]["AdminUserUnionPlatformPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "reason": "核实为本人账号，恢复返利",
+                 *       "expected_row_version": 2
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminUserUnionBindingActionRequest"];
+            };
+        };
+        responses: {
+            /** @description The binding as it is now (invalid, waiting for the user to authorize again). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "platform": "taobao",
+                     *         "status": "invalid",
+                     *         "blocked_reason": null,
+                     *         "bound_at": "2026-10-10T21:00:00+08:00",
+                     *         "released_at": null,
+                     *         "cooldown_until": null,
+                     *         "reason": "核实为本人账号，恢复返利",
+                     *         "row_version": 3
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserUnionBindingResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

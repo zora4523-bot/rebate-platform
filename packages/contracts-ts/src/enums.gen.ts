@@ -689,6 +689,19 @@ export const risk_state = [
 export type RiskState = (typeof risk_state)[number];
 
 /**
+ * user_risk_state.reason_category，用户可见的原因类别（用户文案取字典 risk_reason.<category>）；state 不为 normal 时必填；后台封禁与冻结时必选一项（PUT /admin/v1/users/{user_id}/risk-state，CT-02j）
+ * Source: 规划/04 §3.2 user_risk_state；BR-TEXT-23 细则「原因类别」；BR-ID-31 (contracts/enums/identity.yaml).
+ */
+export const risk_reason_category = [
+  "malicious_rights", // 异常售后维权
+  "fraud_invite", // 异常邀请行为
+  "abnormal_trade", // 异常交易
+  "account_security", // 账户安全核验
+  "other", // 违反用户协议
+] as const;
+export type RiskReasonCategory = (typeof risk_reason_category)[number];
+
+/**
  * realname_status
  * Source: 规划/04 §2.5 (contracts/enums/identity.yaml).
  */
@@ -1490,6 +1503,7 @@ export const enums = {
   union_binding_status,
   union_binding_blocked_reason,
   risk_state,
+  risk_reason_category,
   realname_status,
   deletion_status,
   deletion_cancel_reason,

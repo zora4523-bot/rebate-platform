@@ -368,6 +368,46 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/users",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/users/lookup",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/users/:user_id",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/reveal",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/users/:user_id/risk-state",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/union-bindings/:platform/reset",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/union-bindings/:platform/disable",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/union-bindings/:platform/enable",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/platform-icons",
     "signed": false
   },

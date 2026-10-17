@@ -368,6 +368,46 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/users",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/users/lookup",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/users/:user_id",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/reveal",
+    "auth": "admin"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/users/:user_id/risk-state",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/union-bindings/:platform/reset",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/union-bindings/:platform/disable",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/union-bindings/:platform/enable",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/platform-icons",
     "auth": "admin"
   },
