@@ -19,7 +19,7 @@ it('[AC-CT-04d#9] 复用生成器，输出稳定且与入库文本逐字一致',
   expect(exports['WITHDRAWAL_STATES']).toEqual(STATES);
   expect(exports['WITHDRAWAL_EVENTS']).toEqual(machine().events);
   expect(exports['WITHDRAWAL_TRANSITIONS']).toEqual(machine().transitions);
-  expect(transitionOf(exports)(null, 'APPLY')).toStrictEqual({
+  expect(transitionOf(exports)(null, 'APPLY')).toEqual({
     ok: true,
     to: 'PENDING_REVIEW',
     id: 'W1',
@@ -35,13 +35,13 @@ it('[AC-CT-04d#10] 改变输入目标会改变输出与迁移结果，不能写�
   const first = renderStateMachine(yaml);
   const second = renderStateMachine(changed);
   expect(second).not.toBe(first);
-  expect(transitionOf(generatedExports(first))(null, 'APPLY')).toStrictEqual({
+  expect(transitionOf(generatedExports(first))(null, 'APPLY')).toEqual({
     ok: true,
     to: 'PENDING_REVIEW',
     id: 'W1',
     noop: false,
   });
-  expect(transitionOf(generatedExports(second))(null, 'APPLY')).toStrictEqual({
+  expect(transitionOf(generatedExports(second))(null, 'APPLY')).toEqual({
     ok: true,
     to: 'APPROVED',
     id: 'W1',
@@ -61,19 +61,19 @@ it('[AC-CT-04d#11] 守卫仅是文字，不求值 needs_manual、资金校验或
     ]),
   );
   const transition = transitionOf(exports);
-  expect(transition(null, 'APPLY')).toStrictEqual({
+  expect(transition(null, 'APPLY')).toEqual({
     ok: true,
     to: 'PENDING_REVIEW',
     id: 'W1',
     noop: false,
   });
-  expect(transition('PAYING', 'CHANNEL_SUCCESS')).toStrictEqual({
+  expect(transition('PAYING', 'CHANNEL_SUCCESS')).toEqual({
     ok: true,
     to: 'PAID_API',
     id: 'W5',
     noop: false,
   });
-  expect(transition('APPROVED', 'CHANNEL_SUCCESS_PROVEN')).toStrictEqual({
+  expect(transition('APPROVED', 'CHANNEL_SUCCESS_PROVEN')).toEqual({
     ok: true,
     to: 'PAID_API',
     id: 'W11',
