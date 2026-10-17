@@ -197,6 +197,21 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": true
   },
   {
+    "method": "POST",
+    "path": "/v1/me/realname",
+    "signed": true
+  },
+  {
+    "method": "GET",
+    "path": "/v1/me/labor-agreement",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/v1/me/labor-agreement/sign",
+    "signed": true
+  },
+  {
     "method": "GET",
     "path": "/v1/me/tips",
     "signed": false

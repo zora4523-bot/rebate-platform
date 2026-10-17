@@ -407,6 +407,36 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": true
   },
   {
+    "operationId": "submitRealname",
+    "method": "POST",
+    "path": "/v1/me/realname",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "getLaborAgreement",
+    "method": "GET",
+    "path": "/v1/me/labor-agreement",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "signLaborAgreement",
+    "method": "POST",
+    "path": "/v1/me/labor-agreement/sign",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "getTips",
     "method": "GET",
     "path": "/v1/me/tips",
