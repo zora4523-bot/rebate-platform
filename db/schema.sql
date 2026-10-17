@@ -1614,6 +1614,116 @@ CREATE TABLE app.commission_rules (
 
 
 --
+-- Name: commission_split_amounts; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.commission_split_amounts (
+    app_id text NOT NULL,
+    order_id uuid NOT NULL,
+    commission_version integer NOT NULL,
+    user_id uuid NOT NULL,
+    role text NOT NULL,
+    base_fen bigint NOT NULL,
+    amount_fen bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT commission_split_amounts_amount_fen_check CHECK (((amount_fen >= 0) AND (amount_fen <= base_fen))),
+    CONSTRAINT commission_split_amounts_base_fen_check CHECK ((base_fen >= 0)),
+    CONSTRAINT commission_split_amounts_commission_version_check CHECK ((commission_version >= 1)),
+    CONSTRAINT commission_split_amounts_role_check CHECK ((role = ANY (ARRAY['self'::text, 'share'::text, 'direct'::text, 'indirect'::text])))
+);
+
+
+--
+-- Name: commission_split_beneficiary_events; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.commission_split_beneficiary_events (
+    event_seq bigint NOT NULL,
+    app_id text NOT NULL,
+    order_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    role text NOT NULL,
+    status text NOT NULL,
+    reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT commission_split_beneficiary_events_role_check CHECK ((role = ANY (ARRAY['self'::text, 'share'::text, 'direct'::text, 'indirect'::text]))),
+    CONSTRAINT commission_split_beneficiary_events_status_check CHECK ((status = ANY (ARRAY['active'::text, 'held'::text, 'forfeited'::text])))
+);
+
+
+--
+-- Name: commission_split_beneficiary_events_event_seq_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.commission_split_beneficiary_events ALTER COLUMN event_seq ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.commission_split_beneficiary_events_event_seq_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: commission_split_totals; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.commission_split_totals (
+    app_id text NOT NULL,
+    order_id uuid NOT NULL,
+    commission_version integer NOT NULL,
+    n_total_fen bigint NOT NULL,
+    pre_base_deduct_fen bigint NOT NULL,
+    base_fen bigint NOT NULL,
+    user_share_total_fen bigint NOT NULL,
+    tlj_redpacket_fen bigint,
+    platform_est_profit_fen bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT commission_split_totals_base_fen_check CHECK ((base_fen >= 0)),
+    CONSTRAINT commission_split_totals_commission_version_check CHECK ((commission_version >= 1)),
+    CONSTRAINT commission_split_totals_platform_est_profit_fen_check CHECK ((((tlj_redpacket_fen IS NULL) AND (platform_est_profit_fen IS NULL)) OR ((tlj_redpacket_fen IS NOT NULL) AND (platform_est_profit_fen IS NOT NULL) AND (platform_est_profit_fen = ((n_total_fen - user_share_total_fen) - tlj_redpacket_fen))))),
+    CONSTRAINT commission_split_totals_pre_base_deduct_fen_check CHECK ((pre_base_deduct_fen = (n_total_fen - base_fen))),
+    CONSTRAINT commission_split_totals_tlj_redpacket_fen_check CHECK (((tlj_redpacket_fen IS NULL) OR (tlj_redpacket_fen >= 0))),
+    CONSTRAINT commission_split_totals_user_share_total_fen_check CHECK (((user_share_total_fen >= 0) AND (user_share_total_fen <= base_fen)))
+);
+
+
+--
+-- Name: commission_splits; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.commission_splits (
+    order_id uuid NOT NULL,
+    app_id text NOT NULL,
+    rule_version_id uuid NOT NULL,
+    order_type text NOT NULL,
+    activity_type text,
+    rebate_mode text,
+    paid_at timestamp with time zone NOT NULL,
+    paid_at_source text NOT NULL,
+    raw_n_fen bigint NOT NULL,
+    subsidy_commission_fen bigint NOT NULL,
+    reserve_bp smallint NOT NULL,
+    reserve_fen bigint NOT NULL,
+    tlj_deduct_fen bigint NOT NULL,
+    base_fen bigint NOT NULL,
+    platform_retain_fen bigint NOT NULL,
+    beneficiaries jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT commission_splits_base_fen_check CHECK ((base_fen >= 0)),
+    CONSTRAINT commission_splits_beneficiaries_check CHECK (((jsonb_typeof(beneficiaries) = 'array'::text) AND (beneficiaries <> '[]'::jsonb))),
+    CONSTRAINT commission_splits_order_type_check CHECK ((order_type = ANY (ARRAY['self'::text, 'share'::text]))),
+    CONSTRAINT commission_splits_paid_at_source_check CHECK ((paid_at_source = ANY (ARRAY['platform'::text, 'platform_modified'::text, 'observed'::text]))),
+    CONSTRAINT commission_splits_platform_retain_fen_check CHECK (((platform_retain_fen >= 0) AND (platform_retain_fen <= base_fen))),
+    CONSTRAINT commission_splits_rebate_mode_check CHECK ((rebate_mode = ANY (ARRAY['none'::text, 'normal'::text]))),
+    CONSTRAINT commission_splits_reserve_bp_check CHECK (((reserve_bp >= 0) AND (reserve_bp <= 10000))),
+    CONSTRAINT commission_splits_reserve_fen_check CHECK ((reserve_fen >= 0)),
+    CONSTRAINT commission_splits_tlj_deduct_fen_check CHECK ((tlj_deduct_fen >= 0))
+);
+
+
+--
 -- Name: config_item_versions; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3761,6 +3871,38 @@ ALTER TABLE ONLY app.commission_rules
 
 
 --
+-- Name: commission_split_amounts commission_split_amounts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_split_amounts
+    ADD CONSTRAINT commission_split_amounts_pkey PRIMARY KEY (app_id, order_id, commission_version, user_id, role);
+
+
+--
+-- Name: commission_split_beneficiary_events commission_split_beneficiary_events_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_split_beneficiary_events
+    ADD CONSTRAINT commission_split_beneficiary_events_pkey PRIMARY KEY (event_seq);
+
+
+--
+-- Name: commission_split_totals commission_split_totals_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_split_totals
+    ADD CONSTRAINT commission_split_totals_pkey PRIMARY KEY (app_id, order_id, commission_version);
+
+
+--
+-- Name: commission_splits commission_splits_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_splits
+    ADD CONSTRAINT commission_splits_pkey PRIMARY KEY (order_id);
+
+
+--
 -- Name: config_item_versions config_item_versions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -4731,6 +4873,13 @@ CREATE UNIQUE INDEX commission_rule_versions_published_effective_from_key ON app
 
 
 --
+-- Name: commission_split_beneficiary_events_current_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX commission_split_beneficiary_events_current_idx ON app.commission_split_beneficiary_events USING btree (app_id, order_id, user_id, role, event_seq);
+
+
+--
 -- Name: consent_records_device_type_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -5326,6 +5475,34 @@ CREATE TRIGGER audit_logs_append_only BEFORE DELETE OR UPDATE ON app.audit_logs 
 
 
 --
+-- Name: commission_split_amounts commission_split_amounts_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER commission_split_amounts_append_only BEFORE DELETE OR UPDATE ON app.commission_split_amounts FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: commission_split_beneficiary_events commission_split_beneficiary_events_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER commission_split_beneficiary_events_append_only BEFORE DELETE OR UPDATE ON app.commission_split_beneficiary_events FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: commission_split_totals commission_split_totals_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER commission_split_totals_append_only BEFORE DELETE OR UPDATE ON app.commission_split_totals FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: commission_splits commission_splits_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER commission_splits_append_only BEFORE DELETE OR UPDATE ON app.commission_splits FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
 -- Name: device_registrations device_registrations_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -5640,6 +5817,46 @@ ALTER TABLE ONLY app.commission_rules
 
 ALTER TABLE ONLY app.commission_rules
     ADD CONSTRAINT commission_rules_rule_version_id_fkey FOREIGN KEY (app_id, rule_version_id) REFERENCES app.commission_rule_versions(app_id, rule_version_id);
+
+
+--
+-- Name: commission_split_amounts commission_split_amounts_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_split_amounts
+    ADD CONSTRAINT commission_split_amounts_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: commission_split_beneficiary_events commission_split_beneficiary_events_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_split_beneficiary_events
+    ADD CONSTRAINT commission_split_beneficiary_events_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: commission_split_totals commission_split_totals_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_split_totals
+    ADD CONSTRAINT commission_split_totals_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: commission_splits commission_splits_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_splits
+    ADD CONSTRAINT commission_splits_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: commission_splits commission_splits_rule_version_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_splits
+    ADD CONSTRAINT commission_splits_rule_version_id_fkey FOREIGN KEY (app_id, rule_version_id) REFERENCES app.commission_rule_versions(app_id, rule_version_id);
 
 
 --
@@ -7295,6 +7512,38 @@ GRANT UPDATE(indirect_approved_at) ON TABLE app.commission_rule_versions TO coul
 
 GRANT SELECT,INSERT ON TABLE app.commission_rules TO couli_app;
 GRANT SELECT ON TABLE app.commission_rules TO couli_readonly;
+
+
+--
+-- Name: TABLE commission_split_amounts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.commission_split_amounts TO couli_app;
+GRANT SELECT ON TABLE app.commission_split_amounts TO couli_readonly;
+
+
+--
+-- Name: TABLE commission_split_beneficiary_events; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.commission_split_beneficiary_events TO couli_app;
+GRANT SELECT ON TABLE app.commission_split_beneficiary_events TO couli_readonly;
+
+
+--
+-- Name: TABLE commission_split_totals; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.commission_split_totals TO couli_app;
+GRANT SELECT ON TABLE app.commission_split_totals TO couli_readonly;
+
+
+--
+-- Name: TABLE commission_splits; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.commission_splits TO couli_app;
+GRANT SELECT ON TABLE app.commission_splits TO couli_readonly;
 
 
 --
