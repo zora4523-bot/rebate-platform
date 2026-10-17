@@ -27,6 +27,10 @@ export type {
 export { revokeSessionsByUser, revokeSessionsByDevice } from './application/revoke-sessions.ts';
 export type { AfterSessionsRevoked, SessionRevokeReason } from './application/revoke-sessions.ts';
 export { IdentityModule } from './identity.module.ts';
+export { ME_READ_PORTS } from './application/tokens.ts';
+export type { MeReadPorts, MeUnionBindingStatus } from './application/me.ts';
+export type { InviteBackfillActivityPort, MeSubject } from './ports/invite-backfill-activity.ts';
+export { createInviteBackfillActivityReader } from './infra/me-reads.ts';
 export type {
   AssembledRevokeByDevice,
   AssembledRevokeByUser,

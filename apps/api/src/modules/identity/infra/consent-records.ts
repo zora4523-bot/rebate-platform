@@ -1,11 +1,11 @@
 // app.consent_records (规划/08 BR-ID-12; 04 §3.2): insert-only, written only by identity (规划/02
-// §4.1). Every function runs in the caller's transaction; nothing here commits. Reused by the
-// consent endpoint (B1-02f).
+// §4.1). Writes use the caller's transaction; user-level reads also accept a pooled handle.
+// Nothing here commits. Reused by the consent endpoint (B1-02f) and GET /v1/me (B1-02z).
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for types, `.ts`
 // relative imports, no decorators.
 import type { DB } from '@couli/db';
-import { sql, type Insertable, type Transaction } from 'kysely';
+import { sql, type Insertable, type Kysely, type Transaction } from 'kysely';
 import type { ConsentState } from '../domain/login.ts';
 
 /**
@@ -62,7 +62,7 @@ export async function deviceConsentRecords(
 
 /** Every user-level record of one user. */
 export async function userConsentRecords(
-  trx: Transaction<DB>,
+  trx: Kysely<DB>,
   appId: string,
   userId: string,
 ): Promise<ConsentState[]> {

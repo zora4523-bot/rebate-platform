@@ -60,3 +60,7 @@ export const TIPS = Symbol('TIPS');
 
 /** First phone binding; null without its storage and read ports. */
 export const BIND_PHONE = Symbol('BIND_PHONE');
+/** The current-user read service, or null without the database and assembled ports. */
+export const ME = Symbol('IDENTITY_ME');
+/** Cross-module read ports of GET /v1/me, assembled by app.module. */
+export const ME_READ_PORTS = Symbol('IDENTITY_ME_READ_PORTS');
