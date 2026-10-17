@@ -154,7 +154,9 @@ export function assertAudit(
   expect(facts.field).toBe('phone');
   expect(facts.reason).toBe(reason);
   // Inspect nested snapshots too: hiding the value under another key is still a leak.
-  const text = JSON.stringify(row);
+  const text = JSON.stringify(row, (_key, value: unknown) =>
+    typeof value === 'bigint' ? value.toString() : value,
+  );
   if (target.phone !== null) expect(text).not.toContain(target.phone);
   if (target.cipher !== null) expect(text).not.toContain(target.cipher.toString('utf8'));
   if (target.hmac !== null) expect(text).not.toContain(target.hmac);
