@@ -1,0 +1,27 @@
+id: B1-11e
+repo: rebate-platform
+title: 补填邀请码接口 POST /v1/me/inviter（bindInviter，backfill 渠道）：growth 首个控制器与 Nest 模块，开事务调用 B1-11d 的绑定核心，失败码按契约回、42901 带 Retry-After，成功回 EmptyResponse；去掉该操作的 planned
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二波第二批；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md §A.6）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审（E1：原拟 Codex 拼装，改 Claude）。
+# 依据：08 BR-INV-02（backfill 判定顺序、频控）、BR-INV-03（每号一次、条件更新 + Idempotency-Key、并发只一条成功）、BR-INV-07（168 小时、无订单 / 找回 / 下级）、BR-INV-08（30403），契约 bindInviter（CT-15p）。细则超 24KB，refs 置空，由编排者摘入（E13）。
+# 现状：growth 无 Nest 模块、无路由（B1-11b 只有日志端口）；绑定判定与写库全在 B1-11d 的 createInviteBinder(deps).bind(trx, cmd)，本任务不复写规则。10005 由 B1-02za 全局守卫 ⑧ 先判（binder 第 1 步同口径兜底）。
+# 范围：控制器放 growth/http/public，新建 growth.module.ts 并在 app.module 注册；user_id、app_id 取已验签令牌，device_id 取已验签设备，不进请求体；3xxxx 由已有幂等模块存结果并回放（重放不再计 30401）；Agent 工具白名单不得出现绑定上级。
+# 契约三件（openapi.yaml 去 planned、两份生成物用 pnpm codegen 重生成，不手改）随本任务提交——Claude 实现的台账按 task.ts 规则写进 paths，不用 mechanical_paths（先例 B1-02s）。
+# 模型：Opus 5.5 高推理（effort high）——归属（上级关系写入）。测试标题 AC-B1-11e#n（E14）。与 B1-11f、B1-11j 同改 growth/** 与 app.module.ts，按 deps 串行。
+refs: []
+refs_hash: {}
+deps: [B1-11d, CT-15p, B1-02za]
+paths:
+  - 'apps/api/src/modules/growth/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/growth/backfill/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/growth/backfill/**'
+status: todo

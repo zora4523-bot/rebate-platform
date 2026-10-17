@@ -1,0 +1,28 @@
+id: B1-11j
+repo: rebate-platform
+title: 我的邀请页 GET /v1/invites/me（getMyInvite）：已实名未满 18 回 30413 self_minor；否则 200 {can_invite, invite_code, landing_url, poster_url, direct_count}，inviterUnavailable(本人) 时码 / 链接 / 海报为 null、direct_count 照常；接通 growth 的实名端口；去掉该操作的 planned
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二波第二批；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md §A.6、§A.8）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审（E1：原拟 Codex 拼装，改 Claude）。
+# 依据：08 BR-INV-18（邀请页）、BR-INV-19（未成年 30413）、BR-INV-16（direct_count 口径：parent_id=本人且无 done 注销单，冷静期 / 封禁下级仍计）、BR-INV-02 inviter_unavailable；契约 getMyInvite（CT-15p，poster_url 可空，E11）。BR-INV-18 加一跳约 16KB，连同摘录超 24KB，refs 置空，由编排者摘入（E13）。
+# 范围：控制器挂 B1-11e 建的 GrowthModule；10005 由 B1-02za 守卫 ⑧；verified_minor = 实名出生日期经 reachedAgeAt(birth, 18) 判（B1-13c），调用方算好传 inviterUnavailable（E17）；风险状态经 risk 只读读取；注销只认 users.status='deleted'（TODO blocked on B1-15）。
+# landing_url = `https://{share_domains[0]}/i/{invite_code}`（share_domains 项是裸域名，见契约 ConfigResponse 样例），不带 UID / 手机号 / 昵称；poster_url 恒 null + TODO(规划/11 §2.3) blocked on 服务端出图任务（TECH-13）。
+# 装配：app.module 把 B1-13d 导出的实名只读读取接到 growth 的实名端口（同时去掉 B1-11d 留的 TODO blocked on B1-13d，绑定与邀请页同用）。
+# 编排已定（2026-10-17，E23–E31 按默认，见 IDENTITY-tips/batch2-ledger/report.md）：share_domains 为空或首项非法 → 默认 can_invite 照常、landing_url=null 并 warn（不编造域名）。
+# 契约三件（去 planned + pnpm codegen 重生成，不手改生成物）写进 paths（Claude 实现，先例 B1-02s）。模型：Opus 5.5。测试标题 AC-B1-11j#n（E14）。
+refs: []
+refs_hash: {}
+deps: [B1-11e, B1-11d, B1-11c, B1-13d, CT-15p, B1-02za]
+paths:
+  - 'apps/api/src/modules/growth/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/growth/invites-me/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/growth/invites-me/**'
+status: todo
