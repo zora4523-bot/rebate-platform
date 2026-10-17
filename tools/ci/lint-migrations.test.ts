@@ -193,6 +193,7 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'ledger_entries',
     'ledger_entries_default',
     'account_balances',
+    'daily_balances',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
