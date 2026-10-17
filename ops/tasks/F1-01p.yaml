@@ -1,0 +1,19 @@
+id: F1-01p
+repo: rebate-platform
+title: 依赖：H5 加 tiptap 静态渲染 3.31.4（@tiptap/static-renderer、@tiptap/core、@tiptap/pm、@tiptap/starter-kit、@tiptap/extension-image），供文章正文（tiptap JSON）按节点白名单渲染
+type: deps
+# 2026-10-18 入账（前端线 f1-frontend-7）。编排 2026-10-17 裁定 Article.body = tiptap JSON 文档序列化字符串、节点白名单（段落、标题、粗斜体、链接、有序 / 无序列表、图片仅 media CDN、引用、分隔线），
+# H5 用 @tiptap/static-renderer 的 renderToReactElement 渲染（规划 05 F1-03；规划 04 已回写 couli#119）。approvals 第 3 条：基线外依赖须发布满 7 天、许可证白名单、另一家评审。
+# 选 3.31.4（2026-09-30 发布；最新 3.32.0 为 10-13 发布未满 7 天），五个包均 MIT，peer react ^19 满足；版本写精确值。只加 apps/h5 dependencies 与锁文件，不改 scripts；
+# 体积按单路由 150KB 预算在 F1-03a 实测。锁文件属保护路径第二类，合并要负责人标签（approvals 第 24 条）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/h5/package.json'
+  - 'pnpm-lock.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo

@@ -1,0 +1,21 @@
+id: F1-06zg
+repo: rebate-platform
+title: 后台「配置中心」页：按权限点（config.*）列出配置项（分组、当前值、默认、生效范围、最近修改），侧滑抽屉编辑（类型校验、保存走二次验证与确认）、批量保存、历史版本与回滚，错误码对照
+type: impl
+# 2026-10-18 入账（前端线 f1-frontend-7）。approvals 第 34 条：Claude 实现，Codex 写规则测试与浏览器测试并对抗评审；截图对照定稿画板 AdmConfigCenter、AdmConfigItemDrawer（design-hifi 10-05 定稿批，decisions-admin-config.md）。
+# 后端 F1-10e（/admin/v1/config-items 列表、读、写、批量、版本、回滚）已合并、不再 planned。配置项含经营与资金参数（提现上限、自动到账条件等），页面只做界面与接口提供的校验提示，取值与保存时校验以服务端为准，不在前端写死规则。
+refs: []
+refs_hash: {}
+deps: [F1-10e, F1-06r, F1-06zb]
+paths:
+  - 'apps/admin/src/pages/config-center/**'
+  - 'apps/admin/src/texts/config-center.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-config-center/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-config-center/**'
+status: todo
