@@ -1,0 +1,6 @@
+raw_code,event,source,verified,note
+0,PLATFORM_PAID,doc,false,已支付
+1,PLATFORM_PAID,doc,false,已成团
+2,PLATFORM_RECEIVED,doc,false,确认收货
+3,PLATFORM_RECEIVED,doc,false,审核成功（实测前不算已结算，BR-FUND-02）
+5,PLATFORM_SETTLED,doc,false,已经结算
