@@ -28,6 +28,8 @@ import type { Transaction } from 'kysely';
 import { newUuidV7, type Clock, type TokenPrincipal } from '../../platform/index.ts';
 import type { TokenService } from './access-tokens.ts';
 
+export type LoginMethod = 'sms' | 'wechat' | 'apple' | 'huawei' | 'merge';
+
 export interface IssuedSession {
   readonly sid: string;
   readonly access_token: string;
@@ -65,7 +67,7 @@ export function accessExpiry(token: string, like: Date): Date {
 export async function createSession(
   transaction: Transaction<DB>,
   principal: Omit<TokenPrincipal, 'sid'>,
-  deps: { clock: Clock; tokens: TokenService },
+  deps: { clock: Clock; tokens: TokenService; loginMethod?: LoginMethod },
   afterCreated?: (transaction: Transaction<DB>, session: IssuedSession) => Promise<void>,
 ): Promise<IssuedSession> {
   const { clock, tokens } = deps;
@@ -88,6 +90,7 @@ export async function createSession(
       id: newUuidV7(now),
       app_id: principal.app_id,
       sid,
+      login_method: deps.loginMethod ?? null,
       user_id: principal.uid,
       device_id: principal.device_id,
       revoked_at: null,

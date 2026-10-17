@@ -26,6 +26,7 @@ import { PHONE_BLIND_INDEX_CONTEXT } from '../domain/registration.ts';
 import type { RegistrationOptions } from './registration.ts';
 import type { SmsHooks, SmsPurpose } from './sms-codes.ts';
 import type { SmsLoginOptions } from './sms-login.ts';
+import type { OauthLoginOptions } from './oauth-login.ts';
 
 /** Rule codes of identity's own refusals (orchestrator ruling B1-03d, to be registered in 06). */
 export const SMS_BLOCKED_PREFIX_RULE = 'SMS_BLOCKED_PREFIX';
@@ -38,6 +39,7 @@ const ACCOUNT_DELETION_ACTION = 'account_deletion';
 export interface IdentityRiskPorts {
   readonly smsHooks: Pick<SmsHooks, 'phoneBlocklist' | 'blockedPrefix'>;
   readonly login: Pick<SmsLoginOptions, 'registrationBlocklist' | 'recordDeviceLimit'>;
+  readonly oauthLogin: Pick<OauthLoginOptions, 'registrationBlocklist'>;
   readonly registration: Pick<RegistrationOptions, 'allowBlockedRegistration'>;
 }
 
@@ -47,6 +49,24 @@ function requestTypeOf(purpose: SmsPurpose): 'register' | null {
 
 export function identityRiskPorts(risk: BlocklistService, crypto: FieldCrypto): IdentityRiskPorts {
   return {
+    oauthLogin: {
+      async registrationBlocklist(trx, input) {
+        // This existing read port requires a phone digest. Empty is not a phone HMAC;
+        // only device hits are applicable to a third-party registration.
+        const block = await risk.matchRegistration(trx, {
+          ...input,
+          phone_hmac: '',
+          related_phone: '',
+        });
+        const hits = block?.hits.filter((hit) => hit.dimension === 'device') ?? [];
+        if (block === null || hits.length === 0) return null;
+        // B1-02d D24: no phone to associate with a blocked_request; return only the refusal.
+        return {
+          code: 44001,
+          data: block.data,
+        };
+      },
+    },
     smsHooks: {
       async phoneBlocklist(request) {
         if (request.purpose === 'step_up' && request.action === ACCOUNT_DELETION_ACTION) {

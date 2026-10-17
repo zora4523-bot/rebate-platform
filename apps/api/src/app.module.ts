@@ -43,6 +43,7 @@ import {
   TOKEN_CHECK,
   STEP_UP_CHECK,
   createSmsSender,
+  createThirdPartyIdentity,
   smsSenderToken,
   createIdentityAttrCodeReader,
   createIdentityCallerContext,
@@ -273,6 +274,11 @@ function identityModule(): DynamicModule {
                 }
               },
             },
+    },
+    thirdPartyIdentity: {
+      inject: [APP_CONFIG, ROOT_LOGGER],
+      useFactory: (config: AppConfig, logger: RootLogger) =>
+        createThirdPartyIdentity(config.appEnv, logger),
     },
     config: {
       inject: [CLOCK, { token: DB, optional: true }],

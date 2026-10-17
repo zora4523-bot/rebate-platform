@@ -72,6 +72,7 @@ import {
   type SensitiveWords,
 } from './application/registration.ts';
 import { createSmsLoginService, type SmsLoginService } from './application/sms-login.ts';
+import { createOauthLoginService, type OauthLoginService } from './application/oauth-login.ts';
 import { identityRiskPorts, type IdentityRiskPorts } from './application/risk-ports.ts';
 import { createSmsRiskPorts, type SmsRiskPorts } from './application/sms-risk-ports.ts';
 import type { MinimumVersionReader } from './application/session-scope.ts';
@@ -84,6 +85,7 @@ import {
   ME,
   ME_READ_PORTS,
   OAUTH_ATTEMPTS,
+  OAUTH_LOGIN,
   REFRESH,
   SMS_CODES,
   SMS_LOGIN,
@@ -99,6 +101,7 @@ import { BindPhoneController } from './http/public/bind-phone.controller.ts';
 import { DevicesController } from './http/public/devices.controller.ts';
 import { H5TokenController } from './http/public/h5-token.controller.ts';
 import { OauthAttemptsController } from './http/public/oauth-attempts.controller.ts';
+import { OauthLoginController } from './http/public/oauth-login.controller.ts';
 import { StepUpController } from './http/public/step-up.controller.ts';
 import { LogoutController } from './http/public/logout.controller.ts';
 import { RefreshController } from './http/public/refresh.controller.ts';
@@ -254,6 +257,7 @@ export class IdentityModule {
         DevicesController,
         SmsCodesController,
         SmsLoginController,
+        OauthLoginController,
         RefreshController,
         LogoutController,
         OauthAttemptsController,
@@ -559,6 +563,61 @@ export class IdentityModule {
             db === undefined || redis === undefined || reader === null
               ? null
               : createOauthAttemptService({ db, redis, clock, config: reader }),
+        },
+        {
+          provide: OAUTH_LOGIN,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            IDENTITY_CONFIG,
+            OAUTH_ATTEMPTS,
+            THIRD_PARTY_IDENTITY,
+            TOKEN_SERVICE,
+            INVITE_CODE_WORDS,
+            RISK_PORTS,
+            SMS_RISK_PORTS,
+            PUSH_TOKENS,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            reader: IdentityConfigReader | null,
+            attempts: OauthAttemptService | null,
+            thirdPartyIdentity: ThirdPartyIdentityPort | null,
+            tokens: TokenService,
+            sensitiveWords: SensitiveWords,
+            risk: IdentityRiskPorts | null,
+            smsRisk: SmsRiskPorts,
+            pushTokens: SessionPushTokens | null,
+            db?: Kysely<Database>,
+            fieldCrypto?: FieldCrypto,
+          ): OauthLoginService | null =>
+            db === undefined || fieldCrypto === undefined || reader === null || attempts === null
+              ? null
+              : createOauthLoginService({
+                  db,
+                  clock,
+                  crypto: fieldCrypto,
+                  logger,
+                  versions: reader,
+                  config: reader,
+                  attempts,
+                  tokens,
+                  ...(thirdPartyIdentity === null ? {} : { thirdPartyIdentity }),
+                  ...(pushTokens === null ? {} : { pushTokens }),
+                  ...(risk === null ? {} : risk.oauthLogin),
+                  registration: createRegistrationService({
+                    clock,
+                    config: reader,
+                    crypto: fieldCrypto,
+                    logger,
+                    sensitiveWords,
+                    ...(risk === null ? {} : risk.registration),
+                    ...smsRisk.registration,
+                  }),
+                }),
         },
         {
           provide: STEP_UP,
