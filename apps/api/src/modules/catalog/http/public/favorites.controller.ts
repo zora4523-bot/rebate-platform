@@ -7,8 +7,11 @@
 // - The subject is the verified token only (app_id, uid, device_id); no header, query or body
 //   field names a user. The route schema comes from the contract; the three writes have no query
 //   parameter, so any query field is refused (20001) instead of being ignored.
-// - Writes run in platform idempotency's standard mode (the use cases open their own
-//   transactions); the stored response is written as is, so a replay equals the first answer.
+// - Writes run in platform idempotency's transactional mode (B1-28e, executeInTransaction): the
+//   use case runs inside runInFavoritesTransaction with the idempotency transaction, so the
+//   favorites write and the `completed` record commit together or not at all (a crash before the
+//   record is written leaves neither); the stored response is written as is, so a replay equals
+//   the first answer. A refusal (20001) is not stored and rolls everything back.
 // - A product key must parse against the platform dictionary and belong to the path's (or the
 //   item's) platform, as the detail route checks (BR-PROD-03), else 20001 naming the field.
 // - FavoriteError → 20001 with its data (reason favorites_full, or fields).
@@ -42,6 +45,7 @@ import {
 } from '../../../platform/index.ts';
 import type { Catalog, PlatformRecord } from '../../domain/types.ts';
 import { FavoriteError } from '../../favorites/errors.ts';
+import { runInFavoritesTransaction } from '../../favorites/transaction.ts';
 import type { FavoriteKey, FavoriteListItem, FavoritesService } from '../../favorites/types.ts';
 
 /** Nest injection token of the favorites route ports (built by CatalogModule). */
@@ -169,7 +173,7 @@ export class FavoritesController {
       throw new Error('catalog: favorites writes need the idempotency primitive');
     }
     const key = request.headers['idempotency-key'];
-    const result = await idempotency.execute(
+    const result = await idempotency.executeInTransaction(
       {
         appId: principal.app_id,
         actor: { userId: principal.uid, deviceId: principal.device_id, phoneHmac: null },
@@ -179,9 +183,9 @@ export class FavoritesController {
         body,
         traceId: request.id,
       },
-      async () => {
+      async (trx) => {
         try {
-          return await work();
+          return await runInFavoritesTransaction(trx, work);
         } catch (error: unknown) {
           const refused = favoriteRefusal(error, request.id);
           if (refused === undefined) throw error;
