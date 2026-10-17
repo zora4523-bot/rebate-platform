@@ -5,6 +5,7 @@ type: impl
 # 草稿 2026-10-17（W1 线第十棒，订单线）。来源：B1-08g 规则测试过审范围外（D10-33）——B1-08g 只实现调度器、处理器、水位与队列目录，worker 入口 entry.ts 与 app.module.ts 不在其路径，合并后生产 worker 不会运行增量同步；B1-08f 的映射函数不读文件，装配层读 csv。
 # 约束（#612 评审）：调度器不得在模块初始化 / 入口启动时投递（冻结 test/spec/risk/freeze-expiry/scheduling.test.ts:121,124、test/spec/agent/stream-recovery/module.test.ts:146 零投递）；entry.ts 取调度器照现有可选写法（取不到不报错、有 start 才调用；冻结 test/spec/risk/freeze-expiry-heal/entry.test.ts:73,135、test/spec/agent/stream-recovery/entry.test.ts:110）。
 # B1-08h 的只读端口（推广位 pids、账号 sync_start_at、用户 attr_code、淘宝绑定区间）在 union / linking / identity 的实现与装配也在本任务（D10-35，AGENTS 硬规则 8：跨模块只经对方 index.ts）；返利首态端口 rebate.onImported 在 settlement 立项前接 TODO 空实现。
+# B1-08g Codex 评审 r2（D10-36）：装配 SyncAccessPort 时必须提供 queryableAccount(platform)（本部署联盟凭据对应的 union_account_id），规则测试须断言生产装配提供了它；否则同平台多个联盟账号时会用 A 的凭据推进 B 的水位。
 # 分工：orders 在 Codex 实现禁区 → impl claude、tester codex。
 refs: []
 refs_hash: {}
