@@ -21,6 +21,7 @@ import {
   historyPage,
   itemOf,
   keyInvalid,
+  member,
   normalized,
   normalizedVersion,
   putRow,
@@ -326,3 +327,72 @@ it('[AC-F1-10e#36] 写按令牌的 app 隔离：别的 app 同键同版本的行
   expect(await snapshot(h, otherApp)).toStrictEqual(foreign2);
   expect(await current(h, f.appId, KEYS.generalFlag)).toMatchObject({ value: true, version: 3 });
 });
+
+it.each([
+  ['invite.bind_phone_guide', 'invite.before_buy_tip'],
+  ['invite.before_buy_tip', 'invite.bind_phone_guide'],
+] as const)(
+  '[AC-F1-10e#55] BR-INV-21：持 config.general 的管理员把 %s 由 true 改 false 再改回 true，每次 version+1、历史 / 审计 / 告警各一，另一提醒键 %s 不动',
+  async (key, otherKey) => {
+    const f = await setup(h);
+    await putRow(h, f.appId, key, true); // seed-style row: version 1, no history
+    await putRow(h, f.appId, otherKey, true);
+    const untouched = await current(h, f.appId, otherKey);
+    const { who, token } = await member(h, f, ['config.general']);
+    const caller = { ...f, token };
+    const steps = [
+      { from: true, to: false, version: 1 },
+      { from: false, to: true, version: 2 },
+    ];
+    for (const step of steps) {
+      const before = await snapshot(h, f.appId);
+      const seen = f.lines.length;
+      const item = await success<Item>(
+        await update(caller, key, { value: step.to, expected_version: step.version }),
+        'update',
+      );
+      const now = f.clock.now().toISOString();
+      expect(normalized(item)).toStrictEqual(
+        itemOf(key, {
+          value: step.to,
+          version: step.version + 1,
+          updated_by: who.username,
+          updated_at: now,
+        }),
+      );
+      expect(await current(h, f.appId, key)).toMatchObject({
+        value: step.to,
+        version: step.version + 1,
+        updated_by: who.username,
+      });
+      const after = await snapshot(h, f.appId);
+      const ids = new Set(before.versions.map((v) => `${v.key}:${v.version}`));
+      const added = after.versions.filter((v) => !ids.has(`${v.key}:${v.version}`));
+      expect(added).toHaveLength(1);
+      expect(added[0]).toMatchObject({
+        key,
+        version: step.version + 1,
+        value: step.to,
+        updated_by: who.username,
+        updated_by_admin_id: who.id,
+      });
+      const audits = await auditsSince(h, f.appId, before);
+      expect(audits).toHaveLength(1);
+      expectAudit(audits[0]!, f, who, 'config_item_change', {
+        key,
+        from: step.version,
+        to: step.version + 1,
+        before: step.from,
+        after: step.to,
+      });
+      expectAlerted(f.lines, seen, [key]);
+      expect(alertsSince(f.lines, seen)).toHaveLength(1);
+      expect(await current(h, f.appId, otherKey)).toStrictEqual(untouched);
+      expect(await versionsOf(h, f.appId, otherKey)).toStrictEqual([]);
+    }
+    expect((await versionsOf(h, f.appId, key)).map((v) => [v.version, v.value])).toStrictEqual([
+      [2, false],
+      [3, true],
+    ]);
+  },
+);
