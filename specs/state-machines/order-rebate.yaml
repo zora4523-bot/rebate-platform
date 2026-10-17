@@ -1,0 +1,377 @@
+# 订单返利状态 orders.rebate_status 的状态机（规划/04 §4.1；规划/08 BR-FUND-01 rebate_status 迁移表 R1–R14，
+# 含 R3a、R3b、R5a、R9b；R14 为自迁移）。迁移表只在 08 维护；本文件按 SPEC_REF 逐行转写，生成
+# packages/domain/src/state-machines/order-rebate.gen.ts（node packages/domain/scripts/state-machines.ts；--verify 只比对）。
+# 生成物勿手改，改这里再生成。
+#
+# 写法约定（CT-04a 编排口径 D10-26）：
+# - from 中 null 表示「—」（入库首态）；to 为 same 表示「不变」。
+# - guard 是原文「守卫」列文字（原文为「—」的照写），只作说明，transition() 不求值；守卫、记账与副作用由调用方负责。
+# - 原文事件列没有编码的，用大写蛇形名，并在每行上方注释写出事件原文；一格里有多个事件的拆成同编号的多行。
+# - 「到」列按情况分流的（R2、R3、R3a、R12），yaml 写基准值，分流由调用方判断，见各行注释。
+#
+# 原文表外说明（逐字）：
+# R9 与 R9b 的判定：同一次同步中 refunded_quantity 增加，或存在对应的 order_rights → R9；否则有新的结算记录
+# （BR-FUND-09 seq 变化）→ R10；否则只有预估佣金变化 → R9b。R9、R10 两路的终态分流相同（2026-10-03 第 2 轮评审后修改）：
+# 新的有效联盟佣金（正数部分）为 0，不论原基数是否为 0、不论原因 → 按 R8 整单扣回、转 CLAWED_BACK；原基数大于 0 而新基数为 0
+# → 同样按 R8；新旧基数都为 0 而新的有效联盟佣金大于 0（只因预留比例使基数为 0，BR-FUND-05）→ 仍走 R9 或 R10，只调平台金额
+# 并成对更新 booked_base_fen 与 booked_n_fen，订单保持 CREDITED，之后的退款与结算变化照常按本段处理。
+# 同一次更新同时满足逆向事件（R8、R9）与结算额变化（R10）时：先写结算记录，再按逆向事件记 CLAWBACK，差额按新基数与当前净额计算；
+# R10 随后重算，差额为 0 不写（2026-10-03 资金规则对齐，方案 §2 R-27）。
+# VOID、CLAWED_BACK 是终态：订单同步等自动事件不得让订单离开，只有人工恢复（R12、R13，BR-FUND-22）可以离开；
+# R3b 在 VOID 上只写归属、状态不变（2026-10-03 资金规则对齐方案 §8 O-03）。
+name: order-rebate
+field: rebate_status
+states: [UNATTRIBUTED, ESTIMATED, WAITING, CREDITED, VOID, CLAWED_BACK]
+# 事件编码与原文对照：
+# IMPORT_UNATTRIBUTED 入库未归因；IMPORT_ATTRIBUTED 入库已归因；
+# CLAIM_APPROVED、ADMIN_REASSIGN、SYNC_ATTRIBUTED、SETTLE_BATCH_CREDIT、BENEFICIARY_RELEASE、BLACKLIST_CONFIRMED、
+# HOLD、UNHOLD、ADMIN_RESTORE 为原文编码；
+# PLATFORM_RECEIVED_OR_SETTLED platform_status→RECEIVED 或 SETTLED；
+# PLATFORM_INVALID 整单失效；RIGHTS_FULL 全额维权；PUNISH 处罚；BLACKLIST_HIT 黑名单；
+# BASE_ZERO 有效基数 B_est 由 >0 变 0（R6）/ 原基数大于 0 而有效基数变 0（R8）；
+# COMMISSION_POSITIVE_ZERO 有效联盟佣金的正数部分由 >0 变 0；
+# REFUND_AFTER_SETTLE、INVALID_AFTER_SETTLE 结算后退款或失效（编码取自 BR-FUND-08）；
+# PARTIAL_REFUND 部分退款；RIGHTS_PARTIAL 部分维权；COMMISSION_CHANGED 佣金变化；
+# ESTIMATE_CHANGED 结算记录未变而预估佣金变化；
+# SETTLE_NEGATIVE_DIFF 负差；SETTLE_POSITIVE_DIFF_APPROVED 正差补差候选获批。
+events:
+  - IMPORT_UNATTRIBUTED
+  - IMPORT_ATTRIBUTED
+  - CLAIM_APPROVED
+  - ADMIN_REASSIGN
+  - SYNC_ATTRIBUTED
+  - PLATFORM_RECEIVED_OR_SETTLED
+  - SETTLE_BATCH_CREDIT
+  - BENEFICIARY_RELEASE
+  - PLATFORM_INVALID
+  - RIGHTS_FULL
+  - PUNISH
+  - BLACKLIST_HIT
+  - BASE_ZERO
+  - PARTIAL_REFUND
+  - RIGHTS_PARTIAL
+  - COMMISSION_CHANGED
+  - REFUND_AFTER_SETTLE
+  - INVALID_AFTER_SETTLE
+  - COMMISSION_POSITIVE_ZERO
+  - BLACKLIST_CONFIRMED
+  - ESTIMATE_CHANGED
+  - SETTLE_NEGATIVE_DIFF
+  - SETTLE_POSITIVE_DIFF_APPROVED
+  - HOLD
+  - UNHOLD
+  - ADMIN_RESTORE
+transitions:
+  # R1 | — | 入库未归因 | — | UNATTRIBUTED | 记账：无
+  - id: R1
+    from: [null]
+    event: IMPORT_UNATTRIBUTED
+    to: UNATTRIBUTED
+    guard: '—'
+    test_id: SM-REB-R1
+  # R2 | — | 入库已归因 | — | ESTIMATED（platform_status 已为 RECEIVED/SETTLED 时同事务再按 R4 进 WAITING；
+  # platform_status 为 INVALID（P13）时不生成快照，同一事务按 R6 置 VOID） |
+  # 记账：无；platform_status ∈ {PAID, RECEIVED, SETTLED} 时同事务生成分佣快照，DEPOSIT_PAID 时在之后 P2（→PAID）
+  # 或 P14 的同一事务内生成，INVALID 不生成（BR-CALC-10）
+  # 「到」写基准值 ESTIMATED；再按 R4 进 WAITING、按 R6 置 VOID 由调用方在同一事务内另行调用 transition。
+  - id: R2
+    from: [null]
+    event: IMPORT_ATTRIBUTED
+    to: ESTIMATED
+    guard: '—'
+    test_id: SM-REB-R2
+  # R3 | UNATTRIBUTED | CLAIM_APPROVED / ADMIN_REASSIGN | orders.locked=false（未被其他用户认领或改派） |
+  # ESTIMATED；platform_status 已为 RECEIVED/SETTLED 则直接 WAITING（settle_period 按原 received_at 取，BR-FUND-04） |
+  # 记账：无分录；同事务设置 user_id、user_basis（CLAIM_APPROVED→claim，ADMIN_REASSIGN→admin；BR-ATTR-09），locked=true；
+  # platform_status ≠ DEPOSIT_PAID 时同事务生成分佣快照（BR-CALC-10；等级与上级取 paid_at 时刻，BR-CALC-12）
+  # 「到」按 R2 写 ESTIMATED；平台已为 RECEIVED / SETTLED 时由调用方再按 R4 进 WAITING。
+  - id: R3
+    from: [UNATTRIBUTED]
+    event: CLAIM_APPROVED
+    to: ESTIMATED
+    guard: 'orders.locked=false（未被其他用户认领或改派）；平台已为 RECEIVED / SETTLED 时由调用方再按 R4 进 WAITING'
+    test_id: SM-REB-R3
+  - id: R3
+    from: [UNATTRIBUTED]
+    event: ADMIN_REASSIGN
+    to: ESTIMATED
+    guard: 'orders.locked=false（未被其他用户认领或改派）；平台已为 RECEIVED / SETTLED 时由调用方再按 R4 进 WAITING'
+    test_id: SM-REB-R3
+  # R3a | UNATTRIBUTED | SYNC_ATTRIBUTED（同步重跑用户归属成功，BR-ATTR-16） | orders.locked=false |
+  # ESTIMATED；platform_status 已为 RECEIVED/SETTLED 则 WAITING（settle_period 按原 received_at 取，BR-FUND-04） |
+  # 记账：无分录；写 user_id、user_basis=param，不置 locked；platform_status ≠ DEPOSIT_PAID 时同事务按 BR-CALC-10 生成分佣快照
+  # 「到」按 R2 写 ESTIMATED；平台已为 RECEIVED / SETTLED 时由调用方再按 R4 进 WAITING。
+  - id: R3a
+    from: [UNATTRIBUTED]
+    event: SYNC_ATTRIBUTED
+    to: ESTIMATED
+    guard: 'orders.locked=false；平台已为 RECEIVED / SETTLED 时由调用方再按 R4 进 WAITING'
+    test_id: SM-REB-R3a
+  # R3b | VOID 且 user_id 为空 | ADMIN_REASSIGN / SYNC_ATTRIBUTED（同步重跑用户归属成功，BR-ATTR-16） | orders.locked=false |
+  # VOID 不变 | 记账：ADMIN_REASSIGN：只写 user_id、user_basis=admin、locked=true；SYNC_ATTRIBUTED：只写 user_id、
+  # user_basis=param，不置 locked；都不生成快照、无分录。用户找回不受理 VOID 订单（BR-ATTR-17 ④c、BR-ATTR-18），
+  # 本迁移不含 CLAIM_APPROVED（负责人 2026-10-03 资金规则对齐决-07 选 A）
+  - id: R3b
+    from: [VOID]
+    event: ADMIN_REASSIGN
+    to: same
+    guard: 'VOID 且 user_id 为空；orders.locked=false'
+    test_id: SM-REB-R3b
+  - id: R3b
+    from: [VOID]
+    event: SYNC_ATTRIBUTED
+    to: same
+    guard: 'VOID 且 user_id 为空；orders.locked=false'
+    test_id: SM-REB-R3b
+  # R4 | ESTIMATED | platform_status→RECEIVED 或 SETTLED | （守卫见 guard） | WAITING |
+  # 记账：无（写 received_synced_at、settle_period，BR-FUND-04）
+  - id: R4
+    from: [ESTIMATED]
+    event: PLATFORM_RECEIVED_OR_SETTLED
+    to: WAITING
+    guard: 'received_at 已按 BR-FUND-02 取得（平台返回的收货、完成时间，或 P5、P12 的结算时间）；取不到时不迁移，订单进待处理表'
+    test_id: SM-REB-R4
+  # R5 | WAITING | SETTLE_BATCH_CREDIT（所在结算批次经人工确认后执行，BR-FUND-04） | （守卫见 guard） | CREDITED |
+  # 记账：按 BR-FUND-05 写入账凭证：份额为 0 的受益人不写，平台凭证（留存 + 预留）大于 0 就写，全部为 0 时不写凭证、只迁移状态；
+  # 被剥夺的受益人写平台 FORFEIT 凭证（BR-CALC-13）；B_credit=0 不推送入账
+  - id: R5
+    from: [WAITING]
+    event: SETTLE_BATCH_CREDIT
+    to: CREDITED
+    guard: 'BR-FUND-04 ④ 一致性校验通过且 ⑦ 执行校验通过'
+    test_id: SM-REB-R5
+  # R5a | CREDITED | BENEFICIARY_RELEASE（受益人 held→active，BR-CALC-13；正差被延后的受益人恢复正常同此） |
+  # （守卫见 guard） | 不变 |
+  # 记账：该受益人按其待补记义务（beneficiary_credit_id，BR-FUND-04 ⑫）单独入账，金额取该义务执行时的剩余未履约金额
+  # （按执行时的 booked_base_fen 与快照比例重拆的份额 − 当前净额；份额已被其他事务处置的义务已在该事务关闭，不再执行），
+  # 凭证与义务完成同事务；首次入账义务 uniq_key 沿用 `{order_key}:{uid}:{role}:CREDIT`（保证只入一次），
+  # 改派入账义务用 R14 的 REASSIGN_CREDIT 键，延后差额义务用 `{order_key}:{uid}:{role}:ADJ:DEFERRED:{beneficiary_credit_id}`
+  # （同一条结算记录下再次补记也不撞键）；转没收时：首次入账、改派入账义务为首次整份没收，份额记平台：
+  # 首次入账义务 `{order_key}:PLATFORM:FORFEIT:{uid}:{role}`，改派入账义务
+  # `{order_key}:PLATFORM:FORFEIT:{uid}:{role}:REASSIGN:{reassign_id}`（与 R14 当时的没收同键）（BR-CALC-13，追加 forfeited 事件）；
+  # 延后差额义务只没收剩余未履约金额，记 `{order_key}:PLATFORM:FORFEIT:{uid}:{role}:DEFERRED:{beneficiary_credit_id}`，
+  # 不追加 forfeited 事件，已入账部分照常参与之后的扣回与补差（BR-FUND-04 ⑫）（默认处理，待财务确认）
+  - id: R5a
+    from: [CREDITED]
+    event: BENEFICIARY_RELEASE
+    to: same
+    guard: '该受益人的补记项通过 BR-FUND-04 ⑫ 的执行重验（订单为 CREDITED、rights_pending=false、结算记录 seq 未变、归属快照未变、该待补记义务未完成，且本单 BR-FUND-19 ⑤ 等式成立）；BR-FUND-04 ⑦ 的「仍为 WAITING」不适用；在解除后的下一个结算批次（含补充批次）处理'
+    test_id: SM-REB-R5a
+  # R6 | UNATTRIBUTED / ESTIMATED / WAITING | 整单失效 / 全额维权 / 处罚 / 黑名单 / 有效基数 B_est 由 >0 变 0 |
+  # （守卫见 guard，只约束基数归零分支） | VOID（终态） | 记账：无（BR-FUND-07）
+  # 事件原文：整单失效 → PLATFORM_INVALID
+  - id: R6
+    from: [UNATTRIBUTED, ESTIMATED, WAITING]
+    event: PLATFORM_INVALID
+    to: VOID
+    guard: '基数归零分支：platform_status ≠ DEPOSIT_PAID，且新 B_est 非 null；B_est 按 BR-CALC-02 由有效联盟佣金换算，结算佣金已到之后预估单独变化不触发（BR-FUND-07）'
+    test_id: SM-REB-R6
+  # 事件原文：全额维权 → RIGHTS_FULL
+  - id: R6
+    from: [UNATTRIBUTED, ESTIMATED, WAITING]
+    event: RIGHTS_FULL
+    to: VOID
+    guard: '基数归零分支：platform_status ≠ DEPOSIT_PAID，且新 B_est 非 null；B_est 按 BR-CALC-02 由有效联盟佣金换算，结算佣金已到之后预估单独变化不触发（BR-FUND-07）'
+    test_id: SM-REB-R6
+  # 事件原文：处罚 → PUNISH
+  - id: R6
+    from: [UNATTRIBUTED, ESTIMATED, WAITING]
+    event: PUNISH
+    to: VOID
+    guard: '基数归零分支：platform_status ≠ DEPOSIT_PAID，且新 B_est 非 null；B_est 按 BR-CALC-02 由有效联盟佣金换算，结算佣金已到之后预估单独变化不触发（BR-FUND-07）'
+    test_id: SM-REB-R6
+  # 事件原文：黑名单 → BLACKLIST_HIT（BR-FUND-07 写作 BLACKLIST_HIT）
+  - id: R6
+    from: [UNATTRIBUTED, ESTIMATED, WAITING]
+    event: BLACKLIST_HIT
+    to: VOID
+    guard: '基数归零分支：platform_status ≠ DEPOSIT_PAID，且新 B_est 非 null；B_est 按 BR-CALC-02 由有效联盟佣金换算，结算佣金已到之后预估单独变化不触发（BR-FUND-07）'
+    test_id: SM-REB-R6
+  # 事件原文：有效基数 B_est 由 >0 变 0 → BASE_ZERO（订单原因码 COMMISSION_ZERO，BR-FUND-07）
+  - id: R6
+    from: [UNATTRIBUTED, ESTIMATED, WAITING]
+    event: BASE_ZERO
+    to: VOID
+    guard: '基数归零分支：platform_status ≠ DEPOSIT_PAID，且新 B_est 非 null；B_est 按 BR-CALC-02 由有效联盟佣金换算，结算佣金已到之后预估单独变化不触发（BR-FUND-07）'
+    test_id: SM-REB-R6
+  # R7 | ESTIMATED / WAITING | 部分退款 / 部分维权 / 佣金变化 | （守卫见 guard） | 不变 | 记账：无（重算预估）
+  # 事件原文：部分退款 → PARTIAL_REFUND
+  - id: R7
+    from: [ESTIMATED, WAITING]
+    event: PARTIAL_REFUND
+    to: same
+    guard: '新 B>0，或原 B 已为 0，或原 B 为 null（从未收到佣金数值，BR-FUND-07 细则「边界（佣金为空）」；2026-10-06 代理按 规划/11 §7.1 用 Jev 判断，置信度 0.66，规划/12 §9 F-21）'
+    test_id: SM-REB-R7
+  # 事件原文：部分维权 → RIGHTS_PARTIAL
+  - id: R7
+    from: [ESTIMATED, WAITING]
+    event: RIGHTS_PARTIAL
+    to: same
+    guard: '新 B>0，或原 B 已为 0，或原 B 为 null（从未收到佣金数值，BR-FUND-07 细则「边界（佣金为空）」；2026-10-06 代理按 规划/11 §7.1 用 Jev 判断，置信度 0.66，规划/12 §9 F-21）'
+    test_id: SM-REB-R7
+  # 事件原文：佣金变化 → COMMISSION_CHANGED
+  - id: R7
+    from: [ESTIMATED, WAITING]
+    event: COMMISSION_CHANGED
+    to: same
+    guard: '新 B>0，或原 B 已为 0，或原 B 为 null（从未收到佣金数值，BR-FUND-07 细则「边界（佣金为空）」；2026-10-06 代理按 规划/11 §7.1 用 Jev 判断，置信度 0.66，规划/12 §9 F-21）'
+    test_id: SM-REB-R7
+  # R8 | CREDITED | 整单失效 / 全额维权 / 处罚 / 结算后退款或失效 / 有效联盟佣金的正数部分由 >0 变 0（不论原基数是否为 0、
+  # 不论原因） / 原基数大于 0 而有效基数变 0（这两项均含结算佣金为负，BR-CALC-02） / 黑名单人工复核确认（BLACKLIST_CONFIRMED，
+  # 超管或有权限账号 step-up 确认，一人可完成，拍板第二批 §8 ADD-05；默认处理，待财务确认） | — | CLAWED_BACK（终态） |
+  # 记账：CLAWBACK（BR-FUND-08）；sub_type 与订单原因码按 BR-FUND-08 细则「sub_type 与订单原因码」映射，同一事务写 reason_code
+  # 事件原文：整单失效 → PLATFORM_INVALID
+  - id: R8
+    from: [CREDITED]
+    event: PLATFORM_INVALID
+    to: CLAWED_BACK
+    guard: '—'
+    test_id: SM-REB-R8
+  # 事件原文：全额维权 → RIGHTS_FULL
+  - id: R8
+    from: [CREDITED]
+    event: RIGHTS_FULL
+    to: CLAWED_BACK
+    guard: '—'
+    test_id: SM-REB-R8
+  # 事件原文：处罚 → PUNISH
+  - id: R8
+    from: [CREDITED]
+    event: PUNISH
+    to: CLAWED_BACK
+    guard: '—'
+    test_id: SM-REB-R8
+  # 事件原文：结算后退款或失效 → REFUND_AFTER_SETTLE（结算后退款）
+  - id: R8
+    from: [CREDITED]
+    event: REFUND_AFTER_SETTLE
+    to: CLAWED_BACK
+    guard: '—'
+    test_id: SM-REB-R8
+  # 事件原文：结算后退款或失效 → INVALID_AFTER_SETTLE（结算后失效）
+  - id: R8
+    from: [CREDITED]
+    event: INVALID_AFTER_SETTLE
+    to: CLAWED_BACK
+    guard: '—'
+    test_id: SM-REB-R8
+  # 事件原文：有效联盟佣金的正数部分由 >0 变 0（不论原基数是否为 0、不论原因） → COMMISSION_POSITIVE_ZERO
+  - id: R8
+    from: [CREDITED]
+    event: COMMISSION_POSITIVE_ZERO
+    to: CLAWED_BACK
+    guard: '—'
+    test_id: SM-REB-R8
+  # 事件原文：原基数大于 0 而有效基数变 0 → BASE_ZERO
+  - id: R8
+    from: [CREDITED]
+    event: BASE_ZERO
+    to: CLAWED_BACK
+    guard: '—'
+    test_id: SM-REB-R8
+  # 事件原文：黑名单人工复核确认（BLACKLIST_CONFIRMED，超管或有权限账号 step-up 确认，一人可完成）→ BLACKLIST_CONFIRMED
+  - id: R8
+    from: [CREDITED]
+    event: BLACKLIST_CONFIRMED
+    to: CLAWED_BACK
+    guard: '—'
+    test_id: SM-REB-R8
+  # R9 | CREDITED | 部分退款 / 部分维权 | （守卫见 guard） | 不变 |
+  # 记账：部分 CLAWBACK（BR-FUND-08）；新旧基数都为 0 时受益人应得与净额都为 0，只冲回平台金额，同样成对更新 booked_base_fen
+  # 与 booked_n_fen；受益人有未完成的待补记义务、本次把其剩余未履约金额归了平台的，同一事务关闭该义务（BR-FUND-04 ⑫）；
+  # 新的有效联盟佣金为 0，或原基数大于 0 而新基数为 0，不走本迁移，按迁移 R8
+  # 事件原文：部分退款 → PARTIAL_REFUND
+  - id: R9
+    from: [CREDITED]
+    event: PARTIAL_REFUND
+    to: same
+    guard: '新基数大于 0，或新旧基数都为 0 且新的有效联盟佣金大于 0（BR-FUND-05 基数为 0 仍记预留的订单）'
+    test_id: SM-REB-R9
+  # 事件原文：部分维权 → RIGHTS_PARTIAL
+  - id: R9
+    from: [CREDITED]
+    event: RIGHTS_PARTIAL
+    to: same
+    guard: '新基数大于 0，或新旧基数都为 0 且新的有效联盟佣金大于 0（BR-FUND-05 基数为 0 仍记预留的订单）'
+    test_id: SM-REB-R9
+  # R9b | CREDITED | 结算记录未变而预估佣金变化（含变为 0；价保、比价降佣、联盟佣金调整只反映在预估字段时） | — | 不变 |
+  # 记账：无分录：只存档 est_commission_fen，不改应得、不改 booked_base_fen 与 booked_n_fen；预估换算出的基数与 booked_base_fen
+  # 不同时，生成差错单「入账后预估佣金变化」并告警，同一子订单同一预估值只生成一次（开关 settle.estimate_change_diff.enabled，
+  # 默认 on；off 时只存档、不生成差错单）。原键 `ADJ:{sub_type}:v{commission_version}` 停用，不复用（2026-10-03 资金规则对齐决-01 选 A）
+  # 事件原文：结算记录未变而预估佣金变化 → ESTIMATE_CHANGED
+  - id: R9b
+    from: [CREDITED]
+    event: ESTIMATE_CHANGED
+    to: same
+    guard: '—'
+    test_id: SM-REB-R9b
+  # R10 | CREDITED | 结算基数（结算额按 BR-CALC-02 换算）低于 booked_base_fen，或与之相等而结算佣金的正数部分低于 booked_n_fen
+  # （负差，即时）/ 正差补差候选获批（含基数相等而结算佣金高于 booked_n_fen） | （守卫见 guard） | 不变 |
+  # 记账：SETTLE_ADJUST（BR-FUND-09）；各受益人差额的去向按 BR-CALC-09 的受益人状态规则；基数相等（含新旧基数都为 0）时
+  # 受益人差额为 0，只调平台金额，同样成对更新 booked_base_fen 与 booked_n_fen；受益人有未完成的待补记义务、本次把其剩余未履约金额
+  # 归了平台或补给了受益人的，同一事务关闭该义务（BR-FUND-04 ⑫）；新的结算佣金正数部分为 0（含为负，不论原基数是否为 0），
+  # 或原基数大于 0 而新基数为 0，不走本迁移，按迁移 R8
+  # 事件原文：结算基数低于 booked_base_fen，或与之相等而结算佣金的正数部分低于 booked_n_fen（负差，即时）→ SETTLE_NEGATIVE_DIFF
+  - id: R10
+    from: [CREDITED]
+    event: SETTLE_NEGATIVE_DIFF
+    to: same
+    guard: 'BR-FUND-09；新基数大于 0，或新旧基数都为 0 且新的结算佣金（正数部分）大于 0（BR-FUND-05 基数为 0 仍记预留的订单）'
+    test_id: SM-REB-R10
+  # 事件原文：正差补差候选获批（含基数相等而结算佣金高于 booked_n_fen）→ SETTLE_POSITIVE_DIFF_APPROVED
+  - id: R10
+    from: [CREDITED]
+    event: SETTLE_POSITIVE_DIFF_APPROVED
+    to: same
+    guard: 'BR-FUND-09；新基数大于 0，或新旧基数都为 0 且新的结算佣金（正数部分）大于 0（BR-FUND-05 基数为 0 仍记预留的订单）'
+    test_id: SM-REB-R10
+  # R11 | ESTIMATED / WAITING | HOLD / UNHOLD | BR-FUND-06 的角色 | 不变，hold=true/false | 记账：无
+  - id: R11
+    from: [ESTIMATED, WAITING]
+    event: HOLD
+    to: same
+    guard: 'BR-FUND-06 的角色；hold=true'
+    test_id: SM-REB-R11
+  - id: R11
+    from: [ESTIMATED, WAITING]
+    event: UNHOLD
+    to: same
+    guard: 'BR-FUND-06 的角色；hold=false'
+    test_id: SM-REB-R11
+  # R12 / R13 | VOID / CLAWED_BACK | ADMIN_RESTORE | 见 BR-FUND-22 | 见 BR-FUND-22 | 见 BR-FUND-22
+  # BR-FUND-22 原文：R12：VOID → 按当前 platform_status 回到 ESTIMATED 或 WAITING（WAITING 时 settle_period 按 received_at 取；
+  # 该周期批次已执行的，进入补充批次或下一周期批次，BR-FUND-04）；user_id 为空（未归因）的回到 UNATTRIBUTED
+  # （未归因池，可再被找回或改派，BR-ATTR-16）；不写分录。
+  # 「到」写基准值 ESTIMATED；按当前 platform_status 进 WAITING、user_id 为空回到 UNATTRIBUTED 的分流由调用方判断。
+  - id: R12
+    from: [VOID]
+    event: ADMIN_RESTORE
+    to: ESTIMATED
+    guard: '见 BR-FUND-22（差错单经 ADMIN_RESTORE 处理：超管或被勾选该权限的账号 step-up 后处理）；按当前 platform_status 回到 ESTIMATED 或 WAITING、user_id 为空的回到 UNATTRIBUTED，由调用方判断'
+    test_id: SM-REB-R12
+  # BR-FUND-22 原文：R13：CLAWED_BACK → CREDITED，按当前有效联盟佣金经 BR-CALC-02 换算出的基数与分佣快照重算各受益人与平台应得
+  # （平台应得含预留，BR-FUND-05），与当前净额（口径同 BR-FUND-08）的差额写 ADMIN_ADJUST（sub_type=RESTORE），
+  # uniq_key 受益人 `{order_key}:{user_id}:{role}:RESTORE:{差错单 id}`、平台 `{order_key}:PLATFORM:RESTORE:{差错单 id}`，
+  # 同事务 booked_base_fen = 新基数、booked_n_fen = 该联盟佣金的正数部分。
+  - id: R13
+    from: [CLAWED_BACK]
+    event: ADMIN_RESTORE
+    to: CREDITED
+    guard: '见 BR-FUND-22（差错单经 ADMIN_RESTORE 处理：超管或被勾选该权限的账号 step-up 后处理）'
+    test_id: SM-REB-R13
+  # R14 | ESTIMATED / WAITING / CREDITED | ADMIN_REASSIGN（已归属订单改派，BR-ATTR-20） |
+  # 有权限者 step-up 确认（一人可完成，ADD-05） | 不变（自迁移） |
+  # 记账：非 CREDITED：无分录，作废旧快照、按新 user_id 生成新快照；CREDITED：同事务先按账户红冲旧快照在本单上的净额——
+  # 旧受益人 `{order_key}:{old_uid}:{role}:REASSIGN_REV:{reassign_id}`，平台 `{order_key}:PLATFORM:REASSIGN_REV:{reassign_id}`
+  # （平台已入账净额，含旧快照的 FORFEIT，口径同 BR-FUND-08）——再按新快照重记：新受益人
+  # `{order_key}:{new_uid}:{role}:REASSIGN_CREDIT:{reassign_id}`，平台 `{order_key}:PLATFORM:REASSIGN_CREDIT:{reassign_id}`
+  # （留存 + 预留，BR-FUND-05）；重记时在 BR-FUND-16 的锁内逐受益人按 BR-CALC-13 判定：新受益人暂缓的不写凭证，开改派入账义务，
+  # 按 BR-FUND-04 ⑫ 的补记项入账；被剥夺的写 `{order_key}:PLATFORM:FORFEIT:{uid}:{role}:REASSIGN:{reassign_id}`
+  # （该次改派开立的义务之后转没收也用这个键）；各键都带本次 reassign_id，同一受益人或被剥夺者出现在前后两个快照里也不撞键，
+  # 金额为 0 的不写；同一事务作废旧受益人未完成的待补记义务（BR-FUND-04 ⑫）
+  - id: R14
+    from: [ESTIMATED, WAITING, CREDITED]
+    event: ADMIN_REASSIGN
+    to: same
+    guard: '有权限者 step-up 确认（一人可完成，ADD-05）'
+    test_id: SM-REB-R14
