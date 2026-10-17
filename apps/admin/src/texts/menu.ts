@@ -26,6 +26,7 @@ export const menuTexts = {
     content: '内容管理',
     messages: '消息模板',
     'app-versions': '版本管理',
+    'platform-icons': '平台标识',
     'commission-rules': '分佣规则',
     config: '配置中心',
     switches: '紧急开关',

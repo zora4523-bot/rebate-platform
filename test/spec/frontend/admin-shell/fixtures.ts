@@ -23,6 +23,7 @@ export const MENU = [
   ['运营', 'content', '内容管理', ['content.article', 'content.agreement']],
   ['运营', 'messages', '消息模板', ['content.article', 'content.fund_terms']],
   ['运营', 'app-versions', '版本管理', ['content.app_version']],
+  ['运营', 'platform-icons', '平台标识', ['content.platform_icon']],
   ['规则与配置', 'commission-rules', '分佣规则', ['config.business']],
   ['规则与配置', 'config', '配置中心', ['config.general', 'config.risk', 'config.business']],
   ['规则与配置', 'switches', '紧急开关', ['switch.all', 'switch.payout', 'switch.pay']],
