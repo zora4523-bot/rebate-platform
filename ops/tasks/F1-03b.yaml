@@ -1,0 +1,21 @@
+id: F1-03b
+repo: rebate-platform
+title: H5 帮助中心：帮助首页（分类入口与常见问题）、分类列表（游标分页）、帮助文章详情（复用文章正文渲染组件），含面向有返利经验用户的三个常见问题入口（BR-TEXT-18 细则），加载 / 空 / 出错三态
+type: impl
+# 2026-10-18 入账（前端线 f1-frontend-7）；分工同 F1-03a（approvals 第 34 条）。画板 Help、HelpCategory、HelpArticle 及 HelpArticle* 各篇（design-hifi 10-05 定稿批）；接口 /v1/articles?category=help。
+# 帮助正文由后台 CMS 维护（首版打进安装包的法务与帮助正文等负责人提供），页面只按接口渲染；常见问题过 BR-TEXT-13 与 BR-INV-20 词库扫描属内容侧，不在页面任务。
+refs: []
+refs_hash: {}
+deps: [F1-03a]
+paths:
+  - 'apps/h5/src/entries/app/pages/help/**'
+  - 'apps/h5/src/entries/app/routes.ts'
+  - 'apps/h5/src/texts/help.ts'
+test_paths:
+  - 'test/spec/frontend/h5-help/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-help/**'
+status: todo

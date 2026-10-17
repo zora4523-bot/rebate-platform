@@ -1,0 +1,22 @@
+id: F1-03c
+repo: rebate-platform
+title: H5 公告与协议：公告列表（NoticeItem 摘要、游标分页）与公告详情、协议页（文章分类 agreement，按 article_id 与可选 version 读取指定版本），复用文章正文渲染组件，加载 / 空 / 出错三态
+type: impl
+# 2026-10-18 入账（前端线 f1-frontend-7）；分工同 F1-03a（approvals 第 34 条）。画板 Notice、NoticeDetail、Agreement、LaborAgreement（design-hifi 10-05 定稿批）；接口 /v1/articles?category=notice|agreement、/v1/articles/{article_id}?version=。
+refs: []
+refs_hash: {}
+deps: [F1-03a, F1-03b]
+paths:
+  - 'apps/h5/src/entries/app/pages/notices/**'
+  - 'apps/h5/src/entries/app/pages/agreements/**'
+  - 'apps/h5/src/entries/app/routes.ts'
+  - 'apps/h5/src/texts/notices.ts'
+  - 'apps/h5/src/texts/agreements.ts'
+test_paths:
+  - 'test/spec/frontend/h5-notices/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-notices/**'
+status: todo
