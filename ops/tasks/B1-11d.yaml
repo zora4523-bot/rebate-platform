@@ -4,6 +4,7 @@ title: growth 绑定核心（服务层，不加路由）：bindInviter(trx, {cha
 type: impl
 # 草稿 2026-10-17（身份与风控线 identity-lane，第二波第一批；编排 13:5x 派工；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
 # 依据：08 BR-INV-02、BR-INV-03 细则、BR-INV-07、BR-INV-08（规则与归属），由编排者摘入（细则超 24KB，refs 置空 + 第 9 节摘录，E13）。现状：建号带邀请码时绑定端口未接，回 50001（identity.module.ts TODO）。
+# 2026-10-17 补 paths：同设备集合读 login_logs（identity 的表），由 identity 新建只读端口经 index.ts 导出。
 # 模型：**Opus 5.5 高推理（effort high）**——规则与归属。可先写规则测试；实现等 B1-11a、B1-11b 合并。上级日志 source=register / backfill、operator=user:<id>、at 取注入 Clock（D25–D28）。
 refs: []
 refs_hash: {}
@@ -11,6 +12,8 @@ deps: [B1-11a, B1-11b, B1-11c]
 paths:
   - 'apps/api/src/modules/growth/**'
   - 'apps/api/src/modules/identity/identity.module.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/modules/identity/ports/**'
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/growth/bind/**'
