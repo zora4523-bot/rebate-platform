@@ -1,6 +1,6 @@
 import type { VendorUsage } from './types.ts';
 
-// 跨网关共享认领状态，relay 原样传播同一个错误时只由内层计费网关补记。
+// 跨网关共享认领状态：最内层先认领（含非计费层），仅在该层实际计费时记账。
 const claimed = new WeakSet<Error>();
 
 /** 按结构识别协议失败用量，避免 vendors 反向依赖协议适配器。 */
