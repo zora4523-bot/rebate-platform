@@ -5858,7 +5858,6 @@ paths:
         `Cache-Control: no-store` and the console shows the value without keeping it. No
         Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003

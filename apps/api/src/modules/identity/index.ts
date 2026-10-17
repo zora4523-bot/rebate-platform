@@ -43,6 +43,8 @@ export type {
 export { revokeSessionsByUser, revokeSessionsByDevice } from './application/revoke-sessions.ts';
 export type { AfterSessionsRevoked, SessionRevokeReason } from './application/revoke-sessions.ts';
 export { IdentityModule } from './identity.module.ts';
+// The admin entry's console routes of identity (F1-07a: the audited phone reveal).
+export { IdentityAdminModule } from './identity-admin.module.ts';
 export { ME_READ_PORTS } from './application/tokens.ts';
 export type { MeReadPorts, MeUnionBindingStatus } from './application/me.ts';
 export type { InviteBackfillActivityPort, MeSubject } from './ports/invite-backfill-activity.ts';

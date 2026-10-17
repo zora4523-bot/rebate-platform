@@ -4416,6 +4416,64 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminRevealUserField": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "user_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "reason"
+      ],
+      "properties": {
+        "field": {
+          "type": "string",
+          "description": "The sensitive field to show in full. Only phone (permission point pii.reveal_phone) for\nnow; the identity number and payout account (pii.reveal_identity) come later.\n",
+          "enum": [
+            "phone"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Required free-text reason, kept in the audit record."
+        }
+      }
+    }
+  },
   "adminListPlatformIcons": {
     "headers": {
       "type": "object",
