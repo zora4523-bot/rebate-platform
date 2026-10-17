@@ -1,0 +1,27 @@
+id: B1-13h
+repo: rebate-platform
+title: 劳务协议：GET /v1/me/labor-agreement（当前有效版本、全文地址、sha256、need_sign、最近签署）与 POST /v1/me/labor-agreement/sign（只插入 consent_records type=labor_agreement，带 text_sha256、签约主体快照、device_id，channel=withdraw_flow）；h5_token 两条都 10403；导出「当前版本已签」只读端口供提现；去掉两条操作的 planned
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二波第二批；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md §B.6、§B.7）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审（E1：原拟 Codex 拼装，改 Claude）。
+# 依据：08 BR-WDR-31（签署前提、留存项、改版需重签、H5 / Bridge / Agent 不得代签）、BR-ID-12（同意记录只插入）、BR-ID-33（脱敏姓名）；契约 getLaborAgreement / signLaborAgreement（CT-15r）。BR-WDR-31 加一跳约 23KB，refs 置空，由编排者摘入（E13）。
+# 现状：consent_records 已有 labor_agreement 类型、text_sha256、signer_snapshot 与 CHECK（user + sha256 + 快照 + device_id），不需迁移；30304 由 B1-02za 守卫 ⑨（实名读取由 B1-13d 接）；access-tokens.ts 的 h5 禁入前缀要加 /v1/me/labor-agreement（GET 也 10403）。
+# 版本来源（E10）：配置 legal.labor_agreement.version / text_url / text_sha256 / resign_from_version；签约主体 legal.operator_entity.name / credit_code（负责人提供）。任一缺失或不合法 → 50001 + warn（不含用户信息），不编造。
+# need_sign 默认按 08：从未签署，或最近签署版本 < resign_from_version（签一次持续有效，直到需重签的新版本）。签署：version≠当前 / sha256 不符 / agreed≠true → 20001 带 fields（E20）；快照 = 主体名称与信用代码 + user_id、realname 记录 id、脱敏姓名；server_at=Clock。
+# 编排已定（2026-10-17，E23–E31 按默认，见 IDENTITY-tips/batch2-ledger/report.md）：① 契约 need_sign 描述首句「未签当前版本即 true」与 08「签一次持续有效到需重签」字面不一致，默认按 08 并请契约线改描述；② consent_records.client_at 必填而签署请求无客户端时间，默认写服务器时间。
+# 模型：Opus 5.5 高推理（effort high）——提现前置、资金相关。契约三件写进 paths（Claude 实现，先例 B1-02s）。测试标题 AC-B1-13h#n。与 B1-13d 同改 identity/**，deps 串行。
+refs: []
+refs_hash: {}
+deps: [B1-13d, B1-13b, CT-15r, B1-02za]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/labor-agreement/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/labor-agreement/**'
+status: todo

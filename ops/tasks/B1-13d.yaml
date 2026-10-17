@@ -1,0 +1,28 @@
+id: B1-13d
+repo: rebate-platform
+title: 实名服务与 POST /v1/me/realname（submitRealname）：id_verification 同意检查、BR-ID-25 校验顺序、每用户每自然日 3 次计数、二要素核验端口 + 假实现、加密写 realname、唯一冲突竞态回 30405；Me.realname_status 接表；导出实名只读读取（守卫 ⑨、growth、劳务协议用）；去掉该操作的 planned
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二波第二批；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md §B.6、§B.7）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-ID-25（实名触发、顺序、计次、存储、唯一）、BR-ID-26（年龄口径，函数在 B1-13c）、BR-ID-12（同意记录当前状态）；契约 submitRealname（CT-15r）、表 realname（B1-13b，0042）。BR-ID-25 加一跳约 10KB，连同摘录会超 24KB，refs 置空，由编排者摘入（E13）。
+# 顺序：10005（B1-02za 守卫 ⑧）→ 10004 consent_type=id_verification（该用户 user 级最新一条 id_verification 非 accepted）→ 20001 fields=[id_no] → 30407 → 30410 → 30405 → 调供应商（一致 verified / 不一致 30406）。供应商超时 50401、报错或未接 50301（E9），都不计次。
+# 计次：Redis 键 <app_id>:<+08:00 日>:<user_id>，调供应商前预占、50401 / 50301 回退；30405 与明确结果计 1；Redis 不可用 50001。成功：FieldCrypto 加密姓名 / 证件号 / 出生日期，id_no_hmac 用 blindIndex（64 位小写十六进制，0042 CHECK），provider、verified_at=Clock；部分唯一冲突 23505 → 30405（计次）。姓名与证件号不进日志。
+# 供应商：RealnameVerifierPort + 假实现只在 local / test 注入（先例 fake-sms、D6）；staging / prod 未接真实供应商不注入 → 50301。真实供应商属负责人项（花钱 / 新供应商），现在不停。
+# 编排已定（2026-10-17，E23–E31 按默认，见 IDENTITY-tips/batch2-ledger/report.md）：① 已 verified 再提交（契约写「由实现任务定码」）默认：10005、10004 之后直接回 200 {verified, 已存脱敏姓名}，不调供应商、不计次、不改行；② 30406 默认写 status=failed 行（无密文，0042 允许），Me 显示 failed；③ id_verification 同意默认不校验版本（无 legal.id_verification.version 配置）。
+# 模型：Opus 5.5 高推理（effort high）——规则 + 敏感数据。契约三件写进 paths（Claude 实现，先例 B1-02s）。测试标题 AC-B1-13d#n。
+refs: []
+refs_hash: {}
+deps: [B1-13b, B1-13c, CT-15r, B1-02za]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/realname/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/realname/**'
+status: todo
