@@ -1,0 +1,43 @@
+{
+  "red_tests": [],
+  "risk_note": "RV2 by path (pnpm-lock.yaml). Dependencies task under approvals id 3: H5 adds @tiptap/static-renderer, @tiptap/core, @tiptap/pm, @tiptap/starter-kit and @tiptap/extension-image at the exact version 3.31.4 (published 2026-09-30; 3.32.0 is younger than seven days), the workspace minimumReleaseAge (10080 minutes) enforced by pnpm, all production dependencies of apps/h5 MIT, no install scripts; only apps/h5 dependencies and the lockfile change. Needed for article bodies stored as tiptap JSON (orchestrator decision 2026-10-17, planning couli#119). Review: Codex (the other family). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "no findings on the correct base (an earlier run compared against a newer main and was discarded); exact versions, lock entries from the five packages' trees, MIT, no lifecycle scripts; money checklist n/a"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "none",
+    "rounds": 0,
+    "last_verdict": "n/a",
+    "note": "deps task, ledger tester: none"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  },
+  "task": "F1-01p",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "0d7cb90ba5facff065f421078df5a7e2794669d6",
+  "runs": [],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "a0118d3f0bece306e75a87cdcc1ed083b775af7a",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "300776b995475cc7519471562c0c97d4d784d8ac",
+    "specs": "dedddf339e9dd3adc8a99c6107119052d9280a97"
+  }
+}
