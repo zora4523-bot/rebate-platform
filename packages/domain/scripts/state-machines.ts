@@ -1,14 +1,12 @@
-// 状态机生成器（规划/04 §4；CT-04a）：读 specs/state-machines/<name>.yaml，生成
+// 状态机生成器（规划/04 §4；CT-04a、B2-03j）：按目录列出 specs/state-machines/*.yaml（排序），逐个生成
 // packages/domain/src/state-machines/<name>.gen.ts（枚举常量、只读迁移表与 transition<Name>()）。
 //   node packages/domain/scripts/state-machines.ts            写出生成物
 //   node packages/domain/scripts/state-machines.ts --verify   只比对，生成物过期时退出 1，不写文件
 // renderStateMachine(yamlText) 是纯函数：同一输入总是得到同一文本；守卫只当文字写进表里，不求值。
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseYamlLite } from '../../../tools/lib/yaml-lite.ts';
-
-export const MACHINES = ['order-platform', 'order-rebate'] as const;
 
 const GENERATE_COMMAND = 'node packages/domain/scripts/state-machines.ts';
 const SPECIAL_KINDS = ['backward', 'same_state'] as const;
@@ -17,6 +15,11 @@ const TOP_KEYS = ['name', 'field', 'states', 'events', 'transitions', 'stages', 
 const ROW_KEYS = ['id', 'kind', 'from', 'event', 'to', 'guard', 'test_id'];
 const NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const CODE_RE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/;
+// 状态值与库表取值一致：大写蛇形（订单）或小写蛇形（如 commission_rule_versions.status）。
+const STATE_RE = /^(?:[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*|[a-z][a-z0-9]*(?:_[a-z0-9]+)*)$/;
+const RESERVED_STATES = ['same'];
+const SOURCE_DIR = 'specs/state-machines';
+const TARGET_DIR = 'packages/domain/src/state-machines';
 const ID_RE = /^[A-Z][A-Za-z0-9]*$/;
 
 type RowKind = (typeof ROW_KINDS)[number];
@@ -67,6 +70,19 @@ function codeList(value: unknown, where: string): string[] {
     const code = stringOf(item, `${where}[${i}]`);
     if (!CODE_RE.test(code)) fail(`${where}[${i}] "${code}" must be UPPER_SNAKE_CASE`);
     return code;
+  });
+  if (new Set(out).size !== out.length) fail(`${where} has duplicates`);
+  return out;
+}
+
+function stateList(value: unknown, where: string): string[] {
+  if (!Array.isArray(value) || value.length === 0) fail(`${where} must be a non-empty list`);
+  const out = value.map((item, i) => {
+    const state = stringOf(item, `${where}[${i}]`);
+    if (!STATE_RE.test(state) || RESERVED_STATES.includes(state)) {
+      fail(`${where}[${i}] "${state}" must be UPPER_SNAKE_CASE or lower_snake_case (not "same")`);
+    }
+    return state;
   });
   if (new Set(out).size !== out.length) fail(`${where} has duplicates`);
   return out;
@@ -131,7 +147,7 @@ function parseMachine(yamlText: string): Machine {
   const name = stringOf(doc['name'], 'name');
   if (!NAME_RE.test(name)) fail(`name "${name}" must be kebab-case`);
   const field = stringOf(doc['field'], 'field');
-  const states = codeList(doc['states'], 'states');
+  const states = stateList(doc['states'], 'states');
   const events = codeList(doc['events'], 'events');
   const rawRows = doc['transitions'];
   if (!Array.isArray(rawRows) || rawRows.length === 0) fail('transitions must be a non-empty list');
@@ -159,7 +175,7 @@ function parseMachine(yamlText: string): Machine {
   let stages: string[] | undefined;
   let eventStates: [string, string][] | undefined;
   if (doc['stages'] !== undefined || doc['event_states'] !== undefined || hasSpecial) {
-    stages = codeList(doc['stages'], 'stages');
+    stages = stateList(doc['stages'], 'stages');
     for (const stage of stages) {
       if (!states.includes(stage)) fail(`stages "${stage}" is not in states`);
     }
@@ -305,6 +321,21 @@ function repoRoot(): string {
   return fileURLToPath(new URL('../../../', import.meta.url));
 }
 
+// 登记的状态机 = specs/state-machines/ 下全部 *.yaml（按名字排序）；目录缺失或为空直接报错，不跳过。
+export function listMachines(root: string): string[] {
+  const names = readdirSync(join(root, SOURCE_DIR))
+    .filter((file) => file.endsWith('.yaml'))
+    .map((file) => file.slice(0, -'.yaml'.length))
+    .sort();
+  if (names.length === 0) fail(`${SOURCE_DIR} has no *.yaml`);
+  for (const name of names) {
+    if (!NAME_RE.test(name)) fail(`${SOURCE_DIR}/${name}.yaml: file name must be kebab-case`);
+  }
+  return names;
+}
+
+export const MACHINES: readonly string[] = listMachines(repoRoot());
+
 function main(argv: string[]): number {
   const verify = argv.includes('--verify');
   const unknown = argv.filter((arg) => arg !== '--verify');
@@ -314,10 +345,13 @@ function main(argv: string[]): number {
   }
   const root = repoRoot();
   let stale = 0;
-  for (const name of MACHINES) {
-    const source = `specs/state-machines/${name}.yaml`;
-    const target = `packages/domain/src/state-machines/${name}.gen.ts`;
-    const expected = renderStateMachine(readFileSync(join(root, source), 'utf8'));
+  for (const name of listMachines(root)) {
+    const source = `${SOURCE_DIR}/${name}.yaml`;
+    const target = `${TARGET_DIR}/${name}.gen.ts`;
+    const yamlText = readFileSync(join(root, source), 'utf8');
+    const declared = parseMachine(yamlText).name;
+    if (declared !== name) fail(`${source}: name "${declared}" must match the file name`);
+    const expected = renderStateMachine(yamlText);
     const targetPath = join(root, target);
     const current = existsSync(targetPath) ? readFileSync(targetPath, 'utf8') : null;
     if (current === expected) continue;
