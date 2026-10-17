@@ -4802,5 +4802,325 @@ export const CONTRACT_ROUTE_SCHEMAS = {
         }
       }
     }
+  },
+  "adminListConfigItems": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminBatchUpdateConfigItems": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "description": "Keys of one permission point, each at most once.",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "value",
+              "expected_version"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "A configuration or emergency-switch key (04 §10, §10.2): dotted segments, concrete per\nplatform or channel (`convert.enabled.taobao`); the server's registry decides which keys\nexist.\n",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+              },
+              "value": {
+                "description": "Any JSON value of the key's `value_type` (an `enum` value is one of `options`); checked by\nthe server against the key's registered type and rule, a mismatch → 20001 with\ndata.fields=[value].\n"
+              },
+              "expected_version": {
+                "allOf": [
+                  {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0,
+                    "description": "Version of the key's current value: 0 = never written (value null, the default applies);\nplus 1 on every change or rollback, never going back. The CAS value `expected_version`\nof the writes.\n"
+                  }
+                ],
+                "description": "The item's `version` as the console showed it; any mismatch is 20902 for the whole batch."
+              }
+            }
+          }
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free-text reason, kept in the audit record and the history version."
+        }
+      }
+    }
+  },
+  "adminGetConfigItem": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "A configuration or emergency-switch key (04 §10, §10.2): dotted segments, concrete per\nplatform or channel (`convert.enabled.taobao`); the server's registry decides which keys\nexist.\n",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminUpdateConfigItem": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "A configuration or emergency-switch key (04 §10, §10.2): dotted segments, concrete per\nplatform or channel (`convert.enabled.taobao`); the server's registry decides which keys\nexist.\n",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "expected_version"
+      ],
+      "properties": {
+        "value": {
+          "description": "Any JSON value of the key's `value_type` (an `enum` value is one of `options`); checked by\nthe server against the key's registered type and rule, a mismatch → 20001 with\ndata.fields=[value].\n"
+        },
+        "expected_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "Version of the key's current value: 0 = never written (value null, the default applies);\nplus 1 on every change or rollback, never going back. The CAS value `expected_version`\nof the writes.\n"
+            }
+          ],
+          "description": "The item's `version` as the console showed it; a mismatch is 20902."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free-text reason, kept in the audit record and the history version."
+        }
+      }
+    }
+  },
+  "adminListConfigItemVersions": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "A configuration or emergency-switch key (04 §10, §10.2): dotted segments, concrete per\nplatform or channel (`convert.enabled.taobao`); the server's registry decides which keys\nexist.\n",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminRollbackConfigItem": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "A configuration or emergency-switch key (04 §10, §10.2): dotted segments, concrete per\nplatform or channel (`convert.enabled.taobao`); the server's registry decides which keys\nexist.\n",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_]*(\\.[A-Za-z0-9_]+)*$"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "to_version",
+        "expected_version"
+      ],
+      "properties": {
+        "to_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "description": "The stored version whose value becomes the new current value; must be older than the current one."
+        },
+        "expected_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "description": "The item's current `version` as the console showed it; a mismatch is 20902."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Optional free-text reason, kept in the audit record and the history version."
+        }
+      }
+    }
   }
 } as const;
