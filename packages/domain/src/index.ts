@@ -1,4 +1,15 @@
 export { accountingDate, chinaMonth, chinaDayRange, chinaMonthRange } from './calendar/index.ts';
+export {
+  parseResidentIdNo,
+  reachedAgeAt,
+  ageAt,
+  isAtLeastAge,
+  normalizePersonName,
+  samePersonName,
+  normalizeBankCardNo,
+  isValidBankCardNo,
+} from './identity-docs/index.ts';
+export type { ResidentIdNoResult } from './identity-docs/index.ts';
 export { splitCommission, quoteRebate } from './commission/commission.ts';
 export { validateRuleVersion } from './commission/publish-validation.ts';
 export type {
