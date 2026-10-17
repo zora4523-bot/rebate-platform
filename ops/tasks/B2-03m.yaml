@@ -1,0 +1,19 @@
+id: B2-03m
+repo: rebate-platform
+title: 测试修改：删除报价器 prepare() 作用域模式的冻结规则测试 test/spec/commission/quoter/prepare.test.ts；wiring/kit.ts 的「prepare 未被调用」改为「报价器上不存在 prepare」
+type: test-change
+# 2026-10-17 资金线 funds-quote（publish-plan P4，负责人 2026-10-17 口头批准 P4=A「A，删掉」，notices 18:3x 条）。prepare() 生产从未接线（B2-03d 改用 linking 的预读包装），
+# 删除被测功能整体，不放宽其余断言；不删别的资金测试。wiring/kit.ts 第 210–214 行对 prepare 的 spyOn 会在方法删除后报错，改为断言报价器没有 prepare 属性（比「未调用」更强）。
+# 第一类保护路径：按 approvals #24 由编排核对后加 owner-approved 标签；非 task/ 分支、不碰资金实现路径，按 approvals #12 免证据文件。实现清理在 B2-03n。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/commission/quoter/prepare.test.ts'
+  - 'test/spec/commission/wiring/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
