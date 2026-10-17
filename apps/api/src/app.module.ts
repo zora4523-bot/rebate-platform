@@ -81,6 +81,7 @@ import {
   type LinkRegistrations,
 } from './modules/linking/index.ts';
 import {
+  NotificationModule,
   bindPushTokensForSession,
   unbindPushTokensForSession,
 } from './modules/notification/index.ts';
@@ -992,7 +993,10 @@ export class AppModule {
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest).
         ...(options.entry === 'api'
-          ? [ContentPublicModule.forApi({ viewerContext: identityViewer })]
+          ? [
+              ContentPublicModule.forApi({ viewerContext: identityViewer }),
+              NotificationModule.forApi((db, clock) => createContentReader({ db, clock })),
+            ]
           : []),
         ...(identity === undefined || risk === undefined
           ? []

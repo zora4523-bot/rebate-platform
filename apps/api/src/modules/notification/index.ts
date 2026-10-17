@@ -6,3 +6,13 @@ export {
   unbindPushTokensForSession,
 } from './application/session-bindings.ts';
 export type { SessionBinding, SessionUnbinding } from './application/session-bindings.ts';
+export { createPushTokenReporter } from './application/push-token-report.ts';
+export type {
+  PushTokenConfigReader,
+  PushTokenReport,
+  PushTokenReporter,
+  PushTokenReporterOptions,
+} from './application/push-token-report.ts';
+export { PushTokenController } from './http/public/push-token.controller.ts';
+export type { PushTokenHttpRequest } from './http/public/push-token.controller.ts';
+export { NotificationModule } from './notification.module.ts';
