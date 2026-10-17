@@ -536,6 +536,19 @@ export interface LedgerVouchers {
   voucher_kind: string | null;
 }
 
+export interface LevelChangeLogs {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  effective_at: Timestamp;
+  from_level: string | null;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  operator: string;
+  reason: string | null;
+  source: string;
+  to_level: string;
+  user_id: string;
+}
+
 export interface LinkLogs {
   agent_message_id: string | null;
   agent_session_id: string | null;
@@ -1008,6 +1021,19 @@ export interface RefreshTokens {
   updated_at: Generated<Timestamp>;
 }
 
+export interface RelationChangeLogs {
+  app_id: string;
+  at: Timestamp;
+  created_at: Generated<Timestamp>;
+  from_parent_id: string | null;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  operator: string;
+  reason: string | null;
+  source: string;
+  to_parent_id: string | null;
+  user_id: string;
+}
+
 export interface RiskHits {
   amount_fen: ColumnType<bigint, bigint, bigint> | null;
   app_id: string;
@@ -1287,6 +1313,7 @@ export interface DB {
   ledger_accounts: LedgerAccounts;
   ledger_entries: LedgerEntries;
   ledger_vouchers: LedgerVouchers;
+  level_change_logs: LevelChangeLogs;
   link_logs: LinkLogs;
   link_open_attempts: LinkOpenAttempts;
   links: Links;
@@ -1316,6 +1343,7 @@ export interface DB {
   product_refs: ProductRefs;
   push_tokens: PushTokens;
   refresh_tokens: RefreshTokens;
+  relation_change_logs: RelationChangeLogs;
   risk_hits: RiskHits;
   risk_judgements: RiskJudgements;
   risk_rules: RiskRules;

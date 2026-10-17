@@ -2100,6 +2100,44 @@ CREATE TABLE app.ledger_vouchers (
 
 
 --
+-- Name: level_change_logs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.level_change_logs (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    from_level text,
+    to_level text NOT NULL,
+    source text NOT NULL,
+    operator text NOT NULL,
+    reason text,
+    effective_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT level_change_logs_admin_reason_check CHECK (((source <> 'admin'::text) OR (btrim(COALESCE(reason, ''::text)) <> ''::text))),
+    CONSTRAINT level_change_logs_from_level_check CHECK ((from_level = ANY (ARRAY['L1'::text, 'L2'::text, 'L3'::text]))),
+    CONSTRAINT level_change_logs_operator_check CHECK ((btrim(operator) <> ''::text)),
+    CONSTRAINT level_change_logs_shape_check CHECK ((((source = 'register'::text) AND (from_level IS NULL)) OR ((source = 'admin'::text) AND (from_level IS NOT NULL) AND (from_level <> to_level)))),
+    CONSTRAINT level_change_logs_source_check CHECK ((source = ANY (ARRAY['register'::text, 'admin'::text]))),
+    CONSTRAINT level_change_logs_to_level_check CHECK ((to_level = ANY (ARRAY['L1'::text, 'L2'::text, 'L3'::text])))
+);
+
+
+--
+-- Name: level_change_logs_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.level_change_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.level_change_logs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: link_logs; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3072,6 +3110,43 @@ CREATE TABLE app.refresh_tokens (
     expire_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: relation_change_logs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.relation_change_logs (
+    id bigint NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    from_parent_id uuid,
+    to_parent_id uuid,
+    source text NOT NULL,
+    operator text NOT NULL,
+    reason text,
+    at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT relation_change_logs_change_check CHECK ((from_parent_id IS DISTINCT FROM to_parent_id)),
+    CONSTRAINT relation_change_logs_not_self_check CHECK (((to_parent_id IS NULL) OR (to_parent_id <> user_id))),
+    CONSTRAINT relation_change_logs_operator_check CHECK ((btrim(operator) <> ''::text)),
+    CONSTRAINT relation_change_logs_parent_deleted_check CHECK (((source <> 'parent_deleted'::text) OR (to_parent_id IS NULL))),
+    CONSTRAINT relation_change_logs_source_check CHECK ((source = ANY (ARRAY['landing'::text, 'register'::text, 'backfill'::text, 'admin'::text, 'risk_same_device'::text, 'parent_deleted'::text])))
+);
+
+
+--
+-- Name: relation_change_logs_id_seq; Type: SEQUENCE; Schema: app; Owner: -
+--
+
+ALTER TABLE app.relation_change_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME app.relation_change_logs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -4299,6 +4374,14 @@ ALTER TABLE ONLY app.ledger_vouchers
 
 
 --
+-- Name: level_change_logs level_change_logs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.level_change_logs
+    ADD CONSTRAINT level_change_logs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: link_logs link_logs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -4664,6 +4747,14 @@ ALTER TABLE ONLY app.refresh_tokens
 
 ALTER TABLE ONLY app.refresh_tokens
     ADD CONSTRAINT refresh_tokens_token_hash_key UNIQUE (app_id, token_hash);
+
+
+--
+-- Name: relation_change_logs relation_change_logs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.relation_change_logs
+    ADD CONSTRAINT relation_change_logs_pkey PRIMARY KEY (id);
 
 
 --
@@ -5330,6 +5421,20 @@ CREATE INDEX ledger_vouchers_order_key_idx ON app.ledger_vouchers USING btree (a
 
 
 --
+-- Name: level_change_logs_register_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX level_change_logs_register_key ON app.level_change_logs USING btree (app_id, user_id) WHERE (source = 'register'::text);
+
+
+--
+-- Name: level_change_logs_user_effective_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX level_change_logs_user_effective_idx ON app.level_change_logs USING btree (app_id, user_id, effective_at, id);
+
+
+--
 -- Name: link_logs_link_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -5516,6 +5621,13 @@ CREATE INDEX push_tokens_user_bound_sid_idx ON app.push_tokens USING btree (app_
 --
 
 CREATE INDEX refresh_tokens_session_idx ON app.refresh_tokens USING btree (app_id, sid);
+
+
+--
+-- Name: relation_change_logs_user_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX relation_change_logs_user_at_idx ON app.relation_change_logs USING btree (app_id, user_id, at, id);
 
 
 --
@@ -5939,6 +6051,13 @@ CREATE TRIGGER ledger_vouchers_append_only BEFORE DELETE OR UPDATE ON app.ledger
 
 
 --
+-- Name: level_change_logs level_change_logs_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER level_change_logs_append_only BEFORE DELETE OR UPDATE ON app.level_change_logs FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
 -- Name: link_logs link_logs_append_only; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -6020,6 +6139,13 @@ CREATE TRIGGER product_key_aliases_append_only BEFORE DELETE OR UPDATE ON app.pr
 --
 
 CREATE TRIGGER product_refs_no_key_rewrite BEFORE UPDATE ON app.product_refs FOR EACH ROW EXECUTE FUNCTION app.reject_product_ref_key_rewrite();
+
+
+--
+-- Name: relation_change_logs relation_change_logs_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER relation_change_logs_append_only BEFORE DELETE OR UPDATE ON app.relation_change_logs FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
 
 
 --
@@ -6362,6 +6488,14 @@ ALTER TABLE app.ledger_entries
 
 
 --
+-- Name: level_change_logs level_change_logs_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.level_change_logs
+    ADD CONSTRAINT level_change_logs_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: link_logs link_logs_opener_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -6631,6 +6765,30 @@ ALTER TABLE ONLY app.refresh_tokens
 
 ALTER TABLE ONLY app.refresh_tokens
     ADD CONSTRAINT refresh_tokens_session_fkey FOREIGN KEY (app_id, sid) REFERENCES app.sessions(app_id, sid);
+
+
+--
+-- Name: relation_change_logs relation_change_logs_from_parent_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.relation_change_logs
+    ADD CONSTRAINT relation_change_logs_from_parent_fkey FOREIGN KEY (app_id, from_parent_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: relation_change_logs relation_change_logs_to_parent_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.relation_change_logs
+    ADD CONSTRAINT relation_change_logs_to_parent_fkey FOREIGN KEY (app_id, to_parent_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: relation_change_logs relation_change_logs_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.relation_change_logs
+    ADD CONSTRAINT relation_change_logs_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -8353,6 +8511,14 @@ GRANT SELECT ON TABLE app.ledger_vouchers TO couli_readonly;
 
 
 --
+-- Name: TABLE level_change_logs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.level_change_logs TO couli_app;
+GRANT SELECT ON TABLE app.level_change_logs TO couli_readonly;
+
+
+--
 -- Name: TABLE link_logs; Type: ACL; Schema: app; Owner: -
 --
 
@@ -8989,6 +9155,14 @@ GRANT UPDATE(rotated_at) ON TABLE app.refresh_tokens TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.refresh_tokens TO couli_app;
+
+
+--
+-- Name: TABLE relation_change_logs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.relation_change_logs TO couli_app;
+GRANT SELECT ON TABLE app.relation_change_logs TO couli_readonly;
 
 
 --
