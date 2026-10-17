@@ -1,0 +1,34 @@
+id: F1-09d
+repo: rebate-platform
+title: content：GET /v1/pages/{page_key}——取已发布页面，按 device_id 灰度分桶选版本、按端 min_app_version 过滤、condition 人群过滤（本任务只判 login），ttl_sec 300；去掉 getPage 的 planned
+type: impl
+# 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/pages-plan.md §3、§4）。宿主 05 F1-02 pages 行（发布 / 灰度 / 门槛 / 人群）。
+# 依据 04 §6.2 l.498（optional 令牌、OPS-05 分桶、TECH-07 按 X-Platform + X-App-Version 过滤）、03 §6.1 页面形状；08 BR-ID-11 细则（首页人群与灰度）、BR-INV-23——
+# refs 置空，规则摘录由编排者摘入任务书第 9 节（先例 #547、#580、F1-09b）；契约以 CT-02l 合并后的 getPage 为准（couli-runs/CT-02l/decision-orchestrator.md 裁定 2）。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条：新台账实现回 Claude，Codex 写规则测试并对抗评审）。
+# 要点：读 F1-09a 的 pages / page_versions（主库读），选版本与过滤调 F1-09b 的纯函数（content/domain/pages/select），不另写一套；
+# 只返回已发布版本；page_key 无此页、无已发布版本或过滤后无可选版本 → 30701；无 X-Device-Id 给全量版（R3）；登录态照 F1-02c 的 identityViewer 端口注入，content 不 import identity；
+# condition 本任务只判 login，has_parent / union_authorized / has_order 非 any 的 section 先不下发（R5 保守，F1-09g 补齐）；ttl_sec 常量 300（R8，待规划回写）；读缓存复用 content 60 秒 TTL（R11）。
+# R3 / R5 / R8 / R11 与 P1（不标 x-session-scopes，受限会话得 10405）采用默认（编排者默认，待编排复核，见 couli-runs/CONTENT-client/decisions-pending.md）。
+# 顺手并入 F1-02e followup（couli-runs/F1-02e/followups.md，code review r1 S2）：app.module 把同一个 ContentReader 实例交给 /v1/app-versions/check（ContentPublicModule）与风控最低版本闸门，
+#   消除两边最多 60 秒不一致；若共用须改 apps/api/src/modules/risk/**，不扩 paths，在输出里写明留给后续任务。
+# 去掉 getPage 的 planned，同 PR 重生成 route-schemas.gen.ts 与 openapi.gen.ts（先例 F1-02c）；冻结测试 test/spec/identity/token/bootstrap.test.ts 挑 optional 操作当桩，落地前核对它仍绿。
+# 契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+refs: []
+refs_hash: {}
+deps: [CT-02l, F1-09a, F1-09b]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+test_paths:
+  - 'test/spec/content/pages-read/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/pages-read/**'
+status: todo
+pr: null

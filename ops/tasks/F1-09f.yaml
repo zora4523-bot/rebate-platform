@@ -1,0 +1,35 @@
+id: F1-09f
+repo: rebate-platform
+title: content：后台页面配置——/admin/v1/pages* 列表、详情、版本列表与详情、存草稿（页级 revision CAS）、发布（带 gray_percent）、调灰度 / 转全量、回滚（按 publish_at 退回上一个全量版）；去掉这 8 条的 planned
+type: impl
+# 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/pages-plan.md §3、§4 R1、R2、R6）。宿主 05 F1-09（后台首页配置、频道白名单与公告数据源服务端再校验）。
+# 依据 04 §6.6 pages 行（草稿、校验、发布、回滚；CAS 冲突 20902 按 data.resource）、§3.2 l.386、§11.2 content.page（step-up「–」）；08 BR-ATTR-29 ①、BR-ID-33 / BR-WDR-01 / BR-TEXT-13 / BR-TEXT-17 细则——
+# BR-ATTR-29 单条约 21KB，refs 置空，规则摘录由编排者摘入任务书第 9 节；契约以 CT-02l 合并后的 adminListPageConfigs、adminGetPageConfig、adminListPageConfigVersions、adminGetPageConfigVersion、
+# adminCreatePageConfigVersion、adminPublishPageConfig、adminUpdatePageConfigGray、adminRollbackPageConfig 为准（couli-runs/CT-02l/decision-orchestrator.md 裁定 3–8）。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。写法参照 content/http/admin/platform-icons.controller.ts 与 F1-06w / F1-06y（守卫、审计、CAS）。
+# 要点：AdminOperationGuard 单个权限点 content.page、无 step-up（读操作可传 readOnly）；页级 revision 存草稿 / 发布 / 调灰度 / 回滚各 +1，expected_revision 不符 → 20902 resource=page，首存 expected_revision 必须 0；
+# 一条带条件的 UPDATE（或 INSERT…ON CONFLICT）完成 CAS，规则测试含并发；存草稿插入新版本行（最大版本 +1，内容以后不改，R1）；存草稿与发布都调 F1-09c 的校验纯函数（20001 data.fields 为 JSON 路径），
+#   开关 external_page.union_host_block 与 link-patterns / material-channels 由本任务读出后传入；section 形状按 CT-07a 的 home-schema.json 校验（R6 默认先开 CT-07a）。
+# 发布 / 调灰度 / 回滚边界照 CT-02l 裁定 5、7 与 P4（gray_percent 只收 1..100；无全量版首发只能 100；已有灰度版不能再发布；回滚 version 须为当前灰度或全量版）。
+# 回滚全量版时按 publish_at 取上一个全量版（不按版本号：版本号是保存顺序不是发布顺序；CT-02l 契约评审 r1 S2，见 couli-runs/CT-02l/followups.md），该版标 rolled_back；契约说明的改正由 CT-07a 做。
+# publisher / updated_by / created_by 存后台账号 uuid，响应的登录名关联 admin_users 取（P5）；render_count / error_count 只读不写（R10）；发布、调灰度、回滚写审计（存草稿是否审计照 platform-icons 先例）。
+# R1 / R2 / R6 / R10、P2（20001 不加 data.reason）、P4、P5 采用默认（编排者默认，待编排复核，见 couli-runs/CONTENT-client/decisions-pending.md）。deps 不含 F1-10c（单个权限点，守卫既有行为即够）。
+# 去掉 8 条 planned，同 PR 重生成 route-schemas.gen.ts 与 openapi.gen.ts；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+refs: []
+refs_hash: {}
+deps: [CT-02l, F1-09a, F1-09c, CT-07a]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+test_paths:
+  - 'test/spec/content/pages-admin/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/pages-admin/**'
+status: todo
+pr: null

@@ -1,0 +1,31 @@
+id: CT-07a
+repo: rebate-platform
+title: 契约：首页 SDUI 形状——contracts/home-schema.json（页面与 section：id、type、version、按端 min_app_version、props、data_source、condition；跳转目标 {route, params}）与 contracts/fixtures/home-golden/ 样例；顺带改正 adminRollbackPageConfig 的回滚说明
+type: contract
+# 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/pages-plan.md §2、§3、§4 R6）。宿主 05 CT-07（home-schema.json + golden，未入账，本任务是其第一段）。
+# 依据 03 §6.1 页面形状 {page_key, version, ttl_sec, sections[{id, type, version, min_app_version, props, data_source{kind…}, condition}]}、§6.2（未知 type 客户端跳过）、§6.3 卡片注册表（ad_label、notice_bar 数据源、union_material 频道白名单）；
+# 04 §10.1 l.865 跳转目标 {route, params} 与按端 {ios, android, harmony} 门槛；08 BR-TEXT-13 / BR-TEXT-17 细则——contract_sections 只取 04 §6.2（约 3.8KB，pages 行；§10.1 约 17KB 不整节嵌入），03 §6.1–§6.3 与 04 l.865 由编排者摘入任务书第 9 节；refs 置空（BR-TEXT-13 约 15KB）。
+# 分工：impl claude、tester none（照契约任务先例 CT-02l：形状由契约作者落，不加规划没有的字段；一致性由实现者在 packages/contracts-ts 写单元测试：每份 golden 过 schema、未知 type 的样例只校外壳）。
+# 要点：形状照 P3 默认——union_material 频道字段 channels: [{platform, channel_id}]；notice_bar 的 api 数据源只有 kind；condition 四键取值 any / yes / no；跳转目标是带 route 键的对象，
+#   route 取值引 contracts/routes.json，params 自由对象（编排者默认，待编排复核，见 couli-runs/CONTENT-client/decisions-pending.md）。须与已合并的 F1-09c 校验对齐：引 couli-runs/F1-09c/decision-orchestrator.md 裁定 3 与末段，
+#   字段若与 F1-09c 的识别方式不同，在输出里写明差异由后续任务收窄，不改 apps/。
+# min_app_version 按端 {ios, android, harmony}、键缺或 null 的含义照 R4；section 列表不设上限（规划没写）。golden 至少覆盖：全量首页、带门槛的 section、四种 condition、ExternalPage 跳转、notice_bar、union_material。
+# 顺带：getPage / adminGetPageConfigVersion 的 sections 说明指向 home-schema.json；adminRollbackPageConfig 说明改为「按 publish_at 退回上一个全量版」（CT-02l 契约评审 r1 S2，couli-runs/CT-02l/followups.md）。
+# contracts/README.md 把 home-schema.json 从「以后会放在这里的文件」移到现有文件表。改 openapi.yaml 只动说明文字（planned 操作，oasdiff 不比较），重生成 openapi.gen.ts。占契约槽（B3-lane/notices.md，排在 CT-02l 之后）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.2']
+deps: [CT-02l]
+paths:
+  - 'contracts/home-schema.json'
+  - 'contracts/fixtures/home-golden/**'
+  - 'contracts/README.md'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
