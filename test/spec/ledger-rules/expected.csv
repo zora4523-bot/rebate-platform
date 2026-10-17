@@ -1,10 +1,16 @@
 template_id,ledger_type,sub_type,uniq_key_pattern,line,account_owner,subject,sub_account,sign,amount_ref,note
 ADMIN_ADJUST:ACCOUNT_CLOSED,ADMIN_ADJUST,ACCOUNT_CLOSED,ADJ:{adjust_id},1,user,USER_BALANCE,available,debit,closing_balance_fen,BR-FUND-24；批准时重读 processing 用户正 available；done 前完成
 ADMIN_ADJUST:ACCOUNT_CLOSED,ADMIN_ADJUST,ACCOUNT_CLOSED,ADJ:{adjust_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,closing_balance_fen,BR-FUND-24；批准时重读 processing 用户正 available；done 前完成
+ADMIN_ADJUST:ACCOUNT_CLOSED:REVERSE,ADMIN_ADJUST,ACCOUNT_CLOSED,ADJ:{adjust_id}:REVERSE,1,user,USER_BALANCE,available,credit,closing_balance_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
+ADMIN_ADJUST:ACCOUNT_CLOSED:REVERSE,ADMIN_ADJUST,ACCOUNT_CLOSED,ADJ:{adjust_id}:REVERSE,2,platform,COMMISSION_REVENUE,TBD(08 未定),debit,closing_balance_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
 ADMIN_ADJUST:OTHER:DECREASE,ADMIN_ADJUST,OTHER,ADJ:{adjust_id},1,user,USER_BALANCE,available,debit,admin_adjust_fen,BR-FUND-24；调账对方科目白名单待财务确认；A 的具体名单未在摘录给出；不写 frozen
 ADMIN_ADJUST:OTHER:DECREASE,ADMIN_ADJUST,OTHER,ADJ:{adjust_id},2,platform,TBD(08 未定),TBD(08 未定),credit,admin_adjust_fen,BR-FUND-24；调账对方科目白名单待财务确认；A 的具体名单未在摘录给出；不写 frozen
+ADMIN_ADJUST:OTHER:DECREASE:REVERSE,ADMIN_ADJUST,OTHER,ADJ:{adjust_id}:REVERSE,1,user,USER_BALANCE,available,credit,admin_adjust_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
+ADMIN_ADJUST:OTHER:DECREASE:REVERSE,ADMIN_ADJUST,OTHER,ADJ:{adjust_id}:REVERSE,2,platform,TBD(08 未定),TBD(08 未定),debit,admin_adjust_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
 ADMIN_ADJUST:OTHER:INCREASE,ADMIN_ADJUST,OTHER,ADJ:{adjust_id},1,platform,TBD(08 未定),TBD(08 未定),debit,admin_adjust_fen,BR-FUND-24；调账对方科目白名单待财务确认；A 的具体名单未在摘录给出；不写 frozen
 ADMIN_ADJUST:OTHER:INCREASE,ADMIN_ADJUST,OTHER,ADJ:{adjust_id},2,user,USER_BALANCE,available,credit,admin_adjust_fen,BR-FUND-24；调账对方科目白名单待财务确认；A 的具体名单未在摘录给出；不写 frozen
+ADMIN_ADJUST:OTHER:INCREASE:REVERSE,ADMIN_ADJUST,OTHER,ADJ:{adjust_id}:REVERSE,1,platform,TBD(08 未定),TBD(08 未定),credit,admin_adjust_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
+ADMIN_ADJUST:OTHER:INCREASE:REVERSE,ADMIN_ADJUST,OTHER,ADJ:{adjust_id}:REVERSE,2,user,USER_BALANCE,available,debit,admin_adjust_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
 ADMIN_ADJUST:PAYOUT_RECOVERY:CASH_ALIPAY:DECREASE,ADMIN_ADJUST,PAYOUT_RECOVERY,ADJ:{adjust_id},1,user,USER_BALANCE,available,debit,admin_adjust_fen,BR-FUND-24；对方科目按原提现通道；关联提现单与差错单
 ADMIN_ADJUST:PAYOUT_RECOVERY:CASH_ALIPAY:DECREASE,ADMIN_ADJUST,PAYOUT_RECOVERY,ADJ:{adjust_id},2,platform,CASH_ALIPAY,TBD(08 未定),credit,admin_adjust_fen,BR-FUND-24；对方科目按原提现通道；关联提现单与差错单
 ADMIN_ADJUST:PAYOUT_RECOVERY:CASH_ALIPAY:DECREASE:REVERSE,ADMIN_ADJUST,PAYOUT_RECOVERY,ADJ:{adjust_id}:REVERSE,1,user,USER_BALANCE,available,credit,admin_adjust_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
@@ -31,8 +37,12 @@ ADMIN_ADJUST:PAYOUT_RECOVERY:CASH_WECHAT:INCREASE:REVERSE,ADMIN_ADJUST,PAYOUT_RE
 ADMIN_ADJUST:PAYOUT_RECOVERY:CASH_WECHAT:INCREASE:REVERSE,ADMIN_ADJUST,PAYOUT_RECOVERY,ADJ:{adjust_id}:REVERSE,2,user,USER_BALANCE,available,debit,admin_adjust_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
 ADMIN_ADJUST:RECON_FIX:DECREASE,ADMIN_ADJUST,RECON_FIX,ADJ:{adjust_id},1,user,USER_BALANCE,available,debit,admin_adjust_fen,BR-FUND-24；调账对方科目白名单待财务确认；A 的具体名单未在摘录给出；不写 frozen
 ADMIN_ADJUST:RECON_FIX:DECREASE,ADMIN_ADJUST,RECON_FIX,ADJ:{adjust_id},2,platform,TBD(08 未定),TBD(08 未定),credit,admin_adjust_fen,BR-FUND-24；调账对方科目白名单待财务确认；A 的具体名单未在摘录给出；不写 frozen
+ADMIN_ADJUST:RECON_FIX:DECREASE:REVERSE,ADMIN_ADJUST,RECON_FIX,ADJ:{adjust_id}:REVERSE,1,user,USER_BALANCE,available,credit,admin_adjust_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
+ADMIN_ADJUST:RECON_FIX:DECREASE:REVERSE,ADMIN_ADJUST,RECON_FIX,ADJ:{adjust_id}:REVERSE,2,platform,TBD(08 未定),TBD(08 未定),debit,admin_adjust_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
 ADMIN_ADJUST:RECON_FIX:INCREASE,ADMIN_ADJUST,RECON_FIX,ADJ:{adjust_id},1,platform,TBD(08 未定),TBD(08 未定),debit,admin_adjust_fen,BR-FUND-24；调账对方科目白名单待财务确认；A 的具体名单未在摘录给出；不写 frozen
 ADMIN_ADJUST:RECON_FIX:INCREASE,ADMIN_ADJUST,RECON_FIX,ADJ:{adjust_id},2,user,USER_BALANCE,available,credit,admin_adjust_fen,BR-FUND-24；调账对方科目白名单待财务确认；A 的具体名单未在摘录给出；不写 frozen
+ADMIN_ADJUST:RECON_FIX:INCREASE:REVERSE,ADMIN_ADJUST,RECON_FIX,ADJ:{adjust_id}:REVERSE,1,platform,TBD(08 未定),TBD(08 未定),credit,admin_adjust_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
+ADMIN_ADJUST:RECON_FIX:INCREASE:REVERSE,ADMIN_ADJUST,RECON_FIX,ADJ:{adjust_id}:REVERSE,2,user,USER_BALANCE,available,debit,admin_adjust_fen,BR-FUND-16/24；原键追加 REVERSE；整笔逐行换符号；金额科目类型不变；只允许一次
 ADMIN_ADJUST:RESTORE:APPEAL,ADMIN_ADJUST,RESTORE,{order_key}:{user_id}:{role}:RESTORE:{差错单 id},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,restore_fen,BR-FUND-22 申诉恢复③；补发被封禁没收的已计入平台留存份额
 ADMIN_ADJUST:RESTORE:APPEAL,ADMIN_ADJUST,RESTORE,{order_key}:{user_id}:{role}:RESTORE:{差错单 id},2,user,USER_BALANCE,available,credit,restore_fen,BR-FUND-22 申诉恢复③；补发被封禁没收的已计入平台留存份额
 ADMIN_ADJUST:RESTORE:PLATFORM,ADMIN_ADJUST,RESTORE,{order_key}:PLATFORM:RESTORE:{差错单 id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,restore_fen,BR-FUND-22 R13；平台应得含预留
@@ -43,52 +53,52 @@ BAD_DEBT_WRITEOFF,BAD_DEBT_WRITEOFF,,BADDEBT:{account_id}:{candidate_id},1,platf
 BAD_DEBT_WRITEOFF,BAD_DEBT_WRITEOFF,,BADDEBT:{account_id}:{candidate_id},2,user,USER_BALANCE,available,credit,writeoff_fen,BR-FUND-12；批准重读后按当前负 available 核销；frozen 为零；非负则取消不写
 CLAWBACK:FULL:BAD_DEBT,CLAWBACK,FULL,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},1,platform,BAD_DEBT,TBD(08 未定),debit,clawback_fen,BR-FUND-08；processing/done 且份额已入账；金额及键及类型不变
 CLAWBACK:FULL:BAD_DEBT,CLAWBACK,FULL,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；processing/done 且份额已入账；金额及键及类型不变
-CLAWBACK:FULL:PLATFORM:DECREASE,CLAWBACK,FULL,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:FULL:PLATFORM:DECREASE,CLAWBACK,FULL,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:FULL:PLATFORM:INCREASE,CLAWBACK,FULL,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:FULL:PLATFORM:INCREASE,CLAWBACK,FULL,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:FULL:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:FULL:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:FULL:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:FULL:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
 CLAWBACK:FULL:USER,CLAWBACK,FULL,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},1,user,USER_BALANCE,available,debit,clawback_fen,BR-FUND-08；仅 available 扣回；扣回额 <=0 不写
 CLAWBACK:FULL:USER,CLAWBACK,FULL,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；仅 available 扣回；扣回额 <=0 不写
 CLAWBACK:PART_REFUND:BAD_DEBT,CLAWBACK,PART_REFUND,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},1,platform,BAD_DEBT,TBD(08 未定),debit,clawback_fen,BR-FUND-08；processing/done 且份额已入账；金额及键及类型不变
 CLAWBACK:PART_REFUND:BAD_DEBT,CLAWBACK,PART_REFUND,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；processing/done 且份额已入账；金额及键及类型不变
-CLAWBACK:PART_REFUND:PLATFORM:DECREASE,CLAWBACK,PART_REFUND,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:PART_REFUND:PLATFORM:DECREASE,CLAWBACK,PART_REFUND,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:PART_REFUND:PLATFORM:INCREASE,CLAWBACK,PART_REFUND,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:PART_REFUND:PLATFORM:INCREASE,CLAWBACK,PART_REFUND,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:PART_REFUND:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:PART_REFUND:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:PART_REFUND:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:PART_REFUND:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
 CLAWBACK:PART_REFUND:USER,CLAWBACK,PART_REFUND,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},1,user,USER_BALANCE,available,debit,clawback_fen,BR-FUND-08；仅 available 扣回；扣回额 <=0 不写
 CLAWBACK:PART_REFUND:USER,CLAWBACK,PART_REFUND,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；仅 available 扣回；扣回额 <=0 不写
 CLAWBACK:PUNISH:BAD_DEBT,CLAWBACK,PUNISH,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},1,platform,BAD_DEBT,TBD(08 未定),debit,clawback_fen,BR-FUND-08；processing/done 且份额已入账；金额及键及类型不变
 CLAWBACK:PUNISH:BAD_DEBT,CLAWBACK,PUNISH,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；processing/done 且份额已入账；金额及键及类型不变
-CLAWBACK:PUNISH:PLATFORM:DECREASE,CLAWBACK,PUNISH,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:PUNISH:PLATFORM:DECREASE,CLAWBACK,PUNISH,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:PUNISH:PLATFORM:INCREASE,CLAWBACK,PUNISH,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:PUNISH:PLATFORM:INCREASE,CLAWBACK,PUNISH,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:PUNISH:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:PUNISH:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:PUNISH:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:PUNISH:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
 CLAWBACK:PUNISH:USER,CLAWBACK,PUNISH,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},1,user,USER_BALANCE,available,debit,clawback_fen,BR-FUND-08；仅 available 扣回；扣回额 <=0 不写
 CLAWBACK:PUNISH:USER,CLAWBACK,PUNISH,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；仅 available 扣回；扣回额 <=0 不写
 CLAWBACK:RIGHTS:BAD_DEBT,CLAWBACK,RIGHTS,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},1,platform,BAD_DEBT,TBD(08 未定),debit,clawback_fen,BR-FUND-08；processing/done 且份额已入账；金额及键及类型不变
 CLAWBACK:RIGHTS:BAD_DEBT,CLAWBACK,RIGHTS,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；processing/done 且份额已入账；金额及键及类型不变
-CLAWBACK:RIGHTS:PLATFORM:DECREASE,CLAWBACK,RIGHTS,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:RIGHTS:PLATFORM:DECREASE,CLAWBACK,RIGHTS,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:RIGHTS:PLATFORM:INCREASE,CLAWBACK,RIGHTS,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
-CLAWBACK:RIGHTS:PLATFORM:INCREASE,CLAWBACK,RIGHTS,{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:RIGHTS:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:RIGHTS:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:RIGHTS:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
+CLAWBACK:RIGHTS:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CLAWBACK:{rights_event_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,clawback_fen,BR-FUND-08；平台差额可正可负；平台应得含预留；差额为零不写
 CLAWBACK:RIGHTS:USER,CLAWBACK,RIGHTS,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},1,user,USER_BALANCE,available,debit,clawback_fen,BR-FUND-08；仅 available 扣回；扣回额 <=0 不写
 CLAWBACK:RIGHTS:USER,CLAWBACK,RIGHTS,{order_key}:{user_id}:{role}:CLAWBACK:{rights_event_id},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,clawback_fen,BR-FUND-08；仅 available 扣回；扣回额 <=0 不写
 CREDIT:DIRECT,REFERRAL_CREDIT,DIRECT,{order_key}:{user_id}:{role}:CREDIT,1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,share_fen,BR-FUND-05；role 使用契约 self/share/direct/indirect；金额 >0 才写
 CREDIT:DIRECT,REFERRAL_CREDIT,DIRECT,{order_key}:{user_id}:{role}:CREDIT,2,user,USER_BALANCE,available,credit,share_fen,BR-FUND-05；role 使用契约 self/share/direct/indirect；金额 >0 才写
 CREDIT:INDIRECT,REFERRAL_CREDIT,INDIRECT,{order_key}:{user_id}:{role}:CREDIT,1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,share_fen,BR-FUND-05；role 使用契约 self/share/direct/indirect；金额 >0 才写
 CREDIT:INDIRECT,REFERRAL_CREDIT,INDIRECT,{order_key}:{user_id}:{role}:CREDIT,2,user,USER_BALANCE,available,credit,share_fen,BR-FUND-05；role 使用契约 self/share/direct/indirect；金额 >0 才写
-CREDIT:PLATFORM,TBD(08 未定),,{order_key}:PLATFORM:CREDIT,1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,platform_retain_fen,BR-FUND-05；同一平台凭证包括留存与预留；平台流水类型及子户未定
-CREDIT:PLATFORM,TBD(08 未定),,{order_key}:PLATFORM:CREDIT,2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,platform_retain_fen,BR-FUND-05；同一平台凭证包括留存与预留；平台流水类型及子户未定
-CREDIT:PLATFORM,TBD(08 未定),,{order_key}:PLATFORM:CREDIT,3,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,reserve_fen,BR-FUND-05；预留大于零即使基数为零仍入账
-CREDIT:PLATFORM,TBD(08 未定),,{order_key}:PLATFORM:CREDIT,4,platform,COMMISSION_REVENUE,TBD(08 未定),credit,reserve_fen,BR-FUND-05；预留大于零即使基数为零仍入账
+CREDIT:PLATFORM,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CREDIT,1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,TBD(08 未定),BR-FUND-05；平台留存加预留合计不在金额词表；一借一贷；基数为零而预留大于零仍入账
+CREDIT:PLATFORM,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:CREDIT,2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,TBD(08 未定),BR-FUND-05；平台留存加预留合计不在金额词表；一借一贷；基数为零而预留大于零仍入账
 CREDIT:SELF,REBATE_CREDIT,,{order_key}:{user_id}:{role}:CREDIT,1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,share_fen,BR-FUND-05；role 使用契约 self/share/direct/indirect；金额 >0 才写
 CREDIT:SELF,REBATE_CREDIT,,{order_key}:{user_id}:{role}:CREDIT,2,user,USER_BALANCE,available,credit,share_fen,BR-FUND-05；role 使用契约 self/share/direct/indirect；金额 >0 才写
 CREDIT:SHARE,SHARE_CREDIT,,{order_key}:{user_id}:{role}:CREDIT,1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,share_fen,BR-FUND-05；role 使用契约 self/share/direct/indirect；金额 >0 才写
 CREDIT:SHARE,SHARE_CREDIT,,{order_key}:{user_id}:{role}:CREDIT,2,user,USER_BALANCE,available,credit,share_fen,BR-FUND-05；role 使用契约 self/share/direct/indirect；金额 >0 才写
-FORFEIT,TBD(08 未定),,{order_key}:PLATFORM:FORFEIT:{uid}:{role},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,share_fen,BR-CALC-13；首次整份没收；首次与对应暂缓转没收共用键；不按原因另建科目
-FORFEIT,TBD(08 未定),,{order_key}:PLATFORM:FORFEIT:{uid}:{role},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,share_fen,BR-CALC-13；首次整份没收；首次与对应暂缓转没收共用键；不按原因另建科目
-FORFEIT:REASSIGN,TBD(08 未定),,{order_key}:PLATFORM:FORFEIT:{uid}:{role}:REASSIGN:{reassign_id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,share_fen,BR-CALC-13；首次整份没收；首次与对应暂缓转没收共用键；不按原因另建科目
-FORFEIT:REASSIGN,TBD(08 未定),,{order_key}:PLATFORM:FORFEIT:{uid}:{role}:REASSIGN:{reassign_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,share_fen,BR-CALC-13；首次整份没收；首次与对应暂缓转没收共用键；不按原因另建科目
+FORFEIT,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:FORFEIT:{uid}:{role},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,share_fen,BR-CALC-13；首次整份没收；首次与对应暂缓转没收共用键；不按原因另建科目
+FORFEIT,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:FORFEIT:{uid}:{role},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,share_fen,BR-CALC-13；首次整份没收；首次与对应暂缓转没收共用键；不按原因另建科目
+FORFEIT:DEFERRED,TBD(08 未定),TBD(08 未定),TBD(08 未定),1,platform,TBD(08 未定),TBD(08 未定),debit,TBD(08 未定),BR-CALC-13；只没收当前待补记额；不追加 forfeited 事件；摘录未给凭证键与借贷科目；待补 BR-FUND-04 ⑫
+FORFEIT:DEFERRED,TBD(08 未定),TBD(08 未定),TBD(08 未定),2,platform,TBD(08 未定),TBD(08 未定),credit,TBD(08 未定),BR-CALC-13；只没收当前待补记额；不追加 forfeited 事件；摘录未给凭证键与借贷科目；待补 BR-FUND-04 ⑫
+FORFEIT:REASSIGN,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:FORFEIT:{uid}:{role}:REASSIGN:{reassign_id},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,share_fen,BR-CALC-13；首次整份没收；首次与对应暂缓转没收共用键；不按原因另建科目
+FORFEIT:REASSIGN,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:FORFEIT:{uid}:{role}:REASSIGN:{reassign_id},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,share_fen,BR-CALC-13；首次整份没收；首次与对应暂缓转没收共用键；不按原因另建科目
 REASSIGN_CREDIT,TBD(08 未定),TBD(08 未定),TBD(08 未定),1,TBD(08 未定),TBD(08 未定),TBD(08 未定),debit,reassign_fen,BR-FUND-15；沿用原分录 ledger_type/sub_type；摘录无改派键及完整模板；不新增流水枚举
 REASSIGN_CREDIT,TBD(08 未定),TBD(08 未定),TBD(08 未定),2,TBD(08 未定),TBD(08 未定),TBD(08 未定),credit,reassign_fen,BR-FUND-15；沿用原分录 ledger_type/sub_type；摘录无改派键及完整模板；不新增流水枚举
 REASSIGN_REV,TBD(08 未定),TBD(08 未定),TBD(08 未定),1,TBD(08 未定),TBD(08 未定),TBD(08 未定),debit,reassign_fen,BR-FUND-15；沿用原分录 ledger_type/sub_type；摘录无改派键及完整模板；不新增流水枚举
@@ -101,38 +111,38 @@ REWARD:newbie,REWARD,newbie,TBD(08 未定),1,TBD(08 未定),TBD(08 未定),TBD(0
 REWARD:newbie,REWARD,newbie,TBD(08 未定),2,TBD(08 未定),TBD(08 未定),TBD(08 未定),credit,TBD(08 未定),BR-FUND-15；P1 仅定义类型和值域；记账科目及金额及幂等键待定
 SETTLE_ADJUST:PRICE_COMPARE:BAD_DEBT,SETTLE_ADJUST,PRICE_COMPARE,{order_key}:{user_id}:{role}:ADJ:{seq},1,platform,BAD_DEBT,TBD(08 未定),debit,adjust_fen,BR-FUND-09；注销 processing/done 负差改记平台坏账
 SETTLE_ADJUST:PRICE_COMPARE:BAD_DEBT,SETTLE_ADJUST,PRICE_COMPARE,{order_key}:{user_id}:{role}:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；注销 processing/done 负差改记平台坏账
-SETTLE_ADJUST:PRICE_COMPARE:PLATFORM:DECREASE,SETTLE_ADJUST,PRICE_COMPARE,{order_key}:PLATFORM:ADJ:{seq},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
-SETTLE_ADJUST:PRICE_COMPARE:PLATFORM:DECREASE,SETTLE_ADJUST,PRICE_COMPARE,{order_key}:PLATFORM:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
-SETTLE_ADJUST:PRICE_COMPARE:PLATFORM:INCREASE,SETTLE_ADJUST,PRICE_COMPARE,{order_key}:PLATFORM:ADJ:{seq},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
-SETTLE_ADJUST:PRICE_COMPARE:PLATFORM:INCREASE,SETTLE_ADJUST,PRICE_COMPARE,{order_key}:PLATFORM:ADJ:{seq},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:PRICE_COMPARE:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:PRICE_COMPARE:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:PRICE_COMPARE:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:PRICE_COMPARE:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
 SETTLE_ADJUST:PRICE_COMPARE:USER:DECREASE,SETTLE_ADJUST,PRICE_COMPARE,{order_key}:{user_id}:{role}:ADJ:{seq},1,user,USER_BALANCE,available,debit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:PRICE_COMPARE:USER:DECREASE,SETTLE_ADJUST,PRICE_COMPARE,{order_key}:{user_id}:{role}:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:PRICE_COMPARE:USER:INCREASE,SETTLE_ADJUST,PRICE_COMPARE,{order_key}:{user_id}:{role}:ADJ:{seq},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:PRICE_COMPARE:USER:INCREASE,SETTLE_ADJUST,PRICE_COMPARE,{order_key}:{user_id}:{role}:ADJ:{seq},2,user,USER_BALANCE,available,credit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:PRICE_PROTECT:BAD_DEBT,SETTLE_ADJUST,PRICE_PROTECT,{order_key}:{user_id}:{role}:ADJ:{seq},1,platform,BAD_DEBT,TBD(08 未定),debit,adjust_fen,BR-FUND-09；注销 processing/done 负差改记平台坏账
 SETTLE_ADJUST:PRICE_PROTECT:BAD_DEBT,SETTLE_ADJUST,PRICE_PROTECT,{order_key}:{user_id}:{role}:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；注销 processing/done 负差改记平台坏账
-SETTLE_ADJUST:PRICE_PROTECT:PLATFORM:DECREASE,SETTLE_ADJUST,PRICE_PROTECT,{order_key}:PLATFORM:ADJ:{seq},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
-SETTLE_ADJUST:PRICE_PROTECT:PLATFORM:DECREASE,SETTLE_ADJUST,PRICE_PROTECT,{order_key}:PLATFORM:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
-SETTLE_ADJUST:PRICE_PROTECT:PLATFORM:INCREASE,SETTLE_ADJUST,PRICE_PROTECT,{order_key}:PLATFORM:ADJ:{seq},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
-SETTLE_ADJUST:PRICE_PROTECT:PLATFORM:INCREASE,SETTLE_ADJUST,PRICE_PROTECT,{order_key}:PLATFORM:ADJ:{seq},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:PRICE_PROTECT:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:PRICE_PROTECT:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:PRICE_PROTECT:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:PRICE_PROTECT:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
 SETTLE_ADJUST:PRICE_PROTECT:USER:DECREASE,SETTLE_ADJUST,PRICE_PROTECT,{order_key}:{user_id}:{role}:ADJ:{seq},1,user,USER_BALANCE,available,debit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:PRICE_PROTECT:USER:DECREASE,SETTLE_ADJUST,PRICE_PROTECT,{order_key}:{user_id}:{role}:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:PRICE_PROTECT:USER:INCREASE,SETTLE_ADJUST,PRICE_PROTECT,{order_key}:{user_id}:{role}:ADJ:{seq},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:PRICE_PROTECT:USER:INCREASE,SETTLE_ADJUST,PRICE_PROTECT,{order_key}:{user_id}:{role}:ADJ:{seq},2,user,USER_BALANCE,available,credit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:SETTLE_DIFF:BAD_DEBT,SETTLE_ADJUST,SETTLE_DIFF,{order_key}:{user_id}:{role}:ADJ:{seq},1,platform,BAD_DEBT,TBD(08 未定),debit,adjust_fen,BR-FUND-09；注销 processing/done 负差改记平台坏账
 SETTLE_ADJUST:SETTLE_DIFF:BAD_DEBT,SETTLE_ADJUST,SETTLE_DIFF,{order_key}:{user_id}:{role}:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；注销 processing/done 负差改记平台坏账
-SETTLE_ADJUST:SETTLE_DIFF:PLATFORM:DECREASE,SETTLE_ADJUST,SETTLE_DIFF,{order_key}:PLATFORM:ADJ:{seq},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
-SETTLE_ADJUST:SETTLE_DIFF:PLATFORM:DECREASE,SETTLE_ADJUST,SETTLE_DIFF,{order_key}:PLATFORM:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
-SETTLE_ADJUST:SETTLE_DIFF:PLATFORM:INCREASE,SETTLE_ADJUST,SETTLE_DIFF,{order_key}:PLATFORM:ADJ:{seq},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
-SETTLE_ADJUST:SETTLE_DIFF:PLATFORM:INCREASE,SETTLE_ADJUST,SETTLE_DIFF,{order_key}:PLATFORM:ADJ:{seq},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:SETTLE_DIFF:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},1,platform,COMMISSION_REVENUE,TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:SETTLE_DIFF:PLATFORM:DECREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:SETTLE_DIFF:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
+SETTLE_ADJUST:SETTLE_DIFF:PLATFORM:INCREASE,TBD(08 未定),TBD(08 未定),{order_key}:PLATFORM:ADJ:{seq},2,platform,COMMISSION_REVENUE,TBD(08 未定),credit,adjust_fen,BR-FUND-09；平台差额方向独立于整单分路；应得含预留
 SETTLE_ADJUST:SETTLE_DIFF:USER:DECREASE,SETTLE_ADJUST,SETTLE_DIFF,{order_key}:{user_id}:{role}:ADJ:{seq},1,user,USER_BALANCE,available,debit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:SETTLE_DIFF:USER:DECREASE,SETTLE_ADJUST,SETTLE_DIFF,{order_key}:{user_id}:{role}:ADJ:{seq},2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:SETTLE_DIFF:USER:INCREASE,SETTLE_ADJUST,SETTLE_DIFF,{order_key}:{user_id}:{role}:ADJ:{seq},1,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),debit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
 SETTLE_ADJUST:SETTLE_DIFF:USER:INCREASE,SETTLE_ADJUST,SETTLE_DIFF,{order_key}:{user_id}:{role}:ADJ:{seq},2,user,USER_BALANCE,available,credit,adjust_fen,BR-FUND-09；负差即时；正差候选批准时重算；零差不写；分路按整单
-UNION_RECEIPT:CASH_ALIPAY,TBD(08 未定),,TBD(08 未定),1,platform,CASH_ALIPAY,TBD(08 未定),debit,TBD(08 未定),BR-FUND-20；实际回款金额符号及幂等键及流水类型未定；不得将回款金额等同单笔 N
-UNION_RECEIPT:CASH_ALIPAY,TBD(08 未定),,TBD(08 未定),2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,TBD(08 未定),BR-FUND-20；实际回款金额符号及幂等键及流水类型未定；不得将回款金额等同单笔 N
-UNION_RECEIPT:CASH_BANK,TBD(08 未定),,TBD(08 未定),1,platform,CASH_BANK,TBD(08 未定),debit,TBD(08 未定),BR-FUND-20；实际回款金额符号及幂等键及流水类型未定；不得将回款金额等同单笔 N
-UNION_RECEIPT:CASH_BANK,TBD(08 未定),,TBD(08 未定),2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,TBD(08 未定),BR-FUND-20；实际回款金额符号及幂等键及流水类型未定；不得将回款金额等同单笔 N
+UNION_RECEIPT:CASH_ALIPAY,TBD(08 未定),TBD(08 未定),TBD(08 未定),1,platform,CASH_ALIPAY,TBD(08 未定),debit,TBD(08 未定),BR-FUND-20；实际回款金额符号及幂等键及流水类型未定；不得将回款金额等同单笔 N
+UNION_RECEIPT:CASH_ALIPAY,TBD(08 未定),TBD(08 未定),TBD(08 未定),2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,TBD(08 未定),BR-FUND-20；实际回款金额符号及幂等键及流水类型未定；不得将回款金额等同单笔 N
+UNION_RECEIPT:CASH_BANK,TBD(08 未定),TBD(08 未定),TBD(08 未定),1,platform,CASH_BANK,TBD(08 未定),debit,TBD(08 未定),BR-FUND-20；实际回款金额符号及幂等键及流水类型未定；不得将回款金额等同单笔 N
+UNION_RECEIPT:CASH_BANK,TBD(08 未定),TBD(08 未定),TBD(08 未定),2,platform,UNION_RECEIVABLE:{platform},TBD(08 未定),credit,TBD(08 未定),BR-FUND-20；实际回款金额符号及幂等键及流水类型未定；不得将回款金额等同单笔 N
 WITHDRAW:FREEZE,WITHDRAW_FREEZE,,wd:{withdrawal_id}:FREEZE,1,user,USER_BALANCE,available,debit,withdraw_fen,BR-WDR-09；W1；available 减少且 frozen 增加
 WITHDRAW:FREEZE,WITHDRAW_FREEZE,,wd:{withdrawal_id}:FREEZE,2,user,USER_BALANCE,frozen,credit,withdraw_fen,BR-WDR-09；W1；available 减少且 frozen 增加
 WITHDRAW:RETURN,WITHDRAW_RETURN,,wd:{withdrawal_id}:RETURN,1,user,USER_BALANCE,frozen,debit,withdraw_fen,BR-WDR-09；W3/W6/W10 FAILED；frozen 减少且 available 增加
