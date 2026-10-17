@@ -222,6 +222,21 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "realname"
   },
   {
+    "method": "POST",
+    "path": "/v1/me/realname",
+    "auth": "phone"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/me/labor-agreement",
+    "auth": "realname"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/me/labor-agreement/sign",
+    "auth": "realname"
+  },
+  {
     "method": "GET",
     "path": "/v1/me/tips",
     "auth": "login"

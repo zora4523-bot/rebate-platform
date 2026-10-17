@@ -1206,6 +1206,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/realname": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Real-name verification (name and ID number)
+         * @description Two-element verification of name plus an 18-digit resident ID number, no face check
+         *     (BR-ID-25). The client only offers it when the user first enters a withdrawal or binds a
+         *     payout account while realname_status≠verified; no other entry may ask for the ID number.
+         *     Preconditions: no phone bound → 10005, checked before the consent (a member without phone
+         *     never gets 10004 or 30406, BR-ID-01 细则); no id_verification consent → 10004 with
+         *     data.consent_type=id_verification. Then, first hit wins (BR-ID-25): 20001 format (18
+         *     digits and check digit; the format is judged by the server, not by the request schema,
+         *     so that 10005 / 10004 come first) → 30407 age (computed locally from the ID number,
+         *     BR-ID-26) → 30410 today's attempts used up → 30405 (the ID number is already verified on
+         *     another account of this app; that account is never revealed) → vendor call. At most 3
+         *     attempts per user per natural day (+08:00): a vendor call with a definite result (match or
+         *     mismatch) counts 1, 30405 counts 1 (no vendor call); 20001, 30407 and vendor timeout or
+         *     error (50401 / 50301) do not count. The verification service being unavailable, including
+         *     not yet connected, is 50301 and does not count. A mismatch is 30406. A failed attempt
+         *     keeps neither the name nor the ID number. After verified the user cannot change it
+         *     themselves (corrections only by customer service in the admin console); the code for a
+         *     resubmission after verified is set by the implementing task. The name and the ID number
+         *     never go into logs. The client fetches GET /v1/me again after success. Version gate:
+         *     applied.
+         */
+        post: operations["submitRealname"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/labor-agreement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Current labor agreement and whether I must sign it
+         * @description The currently effective labor agreement version, the address of its full text, its sha256
+         *     and whether the user must sign (BR-WDR-31; 04 §6.1). need_sign is true when the user has
+         *     not signed the current version, or when the current version is marked as requiring a new
+         *     signature and the signed version is older. signed_version / signed_at are the latest
+         *     signature, null when never signed. The version comes from server configuration; the
+         *     contract does not promise how it is managed in the admin console. Read-only, so an
+         *     h5_token may read it. Not realname → 30304.
+         */
+        get: operations["getLaborAgreement"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/labor-agreement/sign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign the labor agreement
+         * @description Signs the currently effective labor agreement version (BR-WDR-31). Native App only: an
+         *     h5_token gets 10403, and neither JSBridge nor the Agent may sign on the user's behalf. The
+         *     signer is the verified real-name person; not realname → 30304. version not the currently
+         *     effective version → 20001 data.fields=[version]; text_sha256 not the digest of that
+         *     version → 20001 data.fields=[text_sha256]; agreed not true → 20001 data.fields=[agreed].
+         *     Every signature inserts one record and never changes an earlier one (version, text
+         *     digest, server time, signer snapshot, channel, device_id). The client fetches
+         *     GET /v1/me/labor-agreement again after success. Version gate: applied.
+         */
+        post: operations["signLaborAgreement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/tips": {
         parameters: {
             query?: never;
@@ -4342,6 +4433,77 @@ export interface components {
             payee_name: string;
         };
         SavePayoutAccountRequest: components["schemas"]["SavePayoutAccountByAlipay"] | components["schemas"]["SavePayoutAccountByBankCard"];
+        SubmitRealnameRequest: {
+            /** @description Real name as typed; normalised by the server. */
+            name: string;
+            /**
+             * @description 18-digit resident ID number as typed. No pattern here: length and check digit are judged
+             *     by the server (20001 data.fields=[id_no], BR-ID-25) after the phone and consent checks.
+             */
+            id_no: string;
+        };
+        SubmitRealnameResult: {
+            /**
+             * @description contracts/enums/identity.yaml realname_status; always verified on success.
+             * @enum {string}
+             */
+            realname_status: "verified";
+            /** @description Masked by the server (BR-ID-33). */
+            masked_name: string;
+        };
+        SubmitRealnameResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["SubmitRealnameResult"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Currently effective labor agreement and the user's signing state (BR-WDR-31). */
+        LaborAgreement: {
+            /**
+             * Format: int32
+             * @description Currently effective version.
+             */
+            version: number;
+            /**
+             * Format: uri
+             * @description Address of the full text of that version.
+             */
+            text_url: string;
+            /** @description Lower-case hex sha256 of that version's text. */
+            text_sha256: string;
+            /**
+             * @description True when the current version is not signed, or it is marked as requiring a new signature
+             *     and the signed version is older.
+             */
+            need_sign: boolean;
+            /**
+             * Format: int32
+             * @description Version of the latest signature; null when never signed.
+             */
+            signed_version: number | null;
+            /**
+             * Format: date-time
+             * @description Server time of the latest signature; null when never signed.
+             */
+            signed_at: string | null;
+        };
+        LaborAgreementResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["LaborAgreement"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        SignLaborAgreementRequest: {
+            /**
+             * Format: int32
+             * @description The version shown to the user (GET /v1/me/labor-agreement); must be the current one.
+             */
+            version: number;
+            /** @description sha256 of the text shown; must match that version (20001 data.fields=[text_sha256]). */
+            text_sha256: string;
+            /** @description Must be true; the server returns 20001 data.fields=[agreed] otherwise. */
+            agreed: boolean;
+        };
         /**
          * @description Article category (04 §6.2：帮助、规则、公告、协议; codes defined here, no enums/ entry yet).
          * @enum {string}
@@ -9812,6 +9974,195 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["PayoutAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    submitRealname: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "张三",
+                 *       "id_no": "11010519491231002X"
+                 *     }
+                 */
+                "application/json": components["schemas"]["SubmitRealnameRequest"];
+            };
+        };
+        responses: {
+            /** @description Verified. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "realname_status": "verified",
+                     *         "masked_name": "**三"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SubmitRealnameResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getLaborAgreement: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current labor agreement and the signing state. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LaborAgreementResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    signLaborAgreement: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "version": 2,
+                 *       "text_sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                 *       "agreed": true
+                 *     }
+                 */
+                "application/json": components["schemas"]["SignLaborAgreementRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
