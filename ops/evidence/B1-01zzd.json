@@ -1,0 +1,72 @@
+{
+  "task": "B1-01zzd",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "8eb02c2d610c0846e23f171dd5180ee5065d1dec",
+  "red_tests": [
+    "test/spec/db/pg-url-linear/linear.test.ts > [AC-B1-01zzd#1] 普通长单词原样保留且两个入口均在时限内完成",
+    "test/spec/db/pg-url-linear/linear.test.ts > [AC-B1-01zzd#2] 没有艾特符的长 URL 原样保留且两个入口均在时限内完成",
+    "test/spec/db/pg-url-linear/linear.test.ts > [AC-B1-01zzd#3] 闭合引号后粘连长文本全部打码且两个入口均在时限内完成",
+    "test/spec/db/pg-url-linear/linear.test.ts > [AC-B1-01zzd#4] 逗号粘连的重复未加引号口令全部打码且两个入口均在时限内完成",
+    "test/spec/db/pg-url-linear/linear.test.ts > [AC-B1-01zzd#5] 重复未闭合引号口令全部打码且两个入口均在时限内完成"
+  ],
+  "risk_note": "RV2 (packages/db/src/pg-url.ts, log and error redaction). Follow-up 28 of followups/staging-b1-01zc-zd.md: [AC-B1-01zy#6] took ~700 s on the 1,000,000-run longrun job (limit 600 s). Root cause in the implementation: linear but ~40 ns/char on the property's inputs, and quadratic or worse on adversarial inputs (URL_CREDENTIALS retried from every start, unanchored ENDS_IN_ASSIGNMENT, every secret assignment inside a masked value re-scanned to its end). Codex wrote test/spec/db/pg-url-linear/** (1 attempt; its edit of the frozen property file's timeout was dropped by the orchestrator as out of bounds, precedent #572 test-change), red 5 tests on the test runner; Claude spec-test review round 1 pass (3 S2, covered by the implementation's unit tests). Opus implemented (one follow-up within the round: the differential unit test dropped fast-check/@couli/testing so no dependency change). Output byte-for-byte unchanged: in-package seeded differential against a verbatim copy of the old implementation, plus an orchestrator differential of 400,000 random texts (0 mismatches). Codex money-checklist review round 1 pass (0 findings). Full verification by the required CI checks (ops/approvals.yaml id 21). After the review, the orchestrator added explicit { timeout: 60_000 } to five unit tests in packages/db/src/pg-url.test.ts (the 65,536-code-unit differential exceeded Vitest's 5 s default on the CI runner); assertions and the implementation are unchanged.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "8eb02c2d610c0846e23f171dd5180ee5065d1dec",
+      "tree": "5e730b05724ee6c0261e3b80d9722af8b939e9e0",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T06:08:32Z",
+      "finished_at": "2026-10-17T06:09:09Z",
+      "red_tests": [
+        "test/spec/db/pg-url-linear/linear.test.ts > [AC-B1-01zzd#1] 普通长单词原样保留且两个入口均在时限内完成",
+        "test/spec/db/pg-url-linear/linear.test.ts > [AC-B1-01zzd#2] 没有艾特符的长 URL 原样保留且两个入口均在时限内完成",
+        "test/spec/db/pg-url-linear/linear.test.ts > [AC-B1-01zzd#3] 闭合引号后粘连长文本全部打码且两个入口均在时限内完成",
+        "test/spec/db/pg-url-linear/linear.test.ts > [AC-B1-01zzd#4] 逗号粘连的重复未加引号口令全部打码且两个入口均在时限内完成",
+        "test/spec/db/pg-url-linear/linear.test.ts > [AC-B1-01zzd#5] 重复未闭合引号口令全部打码且两个入口均在时限内完成"
+      ],
+      "expected": ["test/spec/db/pg-url-linear/linear.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "0984e2f94208522f9a53dbf35a40dfdde06a7125ae067f1792937f34463fd843"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "round 1 pass, 0 findings (couli-runs/B1-01zzd/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass with three S2 (couli-runs/B1-01zzd/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8ab6d8a94c906160d9ab5ec57ae5d3511763601d",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "bdcec12d0d35ed0f3d767a1eccddaf0c155e847d",
+    "specs": "b27c6500eac7ac6db84687eddad33b685fe0f012"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001 on test/properties/db/pg-url-redaction.test.ts with the new implementation: [AC-B1-01zy#6] 100 s, #7 22 s on a Mac at load average 38-54 (before: 15 s per 100,000 runs, after 6.3 s). test/properties unchanged; the longrun-run CI job runs the full tier",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
