@@ -1,0 +1,24 @@
+id: CT-04b
+repo: rebate-platform
+title: 契约——订单 Order.quantity 改为可空（库内 orders 该列可空、入库暂不写；listOrders / getOrder 仍 x-implementation planned，非破坏性）
+type: contract
+# 草稿 2026-10-18（W1 线，订单线）。来源：B1-08l 起草核对契约（编排决定 D10-43）。
+# 不许以 1 填充件数；商品标题 / 图片 / 件数的数据补全另立任务（followups）。契约槽：新增 / 修改操作类，按 B3-lane/notices.md 规则登记后就绪即占。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/contracts/orders-quantity/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+  - 'test/spec/contracts/orders-quantity/**'
+status: todo
+pr: null
