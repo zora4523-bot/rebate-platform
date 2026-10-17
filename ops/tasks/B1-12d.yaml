@@ -22,5 +22,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/notification/message-read/**'
-status: todo
-pr: null
+status: done
+pr: 658
