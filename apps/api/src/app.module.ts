@@ -274,6 +274,7 @@ function identityModule(): DynamicModule {
                 }
               },
             },
+    },
     thirdPartyIdentity: {
       inject: [APP_CONFIG, ROOT_LOGGER],
       useFactory: (config: AppConfig, logger: RootLogger) =>
