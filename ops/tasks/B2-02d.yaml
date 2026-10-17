@@ -1,0 +1,25 @@
+id: B2-02d
+repo: rebate-platform
+title: 迁移 0038：daily_balances（按账户 × 子户 × 会计日的期初、借方、贷方、期末）及授权；约束索引具名
+type: migration
+# 2026-10-17 资金线入账（ledger-plan.md §2.1、D9；迁移号 0038 已在 B3-lane/notices.md 预定）。依据 BR-FUND-19 ①「期初 + 当日发生额 = 期末」。
+# 列按 D9 默认 A：主键 (app_id, account_id, sub_account, accounting_date)，opening_fen、debit_fen、credit_fen、closing_fen（bigint 整数分），(app_id, account_id) 外键 → ledger_accounts；
+# 写入方是 B2-02j 日终运行器（重跑幂等），本任务只建表。授权只给 couli_app SELECT、INSERT、UPDATE（重跑覆盖当日行），couli_readonly 只 SELECT。须同步 tools/ci/lint-migrations.test.ts（daily_balances 已由 B2-02b 入资金表名单）。两段式（db/AGENTS.md）。
+refs: [BR-FUND-19]
+refs_hash:
+  BR-FUND-19: 6c6cde3b3d84
+deps: [B2-02b, B2-02c]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+test_paths:
+  - 'test/spec/db/ledger/daily/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/ledger/daily/**'
+status: todo
+pr: null
