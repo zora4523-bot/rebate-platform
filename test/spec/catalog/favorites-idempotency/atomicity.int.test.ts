@@ -56,9 +56,24 @@ it('[AC-B1-28e#4] 加入后 completed 写失败：收藏与记录一起回滚，
       status: 200,
       body: '{"code":0,"msg":"","data":{"platform":"taobao","product_key":"tb:favorite001","favorited_at":"2031-05-20T04:00:00.000Z"},"trace_id":"at-cap"}',
     });
+    f.state.cap = 2;
+    expect(
+      await f.call('add', 'reach-cap', {
+        headers: { 'idempotency-key': 'fill-last-slot', 'x-channel': 'appstore' },
+        params: { platform: 'taobao', product_key: 'tb:favorite002' },
+      }),
+    ).toEqual({
+      status: 200,
+      body: '{"code":0,"msg":"","data":{"platform":"taobao","product_key":"tb:favorite002","favorited_at":"2031-05-20T04:02:00.000Z"},"trace_id":"reach-cap"}',
+    });
+    expect((await f.favorites()).map((row) => row.product_key)).toEqual([
+      'tb:favorite001',
+      'tb:favorite002',
+    ]);
+    expect(await f.records('fill-last-slot')).toEqual([{ status: 'completed' }]);
     const full = await f.call('add', 'full-trace', {
       headers: { 'idempotency-key': 'new-at-cap', 'x-channel': 'appstore' },
-      params: { platform: 'taobao', product_key: 'tb:favorite002' },
+      params: { platform: 'taobao', product_key: 'tb:favorite003' },
     });
     expect(full.status).toBe(400);
     expect(JSON.parse(full.body)).toMatchObject({
@@ -66,7 +81,10 @@ it('[AC-B1-28e#4] 加入后 completed 写失败：收藏与记录一起回滚，
       data: { reason: 'favorites_full' },
     });
     expect(await f.records('new-at-cap')).toEqual([]);
-    expect((await f.favorites()).map((row) => row.product_key)).toEqual(['tb:favorite001']);
+    expect((await f.favorites()).map((row) => row.product_key)).toEqual([
+      'tb:favorite001',
+      'tb:favorite002',
+    ]);
   } finally {
     await f.close();
   }
@@ -117,6 +135,29 @@ it('[AC-B1-28e#5] 取消后 completed 写失败：原行恢复，另一端加入
       '01920000-0000-7000-8000-000000000201',
     ]);
     expect(f.state.favoriteWrites).toBe(2);
+    expect(
+      await f.call('remove', 'absent-trace', {
+        headers: { 'idempotency-key': 'remove-absent', 'x-channel': 'appstore' },
+        params: { platform: 'taobao', product_key: 'tb:favorite003' },
+      }),
+    ).toEqual({
+      status: 200,
+      body: '{"code":0,"msg":"","data":{},"trace_id":"absent-trace"}',
+    });
+    expect(await f.records('remove-absent')).toEqual([{ status: 'completed' }]);
+    expect(
+      (await f.favorites()).map((row) => ({
+        id: row.id,
+        key: row.product_key,
+        at: row.created_at.toISOString(),
+      })),
+    ).toEqual([
+      {
+        id: '01920000-0000-7000-8000-000000000201',
+        key: 'tb:favorite001',
+        at: '2031-05-20T04:00:00.000Z',
+      },
+    ]);
   } finally {
     await f.close();
   }
