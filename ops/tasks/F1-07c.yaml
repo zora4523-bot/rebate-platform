@@ -1,0 +1,29 @@
+id: F1-07c
+repo: rebate-platform
+title: linking：后台联盟授权管理——POST /admin/v1/users/{user_id}/union-bindings/{platform}/reset（union.binding_reset，只 active / invalid → released + 冷却）、/disable（→ blocked(admin_disable)）、/enable（只 blocked(admin_disable) → invalid）；动态码、原因必填、row_version 比较（20902 union_binding）、状态不允许 30154、审计；同平台新绑定行的 row_version 接在旧行最大值之后；导出封禁 / 解封联动端口；去掉 3 条 planned
+type: impl
+# 2026-10-18 入账（后台后端线 admin-backend，F1-07 第三批；编排会话 10-17 admin-prompt5 第 2 项）。依据 05 F1-07、04 §6.6 / §11.2、契约 CT-02j（#647）三个操作的 description。
+# refs 为空：BR-ID-20（与一跳引用）写进 refs 后任务书 33KB，超过 brief.ts 24KB 上限；按本线 2026-10-17 05:02 在 notices 提出的选项 B（编排未回复，按默认推进）：
+#   BR-ID-20 正文与细则由编排者逐字摘进任务书第 9 节，规则测试评审与代码评审按摘录核对；评审移到 out_of_scope 的 BR 条目由编排者逐条判断是否在本任务补（同 F1-07b 做法）。
+# 取值裁定见 couli-runs/ADMIN-backend/f107-plan.md（裁定 2、5、7 与「CT-02j 实现方自定、编排者认可」）。
+# 要点：union_bindings 唯一写者是 linking，状态改动只经 canTransitionBinding 已有的边（不加新边，冻结测试不改）；
+#   版本承接要改 linking/application/union-bindings.ts 与 pdd-authority.ts 两处 insertInto('union_bindings')（同平台旧行最大 row_version + 1，契约已写明）；
+#   导出 blockForBan / restoreAfterUnban（接收调用方事务；解封只恢复因 ban 置 blocked 的行，裁定 2）供 F1-07d 调用；重置时清该用户转链缓存（契约 reset 描述）。
+refs: []
+refs_hash: {}
+deps: [CT-02j]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/linking/admin-union-bindings/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/admin-union-bindings/**'
+status: todo
+pr: null
