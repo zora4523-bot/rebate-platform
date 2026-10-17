@@ -2,7 +2,7 @@
 // (规划/08 BR-ID-07 细则「推送令牌与会话」: 令牌值去重、归属、冲突冻结、上报时只接受当前会话).
 // notification is the only writer of push_tokens. The rule tests in
 // test/spec/notification/push-token-report/** import this file by path; the names, signatures and
-// the semantics written here are the contract. SKELETON: every function throws NotImplemented.
+// the semantics written here are the contract.
 //
 // createPushTokenReporter(options).report(command) — one transaction per report; resolves (void)
 // in every rule outcome (written, ignored, refused, frozen): the route always answers success.
@@ -44,17 +44,12 @@
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
+import { createHash } from 'node:crypto';
 import type { Clock, RootLogger } from '../../platform/index.ts';
+import { reportInTransaction } from '../infra/push-token-report-store.ts';
+import type { PushTokenReport } from './push-token-report-types.ts';
 
-/** One report: the subject is the verified token principal, the value is the request body. */
-export interface PushTokenReport {
-  readonly app_id: string;
-  readonly user_id: string;
-  readonly sid: string;
-  readonly device_id: string;
-  readonly provider: string;
-  readonly token: string;
-}
+export type { PushTokenReport } from './push-token-report-types.ts';
 
 /** content's configValue port shape (createContentReader satisfies it). */
 export interface PushTokenConfigReader {
@@ -75,6 +70,31 @@ export interface PushTokenReporter {
 }
 
 export function createPushTokenReporter(options: PushTokenReporterOptions): PushTokenReporter {
-  void options;
-  throw new Error('NotImplemented: createPushTokenReporter');
+  return {
+    async report(command) {
+      const now = options.clock.now();
+      // Read before holding database locks; unavailable configuration uses the rule's default.
+      const configured = await options.config
+        .configValue(command.app_id, 'push.token_conflict_window_hours')
+        .catch(() => null);
+      const value = configured?.value;
+      const hours =
+        typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 24;
+      const conflict = await options.db
+        .transaction()
+        .execute((trx) => reportInTransaction(trx, command, now, hours * 3_600_000));
+      // Emit only the committed outcome: retries and rolled-back moves never duplicate events.
+      if (conflict !== undefined) {
+        options.logger.warn({
+          code: 'PUSH_TOKEN_CONFLICT',
+          app_id: command.app_id,
+          provider: command.provider,
+          reporting_device_id: command.device_id,
+          holding_device_id: conflict.deviceId,
+          outcome: conflict.outcome,
+          token_fingerprint: createHash('sha256').update(command.token).digest('hex'),
+        });
+      }
+    },
+  };
 }

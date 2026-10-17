@@ -15,3 +15,4 @@ export type {
 } from './application/push-token-report.ts';
 export { PushTokenController } from './http/public/push-token.controller.ts';
 export type { PushTokenHttpRequest } from './http/public/push-token.controller.ts';
+export { NotificationModule } from './notification.module.ts';

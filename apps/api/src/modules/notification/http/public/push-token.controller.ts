@@ -5,11 +5,20 @@
 // reporter unchanged. Every rule outcome answers EmptyResponse { code: 0, msg: '', data: {},
 // trace_id: request.id }. No principal → reject without calling the reporter.
 // Mounted by NotificationModule (app.module, api entry) with contractRouteSchema('reportPushToken').
-// SKELETON: Nest decorators are to be applied as plain calls (this file is reachable from the
+// Nest decorators are applied as plain calls (this file is reachable from the
 // `test` project, whose compiler settings have no legacy decorators).
 import type { Schema } from '@couli/contracts-ts';
-import type { TokenPrincipal } from '../../../platform/index.ts';
+import { Controller, HttpCode, HttpException, Inject, Post, Req } from '@nestjs/common';
+import { RouteSchema } from '@nestjs/platform-fastify';
+import {
+  contractRouteSchema,
+  tokenPrincipal,
+  type ContractOperationId,
+  type TokenPrincipal,
+} from '../../../platform/index.ts';
 import type { PushTokenReporter } from '../../application/push-token-report.ts';
+
+export const PUSH_TOKEN_REPORTER = Symbol('PUSH_TOKEN_REPORTER');
 
 /** What the handler reads of the Fastify request, already checked by the request checks. */
 export interface PushTokenHttpRequest {
@@ -22,13 +31,39 @@ export interface PushTokenHttpRequest {
 }
 
 export class PushTokenController {
+  readonly #reporter: PushTokenReporter;
+
   constructor(reporter: PushTokenReporter) {
-    void reporter;
-    throw new Error('NotImplemented: PushTokenController');
+    this.#reporter = reporter;
   }
 
-  report(request: PushTokenHttpRequest): Promise<Schema<'EmptyResponse'>> {
-    void request;
-    throw new Error('NotImplemented: PushTokenController.report');
+  async report(request: PushTokenHttpRequest): Promise<Schema<'EmptyResponse'>> {
+    const principal = tokenPrincipal(request);
+    if (principal === undefined) {
+      throw new HttpException({ code: 10001, msg: '未登录', trace_id: request.id }, 401);
+    }
+    await this.#reporter.report({
+      app_id: principal.app_id,
+      user_id: principal.uid,
+      sid: principal.sid,
+      device_id: principal.device_id,
+      provider: request.body.provider,
+      token: request.body.token,
+    });
+    return { code: 0, msg: '', data: {}, trace_id: request.id };
   }
 }
+
+Controller('v1/devices')(PushTokenController);
+Inject(PUSH_TOKEN_REPORTER)(PushTokenController, undefined, 0);
+const reportMethod = Object.getOwnPropertyDescriptor(PushTokenController.prototype, 'report')!;
+Post('push-token')(PushTokenController.prototype, 'report', reportMethod);
+HttpCode(200)(PushTokenController.prototype, 'report', reportMethod);
+// The orchestrator removes planned and regenerates this operation in its mechanical change.
+// Until then the type assertion permits static checking; the runtime lookup still fails closed.
+RouteSchema(contractRouteSchema('reportPushToken' as ContractOperationId))(
+  PushTokenController.prototype,
+  'report',
+  reportMethod,
+);
+Req()(PushTokenController.prototype, 'report', 0);
