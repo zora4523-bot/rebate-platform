@@ -9,7 +9,19 @@
 // throw that rolls back and stores nothing, so the same key may be retried after the user acts.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
-import type { HandlerResult, ResponseEnvelope } from './index.ts';
+// The two shapes below match HandlerResult / ResponseEnvelope in ./index.ts structurally; they are
+// declared here rather than imported because ./index.ts imports this file (no-circular).
+interface ResponseEnvelope {
+  readonly code: number;
+  readonly msg: string;
+  readonly data?: unknown;
+  readonly trace_id: string;
+}
+
+interface HandlerResult {
+  readonly status: number;
+  readonly envelope: ResponseEnvelope;
+}
 
 /** Thrown by a post-miss check: stored and replayed like a handler's result (code 30000–39999). */
 export class StoredRejection extends Error {
