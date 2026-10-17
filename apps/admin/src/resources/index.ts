@@ -61,6 +61,7 @@ const CATALOGUE: readonly CatalogueRow[] = [
       ['content', any('content.article', 'content.agreement')],
       ['messages', any('content.article', 'content.fund_terms')],
       ['app-versions', any('content.app_version')],
+      ['platform-icons', any('content.platform_icon')],
     ],
   ],
   [

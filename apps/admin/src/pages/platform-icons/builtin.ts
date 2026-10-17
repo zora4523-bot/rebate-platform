@@ -1,6 +1,13 @@
-// Built-in images of the platform marks page (F1-06zd skeleton; types only, the implementation
-// adds the URL map). Kept apart from index.ts so the page can import it without a cycle.
+// Bundled platform images and their URL map, kept apart from the page entry to avoid a cycle.
 import type { PlatformIconKey } from '@couli/contracts-ts';
+import taobao from './assets/taobao.svg?no-inline';
+import tmall from './assets/tmall.svg?no-inline';
+import jd from './assets/jd.svg?no-inline';
+import pdd from './assets/pinduoduo.svg?no-inline';
+import wechat from './assets/wechat.svg?no-inline';
+import wechat_pay from './assets/wechat-pay.svg?no-inline';
+import alipay from './assets/alipay.svg?no-inline';
+import wecom from './assets/wecom.svg?no-inline';
 
 /**
  * BR-TEXT-24 细则「标识键」: key → built-in file name. The built-in images are byte-identical
@@ -18,5 +25,16 @@ export interface BuiltinIconFiles {
   readonly wecom: 'wecom';
 }
 
-/** The built-in image URL of every key (the map the implementation fills from ./assets). */
+/** The built-in image URL of every key. */
 export type BuiltinIconUrls = { readonly [K in PlatformIconKey]: string };
+
+export const builtinIconUrls: BuiltinIconUrls = {
+  taobao,
+  tmall,
+  jd,
+  pdd,
+  wechat,
+  wechat_pay,
+  alipay,
+  wecom,
+};
