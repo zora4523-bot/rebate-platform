@@ -9,7 +9,7 @@ type: impl
 # 分工：orders 在 Codex 实现禁区 → impl claude、tester codex。
 refs: []
 refs_hash: {}
-deps: [B1-08g, B1-08f, B1-08h]
+deps: [B1-08g, B1-08f, B1-08h, B1-08i]
 paths:
   - 'apps/api/src/modules/orders/**'
   - 'apps/api/src/app.module.ts'

@@ -7,7 +7,7 @@ type: impl
 # BR-CALC-10。blocked：commission 的快照生成接口与 commission_splits 表尚无任务（资金线 B2-03 未拆部分），BR-CALC-27 四段金额待决策；资金线已立 B2-03g（分佣快照写入端口，#599），已加进 deps。本线不写四段金额列。
 refs: []
 refs_hash: {}
-deps: [B1-08h, B2-03g]
+deps: [B1-08h, B2-03g, B1-08i, B1-08j]
 paths:
   - 'apps/api/src/modules/orders/**'
 test_paths:
