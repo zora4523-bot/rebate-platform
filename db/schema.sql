@@ -2671,6 +2671,71 @@ CREATE TABLE app.orders_default (
 
 
 --
+-- Name: page_preview_tokens; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.page_preview_tokens (
+    token_hash text NOT NULL,
+    app_id text NOT NULL,
+    page_key text NOT NULL,
+    version integer NOT NULL,
+    created_by uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expire_at timestamp with time zone NOT NULL,
+    used_count integer DEFAULT 0 NOT NULL,
+    CONSTRAINT page_preview_tokens_expire_at_check CHECK (((expire_at > created_at) AND (expire_at <= (created_at + '00:10:00'::interval)))),
+    CONSTRAINT page_preview_tokens_token_hash_check CHECK ((token_hash ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT page_preview_tokens_used_count_check CHECK ((used_count >= 0))
+);
+
+
+--
+-- Name: page_versions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.page_versions (
+    app_id text NOT NULL,
+    page_key text NOT NULL,
+    version integer NOT NULL,
+    sections jsonb NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    render_count bigint DEFAULT 0 NOT NULL,
+    error_count bigint DEFAULT 0 NOT NULL,
+    publish_at timestamp with time zone,
+    publisher uuid,
+    created_by_admin_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT page_versions_counts_check CHECK (((render_count >= 0) AND (error_count >= 0))),
+    CONSTRAINT page_versions_page_key_check CHECK ((page_key ~ '^(home|custom:[a-z0-9_-]{1,57})$'::text)),
+    CONSTRAINT page_versions_publish_check CHECK ((((status = 'draft'::text) = (publish_at IS NULL)) AND ((publish_at IS NULL) = (publisher IS NULL)))),
+    CONSTRAINT page_versions_sections_check CHECK ((jsonb_typeof(sections) = 'array'::text)),
+    CONSTRAINT page_versions_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'rolled_back'::text]))),
+    CONSTRAINT page_versions_version_check CHECK ((version >= 1))
+);
+
+
+--
+-- Name: pages; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.pages (
+    app_id text NOT NULL,
+    page_key text NOT NULL,
+    current_version integer,
+    gray_version integer,
+    gray_percent smallint DEFAULT 0 NOT NULL,
+    revision integer DEFAULT 0 NOT NULL,
+    updated_by_admin_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pages_gray_check CHECK ((((gray_version IS NULL) AND (gray_percent = 0)) OR ((gray_version IS NOT NULL) AND ((gray_percent >= 1) AND (gray_percent <= 99)) AND (current_version IS NOT NULL) AND (gray_version <> current_version)))),
+    CONSTRAINT pages_gray_percent_check CHECK (((gray_percent >= 0) AND (gray_percent <= 100))),
+    CONSTRAINT pages_page_key_check CHECK ((page_key ~ '^(home|custom:[a-z0-9_-]{1,57})$'::text)),
+    CONSTRAINT pages_revision_check CHECK ((revision >= 0))
+);
+
+
+--
 -- Name: payout_account_changes; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4407,6 +4472,30 @@ ALTER TABLE ONLY app.orders
 
 ALTER TABLE ONLY app.orders_default
     ADD CONSTRAINT orders_default_pkey PRIMARY KEY (order_id, attr_at);
+
+
+--
+-- Name: page_preview_tokens page_preview_tokens_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.page_preview_tokens
+    ADD CONSTRAINT page_preview_tokens_pkey PRIMARY KEY (token_hash);
+
+
+--
+-- Name: page_versions page_versions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.page_versions
+    ADD CONSTRAINT page_versions_pkey PRIMARY KEY (app_id, page_key, version);
+
+
+--
+-- Name: pages pages_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pages
+    ADD CONSTRAINT pages_pkey PRIMARY KEY (app_id, page_key);
 
 
 --
@@ -6385,6 +6474,62 @@ ALTER TABLE app.orders
 
 
 --
+-- Name: page_preview_tokens page_preview_tokens_created_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.page_preview_tokens
+    ADD CONSTRAINT page_preview_tokens_created_by_fkey FOREIGN KEY (created_by) REFERENCES app.admin_users(id);
+
+
+--
+-- Name: page_preview_tokens page_preview_tokens_version_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.page_preview_tokens
+    ADD CONSTRAINT page_preview_tokens_version_fkey FOREIGN KEY (app_id, page_key, version) REFERENCES app.page_versions(app_id, page_key, version);
+
+
+--
+-- Name: page_versions page_versions_created_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.page_versions
+    ADD CONSTRAINT page_versions_created_by_admin_id_fkey FOREIGN KEY (created_by_admin_id) REFERENCES app.admin_users(id);
+
+
+--
+-- Name: page_versions page_versions_publisher_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.page_versions
+    ADD CONSTRAINT page_versions_publisher_fkey FOREIGN KEY (publisher) REFERENCES app.admin_users(id);
+
+
+--
+-- Name: pages pages_current_version_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pages
+    ADD CONSTRAINT pages_current_version_fkey FOREIGN KEY (app_id, page_key, current_version) REFERENCES app.page_versions(app_id, page_key, version);
+
+
+--
+-- Name: pages pages_gray_version_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pages
+    ADD CONSTRAINT pages_gray_version_fkey FOREIGN KEY (app_id, page_key, gray_version) REFERENCES app.page_versions(app_id, page_key, version);
+
+
+--
+-- Name: pages pages_updated_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pages
+    ADD CONSTRAINT pages_updated_by_admin_id_fkey FOREIGN KEY (updated_by_admin_id) REFERENCES app.admin_users(id);
+
+
+--
 -- Name: payout_account_changes payout_account_changes_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -8351,6 +8496,114 @@ GRANT SELECT ON TABLE app.orders TO couli_readonly;
 --
 
 GRANT SELECT ON TABLE app.orders_default TO couli_readonly;
+
+
+--
+-- Name: TABLE page_preview_tokens; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.page_preview_tokens TO couli_app;
+GRANT SELECT ON TABLE app.page_preview_tokens TO couli_readonly;
+
+
+--
+-- Name: COLUMN page_preview_tokens.used_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(used_count) ON TABLE app.page_preview_tokens TO couli_app;
+
+
+--
+-- Name: TABLE page_versions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.page_versions TO couli_app;
+GRANT SELECT ON TABLE app.page_versions TO couli_readonly;
+
+
+--
+-- Name: COLUMN page_versions.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.page_versions TO couli_app;
+
+
+--
+-- Name: COLUMN page_versions.render_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(render_count) ON TABLE app.page_versions TO couli_app;
+
+
+--
+-- Name: COLUMN page_versions.error_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(error_count) ON TABLE app.page_versions TO couli_app;
+
+
+--
+-- Name: COLUMN page_versions.publish_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(publish_at) ON TABLE app.page_versions TO couli_app;
+
+
+--
+-- Name: COLUMN page_versions.publisher; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(publisher) ON TABLE app.page_versions TO couli_app;
+
+
+--
+-- Name: TABLE pages; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.pages TO couli_app;
+GRANT SELECT ON TABLE app.pages TO couli_readonly;
+
+
+--
+-- Name: COLUMN pages.current_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(current_version) ON TABLE app.pages TO couli_app;
+
+
+--
+-- Name: COLUMN pages.gray_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(gray_version) ON TABLE app.pages TO couli_app;
+
+
+--
+-- Name: COLUMN pages.gray_percent; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(gray_percent) ON TABLE app.pages TO couli_app;
+
+
+--
+-- Name: COLUMN pages.revision; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(revision) ON TABLE app.pages TO couli_app;
+
+
+--
+-- Name: COLUMN pages.updated_by_admin_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_by_admin_id) ON TABLE app.pages TO couli_app;
+
+
+--
+-- Name: COLUMN pages.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.pages TO couli_app;
 
 
 --
