@@ -1,0 +1,24 @@
+id: CT-06n
+repo: rebate-platform
+title: 契约门禁：台账里凡 paths 含 contracts/openapi.yaml 的任务，task.ts check 校验 paths 同时覆盖 packages/contracts-ts/src/openapi.gen.ts 与 auth / signing / min-version 三份路由生成物（缺一即报错并给出补全清单）；brief.ts 生成的任务书在「可以改的路径」里提示这几份生成物
+type: guard-change
+# 2026-10-18 入账（be-codex，编排 04:1x / 01:4x 派工）。起因：CT-15n、CT-02i、CT-22a、CT-22b 连续因新增或删去 planned 操作要重生成 apps/api/src/modules/platform/http/auth-routes.gen.ts、platform/validation/signing-routes.gen.ts、risk/application/min-version-routes.gen.ts，而台账 paths 没列，实现中途补台账（#563、#605）。
+# 范围：只加校验与提示，不改既有台账（全量 task.ts check 必须仍过：已合并的旧台账若缺这几份，按「status: done 的不查」或单独豁免清单处理，由实现者在测试里写明）；mechanical_paths（approvals 31）的三文件规则不变。
+# tools/ 属保护路径第三类：Claude 实现、Codex 对抗评审，按 approvals #24 在评审通过、检查全绿后加标签。tools 自己的单元测试由实现者写（tools/**/*.test.ts），不需要先写规则测试。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/task.ts'
+  - 'tools/ops/task.test.ts'
+  - 'tools/ops/brief.ts'
+  - 'tools/ops/brief.test.ts'
+  - 'tools/lib/task-file.ts'
+  - 'tools/lib/task-file.test.ts'
+  - 'tools/ops/README.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
