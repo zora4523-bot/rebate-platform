@@ -14,7 +14,8 @@ refs_hash:
   BR-AI-08: e932a052720f
   BR-AI-09: b0aaba683658
   BR-AI-11: 0ce4651ba7c3
-deps: [B3-04a, B1-05j, B1-06c]
+# 2026-10-17 编排者：deps 加 B3-05i（卡片编号回填，见 B3-05i 注释）。
+deps: [B3-04a, B1-05j, B1-06c, B3-05i]
 paths:
   - 'apps/api/src/modules/agent/tools/search/**'
 test_paths:
