@@ -1,0 +1,24 @@
+id: F1-06zf
+repo: rebate-platform
+title: 后台「紧急开关」页：按 4 组列出服务端登记的开关（当前状态、默认、与默认不同标签、所需权限点、只读开关置灰），按权限点决定可否切换，切换走动态码二次验证（X-Step-Up-Token）与确认弹窗，自动打款开关只能关闭，错误码 10003 / 10403 / 20001 对照
+type: impl
+# 2026-10-18 入账（前端线 f1-frontend-7）。approvals 第 34 条（2026-10-17）：新任务由 Claude 实现（Opus 5.5 子代理）、Codex 先写规则测试与浏览器测试并对抗评审；截图对照定稿设计稿的流程不变。
+# 后端 F1-10d（GET /admin/v1/kill-switches、PUT /admin/v1/kill-switches/{key}）已合并、不再 planned；菜单「紧急开关」已在 resources（switch.all / switch.payout / switch.pay 任一可见）。
+# 画板 AdmSwitches、AdmSwitchOff（design-hifi 10-05 定稿批，decisions-admin-config.md §14–15）；切换用 F1-06r 的 step-up 弹窗（totp 档）与 F1-06zb 的 createAdminApi。
+# BR-WDR-30：withdraw.auto_payout.enabled 只能从后台关闭（开启要负责人确认，另一流程），页面只做界面，不改取值规则。admin_editable=false 的开关只读。
+refs: [BR-WDR-30]
+refs_hash:
+  BR-WDR-30: aaff79caf8a2
+deps: [F1-10d, F1-06r, F1-06zb]
+paths:
+  - 'apps/admin/src/pages/kill-switches/**'
+  - 'apps/admin/src/texts/kill-switches.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-kill-switches/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-kill-switches/**'
+status: todo
