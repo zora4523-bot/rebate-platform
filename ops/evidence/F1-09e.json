@@ -1,0 +1,109 @@
+{
+  "task": "F1-09e",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "95fc0c2e2aa5999d582ab5b5683dcce32b419c2b",
+  "red_tests": [
+    "test/spec/content/pages-preview/contract.test.ts > [AC-F1-09e#17] 两个预览接口解除 planned，公开预览仍为无用户鉴权和无请求签名",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#1] 只持 content.page 即可签发，无 step-up，守卫使用写模式",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#2] 两次签发产生不同的 32 字节随机 token，只存 SHA256，时间同源且恰为十分钟",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#3] draft 版本都能签发并预览",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#3] published 版本都能签发并预览",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#3] rolled_back 版本都能签发并预览",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#4] 未知页 30701；已存页缺少版本 20001 fields=[version]；拒绝均无写入",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#5] 无权限或只有其他 content 权限返回 10403，不写 token、页面或审计",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#6] 签发需要后台身份，未认证请求 10001 且无业务写入",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#7] app_id 只来自后台 actor，伪造 X-App-Id 不改变签发归属",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#8] 签发恰写一条审计，记录 actor 与版本和到期时间，不含明文或哈希",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#9] 游客低版本仍读钉住的草稿全部 sections，无灰度或人群筛选；两次计数且不改页面",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#10] 到期前 1ms 可读，到期瞬间及之后 30701，无缓存放行且失败不计数",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#11] 错 token、另一已存在页、另一 app、过期一律同一 30701 信封，失败无写入",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#12] 有效用户 Bearer 不能代替预览 token，也不改变正确 token 的结果",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#13] query token 必填且长度 1..256，格式错误 20001，不消耗已有 token",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#14] 同 token 并发预览按命中次数原子累加，拒绝请求不参与计数",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#15] 在另一环境数据库无法使用已签发 token，即使 app/page/version 相同",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#16] preview 只在 api 入口，签发只在 admin 入口",
+    "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#18] 审计写入失败时签发整体失败，不能留下无审计的 token"
+  ],
+  "risk_note": "RV2 (content page preview; contract planned removal). Admin issues a preview token for a page version (AdminOperationGuard content.page without step-up, ContentAdminModule on the admin entry): token = 32 random bytes base64url, only its sha256 stored, created_at / expire_at from one injected Clock reading 600 000 ms apart, token row and audit (page_preview_token_issue, no token or hash) in one transaction. GET /v1/pages/{page_key}/preview (api entry) validates token hash, page_key, X-App-Id and expire_at > now in one atomic UPDATE that bumps used_count and returns the version; any failure is the same 30701; sections returned as stored, no audience filter, no cache (P7, E4). Request logs record route templates only, so the token never reaches them (E3). Both operations leave planned (mechanical). The rule-test kit's app ids were mechanically shortened to the 32-character X-App-Id limit by the orchestrator before the implementation (assertions unchanged). No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "95fc0c2e2aa5999d582ab5b5683dcce32b419c2b",
+      "tree": "997d28665dfdd2fda3f4c4b13ee5456956104068",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T23:17:54Z",
+      "finished_at": "2026-10-17T23:18:09Z",
+      "red_tests": [
+        "test/spec/content/pages-preview/contract.test.ts > [AC-F1-09e#17] 两个预览接口解除 planned，公开预览仍为无用户鉴权和无请求签名",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#1] 只持 content.page 即可签发，无 step-up，守卫使用写模式",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#2] 两次签发产生不同的 32 字节随机 token，只存 SHA256，时间同源且恰为十分钟",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#3] draft 版本都能签发并预览",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#3] published 版本都能签发并预览",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#3] rolled_back 版本都能签发并预览",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#4] 未知页 30701；已存页缺少版本 20001 fields=[version]；拒绝均无写入",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#5] 无权限或只有其他 content 权限返回 10403，不写 token、页面或审计",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#6] 签发需要后台身份，未认证请求 10001 且无业务写入",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#7] app_id 只来自后台 actor，伪造 X-App-Id 不改变签发归属",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#8] 签发恰写一条审计，记录 actor 与版本和到期时间，不含明文或哈希",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#9] 游客低版本仍读钉住的草稿全部 sections，无灰度或人群筛选；两次计数且不改页面",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#10] 到期前 1ms 可读，到期瞬间及之后 30701，无缓存放行且失败不计数",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#11] 错 token、另一已存在页、另一 app、过期一律同一 30701 信封，失败无写入",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#12] 有效用户 Bearer 不能代替预览 token，也不改变正确 token 的结果",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#13] query token 必填且长度 1..256，格式错误 20001，不消耗已有 token",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#14] 同 token 并发预览按命中次数原子累加，拒绝请求不参与计数",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#15] 在另一环境数据库无法使用已签发 token，即使 app/page/version 相同",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#16] preview 只在 api 入口，签发只在 admin 入口",
+        "test/spec/content/pages-preview/preview.int.test.ts > [AC-F1-09e#18] 审计写入失败时签发整体失败，不能留下无审计的 token"
+      ],
+      "expected": [
+        "test/spec/content/pages-preview/contract.test.ts",
+        "test/spec/content/pages-preview/preview.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "07e17cb6f29707c4c128db9e14116904fd660e6928a979272d91cd04434a069f"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "e080d7395dd8d3c22fe185ca00a1b2058f907b5959b56f4a4e781ce69328fdb1"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 runs) reviewed by fresh Claude subagents: r1 fail (S1 page_key / app_id not discriminated), r2 fail (app_id still not discriminated), r3 pass under a self-approved exception round (couli-runs F1-09e/exception-spec-round-3.md)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "dc319fdb936fc9ae340f459936e53f5d5567efe5",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "f39362e10b4b3f7dccc3c3e8b5247c145a254002",
+    "specs": "3030daffce230ca321928167ab05aa0b6a68efe6"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}

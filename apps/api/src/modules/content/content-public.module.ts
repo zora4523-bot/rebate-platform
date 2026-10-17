@@ -1,5 +1,5 @@
-// content's /v1 client routes (F1-02c, F1-02e, F1-02f, F1-09d): config, app-versions check,
-// articles and pages.
+// content's /v1 client routes (F1-02c, F1-02e, F1-02f, F1-09d, F1-09e): config, app-versions
+// check, articles, pages and the draft page preview (token only, no viewer context).
 // app.module imports this module on
 // the api entry only and passes identity's request viewer as the ConfigViewerContext provider
 // (content never imports identity). Config reads use a process-wide ContentReader; article reads
@@ -38,11 +38,20 @@ import { createKyselyContentStore } from './infra/kysely-content-store.ts';
 import { PageReader } from './application/page-reader.ts';
 import { PagesController } from './http/public/pages.controller.ts';
 import { createKyselyPageStore } from './infra/kysely-page-store.ts';
+import { PagePreviewService, type PagePreviewStore } from './application/page-preview.ts';
+import { PagePreviewController } from './http/public/page-preview.controller.ts';
+import { createKyselyPagePreviewStore } from './infra/kysely-page-preview-store.ts';
 
 const UNAVAILABLE_READER: ContentReader = {
   appVersion: () => Promise.reject(new Error('content: version reads need the database')),
   minSupportedVersion: () => Promise.reject(new Error('content: config reads need the database')),
   configValue: () => Promise.reject(new Error('content: config reads need the database')),
+};
+
+const UNAVAILABLE_PREVIEWS: PagePreviewStore = {
+  transaction: () => Promise.reject(new Error('content: preview tokens are not issued here')),
+  consume: () => Promise.reject(new Error('content: page previews need the database')),
+  sections: () => Promise.reject(new Error('content: page previews need the database')),
 };
 
 const CONTENT_READER = Symbol('CONTENT_READER');
@@ -69,8 +78,25 @@ export class ContentPublicModule {
   static forApi(ports: ContentPublicPorts): DynamicModule {
     return {
       module: ContentPublicModule,
-      controllers: [ConfigController, ArticlesController, AppVersionsController, PagesController],
+      controllers: [
+        ConfigController,
+        ArticlesController,
+        AppVersionsController,
+        PagesController,
+        PagePreviewController,
+      ],
       providers: [
+        {
+          // F1-09e previewPage: always the primary handle, never cached.
+          provide: PagePreviewService,
+          inject: [{ token: DB, optional: true }, CLOCK],
+          useFactory: (db: Kysely<Database> | undefined, clock: Clock): PagePreviewService =>
+            new PagePreviewService({
+              store:
+                db === undefined ? UNAVAILABLE_PREVIEWS : createKyselyPagePreviewStore(db, null),
+              clock,
+            }),
+        },
         {
           provide: ArticleReader,
           inject: [{ token: DB, optional: true }, CLOCK],
