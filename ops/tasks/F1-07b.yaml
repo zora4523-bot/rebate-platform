@@ -1,0 +1,27 @@
+id: F1-07b
+repo: rebate-platform
+title: identity：后台用户查询——GET /admin/v1/users（user.list，页码分页，只含非敏感字段）、GET /admin/v1/users/lookup（按 UID 或完整手机号，只认 user.lookup；user.list 只管列表浏览，GitHub Codex 评审 P1）、GET /admin/v1/users/{user_id}（详情，复用 F1-07a 的投影）；去掉这 3 条的 planned
+type: impl
+# 2026-10-17 入账（后台后端线 admin-backend，编排会话 10-17 admin-prompt5 第 2 项与 13:2x：拆 05 F1-07 后台用户与运营接口，先开不依赖订单线的用户查询 / 封禁冻结 / 联盟授权管理）。
+# 依据 05 F1-07；04 §6.6（users、reveal、risk-state、union-bindings）、§11.1 数据权限点、§11.2 risk.* / union.*；08 BR-ID-31（封禁）、BR-ID-36 / BR-WDR-05 / BR-CALC-13（冻结）、BR-ID-20（联盟授权）、BR-ID-33（脱敏）、BR-ID-34。
+# 取值裁定见 couli-runs/ADMIN-backend/f107-plan.md（编号即下文「裁定 N」）；订单查询与改归属、找回、维权导入、手动同步依赖 B1-08/09/10，本批不开。
+# 要点：纯查询拼装（approvals 30 / 31 Codex 实现、Claude 规则测试）；手机号查询经 phone_hmac；详情里的订单 / 余额 / 提现段等订单线与资金线，本任务不出（字段按契约可空或不列）；跨 app 隔离；列表按注册时间倒序（裁定 9）。
+refs: []
+refs_hash: {}
+deps: [F1-07a]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+mechanical_paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/admin-users/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/admin-users/**'
+status: todo
+pr: null
