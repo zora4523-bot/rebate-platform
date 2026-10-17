@@ -522,6 +522,265 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       ]
     }
   },
+  "loginByWechat": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt_id",
+        "code",
+        "legal_versions",
+        "consent_at"
+      ],
+      "properties": {
+        "attempt_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "code": {
+          "type": "string",
+          "description": "An authorization credential from the provider SDK; never stored or logged.",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "legal_versions": {
+          "type": "object",
+          "description": "Versions of the privacy policy and user agreement the user agreed to (BR-ID-04).",
+          "additionalProperties": false,
+          "required": [
+            "privacy",
+            "agreement"
+          ],
+          "properties": {
+            "privacy": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            },
+            "agreement": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            }
+          }
+        },
+        "consent_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  },
+  "loginByApple": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt_id",
+        "identity_token",
+        "authorization_code",
+        "legal_versions",
+        "consent_at"
+      ],
+      "properties": {
+        "attempt_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "identity_token": {
+          "type": "string",
+          "description": "An authorization credential from the provider SDK; never stored or logged.",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "authorization_code": {
+          "type": "string",
+          "description": "An authorization credential from the provider SDK; never stored or logged.",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "legal_versions": {
+          "type": "object",
+          "description": "Versions of the privacy policy and user agreement the user agreed to (BR-ID-04).",
+          "additionalProperties": false,
+          "required": [
+            "privacy",
+            "agreement"
+          ],
+          "properties": {
+            "privacy": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            },
+            "agreement": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            }
+          }
+        },
+        "consent_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  },
   "stepUp": {
     "headers": {
       "type": "object",
