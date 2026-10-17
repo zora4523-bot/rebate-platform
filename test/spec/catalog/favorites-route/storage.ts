@@ -19,7 +19,7 @@ export function idempotencyStorage() {
         [...where.matchAll(/(?:"(\w+)"|\b(id))\s*=\s*\$(\d+)/g)].every(
           (match) => row[match[1] ?? match[2]!] === parameters[Number(match[3]) - 1],
         );
-      if (/^begin\b/i.test(text)) snapshot = structuredClone(records);
+      if (/^(begin|start transaction)\b/i.test(text)) snapshot = structuredClone(records);
       else if (/^rollback\b/i.test(text)) records = snapshot;
       else if (/^(commit|set transaction)\b/i.test(text)) rows = [];
       else if (text.includes('pg_try_advisory_xact_lock')) rows = [{ acquired: true }];
