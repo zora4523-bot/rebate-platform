@@ -11,6 +11,17 @@ import {
 import { PUSH_TOKEN_REPORTER, PushTokenController } from './http/public/push-token.controller.ts';
 import { MESSAGE_READER, MessagesController } from './http/public/messages.controller.ts';
 
+/** Build on first read so module startup never touches the database handle. */
+function lazyMessageReader(db: Kysely<Database>): MessageReader {
+  let reader: MessageReader | undefined;
+  return {
+    get: async (query) => {
+      reader ??= createMessageReader({ db });
+      return reader.get(query);
+    },
+  };
+}
+
 /** API-only assembly; content implements the configuration port in app.module. */
 export class NotificationModule {
   static forApi(
@@ -29,7 +40,7 @@ export class NotificationModule {
                   get: () =>
                     Promise.reject(new Error('notification: message reads need the database')),
                 }
-              : createMessageReader({ db }),
+              : lazyMessageReader(db),
         },
         {
           provide: PUSH_TOKEN_REPORTER,
