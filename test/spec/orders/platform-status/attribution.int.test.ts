@@ -20,11 +20,34 @@ afterAll(async () => {
 import { randomUUID } from 'node:crypto';
 import { at, expectSafeLogs, scenario } from './kit.ts';
 
-it.each([false, true])(
-  '[AC-B1-08i#33] 未归因重跑成功，locked=%s 决定能否写 user_id',
-  async (locked) => {
+it.each([
+  { rebate: 'UNATTRIBUTED', locked: false },
+  { rebate: 'UNATTRIBUTED', locked: true },
+  { rebate: 'VOID', locked: false },
+  { rebate: 'VOID', locked: true },
+])(
+  '[AC-B1-08i#33] $rebate 重跑归属成功，locked=$locked 决定能否写 user_id',
+  async ({ rebate, locked }) => {
     const f = await scenario(db, {}, { unattributed: true });
-    await db.updateTable('orders').set({ locked }).where('app_id', '=', f.ctx.app_id).execute();
+    // A separate connection simulates settlement owning the rebate status.
+    const settlementDb = createDb({ connectionString: database!.urlFor('couli_app'), max: 1 });
+    try {
+      await settlementDb
+        .updateTable('orders')
+        .set({ rebate_status: rebate, locked })
+        .where('app_id', '=', f.ctx.app_id)
+        .where('order_id', '=', f.original.order_id)
+        .where('attr_at', '=', f.original.attr_at)
+        .execute();
+    } finally {
+      await destroyDb(settlementDb);
+    }
+    expect((await f.read()).orders[0]).toMatchObject({
+      rebate_status: rebate,
+      user_id: null,
+      user_basis: null,
+      locked,
+    });
     f.findUser.mockResolvedValue(f.userId);
     await f.pipeline.process(
       f.next({ promotion_slot: 'changed-pid', est_commission_fen: 456n }),
@@ -34,6 +57,7 @@ it.each([false, true])(
     expect(after.orders[0]).toMatchObject({
       user_id: locked ? null : f.userId,
       user_basis: locked ? null : 'param',
+      rebate_status: rebate,
       locked,
       pid: 'changed-pid',
       attr_at: f.original.attr_at,
@@ -41,6 +65,10 @@ it.each([false, true])(
       scene_basis: f.original.scene_basis,
     });
     expect(after.counters).toEqual(f.before.counters);
+    expect(after.history).toEqual(f.before.history);
+    const updates = f.queries.filter((q) => /^update "app"."orders"/i.test(q.sql));
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.sql.split(' where ')[0]).not.toMatch(/"rebate_status"\s*=/i);
     expect(f.onUpdated.mock.calls[0]?.[1]).toMatchObject({ attributed_now: !locked });
     expect(f.publish.mock.calls[0]?.[1]).toMatchObject({ payload: { attributed_now: !locked } });
     if (!locked) {

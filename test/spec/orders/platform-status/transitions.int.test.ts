@@ -21,6 +21,7 @@ import { at, historySteps, RECEIVED, scenario, SETTLED } from './kit.ts';
 
 it.each([
   { initial: 'paid', raw: 'received', rule: 'P3', steps: ['RECEIVED'], time: RECEIVED },
+  { initial: 'received', raw: 'settled', rule: 'P4', steps: ['SETTLED'], time: RECEIVED },
   { initial: 'paid', raw: 'settled', rule: 'P5', steps: ['RECEIVED', 'SETTLED'], time: SETTLED },
   {
     initial: 'deposit',
@@ -35,6 +36,7 @@ it.each([
   async ({ initial, raw, rule, steps, time }) => {
     const f = await scenario(db, {
       raw_status: initial,
+      ...(initial === 'received' ? { received_at: at(RECEIVED) } : {}),
       ...(initial === 'deposit'
         ? { deposit_paid_at: at('2026-10-14T01:02:03Z'), paid_at: null }
         : {}),
@@ -54,6 +56,7 @@ it.each([
     expect(row).toMatchObject({
       platform_status: steps.at(-1),
       received_at: at(time),
+      settled_at: raw === 'settled' ? at(SETTLED) : null,
       row_version: f.original.row_version + 1,
       updated_at: f.clock.now(),
       attr_at: f.original.attr_at,
