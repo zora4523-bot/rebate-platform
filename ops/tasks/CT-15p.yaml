@@ -1,0 +1,23 @@
+id: CT-15p
+repo: rebate-platform
+title: 契约：growth 用户侧四条（POST /v1/me/inviter bindInviter、GET /v1/invites/me getMyInvite、POST /v1/landing/sms-codes sendLandingSmsCode、POST /v1/invites/landing-register landingRegister），全部 planned；重生成 openapi.gen.ts 与三份路由生成物
+type: contract
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二波第一批；编排 13:5x 派工；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：04 §6.1 对应四行，08 BR-INV-02～10、BR-ID-32（落地页发码），由编排者摘入。海报按 04 的 poster_url 可空（E11）。错误码只用已登记的；新增操作类契约按 notices 排队占槽。
+refs: []
+refs_hash: {}
+contract_sections: ['6.4']
+deps: [CT-15n]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/identity.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo

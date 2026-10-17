@@ -1,0 +1,20 @@
+id: B1-11c
+repo: rebate-platform
+title: packages/domain 邀请纯函数：inviterUnavailable（BR-INV-02 定义，输入只含事实）、inviteBackfillDeadline 与 withinBackfill（严格小于）、inviteFailWindow（+08:00 当日键与到次日 00:00 的秒数，供 Retry-After）
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二波第一批；编排 13:5x 派工；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-INV-02、BR-INV-07，由编排者摘入。纯函数，时间由调用方传入；B1-11d、B1-11j、B1-11k、B1-02z 对齐共用。模型：Opus 5.5。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'packages/domain/src/invite/**'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/domain/invite/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/invite/**'
+status: todo
