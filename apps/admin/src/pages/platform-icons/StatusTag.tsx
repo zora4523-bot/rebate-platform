@@ -6,7 +6,7 @@ export function StatusTag({
   tone = 'neutral',
   children,
 }: {
-  readonly tone?: 'neutral' | 'success' | 'warning';
+  readonly tone?: 'neutral' | 'success' | 'warning' | 'error';
   readonly children: ReactNode;
 }) {
   const { token } = theme.useToken();
@@ -16,7 +16,7 @@ export function StatusTag({
       icon={
         tone === 'success' ? (
           <CheckCircleOutlined aria-hidden />
-        ) : tone === 'warning' ? (
+        ) : tone === 'warning' || tone === 'error' ? (
           <WarningOutlined aria-hidden />
         ) : undefined
       }
@@ -26,13 +26,17 @@ export function StatusTag({
             ? token.colorSuccess
             : tone === 'warning'
               ? token.colorWarning
-              : token.colorTextSecondary,
+              : tone === 'error'
+                ? token.colorError
+                : token.colorTextSecondary,
         background:
           tone === 'success'
             ? 'var(--color-status-success-background)'
             : tone === 'warning'
               ? 'var(--color-status-warning-background)'
-              : token.colorInfoBg,
+              : tone === 'error'
+                ? 'var(--color-status-error-background)'
+                : token.colorInfoBg,
         borderRadius: token.borderRadiusSM * 4,
       }}
     >

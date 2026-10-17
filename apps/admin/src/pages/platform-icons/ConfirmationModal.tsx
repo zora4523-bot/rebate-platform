@@ -14,7 +14,7 @@ export function ConfirmationModal({
   onConfirm,
   onRefresh,
   onAudit,
-  onUnavailable,
+  onRegister,
 }: {
   readonly action: Confirmation;
   readonly busy: boolean;
@@ -23,7 +23,7 @@ export function ConfirmationModal({
   readonly onConfirm: () => void;
   readonly onRefresh: () => void;
   readonly onAudit: () => void;
-  readonly onUnavailable: () => void;
+  readonly onRegister: () => void;
 }) {
   const { token } = theme.useToken();
   const { icon, kind, target } = action;
@@ -100,7 +100,7 @@ export function ConfirmationModal({
               </Button>
             </>
           ) : error?.kind === 'source' ? (
-            <Button type="primary" onClick={onUnavailable}>
+            <Button type="primary" onClick={onRegister}>
               {t.register}
             </Button>
           ) : (

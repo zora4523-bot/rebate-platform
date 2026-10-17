@@ -10,7 +10,6 @@ import {
   Space,
   Table,
   Typography,
-  message,
   theme,
   type TableColumnsType,
 } from 'antd';
@@ -22,6 +21,7 @@ import { ConfirmationModal } from './ConfirmationModal.tsx';
 import { HistoryDrawer } from './HistoryDrawer.tsx';
 import { PermissionLine } from './PermissionLine.tsx';
 import { StatusTag } from './StatusTag.tsx';
+import { SourceDialog, UploadDialog } from './upload.ts';
 import {
   currentLabel,
   time,
@@ -42,11 +42,14 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
   const getProvider = useDataProvider();
   const navigate = useNavigate();
   const { token } = theme.useToken();
-  const [feedback, contextHolder] = message.useMessage();
   const [items, setItems] = useState<Icon[]>([]);
   const [status, setStatus] = useState<LoadStatus>('loading');
   const [historyKey, setHistoryKey] = useState<Icon['key']>();
   const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [uploadIcon, setUploadIcon] = useState<Icon>();
+  const [sourceTarget, setSourceTarget] = useState<{ key: Icon['key']; version: Version }>();
+  const [savedVersion, setSavedVersion] = useState<{ key: Icon['key']; version: Version }>();
+  const [unknownKey, setUnknownKey] = useState(false);
   const [action, setAction] = useState<Confirmation>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionError>();
@@ -90,9 +93,24 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
     return invalidateRequests;
   }, [loadList, invalidateRequests]);
 
-  // TODO(规划/11 §3.4): connect upload and source registration — blocked on F1-06ze.
-  const unavailable = () => {
-    void feedback.info(t.unavailable);
+  const openUpload = (icon: Icon) => {
+    setUnknownKey(false);
+    setSavedVersion(undefined);
+    setUploadIcon(icon);
+  };
+  const handleUnknownKey = () => {
+    setUploadIcon(undefined);
+    setSourceTarget(undefined);
+    setAction(undefined);
+    setHistoryKey(undefined);
+    setResult(undefined);
+    setUnknownKey(true);
+    void loadList();
+  };
+  const refreshSource = () => {
+    setSourceTarget(undefined);
+    setHistoryRefresh((n) => n + 1);
+    void loadList();
   };
   const audit = () => {
     void navigate('/audit-logs');
@@ -116,6 +134,7 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
   };
   const closeHistory = () => {
     setHistoryKey(undefined);
+    setSavedVersion(undefined);
     void loadList();
   };
   const refreshHistory = () => {
@@ -135,15 +154,14 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
     try {
       const custom = getProvider().custom;
       if (!custom) throw new Error('Missing custom data provider');
-      // CAS uses the list's mark revision; the version's revision belongs to source edits.
-      const latestIcon = items.find((item) => item.key === icon.key) ?? icon;
+      // Confirm exactly the mark revision shown when the modal opened.
       const response = await custom<Icon>({
         url: `/admin/v1/platform-icons/${icon.key}/${kind === 'restore' ? 'restore-builtin' : 'publish'}`,
         method: 'post',
         payload:
           kind === 'restore'
-            ? { expected_revision: latestIcon.revision }
-            : { version: target?.version, expected_revision: latestIcon.revision },
+            ? { expected_revision: icon.revision }
+            : { version: target?.version, expected_revision: icon.revision },
       });
       if (request !== writeSequence.current) return;
       // Invalidate every read started before this successful write, then apply its response.
@@ -159,6 +177,7 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
       });
       setAction(undefined);
       setHistoryKey(undefined);
+      setSavedVersion(undefined);
     } catch (cause) {
       if (request !== writeSequence.current) return;
       if (cause instanceof AdminApiError && cause.code === 20902) {
@@ -176,6 +195,10 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
           Array.isArray(data.fields)
             ? data.fields
             : [];
+        if (fields.includes('key')) {
+          handleUnknownKey();
+          return;
+        }
         setError({
           kind: fields.includes('version')
             ? 'version'
@@ -281,7 +304,7 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
             size="small"
             style={{ paddingInline: 0 }}
             aria-label={t.rowAction(t.upload, t.names[icon.key])}
-            onClick={unavailable}
+            onClick={() => openUpload(icon)}
           >
             {t.upload}
           </Button>
@@ -311,7 +334,6 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
   const historyIcon = items.find((item) => item.key === historyKey);
   return (
     <Flex vertical gap={16}>
-      {contextHolder}
       <Flex justify="space-between" align="center" wrap gap={8}>
         <Space>
           <Typography.Title level={4} style={{ margin: 0 }}>
@@ -323,6 +345,7 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
         </Space>
         <PermissionLine />
       </Flex>
+      {unknownKey && <Alert type="error" showIcon message={t.unknownKey} />}
       {result && (
         <Alert
           type="success"
@@ -409,14 +432,16 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
       </Typography.Text>
       {historyIcon && (
         <HistoryDrawer
-          key={historyIcon.key}
+          key={`history-${historyIcon.key}`}
           icon={historyIcon}
           refresh={historyRefresh}
           onClose={closeHistory}
           onAction={(kind, target, retained) =>
             openAction(historyIcon, kind, true, target, retained)
           }
-          onUnavailable={unavailable}
+          onUpload={() => openUpload(historyIcon)}
+          onSource={(version) => setSourceTarget({ key: historyIcon.key, version })}
+          savedVersion={savedVersion?.key === historyIcon.key ? savedVersion.version : undefined}
         />
       )}
       {action && (
@@ -435,7 +460,46 @@ export function PlatformIconsPage({ now }: PlatformIconsPageProps): ReactElement
           }}
           onRefresh={refreshHistory}
           onAudit={audit}
-          onUnavailable={unavailable}
+          onRegister={() => {
+            if (!action.target) return;
+            setHistoryKey(action.icon.key);
+            setSourceTarget({ key: action.icon.key, version: action.target });
+            setAction(undefined);
+            setError(undefined);
+          }}
+        />
+      )}
+      {uploadIcon && (
+        <UploadDialog
+          key={`upload-${uploadIcon.key}`}
+          icon={uploadIcon}
+          onClose={() => setUploadIcon(undefined)}
+          onUnknownKey={handleUnknownKey}
+          onSaved={(version) => {
+            setSavedVersion({ key: uploadIcon.key, version });
+            setUploadIcon(undefined);
+            setHistoryKey(uploadIcon.key);
+            setHistoryRefresh((n) => n + 1);
+            void loadList();
+          }}
+        />
+      )}
+      {sourceTarget && (
+        <SourceDialog
+          key={`source-${sourceTarget.key}-${sourceTarget.version.version}`}
+          iconKey={sourceTarget.key}
+          version={sourceTarget.version}
+          onClose={() => setSourceTarget(undefined)}
+          onSaved={(version) => {
+            setSavedVersion((previous) =>
+              previous?.key === sourceTarget.key && previous.version.version === version.version
+                ? { key: sourceTarget.key, version }
+                : previous,
+            );
+            refreshSource();
+          }}
+          onRefresh={refreshSource}
+          onUnknownKey={handleUnknownKey}
         />
       )}
     </Flex>

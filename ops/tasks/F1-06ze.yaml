@@ -21,4 +21,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/admin-platform-icons-upload/**'
-status: todo
+status: done
+pr: 661

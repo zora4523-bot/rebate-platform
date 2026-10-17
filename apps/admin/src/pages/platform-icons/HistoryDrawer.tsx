@@ -1,6 +1,18 @@
 import { useDataProvider } from '@refinedev/core';
 import { PictureOutlined, UndoOutlined, UploadOutlined } from '@ant-design/icons';
-import { Avatar, Button, Drawer, Flex, Result, Space, Spin, Typography, theme } from 'antd';
+import {
+  Alert,
+  Avatar,
+  Button,
+  Drawer,
+  Flex,
+  Pagination,
+  Result,
+  Space,
+  Spin,
+  Typography,
+  theme,
+} from 'antd';
 import { useEffect, useState } from 'react';
 import { platformIconsTexts as t } from '../../texts/platform-icons.ts';
 import {
@@ -20,17 +32,23 @@ export function HistoryDrawer({
   refresh,
   onClose,
   onAction,
-  onUnavailable,
+  onUpload,
+  onSource,
+  savedVersion,
 }: {
   readonly icon: Icon;
   readonly refresh: number;
   readonly onClose: () => void;
   readonly onAction: (kind: ActionKind, target?: Version, retained?: readonly number[]) => void;
-  readonly onUnavailable: () => void;
+  readonly onUpload: () => void;
+  readonly onSource: (version: Version) => void;
+  readonly savedVersion: Version | undefined;
 }) {
   const provider = useDataProvider();
   const { token } = theme.useToken();
-  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ page: 1, saved: savedVersion?.version });
+  // A newly saved version belongs on page one without remounting the drawer underneath it.
+  const page = pagination.saved === savedVersion?.version ? pagination.page : 1;
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{
     status: 'loading' | 'ready' | 'failed';
@@ -60,7 +78,7 @@ export function HistoryDrawer({
   const pages = Math.max(1, Math.ceil(state.total / 20));
   const changePage = (next: number) => {
     setState((old) => ({ ...old, status: 'loading', items: [] }));
-    setPage(next);
+    setPagination({ page: next, saved: savedVersion?.version });
   };
   return (
     <Drawer
@@ -83,6 +101,18 @@ export function HistoryDrawer({
       }
     >
       <Flex vertical gap={16}>
+        {savedVersion && (
+          <Alert
+            type="success"
+            showIcon
+            style={{ border: 0, background: 'var(--color-status-success-background)' }}
+            message={
+              savedVersion.publishable
+                ? t.savedPublishable(savedVersion.version)
+                : t.savedDraft(savedVersion.version)
+            }
+          />
+        )}
         <div
           style={{
             display: 'grid',
@@ -115,7 +145,7 @@ export function HistoryDrawer({
           <Flex justify="space-between" align="center">
             <Typography.Text strong>{t.versions}</Typography.Text>
             <Space>
-              <Button icon={<UploadOutlined aria-hidden />} onClick={onUnavailable}>
+              <Button icon={<UploadOutlined aria-hidden />} onClick={onUpload}>
                 {t.uploadNew}
               </Button>
               <Button
@@ -169,11 +199,7 @@ export function HistoryDrawer({
               }
               subTitle={t.emptyDescription(platform)}
               extra={
-                <Button
-                  type="primary"
-                  icon={<UploadOutlined aria-hidden />}
-                  onClick={onUnavailable}
-                >
+                <Button type="primary" icon={<UploadOutlined aria-hidden />} onClick={onUpload}>
                   {t.uploadReplacement}
                 </Button>
               }
@@ -224,14 +250,18 @@ export function HistoryDrawer({
                                 ? t.editName(platform, version.version)
                                 : t.registerName(platform, version.version)
                             }
-                            onClick={onUnavailable}
+                            onClick={() => onSource(version)}
                           >
                             {publishable ? t.editSource : t.register}
                           </Button>
                         )}
                         {!live && (
                           <Button
-                            type="link"
+                            type={
+                              savedVersion?.version === version.version && publishable
+                                ? 'primary'
+                                : 'link'
+                            }
                             size="small"
                             disabled={!publishable}
                             aria-label={
@@ -271,12 +301,16 @@ export function HistoryDrawer({
                       />
                       <VersionDetails version={version} />
                     </div>
-                    {(!publishable || (version.ever_published && !live)) && (
+                    {(!publishable || !live) && (
                       <Typography.Paragraph
                         type="secondary"
                         style={{ fontSize: 12, margin: '12px 0 0' }}
                       >
-                        {!publishable ? t.sourceRequired : t.sourceLocked}
+                        {!publishable
+                          ? t.sourceRequired
+                          : version.ever_published
+                            ? t.sourceLocked
+                            : t.sourceEditable}
                       </Typography.Paragraph>
                     )}
                   </div>
@@ -287,24 +321,27 @@ export function HistoryDrawer({
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {t.pagination(state.total, page, pages)}
               </Typography.Text>
-              <Space size={8}>
-                <Button
-                  size="small"
-                  style={{ background: token.colorInfoBg, borderColor: token.colorBorderSecondary }}
-                  disabled={page <= 1}
-                  onClick={() => changePage(page - 1)}
-                >
-                  {t.previous}
-                </Button>
-                <Button
-                  size="small"
-                  style={{ background: token.colorInfoBg, borderColor: token.colorBorderSecondary }}
-                  disabled={page >= pages}
-                  onClick={() => changePage(page + 1)}
-                >
-                  {t.next}
-                </Button>
-              </Space>
+              <Pagination
+                current={page}
+                total={state.total}
+                pageSize={20}
+                showSizeChanger={false}
+                onChange={changePage}
+                itemRender={(_, type) =>
+                  type === 'prev' || type === 'next' ? (
+                    <Button
+                      size="small"
+                      style={{
+                        background: token.colorInfoBg,
+                        borderColor: token.colorBorderSecondary,
+                      }}
+                      disabled={type === 'prev' ? page <= 1 : page >= pages}
+                    >
+                      {type === 'prev' ? t.previous : t.next}
+                    </Button>
+                  ) : null
+                }
+              />
             </Flex>
           </>
         )}
