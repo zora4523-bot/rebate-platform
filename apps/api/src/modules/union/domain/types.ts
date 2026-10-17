@@ -186,7 +186,45 @@ export interface PddOrderFields {
   readonly subsidy_list?: readonly unknown[] | null;
 }
 
-export interface UnionOrder extends ItemRef, PddOrderFields {
+/**
+ * B1-08e（D10-20）：跨平台归因参数，原样字符串；union 不解析（用户归属在 orders，BR-ATTR-06）。
+ * 拼多多只填 custom_parameters。
+ */
+export interface UnionOrderAttrParams {
+  readonly relation_id: string | null;
+  readonly custom_parameters: string | null;
+  readonly sub_union_id: string | null;
+}
+
+/**
+ * B1-08e（D10-20）：平台无关的订单字段，由各平台适配器的映射层填写（makeUnionOrder 不补，所以在
+ * UnionOrder 上是可选的；拼多多映射总是全部给出，缺失一律显式 null）。
+ * TODO(规划/11 §4.5): 淘宝 / 京东的订单映射 — blocked on 推广位 / siteId
+ */
+export interface UnionOrderNeutralFields {
+  /** 订单唯一键里的子订单号（BR-ATTR-22）；拼多多 = order_sn。 */
+  readonly sub_order_id: string;
+  /** 拼多多没有父单：null。 */
+  readonly parent_order_id: string | null;
+  /** 推广位；拼多多 = pid（列表 p_id、详情 pid）。 */
+  readonly promotion_slot: string | null;
+  readonly attr_params: UnionOrderAttrParams;
+  /** 平台原始状态码的字符串形式；状态映射在 orders（B1-08f）。 */
+  readonly raw_status: string | null;
+  readonly deposit_paid_at: Date | null;
+  readonly paid_at: Date | null;
+  readonly received_at: Date | null;
+  readonly settled_at: Date | null;
+  readonly modified_at: Date | null;
+  /** 预估佣金（整数分）；拼多多 = commission_fen（promotion_amount，含服务费）。 */
+  readonly est_commission_fen: bigint | null;
+  /** 结算佣金（整数分）；拼多多暂无单独字段 → null（TODO 待 CAP-PDD-07）。 */
+  readonly settle_commission_fen: bigint | null;
+  /** 该订单所在那页报文在 union_raw_payloads 的 id（十进制字符串）；未归档为 null。 */
+  readonly raw_payload_id: string | null;
+}
+
+export interface UnionOrder extends ItemRef, PddOrderFields, Partial<UnionOrderNeutralFields> {
   readonly order_id: string;
   readonly paid_fen: bigint;
   /** PDD: promotion_amount 含软件服务费，不是可分配基数；基数 = promotion_amount −

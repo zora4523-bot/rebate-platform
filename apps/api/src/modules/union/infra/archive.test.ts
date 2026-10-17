@@ -19,7 +19,7 @@ import {
 } from './archive.ts';
 import type { UnionTransportRequest } from './replay.ts';
 
-function fakeDb(fail = false) {
+function fakeDb(fail = false, id?: bigint) {
   const statements: CompiledQuery[] = [];
   const db = new Kysely<DB>({
     dialect: {
@@ -32,7 +32,7 @@ function fakeDb(fail = false) {
           async executeQuery<R>(query: CompiledQuery): Promise<QueryResult<R>> {
             statements.push(query);
             if (fail) throw new RangeError('fake insert refused');
-            return { rows: [] as R[], numAffectedRows: 1n };
+            return { rows: (id === undefined ? [] : [{ id }]) as R[], numAffectedRows: 1n };
           },
           async *streamQuery() {
             throw new Error('not streamed');
@@ -140,4 +140,35 @@ it('[AC-B1-04p-UNIT#5] 插入失败时原错误照抛并记 error；无上下文
   expect(statements).toHaveLength(1);
   expect(logger.warn).toHaveBeenCalledTimes(1);
   expect(logger.warn.mock.calls[0]?.[0]).toMatchObject({ event: 'union.raw_payload.no_context' });
+});
+
+it('[AC-B1-08e-UNIT#1] 插入成功时以不可枚举属性回传行 id，响应引用与可枚举内容不变', async () => {
+  const { db, statements } = fakeDb(false, 9007199254740993n);
+  const clock = new FixedClock('2026-10-15T00:00:00.000Z');
+  const logger = { warn: vi.fn(), error: vi.fn() };
+  const reply = { status: 200, headers: {}, body: 'raw' };
+  const wrapped = createArchivingTransport(async () => reply, { db, clock, logger });
+  const result = await wrapped(base);
+  expect(result).toBe(reply);
+  expect(result.raw_payload_id).toBe('9007199254740993');
+  expect(Object.keys(result)).toEqual(['status', 'headers', 'body']);
+  expect(result).toEqual({ status: 200, headers: {}, body: 'raw' });
+  expect(statements[0]!.sql).toMatch(/returning "id"$/);
+});
+
+it('[AC-B1-08e-UNIT#2] 插入失败或无上下文时不挂 raw_payload_id', async () => {
+  const clock = new FixedClock('2026-10-15T00:00:00.000Z');
+  const logger = { warn: vi.fn(), error: vi.fn() };
+  const failing = createArchivingTransport(
+    async () => ({ status: 200, headers: {}, body: 'raw' }),
+    { db: fakeDb(true).db, clock, logger },
+  );
+  expect(await failing(base)).not.toHaveProperty('raw_payload_id');
+  const { archive: omitted, ...plain } = base;
+  void omitted;
+  const wrapped = createArchivingTransport(
+    async () => ({ status: 200, headers: {}, body: 'raw' }),
+    { db: fakeDb(false, 7n).db, clock, logger },
+  );
+  expect(await wrapped(plain)).not.toHaveProperty('raw_payload_id');
 });

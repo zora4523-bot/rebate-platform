@@ -5,7 +5,12 @@
 // 状态映射（specs/order-status-map/pdd.csv）、可分配基数扣减、时间窗拆分都不在这里。
 import { InvalidAmount, parseFen } from '@couli/money';
 import { makeUnionOrder } from '../../domain/dto.ts';
-import { UnionError, type TimeWindow, type UnionOrder } from '../../domain/types.ts';
+import {
+  UnionError,
+  type TimeWindow,
+  type UnionOrder,
+  type UnionOrderNeutralFields,
+} from '../../domain/types.ts';
 
 export const PDD_ORDER_INCREMENT = 'pdd.ddk.order.list.increment.get';
 export const PDD_ORDER_RANGE = 'pdd.ddk.order.list.range.get';
@@ -335,13 +340,29 @@ function subsidyList(value: unknown): readonly null[] | null {
 }
 
 /**
+ * B1-08e：一页订单报文的元数据。rawPayloadId 是这页响应在 union_raw_payloads 的行 id（归档传输
+ * 回传，没有为 null）；like 是注入时钟给出的任一时刻，只作构造 Date 的模板，取值不进 DTO。
+ */
+export interface PddOrderPage {
+  readonly rawPayloadId: string | null;
+  readonly like: Date;
+}
+
+/**
  * 一条拼多多订单 → UnionOrder。order_id 取 order_sn；platform_order_id 取列表的 order_id（只有
  * increment 的 probe 见到，其余为 null）；推广位：列表 p_id、详情 pid 统一到 pid。
  * commission_fen = promotion_amount（含软件服务费，不是可分配基数；基数 = promotion_amount −
  * duo_id_service_fee，在 orders / 分账层扣），service_fee_fen = duo_id_service_fee。
  * subsidy_* 单列透传，不并入任何金额。return_status 只读详情接口。
+ * B1-08e：另填平台无关字段（sub_order_id = order_sn，promotion_slot = pid，attr_params 只填原样的
+ * custom_parameters，raw_status = String(order_status)，五个时刻由秒转 Date，est = commission_fen，
+ * settle = null）；raw_payload_id 由调用方给出该页报文的归档行 id，没有为 null。
  */
-export function mapPddOrder(input: unknown, source: PddOrderSource): UnionOrder {
+export function mapPddOrder(
+  input: unknown,
+  source: PddOrderSource,
+  page: PddOrderPage,
+): UnionOrder & UnionOrderNeutralFields {
   if (!isRecord(input)) throw invalid('order row is not an object');
   const f = new Fields(input, source);
   const orderSn = f.raw('order_sn');
@@ -360,12 +381,19 @@ export function mapPddOrder(input: unknown, source: PddOrderSource): UnionOrder 
     paid_fen: nonNegativeFen(orderAmount, 'order_amount'),
     commission_fen: nonNegativeFen(promotionAmount, 'promotion_amount'),
   });
+  const pid = source === 'detail' ? f.text('pid') : f.text('p_id');
+  const customParameters = f.text('custom_parameters');
+  const orderStatus = f.integer('order_status');
+  const payTime = f.seconds('order_pay_time');
+  const receiveTime = f.seconds('order_receive_time');
+  const settleTime = f.seconds('order_settle_time');
+  const modifyAt = f.seconds('order_modify_at');
   return Object.freeze({
     ...base,
     platform_order_id: f.text('order_id'),
-    pid: source === 'detail' ? f.text('pid') : f.text('p_id'),
-    custom_parameters: f.text('custom_parameters'),
-    order_status: f.integer('order_status'),
+    pid,
+    custom_parameters: customParameters,
+    order_status: orderStatus,
     order_status_desc: f.text('order_status_desc'),
     fail_reason: f.text('fail_reason'),
     return_status: f.integer('return_status'),
@@ -376,16 +404,46 @@ export function mapPddOrder(input: unknown, source: PddOrderSource): UnionOrder 
     promotion_rate: f.count('promotion_rate'),
     sep_rate: f.count('sep_rate'),
     order_create_time: f.seconds('order_create_time'),
-    order_pay_time: f.seconds('order_pay_time'),
+    order_pay_time: payTime,
     order_group_success_time: f.seconds('order_group_success_time'),
-    order_receive_time: f.seconds('order_receive_time'),
+    order_receive_time: receiveTime,
     order_verify_time: f.seconds('order_verify_time'),
-    order_settle_time: f.seconds('order_settle_time'),
-    order_modify_at: f.seconds('order_modify_at'),
+    order_settle_time: settleTime,
+    order_modify_at: modifyAt,
     url_last_generate_time: f.seconds('url_last_generate_time'),
     subsidy_duo_amount_level: f.count('subsidy_duo_amount_level'),
     subsidy_duo_amount_ten_million: f.count('subsidy_duo_amount_ten_million'),
     subsidy_type: f.integer('subsidy_type'),
     subsidy_list: subsidyList(f.raw('subsidy_list')),
+    // B1-08e（D10-20）：平台无关字段。
+    sub_order_id: orderSn,
+    parent_order_id: null,
+    promotion_slot: pid,
+    attr_params: Object.freeze({
+      relation_id: null,
+      custom_parameters: customParameters,
+      sub_union_id: null,
+    }),
+    raw_status: orderStatus === null ? null : String(orderStatus),
+    deposit_paid_at: null,
+    paid_at: instant(payTime, page.like),
+    received_at: instant(receiveTime, page.like),
+    settled_at: instant(settleTime, page.like),
+    modified_at: instant(modifyAt, page.like),
+    est_commission_fen: base.commission_fen,
+    // TODO(规划/11 §4.5): 拼多多结算佣金 — blocked on CAP-PDD-07（现有映射没有单独字段，不臆造）
+    settle_commission_fen: null,
+    raw_payload_id: page.rawPayloadId,
   });
+}
+
+/**
+ * 秒级时间戳 → Date；0 或缺失为 null（拼多多以 0 表示尚未发生）。Date 从注入时钟的一个时刻复制后
+ * setTime 得到，不读系统时钟（apps/api 不写 new Date）。
+ */
+function instant(seconds: number | null, like: Date): Date | null {
+  if (seconds === null || seconds === 0) return null;
+  const result = structuredClone(like);
+  result.setTime(seconds * 1000);
+  return result;
 }

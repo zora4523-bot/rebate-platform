@@ -4,6 +4,7 @@
 // - 请求摘要只有 method、url（origin + pathname）与去掉敏感键的参数；请求头与请求体原文一律不存。
 // - payload 是响应 body 原文的 gzip（库内归档用于对账与重放，不做录制脱敏）；content_hash 是它的 sha256。
 // - 开始、结束各取一次注入的 Clock；归档失败只记一条 error 日志，调用结果不变。
+// - B1-08e：插入成功时把行 id（returning id）以不可枚举的 raw_payload_id 挂在响应对象上。
 // 演示适配器不经传输，因此从不归档。
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -140,6 +141,21 @@ function errorName(error: unknown): string {
   return typeof error;
 }
 
+/**
+ * B1-08e：把归档行 id 以不可枚举属性挂在 inner 返回的同一个响应对象上（调用方拿到的引用与可枚举
+ * 内容都不变）。对象不可扩展或已有该属性时不挂（不覆盖 inner 自带的值）。
+ */
+function attachRawPayloadId(response: UnionTransportResponse, rawPayloadId: string): void {
+  if (typeof response !== 'object' || response === null || !Object.isExtensible(response)) return;
+  if (Object.hasOwn(response, 'raw_payload_id')) return;
+  Object.defineProperty(response, 'raw_payload_id', {
+    value: rawPayloadId,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
+}
+
 export function createArchivingTransport(
   inner: UnionTransport,
   deps: ArchiveDependencies,
@@ -152,7 +168,7 @@ export function createArchivingTransport(
     started: Date,
     ended: Date,
     outcome: Outcome,
-  ): Promise<void> => {
+  ): Promise<string | undefined> => {
     try {
       const payload = gzipSync(outcome.ok ? outcome.response.body : '');
       const errorCode = outcome.ok
@@ -160,7 +176,7 @@ export function createArchivingTransport(
         : outcome.error instanceof UnionError
           ? outcome.error.code
           : null;
-      await db
+      const row = await db
         .withSchema('app')
         .insertInto('union_raw_payloads')
         .values({
@@ -174,7 +190,9 @@ export function createArchivingTransport(
           latency_ms: Math.max(0, Math.round(ended.getTime() - started.getTime())),
           error_code: errorCode,
         })
-        .execute();
+        .returning('id')
+        .executeTakeFirst();
+      return row === undefined ? undefined : String(row.id);
     } catch (error) {
       logger.error(
         {
@@ -185,6 +203,7 @@ export function createArchivingTransport(
         },
         'union raw payload archive failed',
       );
+      return undefined;
     }
   };
 
@@ -204,8 +223,9 @@ export function createArchivingTransport(
     } catch (error) {
       outcome = { ok: false, error };
     }
-    await archive(request, context, started, clock.now(), outcome);
-    if (outcome.ok) return outcome.response;
-    throw outcome.error;
+    const rawPayloadId = await archive(request, context, started, clock.now(), outcome);
+    if (!outcome.ok) throw outcome.error;
+    if (rawPayloadId !== undefined) attachRawPayloadId(outcome.response, rawPayloadId);
+    return outcome.response;
   };
 }
