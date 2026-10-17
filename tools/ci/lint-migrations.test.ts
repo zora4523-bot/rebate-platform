@@ -184,6 +184,7 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'commission_rule_versions',
     'commission_rules',
     'commission_rule_reserves',
+    'commission_rule_trials',
     'commission_splits',
     'commission_split_amounts',
     'commission_split_beneficiary_events',
