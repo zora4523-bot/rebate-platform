@@ -6,7 +6,12 @@ export { decodeFavoritesCursor, encodeFavoritesCursor } from './cursor.ts';
 export { favoriteCardView, readFavoritesCap } from './rules.ts';
 export { createFavoritesService } from './service.ts';
 export { createFavoriteCardPort } from './card-port.ts';
-export { outerFavoritesTransaction, runInFavoritesTransaction } from './transaction.ts';
+export {
+  outerFavoritesTransaction,
+  prefetchedFavoritesCap,
+  runInFavoritesTransaction,
+} from './transaction.ts';
+export type { PrefetchedFavoritesCap } from './transaction.ts';
 export type { FavoriteCardPortOptions } from './card-port.ts';
 export type {
   FavoriteCardOutcome,

@@ -5,7 +5,7 @@ import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import { decodeFavoritesCursor, encodeFavoritesCursor } from './cursor.ts';
 import { FavoriteError } from './errors.ts';
 import { favoriteCardView, readFavoritesCap } from './rules.ts';
-import { outerFavoritesTransaction } from './transaction.ts';
+import { outerFavoritesTransaction, prefetchedFavoritesCap } from './transaction.ts';
 import type {
   FavoriteCardView,
   FavoriteRecord,
@@ -71,10 +71,16 @@ export function createFavoritesService(options: FavoritesServiceOptions): Favori
   }
 
   return {
+    favoritesCap(appId) {
+      return readFavoritesCap(config, appId);
+    },
+
     async addFavorite(appId, userId, platform, productKey) {
       // Read configuration before holding a database connection/lock: the reader may itself
-      // need a connection from the same pool. Existing records always precede the cap check.
-      const cap = await readFavoritesCap(config, appId);
+      // need a connection from the same pool. Inside the idempotency transaction the route has
+      // already read it before that transaction took its connection (prefetched cap). Existing
+      // records always precede the cap check.
+      const cap = prefetchedFavoritesCap(appId) ?? (await readFavoritesCap(config, appId));
       try {
         return await withUserLock(appId, userId, async (trx) => {
           const existing = await lookup(
