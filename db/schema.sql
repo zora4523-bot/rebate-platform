@@ -1586,6 +1586,29 @@ CREATE TABLE app.commission_rule_reserves (
 
 
 --
+-- Name: commission_rule_trials; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.commission_rule_trials (
+    trial_id uuid NOT NULL,
+    app_id text NOT NULL,
+    rule_version_id uuid NOT NULL,
+    base_version_id uuid,
+    sample_from timestamp with time zone NOT NULL,
+    sample_to timestamp with time zone NOT NULL,
+    sample_count integer NOT NULL,
+    sample_hash text NOT NULL,
+    report jsonb NOT NULL,
+    created_by uuid NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    CONSTRAINT commission_rule_trials_report_check CHECK ((jsonb_typeof(report) = 'object'::text)),
+    CONSTRAINT commission_rule_trials_sample_count_check CHECK ((sample_count >= 0)),
+    CONSTRAINT commission_rule_trials_sample_hash_check CHECK ((sample_hash <> ''::text)),
+    CONSTRAINT commission_rule_trials_sample_window_check CHECK ((sample_from < sample_to))
+);
+
+
+--
 -- Name: commission_rule_versions; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4212,6 +4235,14 @@ ALTER TABLE ONLY app.commission_rule_reserves
 
 
 --
+-- Name: commission_rule_trials commission_rule_trials_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_trials
+    ADD CONSTRAINT commission_rule_trials_pkey PRIMARY KEY (trial_id);
+
+
+--
 -- Name: commission_rule_versions commission_rule_versions_app_id_rule_version_id_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -5375,6 +5406,13 @@ CREATE INDEX blocklist_value_idx ON app.blocklist USING btree (app_id, dimension
 
 
 --
+-- Name: commission_rule_trials_version_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX commission_rule_trials_version_created_idx ON app.commission_rule_trials USING btree (app_id, rule_version_id, created_at);
+
+
+--
 -- Name: commission_rule_versions_published_effective_from_key; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -6117,6 +6155,13 @@ CREATE TRIGGER audit_logs_append_only BEFORE DELETE OR UPDATE ON app.audit_logs 
 
 
 --
+-- Name: commission_rule_trials commission_rule_trials_append_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER commission_rule_trials_append_only BEFORE DELETE OR UPDATE ON app.commission_rule_trials FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
 -- Name: commission_split_amounts commission_split_amounts_append_only; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -6447,6 +6492,30 @@ ALTER TABLE ONLY app.commission_rule_reserves
 
 ALTER TABLE ONLY app.commission_rule_reserves
     ADD CONSTRAINT commission_rule_reserves_rule_version_id_fkey FOREIGN KEY (app_id, rule_version_id) REFERENCES app.commission_rule_versions(app_id, rule_version_id);
+
+
+--
+-- Name: commission_rule_trials commission_rule_trials_base_version_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_trials
+    ADD CONSTRAINT commission_rule_trials_base_version_id_fkey FOREIGN KEY (app_id, base_version_id) REFERENCES app.commission_rule_versions(app_id, rule_version_id);
+
+
+--
+-- Name: commission_rule_trials commission_rule_trials_created_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_trials
+    ADD CONSTRAINT commission_rule_trials_created_by_fkey FOREIGN KEY (app_id, created_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: commission_rule_trials commission_rule_trials_rule_version_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.commission_rule_trials
+    ADD CONSTRAINT commission_rule_trials_rule_version_id_fkey FOREIGN KEY (app_id, rule_version_id) REFERENCES app.commission_rule_versions(app_id, rule_version_id);
 
 
 --
@@ -8288,6 +8357,14 @@ GRANT UPDATE(updated_at) ON TABLE app.category_blocklist TO couli_app;
 
 GRANT SELECT,INSERT ON TABLE app.commission_rule_reserves TO couli_app;
 GRANT SELECT ON TABLE app.commission_rule_reserves TO couli_readonly;
+
+
+--
+-- Name: TABLE commission_rule_trials; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.commission_rule_trials TO couli_app;
+GRANT SELECT ON TABLE app.commission_rule_trials TO couli_readonly;
 
 
 --
