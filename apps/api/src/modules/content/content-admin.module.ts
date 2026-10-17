@@ -48,6 +48,9 @@ import {
 import { KillSwitchAdmin, type KillSwitchStore } from './application/kill-switch-admin.ts';
 import { AdminKillSwitchesController } from './http/admin/kill-switches.controller.ts';
 import { createKyselyKillSwitchStore } from './infra/kysely-kill-switch-store.ts';
+import { ConfigItemAdmin, type ConfigItemStore } from './application/config-item-admin.ts';
+import { AdminConfigItemsController } from './http/admin/config-items.controller.ts';
+import { createKyselyConfigItemStore } from './infra/kysely-config-item-store.ts';
 
 /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
 export type ContentAuditWriterFactory = (db: Kysely<Database>, clock: Clock) => AuditPort;
@@ -79,6 +82,13 @@ const NO_DATABASE_SWITCHES: KillSwitchStore = {
   transaction: () => Promise.reject(new Error('content: kill switch writes need the database')),
 };
 
+const NO_DATABASE_CONFIG_ITEMS: ConfigItemStore = {
+  rows: () => Promise.reject(new Error('content: config item reads need the database')),
+  row: () => Promise.reject(new Error('content: config item reads need the database')),
+  versions: () => Promise.reject(new Error('content: config item history needs the database')),
+  transaction: () => Promise.reject(new Error('content: config item writes need the database')),
+};
+
 /** Monotonic milliseconds for the SVG conversion budget (not business time). */
 const monotonicMs = (): number => performance.now();
 
@@ -87,8 +97,24 @@ export class ContentAdminModule {
   static forAdmin(options: ContentAdminOptions): DynamicModule {
     return {
       module: ContentAdminModule,
-      controllers: [AdminPlatformIconsController, AdminKillSwitchesController],
+      controllers: [
+        AdminPlatformIconsController,
+        AdminKillSwitchesController,
+        AdminConfigItemsController,
+      ],
       providers: [
+        {
+          provide: ConfigItemAdmin,
+          inject: [CLOCK, ROOT_LOGGER, { token: DB, optional: true }],
+          useFactory: (clock: Clock, logger: Logger, db?: Kysely<Database>): ConfigItemAdmin =>
+            new ConfigItemAdmin(
+              db === undefined
+                ? NO_DATABASE_CONFIG_ITEMS
+                : createKyselyConfigItemStore(db, (trx) => options.auditWriter(trx, clock)),
+              clock,
+              logger,
+            ),
+        },
         {
           provide: KillSwitchAdmin,
           inject: [CLOCK, ROOT_LOGGER, { token: DB, optional: true }],
