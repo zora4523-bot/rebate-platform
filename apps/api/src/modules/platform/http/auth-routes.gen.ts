@@ -187,6 +187,26 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "login"
   },
   {
+    "method": "POST",
+    "path": "/v1/me/inviter",
+    "auth": "phone"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/invites/me",
+    "auth": "phone"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/landing/sms-codes",
+    "auth": "none"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/invites/landing-register",
+    "auth": "none"
+  },
+  {
     "method": "GET",
     "path": "/v1/me/payout-account",
     "auth": "realname"

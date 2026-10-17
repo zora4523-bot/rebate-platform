@@ -187,6 +187,26 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": true
   },
   {
+    "method": "POST",
+    "path": "/v1/me/inviter",
+    "signed": true
+  },
+  {
+    "method": "GET",
+    "path": "/v1/invites/me",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/v1/landing/sms-codes",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/v1/invites/landing-register",
+    "signed": false
+  },
+  {
     "method": "GET",
     "path": "/v1/me/payout-account",
     "signed": false

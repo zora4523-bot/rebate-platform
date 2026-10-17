@@ -387,6 +387,46 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": true
   },
   {
+    "operationId": "bindInviter",
+    "method": "POST",
+    "path": "/v1/me/inviter",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "getMyInvite",
+    "method": "GET",
+    "path": "/v1/invites/me",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "sendLandingSmsCode",
+    "method": "POST",
+    "path": "/v1/landing/sms-codes",
+    "gate": false,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "landingRegister",
+    "method": "POST",
+    "path": "/v1/invites/landing-register",
+    "gate": false,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "getPayoutAccount",
     "method": "GET",
     "path": "/v1/me/payout-account",

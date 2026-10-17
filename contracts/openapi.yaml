@@ -58,6 +58,8 @@ tags:
     description: Operational probes. Not part of the product API and not versioned under /v1.
   - name: identity
     description: Device registration, SMS login, token refresh and the current user (04 §6.1).
+  - name: growth
+    description: Invite binding and relations (growth module).
   - name: config
     description: Client configuration and switches (04 §6.2, §10.1).
   - name: trade
@@ -2802,6 +2804,319 @@ paths:
                 msg: ''
                 data: {}
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/me/inviter:
+    post:
+      operationId: bindInviter
+      tags:
+        - growth
+      summary: Bind an inviter by invite code (backfill, once)
+      description: |
+        The "我的" backfill of an invite code (source backfill, BR-INV-03, BR-INV-07). The server
+        normalises invite_code in three steps: Unicode NFKC → remove all Unicode white space
+        (U+3000 included) and the zero-width characters U+200B–U+200D, U+FEFF → upper case; no
+        O→0 style correction (BR-INV-02). Order of checks, the first hit is returned (BR-INV-02):
+        10005 (no bound phone) → 30408 (growth.invite_bind.enabled off) → 42901 → 30402 (already
+        has an inviter or has used the self-binding chance) → 30404 (now ≥ users.created_at +
+        invite.backfill_hours, default 168 hours, to the second; the boundary instant itself is
+        rejected) → 30409 (has an order, a claim or a direct invitee, any status) → 30401
+        (normalised code empty, length ≠ 6 or outside the character set; no lookup) → 30401
+        (inviter missing or unavailable) → 30403 (self, own invitee or same device, BR-INV-08).
+        30401 never tells the reason. Every 30401 counts per phone_hmac per natural day
+        (+08:00); once the count reaches invite.fail_limit_per_day (5) the following requests that
+        day stop at the rate-limit step with 42901 and Retry-After up to the next 00:00 +08:00.
+        Succeeds at most once per account: the write is conditional (no inviter and the
+        self-binding chance unused), so of two concurrent requests with different keys exactly one
+        binds and the other gets 30402. The client fetches GET /v1/me again after success.
+        Version gate: applied.
+      x-auth: phone
+      x-signed: true
+      x-idempotent: true
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 10005
+        - 30408
+        - 42901
+        - 30402
+        - 30404
+        - 30409
+        - 30401
+        - 30403
+        - 10405
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindInviterRequest'
+            example:
+              invite_code: K7M2QX
+      responses:
+        '200':
+          description: The inviter is bound.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              example:
+                code: 0
+                msg: ''
+                data: {}
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/invites/me:
+    get:
+      operationId: getMyInvite
+      tags:
+        - growth
+      summary: My invite code, landing link and poster
+      description: |
+        The invite page (BR-INV-18). 10005 when no phone is bound. A user identified as under 18
+        (realname verified, BR-INV-19) gets 30413 with data.reason=self_minor and the client hides
+        the invite and share entries. Otherwise 200: when inviter_unavailable(self) is true
+        (BR-INV-02) can_invite=false and invite_code, landing_url and poster_url are null while
+        direct_count is still returned; the client shows "暂不可邀请" without a reason.
+        landing_url is `{a current share domain}/i/{invite_code}` and may carry a channel code
+        parameter; it never contains the UID, the phone number or the nickname. poster_url is the
+        poster image drawn by the server (04 §6.4, TECH-13); null while poster drawing is not
+        available.
+      x-auth: phone
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 10005
+        - 30413
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: My invite information.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyInviteResponse'
+              examples:
+                can_invite:
+                  summary: Can invite
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      can_invite: true
+                      invite_code: K7M2QX
+                      landing_url: https://share.example.test/i/K7M2QX
+                      poster_url: null
+                      direct_count: 3
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                cannot_invite:
+                  summary: Cannot invite (no reason given)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      can_invite: false
+                      invite_code: null
+                      landing_url: null
+                      poster_url: null
+                      direct_count: 0
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/landing/sms-codes:
+    post:
+      operationId: sendLandingSmsCode
+      tags:
+        - identity
+      summary: Send an SMS login code from the invite landing page
+      description: |
+        Used only by the invite landing page opened outside the app (BR-ID-32, BR-INV-05); the
+        code is a purpose=login code (not sent in the body). No device id, no request signature
+        and no human verification. `phone` is normalised by the server (BR-ID-05 细则「手机号规范化」).
+        Order of checks: 20001 (not a mainland mobile number after normalisation:
+        `data.fields=[phone]`, `data.reason=phone_invalid`; no SMS, nothing counted) → 44001
+        (blocked number prefix or blacklisted phone) → 42901 with Retry-After (the two per-IP
+        limits and the per-phone limits of BR-ID-05 细则「判定位置」). Code rules as BR-ID-05:
+        6 digits, valid 5 minutes, a new code voids the previous one. Not signed. Version gate:
+        不判定：落地页 (written false, BR-ID-01 细则).
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-min-version-gate: false
+      x-implementation: planned
+      x-error-codes:
+        - 20001
+        - 44001
+        - 42901
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LandingSmsCodeRequest'
+            example:
+              phone: '13800138000'
+      responses:
+        '200':
+          description: The provider accepted the SMS, or its outcome is unknown (counted as sent).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendSmsCodeResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  resend_after_sec: 60
+                  expires_in_sec: 300
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/invites/landing-register:
+    post:
+      operationId: landingRegister
+      tags:
+        - growth
+      summary: Register on the invite landing page and bind the inviter
+      description: |
+        The landing-page registration (source landing, BR-INV-05; the `POST /v1/landing/login` of
+        BR-ID-32). No device id, no request signature, no human verification; phone and invite_code
+        are normalised by the server (BR-ID-05 细则「手机号规范化」, BR-INV-02). Order of checks,
+        the first hit is returned: agreed=true, otherwise 10004 with data.consent_type=agreement →
+        30408 (growth.invite_bind.enabled off; no account is created) → 42901 with Retry-After (the
+        same IP or the same phone_hmac already has invite.fail_limit_per_day (5) 30401 today,
+        +08:00) → 30401 (normalised code empty, length ≠ 6 or outside the character set) → 30401
+        (inviter missing or unavailable) → 20002 / 20003 (the purpose=login SMS code is checked and
+        used up, BR-ID-05) → the phone already has an account → result=already_registered → 44001
+        (landing.ip_register_limit reached for the IP in the last 3600 s, BR-ID-32; no account) →
+        the account is created and the inviter bound in one transaction (result=registered). A
+        phone that is not a mainland mobile number after normalisation is 20001. An invite code
+        failure does not use up the SMS code. already_registered changes no relation and tells
+        nothing more; an account in the deletion cooling period or processing counts as
+        registered, a phone whose only account finished deletion counts as new. The same IP or
+        phone_hmac counts every 30401 (BR-INV-02). No token is issued; the page sends the user to
+        the app to log in with the same number. Idempotency subject `p:<phone_hmac>` (04 §5).
+        Not signed. Version gate: 不判定：落地页 (written false, BR-ID-01 细则).
+      x-auth: none
+      x-signed: false
+      x-idempotent: true
+      x-min-version-gate: false
+      x-implementation: planned
+      x-error-codes:
+        - 10004
+        - 30408
+        - 42901
+        - 20001
+        - 30401
+        - 20002
+        - 20003
+        - 44001
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LandingRegisterRequest'
+            example:
+              phone: '13800138000'
+              sms_code: '246810'
+              invite_code: K7M2QX
+              agreed: true
+              channel: wx_group_01
+      responses:
+        '200':
+          description: Registered and bound, or the phone already has an account.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandingRegisterResponse'
+              examples:
+                registered:
+                  summary: New account created and bound to the inviter
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      result: registered
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                already_registered:
+                  summary: The phone already has an account; nothing changed
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      result: already_registered
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
         4XX:
@@ -10525,6 +10840,153 @@ components:
             data.merge_ticket of the 30411 returned by POST /v1/me/phone; valid for 5 minutes and
             once. Its format is not part of the contract.
           minLength: 1
+    BindInviterRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - invite_code
+      properties:
+        invite_code:
+          type: string
+          description: |
+            Invite code as typed or pasted. The server normalises it and checks the format
+            (BR-INV-02); an empty or malformed code is 30401 and counts towards the daily limit, so
+            the schema has no pattern or minLength.
+          maxLength: 64
+    MyInvite:
+      type: object
+      additionalProperties: false
+      required:
+        - can_invite
+        - invite_code
+        - landing_url
+        - poster_url
+        - direct_count
+      properties:
+        can_invite:
+          type: boolean
+          description: false when inviter_unavailable(self) (BR-INV-02); the reason is not given.
+        invite_code:
+          type:
+            - string
+            - 'null'
+          description: My invite code; null when can_invite=false.
+          pattern: '^[2-9A-HJ-NP-Z]{6}$'
+        landing_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: |
+            `{share domain}/i/{invite_code}`, optionally with a channel code parameter; never the
+            UID, phone number or nickname. null when can_invite=false.
+        poster_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: |
+            Poster image drawn by the server (04 §6.4, TECH-13); null when can_invite=false and
+            while poster drawing is not available.
+        direct_count:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Number of my direct invitees (BR-INV-16); returned even when can_invite=false.
+    MyInviteResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/MyInvite'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    LandingSmsCodeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - phone
+      properties:
+        phone:
+          $ref: '#/components/schemas/Phone'
+    LandingRegisterRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - phone
+        - sms_code
+        - invite_code
+        - agreed
+      properties:
+        phone:
+          $ref: '#/components/schemas/Phone'
+        sms_code:
+          type: string
+          description: |
+            The purpose=login code from POST /v1/landing/sms-codes; a wrong or expired code is
+            20002 / 20003 (BR-ID-05).
+          maxLength: 64
+        invite_code:
+          type: string
+          description: |
+            Invite code of the landing link. Normalised and checked by the server (BR-INV-02); an
+            empty or malformed code is 30401 and counts towards the daily limit, so the schema has
+            no pattern or minLength.
+          maxLength: 64
+        agreed:
+          type: boolean
+          description: |
+            The user agreement and privacy policy box was ticked. false is 10004 with
+            data.consent_type=agreement, not a validation error; on success the agreement and
+            privacy consents are recorded with channel h5_landing (BR-INV-05, BR-ID-32).
+        channel:
+          type: string
+          description: |
+            Optional channel code of the landing link, kept as the account's registered channel
+            (BR-ID-04, BR-INV-05).
+          minLength: 1
+          maxLength: 32
+          pattern: '^[A-Za-z0-9_-]+$'
+    LandingRegisterData:
+      type: object
+      additionalProperties: false
+      required:
+        - result
+      properties:
+        result:
+          type: string
+          description: |
+            registered = account created and bound to the inviter; already_registered = the phone
+            already has an account (in deletion included), nothing changed (BR-INV-05).
+          enum:
+            - registered
+            - already_registered
+    LandingRegisterResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/LandingRegisterData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
     TipKey:
       type: string
       description: One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则).
