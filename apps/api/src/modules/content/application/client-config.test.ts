@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { expect, it } from 'vitest';
-import { MediaStoreUnavailableError } from '../../platform/index.ts';
+import { MediaStoreUnavailableError, type MaterialChannelsSpec } from '../../platform/index.ts';
 import type { ClientConfig } from '../domain/client-config.ts';
 import {
   ClientConfigService,
@@ -21,6 +22,7 @@ function service(
   values: Record<string, unknown>,
   failure?: Error,
   platformIcons: ClientConfigDeps['platformIcons'] = () => Promise.resolve({}),
+  channels: MaterialChannelsSpec = { version: 'empty', channels: [] },
 ) {
   const warns: unknown[] = [];
   const errors: unknown[] = [];
@@ -41,6 +43,7 @@ function service(
     platformIcons,
     linkPatterns: () =>
       ({ version: 'lp', rules: [] }) as NonNullable<ClientConfig['link_patterns']>,
+    materialChannels: () => channels,
     logger: {
       warn: ((o: unknown) => void warns.push(o)) as never,
       error: ((o: unknown) => void errors.push(o)) as never,
@@ -93,4 +96,62 @@ it('[AC-F1-02d] icon database errors reject even after a successful config read'
   fail = true;
   await expect(s.svc.read({ appId: 'app1', userId: null }, null)).rejects.toBe(failure);
   expect(s.warns).toEqual([]);
+});
+
+function oracle(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(oracle).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${oracle(record[k])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value)!;
+}
+
+it('[AC-F1-02h] config_version hashes the final JSON data, platform_icons included', async () => {
+  const icons = { taobao: { version: 1 } } as never;
+  const s = service(REQUIRED, undefined, () => Promise.resolve(icons));
+  const config = await s.svc.read({ appId: 'a', userId: null }, null);
+  const wire = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
+  delete wire['config_version'];
+  const expected = createHash('sha256').update(oracle(wire)).digest('hex').slice(0, 32);
+  expect(config.config_version).toBe(expected);
+  expect(config.platform_icons).toEqual(icons);
+  const plain = await service(REQUIRED).svc.read({ appId: 'a', userId: null }, null);
+  expect(plain.config_version).not.toBe(config.config_version);
+});
+
+it('[AC-F1-02h] the same data in another app gets the same config_version', async () => {
+  const a = await service(REQUIRED).svc.read({ appId: 'a1', userId: null }, null);
+  const b = await service(REQUIRED).svc.read({ appId: 'a2', userId: null }, null);
+  expect(a.config_version).toMatch(/^[0-9a-f]{32}$/);
+  expect(b.config_version).toBe(a.config_version);
+});
+
+it('[AC-F1-02h] rank_platforms comes from the selectable material channels', async () => {
+  const s = service(REQUIRED, undefined, undefined, {
+    version: 'synthetic',
+    channels: [
+      {
+        platform: 'jd',
+        channel_id: 'c1',
+        name: 'n',
+        sort_basis: 'sales',
+        selectable: true,
+        source: 's',
+      },
+      {
+        platform: 'taobao',
+        channel_id: 'c2',
+        name: 'n',
+        sort_basis: 'sales',
+        selectable: false,
+        source: 's',
+      },
+    ],
+  });
+  const config = await s.svc.read({ appId: 'a', userId: null }, null);
+  expect(config.features.rank_platforms).toEqual(['jd']);
 });

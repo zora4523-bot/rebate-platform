@@ -15,6 +15,7 @@ import {
   CLOCK,
   DB,
   getLinkPatterns,
+  getMaterialChannels,
   ROOT_LOGGER,
   type AppConfig,
   type Clock,
@@ -90,6 +91,7 @@ export class ContentPublicModule {
                 );
               },
               linkPatterns: () => getLinkPatterns() as NonNullable<ClientConfig['link_patterns']>,
+              materialChannels: getMaterialChannels,
               logger: logger.child({ module: 'content' }),
             }),
         },

@@ -69,6 +69,9 @@ const OPTIONAL_CONFIG_KEYS = [
   'agent.guest_daily_quota',
   'agent.require_phone',
   'claim.window_hours',
+  // F1-02h: not the same-named keys lkg_max_age_sec / bridge_disabled_methods.
+  'config.lkg_max_age_sec',
+  'bridge.disabled_methods',
 ] as const;
 
 /** Every config_items key GET /v1/config reads (link_patterns is not one: platform's table). */
@@ -109,6 +112,8 @@ export interface ClientConfigInput {
   readonly deviceId: string | null;
   /** platform's getLinkPatterns(), sent as is. */
   readonly linkPatterns: NonNullable<ClientConfig['link_patterns']>;
+  /** features.rank_platforms, derived from platform's material channel whitelist (F1-02h). */
+  readonly rankPlatforms: readonly PlatformCode[];
   readonly report: ConfigReport;
 }
 
@@ -165,6 +170,16 @@ const isCanary: Check<Canary> = (value): value is Canary =>
   intIn(0, H5_BUCKETS)(value['percent_bp']);
 
 const isVersion = intIn(1, INT32_MAX);
+
+/** The contract's bridge method name (`namespace.method`). */
+const BRIDGE_METHOD = /^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/;
+const isBridgeMethods: Check<string[]> = (value): value is string[] =>
+  Array.isArray(value) &&
+  value.every((v) => typeof v === 'string' && BRIDGE_METHOD.test(v)) &&
+  new Set(value).size === value.length;
+
+/** 04 §10.1: the proxy default of lkg_max_age_sec (7 days). */
+export const LKG_MAX_AGE_DEFAULT_SEC = 604_800;
 
 // ---- derivations ----
 
@@ -307,7 +322,12 @@ export function buildClientConfig(input: ClientConfigInput): ClientConfig | unde
     h5_base_url: h5BaseUrl ?? '',
     h5_release: { version: releaseVersion(stable ?? '', canary, input) },
     share_domains: optional('share_domains', arrayOf(isString), []),
-    features: { flags, platform_status: platformStatus, search_status: searchStatuses },
+    features: {
+      flags,
+      platform_status: platformStatus,
+      search_status: searchStatuses,
+      rank_platforms: [...input.rankPlatforms],
+    },
     texts: optional('texts', dictOf(isString), {}),
     legal: {
       privacy: { version: privacyVersion ?? 1, min_version: privacyMin ?? 1 },
@@ -338,6 +358,12 @@ export function buildClientConfig(input: ClientConfigInput): ClientConfig | unde
     },
     help_links: optional('help_links', dictOf(isHelpLinkTarget), {}),
     claim: { window_days: windowDays(hours) },
+    lkg_max_age_sec: optional(
+      'config.lkg_max_age_sec',
+      intIn(1, INT32_MAX),
+      LKG_MAX_AGE_DEFAULT_SEC,
+    ),
+    bridge_disabled_methods: [...optional('bridge.disabled_methods', isBridgeMethods, [])],
   };
   return failed ? undefined : config;
 }

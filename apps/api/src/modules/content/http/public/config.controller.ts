@@ -6,16 +6,23 @@
 //
 // Nest's decorators are applied as plain calls below (not decorator syntax): content's index.ts
 // is reachable from the test project, whose compiler settings have no legacy decorators.
-import { Controller, Get, Inject, Req } from '@nestjs/common';
+import { Controller, Get, Inject, Req, Res } from '@nestjs/common';
 import { RouteSchema } from '@nestjs/platform-fastify';
 import type { Schema } from '@couli/contracts-ts';
 import { contractRouteSchema, type ContractOperationId } from '../../../platform/index.ts';
 import { ClientConfigService, ConfigViewerContext } from '../../application/client-config.ts';
+import { ifNoneMatchHits } from '../../domain/config-etag.ts';
 
 export interface ConfigRequest {
   /** Trace id set by `genReqId`. */
   readonly id: string;
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
+}
+
+/** What this controller writes on the Fastify reply besides the body (F1-02h). */
+export interface ConfigReply {
+  header(name: string, value: string): unknown;
+  code(statusCode: number): unknown;
 }
 
 const OPERATION = 'getConfig';
@@ -44,13 +51,28 @@ export class ConfigController {
     this.#viewer = viewer;
   }
 
-  async read(request: ConfigRequest): Promise<Schema<'ConfigResponse'>> {
+  /**
+   * 200 with the strong ETag (data.config_version in quotes); 304 without a body when
+   * If-None-Match matches it (F1-02h §9.2-4). The configuration is always assembled first, so a
+   * broken configuration or a failed read still answers 50001, never 304.
+   */
+  async read(
+    request: ConfigRequest,
+    reply: ConfigReply,
+  ): Promise<Schema<'ConfigResponse'> | undefined> {
     const viewer = await this.#viewer.current();
     const device = request.headers['x-device-id'];
     const data = await this.#service.read(
       { appId: viewer.appId, userId: viewer.userId },
       typeof device === 'string' && device !== '' ? device : null,
     );
+    const etag = `"${data.config_version ?? ''}"`;
+    reply.header('ETag', etag);
+    const condition = request.headers['if-none-match'];
+    if (ifNoneMatchHits(Array.isArray(condition) ? condition.join(',') : condition, etag)) {
+      reply.code(304);
+      return undefined;
+    }
     return { code: 0, msg: '', data, trace_id: request.id };
   }
 }
@@ -61,6 +83,7 @@ export class ConfigController {
   Inject(ClientConfigService)(ConfigController, undefined, 0);
   Inject(ConfigViewerContext)(ConfigController, undefined, 1);
   Req()(prototype, 'read', 0);
+  Res({ passthrough: true })(prototype, 'read', 1);
   Get('config')(prototype, 'read', read);
   RouteSchema(routeSchema())(prototype, 'read', read);
   Controller('v1')(ConfigController);
