@@ -34,6 +34,7 @@ function build(
     viewer,
     deviceId,
     linkPatterns: PATTERNS,
+    rankPlatforms: [],
     report: { missing: (k) => missing.push(k), invalid: (k) => invalid.push(k) },
   });
   return { config, missing, invalid };
@@ -73,6 +74,7 @@ it('[AC-F1-02c] a required key absent or malformed fails and is reported', () =>
     viewer: { appId: 'app', userId: null },
     deviceId: null,
     linkPatterns: PATTERNS,
+    rankPlatforms: [],
     report: { missing: (k) => missing.push(k), invalid: () => undefined },
   });
   expect(result).toBeUndefined();
@@ -168,4 +170,67 @@ it('[AC-F1-02c] the key list covers every platform switch once', () => {
   expect(CLIENT_CONFIG_KEYS).toContain('search.enabled.suning');
   expect(CLIENT_CONFIG_KEYS).not.toContain('link_patterns');
   expect(CLIENT_CONFIG_KEYS).not.toContain('invite.required');
+});
+
+it('[AC-F1-02h] lkg_max_age_sec and bridge_disabled_methods default silently when absent', () => {
+  const { config, invalid } = build();
+  expect(config!.lkg_max_age_sec).toBe(604_800);
+  expect(config!.bridge_disabled_methods).toEqual([]);
+  expect(config!.features.rank_platforms).toEqual([]);
+  expect(invalid).toEqual([]);
+});
+
+it('[AC-F1-02h] the namespaced keys are read; same-named keys are ignored', () => {
+  const { config } = build({
+    'config.lkg_max_age_sec': 3600,
+    'bridge.disabled_methods': ['ext.openApp', 'clipboard.read'],
+    lkg_max_age_sec: 1,
+    bridge_disabled_methods: ['a.b'],
+  });
+  expect(config!.lkg_max_age_sec).toBe(3600);
+  expect(config!.bridge_disabled_methods).toEqual(['ext.openApp', 'clipboard.read']);
+});
+
+it('[AC-F1-02h] a malformed lkg_max_age_sec falls back whole and is reported', () => {
+  for (const value of [0, -1, 1.5, '3600', 2_147_483_648, null]) {
+    const { config, invalid } = build({ 'config.lkg_max_age_sec': value });
+    expect(config!.lkg_max_age_sec).toBe(604_800);
+    expect(invalid).toEqual(['config.lkg_max_age_sec']);
+  }
+});
+
+it('[AC-F1-02h] a malformed bridge.disabled_methods falls back to [] and is reported', () => {
+  for (const value of [
+    ['login'],
+    ['clipboard.read', 7],
+    ['a.b', 'a.b'],
+    'clipboard.read',
+    ['Clipboard.read'],
+    ['clipboard.read.extra'],
+    {},
+  ]) {
+    const { config, invalid } = build({ 'bridge.disabled_methods': value });
+    expect(config!.bridge_disabled_methods).toEqual([]);
+    expect(invalid).toEqual(['bridge.disabled_methods']);
+  }
+});
+
+it('[AC-F1-02h] features.rank_platforms comes from the input, never from config rows', () => {
+  const missing: string[] = [];
+  const config = buildClientConfig({
+    values: new Map(
+      Object.entries({
+        ...REQUIRED,
+        'features.rank_platforms': ['taobao'],
+        'features.flags': { rank_platforms: true },
+      }),
+    ),
+    viewer: { appId: 'app', userId: null },
+    deviceId: null,
+    linkPatterns: PATTERNS,
+    rankPlatforms: ['jd', 'pdd'],
+    report: { missing: (k) => missing.push(k), invalid: () => undefined },
+  });
+  expect(config!.features.rank_platforms).toEqual(['jd', 'pdd']);
+  expect(missing).toEqual([]);
 });

@@ -6,13 +6,14 @@
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import type { Logger } from 'pino';
-import { MediaStoreUnavailableError } from '../../platform/index.ts';
+import { MediaStoreUnavailableError, type MaterialChannelsSpec } from '../../platform/index.ts';
 import {
   buildClientConfig,
   CLIENT_CONFIG_KEYS,
   type ClientConfig,
   type ConfigViewer,
 } from '../domain/client-config.ts';
+import { configEtag, rankPlatforms } from '../domain/config-etag.ts';
 import type { ContentReader } from './content-reader.ts';
 import type { PublishedPlatformIcons } from './published-platform-icons.ts';
 
@@ -36,6 +37,8 @@ export interface ClientConfigDeps {
   /** Fresh primary-database read on every request, outside ContentReader's cache. */
   readonly platformIcons: (appId: string) => Promise<PublishedPlatformIcons>;
   readonly linkPatterns: () => NonNullable<ClientConfig['link_patterns']>;
+  /** platform's getMaterialChannels(): features.rank_platforms is derived from it (F1-02h). */
+  readonly materialChannels: () => MaterialChannelsSpec;
   readonly logger: Pick<Logger, 'warn' | 'error'>;
 }
 
@@ -47,8 +50,9 @@ export class ClientConfigService {
   }
 
   /**
-   * The Config of `viewer`. `deviceId` is the guest's X-Device-Id header, used only to bucket
-   * h5_release when there is no user; it is never an identity.
+   * The Config of `viewer`, its config_version set (the ETag without quotes). `deviceId` is the
+   * guest's X-Device-Id header, used only to bucket h5_release when there is no user; it is
+   * never an identity.
    */
   async read(viewer: ConfigViewer, deviceId: string | null): Promise<ClientConfig> {
     const { reader, logger } = this.#deps;
@@ -68,6 +72,7 @@ export class ClientConfigService {
       viewer,
       deviceId,
       linkPatterns: this.#deps.linkPatterns(),
+      rankPlatforms: rankPlatforms(this.#deps.materialChannels()),
       report: {
         missing: (key) => {
           missing.push(key);
@@ -94,6 +99,10 @@ export class ClientConfigService {
         'media public base URL unavailable; platform_icons omitted',
       );
     }
+    // F1-02h: the version covers the caller's final data (per-caller parts and platform_icons
+    // included), never itself; the controller answers it as the strong ETag.
+    const etag = configEtag(config);
+    config.config_version = etag.slice(1, -1);
     return config;
   }
 }
