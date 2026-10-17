@@ -9,6 +9,10 @@
 // Step-up tokens are signed exactly as POST /v1/auth/step-up issues them (signScopedToken with the
 // application's TOKEN_KEYS, aud=step_up). Only the orchestrator runs these fixtures, inside the
 // isolated integration-test container.
+// Identity level (BR-ID-01 ⑧ ⑨, judged before ⑫; createWithdrawal is x-auth realname): every
+// fixture user has a bound phone (a unique phone_hmac) and IdentityModule's real-name status
+// reader is swapped for one that always answers 'verified', so ⑫ is what these tests reach. Where
+// IdentityModule has no such option yet, the extra option is ignored.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -127,7 +131,9 @@ export async function openFixture(): Promise<Fixture> {
   // identity's public surface (its index also exports the Nest module, outside the test project).
   const identity = (await import(
     new URL('apps/api/src/modules/identity/index.ts', ROOT).href
-  )) as Pick<typeof StepUpVerifyApi, 'withStepUp'>;
+  )) as Pick<typeof StepUpVerifyApi, 'withStepUp'> & {
+    IdentityModule: { forRoot(options: Record<string, unknown>): unknown };
+  };
   const identityTokens = (await import(
     new URL('apps/api/src/modules/identity/application/tokens.ts', ROOT).href
   )) as typeof IdentityTokensApi;
@@ -257,6 +263,14 @@ export async function openFixture(): Promise<Fixture> {
       `${operation.operationId} 已实现，改用真实路由的替换办法`,
     ).toBe(false);
   }
+  // Stage ⑨: the real-name status port always answers 'verified' (option realnameStatus).
+  const originalIdentity = identity.IdentityModule.forRoot.bind(identity.IdentityModule);
+  const identitySpy = vi.spyOn(identity.IdentityModule, 'forRoot').mockImplementation((options) =>
+    originalIdentity({
+      ...options,
+      realnameStatus: { useFactory: () => ({ read: () => Promise.resolve('verified') }) },
+    }),
+  );
   const original = AppModule.forEntry.bind(AppModule);
   const entrySpy = vi.spyOn(AppModule, 'forEntry').mockImplementationOnce((options) => {
     const module = original(options);
@@ -305,6 +319,7 @@ export async function openFixture(): Promise<Fixture> {
   } finally {
     entrySpy.mockRestore();
     platformSpy.mockRestore();
+    identitySpy.mockRestore();
   }
 }
 
@@ -338,7 +353,7 @@ export interface User {
 
 /**
  * A fresh app id (no cached configuration, buckets or versions shared with another test), one
- * registered device, one user and one full session of that user on that device. `config` rows and
+ * registered device, one user with a bound phone and one full session of that user on that device. `config` rows and
  * an app_versions row (minimum `minVersion` for ios / appstore) are written before any request.
  */
 export async function user(
@@ -380,7 +395,8 @@ export async function user(
     device_id: expect.any(String),
     install_secret: expect.any(String),
   });
-  const uid = await seedUser(db, appId);
+  // Stage ⑧: a bound phone (any unique HMAC value).
+  const uid = await seedUser(db, appId, { phoneHmac: randomBytes(32).toString('hex') });
   const sessions = (await import(
     new URL('apps/api/src/modules/identity/application/sessions.ts', ROOT).href
   )) as typeof SessionsApi;
