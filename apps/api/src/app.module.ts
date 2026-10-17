@@ -38,6 +38,7 @@ import {
 } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
 import {
+  IdentityAdminModule,
   IdentityModule,
   ME_READ_PORTS,
   TOKEN_CHECK,
@@ -1006,6 +1007,9 @@ export class AppModule {
               }),
             ]
           : []),
+        // identity's /admin/v1 user reveal (F1-07a, BR-ID-33): guarded by AdminOperationGuard,
+        // audited through the global AUDIT_PORT before the value is returned.
+        ...(options.entry === 'admin' ? [IdentityAdminModule.forAdmin()] : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest).
         ...(options.entry === 'api'

@@ -43,6 +43,8 @@ export type {
 export { revokeSessionsByUser, revokeSessionsByDevice } from './application/revoke-sessions.ts';
 export type { AfterSessionsRevoked, SessionRevokeReason } from './application/revoke-sessions.ts';
 export { IdentityModule } from './identity.module.ts';
+// The admin entry's console routes of identity (F1-07a: the audited phone reveal).
+export { IdentityAdminModule } from './identity-admin.module.ts';
 export { ME_READ_PORTS } from './application/tokens.ts';
 export type { MeReadPorts, MeUnionBindingStatus } from './application/me.ts';
 export type { InviteBackfillActivityPort, MeSubject } from './ports/invite-backfill-activity.ts';
@@ -104,3 +106,5 @@ export type {
 // The process SMS sender and its Nest token (the admin entry's sms step-up tier, F1-06l).
 export { createSmsSender, smsSenderToken } from './infra/fake-sms.ts';
 export { createThirdPartyIdentity } from './infra/fake-third-party-identity.ts';
+export { projectAdminUser } from './application/admin-user-view.ts';
+export type { AdminUserViewReader, AdminUserViewSource } from './application/admin-user-view.ts';
