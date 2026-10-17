@@ -25,6 +25,27 @@ afterAll(async () => {
   await closeSuite(suite);
 });
 
+function twoRequestBarrier() {
+  let release: () => void = () => {
+    throw new Error('barrier not initialized');
+  };
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let arrivals = 0;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  return {
+    async wait() {
+      arrivals++;
+      if (arrivals === 1) timeout = setTimeout(release, 5000);
+      if (arrivals === 2) release();
+      await ready;
+      clearTimeout(timeout);
+      expect(arrivals, '两个请求必须在超时前越过预检屏障，不得持行锁等待').toBe(2);
+    },
+  };
+}
+
 it.each(['backfill', 'register'] as const)(
   '[AC-B1-11d#31] %s 成功仅更新指定列并恰写一条完整关系日志',
   async (channel) => {
@@ -122,28 +143,39 @@ it('[AC-B1-11d#35] 两个请求均读到未绑定后争抢不同码，只能一�
       invite: OTHER_CODE,
       phoneHmac: randomBytes(32).toString('hex'),
     });
-    let release: () => void = () => {
-      throw new Error('barrier not initialized');
-    };
-    const ready = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const entryBarrier = twoRequestBarrier();
+    const precheckBarrier = twoRequestBarrier();
     let arrivals = 0;
-    const binder = await f.binder();
+    const binder = await f.binder({
+      activity(trx) {
+        const reader = f.deps.activity(trx);
+        return {
+          ...reader,
+          async orderCount(subject) {
+            const count = await reader.orderCount(subject);
+            // Activity is checked after parent_id/self_bind_used, before any writes.
+            // This ordinary SELECT acquires no user row lock; both prechecks must finish.
+            arrivals++;
+            await precheckBarrier.wait();
+            return count;
+          },
+        };
+      },
+    });
     const before = await f.row();
-    const answers = await Promise.all(
+    const outcomes = await Promise.allSettled(
       [f.command.invite_code, OTHER_CODE].map((invite_code) =>
         f.db.transaction().execute(async (trx) => {
-          // Synchronize before bind can acquire locks: waiting inside readRisk can deadlock
-          // an implementation that locks the user row before reading the inviter's risk.
           expect(await row(trx, f.app, f.userId)).toEqual(before);
-          arrivals++;
-          if (arrivals === 2) release();
-          await ready;
+          await entryBarrier.wait();
           return binder.bind(trx, { ...f.command, invite_code });
         }),
       ),
     );
+    const answers = outcomes.map((outcome) => {
+      if (outcome.status === 'rejected') throw outcome.reason;
+      return outcome.value;
+    });
     expect(arrivals).toBe(2);
     expect(answers.filter((a) => a.result === 'bound')).toHaveLength(1);
     expect(answers.filter((a) => a.result === 'failed')).toEqual([

@@ -17,6 +17,7 @@ import {
   OWN_CODE,
   DEVICE_CONTEXT,
   NOW,
+  type Fixture,
   type Suite,
 } from './kit.ts';
 
@@ -27,6 +28,39 @@ beforeAll(async () => {
 afterAll(async () => {
   await closeSuite(suite);
 });
+
+// Called after the first unavailable-inviter 30401, including for every parameterized case.
+async function unavailableCounts(f: Fixture, deps: Parameters<Fixture['bind']>[1] = {}) {
+  const stored = await keys(f.raw, `*${f.app}*`);
+  expect(stored).toHaveLength(1);
+  expect(stored[0]).toContain(`${f.app}:2031-05-06:${(await f.row()).phone_hmac}`);
+  expect(await f.raw.call('GET', stored[0]!)).toBe('1');
+  // Mix a format failure with unavailable-inviter failures from both channels.
+  for (const attempt of [
+    { channel: 'register', invite_code: 'BAD', count: '2' },
+    { channel: 'backfill', invite_code: CODE, count: '3' },
+    { channel: 'register', invite_code: CODE, count: '4' },
+    { channel: 'backfill', invite_code: CODE, count: '5' },
+  ] as const) {
+    await failed(f, 30401, { channel: attempt.channel, invite_code: attempt.invite_code }, deps);
+    expect(await keys(f.raw, `*${f.app}*`)).toEqual(stored);
+    expect(await f.raw.call('GET', stored[0]!)).toBe(attempt.count);
+  }
+  await seedUser(f.db, f.app, {
+    invite: OTHER_CODE,
+    phoneHmac: randomBytes(32).toString('hex'),
+  });
+  // A different, available inviter cannot bypass the shared daily quota.
+  for (const channel of ['backfill', 'register'] as const) {
+    expect(await failed(f, 42901, { channel, invite_code: OTHER_CODE })).toEqual({
+      result: 'failed',
+      code: 42901,
+      retry_after_seconds: 25200,
+    });
+    expect(await f.raw.call('GET', stored[0]!)).toBe('5');
+    expect(await keys(f.raw, `*${f.app}*`)).toEqual(stored);
+  }
+}
 
 it('[AC-B1-11d#1] backfill 手机身份先于关闭开关与错误码格式', async () => {
   await withFixture(suite, async (f) => {
@@ -176,6 +210,7 @@ it.each(['banned', 'appealing', 'frozen'] as const)(
         suite.kit.crypto.blindIndex(f.command.device_id, DEVICE_CONTEXT),
       );
       await failed(f, 30401);
+      await unavailableCounts(f);
     });
   },
 );
@@ -184,6 +219,7 @@ it.each(['deleted', 'no_phone'])('[AC-B1-11d#16] 邀请人 %s 返回 30401', asy
   await withFixture(suite, async (f) => {
     await f.patch(kind === 'deleted' ? { status: 'deleted' } : { phone_hmac: null }, f.parentId);
     await failed(f, 30401);
+    await unavailableCounts(f);
   });
 });
 
@@ -204,6 +240,7 @@ it('[AC-B1-11d#52] 已实名邀请人距满 18 岁还差一天，30401 且不写
       user_id: f.parentId,
     });
     expect(verifiedBirthDate.mock.calls[0]![0].isTransaction).toBe(true);
+    await unavailableCounts(f, { verifiedBirthDate });
   });
 });
 
