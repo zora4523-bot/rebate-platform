@@ -9,10 +9,12 @@
 -- - 有分录却没有缓存行的账户按差异报出（不靠内连接静默丢弃）。
 -- - daily_balances 也是分录口径（decision 20）：只取 accounting_date = 校验日、属于用户账户的行，
 --   核对 opening_fen + debit_fen - credit_fen = closing_fen，available 与 frozen 两个子户都核对。
--- - 校验日应有日余额的账户子户 = 校验日（凭证 accounting_date）有分录的用户账户子户
---   ∪ 前一会计日有 daily_balances 行的用户账户子户 ∪ 校验日已有 daily_balances 行的用户账户子户；
+-- - 校验日应有日余额的账户子户 = 截至校验日曾出现过的用户账户子户：
+--   有 accounting_date（凭证会计日）≤ 校验日的分录，或有 accounting_date < 校验日的 daily_balances 行，
+--   再并上校验日已有 daily_balances 行的用户账户子户（其期末等式照样核对）；
 --   左连接校验日 daily_balances，缺行按账户级差异报出（detail.check = missing_daily_balance），
---   不让日余额生成失败被报成「无差异」。
+--   不让日余额生成失败（含任意长度的连续缺失、期间无新流水）被报成「无差异」。
+--   用账户 × 子户逐个 EXISTS 判断，不对全量分录聚合。
 -- - 金额只做整数加减比较：sum(bigint) 是 numeric，精确，不用浮点。detail 里的金额写成文本，
 --   避免 JSON 数字在 2^53 以上丢精度。
 -- - checked_rows = 用户账户数 × 2 个子户（缓存核对）+ 校验日应有日余额的账户子户数（含缺行）。
@@ -60,24 +62,27 @@ cache_checks AS (
     ON ec.app_id = ua.app_id AND ec.account_id = ua.account_id
 ),
 daily_expected AS (
-  SELECT e.app_id, e.account_id, e.sub_account
-  FROM app.ledger_entries e
-  JOIN user_accounts ua ON ua.app_id = e.app_id AND ua.account_id = e.account_id
-  JOIN app.ledger_vouchers v ON v.app_id = e.app_id AND v.id = e.voucher_id
+  SELECT ua.app_id, ua.account_id, s.sub_account
+  FROM user_accounts ua
+  CROSS JOIN sub_accounts s
   CROSS JOIN params p
-  WHERE v.accounting_date = p.check_date
-  UNION
-  SELECT d.app_id, d.account_id, d.sub_account
-  FROM app.daily_balances d
-  JOIN user_accounts ua ON ua.app_id = d.app_id AND ua.account_id = d.account_id
-  CROSS JOIN params p
-  WHERE d.accounting_date = p.check_date - 1
-  UNION
-  SELECT d.app_id, d.account_id, d.sub_account
-  FROM app.daily_balances d
-  JOIN user_accounts ua ON ua.app_id = d.app_id AND ua.account_id = d.account_id
-  CROSS JOIN params p
-  WHERE d.accounting_date = p.check_date
+  WHERE EXISTS (
+      SELECT 1
+      FROM app.ledger_entries e
+      JOIN app.ledger_vouchers v ON v.app_id = e.app_id AND v.id = e.voucher_id
+      WHERE e.app_id = ua.app_id
+        AND e.account_id = ua.account_id
+        AND e.sub_account = s.sub_account
+        AND v.accounting_date <= p.check_date
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM app.daily_balances d
+      WHERE d.app_id = ua.app_id
+        AND d.account_id = ua.account_id
+        AND d.sub_account = s.sub_account
+        AND d.accounting_date <= p.check_date
+    )
 ),
 daily_checks AS (
   SELECT
