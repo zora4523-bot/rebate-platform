@@ -5,8 +5,11 @@ import type { Clock } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionOrder } from '../../union/index.ts';
 import type { BindingRow } from '../domain/attribution.ts';
 import type { StatusMap } from '../domain/status-map.ts';
-import type { OrderPipelineContext } from './pipeline-port.ts';
-import type { SyncLogger } from './sync-ports.ts';
+import type { OrderSyncWindow, SyncLogger } from './sync-ports.ts';
+
+export interface OrderPipelineContext extends OrderSyncWindow {
+  readonly requestId: string;
+}
 
 export interface PidRow {
   readonly pid_scene: string;
@@ -67,4 +70,13 @@ export interface OrderPipelineDeps {
   };
   readonly mtimeOrdering?: (platform: RegisteredPlatform) => boolean;
   readonly logger?: SyncLogger;
+}
+
+/** Normal resolution includes accepted, dropped, rejected and pending orders. */
+export interface OrderPipelinePort {
+  process(order: UnionOrder, ctx: OrderPipelineContext): Promise<void | OrderPipelineResult>;
+}
+
+export interface OrderPipeline extends OrderPipelinePort {
+  process(order: UnionOrder, ctx: OrderPipelineContext): Promise<OrderPipelineResult>;
 }
