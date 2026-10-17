@@ -104,3 +104,5 @@ export type {
 // The process SMS sender and its Nest token (the admin entry's sms step-up tier, F1-06l).
 export { createSmsSender, smsSenderToken } from './infra/fake-sms.ts';
 export { createThirdPartyIdentity } from './infra/fake-third-party-identity.ts';
+export { projectAdminUser } from './application/admin-user-view.ts';
+export type { AdminUserViewReader, AdminUserViewSource } from './application/admin-user-view.ts';
