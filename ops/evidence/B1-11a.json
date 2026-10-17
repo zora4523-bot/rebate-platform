@@ -1,0 +1,90 @@
+{
+  "task": "B1-11a",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "9c68b6ae4f2e7ce69c9993d2c5f99d35f8c29854",
+  "red_tests": [
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#1] 两表列类型、可空性、identity 与业务时钟默认值符合裁定",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#2] 主键、全部 CHECK 以及跨 app 外键有指定名称且有效，无级联",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#3] 回放索引列序与注册部分唯一索引符合裁定",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#4] 六种关系来源合法，允许初次绑定、换绑和解除",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#5] 关系 CHECK 拒绝未知来源、无变化、自指、错误注销解除与空操作人",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#6] 等级允许 L1/L2/L3 注册、升降级以及任意非空审计身份",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#7] 等级 CHECK 拒绝非法等级、来源、注册形状与无理由调级",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#8] 必填审计字段拒绝 NULL，业务时刻必须显式写入",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#9] 用户及新旧上级外键均拒绝不存在和跨 app 的用户",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#10] 注册唯一性由 PG 保证，同用户 admin 多条及其他 app 注册不受限",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#11] app 仅可追加读取，readonly 仅读取，无表级或列级改删授权",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#12] 两表仅有指定的行级 BEFORE UPDATE/DELETE 触发器并复用拒绝函数",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#13] 关系按 at 回放，等号取新上级，同刻按 id 决胜并保留解除记录",
+    "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#14] 等级按 effective_at 回放，边界及同刻 id 正确且不依赖入库戳"
+  ],
+  "risk_note": "RV2 (db/**). Migration 0040: level_change_logs and relation_change_logs, insert-only (shared append-only trigger, no UPDATE/DELETE grants), schema snapshot and db.gen.ts regenerated on the test machine. Renumbered 0041→0040 after the funds lane released 0039 (pure rename, no content change). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "9c68b6ae4f2e7ce69c9993d2c5f99d35f8c29854",
+      "tree": "e4e1c2100c4a55c85884206fda5385ceb9b9516d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T17:20:42Z",
+      "finished_at": "2026-10-17T17:20:47Z",
+      "red_tests": [
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#1] 两表列类型、可空性、identity 与业务时钟默认值符合裁定",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#2] 主键、全部 CHECK 以及跨 app 外键有指定名称且有效，无级联",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#3] 回放索引列序与注册部分唯一索引符合裁定",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#4] 六种关系来源合法，允许初次绑定、换绑和解除",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#5] 关系 CHECK 拒绝未知来源、无变化、自指、错误注销解除与空操作人",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#6] 等级允许 L1/L2/L3 注册、升降级以及任意非空审计身份",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#7] 等级 CHECK 拒绝非法等级、来源、注册形状与无理由调级",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#8] 必填审计字段拒绝 NULL，业务时刻必须显式写入",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#9] 用户及新旧上级外键均拒绝不存在和跨 app 的用户",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#10] 注册唯一性由 PG 保证，同用户 admin 多条及其他 app 注册不受限",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#11] app 仅可追加读取，readonly 仅读取，无表级或列级改删授权",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#12] 两表仅有指定的行级 BEFORE UPDATE/DELETE 触发器并复用拒绝函数",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#13] 关系按 at 回放，等号取新上级，同刻按 id 决胜并保留解除记录",
+        "test/spec/db/growth/change-logs/change-logs.int.test.ts > [AC-B1-11a#14] 等级按 effective_at 回放，边界及同刻 id 正确且不依赖入库戳"
+      ],
+      "expected": ["test/spec/db/growth/change-logs/change-logs.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "c69c5cb512f94e4c748a8f9e3885e3a271d79bce52ffb4039d9524651c497b94"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass (0 findings); checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: round 1 pass (1 non-blocking finding)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "023ae60da1ee01444c0579ff4da9e4fb2b0619ea",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "ba69f1c0fb5dc90576562fe43c9f7f6a02f7ac66",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
