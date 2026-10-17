@@ -188,6 +188,11 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'commission_split_amounts',
     'commission_split_beneficiary_events',
     'commission_split_totals',
+    'ledger_accounts',
+    'ledger_vouchers',
+    'ledger_entries',
+    'ledger_entries_default',
+    'account_balances',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
