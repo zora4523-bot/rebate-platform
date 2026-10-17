@@ -66,6 +66,7 @@ import {
   type MeReadPorts,
   type MeUnionBindingStatus,
 } from './modules/identity/index.ts';
+import { LedgerModule } from './modules/ledger/index.ts';
 import {
   LINK_LANDING_PORTS,
   LINK_OPEN_PORTS,
@@ -1022,6 +1023,9 @@ export class AppModule {
           ? []
           : [identity, risk, identityMePorts(risk)]),
         ...(union === undefined ? [] : [union]),
+        // The ledger posting port (B2-02f) on every entry that books money: settlement (worker),
+        // withdrawals (api, payout) and adjustments (admin); the stream entry books nothing.
+        ...(options.entry === 'stream' ? [] : [LedgerModule.forRoot()]),
         // Freeze expiry and the daily risk alerts (BR-ID-36, B1-03j): the risk-scan queue's
         // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.
         ...(options.entry === 'worker'
