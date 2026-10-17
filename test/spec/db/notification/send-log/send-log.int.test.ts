@@ -1,6 +1,6 @@
 // B1-12e: 04 §3.2 notify_templates / notify_logs and task supplement B (technical decisions).
 // No sending, preferences, retention or other BR behavior is implemented by this migration.
-// The existing globalSetup alone reads TEST_PG_ADMIN_URL; workers use business-role URLs.
+// Only the existing globalSetup reads the admin database URL; workers use business-role URLs.
 // Catalog assertions precede DML so an absent table produces an assertion failure in red runs.
 import { randomUUID } from 'node:crypto';
 
