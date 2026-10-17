@@ -707,7 +707,7 @@ describe('run.ts static and the single-purpose guards', () => {
   });
 
   it('the remaining single-purpose guards report through their own exit code', () => {
-    const root = staticTree({ 'apps/api/src/modules/ledger/index.ts': 'export {};\n' });
+    const root = staticTree({ 'apps/api/src/modules/settlement/index.ts': 'export {};\n' });
     expect(guard('agents-pair.ts', ['--cwd', root]).stdout).toBe('PASS agents-pair\n');
     expect(guard('risk-map-coverage.ts', ['--cwd', root]).status).toBe(1);
     expect(guard('protected-sync.ts', ['--cwd', root]).status).toBe(0);

@@ -1,0 +1,35 @@
+{
+  "task": "B2-02a",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "9c40c5a61699aea0bcfde75c07d4ef4a47cb973d",
+  "red_tests": [],
+  "risk_note": "RV2 (apps/api/src/modules/ledger/** is a funds path). Gate registration only: ops/risk-map.yaml adds ledger as RV2 (same columns as commission), tools/guard/lib/risk.test.ts rule list synced and its unregistered-path example moved to modules/settlement (Codex r1 S2), root AGENTS.md table regenerated, module AGENTS.md (no numbers or formulas) and one-line CLAUDE.md. No executable code. Ledger tester: none, so no red run. Written by the lane orchestrator (funds-quote). tools/guard/guard-cli.test.ts unregistered-module example also moved to modules/settlement (CI verify-fast showed it; ledger paths extended by #606).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, one S2 (risk.test.ts example path) fixed in a follow-up commit"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "e28cc12e9ccd5b76c0a54d269337002951411da0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "6875085aaa560985594fed987c2caeba34f571eb",
+    "test/spec": "33b62f47aef78caaa9d958ca430d86c9630f1b49",
+    "specs": "4b37a92670828e2b8c3e0734ecb85eb5371a7277"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's",
+    "tree": "6875085aaa560985594fed987c2caeba34f571eb"
+  }
+}
