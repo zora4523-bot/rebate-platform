@@ -421,6 +421,17 @@ export interface DailyBalances {
   sub_account: string;
 }
 
+export interface DeletedIdentities {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  deleted_at: Timestamp;
+  device_hash: string | null;
+  expire_at: Timestamp;
+  id: Generated<ColumnType<bigint, bigint, bigint>>;
+  phone_hmac: string | null;
+  reason: string;
+}
+
 export interface DeviceRegistrations {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1009,6 +1020,22 @@ export interface PushTokens {
   user_id: string | null;
 }
 
+export interface Realname {
+  app_id: string;
+  birth_date_cipher: Buffer | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  id_no_cipher: Buffer | null;
+  id_no_hmac: string | null;
+  name_cipher: Buffer | null;
+  provider: string | null;
+  row_version: Generated<number>;
+  status: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  verified_at: Timestamp | null;
+}
+
 export interface RefreshTokens {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1304,6 +1331,7 @@ export interface DB {
   config_items: ConfigItems;
   consent_records: ConsentRecords;
   daily_balances: DailyBalances;
+  deleted_identities: DeletedIdentities;
   device_registrations: DeviceRegistrations;
   devices: Devices;
   event_log: EventLog;
@@ -1342,6 +1370,7 @@ export interface DB {
   product_key_aliases: ProductKeyAliases;
   product_refs: ProductRefs;
   push_tokens: PushTokens;
+  realname: Realname;
   refresh_tokens: RefreshTokens;
   relation_change_logs: RelationChangeLogs;
   risk_hits: RiskHits;

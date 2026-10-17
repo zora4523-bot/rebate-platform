@@ -1,0 +1,112 @@
+{
+  "task": "B1-13b",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "b07e0ba1d00d6a76e52cff77fd07baf0a7a2368c",
+  "red_tests": [
+    "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#17] couli_app can insert/read realname but cannot delete or change ownership/identity",
+    "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#18] couli_app can atomically verify, correct and anonymize the allowed columns",
+    "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#19] couli_readonly can read only the public realname columns",
+    "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#20] tombstones allow couli_app insert/read/delete but forbid every update",
+    "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#21] couli_readonly can read tombstones and cannot insert/update/delete them",
+    "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#22] effective table and column grants exactly match the two-role matrix",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#5] realname accepts exactly none, verified and failed with legal shapes",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#6] verified requires every cipher, HMAC, provider and verification time",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#7] none and failed cannot retain any name, ID, birth cipher or ID HMAC",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#8] ID HMAC is lowercase hex64 and a supplied provider cannot be blank",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#9] one realname per app/user, and globally unique record ID",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#10] verified HMAC uniqueness is scoped to app and released by anonymization",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#11] realname rejects missing users and a user belonging to another app",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#12] required realname columns reject null and status has no implicit value",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#13] deleted identities support phone, device, both, and repeated phone changes",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#14] tombstones require an identifier and phone_changed permits only a phone",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#15] tombstone reasons and both hash formats are constrained",
+    "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#16] expiry must follow deletion; the database does not hard-code 180 days",
+    "test/spec/db/realname/schema.int.test.ts > [AC-B1-13b#1] realname has exactly the specified types, nullability and defaults",
+    "test/spec/db/realname/schema.int.test.ts > [AC-B1-13b#2] deleted_identities uses an ALWAYS identity and application-supplied deletion/expiry times",
+    "test/spec/db/realname/schema.int.test.ts > [AC-B1-13b#3] named keys and tenant-qualified user FK exist and cannot cascade",
+    "test/spec/db/realname/schema.int.test.ts > [AC-B1-13b#4] named indexes enforce verified-only uniqueness and cover tombstone lookups/expiry",
+    "test/spec/db/realname/schema.int.test.ts > [AC-B1-13b#23] migration 0041 declares timeouts and grants alongside both new tables"
+  ],
+  "risk_note": "RV2 (db/**). Migration 0041: identity realname (encrypted columns, unique keys) and deleted_identities, grants in the creating migration; schema snapshot and db.gen.ts regenerated on the test machine. Renumbered 0042→0041 after the funds lane released 0039: the migration file and the three file-name mentions in the rule test were renamed mechanically, assertions unchanged. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b07e0ba1d00d6a76e52cff77fd07baf0a7a2368c",
+      "tree": "52b902a5ed486d3e4b9dce2bfea137c54ef0bda5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T18:26:20Z",
+      "finished_at": "2026-10-17T18:26:26Z",
+      "red_tests": [
+        "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#17] couli_app can insert/read realname but cannot delete or change ownership/identity",
+        "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#18] couli_app can atomically verify, correct and anonymize the allowed columns",
+        "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#19] couli_readonly can read only the public realname columns",
+        "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#20] tombstones allow couli_app insert/read/delete but forbid every update",
+        "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#21] couli_readonly can read tombstones and cannot insert/update/delete them",
+        "test/spec/db/realname/access.int.test.ts > [AC-B1-13b#22] effective table and column grants exactly match the two-role matrix",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#5] realname accepts exactly none, verified and failed with legal shapes",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#6] verified requires every cipher, HMAC, provider and verification time",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#7] none and failed cannot retain any name, ID, birth cipher or ID HMAC",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#8] ID HMAC is lowercase hex64 and a supplied provider cannot be blank",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#9] one realname per app/user, and globally unique record ID",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#10] verified HMAC uniqueness is scoped to app and released by anonymization",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#11] realname rejects missing users and a user belonging to another app",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#12] required realname columns reject null and status has no implicit value",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#13] deleted identities support phone, device, both, and repeated phone changes",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#14] tombstones require an identifier and phone_changed permits only a phone",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#15] tombstone reasons and both hash formats are constrained",
+        "test/spec/db/realname/constraints.int.test.ts > [AC-B1-13b#16] expiry must follow deletion; the database does not hard-code 180 days",
+        "test/spec/db/realname/schema.int.test.ts > [AC-B1-13b#1] realname has exactly the specified types, nullability and defaults",
+        "test/spec/db/realname/schema.int.test.ts > [AC-B1-13b#2] deleted_identities uses an ALWAYS identity and application-supplied deletion/expiry times",
+        "test/spec/db/realname/schema.int.test.ts > [AC-B1-13b#3] named keys and tenant-qualified user FK exist and cannot cascade",
+        "test/spec/db/realname/schema.int.test.ts > [AC-B1-13b#4] named indexes enforce verified-only uniqueness and cover tombstone lookups/expiry",
+        "test/spec/db/realname/schema.int.test.ts > [AC-B1-13b#23] migration 0041 declares timeouts and grants alongside both new tables"
+      ],
+      "expected": [
+        "test/spec/db/realname/access.int.test.ts",
+        "test/spec/db/realname/constraints.int.test.ts",
+        "test/spec/db/realname/schema.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2de9e6315f09bb386d090f3ba20969b07e5cf650a142344f4d73691e511a8945"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass (0 findings); checklist complete"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by fresh Claude subagents: round 1 fail (3 findings, fixed by Codex round 2), round 2 pass"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "023ae60da1ee01444c0579ff4da9e4fb2b0619ea",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "6ec9c803a49ad7b83ee6cb6f3280cb6e5169f668",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
