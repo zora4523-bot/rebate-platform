@@ -409,6 +409,18 @@ export interface ConsentRecords {
   version: number;
 }
 
+export interface DailyBalances {
+  account_id: string;
+  accounting_date: Timestamp;
+  app_id: string;
+  closing_fen: ColumnType<bigint, bigint, bigint>;
+  computed_at: Timestamp;
+  credit_fen: ColumnType<bigint, bigint, bigint>;
+  debit_fen: ColumnType<bigint, bigint, bigint>;
+  opening_fen: ColumnType<bigint, bigint, bigint>;
+  sub_account: string;
+}
+
 export interface DeviceRegistrations {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1228,6 +1240,7 @@ export interface DB {
   config_item_versions: ConfigItemVersions;
   config_items: ConfigItems;
   consent_records: ConsentRecords;
+  daily_balances: DailyBalances;
   device_registrations: DeviceRegistrations;
   devices: Devices;
   event_log: EventLog;

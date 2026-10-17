@@ -1816,6 +1816,26 @@ ALTER TABLE app.consent_records ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY
 
 
 --
+-- Name: daily_balances; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.daily_balances (
+    app_id text NOT NULL,
+    account_id uuid NOT NULL,
+    sub_account text NOT NULL,
+    accounting_date date NOT NULL,
+    opening_fen bigint NOT NULL,
+    debit_fen bigint NOT NULL,
+    credit_fen bigint NOT NULL,
+    closing_fen bigint NOT NULL,
+    computed_at timestamp with time zone NOT NULL,
+    CONSTRAINT daily_balances_credit_fen_check CHECK ((credit_fen >= 0)),
+    CONSTRAINT daily_balances_debit_fen_check CHECK ((debit_fen >= 0)),
+    CONSTRAINT daily_balances_sub_account_check CHECK ((sub_account = ANY (ARRAY['available'::text, 'frozen'::text])))
+);
+
+
+--
 -- Name: device_registrations; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4070,6 +4090,14 @@ ALTER TABLE ONLY app.consent_records
 
 
 --
+-- Name: daily_balances daily_balances_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.daily_balances
+    ADD CONSTRAINT daily_balances_pkey PRIMARY KEY (app_id, account_id, sub_account, accounting_date);
+
+
+--
 -- Name: device_registrations device_registrations_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -6189,6 +6217,14 @@ ALTER TABLE ONLY app.consent_records
 
 
 --
+-- Name: daily_balances daily_balances_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.daily_balances
+    ADD CONSTRAINT daily_balances_account_fkey FOREIGN KEY (app_id, account_id) REFERENCES app.ledger_accounts(app_id, id);
+
+
+--
 -- Name: device_registrations device_registrations_merged_into_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -7935,6 +7971,14 @@ GRANT SELECT ON TABLE app.config_items TO couli_payout;
 
 GRANT SELECT,INSERT ON TABLE app.consent_records TO couli_app;
 GRANT SELECT ON TABLE app.consent_records TO couli_readonly;
+
+
+--
+-- Name: TABLE daily_balances; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.daily_balances TO couli_app;
+GRANT SELECT ON TABLE app.daily_balances TO couli_readonly;
 
 
 --
