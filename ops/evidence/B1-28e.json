@@ -1,0 +1,93 @@
+{
+  "task": "B1-28e",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "2690e84d7c2cda99c6a2dfae93ff51f96ffe7a54",
+  "red_tests": [
+    "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#4] 加入后 completed 写失败：收藏与记录一起回滚，同事务持有用户锁，同键可立即重试",
+    "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#5] 取消后 completed 写失败：原行恢复，另一端加入仍返回原行，首次成功后重放不删新收藏",
+    "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#6] 批量删除后 completed 写失败：整批恢复，同键首次成功删除后重放保留重新加入的两行",
+    "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#7] 加入提交成功但确认丢失：另一端取消后，同键重放不能重新插入收藏",
+    "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#8] 取消提交成功但确认丢失：另一端重新加入，过租约同键重放保留新行",
+    "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#9] 批量删除提交成功但确认丢失：重新加入的整批收藏不能被原键再删",
+    "test/spec/catalog/favorites-idempotency/routing.test.ts > [AC-B1-28e#1] 加入收藏使用 executeInTransaction 并原样返回已保存响应",
+    "test/spec/catalog/favorites-idempotency/routing.test.ts > [AC-B1-28e#2] 取消收藏使用 executeInTransaction，重放不再调用删除用例",
+    "test/spec/catalog/favorites-idempotency/routing.test.ts > [AC-B1-28e#3] 批量删除使用 executeInTransaction 并保留请求体用于幂等比对"
+  ],
+  "risk_note": "RV1 paths (catalog/favorites, favorites.controller) with rule tests (test/spec, RV2 by PR): the favorites writes now run inside the platform idempotency transaction (executeInTransaction), closing B1-28c's code-review finding (a crash between the business commit and the completed record could replay a delete). The outer transaction reaches addFavorite / removeFavorite / removeFavorites through AsyncLocalStorage (their call shape is pinned by B1-28c's frozen tests); the per-user lock comes first in that transaction; the favorites cap is read before the transaction opens so a transaction never asks the pool for a second connection (Codex review r1 S2, fixed in round 2). Two mechanical fixture fixes by the orchestrator (db-kit.ts used a structural type instead of importing @couli/db/testing; [AC-B1-28e#6] seeded ids colliding with an earlier case, found by CI verify-int). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2690e84d7c2cda99c6a2dfae93ff51f96ffe7a54",
+      "tree": "21f9fb2c09b0a4c49b9f1aa032cb42d5af078ef8",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T17:18:51Z",
+      "finished_at": "2026-10-17T17:19:03Z",
+      "gate": {
+        "commit": "6b78350b62cec6bcbcf684f071f660f0a83114e8",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#4] 加入后 completed 写失败：收藏与记录一起回滚，同事务持有用户锁，同键可立即重试",
+        "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#5] 取消后 completed 写失败：原行恢复，另一端加入仍返回原行，首次成功后重放不删新收藏",
+        "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#6] 批量删除后 completed 写失败：整批恢复，同键首次成功删除后重放保留重新加入的两行",
+        "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#7] 加入提交成功但确认丢失：另一端取消后，同键重放不能重新插入收藏",
+        "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#8] 取消提交成功但确认丢失：另一端重新加入，过租约同键重放保留新行",
+        "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts > [AC-B1-28e#9] 批量删除提交成功但确认丢失：重新加入的整批收藏不能被原键再删",
+        "test/spec/catalog/favorites-idempotency/routing.test.ts > [AC-B1-28e#1] 加入收藏使用 executeInTransaction 并原样返回已保存响应",
+        "test/spec/catalog/favorites-idempotency/routing.test.ts > [AC-B1-28e#2] 取消收藏使用 executeInTransaction，重放不再调用删除用例",
+        "test/spec/catalog/favorites-idempotency/routing.test.ts > [AC-B1-28e#3] 批量删除使用 executeInTransaction 并保留请求体用于幂等比对"
+      ],
+      "expected": [
+        "test/spec/catalog/favorites-idempotency/atomicity.int.test.ts",
+        "test/spec/catalog/favorites-idempotency/routing.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "127b6a9c3f172d0acb949ce210f811e07858035c3d0c3be9bc4189456d326aed"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8113c3a7c7663c9ff4beb153cfe9e74c84a48b1e3d6c802d66cc2b008e78d406"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass with one S2 (cap read inside the transaction could exhaust the pool), fixed in implementation round 2; round 2 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "9 rule tests by Codex (2 runs) reviewed by fresh Claude subagents: round 1 two S1 (cap boundary one below the limit, single remove of an absent favorite) fixed; round 2 pass with two S2 kept"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "023ae60da1ee01444c0579ff4da9e4fb2b0619ea",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "049428d46a9f8a7bc9cc77164d2479f0446f8c88",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
