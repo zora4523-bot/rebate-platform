@@ -57,6 +57,7 @@ import {
   incrementWindow,
   lastOrderId,
   mapPddOrder,
+  type PddOrderPage,
   orderList,
   parseIncrementCursor,
   parsePddOrderEnvelope,
@@ -140,7 +141,13 @@ function archiveContext(method: string, ctx: CallCtx | undefined): ArchiveContex
 }
 
 /** 订单接口的一次上游请求（B1-04w：见 PddUnionAdapter#orderSender）。 */
-type OrderSender = (method: string, parameters: PddParameters) => Promise<unknown>;
+type OrderSender = (method: string, parameters: PddParameters) => Promise<OrderReply>;
+
+/** B1-08e：订单接口一次响应解出的信封，与这页报文的元数据（归档行 id）。 */
+interface OrderReply {
+  readonly envelope: unknown;
+  readonly page: PddOrderPage;
+}
 
 export class PddUnionAdapter implements UnionAdapter {
   readonly platform = 'pdd' as const;
@@ -200,10 +207,14 @@ export class PddUnionAdapter implements UnionAdapter {
     parameters: PddParameters,
     signal: AbortSignal | undefined,
     archive: ArchiveContext | undefined,
-  ): Promise<unknown> {
+  ): Promise<OrderReply> {
     const response = await this.#send(method, parameters, signal, archive);
     unwrapPddResponse(method, response, this.#warn);
-    return parsePddOrderEnvelope(response.body, pddEnvelopeKey(method)!);
+    const envelope = parsePddOrderEnvelope(response.body, pddEnvelopeKey(method)!);
+    // B1-08e：归档行 id 只取传输回传的元数据（十进制字符串），不读报文里的同名值。
+    const id: unknown = Reflect.get(response, 'raw_payload_id');
+    const rawPayloadId = typeof id === 'string' && /^[0-9]+$/.test(id) ? id : null;
+    return { envelope, page: { rawPayloadId, like: this.#clock.now() } };
   }
 
   /** 签名并发送；返回未解包的原始响应。 */
@@ -503,22 +514,27 @@ export class PddUnionAdapter implements UnionAdapter {
     send: OrderSender,
   ): Promise<Page<UnionOrder>> {
     const window = incrementWindow(win, this.#clock.now().getTime());
-    const fetched = new Map<number, readonly unknown[]>();
-    const fetchPage = async (page: number): Promise<readonly unknown[]> => {
+    // 缓存的是该页实际取回的那次响应：行与那次响应的归档行 id 一起，命中时不重新计量。
+    interface FetchedPage {
+      readonly rows: readonly unknown[];
+      readonly meta: PddOrderPage;
+    }
+    const fetched = new Map<number, FetchedPage>();
+    const fetchPage = async (page: number): Promise<FetchedPage> => {
       const cached = fetched.get(page);
       if (cached !== undefined) return cached;
-      const envelope = await send(PDD_ORDER_INCREMENT, {
+      const reply = await send(PDD_ORDER_INCREMENT, {
         ...window,
         page,
         page_size: PDD_INCREMENT_PAGE_SIZE,
         return_count: false,
       });
-      const rows = orderList(envelope);
-      fetched.set(page, rows);
-      return rows;
+      const result: FetchedPage = { rows: orderList(reply.envelope), meta: reply.page };
+      fetched.set(page, result);
+      return result;
     };
-    const pageOf = (page: number, rows: readonly unknown[]): Page<UnionOrder> => ({
-      items: rows.map((row) => mapPddOrder(row, 'increment')),
+    const pageOf = (page: number, result: FetchedPage): Page<UnionOrder> => ({
+      items: result.rows.map((row) => mapPddOrder(row, 'increment', result.meta)),
       nextCursor: page > 1 ? incrementCursor(page - 1) : null,
     });
 
@@ -528,7 +544,7 @@ export class PddUnionAdapter implements UnionAdapter {
     }
     // 首次调用：不依赖 total_count，先倍增再二分探出最后一个非空页，从它开始往回取。
     const full = async (page: number): Promise<boolean> =>
-      (await fetchPage(page)).length >= PDD_INCREMENT_PAGE_SIZE;
+      (await fetchPage(page)).rows.length >= PDD_INCREMENT_PAGE_SIZE;
     if (!(await full(1))) return pageOf(1, await fetchPage(1));
     let lo = 1; // 已知满页
     let hi: number; // 已知不满（含空）的页
@@ -553,7 +569,7 @@ export class PddUnionAdapter implements UnionAdapter {
       if (await full(mid)) lo = mid;
       else hi = mid;
     }
-    const tail = (await fetchPage(hi)).length > 0 ? hi : lo;
+    const tail = (await fetchPage(hi)).rows.length > 0 ? hi : lo;
     return pageOf(tail, await fetchPage(tail));
   }
 
@@ -564,11 +580,11 @@ export class PddUnionAdapter implements UnionAdapter {
   ): Promise<Page<UnionOrder>> {
     const window = rangeWindow(win);
     const token = cursor === undefined ? undefined : parseRangeCursor(cursor);
-    const envelope = await send(PDD_ORDER_RANGE, {
+    const { envelope, page } = await send(PDD_ORDER_RANGE, {
       ...window,
       ...(token === undefined ? {} : { last_order_id: token }),
     });
-    const items = orderList(envelope).map((row) => mapPddOrder(row, 'range'));
+    const items = orderList(envelope).map((row) => mapPddOrder(row, 'range', page));
     const next = lastOrderId(envelope);
     // 空批、没有迭代器、或迭代器原样不变都结束，避免死循环。
     const done = items.length === 0 || next === null || next === token;
@@ -580,12 +596,12 @@ export class PddUnionAdapter implements UnionAdapter {
     if (typeof orderSn !== 'string' || orderSn.trim() === '') {
       throw new UnionError('invalid_dto', 'pdd getPddOrderDetail: order_sn is blank', 'pdd');
     }
-    const envelope = await this.#requestOrders(
+    const { envelope, page } = await this.#requestOrders(
       PDD_ORDER_DETAIL,
       { order_sn: orderSn },
       ctx?.signal,
       archiveContext(PDD_ORDER_DETAIL, ctx),
     );
-    return mapPddOrder(envelope, 'detail');
+    return mapPddOrder(envelope, 'detail', page);
   }
 }

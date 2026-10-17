@@ -13,6 +13,7 @@ const endpoint: UnionEndpoint = {
 };
 const ctx = { appId: 'unit-app', requestId: 'unit-req', purpose: 'order_sync' } as const;
 const base = { order_sn: 'unit-sn', order_amount: 100, promotion_amount: 10 };
+const meta = { rawPayloadId: null, like: new FixedClock('2026-10-14T00:00:00Z').now() };
 
 function setup(reply: (body: Record<string, unknown>) => unknown) {
   const bodies: Record<string, unknown>[] = [];
@@ -65,19 +66,24 @@ it('[AC-B1-04i-UNIT#3] 游标格式不对或与查询方式不符报 invalid_dto
 });
 
 it('[AC-B1-04i-UNIT#4] subsidy_list 成员不进 DTO，只保留长度', () => {
-  const dto = mapPddOrder({ ...base, subsidy_list: [{ subsidy_amount: 5 }, {}] }, 'increment');
+  const dto = mapPddOrder(
+    { ...base, subsidy_list: [{ subsidy_amount: 5 }, {}] },
+    'increment',
+    meta,
+  );
   expect(dto.subsidy_list).toEqual([null, null]);
   expect(JSON.stringify(dto.subsidy_list)).not.toContain('subsidy_amount');
-  expect(() => mapPddOrder({ ...base, subsidy_list: {} }, 'increment')).toThrow(UnionError);
+  expect(() => mapPddOrder({ ...base, subsidy_list: {} }, 'increment', meta)).toThrow(UnionError);
 });
 
 it('[AC-B1-04i-UNIT#5] 按接口取字段：range 不读 order_id，详情不读列表专有字段', () => {
-  const range = mapPddOrder({ ...base, order_id: 'unit-id', p_id: 'unit-pid' }, 'range');
+  const range = mapPddOrder({ ...base, order_id: 'unit-id', p_id: 'unit-pid' }, 'range', meta);
   expect(range.platform_order_id).toBeNull();
   expect(range.pid).toBe('unit-pid');
   const detail = mapPddOrder(
     { ...base, p_id: 'list-pid', fail_reason: 'x', order_receive_time: 1, return_status: 1 },
     'detail',
+    meta,
   );
   expect(detail).toMatchObject({
     pid: null,
@@ -112,8 +118,40 @@ it('[AC-B1-04w-UNIT#3] 整个窗口落在 90 天界所在那一秒时，收回�
 });
 
 it('[AC-B1-04w-UNIT#4] 直接映射时普通数值商品号只接受非负安全整数', () => {
-  expect(mapPddOrder({ ...base, goods_id: 42 }, 'increment').goods_id).toBe('42');
+  expect(mapPddOrder({ ...base, goods_id: 42 }, 'increment', meta).goods_id).toBe('42');
   for (const goods_id of [2 ** 53, -1, 1.5]) {
-    expect(() => mapPddOrder({ ...base, goods_id }, 'increment')).toThrow(UnionError);
+    expect(() => mapPddOrder({ ...base, goods_id }, 'increment', meta)).toThrow(UnionError);
   }
+});
+
+it('[AC-B1-08e-UNIT#3] 平台无关字段：子单号、推广位、原样归因串、原状态、时刻与佣金', () => {
+  const dto = mapPddOrder(
+    {
+      ...base,
+      p_id: 'unit-slot',
+      custom_parameters: 'raw-attr',
+      order_status: 2,
+      order_pay_time: 1,
+      order_receive_time: 0,
+      order_modify_at: 1791936007,
+    },
+    'increment',
+    { rawPayloadId: '42', like: meta.like },
+  );
+  expect(dto).toMatchObject({
+    sub_order_id: 'unit-sn',
+    parent_order_id: null,
+    promotion_slot: 'unit-slot',
+    attr_params: { relation_id: null, custom_parameters: 'raw-attr', sub_union_id: null },
+    raw_status: '2',
+    deposit_paid_at: null,
+    paid_at: new Date('1970-01-01T00:00:01.000Z'),
+    received_at: null,
+    settled_at: null,
+    modified_at: new Date('2026-10-14T00:00:07.000Z'),
+    est_commission_fen: 10n,
+    settle_commission_fen: null,
+    raw_payload_id: '42',
+  });
+  expect(meta.like.toISOString()).toBe('2026-10-14T00:00:00.000Z');
 });

@@ -38,6 +38,8 @@ export type {
   UnionItemDetail,
   UnionMode,
   UnionOrder,
+  UnionOrderAttrParams,
+  UnionOrderNeutralFields,
   UnionPunish,
   UnionRefund,
 } from './domain/types.ts';

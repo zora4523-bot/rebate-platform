@@ -60,6 +60,11 @@ export interface UnionTransportResponse {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: string;
+  /**
+   * B1-08e：归档传输插入 union_raw_payloads 成功时的行 id（bigint 的十进制字符串）。归档传输把它
+   * 以不可枚举属性挂在 inner 返回的同一个响应对象上；插入失败、无归档上下文或未经归档时没有。
+   */
+  readonly raw_payload_id?: string;
 }
 
 export type UnionTransport = (request: UnionTransportRequest) => Promise<UnionTransportResponse>;
