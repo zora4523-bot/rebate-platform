@@ -81,8 +81,9 @@ it.each(['order-platform', 'order-rebate'] as const)(
     const source = renderStateMachine(yamlText(name));
     const exports = generatedExports(source);
     const prefix = name === 'order-platform' ? 'ORDER_PLATFORM' : 'ORDER_REBATE';
-    expect(exports[`${prefix}_STATES`]).toEqual(expect.any(Array));
-    expect(exports[`${prefix}_EVENTS`]).toEqual(expect.any(Array));
-    expect(exports[`${prefix}_TRANSITIONS`]).toEqual(expect.any(Array));
+    // Values come from a node:vm context: cross-realm arrays fail `instanceof Array`.
+    expect(Array.isArray(exports[`${prefix}_STATES`])).toBe(true);
+    expect(Array.isArray(exports[`${prefix}_EVENTS`])).toBe(true);
+    expect(Array.isArray(exports[`${prefix}_TRANSITIONS`])).toBe(true);
   },
 );
