@@ -1,0 +1,18 @@
+id: B1-28d
+repo: rebate-platform
+title: 测试修改：[AC-B1-29b#10]（price-trend-route/http.test.ts）断言商品详情完整响应不含 favorited；CT-22b 已给 getProduct 加可选 favorited、B1-28c 要返回它（未登录 false），改为期望里接受 favorited 缺省或为 false（未登录请求），其余字段与断言不变
+type: test-change
+# 2026-10-17 入账（be-codex）。起因：B1-28c 规则测试作者（Codex）发现 #10 与 04 §6.3「商品详情接口的响应加 favorited（布尔，未登录为 false）」冲突，B1-28c 实现后 #10 必红。
+# 改法（编排者定）：只改 #10 的详情期望——实际响应含 favorited 时它必须是 false（该用例是未登录请求），不含时也通过；其余字段逐一照旧比较，不放宽别的断言。改前（main，详情无 favorited）改后（叠 B1-28c）都要绿。
+# 保护路径第一类改已有文件：走非 task/ 分支 test-change/B1-28d，Codex 新只读会话评审 pass 后按 approvals #24 加标签合并；B1-28c 合并前落地。不属削弱资金测试。
+refs: []
+refs_hash: {}
+deps: [B1-29b, CT-22b]
+paths:
+  - 'test/spec/catalog/price-trend-route/http.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
