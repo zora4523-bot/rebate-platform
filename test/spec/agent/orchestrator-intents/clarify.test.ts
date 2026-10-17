@@ -24,14 +24,22 @@ it.each(['reference', 'price', 'platform'] as const)(
   },
 );
 
+// Orchestrator mechanical fix (2026-10-17): the shared B3-05b productList fixture carries a
+// quoted_at ending in Z, while the contract requires +08:00; the card is otherwise unchanged.
+function contractTime<T>(card: T): T {
+  return JSON.parse(
+    JSON.stringify(card).replace(/"quoted_at":"([^"]+?)\.000Z"/g, '"quoted_at":"$1.000+08:00"'),
+  ) as T;
+}
+
 it('[AC-B3-05f#32][BR-AI-01] 同一链跨 run 指代仍不明时取最新结果第一张，不再追问', async () => {
   const h = kit();
   const req = request({ agent_intent: 'clarify', slot: 'reference' });
   const first = await h.run(req);
   expect(first.suggestions).toEqual([OPTIONS]);
   // Each product is already assembled as a single-item product_list by the result-set port.
-  const newestFirst = { ...productList(1), fallback_text: '合成最新结果第一商品' };
-  const newestSecond = { ...productList(1), fallback_text: '合成最新结果第二商品' };
+  const newestFirst = { ...contractTime(productList(1)), fallback_text: '合成最新结果第一商品' };
+  const newestSecond = { ...contractTime(productList(1)), fallback_text: '合成最新结果第二商品' };
   h.state.products = [newestFirst, newestSecond];
   const next = { ...req, input: { ...req.input, runId: 'synthetic-next-run' } };
   const output = await h.run(next);
