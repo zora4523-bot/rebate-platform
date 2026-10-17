@@ -31,3 +31,17 @@ export { orderContentHash } from './domain/content-hash.ts';
 export { planImportState } from './domain/import-state.ts';
 export type { ImportHistory, ImportStateDecision } from './domain/import-state.ts';
 export { lockOrderKey, orderLockKeyText } from './infra/order-lock.ts';
+export {
+  createOrderQueries,
+  createUnknownOrderFigures,
+  OrderQueries,
+} from './application/order-queries.ts';
+export type {
+  OrderSubject,
+  OrderFilter,
+  OrderFigures,
+  OrderFiguresReader,
+  OrderLinkReader,
+  OrderQueryDeps,
+} from './application/order-queries.ts';
+export { OrdersModule } from './orders.module.ts';
