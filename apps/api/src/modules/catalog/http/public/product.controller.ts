@@ -1,11 +1,18 @@
 import { Controller, Get, HttpException, Inject, Param, Query, Req } from '@nestjs/common';
 import { RouteSchema } from '@nestjs/platform-fastify';
 import type { Schema } from '@couli/contracts-ts';
-import { contractRouteSchema } from '../../../platform/index.ts';
+import {
+  ROOT_LOGGER,
+  contractRouteSchema,
+  tokenPrincipal,
+  type RootLogger,
+} from '../../../platform/index.ts';
 import { CatalogDetailService } from '../../application/detail-service.ts';
 import { CatalogError } from '../../domain/rules.ts';
+import { FAVORITES_ROUTE, type FavoritesRoutePorts } from './favorites.controller.ts';
 
 type ProductResponse = Schema<'ProductResponse'>;
+type ProductDetailData = ProductResponse['data'];
 
 interface TracedRequest {
   /** Trace id set by `genReqId`. */
@@ -63,13 +70,49 @@ function errorResponse(error: unknown, traceId: string): HttpException | undefin
  * wired). The route schema has validated the path and query; the use case owns every business
  * check. The contract has no source-link parameter, so a detail opened over HTTP has no source
  * card and quotes by BR-PRICE-07's risk row.
+ * B1-28c: `favorited` (规划/01 F-PROD-12): a caller with a verified token gets isFavorited of the
+ * B1-28b use case for the detail's platform and product_key; a guest is false without a lookup.
+ * A failed lookup (or a process without the favorites service) never fails the detail: false,
+ * with one warn line of flat fields. The other fields are the detail use case's, unchanged.
  * Nest metadata is applied below without decorator syntax (same as SearchController).
  */
 export class ProductController {
   readonly #service: CatalogDetailService;
+  readonly #favorites: FavoritesRoutePorts;
+  readonly #logger: RootLogger;
 
-  constructor(service: CatalogDetailService) {
+  constructor(service: CatalogDetailService, favorites: FavoritesRoutePorts, logger: RootLogger) {
     this.#service = service;
+    this.#favorites = favorites;
+    this.#logger = logger;
+  }
+
+  async #favorited(request: TracedRequest, data: ProductDetailData): Promise<boolean> {
+    const principal = tokenPrincipal(request);
+    // A guest, or a detail without a canonical key, is not a favorite (no lookup).
+    if (principal === undefined || data.product_key === null) return false;
+    const productKey = data.product_key;
+    try {
+      const favorites = this.#favorites.favorites;
+      if (favorites === null) throw new Error('catalog: no favorites service in this process');
+      return await favorites.isFavorited(
+        principal.app_id,
+        principal.uid,
+        data.platform,
+        productKey,
+      );
+    } catch {
+      // Flat fields only: never the error, the token or the request.
+      this.#logger.warn(
+        {
+          event: 'catalog_favorited_unavailable',
+          app_id: principal.app_id,
+          platform: data.platform,
+        },
+        'favorited state not read; detail answered with favorited=false',
+      );
+      return false;
+    }
   }
 
   async get(
@@ -82,7 +125,8 @@ export class ProductController {
         product_key: productKey,
         ...(query.item_ref === undefined ? {} : { item_ref: query.item_ref }),
       });
-      return { code: 0, msg: '', data, trace_id: request.id };
+      const favorited = await this.#favorited(request, data);
+      return { code: 0, msg: '', data: { ...data, favorited }, trace_id: request.id };
     } catch (error: unknown) {
       throw errorResponse(error, request.id) ?? error;
     }
@@ -91,6 +135,8 @@ export class ProductController {
 
 Controller('v1')(ProductController);
 Inject(CatalogDetailService)(ProductController, undefined, 0);
+Inject(FAVORITES_ROUTE)(ProductController, undefined, 1);
+Inject(ROOT_LOGGER)(ProductController, undefined, 2);
 const getMethod = Object.getOwnPropertyDescriptor(ProductController.prototype, 'get')!;
 Get('products/:product_key')(ProductController.prototype, 'get', getMethod);
 RouteSchema(contractRouteSchema('getProduct'))(ProductController.prototype, 'get', getMethod);

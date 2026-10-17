@@ -3058,6 +3058,396 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "listFavorites": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id"
+      ]
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "addFavorite": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "idempotency-key"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        },
+        "product_key": {
+          "type": "string",
+          "description": "`<key_prefix>:<stable_id>`, at most 128 characters, opaque to clients (BR-PROD-02).\n",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "platform",
+        "product_key"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "removeFavorite": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "idempotency-key"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        },
+        "product_key": {
+          "type": "string",
+          "description": "`<key_prefix>:<stable_id>`, at most 128 characters, opaque to clients (BR-PROD-02).\n",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "platform",
+        "product_key"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "batchDeleteFavorites": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "idempotency-key"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "platform",
+              "product_key"
+            ],
+            "properties": {
+              "platform": {
+                "type": "string",
+                "description": "Platform (contracts/enums/platform.yaml platform).",
+                "enum": [
+                  "taobao",
+                  "jd",
+                  "pdd",
+                  "meituan",
+                  "vip",
+                  "douyin",
+                  "eleme",
+                  "kuaishou",
+                  "suning"
+                ]
+              },
+              "product_key": {
+                "type": "string",
+                "description": "`<key_prefix>:<stable_id>`, at most 128 characters, opaque to clients (BR-PROD-02).\n",
+                "minLength": 3,
+                "maxLength": 128
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "parseInput": {
     "headers": {
       "type": "object",

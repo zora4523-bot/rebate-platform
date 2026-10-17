@@ -29,7 +29,15 @@ import {
   PriceTrendController,
   type PriceTrendPorts,
 } from './http/public/price-trend.controller.ts';
+import {
+  FAVORITES_ROUTE,
+  FavoritesController,
+  type FavoritesRoutePorts,
+} from './http/public/favorites.controller.ts';
 import { ProductController } from './http/public/product.controller.ts';
+import { createFavoriteCardPort } from './favorites/card-port.ts';
+import { createFavoritesService } from './favorites/service.ts';
+import { createDbCatalogProductReader } from './infra/product-reader-wiring.ts';
 import { SearchController } from './http/public/search.controller.ts';
 import { createUnionDetailUpstream } from './infra/detail-wiring.ts';
 import { processItemRefCipher } from './infra/process-item-ref-cipher.ts';
@@ -236,6 +244,11 @@ function freshDetailUpstream(upstream: ProductDetailUpstream): ProductDetailUpst
  * B1-29b: GET /v1/products/{product_key}/price-trend (PriceTrendController → getPriceTrend of
  * B1-29a over the read-only price_snapshot store, CLOCK and the configuration reader); separate
  * from the detail route, which never reads the trend.
+ * B1-28c: the four favorites routes (FavoritesController) over B1-28b's createFavoritesService;
+ * its card port is createFavoriteCardPort on the same ports, item_ref issuer and cached union
+ * detail upstream as the detail route (retrieval scene: registers a link and quote snapshot,
+ * never converts). The detail's `favorited` reads the same service. Without a DB handle there
+ * is no favorites service and the routes fail closed.
  */
 @Module({})
 export class CatalogModule {
@@ -246,7 +259,7 @@ export class CatalogModule {
         : { ...ports.viewerContext, provide: ViewerContext };
     return {
       module: CatalogModule,
-      controllers: [SearchController, ProductController, PriceTrendController],
+      controllers: [SearchController, ProductController, PriceTrendController, FavoritesController],
       providers: [
         {
           provide: CATALOG,
@@ -310,6 +323,57 @@ export class CatalogModule {
               config,
             },
           }),
+        },
+        {
+          provide: FAVORITES_ROUTE,
+          inject: [
+            { token: DB, optional: true },
+            CATALOG,
+            CatalogConfigReader,
+            CLOCK,
+            ROOT_LOGGER,
+            LinkRegistrar,
+            RebateQuoter,
+            SourceLinkReader,
+            GovernedUnion,
+            ITEM_REFS,
+            { token: REDIS, optional: true },
+          ],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            catalog: Catalog,
+            config: CatalogConfigReader,
+            clock: Clock,
+            logger: RootLogger,
+            registrar: LinkRegistrar,
+            quoter: RebateQuoter,
+            sourceLinks: SourceLinkReader,
+            union: GovernedUnion,
+            itemRefs: ItemRefService,
+            redis?: RedisHandle,
+          ): FavoritesRoutePorts => {
+            if (db === undefined) return { catalog, favorites: null };
+            const cache = redis === undefined ? null : redis.namespace(PRODUCT_CACHE_NAMESPACE);
+            const cards = createFavoriteCardPort({
+              clock,
+              config,
+              catalog,
+              itemRefs,
+              upstream: cacheDetailUpstream(
+                freshDetailUpstream(createUnionDetailUpstream({ union })),
+                { redis: cache, clock, config },
+              ),
+              quoter,
+              registrar,
+              sourceLinks,
+              logger,
+              products: createDbCatalogProductReader({ db, union, config, clock, cache }),
+            });
+            return {
+              catalog,
+              favorites: createFavoritesService({ db, clock, config, cards, logger }),
+            };
+          },
         },
         viewerContext,
         {
