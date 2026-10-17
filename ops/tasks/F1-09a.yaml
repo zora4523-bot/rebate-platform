@@ -1,6 +1,6 @@
 id: F1-09a
 repo: rebate-platform
-title: 迁移 0040：页面三表——pages（每页当前全量版本、灰度版本与 gray_percent、revision）、page_versions（每版一行只增不改，sections jsonb、status、计数列）、page_preview_tokens（token_hash 唯一、expire_at、used_count）
+title: 迁移 0039：页面三表——pages（每页当前全量版本、灰度版本与 gray_percent、revision）、page_versions（每版一行只增不改，sections jsonb、status、计数列）、page_preview_tokens（token_hash 唯一、expire_at、used_count）
 type: migration
 # 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/pages-plan.md §1、§3、§4）。宿主 05 F1-09（后台首页配置）与 F1-02 pages 行。
 # 依据 04 §3.2 l.386 pages / page_versions、l.387 page_preview_tokens（写者 content，TECH-11）；TECH-29 自动回滚门槛、OPS-05 分桶（由编排者摘入任务书）。
@@ -9,7 +9,7 @@ type: migration
 # pages 一页一行，存当前全量版本号、灰度版本号、gray_percent smallint CHECK 0..100、revision（CAS）；preview_tokens 唯一 token_hash（库里只存 sha256），expire_at 由应用按 Clock 写，不用 SQL 时钟。
 # 表切分按 R1 默认：每次存草稿插入新 version 行、内容不再改（预览 token 钉住版本）（编排者默认，待编排复核，见 couli-runs/CONTENT-client/decisions-pending.md）。
 # 授权写在建对象的那条迁移里：couli_app 按写者 content 给 SELECT / INSERT / UPDATE（page_versions 只给更新 status 与计数所需的列级 UPDATE），couli_readonly 只 SELECT；不给 DELETE。
-# 迁移号 0040 已在 couli-runs/B3-lane/notices.md 登记（0036–0039 已被 B2-01g 与资金线占用）。两段式：编排者在测试机跑 pnpm db:snapshot 提交 schema.sql 与 db.gen.ts（outside_needed）。
+# 迁移号原登记 0040，资金线 10-17 14:58 放出 0039 后改为 0039（notices）。两段式：编排者在测试机跑 pnpm db:snapshot 提交 schema.sql 与 db.gen.ts（outside_needed）。
 refs: []
 refs_hash: {}
 deps: []
@@ -24,5 +24,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/db/content/pages/**'
-status: todo
-pr: null
+status: done
+pr: 668

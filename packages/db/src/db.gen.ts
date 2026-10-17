@@ -792,6 +792,43 @@ export interface OrderSyncPending {
   sub_order_id: string;
 }
 
+export interface PagePreviewTokens {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  expire_at: Timestamp;
+  page_key: string;
+  token_hash: string;
+  used_count: Generated<number>;
+  version: number;
+}
+
+export interface Pages {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  current_version: number | null;
+  gray_percent: Generated<number>;
+  gray_version: number | null;
+  page_key: string;
+  revision: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  updated_by_admin_id: string | null;
+}
+
+export interface PageVersions {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  created_by_admin_id: string;
+  error_count: Generated<ColumnType<bigint, bigint, bigint>>;
+  page_key: string;
+  publish_at: Timestamp | null;
+  publisher: string | null;
+  render_count: Generated<ColumnType<bigint, bigint, bigint>>;
+  sections: Json;
+  status: Generated<string>;
+  version: number;
+}
+
 export interface PayoutAccountChanges {
   app_id: string;
   changed_at: Timestamp;
@@ -1263,6 +1300,9 @@ export interface DB {
   order_sync_drops: OrderSyncDrops;
   order_sync_pending: OrderSyncPending;
   orders: Orders;
+  page_preview_tokens: PagePreviewTokens;
+  page_versions: PageVersions;
+  pages: Pages;
   payout_account_changes: PayoutAccountChanges;
   payout_account_verify_attempts: PayoutAccountVerifyAttempts;
   payout_accounts: PayoutAccounts;
