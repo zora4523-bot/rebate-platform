@@ -1,0 +1,47 @@
+// B3-04b · BR-AI-08 / BR-AI-09: the model-facing parameters of search_products. The model only
+// picks a sort enum and integer-fen price bounds; ordering and filtering run on the server.
+import type { ToolDefinition } from '../registry/index.ts';
+
+export type SearchSort = 'relevance' | 'rebate_desc' | 'final_price_asc' | 'sales_desc';
+
+export function searchSorts(): readonly SearchSort[] {
+  return ['relevance', 'rebate_desc', 'final_price_asc', 'sales_desc'];
+}
+
+/** BR-AI-09: K = cards per page, default 8 (also the product_list maximum). */
+export function defaultPageSize(): number {
+  return 8;
+}
+
+/** BR-AI-08: 0 < price ≤ 10,000,000 fen. */
+export function maxPriceFen(): number {
+  return 10_000_000;
+}
+
+export function searchProductsDefinition(platforms: readonly string[]): ToolDefinition {
+  const price = { type: 'integer', minimum: 1, maximum: maxPriceFen() };
+  return {
+    name: 'search_products',
+    description:
+      'Search products on the enabled shopping platforms. Prices are integer fen and compare ' +
+      'with the final price; sort is one of the listed values (default relevance).',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['q'],
+      properties: {
+        q: { type: 'string', minLength: 1, maxLength: 100 },
+        platforms: {
+          type: 'array',
+          minItems: 1,
+          uniqueItems: true,
+          items: { type: 'string', enum: [...platforms] },
+        },
+        sort: { type: 'string', enum: [...searchSorts()] },
+        price_min_fen: price,
+        price_max_fen: { ...price },
+        limit: { type: 'integer', minimum: 1, maximum: defaultPageSize() },
+      },
+    },
+  };
+}
