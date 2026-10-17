@@ -7,12 +7,14 @@ type: impl
 # 05 B1-08 行；BR-TEXT-02 细则「订单的检索范围与分享单的投影」、BR-FUND-17 display_status 派生、BR-ID-30 ⑰。契约槽 ④；契约若缺字段先开 CT 任务。
 refs: []
 refs_hash: {}
-deps: [B1-08h, B1-08d]
+deps: [B1-08h, B1-08d, CT-04b]
 paths:
   - 'apps/api/src/modules/orders/**'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/linking/**'
 test_paths:
   - 'test/spec/orders/list-detail/**'
 impl: claude

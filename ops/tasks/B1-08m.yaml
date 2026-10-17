@@ -8,12 +8,14 @@ type: impl
 refs: [BR-ATTR-21]
 refs_hash:
   BR-ATTR-21: 0679f900972f
-deps: [B1-08h]
+deps: [B1-08h, B1-08l]
 paths:
   - 'apps/api/src/modules/orders/**'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/linking/**'
 test_paths:
   - 'test/spec/orders/pending-tracks/**'
 impl: claude
