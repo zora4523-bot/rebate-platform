@@ -31,3 +31,13 @@ export { orderContentHash } from './domain/content-hash.ts';
 export { planImportState } from './domain/import-state.ts';
 export type { ImportHistory, ImportStateDecision } from './domain/import-state.ts';
 export { lockOrderKey, orderLockKeyText } from './infra/order-lock.ts';
+export { createOrderUpdateStep } from './application/update-step.ts';
+export type {
+  OrderUpdateDeps,
+  OrderUpdateChange,
+  OrderStatusSource,
+  UnmappedOrderInfo,
+} from './application/update-step.ts';
+export type { PlatformStatusEvent } from './domain/status-map.ts';
+export { planOrderUpdate, planOrderSyncColumns } from './domain/update-plan.ts';
+export type { OrderUpdatePlan, OrderSyncColumns, UpdateStateInput } from './domain/update-plan.ts';
