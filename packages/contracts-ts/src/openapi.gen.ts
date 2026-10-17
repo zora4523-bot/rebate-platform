@@ -3803,7 +3803,7 @@ export interface components {
             image_url: string | null;
             pay_amount_fen: components["schemas"]["NullableFen"];
             /** Format: int32 */
-            quantity: number;
+            quantity: number | null;
             /** @description Full platform order number (self-purchase only, copyable). */
             order_no?: string;
             /** @description Masked by the server (BR-TEXT-02 细则「订单号的显示」); shared orders never carry the full number. */
@@ -3859,7 +3859,7 @@ export interface components {
             image_url: string | null;
             pay_amount_fen: components["schemas"]["NullableFen"];
             /** Format: int32 */
-            quantity: number;
+            quantity: number | null;
             /** @description Full platform order number (self-purchase only, copyable). */
             order_no?: string;
             /** @description Masked by the server (BR-TEXT-02 细则「订单号的显示」); shared orders never carry the full number. */
