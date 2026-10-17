@@ -31,3 +31,20 @@ export type {
   ProductKeyPlatform,
   UnionProductPayload,
 } from './product-key/product-key.ts';
+export {
+  orderKey,
+  uniqKey,
+  validateVoucher,
+  applyEntries,
+  mayGoNegative,
+} from './ledger/ledger.ts';
+export type {
+  LedgerRole,
+  UniqKeyInput,
+  LedgerEntry,
+  VoucherValidationCode,
+  VoucherValidationError,
+  VoucherValidationResult,
+  LedgerBalance,
+  NegativeBalanceInput,
+} from './ledger/ledger.ts';
