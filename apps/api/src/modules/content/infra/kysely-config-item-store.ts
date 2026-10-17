@@ -1,5 +1,5 @@
 import type { DB } from '@couli/db';
-import { sql, type Kysely } from 'kysely';
+import { sql, type ExpressionBuilder, type Kysely } from 'kysely';
 import type { AuditPort } from '../../platform/index.ts';
 import type {
   ConfigItemRow,
@@ -9,18 +9,33 @@ import type {
 
 const COLUMNS = ['key', 'value', 'version', 'updated_by', 'updated_at'] as const;
 
-function itemRow(row: {
-  key: string;
-  value: DB['config_items']['value'];
-  version: number;
-  updated_by: string;
-  updated_at: Date;
-}): ConfigItemRow {
+// Only the matching current version establishes an admin author. Seed/system rows
+// can have any updated_by label, and may have no history at all.
+function currentAdminId(eb: ExpressionBuilder<DB, 'config_items'>) {
+  return eb
+    .selectFrom('config_item_versions')
+    .select('updated_by_admin_id')
+    .whereRef('config_item_versions.app_id', '=', 'config_items.app_id')
+    .whereRef('config_item_versions.key', '=', 'config_items.key')
+    .whereRef('config_item_versions.version', '=', 'config_items.version')
+    .as('updated_by_admin_id');
+}
+
+function itemRow(
+  row: {
+    key: string;
+    value: DB['config_items']['value'];
+    version: number;
+    updated_by: string;
+    updated_at: Date;
+  },
+  adminId: string | null,
+): ConfigItemRow {
   return {
     key: row.key,
     value: row.value,
     version: row.version,
-    updatedBy: row.updated_by,
+    updatedBy: adminId === null ? null : row.updated_by,
     updatedAt: row.updated_at,
   };
 }
@@ -32,11 +47,12 @@ function writeTx(trx: Kysely<DB>, audit: AuditPort): ConfigItemTx {
       const row = await app
         .selectFrom('config_items')
         .select(COLUMNS)
+        .select(currentAdminId)
         .where('app_id', '=', appId)
         .where('key', '=', key)
         .forUpdate()
         .executeTakeFirst();
-      return row === undefined ? undefined : itemRow(row);
+      return row === undefined ? undefined : itemRow(row, row.updated_by_admin_id);
     },
 
     version: (appId, key, version) =>
@@ -81,7 +97,7 @@ function writeTx(trx: Kysely<DB>, audit: AuditPort): ConfigItemTx {
               .where('version', '=', input.expectedVersion)
               .returning(COLUMNS)
               .executeTakeFirst();
-      return row === undefined ? undefined : itemRow(row);
+      return row === undefined ? undefined : itemRow(row, input.actor.adminId);
     },
 
     async history(input, version) {
@@ -115,19 +131,21 @@ export function createKyselyConfigItemStore(
       const rows = await app
         .selectFrom('config_items')
         .select(COLUMNS)
+        .select(currentAdminId)
         .where('app_id', '=', appId)
         .execute();
-      return rows.map(itemRow);
+      return rows.map((row) => itemRow(row, row.updated_by_admin_id));
     },
 
     async row(appId, key) {
       const row = await app
         .selectFrom('config_items')
         .select(COLUMNS)
+        .select(currentAdminId)
         .where('app_id', '=', appId)
         .where('key', '=', key)
         .executeTakeFirst();
-      return row === undefined ? undefined : itemRow(row);
+      return row === undefined ? undefined : itemRow(row, row.updated_by_admin_id);
     },
 
     async versions(appId, key, page, pageSize) {

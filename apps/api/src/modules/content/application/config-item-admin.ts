@@ -19,7 +19,7 @@ export interface ConfigItemRow {
   readonly key: string;
   readonly value: Json;
   readonly version: number;
-  readonly updatedBy: string;
+  readonly updatedBy: string | null;
   readonly updatedAt: Date;
 }
 
