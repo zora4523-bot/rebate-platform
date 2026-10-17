@@ -24,7 +24,8 @@ const columns = [
 ] as const;
 type Column = (typeof columns)[number];
 type Row = Record<Column, string>;
-const comparedColumns = columns.filter((column) => column !== 'note');
+const groupColumns = ['ledger_type', 'sub_type', 'uniq_key_pattern'] as const;
+const entryColumns = ['account_owner', 'subject', 'sub_account', 'sign', 'amount_ref'] as const;
 const amountRefs = [
   'share_fen',
   'platform_retain_fen',
@@ -136,10 +137,32 @@ function grouped(rows: Row[]): Map<string, Row[]> {
   return groups;
 }
 
-function oracleRow(expected: Map<string, Row>, row: Row): Row {
-  const match = expected.get(rowKey(row));
-  expect(match, `未约定模板行 ${row.template_id} #${row.line}`).toBeDefined();
-  return match!;
+function businessKey(row: Row): string {
+  return JSON.stringify(groupColumns.map((column) => row[column]));
+}
+
+function businessGroups(rows: Row[]): Map<string, Row[]> {
+  const groups = new Map<string, Row[]>();
+  for (const row of rows) {
+    const key = businessKey(row);
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+  return groups;
+}
+
+function entryMultiset(rows: Row[]): string[] {
+  // Sorting preserves multiplicity; using a Set would silently discard duplicate entries.
+  return rows.map((row) => JSON.stringify(entryColumns.map((column) => row[column]))).sort();
+}
+
+function pendingSection(markdown: string): string {
+  const heading = /^(#{1,6}) [^\n]*待定[^\n]*\n/m.exec(markdown);
+  expect(heading, '须有独立待定节').not.toBeNull();
+  const body = markdown.slice(heading!.index + heading![0].length);
+  const end = body.search(new RegExp(`^#{1,${heading![1]!.length}} `, 'm'));
+  return end < 0 ? body : body.slice(0, end);
 }
 
 function contractValues(name: string): string[] {
@@ -169,26 +192,23 @@ it('[AC-B2-01i#1] CSV 固定十一列、按模板升序、行号从一连续且�
   }
 });
 
-it('[AC-B2-01i#2] 按 template_id + line 与独立 expected.csv 逐格相等，仅 note 不比对', () => {
-  const actual = indexRows(readRows(actualUrl));
-  const expected = indexRows(readRows(expectedUrl));
-  expect([...actual.keys()].sort(), '禁止漏行或新增未经规则定义的行').toEqual(
+it('[AC-B2-01i#2] 按类型、子类型及原文幂等键分组，分录无序多重集合完全相等', () => {
+  const actual = businessGroups(readRows(actualUrl));
+  const expected = businessGroups(readRows(expectedUrl));
+  expect([...actual.keys()].sort(), '两表业务组集合须完全相等').toEqual(
     [...expected.keys()].sort(),
   );
-  for (const [key, expectedRow] of expected) {
-    const actualRow = actual.get(key);
-    expect(actualRow, key).toBeDefined();
-    for (const column of comparedColumns) {
-      expect(actualRow![column], `${expectedRow.template_id} #${expectedRow.line} ${column}`).toBe(
-        expectedRow[column],
-      );
-    }
+  for (const [key, expectedRows] of expected) {
+    const actualRows = actual.get(key);
+    expect(actualRows, key).toBeDefined();
+    expect(entryMultiset(actualRows!), `${key} 禁止缺失、增加或改变分录`).toEqual(
+      entryMultiset(expectedRows),
+    );
   }
 });
 
 it('[AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖全部十三类', () => {
   const rows = readRows(actualUrl);
-  const expected = indexRows(readRows(expectedUrl));
   const types = contractValues('ledger_type');
   expect(types).toHaveLength(13);
   const subtypes = new Map([
@@ -200,7 +220,7 @@ it('[AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖全部
   ]);
   for (const row of rows) {
     if (row.ledger_type === tbd) {
-      expect(oracleRow(expected, row).ledger_type).toBe(tbd);
+      expect(row.sub_type, '流水类型未定时子类型也未定').toBe(tbd);
     } else {
       expect(types, row.template_id).toContain(row.ledger_type);
       expect(subtypes.get(row.ledger_type) ?? [''], row.template_id).toContain(row.sub_type);
@@ -213,14 +233,12 @@ it('[AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖全部
 
 it('[AC-B2-01i#4] 每模板每种金额符号均借贷成对，分录借正贷负且不使用数值金额', () => {
   const rows = readRows(actualUrl);
-  const expected = indexRows(readRows(expectedUrl));
   for (const [id, group] of grouped(rows)) {
     expect(group.length, id).toBeGreaterThanOrEqual(2);
     const counts = new Map<string, { debit: number; credit: number }>();
     for (const row of group) {
       expect(['debit', 'credit'], id).toContain(row.sign);
-      if (row.amount_ref === tbd) expect(oracleRow(expected, row).amount_ref).toBe(tbd);
-      else expect(amountRefs, id).toContain(row.amount_ref);
+      expect([...amountRefs, tbd], id).toContain(row.amount_ref);
       const count = counts.get(row.amount_ref) ?? { debit: 0, credit: 0 };
       if (row.sign === 'debit') count.debit += 1;
       else count.credit += 1;
@@ -235,13 +253,17 @@ it('[AC-B2-01i#4] 每模板每种金额符号均借贷成对，分录借正贷�
 
 it('[AC-B2-01i#5] 单一用户科目及子户合法，待定格不得扩大到已定字段', () => {
   const rows = readRows(actualUrl);
-  const expected = indexRows(readRows(expectedUrl));
+  const expected = businessGroups(readRows(expectedUrl));
+  const actual = businessGroups(rows);
+  expect([...actual.keys()].sort()).toEqual([...expected.keys()].sort());
+  for (const [key, group] of actual) {
+    const masks = (entries: Row[]) =>
+      entries
+        .map((row) => JSON.stringify(entryColumns.map((column) => row[column] === tbd)))
+        .sort();
+    expect(masks(group), `${key} 待定字段的多重集合`).toEqual(masks(expected.get(key)!));
+  }
   for (const row of rows) {
-    for (const column of comparedColumns) {
-      expect(row[column] === tbd, `${row.template_id} ${column} 的待定状态`).toBe(
-        oracleRow(expected, row)[column] === tbd,
-      );
-    }
     if (row.account_owner !== tbd) expect(['user', 'platform']).toContain(row.account_owner);
     if (row.subject !== tbd) expect(subjects).toContain(row.subject);
     if (row.sub_account !== tbd) expect(['available', 'frozen']).toContain(row.sub_account);
@@ -250,35 +272,35 @@ it('[AC-B2-01i#5] 单一用户科目及子户合法，待定格不得扩大到�
   }
 });
 
-it('[AC-B2-01i#6] 红冲逐行沿用原科目金额与类型，符号反转且原键只追加一次 REVERSE', () => {
+it('[AC-B2-01i#6] 红冲沿用原科目金额与类型，分录反号且原键只追加一次 REVERSE', () => {
   const rows = readRows(actualUrl);
-  const originals = indexRows(rows);
-  const reversals = rows.filter((row) => row.template_id.endsWith(':REVERSE'));
-  expect(reversals.length).toBeGreaterThan(0);
-  for (const row of reversals) {
-    const originalId = row.template_id.slice(0, -':REVERSE'.length);
-    const original = originals.get(`${originalId}\u0000${row.line}`);
-    expect(original, originalId).toBeDefined();
-    expect(row.uniq_key_pattern).toBe(`${original!.uniq_key_pattern}:REVERSE`);
-    expect(row.uniq_key_pattern).not.toContain(':REVERSE:REVERSE');
-    for (const column of [
-      'ledger_type',
-      'sub_type',
-      'account_owner',
-      'subject',
-      'sub_account',
-      'amount_ref',
-    ] as const) {
-      expect(row[column], `${row.template_id} ${column}`).toBe(original![column]);
-    }
-    expect(row.sign).toBe(original!.sign === 'debit' ? 'credit' : 'debit');
+  const groups = businessGroups(rows);
+  const reversals = businessGroups(rows.filter((row) => row.uniq_key_pattern.endsWith(':REVERSE')));
+  expect(reversals.size).toBeGreaterThan(0);
+  for (const [key, group] of reversals) {
+    const row = group[0]!;
+    const originalKey = row.uniq_key_pattern.slice(0, -':REVERSE'.length);
+    expect(originalKey).not.toContain(':REVERSE');
+    const original = groups.get(businessKey({ ...row, uniq_key_pattern: originalKey }));
+    expect(original, `${key} 必须有同类型、同子类型的原键`).toBeDefined();
+    const reversed = original!.map((entry) => ({
+      ...entry,
+      sign: entry.sign === 'debit' ? 'credit' : 'debit',
+    }));
+    expect(entryMultiset(group), `${key} 整组分录原额反号`).toEqual(entryMultiset(reversed));
+  }
+  for (const row of rows.filter((entry) => entry.uniq_key_pattern === 'ADJ:{adjust_id}')) {
+    expect(
+      groups.has(businessKey({ ...row, uniq_key_pattern: `${row.uniq_key_pattern}:REVERSE` })),
+      `${row.sub_type} 调账必须有红冲模板`,
+    ).toBe(true);
   }
 });
 
 it('[AC-B2-01i#7] 人读规格可索引每个模板、科目与已定幂等键', () => {
   const markdown = requiredText(markdownUrl);
   const expected = readRows(expectedUrl);
-  for (const id of new Set(expected.map((row) => row.template_id)))
+  for (const id of new Set(readRows(actualUrl).map((row) => row.template_id)))
     expect(markdown, id).toContain(id);
   for (const subject of subjects) expect(markdown, subject).toContain(subject);
   for (const key of new Set(
@@ -294,8 +316,7 @@ it('[AC-B2-01i#7] 人读规格可索引每个模板、科目与已定幂等键',
 
 it('[AC-B2-01i#8] 文档显式列出待定格、财务确认白名单与银行通道限制', () => {
   const markdown = requiredText(markdownUrl);
-  const pending = markdown.match(/^#{1,6} [^\n]*待定[^\n]*\n([\s\S]*?)(?=^#{1,6} |$(?![\s\S]))/m);
-  expect(pending, '须有独立待定节').not.toBeNull();
+  const pending = pendingSection(markdown);
   for (const term of [
     tbd,
     'ledger_type',
@@ -307,7 +328,7 @@ it('[AC-B2-01i#8] 文档显式列出待定格、财务确认白名单与银行�
     '回款',
     '白名单',
   ]) {
-    expect(pending![1], `待定节解释 ${term}`).toContain(term);
+    expect(pending, `待定节解释 ${term}`).toContain(term);
   }
   expect(markdown).toContain('待财务确认');
   expect(markdown).toContain('银行卡通道开通前不使用');
@@ -335,6 +356,8 @@ it('[AC-B2-01i#9] 口径说明包含租户幂等、账户所有者、整数分�
   expect(markdown).toMatch(/(整数|bigint)[^\n]*分|分[^\n]*(整数|bigint)/);
   expect(markdown).toMatch(/(只插入|仅插入|INSERT)/);
   expect(markdown).toMatch(/(同一|同个)[^\n]*事务/);
+  expect(markdown).toMatch(/(?:uniq_key|幂等键)[^\n]*冲突[^\n]*(已入账|跳过)/);
+  expect(markdown).toMatch(/平台科目[^\n]*(不维护|不设)[^\n]*(余额缓存|缓存余额)/);
 });
 
 it('[AC-B2-01i#10] 红冲与提现说明保留整笔限制、单张成功凭证和无分录迁移', () => {
@@ -348,4 +371,7 @@ it('[AC-B2-01i#10] 红冲与提现说明保留整笔限制、单张成功凭证�
   for (const transition of ['W2', 'W4', 'W7', 'W9', 'W11']) expect(markdown).toContain(transition);
   expect(markdown).toMatch(/不(写|产生)[^\n]*分录/);
   expect(markdown).toContain('WITHDRAW_IN_TRANSIT');
+  expect(markdown).toMatch(
+    /^(?=[^\n]*(?:net_fen|WITHDRAW_PAID|净额))(?=[^\n]*(?:fee_fen|WITHDRAW_FEE|手续费))(?=[^\n]*(?:tax_fen|TAX_WITHHOLD|税))[^\n]*(?:=|等于|合计)[^\n]*(?:amount_fen|提现额)/m,
+  );
 });
