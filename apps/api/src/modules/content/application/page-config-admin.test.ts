@@ -30,6 +30,8 @@ function memory(switchValue: unknown = undefined) {
   let page: (PageRow & { updatedBy: string | null }) | undefined;
   let versions: Version[] = [];
   const audits: AuditInput[] = [];
+  const changes: { version: number; from: string; to: string }[] = [];
+  let casMisses = 0;
   const view = (): PageView | undefined =>
     page === undefined || versions.length === 0
       ? undefined
@@ -87,11 +89,13 @@ function memory(switchValue: unknown = undefined) {
         publishAt: null,
       });
     },
-    markPublished: async (_a, _k, n, _p, at) => {
-      Object.assign(find(n)!, { status: 'published', publishAt: at });
-    },
-    markRolledBack: async (_a, _k, n) => {
-      find(n)!.status = 'rolled_back';
+    // Same CAS as the store: the row changes only while its status is still change.from.
+    setVersionStatus: async (_a, _k, n, change, stamp) => {
+      changes.push({ version: n, from: change.from, to: change.to });
+      const row = find(n);
+      if (row === undefined || row.status !== change.from || casMisses-- > 0) return false;
+      Object.assign(row, { status: change.to }, stamp === null ? {} : { publishAt: stamp.at });
+      return true;
     },
     successor: async (_a, _k, except) =>
       versions
@@ -120,7 +124,16 @@ function memory(switchValue: unknown = undefined) {
       }
     },
   };
-  return { store, audits, state: () => ({ page, versions }) };
+  return {
+    store,
+    audits,
+    changes,
+    state: () => ({ page, versions }),
+    /** The next `n` status CASes miss, as if another writer changed the row first. */
+    missCas: (n: number) => {
+      casMisses = n;
+    },
+  };
 }
 
 const ACTOR: PageActor = { appId: 'a1', adminId: 'admin-1', ip: null };
@@ -264,4 +277,45 @@ it('[AC-F1-09f] reads: unknown page or version is 30701; list pages by page_size
   await t.save(0);
   await expect(t.admin.version('a1', 'home', 9)).rejects.toBeInstanceOf(PageNotFoundError);
   expect(await t.admin.version('a1', 'home', 1)).toMatchObject({ version: 1 });
+});
+
+it('[F1-09f 裁定13#4] publish and rollback change status only through the table, by CAS', async () => {
+  const t = setup();
+  await t.save(0);
+  await t.publish(1, 1);
+  await t.save(2);
+  await t.publish(3, 2, 10);
+  t.clock.ms += 1000;
+  await t.admin.rollback(ACTOR, 'home', { version: 2, expected_revision: 4 });
+  expect(t.changes).toEqual([
+    { version: 1, from: 'draft', to: 'published' },
+    { version: 2, from: 'draft', to: 'published' },
+    { version: 2, from: 'published', to: 'rolled_back' },
+  ]);
+});
+
+it('[F1-09f 裁定13#5] a missed status CAS on publish is 20902 and changes nothing', async () => {
+  const t = setup();
+  await t.save(0);
+  const before = JSON.stringify(t.state());
+  t.missCas(1);
+  await expect(t.publish(1, 1)).rejects.toBeInstanceOf(PageConflictError);
+  expect(JSON.stringify(t.state())).toBe(before);
+  expect(t.audits).toHaveLength(1);
+});
+
+it('[F1-09f 裁定13#6] a missed status CAS on rollback is 20902 and changes nothing', async () => {
+  const t = setup();
+  await t.save(0);
+  await t.publish(1, 1);
+  await t.save(2);
+  await t.publish(3, 2, 10);
+  const before = JSON.stringify(t.state());
+  t.missCas(1);
+  t.clock.ms += 1000;
+  await expect(
+    t.admin.rollback(ACTOR, 'home', { version: 2, expected_revision: 4 }),
+  ).rejects.toBeInstanceOf(PageConflictError);
+  expect(JSON.stringify(t.state())).toBe(before);
+  expect(t.audits).toHaveLength(4);
 });

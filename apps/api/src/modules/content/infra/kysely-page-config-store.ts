@@ -5,6 +5,7 @@
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
 import type { AuditPort } from '../../platform/index.ts';
+import { transitionPageVersion } from '../domain/pages/version-status.ts';
 import type {
   PageConfigReads,
   PageConfigStore,
@@ -232,24 +233,25 @@ function writeTx(trx: Kysely<DB>, audit: AuditPort): PageConfigTx {
         .execute();
     },
 
-    async markPublished(appId, key, version, publisher, at) {
-      await app
+    async setVersionStatus(appId, key, version, change, stamp) {
+      // The store writes no change the table refuses, whatever the caller passed in.
+      const { from, to } = transitionPageVersion(change.from, change.to);
+      if ((to === 'published') !== (stamp !== null)) {
+        throw new Error('page version: publish_at / publisher go with the change to published');
+      }
+      const result = await app
         .updateTable('page_versions')
-        .set({ status: 'published', publish_at: at, publisher })
+        .set(
+          stamp === null
+            ? { status: to }
+            : { status: to, publish_at: stamp.at, publisher: stamp.publisher },
+        )
         .where('app_id', '=', appId)
         .where('page_key', '=', key)
         .where('version', '=', version)
-        .execute();
-    },
-
-    async markRolledBack(appId, key, version) {
-      await app
-        .updateTable('page_versions')
-        .set({ status: 'rolled_back' })
-        .where('app_id', '=', appId)
-        .where('page_key', '=', key)
-        .where('version', '=', version)
-        .execute();
+        .where('status', '=', from)
+        .executeTakeFirst();
+      return result.numUpdatedRows === 1n;
     },
 
     async successor(appId, key, except) {

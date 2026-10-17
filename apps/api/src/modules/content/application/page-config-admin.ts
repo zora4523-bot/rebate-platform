@@ -11,6 +11,10 @@
 // Permission checks are the controller's guard; app and admin come from the guard's actor.
 import type { Schema } from '@couli/contracts-ts';
 import type { AuditInput, Clock } from '../../platform/index.ts';
+import {
+  type PageVersionTransition,
+  transitionPageVersion,
+} from '../domain/pages/version-status.ts';
 
 export type PageView = Schema<'AdminPageConfig'>;
 export type PageVersionView = Schema<'AdminPageConfigVersion'>;
@@ -80,14 +84,18 @@ export interface PageConfigTx extends PageConfigReads {
     adminId: string;
     at: Date;
   }): Promise<void>;
-  markPublished(
+  /**
+   * The only write of page_versions.status: re-checks `change` against the transition table, then
+   * one UPDATE … SET status = change.to WHERE status = change.from (publish_at and publisher are
+   * set with `stamp` when the change is to published). False when no row matched (a CAS miss).
+   */
+  setVersionStatus(
     appId: string,
     key: string,
     version: number,
-    publisher: string,
-    at: Date,
-  ): Promise<void>;
-  markRolledBack(appId: string, key: string, version: number): Promise<void>;
+    change: PageVersionTransition,
+    stamp: { readonly publisher: string; readonly at: Date } | null,
+  ): Promise<boolean>;
   /** Published versions other than `except`, newest publish_at first, ties by higher version. */
   successor(appId: string, key: string, except: number): Promise<number | undefined>;
   /** One UPDATE of the three pointers, revision + 1, updated_by_admin_id and updated_at. */
@@ -240,7 +248,11 @@ export class PageConfigAdmin {
       }
       this.#validate(target.sections, await tx.unionHostBlock(actor.appId));
       const at = this.#clock.now();
-      await tx.markPublished(actor.appId, key, body.version, actor.adminId, at);
+      const change = transitionPageVersion(target.status, 'published');
+      const stamp = { publisher: actor.adminId, at };
+      if (!(await tx.setVersionStatus(actor.appId, key, body.version, change, stamp))) {
+        throw new PageConflictError();
+      }
       const pointers: PagePointers =
         body.gray_percent === 100
           ? { currentVersion: body.version, grayVersion: null, grayPercent: 0 }
@@ -299,7 +311,12 @@ export class PageConfigAdmin {
       } else {
         throw new PageFieldsError(['version']);
       }
-      await tx.markRolledBack(actor.appId, key, body.version);
+      // The gray and the fully released pointers only ever name published versions; the CAS
+      // turns a version changed meanwhile into a conflict instead of a blind write.
+      const change = transitionPageVersion('published', 'rolled_back');
+      if (!(await tx.setVersionStatus(actor.appId, key, body.version, change, null))) {
+        throw new PageConflictError();
+      }
       return { pointers, version: body.version, at: this.#clock.now(), action: 'page_rollback' };
     });
   }
