@@ -10,7 +10,6 @@ import {
 } from 'kysely';
 import { afterEach, expect, vi } from 'vitest';
 import type { CardRebateQuoter } from '../../../../apps/api/src/modules/catalog/application/card-assembler.ts';
-import type { CommissionRebateQuoter } from '../../../../apps/api/src/modules/commission/application/types.ts';
 import type {
   UserLevelReaderOptions,
   UserLevelReader,
@@ -207,7 +206,13 @@ export function wiringFixture() {
     expect(demo).not.toHaveBeenCalled();
     expect(rules).toHaveBeenCalledWith({ db });
     expect(levels).toHaveBeenCalledWith({ db });
-    const prepare = vi.spyOn(quoter as CommissionRebateQuoter, 'prepare');
+    // B2-03m（负责人 2026-10-17 批准 P4=A）：报价器的 prepare() 由 B2-03n 删除。仍存在时照旧监视「装配不调用它」；
+    // 删除后报价器上没有该方法，装配自然无从调用，返回一个从不接线的占位，调用方的 not.toHaveBeenCalled() 不变。
+    const own = quoter as object;
+    const prepare =
+      'prepare' in own
+        ? vi.spyOn(own as { prepare: (...args: unknown[]) => Promise<void> }, 'prepare')
+        : vi.fn();
     const options = real.mock.calls[0]![0];
     const ports = await assembled.open();
     expect(ports.quoter).toBe(quoter);
