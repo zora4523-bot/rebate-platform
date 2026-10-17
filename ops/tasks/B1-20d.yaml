@@ -1,0 +1,26 @@
+id: B1-20d
+repo: rebate-platform
+title: identity 改昵称 PATCH /v1/me：去首尾空白后 1–16 个扩展字素簇、内容安全审核（NicknameReviewPort，超时 fail-close）、自然月（+08:00）成功最多 3 次（30415，同一行条件更新防并发）、系统默认昵称不计、操作日志旧值脱敏；去 updateMe 的 planned
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane，第二批第二波）。契约 CT-15n 已合并（updateMe，成功回 EmptyResponse，D7）。依据：08 BR-ID-39、10 AC-S1-61，由编排者摘入。
+# 编排裁定 D9：local / test / staging 用本地敏感词库；prod 未接阿里云前 fail-close 回 20001 nickname_sensitive、不计次；接阿里云时复用 B3-06b（#490）适配器——在 platform 层就经端口复用，在 agent 内则另立小任务提升到 platform（identity 不得 import agent）。
+# Codex 实现（approvals #30、#31），Claude 写规则测试，编排者机械提交去 planned，Claude 新子代理评审。契约槽就绪即占。
+refs: [BR-ID-39]
+refs_hash:
+  BR-ID-39: 503d54b28ccf
+deps: [CT-15n, B1-02z]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+mechanical_paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/nickname/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/nickname/**'
+status: todo
