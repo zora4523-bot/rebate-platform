@@ -1,0 +1,27 @@
+id: B2-03j
+repo: rebate-platform
+title: 规则版本状态机 specs/state-machines/commission-rule-version.yaml（draft → published → revoked）与生成的 transition()；生成器登记新状态机
+type: impl
+# 2026-10-17 资金线（publish-plan，编排 18:1x）。commission_rule_versions.status 是状态字段（硬规则 2：唯一写者 commission，只经生成的 transition()）。
+# 迁移：draft → published（发布：BR-CALC-22 校验与试算通过、effective_from ≥ 发布时刻且严格大于所有已发布未撤销版本，BR-CALC-11）；published → revoked（只许 effective_from 未到，BR-CALC-11）；
+# 不许回退、draft 不可撤销（草稿修改 = 新草稿）。守卫只写成文字（生成器不求值），服务层 B2-03k 落实。Codex 写规则测试，Claude 过审，Opus 实现，Codex money 评审。
+refs: [BR-CALC-11, BR-CALC-22]
+refs_hash:
+  BR-CALC-11: 0bdd7a33eb83
+  BR-CALC-22: 6cfba44a0f45
+deps: []
+paths:
+  - 'specs/state-machines/commission-rule-version.yaml'
+  - 'packages/domain/src/state-machines/commission-rule-version.gen.ts'
+  - 'packages/domain/src/state-machines/index.ts'
+  - 'packages/domain/src/index.ts'
+  - 'packages/domain/scripts/state-machines.ts'
+test_paths:
+  - 'test/spec/domain/state-machines/commission-rule-version/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/state-machines/commission-rule-version/**'
+status: todo
+pr: null

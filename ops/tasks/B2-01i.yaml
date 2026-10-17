@@ -1,0 +1,28 @@
+id: B2-01i
+repo: rebate-platform
+title: 起草 specs/ledger-rules.md 与机器可读 specs/ledger-templates.csv：科目表、uniq_key 总表、每个 ledger_type × sub_type 的借贷模板、红冲规则、调账对方科目白名单（待财务确认）、口径说明
+type: impl
+# 2026-10-17 资金线（ledger-plan §2.2 第二段，编排 06:3x 裁定 D1–D18 全按保守默认；D12–D14：D14 白名单 A 暂定、标「待财务确认」，调账单开工前编排报负责人）。
+# Codex 只拿 08 摘录盲写 expected.csv 与逐行比对测试（test/spec/ledger-rules/**），Opus 按 08 起草 md 与 csv；csv 与 expected 逐行一致即验收。金额与科目口径只照 08，不臆造。
+# 其余依据（BR-FUND-08、09、12、20、22，BR-CALC-13）由任务书第 2b 节摘原文（refs 行长度限制）。
+refs: [BR-FUND-05, BR-FUND-13, BR-FUND-15, BR-FUND-16, BR-FUND-24, BR-WDR-09]
+refs_hash:
+  BR-FUND-05: f69410c13896
+  BR-FUND-13: db3a11ed1712
+  BR-FUND-15: d9a926b42d3c
+  BR-FUND-16: 26bf83a019b1
+  BR-FUND-24: 33fdc9919299
+  BR-WDR-09: 83c9212f1949
+deps: []
+paths:
+  - 'specs/ledger-rules.md'
+  - 'specs/ledger-templates.csv'
+test_paths:
+  - 'test/spec/ledger-rules/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger-rules/**'
+status: todo
+pr: null

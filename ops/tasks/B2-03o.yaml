@@ -1,0 +1,25 @@
+id: B2-03o
+repo: rebate-platform
+title: 迁移 0043：commission_rule_trials（试算差异报告，只插入，带规则版本、基准版本、样本窗口、算例 hash 与报告 jsonb）及授权
+type: migration
+# 2026-10-17 资金线（publish-plan P3=A，编排 18:1x：试算报告落库、只插入、带规则版本与算例 hash；迁移号 0043 已在 notices 预定）。依据 BR-CALC-22（试算样本 = paid_at ∈ [申请时刻 − 7 天, 申请时刻) 的已快照订单；报告失败不许发布）。
+# 列：app_id、trial_id、rule_version_id（草稿）、base_version_id（现行，可空）、sample_from / sample_to、sample_hash、report jsonb、created_by、created_at（应用 Clock，无时钟默认）；外键 (app_id, rule_version_id) → commission_rule_versions。
+# couli_app 只 SELECT、INSERT；couli_readonly 只读。约束索引具名。两段式（db/AGENTS.md）；同步 tools/ci/lint-migrations.test.ts 资金表锁定清单。
+refs: [BR-CALC-22]
+refs_hash:
+  BR-CALC-22: 6cfba44a0f45
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+test_paths:
+  - 'test/spec/db/commission/trials/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/commission/trials/**'
+status: todo
+pr: null

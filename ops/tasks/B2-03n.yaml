@@ -1,0 +1,22 @@
+id: B2-03n
+repo: rebate-platform
+title: commission 报价器删除 prepare() 与作用域模式（只留 live 模式），清掉相关单元测试、类型与 app.module 注释里的 TODO
+type: impl
+# 2026-10-17 资金线（publish-plan P4=A，负责人批准）。前置 B2-03m 删冻结测试。行为不变：生产只用 live 模式（BR-CALC-20 报价时刻先取时钟再读端口），开放内预读仍由 linking 包装端口完成。
+# Codex 写少量规则测试（报价器对象上没有 prepare / 作用域状态；同一报价器并发报价各自按自己的时钟读端口，互不影响）；现有 test/spec/commission/** 与 wiring 测试照旧全过。Opus 实现，Codex money 评审。
+refs: [BR-CALC-20]
+refs_hash:
+  BR-CALC-20: b6075c494b94
+deps: [B2-03m]
+paths:
+  - 'apps/api/src/modules/commission/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/commission/quoter/live-only/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/commission/quoter/live-only/**'
+status: todo
+pr: null

@@ -1,0 +1,26 @@
+id: B2-02f
+repo: rebate-platform
+title: ledger 模块与记账服务：lockBalances(trx, userIds)（按 account_id 升序 FOR UPDATE）、post(trx, vouchers)（判 uniq_key、写凭证与分录含 balance_after_fen / account_version、缓存 version+1、negative_since、负余额守卫、Clock 取 booked_at / accounting_date）、getBalances()
+type: impl
+# 2026-10-17 资金线（ledger-plan §2.2，D2 / D4 / D5 / D11 / D16 默认 A；前置 B1-08d 会计日函数已合并）。只有 ledger 模块改余额（硬规则 2）；凭证 Σ=0 由 @couli/domain validateVoucher，负余额规则只按 BR-FUND-10（mayGoNegative）。
+# 真实 PG 并发（两连接 + 咨询锁栅栏两种先后、200 轮压力）与 PG 属性测试（PR 200 / 长跑 2000，D16）。资金核心：Opus 高推理实现，Codex 写测试 + money 评审。
+refs: [BR-FUND-10, BR-FUND-13, BR-FUND-16]
+refs_hash:
+  BR-FUND-10: cac661152bb2
+  BR-FUND-13: db3a11ed1712
+  BR-FUND-16: 26bf83a019b1
+deps: [B2-02a, B2-02c, B2-01h, B1-08d]
+paths:
+  - 'apps/api/src/modules/ledger/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/ledger/posting/**'
+  - 'test/properties/ledger/posting/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/posting/**'
+  - 'test/properties/ledger/posting/**'
+status: todo
+pr: null
