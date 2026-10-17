@@ -10,6 +10,15 @@ export {
   isValidBankCardNo,
 } from './identity-docs/index.ts';
 export type { ResidentIdNoResult } from './identity-docs/index.ts';
+export {
+  normalizeInviteCode,
+  isInviteCodeFormat,
+  inviterUnavailable,
+  inviteBackfillDeadline,
+  withinBackfill,
+  inviteFailWindow,
+} from './invite/index.ts';
+export type { InviterFacts, InviteFailWindow } from './invite/index.ts';
 export { splitCommission, quoteRebate } from './commission/commission.ts';
 export { validateRuleVersion } from './commission/publish-validation.ts';
 export type {
