@@ -1,0 +1,23 @@
+id: B1-28e
+repo: rebate-platform
+title: 收藏写接口（加入 / 取消 / 批量删除）改用平台同事务幂等 executeInTransaction：收藏用例接受外部事务，幂等记录与收藏写入同提交，进程在业务提交后崩溃再重试不会重复执行（不会误删期间重新加入的收藏）
+type: impl
+# 2026-10-17 入账（be-codex）。起因：B1-28c Codex 代码评审 r1 S1（按 approvals #18 降 S2 后另开本任务，couli-runs/B1-28c/decision-orchestrator.md 第 4 条）。
+# 依据：apps/api/src/modules/platform/idempotency/index.ts「Transactional mode — executeInTransaction」（handler 用传入的 trx，写入与记录一并提交）、04 §6.3 收藏行（PUT / DELETE / batch-delete 幂等）、规划/02 §18「幂等 API」。
+# 改法：catalog/favorites 用例的 add / remove / batchDelete 增加接受外部 Kysely 事务的入口（原无 trx 的入口保留给其他调用方、语义不变）；favorites.controller 的三个写接口改用 executeInTransaction 并把 trx 交给用例；同用户串行锁仍在该事务内。不改契约、不改测试已覆盖的行为。
+# approvals 34：实现回到 Claude（Opus 5.5），Codex 写规则测试与对抗评审；规则测试要能区分「两事务」与「同事务」（在业务写入后、记录 completed 前注入失败，重试不得再次生效）。
+refs: []
+refs_hash: {}
+deps: [B1-28c]
+paths:
+  - 'apps/api/src/modules/catalog/favorites/**'
+  - 'apps/api/src/modules/catalog/http/public/favorites.controller.ts'
+test_paths:
+  - 'test/spec/catalog/favorites-idempotency/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/catalog/favorites-idempotency/**'
+status: todo
+pr: null
