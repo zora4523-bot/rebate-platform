@@ -700,7 +700,8 @@ export interface paths {
          *     No download address of any kind (拍板第二批 TECH-19). Store choice and checks: BR-ID-01 细则
          *     「【去更新】打开哪家商店与保存前的核对」. Called on cold start and on return to foreground
          *     after the recheck interval; read-only and never blocked by the minimum version. Session
-         *     scopes: accepts deletion_only.
+         *     scopes: accepts deletion_only. No row for this platform and channel (including an absent
+         *     X-Channel) → 50001; the client treats it as a failed check (03 §4.4).
          */
         get: operations["checkAppVersion"];
         put?: never;
@@ -1267,6 +1268,10 @@ export interface paths {
          *     x-auth is optional (04 §6.2): h5_release buckets by user_id when logged in (拍板第二批
          *     TECH-28) and agent availability depends on the whitelist user (BR-AI-12).
          *     Session scopes: accepts deletion_only (BR-ID-01 细则「受限会话」).
+         *     Conditional request (02 §10, 03 §4.3): the 200 response carries a strong ETag whose value
+         *     without quotes equals data.config_version (04 §10.1); a request whose If-None-Match
+         *     matches the current ETag under weak comparison gets 304 with no body, and the client
+         *     keeps its LKG.
          */
         get: operations["getConfig"];
         put?: never;
@@ -4267,6 +4272,11 @@ export interface components {
             search_status?: {
                 [key: string]: components["schemas"]["PlatformSearchStatus"];
             };
+            /**
+             * @description Platforms selectable on the hot list, derived by the server from the channel whitelist
+             *     in specs/material-channels.yaml (04 §6.3, 04 §10.1). Not a switch.
+             */
+            rank_platforms?: components["schemas"]["PlatformCode"][];
         };
         /**
          * @description Whether search is open for a platform (enum platform_search_status).
@@ -4394,8 +4404,8 @@ export interface components {
         };
         /**
          * @description Top-level keys of /v1/config (04 §10.1, excerpt). Keys added after v0.9 (external_page,
-         *     link_patterns, external_hosts, app_update, help_links, claim, platform_icons) are
-         *     optional, so a client keeps reading an older last-good configuration (04 §5「兼容」); the
+         *     link_patterns, external_hosts, app_update, help_links, claim, platform_icons,
+         *     lkg_max_age_sec, config_version, bridge_disabled_methods) are optional, so a client keeps reading an older last-good configuration (04 §5「兼容」); the
          *     server always sends them, except that platform_icons lists only the marks with a published
          *     replacement image (BR-TEXT-24). jump_tip, clipboard, bridge_origins, auth_tips, compliance and display are not
          *     shaped by 04 yet and stay free-form; the task that consumes each one types it
@@ -4443,6 +4453,15 @@ export interface components {
             };
             claim?: components["schemas"]["ConfigClaim"];
             platform_icons?: components["schemas"]["ConfigPlatformIcons"];
+            /**
+             * Format: int32
+             * @description How long a last good configuration may be used, in seconds (02 §10, 03 §4.3); default 604800 (7 days).
+             */
+            lkg_max_age_sec?: number;
+            /** @description Release version of this configuration, equal to the response ETag without quotes; saved together with the LKG (04 §10.1, 03 §4.7). */
+            config_version?: string;
+            /** @description Bridge methods disabled remotely; a call answers 90403 method_disabled (03 §5.3). Trial; default empty array. */
+            bridge_disabled_methods?: string[];
         };
         /**
          * @description A replacement image published in the admin console for one platform mark (BR-TEXT-24).
@@ -6022,6 +6041,8 @@ export interface components {
         DeviceId: components["schemas"]["Id"];
         /** @description device_id issued by POST /v1/devices, when the device is registered. */
         OptionalDeviceId: components["schemas"]["Id"];
+        /** @description The ETag of the client's last good response (LKG); a match gets 304. */
+        IfNoneMatch: string;
         /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
         Timestamp: string;
         /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
@@ -6116,6 +6137,8 @@ export interface components {
         NoStore: "no-store";
         /** @description Always no-cache; the stream is neither cached nor buffered. */
         NoCache: "no-cache";
+        /** @description Strong ETag of the configuration; without quotes it equals data.config_version (04 §10.1). */
+        ConfigETag: string;
         /** @description The trace id of the request on every response, the same value as `trace_id` in the body (02 logging); echo of a well-formed X-Trace-Id request header, otherwise a generated UUID. */
         TraceId: components["schemas"]["TraceId"];
     };
@@ -9348,6 +9371,8 @@ export interface operations {
                 "X-Trace-Id"?: components["parameters"]["TraceId"];
                 /** @description device_id issued by POST /v1/devices, when the device is registered. */
                 "X-Device-Id"?: components["parameters"]["OptionalDeviceId"];
+                /** @description The ETag of the client's last good response (LKG); a match gets 304. */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
             };
             path?: never;
             cookie?: never;
@@ -9358,6 +9383,12 @@ export interface operations {
             200: {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
+                    /**
+                     * @description Strong ETag of the configuration on 200; without quotes it equals data.config_version
+                     *     (04 §10.1). A server that delivers it always sends it; a client that finds it missing
+                     *     treats the configuration as having no config_version and sends no If-None-Match.
+                     */
+                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -9474,6 +9505,15 @@ export interface operations {
                      */
                     "application/json": components["schemas"]["ConfigResponse"];
                 };
+            };
+            /** @description Not modified (If-None-Match matched); no body, the client keeps its LKG. */
+            304: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    ETag: components["headers"]["ConfigETag"];
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             429: components["responses"]["TooManyRequests"];
             "4XX": components["responses"]["ClientError"];

@@ -1,0 +1,35 @@
+{
+  "task": "CT-02k",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "f767285e0c48ef7cb0ac02073d99ec3bda2928b2",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only, no server code). Config gains optional lkg_max_age_sec, config_version, bridge_disabled_methods and ConfigFeatures.rank_platforms (04 §10.1); getConfig accepts If-None-Match, may answer 304 (with the required ETag) and declares an optional ETag on 200 (inline, because the type generator makes every $ref header required) so the contract stays true until F1-02h delivers them; checkAppVersion documents 50001 for a missing (platform, channel) row. Orchestrator defaults for the open points are in couli-runs CONTENT-client/decisions-pending.md. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "contract review pass in round 2 after the optional-ETag fix"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "023ae60da1ee01444c0579ff4da9e4fb2b0619ea",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "53679fde841af88858b087d441003d1789557755",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
