@@ -1,0 +1,145 @@
+{
+  "task": "F1-07a",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "d16cea6deaf02e86a22353455f3cd14fa7ce2e45",
+  "red_tests": [
+    "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#1] 列表投影 138 手机只留首三末四，并严格限制为非敏感字段",
+    "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#1] 列表投影 159 手机只留首三末四，并严格限制为非敏感字段",
+    "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#1] 列表投影 180 手机只留首三末四，并严格限制为非敏感字段",
+    "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#2] 详情逐层白名单，手机脱敏，不透传 relation_id、密文或实名字段",
+    "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#3] 未绑手机在列表和详情均为 null，不伪造脱敏串",
+    "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#4] 投影保留契约内的业务值，不把不同用户统一成占位数据",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#5] 非超管仅有 [] 权限不能 reveal（10403）",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#5] 非超管仅有 [ 'user.list' ] 权限不能 reveal（10403）",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#5] 非超管仅有 [ 'user.lookup' ] 权限不能 reveal（10403）",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#5] 非超管仅有 [ 'pii.reveal_identity' ] 权限不能 reveal（10403）",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#6] 无后台登录身份不能查看明文",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#7] 超管=true 也必须提供有效 totp 令牌，缺失或无效为 10003 tier=totp",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#7] 超管=false 也必须提供有效 totp 令牌，缺失或无效为 10003 tier=totp",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#8] 超管=true：从真实密文解出手机号，成功前逐次审计，响应 no-store",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#8] 超管=false：从真实密文解出手机号，成功前逐次审计，响应 no-store",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#9] totp 令牌成功后不可复用；新令牌的相同请求仍各记一条审计",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#10] 同一令牌并发请求最多一次返回明文，且只有一条查看审计",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"field\":\"identity\",\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"field\":\"id_no\",\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"field\":\"name\",\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"field\":\"payout_account\",\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"field\":null,\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#12] reason 必填且长度 1–200，非法输入返回 20001 [reason]：{\"field\":\"phone\"}",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#12] reason 必填且长度 1–200，非法输入返回 20001 [reason]：{\"field\":\"phone\",\"reason\":\"\"}",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#12] reason 必填且长度 1–200，非法输入返回 20001 [reason]：{\"field\":\"phone\",\"reason\":\"核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核\"}",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#12] reason 必填且长度 1–200，非法输入返回 20001 [reason]：{\"field\":\"phone\",\"reason\":null}",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#12] reason 必填且长度 1–200，非法输入返回 20001 [reason]：{\"field\":\"phone\",\"reason\":123}",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#13] reason 长度 1 为合法边界并原样进入审计",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#13] reason 长度 200 为合法边界并原样进入审计",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#14] 未知 user_id 返回 20001 [user_id] 且不审计",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#15] 超管也不能跨 app 查看，客户端 X-App-Id 不能改变后台身份范围",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#16] 未绑手机号返回 20001 [field]，不写任何查看审计",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#17] 审计失败返回 50001，不返回明文，不在日志泄露",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#18] 审计尚未完成时请求不能返回，审计端口输入本身也不含明文",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#19] 损坏的手机号密文不能被当作明文返回",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#20] reveal 只挂 admin 入口，契约去掉 planned",
+    "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#21] 有效 sms 级别令牌不能代替 totp 动态码令牌"
+  ],
+  "risk_note": "RV2 (identity admin read of personal data; authorization boundary). Admin user view projection with the phone masked 3+4 (BR-ID-33), never the plain value or fields outside the contract; POST /admin/v1/users/{user_id}/reveal (field=phone only this batch): AdminOperationGuard with pii.reveal_phone and totp step-up, user looked up within the admin's app (unknown 20001 [user_id], no phone 20001 [field] without audit), phone decrypted, a user_pii_reveal audit record (admin, user, field, reason; never the value) written before the value is returned, 50001 without the value when the audit write fails, Cache-Control: no-store, no plain value in logs. IdentityAdminModule on the admin entry only. Contract: adminRevealUserField leaves planned; route-schemas.gen.ts regenerated. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d16cea6deaf02e86a22353455f3cd14fa7ce2e45",
+      "tree": "78221f3f7df79c61017bc7cb3bd971ea9e0e3e4f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T17:31:08Z",
+      "finished_at": "2026-10-17T17:31:22Z",
+      "red_tests": [
+        "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#1] 列表投影 138 手机只留首三末四，并严格限制为非敏感字段",
+        "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#1] 列表投影 159 手机只留首三末四，并严格限制为非敏感字段",
+        "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#1] 列表投影 180 手机只留首三末四，并严格限制为非敏感字段",
+        "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#2] 详情逐层白名单，手机脱敏，不透传 relation_id、密文或实名字段",
+        "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#3] 未绑手机在列表和详情均为 null，不伪造脱敏串",
+        "test/spec/identity/admin-user-pii/projection.test.ts > [AC-F1-07a#4] 投影保留契约内的业务值，不把不同用户统一成占位数据",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#5] 非超管仅有 [] 权限不能 reveal（10403）",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#5] 非超管仅有 [ 'user.list' ] 权限不能 reveal（10403）",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#5] 非超管仅有 [ 'user.lookup' ] 权限不能 reveal（10403）",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#5] 非超管仅有 [ 'pii.reveal_identity' ] 权限不能 reveal（10403）",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#6] 无后台登录身份不能查看明文",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#7] 超管=true 也必须提供有效 totp 令牌，缺失或无效为 10003 tier=totp",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#7] 超管=false 也必须提供有效 totp 令牌，缺失或无效为 10003 tier=totp",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#8] 超管=true：从真实密文解出手机号，成功前逐次审计，响应 no-store",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#8] 超管=false：从真实密文解出手机号，成功前逐次审计，响应 no-store",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#9] totp 令牌成功后不可复用；新令牌的相同请求仍各记一条审计",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#10] 同一令牌并发请求最多一次返回明文，且只有一条查看审计",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"field\":\"identity\",\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"field\":\"id_no\",\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"field\":\"name\",\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"field\":\"payout_account\",\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#11] field 仅接受 phone，非法值 {\"field\":null,\"reason\":\"用户来电核对注册手机号\"} 返回 20001 [field]",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#12] reason 必填且长度 1–200，非法输入返回 20001 [reason]：{\"field\":\"phone\"}",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#12] reason 必填且长度 1–200，非法输入返回 20001 [reason]：{\"field\":\"phone\",\"reason\":\"\"}",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#12] reason 必填且长度 1–200，非法输入返回 20001 [reason]：{\"field\":\"phone\",\"reason\":\"核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核核\"}",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#12] reason 必填且长度 1–200，非法输入返回 20001 [reason]：{\"field\":\"phone\",\"reason\":null}",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#12] reason 必填且长度 1–200，非法输入返回 20001 [reason]：{\"field\":\"phone\",\"reason\":123}",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#13] reason 长度 1 为合法边界并原样进入审计",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#13] reason 长度 200 为合法边界并原样进入审计",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#14] 未知 user_id 返回 20001 [user_id] 且不审计",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#15] 超管也不能跨 app 查看，客户端 X-App-Id 不能改变后台身份范围",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#16] 未绑手机号返回 20001 [field]，不写任何查看审计",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#17] 审计失败返回 50001，不返回明文，不在日志泄露",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#18] 审计尚未完成时请求不能返回，审计端口输入本身也不含明文",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#19] 损坏的手机号密文不能被当作明文返回",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#20] reveal 只挂 admin 入口，契约去掉 planned",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts > [AC-F1-07a#21] 有效 sms 级别令牌不能代替 totp 动态码令牌"
+      ],
+      "expected": [
+        "test/spec/identity/admin-user-pii/projection.test.ts",
+        "test/spec/identity/admin-user-pii/reveal.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "c8521e89dfaaab367d26cb802be458a082bb9c5868a9233a837e81acd149ae38"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "35bf485934dc637194599b2c827d8e97041d105b11585a6e522ddf50d275f0f4"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one S2 (a non-UUID user_id reaches the query and answers 50001 instead of 20001 [user_id]) tracked in follow-ups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "38 rule tests by Codex (2 runs) reviewed by fresh Claude subagents: round 1 pass with no findings; the full verification then showed a defect in the rule test itself (the audit row check serialised a bigint column with JSON.stringify), fixed in test run 2 without narrowing the check and reviewed in round 2: pass with no findings. The branch was rebuilt to put the test fix before the unchanged implementation commit."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "023ae60da1ee01444c0579ff4da9e4fb2b0619ea",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "fdf000a4506aefc3f91e0a3222b213b5105b88f8",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
