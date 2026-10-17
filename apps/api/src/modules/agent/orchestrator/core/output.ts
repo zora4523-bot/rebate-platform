@@ -32,6 +32,24 @@ export function embeddedCards(card: UnnumberedCard): number {
   return 0;
 }
 
+export interface CardWrite {
+  /** As card(): the card was handed to the run context whole. */
+  readonly written: boolean;
+  /** The delivered frame's card_id (c<n>), when the run context confirmed the write. */
+  readonly cardId: string | null;
+}
+
+/** RunContext.card with its B3-05i delivery receipt callback. */
+type CardWithReceipt = (
+  card: UnnumberedCard,
+  delivered: (cardId: unknown) => void,
+) => Promise<void>;
+
+/** A session card id as numberCard writes it (04 §8.2), else null. */
+function frameCardId(receipt: unknown): string | null {
+  return typeof receipt === 'string' && /^c[1-9][0-9]*$/u.test(receipt) ? receipt : null;
+}
+
 export class RunOutput {
   private frames = 0;
   private cards = 0;
@@ -95,18 +113,33 @@ export class RunOutput {
 
   /** True when the whole card was written; a card that does not fit is never split. */
   async card(card: UnnumberedCard): Promise<boolean> {
-    if (this.closed || !this.frameRoom()) return false;
+    return (await this.deliver(card)).written;
+  }
+
+  /**
+   * card(), plus the frame's card_id when the run context confirms the numbered write (B3-05i):
+   * RunContext.card's `delivered` callback, called by the RunManager only after the frame was
+   * written. A context that never calls it (no receipt support, a run that ended, a failed sink
+   * write) leaves cardId null, and references to that card are removed.
+   */
+  async deliver(card: UnnumberedCard): Promise<CardWrite> {
+    if (this.closed || !this.frameRoom()) return { written: false, cardId: null };
     const cost = 1 + embeddedCards(card);
     if (this.cards + cost > this.limits.cards) {
       this.hit = true;
-      return false;
+      return { written: false, cardId: null };
     }
     this.cards += cost;
     this.frames += 1;
-    const written = this.ctx.card(card);
+    let cardId: string | null = null;
+    // Typed locally so that a context declared without the callback still works (fail closed).
+    const write: CardWithReceipt = this.ctx.card.bind(this.ctx);
+    const written = write(card, (id) => {
+      cardId = frameCardId(id);
+    });
     this.settle();
     await written;
-    return true;
+    return { written: true, cardId };
   }
 
   /** BR-AI-06 ≤ 3 per run, across tools and rounds: items beyond the run's room are dropped. */

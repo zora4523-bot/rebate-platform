@@ -16,6 +16,8 @@ import { runAgent } from './run.ts';
  * {role:'assistant', content: roundText || null, tool_calls}, then, in call order,
  * {role:'tool', tool_call_id, content: JSON.stringify(outcome.modelView)}.
  * Only modelView goes back to the model, never cards/trace/placeholders/raw input.
+ * B3-05i: when the tool issued cardReference values, the model (and trace card_sources /
+ * link_registrations) get a resolved copy instead: delivered card ids, undelivered removed.
  * Tools own schema/identity rejection and untrusted-title delimiting in modelView.
  * Unknown names are rejected by core WITHOUT execute/toolDisplay/tool.status; append
  * {error:'invalid_args'} as the tool message, count the call, and continue the loop.
