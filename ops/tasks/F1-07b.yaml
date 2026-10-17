@@ -23,5 +23,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/admin-users/**'
-status: todo
-pr: null
+status: done
+pr: 695
