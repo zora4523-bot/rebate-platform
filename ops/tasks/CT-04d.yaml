@@ -1,0 +1,24 @@
+id: CT-04d
+repo: rebate-platform
+title: 状态机（提现）：specs/state-machines/withdrawal.yaml 按 08 BR-WDR-08 七个状态与迁移表逐行转写，复用 CT-04a 的 TS 生成器生成枚举与 transition()（packages/domain/src/state-machines/withdrawal.gen.ts，含一致性测试）
+type: contract
+# 2026-10-18 入账（be-codex，编排 01:4x 派工；编号按 00:4x 裁定 CT-04b → CT-04d）。05 CT-04 的提现部分；订单两份见 CT-04a（#622），三端生成器 CT-04c（native）。
+# 依据：08 BR-WDR-08（提现状态与迁移表，迁移表只在 08 维护，本任务只转写），04 §4（yaml 放 specs/state-machines/，生成后端枚举与 transition()）。写法约定照 CT-04a 编排口径 D10-26（null 表首态、same 表不变、guard 只作说明不求值、无编码事件用大写蛇形名并在上方注释原文）。
+# 生成器 packages/domain/scripts/state-machines.ts 若写死了机器清单，只做把 withdrawal 加进清单的最小改动；不改 package.json scripts，用 node 直接运行，--verify 比对。
+# 分工（approvals 34、19、27）：Claude Opus 实现，Codex 写一致性 / 转写规则测试（先红）并对抗评审；packages/domain 属资金区 RV2。不改 contracts/，不占契约槽。
+refs: [BR-WDR-08]
+refs_hash:
+  BR-WDR-08: 75de1f05550c
+deps: [CT-04a]
+paths:
+  - 'specs/state-machines/withdrawal.yaml'
+  - 'packages/domain/**'
+test_paths:
+  - 'test/spec/state-machines/withdrawal/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/state-machines/withdrawal/**'
+status: todo
+pr: null
