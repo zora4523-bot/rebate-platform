@@ -1,6 +1,7 @@
 // content's admin console routes: GET /admin/v1/platform-icons and its version history (F1-06w);
 // registration, publish / rollback and restore-builtin (F1-06y); upload and save as version
 // (F1-06x), whose cleaned files go to platform's MEDIA_STORE (provided globally by PlatformModule).
+// F1-09e adds POST /admin/v1/pages/{page_key}/preview-tokens (content.page, audited).
 // app.module imports this module on the admin entry only; the api and stream entries do not
 // serve /admin/v1. Permission checks go through platform's AdminOperationGuard, which the admin
 // module provides globally on the admin entry (content never imports admin).
@@ -51,6 +52,9 @@ import { createKyselyKillSwitchStore } from './infra/kysely-kill-switch-store.ts
 import { ConfigItemAdmin, type ConfigItemStore } from './application/config-item-admin.ts';
 import { AdminConfigItemsController } from './http/admin/config-items.controller.ts';
 import { createKyselyConfigItemStore } from './infra/kysely-config-item-store.ts';
+import { PagePreviewService, type PagePreviewStore } from './application/page-preview.ts';
+import { AdminPagePreviewTokensController } from './http/admin/page-preview-tokens.controller.ts';
+import { createKyselyPagePreviewStore } from './infra/kysely-page-preview-store.ts';
 
 /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
 export type ContentAuditWriterFactory = (db: Kysely<Database>, clock: Clock) => AuditPort;
@@ -89,6 +93,12 @@ const NO_DATABASE_CONFIG_ITEMS: ConfigItemStore = {
   transaction: () => Promise.reject(new Error('content: config item writes need the database')),
 };
 
+const NO_DATABASE_PREVIEWS: PagePreviewStore = {
+  transaction: () => Promise.reject(new Error('content: preview tokens need the database')),
+  consume: () => Promise.reject(new Error('content: page previews need the database')),
+  sections: () => Promise.reject(new Error('content: page previews need the database')),
+};
+
 /** Monotonic milliseconds for the SVG conversion budget (not business time). */
 const monotonicMs = (): number => performance.now();
 
@@ -101,8 +111,21 @@ export class ContentAdminModule {
         AdminPlatformIconsController,
         AdminKillSwitchesController,
         AdminConfigItemsController,
+        AdminPagePreviewTokensController,
       ],
       providers: [
+        {
+          provide: PagePreviewService,
+          inject: [CLOCK, { token: DB, optional: true }],
+          useFactory: (clock: Clock, db?: Kysely<Database>): PagePreviewService =>
+            new PagePreviewService({
+              store:
+                db === undefined
+                  ? NO_DATABASE_PREVIEWS
+                  : createKyselyPagePreviewStore(db, (trx) => options.auditWriter(trx, clock)),
+              clock,
+            }),
+        },
         {
           provide: ConfigItemAdmin,
           inject: [CLOCK, ROOT_LOGGER, { token: DB, optional: true }],

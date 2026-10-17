@@ -2004,7 +2004,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 30701
       security: []
@@ -7814,7 +7813,6 @@ paths:
         version the page does not have is 20001 with `data.fields=[version]`; a page with no saved
         version → 30701. Written to the audit log.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
