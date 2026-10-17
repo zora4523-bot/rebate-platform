@@ -3,7 +3,8 @@
 //   tools 让 run 停在进行中；把 agent.enabled 改成 false 后推进注入的 Clock，run 在 ≤10 s 内以开关关闭结束
 //   （error 30501、end_reason disabled、退还）；另一会话：改成 false 之后 5 s 发新消息 → 30501（读开关的缓存
 //   ≤5 s，不是 content 默认的 60 s）。
-// - 撤回同意：进行中的 run 在 ≤10 s 内以 10004 结束（consent_withdrawn，退还）。
+// - 撤回同意（BR-AI-13：以 10004 终止，不退配额）：进行中的 run 在 ≤10 s 内以 10004 结束
+//   （consent_withdrawn、settle_result counted），与关开关（30501、退还）分开断言。
 // - runtime.close()：先不再受理（新消息不开新 run），再等进行中的 run 结束才 resolve；不关库。
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
@@ -91,7 +92,7 @@ it('[AC-B3-03f#9][BR-AI-12] 开关缓存 ≤5 s：agent.enabled 改为 false 之
   expect(await runsOf(pg.db, sessionId)).toEqual([]);
 }, 60_000);
 
-it('[AC-B3-03f#10][BR-AI-13] 撤回同意：进行中的 run ≤10 s 内以 10004 结束（end_reason consent_withdrawn、退还）', async () => {
+it('[AC-B3-03f#10][BR-AI-13] 撤回同意（与关开关分开）：进行中的 run ≤10 s 内以 10004 结束（end_reason consent_withdrawn），不退配额（settle_result counted，当日已用仍为 1）', async () => {
   const caller = await newMember(pg.db);
   await openAgent(pg.db);
   await consent(pg.db, caller);
@@ -108,7 +109,8 @@ it('[AC-B3-03f#10][BR-AI-13] 撤回同意：进行中的 run ≤10 s 内以 1000
   expect(last.event).toBe('error');
   expect(last.data['code']).toBe(10004);
   const row = await runRow(pg.db, frames[0]!.data['run_id'] as string);
-  expect(row).toMatchObject({ end_reason: 'consent_withdrawn', settle_result: 'refunded' });
+  expect(row).toMatchObject({ end_reason: 'consent_withdrawn', settle_result: 'counted' });
+  expect(await usedOf(pg.db, caller.userId!)).toBe(1);
 }, 120_000);
 
 it('[AC-B3-03f#11][BR-AI-23] runtime.close()：先不再受理（新消息不开新 run），等进行中的 run 结束后才 resolve，不关库', async () => {

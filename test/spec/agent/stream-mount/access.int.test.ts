@@ -17,9 +17,11 @@ import {
   newGuest,
   newMember,
   openAgent,
+  openSession,
   refusedCode,
   retrace,
   rig,
+  runsOf,
   send,
   setConfig,
   usePgEach,
@@ -98,4 +100,30 @@ it('[AC-B3-03f#5][BR-AI-13][BR-AI-23] ③ 无同意、已撤回、版本落后 �
   expect(await agentSnapshot(pg.db)).toBe(before);
   const passed = await send(r, current, randomUUID(), message());
   expect(refusedCode(passed)).toBe(30504);
+}, 60_000);
+
+it('[AC-B3-03f#19][BR-AI-13] 运行中发布新同意版本：同一 runtime 先以 v1 同意受理；legal.ai_third_party.version 发布为 2 并过了配置缓存期后，旧 v1 同意 → 10004、不建 run；补写 v2 同意后恢复受理（版本不被永久缓存）', async () => {
+  await openAgent(pg.db);
+  await setConfig(pg.db, APP, 'legal.ai_third_party.version', 1);
+  const caller = await newMember(pg.db);
+  await consent(pg.db, caller, { version: 1 });
+  const r = await rig(pg.db);
+  const sessionId = await openSession(r, caller);
+  const first = await send(r, caller, sessionId, message());
+  expect(first.jsons, 'v1 consent is accepted while v1 is current').toEqual([]);
+  expect(await runsOf(pg.db, sessionId)).toHaveLength(1);
+
+  await setConfig(pg.db, APP, 'legal.ai_third_party.version', 2);
+  // Past any configuration cache lifetime (content's reader: 60 s).
+  await r.time.by(61_000);
+  const outdated = await send(r, caller, sessionId, message());
+  expect(refusedCode(outdated)).toBe(10004);
+  expect(outdated.jsons[0]!.body['data']).toEqual({ consent_type: 'ai_third_party' });
+  expect(await runsOf(pg.db, sessionId)).toHaveLength(1);
+
+  await consent(pg.db, caller, { version: 2 });
+  const again = await send(r, caller, sessionId, message());
+  expect(again.jsons, 'accepted again after consenting to v2').toEqual([]);
+  expect(again.streams).toHaveLength(1);
+  expect(await runsOf(pg.db, sessionId)).toHaveLength(2);
 }, 60_000);
