@@ -1,15 +1,5 @@
-import type { ReactElement } from 'react';
-import type { H5ApiClient } from '../../../../shared/api/index.ts';
+import { RulesPage } from './rules-page.tsx';
 
-export interface RulesPageProps {
-  /** Tests and embedding callers can supply the existing H5 API client. */
-  api?: H5ApiClient;
-  mediaCdnOrigin?: string;
-}
-
-export function RulesPage(props: RulesPageProps): ReactElement {
-  void props;
-  throw new Error('NotImplemented: RulesPage');
-}
-
+export { RulesPage, type RulesPageProps } from './rules-page.tsx';
+/** Route module shape (React Router `lazy`): the Rules route renders this page. */
 export { RulesPage as Component };
