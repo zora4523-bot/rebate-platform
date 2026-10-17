@@ -1,4 +1,4 @@
-// identity's admin console routes: POST /admin/v1/users/{user_id}/reveal (F1-07a; BR-ID-33).
+// identity's admin user list / lookup / detail (F1-07b) and reveal (F1-07a; BR-ID-33).
 // app.module imports this module on the admin entry only; the api and stream entries do not
 // serve /admin/v1. Permission and step-up checks go through platform's AdminOperationGuard,
 // which the admin module provides on the admin entry (identity never imports admin); the audit
@@ -18,6 +18,9 @@ import {
 import { AdminUserReveal, type AdminRevealStore } from './application/admin-user-reveal.ts';
 import { AdminUserRevealController } from './http/admin/user-reveal.controller.ts';
 import { createKyselyAdminRevealStore } from './infra/admin-user-reads.ts';
+import { AdminUsers } from './application/admin-users.ts';
+import { AdminUsersController } from './http/admin/users.controller.ts';
+import { createKyselyAdminUsersReader } from './infra/admin-user-view-reader.ts';
 
 const NO_DATABASE: AdminRevealStore = {
   phoneCipher: () => Promise.reject(new Error('identity: user reveal needs the database')),
@@ -28,8 +31,20 @@ export class IdentityAdminModule {
   static forAdmin(): DynamicModule {
     return {
       module: IdentityAdminModule,
-      controllers: [AdminUserRevealController],
+      controllers: [AdminUserRevealController, AdminUsersController],
       providers: [
+        {
+          provide: AdminUsers,
+          inject: [
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (db?: Kysely<Database>, crypto?: FieldCrypto): AdminUsers =>
+            new AdminUsers(
+              db === undefined ? null : createKyselyAdminUsersReader(db, crypto ?? null),
+              crypto ?? null,
+            ),
+        },
         {
           provide: AdminUserReveal,
           inject: [
