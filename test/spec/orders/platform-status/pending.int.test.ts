@@ -19,6 +19,23 @@ afterAll(async () => {
 }, 30_000);
 import { at, expectSafeLogs, RECEIVED, scenario, SETTLED } from './kit.ts';
 
+function expectUnmappedAlert(f: Awaited<ReturnType<typeof scenario>>) {
+  expect([...f.logger.warn.mock.calls, ...f.logger.error.mock.calls]).toEqual(
+    expect.arrayContaining([
+      expect.arrayContaining([
+        expect.objectContaining({
+          alert: expect.any(String),
+          event: 'order_illegal_transition',
+          platform: 'pdd',
+          app_id: f.ctx.app_id,
+          outcome: expect.any(String),
+        }),
+      ]),
+    ]),
+  );
+  expectSafeLogs(f);
+}
+
 it.each([
   { initial: 'received', raw: 'paid', from: 'RECEIVED', event: 'PLATFORM_PAID', rule: 'P10' },
   {
@@ -162,7 +179,7 @@ it.each(['CREDITED', 'CLAWED_BACK'])(
     expect(f.onUpdated).not.toHaveBeenCalled();
     expect(f.onUnmappedStatus).not.toHaveBeenCalled();
     expect(f.publish).not.toHaveBeenCalled();
-    expectSafeLogs(f);
+    expectUnmappedAlert(f);
   },
 );
 
@@ -198,5 +215,6 @@ it.each(['ESTIMATED', 'WAITING', 'UNATTRIBUTED', 'VOID'])(
     expect(f.publish).toHaveBeenCalledTimes(1);
     expect(f.onUnmappedStatus.mock.calls[0]?.[0]).toBe(f.onUpdated.mock.calls[0]?.[0]);
     expect(f.publish.mock.calls[0]?.[0]).toBe(f.onUpdated.mock.calls[0]?.[0]);
+    expectUnmappedAlert(f);
   },
 );
