@@ -278,7 +278,13 @@ it('[AC-B1-29b#10] 价格走势与商品详情独立：详情不嵌走势、不�
     headers,
   });
   expect(detail.statusCode).toBe(200);
-  expect(detail.json<{ data: unknown }>().data).toEqual({
+  // B1-28d: getProduct gained an optional favorited (04 §6.3; CT-22b, B1-28c); this request is a
+  // guest's, so favorited, when present, must be false. Every other field is compared as before.
+  const detailData = detail.json<{ data: Record<string, unknown> }>().data;
+  if ('favorited' in detailData) expect(detailData.favorited).toBe(false);
+  const detailRest = { ...detailData };
+  delete detailRest.favorited;
+  expect(detailRest).toEqual({
     product_key: 'tb:route001',
     item_ref: 'synthetic-reference',
     platform: 'taobao',
