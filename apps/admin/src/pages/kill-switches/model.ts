@@ -3,6 +3,7 @@
 // derives labels and the client-side gate (BR-WDR-30: the auto payout switch is turned off only).
 import type { Schema } from '@couli/contracts-ts';
 import type { AccessControl } from '../../providers/access-control/index.ts';
+import { AdminApiError } from '../../providers/data/index.ts';
 import { killSwitchesTexts as t } from '../../texts/kill-switches.ts';
 
 export type SwitchRow = Schema<'AdminKillSwitch'>;
@@ -191,4 +192,16 @@ export function beijingTime(iso: string): string {
   if (Number.isNaN(ms)) return iso;
   const date = new Date(ms + BEIJING_OFFSET_MS);
   return `${date.getUTCFullYear()}-${two(date.getUTCMonth() + 1)}-${two(date.getUTCDate())} ${two(date.getUTCHours())}:${two(date.getUTCMinutes())}`;
+}
+
+/**
+ * Whether a failed PUT may still have been applied: no readable answer arrived (network, parse,
+ * non-200 envelope), a server error (5xxxx), or an unexpected throw. A refusal the server answered
+ * (10003, 10403, 20001, 20902, 42901 …) or a request rejected before sending means not applied.
+ */
+export function writeOutcomeUnknown(cause: unknown): boolean {
+  if (!(cause instanceof AdminApiError)) return true;
+  if (cause.kind === 'request') return false;
+  if (cause.kind !== 'api') return true;
+  return cause.code >= 50000;
 }

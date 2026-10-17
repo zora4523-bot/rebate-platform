@@ -55,6 +55,7 @@ import {
   targetLabel,
   valueLabel,
   verbOf,
+  writeOutcomeUnknown,
   type SwitchRow,
   type SwitchValue,
 } from './model.ts';
@@ -78,7 +79,11 @@ interface Pending {
 interface Notice {
   readonly type: 'success' | 'error';
   readonly text: string;
+  /** Offer 【重新读取】 (a write whose result is still unconfirmed). */
+  readonly reload?: boolean;
 }
+
+const NO_KEYS: ReadonlySet<string> = new Set();
 
 const LIST_URL = '/admin/v1/kill-switches';
 const STEP_UP_URL = '/admin/v1/auth/step-up';
@@ -113,6 +118,8 @@ export function KillSwitchesPage({ access }: KillSwitchesPageProps): ReactElemen
   const [refreshing, setRefreshing] = useState(false);
   const [pending, setPendingState] = useState<Pending>();
   const [notice, setNotice] = useState<Notice>();
+  // Rows whose last write has an unknown result and no successful read since.
+  const [unconfirmed, setUnconfirmed] = useState<ReadonlySet<string>>(NO_KEYS);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [differentOnly, setDifferentOnly] = useState(false);
@@ -125,8 +132,11 @@ export function KillSwitchesPage({ access }: KillSwitchesPageProps): ReactElemen
     setPendingState(next);
   }, []);
 
-  /** Reads every page (page_size ≤ 200) until the server's total is reached. */
-  const loadList = useCallback(async (): Promise<void> => {
+  /**
+   * Reads every page (page_size ≤ 200) until the server's total is reached. Resolves to the rows,
+   * null when the read failed, or undefined when a newer read or write superseded it.
+   */
+  const loadList = useCallback(async (): Promise<SwitchRow[] | null | undefined> => {
     const request = ++listSequence.current;
     try {
       const provider = getProvider();
@@ -136,19 +146,23 @@ export function KillSwitchesPage({ access }: KillSwitchesPageProps): ReactElemen
           resource: 'kill-switches',
           pagination: { currentPage: page, pageSize: PAGE_SIZE, mode: 'server' },
         });
-        if (request !== listSequence.current) return;
+        if (request !== listSequence.current) return undefined;
         collected.push(...response.data);
         if (response.data.length === 0 || collected.length >= (response.total ?? 0)) break;
       }
       setRows(collected);
       setStatus('ready');
+      // A full read shows the server's values: nothing is unconfirmed any more.
+      setUnconfirmed(NO_KEYS);
+      return collected;
     } catch (cause) {
-      if (request !== listSequence.current) return;
+      if (request !== listSequence.current) return undefined;
       setStatus((previous) => {
         // A failed refresh keeps the rows already shown.
         if (previous === 'ready') return previous;
         return cause instanceof AdminApiError && cause.code === 10403 ? 'forbidden' : 'failed';
       });
+      return null;
     } finally {
       if (request === listSequence.current) setRefreshing(false);
     }
@@ -177,6 +191,8 @@ export function KillSwitchesPage({ access }: KillSwitchesPageProps): ReactElemen
     // One change at a time: a second click (or a click during a write) opens nothing.
     if (pendingRef.current !== undefined || refreshing) return;
     if (!changeable(row, access) || !allowedTarget(row, next)) return;
+    // An unknown write result must be confirmed by a read before anything else is sent.
+    if (unconfirmed.has(row.key)) return;
     if (JSON.stringify(next) === JSON.stringify(currentOf(row))) return;
     setNotice(undefined);
     setPending({ row, next, reason: '', phase: 'confirm', again: false });
@@ -246,8 +262,46 @@ export function KillSwitchesPage({ access }: KillSwitchesPageProps): ReactElemen
         void loadList();
         return;
       }
+      if (writeOutcomeUnknown(cause)) {
+        // The change may have been applied: never resend; read the server's value instead.
+        setUnconfirmed((previous) => new Set(previous).add(row.key));
+        setNotice({ type: 'error', text: t.errors.unknownChecking(name) });
+        await verifyAfterUnknown(row.key, name);
+        return;
+      }
       setNotice({ type: 'error', text: errorText(cause, name) });
     }
+  };
+
+  /** Re-reads the list after a write with an unknown result and reports what the server holds. */
+  const verifyAfterUnknown = async (key: string, name: string): Promise<void> => {
+    setRefreshing(true);
+    const fresh = await loadList();
+    if (fresh === undefined) return;
+    if (fresh === null) {
+      setNotice({ type: 'error', text: t.errors.unknownUnread(name), reload: true });
+      return;
+    }
+    const latest = fresh.find((item) => item.key === key);
+    setNotice({
+      type: 'error',
+      text:
+        latest === undefined
+          ? t.errors.unknownMissing(name)
+          : t.errors.unknownChecked(name, stateLabel(latest, currentOf(latest))),
+    });
+  };
+
+  const reloadUnconfirmed = () => {
+    if (refreshing) return;
+    const keys = [...unconfirmed];
+    const key = keys[0];
+    if (key === undefined) {
+      setRefreshing(true);
+      void loadList();
+      return;
+    }
+    void verifyAfterUnknown(key, displayName(key));
   };
 
   const onVerified = (stepUpToken: string) => {
@@ -285,9 +339,16 @@ export function KillSwitchesPage({ access }: KillSwitchesPageProps): ReactElemen
   } as const;
   const code = { fontFamily: token.fontFamilyCode, fontSize: 12 } as const;
 
+  const unconfirmedTag = (row: SwitchRow) =>
+    unconfirmed.has(row.key) ? (
+      <Tag color="error" style={{ marginInlineEnd: 0 }}>
+        {t.unconfirmed}
+      </Tag>
+    ) : null;
+
   const renderCurrent = (row: SwitchRow) => {
     const current = currentOf(row);
-    const can = changeable(row, access);
+    const can = changeable(row, access) && !unconfirmed.has(row.key);
     if (row.value_type === 'boolean')
       return (
         <Flex align="center" gap={8}>
@@ -299,9 +360,15 @@ export function KillSwitchesPage({ access }: KillSwitchesPageProps): ReactElemen
             onChange={(checked) => openConfirm(row, checked)}
           />
           <Typography.Text strong>{stateLabel(row, current)}</Typography.Text>
+          {unconfirmedTag(row)}
         </Flex>
       );
-    return <Tag style={{ whiteSpace: 'normal', marginInlineEnd: 0 }}>{valueLabel(current)}</Tag>;
+    return (
+      <Flex vertical align="flex-start" gap={4}>
+        <Tag style={{ whiteSpace: 'normal', marginInlineEnd: 0 }}>{valueLabel(current)}</Tag>
+        {unconfirmedTag(row)}
+      </Flex>
+    );
   };
 
   const renderActions = (row: SwitchRow) => {
@@ -311,17 +378,20 @@ export function KillSwitchesPage({ access }: KillSwitchesPageProps): ReactElemen
           {t.readOnly}
         </Typography.Text>
       );
-    const can = changeable(row, access);
-    const note =
-      row.key === AUTO_PAYOUT ? (
-        <Typography.Text type="secondary" style={small}>
-          {t.autoPayoutNote}
-        </Typography.Text>
-      ) : !permitted(row, access) ? (
-        <Typography.Text type="secondary" style={small}>
-          {t.noPermission}
-        </Typography.Text>
-      ) : null;
+    const can = changeable(row, access) && !unconfirmed.has(row.key);
+    const note = unconfirmed.has(row.key) ? (
+      <Typography.Text type="danger" style={small}>
+        {t.unconfirmedNote}
+      </Typography.Text>
+    ) : row.key === AUTO_PAYOUT ? (
+      <Typography.Text type="secondary" style={small}>
+        {t.autoPayoutNote}
+      </Typography.Text>
+    ) : !permitted(row, access) ? (
+      <Typography.Text type="secondary" style={small}>
+        {t.noPermission}
+      </Typography.Text>
+    ) : null;
     const next = row.value_type === 'boolean' ? !(currentOf(row) === true) : undefined;
     const current = currentOf(row);
     return (
@@ -595,6 +665,13 @@ export function KillSwitchesPage({ access }: KillSwitchesPageProps): ReactElemen
           showIcon
           closable
           message={notice.text}
+          action={
+            notice.reload === true && unconfirmed.size > 0 ? (
+              <Button size="small" disabled={refreshing} onClick={reloadUnconfirmed}>
+                {t.reload}
+              </Button>
+            ) : undefined
+          }
           onClose={() => setNotice(undefined)}
         />
       )}

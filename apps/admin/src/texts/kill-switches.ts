@@ -180,5 +180,17 @@ export const killSwitchesTexts = {
       `「${name}」的状态已变化（可能已被他人修改），已刷新为最新值，请确认后重新操作。`,
     network: (name: string): string => `网络异常，「${name}」切换失败，保持原值；请确认后再试。`,
     failed: (name: string): string => `「${name}」切换失败，保持原值；请稍后再试。`,
+    // The PUT may have been applied although no answer arrived (network / unreadable response).
+    unknownChecking: (name: string): string =>
+      `因网络或响应异常，「${name}」的切换结果未知，正在向服务端读取当前值，请勿重复操作。`,
+    unknownChecked: (name: string, state: string): string =>
+      `因网络或响应异常，「${name}」的切换结果曾未知；已重新读取，服务端当前为「${state}」，请核对后再决定是否重新操作。`,
+    unknownMissing: (name: string): string =>
+      `因网络或响应异常，「${name}」的切换结果曾未知；已重新读取，列表中已没有这个开关，请核对后再操作。`,
+    unknownUnread: (name: string): string =>
+      `因网络或响应异常，「${name}」的切换结果未知，重新读取也失败；该开关状态未确认，请点击「重新读取」核实后再操作。`,
   },
+  unconfirmed: '未确认',
+  unconfirmedNote: '切换结果未确认，重新读取成功前不可操作',
+  reload: '重新读取',
 } as const;
