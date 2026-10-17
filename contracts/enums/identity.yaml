@@ -114,6 +114,15 @@ enums:
       frozen: 冻结（可设期限 frozen_until）
       appealing: 申诉中
       banned: 封禁（永久）
+  risk_reason_category:
+    source: 规划/04 §3.2 user_risk_state；BR-TEXT-23 细则「原因类别」；BR-ID-31
+    description: user_risk_state.reason_category，用户可见的原因类别（用户文案取字典 risk_reason.<category>）；state 不为 normal 时必填；后台封禁与冻结时必选一项（PUT /admin/v1/users/{user_id}/risk-state，CT-02j）
+    values:
+      malicious_rights: 异常售后维权
+      fraud_invite: 异常邀请行为
+      abnormal_trade: 异常交易
+      account_security: 账户安全核验
+      other: 违反用户协议
   realname_status:
     source: 规划/04 §2.5
     values:
