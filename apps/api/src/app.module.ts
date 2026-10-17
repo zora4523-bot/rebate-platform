@@ -72,6 +72,7 @@ import {
   LINK_OPEN_PORTS,
   LINK_REGISTRATIONS,
   LinkingModule,
+  createOrderLinkReader,
   createUnionAuthReads,
   createUnavailableAttrCodeReader,
   inOpenReads,
@@ -90,6 +91,7 @@ import {
   bindPushTokensForSession,
   unbindPushTokensForSession,
 } from './modules/notification/index.ts';
+import { OrdersModule } from './modules/orders/index.ts';
 import {
   ParsingLinkRegistrars,
   ParsingModule,
@@ -1017,6 +1019,12 @@ export class AppModule {
           ? [
               ContentPublicModule.forApi({ viewerContext: identityViewer }),
               NotificationModule.forApi((db, clock) => createContentReader({ db, clock })),
+              // GET /v1/orders and /v1/orders/{order_id} over the shared OrderQueries (B1-08l):
+              // content's configuration reader and linking's order-link reader as its ports.
+              OrdersModule.forRoot({
+                config: (db, clock) => createContentReader({ db, clock }),
+                links: (db) => createOrderLinkReader(db),
+              }),
             ]
           : []),
         ...(identity === undefined || risk === undefined

@@ -31,10 +31,12 @@ export { orderContentHash } from './domain/content-hash.ts';
 export { planImportState } from './domain/import-state.ts';
 export type { ImportHistory, ImportStateDecision } from './domain/import-state.ts';
 export { lockOrderKey, orderLockKeyText } from './infra/order-lock.ts';
+// Task B1-08l: the shared order list / detail queries (HTTP and later B3-08), already projected.
 export {
   createOrderQueries,
   createUnknownOrderFigures,
   OrderQueries,
+  OrderQueryError,
 } from './application/order-queries.ts';
 export type {
   OrderSubject,
@@ -45,3 +47,4 @@ export type {
   OrderQueryDeps,
 } from './application/order-queries.ts';
 export { OrdersModule } from './orders.module.ts';
+export type { OrdersModuleOptions } from './orders.module.ts';
