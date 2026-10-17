@@ -1,0 +1,139 @@
+{
+  "task": "B1-29b",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "58941ad2c79468ab17c519adfebca82504a23057",
+  "red_tests": [
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（missing-colon）按详情口径返回 20001",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（tb:）按详情口径返回 20001",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（TB:route001）按详情口径返回 20001",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（tb:has space）按详情口径返回 20001",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（jd:route002）按详情口径返回 20001",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（unknown:route003）按详情口径返回 20001",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#13] 契约拒绝额外 query 字段（app_id=synthetic_forged），不能覆盖服务端范围",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#13] 契约拒绝额外 query 字段（user_id=synthetic-user），不能覆盖服务端范围",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#13] 契约拒绝额外 query 字段（window_days=60），不能覆盖服务端范围",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#1] 游客读取真实用例结果，金额序列化为整数且完整信封符合契约",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#2] auth none：登录凭据和游客返回同样结果，传入用例的参数不含用户标识",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#3] auth none 不要求有效登录凭据",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#4] 缺失或非法 platform（）返回 400/20001 和 fields，不调用用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#4] 缺失或非法 platform（platform=）返回 400/20001 和 fields，不调用用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#4] 缺失或非法 platform（platform=unknown）返回 400/20001 和 fields，不调用用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#4] 缺失或非法 platform（platform=ios）返回 400/20001 和 fields，不调用用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#4] 缺失或非法 platform（platform=TAOBAO）返回 400/20001 和 fields，不调用用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#5] product_key 短于契约长度下限（x）返回 400/20001 和 fields",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#5] product_key 短于契约长度下限（tb）返回 400/20001 和 fields",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 taobao 与 URL 解码后的路径 tb:route001 原样传到用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 jd 与 URL 解码后的路径 jd:route002 原样传到用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 pdd 与 URL 解码后的路径 pdd:route003 原样传到用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 meituan 与 URL 解码后的路径 mt:route004 原样传到用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 vip 与 URL 解码后的路径 vip:route005 原样传到用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 douyin 与 URL 解码后的路径 dy:route006 原样传到用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 kuaishou 与 URL 解码后的路径 ks:route008 原样传到用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 suning 与 URL 解码后的路径 sn:route009 原样传到用例",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#7] 同一应用实例按每次请求的 app_id 隔离读取，不缓存首个请求范围",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#8] 用例给出 no_data（unknown-product）时完整保留空 points 和 null start_date",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#8] 用例给出 no_data（too-few-days）时完整保留空 points 和 null start_date",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#8] 用例给出 no_data（unstable-platform）时完整保留空 points 和 null start_date",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#9] 保留用例的有券 source_key、零价与大额整数，不截断或转字符串",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#14] 金额超过安全整数上限（9007199254740992n）返回 50001，不输出不安全或舍入的价格",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#14] 金额超过安全整数上限（9007199254740993n）返回 50001，不输出不安全或舍入的价格",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#10] 价格走势与商品详情独立：详情不嵌走势、不额外调用 getPriceTrend",
+    "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#11] api 入口恰好注册一次 getProductPriceTrend 且契约去掉 planned"
+  ],
+  "risk_note": "RV1 paths (catalog route, contract marker, generated route schemas) with rule tests (test/spec, RV2 by PR): GET /v1/products/{product_key}/price-trend for 04 §6.3 (05 B1-29 second part). Controller in CatalogModule (auth none), product_key checked against the platform dictionary and the query platform as for the detail route, read scope X-App-Id + platform + product_key only, amounts through fenToJsonNumber (above 2^53 → 50001), price-trend store built lazily on first read; getProductPriceTrend no longer planned, route-schemas.gen.ts regenerated. Opus implementation round 2 (round 1 ended without output in a network outage). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "58941ad2c79468ab17c519adfebca82504a23057",
+      "tree": "35a0515e7bb1256755ce3718834c1131c6df1332",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T05:04:02Z",
+      "finished_at": "2026-10-17T05:04:11Z",
+      "gate": {
+        "commit": "1dd5e552ffb2a880dd98f5aa2e47f3be2574679f",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（missing-colon）按详情口径返回 20001",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（tb:）按详情口径返回 20001",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（TB:route001）按详情口径返回 20001",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（tb:has space）按详情口径返回 20001",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（jd:route002）按详情口径返回 20001",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#12] 商品键形状或平台不匹配（unknown:route003）按详情口径返回 20001",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#13] 契约拒绝额外 query 字段（app_id=synthetic_forged），不能覆盖服务端范围",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#13] 契约拒绝额外 query 字段（user_id=synthetic-user），不能覆盖服务端范围",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#13] 契约拒绝额外 query 字段（window_days=60），不能覆盖服务端范围",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#1] 游客读取真实用例结果，金额序列化为整数且完整信封符合契约",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#2] auth none：登录凭据和游客返回同样结果，传入用例的参数不含用户标识",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#3] auth none 不要求有效登录凭据",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#4] 缺失或非法 platform（）返回 400/20001 和 fields，不调用用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#4] 缺失或非法 platform（platform=）返回 400/20001 和 fields，不调用用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#4] 缺失或非法 platform（platform=unknown）返回 400/20001 和 fields，不调用用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#4] 缺失或非法 platform（platform=ios）返回 400/20001 和 fields，不调用用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#4] 缺失或非法 platform（platform=TAOBAO）返回 400/20001 和 fields，不调用用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#5] product_key 短于契约长度下限（x）返回 400/20001 和 fields",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#5] product_key 短于契约长度下限（tb）返回 400/20001 和 fields",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 taobao 与 URL 解码后的路径 tb:route001 原样传到用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 jd 与 URL 解码后的路径 jd:route002 原样传到用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 pdd 与 URL 解码后的路径 pdd:route003 原样传到用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 meituan 与 URL 解码后的路径 mt:route004 原样传到用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 vip 与 URL 解码后的路径 vip:route005 原样传到用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 douyin 与 URL 解码后的路径 dy:route006 原样传到用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 kuaishou 与 URL 解码后的路径 ks:route008 原样传到用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#6] 平台枚举 suning 与 URL 解码后的路径 sn:route009 原样传到用例",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#7] 同一应用实例按每次请求的 app_id 隔离读取，不缓存首个请求范围",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#8] 用例给出 no_data（unknown-product）时完整保留空 points 和 null start_date",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#8] 用例给出 no_data（too-few-days）时完整保留空 points 和 null start_date",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#8] 用例给出 no_data（unstable-platform）时完整保留空 points 和 null start_date",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#9] 保留用例的有券 source_key、零价与大额整数，不截断或转字符串",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#14] 金额超过安全整数上限（9007199254740992n）返回 50001，不输出不安全或舍入的价格",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#14] 金额超过安全整数上限（9007199254740993n）返回 50001，不输出不安全或舍入的价格",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#10] 价格走势与商品详情独立：详情不嵌走势、不额外调用 getPriceTrend",
+        "test/spec/catalog/price-trend-route/http.test.ts > [AC-B1-29b#11] api 入口恰好注册一次 getProductPriceTrend 且契约去掉 planned"
+      ],
+      "expected": ["test/spec/catalog/price-trend-route/http.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "7bc3038d18adff642bd350f91f0bb51d77cb9073ffdc738fb849dec065b577b8"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "36 rule tests by Codex (2 runs) reviewed by fresh Claude subagents: round 1 one S1 (a 129-character key can never reach the route under Fastify's 100-character parameter limit) plus two S2, all fixed in run 2; round 2 pass"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "185107bf29c934d8dd043882787b138edeed7760",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "b4e5ec27012ca3b192b421ed8b21f0334b81f1ae",
+    "specs": "4b37a92670828e2b8c3e0734ecb85eb5371a7277"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
