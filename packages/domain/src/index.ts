@@ -49,15 +49,27 @@ export type {
   LedgerBalance,
   NegativeBalanceInput,
 } from './ledger/ledger.ts';
-export { transitionOrderPlatform } from './state-machines/order-platform.gen.ts';
+export {
+  ORDER_PLATFORM_EVENTS,
+  ORDER_PLATFORM_STATES,
+  ORDER_PLATFORM_TRANSITIONS,
+  transitionOrderPlatform,
+} from './state-machines/order-platform.gen.ts';
 export type {
   OrderPlatformState,
   OrderPlatformEvent,
   OrderPlatformTransitionResult,
+  OrderPlatformTransitionRow,
 } from './state-machines/order-platform.gen.ts';
-export { transitionOrderRebate } from './state-machines/order-rebate.gen.ts';
+export {
+  ORDER_REBATE_EVENTS,
+  ORDER_REBATE_STATES,
+  ORDER_REBATE_TRANSITIONS,
+  transitionOrderRebate,
+} from './state-machines/order-rebate.gen.ts';
 export type {
   OrderRebateState,
   OrderRebateEvent,
   OrderRebateTransitionResult,
+  OrderRebateTransitionRow,
 } from './state-machines/order-rebate.gen.ts';
