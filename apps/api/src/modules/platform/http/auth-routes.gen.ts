@@ -262,6 +262,26 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "none"
   },
   {
+    "method": "GET",
+    "path": "/v1/me/favorites",
+    "auth": "login"
+  },
+  {
+    "method": "PUT",
+    "path": "/v1/me/favorites/:platform/:product_key",
+    "auth": "login"
+  },
+  {
+    "method": "DELETE",
+    "path": "/v1/me/favorites/:platform/:product_key",
+    "auth": "login"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/me/favorites/batch-delete",
+    "auth": "login"
+  },
+  {
     "method": "POST",
     "path": "/v1/inputs/parse",
     "auth": "optional"

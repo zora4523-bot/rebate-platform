@@ -1366,6 +1366,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My favorites
+         * @description Favorites of the current user, newest favorited first (规划/01 F-PROD-12). Each item has
+         *     `platform`, `product_key`, `favorited_at`, `invalid` and `product_card`. The list card has
+         *     the same shape as a search card (ProductCard) and only registers a link and a quote
+         *     snapshot, never converts (TRADE-03). `invalid=true` when fetching the card the union
+         *     answered that the product does not exist, is off shelf or cannot be promoted; such an
+         *     item's card has only the title and the image, no price and no rebate_*. Only product
+         *     references and times are stored, never prices, links or tokens. `next_cursor` fetches the
+         *     next (older) page; null means no more. A malformed or foreign cursor is 20001 with
+         *     data.fields=[cursor].
+         */
+        get: operations["listFavorites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/favorites/{platform}/{product_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Add a favorite
+         * @description Favorites one product (规划/01 F-PROD-12). Unique per (app, user, platform, product_key):
+         *     when the product is already a favorite the original record is returned and no row is
+         *     added. Adding a new one when the user already has `favorites.max_per_user` favorites is
+         *     20001 with data.reason=favorites_full (client shows error.20001.favorites_full as a light
+         *     hint, no dialog); an existing favorite is returned even at the limit. Only the product
+         *     reference and the time are stored. A product key that does not belong to `platform` is
+         *     20001 with data.fields=[product_key]. Version gate: applied.
+         */
+        put: operations["addFavorite"];
+        post?: never;
+        /**
+         * Remove a favorite
+         * @description Removes one favorite; the row is physically deleted (规划/01 F-PROD-12). A product that is
+         *     not a favorite is success as well. A product key that does not belong to `platform` is
+         *     20001 with data.fields=[product_key]. Version gate: applied.
+         */
+        delete: operations["removeFavorite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/favorites/batch-delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove several favorites
+         * @description Removes the listed favorites, at most 100 items (规划/01 F-PROD-12); rows are physically
+         *     deleted, items that are not favorites are skipped, and the call succeeds. More than 100
+         *     items, or an item whose product key does not belong to its platform, is 20001 with
+         *     data.fields. Version gate: applied.
+         */
+        post: operations["batchDeleteFavorites"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/inputs/parse": {
         parameters: {
             query?: never;
@@ -4216,6 +4299,11 @@ export interface components {
             /** @description Ad label (BR-TEXT-17); null on Agent relevance cards. */
             ad_label?: string | null;
             availability: components["schemas"]["Availability"];
+            /**
+             * @description Only on the product detail response (GET /v1/products/{product_key}): whether the
+             *     caller has favorited this product; false when not logged in (规划/01 F-PROD-12).
+             */
+            favorited?: boolean;
         };
         SearchProductsData: {
             items: components["schemas"]["ProductCard"][];
@@ -4236,6 +4324,60 @@ export interface components {
             msg: string;
             data: components["schemas"]["ProductCard"];
             trace_id: components["schemas"]["TraceId"];
+        };
+        Favorite: {
+            platform: components["schemas"]["PlatformCode"];
+            product_key: components["schemas"]["ProductKey"];
+            /**
+             * Format: date-time
+             * @description When the product was favorited (the original time for a repeated add).
+             */
+            favorited_at: string;
+        };
+        FavoriteResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["Favorite"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Card of an invalid favorite; only the title and the image, no price and no rebate. */
+        InvalidFavoriteCard: {
+            title: string | null;
+            /** Format: uri */
+            image: string | null;
+        };
+        FavoriteItem: {
+            platform: components["schemas"]["PlatformCode"];
+            product_key: components["schemas"]["ProductKey"];
+            /** Format: date-time */
+            favorited_at: string;
+            /**
+             * @description true when fetching the card the union answered that the product does not exist, is
+             *     off shelf or cannot be promoted.
+             */
+            invalid: boolean;
+            /**
+             * @description invalid=false: the list card, same shape as a search card (ProductCard). invalid=true:
+             *     InvalidFavoriteCard, only the title and the image.
+             */
+            product_card: components["schemas"]["ProductCard"] | components["schemas"]["InvalidFavoriteCard"];
+        };
+        FavoriteListData: {
+            items: components["schemas"]["FavoriteItem"][];
+            next_cursor: string | null;
+        };
+        FavoriteListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["FavoriteListData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        FavoriteRef: {
+            platform: components["schemas"]["PlatformCode"];
+            product_key: components["schemas"]["ProductKey"];
+        };
+        BatchDeleteFavoritesRequest: {
+            items: components["schemas"]["FavoriteRef"][];
         };
         PriceTrendPoint: {
             /**
@@ -8979,6 +9121,304 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductPriceTrendResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listFavorites: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of my favorites, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "platform": "taobao",
+                     *             "product_key": "tb:7Kq9LmN3pQ",
+                     *             "favorited_at": "2026-10-05T09:30:00+08:00",
+                     *             "invalid": false,
+                     *             "product_card": {
+                     *               "product_key": "tb:7Kq9LmN3pQ",
+                     *               "item_ref": "v1.dGJfN0txOUxtTjNwUQ.c2ln",
+                     *               "platform": "taobao",
+                     *               "shop_type": "tmall",
+                     *               "title": "降噪蓝牙耳机 5.3",
+                     *               "image": "https://img.example.test/p/7Kq9LmN3pQ.jpg",
+                     *               "shop_name": "示例旗舰店",
+                     *               "price_fen": 3990,
+                     *               "coupon_fen": 1000,
+                     *               "final_price_fen": 2990,
+                     *               "est_net_price_fen": 2721,
+                     *               "rebate_min_fen": 269,
+                     *               "rebate_max_fen": 269,
+                     *               "rebate_basis": "normal",
+                     *               "benefit_tags": [
+                     *                 "有券"
+                     *               ],
+                     *               "spec_text": null,
+                     *               "is_presale": false,
+                     *               "link_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                     *               "cta": {
+                     *                 "text_key": "btn.buy.coupon"
+                     *               },
+                     *               "quoted_at": "2026-10-05T10:00:00+08:00",
+                     *               "stale": false,
+                     *               "age_sec": 12,
+                     *               "source": "taobao_union",
+                     *               "disclaimer_keys": [
+                     *                 "price_basis"
+                     *               ],
+                     *               "ad_label": null,
+                     *               "availability": "ok"
+                     *             }
+                     *           },
+                     *           {
+                     *             "platform": "jd",
+                     *             "product_key": "jd:100012345678",
+                     *             "favorited_at": "2026-10-01T20:15:00+08:00",
+                     *             "invalid": true,
+                     *             "product_card": {
+                     *               "title": "便携电动牙刷",
+                     *               "image": "https://img.example.test/p/100012345678.jpg"
+                     *             }
+                     *           }
+                     *         ],
+                     *         "next_cursor": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["FavoriteListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    addFavorite: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Platform code (enum platform). */
+                platform: components["parameters"]["UnionPlatform"];
+                /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
+                product_key: components["parameters"]["ProductKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The favorite, new or the one already recorded. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "platform": "taobao",
+                     *         "product_key": "tb:7Kq9LmN3pQ",
+                     *         "favorited_at": "2026-10-05T09:30:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["FavoriteResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    removeFavorite: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Platform code (enum platform). */
+                platform: components["parameters"]["UnionPlatform"];
+                /** @description Opaque product key, URL-encoded by the client (BR-PROD-02). */
+                product_key: components["parameters"]["ProductKey"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Not a favorite any more. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    batchDeleteFavorites: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "items": [
+                 *         {
+                 *           "platform": "taobao",
+                 *           "product_key": "tb:7Kq9LmN3pQ"
+                 *         },
+                 *         {
+                 *           "platform": "jd",
+                 *           "product_key": "jd:100012345678"
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["BatchDeleteFavoritesRequest"];
+            };
+        };
+        responses: {
+            /** @description None of the listed products is a favorite any more. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

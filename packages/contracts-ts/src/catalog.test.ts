@@ -138,6 +138,8 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     'icon_format_invalid',
     'icon_too_large',
     'icon_svg_unconvertible',
+    // CT-22b: favorites over favorites.max_per_user (规划/01 F-PROD-12).
+    'favorites_full',
   ]);
   expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10']);
 });

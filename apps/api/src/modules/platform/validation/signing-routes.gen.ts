@@ -262,6 +262,26 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "GET",
+    "path": "/v1/me/favorites",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/v1/me/favorites/:platform/:product_key",
+    "signed": false
+  },
+  {
+    "method": "DELETE",
+    "path": "/v1/me/favorites/:platform/:product_key",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/v1/me/favorites/batch-delete",
+    "signed": false
+  },
+  {
     "method": "POST",
     "path": "/v1/inputs/parse",
     "signed": true

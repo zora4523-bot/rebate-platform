@@ -542,6 +542,46 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "listFavorites",
+    "method": "GET",
+    "path": "/v1/me/favorites",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "addFavorite",
+    "method": "PUT",
+    "path": "/v1/me/favorites/:platform/:product_key",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "removeFavorite",
+    "method": "DELETE",
+    "path": "/v1/me/favorites/:platform/:product_key",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
+    "operationId": "batchDeleteFavorites",
+    "method": "POST",
+    "path": "/v1/me/favorites/batch-delete",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "parseInput",
     "method": "POST",
     "path": "/v1/inputs/parse",
