@@ -9,6 +9,7 @@ import type { UserLevel } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
 import type { RegistrationOptions } from './registration.ts';
+import { readUserCreatedAt } from '../infra/registration-store.ts';
 
 export interface InitialLevelLogEntry {
   readonly app_id: string;
@@ -24,6 +25,14 @@ export interface InitialLevelLog {
 export type RecordInitialLevel = NonNullable<RegistrationOptions['recordInitialLevel']>;
 
 export function createRecordInitialLevel(log: InitialLevelLog): RecordInitialLevel {
-  void log;
-  throw new Error('NotImplemented: createRecordInitialLevel');
+  return async (trx, input) => {
+    const createdAt = await readUserCreatedAt(trx, input);
+    if (createdAt === undefined) throw new Error('initial level log: registration user not found');
+    await log.append(trx, {
+      app_id: input.app_id,
+      user_id: input.user_id,
+      to_level: input.level,
+      effective_at: createdAt,
+    });
+  };
 }
