@@ -23,4 +23,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/oauth-login/**'
-status: todo
+status: done
+pr: 618
