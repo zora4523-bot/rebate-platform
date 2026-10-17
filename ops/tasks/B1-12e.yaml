@@ -1,0 +1,24 @@
+id: B1-12e
+repo: rebate-platform
+title: 迁移：notification 的 notify_templates 与 notify_logs（按 04 §3.2 该行逐列：code、category、渠道、跳转 / user_id 可空、code、channel、dedupe_key、planned_at、sent_at、status queued / success / failed；唯一 (app_id, dedupe_key)；授权写在本迁移）；inbox_messages 不改
+type: impl
+# 2026-10-18 入账（be-codex，编排 02:1x 派工④「B1-12 系列余项」）。B1-12a～d 只覆盖推送令牌与单条消息回查；发送链路（模板、推送、写站内信、频控、扇出）都还没有表可落，
+# 幂等要落在 PG 唯一约束（AGENTS.md 硬规则 4），先建表。依据：规划/04 §3.2 notify_templates / notify_logs 行（code、category、渠道、跳转 {route, params} 只进站内信不进推送载荷，
+# 唯一 (app_id, dedupe_key)，免打扰顺延按 planned_at，发送记录留存见 BR-ID-30），由编排者摘行进任务书。迁移号落地时取主干最大号 + 1（notices 登记）。
+# 04 inbox_messages 行没有 category / dedupe_key，不加列；站内信写入的幂等由同一事务里的 notify_logs 唯一 (app_id, dedupe_key) 承担（B1-12f）。
+# 不在本任务：通知分类开关存储（04 §10「notification_pref 不另建」，由 /v1/me/notification-settings 承载，契约未建，归后续 B1-12g）；发送核心（B1-12f）；交易类扇出（B1-12h，触及归属，暂缓）。
+refs: []
+refs_hash: {}
+deps: [B1-12a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/notification/send-log/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/notification/send-log/**'
+status: todo
