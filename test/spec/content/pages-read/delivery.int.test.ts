@@ -126,7 +126,7 @@ it('[AC-F1-09d#5] sha256 前八字节桶 k−1 命中灰度、k 命中全量，�
   }
 });
 
-it('[AC-F1-09d#6] 无设备头在 99% 灰度下仍取全量，登录也不退回 user_id 分桶', async () => {
+it('[AC-F1-09d#6] 无设备头在 99% 灰度下仍取全量，登录不退回 user_id 或令牌设备号分桶', async () => {
   const id = appId();
   await seedPage(h, id, {
     gray: 2,
@@ -136,7 +136,12 @@ it('[AC-F1-09d#6] 无设备头在 99% 灰度下仍取全量，登录也不退回
       { number: 2, sections: GRAY },
     ],
   });
-  const registered = await registerDevice(h, id);
+  let registered = await registerDevice(h, id);
+  // Select a registered device whose token-bound ID would incorrectly select gray.
+  for (let i = 0; i < 100 && bucket(id, registered.device_id) >= 9900; i += 1) {
+    registered = await registerDevice(h, id);
+  }
+  expect(bucket(id, registered.device_id)).toBeLessThan(9900);
   let login = await session(h, id, registered);
   // Ensure a user_id fallback would select gray, rather than occasionally passing by chance.
   for (let i = 0; i < 100 && bucket(id, login.user.id) >= 9900; i += 1) {
@@ -291,11 +296,31 @@ it('[AC-F1-09d#14] 页面指针和版本缓存都隔离 app_id 与 page_key', as
   await seedPage(h, mine, {
     key: 'custom:x',
     current: 1,
-    versions: [{ number: 1, sections: [{ id: 'custom' }] }],
+    gray: 2,
+    percent: 37,
+    versions: [
+      { number: 1, sections: [{ id: 'custom' }] },
+      { number: 2, sections: [{ id: 'custom-gray' }] },
+    ],
   });
+  const device = deviceAt(mine, 3699);
+  expect(bucket(mine, device)).toBe(3699);
   expect((await success(h.app, mine)).sections).toEqual(FULL);
   expect((await success(h.app, other)).sections).toEqual(GRAY);
-  expect((await success(h.app, mine, 'custom:x')).sections).toEqual([{ id: 'custom' }]);
+  // Same version number, different content: a version cache must include page_key.
+  expect(await success(h.app, mine, 'custom:x')).toEqual({
+    page_key: 'custom:x',
+    version: 1,
+    ttl_sec: 300,
+    sections: [{ id: 'custom' }],
+  });
+  // Only custom:x has a gray pointer: reusing home's cached pointer must fail.
+  expect(await success(h.app, mine, 'custom:x', { 'x-device-id': device })).toEqual({
+    page_key: 'custom:x',
+    version: 2,
+    ttl_sec: 300,
+    sections: [{ id: 'custom-gray' }],
+  });
   await rejected(await read(h.app, missing), 30701);
   expect((await success(h.app, mine)).sections).toEqual(FULL);
 });
