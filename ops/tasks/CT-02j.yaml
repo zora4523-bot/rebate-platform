@@ -1,0 +1,32 @@
+id: CT-02j
+repo: rebate-platform
+title: 契约：后台用户与运营——/admin/v1/users（列表、按 UID 或手机号查询、详情、查看明文 reveal）、users/{id}/risk-state（封禁 / 解封 / 冻结 / 解冻）、users/{id}/union-bindings/{platform}/reset|disable|enable；按数据权限点脱敏、二次验证、expected_row_version 比较并更新；全部 planned
+type: contract
+# 2026-10-17 入账（后台后端线 admin-backend，编排会话 10-17 admin-prompt5 第 2 项与 13:2x：拆 05 F1-07 后台用户与运营接口，先开不依赖订单线的用户查询 / 封禁冻结 / 联盟授权管理）。
+# 依据 05 F1-07；04 §6.6（users、reveal、risk-state、union-bindings）、§11.1 数据权限点、§11.2 risk.* / union.*；08 BR-ID-31（封禁）、BR-ID-36 / BR-WDR-05 / BR-CALC-13（冻结）、BR-ID-20（联盟授权）、BR-ID-33（脱敏）、BR-ID-34。
+# 取值裁定见 couli-runs/ADMIN-backend/f107-plan.md（编号即下文「裁定 N」）；订单查询与改归属、找回、维权导入、手动同步依赖 B1-08/09/10，本批不开。
+# lookup（按 UID / 完整手机号精确查）只认 user.lookup，不接受 user.list 替代（contracts/enums/admin.yaml 两者分工，GitHub Codex 评审 P1）；详情 users/{id} 接受 user.list 或 user.lookup。
+# 要点：8 个操作全部 x-implementation: planned（由 F1-07a～d 去掉）；20902 data.resource 加 user_risk_state、union_binding；新错误码「绑定当前状态不允许该操作」「风控状态不允许该操作」（拟 30154、44004，按 error-codes 分段核对，冲突顺延，裁定 6）；contracts/enums/identity.yaml 加 risk_reason_category（取 user_risk_state.reason_category 的 CHECK 值）；risk-state 请求用显式 action（ban / unban / freeze / unfreeze）以便守卫按 action 定权限点；reason 必填 ≤200（裁定 5）。后台二次验证头复用 CT-02i 的 AdminStepUpToken。
+# packages/contracts-ts 的测试只校验形状（x-auth、权限点、错误码、Idempotency-Key 等），**不断言 x-implementation 是否 planned**（CT-02i 的 admin-config.test.ts 曾因此挡住下游，见 CT-02m；台账评审 S2-1）。
+# contract_sections 只放 11.1、11.2（任务书 24KB 上限）；04 §6.6 的 users、reveal、risk-state、union-bindings 行由编排者摘进任务书第 9 节（台账评审 S2-2）。
+# reveal 本批只支持 field=phone（主干 users 只有手机号密文、实名能力未实现，identity/application/me.ts 已标 TODO；pii.reveal_identity 的身份证号与收款账号等实名 / 资金线能力上线后另加，GitHub Codex 评审 P1）。
+# 列 planned 操作的三份路由表（auth-routes、signing-routes、min-version-routes）随契约重生成（同 CT-15n、CT-02i）。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1', '11.2']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/identity.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

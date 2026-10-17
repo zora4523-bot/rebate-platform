@@ -1,0 +1,19 @@
+id: CT-02m
+repo: rebate-platform
+title: 契约跟进：packages/contracts-ts/src/admin-config.test.ts 不再断言配置中心与紧急开关 8 个操作「仍是 planned」（只校验 x-auth、权限点、无 Idempotency-Key 等形状），以便 F1-10d / F1-10e 实现时去掉 planned
+type: contract
+# 2026-10-17 入账（后台后端线 admin-backend）：F1-10d 测试机完整验证发现，CT-02i（#600）新增的 admin-config.test.ts 断言 8 个操作 x-implementation 为 planned；F1-10d / F1-10e 是 Codex 实现任务，paths 不得含 packages/contracts-ts/**，机械提交只许三个文件，故由本任务（Claude）先改测试。
+# 要点：只改这一个测试文件；去掉 planned 断言（同 F1-06w 对 admin-platform-icons.test.ts 的处理），其余断言不动；契约本身不改。
+refs: []
+refs_hash: {}
+contract_sections: ['10.2']
+deps: []
+paths:
+  - 'packages/contracts-ts/src/admin-config.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

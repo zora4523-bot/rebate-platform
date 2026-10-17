@@ -1,0 +1,28 @@
+id: F1-07a
+repo: rebate-platform
+title: identity：后台用户视图按数据权限点脱敏（手机号 3+4、身份证首 1 末 1、姓名只留末字）与 POST /admin/v1/users/{user_id}/reveal（本批只 field=phone，pii.reveal_phone、动态码、解密明文、逐次审计；实名字段待实名能力）；去掉 reveal 的 planned
+type: impl
+# 2026-10-17 入账（后台后端线 admin-backend，编排会话 10-17 admin-prompt5 第 2 项与 13:2x：拆 05 F1-07 后台用户与运营接口，先开不依赖订单线的用户查询 / 封禁冻结 / 联盟授权管理）。
+# 依据 05 F1-07；04 §6.6（users、reveal、risk-state、union-bindings）、§11.1 数据权限点、§11.2 risk.* / union.*；08 BR-ID-31（封禁）、BR-ID-36 / BR-WDR-05 / BR-CALC-13（冻结）、BR-ID-20（联盟授权）、BR-ID-33（脱敏）、BR-ID-34。
+# 取值裁定见 couli-runs/ADMIN-backend/f107-plan.md（编号即下文「裁定 N」）；订单查询与改归属、找回、维权导入、手动同步依赖 B1-08/09/10，本批不开。
+# 要点：投影函数供 F1-07b 列表 / 详情复用（只读权限点决定可见字段，04 §11.1）；脱敏复用 platform/masking；明文只经 reveal，每次审计（BR-ID-33）；守卫用 AdminOperationGuard（F1-10c）；reason 必填。
+# 与以后入账的 F1-07c（联盟授权）、F1-07d（封禁冻结）可能并行改 openapi.yaml、两份生成物、app.module.ts 与 identity/**：后合并者变基并重生成（台账评审 S2-7）。
+refs: [BR-ID-33]
+refs_hash:
+  BR-ID-33: 01b25f773b29
+deps: [CT-02j]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/identity/admin-user-pii/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/admin-user-pii/**'
+status: todo
+pr: null

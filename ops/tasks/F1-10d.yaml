@@ -10,7 +10,7 @@ type: impl
 refs: [BR-INV-21]
 refs_hash:
   BR-INV-21: 97103f163904
-deps: [CT-02i, F1-10a, F1-10b, F1-10c]
+deps: [CT-02i, CT-02m, F1-10a, F1-10b, F1-10c]
 paths:
   - 'apps/api/src/modules/content/**'
   - 'apps/api/src/app.module.ts'
