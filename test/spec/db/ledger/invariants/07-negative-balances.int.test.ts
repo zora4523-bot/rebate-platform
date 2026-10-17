@@ -49,6 +49,64 @@ it(
 );
 
 it(
+  '[AC-B2-02e#24] ⑦ 前日扣成负数、校验日入账回升但仍为负时不报差异',
+  async () => {
+    await scenario(createTestDatabase, '07', async ({ db, check }) => {
+      const a = await account(db);
+      await entry(db, a, await voucher(db, { accounting_date: '2032-06-14' }), 100n, {
+        ledger_type: 'CLAWBACK',
+        balance_after_fen: -100n,
+        account_version: 1n,
+        booked_at: '2032-06-14T08:00:00Z',
+      });
+      await entry(db, a, await voucher(db, { accounting_date: '2032-06-15' }), -50n, {
+        ledger_type: 'REBATE_CREDIT',
+        balance_after_fen: -50n,
+        account_version: 2n,
+        booked_at: '2032-06-15T08:00:00Z',
+      });
+      // Filtering by check_date before LAG would compare −50 with zero and falsely report it.
+      clean(await check('2032-06-15'));
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-02e#25] ⑦ 早于校验日的违规负余额下降仍须查出，即使后续已回升',
+  async () => {
+    await scenario(createTestDatabase, '07', async ({ db, check }) => {
+      const a = await account(db);
+      await entry(db, a, await voucher(db, { accounting_date: '2032-06-12' }), -10n, {
+        balance_after_fen: 10n,
+        account_version: 1n,
+        booked_at: '2032-06-12T08:00:00Z',
+      });
+      const fee = await voucher(db, { accounting_date: '2032-06-13' });
+      await entry(db, a, fee, 11n, {
+        ledger_type: 'WITHDRAW_FEE',
+        balance_after_fen: -1n,
+        account_version: 2n,
+        booked_at: '2032-06-13T08:00:00Z',
+      });
+      await entry(db, a, await voucher(db, { accounting_date: '2032-06-15' }), -2n, {
+        ledger_type: 'REBATE_CREDIT',
+        balance_after_fen: 1n,
+        account_version: 3n,
+        booked_at: '2032-06-15T08:00:00Z',
+      });
+      const rows = await check('2032-06-15');
+      differences(rows, 'account');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ app_id: APP, account_id: a.id });
+      detailContains(rows, 10n, -1n);
+      expect(JSON.stringify(rows[0]!.detail)).toMatch(new RegExp(`${fee.id}|${fee.uniq_key}`));
+    });
+  },
+  TIMEOUT,
+);
+
+it(
   '[AC-B2-02e#18] ⑦ 账户版本决定先后，仍为负但回升、持平、降到零均不误报',
   async () => {
     await scenario(createTestDatabase, '07', async ({ db, check }) => {

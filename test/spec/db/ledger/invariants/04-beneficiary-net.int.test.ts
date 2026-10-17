@@ -180,6 +180,8 @@ it(
       const key = { order_key: 'taobao:reassign', role: 'self' };
       const oldKey = { ...key, beneficiary_user_id: oldUser.owner_id };
       const newKey = { ...key, beneficiary_user_id: newUser.owner_id };
+      const reassignId = randomUUID();
+      // D3 A: ④ uses voucher_kind; both keys also follow the BR-FUND-16 / BR-FUND-10 format.
       await pair(db, oldUser, p, await voucher(db, { ...oldKey, voucher_kind: 'CREDIT' }), -400n);
       await pair(
         db,
@@ -188,7 +190,7 @@ it(
         await voucher(db, {
           ...oldKey,
           voucher_kind: 'REASSIGN_REV',
-          uniq_key: `${key.order_key}:${oldUser.owner_id}:self:REASSIGN_REV:${randomUUID()}`,
+          uniq_key: `${key.order_key}:${oldUser.owner_id}:self:REASSIGN_REV:${reassignId}`,
         }),
         400n,
       );
@@ -196,7 +198,11 @@ it(
         db,
         newUser,
         p,
-        await voucher(db, { ...newKey, voucher_kind: 'REASSIGN_CREDIT' }),
+        await voucher(db, {
+          ...newKey,
+          voucher_kind: 'REASSIGN_CREDIT',
+          uniq_key: `${key.order_key}:${newUser.owner_id}:self:REASSIGN_CREDIT:${reassignId}`,
+        }),
         -400n,
       );
       await pair(db, newUser, p, await voucher(db, { ...newKey, voucher_kind: 'CLAWBACK' }), 400n, {
@@ -210,6 +216,60 @@ it(
       differences(rows, 'global');
       expect(rows).toHaveLength(1);
       detailContains(rows, oldUser.owner_id, key.order_key, -1n);
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-02e#23] ④ 跨日入账与扣回按全量净额校验，部分及全额扣回通过、多扣一分报差异',
+  async () => {
+    await scenario(createTestDatabase, '04', async ({ db, check }) => {
+      const a = await account(db);
+      const p = await platform(db);
+      const key = { order_key: 'taobao:cross-day', beneficiary_user_id: a.owner_id, role: 'self' };
+      await pair(
+        db,
+        a,
+        p,
+        await voucher(db, { ...key, voucher_kind: 'CREDIT', accounting_date: '2032-06-14' }),
+        -400n,
+        { booked_at: '2032-06-14T08:00:00Z', balance_after_fen: 400n },
+      );
+      await pair(
+        db,
+        a,
+        p,
+        await voucher(db, { ...key, voucher_kind: 'CLAWBACK', accounting_date: '2032-06-15' }),
+        120n,
+        { ledger_type: 'CLAWBACK', account_version: 2n, balance_after_fen: 280n },
+      );
+      clean(await check('2032-06-15'));
+      await pair(
+        db,
+        a,
+        p,
+        await voucher(db, { ...key, voucher_kind: 'CLAWBACK', accounting_date: '2032-06-15' }),
+        280n,
+        { ledger_type: 'CLAWBACK', account_version: 3n, balance_after_fen: 0n },
+      );
+      clean(await check('2032-06-15'));
+      await pair(
+        db,
+        a,
+        p,
+        await voucher(db, { ...key, voucher_kind: 'CLAWBACK', accounting_date: '2032-06-15' }),
+        1n,
+        { ledger_type: 'CLAWBACK', account_version: 4n, balance_after_fen: -1n },
+      );
+      // An all-history check must also find the over-clawback on a day with no new vouchers.
+      for (const date of ['2032-06-15', '2032-06-16']) {
+        const rows = await check(date);
+        differences(rows, 'global');
+        expect(rows).toHaveLength(1);
+        expect(rows[0]!.app_id).toBe(APP);
+        detailContains(rows, key.order_key, a.owner_id, 'self', -1n, 0n);
+      }
     });
   },
   TIMEOUT,

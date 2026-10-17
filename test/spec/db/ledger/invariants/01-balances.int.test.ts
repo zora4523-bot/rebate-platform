@@ -26,7 +26,8 @@ it(
       await entry(db, a, v, -100n);
       await entry(db, a, v, -20n, { sub_account: 'frozen', account_version: 2n });
       await balance(db, a, 100n, 20n);
-      // Daily balances use the signed debit/credit convention of migration 0038.
+      // B2-02e §10 / decision 20: daily balances use entry signs (debit +, credit −),
+      // closing = opening + debit − credit; user-facing balances have the opposite sign.
       await daily(db, a, { opening_fen: -100n, closing_fen: -100n });
       await daily(db, a, { sub_account: 'frozen', opening_fen: -20n, closing_fen: -20n });
       const first = await check();
