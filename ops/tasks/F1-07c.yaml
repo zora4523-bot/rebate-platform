@@ -8,7 +8,10 @@ type: impl
 # 取值裁定见 couli-runs/ADMIN-backend/f107-plan.md（裁定 2、5、7 与「CT-02j 实现方自定、编排者认可」）。
 # 要点：union_bindings 唯一写者是 linking，状态改动只经 canTransitionBinding 已有的边（不加新边，冻结测试不改）；
 #   版本承接要改 linking/application/union-bindings.ts 与 pdd-authority.ts 两处 insertInto('union_bindings')（同平台旧行最大 row_version + 1，契约已写明）；
-#   导出 blockForBan / restoreAfterUnban（接收调用方事务；解封只恢复因 ban 置 blocked 的行，裁定 2）供 F1-07d 调用；重置时清该用户转链缓存（契约 reset 描述）。
+#   导出 blockForBan / restoreAfterUnban（接收调用方事务；解封只恢复因 ban 置 blocked 的行，裁定 2）供 F1-07d 调用；重置时清该用户转链缓存（契约 reset 描述；linking/infra/jump-cache.ts 的键是整体哈希，按用户清理要另设计，如每用户代次键，仍在 linking/** 内）。
+#   【待编排裁定】用户已封禁时对 blocked(admin_disable) 执行 enable：默认拒绝 30154（不让封禁用户的绑定回到 invalid，守 BR-ID-31「封禁时绑定置 blocked」与 BR-ID-20 封禁后注销不自动释放）；契约 enable 描述需同步（台账 #696 Claude 评审 S2-3）。
+#   规则测试取 expected_row_version 直接读库，不走 GET /admin/v1/users/{user_id}（F1-07b 可能晚合并）。
+# 与 F1-07b / F1-07d 并行改 openapi.yaml、两份生成物与 app.module.ts：后合并者变基并重生成。
 refs: []
 refs_hash: {}
 deps: [CT-02j]
