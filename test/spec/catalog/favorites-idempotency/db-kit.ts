@@ -2,7 +2,11 @@
 // Only the pg wire fault is synthetic; controller, favorites and idempotency are production code.
 import { createRequire } from 'node:module';
 import { createDb } from '@couli/db';
-import type { TestDatabase } from '@couli/db/testing';
+// Structural type instead of importing @couli/db/testing: only *.int.test.ts may import it
+// (.dependency-cruiser.cjs testcontainers-only-in-int-tests); the int test passes the real database.
+interface TestDatabase {
+  urlFor(role: 'couli_app'): string;
+}
 import type { PostgresPool } from 'kysely';
 import { createFavoritesService } from '../../../../apps/api/src/modules/catalog/favorites/service.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
