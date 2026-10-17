@@ -4,7 +4,9 @@
 // execute modes, awaits the list in registration order after the lookup found no record (or found
 // a processing record whose lease expired, taken over like a missing one), before the first
 // idempotency write and before the handler. A rejection propagates unchanged: nothing is written,
-// the transaction rolls back and later checks and the handler do not run. Replays, processing
+// the transaction rolls back and later checks and the handler do not run. The one exception is a
+// StoredRejection (./stored-rejection.ts, 3xxxx only, B1-02za E21): later checks and the handler
+// do not run either, but its result is stored and returned as a handler's result would be. Replays, processing
 // (40901), conflicting (20901) and abandoned (20903) keys, and a key held by a concurrent request,
 // never run the checks.
 // Registration is per instance (./index.ts keys the lists by instance in a WeakMap);

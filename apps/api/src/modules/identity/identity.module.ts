@@ -43,6 +43,12 @@ import { createNicknameReview } from './infra/nickname-review.ts';
 import { createH5TokenService, type H5TokenService } from './application/h5-token.ts';
 import { STEP_UP_CHECK, createStepUpCheck } from './application/step-up-verify.ts';
 import {
+  IDENTITY_LEVEL_CHECKS,
+  createDefaultRealnameStatusReader,
+  createIdentityLevelChecks,
+  type RealnameStatusReader,
+} from './application/identity-level.ts';
+import {
   createOauthAttemptService,
   type OauthAttemptService,
 } from './application/oauth-attempts.ts';
@@ -173,7 +179,14 @@ export interface IdentityModuleOptions {
    * sessions are created and ended without touching push tokens.
    */
   readonly pushTokens?: Omit<FactoryProvider<SessionPushTokens | null>, 'provide'>;
+  /**
+   * Builds the real-name status port of stage ⑨ (B1-02za), assembled by app.module. Absent, the
+   * default reader (createDefaultRealnameStatusReader: always none) is used.
+   */
+  readonly realnameStatus?: Omit<FactoryProvider<RealnameStatusReader>, 'provide'>;
 }
+
+const REALNAME_STATUS_READER = Symbol('REALNAME_STATUS_READER');
 
 /** Revocation by user as assembled (Nest token: the function revokeSessionsByUser itself). */
 export type AssembledRevokeByUser = (
@@ -438,6 +451,16 @@ export class IdentityModule {
           inject: [CLOCK, TOKEN_KEYS],
           useFactory: (clock: Clock, keys: TokenKeyProvider): TokenService =>
             createTokenService({ clock, keys }),
+        },
+        options.realnameStatus === undefined
+          ? { provide: REALNAME_STATUS_READER, useFactory: createDefaultRealnameStatusReader }
+          : { ...options.realnameStatus, provide: REALNAME_STATUS_READER },
+        {
+          // Stages ⑧ ⑨: the guard and the post-miss check app.module hands to RiskModule.
+          provide: IDENTITY_LEVEL_CHECKS,
+          inject: [REALNAME_STATUS_READER, { token: DB, optional: true }],
+          useFactory: (realname: RealnameStatusReader, db?: Kysely<Database>) =>
+            createIdentityLevelChecks({ db: db ?? null, realname }),
         },
         {
           provide: STEP_UP_CHECK,
@@ -743,7 +766,7 @@ export class IdentityModule {
           ): Logout => createLogout({ db, clock, pushTokens }),
         },
       ],
-      exports: [DEVICE_SIGNING_KEYS, TOKEN_CHECK, STEP_UP_CHECK],
+      exports: [DEVICE_SIGNING_KEYS, TOKEN_CHECK, STEP_UP_CHECK, IDENTITY_LEVEL_CHECKS],
     };
   }
 }

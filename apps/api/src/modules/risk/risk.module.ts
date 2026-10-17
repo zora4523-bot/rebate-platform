@@ -15,6 +15,9 @@
 // runs ④a, ⑤, ⑬, and ⑤'s post-miss hook is registered after ④a's and before ⑬'s. Its service
 // (riskStateServiceToken(), the single writer of user_risk_state) needs DB and EVENT_BUS; without
 // them stage ⑤ is not installed (one info line `risk_state_gate_disabled` at startup).
+// Stages ⑥–⑫ of other modules (today identity's ⑧ ⑨ level check and ⑫ step-up) come from
+// app.module through two optional lists: `beforeRateLimit` (post-miss checks, after ⑤'s hook) and
+// `beforeRateLimitGuards` (chained in the global guard after ⑤); risk imports none of them.
 // Appeals (BR-ID-36, B1-03i): POST / GET /v1/me/appeals, always registered on the entry. Their
 // service needs DB and stage ⑤'s service (the single writer of user_risk_state); the calendar is
 // read through the configuration port over a handle (content's reader, assembled by app.module).
@@ -112,6 +115,7 @@ export const MINIMUM_VERSION_CHECK = Symbol('MINIMUM_VERSION_CHECK');
 const MINIMUM_VERSION_READER = Symbol('MINIMUM_VERSION_READER');
 const MINIMUM_VERSION_HOOK = Symbol('MINIMUM_VERSION_HOOK');
 const BEFORE_RATE_LIMIT = Symbol('BEFORE_RATE_LIMIT');
+const BEFORE_RATE_LIMIT_GUARDS = Symbol('BEFORE_RATE_LIMIT_GUARDS');
 /** Whether stage ④a is in force on this entry: true exactly when a reader is wired. */
 const MINIMUM_VERSION_GATE = Symbol('MINIMUM_VERSION_GATE');
 const RATE_LIMIT_THRESHOLDS = Symbol('RATE_LIMIT_THRESHOLDS');
@@ -184,6 +188,17 @@ export interface RiskModuleOptions {
    */
   readonly beforeRateLimit?: Pick<
     FactoryProvider<readonly IdempotencyPostMissCheck[]>,
+    'inject' | 'useFactory'
+  >;
+  /**
+   * The guard counterpart of beforeRateLimit for the non-idempotent operations (BR-ID-01 ⑥–⑫;
+   * today identity's ⑧ ⑨ level guard, B1-02za), built by app.module. Chained in list order in the
+   * global guard right after ⑤ (after ④a when ⑤ is not installed) and before ⑬. Each guard skips
+   * the idempotent operations itself (their stage runs in the post-miss hook). Absent or empty:
+   * the global guard is exactly as without this option.
+   */
+  readonly beforeRateLimitGuards?: Pick<
+    FactoryProvider<readonly RiskStageGuard[]>,
     'inject' | 'useFactory'
   >;
   /**
@@ -288,7 +303,13 @@ interface StageGuard {
   canActivate(context: ExecutionContext): boolean | Promise<boolean>;
 }
 
-/** ④a, ⑤ then ⑬ in one global guard, so their order never depends on guard registration order. */
+/** A stage of the global guard chain supplied through RiskModuleOptions.beforeRateLimitGuards. */
+export type RiskStageGuard = StageGuard;
+
+/**
+ * ④a, ⑤, the optional ⑥–⑫ guards, then ⑬ in one global guard, so their order never depends on
+ * guard registration order.
+ */
 function chainGuards(first: StageGuard, ...rest: readonly (StageGuard | null)[]): StageGuard {
   const stages = [first, ...rest.filter((stage): stage is StageGuard => stage !== null)];
   if (stages.length === 1) return first;
@@ -307,6 +328,15 @@ export class RiskModule {
   /** Read-only scope presence for downstream HTTP post-miss checks (also used by ④a and ⑤). */
   static hasHttpRequestScope(): boolean {
     return MINIMUM_VERSION_SCOPE.getStore() !== undefined;
+  }
+
+  /**
+   * The HTTP request whose idempotent handler is running (the store hasHttpRequestScope reports),
+   * for downstream post-miss checks that judge the matched route and the verified principal;
+   * undefined outside an HTTP request (jobs, direct calls of the idempotency service).
+   */
+  static httpRequestInScope(): MinimumVersionRequest | undefined {
+    return MINIMUM_VERSION_SCOPE.getStore()?.request;
   }
 
   /**
@@ -359,6 +389,9 @@ export class RiskModule {
         options.beforeRateLimit === undefined
           ? { provide: BEFORE_RATE_LIMIT, useValue: [] }
           : { provide: BEFORE_RATE_LIMIT, ...options.beforeRateLimit },
+        options.beforeRateLimitGuards === undefined
+          ? { provide: BEFORE_RATE_LIMIT_GUARDS, useValue: [] }
+          : { provide: BEFORE_RATE_LIMIT_GUARDS, ...options.beforeRateLimitGuards },
         ...sameDeviceProviders,
         appealsConfig,
         {
@@ -475,16 +508,19 @@ export class RiskModule {
             MINIMUM_VERSION_GATE,
             RISK_STATE_SERVICE,
             RATE_LIMIT_SERVICE,
+            BEFORE_RATE_LIMIT_GUARDS,
           ],
           useFactory: (
             check: MinimumVersionCheck,
             enabled: boolean,
             riskState: RiskStateService | null,
             rateLimit: RateLimitService | null,
+            beforeRateLimit: readonly RiskStageGuard[],
           ): StageGuard =>
             chainGuards(
               enabled ? createMinimumVersionGuard(check) : GATE_DISABLED_GUARD,
               riskState === null ? null : createRiskStateGuard(riskState),
+              ...beforeRateLimit,
               rateLimit === null ? null : createRateLimitGuard(rateLimit),
             ),
         },

@@ -1,5 +1,8 @@
 // Public surface of the identity module. Other modules import only from this file.
+// Stages ⑧ ⑨ (BR-ID-01 identity level, B1-02za): app.module hands IDENTITY_LEVEL_CHECKS' guard and
+// post-miss check to RiskModule, and assembles the real-name status port.
 export {
+  IDENTITY_LEVEL_CHECKS,
   identityLevelRefusal,
   createIdentityLevelChecks,
   createDefaultRealnameStatusReader,

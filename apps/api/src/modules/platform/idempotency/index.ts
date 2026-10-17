@@ -261,6 +261,11 @@
 //     reads on that connection instead of borrowing a second one from the pool (a pool full of
 //     claims would otherwise wait on itself). It is passed through an AsyncLocalStorage, not as a
 //     second argument, so the checks keep the one-argument call the rule tests pin.
+//     Stored refusal (B1-02za E21): a check may throw StoredRejection (./stored-rejection.ts,
+//     codes 30000–39999 only). The remaining checks and the handler do not run; the claim goes on
+//     as for a handler whose result is that refusal (standard mode: processing row, then
+//     `completed`; transactional mode: `completed` in the claim's transaction), and later
+//     requests of the key replay it. Any other throw rolls back and stores nothing, as before.
 //
 // 12. Rules for the implementation: this file is compiled by the `test` project too
 //     (erasableSyntaxOnly, no decorators): erasable syntax only (no parameter properties, enum,
@@ -273,6 +278,9 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { Clock } from '../clock/index.ts';
+import { StoredRejection } from './stored-rejection.ts';
+
+export { StoredRejection } from './stored-rejection.ts';
 
 /** The four step-up actions (04 §2.5 step_up_action). */
 export type StepUpAction =
@@ -513,9 +521,20 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
    * After a miss (or an expired lease about to be taken over), before any write or handler. The
    * checks see the claim's transaction through idempotencyPostMissTransaction().
    */
-  async function afterMiss(request: IdempotentRequest, trx: Transaction<DB>) {
-    await POST_MISS_CONTEXT.run({ trx }, async () => {
-      for (const check of [...postMissChecks]) await check(request);
+  async function afterMiss(
+    request: IdempotentRequest,
+    trx: Transaction<DB>,
+  ): Promise<HandlerResult | undefined> {
+    return POST_MISS_CONTEXT.run({ trx }, async () => {
+      try {
+        for (const check of [...postMissChecks]) await check(request);
+      } catch (error) {
+        // A stored business refusal (./stored-rejection.ts) stands in for the handler's result;
+        // anything else propagates unchanged (nothing written, the claim rolls back).
+        if (error instanceof StoredRejection) return error.result;
+        throw error;
+      }
+      return undefined;
     });
   }
 
@@ -583,6 +602,8 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       const prepared = prepare(request);
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
       if (sensitiveOperation(request)) throw new IdempotencyError('transactional_required');
+      // Set when a post-miss check threw a StoredRejection: its result replaces the handler's.
+      let rejected: HandlerResult | undefined;
       const claimed = await transaction(db, request, report, async (trx) => {
         if (!(await lockScope(trx, prepared.scope))) return busyResponse(trx, prepared, request);
         return boundedClaim(trx, async () => {
@@ -596,7 +617,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
               }
               // An expired lease is taken over like a missing key: ④a runs before the takeover.
               if (!checked) {
-                await afterMiss(request, trx);
+                rejected = await afterMiss(request, trx);
                 checked = true;
                 now = clock.now();
               }
@@ -612,7 +633,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
               if (taken !== undefined) return taken;
             } else {
               if (!checked) {
-                await afterMiss(request, trx);
+                rejected = await afterMiss(request, trx);
                 checked = true;
                 now = clock.now();
               }
@@ -631,9 +652,10 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
         });
       });
       if ('source' in claimed) return claimed;
+      const stored = rejected;
       let result: ReturnType<typeof handlerResponse>;
       try {
-        result = handlerResponse(await handler());
+        result = handlerResponse(stored === undefined ? await handler() : stored);
       } catch (error) {
         // The handler's error is the answer; a failed cleanup must not replace it (B1-01zt ③).
         // The row stays processing until its lease expires (40901 meanwhile, then a takeover).
@@ -654,13 +676,14 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
       return transaction(db, request, report, async (trx) => {
         if (!(await lockScope(trx, prepared.scope))) return busyResponse(trx, prepared, request);
+        let rejected: HandlerResult | undefined;
         const claim = await boundedClaim(trx, async () => {
           let checked = false;
           for (;;) {
             const row = await findRow(trx, prepared.scope);
             if (row !== undefined) return existingResponse(row, prepared.hash, request.traceId);
             if (!checked) {
-              await afterMiss(request, trx);
+              rejected = await afterMiss(request, trx);
               checked = true;
             }
             const inserted = await insertRow(
@@ -674,7 +697,8 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
           }
         });
         if ('source' in claim) return claim;
-        const result = handlerResponse(await handler(trx));
+        const stored = rejected;
+        const result = handlerResponse(stored === undefined ? await handler(trx) : stored);
         if (!result.store) throw new RollbackResponse(result.response);
         // This processing row has never been visible outside this transaction. The unique
         // constraint reserves the key before any business writes and excludes abandonment.
