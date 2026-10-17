@@ -7,7 +7,7 @@ type: impl
 # 资金线 SnapshotBeneficiaryResolver 由资金线自己接 growth 的回放端口（D29）。邀请绑定（上级关系的产生）不在本任务。Codex 实现（approvals #30），Claude 写规则测试，Claude 新子代理评审。
 refs: []
 refs_hash: {}
-deps: [B1-11a, B1-02i]
+deps: [B1-11a, B1-02i, B1-11o]
 paths:
   - 'apps/api/src/modules/growth/**'
   - 'apps/api/src/modules/identity/**'
