@@ -10,7 +10,16 @@ import { expect } from 'vitest';
 import type { Response } from '../sms-codes/http-kit.ts';
 import { fixture as meFixture, ME, NICKNAME, type Kit } from '../me/http-kit.ts';
 
-export { openKit, closeKit, me, ME, NICKNAME, type Kit } from '../me/http-kit.ts';
+export {
+  openKit,
+  closeKit,
+  me,
+  ME,
+  NICKNAME,
+  DEFAULT_AVATAR,
+  DEFAULT_AVATAR_URL,
+  type Kit,
+} from '../me/http-kit.ts';
 
 const ROOT = new URL('../../../../', import.meta.url);
 type UpdateModule =
@@ -135,11 +144,15 @@ export async function nicknameFixture(kit: Kit, options: NicknameOptions = {}) {
 }
 export type NicknameFixture = Awaited<ReturnType<typeof nicknameFixture>>;
 
-/** The nickname columns of a user row (what a change may touch). */
+/**
+ * The nickname columns of a user row (what a change may touch), plus avatar (what a change must
+ * never touch: MVP avatars are not editable, OPS-13 / 04 §6.1).
+ */
 export async function columns(f: NicknameFixture) {
   const row = await f.row();
   return {
     nickname: row.nickname,
+    avatar: row.avatar,
     month: row.nickname_change_month,
     count: Number(row.nickname_change_count),
     row_version: Number(row.row_version),
@@ -256,4 +269,44 @@ export function gatedReview(n: number) {
     },
   };
   return { calls, port };
+}
+
+/**
+ * `promise` settled within `ms`, else a rejection naming `label` (so a held review, a held row
+ * lock or a never-answering use case fails the test instead of hanging it).
+ */
+export async function within<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms: ${label}`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * A review that does not answer until the test calls `answer(verdict)`. `reached` resolves when
+ * the use case has entered review, so the test can look at the row while the review is pending.
+ */
+export function heldReview() {
+  const calls: ReviewInput[] = [];
+  let entered!: () => void;
+  const reached = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  let answer!: (verdict: Verdict) => void;
+  const verdict = new Promise<Verdict>((resolve) => {
+    answer = resolve;
+  });
+  const port: ReviewPort = {
+    async review(input) {
+      calls.push(input);
+      entered();
+      return verdict;
+    },
+  };
+  return { calls, port, reached, answer };
 }

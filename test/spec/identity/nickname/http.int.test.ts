@@ -8,6 +8,8 @@ import {
   changeLines,
   closeKit,
   columns,
+  DEFAULT_AVATAR,
+  DEFAULT_AVATAR_URL,
   exhaustedError,
   fieldsError,
   FIXTURE_MONTH,
@@ -47,7 +49,12 @@ it('[AC-B1-20d#1] 成功改昵称：回 {code:0,data:{}}，存去首尾空白后
   expect(after.count).toBe(1);
   expect(after.row_version).toBe(before.row_version + 1);
   expect(after.updated_at).toBe(kit.clock.now().getTime());
-  expect(me(kit, await f.get()).nickname).toBe('小狸');
+  // Only the nickname: the avatar stays the default (OPS-13; 04 §6.1 头像 MVP 不可改).
+  expect(before.avatar).toBe(DEFAULT_AVATAR);
+  expect(after.avatar).toBe(DEFAULT_AVATAR);
+  const read = me(kit, await f.get());
+  expect(read.nickname).toBe('小狸');
+  expect(read.avatar_url).toBe(DEFAULT_AVATAR_URL);
 });
 
 for (const [label, nickname, expected] of [

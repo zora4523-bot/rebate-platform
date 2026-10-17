@@ -2,7 +2,9 @@
 // error, the prod fail-close review, check order, concurrency). Real PG through the me kit; the
 // use case is built inside each test (its skeleton throws NotImplemented until implemented).
 // Sources: 08 BR-ID-39 (+ 细则), BR-AI-18 (fail-close); 10 AC-S1-61 ④⑤; task brief §9.3 #5–#7,
-// #10, #11, §9.4.
+// #10, #11, §9.4; review-first (保存前审核) and no row lock held over the review: §9.3 #5, #10.
+import { setTimeout as delay } from 'node:timers/promises';
+import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { memoryLogger } from '../sms-codes/kit.ts';
 import {
@@ -11,12 +13,15 @@ import {
   columns,
   FIXTURE_MONTH,
   gatedReview,
+  heldReview,
+  me,
   NICKNAME,
   nicknameFixture,
   nicknameService,
   openKit,
   reviewModule,
   scriptedReview,
+  within,
   type Kit,
   type UpdateResult,
 } from './kit.ts';
@@ -164,3 +169,49 @@ it('[AC-B1-20d#11] 并发时已用 2 次 → 5 个里恰 1 个成功，计数为
   expect(results.filter((result) => result.code === 30415)).toHaveLength(4);
   expect((await columns(f)).count).toBe(3);
 });
+
+for (const [verdict, expected, after] of [
+  ['pass', { code: 0 }, { nickname: '小狸', month: FIXTURE_MONTH, count: 2 }],
+  ['hit', SENSITIVE, { nickname: NICKNAME, month: FIXTURE_MONTH, count: 1 }],
+] as const) {
+  it(`[AC-B1-20d#16] 先审核、后保存：审核未返回前库里与 GET /v1/me 仍是旧昵称与旧计数、行未被锁；审核 ${verdict} 后才定结果`, async () => {
+    const f = await nicknameFixture(kit, { month: FIXTURE_MONTH, count: 1 });
+    const before = await columns(f);
+    const held = heldReview();
+    const { logger, lines } = memoryLogger();
+    const service = await nicknameService(kit, held.port, logger);
+    const pending = service.update({ appId: f.appId, userId: f.uid, nickname: '小狸' });
+    pending.catch(() => undefined);
+    await within(
+      Promise.race([
+        held.reached,
+        pending.then(() => {
+          throw new Error('the change settled before its review answered');
+        }),
+      ]),
+      3_000,
+      'the use case entering review',
+    );
+    // Let any write started alongside the review land before looking.
+    await delay(200);
+    expect(held.calls).toEqual([{ appId: f.appId, text: '小狸' }]);
+    // Another connection sees the old row: nothing was saved ahead of the review.
+    expect(await columns(f)).toEqual(before);
+    expect(me(kit, await f.get()).nickname).toBe(NICKNAME);
+    // And the row is not locked while the review is pending (§9.3 #10).
+    await within(
+      kit.suite.db.transaction().execute(async (trx) => {
+        await sql`SELECT id FROM app.users WHERE app_id = ${f.appId} AND id = ${f.uid}
+          FOR UPDATE NOWAIT`.execute(trx);
+      }),
+      3_000,
+      'locking the user row during the review',
+    );
+    expect(changeLines(lines)).toEqual([]);
+
+    held.answer(verdict);
+    expect(await within(pending, 3_000, 'the change after its review answered')).toEqual(expected);
+    expect(await columns(f)).toMatchObject(after);
+    expect(changeLines(lines)).toHaveLength(verdict === 'pass' ? 1 : 0);
+  });
+}
