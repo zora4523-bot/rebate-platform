@@ -65,3 +65,7 @@ export const BIND_PHONE = Symbol('BIND_PHONE');
 export const ME = Symbol('IDENTITY_ME');
 /** Cross-module read ports of GET /v1/me, assembled by app.module. */
 export const ME_READ_PORTS = Symbol('IDENTITY_ME_READ_PORTS');
+/** Nickname content review, selected by environment. */
+export const NICKNAME_REVIEW = Symbol('IDENTITY_NICKNAME_REVIEW');
+/** The nickname update service, or null without the database. */
+export const UPDATE_NICKNAME = Symbol('IDENTITY_UPDATE_NICKNAME');

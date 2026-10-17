@@ -34,6 +34,12 @@ import {
 } from './application/bind-phone.ts';
 import { createTipsService, type TipsService } from './application/tips.ts';
 import { createMeService, type MeService, type MeReadPorts } from './application/me.ts';
+import {
+  createUpdateNicknameService,
+  type UpdateNicknameService,
+} from './application/update-nickname.ts';
+import type { NicknameReviewPort } from './ports/nickname-review.ts';
+import { createNicknameReview } from './infra/nickname-review.ts';
 import { createH5TokenService, type H5TokenService } from './application/h5-token.ts';
 import { STEP_UP_CHECK, createStepUpCheck } from './application/step-up-verify.ts';
 import {
@@ -84,6 +90,7 @@ import {
   LOGOUT,
   ME,
   ME_READ_PORTS,
+  NICKNAME_REVIEW,
   OAUTH_ATTEMPTS,
   OAUTH_LOGIN,
   REFRESH,
@@ -95,6 +102,7 @@ import {
   TOKEN_CHECK,
   TOKEN_KEYS,
   TOKEN_SERVICE,
+  UPDATE_NICKNAME,
 } from './application/tokens.ts';
 import { ConsentsController } from './http/public/consents.controller.ts';
 import { BindPhoneController } from './http/public/bind-phone.controller.ts';
@@ -687,6 +695,23 @@ export class IdentityModule {
           inject: [CLOCK, { token: DB, optional: true }],
           useFactory: (clock: Clock, db?: Kysely<Database>): TipsService | null =>
             db === undefined ? null : createTipsService({ db, clock }),
+        },
+        {
+          provide: NICKNAME_REVIEW,
+          inject: [APP_CONFIG],
+          useFactory: (config: AppConfig): NicknameReviewPort =>
+            createNicknameReview(config.appEnv),
+        },
+        {
+          provide: UPDATE_NICKNAME,
+          inject: [CLOCK, ROOT_LOGGER, NICKNAME_REVIEW, { token: DB, optional: true }],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            review: NicknameReviewPort,
+            db?: Kysely<Database>,
+          ): UpdateNicknameService | null =>
+            db === undefined ? null : createUpdateNicknameService({ db, clock, logger, review }),
         },
         {
           provide: ME,
