@@ -40,7 +40,8 @@ export const SECTIONS: Preview['sections'] = [
   },
 ];
 
-export const appId = () => `f109e_${randomUUID().replaceAll('-', '')}`;
+// X-App-Id is at most 32 characters (contract AppId): f109e_ + 26 hex.
+export const appId = () => `f109e_${randomUUID().replaceAll('-', '').slice(0, 26)}`;
 export const hash = (token: string) => createHash('sha256').update(token, 'utf8').digest('hex');
 
 export function assertRoute(app: HttpApp, method: 'GET' | 'POST', path: string) {
