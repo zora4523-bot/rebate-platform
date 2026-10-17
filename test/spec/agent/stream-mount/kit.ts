@@ -13,7 +13,7 @@
 // Everything under test is built inside tests (never in hooks), so the NotImplemented of the
 // skeleton reddens each test itself. Expected values stay in the rule tests or are read from
 // contracts/texts.default.json.
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import type { DB } from '@couli/db';
@@ -165,16 +165,49 @@ function callerOf(appId: string, deviceId: string, userId: string | null, phoneB
   return caller;
 }
 
-/** A logged-in caller on real users / devices rows; phoneBound as given (default true). */
+/**
+ * A logged-in caller on real users / devices rows; phoneBound as given (default true). A bound
+ * phone is real identity data: users.phone_hmac and users.phone_cipher are set (synthetic values),
+ * an unbound user has both null, so the stream entry can derive it from the account itself.
+ */
 export async function newMember(
   db: Kysely<DB>,
   options: { appId?: string; phoneBound?: boolean } = {},
 ): Promise<AgentCaller> {
   const appId = options.appId ?? APP;
+  const phoneBound = options.phoneBound ?? true;
   connect(db);
-  const userId = await newUser({ app_id: appId });
+  const userId = await newUser({
+    app_id: appId,
+    ...(phoneBound
+      ? {
+          phone_hmac: randomBytes(32).toString('hex'),
+          phone_cipher: Buffer.from(`synthetic-phone-cipher-${randomUUID()}`),
+        }
+      : { phone_hmac: null, phone_cipher: null }),
+  });
   const deviceId = await newDevice(db, appId, userId);
-  return callerOf(appId, deviceId, userId, options.phoneBound ?? true);
+  return callerOf(appId, deviceId, userId, phoneBound);
+}
+
+/** The same account on another real devices row (a second phone of the user). */
+export async function anotherDevice(db: Kysely<DB>, caller: AgentCaller): Promise<AgentCaller> {
+  const deviceId = await newDevice(db, caller.appId, caller.userId);
+  return callerOf(caller.appId, deviceId, caller.userId, caller.phoneBound);
+}
+
+/** The guest's own device after the user logs in on it (devices.user_id set to the account). */
+export async function loginOnDevice(
+  db: Kysely<DB>,
+  guest: AgentCaller,
+  member: AgentCaller,
+): Promise<AgentCaller> {
+  await db
+    .updateTable('devices')
+    .set({ user_id: member.userId })
+    .where('id', '=', guest.deviceId)
+    .execute();
+  return callerOf(guest.appId, guest.deviceId, member.userId, member.phoneBound);
 }
 
 /** A guest on a real devices row. */
