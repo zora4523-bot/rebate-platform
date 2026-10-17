@@ -1,8 +1,11 @@
-// content's /v1 client routes (F1-02c, F1-02e, F1-02f): config, app-versions check and articles.
+// content's /v1 client routes (F1-02c, F1-02e, F1-02f, F1-09d): config, app-versions check,
+// articles and pages.
 // app.module imports this module on
 // the api entry only and passes identity's request viewer as the ConfigViewerContext provider
 // (content never imports identity). Config reads use a process-wide ContentReader; article reads
-// always query the primary handle DB afresh. Without a database handle the routes still
+// always query the primary handle DB afresh; page reads cache the page pointer and version rows
+// (F1-09d) and filter per request. app.module may hand in the ContentReader so the version check
+// shares one cache with risk's minimum-version gate (F1-02e followup). Without a database handle the routes still
 // registers and every request fails closed (50001).
 //
 // Also compiled by the `test` project: a class decorator only (no parameter decorators or
@@ -32,6 +35,9 @@ import { ArticlesController } from './http/public/articles.controller.ts';
 import { createKyselyArticleStore } from './infra/kysely-article-store.ts';
 import { AppVersionsController } from './http/public/app-versions.controller.ts';
 import { createKyselyContentStore } from './infra/kysely-content-store.ts';
+import { PageReader } from './application/page-reader.ts';
+import { PagesController } from './http/public/pages.controller.ts';
+import { createKyselyPageStore } from './infra/kysely-page-store.ts';
 
 const UNAVAILABLE_READER: ContentReader = {
   appVersion: () => Promise.reject(new Error('content: version reads need the database')),
@@ -40,10 +46,22 @@ const UNAVAILABLE_READER: ContentReader = {
 };
 
 const CONTENT_READER = Symbol('CONTENT_READER');
+const CONTENT_READER_SOURCE = Symbol('CONTENT_READER_SOURCE');
 
 export interface ContentPublicPorts {
   /** Request-scoped provider of the caller (identity's viewer on the api entry). */
   readonly viewerContext: Omit<FactoryProvider<ConfigViewerContext>, 'provide'>;
+  /**
+   * The process-wide reader of config_items and app_versions (null: no database handle). When
+   * absent the module builds its own over DB.
+   */
+  readonly contentReader?: Omit<FactoryProvider<ContentReader | null>, 'provide'>;
+}
+
+function ownContentReader(db: Kysely<Database> | undefined, clock: Clock): ContentReader | null {
+  if (db === undefined) return null;
+  const store = createKyselyContentStore(db);
+  return new CachedContentReader(store, clock, store);
 }
 
 @Module({})
@@ -51,7 +69,7 @@ export class ContentPublicModule {
   static forApi(ports: ContentPublicPorts): DynamicModule {
     return {
       module: ContentPublicModule,
-      controllers: [ConfigController, ArticlesController, AppVersionsController],
+      controllers: [ConfigController, ArticlesController, AppVersionsController, PagesController],
       providers: [
         {
           provide: ArticleReader,
@@ -60,13 +78,22 @@ export class ContentPublicModule {
             new ArticleReader(db === undefined ? null : createKyselyArticleStore(db), clock),
         },
         {
-          provide: CONTENT_READER,
+          provide: PageReader,
           inject: [{ token: DB, optional: true }, CLOCK],
-          useFactory: (db: Kysely<Database> | undefined, clock: Clock): ContentReader => {
-            if (db === undefined) return UNAVAILABLE_READER;
-            const store = createKyselyContentStore(db);
-            return new CachedContentReader(store, clock, store);
-          },
+          useFactory: (db: Kysely<Database> | undefined, clock: Clock): PageReader =>
+            new PageReader(db === undefined ? null : createKyselyPageStore(db), clock),
+        },
+        {
+          provide: CONTENT_READER_SOURCE,
+          ...(ports.contentReader ?? {
+            inject: [{ token: DB, optional: true }, CLOCK],
+            useFactory: ownContentReader,
+          }),
+        },
+        {
+          provide: CONTENT_READER,
+          inject: [CONTENT_READER_SOURCE],
+          useFactory: (reader: ContentReader | null): ContentReader => reader ?? UNAVAILABLE_READER,
         },
         {
           provide: ClientConfigService,
