@@ -141,8 +141,14 @@ for (const [phone, status, code] of [
     const c = await client(f, { phone });
     const step = await c.stepUp();
     const key = randomUUID();
-    await refusal(await c.send('PUT', PAYOUT, { key }), status, code);
-    await refusal(await c.send('PUT', PAYOUT, { key, stepUp: step.token }), status, code);
+    const first = await c.send('PUT', PAYOUT, { key });
+    await refusal(first, status, code);
+    const replay = await c.send('PUT', PAYOUT, { key, stepUp: step.token });
+    if (code === 30304) {
+      // E21：回放体保留首次请求的 trace_id，响应头使用本次请求的追踪号。
+      expect(replay.statusCode).toBe(422);
+      expect(replay.json()).toEqual(first.json());
+    } else await refusal(replay, status, code);
     expect(f.stepUpCalls).not.toContain(step.jti);
     expect(await f.redis.namespace('step_up').get(step.jti)).toBeNull();
     expect(f.handled(c.uid)).toBe(0);
@@ -208,8 +214,11 @@ it('[AC-B1-02za#12] ①签名、②令牌、③App 越权和④缺少幂等键�
   const c = await client(f);
   await refusal(await c.send('PUT', PAYOUT, { headers: { 'x-sign': '0'.repeat(64) } }), 401, 10401);
   await refusal(await c.send('PUT', PAYOUT, { token: 'not-a-jwt' }), 401, 10002);
-  const otherApp = await c.accessWithClaims({ app_id: 'different_app' });
-  await refusal(await c.send('PUT', PAYOUT, { token: otherApp }), 403, 10403);
+  await refusal(
+    await c.send('PUT', PAYOUT, { headers: { 'x-app-id': 'different_app' } }),
+    403,
+    10403,
+  );
   await refusal(await c.send('PUT', PAYOUT, { key: null }), 400, 20001, false);
   await refusal(await c.send('PUT'), 403, 10005);
 });
