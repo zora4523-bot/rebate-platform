@@ -1097,8 +1097,9 @@ export interface paths {
          *     not signed the current version, or when the current version is marked as requiring a new
          *     signature and the signed version is older. signed_version / signed_at are the latest
          *     signature, null when never signed. The version comes from server configuration; the
-         *     contract does not promise how it is managed in the admin console. Read-only, so an
-         *     h5_token may read it. Not realname → 30304.
+         *     contract does not promise how it is managed in the admin console. Native App only, the
+         *     same as signing (04 §6.1): an h5_token gets 10403 even though this is a read. Not
+         *     realname → 30304.
          */
         get: operations["getLaborAgreement"];
         put?: never;
