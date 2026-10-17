@@ -265,6 +265,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "getPage",
+    "method": "GET",
+    "path": "/v1/pages/:page_key",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "previewPage",
     "method": "GET",
     "path": "/v1/pages/:page_key/preview",
@@ -895,6 +905,96 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "operationId": "adminRestoreBuiltinPlatformIcon",
     "method": "POST",
     "path": "/admin/v1/platform-icons/:key/restore-builtin",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListPageConfigs",
+    "method": "GET",
+    "path": "/admin/v1/pages",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetPageConfig",
+    "method": "GET",
+    "path": "/admin/v1/pages/:page_key",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListPageConfigVersions",
+    "method": "GET",
+    "path": "/admin/v1/pages/:page_key/versions",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreatePageConfigVersion",
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/versions",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetPageConfigVersion",
+    "method": "GET",
+    "path": "/admin/v1/pages/:page_key/versions/:version",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminPublishPageConfig",
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/publish",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUpdatePageConfigGray",
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/gray",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRollbackPageConfig",
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/rollback",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreatePagePreviewToken",
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/preview-tokens",
     "gate": null,
     "sessionScopes": [
       "full"

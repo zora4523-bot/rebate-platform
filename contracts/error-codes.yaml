@@ -222,6 +222,7 @@ codes:
         - kill_switch
         - user_risk_state
         - union_binding
+        - page
     sources: [BR-FUND-01, BR-FUND-04, BR-ATTR-20, BR-WDR-08, BR-ID-36, BR-WDR-17, BR-INV-21]
   - code: 20903
     http: 409

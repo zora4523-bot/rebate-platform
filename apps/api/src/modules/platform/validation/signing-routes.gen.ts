@@ -128,6 +128,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/pages/:page_key",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/v1/pages/:page_key/preview",
     "signed": false
   },
@@ -439,6 +444,51 @@ export const CONTRACT_SIGNING_ROUTES = [
   {
     "method": "POST",
     "path": "/admin/v1/platform-icons/:key/restore-builtin",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pages",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pages/:page_key",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pages/:page_key/versions",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/versions",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pages/:page_key/versions/:version",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/publish",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/gray",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/rollback",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/preview-tokens",
     "signed": false
   },
   {
