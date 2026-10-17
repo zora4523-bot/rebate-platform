@@ -11956,7 +11956,9 @@ components:
         pay_amount_fen:
           $ref: '#/components/schemas/NullableFen'
         quantity:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int32
           minimum: 1
         order_no:
@@ -12132,7 +12134,9 @@ components:
         pay_amount_fen:
           $ref: '#/components/schemas/NullableFen'
         quantity:
-          type: integer
+          type:
+            - integer
+            - 'null'
           format: int32
           minimum: 1
         order_no:
