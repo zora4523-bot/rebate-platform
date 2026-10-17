@@ -1,7 +1,7 @@
 import type { DB } from '@couli/db';
 import type { OrderPlatformState } from '@couli/domain';
 import type { Kysely, Selectable, Transaction } from 'kysely';
-import type { Clock } from '../../platform/index.ts';
+import type { Clock, EventBus } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionOrder } from '../../union/index.ts';
 import type { BindingRow } from '../domain/attribution.ts';
 import type { StatusMap } from '../domain/status-map.ts';
@@ -27,12 +27,14 @@ export interface ImportedOrder {
 }
 
 export interface OrderPipelineResult {
-  readonly kind: 'inserted' | 'dropped' | 'pending' | 'unchanged' | 'stale' | 'app_conflict';
+  readonly kind:
+    'inserted' | 'updated' | 'dropped' | 'pending' | 'unchanged' | 'stale' | 'app_conflict';
   readonly order_id?: string;
   readonly reason?: string;
 }
 
 export interface OrderPipelineDeps {
+  readonly events?: Pick<EventBus, 'publish'>;
   readonly db: Kysely<DB>;
   readonly clock: Clock;
   readonly statusMaps: (platform: RegisteredPlatform) => StatusMap;
