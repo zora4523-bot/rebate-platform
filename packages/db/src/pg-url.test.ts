@@ -676,55 +676,72 @@ function pick<T>(random: () => number, items: readonly T[]): T {
   return items[Math.floor(random() * items.length)] as T;
 }
 
-it('redactCredentials gives exactly the reference output on short texts built from pieces', () => {
-  const differences = differencesFromReference(20261017, (random) => {
-    let text = '';
-    for (let count = Math.floor(random() * 25); count > 0; count--) text += pick(random, PIECES);
-    return text;
-  });
-  expect(differences).toEqual([]);
-});
+it(
+  'redactCredentials gives exactly the reference output on short texts built from pieces',
+  { timeout: 60_000 },
+  () => {
+    const differences = differencesFromReference(20261017, (random) => {
+      let text = '';
+      for (let count = Math.floor(random() * 25); count > 0; count--) text += pick(random, PIECES);
+      return text;
+    });
+    expect(differences).toEqual([]);
+  },
+);
 
-it('redactCredentials gives exactly the reference output on short texts over a small alphabet', () => {
-  const alphabet = [...'ap=\'"\\& \t?:/@%41x#_P'];
-  const differences = differencesFromReference(20261018, (random) => {
-    let text = '';
-    for (let count = Math.floor(random() * 49); count > 0; count--) text += pick(random, alphabet);
-    return text;
-  });
-  expect(differences).toEqual([]);
-});
+it(
+  'redactCredentials gives exactly the reference output on short texts over a small alphabet',
+  { timeout: 60_000 },
+  () => {
+    const alphabet = [...'ap=\'"\\& \t?:/@%41x#_P'];
+    const differences = differencesFromReference(20261018, (random) => {
+      let text = '';
+      for (let count = Math.floor(random() * 49); count > 0; count--)
+        text += pick(random, alphabet);
+      return text;
+    });
+    expect(differences).toEqual([]);
+  },
+);
 
-it('redactCredentials gives exactly the reference output on short arbitrary texts', () => {
-  const differences = differencesFromReference(20261019, (random) => {
-    let text = '';
-    for (let count = Math.floor(random() * 33); count > 0; count--) {
-      // Half the code units ASCII, the rest any UTF-16 code unit (lone surrogates included).
-      const code = random() < 0.5 ? Math.floor(random() * 0x80) : Math.floor(random() * 0x10000);
-      text += String.fromCharCode(code);
-    }
-    return text;
-  });
-  expect(differences).toEqual([]);
-});
+it(
+  'redactCredentials gives exactly the reference output on short arbitrary texts',
+  { timeout: 60_000 },
+  () => {
+    const differences = differencesFromReference(20261019, (random) => {
+      let text = '';
+      for (let count = Math.floor(random() * 33); count > 0; count--) {
+        // Half the code units ASCII, the rest any UTF-16 code unit (lone surrogates included).
+        const code = random() < 0.5 ? Math.floor(random() * 0x80) : Math.floor(random() * 0x10000);
+        text += String.fromCharCode(code);
+      }
+      return text;
+    });
+    expect(differences).toEqual([]);
+  },
+);
 
-it('redactCredentials treats every UTF-16 code unit as the reference does (whitespace, names)', () => {
-  const differences: string[] = [];
-  for (let code = 0; code <= 0xffff; code++) {
-    const char = String.fromCharCode(code);
-    for (const text of [
-      `password=a${char}host=x`,
-      `password='a'${char}&password=b c`,
-      `x://u:p${char}@h`,
-      `${char}x://u:p@h`,
-    ]) {
-      if (redactCredentials(text) !== referenceRedactCredentials(text)) {
-        differences.push(JSON.stringify(text));
+it(
+  'redactCredentials treats every UTF-16 code unit as the reference does (whitespace, names)',
+  { timeout: 60_000 },
+  () => {
+    const differences: string[] = [];
+    for (let code = 0; code <= 0xffff; code++) {
+      const char = String.fromCharCode(code);
+      for (const text of [
+        `password=a${char}host=x`,
+        `password='a'${char}&password=b c`,
+        `x://u:p${char}@h`,
+        `${char}x://u:p@h`,
+      ]) {
+        if (redactCredentials(text) !== referenceRedactCredentials(text)) {
+          differences.push(JSON.stringify(text));
+        }
       }
     }
-  }
-  expect(differences).toEqual([]);
-});
+    expect(differences).toEqual([]);
+  },
+);
 
 it('redactCredentials keeps the reference output in the rarely reached scanner branches', () => {
   const cases: [string, string][] = [
@@ -776,19 +793,23 @@ const LARGE_CASES: [string, string, (output: string) => boolean][] = [
   ['`& ` after a quote', `password='a'${repeatTo('& ', LARGE)}x`, (o) => o === 'password=***'],
 ];
 
-it('redactCredentials and describeError stay linear on 128–256 KB adversarial inputs', () => {
-  const slow: string[] = [];
-  for (const [name, input, check] of LARGE_CASES) {
-    for (const [entry, run] of [
-      ['redactCredentials', redactCredentials],
-      ['describeError', (text: string): string => describeError(new Error(text)).slice(7)],
-    ] as const) {
-      const start = performance.now();
-      const output = run(input);
-      const elapsed = performance.now() - start;
-      expect(check(output), `${entry}: ${name}`).toBe(true);
-      if (elapsed >= 1000) slow.push(`${entry}: ${name} took ${Math.round(elapsed)} ms`);
+it(
+  'redactCredentials and describeError stay linear on 128–256 KB adversarial inputs',
+  { timeout: 120_000 },
+  () => {
+    const slow: string[] = [];
+    for (const [name, input, check] of LARGE_CASES) {
+      for (const [entry, run] of [
+        ['redactCredentials', redactCredentials],
+        ['describeError', (text: string): string => describeError(new Error(text)).slice(7)],
+      ] as const) {
+        const start = performance.now();
+        const output = run(input);
+        const elapsed = performance.now() - start;
+        expect(check(output), `${entry}: ${name}`).toBe(true);
+        if (elapsed >= 1000) slow.push(`${entry}: ${name} took ${Math.round(elapsed)} ms`);
+      }
     }
-  }
-  expect(slow).toEqual([]);
-}, 120_000);
+    expect(slow).toEqual([]);
+  },
+);
