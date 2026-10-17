@@ -1,0 +1,23 @@
+id: B1-02x
+repo: rebate-platform
+title: identity 导出 Agent 调用方上下文读取入口：按 user_id 读是否已绑手机（phoneBound），按设备 ID 读 device_hash（盲索引，与登录 / 风控同口径）；只读，供 stream 入口把 TokenPrincipal 补成 AgentCaller
+type: impl
+# 2026-10-17 编排者（staging-b3-term）：B3-03f 的 Codex 实现 blocked——stream 入口的 TokenPrincipal 只有用户、应用、会话、设备 ID 与 scope，没有 phoneBound / deviceHash，identity/index.ts 也无公开读取口（访问端口 10005 与游客额度键需要它们）。照 B1-02r 先例由 B3 线做，只新增只读导出，不改身份现有行为；编号已在 B3-lane/notices.md 预占并告知身份线。
+# 依据：BR-AI-11（Agent 可用的身份范围）、BR-ID-03（未绑手机主体的限制与游客额度）。分工：Codex 写规则测试，Claude Opus 5.5 实现（负责人 2026-10-17 17:2x），Codex 对抗评审。
+refs: [BR-AI-11, BR-ID-03]
+refs_hash:
+  BR-AI-11: 0ce4651ba7c3
+  BR-ID-03: bb1441748c73
+deps: [B1-02r]
+paths:
+  - 'apps/api/src/modules/identity/ports/agent-caller.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+test_paths:
+  - 'test/spec/identity/agent-caller/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/agent-caller/**'
+status: todo
+pr: null
