@@ -1,0 +1,35 @@
+{
+  "task": "CT-07a",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "6a55309f17e44f5447630e22a33817d933c84784",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). contracts/home-schema.json describes the home SDUI page (sections with id, type, min_app_version per platform, condition any/yes/no, data_source per type, jump targets {route, params}); 8 golden and 13 invalid fixtures checked by a contracts-ts unit test (schema validity, routes in routes.json, NoticeItem / RouteTarget equal to the contract, AppVersion and PlatformCode shapes). openapi.yaml only changes descriptions: page sections point to home-schema.json, rollback goes back to the full version with the latest publish_at (same instant: higher version). Orchestrator defaults P3, C1–C8 in couli-runs CONTENT-client/decisions-pending.md; checks F1-09c does not run are left to F1-09f (couli-runs F1-09f/followups.md). No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "023ae60da1ee01444c0579ff4da9e4fb2b0619ea",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "ab0bdcc5c07c096b42a2296b491a4cb5e5b6d0ab",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
