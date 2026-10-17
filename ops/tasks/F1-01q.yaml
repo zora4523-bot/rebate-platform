@@ -1,0 +1,24 @@
+id: F1-01q
+repo: rebate-platform
+title: H5 App 内入口的应用级 API 客户端接线：按环境基址、经 bridge（app.getEnv / auth.getH5Token）取请求头与令牌构造 createApiClient，用 React context 提供给路由页面（页面经 hook 取用），并加媒体 CDN 域配置入口（供正文图片允许域）
+type: impl
+# 2026-10-18 入账（前端线 f1-frontend-7）。F1-03a（规则页）Codex 评审 r1 的 S1：真实入口没有注入 api，/rules 永远显示占位页；apps/h5 只有 createApiClient（shared/api），没有应用级构造与注入。
+# approvals 第 34 条：Claude 实现、Codex 写规则测试与评审。请求头按契约 components.parameters（X-App-Id、X-Platform、X-App-Version、X-Build、X-Channel 等，以 contracts/openapi.yaml 为准）由 bridge app.getEnv 结果填充，令牌经 bridge-sdk 的令牌管理器（auth.getH5Token），不在 H5 自造；
+# 不在 App 内（无 bridge）时按 H5 现有降级（站外落地页不走本客户端）。媒体 CDN 域：从环境（构建期注入）或 /v1/config 读，二选一在实现时按契约定，并写进 shared/env。CSP（img-src）另立任务。
+refs: []
+refs_hash: {}
+deps: [F1-01p]
+paths:
+  - 'apps/h5/src/shared/api/**'
+  - 'apps/h5/src/shared/env.ts'
+  - 'apps/h5/src/entries/app/app-shell.tsx'
+  - 'apps/h5/src/entries/app/shell.ts'
+  - 'apps/h5/src/entries/app/main.tsx'
+test_paths:
+  - 'test/spec/frontend/h5-app-api/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-app-api/**'
+status: todo

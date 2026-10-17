@@ -5,9 +5,10 @@ type: impl
 # 2026-10-18 入账（前端线 f1-frontend-7）。approvals 第 34 条：Claude 实现（Opus 5.5），Codex 先写规则测试与浏览器测试并对抗评审；截图对照定稿画板 Rules（design-hifi，10-05 定稿批）。
 # 规划 11 §2.6 页面任务试行首选页；接口 GET /v1/articles?category=rule、/v1/articles/{article_id}（F1-02f 已合并）；正文格式与白名单见编排 2026-10-17 裁定（F1-frontend/progress.md）。
 # 渲染组件放 apps/h5/src/components/article-body/**，F1-03b / F1-03c 复用；文案键放 apps/h5/src/texts/rules.ts。内容安全策略（05：随 F1-03 首批页面上线前）另行入账，不在本任务。
+# 2026-10-18 补：Codex 评审 r1 指出真实入口未注入 api（页面只显示占位），依赖 F1-01q 的应用级 API 客户端；F1-01q 合并后本任务实现末轮改为经 hook 取用，并修列表分页。
 refs: []
 refs_hash: {}
-deps: [F1-01p, F1-02f]
+deps: [F1-01p, F1-02f, F1-01q]
 paths:
   - 'apps/h5/src/components/article-body/**'
   - 'apps/h5/src/entries/app/pages/rules/**'
