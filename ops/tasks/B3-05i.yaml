@@ -5,6 +5,7 @@ type: impl
 # 2026-10-17 编排者（staging-b3-term）：B3-04c Codex 评审 r1 S1——quote 的 modelView 拿不到报价卡的真实 card_id（numberCard 在工具返回后才分配，runTool 原样回传 modelView），同会话后续无法引用该卡；B3-04b 的规则测试已注入 cardReference(ctx, index) 端口但无实现。core（B3-05b 已合并）没有回填机制，只能在 core 补。
 # 约定由本任务定：工具在 modelView 里用卡片下标占位（或返回 cardReference 取号），core 发卡成功后替换为实际 card_id；失败 / 丢弃的卡对应引用移除，不留空号。不改已合并工具的对外形状以外的行为。
 # 依据：BR-AI-05（模型可见内容只给卡片引用、不含金额）、BR-AI-06（卡片由服务端组装）。分工：Codex 写规则测试，Claude Opus 5.5 实现（负责人 2026-10-17 17:2x，Agent 编排核心按困难任务用高推理），Codex 对抗评审。风险 RV1。
+# 2026-10-17 编排者：paths 加 stream/run/manager.ts、types.ts——core 只经 RunContext.card 写卡（返回 void），编号在流层 manager 里分配，需给 card 加可选回执回调（只增参数，约 4 行，不改既有行为）；manager.ts 在额度结算路径上，评审按资金清单。
 refs: [BR-AI-05, BR-AI-06]
 refs_hash:
   BR-AI-05: ee8fd647fd43
@@ -12,6 +13,8 @@ refs_hash:
 deps: [B3-05b]
 paths:
   - 'apps/api/src/modules/agent/orchestrator/core/**'
+  - 'apps/api/src/modules/agent/stream/run/manager.ts'
+  - 'apps/api/src/modules/agent/stream/run/types.ts'
 test_paths:
   - 'test/spec/agent/orchestrator-card-refs/**'
 impl: claude
