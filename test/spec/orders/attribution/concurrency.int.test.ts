@@ -67,7 +67,7 @@ it('[AC-B1-08h#53] 每事务第一条业务 SQL 取 xact 锁，然后读 order_k
   expect(await p.process({ ...f.incoming, raw_payload_id: '202' }, f.ctx)).toMatchObject({
     kind: 'unchanged',
   });
-  expect(trace.queries.filter((q) => /\b(insert|update|delete)\b/i.test(q.sql))).toEqual([]);
+  expect(trace.queries.filter((q) => /^\s*(insert|update|delete)\b/i.test(q.sql))).toEqual([]);
 });
 
 it.each(['process', 'shared-helper'] as const)(

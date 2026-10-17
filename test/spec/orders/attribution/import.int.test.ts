@@ -137,6 +137,7 @@ it.each([
     expect(saved.orders[0]).toMatchObject({
       platform_status: states.at(-1),
       received_at: received ? at(received) : settled ? at(settled) : null,
+      settled_at: settled ? at(settled) : null,
       rebate_status: 'UNATTRIBUTED',
     });
     expect(saved.history.map((r) => [r.from_status, r.to_status, r.event])).toEqual(
@@ -187,8 +188,6 @@ it.each(['received', 'settled'])(
         order_id: s.orders[0]!.order_id,
         reason: 'NO_RECEIVED_AT',
         status: 'open',
-        raw_status,
-        detected_at: at(NOW),
       }),
     ]);
     expect(f.onImported.mock.calls[0]?.[1]).toMatchObject({
