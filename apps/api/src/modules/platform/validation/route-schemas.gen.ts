@@ -2884,6 +2884,10 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "description": "Entity id, a UUIDv7 string (04 §5).",
           "minLength": 1,
           "maxLength": 64
+        },
+        "if-none-match": {
+          "type": "string",
+          "maxLength": 512
         }
       },
       "required": [

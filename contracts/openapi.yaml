@@ -1876,7 +1876,8 @@ paths:
         No download address of any kind (拍板第二批 TECH-19). Store choice and checks: BR-ID-01 细则
         「【去更新】打开哪家商店与保存前的核对」. Called on cold start and on return to foreground
         after the recheck interval; read-only and never blocked by the minimum version. Session
-        scopes: accepts deletion_only.
+        scopes: accepts deletion_only. No row for this platform and channel (including an absent
+        X-Channel) → 50001; the client treats it as a failed check (03 §4.4).
       x-auth: none
       x-signed: false
       x-idempotent: false
@@ -3576,6 +3577,10 @@ paths:
         x-auth is optional (04 §6.2): h5_release buckets by user_id when logged in (拍板第二批
         TECH-28) and agent availability depends on the whitelist user (BR-AI-12).
         Session scopes: accepts deletion_only (BR-ID-01 细则「受限会话」).
+        Conditional request (02 §10, 03 §4.3): the 200 response carries a strong ETag whose value
+        without quotes equals data.config_version (04 §10.1); a request whose If-None-Match
+        matches the current ETag under weak comparison gets 304 with no body, and the client
+        keeps its LKG.
       x-auth: optional
       x-signed: false
       x-idempotent: false
@@ -3594,12 +3599,15 @@ paths:
         - $ref: '#/components/parameters/Channel'
         - $ref: '#/components/parameters/TraceId'
         - $ref: '#/components/parameters/OptionalDeviceId'
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
         '200':
           description: The current configuration.
           headers:
             X-Trace-Id:
               $ref: '#/components/headers/TraceId'
+            ETag:
+              $ref: '#/components/headers/ConfigETagOptional'
           content:
             application/json:
               schema:
@@ -3684,6 +3692,13 @@ paths:
                       sha256: 88e2cce43eeadb36ce19668116709ef3f6f44b7b364d4d23fd545d2af826e6da
                       version: 1
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '304':
+          description: Not modified (If-None-Match matched); no body, the client keeps its LKG.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+            ETag:
+              $ref: '#/components/headers/ConfigETag'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         4XX:
@@ -8479,6 +8494,14 @@ components:
       description: device_id issued by POST /v1/devices, when the device is registered.
       schema:
         $ref: '#/components/schemas/Id'
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: The ETag of the client's last good response (LKG); a match gets 304.
+      schema:
+        type: string
+        maxLength: 512
     Timestamp:
       name: X-Timestamp
       in: header
@@ -8961,6 +8984,21 @@ components:
         type: string
         enum:
           - no-cache
+    ConfigETag:
+      required: true
+      description: Strong ETag of the configuration; without quotes it equals data.config_version (04 §10.1).
+      schema:
+        type: string
+        pattern: '^"[0-9A-Za-z._:-]{1,64}"$'
+    ConfigETagOptional:
+      required: false
+      description: |
+        Strong ETag of the configuration on 200; without quotes it equals data.config_version
+        (04 §10.1). A server that delivers it always sends it; a client that finds it missing
+        treats the configuration as having no config_version and sends no If-None-Match.
+      schema:
+        type: string
+        pattern: '^"[0-9A-Za-z._:-]{1,64}"$'
     TraceId:
       required: true
       description: The trace id of the request on every response, the same value as `trace_id` in the body (02 logging); echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.
@@ -12916,6 +12954,14 @@ components:
             $ref: '#/components/schemas/PlatformCode'
           additionalProperties:
             $ref: '#/components/schemas/PlatformSearchStatus'
+        rank_platforms:
+          type: array
+          uniqueItems: true
+          description: |
+            Platforms selectable on the hot list, derived by the server from the channel whitelist
+            in specs/material-channels.yaml (04 §6.3, 04 §10.1). Not a switch.
+          items:
+            $ref: '#/components/schemas/PlatformCode'
     PlatformSearchStatus:
       type: string
       description: Whether search is open for a platform (enum platform_search_status).
@@ -13156,8 +13202,8 @@ components:
       type: object
       description: |
         Top-level keys of /v1/config (04 §10.1, excerpt). Keys added after v0.9 (external_page,
-        link_patterns, external_hosts, app_update, help_links, claim, platform_icons) are
-        optional, so a client keeps reading an older last-good configuration (04 §5「兼容」); the
+        link_patterns, external_hosts, app_update, help_links, claim, platform_icons,
+        lkg_max_age_sec, config_version, bridge_disabled_methods) are optional, so a client keeps reading an older last-good configuration (04 §5「兼容」); the
         server always sends them, except that platform_icons lists only the marks with a published
         replacement image (BR-TEXT-24). jump_tip, clipboard, bridge_origins, auth_tips, compliance and display are not
         shaped by 04 yet and stay free-form; the task that consumes each one types it
@@ -13248,6 +13294,24 @@ components:
           $ref: '#/components/schemas/ConfigClaim'
         platform_icons:
           $ref: '#/components/schemas/ConfigPlatformIcons'
+        lkg_max_age_sec:
+          type: integer
+          format: int32
+          minimum: 1
+          description: How long a last good configuration may be used, in seconds (02 §10, 03 §4.3); default 604800 (7 days).
+        config_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[0-9A-Za-z._:-]+$'
+          description: Release version of this configuration, equal to the response ETag without quotes; saved together with the LKG (04 §10.1, 03 §4.7).
+        bridge_disabled_methods:
+          type: array
+          uniqueItems: true
+          description: Bridge methods disabled remotely; a call answers 90403 method_disabled (03 §5.3). Trial; default empty array.
+          items:
+            type: string
+            pattern: '^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$'
     ConfigPlatformIcon:
       type: object
       description: |
