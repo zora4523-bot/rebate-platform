@@ -10,7 +10,7 @@ type: impl
 # ETag：对最终 data（按人派生之后）做规范化 JSON 的 sha256 取前 32 位 hex，config_version 即该值、ETag 为其加引号（CT-02k 待裁定 ①，编排者默认，见 couli-runs/CONTENT-client/decisions-pending.md）；
 # config_version 自身不进哈希输入。If-None-Match 弱比较（去 W/ 前缀、支持逗号列表与 *）命中 → 304 无 body，带 ETag 与 X-Trace-Id；不加 Cache-Control（待裁定 ④）。
 # getConfig 已非 planned，不需机械提交，故无 mechanical_paths；app.module.ts 只在要改装配时动。
-# 2026-10-17 改为 Codex 实现（未开工，ops/approvals.yaml 第 30 条）：Claude 子代理先写规则测试 → Codex 新只读会话过审 → Codex 经 codex-run.sh impl 实现 → Claude 新子代理评审（第 27 条）。
+# 2026-10-17 改回 Claude 实现（ops/approvals.yaml 第 34 条：未开工的清单任务改回 impl: claude、tester: codex 并移出 tools/guard/codex-impl-tasks.json；本任务无 spec_commit、test(spec) 或实现提交）：Codex 先写规则测试（先红）→ Claude 新子代理过审 → Opus 5.5 实现 → Codex 新只读会话对抗评审（第 27 条）。
 # 规则测试只能写在 test_paths；F1-02c 冻结测试的放宽由 F1-02i 先合并（path-guard-author 拒改别任务冻结测试）。
 refs: []
 refs_hash: {}
@@ -20,8 +20,8 @@ paths:
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/content/config-etag/**'
-impl: codex
-tester: claude
+impl: claude
+tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/content/config-etag/**'

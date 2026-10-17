@@ -1,0 +1,32 @@
+id: F1-09e
+repo: rebate-platform
+title: content：页面预览——后台签发预览 token（POST /admin/v1/pages/{page_key}/preview-tokens）与 GET /v1/pages/{page_key}/preview（只凭后台 token、10 分钟只读）；去掉 adminCreatePagePreviewToken、previewPage 的 planned
+type: impl
+# 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/pages-plan.md §3、§4 R9）。宿主 05 F1-02 pages 行（预览）、F1-09（后台首页配置）。
+# 依据 04 §3.2 l.387 page_preview_tokens（token_hash、expire_at 10 分钟、used_count，写者 content，TECH-11）、§6.2 l.499 preview、§6.6 pages「生成草稿预览二维码」、§11.2 content.page（step-up「–」）、03 §3.6 HomePreview；
+# 规则摘录由编排者摘入任务书第 9 节；契约以 CT-02l 合并后的 adminCreatePagePreviewToken 与既有 previewPage 为准（couli-runs/CT-02l/decision-orchestrator.md 裁定 4、5、7）。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。
+# 要点：签发走 AdminOperationGuard 单个权限点 content.page（无 step-up）；token 随机 ≥32 字节，库里只存 sha256，expire_at = 注入 Clock + 10 分钟（不用 SQL 时钟）；
+# 任意状态的版本都可签（R9），版本不存在 → 20001 data.fields=[version]，页不存在 → 30701；回 {token, page_key, version, expire_at}，不回深链（二维码由后台前端拼，不带主机名）；签发写审计。
+# preview：x-auth none，不接受用户令牌；按 token_hash + page_key 查、未过期才放行，命中 used_count+1；无效 / 过期 / 别的环境签发 / page_key 不符一律 30701 且不区分原因；
+# 返回 token 钉住的那个版本（不走灰度分桶；门槛与人群过滤是否适用按 previewPage 契约说明，契约没写的按「原样返回该版本 sections」并在输出里报）。
+# deps 不含 F1-10c：content.page 只用单个权限点、无 step-up，守卫既有行为即够（核实 platform/http/admin-guard.ts）。R9 采用默认（编排者默认，待编排复核，见 couli-runs/CONTENT-client/decisions-pending.md）。
+# 去掉两条 planned，同 PR 重生成 route-schemas.gen.ts 与 openapi.gen.ts（先例 F1-02c、F1-06w）。契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+refs: []
+refs_hash: {}
+deps: [CT-02l, F1-09a]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+test_paths:
+  - 'test/spec/content/pages-preview/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/pages-preview/**'
+status: todo
+pr: null

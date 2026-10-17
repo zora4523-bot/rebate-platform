@@ -1,0 +1,29 @@
+id: F1-09g
+repo: rebate-platform
+title: content：页面人群条件跨模块读端口——has_parent / union_authorized / has_order 按登录用户判定，补齐 GET /v1/pages/{page_key} 的 condition 过滤（F1-09d 先只判 login）
+type: impl
+# 2026-10-17 入账（内容模块客户端接口线 content-client；依据 couli-runs/CONTENT-client/pages-plan.md §3、§4 R5）。宿主 05 F1-02 pages 行（人群）。
+# R5 默认：F1-09d 先只判 login、其余条件非 any 的 section 先不下发（保守），本任务补齐（编排者默认，待编排复核，见 couli-runs/CONTENT-client/decisions-pending.md）；
+#   本任务等编排 R5 复核后再开工，可先入账；若复核改为「F1-09d 等端口一起做」，本任务并入 F1-09d 后作废。
+# 依据 03 §6.1（condition 只用 login / has_parent / union_authorized / has_order，服务端只下发命中 section）；08 BR-ID-11 细则（首页人群与灰度）、BR-INV-23（人群不用会员口径）——
+# refs 置空，规则摘录由编排者摘入任务书第 9 节（同 F1-09b）。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。
+# 要点：content 里定义人群事实端口（一次请求按登录用户取三项事实，未登录全为 false），由 app.module 用各模块 index.ts 已导出的读口装配，content 不 import identity / union / orders；
+#   union_authorized 可复用 app.module 里 ME_READ_PORTS 的 createUnionAuthReads 绑定状态投影（哪些状态算「已授权」按任务书摘录，规划没写清的报出来）；
+#   has_parent 读邀请关系、has_order 读订单是否存在——对应模块若没有导出所需读口，不改别的模块，在输出 outside_needed 里写明，由编排者另开任务。
+# 只读、不缓存人群事实之外的东西；F1-09b 的 condition 匹配函数若需改签名，只改 content/domain/pages/select 内并保持其规则测试绿。
+refs: []
+refs_hash: {}
+deps: [F1-09d]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/content/pages-audience/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/pages-audience/**'
+status: todo
+pr: null
