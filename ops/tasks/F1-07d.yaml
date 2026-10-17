@@ -1,0 +1,35 @@
+id: F1-07d
+repo: rebate-platform
+title: risk：后台封禁 / 解封 / 冻结 / 解冻——PUT /admin/v1/users/{user_id}/risk-state（ban / unban 要 risk.ban，freeze / unfreeze 要 risk.freeze，动态码）；一个事务里 setRiskState（expected_row_version 比较，20902 user_risk_state）+ 封禁吊销全部会话（revokeSessions banned）+ F1-07c 绑定联动端口 + 审计；状态不允许 44004；站内信只留端口；去掉 planned
+type: impl
+# 2026-10-18 入账（后台后端线 admin-backend，F1-07 第四批）。依据 05 F1-07、04 §6.6 / §11.2、契约 CT-02j（#647）adminUpdateUserRiskState 的 description。
+# refs 为空：BR-ID-31（与一跳引用）写进 refs 后任务书 57KB，超过 brief.ts 24KB 上限；按选项 B（同 F1-07c 注释）：BR-ID-31 与 BR-ID-36 相关正文 / 细则由编排者逐字摘进任务书第 9 节，评审按摘录核对。
+# 取值裁定见 couli-runs/ADMIN-backend/f107-plan.md（裁定 1、2、3、4、5、8 与「CT-02j 实现方自定、编排者认可」）。
+# 要点：风控状态唯一写入口 risk/application/risk-state.ts setRiskState（不加新迁移边，冻结测试 test/spec/risk/risk-state/** 不改）；
+#   封禁即提现阻断靠既有读时判定与 risk.state_changed（提现单不写）；冻结不动会话与绑定；appealing 一律 44004（裁定 1）；
+#   站内信 RISK_STATE_CHANGED 只留端口（notices 2026-10-17 04:56 已请通知线排发送实现）；解封联动导出给申诉撤销复用；
+#   顺手改过时注释（risk-state.ts「F1-10 / B1-27」、revoke-sessions.ts「ban (B1-31)」）。
+#   会话吊销与 linking 联动都以端口注入、在 app.module.ts 装配（identity 已导入 risk，risk 直接 import identity 会成环，.dependency-cruiser no-circular）。
+#   SetRiskState 加可选 expected_row_version（null 只在无记录时首建，其余不匹配 20902），不传时行为不变，冻结测试不改。
+#   封禁要跨进程失效风控状态缓存（BR-ID-01：封禁时主动失效缓存；admin 进程写、api 进程读；risk-state.ts 注明尚无消费者）：在 risk/** 内接上。
+#   【待编排裁定】站内信：契约写「发送 RISK_STATE_CHANGED（BR-TEXT-23）」，主干无发送实现；默认见 notices 本线 2026-10-18 条。
+# 与 F1-07b / F1-07c 并行改 openapi.yaml、两份生成物与 app.module.ts：后合并者变基并重生成。
+refs: []
+refs_hash: {}
+deps: [CT-02j, F1-07c]
+paths:
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+test_paths:
+  - 'test/spec/risk/admin-risk-state/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/admin-risk-state/**'
+status: todo
+pr: null
