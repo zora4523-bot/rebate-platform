@@ -11,6 +11,21 @@ import type { DB } from '@couli/db';
 import { sql, type Transaction } from 'kysely';
 import type { DeviceRegistrationRecord } from '../domain/registration.ts';
 
+/** The inserted account's Clock instant, read in the creation transaction for BR-INV-14. */
+export async function readUserCreatedAt(
+  trx: Transaction<DB>,
+  subject: { readonly app_id: string; readonly user_id: string },
+): Promise<Date | undefined> {
+  const row = await trx
+    .withSchema('app')
+    .selectFrom('users')
+    .select('created_at')
+    .where('app_id', '=', subject.app_id)
+    .where('id', '=', subject.user_id)
+    .executeTakeFirst();
+  return row?.created_at;
+}
+
 export type Savepoint =
   | 'identity_registration'
   | 'identity_registration_user'

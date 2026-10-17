@@ -187,7 +187,6 @@ export interface RegistrationOptions {
       readonly third_party_digest: string | null;
     },
   ) => Promise<boolean>;
-  // TODO(规划/11 §2.3): BR-INV-14 same-transaction source=register log — blocked on level_change_logs table task.
   readonly recordInitialLevel?: (
     trx: Transaction<DB>,
     input: {

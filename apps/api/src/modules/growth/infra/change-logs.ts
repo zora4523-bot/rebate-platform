@@ -1,21 +1,56 @@
-// growth change-log writers (B1-11b skeleton): insert one row into app.level_change_logs /
+// growth change-log writers (B1-11b): insert one row into app.level_change_logs /
 // app.relation_change_logs inside the caller's transaction (never opening or committing one),
 // after the input checks; database errors propagate unchanged. users is never written here.
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
-import type { LevelChangeInput, RelationChangeInput } from '../domain/change-logs.ts';
+import {
+  validateLevelChange,
+  validateRelationChange,
+  type LevelChangeInput,
+  type RelationChangeInput,
+} from '../domain/change-logs.ts';
+import type { GrowthLogTables } from './log-tables.ts';
 
-export function appendLevelChange(trx: Transaction<DB>, input: LevelChangeInput): Promise<void> {
-  void trx;
-  void input;
-  throw new Error('NotImplemented: appendLevelChange');
+export async function appendLevelChange(
+  trx: Transaction<DB>,
+  input: LevelChangeInput,
+): Promise<void> {
+  validateLevelChange(input);
+  await trx
+    .withTables<GrowthLogTables>()
+    .withSchema('app')
+    .insertInto('level_change_logs')
+    .values({
+      app_id: input.app_id,
+      user_id: input.user_id,
+      from_level: input.from_level,
+      to_level: input.to_level,
+      source: input.source,
+      operator: input.operator,
+      reason: input.reason,
+      effective_at: input.effective_at,
+    })
+    .execute();
 }
 
-export function appendRelationChange(
+export async function appendRelationChange(
   trx: Transaction<DB>,
   input: RelationChangeInput,
 ): Promise<void> {
-  void trx;
-  void input;
-  throw new Error('NotImplemented: appendRelationChange');
+  validateRelationChange(input);
+  await trx
+    .withTables<GrowthLogTables>()
+    .withSchema('app')
+    .insertInto('relation_change_logs')
+    .values({
+      app_id: input.app_id,
+      user_id: input.user_id,
+      from_parent_id: input.from_parent_id,
+      to_parent_id: input.to_parent_id,
+      source: input.source,
+      operator: input.operator,
+      reason: input.reason,
+      at: input.at,
+    })
+    .execute();
 }
