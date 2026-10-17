@@ -27,7 +27,8 @@ export const INSTANT = '2026-10-08T02:00:00.000Z';
 export const CONSENT_AT = '2026-10-08T01:59:55.000Z';
 export const LEGAL = { privacy: 7, agreement: 4 };
 /** Channel whose minimum version (3.0.0) is seeded per app; RESTRICTED headers are below it. */
-export const RESTRICTED = { 'x-channel': 'restricted', 'x-app-version': '1.0.0' };
+// install_channel enum value (route validation rejects a value outside the contract enum).
+export const RESTRICTED = { 'x-channel': 'official', 'x-app-version': '1.0.0' };
 /** Field-cipher context of the Apple refresh token (table.column, as users.phone). */
 export const APPLE_REFRESH_CONTEXT = 'user_oauth.apple_refresh_token';
 export const DEVICE_LOG_CONTEXT = 'login_logs.device_id';
@@ -410,12 +411,14 @@ export function warnings(kit: OauthKit, start: number): Record<string, unknown>[
 export async function stored(f: Fixture): Promise<string> {
   const state = await rows(f);
   return JSON.stringify(state, (_key, value: unknown) =>
-    value !== null &&
-    typeof value === 'object' &&
-    (value as { type?: unknown }).type === 'Buffer' &&
-    Array.isArray((value as { data?: unknown }).data)
-      ? Buffer.from((value as { data: number[] }).data).toString('utf8')
-      : value,
+    typeof value === 'bigint'
+      ? value.toString()
+      : value !== null &&
+          typeof value === 'object' &&
+          (value as { type?: unknown }).type === 'Buffer' &&
+          Array.isArray((value as { data?: unknown }).data)
+        ? Buffer.from((value as { data: number[] }).data).toString('utf8')
+        : value,
   );
 }
 
