@@ -257,23 +257,31 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
     if (token !== null && token !== '') headers.set('Authorization', `Bearer ${token}`);
     const stepUpToken = stepUpTokenOf(request.meta);
     if (stepUpToken !== undefined) headers.set('X-Step-Up-Token', stepUpToken);
-    let body: string | undefined;
+    let body: string | FormData | undefined;
     if (request.body !== undefined && request.method !== 'GET' && request.method !== 'HEAD') {
-      headers.set('Content-Type', 'application/json');
-      body = JSON.stringify(request.body);
+      if (request.body instanceof FormData) body = request.body;
+      else {
+        headers.set('Content-Type', 'application/json');
+        body = JSON.stringify(request.body);
+      }
     }
+    const requestedSignal: unknown = request.meta?.['signal'];
+    const signal = requestedSignal instanceof AbortSignal ? requestedSignal : undefined;
 
     let response: Response;
     try {
+      signal?.throwIfAborted();
       response = await options.fetch(request.url.toString(), {
         method: request.method,
         headers,
         ...(body === undefined ? {} : { body }),
+        ...(signal ? { signal } : {}),
         credentials: 'omit',
         // A followed redirect would resend the Bearer (and step-up) token to an address outside
         // /admin/v1, so redirects make fetch reject; that rejection is a network error (-1).
         redirect: 'error',
       });
+      signal?.throwIfAborted();
     } catch (cause) {
       throw new AdminApiError({
         kind: 'network',
@@ -317,6 +325,7 @@ export function createDataProvider(options: DataProviderOptions): AdminDataProvi
     let text: string;
     try {
       text = await response.text();
+      signal?.throwIfAborted();
     } catch (cause) {
       throw new AdminApiError({
         kind: 'network',
