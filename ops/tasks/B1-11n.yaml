@@ -1,0 +1,19 @@
+id: B1-11n
+repo: rebate-platform
+title: growth 导出上级关系只读端口：按 (app_id, user_id) 返回 {has_parent, parent_bound_at}，不返回上级身份；只读、不缓存（内容线页面模块 F1-09g 人群条件 has_parent 用）
+type: impl
+# 草稿 2026-10-17（身份与风控线 identity-lane；编排 19:0x 派工，原写编号 B1-11c 已被 domain 邀请纯函数占用，改 B1-11n，E22）。
+# 依据：02 §4.1 growth 拥有 users.parent_id 等关系列；内容线只经 growth/index.ts 读。单条主键查询；查不到用户 → 按「无上级」还是报错按先例：查不到返回 null（调用方保守处理）。先例 B1-02u（createUserLevelReader）。模型：Opus 5.5。
+refs: []
+refs_hash: {}
+deps: [B1-11b]
+paths:
+  - 'apps/api/src/modules/growth/**'
+test_paths:
+  - 'test/spec/growth/parent-reader/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/growth/parent-reader/**'
+status: todo

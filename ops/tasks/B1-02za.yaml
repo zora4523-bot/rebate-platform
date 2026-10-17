@@ -4,6 +4,7 @@ title: 身份等级守卫（判定顺序 ⑧ 未绑手机 10005、⑨ 未实名 
 type: impl
 # 草稿 2026-10-17（身份与风控线 identity-lane，第二波第一批；编排 13:5x 派工；计划 couli-runs/IDENTITY-tips/wave2-plan.md，调研 wave2-research.md）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
 # 依据：08 BR-ID-01 判定顺序与等级定义（从库判定、不读 JWT）、04 §2.5 identity_level，由编排者摘入。B1-02h 台账注明 ⑦⑧⑨ 是缺口；⑦ 隐私 10004 不在本任务（E2）。growth 的 /v1/me/inviter、/v1/invites/me 与 B1-13 的收款账号接口最先用到。
+# 2026-10-17 补（E21）：⑨ 30304 是 3xxxx，须写入幂等结果且排在 ⑫ 之前——幂等模块的未命中后检查允许抛出「需保存的业务拒绝」（只限 3xxxx），按处理函数结果同样写 completed 并回放；⑧ 10005 照旧回滚不存。故 paths 加 platform/idempotency/**（一参数签名不变）。
 # 模型：Opus 5.5。挂钩先例 B1-02y（risk.module beforeRateLimit 列表）。实名表未建前实名状态端口缺省 none（B1-13d 接表）。
 refs: []
 refs_hash: {}
@@ -11,6 +12,7 @@ deps: [B1-02y, B1-03h, B1-02z]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/modules/risk/risk.module.ts'
+  - 'apps/api/src/modules/platform/idempotency/**'
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/identity/identity-level/**'
