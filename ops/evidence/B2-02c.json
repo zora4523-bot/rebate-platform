@@ -1,0 +1,133 @@
+{
+  "task": "B2-02c",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "57d78cad4e7dca92bad300f9c221e5dd0d33b309",
+  "red_tests": [
+    "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#14] app 可读写入四表，账户凭证分录拒绝 UPDATE / DELETE / TRUNCATE",
+    "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#15] 余额仅四列可 UPDATE，身份字段不可改，持行锁后可一起更新余额和版本",
+    "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#16] couli_app 的表级和逐列权限精确符合 D8",
+    "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#16] couli_readonly 的表级和逐列权限精确符合 D8",
+    "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#16] couli_payout 的表级和逐列权限精确符合 D8",
+    "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#16] couli_maint 的表级和逐列权限精确符合 D8",
+    "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#17] couli_readonly 实际写入与变更被拒，只有 readonly 可读",
+    "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#17] couli_payout 实际写入与变更被拒，只有 readonly 可读",
+    "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#17] couli_maint 实际写入与变更被拒，只有 readonly 可读",
+    "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#18] 凭证与分录挂载具名、无条件的行级禁止改删触发器",
+    "test/spec/db/ledger/core/partitions.int.test.ts > [AC-B2-02c#19] 分录按 booked_at RANGE 分区，主键为 id + booked_at，自增 id 为 bigint",
+    "test/spec/db/ledger/core/partitions.int.test.ts > [AC-B2-02c#20] 迁移只建 DEFAULT，维护函数白名单与 TS 同步且建月分区幂等",
+    "test/spec/db/ledger/core/partitions.int.test.ts > [AC-B2-02c#21] app 不得执行分区维护，DEFAULT 已有行时不得创建重叠月分区",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#1] 四表字段、金额 bigint、单一余额与可空结构化元数据",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#2] booked_at 和 accounting_date 无 SQL 默认值且必须显式写入",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#3] 同 app 同用户只有一个 USER_BALANCE，账户和凭证唯一键隔离 app",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#4] 唯一约束在两个并发 INSERT 下仍只允许一个成功",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#5] 用户不能拆自购推广账户，平台科目接受带平台后缀的 subject",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#6] frozen_fen 拒绝 -1，接受 0 和 1，余额允许负 available",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#6] version 拒绝 -1，接受 0 和 1，余额允许负 available",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#7] 金额非零且保留正负号、超过 2^53 的整数分及平台空余额",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#8] ledger_type 接受契约全部 13 值，拒绝新增与旧类型；间推只用 sub_type",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#9] 子户仅 available / frozen，income_type 可空或为两种契约所得类型",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#10] 四表 app_id 及分录必要维度拒绝 NULL",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#11] 三条外键拒绝不存在及跨 app 的账户或凭证",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#12] 外键显式包含 app_id、引用非分区父表且禁止级联",
+    "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#13] 0037 显式命名约束及索引并设置两个正超时",
+    "test/spec/db/ledger/core/uniq-key.int.test.ts > [AC-B2-02c#22] BR-FUND-16 同 app 与 uniq_key 的凭证即使其他业务字段全变仍被拒绝",
+    "test/spec/db/ledger/core/uniq-key.int.test.ts > [AC-B2-02c#23] BR-FUND-16 覆盖 uniq_key 的唯一约束列集合恰好为 app_id 与 uniq_key",
+    "test/spec/db/ledger/core/uniq-key.int.test.ts > [AC-B2-02c#24] BR-FUND-16 不同 app_id 可使用相同 uniq_key"
+  ],
+  "risk_note": "RV2 (db). Migration 0037 creates the ledger core tables (BR-FUND-13/15/16): ledger_accounts (one balance account per user, unique (app_id, owner_type, owner_id, subject)), ledger_vouchers (unique (app_id, uniq_key), nullable structured columns per ledger-plan D3), ledger_entries (monthly partitions plus DEFAULT, added to the ensure_month_partition allow-list and packages/db partitions.ts), account_balances (frozen_fen >= 0, version). Vouchers and entries are insert-only: UPDATE / DELETE rejected by triggers and not granted. couli_app SELECT / INSERT on vouchers and entries, SELECT / INSERT / UPDATE on balances; couli_readonly SELECT only (D8). Named constraints and indexes; bigint *_fen. lint-migrations funds-table list gains the five table names. booked_at has no clock default (D2, application Clock). Generated schema.sql / db.gen.ts produced on the test machine after rebasing onto main with 0036. A frozen rule-test file was reformatted with prettier by the orchestrator (content unchanged). No application code; posting is B2-02f.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "57d78cad4e7dca92bad300f9c221e5dd0d33b309",
+      "tree": "8f2d4c77c93b4e4cff09293dba0ec1e197860c78",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-17T05:43:15Z",
+      "finished_at": "2026-10-17T05:43:22Z",
+      "gate": {
+        "commit": "117347a2a19ecc6fcf611a573a21d4924f141807",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#14] app 可读写入四表，账户凭证分录拒绝 UPDATE / DELETE / TRUNCATE",
+        "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#15] 余额仅四列可 UPDATE，身份字段不可改，持行锁后可一起更新余额和版本",
+        "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#16] couli_app 的表级和逐列权限精确符合 D8",
+        "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#16] couli_readonly 的表级和逐列权限精确符合 D8",
+        "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#16] couli_payout 的表级和逐列权限精确符合 D8",
+        "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#16] couli_maint 的表级和逐列权限精确符合 D8",
+        "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#17] couli_readonly 实际写入与变更被拒，只有 readonly 可读",
+        "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#17] couli_payout 实际写入与变更被拒，只有 readonly 可读",
+        "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#17] couli_maint 实际写入与变更被拒，只有 readonly 可读",
+        "test/spec/db/ledger/core/access.int.test.ts > [AC-B2-02c#18] 凭证与分录挂载具名、无条件的行级禁止改删触发器",
+        "test/spec/db/ledger/core/partitions.int.test.ts > [AC-B2-02c#19] 分录按 booked_at RANGE 分区，主键为 id + booked_at，自增 id 为 bigint",
+        "test/spec/db/ledger/core/partitions.int.test.ts > [AC-B2-02c#20] 迁移只建 DEFAULT，维护函数白名单与 TS 同步且建月分区幂等",
+        "test/spec/db/ledger/core/partitions.int.test.ts > [AC-B2-02c#21] app 不得执行分区维护，DEFAULT 已有行时不得创建重叠月分区",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#1] 四表字段、金额 bigint、单一余额与可空结构化元数据",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#2] booked_at 和 accounting_date 无 SQL 默认值且必须显式写入",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#3] 同 app 同用户只有一个 USER_BALANCE，账户和凭证唯一键隔离 app",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#4] 唯一约束在两个并发 INSERT 下仍只允许一个成功",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#5] 用户不能拆自购推广账户，平台科目接受带平台后缀的 subject",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#6] frozen_fen 拒绝 -1，接受 0 和 1，余额允许负 available",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#6] version 拒绝 -1，接受 0 和 1，余额允许负 available",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#7] 金额非零且保留正负号、超过 2^53 的整数分及平台空余额",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#8] ledger_type 接受契约全部 13 值，拒绝新增与旧类型；间推只用 sub_type",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#9] 子户仅 available / frozen，income_type 可空或为两种契约所得类型",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#10] 四表 app_id 及分录必要维度拒绝 NULL",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#11] 三条外键拒绝不存在及跨 app 的账户或凭证",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#12] 外键显式包含 app_id、引用非分区父表且禁止级联",
+        "test/spec/db/ledger/core/storage.int.test.ts > [AC-B2-02c#13] 0037 显式命名约束及索引并设置两个正超时",
+        "test/spec/db/ledger/core/uniq-key.int.test.ts > [AC-B2-02c#22] BR-FUND-16 同 app 与 uniq_key 的凭证即使其他业务字段全变仍被拒绝",
+        "test/spec/db/ledger/core/uniq-key.int.test.ts > [AC-B2-02c#23] BR-FUND-16 覆盖 uniq_key 的唯一约束列集合恰好为 app_id 与 uniq_key",
+        "test/spec/db/ledger/core/uniq-key.int.test.ts > [AC-B2-02c#24] BR-FUND-16 不同 app_id 可使用相同 uniq_key"
+      ],
+      "expected": [
+        "test/spec/db/ledger/core/access.int.test.ts",
+        "test/spec/db/ledger/core/partitions.int.test.ts",
+        "test/spec/db/ledger/core/storage.int.test.ts",
+        "test/spec/db/ledger/core/uniq-key.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2c63e4cfec348d9f9433d07218f64a2263fac536b3e477767816d60897360d5e"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings; the orchestrator committed on another task branch while it ran (other_task_branches_changed flag only, output complete, decision 18)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 2 runs (27 then 30 red); round 2 pass with one S2 (no voucher structured-column / uniq_key consistency CHECK; consistency is the posting service's job, decision 17)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8ab6d8a94c906160d9ab5ec57ae5d3511763601d",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "e5ebc1f40bd25f39211654b41df8fc990d11b343",
+    "specs": "b27c6500eac7ac6db84687eddad33b685fe0f012"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
