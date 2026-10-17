@@ -1,4 +1,17 @@
 // Public surface of the identity module. Other modules import only from this file.
+export {
+  identityLevelRefusal,
+  createIdentityLevelChecks,
+  createDefaultRealnameStatusReader,
+} from './application/identity-level.ts';
+export type {
+  RealnameStatus,
+  RealnameStatusReader,
+  IdentityLevelInput,
+  IdentityLevelGuard,
+  IdentityLevelChecks,
+  IdentityLevelOptions,
+} from './application/identity-level.ts';
 export { createUserLevelReader } from './ports/user-level.ts';
 export type {
   UserLevel,
