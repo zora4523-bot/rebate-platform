@@ -12,6 +12,11 @@
 //   users.phone_hmac / phone_cipher，不由夹具注入。
 // - 白名单（BR-AI-23 ①、BR-AI-12）：whitelist_only=true 时名单外 30501、名单外且未同意仍 30501（不是 10004）、
 //   名单内受理；运行中把 whitelist_only 打开，5 s 后名单外用户的新请求即 30501。
+// - 游客额度键（BR-AI-23 ⑩、BR-AI-15、BR-ID-03；B3-03g quotaSubjects）：游客与未绑手机账号按设备与 IP 两个计数，
+//   键由挂载层从真实请求推出（设备取自设备身份，IP 取自来源地址，不是明文 IP）。同设备换 IP：设备键相同、IP 键
+//   不同；换设备同 IP：设备键不同、IP 键相同；未绑手机账号也只有设备与 IP 两个键。guest_daily_quota 与
+//   guest_ip_daily_quota 设为 1 后，把一条 run 记为已计入（生产默认装配每条都退还，夹具改 settle_result 模拟
+//   消耗），同设备换 IP → 30502、换设备同 IP → 30502，均不建 run；换设备且换 IP 照常受理。
 import { randomUUID } from 'node:crypto';
 
 import { createTestDatabase } from '@couli/db/testing';
@@ -56,6 +61,7 @@ interface App {
     url: string;
     headers?: Record<string, string>;
     payload?: string;
+    remoteAddress?: string;
   }): Promise<Injected>;
 }
 
@@ -134,12 +140,13 @@ async function accessToken(app: App, clock: FixedClock, caller: AgentCaller): Pr
   return session.access_token;
 }
 
-function client(app: App, token: string) {
+function client(app: App, token: string, remoteAddress?: string) {
   const headers = { 'x-app-id': APP, authorization: `Bearer ${token}` };
   return (method: string, url: string, body?: unknown) =>
     app.inject({
       method,
       url,
+      ...(remoteAddress === undefined ? {} : { remoteAddress }),
       headers: body === undefined ? headers : { ...headers, 'content-type': 'application/json' },
       ...(body === undefined ? {} : { payload: JSON.stringify(body) }),
     });
@@ -231,7 +238,7 @@ it('[AC-B3-03f#23][BR-AI-13] 真实 stream 入口 + PG：撤回同意后四条�
 type Call = (method: string, url: string, body?: unknown) => Promise<Injected>;
 
 /** A guest request: no token, the device identity of the caller's devices row. */
-function guestClient(app: App, caller: AgentCaller): Call {
+function guestClient(app: App, caller: AgentCaller, remoteAddress?: string): Call {
   const headers = {
     'x-app-id': caller.appId,
     'x-device-id': caller.deviceId,
@@ -243,13 +250,19 @@ function guestClient(app: App, caller: AgentCaller): Call {
     app.inject({
       method,
       url,
+      ...(remoteAddress === undefined ? {} : { remoteAddress }),
       headers: body === undefined ? headers : { ...headers, 'content-type': 'application/json' },
       ...(body === undefined ? {} : { payload: JSON.stringify(body) }),
     });
 }
 
-async function memberClient(app: App, clock: FixedClock, caller: AgentCaller): Promise<Call> {
-  return client(app, await accessToken(app, clock, caller));
+async function memberClient(
+  app: App,
+  clock: FixedClock,
+  caller: AgentCaller,
+  remoteAddress?: string,
+): Promise<Call> {
+  return client(app, await accessToken(app, clock, caller), remoteAddress);
 }
 
 /** createSession then sendMessage, both accepted; the session is owned as expected. */
@@ -398,6 +411,100 @@ it('[AC-B3-03f#27][BR-AI-12] 真实 stream 入口 + PG：运行中打开 whiteli
     expect(json(sent)['code'], sent.body).toBe(30501);
     expect(await runsOf(pg.db, sessionId)).toEqual([]);
     expect(json(await call('POST', '/v1/agent/sessions'))['code']).toBe(30501);
+  } finally {
+    await app.close();
+  }
+}, 120_000);
+
+/** quota_subjects of the single run of a session, parsed: [kind, key] pairs. */
+async function subjectsOf(sessionId: string): Promise<[string, string][]> {
+  const runs = await runsOf(pg.db, sessionId);
+  expect(runs).toHaveLength(1);
+  return (runs[0]!['quota_subjects'] as string[]).map((s) => JSON.parse(s) as [string, string]);
+}
+
+function keyOf(subjects: readonly [string, string][], kind: string): string {
+  const found = subjects.filter(([k]) => k === kind);
+  expect(found, `one ${kind} subject`).toHaveLength(1);
+  return found[0]![1];
+}
+
+it('[AC-B3-03f#28][BR-AI-23][BR-AI-15][BR-ID-03] 真实 stream 入口 + PG：游客与未绑手机账号按设备与 IP 两个键计数——同设备换 IP 设备键同、IP 键异，换设备同 IP 反之；设备或 IP 任一达上限（各为 1）→ 30502、不建 run，换设备且换 IP 照常受理', async () => {
+  const clock = new FixedClock('2026-10-06T10:00:00+08:00');
+  await openAgent(pg.db);
+  await setConfig(pg.db, APP, 'agent.guest_daily_quota', 1);
+  await setConfig(pg.db, APP, 'agent.guest_ip_daily_quota', 1);
+  const a = await newGuest(pg.db);
+  const b = await newGuest(pg.db);
+  const c = await newGuest(pg.db);
+  const unbound = await newMember(pg.db, { phoneBound: false });
+  for (const caller of [a, b, c, unbound]) await consent(pg.db, caller);
+  // TEST-NET-3 addresses (RFC 5737), never real clients.
+  const IP1 = '203.0.113.11';
+  const IP2 = '203.0.113.12';
+  const IP3 = '203.0.113.13';
+  const IP4 = '203.0.113.14';
+  const IP5 = '203.0.113.15';
+  const IP6 = '203.0.113.16';
+  const app = await streamApp(clock);
+  try {
+    // Every run of the production assembly is refunded, so nothing is consumed yet.
+    const a1 = await expectAccepted(guestClient(app, a, IP1), { userId: null }, 'a@IP1');
+    const a2 = await expectAccepted(guestClient(app, a, IP2), { userId: null }, 'a@IP2');
+    const b1 = await expectAccepted(guestClient(app, b, IP1), { userId: null }, 'b@IP1');
+    const sa1 = await subjectsOf(a1);
+    const sa2 = await subjectsOf(a2);
+    const sb1 = await subjectsOf(b1);
+    for (const subjects of [sa1, sa2, sb1]) {
+      expect(subjects.map(([kind]) => kind).sort()).toEqual(['device', 'ip']);
+      expect(JSON.stringify(subjects)).not.toContain('203.0.113.');
+    }
+    expect(keyOf(sa2, 'device'), 'same device, other IP').toBe(keyOf(sa1, 'device'));
+    expect(keyOf(sa2, 'ip'), 'same device, other IP').not.toBe(keyOf(sa1, 'ip'));
+    expect(keyOf(sb1, 'device'), 'other device, same IP').not.toBe(keyOf(sa1, 'device'));
+    expect(keyOf(sb1, 'ip'), 'other device, same IP').toBe(keyOf(sa1, 'ip'));
+
+    // Consume: a's first run (device a, IP1) counts.
+    const counted = await pg.db
+      .updateTable('agent_runs')
+      .set({ settle_result: 'counted' })
+      .where('session_id', '=', a1)
+      .executeTakeFirst();
+    expect(Number(counted.numUpdatedRows)).toBe(1);
+
+    const before = await agentSnapshot(pg.db);
+    for (const [caller, ip, what] of [
+      [a, IP3, 'same device, new IP: device limit'],
+      [b, IP1, 'other device, same IP: IP limit'],
+    ] as const) {
+      const sent = await guestClient(app, caller, ip)(
+        'POST',
+        `/v1/agent/sessions/${caller === a ? a2 : b1}/messages`,
+        { client_msg_id: randomUUID(), text: '帮我找个保温杯' },
+      );
+      expect(json(sent)['code'], `${what}: ${sent.body}`).toBe(30502);
+    }
+    expect(await agentSnapshot(pg.db)).toBe(before);
+    await expectAccepted(guestClient(app, c, IP4), { userId: null }, 'new device, new IP');
+
+    // An account without a bound phone counts as a guest: device and IP, no member key; its
+    // device limit applies the same way (a new IP does not reset it).
+    const token = await accessToken(app, clock, unbound);
+    const u1 = await expectAccepted(client(app, token, IP5), { userId: unbound.userId }, 'u@IP5');
+    const su1 = await subjectsOf(u1);
+    expect(su1.map(([kind]) => kind).sort()).toEqual(['device', 'ip']);
+    expect(keyOf(su1, 'device')).not.toBe(keyOf(sa1, 'device'));
+    await pg.db
+      .updateTable('agent_runs')
+      .set({ settle_result: 'counted' })
+      .where('session_id', '=', u1)
+      .execute();
+    const again = await client(app, token, IP6)('POST', `/v1/agent/sessions/${u1}/messages`, {
+      client_msg_id: randomUUID(),
+      text: '帮我找个保温杯',
+    });
+    expect(json(again)['code'], again.body).toBe(30502);
+    expect(await runsOf(pg.db, u1)).toHaveLength(1);
   } finally {
     await app.close();
   }
