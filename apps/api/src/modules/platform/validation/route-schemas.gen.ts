@@ -5322,6 +5322,376 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminListPageConfigs": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminGetPageConfig": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "page_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(home|custom:[a-z0-9_-]{1,57})$"
+        }
+      },
+      "required": [
+        "page_key"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminListPageConfigVersions": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "page_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(home|custom:[a-z0-9_-]{1,57})$"
+        }
+      },
+      "required": [
+        "page_key"
+      ],
+      "additionalProperties": false
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminCreatePageConfigVersion": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "page_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(home|custom:[a-z0-9_-]{1,57})$"
+        }
+      },
+      "required": [
+        "page_key"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sections",
+        "expected_revision"
+      ],
+      "properties": {
+        "sections": {
+          "type": "array",
+          "description": "The whole page; section shape contracts/home-schema.json `$defs/section`.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "expected_revision": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The page's `revision` as the console showed it, 0 for a page not saved yet; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminGetPageConfigVersion": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "page_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(home|custom:[a-z0-9_-]{1,57})$"
+        },
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "page_key",
+        "version"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminPublishPageConfig": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "page_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(home|custom:[a-z0-9_-]{1,57})$"
+        }
+      },
+      "required": [
+        "page_key"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "gray_percent",
+        "expected_revision"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "description": "Draft version to publish."
+        },
+        "gray_percent": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "100 = release fully; 1..99 = gray rollout to that share of devices."
+        },
+        "expected_revision": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The page's `revision` as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminUpdatePageConfigGray": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "page_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(home|custom:[a-z0-9_-]{1,57})$"
+        }
+      },
+      "required": [
+        "page_key"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gray_percent",
+        "expected_revision"
+      ],
+      "properties": {
+        "gray_percent": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "New share of devices on the gray version; 100 = release the gray version fully."
+        },
+        "expected_revision": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The page's `revision` as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminRollbackPageConfig": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "page_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(home|custom:[a-z0-9_-]{1,57})$"
+        }
+      },
+      "required": [
+        "page_key"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "expected_revision"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "description": "The current gray version or the current fully released version."
+        },
+        "expected_revision": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The page's `revision` as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
   "adminCreatePagePreviewToken": {
     "headers": {
       "type": "object",

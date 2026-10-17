@@ -2,6 +2,7 @@
 // registration, publish / rollback and restore-builtin (F1-06y); upload and save as version
 // (F1-06x), whose cleaned files go to platform's MEDIA_STORE (provided globally by PlatformModule).
 // F1-09e adds POST /admin/v1/pages/{page_key}/preview-tokens (content.page, audited).
+// Page configuration /admin/v1/pages* (F1-09f): drafts, publish, gray, rollback and their reads.
 // app.module imports this module on the admin entry only; the api and stream entries do not
 // serve /admin/v1. Permission checks go through platform's AdminOperationGuard, which the admin
 // module provides globally on the admin entry (content never imports admin).
@@ -55,6 +56,15 @@ import { createKyselyConfigItemStore } from './infra/kysely-config-item-store.ts
 import { PagePreviewService, type PagePreviewStore } from './application/page-preview.ts';
 import { AdminPagePreviewTokensController } from './http/admin/page-preview-tokens.controller.ts';
 import { createKyselyPagePreviewStore } from './infra/kysely-page-preview-store.ts';
+import {
+  PageConfigAdmin,
+  type PageConfigStore,
+  type PageSectionsCheck,
+} from './application/page-config-admin.ts';
+import { createPageSectionsCheck } from './application/page-sections-check.ts';
+import { AdminPagesController } from './http/admin/pages.controller.ts';
+import { homeSectionsSchema } from './infra/home-schema.ts';
+import { createKyselyPageConfigStore } from './infra/kysely-page-config-store.ts';
 
 /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
 export type ContentAuditWriterFactory = (db: Kysely<Database>, clock: Clock) => AuditPort;
@@ -99,6 +109,17 @@ const NO_DATABASE_PREVIEWS: PagePreviewStore = {
   sections: () => Promise.reject(new Error('content: page previews need the database')),
 };
 
+const refusePages = (): Promise<never> =>
+  Promise.reject(new Error('content: page configuration needs the database'));
+
+const NO_DATABASE_PAGES: PageConfigStore = {
+  pages: refusePages,
+  page: refusePages,
+  versions: refusePages,
+  version: refusePages,
+  transaction: refusePages,
+};
+
 /** Monotonic milliseconds for the SVG conversion budget (not business time). */
 const monotonicMs = (): number => performance.now();
 
@@ -112,6 +133,7 @@ export class ContentAdminModule {
         AdminKillSwitchesController,
         AdminConfigItemsController,
         AdminPagePreviewTokensController,
+        AdminPagesController,
       ],
       providers: [
         {
@@ -125,6 +147,23 @@ export class ContentAdminModule {
                   : createKyselyPagePreviewStore(db, (trx) => options.auditWriter(trx, clock)),
               clock,
             }),
+        },
+        {
+          // F1-09f /admin/v1/pages*: contracts/home-schema.json is read and compiled on the first
+          // save or publish, so a broken contract file answers 50001 rather than stopping the entry.
+          provide: PageConfigAdmin,
+          inject: [CLOCK, { token: DB, optional: true }],
+          useFactory: (clock: Clock, db?: Kysely<Database>): PageConfigAdmin => {
+            let check: PageSectionsCheck | undefined;
+            return new PageConfigAdmin(
+              db === undefined
+                ? NO_DATABASE_PAGES
+                : createKyselyPageConfigStore(db, (trx) => options.auditWriter(trx, clock)),
+              clock,
+              (sections, unionHostBlock) =>
+                (check ??= createPageSectionsCheck(homeSectionsSchema()))(sections, unionHostBlock),
+            );
+          },
         },
         {
           provide: ConfigItemAdmin,
