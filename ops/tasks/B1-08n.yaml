@@ -1,0 +1,23 @@
+id: B1-08n
+repo: rebate-platform
+title: 订单同步接线：worker 入口装配 order-sync 处理器与定时调度器（启动零投递、可选取用），流水线端口接 B1-08h 的归因流水线；status-map 在模块启动时读一次 specs/order-status-map/*.csv
+type: impl
+# 草稿 2026-10-17（W1 线第十棒，订单线）。来源：B1-08g 规则测试过审范围外（D10-33）——B1-08g 只实现调度器、处理器、水位与队列目录，worker 入口 entry.ts 与 app.module.ts 不在其路径，合并后生产 worker 不会运行增量同步；B1-08f 的映射函数不读文件，装配层读 csv。
+# 约束（#612 评审）：调度器不得在模块初始化 / 入口启动时投递（冻结 test/spec/risk/freeze-expiry/scheduling.test.ts:121,124、test/spec/agent/stream-recovery/module.test.ts:146 零投递）；entry.ts 取调度器照现有可选写法（取不到不报错、有 start 才调用；冻结 test/spec/risk/freeze-expiry-heal/entry.test.ts:73,135、test/spec/agent/stream-recovery/entry.test.ts:110）。
+# 分工：orders 在 Codex 实现禁区 → impl claude、tester codex。
+refs: []
+refs_hash: {}
+deps: [B1-08g, B1-08f, B1-08h]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/orders/wiring/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/wiring/**'
+status: todo
+pr: null
