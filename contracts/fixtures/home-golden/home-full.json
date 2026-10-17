@@ -1,0 +1,217 @@
+{
+  "page_key": "home",
+  "version": 3,
+  "ttl_sec": 300,
+  "sections": [
+    {
+      "id": "banner_main",
+      "type": "banner",
+      "version": 1,
+      "min_app_version": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "props": {
+        "height_ratio": 0.4,
+        "autoplay_ms": 4000
+      },
+      "data_source": {
+        "kind": "static",
+        "items": [
+          {
+            "image": "https://example.com/img/banner-1.png",
+            "action": {
+              "route": "ProductDetail",
+              "params": {
+                "platform": "jd",
+                "product_key": "jd_demo_001"
+              }
+            }
+          },
+          {
+            "image": "https://example.com/img/banner-2.png",
+            "action": {
+              "route": "ExternalPage",
+              "params": {
+                "url": "https://example.com/activity/autumn"
+              }
+            }
+          }
+        ]
+      },
+      "condition": {
+        "login": "any"
+      },
+      "ad_label": "推广"
+    },
+    {
+      "id": "icons",
+      "type": "icon_grid",
+      "version": 1,
+      "props": {},
+      "data_source": {
+        "kind": "static",
+        "items": [
+          {
+            "image": "https://example.com/img/icon-search.png",
+            "action": {
+              "route": "Search",
+              "params": {
+                "platform": "pdd"
+              }
+            }
+          },
+          {
+            "image": "https://example.com/img/icon-orders.png",
+            "action": {
+              "route": "OrderList"
+            }
+          },
+          {
+            "image": "https://example.com/img/icon-invite.png",
+            "action": {
+              "route": "InviteShare",
+              "params": {}
+            }
+          },
+          {
+            "image": "https://example.com/img/icon-help.png",
+            "action": {
+              "route": "Help"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "hot_scroll",
+      "type": "product_scroll",
+      "version": 1,
+      "props": {},
+      "data_source": {
+        "kind": "product_pool",
+        "pool_id": "pool_demo_hot",
+        "limit": 10
+      }
+    },
+    {
+      "id": "p1",
+      "type": "product_grid",
+      "version": 2,
+      "props": {
+        "columns": 2,
+        "title": "今日爆款"
+      },
+      "data_source": {
+        "kind": "product_pool",
+        "pool_id": "pool_demo_daily",
+        "limit": 20
+      }
+    },
+    {
+      "id": "activity",
+      "type": "activity_entry",
+      "version": 1,
+      "props": {},
+      "data_source": {
+        "kind": "static",
+        "items": [
+          {
+            "image": "https://example.com/img/activity-1.png",
+            "action": {
+              "route": "ExternalPage",
+              "params": {
+                "url": "https://example.com/activity/1"
+              }
+            }
+          },
+          {
+            "image": "https://example.com/img/activity-2.png",
+            "action": {
+              "route": "Rules"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "notice",
+      "type": "notice_bar",
+      "version": 1,
+      "props": {
+        "items": [
+          {
+            "item_id": "notice_demo_1",
+            "content_version": 1,
+            "text": "国庆期间提现到账时间顺延",
+            "target": {
+              "route": "Notice",
+              "params": {
+                "article_id": "notice_demo_1"
+              }
+            },
+            "closable": true,
+            "start_at": "2026-10-01T00:00:00+08:00",
+            "end_at": null
+          },
+          {
+            "item_id": "notice_demo_2",
+            "content_version": 3,
+            "text": "系统维护通知",
+            "target": null,
+            "closable": false,
+            "start_at": "2026-10-10T00:00:00+08:00",
+            "end_at": "2026-10-12T00:00:00+08:00"
+          }
+        ]
+      },
+      "data_source": {
+        "kind": "static"
+      }
+    },
+    {
+      "id": "feed",
+      "type": "feed_infinite",
+      "version": 1,
+      "data_source": {
+        "kind": "union_material",
+        "channels": [
+          {
+            "platform": "taobao",
+            "channel_id": "demo_channel_1"
+          },
+          {
+            "platform": "jd",
+            "channel_id": "demo_channel_2"
+          }
+        ],
+        "mix": "interleave"
+      }
+    },
+    {
+      "id": "popup",
+      "type": "popup",
+      "version": 1,
+      "props": {
+        "image": "https://example.com/img/popup.png",
+        "daily_max": 1,
+        "time_window": ["09:00", "22:00"]
+      },
+      "data_source": {
+        "kind": "static",
+        "items": [
+          {
+            "action": {
+              "route": "InviteShare"
+            }
+          }
+        ]
+      },
+      "condition": {
+        "login": "yes",
+        "has_order": "no"
+      }
+    }
+  ]
+}

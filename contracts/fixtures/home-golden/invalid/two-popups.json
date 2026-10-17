@@ -1,0 +1,55 @@
+{
+  "page_key": "home",
+  "version": 1,
+  "ttl_sec": 300,
+  "sections": [
+    {
+      "id": "popup",
+      "type": "popup",
+      "version": 1,
+      "props": {
+        "image": "https://example.com/img/popup.png",
+        "daily_max": 1,
+        "time_window": ["09:00", "22:00"]
+      },
+      "data_source": {
+        "kind": "static",
+        "items": [
+          {
+            "action": {
+              "route": "InviteShare"
+            }
+          }
+        ]
+      },
+      "condition": {
+        "login": "yes",
+        "has_order": "no"
+      }
+    },
+    {
+      "id": "popup_2",
+      "type": "popup",
+      "version": 1,
+      "props": {
+        "image": "https://example.com/img/popup.png",
+        "daily_max": 1,
+        "time_window": ["09:00", "22:00"]
+      },
+      "data_source": {
+        "kind": "static",
+        "items": [
+          {
+            "action": {
+              "route": "InviteShare"
+            }
+          }
+        ]
+      },
+      "condition": {
+        "login": "yes",
+        "has_order": "no"
+      }
+    }
+  ]
+}

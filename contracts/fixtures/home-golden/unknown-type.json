@@ -1,0 +1,39 @@
+{
+  "page_key": "home",
+  "version": 1,
+  "ttl_sec": 300,
+  "sections": [
+    {
+      "id": "future_card",
+      "type": "video_wall",
+      "version": 1,
+      "min_app_version": {
+        "ios": "9.0.0"
+      },
+      "props": {
+        "anything": ["goes", 1, true]
+      },
+      "data_source": {
+        "kind": "video_pool",
+        "pool": "demo"
+      },
+      "condition": {
+        "login": "yes"
+      }
+    },
+    {
+      "id": "p1",
+      "type": "product_grid",
+      "version": 2,
+      "props": {
+        "columns": 2,
+        "title": "今日爆款"
+      },
+      "data_source": {
+        "kind": "product_pool",
+        "pool_id": "pool_demo_daily",
+        "limit": 20
+      }
+    }
+  ]
+}

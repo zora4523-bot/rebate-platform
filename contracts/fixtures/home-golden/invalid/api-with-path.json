@@ -1,0 +1,16 @@
+{
+  "page_key": "home",
+  "version": 1,
+  "ttl_sec": 300,
+  "sections": [
+    {
+      "id": "notice_cms",
+      "type": "notice_bar",
+      "version": 1,
+      "data_source": {
+        "kind": "api",
+        "path": "/v1/articles"
+      }
+    }
+  ]
+}

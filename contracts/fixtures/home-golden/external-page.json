@@ -1,0 +1,28 @@
+{
+  "page_key": "custom:autumn_promo",
+  "version": 1,
+  "ttl_sec": 300,
+  "sections": [
+    {
+      "id": "ext_banner",
+      "type": "banner",
+      "version": 1,
+      "data_source": {
+        "kind": "static",
+        "items": [
+          {
+            "image": "https://example.com/img/ext.png",
+            "action": {
+              "route": "ExternalPage",
+              "params": {
+                "url": "https://example.com/promo/page?from=home",
+                "title": "活动说明",
+                "nav_style": "light"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

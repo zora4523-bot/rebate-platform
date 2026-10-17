@@ -1,0 +1,67 @@
+{
+  "page_key": "home",
+  "version": 1,
+  "ttl_sec": 300,
+  "sections": [
+    {
+      "id": "notice",
+      "type": "notice_bar",
+      "version": 1,
+      "props": {
+        "items": [
+          {
+            "item_id": "notice_demo_1",
+            "content_version": 1,
+            "text": "国庆期间提现到账时间顺延",
+            "target": {
+              "route": "Notice",
+              "params": {
+                "article_id": "notice_demo_1"
+              }
+            },
+            "closable": true,
+            "start_at": "2026-10-01T00:00:00+08:00",
+            "end_at": null
+          },
+          {
+            "item_id": "notice_demo_2",
+            "content_version": 3,
+            "text": "系统维护通知",
+            "target": null,
+            "closable": false,
+            "start_at": "2026-10-10T00:00:00+08:00",
+            "end_at": "2026-10-12T00:00:00+08:00"
+          }
+        ]
+      },
+      "data_source": {
+        "kind": "static",
+        "items": [
+          {
+            "item_id": "notice_demo_1",
+            "content_version": 1,
+            "text": "国庆期间提现到账时间顺延",
+            "target": {
+              "route": "Notice",
+              "params": {
+                "article_id": "notice_demo_1"
+              }
+            },
+            "closable": true,
+            "start_at": "2026-10-01T00:00:00+08:00",
+            "end_at": null
+          },
+          {
+            "item_id": "notice_demo_2",
+            "content_version": 3,
+            "text": "系统维护通知",
+            "target": null,
+            "closable": false,
+            "start_at": "2026-10-10T00:00:00+08:00",
+            "end_at": "2026-10-12T00:00:00+08:00"
+          }
+        ]
+      }
+    }
+  ]
+}

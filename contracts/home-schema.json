@@ -1,0 +1,685 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Home SDUI page contract (CT-07a). Shape: 规划/03 §6.1; client handling: 03 §6.2; card registry: 03 §6.3; jump targets and per-platform min_app_version: 04 §10.1; NoticeItem: 04 §6.2; ad_label: BR-TEXT-17. The root is one delivered page (GET /v1/pages/{page_key}, preview, and the sections the console saves and reads back use $defs/section). The 8 registered section types are validated strictly by type; any other type is an unknown card: only the section envelope is checked and the client skips it silently (03 §6.2). Jump targets are {route, params} (RouteTarget of openapi.yaml): route names are not enumerated here, a server may send a route newer than the client (03 §4.4). Props whose keys the plan only describes (icon_grid, activity_entry, notice_bar display, popup close button, product_scroll) stay open until the plan names them. union_material carries channels [{platform, channel_id}] chosen from the channel whitelist (BR-TEXT-17 细则); the platforms list of the 03 §6.1 example is derived from channels and not accepted here. At most one popup per page; section ids unique per page (checked by the contracts-ts unit test and on save, not expressible here). Fixtures: contracts/fixtures/home-golden/*.json (invalid/ holds counter-examples).",
+  "title": "Page",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["page_key", "version", "ttl_sec", "sections"],
+  "properties": {
+    "page_key": {
+      "type": "string",
+      "pattern": "^(home|custom:[a-z0-9_-]{1,57})$"
+    },
+    "version": {
+      "type": "integer",
+      "format": "int32",
+      "minimum": 1
+    },
+    "ttl_sec": {
+      "type": "integer",
+      "format": "int32",
+      "minimum": 1
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/section"
+      },
+      "contains": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["popup"]
+          }
+        }
+      },
+      "minContains": 0,
+      "maxContains": 1
+    }
+  },
+  "$defs": {
+    "app_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "min_app_version": {
+      "type": "object",
+      "$comment": "Per platform, \"not lower than\". A platform whose key is missing or null does not get the section (编排者默认 R4); a section without min_app_version is not filtered.",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "ios": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/app_version"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "android": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/app_version"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "harmony": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/app_version"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "condition_value": {
+      "type": "string",
+      "enum": ["any", "yes", "no"]
+    },
+    "condition": {
+      "type": "object",
+      "$comment": "Audience (03 §6.1). A missing key or a missing condition means any.",
+      "additionalProperties": false,
+      "properties": {
+        "login": {
+          "$ref": "#/$defs/condition_value"
+        },
+        "has_parent": {
+          "$ref": "#/$defs/condition_value"
+        },
+        "union_authorized": {
+          "$ref": "#/$defs/condition_value"
+        },
+        "has_order": {
+          "$ref": "#/$defs/condition_value"
+        }
+      }
+    },
+    "route_target": {
+      "type": "object",
+      "description": "In-app jump target {route, params} (contracts/routes.json; TECH-04). route stays a string on\npurpose: a server may return a route newer than an installed client, which then opens the\nupgrade page (03 §4.4), so the HTTP contract cannot pin the route list. The client checks\nroute and params against its own routes table (bridge RouteTarget) before opening; the\nserver only stores targets checked against routes.json when they are saved.\n",
+      "additionalProperties": false,
+      "required": ["route"],
+      "properties": {
+        "route": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "notice_item": {
+      "type": "object",
+      "description": "One notice-bar entry, shared by the static (home schema) and api (GET /v1/articles notice\ncategory) sources; closing and content-version rules only in BR-TEXT-13 细则「首页公告条的\n关闭与内容版本」 (04 §6.2).\n",
+      "additionalProperties": false,
+      "not": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "A notice that cannot be closed must have end_at (BR-TEXT-13 细则「生效区间」).",
+        "properties": {
+          "closable": {
+            "const": false
+          },
+          "end_at": {
+            "type": "null"
+          }
+        },
+        "required": ["closable", "end_at"]
+      },
+      "required": [
+        "item_id",
+        "content_version",
+        "text",
+        "target",
+        "closable",
+        "start_at",
+        "end_at"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "For api entries the notice article id."
+        },
+        "content_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/route_target"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closable": {
+          "type": "boolean"
+        },
+        "start_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      }
+    },
+    "static_item": {
+      "type": "object",
+      "$comment": "One entry of a static data source; keys other than action and image are left to each card until the plan names them.",
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/route_target"
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "data_source_static": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "items"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["static"]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/static_item"
+          }
+        }
+      }
+    },
+    "data_source_static_notice": {
+      "type": "object",
+      "$comment": "notice_bar static: the entries are props.items (04 §6.2), the data source carries only kind.",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["static"]
+        }
+      }
+    },
+    "data_source_product_pool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "pool_id", "limit"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["product_pool"]
+        },
+        "pool_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "limit": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1
+        }
+      }
+    },
+    "material_channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "channel_id"],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "enum": ["taobao", "jd", "pdd", "meituan", "vip", "douyin", "eleme", "kuaishou", "suning"]
+        },
+        "channel_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "data_source_union_material": {
+      "type": "object",
+      "$comment": "Channels come from the server-side whitelist (specs/material-channels.yaml, BR-TEXT-17 细则); the client never sends a channel parameter (03 §6.3).",
+      "additionalProperties": false,
+      "required": ["kind", "channels"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["union_material"]
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/material_channel"
+          }
+        },
+        "mix": {
+          "type": "string",
+          "enum": ["interleave"]
+        }
+      }
+    },
+    "data_source_api": {
+      "type": "object",
+      "$comment": "notice_bar only: the one source is the notice CMS (GET /v1/articles, notice category); no endpoint path is accepted (03 §6.3).",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["api"]
+        }
+      }
+    },
+    "time_of_day": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+    },
+    "section": {
+      "type": "object",
+      "$comment": "Envelope checked for every type; registered types add their props and data_source below. min_app_version, props, data_source and condition are optional (missing = not filtered / everyone) and never null.",
+      "additionalProperties": false,
+      "required": ["id", "type", "version"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1
+        },
+        "min_app_version": {
+          "$ref": "#/$defs/min_app_version"
+        },
+        "props": {
+          "type": "object"
+        },
+        "data_source": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "condition": {
+          "$ref": "#/$defs/condition"
+        },
+        "ad_label": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "$comment": "Banner only: the promotion label, the SDUI field of the same name (BR-TEXT-17)."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["banner"]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/section_banner"
+          },
+          "else": {
+            "type": "object",
+            "properties": {
+              "ad_label": false
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["icon_grid"]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/section_icon_grid"
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["product_scroll"]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/section_product_scroll"
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["product_grid"]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/section_product_grid"
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["activity_entry"]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/section_activity_entry"
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["notice_bar"]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/section_notice_bar"
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["feed_infinite"]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/section_feed_infinite"
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["popup"]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/section_popup"
+          }
+        }
+      ]
+    },
+    "section_banner": {
+      "type": "object",
+      "$comment": "Carousel (03 §6.3): static.",
+      "required": ["data_source"],
+      "properties": {
+        "props": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "height_ratio": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "autoplay_ms": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        },
+        "data_source": {
+          "$ref": "#/$defs/data_source_static"
+        }
+      }
+    },
+    "section_icon_grid": {
+      "type": "object",
+      "$comment": "Icon grid (03 §6.3): columns 4 / 5, rows, badges; key names not given by the plan yet, props stay open. static.",
+      "required": ["data_source"],
+      "properties": {
+        "props": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "data_source": {
+          "$ref": "#/$defs/data_source_static"
+        }
+      }
+    },
+    "section_product_scroll": {
+      "type": "object",
+      "$comment": "Horizontal product strip (03 §6.3): title, more button action; key names not given by the plan yet, props stay open. product_pool / union_material.",
+      "required": ["data_source"],
+      "properties": {
+        "props": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "data_source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/data_source_product_pool"
+            },
+            {
+              "$ref": "#/$defs/data_source_union_material"
+            }
+          ]
+        }
+      }
+    },
+    "section_product_grid": {
+      "type": "object",
+      "$comment": "Product grid (03 §6.1, §6.3): product_pool / union_material.",
+      "required": ["data_source"],
+      "properties": {
+        "props": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "columns": {
+              "type": "integer",
+              "format": "int32",
+              "enum": [1, 2]
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "data_source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/data_source_product_pool"
+            },
+            {
+              "$ref": "#/$defs/data_source_union_material"
+            }
+          ]
+        }
+      }
+    },
+    "section_activity_entry": {
+      "type": "object",
+      "$comment": "Activity entry (03 §6.3): 1–3 images, layout; key names not given by the plan yet, props stay open. static.",
+      "required": ["data_source"],
+      "properties": {
+        "props": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "data_source": {
+          "$ref": "#/$defs/data_source_static"
+        }
+      }
+    },
+    "section_notice_bar": {
+      "type": "object",
+      "$comment": "Notice bar (03 §6.3): scrolling / static display (key name not given by the plan yet, props stay open). static: data_source {kind: static} and props.items is a NoticeItem array (04 §6.2); api: data_source {kind: api} (the notice CMS) and props carry no items.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["data_source", "props"],
+          "properties": {
+            "props": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["items"],
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/notice_item"
+                  }
+                }
+              }
+            },
+            "data_source": {
+              "$ref": "#/$defs/data_source_static_notice"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "props": {
+              "type": "object",
+              "additionalProperties": true,
+              "not": {
+                "type": "object",
+                "required": ["items"],
+                "properties": {
+                  "items": true
+                }
+              }
+            },
+            "data_source": {
+              "$ref": "#/$defs/data_source_api"
+            }
+          },
+          "required": ["data_source"]
+        }
+      ]
+    },
+    "section_feed_infinite": {
+      "type": "object",
+      "$comment": "Infinite material feed (03 §6.3): union_material only; the plan names no props.",
+      "required": ["data_source"],
+      "properties": {
+        "props": {
+          "type": "object",
+          "additionalProperties": false
+        },
+        "data_source": {
+          "$ref": "#/$defs/data_source_union_material"
+        }
+      }
+    },
+    "section_popup": {
+      "type": "object",
+      "$comment": "Popup (03 §6.1, §6.3): at most one per page; image, daily times, time window (start, end), close button (key name not given by the plan yet, so props stay open). static, items carry the action.",
+      "required": ["data_source"],
+      "properties": {
+        "props": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "image": {
+              "type": "string",
+              "minLength": 1
+            },
+            "daily_max": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            },
+            "time_window": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/$defs/time_of_day"
+              }
+            }
+          }
+        },
+        "data_source": {
+          "$ref": "#/$defs/data_source_static"
+        }
+      }
+    }
+  }
+}

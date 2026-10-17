@@ -756,7 +756,7 @@ export interface paths {
          *     and never by a user token. The token is valid only in the environment that issued it;
          *     invalid, expired or issued elsewhere → 30701. Only the HomePreview route of test builds
          *     calls it; release builds have no route or code for it (03 §3.6). The QR code carries only
-         *     token and page_key, no host name. sections follow the page schema of the page module.
+         *     token and page_key, no host name. sections follow contracts/home-schema.json.
          */
         get: operations["previewPage"];
         put?: never;
@@ -2630,10 +2630,11 @@ export interface paths {
          *     current fully released version, otherwise 20001 with `data.fields=[version]` (编排者默认).
          *     Rolling back the gray version marks it rolled_back and leaves the page without a gray
          *     version. Rolling back the fully released version (only while there is no gray version,
-         *     otherwise 20001 with `data.fields=[version]`) marks it rolled_back and makes the highest
-         *     published version below it the fully released one; without such a version → 20001 with
-         *     `data.fields=[version]`. Nothing is republished under a new number: the version numbers
-         *     clients saw stay as they were. CAS as in publish: `expected_revision` is the page's
+         *     otherwise 20001 with `data.fields=[version]`) marks it rolled_back and makes the published
+         *     version with the latest publish_at among the page's other published versions the fully
+         *     released one (ties: higher version); without one → 20001 with `data.fields=[version]`
+         *     (version numbers are save order, not publish order). Nothing is republished under a new
+         *     number: the version numbers clients saw stay as they were. CAS as in publish: `expected_revision` is the page's
          *     `revision` the console showed, the rollback adds 1, and a mismatch → 20902 with
          *     `data.resource=page`. A page with no saved version → 30701. Written to the audit log.
          */
@@ -4258,7 +4259,8 @@ export interface components {
             ttl_sec: number;
             /**
              * @description Only the sections whose condition matches and whose min_app_version this platform and
-             *     app version meet; the section shape is owned by home-schema.json (CT-07a).
+             *     app version meet; the page shape is contracts/home-schema.json (sections:
+             *     `$defs/section`).
              */
             sections: {
                 [key: string]: unknown;
@@ -5834,7 +5836,7 @@ export interface components {
             created_by: string;
             /** Format: date-time */
             created_at: string;
-            /** @description Sections as stored in page_versions.sections (shape owned by home-schema.json, CT-07a). */
+            /** @description Sections as stored in page_versions.sections (shape contracts/home-schema.json `$defs/section`). */
             sections: {
                 [key: string]: unknown;
             }[];
@@ -5862,7 +5864,7 @@ export interface components {
             trace_id: components["schemas"]["TraceId"];
         };
         AdminPageConfigDraftRequest: {
-            /** @description The whole page; section shape owned by home-schema.json (CT-07a). */
+            /** @description The whole page; section shape contracts/home-schema.json `$defs/section`. */
             sections: {
                 [key: string]: unknown;
             }[];
