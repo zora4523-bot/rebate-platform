@@ -128,6 +128,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/pages/:page_key",
+    "auth": "optional"
+  },
+  {
+    "method": "GET",
     "path": "/v1/pages/:page_key/preview",
     "auth": "none"
   },
@@ -439,6 +444,51 @@ export const CONTRACT_AUTH_ROUTES = [
   {
     "method": "POST",
     "path": "/admin/v1/platform-icons/:key/restore-builtin",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pages",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pages/:page_key",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pages/:page_key/versions",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/versions",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pages/:page_key/versions/:version",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/publish",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/gray",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/rollback",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pages/:page_key/preview-tokens",
     "auth": "admin"
   },
   {

@@ -1927,6 +1927,68 @@ paths:
           $ref: '#/components/responses/ClientError'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /v1/pages/{page_key}:
+    get:
+      operationId: getPage
+      tags:
+        - content
+      summary: Page configuration (home, custom:*)
+      description: |
+        The published configuration of a page (04 §6.2; shape 03 §6.1). Only published versions
+        are served, never drafts (drafts are read through previewPage). Rollout (拍板第二批
+        OPS-05, BR-ID-11 细则): with X-Device-Id the device is bucketed and gets the gray version
+        when its bucket (0..9999) is below gray_percent×100; without X-Device-Id it gets the fully
+        released version. Sections are filtered before they are sent: the section's
+        min_app_version for the X-Platform of the request, compared only as 「not lower than」
+        X-App-Version (TECH-07, 05 F1-02), and its condition, which uses only login, has_parent,
+        union_authorized and has_order (03 §6.1, BR-INV-23); the bearer token is optional and
+        only decides those conditions. A page_key of the right shape whose page does not exist,
+        has no published version or has no version left for this request → 30701. `ttl_sec` is
+        the server constant 300 (the example value of 03 §6.1; 编排者默认, pending a write-back
+        to the plan). Session scopes: full only (not on the BR-ID-01 细则「受限会话」 table).
+      x-auth: optional
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30701
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/OptionalDeviceId'
+        - $ref: '#/components/parameters/PageKeyPath'
+      responses:
+        '200':
+          description: The page as this device and user see it.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  page_key: home
+                  version: 7
+                  ttl_sec: 300
+                  sections: []
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /v1/pages/{page_key}/preview:
     get:
       operationId: previewPage
@@ -7084,6 +7146,735 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/pages:
+    get:
+      operationId: adminListPageConfigs
+      tags:
+        - admin-content
+      summary: Configured pages with their released and gray versions
+      description: |
+        Permission point `content.page` (04 §11.2; step-up 「–」). One row per page that has at
+        least one saved version (`home`, `custom:*`), ordered by page_key, page by page (`page`,
+        `page_size` ≤ 200): the fully released version, the gray version and its percentage, the
+        newest saved version, who changed the page last and when, and the page's `revision`, the
+        CAS value of every page write (04 §6.6 `pages`; 编排者默认).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of configured pages.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPageConfigListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - page_key: home
+                      current_version: 6
+                      gray_version: 7
+                      gray_percent: 10
+                      revision: 9
+                      latest_version: 8
+                      updated_by: ops-yi
+                      updated_at: '2026-10-17T10:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 1
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pages/{page_key}:
+    get:
+      operationId: adminGetPageConfig
+      tags:
+        - admin-content
+      summary: One configured page
+      description: |
+        Permission point `content.page`. The page's released and gray versions, newest saved
+        version, last change and `revision` (the CAS value of every page write). A page_key of the
+        right shape with no saved version → 30701.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PageKeyPath'
+      responses:
+        '200':
+          description: The page.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPageConfigResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  page_key: home
+                  current_version: 6
+                  gray_version: 7
+                  gray_percent: 10
+                  revision: 9
+                  latest_version: 8
+                  updated_by: ops-yi
+                  updated_at: '2026-10-17T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notFound:
+                  $ref: '#/components/examples/AdminPageConfigNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pages/{page_key}/versions:
+    get:
+      operationId: adminListPageConfigVersions
+      tags:
+        - admin-content
+      summary: Version history of one page
+      description: |
+        Permission point `content.page`. Every saved version of the page, newest first, page by
+        page (`page`, `page_size` ≤ 200), drafts and rolled-back versions included, without their
+        sections (read one version for those). render_count and error_count stay 0 until the
+        render report of TECH-29 exists (编排者默认). A page_key of the right shape with no saved
+        version → 30701.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PageKeyPath'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of versions, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPageConfigVersionListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - version: 8
+                      status: draft
+                      render_count: 0
+                      error_count: 0
+                      publish_at: null
+                      publisher: null
+                      created_by: ops-yi
+                      created_at: '2026-10-17T09:30:00+08:00'
+                    - version: 7
+                      status: published
+                      render_count: 0
+                      error_count: 0
+                      publish_at: '2026-10-16T20:00:00+08:00'
+                      publisher: ops-yi
+                      created_by: ops-yi
+                      created_at: '2026-10-16T19:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 8
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notFound:
+                  $ref: '#/components/examples/AdminPageConfigNotFound'
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: adminCreatePageConfigVersion
+      tags:
+        - admin-content
+      summary: Save a draft as a new version of one page
+      description: |
+        Permission point `content.page`. Saves `sections` as a new draft version (number = newest
+        version + 1, counted per page from 1); a saved version's content never changes again, so a
+        preview token stays pinned to what it shows (编排者默认). The first save creates the page.
+        Nothing is published: the draft takes effect only through POST
+        /admin/v1/pages/{page_key}/publish. Saving runs the same checks as publishing (04 §6.6):
+        jump targets (an ExternalPage url whose host is in the `union_host` category of the
+        platform link-pattern table while switch `external_page.union_host_block` is on, BR-ATTR-29
+        ①; personal-data placeholders in an external url, BR-ID-33 细则「外链不带个人数据」;
+        Withdraw, PayoutAccount, LaborAgreement or RealName with params, BR-WDR-01 细则), the
+        notice_bar api data source (only the notice CMS, 03 §6.3) and union_material channels (only
+        selectable channels of specs/material-channels.yaml, BR-TEXT-17 细则「联盟物料频道」); a
+        failure is 20001 with `data.fields` naming the offending field as a dotted path with array
+        indexes (e.g. `sections.0.data_source`), no `data.reason` (编排者默认). CAS:
+        `expected_revision` is the page's `revision` the console showed, 0 for a page not saved
+        yet; saving adds 1, and a mismatch → 20902 with `data.resource=page` (编排者默认: drafts
+        are whole pages, so two editors must not save over each other unseen).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PageKeyPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPageConfigDraftRequest'
+            example:
+              sections: []
+              expected_revision: 9
+      responses:
+        '200':
+          description: The new draft version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPageConfigVersionResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  page_key: home
+                  version: 9
+                  status: draft
+                  render_count: 0
+                  error_count: 0
+                  publish_at: null
+                  publisher: null
+                  created_by: ops-yi
+                  created_at: '2026-10-17T10:30:00+08:00'
+                  sections: []
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not saved (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                sectionInvalid:
+                  $ref: '#/components/examples/AdminPageConfigSectionInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminPageConfigConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pages/{page_key}/versions/{version}:
+    get:
+      operationId: adminGetPageConfigVersion
+      tags:
+        - admin-content
+      summary: One version of a page with its sections
+      description: |
+        Permission point `content.page`. One saved version with its sections as stored. A
+        page_key of the right shape with no saved version, or a version the page does not have →
+        30701.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PageKeyPath'
+        - $ref: '#/components/parameters/PageVersionPath'
+      responses:
+        '200':
+          description: The version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPageConfigVersionResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  page_key: home
+                  version: 7
+                  status: published
+                  render_count: 0
+                  error_count: 0
+                  publish_at: '2026-10-16T20:00:00+08:00'
+                  publisher: ops-yi
+                  created_by: ops-yi
+                  created_at: '2026-10-16T19:00:00+08:00'
+                  sections: []
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notFound:
+                  $ref: '#/components/examples/AdminPageConfigNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pages/{page_key}/publish:
+    post:
+      operationId: adminPublishPageConfig
+      tags:
+        - admin-content
+      summary: Publish a draft version of a page (full or gray)
+      description: |
+        Permission point `content.page`. Publishes the draft `version` after the same checks as
+        saving a draft (20001 with `data.fields` as a dotted path, see POST
+        /admin/v1/pages/{page_key}/versions). `gray_percent` 100 makes it the fully released
+        version (the previous one stays published but is no longer current); 1..99 makes it the
+        gray version, served to devices whose bucket is below gray_percent×100 (OPS-05); 0 is not
+        accepted, a gray version is stopped by rolling it back (编排者默认). Edges (编排者默认): a
+        page without a fully released version accepts only 100, otherwise 20001 with
+        `data.fields=[gray_percent]`; while a gray version exists no other version can be
+        published, 20001 with `data.fields=[version]` (release it fully or roll it back first); a
+        version that does not exist or is not a draft is 20001 with `data.fields=[version]`. CAS:
+        `expected_revision` is the page's `revision` the console showed; publishing adds 1, so a
+        stale request, including a retry of one that already took effect, never matches again: a
+        mismatch → 20902 with `data.resource=page`. A page with no saved version → 30701. Written
+        to the audit log.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PageKeyPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPageConfigPublishRequest'
+            examples:
+              gray:
+                summary: Publish version 8 to 10% of devices
+                value:
+                  version: 8
+                  gray_percent: 10
+                  expected_revision: 9
+              full:
+                summary: Publish version 8 to everyone
+                value:
+                  version: 8
+                  gray_percent: 100
+                  expected_revision: 9
+      responses:
+        '200':
+          description: The page with its new released or gray version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPageConfigResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  page_key: home
+                  current_version: 7
+                  gray_version: 8
+                  gray_percent: 10
+                  revision: 10
+                  latest_version: 8
+                  updated_by: ops-yi
+                  updated_at: '2026-10-17T11:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not published (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                versionInvalid:
+                  $ref: '#/components/examples/AdminPageConfigVersionInvalid'
+                grayInvalid:
+                  $ref: '#/components/examples/AdminPageConfigGrayInvalid'
+                sectionInvalid:
+                  $ref: '#/components/examples/AdminPageConfigSectionInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminPageConfigConflict'
+                notFound:
+                  $ref: '#/components/examples/AdminPageConfigNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pages/{page_key}/gray:
+    post:
+      operationId: adminUpdatePageConfigGray
+      tags:
+        - admin-content
+      summary: Change the gray percentage of a page, or release the gray version fully
+      description: |
+        Permission point `content.page`. Sets the gray percentage of the page's gray version
+        (1..99), or with 100 releases it fully: the gray version becomes the fully released
+        version and the page has no gray version any more (编排者默认). A page without a gray
+        version is 20001 with `data.fields=[gray_percent]`. CAS as in publish: `expected_revision`
+        is the page's `revision` the console showed, the change adds 1, and a mismatch → 20902
+        with `data.resource=page`. A page with no saved version → 30701. Written to the audit
+        log.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PageKeyPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPageConfigGrayRequest'
+            examples:
+              widen:
+                summary: Widen the gray version to half of the devices
+                value:
+                  gray_percent: 50
+                  expected_revision: 10
+              release:
+                summary: Release the gray version to everyone
+                value:
+                  gray_percent: 100
+                  expected_revision: 11
+      responses:
+        '200':
+          description: The page with its new gray percentage or released version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPageConfigResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  page_key: home
+                  current_version: 8
+                  gray_version: null
+                  gray_percent: 0
+                  revision: 12
+                  latest_version: 8
+                  updated_by: ops-yi
+                  updated_at: '2026-10-17T15:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                noGrayVersion:
+                  $ref: '#/components/examples/AdminPageConfigGrayInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminPageConfigConflict'
+                notFound:
+                  $ref: '#/components/examples/AdminPageConfigNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pages/{page_key}/rollback:
+    post:
+      operationId: adminRollbackPageConfig
+      tags:
+        - admin-content
+      summary: Roll back the gray or the fully released version of a page
+      description: |
+        Permission point `content.page`. `version` must be the page's current gray version or
+        current fully released version, otherwise 20001 with `data.fields=[version]` (编排者默认).
+        Rolling back the gray version marks it rolled_back and leaves the page without a gray
+        version. Rolling back the fully released version (only while there is no gray version,
+        otherwise 20001 with `data.fields=[version]`) marks it rolled_back and makes the highest
+        published version below it the fully released one; without such a version → 20001 with
+        `data.fields=[version]`. Nothing is republished under a new number: the version numbers
+        clients saw stay as they were. CAS as in publish: `expected_revision` is the page's
+        `revision` the console showed, the rollback adds 1, and a mismatch → 20902 with
+        `data.resource=page`. A page with no saved version → 30701. Written to the audit log.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PageKeyPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPageConfigRollbackRequest'
+            example:
+              version: 8
+              expected_revision: 10
+      responses:
+        '200':
+          description: The page after the rollback.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPageConfigResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  page_key: home
+                  current_version: 7
+                  gray_version: null
+                  gray_percent: 0
+                  revision: 11
+                  latest_version: 8
+                  updated_by: ops-yi
+                  updated_at: '2026-10-17T12:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not rolled back (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                versionInvalid:
+                  $ref: '#/components/examples/AdminPageConfigVersionInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminPageConfigConflict'
+                notFound:
+                  $ref: '#/components/examples/AdminPageConfigNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pages/{page_key}/preview-tokens:
+    post:
+      operationId: adminCreatePagePreviewToken
+      tags:
+        - admin-content
+      summary: Issue a preview token for one version of a page
+      description: |
+        Permission point `content.page` (「草稿预览二维码」, TECH-11). Issues a read-only preview
+        token for `version`, in any status (编排者默认), valid 10 minutes and only in the
+        environment that issued it; the test build's HomePreview route reads the version with it
+        through GET /v1/pages/{page_key}/preview. The console draws the QR code from `token` and
+        `page_key` only, with no host name (03 §3.6); no deep link is returned (编排者默认). A
+        version the page does not have is 20001 with `data.fields=[version]`; a page with no saved
+        version → 30701. Written to the audit log.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PageKeyPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPagePreviewTokenRequest'
+            example:
+              version: 8
+      responses:
+        '200':
+          description: The preview token.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPagePreviewTokenResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  token: pv_example_token_0000000000000000
+                  page_key: home
+                  version: 8
+                  expire_at: '2026-10-17T10:40:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not issued (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                versionInvalid:
+                  $ref: '#/components/examples/AdminPageConfigVersionInvalid'
+                notFound:
+                  $ref: '#/components/examples/AdminPageConfigNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/kill-switches:
     get:
       operationId: adminListKillSwitches
@@ -8697,6 +9488,27 @@ components:
         type: integer
         format: int32
         minimum: 1
+    PageKeyPath:
+      name: page_key
+      in: path
+      required: true
+      description: |
+        Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+        another shape → 20001 with data.fields=[page_key].
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: '^(home|custom:[a-z0-9_-]{1,57})$'
+    PageVersionPath:
+      name: version
+      in: path
+      required: true
+      description: Version of the page, counted per page from 1.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
     ConfigKeyPath:
       name: key
       in: path
@@ -9306,6 +10118,47 @@ components:
         msg: 状态已变化，请刷新后重试
         data:
           resource: platform_icon
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPageConfigNotFound:
+      summary: 30701 the page (or the version read) does not exist
+      value:
+        code: 30701
+        msg: 页面不存在
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPageConfigVersionInvalid:
+      summary: 20001 the version does not exist or its status does not allow the operation
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - version
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPageConfigGrayInvalid:
+      summary: 20001 gray_percent not allowed now (no released version yet, or no gray version)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - gray_percent
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPageConfigSectionInvalid:
+      summary: 20001 a section failed the save checks (dotted path of the offending field)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - sections.0.data_source
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPageConfigConflict:
+      summary: 20902 the page was changed by someone else (revision moved on)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: page
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminStepUpRequiredTotp:
       summary: 10003 the operation needs a totp-tier step-up token
@@ -12242,6 +13095,53 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/PagePreview'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    Page:
+      type: object
+      additionalProperties: false
+      required:
+        - page_key
+        - version
+        - ttl_sec
+        - sections
+      properties:
+        page_key:
+          type: string
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        ttl_sec:
+          type: integer
+          format: int32
+          minimum: 1
+          description: |
+            How long the client may reuse this response, in seconds; the server constant 300 (the
+            example value of 03 §6.1, pending a write-back to the plan).
+        sections:
+          type: array
+          description: |
+            Only the sections whose condition matches and whose min_app_version this platform and
+            app version meet; the section shape is owned by home-schema.json (CT-07a).
+          items:
+            type: object
+            additionalProperties: true
+    PageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/Page'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     InboxMessage:
@@ -15363,6 +16263,441 @@ components:
           format: int32
           minimum: 0
           description: The mark's `revision` as the console showed it; a mismatch is 20902.
+    AdminPageKey:
+      type: string
+      description: Page key, `home` or `custom:<name>`.
+      minLength: 1
+      maxLength: 64
+      pattern: '^(home|custom:[a-z0-9_-]{1,57})$'
+    AdminPageConfig:
+      type: object
+      description: A configured page with its fully released and gray versions.
+      additionalProperties: false
+      required:
+        - page_key
+        - current_version
+        - gray_version
+        - gray_percent
+        - revision
+        - latest_version
+        - updated_by
+        - updated_at
+      properties:
+        page_key:
+          $ref: '#/components/schemas/AdminPageKey'
+        current_version:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: Fully released version; null = nothing released yet.
+        gray_version:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: Version in gray rollout; null = none.
+        gray_percent:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 100
+          description: Share of devices on the gray version (bucket < gray_percent×100); 0 when there is no gray version.
+        revision:
+          type: integer
+          format: int32
+          minimum: 0
+          description: |
+            Plus 1 on every draft save, publish, gray change and rollback, never going back. The CAS
+            value of every page write, so a retried old request cannot undo a later change.
+        latest_version:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: Newest saved version, drafts included.
+        updated_by:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Username of the admin who last saved, published, changed the gray share or rolled back.
+        updated_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+    AdminPageConfigList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Ordered by page_key.
+          items:
+            $ref: '#/components/schemas/AdminPageConfig'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminPageConfigListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPageConfigList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPageConfigResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPageConfig'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPageConfigVersionStatus:
+      type: string
+      description: draft = saved, never published; published = released fully or in gray at some time; rolled_back = taken back (04 §3.2).
+      enum:
+        - draft
+        - published
+        - rolled_back
+    AdminPageConfigVersionSummary:
+      type: object
+      description: One saved version of a page, without its sections.
+      additionalProperties: false
+      required:
+        - version
+        - status
+        - render_count
+        - error_count
+        - publish_at
+        - publisher
+        - created_by
+        - created_at
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/AdminPageConfigVersionStatus'
+        render_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Renders reported for this version (TECH-29); 0 until the render report exists.
+        error_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Render errors reported for this version (TECH-29); 0 until the render report exists.
+        publish_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the version was published; null = never.
+        publisher:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Username of the admin who published the version; null = never published.
+        created_by:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Username of the admin who saved the version.
+        created_at:
+          type: string
+          format: date-time
+    AdminPageConfigVersion:
+      type: object
+      description: One saved version of a page with its sections.
+      additionalProperties: false
+      required:
+        - page_key
+        - version
+        - status
+        - render_count
+        - error_count
+        - publish_at
+        - publisher
+        - created_by
+        - created_at
+        - sections
+      properties:
+        page_key:
+          $ref: '#/components/schemas/AdminPageKey'
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/AdminPageConfigVersionStatus'
+        render_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Renders reported for this version (TECH-29); 0 until the render report exists.
+        error_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Render errors reported for this version (TECH-29); 0 until the render report exists.
+        publish_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the version was published; null = never.
+        publisher:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Username of the admin who published the version; null = never published.
+        created_by:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Username of the admin who saved the version.
+        created_at:
+          type: string
+          format: date-time
+        sections:
+          type: array
+          description: Sections as stored in page_versions.sections (shape owned by home-schema.json, CT-07a).
+          items:
+            type: object
+            additionalProperties: true
+    AdminPageConfigVersionList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Newest version first.
+          items:
+            $ref: '#/components/schemas/AdminPageConfigVersionSummary'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminPageConfigVersionListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPageConfigVersionList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPageConfigVersionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPageConfigVersion'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminPageConfigDraftRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - sections
+        - expected_revision
+      properties:
+        sections:
+          type: array
+          description: The whole page; section shape owned by home-schema.json (CT-07a).
+          items:
+            type: object
+            additionalProperties: true
+        expected_revision:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The page's `revision` as the console showed it, 0 for a page not saved yet; a mismatch is 20902.
+    AdminPageConfigPublishRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - gray_percent
+        - expected_revision
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Draft version to publish.
+        gray_percent:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+          description: 100 = release fully; 1..99 = gray rollout to that share of devices.
+        expected_revision:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The page's `revision` as the console showed it; a mismatch is 20902.
+    AdminPageConfigGrayRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - gray_percent
+        - expected_revision
+      properties:
+        gray_percent:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+          description: New share of devices on the gray version; 100 = release the gray version fully.
+        expected_revision:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The page's `revision` as the console showed it; a mismatch is 20902.
+    AdminPageConfigRollbackRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - expected_revision
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: The current gray version or the current fully released version.
+        expected_revision:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The page's `revision` as the console showed it; a mismatch is 20902.
+    AdminPagePreviewTokenRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Version to preview, in any status.
+    AdminPagePreviewToken:
+      type: object
+      additionalProperties: false
+      required:
+        - token
+        - page_key
+        - version
+        - expire_at
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Preview token for GET /v1/pages/{page_key}/preview; the QR code carries only it and page_key.
+        page_key:
+          $ref: '#/components/schemas/AdminPageKey'
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        expire_at:
+          type: string
+          format: date-time
+          description: 10 minutes after issue.
+    AdminPagePreviewTokenResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminPagePreviewToken'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
     AdminConfigKey:
       type: string
       description: |

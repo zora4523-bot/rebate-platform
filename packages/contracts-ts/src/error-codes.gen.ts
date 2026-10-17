@@ -281,7 +281,7 @@ export const errorCodes = {
     retry: "刷新后",
     retry_kind: "after_action",
     retry_kind_by_reason: {},
-    data: {"resource":["order","order_attribution","withdrawal","settle_batch","platform_icon","config_item","kill_switch","user_risk_state","union_binding"]},
+    data: {"resource":["order","order_attribution","withdrawal","settle_batch","platform_icon","config_item","kill_switch","user_risk_state","union_binding","page"]},
     headers: [],
     sources: ["BR-FUND-01","BR-FUND-04","BR-ATTR-20","BR-WDR-08","BR-ID-36","BR-WDR-17","BR-INV-21"],
     phase: null,

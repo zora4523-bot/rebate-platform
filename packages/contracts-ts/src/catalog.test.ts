@@ -206,6 +206,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     // CT-02j: admin user risk state and union binding CAS (04 §6.6, BR-ID-20, BR-ID-31).
     'user_risk_state',
     'union_binding',
+    // CT-02l: admin page draft / publish / gray / rollback CAS (04 §6.6 pages).
+    'page',
   ]);
 });
 

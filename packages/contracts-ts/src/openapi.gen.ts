@@ -712,6 +712,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/pages/{page_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Page configuration (home, custom:*)
+         * @description The published configuration of a page (04 §6.2; shape 03 §6.1). Only published versions
+         *     are served, never drafts (drafts are read through previewPage). Rollout (拍板第二批
+         *     OPS-05, BR-ID-11 细则): with X-Device-Id the device is bucketed and gets the gray version
+         *     when its bucket (0..9999) is below gray_percent×100; without X-Device-Id it gets the fully
+         *     released version. Sections are filtered before they are sent: the section's
+         *     min_app_version for the X-Platform of the request, compared only as 「not lower than」
+         *     X-App-Version (TECH-07, 05 F1-02), and its condition, which uses only login, has_parent,
+         *     union_authorized and has_order (03 §6.1, BR-INV-23); the bearer token is optional and
+         *     only decides those conditions. A page_key of the right shape whose page does not exist,
+         *     has no published version or has no version left for this request → 30701. `ttl_sec` is
+         *     the server constant 300 (the example value of 03 §6.1; 编排者默认, pending a write-back
+         *     to the plan). Session scopes: full only (not on the BR-ID-01 细则「受限会话」 table).
+         */
+        get: operations["getPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/pages/{page_key}/preview": {
         parameters: {
             query?: never;
@@ -2414,6 +2445,231 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Configured pages with their released and gray versions
+         * @description Permission point `content.page` (04 §11.2; step-up 「–」). One row per page that has at
+         *     least one saved version (`home`, `custom:*`), ordered by page_key, page by page (`page`,
+         *     `page_size` ≤ 200): the fully released version, the gray version and its percentage, the
+         *     newest saved version, who changed the page last and when, and the page's `revision`, the
+         *     CAS value of every page write (04 §6.6 `pages`; 编排者默认).
+         */
+        get: operations["adminListPageConfigs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/pages/{page_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One configured page
+         * @description Permission point `content.page`. The page's released and gray versions, newest saved
+         *     version, last change and `revision` (the CAS value of every page write). A page_key of the
+         *     right shape with no saved version → 30701.
+         */
+        get: operations["adminGetPageConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/pages/{page_key}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Version history of one page
+         * @description Permission point `content.page`. Every saved version of the page, newest first, page by
+         *     page (`page`, `page_size` ≤ 200), drafts and rolled-back versions included, without their
+         *     sections (read one version for those). render_count and error_count stay 0 until the
+         *     render report of TECH-29 exists (编排者默认). A page_key of the right shape with no saved
+         *     version → 30701.
+         */
+        get: operations["adminListPageConfigVersions"];
+        put?: never;
+        /**
+         * Save a draft as a new version of one page
+         * @description Permission point `content.page`. Saves `sections` as a new draft version (number = newest
+         *     version + 1, counted per page from 1); a saved version's content never changes again, so a
+         *     preview token stays pinned to what it shows (编排者默认). The first save creates the page.
+         *     Nothing is published: the draft takes effect only through POST
+         *     /admin/v1/pages/{page_key}/publish. Saving runs the same checks as publishing (04 §6.6):
+         *     jump targets (an ExternalPage url whose host is in the `union_host` category of the
+         *     platform link-pattern table while switch `external_page.union_host_block` is on, BR-ATTR-29
+         *     ①; personal-data placeholders in an external url, BR-ID-33 细则「外链不带个人数据」;
+         *     Withdraw, PayoutAccount, LaborAgreement or RealName with params, BR-WDR-01 细则), the
+         *     notice_bar api data source (only the notice CMS, 03 §6.3) and union_material channels (only
+         *     selectable channels of specs/material-channels.yaml, BR-TEXT-17 细则「联盟物料频道」); a
+         *     failure is 20001 with `data.fields` naming the offending field as a dotted path with array
+         *     indexes (e.g. `sections.0.data_source`), no `data.reason` (编排者默认). CAS:
+         *     `expected_revision` is the page's `revision` the console showed, 0 for a page not saved
+         *     yet; saving adds 1, and a mismatch → 20902 with `data.resource=page` (编排者默认: drafts
+         *     are whole pages, so two editors must not save over each other unseen).
+         */
+        post: operations["adminCreatePageConfigVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/pages/{page_key}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One version of a page with its sections
+         * @description Permission point `content.page`. One saved version with its sections as stored. A
+         *     page_key of the right shape with no saved version, or a version the page does not have →
+         *     30701.
+         */
+        get: operations["adminGetPageConfigVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/pages/{page_key}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a draft version of a page (full or gray)
+         * @description Permission point `content.page`. Publishes the draft `version` after the same checks as
+         *     saving a draft (20001 with `data.fields` as a dotted path, see POST
+         *     /admin/v1/pages/{page_key}/versions). `gray_percent` 100 makes it the fully released
+         *     version (the previous one stays published but is no longer current); 1..99 makes it the
+         *     gray version, served to devices whose bucket is below gray_percent×100 (OPS-05); 0 is not
+         *     accepted, a gray version is stopped by rolling it back (编排者默认). Edges (编排者默认): a
+         *     page without a fully released version accepts only 100, otherwise 20001 with
+         *     `data.fields=[gray_percent]`; while a gray version exists no other version can be
+         *     published, 20001 with `data.fields=[version]` (release it fully or roll it back first); a
+         *     version that does not exist or is not a draft is 20001 with `data.fields=[version]`. CAS:
+         *     `expected_revision` is the page's `revision` the console showed; publishing adds 1, so a
+         *     stale request, including a retry of one that already took effect, never matches again: a
+         *     mismatch → 20902 with `data.resource=page`. A page with no saved version → 30701. Written
+         *     to the audit log.
+         */
+        post: operations["adminPublishPageConfig"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/pages/{page_key}/gray": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change the gray percentage of a page, or release the gray version fully
+         * @description Permission point `content.page`. Sets the gray percentage of the page's gray version
+         *     (1..99), or with 100 releases it fully: the gray version becomes the fully released
+         *     version and the page has no gray version any more (编排者默认). A page without a gray
+         *     version is 20001 with `data.fields=[gray_percent]`. CAS as in publish: `expected_revision`
+         *     is the page's `revision` the console showed, the change adds 1, and a mismatch → 20902
+         *     with `data.resource=page`. A page with no saved version → 30701. Written to the audit
+         *     log.
+         */
+        post: operations["adminUpdatePageConfigGray"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/pages/{page_key}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Roll back the gray or the fully released version of a page
+         * @description Permission point `content.page`. `version` must be the page's current gray version or
+         *     current fully released version, otherwise 20001 with `data.fields=[version]` (编排者默认).
+         *     Rolling back the gray version marks it rolled_back and leaves the page without a gray
+         *     version. Rolling back the fully released version (only while there is no gray version,
+         *     otherwise 20001 with `data.fields=[version]`) marks it rolled_back and makes the highest
+         *     published version below it the fully released one; without such a version → 20001 with
+         *     `data.fields=[version]`. Nothing is republished under a new number: the version numbers
+         *     clients saw stay as they were. CAS as in publish: `expected_revision` is the page's
+         *     `revision` the console showed, the rollback adds 1, and a mismatch → 20902 with
+         *     `data.resource=page`. A page with no saved version → 30701. Written to the audit log.
+         */
+        post: operations["adminRollbackPageConfig"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/pages/{page_key}/preview-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a preview token for one version of a page
+         * @description Permission point `content.page` (「草稿预览二维码」, TECH-11). Issues a read-only preview
+         *     token for `version`, in any status (编排者默认), valid 10 minutes and only in the
+         *     environment that issued it; the test build's HomePreview route reads the version with it
+         *     through GET /v1/pages/{page_key}/preview. The console draws the QR code from `token` and
+         *     `page_key` only, with no host name (03 §3.6); no deep link is returned (编排者默认). A
+         *     version the page does not have is 20001 with `data.fields=[version]`; a page with no saved
+         *     version → 30701. Written to the audit log.
+         */
+        post: operations["adminCreatePagePreviewToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -3990,6 +4246,30 @@ export interface components {
             data: components["schemas"]["PagePreview"];
             trace_id: components["schemas"]["TraceId"];
         };
+        Page: {
+            page_key: string;
+            /** Format: int32 */
+            version: number;
+            /**
+             * Format: int32
+             * @description How long the client may reuse this response, in seconds; the server constant 300 (the
+             *     example value of 03 §6.1, pending a write-back to the plan).
+             */
+            ttl_sec: number;
+            /**
+             * @description Only the sections whose condition matches and whose min_app_version this platform and
+             *     app version meet; the section shape is owned by home-schema.json (CT-07a).
+             */
+            sections: {
+                [key: string]: unknown;
+            }[];
+        };
+        PageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["Page"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         InboxMessage: {
             message_id: components["schemas"]["Id"];
             /** @description Message template code (notify_templates). */
@@ -5437,6 +5717,227 @@ export interface components {
              */
             expected_revision: number;
         };
+        /** @description Page key, `home` or `custom:<name>`. */
+        AdminPageKey: string;
+        /** @description A configured page with its fully released and gray versions. */
+        AdminPageConfig: {
+            page_key: components["schemas"]["AdminPageKey"];
+            /**
+             * Format: int32
+             * @description Fully released version; null = nothing released yet.
+             */
+            current_version: number | null;
+            /**
+             * Format: int32
+             * @description Version in gray rollout; null = none.
+             */
+            gray_version: number | null;
+            /**
+             * Format: int32
+             * @description Share of devices on the gray version (bucket < gray_percent×100); 0 when there is no gray version.
+             */
+            gray_percent: number;
+            /**
+             * Format: int32
+             * @description Plus 1 on every draft save, publish, gray change and rollback, never going back. The CAS
+             *     value of every page write, so a retried old request cannot undo a later change.
+             */
+            revision: number;
+            /**
+             * Format: int32
+             * @description Newest saved version, drafts included.
+             */
+            latest_version: number | null;
+            /** @description Username of the admin who last saved, published, changed the gray share or rolled back. */
+            updated_by: string | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        AdminPageConfigList: {
+            /** @description Ordered by page_key. */
+            items: components["schemas"]["AdminPageConfig"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminPageConfigListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPageConfigList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminPageConfigResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPageConfig"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description draft = saved, never published; published = released fully or in gray at some time; rolled_back = taken back (04 §3.2).
+         * @enum {string}
+         */
+        AdminPageConfigVersionStatus: "draft" | "published" | "rolled_back";
+        /** @description One saved version of a page, without its sections. */
+        AdminPageConfigVersionSummary: {
+            /** Format: int32 */
+            version: number;
+            status: components["schemas"]["AdminPageConfigVersionStatus"];
+            /**
+             * Format: int64
+             * @description Renders reported for this version (TECH-29); 0 until the render report exists.
+             */
+            render_count: number;
+            /**
+             * Format: int64
+             * @description Render errors reported for this version (TECH-29); 0 until the render report exists.
+             */
+            error_count: number;
+            /**
+             * Format: date-time
+             * @description When the version was published; null = never.
+             */
+            publish_at: string | null;
+            /** @description Username of the admin who published the version; null = never published. */
+            publisher: string | null;
+            /** @description Username of the admin who saved the version. */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description One saved version of a page with its sections. */
+        AdminPageConfigVersion: {
+            page_key: components["schemas"]["AdminPageKey"];
+            /** Format: int32 */
+            version: number;
+            status: components["schemas"]["AdminPageConfigVersionStatus"];
+            /**
+             * Format: int64
+             * @description Renders reported for this version (TECH-29); 0 until the render report exists.
+             */
+            render_count: number;
+            /**
+             * Format: int64
+             * @description Render errors reported for this version (TECH-29); 0 until the render report exists.
+             */
+            error_count: number;
+            /**
+             * Format: date-time
+             * @description When the version was published; null = never.
+             */
+            publish_at: string | null;
+            /** @description Username of the admin who published the version; null = never published. */
+            publisher: string | null;
+            /** @description Username of the admin who saved the version. */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Sections as stored in page_versions.sections (shape owned by home-schema.json, CT-07a). */
+            sections: {
+                [key: string]: unknown;
+            }[];
+        };
+        AdminPageConfigVersionList: {
+            /** @description Newest version first. */
+            items: components["schemas"]["AdminPageConfigVersionSummary"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminPageConfigVersionListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPageConfigVersionList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminPageConfigVersionResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPageConfigVersion"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminPageConfigDraftRequest: {
+            /** @description The whole page; section shape owned by home-schema.json (CT-07a). */
+            sections: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Format: int32
+             * @description The page's `revision` as the console showed it, 0 for a page not saved yet; a mismatch is 20902.
+             */
+            expected_revision: number;
+        };
+        AdminPageConfigPublishRequest: {
+            /**
+             * Format: int32
+             * @description Draft version to publish.
+             */
+            version: number;
+            /**
+             * Format: int32
+             * @description 100 = release fully; 1..99 = gray rollout to that share of devices.
+             */
+            gray_percent: number;
+            /**
+             * Format: int32
+             * @description The page's `revision` as the console showed it; a mismatch is 20902.
+             */
+            expected_revision: number;
+        };
+        AdminPageConfigGrayRequest: {
+            /**
+             * Format: int32
+             * @description New share of devices on the gray version; 100 = release the gray version fully.
+             */
+            gray_percent: number;
+            /**
+             * Format: int32
+             * @description The page's `revision` as the console showed it; a mismatch is 20902.
+             */
+            expected_revision: number;
+        };
+        AdminPageConfigRollbackRequest: {
+            /**
+             * Format: int32
+             * @description The current gray version or the current fully released version.
+             */
+            version: number;
+            /**
+             * Format: int32
+             * @description The page's `revision` as the console showed it; a mismatch is 20902.
+             */
+            expected_revision: number;
+        };
+        AdminPagePreviewTokenRequest: {
+            /**
+             * Format: int32
+             * @description Version to preview, in any status.
+             */
+            version: number;
+        };
+        AdminPagePreviewToken: {
+            /** @description Preview token for GET /v1/pages/{page_key}/preview; the QR code carries only it and page_key. */
+            token: string;
+            page_key: components["schemas"]["AdminPageKey"];
+            /** Format: int32 */
+            version: number;
+            /**
+             * Format: date-time
+             * @description 10 minutes after issue.
+             */
+            expire_at: string;
+        };
+        AdminPagePreviewTokenResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPagePreviewToken"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         /**
          * @description A configuration or emergency-switch key (04 §10, §10.2): dotted segments, concrete per
          *     platform or channel (`convert.enabled.taobao`); the server's registry decides which keys
@@ -6108,6 +6609,13 @@ export interface components {
         PlatformIconKeyPath: components["schemas"]["PlatformIconKey"];
         /** @description Version of the mark, counted per mark from 1; unknown → 20001 with data.fields=[version]. */
         PlatformIconVersionPath: number;
+        /**
+         * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+         *     another shape → 20001 with data.fields=[page_key].
+         */
+        PageKeyPath: string;
+        /** @description Version of the page, counted per page from 1. */
+        PageVersionPath: number;
         /**
          * @description A configuration or emergency-switch key as registered by the server (04 §10, §10.2), dotted
          *     and concrete (`convert.enabled.taobao`, not `convert.enabled.<platform>`); an unregistered
@@ -7813,6 +8321,64 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["AppVersionCheckResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getPage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices, when the device is registered. */
+                "X-Device-Id"?: components["parameters"]["OptionalDeviceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The page as this device and user see it. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "page_key": "home",
+                     *         "version": 7,
+                     *         "ttl_sec": 300,
+                     *         "sections": []
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PageResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
@@ -12089,6 +12655,604 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not restored (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListPageConfigs: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of configured pages. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "page_key": "home",
+                     *             "current_version": 6,
+                     *             "gray_version": 7,
+                     *             "gray_percent": 10,
+                     *             "revision": 9,
+                     *             "latest_version": 8,
+                     *             "updated_by": "ops-yi",
+                     *             "updated_at": "2026-10-17T10:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 1
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPageConfigListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetPageConfig: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The page. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "page_key": "home",
+                     *         "current_version": 6,
+                     *         "gray_version": 7,
+                     *         "gray_percent": 10,
+                     *         "revision": 9,
+                     *         "latest_version": 8,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-17T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPageConfigResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListPageConfigVersions: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of versions, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "version": 8,
+                     *             "status": "draft",
+                     *             "render_count": 0,
+                     *             "error_count": 0,
+                     *             "publish_at": null,
+                     *             "publisher": null,
+                     *             "created_by": "ops-yi",
+                     *             "created_at": "2026-10-17T09:30:00+08:00"
+                     *           },
+                     *           {
+                     *             "version": 7,
+                     *             "status": "published",
+                     *             "render_count": 0,
+                     *             "error_count": 0,
+                     *             "publish_at": "2026-10-16T20:00:00+08:00",
+                     *             "publisher": "ops-yi",
+                     *             "created_by": "ops-yi",
+                     *             "created_at": "2026-10-16T19:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 8
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPageConfigVersionListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCreatePageConfigVersion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "sections": [],
+                 *       "expected_revision": 9
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminPageConfigDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description The new draft version. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "page_key": "home",
+                     *         "version": 9,
+                     *         "status": "draft",
+                     *         "render_count": 0,
+                     *         "error_count": 0,
+                     *         "publish_at": null,
+                     *         "publisher": null,
+                     *         "created_by": "ops-yi",
+                     *         "created_at": "2026-10-17T10:30:00+08:00",
+                     *         "sections": []
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPageConfigVersionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not saved (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetPageConfigVersion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+                /** @description Version of the page, counted per page from 1. */
+                version: components["parameters"]["PageVersionPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The version. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "page_key": "home",
+                     *         "version": 7,
+                     *         "status": "published",
+                     *         "render_count": 0,
+                     *         "error_count": 0,
+                     *         "publish_at": "2026-10-16T20:00:00+08:00",
+                     *         "publisher": "ops-yi",
+                     *         "created_by": "ops-yi",
+                     *         "created_at": "2026-10-16T19:00:00+08:00",
+                     *         "sections": []
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPageConfigVersionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminPublishPageConfig: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPageConfigPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description The page with its new released or gray version. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "page_key": "home",
+                     *         "current_version": 7,
+                     *         "gray_version": 8,
+                     *         "gray_percent": 10,
+                     *         "revision": 10,
+                     *         "latest_version": 8,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-17T11:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPageConfigResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not published (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUpdatePageConfigGray: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPageConfigGrayRequest"];
+            };
+        };
+        responses: {
+            /** @description The page with its new gray percentage or released version. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "page_key": "home",
+                     *         "current_version": 8,
+                     *         "gray_version": null,
+                     *         "gray_percent": 0,
+                     *         "revision": 12,
+                     *         "latest_version": 8,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-17T15:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPageConfigResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRollbackPageConfig: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "version": 8,
+                 *       "expected_revision": 10
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminPageConfigRollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description The page after the rollback. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "page_key": "home",
+                     *         "current_version": 7,
+                     *         "gray_version": null,
+                     *         "gray_percent": 0,
+                     *         "revision": 11,
+                     *         "latest_version": 8,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-17T12:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPageConfigResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not rolled back (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCreatePagePreviewToken: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "version": 8
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminPagePreviewTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description The preview token. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "token": "pv_example_token_0000000000000000",
+                     *         "page_key": "home",
+                     *         "version": 8,
+                     *         "expire_at": "2026-10-17T10:40:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPagePreviewTokenResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not issued (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
