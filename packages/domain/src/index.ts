@@ -93,3 +93,15 @@ export type {
   OrderRebateTransitionResult,
   OrderRebateTransitionRow,
 } from './state-machines/order-rebate.gen.ts';
+export {
+  COMMISSION_RULE_VERSION_EVENTS,
+  COMMISSION_RULE_VERSION_STATES,
+  COMMISSION_RULE_VERSION_TRANSITIONS,
+  transitionCommissionRuleVersion,
+} from './state-machines/commission-rule-version.gen.ts';
+export type {
+  CommissionRuleVersionState,
+  CommissionRuleVersionEvent,
+  CommissionRuleVersionTransitionResult,
+  CommissionRuleVersionTransitionRow,
+} from './state-machines/commission-rule-version.gen.ts';

@@ -1,0 +1,38 @@
+# 规则版本状态 commission_rule_versions.status 的状态机（规划/08 BR-CALC-11、BR-CALC-22；任务 B2-03j）。
+# 生成 packages/domain/src/state-machines/commission-rule-version.gen.ts
+# （node packages/domain/scripts/state-machines.ts；--verify 只比对）。生成物勿手改，改这里再生成。
+#
+# 写法约定（同 CT-04a）：
+# - from 中 null 表示「—」（入库首态：起草时插入草稿行）。
+# - guard 只是规则文字说明，transition() 不求值；守卫、step-up、审计与副作用由服务层（B2-03k）负责。
+# - 状态值与 db/migrations/0032 的 commission_rule_versions_status_check 一致（小写）；事件用大写蛇形名。
+#
+# 表外说明：
+# - 只有下面三行迁移，其余组合一律为表外事件。
+# - draft 不可撤销、不可发布后再改：修改草稿 = 起草新草稿（旧草稿留存）。
+# - 已生效的 published 不可撤销、不可修改、不可删除，回滚 = 发布一个新版本（BR-CALC-11）；revoked 是终态。
+name: commission-rule-version
+field: status
+states: [draft, published, revoked]
+# DRAFT_CREATED 起草（超管或被勾选规则发布权限的账号，记 base_version_id）；PUBLISH 经 step-up 发布；
+# REVOKE 撤销未生效的已发布版本（step-up 并写审计，不改内容）。
+events: [DRAFT_CREATED, PUBLISH, REVOKE]
+transitions:
+  - id: V1
+    from: [null]
+    event: DRAFT_CREATED
+    to: draft
+    guard: '超管或被勾选规则发布权限的账号起草，草稿记录 base_version_id（BR-CALC-22）'
+    test_id: AC-B2-03j#5
+  - id: V2
+    from: [draft]
+    event: PUBLISH
+    to: published
+    guard: 'BR-CALC-22：BR-CALC-06 完整性（含每个平台的 reserve_bp）与 BR-CALC-07 上限校验通过、试算差异报告生成成功；经 step-up 发布；当前最新已发布版本 = base_version_id；effective_from ≥ 发布时刻，且严格大于所有已发布且未撤销版本的 effective_from（BR-CALC-11）；写审计'
+    test_id: AC-B2-03j#5
+  - id: V3
+    from: [published]
+    event: REVOKE
+    to: revoked
+    guard: 'BR-CALC-11：只许 effective_from 未到（当前时刻 < effective_from）的已发布版本撤销；须 step-up 并写审计，不改内容'
+    test_id: AC-B2-03j#5
