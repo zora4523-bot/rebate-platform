@@ -7,7 +7,7 @@ type: impl
 # 02 §7.3、§18「同一订单的并发处理」；12 §9 S-01、S-13。订单归属核心（approvals 30 Claude 实现）。08 未写清的取值按 orders-plan.md 待编排裁定 ⑤ ⑥ 默认值。
 refs: [BR-ATTR-01, BR-ATTR-02, BR-ATTR-22, BR-ATTR-25]
 refs_hash:
-  BR-ATTR-01: f1627d31a3fb
+  BR-ATTR-01: d33a336b9b5a
   BR-ATTR-02: 51413f8a9a8a
   BR-ATTR-22: fef8d1c35cf2
   BR-ATTR-25: d3560ccebcdb
