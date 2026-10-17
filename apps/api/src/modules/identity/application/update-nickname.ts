@@ -8,6 +8,7 @@
 // successful change counts (§9.4 D30). A success writes one pino info line
 // identity_nickname_changed with the old value masked (§9.4 D31).
 import type { DB } from '@couli/db';
+import { chinaMonth } from '@couli/domain';
 import type { Kysely } from 'kysely';
 import type { Clock, RootLogger } from '../../platform/index.ts';
 import type { NicknameReviewPort } from '../ports/nickname-review.ts';
@@ -37,6 +38,103 @@ export interface UpdateNicknameService {
 }
 
 export function createUpdateNicknameService(options: UpdateNicknameOptions): UpdateNicknameService {
-  void options;
-  throw new Error('NotImplemented: createUpdateNicknameService');
+  const { clock, logger, review } = options;
+  const db = options.db.withSchema('app');
+  const segmenter = new Intl.Segmenter('und', { granularity: 'grapheme' });
+  const userQuery = (connection: Kysely<DB>, command: UpdateNicknameCommand) =>
+    connection
+      .selectFrom('users')
+      .select(['nickname', 'nickname_change_month', 'nickname_change_count'])
+      .where('app_id', '=', command.appId)
+      .where('id', '=', command.userId);
+
+  return {
+    async update(command) {
+      const nickname = command.nickname.trim();
+      // Stop at the first excess cluster instead of allocating an array for an arbitrary body.
+      let length = 0;
+      for (const cluster of segmenter.segment(nickname)) {
+        void cluster;
+        if (++length > 16) break;
+      }
+      if (length < 1 || length > 16) {
+        return { code: 20001, data: { fields: ['nickname'] } };
+      }
+
+      const current = await userQuery(db, command).executeTakeFirstOrThrow();
+      if (nickname === current.nickname) return { code: 0 };
+      if (
+        current.nickname_change_month === chinaMonth(clock.now()) &&
+        current.nickname_change_count >= 3
+      ) {
+        return { code: 30415 };
+      }
+
+      // No transaction or row lock spans the external review. The port owns its timeout.
+      let verdict;
+      try {
+        verdict = await review.review({ appId: command.appId, text: nickname });
+      } catch {
+        // Review errors may echo the submitted text: never log the error object or message.
+        verdict = 'unavailable';
+      }
+      if (verdict !== 'pass') {
+        if (verdict !== 'hit') {
+          logger.warn(
+            { app_id: command.appId, user_id: command.userId },
+            'identity_nickname_review_unavailable',
+          );
+        }
+        return { code: 20001, data: { reason: 'nickname_sensitive' } };
+      }
+
+      const saved = await db.transaction().execute(async (trx) => {
+        const user = await userQuery(trx, command).forUpdate().executeTakeFirstOrThrow();
+        if (nickname === user.nickname) return { code: 0 } as const;
+        // Read the clock after acquiring the lock: a review / lock wait can cross midnight.
+        const now = clock.now();
+        const month = chinaMonth(now);
+        if (user.nickname_change_month === month && user.nickname_change_count >= 3) {
+          return { code: 30415 } as const;
+        }
+        // D30: all successful user changes count, including changes to/from a default name.
+        const changed = await trx
+          .updateTable('users')
+          .set((eb) => ({
+            nickname,
+            nickname_change_month: month,
+            nickname_change_count:
+              user.nickname_change_month === month ? user.nickname_change_count + 1 : 1,
+            updated_at: now,
+            row_version: eb('row_version', '+', 1),
+          }))
+          .where('app_id', '=', command.appId)
+          .where('id', '=', command.userId)
+          .where((eb) =>
+            eb.or([
+              eb('nickname_change_month', 'is distinct from', month),
+              eb('nickname_change_count', '<', 3),
+            ]),
+          )
+          .returning('id')
+          .executeTakeFirst();
+        if (changed === undefined) return { code: 30415 } as const;
+        const first = segmenter.segment(user.nickname)[Symbol.iterator]().next().value?.segment;
+        return {
+          code: 0,
+          change: {
+            app_id: command.appId,
+            user_id: command.userId,
+            old_nickname: `${first ?? ''}***`,
+            new_nickname: nickname,
+            counted: true,
+            month,
+          },
+        } as const;
+      });
+      // Log only committed changes, with the actual previous value read under the row lock.
+      if ('change' in saved) logger.info(saved.change, 'identity_nickname_changed');
+      return { code: saved.code };
+    },
+  };
 }

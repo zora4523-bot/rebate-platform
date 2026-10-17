@@ -14,6 +14,7 @@ const MESSAGES: Readonly<Record<number, string>> = Object.freeze({
   20002: '验证码错误，请重新输入',
   20003: '验证码已失效，请重新获取',
   20004: '授权未完成，请重新授权',
+  30415: '本月昵称修改次数已用完，下月可再修改',
   50001: '服务端错误',
   50305: '该登录方式暂时不可用，请稍后再试或改用其他登录方式',
 });
@@ -28,13 +29,15 @@ const STATUSES: Readonly<Record<number, number>> = Object.freeze({
   20002: 400,
   20003: 400,
   20004: 400,
+  30415: 422,
   50001: 500,
   50305: 503,
 });
 
 export type IdentityFailure =
-  | { readonly code: 10001 | 10002 | 10403 | 20002 | 20003 | 50001 }
+  | { readonly code: 10001 | 10002 | 10403 | 20002 | 20003 | 30415 | 50001 }
   | { readonly code: 20001; readonly data: { readonly fields: readonly string[] } }
+  | { readonly code: 20001; readonly data: { readonly reason: 'nickname_sensitive' } }
   | { readonly code: 20004; readonly data?: { readonly reason: 'identity_mismatch' } }
   | { readonly code: 50305; readonly data: { readonly provider: string } };
 
@@ -43,7 +46,14 @@ export function identityFailure(result: IdentityFailure, traceId: string): HttpE
   const status = STATUSES[result.code] ?? 500;
   let msg = MESSAGES[result.code] ?? SERVER_ERROR_MSG;
   let data: Readonly<Record<string, unknown>> | undefined;
-  if (result.code === 20001) data = { fields: [...result.data.fields] };
+  if (result.code === 20001) {
+    if ('reason' in result.data) {
+      data = { reason: result.data.reason };
+      msg = '昵称含不允许使用的内容，请修改';
+    } else {
+      data = { fields: [...result.data.fields] };
+    }
+  }
   if (result.code === 20004 && result.data !== undefined) {
     data = { reason: result.data.reason };
     msg = IDENTITY_MISMATCH_MSG;
