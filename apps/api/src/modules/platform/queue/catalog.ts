@@ -14,6 +14,7 @@ const defaults = {
 
 export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
   ...[
+    'order-sync',
     'order-rescan',
     'settle',
     'payout',
@@ -27,8 +28,11 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
       ...defaults,
       name,
       // risk-scan (B1-03j): at most one queued or active job per time-slot singletonKey.
+      // order-sync (B1-08g): one queued or active job per window singletonKey (02 §7.1).
       policy:
-        name === 'settle' || name === 'payout' || name === 'risk-scan' ? 'exclusive' : 'standard',
+        name === 'order-sync' || name === 'settle' || name === 'payout' || name === 'risk-scan'
+          ? 'exclusive'
+          : 'standard',
     }),
   ),
   Object.freeze({
@@ -53,6 +57,7 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
   stream: Object.freeze([]),
   admin: Object.freeze([]),
   worker: Object.freeze([
+    work('order-sync', 1),
     work('order-rescan', 1),
     work('settle', 1),
     work('notify', 5),
