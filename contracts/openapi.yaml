@@ -5646,7 +5646,6 @@ paths:
         /admin/v1/users/{user_id}/reveal; no identity number, payout account, real name or raw
         risk reason. Balances, orders and withdrawals of a user are not part of this contract yet.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -5726,7 +5725,6 @@ paths:
         phone number masked (the full number only through POST /admin/v1/users/{user_id}/reveal).
         Lookup by order number comes with the order console.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -5822,7 +5820,6 @@ paths:
         ledger and withdrawals of the user come with the order and fund consoles and are not part
         of this schema yet.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
