@@ -20,6 +20,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { createTestDatabase } from '@couli/db/testing';
+import { sql } from 'kysely';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
@@ -423,6 +424,38 @@ async function subjectsOf(sessionId: string): Promise<[string, string][]> {
   return (runs[0]!['quota_subjects'] as string[]).map((s) => JSON.parse(s) as [string, string]);
 }
 
+/**
+ * A finished run on `sessionId` that counts against the quota (settle_result 'counted'), with the
+ * same quota_subjects as the session's existing run; accepted a minute before `clock` (the same
+ * day). Columns as B3-03g's acceptance writes them, within every agent_runs constraint.
+ */
+async function insertCountedRun(clock: FixedClock, sessionId: string): Promise<void> {
+  const [source] = await runsOf(pg.db, sessionId);
+  expect(source, `the run of ${sessionId}`).toBeDefined();
+  const now = clock.now();
+  const acceptedAt = new Date(now.getTime() - 60_000);
+  const hex = randomUUID().replace(/-/g, '');
+  const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-7${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  await pg.db
+    .insertInto('agent_runs')
+    .values({
+      id,
+      app_id: APP,
+      session_id: sessionId,
+      prompt_version: 'none',
+      accepted_at: acceptedAt,
+      deadline_at: new Date(acceptedAt.getTime() + 20_000),
+      quota_subjects: source!['quota_subjects'] as string[],
+      end_reason: 'stop',
+      finish_reason: 'stop',
+      settle_result: 'counted',
+      settled_at: now,
+      final_event: sql`${JSON.stringify({ type: 'done', data: { finish_reason: 'stop' } })}::jsonb`,
+      ended_at: now,
+    })
+    .execute();
+}
+
 function keyOf(subjects: readonly [string, string][], kind: string): string {
   const found = subjects.filter(([k]) => k === kind);
   expect(found, `one ${kind} subject`).toHaveLength(1);
@@ -464,13 +497,9 @@ it('[AC-B3-03f#28][BR-AI-23][BR-AI-15][BR-ID-03] 真实 stream 入口 + PG：游
     expect(keyOf(sb1, 'device'), 'other device, same IP').not.toBe(keyOf(sa1, 'device'));
     expect(keyOf(sb1, 'ip'), 'other device, same IP').toBe(keyOf(sa1, 'ip'));
 
-    // Consume: a's first run (device a, IP1) counts.
-    const counted = await pg.db
-      .updateTable('agent_runs')
-      .set({ settle_result: 'counted' })
-      .where('session_id', '=', a1)
-      .executeTakeFirst();
-    expect(Number(counted.numUpdatedRows)).toBe(1);
+    // Consume: one more run, already counted, with the same subjects as a's first run (device a,
+    // IP1). Settled runs are write-once (agent_runs_no_rewrite), so it is inserted, not updated.
+    await insertCountedRun(clock, a1);
 
     const before = await agentSnapshot(pg.db);
     for (const [caller, ip, what] of [
@@ -494,17 +523,16 @@ it('[AC-B3-03f#28][BR-AI-23][BR-AI-15][BR-ID-03] 真实 stream 入口 + PG：游
     const su1 = await subjectsOf(u1);
     expect(su1.map(([kind]) => kind).sort()).toEqual(['device', 'ip']);
     expect(keyOf(su1, 'device')).not.toBe(keyOf(sa1, 'device'));
-    await pg.db
-      .updateTable('agent_runs')
-      .set({ settle_result: 'counted' })
-      .where('session_id', '=', u1)
-      .execute();
+    await insertCountedRun(clock, u1);
     const again = await client(app, token, IP6)('POST', `/v1/agent/sessions/${u1}/messages`, {
       client_msg_id: randomUUID(),
       text: '帮我找个保温杯',
     });
     expect(json(again)['code'], again.body).toBe(30502);
-    expect(await runsOf(pg.db, u1)).toHaveLength(1);
+    expect(
+      await runsOf(pg.db, u1),
+      'the accepted run and the counted one, no new run',
+    ).toHaveLength(2);
   } finally {
     await app.close();
   }
