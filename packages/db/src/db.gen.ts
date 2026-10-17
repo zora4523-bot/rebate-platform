@@ -646,6 +646,32 @@ export interface LoginLogs {
   user_id: string;
 }
 
+export interface NotifyLogs {
+  app_id: string;
+  channel: string;
+  code: string;
+  created_at: Generated<Timestamp>;
+  dedupe_key: string;
+  id: string;
+  planned_at: Timestamp;
+  row_version: Generated<number>;
+  sent_at: Timestamp | null;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  user_id: string | null;
+}
+
+export interface NotifyTemplates {
+  app_id: string;
+  category: string;
+  channels: string[];
+  code: string;
+  created_at: Generated<Timestamp>;
+  route: Json | null;
+  row_version: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface OrderKeys {
   app_id: string;
   attr_at: Timestamp;
@@ -1346,6 +1372,8 @@ export interface DB {
   link_open_attempts: LinkOpenAttempts;
   links: Links;
   login_logs: LoginLogs;
+  notify_logs: NotifyLogs;
+  notify_templates: NotifyTemplates;
   order_keys: OrderKeys;
   order_rights: OrderRights;
   order_settlements: OrderSettlements;
