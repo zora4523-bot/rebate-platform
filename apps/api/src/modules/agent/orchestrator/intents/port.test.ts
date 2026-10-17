@@ -4,7 +4,7 @@ import type { AgentCaller } from '../../http/index.ts';
 import type { RedactedText } from '../../stream/admission/index.ts';
 import type { RunContext, UnnumberedCard } from '../../stream/run/index.ts';
 import { createIntentPort } from './index.ts';
-import type { IntentDeps, IntentRequest } from './index.ts';
+import type { IntentDeps, IntentRequest, TemplateCall } from './index.ts';
 
 // Synthetic only. BR-AI-01 细则「判定顺序」②③④ through the whole port: the server's clear
 // reading of the user's text decides between personal queries, page_guide and rule_qa.
@@ -59,7 +59,7 @@ function request(
   };
 }
 
-function harness(disabled: readonly string[] = []) {
+function harness(disabled: readonly string[] = [], calls: readonly TemplateCall[] = []) {
   const off = new Set(disabled);
   const unused = () => Promise.reject(new Error('synthetic: clarification not expected'));
   const deps: IntentDeps = {
@@ -67,7 +67,7 @@ function harness(disabled: readonly string[] = []) {
     flags: { enabled: async (_app, key) => !off.has(key) },
     tools: { registered: () => true },
     texts: { text: async (_app, key) => copy(key) },
-    trace: { calls: async () => [], record: vi.fn() },
+    trace: { calls: async () => calls, record: vi.fn() },
     clarification: {
       scope: unused,
       takeOnce: unused,
@@ -221,3 +221,193 @@ it.each([
     expect(h.deps.continuation.run).not.toHaveBeenCalled();
   },
 );
+
+// BR-AI-01 「页面引导」: location / entry questions stay page guides for every identity, and a
+// sentence-final particle is no evidence of a progress question.
+it.each([
+  [
+    '提现记录在哪看呢？',
+    { agent_intent: 'page_guide', guide_route: 'WithdrawRecords' },
+    'WithdrawRecords',
+  ],
+  ['订单列表在哪呢', { agent_intent: 'page_guide', guide_route: 'OrderList' }, 'OrderList'],
+  ['钱包在哪里啊', { agent_intent: 'page_guide', guide_route: 'Wallet' }, 'Wallet'],
+  [
+    '提现记录哪里看嘛',
+    { agent_intent: 'page_guide', guide_route: 'WithdrawRecords' },
+    'WithdrawRecords',
+  ],
+  ['钱包呢', { agent_intent: 'page_guide', guide_route: 'Wallet' }, 'Wallet'],
+  ['提现记录在哪个页面呀', { agent_intent: 'earnings_query' }, 'WithdrawRecords'],
+  ['我的订单怎么找呢', { agent_intent: 'order_query' }, 'OrderList'],
+  ['余额入口在哪儿呢', { agent_intent: 'earnings_query' }, 'Wallet'],
+] as const)(
+  '[B3-05f][BR-AI-01] 位置或入口问法带语气词仍出引导卡，游客不要求登录：%s',
+  async (text, model, route) => {
+    const h = harness();
+    const output = await h.run(request(model, text, GUEST));
+    expect(output.result).toEqual({ kind: 'done', finishReason: 'stop' });
+    expect(output.cards).toEqual([guideCard(route)]);
+    expect(output.texts).toEqual([]);
+  },
+);
+
+it.each([
+  ['余额呢', 'agent.earnings.need_login'],
+  ['我的提现到哪了呢', 'agent.earnings.need_login'],
+  ['提现到哪里了啊', 'agent.earnings.need_login'],
+  ['我余额还有多少呀', 'agent.earnings.need_login'],
+  ['那单返了吗', 'agent.need_login'],
+  ['上一单的返利呢', 'agent.need_login'],
+] as const)('[B3-05f][BR-AI-01] 数额与进度问法即使带语气词仍按本人查询：%s', async (text, key) => {
+  const h = harness();
+  const model = { agent_intent: 'page_guide', guide_route: 'Wallet' };
+  const output = await h.run(request(model, text, GUEST));
+  expect(output.result).toEqual({ kind: 'done', finishReason: 'auth_required' });
+  expect(output.cards.map((card) => card.type)).toEqual(['auth_required']);
+  expect(output.texts).toEqual([copy(key)]);
+});
+
+// BR-AI-07: templates summarise every call of the run, not only the last one.
+const PAID = { reason_code: null, display_status: 'PAID' } as const;
+const WAITING = { reason_code: null, display_status: 'WAITING' } as const;
+const REFUND = { reason_code: 'REFUND', display_status: 'INVALID' } as const;
+const NOT_TRACKED = { reason_code: 'NOT_TRACKED', display_status: 'WAITING' } as const;
+
+async function templateTexts(calls: readonly TemplateCall[]) {
+  const h = harness([], calls);
+  const output = await h.run(request('模型伪造结论：已到账', '合成订单问题', MEMBER));
+  expect(output.result).toEqual({ kind: 'done', finishReason: 'stop' });
+  expect(output.cards).toEqual([]);
+  expect(h.deps.continuation.run).not.toHaveBeenCalled();
+  return output.texts;
+}
+
+it.each<[string, readonly TemplateCall[]]>([
+  [
+    '两次 explain_order 各一笔',
+    [
+      { name: 'explain_order', orders: [PAID] },
+      { name: 'explain_order', orders: [REFUND] },
+    ],
+  ],
+  [
+    'explain_order 与 list_my_orders 各一笔',
+    [
+      { name: 'explain_order', orders: [WAITING] },
+      { name: 'list_my_orders', orders: [PAID] },
+    ],
+  ],
+  ['一次 list_my_orders 两笔', [{ name: 'list_my_orders', orders: [PAID, REFUND] }]],
+  [
+    '空列表后两次单笔',
+    [
+      { name: 'list_my_orders', orders: [] },
+      { name: 'explain_order', orders: [PAID] },
+      { name: 'explain_order', orders: [WAITING] },
+    ],
+  ],
+  [
+    '查不到的单号与另一笔',
+    [
+      { name: 'explain_order', orders: [NOT_TRACKED] },
+      { name: 'explain_order', orders: [WAITING] },
+    ],
+  ],
+  [
+    '三次 explain_order',
+    [
+      { name: 'explain_order', orders: [PAID] },
+      { name: 'explain_order', orders: [PAID] },
+      { name: 'explain_order', orders: [REFUND] },
+    ],
+  ],
+])('[B3-05f][BR-AI-07] 本 run 合计多笔订单一律用 order_list.summary：%s', async (_name, calls) => {
+  expect(await templateTexts(calls)).toEqual([copy('order_list.summary')]);
+});
+
+it.each<[readonly TemplateCall[], string]>([
+  [[{ name: 'explain_order', orders: [PAID] }], 'order_status.PAID.summary'],
+  [[{ name: 'explain_order', orders: [REFUND] }], 'order_reason.REFUND.summary'],
+  [
+    [
+      { name: 'list_my_orders', orders: [] },
+      { name: 'explain_order', orders: [WAITING] },
+    ],
+    'order_status.WAITING.summary',
+  ],
+  [
+    [
+      { name: 'list_my_orders', orders: [] },
+      { name: 'explain_order', orders: [NOT_TRACKED] },
+    ],
+    'order_reason.NOT_TRACKED.summary',
+  ],
+  [
+    [
+      { name: 'list_my_orders', orders: [] },
+      { name: 'list_my_orders', orders: [] },
+    ],
+    'order_list.empty',
+  ],
+  [
+    [
+      { name: 'list_my_orders', orders: [] },
+      { name: 'list_my_orders', orders: [REFUND] },
+    ],
+    'order_reason.REFUND.summary',
+  ],
+])(
+  '[B3-05f][BR-AI-07] 本 run 合计只有一笔或零笔时用单笔模板或空列表模板 %#',
+  async (calls, key) => {
+    expect(await templateTexts(calls)).toEqual([copy(key)]);
+  },
+);
+
+it.each<[readonly TemplateCall[], readonly string[]]>([
+  [
+    [
+      { name: 'get_my_earnings', status: 'unavailable' },
+      { name: 'get_my_earnings', status: 'shown' },
+    ],
+    ['agent.earnings.summary'],
+  ],
+  [
+    [
+      { name: 'get_my_earnings', status: 'shown' },
+      { name: 'get_my_earnings', status: 'unavailable' },
+    ],
+    ['agent.earnings.summary'],
+  ],
+  [
+    [
+      { name: 'get_my_earnings', status: 'unavailable' },
+      { name: 'get_my_earnings', status: 'unavailable' },
+    ],
+    ['agent.earnings.unavailable'],
+  ],
+  [
+    [
+      { name: 'search_rules', matched: true },
+      { name: 'search_rules', matched: false },
+    ],
+    ['agent.rule.found'],
+  ],
+  [
+    [
+      { name: 'search_rules', matched: false },
+      { name: 'search_rules', matched: false },
+    ],
+    ['agent.rule.not_found'],
+  ],
+  [
+    [
+      { name: 'explain_order', orders: [PAID] },
+      { name: 'search_rules', matched: true },
+      { name: 'explain_order', orders: [WAITING] },
+    ],
+    ['order_list.summary', 'agent.rule.found'],
+  ],
+])('[B3-05f][BR-AI-07][BR-AI-01] 收益与规则同样按本 run 全部调用汇总 %#', async (calls, keys) => {
+  expect(await templateTexts(calls)).toEqual(keys.map(copy));
+});

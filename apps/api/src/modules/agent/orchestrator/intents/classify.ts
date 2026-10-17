@@ -8,6 +8,12 @@
 // Order versus earnings: a demonstrative or measure word (这笔 / 那笔) is not evidence of an
 // order. An order needs an order noun (订单, 单号, 下单, 买的, 那单 …); account wording (提现,
 // 余额, 收益, 可提, 钱包) in the same sentence makes it earnings even next to an order noun.
+//
+// Page location first: a location or entry word (在哪 / 哪里看 / 怎么找 / 入口 / 哪个页面) makes
+// the message a page_guide question even when it names 提现 or 订单; it is never raised to a
+// personal query that asks a guest to log in. A sentence-final particle (呢 / 吗 / 啊 / 呀 / 吧 /
+// 嘛 …) is never evidence of a progress question; only a bare amount noun with a particle
+// (余额呢, 上一单的返利呢) asks about own data.
 
 /** Regular-expression sources (compiled with the `u` flag), applied to the user's text with
  * white space and trailing punctuation removed. Returned fresh by a function, not a constant. */
@@ -25,6 +31,9 @@ export interface IntentTextPatterns {
   readonly progress: string;
   /** Asking whether a rebate arrived; personal on its own (那返了吗). */
   readonly rebateProgress: string;
+  /** The whole sentence is an amount noun plus a particle (余额呢, 上一单的返利呢): asks about own
+   * data. Page nouns (钱包呢, 提现记录呢) and particles alone are not. */
+  readonly ellipticalAmount: string;
   /** Asking about withdrawal progress → topic withdrawal_progress. */
   readonly withdrawalProgress: string;
   /** Generic wording (一般 / 规则 / 多久 / 怎么算 …) → rule_qa unless it points at own data. */
@@ -34,7 +43,7 @@ export interface IntentTextPatterns {
   /** Points at one specific item (这笔 / 那单 / an order number); cancels `generic` but does not
    * decide between order and earnings. */
   readonly specificRef: string;
-  /** Asking where a page is. 到哪 (progress) is not a location. */
+  /** Asking where a page or an entry is. 到哪 / 在哪一步 / 在哪了 (progress) are not. */
   readonly location: string;
   /** Asking how to start an operation (怎么提现) → an entry page. */
   readonly howTo: string;
@@ -47,15 +56,19 @@ export function intentTextPatterns(): IntentTextPatterns {
     earningsWeak: '多少钱|钱',
     rebateNoun: '返利|返现',
     progress:
-      '多少|几块|几元|到哪|进度|到账|结算|返了|返没返|没返|还没|什么时候|啥时候|多会儿|多久|呢$',
+      '多少|几块|几元|到哪|哪一步|哪个环节|哪个阶段|进度|到账|结算|返了|返没返|没返|还没|什么时候|啥时候|多会儿|多久',
     rebateProgress: '返了[吗没么]?|返没返|没返|还没返|到账了[吗没么]?',
-    withdrawalProgress: '提现.*(?:到哪|进度|到账|审核|什么时候|啥时候|还没|怎么样)',
+    ellipticalAmount:
+      '^(?:那|那个|还有|我的?|我那)?(?:(?:上一|那|这)[单笔]的?)?(?:余额|收益|可提现?|返利|返现)(?:呢|嘞|咧)$',
+    withdrawalProgress:
+      '提现.*(?:到哪|哪一步|哪个环节|哪个阶段|进度|到账|审核|什么时候|啥时候|还没|怎么样)',
     generic:
       '一般|通常|规则|多久|几天|怎么算|如何计算|最低|最少|最高|最多|上限|下限|门槛|规定|标准|手续费',
     selfPointer:
       '我(?:的|那|这)?(?:返利|收益|余额|钱|提现|订单|那单|这单)|我(?:还|现在)?(?:有|能提|可以提|可提)',
     specificRef: '那单|这单|那笔|这笔|上一单|上一笔|单号|(?<!\\d)\\d{10,}(?!\\d)',
-    location: '在哪|(?<!到)哪里|(?<!到)哪儿|(?<!到)哪(?:看|找|查)|入口|从哪',
+    location:
+      '在哪(?!一步|步|个环节|个阶段|(?:里|儿)?了)|(?<![到在])哪(?:里|儿)(?!了)|(?<!到)哪(?:看|找|查)|哪个(?:页面|入口|地方)|哪一页|入口|从哪',
     howTo: '(?:怎么|如何|怎样)(?:才能|可以|能)?(?:提现|查看|看|找|打开|进入|进|邀请|授权|绑定)',
   };
 }
@@ -101,6 +114,7 @@ export function createTextClassifier(
   const rebateNoun = re(patterns.rebateNoun);
   const progress = re(patterns.progress);
   const rebateProgress = re(patterns.rebateProgress);
+  const ellipticalAmount = re(patterns.ellipticalAmount);
   const withdrawalProgress = re(patterns.withdrawalProgress);
   const generic = re(patterns.generic);
   const selfPointer = re(patterns.selfPointer);
@@ -117,9 +131,12 @@ export function createTextClassifier(
     classify(input) {
       const text = input.replace(/\s+/gu, '').replace(/[?？!！。.,，~～…]+$/u, '');
       if (text === '') return { kind: 'unknown' };
+      // A location or entry question is a page_guide question first (BR-AI-01 「页面引导」).
+      if (location.test(text) || howTo.test(text)) return { kind: 'page', route: routeHint(text) };
       const pointsAtOwn = selfPointer.test(text) || specificRef.test(text);
       const isGeneric = generic.test(text) && !pointsAtOwn;
-      const asksProgress = progress.test(text) || rebateProgress.test(text);
+      const asksProgress =
+        progress.test(text) || rebateProgress.test(text) || ellipticalAmount.test(text);
       if (!isGeneric && asksProgress) {
         const withdrawal = withdrawalProgress.test(text);
         if (earningsStrong.test(text)) return { kind: 'earnings', withdrawal };
@@ -129,7 +146,6 @@ export function createTextClassifier(
           return { kind: 'personal', withdrawal };
         }
       }
-      if (location.test(text) || howTo.test(text)) return { kind: 'page', route: routeHint(text) };
       if (isGeneric) return { kind: 'rule' };
       return { kind: 'unknown' };
     },

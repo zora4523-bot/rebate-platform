@@ -51,3 +51,25 @@ it.each([
 ])('[B3-05f][BR-AI-01] 指向本人数据或具体某笔时不判规则：%s', (text, expected) => {
   expect(classifier.classify(text)).toEqual(expected);
 });
+
+it.each([
+  ['提现记录在哪看呢', 'WithdrawRecords'],
+  ['订单列表在哪呢', 'OrderList'],
+  ['钱包在哪里啊', 'Wallet'],
+  ['提现记录在哪个页面呀', 'WithdrawRecords'],
+  ['我的订单怎么找呢', 'OrderList'],
+  ['余额入口在哪儿呢', 'Wallet'],
+])('[B3-05f][BR-AI-01] 位置与入口问法优先判页面，语气词不算进度：%s', (text, route) => {
+  expect(classifier.classify(text)).toEqual({ kind: 'page', route });
+});
+
+it.each([
+  ['钱包呢', { kind: 'unknown' }],
+  ['提现记录呢', { kind: 'unknown' }],
+  ['订单吧', { kind: 'unknown' }],
+  ['余额呢', { kind: 'earnings', withdrawal: false }],
+  ['提现到哪里了啊', { kind: 'earnings', withdrawal: true }],
+  ['我的提现卡在哪一步了', { kind: 'earnings', withdrawal: true }],
+])('[B3-05f][BR-AI-01] 只有语气词不算进度，数额名词或进度词才算：%s', (text, expected) => {
+  expect(classifier.classify(text)).toEqual(expected);
+});

@@ -69,23 +69,43 @@ function personalSpec(intent: PersonalIntent): PersonalSpec {
       };
 }
 
-/** BR-AI-07 T5 / T6 and BR-AI-01 「收益查询」: template key for one actual tool call. */
-function templateKey(call: TemplateCall): string {
-  switch (call.name) {
-    case 'list_my_orders':
-    case 'explain_order': {
-      const [first, ...rest] = call.orders;
-      if (first === undefined) return 'order_list.empty';
-      if (rest.length > 0) return 'order_list.summary';
-      return first.reason_code === null
-        ? `order_status.${first.display_status}.summary`
-        : `order_reason.${first.reason_code}.summary`;
+/** BR-AI-07 T5 / T6 and BR-AI-01 「收益查询」: template keys for every actual call of this run.
+ * Each kind is summarised over all its calls, never only the last one: all order results of the
+ * run together (0 → order_list.empty, 1 → that order's reason / status summary, more than 1 —
+ * from one call or several — → order_list.summary); earnings shown by any call → summary, else
+ * unavailable; rules matched by any call → found, else not_found. When one run used several
+ * kinds, each kind's template is sent in the fixed order orders, earnings, rules, so no card
+ * the tool path delivered is left without its text. */
+function templateKeys(calls: readonly TemplateCall[]): readonly string[] {
+  const keys: string[] = [];
+  const orderCalls = calls.filter(
+    (call): call is Extract<TemplateCall, { name: 'list_my_orders' | 'explain_order' }> =>
+      call.name === 'list_my_orders' || call.name === 'explain_order',
+  );
+  if (orderCalls.length > 0) {
+    const orders = orderCalls.flatMap((call) => call.orders);
+    const [first, ...rest] = orders;
+    if (first === undefined) keys.push('order_list.empty');
+    else if (rest.length > 0) keys.push('order_list.summary');
+    else {
+      keys.push(
+        first.reason_code === null
+          ? `order_status.${first.display_status}.summary`
+          : `order_reason.${first.reason_code}.summary`,
+      );
     }
-    case 'search_rules':
-      return call.matched ? 'agent.rule.found' : 'agent.rule.not_found';
-    case 'get_my_earnings':
-      return call.status === 'shown' ? 'agent.earnings.summary' : 'agent.earnings.unavailable';
   }
+  const earnings = calls.filter((call) => call.name === 'get_my_earnings');
+  if (earnings.length > 0) {
+    const shown = earnings.some((call) => call.status === 'shown');
+    keys.push(shown ? 'agent.earnings.summary' : 'agent.earnings.unavailable');
+  }
+  const rules = calls.filter((call) => call.name === 'search_rules');
+  if (rules.length > 0) {
+    const matched = rules.some((call) => call.matched);
+    keys.push(matched ? 'agent.rule.found' : 'agent.rule.not_found');
+  }
+  return keys;
 }
 
 function done(finishReason: Done['finishReason']): Done {
@@ -149,10 +169,9 @@ class IntentHandler {
     const label = raw.kind === 'object' ? knownIntent(raw.value['agent_intent']) : null;
 
     // BR-AI-07: an actual order / rule / earnings call in this run replaces any final model text.
-    const calls = await this.deps.trace.calls(appId, runId);
-    const last = calls.at(-1);
-    if (last !== undefined) {
-      await this.fixedText(request, ctx, templateKey(last));
+    const keys = templateKeys(await this.deps.trace.calls(appId, runId));
+    if (keys.length > 0) {
+      for (const key of keys) await this.fixedText(request, ctx, key);
       this.record(request, { intent: label, replaced: true });
       return done('stop');
     }
