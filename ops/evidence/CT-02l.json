@@ -1,0 +1,35 @@
+{
+  "task": "CT-02l",
+  "spec_ref": "038229e4a646dbd0b9ac5c8784dc0c931c739b51",
+  "spec_commit": "6bff7845a7512be36a7475eb592518109ce052dd",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only, all new operations planned). GET /v1/pages/{page_key} (getPage, x-auth optional) and nine /admin/v1/pages* operations (list, detail, versions, version, save draft with page-level revision CAS, publish with gray_percent 1..100, adjust gray / go full, rollback, preview token) behind permission content.page without step-up; 20902 data.resource gains page (catalog.test.ts resource list synced, as CT-17g / CT-02i). Orchestrator defaults (pages R1–R12, P1–P6) are in couli-runs CONTENT-client/decisions-pending.md. One S2 on rollback ordering tracked in followups for F1-09f. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review pass; one S2 tracked in followups"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "023ae60da1ee01444c0579ff4da9e4fb2b0619ea",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "ac5825caf28ceef964b939bddc39e61904140ed1",
+    "test/spec": "cfc2b2673d010ffa3b02e3791f97aa6915e57d1c",
+    "specs": "55f66fa7dcf3bb1c67e9025e383d4dcd5fe905fa"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "ac5825caf28ceef964b939bddc39e61904140ed1"
+  }
+}
