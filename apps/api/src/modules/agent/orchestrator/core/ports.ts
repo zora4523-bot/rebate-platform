@@ -27,6 +27,9 @@ import type {
 import type { RunBodyResult, RunContext, UnnumberedCard } from '../../stream/run/index.ts';
 import type { SuggestionsData } from '../../stream/writer/index.ts';
 
+// B3-05i: exported function port; tools inject cardReference(ctx, outcome.cards index).
+// Import from ./card-references.ts; see its contract for delivery/removal semantics.
+
 export interface OrchestratorLimits {
   readonly toolCalls: number;
   readonly modelRounds: number;
