@@ -212,31 +212,34 @@ it('[AC-F1-09e#10] 到期前 1ms 可读，到期瞬间及之后 30701，无缓�
 it('[AC-F1-09e#11] 错 token、另一已存在页、另一 app、过期一律同一 30701 信封，失败无写入', async () => {
   const f = await setup(h);
   const other = { ...f, appId: appId() };
+  const pageKey = 'custom:only11';
+  const version = 11;
+  // This page/version pair is unused by earlier cases sharing the database.
   // Insert distinct competing versions first: omitting either scope must not read them.
-  await seedVersion(h, f, 1, 'draft', 'custom:other', [{ id: 'other-page-v1' }]);
-  await seedVersion(h, other, 1, 'draft', 'home', [{ id: 'other-app-v1' }]);
-  await seedVersion(h, f, 1);
-  const result = await issued(await issue(f, 1));
-  expect(await previewed(await read(f, result.token))).toEqual({
-    page_key: 'home',
-    version: 1,
+  await seedVersion(h, f, version, 'draft', 'custom:other', [{ id: 'other-page-v11' }]);
+  await seedVersion(h, other, version, 'draft', pageKey, [{ id: 'other-app-v11' }]);
+  await seedVersion(h, f, version, 'draft', pageKey);
+  const result = await issued(await issue(f, version, pageKey));
+  expect(await previewed(await read(f, result.token, pageKey))).toEqual({
+    page_key: pageKey,
+    version,
     sections: SECTIONS,
   });
   const before = await snapshot(h, f);
   const otherBefore = await snapshot(h, other);
-  const unknown = await rejected(await read(f, 'x'.repeat(43)), 'preview', 30701);
+  const unknown = await rejected(await read(f, 'x'.repeat(43), pageKey), 'preview', 30701);
   expect(await rejected(await read(f, result.token, 'custom:other'), 'preview', 30701)).toEqual(
     unknown,
   );
   expect(
-    await rejected(await read(f, result.token, 'home', other.appId), 'preview', 30701),
+    await rejected(await read(f, result.token, pageKey, other.appId), 'preview', 30701),
   ).toEqual(unknown);
   // Public page_key has no pattern: a non-admin-shaped key still gets the same refusal.
   expect(await rejected(await read(f, result.token, 'not-a-page'), 'preview', 30701)).toEqual(
     unknown,
   );
   f.clock.advanceMs(600_000);
-  expect(await rejected(await read(f, result.token), 'preview', 30701)).toEqual(unknown);
+  expect(await rejected(await read(f, result.token, pageKey), 'preview', 30701)).toEqual(unknown);
   expect(await snapshot(h, f)).toEqual(before);
   expect(await snapshot(h, other)).toEqual(otherBefore);
 });
