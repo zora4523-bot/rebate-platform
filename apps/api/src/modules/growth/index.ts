@@ -39,6 +39,7 @@ export {
 } from './application/invite-binder.ts';
 export type {
   InviteBindCommand,
+  InviteBindOptions,
   InviteBinder,
   InviteBinderDeps,
   InviteBindingResult,

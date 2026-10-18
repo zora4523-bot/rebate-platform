@@ -16,6 +16,9 @@
 // - Codes as the core returns them, HTTP status from contracts/error-codes.yaml, msg the BR-TEXT-14
 //   fallback text (clients show their dictionary text error.<code>); 3xxxx envelopes have no data.
 //   42901 carries Retry-After, the core's seconds up to the next 00:00 +08:00.
+// - The daily 30401 count is in Redis, outside the transaction: the core gets the Idempotency-Key
+//   as its attempt key and counts one key once (a retry after a rolled-back commit — no record
+//   survives it — never counts again; review r1 S1).
 // - Stages ①–⑧ (signature, token, app, version gate, risk state, phone level 10005) are the
 //   global guard's and the idempotency post-miss hooks', not judged here.
 // Without the core (no database, Redis, field cipher or event bus) or the idempotency primitive the
@@ -124,7 +127,8 @@ export class InviterController {
       throw new Error('growth: signature device and token belong to different apps');
     }
     const body = request.body!;
-    const key = request.headers['idempotency-key'];
+    const header = request.headers['idempotency-key'];
+    const key = typeof header === 'string' ? header : undefined;
     const traceId = request.id;
     let retryAfter: number | undefined;
     const result = await idempotency.executeInTransaction(
@@ -133,19 +137,25 @@ export class InviterController {
         actor: { userId: principal.uid, deviceId: device.deviceId, phoneHmac: null },
         method: 'POST',
         path: PATH,
-        key: typeof key === 'string' ? key : undefined,
+        key,
         body,
         traceId,
       },
       async (trx): Promise<HandlerResult> => {
         const outcome = answer(
-          await binder.bind(trx, {
-            channel: 'backfill',
-            app_id: principal.app_id,
-            user_id: principal.uid,
-            device_id: device.deviceId,
-            invite_code: body.invite_code,
-          }),
+          await binder.bind(
+            trx,
+            {
+              channel: 'backfill',
+              app_id: principal.app_id,
+              user_id: principal.uid,
+              device_id: device.deviceId,
+              invite_code: body.invite_code,
+            },
+            // The handler runs only with a well-formed key (the idempotency module answers 20001
+            // otherwise): the daily 30401 count is de-duplicated per key (review r1 S1).
+            key === undefined ? undefined : { attemptKey: key },
+          ),
           traceId,
         );
         retryAfter = outcome.retryAfter;

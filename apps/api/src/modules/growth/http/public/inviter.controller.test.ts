@@ -9,6 +9,7 @@ import type {
 } from '../../../platform/index.ts';
 import type {
   InviteBindCommand,
+  InviteBindOptions,
   InviteBinder,
   InviteBindingResult,
 } from '../../application/invite-binder.ts';
@@ -62,11 +63,16 @@ function idempotency(
   };
 }
 
-function binder(result: InviteBindingResult, commands: InviteBindCommand[]): InviteBinder {
+function binder(
+  result: InviteBindingResult,
+  commands: InviteBindCommand[],
+  options: (InviteBindOptions | undefined)[] = [],
+): InviteBinder {
   return {
-    bind(trx, command) {
+    bind(trx, command, option) {
       expect(trx).toBe(TRX);
       commands.push(command);
+      options.push(option);
       return Promise.resolve(result);
     },
   };
@@ -91,10 +97,11 @@ function request(
 
 it('[AC-B1-11e#1] bound → 200 EmptyResponse; identity from token and signature, raw code', async () => {
   const commands: InviteBindCommand[] = [];
+  const options: (InviteBindOptions | undefined)[] = [];
   const requests: IdempotentRequest[] = [];
   const sent: Sent = { headers: {} };
   const controller = new InviterController(
-    binder({ result: 'bound', parent_id: 'p', bound_at: new Date(0) }, commands),
+    binder({ result: 'bound', parent_id: 'p', bound_at: new Date(0) }, commands, options),
     idempotency(requests) as Idempotency,
   );
   await controller.bindInviter(request(), reply(sent));
@@ -104,6 +111,8 @@ it('[AC-B1-11e#1] bound → 200 EmptyResponse; identity from token and signature
   expect(commands).toEqual([
     { channel: 'backfill', app_id: APP, user_id: USER, device_id: DEVICE, invite_code: ' k7q2mz ' },
   ]);
+  // The Idempotency-Key de-duplicates the daily 30401 count (review r1 S1).
+  expect(options).toEqual([{ attemptKey: 'key-b1-11e' }]);
   expect(requests).toEqual([
     {
       appId: APP,

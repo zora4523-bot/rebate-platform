@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { DB } from '@couli/db';
 import {
   DummyDriver,
@@ -19,6 +20,7 @@ import {
   createInviteBinder,
   createRegistrationInviteBinding,
   type InviteBindCommand,
+  type InviteBindOptions,
   type InviteBinderDeps,
   type InviteBindingResult,
 } from '../index.ts';
@@ -54,6 +56,7 @@ afterEach(async () => {
 function fakeRedis() {
   const store = new Map<string, { value: string; ttl: number }>();
   const state = { failGet: false, failEval: false };
+  const evals: { script: string; keys: string[]; ttlSeconds: number }[] = [];
   const handle: RedisHandle = {
     namespace(name) {
       return {
@@ -64,8 +67,15 @@ function fakeRedis() {
         async set() {
           throw new Error('set is not used by the binder');
         },
-        async eval(_script: string, options: RedisScriptOptions) {
+        async eval(script: string, options: RedisScriptOptions) {
           if (state.failEval) throw new Error('redis down');
+          evals.push({ script, keys: [...options.keys], ttlSeconds: options.ttlSeconds });
+          // COUNT_FAILURE's seen marker: SET NX EX on the second key; present → nothing counted.
+          if (options.keys.length > 1) {
+            const seen = `${name}:${options.keys[1]!}`;
+            if (store.has(seen)) return 0;
+            store.set(seen, { value: '1', ttl: options.ttlSeconds });
+          }
           const key = `${name}:${options.keys[0]!}`;
           const current = store.get(key);
           const count = Number(current?.value ?? '0') + 1;
@@ -77,7 +87,7 @@ function fakeRedis() {
     close: async () => {},
     onApplicationShutdown: async () => {},
   };
-  return { handle, store, state };
+  return { handle, store, state, evals };
 }
 
 // Compile real Kysely queries against an in-memory driver: no socket or database.
@@ -169,9 +179,10 @@ async function fixture(overrides: Partial<World> = {}) {
   const bind = (
     input: Partial<InviteBindCommand> = {},
     extra: Partial<InviteBinderDeps> = {},
+    options?: InviteBindOptions,
   ): Promise<InviteBindingResult> => {
     const binder = createInviteBinder({ ...deps, ...extra });
-    return db.transaction().execute((trx) => binder.bind(trx, { ...command, ...input }));
+    return db.transaction().execute((trx) => binder.bind(trx, { ...command, ...input }, options));
   };
   const writes = () => queries.filter((q) => /^(insert|update|delete)\b/i.test(q.sql));
   return {
@@ -628,4 +639,76 @@ it('[AC-B1-11d#28] a closed Redis handle throwing from namespace() answers 50001
   expect(await f.bind({ invite_code: '' }, { redis })).toEqual({ result: 'failed', code: 50001 });
   expect(f.writes()).toEqual([]);
   expect(f.queries.some((q) => q.sql.includes('pg_advisory_xact_lock'))).toBe(false);
+});
+
+const seenOf = (userId: string, attemptKey: string) =>
+  `${KEY}:seen:${createHash('sha256')
+    .update(JSON.stringify([userId, attemptKey]))
+    .digest('hex')}`;
+
+it('[AC-B1-11e#5] one attempt key counts once: a retry after a rolled-back commit adds nothing', async () => {
+  const f = await fixture();
+  const options = { attemptKey: 'key-retry-0001' };
+  expect(await f.bind({ invite_code: '' }, {}, options)).toEqual({ result: 'failed', code: 30401 });
+  expect(await f.bind({ invite_code: '' }, {}, options)).toEqual({ result: 'failed', code: 30401 });
+  expect(f.redis.store.get(KEY)).toEqual({ value: '1', ttl: 25200 + 60 });
+  const marker = seenOf(USER, 'key-retry-0001');
+  expect(f.redis.store.get(marker)).toEqual({ value: '1', ttl: 25200 + 60 });
+  // The raw key never reaches Redis; the marker sits under the day's count key.
+  const prefix = `${APP}:2031-05-06:${PHONE}`;
+  expect(f.redis.evals.map((call) => call.keys)).toEqual([
+    [prefix, marker.slice(INVITE_FAIL_NAMESPACE.length + 1)],
+    [prefix, marker.slice(INVITE_FAIL_NAMESPACE.length + 1)],
+  ]);
+  expect(JSON.stringify(f.redis.evals)).not.toContain('key-retry-0001');
+  expect(f.redis.evals[0]!.script).toMatch(/SET', KEYS\[2\], '1', 'NX', 'EX', ARGV\[1\]/);
+});
+
+it('[AC-B1-11e#5] different attempt keys count once each and still reach the daily limit', async () => {
+  const f = await fixture();
+  for (let i = 0; i < 5; i++) {
+    expect(await f.bind({ invite_code: 'BAD' }, {}, { attemptKey: `key-distinct-${i}` })).toEqual({
+      result: 'failed',
+      code: 30401,
+    });
+  }
+  expect(f.redis.store.get(KEY)?.value).toBe('5');
+  expect(await f.bind({}, {}, { attemptKey: 'key-distinct-5' })).toEqual({
+    result: 'failed',
+    code: 42901,
+    retry_after_seconds: 25200,
+  });
+});
+
+it('[AC-B1-11e#5] the markers never extend the day: later failures keep the first TTL', async () => {
+  const f = await fixture();
+  expect(await f.bind({ invite_code: '' }, {}, { attemptKey: 'key-early-0001' })).toMatchObject({
+    code: 30401,
+  });
+  f.clock.set('2031-05-06T15:00:00.000Z'); // 23:00 +08:00, one hour to midnight
+  expect(await f.bind({ invite_code: '' }, {}, { attemptKey: 'key-late-00001' })).toMatchObject({
+    code: 30401,
+  });
+  expect(await f.bind({ invite_code: '' }, {}, { attemptKey: 'key-early-0001' })).toMatchObject({
+    code: 30401,
+  });
+  expect(f.redis.store.get(KEY)).toEqual({ value: '2', ttl: 25200 + 60 });
+  expect(f.redis.store.get(seenOf(USER, 'key-early-0001'))?.ttl).toBe(25200 + 60);
+  expect(f.redis.store.get(seenOf(USER, 'key-late-00001'))?.ttl).toBe(3600 + 60);
+  // Every call asks for the TTL to the end of its own day only (set on creation by the script).
+  expect(f.redis.evals.map((call) => call.ttlSeconds)).toEqual([25260, 3660, 3660]);
+});
+
+it('[AC-B1-11e#5] without an attempt key every 30401 counts (register channel unchanged)', async () => {
+  const f = await fixture();
+  expect(await f.bind({ invite_code: '' })).toMatchObject({ code: 30401 });
+  expect(await f.bind({ invite_code: '' })).toMatchObject({ code: 30401 });
+  expect(f.redis.store.get(KEY)?.value).toBe('2');
+  expect(f.redis.evals.map((call) => call.keys.length)).toEqual([1, 1]);
+});
+
+it('[AC-B1-11e#5] a malformed attempt key is a programming error', async () => {
+  const f = await fixture();
+  await expect(f.bind({}, {}, { attemptKey: '' })).rejects.toThrow(TypeError);
+  expect(f.redis.evals).toEqual([]);
 });
