@@ -37,6 +37,14 @@ export interface RebateQuoteDeps {
   readonly references: {
     resolve(reference: QuoteReference, context: ToolCallContext): Promise<QuoteReferenceResult>;
   };
+  /**
+   * B3-05i: the core's cardReference (orchestrator/core/card-references.ts), injected by the
+   * composition root. index addresses this call's ToolOutcome.cards; the core replaces the whole
+   * string value with the delivered frame's card_id. Called only when a card goes out. Optional
+   * so callers without a numbering owner (the deterministic runner) still work; without it the
+   * model view carries no card_id and the card cannot be referenced later.
+   */
+  readonly cardReference?: (context: ToolCallContext, index: number) => string;
 }
 
 /** Internal outcomes for B3-05e, not new public error codes or fabricated wire cards. */
@@ -244,11 +252,21 @@ function agentProduct(card: ProductCard): Record<string, unknown> {
   };
 }
 
-/** BR-AI-05: the model sees title (untrusted, escaped), platform and benefit_tags only. */
-function modelView(card: ProductCard): unknown {
+/**
+ * BR-AI-05: the model sees card_id (a whole-value core reference to outcome.cards[index]), the
+ * title (untrusted, escaped), platform and benefit_tags only.
+ */
+function modelView(
+  deps: RebateQuoteDeps,
+  ctx: ToolCallContext,
+  card: ProductCard,
+  index: number,
+): unknown {
+  const reference = deps.cardReference;
   return {
     products: [
       {
+        ...(reference === undefined ? {} : { card_id: reference(ctx, index) }),
         title: wrapUntrusted(card.title ?? ''),
         platform: card.platform,
         benefit_tags: card.benefit_tags.filter((tag) => typeof tag === 'string'),
@@ -288,10 +306,12 @@ async function quoteProduct(
     data: { product: agentProduct(card), material: null, tlj_kind: 'unknown' },
     fallback_text: fallbackText(),
   };
+  // The quote card is the only entry of outcome.cards: its reference index is its position there.
+  const cards = [wire];
   return {
     kind: 'ok',
-    modelView: modelView(card),
-    cards: [wire],
+    modelView: modelView(deps, ctx, card, cards.indexOf(wire)),
+    cards,
     trace: { link_registrations: [{ link_id: card.link_id, product_key: productKey, ok: true }] },
   };
 }
