@@ -2502,10 +2502,16 @@ CREATE TABLE app.notify_templates (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    variant text DEFAULT 'default'::text NOT NULL,
+    title_override text,
+    body_override text,
+    CONSTRAINT notify_templates_body_override_check CHECK (((body_override IS NULL) OR (body_override ~ '[^[:space:]\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]'::text))),
     CONSTRAINT notify_templates_category_check CHECK ((category = ANY (ARRAY['service'::text, 'subscription'::text, 'marketing'::text]))),
     CONSTRAINT notify_templates_channels_check CHECK (((cardinality(channels) >= 1) AND (array_position(channels, NULL::text) IS NULL) AND (channels <@ ARRAY['inbox'::text, 'push'::text, 'sms'::text]))),
     CONSTRAINT notify_templates_code_check CHECK ((code ~ '^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$'::text)),
-    CONSTRAINT notify_templates_route_check CHECK (((route IS NULL) OR (jsonb_typeof(route) = 'object'::text)))
+    CONSTRAINT notify_templates_route_check CHECK (((route IS NULL) OR (jsonb_typeof(route) = 'object'::text))),
+    CONSTRAINT notify_templates_title_override_check CHECK (((title_override IS NULL) OR (title_override ~ '[^[:space:]\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]'::text))),
+    CONSTRAINT notify_templates_variant_check CHECK ((variant ~ '^[a-z][a-z0-9]*(_[a-z0-9]+)*$'::text))
 );
 
 
@@ -4738,7 +4744,7 @@ ALTER TABLE ONLY app.notify_logs
 --
 
 ALTER TABLE ONLY app.notify_templates
-    ADD CONSTRAINT notify_templates_pkey PRIMARY KEY (app_id, code);
+    ADD CONSTRAINT notify_templates_pkey PRIMARY KEY (app_id, code, variant);
 
 
 --
