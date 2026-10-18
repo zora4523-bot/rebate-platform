@@ -2,6 +2,14 @@
 export { laborAgreementSigned } from './ports/labor-agreement.ts';
 // B1-13h: the labor agreement's configuration port app.module assembles (IdentityModuleOptions).
 export type { LaborAgreementConfigReader } from './ports/labor-agreement.ts';
+export { createPayoutAccountService } from './application/payout-account.ts';
+export type {
+  PayoutAccountSubject,
+  SaveAlipayCommand,
+  SaveAlipayResult,
+  PayoutAccountServiceOptions,
+  PayoutAccountService,
+} from './application/payout-account.ts';
 // Stages ⑧ ⑨ (BR-ID-01 identity level, B1-02za): app.module hands IDENTITY_LEVEL_CHECKS' guard and
 // post-miss check to RiskModule, and assembles the real-name status port.
 export {
