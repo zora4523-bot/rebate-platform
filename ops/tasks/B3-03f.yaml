@@ -12,7 +12,7 @@ refs_hash:
   BR-AI-13: 870069e3ab76
 # 2026-10-15 编排者：按 B3-05 拆分（couli-runs/B3-05-plan/plan.md §3.3、§3.6）补依赖——同意读取（B1-02r）、访问三端口与按 run 取守卫（B3-03i）、最小可挂载 RunBody（B3-05a/b/c）、worker 侧 sweeper 已占用并改完 app.module.ts / agent.module.ts（B3-03h）。 2026-10-16 编排者：paths 加 agent/stream/mount/**（agent.module.ts 已有 B3-03h 的实现，测试阶段骨架不能放进去，path-guard 只认空壳文件；骨架放新目录，实现阶段 agent.module.ts 调用它）。
 # 2026-10-17 编排者（agent-lane）：不另开 CT-08g，改按 approvals 第 31 条在本任务 PR 里由 Claude 机械提交去掉 createAgentSession、getCurrentAgentSession、sendAgentMessage、cancelAgentRun 的 planned 并重生成（trailer Couli-Mechanical: contract-codegen）；auth / signing / min-version 三份路由生成物已含这四条，去 planned 只改 mechanical_paths 三项。历史、反馈、举报三条仍 planned。 2026-10-17 编排者：deps 加 B1-02x（identity 导出调用方上下文；Codex 实现首轮 blocked 于此）。
-# 2026-10-18 编排者：paths 加 stream/run/manager.ts（notice 卡不计已下发卡，BR-AI-15「没有下发任何 card」）、apps/api/src/contract.test.ts（CT-02a 路由归属扩为 /v1/agent/ 归 stream）与 platform/http/request-check-plan.test.ts（两条单测写死「stream 无 token 检查」，本任务按设计给 stream 装 token 检查 ② ③）。；10-19 CT-08d / CT-08f 两个契约测试文件从 test_paths 移到 paths（去 planned 后的断言同步属实现侧提交；放 test_paths 会被 red-check 整文件判红，CT-06r 豁免需逐条 3 行超 40 行上限）。
+# 2026-10-18 编排者：paths 加 stream/run/manager.ts（notice 卡不计已下发卡，BR-AI-15「没有下发任何 card」）、apps/api/src/contract.test.ts（CT-02a 路由归属扩为 /v1/agent/ 归 stream）与 platform/http/request-check-plan.test.ts（两条单测写死「stream 无 token 检查」，本任务按设计给 stream 装 token 检查 ② ③）。；10-19 两个契约测试文件回到 test_paths（evidence-check 不许 spec_commit 之后改规则测试），http.test.ts 中 12 条未改用例按 CT-06r 声明 red_exempt（CT-06t 起该段不计行数）。
 deps: [B3-03d, B3-03g, B3-03h, B3-03i, B1-02r, B3-05a, B3-05b, B3-05c, B1-02x]
 paths:
   - 'apps/api/src/app.module.ts'
@@ -23,14 +23,51 @@ paths:
   - 'apps/api/src/contract.test.ts'
   - 'apps/api/src/modules/platform/http/request-check-plan.test.ts'
   - 'apps/api/src/modules/agent/stream/run/manager.ts'
-  - 'test/spec/contracts/agent-accept/baseline.ts'
-  - 'test/spec/contracts/agent-http/http.test.ts'
 mechanical_paths:
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
 test_paths:
   - 'test/spec/agent/stream-mount/**'
+  - 'test/spec/contracts/agent-accept/baseline.ts'
+  - 'test/spec/contracts/agent-http/http.test.ts'
+red_exempt:
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#2] post /v1/agent/sessions（createAgentSession）声明所需且仍有效的错误码'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#2] get /v1/agent/sessions/current（getCurrentAgentSession）声明所需且仍有效的错误码'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#2] post /v1/agent/sessions/{id}/messages（sendAgentMessage）声明所需且仍有效的错误码'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#2] post /v1/agent/runs/{run_id}/cancel（cancelAgentRun）声明所需且仍有效的错误码'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#3] 新建会话无请求体，返回封闭且必填的会话数据及合法示例'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#4] 当前会话 data 只有必填 session，接受会话或 null 并提供空态示例'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#5] 消息必填、封闭，client_msg_id 仅接受 8–64 位字母数字下划线短横线'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#5] text 非空必填但 schema 不设 maxLength，600 字留给业务顺序校验'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#5] context 可省略或仅含 product_key、order_id、text 之一，文本上限 2000 字'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#7] 停止生成无请求体，200 复用 EmptyResponse 且 data 为空对象'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#8] 30501–30506 有效，30502 登记 reset_at 与准确的 next 取值'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
+  - file: 'test/spec/contracts/agent-http/http.test.ts'
+    test: '[AC-CT-08d#8] 30506 含义包括重复 client_msg_id 的原 run 仍在进行'
+    reason: '测试体未改，只因 kit.ts 用 createRequire 被判可能读到本任务改动的测试而整文件入列；契约结构断言对去 planned 前后都成立，骨架上必然绿'
 impl: codex
 tester: claude
 accept:
