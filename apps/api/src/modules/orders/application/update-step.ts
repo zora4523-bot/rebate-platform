@@ -5,9 +5,10 @@
 // - 其余：一条 CAS UPDATE（row_version + 当前 platform_status）；影响 0 行 → 重读一次重新判定，仍 0 行抛
 //   ORDER_CAS_CONFLICT。写序：UPDATE orders → history（按步序，只插入）→ pending → settlement 端口 → order.updated
 //   → 告警事件。
-// - 告警事件（注入 alertEvents 时，与上述写入同一事务；application/alert-events.ts）：表外事件与 P10 倒退（含开关关）
-//   → order.illegal_transition；已归属订单归因参数变化 → order.attr_param_changed；重跑归属遇淘宝绑定冲突 →
-//   order.attr_binding_conflict。映射表外的码（UNMAPPED_STATUS）08 未写该事件，只告警进待处理。
+// - 告警事件与 order.updated 经同一个注入的 events 总线、与上述写入同一事务入队（application/alert-events.ts），
+//   入队抛错整事务回滚：表外事件与 P10 倒退（含开关关）→ order.illegal_transition；已归属订单归因参数变化 →
+//   order.attr_param_changed；重跑归属遇淘宝绑定冲突 → order.attr_binding_conflict。映射表外的码
+//   （UNMAPPED_STATUS）08 未写该事件，只告警进待处理。
 // - 未归因（user_id 为空，含 VOID 的 R3b）每次重跑用户归属：命中且 locked=false 才写 user_id、user_basis=param。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
 //   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
@@ -76,7 +77,7 @@ export interface OrderStatusSource {
 
 export interface OrderUpdateDeps extends Pick<
   OrderPipelineDeps,
-  'clock' | 'users' | 'bindings' | 'statusMaps' | 'logger' | 'alertEvents'
+  'clock' | 'users' | 'bindings' | 'statusMaps' | 'logger'
 > {
   /** settlement 实现（B1-08n 接线）；与本次写库同一事务调用，抛错整事务回滚。 */
   readonly rebate: {
@@ -91,6 +92,7 @@ export interface OrderUpdateDeps extends Pick<
       source: OrderStatusSource,
     ): Promise<void>;
   };
+  /** 领域事件 order.updated 与三个告警事件共用的总线；与本次写库同一事务入队，抛错整事务回滚。 */
   readonly events: Pick<EventBus, 'publish'>;
   readonly regressionHold?: (platform: Parameters<OrderPipelineDeps['statusMaps']>[0]) => boolean;
 }
@@ -139,7 +141,7 @@ export function createOrderUpdateStep(
       detail: pendingDetail(plan, current.platform_status),
     });
     if (reason === 'ILLEGAL_TRANSITION') {
-      await publishIllegalTransition(deps.alertEvents, trx, {
+      await publishIllegalTransition(deps.events, trx, {
         appId: current.app_id,
         orderId: current.order_id,
         pendingId,
@@ -299,10 +301,10 @@ export function createOrderUpdateStep(
         attributed_now: attributedNow,
       },
     });
-    // 告警事件与本次写库同一事务（BR-ATTR-01 ⑦、BR-ATTR-07、BR-FUND-01 P10）。
+    // 告警事件与 order.updated 同一总线、同一事务（BR-ATTR-01 ⑦、BR-ATTR-07、BR-FUND-01 P10；02 §11）。
     if (plan.pending === 'ILLEGAL_TRANSITION') {
       // P10 且开关关：状态不迁移、其余列已照写，仍与待处理记录同事务记 order.illegal_transition。
-      await publishIllegalTransition(deps.alertEvents, trx, {
+      await publishIllegalTransition(deps.events, trx, {
         appId: current.app_id,
         orderId: current.order_id,
         pendingId,
@@ -314,7 +316,7 @@ export function createOrderUpdateStep(
       });
     }
     if (!unattributed && paramsChanged) {
-      await publishParamChanged(deps.alertEvents, trx, {
+      await publishParamChanged(deps.events, trx, {
         appId: current.app_id,
         orderId: current.order_id,
         platform,
@@ -322,7 +324,7 @@ export function createOrderUpdateStep(
       });
     }
     if (bindingConflict) {
-      await publishBindingConflict(deps.alertEvents, trx, {
+      await publishBindingConflict(deps.events, trx, {
         appId: current.app_id,
         orderId: current.order_id,
         platform,

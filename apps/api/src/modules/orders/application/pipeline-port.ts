@@ -1,9 +1,9 @@
 // B1-08h：归因流水线主事务（BR-ATTR-01；规划/02 §7.3、§18；D10-35）。每个子订单一个事务：
 // 第一句取该子订单的 advisory 锁，锁后重读 order_keys；判定全部完成后才写库。
 // - 已存在：app 不同 → 零写入、P1 告警；同 App → 乱序（可选）→ content_hash 短路 → updateStep（B1-08i）。
-// - 注入 events（B1-08i）时，首次入库在 rebate.onImported 之后同事务发 order.created；注入 alertEvents 时，
-//   首态为表外事件（非法首态）在写待处理的同一事务发 order.illegal_transition，淘宝绑定冲突在入库同一事务
-//   发 order.attr_binding_conflict（application/alert-events.ts）。
+// - 注入 events（B1-08i）时，经这同一个总线、同一事务：首次入库在 rebate.onImported 之后发 order.created，
+//   淘宝绑定冲突随后发 order.attr_binding_conflict；首态为表外事件（非法首态）在写待处理之后发
+//   order.illegal_transition（application/alert-events.ts）。入队抛错整事务回滚。
 // - 新子订单：① App 归属（推广位白名单）→ attr_at（定金优先）→ 同步起点 → 首态（表外码 / 非法首态只写
 //   pending，不建行）→ ② 用户归属 → ④ buy_type → 写 order_keys、orders、history（+ NO_RECEIVED_AT）、
 //   未归因计数、无 mtime 计数（开启排序时）→ rebate.onImported（同事务）。①、无付款时间、同步起点之前 → 只记丢弃计数。
@@ -194,7 +194,7 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       // BR-ATTR-01：迁移表外的首态事件（非法首态）与待处理记录同事务记 order.illegal_transition；
       // 映射表外的码（UNMAPPED_STATUS，BR-FUND-02）只告警进待处理，08 未写该事件。
       if (reason === 'ILLEGAL_TRANSITION') {
-        await publishIllegalTransition(deps.alertEvents, trx, {
+        await publishIllegalTransition(deps.events, trx, {
           appId: ctx.app_id,
           orderId: null,
           pendingId,
@@ -317,9 +317,9 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       name: 'order.created',
       payload: { order_id: orderId, platform, platform_status: plan.platform_status, attributed },
     });
-    // BR-ATTR-07：多条绑定命中且用户不同 → 未归因入库，同事务记 order.attr_binding_conflict。
+    // BR-ATTR-07：多条绑定命中且用户不同 → 未归因入库，同一总线、同事务记 order.attr_binding_conflict。
     if (user.kind === 'unattributed' && user.conflict) {
-      await publishBindingConflict(deps.alertEvents, trx, {
+      await publishBindingConflict(deps.events, trx, {
         appId: ctx.app_id,
         orderId,
         platform,

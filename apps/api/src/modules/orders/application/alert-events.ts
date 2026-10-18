@@ -1,6 +1,7 @@
-// B1-08i（D10-47、D10-48；规划/02 §11；BR-ATTR-01 ⑦、BR-ATTR-07、BR-FUND-01 P10）：订单同步的三个告警事件
-// order.illegal_transition、order.attr_binding_conflict、order.attr_param_changed，经注入的事件总线与业务写
-// 同一事务入队（总线未注入时调用方只记告警日志）。
+// B1-08i（D10-47、D10-48、D10-57；规划/02 §11；BR-ATTR-01 ⑦、BR-ATTR-07、BR-FUND-01 P10）：订单同步的三个告警
+// 事件 order.illegal_transition、order.attr_binding_conflict、order.attr_param_changed。与领域事件（order.created /
+// order.updated）走同一个注入的 events 总线、与业务写同一事务入队；入队失败即抛错，整事务回滚（待处理记录与订单写
+// 一并不留）。流水线未注入 events 时（B1-08h 的用法）只记告警日志。
 // - 载荷只放 id、枚举与平台名，不放子订单号、用户 id、归因参数的值与原始状态码（原始码在待处理记录里，
 //   按 pending_id 查）。
 // - order.illegal_transition 总与一条 order_sync_pending 记录同事务写入；事件 ID 由（事件名、App、载荷）派生，
@@ -13,10 +14,10 @@ import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
 import type { EventBus, JobPayload } from '../../platform/index.ts';
 
-/** 告警事件总线（EventBus 子集）；装配时与 events 注入同一个 EventBus（B1-08n）。 */
-export type OrderAlertEvents = Pick<EventBus, 'publish'>;
+/** 订单模块注入的事件总线（EventBus 子集）：领域事件与告警事件共用。 */
+type OrderEvents = Pick<EventBus, 'publish'>;
 
-/** 已归属订单上可能变化、但不覆盖的归因参数列（BR-ATTR-01）；只作载荷里的列名，不带值。 */
+/** 已归属订单上可能变化、但不覆盖的归因参数列（BR-ATTR-01）；只作 order.attr_param_changed 载荷里的列名，不带值。 */
 export type OrderAttrParamColumn = 'pid' | 'relation_id' | 'sub_union_id' | 'custom_params';
 
 export interface IllegalTransitionAlert {
@@ -50,7 +51,7 @@ export function derivedEventId(name: string, appId: string, payload: JobPayload)
 
 /** 表外事件与 P10 倒退：与待处理记录同事务入队 order.illegal_transition（BR-ATTR-01、BR-FUND-01 P10）。 */
 export async function publishIllegalTransition(
-  bus: OrderAlertEvents | undefined,
+  bus: OrderEvents | undefined,
   trx: Transaction<DB>,
   alert: IllegalTransitionAlert,
 ): Promise<void> {
@@ -81,7 +82,7 @@ export async function publishIllegalTransition(
 
 /** BR-ATTR-07：多条绑定命中且用户不同，订单进未归因池，同事务入队 order.attr_binding_conflict。 */
 export async function publishBindingConflict(
-  bus: OrderAlertEvents | undefined,
+  bus: OrderEvents | undefined,
   trx: Transaction<DB>,
   alert: { readonly appId: string; readonly orderId: string; readonly platform: string },
 ): Promise<void> {
@@ -94,7 +95,7 @@ export async function publishBindingConflict(
 
 /** BR-ATTR-01：已归属订单的归因参数新值与库内不同（库内不覆盖），同事务入队 order.attr_param_changed。 */
 export async function publishParamChanged(
-  bus: OrderAlertEvents | undefined,
+  bus: OrderEvents | undefined,
   trx: Transaction<DB>,
   alert: {
     readonly appId: string;

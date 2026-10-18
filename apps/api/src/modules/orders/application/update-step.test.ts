@@ -1,5 +1,5 @@
-// B1-08i 源码旁单元测试：更新步骤的写序、CAS 重读与整条拒收，以及告警事件与写库同一事务入队（不连库：
-// 脚本化驱动只回预设结果，记录编译后的语句）。
+// B1-08i 源码旁单元测试：更新步骤的写序、CAS 重读与整条拒收，以及告警事件与 order.updated 经同一个 events
+// 总线、与写库同一事务入队（不连库：脚本化驱动只回预设结果，记录编译后的语句）。
 import type { DB } from '@couli/db';
 import {
   DummyDriver,
@@ -141,6 +141,10 @@ const ctx: OrderPipelineContext = {
   requestId: 'unit-request',
 };
 
+type Publish = OrderUpdateDeps['events']['publish'];
+type Trx = Parameters<Publish>[0];
+
+/** 每次入队在 order 里记 event:<事件名>；领域事件与告警事件都经这一个总线。 */
 function deps(order: string[]): OrderUpdateDeps {
   return {
     clock: new FixedClock(NOW),
@@ -158,9 +162,9 @@ function deps(order: string[]): OrderUpdateDeps {
       }),
     },
     events: {
-      publish: vi.fn(() => {
-        order.push('event');
-        return Promise.resolve({ eventId: 'unit', duplicate: false });
+      publish: vi.fn<Publish>((_trx, event) => {
+        order.push(`event:${event.name}`);
+        return Promise.resolve({ eventId: event.eventId ?? 'unit', duplicate: false });
       }),
     },
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -182,7 +186,7 @@ it('[AC-B1-08i#U6] 首次 CAS 0 行 → 重读一次后按新状态重新判定�
   const updates = log.filter((sql) => sql.startsWith('update "app"."orders"'));
   expect(updates).toHaveLength(2);
   expect(log.filter((sql) => sql.startsWith('select'))).toHaveLength(1);
-  expect(order).toEqual(['rebate', 'event']);
+  expect(order).toEqual(['rebate', 'event:order.updated']);
 });
 
 it('[AC-B1-08i#U7] 两次 CAS 都 0 行抛 ORDER_CAS_CONFLICT，不调用端口', async () => {
@@ -198,7 +202,7 @@ it('[AC-B1-08i#U7] 两次 CAS 都 0 行抛 ORDER_CAS_CONFLICT，不调用端口'
   expect(order).toEqual([]);
 });
 
-it('[AC-B1-08i#U8] P10 倒退整条拒收：只写待处理（含说明），不 UPDATE、不调端口', async () => {
+it('[AC-B1-08i#U8] P10 倒退整条拒收：只写待处理（含说明），不 UPDATE、不调 settlement、不发 order.updated，只入队告警', async () => {
   const { db, log } = scriptedDb(
     () => 1n,
     () => current,
@@ -217,7 +221,7 @@ it('[AC-B1-08i#U8] P10 倒退整条拒收：只写待处理（含说明），不
   expect(
     log.filter((sql) => sql.startsWith('insert into "app"."order_sync_pending"')),
   ).toHaveLength(1);
-  expect(order).toEqual([]);
+  expect(order).toEqual(['event:order.illegal_transition']);
 });
 
 it('[AC-B1-08i#U9] P8 维权与处罚：change 相同，第三参数带各自的映射事件与原始码供 settlement 选 order_rights 类型', async () => {
@@ -234,7 +238,7 @@ it('[AC-B1-08i#U9] P8 维权与处罚：change 相同，第三参数带各自的
       .transaction()
       .execute((trx) => step.apply(trx, current, incoming({ raw_status: raw }), ctx));
     expect(outcome).toEqual({ kind: 'updated', order_id: current.order_id });
-    expect(order).toEqual(['rebate', 'event']);
+    expect(order).toEqual(['rebate', 'event:order.updated']);
     const onUpdated = vi.mocked(d.rebate.onUpdated);
     expect(onUpdated).toHaveBeenCalledTimes(1);
     const call = onUpdated.mock.calls[0];
@@ -259,7 +263,7 @@ it('[AC-B1-08i#U10] 表外码未入账：onUnmappedStatus 与 onUpdated 的第�
     .transaction()
     .execute((trx) => step.apply(trx, current, incoming({ raw_status: ' Unit-Unknown ' }), ctx));
   expect(outcome).toEqual({ kind: 'updated', order_id: current.order_id });
-  expect(order).toEqual(['unmapped', 'rebate', 'event']);
+  expect(order).toEqual(['unmapped', 'rebate', 'event:order.updated']);
   const source = { event: null, raw_status: ' Unit-Unknown ' };
   expect(vi.mocked(d.rebate.onUnmappedStatus).mock.calls[0]?.[2]).toEqual(source);
   expect(vi.mocked(d.rebate.onUpdated).mock.calls[0]?.[2]).toEqual(source);
@@ -269,20 +273,16 @@ it('[AC-B1-08i#U10] 表外码未入账：onUnmappedStatus 与 onUpdated 的第�
   });
 });
 
-// —— 告警事件（D10-47 / D10-48；BR-ATTR-01 ⑦、BR-ATTR-07、BR-FUND-01 P10）——
+// —— 告警事件（D10-47 / D10-48 / D10-57；BR-ATTR-01 ⑦、BR-ATTR-07、BR-FUND-01 P10）——
 
-type Publish = NonNullable<OrderUpdateDeps['alertEvents']>['publish'];
-type Trx = Parameters<Publish>[0];
-
-/** deps 再注入告警事件总线；每次入队在 order 里记 alert:<事件名>。 */
-function withAlerts(order: string[], patch: Partial<OrderUpdateDeps> = {}) {
-  const publish = vi.fn<Publish>((_trx, event) => {
-    order.push(`alert:${event.name}`);
-    return Promise.resolve({ eventId: event.eventId ?? 'unit', duplicate: false });
-  });
-  const d: OrderUpdateDeps = { ...deps(order), alertEvents: { publish }, ...patch };
-  return { d, publish };
+/** deps 加补丁，并交回它的 events.publish（领域事件与告警事件共用）。 */
+function withBus(order: string[], patch: Partial<OrderUpdateDeps> = {}) {
+  const d: OrderUpdateDeps = { ...deps(order), ...patch };
+  return { d, publish: vi.mocked(d.events.publish) };
 }
+
+const named = (publish: ReturnType<typeof withBus>['publish'], name: string) =>
+  publish.mock.calls.filter(([, event]) => event.name === name);
 
 /** 在一个事务里跑一次 apply，同时交回该事务对象，供断言「同一 trx」。 */
 async function run(
@@ -327,7 +327,7 @@ it.each([
       () => row,
     );
     const order: string[] = [];
-    const { d, publish } = withAlerts(order);
+    const { d, publish } = withBus(order);
     const first = await run(db, d, row, incoming({ raw_status: raw }));
     expect(first.outcome).toEqual({
       kind: 'pending',
@@ -335,7 +335,7 @@ it.each([
       reason: 'ILLEGAL_TRANSITION',
     });
     expect(log.some((sql) => sql.startsWith('update'))).toBe(false);
-    expect(order).toEqual(['alert:order.illegal_transition']);
+    expect(order).toEqual(['event:order.illegal_transition']);
     expect(publish).toHaveBeenCalledTimes(1);
     const [trx, published] = publish.mock.calls[0] ?? [];
     expect(trx).toBe(first.trx);
@@ -366,19 +366,21 @@ it.each([
   },
 );
 
-it('[AC-B1-08i#U12] P10 开关关：照常写后与待处理同一 trx 入队 order.illegal_transition（status_kept），排在 order.updated 之后', async () => {
+it('[AC-B1-08i#U12] P10 开关关：照常写后与待处理同一 trx、同一总线入队 order.illegal_transition（status_kept），排在 order.updated 之后', async () => {
   const { db } = scriptedDb(
     () => 1n,
     () => current,
   );
   const order: string[] = [];
-  const { d, publish } = withAlerts(order, { regressionHold: () => false });
+  const { d, publish } = withBus(order, { regressionHold: () => false });
   const { outcome, trx } = await run(db, d, current, incoming({ raw_status: 'paid' }));
   expect(outcome).toEqual({ kind: 'updated', order_id: current.order_id });
-  expect(order).toEqual(['rebate', 'event', 'alert:order.illegal_transition']);
+  expect(order).toEqual(['rebate', 'event:order.updated', 'event:order.illegal_transition']);
+  expect(publish).toHaveBeenCalledTimes(2);
   expect(publish.mock.calls[0]?.[0]).toBe(trx);
+  expect(publish.mock.calls[1]?.[0]).toBe(trx);
   expect(vi.mocked(d.rebate.onUpdated).mock.calls[0]?.[0]).toBe(trx);
-  expect(publish.mock.calls[0]?.[1]).toMatchObject({
+  expect(publish.mock.calls[1]?.[1]).toMatchObject({
     name: 'order.illegal_transition',
     payload: {
       order_id: current.order_id,
@@ -397,7 +399,7 @@ it('[AC-B1-08i#U13] 已归属订单归因参数变化：参数列不写，同一
     () => current,
   );
   const order: string[] = [];
-  const { d, publish } = withAlerts(order);
+  const { d, publish } = withBus(order);
   const changed = incoming({
     raw_status: 'received',
     attr_params: {
@@ -412,10 +414,11 @@ it('[AC-B1-08i#U13] 已归属订单归因参数变化：参数列不写，同一
   for (const column of ['"pid"', '"relation_id"', '"sub_union_id"', '"custom_params"']) {
     expect(update.split(' where ')[0]).not.toContain(column);
   }
-  expect(order).toEqual(['rebate', 'event', 'alert:order.attr_param_changed']);
-  expect(publish).toHaveBeenCalledTimes(1);
-  expect(publish.mock.calls[0]?.[0]).toBe(trx);
-  expect(publish.mock.calls[0]?.[1]).toEqual({
+  expect(order).toEqual(['rebate', 'event:order.updated', 'event:order.attr_param_changed']);
+  const alerts = named(publish, 'order.attr_param_changed');
+  expect(alerts).toHaveLength(1);
+  expect(alerts[0]?.[0]).toBe(trx);
+  expect(alerts[0]?.[1]).toEqual({
     appId: current.app_id,
     name: 'order.attr_param_changed',
     payload: {
@@ -424,7 +427,7 @@ it('[AC-B1-08i#U13] 已归属订单归因参数变化：参数列不写，同一
       changed: ['relation_id', 'custom_params'],
     },
   });
-  const text = JSON.stringify(publish.mock.calls[0]?.[1]);
+  const text = JSON.stringify(alerts[0]?.[1]);
   expect(text).not.toContain('unit-rel-new');
   expect(text).not.toContain('unit-buyer');
 });
@@ -437,7 +440,7 @@ it('[AC-B1-08i#U14] 未归因订单重跑归属遇淘宝绑定冲突：不写 us
   );
   const order: string[] = [];
   const bound = at('2026-10-01T00:00:00.000Z');
-  const { d, publish } = withAlerts(order, {
+  const { d, publish } = withBus(order, {
     bindings: {
       findByRelation: vi.fn(() =>
         Promise.resolve([
@@ -456,15 +459,16 @@ it('[AC-B1-08i#U14] 未归因订单重跑归属遇淘宝绑定冲突：不写 us
   expect(outcome).toEqual({ kind: 'updated', order_id: current.order_id });
   const update = log.find((sql) => sql.startsWith('update "app"."orders"')) ?? '';
   expect(update.split(' where ')[0]).not.toContain('"user_id"');
-  expect(order).toEqual(['rebate', 'event', 'alert:order.attr_binding_conflict']);
-  expect(publish).toHaveBeenCalledTimes(1);
-  expect(publish.mock.calls[0]?.[0]).toBe(trx);
-  expect(publish.mock.calls[0]?.[1]).toEqual({
+  expect(order).toEqual(['rebate', 'event:order.updated', 'event:order.attr_binding_conflict']);
+  const alerts = named(publish, 'order.attr_binding_conflict');
+  expect(alerts).toHaveLength(1);
+  expect(alerts[0]?.[0]).toBe(trx);
+  expect(alerts[0]?.[1]).toEqual({
     appId: current.app_id,
     name: 'order.attr_binding_conflict',
     payload: { order_id: current.order_id, platform: 'taobao' },
   });
-  expect(JSON.stringify(publish.mock.calls[0]?.[1])).not.toContain('unit-user-');
+  expect(JSON.stringify(alerts[0]?.[1])).not.toContain('unit-user-');
 });
 
 it('[AC-B1-08i#U15] 映射表外的码（已入账整条拒收、未入账照常写）不入队 order.illegal_transition', async () => {
@@ -475,9 +479,46 @@ it('[AC-B1-08i#U15] 映射表外的码（已入账整条拒收、未入账照常
       () => row,
     );
     const order: string[] = [];
-    const { d, publish } = withAlerts(order);
+    const { d, publish } = withBus(order);
     const { outcome } = await run(db, d, row, incoming({ raw_status: 'unit-unknown' }));
     expect(outcome.kind).toBe(rebate === 'CREDITED' ? 'pending' : 'updated');
-    expect(publish).not.toHaveBeenCalled();
+    expect(named(publish, 'order.illegal_transition')).toEqual([]);
+    expect(order).toEqual(
+      rebate === 'CREDITED' ? [] : ['unmapped', 'rebate', 'event:order.updated'],
+    );
   }
 });
+
+it.each([
+  { label: 'P10 倒退整条拒收', hold: true, outcome: 'rejected' },
+  { label: 'P10 开关关照常写', hold: false, outcome: 'status_kept' },
+])(
+  '[AC-B1-08i#U18] $label：order.illegal_transition 入队抛错原样抛出、不打已处理日志，由所在事务整体回滚',
+  async ({ hold, outcome }) => {
+    const { db } = scriptedDb(
+      () => 1n,
+      () => current,
+    );
+    const order: string[] = [];
+    const failure = new Error('unit-bus-failure');
+    const { d, publish } = withBus(order, { regressionHold: () => hold });
+    publish.mockImplementation((_trx, event) => {
+      order.push(`event:${event.name}`);
+      return event.name === 'order.illegal_transition'
+        ? Promise.reject(failure)
+        : Promise.resolve({ eventId: 'unit', duplicate: false });
+    });
+    await expect(run(db, d, current, incoming({ raw_status: 'paid' }))).rejects.toBe(failure);
+    expect(order).toEqual(
+      hold
+        ? ['event:order.illegal_transition']
+        : ['rebate', 'event:order.updated', 'event:order.illegal_transition'],
+    );
+    expect(named(publish, 'order.illegal_transition')[0]?.[1]).toMatchObject({
+      payload: { outcome },
+    });
+    // 失败的这次不打「已拒收 / 已照写」告警日志，也不打 updated。
+    expect(vi.mocked(d.logger!.error)).not.toHaveBeenCalled();
+    expect(vi.mocked(d.logger!.info)).not.toHaveBeenCalled();
+  },
+);

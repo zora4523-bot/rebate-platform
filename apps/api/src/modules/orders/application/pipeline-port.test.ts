@@ -1,5 +1,6 @@
 // B1-08h 源码旁单元测试：BR-ATTR-01 开启乱序判定、平台没给修改时间时，首次入库（新建订单行）也累加
-// order_sync_no_mtime（D10-39）；B1-08i：首次入库的告警事件与写库同一事务入队。不连库：DummyDriver 不回任何行
+// order_sync_no_mtime（D10-39）；B1-08i：首次入库的告警事件与 order.created 经同一个 events 总线、与写库同一事务
+// 入队，入队失败整事务回滚。不连库：DummyDriver 不回任何行
 // （锁后读 order_keys 为空 → 新子订单；写待处理时回一个 id），只记录编译后的语句与事务边界。
 import type { DB } from '@couli/db';
 import {
@@ -219,21 +220,22 @@ it.each([
   },
 );
 
-// —— 告警事件（B1-08i；D10-47 / D10-48）——
+// —— 告警事件（B1-08i；D10-47 / D10-48 / D10-57：与领域事件同一个 events 总线）——
 
-type Publish = NonNullable<OrderPipelineDeps['alertEvents']>['publish'];
+type Publish = NonNullable<OrderPipelineDeps['events']>['publish'];
 
-function alerts(statements: Statement[]) {
+/** 事件总线替身：每次入队在语句流里记 event:<事件名>（参数为是否在事务内）。 */
+function bus(statements: Statement[]) {
   return vi.fn<Publish>((trx, event) => {
-    statements.push({ sql: `alert:${event.name}`, parameters: [trx.isTransaction] });
+    statements.push({ sql: `event:${event.name}`, parameters: [trx.isTransaction] });
     return Promise.resolve({ eventId: event.eventId ?? 'unit', duplicate: false });
   });
 }
 
 it('[AC-B1-08i#U16] 首态为表外事件（非法首态）：不建行，写待处理后同一事务入队 order.illegal_transition；映射表外的码不入队', async () => {
   const publish = vi.fn<Publish>();
-  const { pipeline, statements } = setup({ alertEvents: { publish } });
-  publish.mockImplementation(alerts(statements));
+  const { pipeline, statements } = setup({ events: { publish } });
+  publish.mockImplementation(bus(statements));
   const result = await pipeline.process(order({ raw_status: 'rights' }), ctx);
   expect(result).toEqual({ kind: 'pending', reason: 'ILLEGAL_TRANSITION' });
   expect(statements.some(writesOrder)).toBe(false);
@@ -241,7 +243,7 @@ it('[AC-B1-08i#U16] 首态为表外事件（非法首态）：不建行，写待
   const pendingAt = sqls.findIndex((sql) =>
     sql.startsWith('insert into "app"."order_sync_pending"'),
   );
-  const alertAt = sqls.indexOf('alert:order.illegal_transition');
+  const alertAt = sqls.indexOf('event:order.illegal_transition');
   expect(sqls[0]).toBe('begin');
   expect(sqls.at(-1)).toBe('commit');
   expect(pendingAt).toBeGreaterThan(0);
@@ -267,7 +269,7 @@ it('[AC-B1-08i#U16] 首态为表外事件（非法首态）：不建行，写待
   });
   expect(JSON.stringify(publish.mock.calls[0]?.[1])).not.toContain('unit-child');
 
-  const unmapped = setup({ alertEvents: { publish } });
+  const unmapped = setup({ events: { publish } });
   await expect(
     unmapped.pipeline.process(order({ raw_status: 'outside-map' }), ctx),
   ).resolves.toEqual({
@@ -277,11 +279,11 @@ it('[AC-B1-08i#U16] 首态为表外事件（非法首态）：不建行，写待
   expect(publish).toHaveBeenCalledTimes(1);
 });
 
-it('[AC-B1-08i#U17] 首次入库遇淘宝绑定冲突：未归因入库，同一事务（与返利首态端口同一 trx）入队 order.attr_binding_conflict', async () => {
+it('[AC-B1-08i#U17] 首次入库遇淘宝绑定冲突：未归因入库，与 order.created 同一总线、同一 trx（与返利首态端口同一 trx）入队 order.attr_binding_conflict', async () => {
   const publish = vi.fn<Publish>();
   const bound = at('2026-10-01T00:00:00.000Z');
   const { pipeline, statements, onImported } = setup({
-    alertEvents: { publish },
+    events: { publish },
     bindings: {
       findByRelation: () =>
         Promise.resolve([
@@ -290,7 +292,7 @@ it('[AC-B1-08i#U17] 首次入库遇淘宝绑定冲突：未归因入库，同一
         ]),
     },
   });
-  publish.mockImplementation(alerts(statements));
+  publish.mockImplementation(bus(statements));
   const taobao = order({
     platform: 'taobao',
     attr_params: { relation_id: 'unit-rel', sub_union_id: null, custom_parameters: null },
@@ -298,17 +300,63 @@ it('[AC-B1-08i#U17] 首次入库遇淘宝绑定冲突：未归因入库，同一
   const result = await pipeline.process(taobao, { ...ctx, platform: 'taobao' });
   expect(result).toMatchObject({ kind: 'inserted' });
   expect(onImported.mock.calls[0]?.[1]).toMatchObject({ attributed: false });
-  expect(publish).toHaveBeenCalledTimes(1);
-  expect(publish.mock.calls[0]?.[0]).toBe(onImported.mock.calls[0]?.[0]);
-  expect(publish.mock.calls[0]?.[1]).toEqual({
+  expect(publish.mock.calls.map(([, event]) => event.name)).toEqual([
+    'order.created',
+    'order.attr_binding_conflict',
+  ]);
+  for (const [trx] of publish.mock.calls) expect(trx).toBe(onImported.mock.calls[0]?.[0]);
+  expect(publish.mock.calls[0]?.[1]).toMatchObject({ payload: { attributed: false } });
+  expect(publish.mock.calls[1]?.[1]).toEqual({
     appId: APP,
     name: 'order.attr_binding_conflict',
     payload: { order_id: result.order_id, platform: 'taobao' },
   });
-  expect(JSON.stringify(publish.mock.calls[0]?.[1])).not.toContain('unit-user-');
+  expect(JSON.stringify(publish.mock.calls[1]?.[1])).not.toContain('unit-user-');
   const sqls = statements.map((s) => s.sql);
-  expect(sqls.indexOf('alert:order.attr_binding_conflict')).toBeGreaterThan(
+  expect(sqls.indexOf('event:order.attr_binding_conflict')).toBeGreaterThan(
     sqls.indexOf('rebate.onImported'),
   );
   expect(sqls.at(-1)).toBe('commit');
 });
+
+it.each([
+  { label: '非法首态', alert: 'order.illegal_transition', patch: { raw_status: 'rights' } },
+  {
+    label: '淘宝绑定冲突',
+    alert: 'order.attr_binding_conflict',
+    patch: {
+      platform: 'taobao',
+      attr_params: { relation_id: 'unit-rel', sub_union_id: null, custom_parameters: null },
+    },
+  },
+] satisfies { label: string; alert: string; patch: Partial<UnionOrder> }[])(
+  '[AC-B1-08i#U19] $label：$alert 入队失败，待处理 / 订单写入随整事务回滚，错误原样抛出',
+  async ({ alert, patch }) => {
+    const failure = new Error('unit-bus-failure');
+    const publish = vi.fn<Publish>();
+    const bound = at('2026-10-01T00:00:00.000Z');
+    const { pipeline, statements } = setup({
+      events: { publish },
+      bindings: {
+        findByRelation: () =>
+          Promise.resolve([
+            { user_id: 'unit-user-a', bound_at: bound, released_at: null, cooldown_until: null },
+            { user_id: 'unit-user-b', bound_at: bound, released_at: null, cooldown_until: null },
+          ]),
+      },
+    });
+    const record = bus(statements);
+    publish.mockImplementation(async (trx, event) => {
+      await record(trx, event);
+      if (event.name === alert) throw failure;
+      return { eventId: 'unit', duplicate: false };
+    });
+    const platform = patch.platform ?? 'pdd';
+    await expect(pipeline.process(order(patch), { ...ctx, platform })).rejects.toBe(failure);
+    const sqls = statements.map((s) => s.sql);
+    expect(sqls[0]).toBe('begin');
+    expect(sqls).toContain(`event:${alert}`);
+    expect(sqls.at(-1)).toBe('rollback');
+    expect(sqls).not.toContain('commit');
+  },
+);

@@ -34,13 +34,12 @@ export interface OrderPipelineResult {
 }
 
 export interface OrderPipelineDeps {
-  readonly events?: Pick<EventBus, 'publish'>;
   /**
-   * 告警事件总线（B1-08i，02 §11：order.illegal_transition、order.attr_binding_conflict、
-   * order.attr_param_changed）。注入时与业务写同一事务入队；装配在 B1-08n（与 events 同一个 EventBus）。
-   * 未注入时只记告警日志。与 events 分开注入：events 的调用次数由冻结规则测试逐次断言。
+   * 事件总线（B1-08i，02 §11）：领域事件 order.created 与告警事件 order.illegal_transition、
+   * order.attr_binding_conflict 都经它、与本次写库同一事务入队，入队失败整事务回滚。
+   * 未注入（B1-08h 的用法）时不发事件，告警只记日志；装配在 B1-08n。
    */
-  readonly alertEvents?: Pick<EventBus, 'publish'>;
+  readonly events?: Pick<EventBus, 'publish'>;
   readonly db: Kysely<DB>;
   readonly clock: Clock;
   readonly statusMaps: (platform: RegisteredPlatform) => StatusMap;
