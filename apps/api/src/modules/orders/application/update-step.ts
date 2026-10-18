@@ -11,8 +11,9 @@
 //   （UNMAPPED_STATUS）08 未写该事件，只告警进待处理。
 // - 未归因（user_id 为空，含 VOID 的 R3b）每次重跑用户归属：命中且 locked=false 才写 user_id、user_basis=param。
 // - ⑤ 来源回填（B1-08j，BR-ATTR-15）：本次写 user_id、库内 source_match 为空且注入 sources 时，按订单推广位
-//   （current.pid 经 pids 端口取首行 pid_scene；查不到按 fallback 并告警）、current.shop_id 与本次报文匹配，
-//   四列并入同一条 CAS UPDATE（WHERE 另加 source_match IS NULL）；端口抛错整事务回滚。不改 product_key / shop_id。
+//   （本次 UPDATE 将写入的 pid——未归因重跑写入本次报文的推广位，未改时即原值——经 pids 端口取首行 pid_scene；
+//   查不到按 fallback 并告警）、current.shop_id 与本次报文匹配，四列并入同一条 CAS UPDATE（WHERE 另加
+//   source_match IS NULL）；端口抛错整事务回滚。不改 product_key / shop_id。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
 //   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
 // 日志只打平铺字段（platform、app_id、reason、outcome、rule、event），不打子订单号与买家参数。
@@ -178,13 +179,16 @@ export function createOrderUpdateStep(
 
   type Attempt = OrderPipelineResult | 'conflict';
 
-  /** 订单推广位的 pid_scene：按库内 pid 取 pids 端口的首行；端口未注入、无 pid 或查无 → null。 */
+  /**
+   * 订单推广位的 pid_scene（BR-ATTR-15 ②「pid_scene = 订单推广位的 pid_scene」）：pid 是本次 UPDATE 写入后
+   * 订单的推广位（不是库内旧值），取 pids 端口的首行；端口未注入、无 pid 或查无 → null。
+   */
   async function orderPidScene(
     current: OrderRow,
+    pid: string | null,
     ctx: OrderPipelineContext,
     platform: RegisteredPlatform,
   ): Promise<string | null> {
-    const pid = current.pid;
     if (deps.pids === undefined || pid === null || pid === '') return null;
     const rows = await deps.pids.find({
       appId: current.app_id,
@@ -261,7 +265,9 @@ export function createOrderUpdateStep(
         attributedNow = true;
         // ⑤ 来源回填：只在本次把 user_id 由空写为非空、且尚无 source_match（含 none）时执行。
         if (deps.sources !== undefined && current.source_match === null) {
-          const pidScene = await orderPidScene(current, ctx, platform);
+          // 推广位以本次写入后的为准：set 里有 pid（未归因重跑写入本次报文的推广位）就用它，否则是原值。
+          const orderPid = set.pid !== undefined ? set.pid : current.pid;
+          const pidScene = await orderPidScene(current, orderPid, ctx, platform);
           pidSceneMissing = pidScene === null;
           const source = await backfillOrderSource(deps.sources, {
             appId: current.app_id,

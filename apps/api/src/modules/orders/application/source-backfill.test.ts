@@ -26,12 +26,19 @@ const ATTR = '2026-10-15T16:00:00.000Z';
 const USER = '019a0000-0000-7000-8000-000000000042';
 const at = (iso: string) => new FixedClock(iso).now();
 
-function scriptedDb(trace: string[]) {
+function scriptedDb(
+  trace: string[],
+  compiledLog: { sql: string; parameters: readonly unknown[] }[] = [],
+) {
   class ScriptedDriver extends DummyDriver {
     override acquireConnection(): Promise<DatabaseConnection> {
       return Promise.resolve({
-        executeQuery<R>(compiled: { sql: string }): Promise<QueryResult<R>> {
+        executeQuery<R>(compiled: {
+          sql: string;
+          parameters: readonly unknown[];
+        }): Promise<QueryResult<R>> {
           trace.push(compiled.sql);
+          compiledLog.push({ sql: compiled.sql, parameters: compiled.parameters });
           if (compiled.sql.startsWith('update "app"."orders"')) {
             return Promise.resolve({ rows: [], numAffectedRows: 1n });
           }
@@ -293,4 +300,65 @@ it.each([
   const update = trace.find((sql) => sql.startsWith('update "app"."orders"'));
   expect(update?.split(' where ')[0]).not.toContain('"source_match"');
   expect(update?.split(' where ')[1]).not.toContain('"source_match"');
+});
+
+it('[AC-B1-08j#U9] 未归因重跑改推广位：按本次写入的推广位取 pid_scene（旧 self_buy → 新 agent，选 agent 点击）', async () => {
+  const trace: string[] = [];
+  const compiled: { sql: string; parameters: readonly unknown[] }[] = [];
+  // L1：较新的 self_buy 搜索点击；L2：较早的 agent 点击。按旧推广位会错选 L1。
+  const search: LinkLogCandidate = {
+    ...click,
+    id: 7n,
+    link_id: '019a0000-0000-7000-8000-0000000000b1',
+    pid_scene: 'self_buy',
+    scene: 'search',
+    created_at: at('2026-10-15T08:00:00.000Z'),
+  };
+  const agent: LinkLogCandidate = {
+    ...click,
+    id: 6n,
+    link_id: '019a0000-0000-7000-8000-0000000000b2',
+    pid_scene: 'agent',
+    scene: 'agent',
+    agent_session_id: '019a0000-0000-7000-8000-0000000000c2',
+    created_at: at('2026-10-14T08:00:00.000Z'),
+  };
+  const p = ports(trace, [search, agent]);
+  const find = vi.fn<NonNullable<OrderUpdateDeps['pids']>['find']>(({ pid }) =>
+    Promise.resolve([
+      {
+        pid_scene: pid === 'slot-b' ? 'agent' : 'self_buy',
+        status: 'active' as const,
+        site_id: null,
+      },
+    ]),
+  );
+  const deps = updateDeps(p.sources, { find });
+  const step = createOrderUpdateStep(deps);
+  const before = { ...current, pid: 'slot-a' } as Selectable<DB['orders']>;
+  const outcome = await scriptedDb(trace, compiled)
+    .transaction()
+    .execute((trx) => step.apply(trx, before, incoming({ promotion_slot: 'slot-b' }), ctx));
+  expect(outcome).toEqual({ kind: 'updated', order_id: current.order_id });
+  expect(find).toHaveBeenCalledExactlyOnceWith({
+    appId: 'unit-app',
+    platform: 'pdd',
+    unionAccountId: 'unit-account',
+    pid: 'slot-b',
+  });
+  const updates = compiled.filter((q) => q.sql.startsWith('update "app"."orders"'));
+  expect(updates).toHaveLength(1);
+  const [set] = updates[0]!.sql.split(' where ');
+  expect(set).toContain('"pid"');
+  const values = updates[0]!.parameters;
+  expect(values).toContain('slot-b');
+  expect(values).toContain(agent.link_id);
+  expect(values).toContain(agent.agent_session_id);
+  expect(values).toContain('agent');
+  expect(values).not.toContain(search.link_id);
+  expect(values).not.toContain('search');
+  expect(deps.logger?.warn).not.toHaveBeenCalledWith(
+    expect.objectContaining({ reason: 'PID_SCENE_NOT_FOUND' }),
+    expect.any(String),
+  );
 });
