@@ -1,0 +1,22 @@
+id: B1-01zze
+repo: rebate-platform
+title: HTTP 入口路径参数长度：Fastify 默认 maxParamLength=100 让契约允许的长路径参数（ProductKey 最长 128，含编码后的冒号）在路由层得 414 且不是契约错误格式；调大上限，合法长度的键到达处理函数，超出契约长度的由契约校验以 ErrorEnvelope 拒绝
+type: impl
+# 2026-10-18 入账（be-codex，编排 02:1x 派工④ catalog followups；needs.md 2026-10-17 平台条）。
+# 依据：contracts/openapi.yaml components.schemas.ProductKey（minLength 3、maxLength 128，BR-PROD-02），用于 /v1/products/{product_key}、
+# /v1/products/{product_key}/price-trend 等路径参数；Fastify（find-my-way）默认 maxParamLength 100，超长参数直接回 414，绕过 GlobalErrorFilter 的契约 ErrorEnvelope。
+# 改法由实现定（bootstrap.ts 的 PlatformFastifyAdapter 选项），上限须覆盖契约里所有路径参数的 maxLength 加百分号编码余量；不改契约。
+refs: []
+refs_hash: {}
+deps: [B1-01f]
+paths:
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/bootstrap.test.ts'
+test_paths:
+  - 'test/spec/platform/http/param-length/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/http/param-length/**'
+status: todo
