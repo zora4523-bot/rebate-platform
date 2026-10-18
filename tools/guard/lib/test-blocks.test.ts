@@ -1417,6 +1417,11 @@ it('[CT-06w] execution, absolute or template loads and mocks keep a module open;
     `${prefix}it uses Worker)`,
   );
   expect(why("import vm from 'node:vm';\nexport const n = vm;")).toBe(`${prefix}it uses node:vm)`);
+  expect(why("export const n = await import('node:fs');")).toBe(`${prefix}it uses node:fs)`);
+  // A workspace package is test code the closure does not follow, not a package.
+  expect(why("import { x } from '@couli/db/testing';\nexport const n = x;")).toBe(
+    `${prefix}it imports @couli/db/testing, a workspace package not read here)`,
+  );
   // An absolute specifier (Vite resolves it against the project root) is not a package.
   expect(why("export { n } from '/spec/real/bridge.ts';")).toBe(
     `${prefix}it imports /spec/real/bridge.ts, which cannot be resolved)`,
@@ -1463,4 +1468,97 @@ it('[CT-06w] execution, absolute or template loads and mocks keep a module open;
       `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (${c[0]?.mocking}))`,
     );
   }
+});
+
+// The old rules of CT-06p / CT-06r, as on origin/main before CT-06w: the support file is named
+// anywhere in a module's text, or its stem is a word of a literal.
+const oldNameRule = (closure: readonly Module[], support: string): boolean => {
+  const name = support.slice(support.lastIndexOf('/') + 1);
+  const stem = name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name;
+  const word = new RegExp(
+    `(?<![\\w$.-])${stem.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}(?![\\w$-])`,
+    'u',
+  );
+  return closure.some(
+    (m) => m.text.includes(name) || (m.literals ?? []).some((l) => word.test(l.text)),
+  );
+};
+
+it('[CT-06w] fallback: a closure with one module that is not closed judges exactly like the old code (orchestrator ruling 2026-10-19)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/identity/step-up-verify/kit.ts';
+  const base: Record<string, string> = {
+    'test/spec/a/kit.ts': "export { n } from './deep/kit.ts';",
+    'test/spec/a/deep/kit.ts': 'export const n = 1;',
+    'test/spec/a/other.ts': 'export const o = 2;',
+    'apps/api/src/x.ts': '',
+  };
+  const closure = (
+    files: Record<string, string>,
+    text = "import { n } from './kit.ts';\nimport { o } from './other.ts';",
+  ) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  // All closed: the specifier is exempt (the one relaxation); the old rule would have fired.
+  const closed = closure(base);
+  expect(closed.map((m) => m.closed)).toEqual([true, true, true, true]);
+  expect(oldNameRule(closed, support)).toBe(true);
+  expect(mayReadSupport(file, support, closed)).toBeNull();
+  // One module anywhere in the closure not closed (the deepest one here, in every way the
+  // definition names): the judgement falls back to the old rules — whole, as the old code.
+  const open: [string, string][] = [
+    [
+      'a file-system API',
+      "import { readFileSync } from 'node:fs';\nexport const n = readFileSync('x', 'utf8');",
+    ],
+    ['import.meta', 'export const n = import.meta.url;'],
+    ['a mock', "import { vi } from 'vitest';\nvi.mock('./x.ts');\nexport const n = 1;"],
+    [
+      'a process',
+      "import { spawnSync } from 'node:child_process';\nexport const n = spawnSync('cat');",
+    ],
+    ['eval', "export const n = eval('1');"],
+    ['a Worker', "export const n = new Worker('w.js');"],
+    ['a listing', "import { readdirSync } from 'node:fs';\nexport const n = readdirSync('.');"],
+    ['a computed import', 'export const n = await import(`./${"x"}.ts`);'],
+    ['a template specifier', 'export const n = await import(`./x.ts`);'],
+    ['an absolute specifier', "export { n } from '/spec/a/other.ts';"],
+    ['an unresolved import', "export { n } from './missing.ts';"],
+    ['a workspace package', "import { x } from '@couli/testing';\nexport const n = x;"],
+    ['a file not read here', "import raw from './data.txt?raw';\nexport const n = raw;"],
+    ['unreadable code', "it('open"],
+  ];
+  for (const [what, deep] of open) {
+    const c = closure({ ...base, 'test/spec/a/deep/kit.ts': deep, 'test/spec/a/data.txt': '' });
+    expect(
+      c.map((m) => m.path),
+      what,
+    ).toEqual([file, 'test/spec/a/kit.ts', 'test/spec/a/other.ts', 'test/spec/a/deep/kit.ts']);
+    expect(
+      c.slice(1, 2).map((m) => m.closed),
+      what,
+    ).toEqual([false]);
+    expect(oldNameRule(c, support), what).toBe(true);
+    const why = mayReadSupport(file, support, c);
+    expect(why, what).toMatch(
+      /^test\/spec\/a\/rules\.test\.ts names kit\.ts in an unresolved import \.\/kit\.ts \(test\/spec\/a\/kit\.ts is not closed: /,
+    );
+  }
+  // A root that mocks: whole, as the old code, whatever its imports resolve to.
+  const mocking = closure(
+    base,
+    "import { vi } from 'vitest';\nvi.mock('./other.ts');\nimport { n } from './kit.ts';",
+  );
+  expect(oldNameRule(mocking, support)).toBe(true);
+  expect(mayReadSupport(file, support, mocking)).toBe(
+    `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (it uses vi.mock))`,
+  );
+  // And where the old rule would not fire, neither does the new one (no new whole judgements
+  // from the exemption itself; a closed closure without the name is free either way).
+  const free = closure(base, "import { o } from './other.ts';");
+  expect(oldNameRule(free, support)).toBe(false);
+  expect(mayReadSupport(file, support, free)).toBeNull();
 });

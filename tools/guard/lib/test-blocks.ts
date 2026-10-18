@@ -30,9 +30,30 @@
 //   as a whole.
 //
 // Test-support files (a helper, fixture or data file the task changed inside its test_paths) are
-// judged by mayReadSupport: a file that may read one is judged as a whole (see there). Import
-// specifiers are resolved to repository paths first (CT-06w): an import of a same-named file in
-// another directory is not a read of the support file.
+// judged by mayReadSupport: a file that may read one is judged as a whole (see there).
+//
+// CT-06w (orchestrator ruling of 2026-10-19, after B1-12g red/4 and five Codex rounds) — a
+// conservative fallback, not a proof about arbitrary code:
+// - Design intent: an import specifier such as `./kit.ts` names a file; when that file resolves
+//   to a different test-code module than the changed support file (test/spec/platform/events/kit.ts
+//   is not test/spec/identity/step-up-verify/kit.ts), the basename in the specifier is no evidence
+//   that the test reads the support file. Only such a specifier literal is exempt from the name
+//   rules; the name anywhere else (a comment, another literal) still counts.
+// - Closed module (Module.closed): tokenised; no dynamic load (glob / require / computed import);
+//   no directory listing; no file-system API, no code or process execution (child_process, vm,
+//   worker_threads, module, eval, Function, Worker …), no import.meta; no mock call of any
+//   spelling; no template specifier or import inside a template; every relative or `#` import
+//   resolves (certainly, by Vite's rules) to a closed module of the closure or to a module outside
+//   the test code (implementation code never reads test-support files, as since CT-06p); a bare
+//   specifier is a package — except a workspace package (`@couli/*`, test code such as
+//   packages/testing that the closure does not follow). Computed as a fixpoint over the closure;
+//   `opaque` says why not.
+// - Fallback rule: a specifier is exempt only when it resolves to a closed module; whenever the
+//   module it names is not closed, not followed, not resolved, or the importing module itself
+//   mocks modules, the specifier keeps the name rules of CT-06p unchanged — the file is judged as
+//   a whole exactly as before, the reason says `unresolved import`. So a closure with one module
+//   that is not closed judges like the old code; the question a review must answer is whether a
+//   closure of closed modules can still reach a changed support file.
 //
 // Node built-ins only; pure functions (the caller reads the files).
 
@@ -1780,18 +1801,28 @@ export function relativeClosure(
   }
   // Closed modules (a fixpoint: a module importing a module that is not closed is not closed).
   const byPath = new Map(out.map((m) => [m.path, m]));
-  // A package: a bare name (`vitest`, `node:fs`, `@scope/pkg/sub`); an absolute path, a URL or
-  // anything else is a load the rules here do not follow (Codex review r5).
-  const bare = (spec: string): boolean =>
-    /^(node:)?(@[\w-][\w.-]*\/)?[\w-][\w.-]*(\/[\w.-]+)*$/.test(spec.replace(/[?#].*$/, ''));
+  // A package: a bare name (`vitest`, `node:fs`, `@scope/pkg/sub`) that is not a workspace package
+  // of this repository (`@couli/*` — test code the closure does not follow, e.g. packages/testing);
+  // an absolute path, a URL or anything else is a load the rules here do not follow (Codex
+  // review r5).
+  const bare = (spec: string): boolean => {
+    const clean = spec.replace(/[?#].*$/, '');
+    return (
+      !clean.startsWith('@couli/') &&
+      /^(node:)?(@[\w-][\w.-]*\/)?[\w-][\w.-]*(\/[\w.-]+)*$/.test(clean)
+    );
+  };
   for (const m of out) {
     if (m.opaque !== null) continue;
     const open = m.imports.find((i) =>
       i.resolved === null ? !bare(i.spec) : !byPath.has(i.resolved) && follow(i.resolved),
     );
     if (open === undefined) m.closed = true;
-    else if (open.resolved === null) m.opaque = `it imports ${open.spec}, which cannot be resolved`;
-    else m.opaque = `it imports ${open.resolved}, which is not read here`;
+    else if (open.resolved === null) {
+      m.opaque = open.spec.startsWith('@couli/')
+        ? `it imports ${open.spec}, a workspace package not read here`
+        : `it imports ${open.spec}, which cannot be resolved`;
+    } else m.opaque = `it imports ${open.resolved}, which is not read here`;
   }
   for (let changed = true; changed;) {
     changed = false;
