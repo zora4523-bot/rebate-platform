@@ -28,8 +28,8 @@ const WORDS: BannedWord[] = [
 ];
 
 it('[AC-F1-02r#4] normalization keeps non-ASCII case and strips separators, marks and controls', () => {
-  expect(normalizeForMatch('Ｍ最​低—价 Ä')).toBe('m最低价Ä');
-  expect(normalizeForMatch('­abc\u0007')).toBe('abc');
+  expect(normalizeForMatch('Ｍ最\u200B低—价 Ä')).toBe('m最低价Ä');
+  expect(normalizeForMatch('\u00ADabc\u0007')).toBe('abc');
 });
 
 it('[AC-F1-02r#5] scope filters words before matching', () => {
