@@ -217,14 +217,25 @@ it('[AC-F1-02a#11] couli_app reads, inserts and updates the three tables, nothin
       SELECT p AS privilege, has_table_privilege('couli_app', ${`app.${table}`}, p) AS held
       FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p
     `.execute(app);
-    expect(Object.fromEntries(rows.rows.map((r) => [r.privilege, r.held])), table).toEqual({
+    const held = Object.fromEntries(rows.rows.map((r) => [r.privilege, r.held]));
+    // F1-02y (test-change): F1-02q narrows couli_app's UPDATE on app.articles to the columns the
+    // publish / offline flow writes, so for articles the table-level UPDATE bit is not asserted
+    // here; those columns stay updatable (checked below) and F1-02q's own rule tests pin the rest.
+    if (table === 'articles') delete held['UPDATE'];
+    expect(held, table).toEqual({
       SELECT: true,
       INSERT: true,
-      UPDATE: true,
+      ...(table === 'articles' ? {} : { UPDATE: true }),
       TRUNCATE: false,
       REFERENCES: false,
       TRIGGER: false,
     });
+  }
+  for (const column of ['status', 'published_at', 'notice_end_at', 'row_version', 'updated_at']) {
+    const rows = await sql<{ held: boolean }>`
+      SELECT has_column_privilege('couli_app', 'app.articles', ${column}, 'UPDATE') AS held
+    `.execute(app);
+    expect(rows.rows[0]?.held, `articles.${column}`).toBe(true);
   }
 });
 
