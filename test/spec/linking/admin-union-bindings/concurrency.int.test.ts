@@ -59,19 +59,26 @@ async function held(s: Scenario, finish: (trx: Transaction<DB>) => Promise<void>
     );
   return { pid: await ready.promise, release: () => release.resolve(), done };
 }
+async function pollUntilTrue(check: () => boolean | Promise<boolean>, interval: number) {
+  const deadline = performance.now() + 2500;
+  let last = false;
+  do {
+    last = await check();
+    if (last) return;
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) break;
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(interval, remaining)));
+  } while (performance.now() < deadline);
+  expect(last).toBe(true);
+}
 async function waitingOnUser(pid: number) {
-  await expect
-    .poll(
-      async () => {
-        const result = await sql<{ query: string }>`SELECT query FROM pg_stat_activity
+  await pollUntilTrue(async () => {
+    const result = await sql<{ query: string }>`SELECT query FROM pg_stat_activity
       WHERE ${pid} = ANY(pg_blocking_pids(pid)) AND wait_event_type = 'Lock'`.execute(h.db);
-        return result.rows.some(
-          (row) => /users/i.test(row.query) && /for no key update/i.test(row.query),
-        );
-      },
-      { timeout: 2500, interval: 20 },
-    )
-    .toBe(true);
+    return result.rows.some(
+      (row) => /users/i.test(row.query) && /for no key update/i.test(row.query),
+    );
+  }, 20);
 }
 async function bannedWithoutActive(s: Scenario) {
   expect(
@@ -155,7 +162,7 @@ it('[AC-F1-07c#21] 淘宝换凭据期间不持用户锁，换完后重查已提�
   const request = auth.bind();
   // Bound polling also exposes early errors without hanging on an unreached exchange barrier.
   try {
-    await expect.poll(() => auth.exchange.mock.calls.length, { timeout: 2500 }).toBe(1);
+    await pollUntilTrue(() => auth.exchange.mock.calls.length === 1, 50);
     await entered.promise;
     const ban = h.db
       .transaction()
