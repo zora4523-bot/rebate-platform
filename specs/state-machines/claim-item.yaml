@@ -1,0 +1,38 @@
+# 找回子项决定 claim_items.decision（claim_item_decision）的状态机（规划/04 §2.3、§3.2；规划/08 BR-ATTR-16、BR-ATTR-18、
+# BR-ATTR-20；规划/12 §3.3；任务 CT-04e）。迁移表只在 08 维护；本文件按 SPEC_REF 转写，生成
+# packages/domain/src/state-machines/claim-item.gen.ts（node packages/domain/scripts/state-machines.ts；--verify 只比对）。
+# 生成物勿手改，改这里再生成。
+#
+# 写法约定（同 CT-04a、F1-09h）：
+# - from 中 null 表示「decision 为空（待审）」；插入 claim_items 行本身不是迁移（行随 claim 受理写入，decision 为空）。
+# - guard 只是规则文字说明，transition() 不求值；权限、BR-ATTR-20 加锁复查、驳回原因码与通知由服务层负责。
+# - 驳回原因码（reject_reason）不进状态机。
+# - 状态值与 contracts/enums/order.yaml 的 claim_item_decision 一致（小写蛇形；待审在库里是 NULL，不另设状态值）；事件用大写蛇形名。
+#
+# 表外说明：
+# - 只有下面三行迁移，其余组合一律为表外事件。
+# - approved / rejected / cancelled 都是终态，已决子项不能改判。
+name: claim-item
+field: decision
+states: [approved, rejected, cancelled]
+# APPROVE 通过；REJECT 驳回（客服或系统）；CANCEL 同步或复查发现订单已归申请人。
+events: [APPROVE, REJECT, CANCEL]
+transitions:
+  - id: I1
+    from: [null]
+    event: APPROVE
+    to: approved
+    guard: '待审子项由客服通过，且按 BR-ATTR-20 加锁复查订单仍未归属（重读 user_id 为空）；P1 开启 claim.auto_approve_strong 后 strong 子项直接通过同此'
+    test_id: SM-CLI-I1
+  - id: I2
+    from: [null]
+    event: REJECT
+    to: rejected
+    guard: '待审子项被驳回，reject_reason 必填：客服只能选 NO_EVIDENCE、EXPIRED_CLICK、NOT_TRACKED、OTHER_TLJ、FRAUD、OTHER 六个；系统写 NOT_IN_POOL（他人先通过、后台改派、同步归属给他人）或 ORDER_INVALID（审核时订单 rebate_status 已为 VOID）'
+    test_id: SM-CLI-I2
+  - id: I3
+    from: [null]
+    event: CANCEL
+    to: cancelled
+    guard: '待审子项的订单经同步自动归属、或通过时复查发现已归属，且归属的 user_id 等于申请人（BR-ATTR-16、BR-ATTR-20 ②）'
+    test_id: SM-CLI-I3
