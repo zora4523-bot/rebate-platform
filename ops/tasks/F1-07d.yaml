@@ -12,7 +12,7 @@ type: impl
 #   会话吊销与 linking 联动都以端口注入、在 app.module.ts 装配（identity 已导入 risk，risk 直接 import identity 会成环，.dependency-cruiser no-circular）。
 #   并发：风控状态变更事务先取用户级锁 `SELECT … FROM app.users WHERE app_id = ? AND id = ? FOR UPDATE`（与 F1-07c 的绑定操作同一把锁），再 setRiskState 与绑定联动，避免与 enable 交错出 banned + invalid（GitHub Codex #696 P2）。
 #   SetRiskState 加可选 expected_row_version（null 只在无记录时首建，其余不匹配 20902），不传时行为不变，冻结测试不改。
-#   封禁要跨进程失效风控状态缓存（BR-ID-01：封禁时主动失效缓存；admin 进程写、api 进程读；risk-state.ts 注明尚无消费者）：在 risk/** 内接上。
+#   封禁要跨进程失效风控状态缓存（BR-ID-01：缓存 ≤60 秒且封禁时必须主动失效；risk-state.ts 的进程缓存是各进程自己的 Map，risk.state_changed 尚无消费者，platform 生产订阅表为空；sms-login 允许封禁用户重新登录，旧会话吊销后新会话在窗口内仍会过第⑤关）：在 risk/** 内用 risk 模块已有的 Redis 连接做失效广播——setRiskState 的事务提交后（不在事务内）发布 app_id + user_id + row_version，各进程订阅后清掉本地键并按现有 pending / 水位规则拒收旧值；订阅断开期间该进程按 fresh 读库，不读缓存。不改 platform 事件订阅、队列与 worker。验收用例：同一 PG / Redis 上起 admin 与 api 两个应用实例，api 先读到并缓存 normal，admin 封禁成功后 api 的下一次第⑤关判定为 10006（等待以有上限的轮询，不靠 60 秒过期）（GitHub Codex #696 第 4 轮 P1）。
 #   站内信 RISK_STATE_CHANGED：不加发送调用（notification 尚无发送端口）；触发源是 setRiskState 已发的 risk.state_changed，发送由通知线订阅实现，代码里写 TODO 指向通知线跟进任务；契约措辞由 CT-02p 改为「由通知模块发送」，不保留 planned（编排 10-18 09:2x 裁定 ②；台账评审 r2 S2-3）。
 # 与 F1-07b / F1-07c 并行改 openapi.yaml、两份生成物与 app.module.ts：后合并者变基并重生成。
 refs: [BR-ID-31]
