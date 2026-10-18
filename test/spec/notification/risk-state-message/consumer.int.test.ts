@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type {
   ReceivedEvent,
@@ -9,7 +10,7 @@ import { assembled } from './worker-kit.ts';
 
 let suite: Suite;
 beforeAll(async () => {
-  suite = await openSuite();
+  suite = await openSuite(createTestDatabase);
 });
 afterAll(async () => {
   await suite?.close();

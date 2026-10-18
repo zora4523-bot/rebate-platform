@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase } from '@couli/db/testing';
 import { PostgresQueryCompiler, sql, type Insertable, type Kysely } from 'kysely';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import {
@@ -10,7 +9,14 @@ import {
 import type { ReceivedEvent } from '../../../../apps/api/src/modules/platform/index.ts';
 import { event, NOW, payload } from './fixtures.ts';
 
-export async function openSuite() {
+// Structural type instead of importing @couli/db/testing: only *.int.test.ts may import it
+// (.dependency-cruiser.cjs testcontainers-only-in-int-tests); the int test passes its factory.
+interface TestDatabase {
+  urlFor(role: 'couli_app'): string;
+  drop(): Promise<void>;
+}
+
+export async function openSuite(createTestDatabase: () => Promise<TestDatabase>) {
   const database = await createTestDatabase();
   const queries: string[] = [];
   const db = createDb({ connectionString: database.urlFor('couli_app'), max: 8 });

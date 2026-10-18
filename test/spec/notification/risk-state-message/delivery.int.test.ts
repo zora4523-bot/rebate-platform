@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
+import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createRiskStateMessageHandler } from '../../../../apps/api/src/modules/notification/application/risk-state-message.ts';
 import { failInsert, fixture, openSuite, type Suite } from './db-kit.ts';
@@ -7,7 +8,7 @@ import { NOW, variants } from './fixtures.ts';
 
 let suite: Suite;
 beforeAll(async () => {
-  suite = await openSuite();
+  suite = await openSuite(createTestDatabase);
 });
 afterAll(async () => {
   await suite?.close();
