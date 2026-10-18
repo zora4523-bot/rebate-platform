@@ -1,0 +1,29 @@
+id: CT-24a
+repo: rebate-platform
+title: 契约：后台工作台 GET /admin/v1/dashboard（dashboard.view；待办卡 todo[] 按各卡权限点由服务端裁剪、无权限或模块未上线的卡不出现；昨日概览 yesterday；系统状态 status 需 fund.view；本期不含 open_alerts）；新增权限点 dashboard.view；planned
+type: contract
+# 2026-10-18 入账（admin-backend，编排 19:2x 派工「后台缺口」规划 #137 与 21:3x 后台第 1 批定稿）。依据 01 F-ADM-26、04 §6.6 dashboard 与 §11.1 dashboard.view、design/specs/admin-dashboard.md、03 §9.2。
+# 本线技术取舍（由编排者摘进任务书第 9 节：04 §6.6 的 dashboard 段、§11.1 dashboard.view 一行、01 F-ADM-26 原文与 design/specs/admin-dashboard.md 要点）：todo[] 每项 {key, count, route, oldest_at?, breakdown?}，key 为独立编码的 8 值枚举（如 withdraw_review_pending，放 contracts/enums/admin.yaml，description 写对应权限点；不直接用权限点字符串，避免字典键含点与一点多卡撞键）：（待审提现 withdraw.review、待审找回 order.claim、待确认月结 settle.bill、未关闭差错单 fund.recon、待处理申诉 risk.appeal、AI 举报超 48 小时 agent.report、受益人份额 held 满 30 天 risk.freeze、站长授权到期 / 失效 union.account_auth）一次列全；另加可选 breakdown（画板动态副文案的结构化数，如找回「自动匹配待确认 / 人工审核中」）与可选 oldest_at（「最早申请时间」）；有权限且模块已上线的卡 count=0 也返回（定稿规格「待办全为 0 卡仍显示」）；对应模块未上线（提现、月结、差错单）时该卡不出现，与无权限同语义——这 3 张卡由资金线的后台任务（B2-09 / F1-08 系列）落地时在 B1-34 的计数里补，B1-34 的「计数与各列表一致」验收按已上线卡拆分；status.balance_w_expired 可空（W 余额录入随资金线）。
+# 第 1 批定稿 ①：本期不返回 open_alerts（F1-14a 验收要求响应快照不含 open_alerts）。
+# dashboard.view 无二次验证（04 §11.1「–」），在 admin_permission 枚举里放在 user.list 之前；冻结预言 expected.ts 由 CT-24i 先放行。
+# 实现由 B1-34 承接（CT-24a 合并后开工）。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: [CT-24i]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
