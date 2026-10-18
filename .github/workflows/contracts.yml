@@ -100,7 +100,8 @@ jobs:
 
   contracts-gate:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).
-    if: always()
+    # Skipped, not failed, when the run is cancelled (CT-06u, rules in ci.yml).
+    if: ${{ !cancelled() }}
     needs: [contracts-detect, contracts-check]
     runs-on: ubuntu-latest
     timeout-minutes: 5

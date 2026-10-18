@@ -4,7 +4,10 @@
 #
 # Rules for every workflow in this repo (checked by tools/ci/check-workflows.ts):
 #   - no workflow-level `paths` filters; path-conditional work uses a job-level `if` plus an
-#     `if: always()` summary job, and only summary jobs are required checks;
+#     `if: ${{ !cancelled() }}` summary job, and only summary jobs are required checks. The
+#     summary job runs on every outcome of its needs except a cancelled run (CT-06u): a run
+#     superseded by concurrency (the next push, or the owner label) then leaves its summary
+#     check `skipped`, not `failure`, on the commit, so the rollup of the newer run decides;
 #   - job ids are unique across all workflows and jobs carry no `name:`, so the check context
 #     equals the job id;
 #   - every action is pinned to a full commit SHA with a version comment.
@@ -230,7 +233,9 @@ jobs:
 
   ci-gate:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).
-    if: always()
+    # Skipped, not failed, when the run is cancelled (CT-06u, see the rules above); every other
+    # outcome of the needs is judged below, a non-success is red.
+    if: ${{ !cancelled() }}
     needs: [verify-fast, verify-props, verify-int, guard-git]
     runs-on: ubuntu-latest
     timeout-minutes: 5

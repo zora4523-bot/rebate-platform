@@ -46,6 +46,9 @@ function isBlankOrComment(line: string): boolean {
   return trimmed === '' || trimmed.startsWith('#');
 }
 
+/** The only `if` accepted on a required summary job (a job with `needs`); see checkRuleset. */
+export const SUMMARY_CONDITION = '${{ !cancelled() }}';
+
 /** Removes a trailing ` # comment` and surrounding quotes from a scalar value. */
 function scalar(value: string): string {
   const withoutComment = value.replace(/\s+#.*$/, '').trim();
@@ -363,19 +366,24 @@ function checkRuleset(root: string, workflows: Workflow[], problems: Problem[]):
     const { job, workflow } = owner;
     // A job skipped by `needs` or by its own `if` reports "skipped", which GitHub counts as
     // passing. A required job therefore either has no condition and no needs, or is an
-    // `if: always()` summary job.
+    // `if: ${{ !cancelled() }}` summary job: it reports on every outcome of its needs except a
+    // cancelled run. `always()` is refused since CT-06u: on a run cancelled by concurrency (the
+    // next push, or the owner label) an always() summary runs against cancelled needs and leaves
+    // a `failure` check on the commit that blocks the merge next to the newer run's pass
+    // (rebate-platform #799); a skipped summary of a cancelled run leaves nothing.
     const condition = job.condition;
     const ok = job.hasNeeds
-      ? condition === 'always()'
-      : condition === null || condition === 'always()';
+      ? condition === SUMMARY_CONDITION
+      : condition === null || condition === SUMMARY_CONDITION;
     if (!ok) {
       problems.push({
         file: workflow.file,
         line: job.line,
         code: 'required-job-condition',
         message:
-          `required job \`${job.id}\` can be skipped (needs or a conditional \`if\`); a skipped ` +
-          'job counts as passing: make it an `if: always()` summary job',
+          `required job \`${job.id}\` can be skipped (needs or a conditional \`if\`) or runs on a ` +
+          `cancelled run; a skipped job counts as passing and an always() summary of a cancelled ` +
+          `run leaves a failure: make it an \`if: ${SUMMARY_CONDITION}\` summary job`,
       });
     }
   }

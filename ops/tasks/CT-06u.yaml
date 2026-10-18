@@ -1,0 +1,29 @@
+id: CT-06u
+repo: rebate-platform
+title: ci 汇总作业在运行被取消时跳过而非失败（避免遗留 failure 必需检查）
+type: guard-change
+# 2026-10-19 入账（编排会话）。起因：PR 加 owner-approved 标签（ci.yml 监听 labeled）再触发一轮 ci，上一轮被并发组取消；ci-gate
+# 是 `if: always()` 的汇总作业，依赖被取消时仍跑并以 failure 结束，同一提交上留下一条 ci-gate=failure 的必需检查，rollup 一直 FAILURE、
+# 合并被拦（#799 同日，只能对被取消那轮 gh run rerun 才解开）。
+# 做法：① ci-gate、contracts-gate、longrun-props 三个汇总作业的 `if: always()` 改为 `if: ${{ !cancelled() }}`——运行被取消时汇总作业
+# skipped 而不是 failure；其余结果照旧由步骤判定，依赖非 success 仍红（步骤只能绿或红，不把 cancelled 判绿，避免验证没跑完却放行）。
+# ② 不改 concurrency 组的取消行为，不改任何必需检查名、不改 ops/branch-protection.json。③ tools/ci/check-workflows.ts 的
+# required-job-condition 规则改为只认 `${{ !cancelled() }}`（导出 SUMMARY_CONDITION），always() 汇总作业从此拒收；单测补三个工作流的
+# always() 拒收用例与真实文件断言。④ 验证：PR 上连推两次提交让一轮被取消，确认被取消那轮的 ci-gate 是 skipped 而非 failure，两次 run id
+# 写进 PR 描述。已知取舍：被取消那轮没有后继运行时，skipped 的必需检查在 GitHub 视为通过——本仓库的取消只来自并发组（必有后继运行）。
+# tools/** 与 .github/** 属保护路径第三类：approvals #16 常设授权的门禁小修，Claude 实现、Codex 对抗评审，评审通过、检查全绿后按
+# approvals #24 加标签；按 approvals #12 走非 task 分支（chore/guard-change-CT-06u）、不带证据文件（先例 F1-01k 自举）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - '.github/workflows/contracts.yml'
+  - '.github/workflows/longrun-props.yml'
+  - 'tools/ci/check-workflows{,.test}.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

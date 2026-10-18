@@ -76,8 +76,9 @@ jobs:
 
   longrun-props:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).
-    # It always reports; a context that never reports would stay pending forever (规划/11 §3.2).
-    if: always()
+    # It reports on every outcome except a cancelled run (CT-06u, rules in ci.yml); a context
+    # that never reports would stay pending forever (规划/11 §3.2).
+    if: ${{ !cancelled() }}
     needs: [longrun-detect, longrun-run]
     runs-on: ubuntu-latest
     timeout-minutes: 5
