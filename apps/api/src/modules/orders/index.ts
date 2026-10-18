@@ -47,7 +47,10 @@ export type {
   OrderQueryDeps,
 } from './application/order-queries.ts';
 export { OrdersModule } from './orders.module.ts';
-export type { OrdersModuleOptions } from './orders.module.ts';
+// B1-08n: the worker's order-sync runtime (OrdersModule.forWorker; entry.ts starts it once).
+export { orderSyncToken } from './worker-runtime.ts';
+export type { OrderSyncReadPorts, OrderSyncRuntime } from './worker-runtime.ts';
+export type { OrdersModuleOptions, OrdersWorkerOptions } from './orders.module.ts';
 // Task B1-08m: the pending-track cards (BR-ATTR-21) — the pure per-attempt selection and the
 // shared queries behind GET /v1/orders/pending-tracks and its dismiss, over linking's port.
 export {

@@ -66,6 +66,18 @@ export type {
 export type { UnionRegistration, UnionRegistry } from './infra/registry.ts';
 export { loadUnionEndpoints, parseUnionEndpoints } from './infra/endpoints.ts';
 export { createGovernedAdapter } from './application/governed-adapter.ts';
+// B1-08n: the order-sync wiring's union side (SyncAccessPort, pipeline readers, worker governance).
+export {
+  createUnionSyncAccess,
+  createUnionOrderReaders,
+  createGovernedSyncAdapter,
+} from './application/order-sync-ports.ts';
+export type {
+  UnionOrderReaders,
+  UnionSyncAccess,
+  UnionSyncAccessOptions,
+  UnionSyncAccount,
+} from './application/order-sync-ports.ts';
 export { UnionPidError, createUnionPidService } from './pids/service.ts';
 export type {
   AccountRow as UnionAccountRow,

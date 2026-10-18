@@ -61,6 +61,21 @@ export function createGovernedAdapter(
   adapter: UnionAdapter,
   options: GovernedAdapterOptions,
 ): UnionAdapter {
+  return governAdapter(adapter, options).adapter;
+}
+
+/**
+ * B1-08n: the governed adapter together with its two governors, for callers inside union that
+ * must read a breaker (order-sync-ports.ts createGovernedSyncAdapter). Same wrapping as
+ * createGovernedAdapter; nothing here starts a timer or calls the adapter.
+ */
+export function governAdapter(
+  adapter: UnionAdapter,
+  options: GovernedAdapterOptions,
+): {
+  readonly adapter: UnionAdapter;
+  readonly governors: Readonly<Record<'online' | 'offline', Governor>>;
+} {
   const { endpoint, scheduler, quota, resilience } = options;
   if (adapter.platform !== endpoint.platform) {
     throw new UnionError(
@@ -236,5 +251,5 @@ export function createGovernedAdapter(
           },
         }),
   };
-  return Object.freeze(governed);
+  return { adapter: Object.freeze(governed), governors };
 }

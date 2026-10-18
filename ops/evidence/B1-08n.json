@@ -1,0 +1,151 @@
+{
+  "task": "B1-08n",
+  "spec_ref": "8c91f67e2dc11ad7f50d279cf8103e0f038e5ac8",
+  "spec_commit": "da30fe4899c03ed9b8f358b5b912817f61553420",
+  "red_tests": [
+    "test/spec/orders/wiring/access.int.test.ts > [AC-B1-08n#13] 跨 App 枚举注册平台账号、不按 status 过滤，sync_start_at 为 ISO/null；授权逐次按三键查询",
+    "test/spec/orders/wiring/breaker.test.ts > [AC-B1-08n#18] online 的熔断与 offlineCircuitOpen 同源，离线到期自动恢复",
+    "test/spec/orders/wiring/breaker.test.ts > [AC-B1-08n#18] order_sync 的熔断与 offlineCircuitOpen 同源，离线到期自动恢复",
+    "test/spec/orders/wiring/credentials.int.test.ts > [AC-B1-08n#14] live 全库零/一/两账号，每次重查；不确定账号每平台只报一次，demo/replay 永不查询订单",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#5] worker 在 queue 与 agent 后启动一次；停机等待 sync 完成再停 agent 和 services",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 throw 不导致启动失败或额外日志",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 null 不导致启动失败或额外日志",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 undefined 不导致启动失败或额外日志",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 no-start 不导致启动失败或额外日志",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 queue 不导致启动失败或额外日志",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 start-throws 不导致启动失败或额外日志",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#7] sync stop 拒绝仍停止底层服务并清空定时器",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#8] 服务启动期间收到 SIGTERM 不取用同步运行体",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#9] 初始化即退出不启动同步",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#20] agent 启动时收到信号，订单同步仍须检查 stopping",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#10] api 不取用同步运行体",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#10] stream 不取用同步运行体",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#10] admin 不取用同步运行体",
+    "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#10] payout 不取用同步运行体",
+    "test/spec/orders/wiring/flow.int.test.ts > [AC-B1-08n#19] worker 运行体接通真实归因/更新/事件总线；一页订单入库、水位推进、更新不重复建单",
+    "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#1] worker 装配只注册一次 order-sync，零查询、零投递、零定时器，映射取真实 CSV",
+    "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#2] 缺 DB 或队列（onlyQueueMissing=false）提供 null 并恰一条 info",
+    "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#2] 缺 DB 或队列（onlyQueueMissing=true）提供 null 并恰一条 info",
+    "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#3] api 不装配订单同步",
+    "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#3] stream 不装配订单同步",
+    "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#3] admin 不装配订单同步",
+    "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#3] payout 不装配订单同步",
+    "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#4] 归因与更新装配共享真实 EVENT_BUS，updateStep 必须注入，mtimeOrdering 默认关闭",
+    "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#21] worker 的处理器 registry 与 access 熔断读取使用同一套治理包装",
+    "test/spec/orders/wiring/readers.int.test.ts > [AC-B1-08n#15] pids 按四键返回原始 scene/status/site；账号 syncStartAt 按 App/账号读真实字段且不缓存",
+    "test/spec/orders/wiring/readers.int.test.ts > [AC-B1-08n#16] attr_code 反查用户按 App 隔离，注销用户仍返回 id，每次重查",
+    "test/spec/orders/wiring/readers.int.test.ts > [AC-B1-08n#17] 绑定读取不按 status 过滤、不缓存，三键隔离并保留所有不同的时间戳",
+    "test/spec/orders/wiring/status-files.test.ts > [AC-B1-08n#11] 装配时每个调度平台只读一次 CSV，随后 statusMaps 只取缓存",
+    "test/spec/orders/wiring/status-files.test.ts > [AC-B1-08n#12] CSV 读取 ENOENT 必须中止启动；只翻译 ENOENT",
+    "test/spec/orders/wiring/status-files.test.ts > [AC-B1-08n#12] CSV 读取 EACCES 必须中止启动；只翻译 ENOENT"
+  ],
+  "risk_note": "RV2 (orders/**, app.module.ts, entry.ts, union / linking / identity read ports). Worker entry starts the optional order-sync runtime the existing optional way (handler registered once; no dispatch, query or timer at module init or entry start — the frozen zero-dispatch tests stay green); OrdersModule.forWorker wires the B1-08h attribution pipeline with the B1-08i update step and the platform event bus (alerts and domain events on the same bus); SyncAccessPort provides queryableAccount (only a live endpoint with exactly one account per platform); status-map CSVs read once per scheduled platform. Cross-module data only through the union / identity / linking read ports exported from their index.ts. Settlement rebate port is a TODO no-op until settlement exists. Documented defaults per the brief.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "da30fe4899c03ed9b8f358b5b912817f61553420",
+      "tree": "51238f00d68829e886e82d46545a39612cb1018f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T16:10:23Z",
+      "finished_at": "2026-10-18T16:10:57Z",
+      "gate": {
+        "commit": "cfddf922108474a61dbeb4f588f33697369a75cf",
+        "clean": true,
+        "script_sha256": "a760318276108244f9664229d4673fceafa5692c68dba5ecdc016a9e4b5cd057"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/orders/wiring/access.int.test.ts > [AC-B1-08n#13] 跨 App 枚举注册平台账号、不按 status 过滤，sync_start_at 为 ISO/null；授权逐次按三键查询",
+        "test/spec/orders/wiring/breaker.test.ts > [AC-B1-08n#18] online 的熔断与 offlineCircuitOpen 同源，离线到期自动恢复",
+        "test/spec/orders/wiring/breaker.test.ts > [AC-B1-08n#18] order_sync 的熔断与 offlineCircuitOpen 同源，离线到期自动恢复",
+        "test/spec/orders/wiring/credentials.int.test.ts > [AC-B1-08n#14] live 全库零/一/两账号，每次重查；不确定账号每平台只报一次，demo/replay 永不查询订单",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#5] worker 在 queue 与 agent 后启动一次；停机等待 sync 完成再停 agent 和 services",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 throw 不导致启动失败或额外日志",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 null 不导致启动失败或额外日志",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 undefined 不导致启动失败或额外日志",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 no-start 不导致启动失败或额外日志",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 queue 不导致启动失败或额外日志",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#6] 可选运行体 start-throws 不导致启动失败或额外日志",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#7] sync stop 拒绝仍停止底层服务并清空定时器",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#8] 服务启动期间收到 SIGTERM 不取用同步运行体",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#9] 初始化即退出不启动同步",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#20] agent 启动时收到信号，订单同步仍须检查 stopping",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#10] api 不取用同步运行体",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#10] stream 不取用同步运行体",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#10] admin 不取用同步运行体",
+        "test/spec/orders/wiring/entry.test.ts > [AC-B1-08n#10] payout 不取用同步运行体",
+        "test/spec/orders/wiring/flow.int.test.ts > [AC-B1-08n#19] worker 运行体接通真实归因/更新/事件总线；一页订单入库、水位推进、更新不重复建单",
+        "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#1] worker 装配只注册一次 order-sync，零查询、零投递、零定时器，映射取真实 CSV",
+        "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#2] 缺 DB 或队列（onlyQueueMissing=false）提供 null 并恰一条 info",
+        "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#2] 缺 DB 或队列（onlyQueueMissing=true）提供 null 并恰一条 info",
+        "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#3] api 不装配订单同步",
+        "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#3] stream 不装配订单同步",
+        "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#3] admin 不装配订单同步",
+        "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#3] payout 不装配订单同步",
+        "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#4] 归因与更新装配共享真实 EVENT_BUS，updateStep 必须注入，mtimeOrdering 默认关闭",
+        "test/spec/orders/wiring/module.test.ts > [AC-B1-08n#21] worker 的处理器 registry 与 access 熔断读取使用同一套治理包装",
+        "test/spec/orders/wiring/readers.int.test.ts > [AC-B1-08n#15] pids 按四键返回原始 scene/status/site；账号 syncStartAt 按 App/账号读真实字段且不缓存",
+        "test/spec/orders/wiring/readers.int.test.ts > [AC-B1-08n#16] attr_code 反查用户按 App 隔离，注销用户仍返回 id，每次重查",
+        "test/spec/orders/wiring/readers.int.test.ts > [AC-B1-08n#17] 绑定读取不按 status 过滤、不缓存，三键隔离并保留所有不同的时间戳",
+        "test/spec/orders/wiring/status-files.test.ts > [AC-B1-08n#11] 装配时每个调度平台只读一次 CSV，随后 statusMaps 只取缓存",
+        "test/spec/orders/wiring/status-files.test.ts > [AC-B1-08n#12] CSV 读取 ENOENT 必须中止启动；只翻译 ENOENT",
+        "test/spec/orders/wiring/status-files.test.ts > [AC-B1-08n#12] CSV 读取 EACCES 必须中止启动；只翻译 ENOENT"
+      ],
+      "expected": [
+        "test/spec/orders/wiring/access.int.test.ts",
+        "test/spec/orders/wiring/breaker.test.ts",
+        "test/spec/orders/wiring/credentials.int.test.ts",
+        "test/spec/orders/wiring/entry.test.ts",
+        "test/spec/orders/wiring/flow.int.test.ts",
+        "test/spec/orders/wiring/module.test.ts",
+        "test/spec/orders/wiring/readers.int.test.ts",
+        "test/spec/orders/wiring/status-files.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "9dfa8ab4e3fd0b0dce30a86719e15bd7a8e9250fed85e053d8a35f2bc431b375"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "76b603e914893856b0249d16e67acdfafc248f9c453a11c76dd105cd078fdd3f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings (including the silent start-failure path required by frozen entry test #6)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run, 35 tests). Round 1 pass; two S2 (scheduler and handler must share the access instance; queryableAccount error log fields flat) applied in the implementation."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "164df265c5504cc488fd24fbcd584fc22de365e7",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}

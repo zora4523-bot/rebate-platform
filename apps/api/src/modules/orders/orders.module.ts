@@ -3,6 +3,8 @@
 // factories from app.module (content's configuration reader, linking's order-link reader), so
 // this module imports no other module's implementation. Without a database the queries fail
 // closed on first use; module startup never touches the database handle.
+// B1-08n: forWorker — the worker entry's order-sync runtime (worker-runtime.ts) under
+// orderSyncToken(); identity's and linking's readers come in as factories from app.module.
 // B1-08m: the shared PendingTracks provider (class token) and the /v1/orders/pending-tracks
 // controller, over linking's open-attempt port (factory from app.module, like the link reader).
 import { Module, type DynamicModule } from '@nestjs/common';
@@ -10,15 +12,38 @@ import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { ContentReader } from '../content/index.ts';
 import type { PendingAttemptStore } from '../linking/index.ts';
-import { CLOCK, DB, type Clock } from '../platform/index.ts';
+import {
+  CLOCK,
+  DB,
+  EVENT_BUS,
+  JOB_QUEUE,
+  ROOT_LOGGER,
+  type Clock,
+  type EventBus,
+  type QueueRuntime,
+  type RootLogger,
+} from '../platform/index.ts';
+import {
+  UNION_ENDPOINTS,
+  UNION_REGISTRY,
+  type UnionEndpoint,
+  type UnionRegistry,
+} from '../union/index.ts';
 import {
   OrderQueries,
   createOrderQueries,
   type OrderLinkReader,
 } from './application/order-queries.ts';
 import { PendingTracks, createPendingTracks } from './application/pending-tracks.ts';
+import { ORDER_SYNC_QUEUE } from './application/sync-scheduler.ts';
 import { OrdersController } from './http/public/orders.controller.ts';
 import { PendingTracksController } from './http/public/pending-tracks.controller.ts';
+import {
+  createOrderSyncRuntime,
+  orderSyncToken,
+  type OrderSyncReadPorts,
+  type OrderSyncRuntime,
+} from './worker-runtime.ts';
 
 export interface OrdersModuleOptions {
   /** content's ContentReader over the primary handle (order.user_query_months, credit.enabled.*). */
@@ -27,6 +52,12 @@ export interface OrdersModuleOptions {
   readonly links: (db: Kysely<Database>) => OrderLinkReader;
   /** linking's open-attempt port (link_open_attempts: read, dismissed_at write). */
   readonly attempts: (db: Kysely<Database>) => PendingAttemptStore;
+}
+
+/** The worker's order-sync ports (B1-08n), assembled by app.module. */
+export interface OrdersWorkerOptions extends OrderSyncReadPorts {
+  /** union's module instance of this entry (UNION_ENDPOINTS, UNION_REGISTRY). */
+  readonly union: DynamicModule;
 }
 
 export class OrdersModule {
@@ -66,6 +97,60 @@ export class OrdersModule {
         },
       ],
       exports: [OrderQueries, PendingTracks],
+    };
+  }
+
+  /**
+   * B1-08n: the worker entry's order sync. orderSyncToken() provides the runtime of
+   * createOrderSyncRuntime (handler registered on `order-sync`, scheduler built but not started);
+   * entry.ts starts it after the queue runs. Without a database handle, the job queue or the
+   * event bus the token provides null and one info line `order_sync_disabled` is logged; nothing
+   * is registered. Assembly runs no query, sends no job and arms no timer.
+   */
+  static forWorker(options: OrdersWorkerOptions): DynamicModule {
+    const { union, ...ports } = options;
+    return {
+      module: OrdersModule,
+      imports: [union],
+      providers: [
+        {
+          provide: orderSyncToken(),
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            UNION_ENDPOINTS,
+            UNION_REGISTRY,
+            { token: DB, optional: true },
+            { token: JOB_QUEUE, optional: true },
+            { token: EVENT_BUS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            endpoints: readonly UnionEndpoint[],
+            registry: UnionRegistry,
+            db?: Kysely<Database> | null,
+            queue?: QueueRuntime | null,
+            events?: EventBus | null,
+          ): OrderSyncRuntime | null => {
+            if (db == null || queue == null || events == null) {
+              logger.info({ queue: ORDER_SYNC_QUEUE }, 'order_sync_disabled');
+              return null;
+            }
+            return createOrderSyncRuntime({
+              db,
+              clock,
+              logger,
+              queue,
+              events,
+              endpoints,
+              registry,
+              ports,
+            });
+          },
+        },
+      ],
+      exports: [orderSyncToken()],
     };
   }
 }
