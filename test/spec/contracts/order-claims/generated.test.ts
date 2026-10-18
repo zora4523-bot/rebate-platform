@@ -49,12 +49,14 @@ it.each(endpoints)(
       expect(matches, `${name} 中必须唯一登记 ${method} ${claimPath}`).toHaveLength(1);
       expect(matches[0]).toEqual(row);
     }
-    expect(operation(contract(), method)['x-implementation']).toBe('planned');
-    // generate-route-schemas.ts 明确跳过 planned；不可为满足测试提前注册运行时 schema。
+    const implementation = operation(contract(), method)['x-implementation'];
+    expect([undefined, 'planned']).toContain(implementation);
+    // planned 跳过运行时 schema；后续实现并去掉标记时必须生成 schema。
     const schemas = object(
       generated(platform + 'validation/route-schemas.gen.ts', 'CONTRACT_ROUTE_SCHEMAS'),
     );
-    expect(schemas).not.toHaveProperty(operationId);
+    if (implementation === 'planned') expect(schemas).not.toHaveProperty(operationId);
+    else expect(schemas).toHaveProperty(operationId);
     const bridge = object(JSON.parse(read('contracts/bridge.schema.json')));
     const signedPaths = [{ method: 'POST', path: claimPath }];
     expect(bridge['signed_paths']).toEqual(signedPaths);

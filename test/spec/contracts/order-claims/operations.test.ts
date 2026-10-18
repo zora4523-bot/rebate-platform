@@ -16,7 +16,7 @@ import {
 } from './kit.ts';
 
 it.each(endpoints)(
-  '[CT-04f#1] %s 的 %s 仅声明 planned，鉴权、签名、幂等和版本门禁完整',
+  '[CT-04f#1] %s 的 %s 鉴权、签名、幂等和版本门禁完整',
   (method, id) => {
     const doc = contract();
     const op = operation(doc, method);
@@ -26,7 +26,7 @@ it.each(endpoints)(
     expect(op['security']).toEqual([{ bearerAuth: [] }]);
     expect(op['x-signed']).toBe(method === 'post');
     expect(op['x-idempotent']).toBe(method === 'post');
-    expect(op['x-implementation']).toBe('planned');
+    expect([undefined, 'planned']).toContain(op['x-implementation']);
     expect(op).not.toHaveProperty('x-session-scopes');
     if (method === 'post') expect(op['x-min-version-gate']).toBe(true);
     else {
