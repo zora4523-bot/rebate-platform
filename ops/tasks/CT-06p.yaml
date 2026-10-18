@@ -20,7 +20,7 @@ paths:
   - 'tools/guard/red-check.ts'
   - 'tools/guard/guard-cli.test.ts'
   - 'tools/ops/verify-container.sh'
-  - 'tools/ops/verify-container.test.ts'
+  - 'tools/ops/verify-container{,.services}.test.ts'
   - 'tools/README.md'
   - 'tools/ops/README.md'
   - 'tools/agent/README.md'
