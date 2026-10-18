@@ -17,6 +17,8 @@ export type {
 } from './application/identity-level.ts';
 export { createAgentCallerReader } from './ports/agent-caller.ts';
 export type { AgentCallerReader, AgentCallerReaderOptions } from './ports/agent-caller.ts';
+export { createInviteLoginDevicesReader } from './ports/invite-login-devices.ts';
+export type { InviteLoginDevicesReader } from './ports/invite-login-devices.ts';
 export { createUserLevelReader } from './ports/user-level.ts';
 export type {
   UserLevel,
@@ -56,6 +58,7 @@ export type {
   AssembledRevokeByUser,
   IdentityConfigReader,
   IdentityModuleOptions,
+  RegistrationInviteBindingPort,
 } from './identity.module.ts';
 // B1-12b: the push token port app.module builds from notification's commands.
 export type { SessionPushTokens } from './application/push-tokens.ts';

@@ -2,6 +2,12 @@
 // no routes in this batch; other modules import only from here.
 export { appendLevelChange, appendRelationChange } from './infra/change-logs.ts';
 export { createGrowthHistory } from './infra/history.ts';
+// B1-11d: every write that changes users.parent_id takes this app-level lock first.
+export {
+  RELATION_WRITE_LOCK_NAMESPACE,
+  lockRelationWrites,
+  relationWriteLockKey,
+} from './infra/relation-lock.ts';
 export type {
   AsOfQuery,
   LevelAt,
@@ -19,3 +25,17 @@ export type {
   ParentRelationReaderOptions,
   ParentRelationSubject,
 } from './ports/parent-relation.ts';
+export {
+  createInviteBinder,
+  createRegistrationInviteBinding,
+} from './application/invite-binder.ts';
+export type {
+  InviteBindCommand,
+  InviteBinder,
+  InviteBinderDeps,
+  InviteBindingResult,
+  InviteSubject,
+  InviteActivityReader,
+  RegistrationInviteBinding,
+  RegistrationInviteInput,
+} from './application/invite-binder.ts';
