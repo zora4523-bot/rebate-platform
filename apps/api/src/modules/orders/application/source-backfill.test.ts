@@ -207,6 +207,47 @@ it('[AC-B1-08j#U11] 用例：推广位场景未知（pidScene=null）不取商�
   expect(p.linkLogs).not.toHaveBeenCalled();
 });
 
+it('[AC-B1-08j#U13] 用例：exact 命中即停，不取商品键、窗口配置与外跳日志；后续端口故障不影响 exact', async () => {
+  const p = ports([]);
+  const failure = new Error('synthetic link_logs failure');
+  p.productKey.mockRejectedValue(failure);
+  p.linkLogs.mockRejectedValue(failure);
+  const windowHours = vi.fn(() => 360);
+  const own = { link_id: click.link_id!, user_id: USER, scene: 'agent', agent_session_id: 'S9' };
+  p.linkByCode.mockResolvedValue(own);
+  const input = {
+    appId: 'unit-app',
+    platform: 'pdd' as const,
+    userId: USER,
+    attrAt: at(ATTR),
+    pidScene: 'share',
+    order: incoming(),
+    shopId: 'shop-1',
+  };
+  const sources = { ...p.sources, clickCode: () => true, windowHours };
+  expect(await backfillOrderSource(sources, input)).toEqual({
+    source_match: 'exact',
+    link_id: click.link_id,
+    source_scene: 'agent',
+    agent_session_id: 'S9',
+  });
+  expect(p.linkByCode).toHaveBeenCalledExactlyOnceWith({
+    appId: 'unit-app',
+    platform: 'pdd',
+    lk: 'q1w2e3',
+  });
+  expect(p.productKey).not.toHaveBeenCalled();
+  expect(p.linkLogs).not.toHaveBeenCalled();
+  expect(windowHours).not.toHaveBeenCalled();
+  // exact 未命中（link 属于他人 / 无主）→ 照旧读后续端口；此处端口故障原样抛出。
+  for (const userId of ['someone-else', null]) {
+    p.linkByCode.mockResolvedValue({ ...own, user_id: userId });
+    await expect(backfillOrderSource(sources, input)).rejects.toBe(failure);
+  }
+  expect(p.productKey).toHaveBeenCalledTimes(2);
+  expect(windowHours).toHaveBeenCalledTimes(2);
+});
+
 it('[AC-B1-08j#U6] 首次入库已归因：端口在任何写之前调用，四列只出现在 orders INSERT；未归因不调端口', async () => {
   for (const attributed of [true, false]) {
     const trace: string[] = [];
@@ -241,6 +282,42 @@ it('[AC-B1-08j#U6] 首次入库已归因：端口在任何写之前调用，四�
       expect(insert).not.toContain('"source_match"');
     }
   }
+});
+
+it('[AC-B1-08j#U14] 首次入库 exact 命中：外跳日志读取故障不回滚，exact 四列随 INSERT 写入', async () => {
+  const trace: string[] = [];
+  const compiled: { sql: string; parameters: readonly unknown[] }[] = [];
+  const p = ports(trace);
+  p.productKey.mockRejectedValue(new Error('synthetic product key failure'));
+  p.linkLogs.mockRejectedValue(new Error('synthetic link_logs failure'));
+  const own = '019a0000-0000-7000-8000-0000000000e1';
+  p.linkByCode.mockResolvedValue({
+    link_id: own,
+    user_id: USER,
+    scene: 'agent',
+    agent_session_id: null,
+  });
+  const pipeline = createOrderPipeline({
+    db: scriptedDb(trace, compiled),
+    clock: new FixedClock(NOW),
+    statusMaps: () => map,
+    pids: {
+      find: () => Promise.resolve([{ pid_scene: 'share', status: 'active', site_id: null }]),
+    },
+    accounts: { syncStartAt: () => Promise.resolve(at('2026-10-01T00:00:00.000Z')) },
+    users: { findByAttrCode: () => Promise.resolve(USER) },
+    bindings: { findByRelation: () => Promise.resolve([]) },
+    rebate: { onImported: () => Promise.resolve() },
+    sources: { ...p.sources, clickCode: (platform) => platform === 'pdd' },
+  });
+  const result = await pipeline.process(incoming({ raw_status: 'paid', received_at: null }), ctx);
+  expect(result.kind).toBe('inserted');
+  expect(p.productKey).not.toHaveBeenCalled();
+  expect(p.linkLogs).not.toHaveBeenCalled();
+  const insert = compiled.find((q) => q.sql.startsWith('insert into "app"."orders"'));
+  expect(insert?.sql).toContain('"source_match"');
+  expect(insert?.parameters).toContain('exact');
+  expect(insert?.parameters).toContain(own);
 });
 
 const current = {

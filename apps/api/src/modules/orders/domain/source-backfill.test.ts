@@ -2,6 +2,7 @@
 import { expect, it } from 'vitest';
 import { FixedClock } from '../../platform/index.ts';
 import {
+  matchExactLink,
   matchOrderSource,
   parseLinkCode,
   type LinkLogCandidate,
@@ -55,6 +56,19 @@ it('[AC-B1-08j#U1] exact 只认属于订单 user_id 的 link；user_id 为空的
   expect(matchOrderSource(input({ exactLink: { ...link, user_id: null } })).source_match).toBe(
     'product',
   );
+});
+
+it('[AC-B1-08j#U15] matchExactLink：只认属于订单 user_id 的 link；反查不到、无主、属他人 → null', () => {
+  const link = { link_id: 'exact', user_id: 'u1', scene: null, agent_session_id: null };
+  expect(matchExactLink(link, 'u1')).toEqual({
+    source_match: 'exact',
+    link_id: 'exact',
+    source_scene: null,
+    agent_session_id: null,
+  });
+  expect(matchExactLink(null, 'u1')).toBeNull();
+  expect(matchExactLink({ ...link, user_id: null }, 'u1')).toBeNull();
+  expect(matchExactLink({ ...link, user_id: 'u2' }, 'u1')).toBeNull();
 });
 
 it('[AC-B1-08j#U2] 窗口按绝对毫秒闭区间；同刻按 bigint id 取大；返回值是新对象', () => {

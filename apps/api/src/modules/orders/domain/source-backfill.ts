@@ -99,17 +99,29 @@ function fromLog(row: LinkLogCandidate, kind: 'product' | 'shop'): OrderSourceMa
   };
 }
 
+/**
+ * BR-ATTR-15 ① exact：lk 反查到的 link 属于订单 user_id → 直接取这个 link；反查不到、link 无主或
+ * 属于他人 → null（不算 exact，继续 ②）。用例层据此在命中时即停，不再读后续端口。
+ */
+export function matchExactLink(
+  exactLink: ExactLink | null,
+  userId: string,
+): OrderSourceMatch | null {
+  if (exactLink === null || exactLink.user_id === null || exactLink.user_id !== userId) {
+    return null;
+  }
+  return {
+    source_match: 'exact',
+    link_id: exactLink.link_id,
+    source_scene: exactLink.scene,
+    agent_session_id: exactLink.agent_session_id,
+  };
+}
+
 /** BR-ATTR-15 ①～④（命中即停）。不改输入，不对候选原地排序。 */
 export function matchOrderSource(input: MatchOrderSourceInput): OrderSourceMatch {
-  const exact = input.exactLink;
-  if (exact !== null && exact.user_id !== null && exact.user_id === input.userId) {
-    return {
-      source_match: 'exact',
-      link_id: exact.link_id,
-      source_scene: exact.scene,
-      agent_session_id: exact.agent_session_id,
-    };
-  }
+  const exact = matchExactLink(input.exactLink, input.userId);
+  if (exact !== null) return exact;
   const pidScene = input.pidScene;
   // 推广位场景未知：② / ③ 不跨场景匹配（D10-60），直接 ④ none。
   if (pidScene === null) return { ...NONE };

@@ -8,6 +8,7 @@ import type { RegisteredPlatform, UnionOrder, UnionOrderAttrParams } from '../..
 import { instantAt } from '../domain/sync-window.ts';
 import {
   DEFAULT_BACKFILL_WINDOW_HOURS,
+  matchExactLink,
   matchOrderSource,
   parseLinkCode,
   type ExactLink,
@@ -60,8 +61,10 @@ const HOUR_MS = 3_600_000;
 
 /**
  * 按当时的 userId 重新匹配来源：开关 attr.click_code.<platform> 打开、订单参数解析出 lk、且注入了
- * linkByCode → 先反查 exact 候选；推广位场景已知时再取 product_key、取窗口内 link_logs，交给
- * matchOrderSource。推广位场景未知（pidScene=null）不跨场景匹配：不调 productKey / linkLogs，只看 exact。
+ * linkByCode → 先反查 exact 候选；exact 命中（link 属于订单 user_id）即返回，不再取商品键、窗口配置与
+ * link_logs（BR-ATTR-15 命中即停：后续读取的故障不得回滚已命中的 exact）。exact 未命中且推广位场景已知时
+ * 再取 product_key、取窗口内 link_logs，交给 matchOrderSource。推广位场景未知（pidScene=null）不跨场景
+ * 匹配：不调 productKey / linkLogs，exact 未命中即 none。
  */
 export async function backfillOrderSource(
   ports: OrderSourcePorts,
@@ -74,6 +77,8 @@ export async function backfillOrderSource(
     const lk = parseLinkCode(platform, input.order.attr_params ?? NO_PARAMS);
     if (lk !== null) exactLink = await lookup.call(ports, { appId, platform, lk });
   }
+  const exact = matchExactLink(exactLink, input.userId);
+  if (exact !== null) return exact;
   const windowHours = ports.windowHours?.() ?? DEFAULT_BACKFILL_WINDOW_HOURS;
   let productKey: string | null = null;
   let candidates: readonly LinkLogCandidate[] = [];
