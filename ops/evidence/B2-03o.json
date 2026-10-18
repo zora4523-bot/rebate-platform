@@ -1,0 +1,105 @@
+{
+  "task": "B2-03o",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "cb229dc9ff56dda9cc1412bcbc276dbbf0336c39",
+  "red_tests": [
+    "test/spec/db/commission/trials/permissions.int.test.ts > [AC-B2-03o#12] app 可插入和读取报告，UPDATE 与 DELETE 均拒绝且原报告保留",
+    "test/spec/db/commission/trials/permissions.int.test.ts > [AC-B2-03o#13] readonly 可读报告，INSERT、UPDATE、DELETE 全部拒绝",
+    "test/spec/db/commission/trials/permissions.int.test.ts > [AC-B2-03o#14] couli_payout SELECT、INSERT、UPDATE、DELETE 均返回 42501",
+    "test/spec/db/commission/trials/permissions.int.test.ts > [AC-B2-03o#14] couli_maint SELECT、INSERT、UPDATE、DELETE 均返回 42501",
+    "test/spec/db/commission/trials/permissions.int.test.ts > [AC-B2-03o#15] 四角色有效权限精确限定，无额外表级或列级授权",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#1] 试算报告字段类型与必填性符合存储约定，只有基准版本可空",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#2] 必填字段逐列拒绝 NULL",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#3] BR-CALC-22 保存版本、七天窗口、摘要、申请人和完整 JSON 报告",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#4] 无现行版本时允许 NULL 或省略 base_version_id，零样本可保存",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#5] 样本窗口拒绝相等或倒置，时间按同一瞬间比较",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#6] 样本数拒绝负一，接受零与正数",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#7] created_at 无默认值，遗漏被拒绝，应用时刻原样保存",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#8] rule_version_id 拒绝不存在或跨 app 的版本",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#8] base_version_id 拒绝不存在或跨 app 的版本",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#9] 两个版本外键均包含 app_id、已验证且禁止级联",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#10] trial_id 是唯一主键，同一版本同一时刻可追加多份报告",
+    "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#11] 版本历史索引按 app、规则版本、创建时间排列且覆盖全部报告"
+  ],
+  "risk_note": "RV2 (db). Migration 0043 creates app.commission_rule_trials (orchestrator P3 A: trial reports are stored, insert-only, with the rule version and a sample hash; BR-CALC-22): trial_id primary key, (app_id, rule_version_id) and (app_id, base_version_id) foreign keys to commission_rule_versions without cascade, created_by foreign key to admin_users, sample_from < sample_to, sample_count >= 0, sample_hash non-empty, report a JSON object, sample_from / sample_to / created_at without defaults (application Clock), index (app_id, rule_version_id, created_at), UPDATE / DELETE rejected by a trigger and not granted; couli_app SELECT / INSERT, couli_readonly SELECT. lint-migrations funds-table lock list gains the table. The file was renamed 0043 -> 0042 -> 0043 after the money review (migration numbers reserved by other lanes merged first); content unchanged; schema.sql / db.gen.ts regenerated on the test machine after each rebase.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "cb229dc9ff56dda9cc1412bcbc276dbbf0336c39",
+      "tree": "f55a3f4ad3ed24fdb470a5bedaefe0d0c3db6799",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T02:25:42Z",
+      "finished_at": "2026-10-18T02:25:49Z",
+      "gate": {
+        "commit": "f747d9dd13324e6e6e3475311848560edf0b82f2",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/commission/trials/permissions.int.test.ts > [AC-B2-03o#12] app 可插入和读取报告，UPDATE 与 DELETE 均拒绝且原报告保留",
+        "test/spec/db/commission/trials/permissions.int.test.ts > [AC-B2-03o#13] readonly 可读报告，INSERT、UPDATE、DELETE 全部拒绝",
+        "test/spec/db/commission/trials/permissions.int.test.ts > [AC-B2-03o#14] couli_payout SELECT、INSERT、UPDATE、DELETE 均返回 42501",
+        "test/spec/db/commission/trials/permissions.int.test.ts > [AC-B2-03o#14] couli_maint SELECT、INSERT、UPDATE、DELETE 均返回 42501",
+        "test/spec/db/commission/trials/permissions.int.test.ts > [AC-B2-03o#15] 四角色有效权限精确限定，无额外表级或列级授权",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#1] 试算报告字段类型与必填性符合存储约定，只有基准版本可空",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#2] 必填字段逐列拒绝 NULL",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#3] BR-CALC-22 保存版本、七天窗口、摘要、申请人和完整 JSON 报告",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#4] 无现行版本时允许 NULL 或省略 base_version_id，零样本可保存",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#5] 样本窗口拒绝相等或倒置，时间按同一瞬间比较",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#6] 样本数拒绝负一，接受零与正数",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#7] created_at 无默认值，遗漏被拒绝，应用时刻原样保存",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#8] rule_version_id 拒绝不存在或跨 app 的版本",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#8] base_version_id 拒绝不存在或跨 app 的版本",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#9] 两个版本外键均包含 app_id、已验证且禁止级联",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#10] trial_id 是唯一主键，同一版本同一时刻可追加多份报告",
+        "test/spec/db/commission/trials/storage.int.test.ts > [AC-B2-03o#11] 版本历史索引按 app、规则版本、创建时间排列且覆盖全部报告"
+      ],
+      "expected": [
+        "test/spec/db/commission/trials/permissions.int.test.ts",
+        "test/spec/db/commission/trials/storage.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "95272450164571bf5690f03c9b4634a71cfddf51e44bc9c837fe458416fa930f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings; afterwards only renamed (number) and rebased, content unchanged"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex (17 red); round 1 pass with one S2 (only created_at asserted default-free; the implementation leaves all three time columns default-free)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "4b30f96774a35fda101d86970d5db9570efa03ed",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "4cfb99c4aab10318aeee66581574d61eab52ac45",
+    "specs": "c2b838de9c813844ae68fb6f74f1bb0dc1b2879d"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
