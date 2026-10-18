@@ -135,3 +135,10 @@ export type {
   PendingAttemptScope,
   PendingAttemptStore,
 } from './application/pending-attempts.ts';
+// Task F1-07c: the console's union authorization management (reset / disable / enable,
+// BR-ID-20; admin entry only) and the ban / unban ports F1-07d calls on its own transaction.
+// Rule tests: test/spec/linking/admin-union-bindings/**.
+export { blockForBan, restoreAfterUnban } from './application/binding-risk.ts';
+export type { BindingRiskInput } from './application/binding-risk.ts';
+export { LinkingAdminModule } from './linking-admin.module.ts';
+export type { LinkingAdminOptions, LinkingAuditWriterFactory } from './linking-admin.module.ts';

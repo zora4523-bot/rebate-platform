@@ -20,6 +20,14 @@
 // queries of this process at once (the open and GET /v1/unions/bindings share the count). A query
 // over the cap does not wait: it is refused at once as a failed query (null, logged; the adapter is
 // not called) and touches no count; a query that entered frees its one slot when it ends.
+// F1-07c: activatePddBinding first takes the user lock (binding-lock.ts) on the caller's
+// transaction, outside the per-attempt savepoints (a rollback to one would drop it), and reads the
+// risk state after it: a banned user's binding is never written (`banned`, nothing changed). Its
+// callers query the union authority before they call it, so the lock is never held across the
+// query. A new row's row_version follows the highest of the user's earlier pdd rows.
+// F1-07c (BR-ID-20, owner 2026-10-18): Pinduoduo has no re-authorization; the console's enable
+// and the unban write the binding active themselves (binding-risk.ts), and the refresh and the open
+// activate from a valid filing as before.
 // TODO(规划/11 §4.5): BR-ID-22 的 (user, pid) 粒度 — blocked on union_bindings 加 pid 维度的迁移
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
@@ -30,6 +38,7 @@ import type { AttrCodeReader } from '../ports.ts';
 import { LinkingUnionIdentity, type LinkConversionOptions } from './link-open-conversion.ts';
 import { attrCodeOf } from './link-registration.ts';
 import { UNRELEASED } from './union-auth-reads.ts';
+import { lockBindingUser, nextBindingRowVersion, userBannedOn } from './binding-lock.ts';
 
 export const PDD = 'pdd';
 const ATTR_CODE = /^[0-9a-z]{8}$/;
@@ -44,6 +53,8 @@ type Warn = LinkConversionOptions['logger'];
 export type PddActivation =
   | { readonly kind: 'active'; readonly id: string; readonly accountId: string }
   | { readonly kind: 'blocked' }
+  /** F1-07c: the user is banned (read after the user lock); nothing written. */
+  | { readonly kind: 'banned' }
   | { readonly kind: 'retry' };
 
 function uniqueViolation(error: unknown): boolean {
@@ -237,6 +248,8 @@ async function activateOnce(
       released_at: null,
       cooldown_until: null,
       blocked_reason: null,
+      // F1-07c: after the highest row_version of the user's earlier pdd rows.
+      row_version: nextBindingRowVersion(rows),
       created_at: now,
       updated_at: now,
     })
@@ -248,7 +261,9 @@ async function activateOnce(
 /**
  * Writes the user's pdd binding active (the filing is valid). `executor` must be a transaction:
  * each attempt runs under its own savepoint, so a lost unique race undoes only that attempt and
- * the next one reads what won. Returns active (written now or found) or blocked (nothing written).
+ * the next one reads what won. Returns active (written now or found), blocked or banned (nothing
+ * written). The user lock is taken first, before any savepoint, and held by the caller's
+ * transaction.
  */
 export async function activatePddBinding(
   executor: Kysely<DB>,
@@ -261,6 +276,10 @@ export async function activatePddBinding(
   },
 ): Promise<Exclude<PddActivation, { readonly kind: 'retry' }>> {
   const { appId, userId, accountId, custom } = input;
+  if (!(await lockBindingUser(executor, appId, userId))) {
+    throw new Error('linking: the pdd binding user does not exist');
+  }
+  if (await userBannedOn(executor, appId, userId)) return { kind: 'banned' };
   for (let attempt = 1; ; attempt += 1) {
     let decision: PddActivation;
     await sql`SAVEPOINT pdd_binding_activate`.execute(executor);

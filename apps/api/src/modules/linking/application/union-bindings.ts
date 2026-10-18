@@ -55,6 +55,21 @@
 // echoed. Responses carry only {platform, status}: no account name, relation id or other user.
 // Cross-module reads (devices, user_risk_state, union_accounts, pids) are read-only; this module
 // writes union_auth_sessions (used_at only) and union_bindings.
+// F1-07c: the user lock (binding-lock.ts) is never held during the exchange. A new row is inserted
+// first (the unique-index race of B1-06h is unchanged: two submissions both reach their INSERT),
+// and the lock is taken right after the write, before the conflict log's advisory lock and the
+// key's commit (r3 S2: every path takes the user lock before the advisory lock); an update of an
+// existing row (invalid → active, a cooling row restored) takes the lock just before its UPDATE,
+// in the order the console and the ban ports use (lock, then row), so the two never deadlock.
+// After settling, the lock is taken (again, a no-op when held) and the risk state read: a user
+// banned meanwhile gets the banned answer (10001) and the whole write is rolled back to the
+// savepoint taken before it. Either order leaves no banned + active: a ban holding the lock first
+// commits before this reads banned; this holding it first commits before the ban reads the rows.
+// A new row's row_version, and a restored row's, follow the highest of the user's taobao rows (an
+// earlier row_version never names the current binding again: the console's CAS stays sound). That
+// highest is read under the user lock (r3 S1): a restore reads the rows again after the lock, a
+// new row re-reads after its lock and moves its own row_version up when a row created and reset
+// meanwhile went past it.
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
@@ -66,6 +81,7 @@ import {
   type RootLogger,
 } from '../../platform/index.ts';
 import { canTransitionBinding } from '../domain/binding-status-transitions.ts';
+import { lockBindingUser, nextBindingRowVersion, userBannedOn } from './binding-lock.ts';
 import {
   recordBindingConflict,
   resolveBindingConflictsOnActive,
@@ -201,6 +217,21 @@ type Decision =
   | { readonly kind: 'blocked' }
   | { readonly kind: 'retry' };
 
+/** Every taobao row of the user, read on the caller's transaction (as committed now). */
+async function userRows(
+  trx: Transaction<DB>,
+  appId: string,
+  userId: string,
+): Promise<BindingRow[]> {
+  return trx
+    .selectFrom('union_bindings')
+    .selectAll()
+    .where('app_id', '=', appId)
+    .where('user_id', '=', userId)
+    .where('platform', '=', 'taobao')
+    .execute();
+}
+
 export function createUnionBindings(options: UnionBindingsOptions): UnionBindingsService {
   const { db, clock, callerContext, reads, idempotency, exchanger, logger } = options;
 
@@ -235,13 +266,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
     );
     if (othersCooling) return { kind: 'conflict', conflict: 'cooling' };
 
-    const mine: BindingRow[] = await trx
-      .selectFrom('union_bindings')
-      .selectAll()
-      .where('app_id', '=', appId)
-      .where('user_id', '=', userId)
-      .where('platform', '=', platform)
-      .execute();
+    const mine = await userRows(trx, appId, userId);
     const unreleased = mine.find((row) => UNRELEASED.includes(row.status));
     if (unreleased !== undefined) {
       if (unreleased.relation_id !== relationId || unreleased.union_account_id !== accountId) {
@@ -251,6 +276,8 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       if (unreleased.status === 'blocked') return { kind: 'blocked' };
       // invalid (or a legacy pending_auth) → active; bound_at is written once and kept.
       assertTransition(unreleased.status, 'active');
+      // F1-07c: the user lock before the row's (lock order of the console and the ban ports).
+      await lockBindingUser(trx, appId, userId);
       const updated = await trx
         .updateTable('union_bindings')
         .set((eb) => ({
@@ -279,6 +306,22 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       .sort((a, b) => (b.released_at?.getTime() ?? 0) - (a.released_at?.getTime() ?? 0))[0];
     if (cooling !== undefined) {
       assertTransition(cooling.status, 'active');
+      // F1-07c: the user lock before the row's (lock order of the console and the ban ports).
+      await lockBindingUser(trx, appId, userId);
+      // Codex money review r3 S1: the rows read before the lock may be stale (a row created and
+      // reset meanwhile). Read again under the lock; anything unreleased now, or the cooling row
+      // moved, decides again (the lock stays held), and the new row_version follows the highest
+      // row_version committed by then.
+      const locked = await userRows(trx, appId, userId);
+      const same = locked.find((row) => row.id === cooling.id);
+      if (
+        locked.some((row) => UNRELEASED.includes(row.status)) ||
+        same === undefined ||
+        same.status !== 'released' ||
+        same.row_version !== cooling.row_version
+      ) {
+        return { kind: 'retry' };
+      }
       const restored = await trx
         .updateTable('union_bindings')
         .set((eb) => ({
@@ -287,7 +330,9 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
           cooldown_until: null,
           bound_at: eb.fn.coalesce('bound_at', eb.val(now)),
           updated_at: now,
-          row_version: eb('row_version', '+', 1),
+          // F1-07c: after the highest row_version of the user's taobao rows, never its own + 1
+          // (that value may be one a later row already had: a stale console CAS would hit it).
+          row_version: nextBindingRowVersion(locked),
         }))
         .where('id', '=', cooling.id)
         .where('status', '=', 'released')
@@ -300,10 +345,12 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
 
     // pending_auth is never produced (BR-ID-17 细则): the row is written active directly.
     assertTransition(null, 'active');
+    const id = newUuidV7(now);
+    const version = nextBindingRowVersion(mine);
     await trx
       .insertInto('union_bindings')
       .values({
-        id: newUuidV7(now),
+        id,
         app_id: appId,
         user_id: userId,
         platform,
@@ -314,10 +361,28 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
         released_at: null,
         cooldown_until: null,
         blocked_reason: null,
+        // F1-07c: after the highest row_version of the user's earlier rows on the platform.
+        row_version: version,
         created_at: now,
         updated_at: now,
       })
       .execute();
+    // Inserted first (the B1-06h unique race stays reachable), then the user lock before the
+    // conflict log's advisory lock (Codex money review r3 S2: user lock → advisory lock on every
+    // path). Under the lock the earlier rows are read again (r3 S1): a row created and reset
+    // since the pre-insert read may carry a row_version >= this row's, so this row (not yet
+    // visible to anyone else) moves after the highest; its status is not touched.
+    await lockBindingUser(trx, appId, userId);
+    const earlier = (await userRows(trx, appId, userId)).filter((row) => row.id !== id);
+    const after = nextBindingRowVersion(earlier);
+    if (after > version) {
+      await trx
+        .updateTable('union_bindings')
+        .set({ row_version: after })
+        .where('id', '=', id)
+        .where('row_version', '=', version)
+        .execute();
+    }
     return activated(trx, appId, userId, now);
   }
 
@@ -445,7 +510,20 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       throw new AuthConfigError('linking: the credential exchange returned no relation id');
     }
 
+    // F1-07c: write first (the decide savepoints and the unique race unchanged), then the user
+    // lock outside them, held until the key's transaction commits. A ban committed before the
+    // lock was granted is read after it: the write is rolled back and the answer is the banned
+    // user's (BR-ID-31: no session, 10001).
+    await sql`SAVEPOINT union_binding_write`.execute(trx);
     const decision = await settle(trx, appId, userId, accountId, exchanged.relationId);
+    if (!(await lockBindingUser(trx, appId, userId))) {
+      throw new Error('linking: the bound user does not exist');
+    }
+    if (await userBannedOn(trx, appId, userId)) {
+      await sql`ROLLBACK TO SAVEPOINT union_binding_write`.execute(trx);
+      return result(10001, traceId);
+    }
+    await sql`RELEASE SAVEPOINT union_binding_write`.execute(trx);
     if (decision.kind === 'conflict') {
       // BR-ID-18 / BR-ID-19: one conflict row per 30151, committed with the stored answer; it
       // names the account used, never R or the other user.

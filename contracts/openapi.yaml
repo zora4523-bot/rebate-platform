@@ -6744,7 +6744,6 @@ paths:
         Writes an audit record (action union_binding_reset, before and after
         status, reason). The response is the binding as it is now. No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -6845,7 +6844,6 @@ paths:
         union_binding_disable, before and after status, reason). The response is the binding as
         it is now. No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -6951,7 +6949,6 @@ paths:
         union_binding_enable, before and after status, reason). The response is the binding as it
         is now. No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003

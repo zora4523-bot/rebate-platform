@@ -88,6 +88,7 @@ import {
   LINK_LANDING_PORTS,
   LINK_OPEN_PORTS,
   LINK_REGISTRATIONS,
+  LinkingAdminModule,
   LinkingModule,
   createOrderLinkReader,
   createPendingAttemptStore,
@@ -1242,6 +1243,18 @@ export class AppModule {
         // identity's /admin/v1 user reveal (F1-07a, BR-ID-33): guarded by AdminOperationGuard,
         // audited through the global AUDIT_PORT before the value is returned.
         ...(options.entry === 'admin' ? [IdentityAdminModule.forAdmin()] : []),
+        // linking's /admin/v1 union authorization management (F1-07c, BR-ID-20): guarded by
+        // AdminOperationGuard; each change and its audit row (admin's writer bound to the change's
+        // transaction) commit together; the reset's cooldown reads content's configuration.
+        ...(options.entry === 'admin'
+          ? [
+              LinkingAdminModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                configReader: (db, clock) => createContentReader({ db, clock }),
+              }),
+            ]
+          : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest). GET
         // /v1/pages/{page_key} (F1-09d) reads the same viewer for its login condition.

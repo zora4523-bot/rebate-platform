@@ -35,5 +35,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/admin-union-bindings/**'
-status: todo
-pr: null
+status: done
+pr: 796

@@ -33,6 +33,8 @@
 // An own blocked user's no_rebate refused for maintenance carries the server's no_rebate_reason.
 // B1-06x: the identity, the authority query and the activation are pdd-authority.ts's, shared with
 // the authorization page refresh (union-bindings-pdd.ts); behaviour here is unchanged.
+// F1-07c: the activation takes the user lock and reads the risk state after it; a user banned
+// meanwhile gets the banned user's answer (10001) and nothing is written.
 // B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ATTR-08, BR-ID-17): every slot this check and the
 // conversion use is the scene's active slot of the account this authorization uses (authAccountId
 // above; after an activation, the binding's account), read with the union port's account filter;
@@ -299,6 +301,8 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
       custom,
     });
     if (written.kind === 'blocked') return { kind: 'refused', code: 30153 };
+    // F1-07c: banned meanwhile (read after the user lock): the banned user's answer, as above.
+    if (written.kind === 'banned') return { kind: 'refused', code: 10001 };
     return allow(owner, false, { id: written.id, accountId: written.accountId }, written.accountId);
   }
 
