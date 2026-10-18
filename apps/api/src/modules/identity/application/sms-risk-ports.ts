@@ -24,8 +24,12 @@ export interface SmsRiskPorts {
   readonly registration: Required<Pick<RegistrationOptions, 'afterRegistered'>>;
 }
 export interface SmsRiskPortsOptions {
-  /** admitIp may be absent (a risk port built before B1-11g): landing sends are then refused. */
-  readonly risk: Omit<SmsRisk, 'admitIp'> & Partial<Pick<SmsRisk, 'admitIp'>>;
+  /**
+   * admitIp / releaseIp may be absent (a risk port built before B1-11g): landing sends are then
+   * refused.
+   */
+  readonly risk: Omit<SmsRisk, 'admitIp' | 'releaseIp'> &
+    Partial<Pick<SmsRisk, 'admitIp' | 'releaseIp'>>;
   readonly devices: SmsDeviceHashReader;
   readonly logger: RootLogger;
 }
@@ -81,19 +85,29 @@ export function createSmsRiskPorts(options: SmsRiskPortsOptions): SmsRiskPorts {
           logger.warn({ app_id: appId, purpose: request.purpose }, 'sms_landing_ip_missing');
           return { ...refused };
         }
-        if (risk.admitIp === undefined) {
+        const { admitIp, releaseIp } = risk;
+        if (admitIp === undefined || releaseIp === undefined) {
           logger.error({ app_id: appId, purpose: request.purpose }, 'sms_landing_risk_missing');
           return { ...refused };
         }
-        const admission = await risk.admitIp({ appId, clientIp: request.client_ip });
-        return admission.code === 0
-          ? null
-          : { code: 42901, retryAfterSec: admission.retryAfterSec };
+        const clientIp = request.client_ip;
+        // Atomic: judged and, when admitted, already counted for the IP (no read-then-record race).
+        const admission = await admitIp.call(risk, { appId, clientIp });
+        if (admission.code !== 0) {
+          return { code: 42901, retryAfterSec: admission.retryAfterSec };
+        }
+        const { reservation } = admission;
+        return {
+          code: 0,
+          release: () => releaseIp.call(risk, { appId, clientIp, reservation }),
+        };
       },
       async afterAccepted(request) {
+        // A landing send's IP count is its admitIp reservation: only the daily budget counts here.
+        const countsIp = request.client_ip !== undefined && request.channel !== 'landing';
         await risk.recordAccepted({
           appId: request.app_id,
-          ...(request.client_ip === undefined ? {} : { clientIp: request.client_ip }),
+          ...(countsIp ? { clientIp: request.client_ip } : {}),
         });
       },
     },

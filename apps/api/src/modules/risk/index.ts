@@ -26,6 +26,7 @@ export type {
   SmsRiskOptions,
   SmsRiskRequest,
   SmsRiskIpRequest,
+  SmsRiskIpAdmission,
   SmsRiskAdmission,
 } from './application/sms-risk.ts';
 export {

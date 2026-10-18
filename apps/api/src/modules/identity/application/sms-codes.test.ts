@@ -599,7 +599,8 @@ it('[AC-B1-11g#7] a landing send runs phoneBlocklist then landingQuota, never ca
   const phoneBlocklist = vi.fn(async () => null);
   const captcha = vi.fn(async () => ({ code: 44003 as const }));
   const deviceQuota = vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 9 }));
-  const landingQuota = vi.fn(async () => null);
+  const release = vi.fn(async () => undefined);
+  const landingQuota = vi.fn(async () => ({ code: 0 as const, release }));
   const f = setup({ hooks: { phoneBlocklist, captcha, deviceQuota, landingQuota } });
   const result = await f.service.send({
     app_id: 'couli',
@@ -616,6 +617,8 @@ it('[AC-B1-11g#7] a landing send runs phoneBlocklist then landingQuota, never ca
   expect(captcha).not.toHaveBeenCalled();
   expect(deviceQuota).not.toHaveBeenCalled();
   expect(f.messages).toHaveLength(1);
+  // Accepted: the IP slot reserved before the phone quota stays counted.
+  expect(release).not.toHaveBeenCalled();
 });
 
 it('[AC-B1-11g#10] a landing 42901 from landingQuota short-circuits the phone quota', async () => {
@@ -645,4 +648,78 @@ it('[AC-B1-11g#11] a landing send without a landingQuota hook is refused, never 
   expect(result).toMatchObject({ code: 42901 });
   expect(f.calls).toEqual([]);
   expect(f.messages).toEqual([]);
+});
+
+function landing(overrides: Parameters<typeof setup>[0] = {}) {
+  const order: string[] = [];
+  const release = vi.fn(async () => void order.push('release'));
+  const landingQuota = vi.fn(async () => {
+    order.push('reserve');
+    return { code: 0 as const, release };
+  });
+  const afterAccepted = vi.fn(async () => void order.push('afterAccepted'));
+  const f = setup({ ...overrides, hooks: { landingQuota, afterAccepted } });
+  const send = () =>
+    f.service.send({
+      app_id: 'couli',
+      phone: NUMBER,
+      purpose: 'login',
+      client_ip: '203.0.113.7',
+      channel: 'landing',
+    });
+  return { ...f, order, release, landingQuota, afterAccepted, send };
+}
+
+it('[AC-B1-11g#27] a phone-limited landing send releases its IP slot (the 42901 does not count for the IP)', async () => {
+  const f = landing({
+    reply: (kind) => (kind === 'reserve' ? [0, Date.parse(START) + 60_000] : 1),
+  });
+  expect(await f.send()).toEqual({ code: 42901, retryAfterSec: 60 });
+  expect(f.order).toEqual(['reserve', 'release']);
+  expect(f.messages).toEqual([]);
+});
+
+it('[AC-B1-11g#20] a landing send the provider refuses releases its IP slot; nothing counts', async () => {
+  const f = landing({ sender: { send: async () => 'rejected' } });
+  expect(await f.send()).toEqual({ code: 50001 });
+  expect(f.order).toEqual(['reserve', 'release']);
+  expect(f.afterAccepted).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-11g#19] an unknown landing send (timeout or thrown adapter error) keeps its IP slot', async () => {
+  for (const sender of [
+    { send: async () => 'unknown' as const },
+    {
+      send: async () => {
+        throw new Error('adapter down');
+      },
+    },
+  ]) {
+    const f = landing({ sender });
+    expect(await f.send()).toMatchObject({ code: 0 });
+    expect(f.order).toEqual(['reserve', 'afterAccepted']);
+    expect(f.release).not.toHaveBeenCalled();
+  }
+});
+
+it('[AC-B1-11g#6] a landing send whose phone quota store is unavailable releases its IP slot', async () => {
+  const f = landing({
+    reply: (kind) => {
+      if (kind === 'reserve') throw new RedisUnavailableError('command_failed');
+      return 1;
+    },
+  });
+  expect(await f.send()).toMatchObject({ code: 42901 });
+  expect(f.order).toEqual(['reserve', 'release']);
+  expect(f.messages).toEqual([]);
+});
+
+it('[AC-B1-11g#6] a failing slot release is only logged; the answer stays the refusal', async () => {
+  const f = landing({ sender: { send: async () => 'rejected' } });
+  f.release.mockRejectedValueOnce(new Error('down 203.0.113.7'));
+  expect(await f.send()).toEqual({ code: 50001 });
+  const text = f.lines.join('');
+  expect(text).toContain('sms_landing_slot_release_failed');
+  expect(text).not.toContain('203.0.113.7');
+  expect(text).not.toContain(NUMBER);
 });

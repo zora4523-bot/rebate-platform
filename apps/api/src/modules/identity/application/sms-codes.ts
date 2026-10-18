@@ -12,7 +12,10 @@
 //      number, the device id and the client IP. A landing page send (channel=landing, B1-11g,
 //      BR-ID-32: purpose=login, no signature, no device, no human verification) runs
 //      phoneBlocklist and then landingQuota (42901: the two per-IP items only) instead of captcha
-//      and deviceQuota; without a landingQuota hook it is refused (42901, Retry-After 5);
+//      and deviceQuota; without a landingQuota hook it is refused (42901, Retry-After 5). An
+//      admitted landing send holds an IP slot (reserved atomically, already counted): it is
+//      released when no SMS goes out (any later refusal, failure or throw) or the provider
+//      refuses, and kept for an accepted or unknown send (counted as sent, like the phone quota);
 //   4. one atomic call reserves the per-phone quota (60 s / natural hour / natural day / rolling
 //      24 h, uncommitted sends counted over [reservation, reservation + D], D = sendTimeoutMs +
 //      SMS_IN_FLIGHT_MARGIN_MS) and stores the new random code as the reserved candidate of (app,
@@ -120,6 +123,11 @@ export type SmsResult =
   | { readonly code: 44003 }
   | { readonly code: 42901; readonly retryAfterSec: number }
   | { readonly code: 50001 };
+/** An IP slot reserved by landingQuota before the phone quota (B1-11g). */
+export interface LandingSlot {
+  readonly code: 0;
+  release(): Promise<void>;
+}
 /** The identity configuration port (content implements it; app.module assembles it). */
 export interface SmsConfigReader {
   configValue(
@@ -138,10 +146,14 @@ export interface SmsHooks {
   readonly deviceQuota?: (
     request: SmsRequest,
   ) => Promise<Extract<SmsResult, { code: 42901 }> | null>;
-  /** B1-11g: the landing page send's 42901 step before the phone quota (the per-IP items only). */
+  /**
+   * B1-11g: the landing page send's 42901 step before the phone quota (the per-IP items only).
+   * Admitted, it returns a slot already counted for the IP; the service releases it when no SMS
+   * went out or the provider refused it, and keeps it for an accepted or unknown send.
+   */
   readonly landingQuota?: (
     request: SmsRequest,
-  ) => Promise<Extract<SmsResult, { code: 42901 }> | null>;
+  ) => Promise<Extract<SmsResult, { code: 42901 }> | LandingSlot>;
   readonly afterAccepted?: (request: SmsRequest) => Promise<void>;
 }
 export interface SmsCodeOptions {
@@ -260,6 +272,15 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
     }
   }
 
+  /** Release of a landing IP slot; a failure is only logged (the slot then stays: stricter). */
+  async function releaseSlot(slot: LandingSlot, fields: object): Promise<void> {
+    try {
+      await slot.release();
+    } catch (error) {
+      logger.warn({ ...fields, error_class: errorClass(error) }, 'sms_landing_slot_release_failed');
+    }
+  }
+
   /** Release of a send that never went out (or was refused), retried once; failure only logged. */
   async function releaseQuietly(keys: SmsKeys, token: string, fields: object): Promise<void> {
     try {
@@ -289,14 +310,16 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
       }
       const blocked = (await hooks.phoneBlocklist?.(checked)) ?? null;
       if (blocked !== null) return blocked;
+      let slot: LandingSlot | null = null;
       if (request.channel === 'landing') {
         // BR-ID-32: no human verification and no device step; the per-IP items must be judged.
         if (hooks.landingQuota === undefined) {
           logger.error({ app_id: appId, purpose }, 'sms_landing_quota_missing');
           return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
         }
-        const limited = await hooks.landingQuota(checked);
-        if (limited !== null) return limited;
+        const verdict = await hooks.landingQuota(checked);
+        if (verdict.code === 42901) return verdict;
+        slot = verdict;
       } else {
         const captcha = (await hooks.captcha?.(checked)) ?? null;
         if (captcha !== null) return captcha;
@@ -304,91 +327,106 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
         if (device !== null) return device;
       }
 
-      const keys = keysOf(appId, purpose, phone);
-      const token = randomBytes(16).toString('hex');
-      const reservedAt = nowMs();
-      let reservation: ReserveOutcome = { kind: 'collision' };
-      let code = '';
-      try {
-        for (let draw = 0; draw < SMS_CODE_DRAWS && reservation.kind === 'collision'; draw++) {
-          code = newCode();
-          const hash = codeHash(appId, purpose, phone, code);
-          reservation = await store.reserve(keys, token, hash, purpose, reservedAt);
+      let delivered = false;
+      const quotaAndSend = async (): Promise<SmsResult> => {
+        const keys = keysOf(appId, purpose, phone);
+        const token = randomBytes(16).toString('hex');
+        const reservedAt = nowMs();
+        let reservation: ReserveOutcome = { kind: 'collision' };
+        let code = '';
+        try {
+          for (let draw = 0; draw < SMS_CODE_DRAWS && reservation.kind === 'collision'; draw++) {
+            code = newCode();
+            const hash = codeHash(appId, purpose, phone, code);
+            reservation = await store.reserve(keys, token, hash, purpose, reservedAt);
+          }
+        } catch (error) {
+          if (!(error instanceof RedisUnavailableError)) throw error;
+          logger.warn({ app_id: appId, purpose, reason: error.reason }, 'sms_quota_unavailable');
+          // The call may have run with its reply lost: undo it, so that nothing counts and the
+          // reserved candidate goes (the code in force was never void).
+          await releaseQuietly(keys, token, { app_id: appId, purpose });
+          return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
         }
-      } catch (error) {
-        if (!(error instanceof RedisUnavailableError)) throw error;
-        logger.warn({ app_id: appId, purpose, reason: error.reason }, 'sms_quota_unavailable');
-        // The call may have run with its reply lost: undo it, so that nothing counts and the
-        // reserved candidate goes (the code in force was never void).
-        await releaseQuietly(keys, token, { app_id: appId, purpose });
-        return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
-      }
-      if (reservation.kind === 'collision') {
-        logger.error({ app_id: appId, purpose, draws: SMS_CODE_DRAWS }, 'sms_code_collision');
-        return { code: 50001 };
-      }
-      if (reservation.kind === 'limited') {
-        const retryAfterSec = secondsUntil(reservation.releaseAtMs, reservedAt);
-        logger.info({ app_id: appId, purpose, retry_after_sec: retryAfterSec }, 'sms_code_limited');
-        return { code: 42901, retryAfterSec };
-      }
+        if (reservation.kind === 'collision') {
+          logger.error({ app_id: appId, purpose, draws: SMS_CODE_DRAWS }, 'sms_code_collision');
+          return { code: 50001 };
+        }
+        if (reservation.kind === 'limited') {
+          const retryAfterSec = secondsUntil(reservation.releaseAtMs, reservedAt);
+          logger.info(
+            { app_id: appId, purpose, retry_after_sec: retryAfterSec },
+            'sms_code_limited',
+          );
+          return { code: 42901, retryAfterSec };
+        }
 
-      // From here the candidate is the current code; without that, no SMS goes out.
-      const marked = await retried(() => store.mark(keys, token, nowMs()));
-      if (marked !== true) {
-        logger.warn(
-          { app_id: appId, purpose, reason: marked === null ? 'unavailable' : 'refused' },
-          'sms_mark_failed',
-        );
-        await releaseQuietly(keys, token, { app_id: appId, purpose });
-        return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
-      }
-      // A process that stalled since the reservation could let the provider answer after
-      // reservation + D, outside the span an uncommitted send is counted over: do not send.
-      const late = nowMs() - reservedAt;
-      if (late > SMS_IN_FLIGHT_MARGIN_MS) {
-        logger.warn({ app_id: appId, purpose, late_ms: late }, 'sms_send_late');
-        await releaseQuietly(keys, token, { app_id: appId, purpose });
-        return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
-      }
+        // From here the candidate is the current code; without that, no SMS goes out.
+        const marked = await retried(() => store.mark(keys, token, nowMs()));
+        if (marked !== true) {
+          logger.warn(
+            { app_id: appId, purpose, reason: marked === null ? 'unavailable' : 'refused' },
+            'sms_mark_failed',
+          );
+          await releaseQuietly(keys, token, { app_id: appId, purpose });
+          return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
+        }
+        // A process that stalled since the reservation could let the provider answer after
+        // reservation + D, outside the span an uncommitted send is counted over: do not send.
+        const late = nowMs() - reservedAt;
+        if (late > SMS_IN_FLIGHT_MARGIN_MS) {
+          logger.warn({ app_id: appId, purpose, late_ms: late }, 'sms_send_late');
+          await releaseQuietly(keys, token, { app_id: appId, purpose });
+          return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
+        }
 
-      const delivery = await deliver({ app_id: appId, phone, purpose, code });
-      if (delivery === 'rejected') {
-        // A failed release leaves the send counted and the candidate current: stricter, not looser.
-        await releaseQuietly(keys, token, { app_id: appId, purpose });
-        logger.warn({ app_id: appId, purpose }, 'sms_code_rejected');
-        return { code: 50001 };
-      }
+        const delivery = await deliver({ app_id: appId, phone, purpose, code });
+        // Accepted or unknown: the SMS went out (or may have), so a landing IP slot stays counted.
+        if (delivery !== 'rejected') delivered = true;
+        if (delivery === 'rejected') {
+          // A failed release leaves the send counted and the candidate current: stricter, not looser.
+          await releaseQuietly(keys, token, { app_id: appId, purpose });
+          logger.warn({ app_id: appId, purpose }, 'sms_code_rejected');
+          return { code: 50001 };
+        }
 
-      // The 60-second window and the committed code's lifetime start when the provider answered.
-      const acceptedAt = nowMs();
-      let releaseAt = await retried(() => store.commit(keys, token, acceptedAt));
-      if (releaseAt === null) {
-        // The reservation still counts (conservatively) and the candidate is current.
-        logger.error({ app_id: appId, purpose }, 'sms_commit_failed');
-        releaseAt = Math.max(reservation.releaseAtMs, acceptedAt + SMS_RESEND_INTERVAL_MS);
-      }
-      // The SMS went out (or may have): the post-acceptance counters see it either way, and
-      // their failure does not change the answer.
-      try {
-        await hooks.afterAccepted?.(checked);
-      } catch (error) {
-        logger.error(
-          { app_id: appId, purpose, error_class: errorClass(error) },
-          'sms_after_accepted_failed',
-        );
-      }
-      logger.info({ app_id: appId, purpose, delivery }, 'sms_code_sent');
-      return {
-        code: 0,
-        data: {
-          resend_after_sec: Math.max(
-            SMS_RESEND_INTERVAL_MS / 1000,
-            secondsUntil(releaseAt, acceptedAt),
-          ),
-          expires_in_sec: SMS_CODE_LIFETIME_SECONDS,
-        },
+        // The 60-second window and the committed code's lifetime start when the provider answered.
+        const acceptedAt = nowMs();
+        let releaseAt = await retried(() => store.commit(keys, token, acceptedAt));
+        if (releaseAt === null) {
+          // The reservation still counts (conservatively) and the candidate is current.
+          logger.error({ app_id: appId, purpose }, 'sms_commit_failed');
+          releaseAt = Math.max(reservation.releaseAtMs, acceptedAt + SMS_RESEND_INTERVAL_MS);
+        }
+        // The SMS went out (or may have): the post-acceptance counters see it either way, and
+        // their failure does not change the answer.
+        try {
+          await hooks.afterAccepted?.(checked);
+        } catch (error) {
+          logger.error(
+            { app_id: appId, purpose, error_class: errorClass(error) },
+            'sms_after_accepted_failed',
+          );
+        }
+        logger.info({ app_id: appId, purpose, delivery }, 'sms_code_sent');
+        return {
+          code: 0,
+          data: {
+            resend_after_sec: Math.max(
+              SMS_RESEND_INTERVAL_MS / 1000,
+              secondsUntil(releaseAt, acceptedAt),
+            ),
+            expires_in_sec: SMS_CODE_LIFETIME_SECONDS,
+          },
+        };
       };
+      try {
+        return await quotaAndSend();
+      } finally {
+        // No SMS went out (phone quota, store failure, collision, a throw) or the provider refused
+        // it: the landing IP slot reserved before the phone quota is released.
+        if (slot !== null && !delivered) await releaseSlot(slot, { app_id: appId, purpose });
+      }
     },
 
     /**
