@@ -1,0 +1,19 @@
+id: B1-11r
+repo: rebate-platform
+title: 测试修改：B1-03g 冻结测试 test/spec/risk/sms-risk/ports.test.ts:44 与 failure-http.int.test.ts 对 recordAccepted 的「恰好 {appId, clientIp}」断言放宽为 expect.objectContaining({appId, clientIp})（调用次数与两字段仍断言），使 B1-11g 能给 recordAccepted 传本次预占标识
+type: test-change
+# 草稿 2026-10-18（身份与风控线 identity-lane；编排 23:1x 裁定批准）。B1-11g Codex money r4 S1：为保这两处断言的字段形状只能用共享「已结算」标记，Redis 短暂故障下会被他人消耗致少计、可超发。放宽字段形状不是削弱：调用次数与 appId / clientIp 两字段的值仍断言。
+# 改法：两处 toHaveBeenCalledExactlyOnceWith({ appId, clientIp }) 改为 toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ appId, clientIp }))（或等价写法，保持「恰好一次」）；标题、向量、其余断言不改，注释写明为何放宽（B1-11g 传预占标识）。改前（main）改后（叠 B1-11g 第 5 轮）都要绿。
+# 不属削弱资金测试；保护路径第一类改已有文件，走非 task/ 分支 test-change/B1-11r，Claude 只读复审「不削弱」后按 approvals #24 加标签合并。B1-11g 依赖本任务。模型 Opus 5.5。
+refs: []
+refs_hash: {}
+deps: [B1-03g]
+paths:
+  - 'test/spec/risk/sms-risk/ports.test.ts'
+  - 'test/spec/risk/sms-risk/failure-http.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/sms-risk/**'
+status: todo
