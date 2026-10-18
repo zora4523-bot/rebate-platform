@@ -1,0 +1,87 @@
+{
+  "task": "B2-01i",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "93aa3ac3259bb468b088f2861be0a50ae0050168",
+  "red_tests": [
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#1] CSV 固定十一列、按模板升序、行号从一连续且键唯一",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#2] 按类型、子类型及原文幂等键分组，分录无序多重集合完全相等",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖全部十三类",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#4] 每模板每种金额符号均借贷成对，分录借正贷负且不使用数值金额",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#5] 单一用户科目及子户合法，待定格不得扩大到已定字段",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#6] 红冲沿用原科目金额与类型，分录反号且原键只追加一次 REVERSE",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#7] 人读规格可索引每个模板、科目与已定幂等键",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#8] 文档显式列出待定格、财务确认白名单与银行通道限制",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#9] 口径说明包含租户幂等、账户所有者、整数分与时钟会计日",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#10] 红冲与提现说明保留整笔限制、单张成功凭证和无分录迁移"
+  ],
+  "risk_note": "RV2 (specs). specs/ledger-rules.md and machine-readable specs/ledger-templates.csv (79 templates, 166 entry lines): account subjects (02 section 8.2 / 08), the uniq_key table copied from 08, debit / credit templates for credit, forfeit, clawback, settle adjust, union collection, withdrawal states, write-off, restore, reassign, admin adjust with :REVERSE templates of the opposite sign, account closure; adjustment counter-account whitelist marked pending finance confirmation (ledger-plan D14 A); every cell that 08 leaves open is TBD and listed in the md pending section (including three points where 08 itself is ambiguous: one withdrawal voucher with three entry-level keys, bad-debt debit for never-credited shares, negative R13 restore). Entries are in entry sign (decision 20). No code.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "93aa3ac3259bb468b088f2861be0a50ae0050168",
+      "tree": "a2caa34988a0f389164459572b7c303e73b73ecd",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T02:25:05Z",
+      "finished_at": "2026-10-18T02:25:09Z",
+      "gate": {
+        "commit": "f747d9dd13324e6e6e3475311848560edf0b82f2",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      },
+      "red_tests": [
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#1] CSV 固定十一列、按模板升序、行号从一连续且键唯一",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#2] 按类型、子类型及原文幂等键分组，分录无序多重集合完全相等",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖全部十三类",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#4] 每模板每种金额符号均借贷成对，分录借正贷负且不使用数值金额",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#5] 单一用户科目及子户合法，待定格不得扩大到已定字段",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#6] 红冲沿用原科目金额与类型，分录反号且原键只追加一次 REVERSE",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#7] 人读规格可索引每个模板、科目与已定幂等键",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#8] 文档显式列出待定格、财务确认白名单与银行通道限制",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#9] 口径说明包含租户幂等、账户所有者、整数分与时钟会计日",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#10] 红冲与提现说明保留整笔限制、单张成功凭证和无分录迁移"
+      ],
+      "expected": ["test/spec/ledger-rules/ledger-rules.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "da108367997f91ab6d873992c558c3f2c86adac88ec72233b8816ed1971c7219"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail only on base drift (main merged F1-07b after the fork); rebased; round 2 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "Codex blind-wrote expected.csv from 08 excerpts (10 red); round 1 fail (missing ACCOUNT_CLOSED / RECON_FIX / OTHER reversals, platform credit split into four lines, brittle row-by-row comparison), round 2 pass after grouping by (ledger_type, sub_type, uniq_key_pattern) with unordered entries; four S2 recorded as follow-ups"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "4b30f96774a35fda101d86970d5db9570efa03ed",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "b985ed4b41807bf12e845900518100e48d6373c8",
+    "specs": "e58ab9698a712cff0512d0a5b9f383c334794e71"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
