@@ -53,13 +53,16 @@ const NORMAL = { state: 'normal', reason_category: null, frozen_until: null };
 it('[AC-B1-02z#1] 新微信号：member、未绑手机、默认昵称头像、可补填且截止为建号 +168h、余额 0、两平台未授权、实名 none', async () => {
   const f = await fixture(kit);
   await consentAll(kit, f);
-  const row = await f.row();
   const data = me(kit, await f.get());
-  expect(data).toEqual({
+  // invite_code 取值改由 [AC-B1-11k#*] 覆盖（E4）：这里只断言 invite_code 键存在（字符串或 null），
+  // 其余字段照旧整体比对。
+  expect(data).toHaveProperty('invite_code');
+  const { invite_code: inviteCode, ...rest } = data;
+  expect(inviteCode === null || typeof inviteCode === 'string').toBe(true);
+  expect(rest).toEqual({
     user_id: f.uid,
     nickname: NICKNAME,
     avatar_url: DEFAULT_AVATAR_URL,
-    invite_code: row.invite_code,
     inviter_bound: false,
     invite_backfill: { eligible: true, deadline_at: expect.any(String) },
     identity_level: 'member',
@@ -220,9 +223,8 @@ it('[AC-B1-02z#14] 申诉中但申诉前为 frozen → invite_code 照常返回�
   const until = new Date(kit.clock.now().getTime() + 7 * 24 * HOUR);
   await riskState(kit, f, 'appealing', 'abnormal_trade', until);
   await appeal(kit, f, 'frozen');
-  const row = await f.row();
   const data = me(kit, await f.get());
-  expect(data.invite_code).toBe(row.invite_code);
+  // invite_code 取值改由 [AC-B1-11k#*] 覆盖（E4）。
   expect(data.risk.state).toBe('appealing');
   expect(data.risk.reason_category).toBe('abnormal_trade');
   at(data.risk.frozen_until, until);
@@ -232,9 +234,8 @@ it('[AC-B1-02z#15] 冻结用户 invite_code 照常，risk 三字段为 frozen、
   const f = await fixture(kit);
   const until = new Date(kit.clock.now().getTime() + 3 * 24 * HOUR);
   await riskState(kit, f, 'frozen', 'malicious_rights', until);
-  const row = await f.row();
   const data = me(kit, await f.get());
-  expect(data.invite_code).toBe(row.invite_code);
+  // invite_code 取值改由 [AC-B1-11k#*] 覆盖（E4）。
   expect(data.risk.state).toBe('frozen');
   expect(data.risk.reason_category).toBe('malicious_rights');
   at(data.risk.frozen_until, until);
@@ -393,10 +394,9 @@ it('[AC-B1-02z#30] 只读令牌对应的 app 与用户：别的用户、别的 a
   await riskState(kit, other, 'banned', 'other');
 
   const sameApp = await fixture(kit, { appId: other.appId });
-  const sameRow = await sameApp.row();
   const same = me(kit, await sameApp.get());
   expect(same.user_id).toBe(sameApp.uid);
-  expect(same.invite_code).toBe(sameRow.invite_code);
+  // invite_code 取值改由 [AC-B1-11k#*] 覆盖（E4）。
   expect(same.identity_level).toBe('member');
   expect(same.union_bindings).toEqual(UNBOUND);
   expect(same.need_reconsent).toBe(true);
