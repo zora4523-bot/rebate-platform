@@ -615,3 +615,17 @@ it('review r1 S2: every configuration read goes through the caller transaction',
     for (const call of calls) expect(call[2]).toBe(trx);
   });
 });
+
+it('[AC-B1-11d#28] a closed Redis handle throwing from namespace() answers 50001 with no SQL write', async () => {
+  const f = await fixture();
+  const redis: RedisHandle = {
+    ...f.redis.handle,
+    namespace() {
+      throw new Error('Redis unavailable: closed');
+    },
+  };
+  expect(await f.bind({}, { redis })).toEqual({ result: 'failed', code: 50001 });
+  expect(await f.bind({ invite_code: '' }, { redis })).toEqual({ result: 'failed', code: 50001 });
+  expect(f.writes()).toEqual([]);
+  expect(f.queries.some((q) => q.sql.includes('pg_advisory_xact_lock'))).toBe(false);
+});

@@ -384,9 +384,12 @@ export function createInviteBinder(deps: InviteBinderDeps): InviteBinder {
       }
       const window: InviteFailWindow = inviteFailWindow(at);
       const key = `${appId}:${window.day}:${user.phone_hmac}`;
-      const counter = redis.namespace(INVITE_FAIL_NAMESPACE);
+      // Every Redis call, also taking the namespace (a closed handle throws there), is inside a
+      // catch that answers 50001 before anything is written.
+      let counter: ReturnType<RedisHandle['namespace']>;
       let count: number | null;
       try {
+        counter = redis.namespace(INVITE_FAIL_NAMESPACE);
         count = storedCount(await counter.get(key));
       } catch (error) {
         logger.warn({ ...fields, error_class: errorClass(error) }, 'invite_bind_redis_failed');
