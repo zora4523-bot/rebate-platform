@@ -48,3 +48,11 @@ export type {
   RegistrationInviteBinding,
   RegistrationInviteInput,
 } from './application/invite-binder.ts';
+// B1-11j: the invite page read behind GET /v1/invites/me, assembled by app.module.
+export { createMyInviteReader, firstShareDomain } from './application/my-invite.ts';
+export type {
+  MyInvite,
+  MyInviteDeps,
+  MyInviteReader,
+  MyInviteResult,
+} from './application/my-invite.ts';

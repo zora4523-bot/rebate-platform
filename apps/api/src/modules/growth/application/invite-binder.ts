@@ -123,7 +123,10 @@ export interface InviteBinderDeps {
   readonly activity: (trx: Transaction<DB>) => InviteActivityReader;
   /** The assembler uses risk's readRiskState(subject, { fresh: true }) on this trx. */
   readonly readRisk: (trx: Transaction<DB>, subject: InviteSubject) => Promise<RiskStateSnapshot>;
-  /** TODO(规划/11 §2.3): 实名生日读取，未接时为 null — blocked on B1-13d */
+  /**
+   * identity's realname reader (B1-13d): the verified birth date, or null. app.module always wires
+   * it (B1-11j); omitted only by unit tests, where the inviter counts as unverified.
+   */
   readonly verifiedBirthDate?: (
     trx: Transaction<DB>,
     subject: InviteSubject,

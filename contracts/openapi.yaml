@@ -3408,7 +3408,6 @@ paths:
       x-auth: phone
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 10005
         - 30413
