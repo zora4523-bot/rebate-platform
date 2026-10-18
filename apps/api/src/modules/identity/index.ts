@@ -15,6 +15,8 @@ export type {
   IdentityLevelChecks,
   IdentityLevelOptions,
 } from './application/identity-level.ts';
+export { createAgentCallerReader } from './ports/agent-caller.ts';
+export type { AgentCallerReader, AgentCallerReaderOptions } from './ports/agent-caller.ts';
 export { createUserLevelReader } from './ports/user-level.ts';
 export type {
   UserLevel,
