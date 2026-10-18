@@ -1,4 +1,5 @@
 // Public surface of the identity module. Other modules import only from this file.
+export { laborAgreementSigned } from './ports/labor-agreement.ts';
 // Stages ⑧ ⑨ (BR-ID-01 identity level, B1-02za): app.module hands IDENTITY_LEVEL_CHECKS' guard and
 // post-miss check to RiskModule, and assembles the real-name status port.
 export {
