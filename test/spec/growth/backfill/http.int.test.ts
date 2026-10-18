@@ -23,7 +23,7 @@ let database: Awaited<ReturnType<typeof createTestDatabase>>;
 let redis: Awaited<ReturnType<typeof acquireTestRedis>>;
 let db: ReturnType<typeof createDb>;
 beforeAll(async () => {
-  database = await createTestDatabase(); // TEST_PG_ADMIN_URL, else the isolated test container.
+  database = await createTestDatabase(); // Isolated test database; global setup decides where.
   db = createDb({ connectionString: database.urlFor('couli_app'), max: 8 });
   redis = await acquireTestRedis();
 }, 180_000);
@@ -366,7 +366,7 @@ it('[AC-B1-11e#10] 本次签名设备并入同设备判定，即使本人尚无�
 
 for (const [label, headers, key, code] of [
   ['缺幂等键', {}, null, 20001],
-  ['无令牌', { authorization: '' }, undefined, 10001],
+  ['无令牌', {}, undefined, 10001],
   ['坏签名', { 'x-sign': '0'.repeat(64) }, undefined, 10401],
   ['跨 app 头', { 'x-app-id': 'other_app' }, undefined, 10403],
 ] as const) {
@@ -374,7 +374,15 @@ for (const [label, headers, key, code] of [
     await http(async (f) => {
       await seed(f, CODE);
       const c = await client(f);
-      answer(f, await c.post(undefined, { headers, ...(key === undefined ? {} : { key }) }), code);
+      answer(
+        f,
+        await c.post(undefined, {
+          headers,
+          omitAuthorization: label === '无令牌',
+          ...(key === undefined ? {} : { key }),
+        }),
+        code,
+      );
       expect(callsFor(f, c.uid)).toEqual([]);
       expect(await logs(f, c.uid)).toEqual([]);
       answer(f, await c.post());
@@ -386,7 +394,7 @@ for (const [label, headers, key, code] of [
 it('[AC-B1-11e#12] 同一邀请码在两个 app 各自解析为该 app 的邀请人，用户与日志不串 app', async () => {
   await http(async (f) => {
     const ownParent = await seed(f, CODE);
-    const appId = `${f.appId}_other`;
+    const appId = 'couli_other';
     const otherParent = await seed(f, CODE, { appId });
     const a = await client(f);
     const b = await client(f, { appId });

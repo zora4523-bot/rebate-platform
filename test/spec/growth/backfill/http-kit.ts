@@ -198,6 +198,7 @@ export async function client(
       options: {
         key?: string | null;
         headers?: Record<string, string>;
+        omitAuthorization?: boolean;
       } = {},
     ) {
       const raw = JSON.stringify(body);
@@ -221,7 +222,7 @@ export async function client(
           'x-timestamp': timestamp,
           'x-nonce': nonce,
           'x-sign': createHmac('sha256', device.install_secret).update(message).digest('hex'),
-          authorization: `Bearer ${session.access_token}`,
+          ...(options.omitAuthorization ? {} : { authorization: `Bearer ${session.access_token}` }),
           'x-trace-id': randomUUID(),
           ...(key === null ? {} : { 'idempotency-key': key }),
           ...options.headers,
