@@ -1,0 +1,38 @@
+# 页面版本状态 page_versions.status 的状态机（规划/04 §3.2 pages / page_versions 行；OPS-05、TECH-29；任务 F1-09h）。
+# 生成 packages/domain/src/state-machines/page-version.gen.ts
+# （node packages/domain/scripts/state-machines.ts；--verify 只比对）。生成物勿手改，改这里再生成。
+#
+# 写法约定（同 CT-04a、B2-03j）：
+# - from 中 null 表示「—」（入库首态：存草稿时插入新版本行）。
+# - guard 只是规则文字说明，transition() 不求值；权限、revision CAS、发布信息、自动回滚阈值与副作用由服务层（F1-09f）负责。
+# - 状态值与 db/migrations/0039_pages.sql 的 page_versions_status_check 一致（小写蛇形）；事件用大写蛇形名。
+#
+# 表外说明：
+# - 只有下面三行迁移，其余组合一律为表外事件。
+# - 调灰度 / 转全量只改 gray_percent，status 仍是 published，不是迁移。
+# - 草稿改内容 = 存一个新草稿版本（插入新行），不是迁移；published 不回 draft。
+# - rolled_back 是终态，不可再发布；每个版本只发布一次。
+name: page-version
+field: status
+states: [draft, published, rolled_back]
+# DRAFT_SAVED 后台存草稿（插入新版本行）；PUBLISH 灰度或全量发布；ROLLBACK 人工或自动回滚已发布版本。
+events: [DRAFT_SAVED, PUBLISH, ROLLBACK]
+transitions:
+  - id: P1
+    from: [null]
+    event: DRAFT_SAVED
+    to: draft
+    guard: '后台账号持 content.page 权限存草稿，按 pages.revision 做 CAS，插入新版本行（publish_at、publisher 为空）'
+    test_id: AC-F1-09h#1
+  - id: P2
+    from: [draft]
+    event: PUBLISH
+    to: published
+    guard: '持 content.page 权限发布：gray_percent 取 1..99 为灰度（按 device_id 哈希分桶，无 device_id 给全量版，OPS-05）或 100 为全量；每个版本只发布一次，同时写 publish_at 与 publisher'
+    test_id: AC-F1-09h#1
+  - id: P3
+    from: [published]
+    event: ROLLBACK
+    to: rolled_back
+    guard: '人工回滚灰度中或已全量的已发布版本（持 content.page 权限）；自动回滚（TECH-29）只在本版本 render_count ≥200 时触发，走同一迁移；rolled_back 为终态'
+    test_id: AC-F1-09h#1
