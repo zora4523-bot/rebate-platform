@@ -1,6 +1,6 @@
 // End-to-end tests of the guard command lines against fixture trees and repositories.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { repoRoot } from '../lib/paths.ts';
@@ -603,14 +603,20 @@ describe('path-guard.ts, protected-paths.ts, test-guard.ts, run.ts git', () => {
     expect(withTask.stdout).toBe(
       [
         'FAIL path-guard (1 problem)',
+        'PASS ledger-overwrite',
+        'PASS migration-sequence',
         'FAIL protected-paths (1 problem)',
         'PASS test-guard',
-        'guard git: 1 passed, 2 failed, 0 skipped',
+        'guard git: 3 passed, 2 failed, 0 skipped',
         '',
       ].join('\n'),
     );
     const withoutTask = guard('run.ts', ['git', '--base', base, '--cwd', root]);
-    expect(withoutTask.stdout.split('\n')[0]).toBe('FAIL protected-paths (1 problem)');
+    expect(withoutTask.stdout.split('\n').slice(0, 3)).toEqual([
+      'PASS ledger-overwrite',
+      'PASS migration-sequence',
+      'FAIL protected-paths (1 problem)',
+    ]);
     expect(guard('run.ts', ['git', '--cwd', root]).status).toBe(2);
     expect(guard('run.ts', ['git', '--base', base, '--cwd', makeTree()]).status).toBe(2);
     expect(guard('run.ts', ['bogus']).status).toBe(2);
@@ -884,9 +890,11 @@ describe('run.ts git --pr-number: owner approval (规划/11 §4.4, owner decisio
     expect(res.status).toBe(0);
     expect(res.stdout).toBe(
       [
+        'PASS ledger-overwrite',
+        'PASS migration-sequence',
         'PASS protected-paths (2 warnings, owner-approved)',
         'PASS test-guard (1 warning, owner-approved)',
-        'guard git: 2 passed, 0 failed, 0 skipped',
+        'guard git: 4 passed, 0 failed, 0 skipped',
         '',
       ].join('\n'),
     );
@@ -908,7 +916,7 @@ describe('run.ts git --pr-number: owner approval (规划/11 §4.4, owner decisio
       labels: [label(base)],
     });
     expect(stale.status).toBe(1);
-    expect(stale.stdout.split('\n').slice(0, 2)).toEqual([
+    expect(stale.stdout.split('\n').slice(2, 4)).toEqual([
       'FAIL protected-paths (2 problems)',
       'FAIL test-guard (1 problem)',
     ]);
@@ -941,14 +949,56 @@ describe('run.ts git --pr-number: owner approval (规划/11 §4.4, owner decisio
       labels: [label(head)],
     });
     expect(res.status).toBe(1);
-    expect(res.stdout.split('\n').slice(0, 4)).toEqual([
+    expect(res.stdout.split('\n').slice(0, 6)).toEqual([
       'FAIL path-guard (3 problems)',
+      'PASS ledger-overwrite',
+      'PASS migration-sequence',
       'PASS protected-paths (2 warnings, owner-approved)',
       'FAIL test-guard (1 problem)',
-      'guard git: 1 passed, 2 failed, 0 skipped',
+      'guard git: 3 passed, 2 failed, 0 skipped',
     ]);
     expect(res.stderr).toContain('test-guard: warning: test/spec/ledger/post.test.ts: [add-only]');
     expect(res.stderr).toContain('apps/api/src/modules/ledger/post.test.ts:1: [no-skip-only]');
+  });
+
+  it('a valid label waives neither ledger-overwrite nor migration-sequence (CT-06q)', () => {
+    const doneTask = NO_TESTER_TASK.replace('status: todo\npr: null', 'status: done\npr: 5');
+    const { root, base } = makeRepo({
+      'ops/tasks/N1-01.yaml': doneTask,
+      'db/migrations/0001_init.sql': '-- Up Migration\nselect 1;\n',
+      'turbo.json': '{}\n',
+    });
+    writeFiles(root, {
+      'ops/tasks/N1-01.yaml': doneTask
+        .replace('title: ledger：凭证与分录写入', 'title: 另一个任务')
+        .replace('status: done\npr: 5', 'status: todo\npr: null'),
+      'db/migrations/0001_again.sql': '-- Up Migration\nselect 2;\n',
+      'turbo.json': '{ "x": 1 }\n',
+    });
+    fixtureGit(root, ['add', '-A']);
+    fixtureGit(root, ['commit', '-q', '-m', 'overwrite and collide']);
+    const head = fixtureGit(root, ['rev-parse', 'HEAD']);
+    const res = guardWithPr(root, ['--base', base, '--pr-number', '7'], {
+      head,
+      labels: [label(head)],
+    });
+    expect(res.status).toBe(1);
+    expect(res.stdout).toBe(
+      [
+        'FAIL ledger-overwrite (1 problem)',
+        'FAIL migration-sequence (1 problem)',
+        'PASS protected-paths (1 warning, owner-approved)',
+        'PASS test-guard',
+        'guard git: 2 passed, 2 failed, 0 skipped',
+        '',
+      ].join('\n'),
+    );
+    expect(res.stderr).toContain(
+      'ledger-overwrite: ops/tasks/N1-01.yaml: N1-01 已存在且为 done，新任务请换编号（title 「ledger：凭证与分录写入」→「另一个任务」；status done → todo）',
+    );
+    expect(res.stderr).toContain(
+      'migration-sequence: db/migrations/0001_again.sql: 0001 已被 0001_init.sql 占用，请改为 0002',
+    );
   });
 
   it('an approval binds to a clean commit only, and the PR number is validated', () => {
@@ -1027,9 +1077,11 @@ describe('run.ts git --task: the path guard starts at spec_commit (owner decisio
       [
         'PASS path-guard',
         'PASS path-guard-author',
+        'PASS ledger-overwrite',
+        'PASS migration-sequence',
         'PASS protected-paths',
         'PASS test-guard',
-        'guard git: 4 passed, 0 failed, 0 skipped',
+        'guard git: 6 passed, 0 failed, 0 skipped',
         '',
       ].join('\n'),
     );
@@ -1495,5 +1547,249 @@ describe('run.ts git --task: mechanical contract commits of a Codex implementati
     const res = guard('path-guard.ts', ['--task', 'F1-02e', '--base', base, '--cwd', root]);
     expect(res.status).toBe(1);
     expect(res.stderr).toContain('contracts/openapi.yaml: modified outside the task paths');
+  });
+});
+
+describe('run.ts git: ledger-overwrite and migration-sequence (CT-06q, 2026-10-18)', () => {
+  const UP = '-- Up Migration\n';
+  const TODO_TASK = NO_TESTER_TASK; // id N1-01, status todo, pr null
+  const DONE_TASK = NO_TESTER_TASK.replace('status: todo\npr: null', 'status: done\npr: 5');
+  /** The overwrite of #778: the same id, another title, type and status. */
+  const OVERWRITE = DONE_TASK.replace('title: ledger：凭证与分录写入', 'title: 后台首页配置页')
+    .replace('type: impl', 'type: contract')
+    .replace('status: done\npr: 5', 'status: todo\npr: null');
+
+  function repo(extra: Record<string, string> = {}): { root: string; base: string } {
+    return makeRepo({
+      'ops/tasks/N1-01.yaml': DONE_TASK,
+      'ops/tasks/B2-02a.yaml': LEDGER_TASK, // todo
+      'db/migrations/0001_init.sql': `${UP}select 1;\n`,
+      'db/migrations/0002_second.sql': `${UP}select 2;\n`,
+      'db/migrations/README.md': 'not a migration\n',
+      'docs/notes.md': '# notes\n',
+      ...extra,
+    });
+  }
+
+  function commitAll(root: string, message: string): string {
+    fixtureGit(root, ['add', '-A']);
+    fixtureGit(root, ['commit', '-q', '-m', message]);
+    return fixtureGit(root, ['rev-parse', 'HEAD']);
+  }
+
+  const runGit = (root: string, base: string, ...args: string[]) =>
+    guard('run.ts', ['git', '--base', base, '--cwd', root, ...args]);
+  const lines = (stdout: string, n: number) => stdout.split('\n').slice(0, n);
+
+  it('an untouched base passes both with their notices', () => {
+    const { root, base } = repo();
+    writeFiles(root, { 'docs/notes.md': '# changed\n' });
+    const res = runGit(root, base);
+    expect(res.status, res.stderr).toBe(0);
+    expect(lines(res.stdout, 2)).toEqual(['PASS ledger-overwrite', 'PASS migration-sequence']);
+    expect(res.stderr).toContain('ledger-overwrite: notice: 0 task file(s) changed since');
+    expect(res.stderr).toContain('migration-sequence: notice: no migration added (base max 0002)');
+  });
+
+  it('overwriting a done task file with another task fails, label or not; a new id passes', () => {
+    const { root, base } = repo();
+    writeFiles(root, { 'ops/tasks/N1-01.yaml': OVERWRITE });
+    const res = runGit(root, base);
+    expect(res.status).toBe(1);
+    expect(lines(res.stdout, 1)).toEqual(['FAIL ledger-overwrite (1 problem)']);
+    expect(res.stderr).toContain(
+      'ledger-overwrite: ops/tasks/N1-01.yaml: N1-01 已存在且为 done，新任务请换编号（type 「impl」→「contract」；title 「ledger：凭证与分录写入」→「后台首页配置页」；status done → todo）',
+    );
+    // The same task under a new id, next to the untouched done one: fine (an added file).
+    const { root: ok, base: okBase } = repo();
+    writeFiles(ok, { 'ops/tasks/N1-02.yaml': OVERWRITE.replace('id: N1-01', 'id: N1-02') });
+    expect(runGit(ok, okBase).status).toBe(0);
+    // Also with --task (a task branch), the check runs the same way.
+    const withTask = runGit(root, base, '--task', 'B2-02a');
+    expect(withTask.status).toBe(1);
+    expect(lines(withTask.stdout, 2)).toEqual([
+      'PASS path-guard',
+      'FAIL ledger-overwrite (1 problem)',
+    ]);
+  });
+
+  it('moving a task forward is allowed: status done, pr, paths, deps; a revert is not', () => {
+    const { root, base } = repo();
+    writeFiles(root, {
+      'ops/tasks/B2-02a.yaml': LEDGER_TASK.replace('status: todo\npr: null', 'status: done\npr: 9')
+        .replace('deps: []', 'deps: [N1-01]')
+        .replace(
+          '  - "apps/api/src/modules/ledger/**"',
+          '  - "apps/api/src/modules/ledger/**"\n  - "docs/ledger.md"',
+        ),
+      'ops/tasks/N1-01.yaml': `${DONE_TASK}# 2026-10-18 补注：评审见 #5。\n`,
+    });
+    const ok = runGit(root, base);
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stderr).toContain('ledger-overwrite: notice: 2 task file(s) changed since');
+    writeFiles(root, { 'ops/tasks/N1-01.yaml': TODO_TASK });
+    const reverted = runGit(root, base);
+    expect(reverted.status).toBe(1);
+    expect(reverted.stderr).toContain(
+      'ledger-overwrite: ops/tasks/N1-01.yaml: N1-01 已存在且为 done，新任务请换编号（status done → todo）',
+    );
+  });
+
+  it('a todo task keeps its title and type; deleting or renaming a task file fails', () => {
+    const { root, base } = repo();
+    writeFiles(root, {
+      'ops/tasks/B2-02a.yaml': LEDGER_TASK.replace('type: impl', 'type: contract'),
+    });
+    const retyped = runGit(root, base);
+    expect(retyped.status).toBe(1);
+    expect(retyped.stderr).toContain(
+      'ledger-overwrite: ops/tasks/B2-02a.yaml: B2-02a 已存在（status todo），不得改 id / type / title',
+    );
+    writeFiles(root, { 'ops/tasks/B2-02a.yaml': LEDGER_TASK });
+    rmSync(join(root, 'ops/tasks/N1-01.yaml'));
+    const deleted = runGit(root, base);
+    expect(deleted.status).toBe(1);
+    expect(deleted.stderr).toContain(
+      'ledger-overwrite: ops/tasks/N1-01.yaml: N1-01 已存在，台账文件不得删除',
+    );
+    // Deleted and re-added (staged) under a new id with the same content: git sees a rename.
+    writeFiles(root, { 'ops/tasks/N1-03.yaml': DONE_TASK.replace('id: N1-01', 'id: N1-03') });
+    fixtureGit(root, ['add', '-A']);
+    const renamed = runGit(root, base);
+    expect(renamed.status).toBe(1);
+    expect(renamed.stderr).toContain(
+      'ledger-overwrite: ops/tasks/N1-01.yaml: N1-01 已存在，台账文件不得改名或移动（改成了 ops/tasks/N1-03.yaml）',
+    );
+  });
+
+  it('a branch behind the base is held to the fork point, not to what the base changed since', () => {
+    const { root, base: fork } = repo({ 'ops/tasks/N1-01.yaml': TODO_TASK });
+    // The branch: a docs change only, committed.
+    writeFiles(root, { 'docs/notes.md': '# branch\n' });
+    const head = commitAll(root, 'branch');
+    // The base moved on: N1-01 done there (a landing of another PR).
+    fixtureGit(root, ['checkout', '-q', '-b', 'base', fork]);
+    writeFiles(root, {
+      'ops/tasks/N1-01.yaml': DONE_TASK,
+      'db/migrations/0003_third.sql': `${UP}select 3;\n`,
+    });
+    const tip = commitAll(root, 'base moves');
+    fixtureGit(root, ['checkout', '-q', 'main']);
+    expect(fixtureGit(root, ['rev-parse', 'HEAD'])).toBe(head);
+    // (protected-paths and test-guard see the base's new migration as deleted: --base is the
+    // fork point for them, as before; only the two checks of this block are read here.)
+    const res = runGit(root, tip);
+    expect(lines(res.stdout, 2)).toEqual(['PASS ledger-overwrite', 'PASS migration-sequence']);
+    expect(res.stderr).toContain(
+      `ledger-overwrite: notice: the branch forked from ${fork.slice(0, 12)}, behind ${tip.slice(0, 12)}: compared with the fork point`,
+    );
+    expect(res.stderr).toContain('ledger-overwrite: notice: 0 task file(s) changed since');
+    // The migration the base gained meanwhile is not the branch's either, but it does count as
+    // taken: a 0003 of the branch now collides, and its next number is 0004.
+    expect(res.stderr).toContain('migration-sequence: notice: no migration added (base max 0003)');
+    writeFiles(root, { 'db/migrations/0003_mine.sql': `${UP}select 33;\n` });
+    const collided = runGit(root, tip);
+    expect(collided.status).toBe(1);
+    expect(collided.stderr).toContain(
+      'migration-sequence: db/migrations/0003_mine.sql: 0003 已被 0003_third.sql 占用，请改为 0004',
+    );
+    // What the branch itself did to a task file is still judged (against the fork point).
+    rmSync(join(root, 'db/migrations/0003_mine.sql'));
+    writeFiles(root, { 'ops/tasks/N1-01.yaml': TODO_TASK.replace('type: impl', 'type: sync') });
+    const own = runGit(root, tip);
+    expect(own.status).toBe(1);
+    expect(own.stderr).toContain(
+      'ledger-overwrite: ops/tasks/N1-01.yaml: N1-01 已存在（status todo），不得改 id / type / title',
+    );
+  });
+
+  it('migrations: the next number passes, a taken number, a gap and a repeat fail (untracked files count)', () => {
+    const { root, base } = repo();
+    writeFiles(root, { 'db/migrations/0003_next.sql': `${UP}select 3;\n` });
+    const next = runGit(root, base);
+    expect(next.status, next.stderr).toBe(0);
+    expect(next.stderr).toContain(
+      'migration-sequence: notice: 1 migration(s) added after base max 0002: 0003_next.sql',
+    );
+    writeFiles(root, { 'db/migrations/0004_more.sql': `${UP}select 4;\n` });
+    expect(runGit(root, base).status).toBe(0);
+    rmSync(join(root, 'db/migrations/0004_more.sql'));
+    writeFiles(root, { 'db/migrations/0005_gap.sql': `${UP}select 5;\n` });
+    const gap = runGit(root, base);
+    expect(gap.status).toBe(1);
+    expect(gap.stderr).toContain(
+      'migration-sequence: db/migrations/0005_gap.sql: 迁移号 0005 与 base 主干最大号 0002 不连号（本 PR 新增的迁移须依次为 0003…），请改为 0004',
+    );
+    rmSync(join(root, 'db/migrations/0005_gap.sql'));
+    writeFiles(root, { 'db/migrations/0003_twice.sql': `${UP}select 3;\n` });
+    const twice = runGit(root, base);
+    expect(twice.status).toBe(1);
+    expect(twice.stderr).toContain(
+      'migration-sequence: db/migrations/0003_twice.sql: 0003 已被 0003_next.sql（本 PR 新增） 占用，请改为 0004',
+    );
+    rmSync(join(root, 'db/migrations/0003_twice.sql'));
+    rmSync(join(root, 'db/migrations/0003_next.sql'));
+    writeFiles(root, { 'db/migrations/0002_again.sql': `${UP}select 2;\n` });
+    const taken = runGit(root, base);
+    expect(taken.status).toBe(1);
+    expect(lines(taken.stdout, 2)).toEqual([
+      'PASS ledger-overwrite',
+      'FAIL migration-sequence (1 problem)',
+    ]);
+    expect(taken.stderr).toContain(
+      'migration-sequence: db/migrations/0002_again.sql: 0002 已被 0002_second.sql 占用，请改为 0003',
+    );
+  });
+
+  it('the rename hotfix (ops/approvals.yaml id 32) passes; a malformed new name or a file in a subdirectory is judged by name only', () => {
+    const { root, base } = repo({ 'db/migrations/0002_other.sql': `${UP}select 22;\n` });
+    fixtureGit(root, ['mv', 'db/migrations/0002_other.sql', 'db/migrations/0003_other.sql']);
+    // (protected-paths still reports the rename of a class 1 file: the hotfix needs the label.)
+    const fixed = runGit(root, base);
+    expect(lines(fixed.stdout, 2)).toEqual(['PASS ledger-overwrite', 'PASS migration-sequence']);
+    expect(fixed.stderr).toContain(
+      'migration-sequence: notice: 1 migration(s) added after base max 0002: 0003_other.sql',
+    );
+    writeFiles(root, { 'db/migrations/0004_Bad.sql': `${UP}select 4;\n` });
+    const bad = runGit(root, base);
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toContain(
+      'migration-sequence: db/migrations/0004_Bad.sql: 新增的迁移文件名不是 NNNN_kebab-name.sql',
+    );
+    rmSync(join(root, 'db/migrations/0004_Bad.sql'));
+    // Not directly under db/migrations: not a migration of this check (protected-paths and the
+    // migration gate have their say).
+    writeFiles(root, { 'db/migrations/sub/0002_x.sql': `${UP}select 0;\n` });
+    expect(lines(runGit(root, base).stdout, 2)).toEqual([
+      'PASS ledger-overwrite',
+      'PASS migration-sequence',
+    ]);
+  });
+
+  it('a symbolic link in db/migrations is refused, named, whatever it points to (Codex r1, S2)', () => {
+    const { root, base } = repo();
+    symlinkSync('0002_second.sql', join(root, 'db/migrations/0002_again.sql'));
+    const res = runGit(root, base);
+    expect(res.status).toBe(1);
+    expect(lines(res.stdout, 2)).toEqual([
+      'PASS ledger-overwrite',
+      'FAIL migration-sequence (1 problem)',
+    ]);
+    expect(res.stderr).toContain(
+      'migration-sequence: db/migrations/0002_again.sql: 不是普通文件（符号链接），迁移只能是普通文件',
+    );
+    // Staged, the link is still not a migration file.
+    fixtureGit(root, ['add', '-A']);
+    expect(runGit(root, base).stderr).toContain(
+      'db/migrations/0002_again.sql: 不是普通文件（符号链接）',
+    );
+  });
+
+  it('a base that is not a commit fails both checks as internal errors', () => {
+    const { root } = repo();
+    const res = runGit(root, 'no-such-ref');
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('ledger-overwrite: internal error:');
+    expect(res.stderr).toContain('migration-sequence: cannot list db/migrations at no-such-ref');
   });
 });
