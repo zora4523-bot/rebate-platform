@@ -8,11 +8,13 @@ type: guard-change
 # 两个 ci.yml 方案都被 Codex 对抗评审否决、编排裁定不改 ci.yml：① `if: !cancelled()` 让汇总 skipped——GitHub 把 skipped 必需检查视为通过，
 # 手动取消或旧提交重跑取消新头时头提交可未经验证合并（r1 S1）；② 有后继运行就 success——依赖作业只在 needs 完成时才创建，后继的 ci-gate 检查
 # 出现前头提交同样可合并（r2 S1）。也不加并发分组（标签轮整套 verify 重跑太费 CI 分钟）。
-# 改为流程 + 工具（couli-runs，不入库）：rebase-verify.sh 加标签前先 scripts/wait-head-ci.sh 等当前 head 的 ci 运行 completed 且
-# verify-fast / verify-props / verify-int 全 success（guard-git / ci-gate 因缺标签红不算；有上限轮询、写 land-progress.log 一行），再
-# gh pr edit --add-label，加标签后不再推提交，随后 pr-unblock.sh 对缺标签那轮 --failed 重跑；新增 scripts/pr-unblock.sh <pr>：head 上
-# ci-gate=failure 的运行，conclusion=cancelled 的整轮 gh run rerun（不用 --failed），只因 guard-git / ci-gate 红的 --failed 重跑；
-# land.sh 合并被拦时先调它。本仓库只改 tools/README.md 的批准标签段（加标签时机、恢复脚本名、ci.yml 为何不改）。
+# 第三层（#799 继续核实）：标签轮的运行在工作流级被取消、套件 0 条检查时，GitHub 仍「期待」其必需检查（「N of 6 required status checks
+# are expected」），rollup SUCCESS 也 BLOCKED。改为流程 + 工具（couli-runs，不入库）：rebase-verify.sh 加标签前先 scripts/wait-head-ci.sh
+# 等当前 head 上所有 github-actions 套件完成、无 cancelled 套件、verify-fast / verify-props / verify-int 最新一次全 success（guard-git /
+# ci-gate / protected-paths / evidence-check 因缺标签红不算；有上限轮询，写 land-progress.log），再 gh pr edit --add-label，之后不再推
+# 提交；新增 scripts/pr-unblock.sh <pr>：按 commits/<sha>/check-suites，对结论 cancelled / failure / 0 条检查的每个套件所属运行整轮
+# gh run rerun（不用 --failed），逐个等完再下一个，有运行中的套件先不动，verify 真红的不重跑；land.sh 合并被拦时调它。本仓库只改
+# tools/README.md 的批准标签段（加标签时机、三层阻塞、脚本名、ci.yml 为何不改）。
 # tools/** 属保护路径第三类：approvals #16 常设授权的门禁流程小修，Claude 实现、Codex 评审脚本逻辑与文案，按 approvals #24 加标签；
 # 按 approvals #12 走非 task 分支（chore/guard-change-CT-06u）、不带证据文件。
 refs: []
