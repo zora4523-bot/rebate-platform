@@ -1,0 +1,31 @@
+id: F1-02s
+repo: rebate-platform
+title: content：GET /v1/dict 实现（取 version ≤ 当前 dict_version 的有效值，dict_version 仍读 config_items 同名键、缺省 "0" 时回空 items），去掉其 planned
+type: impl
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 02 l.638；04 l.499 GET /v1/dict、l.390 dict_items、l.859 dict_version（哨兵见 BR-TEXT-12 细则）；08 BR-TEXT-12（12_TEXT l.84，细则 l.649 哨兵 "0"）。原文由编排者摘入任务书第 9 节，refs 置空。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。
+# 要点：每个 (dict, code) 取 version ≤ 当前 dict_version 的最大行，text 为 NULL 的不下发（回到包内默认）；返回形状照 CT-02r（L13，version 参数可选、不做 304）；
+#   dict_version 读 config_items 同名键（04 l.859 原文），缺省 "0" 不变（client-config.ts 的哨兵行为与冻结测试不动），"0" 时回空 items；真实来源 = 后台发布写这个键（F1-02t）。
+# 复用 content 60 秒 TTL（L11）。去掉 getDict 的 planned，同 PR 重生成 openapi.gen.ts 与路由生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 待裁定 L11、L13、L14 用默认。
+refs: []
+refs_hash: {}
+deps: [CT-02r, F1-02q]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/dict-read/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/dict-read/**'
+status: todo
+pr: null

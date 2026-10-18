@@ -1,0 +1,25 @@
+id: F1-02v
+repo: rebate-platform
+title: content 纯函数：后台文章保存校验——正文链接外链规则（https、union_host、个人数据占位）、标题与文本过禁用词、公告字段校验与内容版本推导（nextNoticeContentVersion）
+type: impl
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 04 l.390 articles 白名单、l.575 §6.6（ExternalPage 命中 union_host → 20001，开关 external_page.union_host_block；拒个人数据占位、资金路由带参数）；
+# 08 BR-ATTR-29 ①（04_ATTR l.75，细则 l.854 帮助 / 规则 / 公告文章外链）、BR-TEXT-13 细则 l.687–693。原文由编排者摘入任务书第 9 节，refs 置空。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。
+# 要点：① link href 只收 https（L18），复用 F1-09c 的 normalisedHttpsHost / isUnionHost（开关缺失按 on）/ hasPersonalPlaceholder → 20001 data.fields=[body…JSON 路径]；
+# ② title 与文本节点过 F1-02r 禁用词（命中词进 fields）；③ 公告：不可关闭且无 notice_end_at → 20001 [notice_end_at]；nextNoticeContentVersion：标题或跳转变、或 closable true→false 才 +1。
+# 正文结构白名单复用 F1-02m。纯函数，不读库、不读时钟（现在时刻由调用方传入）。待裁定 L18 用默认。
+refs: []
+refs_hash: {}
+deps: [F1-02m, F1-02r]
+paths:
+  - 'apps/api/src/modules/content/domain/articles-admin/**'
+test_paths:
+  - 'test/spec/content/articles-validate/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/articles-validate/**'
+status: todo
+pr: null

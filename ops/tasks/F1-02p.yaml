@@ -1,0 +1,32 @@
+id: F1-02p
+repo: rebate-platform
+title: content：/admin/v1/agreements* 列表、详情与发布新版本（content.agreement + 动态码 step-up、法务确认；同事务写文章行、协议行、legal.* 配置与审计），去掉其 planned
+type: impl
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 04 l.390、l.575 §6.6 agreements 行、l.858/879 legal.* 三键（min_version ≤ version 由后台保存校验）、l.963 §11.2 content.agreement；08 BR-ID-12（细则 l.682、l.688）、BR-WDR-31 细则。
+# 原文由编排者摘入任务书第 9 节，refs 置空。分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。
+# 要点：AdminOperationGuard 权限点 content.agreement，所有写都 step-up（totp）；一个事务：CAS（expected_version 不符 → 20902 resource=agreement）→ F1-02m 发布校验 →
+#   插入 articles 行（category agreement、published，正文过 F1-02m 白名单）→ 插入 agreements 行（text_sha256、法务确认）→ privacy / agreement 同时写 config_items legal.<type>.version
+#   （privacy 另写 legal.privacy.min_version；04 只列这三键）→ 审计（确认人、确认日期、前后 min_version、requires_resign）。不提供改删已发布版本（L2）。时间只读 Clock。
+# 去掉对应操作的 planned，同 PR 重生成 openapi.gen.ts 与路由生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 待裁定 L1、L2、L3、L4、L7（主体仍是配置项，不在本任务）用默认。
+refs: []
+refs_hash: {}
+deps: [CT-02q, F1-02k, F1-02m, F1-02n]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/agreements-admin/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/agreements-admin/**'
+status: todo
+pr: null

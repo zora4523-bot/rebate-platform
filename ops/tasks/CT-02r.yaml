@@ -1,0 +1,33 @@
+id: CT-02r
+repo: rebate-platform
+title: 契约：字典——GET /v1/dict?version=（x-auth none）与 /admin/v1/dict-items 列表、保存即发布、版本历史、回滚，全部 planned；20902 data.resource 加 dict_item；字典写权限登记
+type: contract
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 02 l.209 / l.638；04 l.499 GET /v1/dict、l.390 dict_items、l.859 dict_version、l.963 / l.968 §11.2；08 BR-TEXT-12（12_TEXT l.84，细则 l.648–660，含资金术语键与表 D）。
+# 原文由编排者摘入任务书，refs 置空。
+# 要点：GET /v1/dict 回 {version, items:{<dict>:{<code>:text}}}（L13：version 参数可选，等于当前也回全量，不做 304；dict = 键第一段，code = 余下部分）；
+# 后台列表显示类别（普通 / 资金术语 / 协议类）与包内默认；PUT /admin/v1/dict-items 请求体 {changes:[{key, text|null}], expected_version}（null = 回到包内默认）；历史；POST …/rollback。
+# L12：PUT 在 permissions.yaml 默认挂 config.general，服务端按键类别改用 content.fund_terms / content.agreement（totp）调 guard，一次只许一类；
+#   permissions.yaml 若不能表达「按请求选点」则拆成三个操作，契约作者核实后在输出里写明。错误 20001 data.fields、20902 resource=dict_item、10003、10403。
+# 待裁定 L12、L13、L14（每次保存即发布一个新 dict_version）、L16（只许改 texts.default.json 已有键）用默认。排在 CT-02q 之后占契约槽；全部新增，oasdiff 预期非破坏。
+refs: []
+refs_hash: {}
+contract_sections: ['6.2', '6.6']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

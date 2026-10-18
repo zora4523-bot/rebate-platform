@@ -1,0 +1,27 @@
+id: F1-02u
+repo: rebate-platform
+title: 文章版本状态机 specs/state-machines/article-version.yaml（draft → published → offline）与生成的 transition()；生成器登记新状态机
+type: impl
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 缘由：articles.status 是状态字段（硬规则 2：唯一写者 content，只经生成的 transition()）。写法照 F1-09h（page-version.yaml）。状态值与 F1-02q 迁移的 articles.status CHECK 一致（L15）。
+# 依据 04 l.390 articles（已发布 = status 精确 published 且 published_at ≤ 现在；当前版本 = 最大已发布 version；整篇下线须把该 id 全部版本改离 published）。原文由编排者摘入任务书，refs 置空。
+# 迁移：null → draft（DRAFT_SAVED，存草稿插入新行，L19）；draft → published（PUBLISH）；published → offline（OFFLINE）；offline 终态。
+# 新版本发布后旧版本仍 published（当前 = 最大 version）；下线把全部 published 版本改 offline——守卫只写成文字，服务层 F1-02w 落实。
+# 规则测试只测生成表与 transition() 的合法性。分工：Codex 写规则测试，Claude 过审，Opus 实现，Codex 评审。待裁定 L15、L19 用默认。
+refs: []
+refs_hash: {}
+deps: [F1-02q]
+paths:
+  - 'specs/state-machines/article-version.yaml'
+  - 'packages/domain/src/state-machines/article-version.gen.ts'
+  - 'packages/domain/src/index.ts'
+  - 'packages/domain/scripts/state-machines.ts'
+test_paths:
+  - 'test/spec/domain/state-machines/article-version/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/state-machines/article-version/**'
+status: todo
+pr: null

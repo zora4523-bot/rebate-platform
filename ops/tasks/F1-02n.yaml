@@ -1,0 +1,33 @@
+id: F1-02n
+repo: rebate-platform
+title: content：协议读端口 currentAgreement(appId, type)（不缓存，经 app.module 交给 identity）与 GET /v1/agreements 实现，去掉其 planned
+type: impl
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 02 l.194 / l.209；04 l.390 agreements、l.483 §6.1（劳务协议版本由 identity 签署接口使用）；08 BR-WDR-31 细则 l.936、l.947。原文由编排者摘入任务书第 9 节，refs 置空。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。
+# 要点：index.ts 导出 currentAgreement(appId, type) → {version, min_version, resign_from_version, text_url, text_sha256, published_at} | null，每次一条索引查询、不缓存（L11）；
+#   text_url = {h5_base_url}/agreement?type=&version=；没有任何该 type 行时回 null，不编造（L8，identity 回 50001）。
+# GET /v1/agreements 回 privacy / agreement 当前版本（形状照 CT-02q），复用 content 60 秒 TTL（L11）。app.module 把端口交给 identity（identity 改读端口另开任务，计划 §5.1 ③）。
+# content 不读写 consent_records（L6）。去掉 getAgreements 的 planned，同 PR 重生成 openapi.gen.ts 与路由生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 待裁定 L6、L8、L11 用默认。
+refs: []
+refs_hash: {}
+deps: [CT-02q, F1-02k, F1-02m]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/agreements-read/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/agreements-read/**'
+status: todo
+pr: null

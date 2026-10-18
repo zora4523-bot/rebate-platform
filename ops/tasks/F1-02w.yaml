@@ -1,0 +1,32 @@
+id: F1-02w
+repo: rebate-platform
+title: content：/admin/v1/articles* 列表、详情、新建、存草稿（CAS）、发布（可定时）与下线实现（状态经生成的 transition()，同事务审计），去掉其 planned
+type: impl
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 04 l.390 articles、l.575 §6.6、l.962 content.article（无 step-up）；08 BR-ATTR-29 ①、BR-TEXT-13 细则 l.687–693。原文由编排者摘入任务书第 9 节，refs 置空。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。写法参照 F1-09f（守卫、审计、CAS）。
+# 要点：AdminOperationGuard 权限点 content.article、无 step-up；CAS 用该 id 最新行 row_version，不符 → 20902 resource=article；存草稿插入新 draft 版本行（L19）；
+# 保存与发布都调 F1-02v 校验（开关 external_page.union_host_block 由本任务读出传入）；发布 / 下线经 F1-02u 生成的 transition()，published_at = Clock 或定时值，
+#   下线把该 id 全部 published 版本改 offline 并补 notice_end_at；notice_content_version 由服务端按 nextNoticeContentVersion 维护；category=agreement 拒绝（L1）。同事务审计。
+# 公共读 article-reader 不改。去掉对应操作的 planned，同 PR 重生成 openapi.gen.ts 与路由生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 待裁定 L1、L15、L18、L19、L21（JEV-05 语义预检本批不做，留 TODO）用默认。
+refs: []
+refs_hash: {}
+deps: [CT-02s, F1-02u, F1-02v, F1-02q]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/articles-admin/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/articles-admin/**'
+status: todo
+pr: null

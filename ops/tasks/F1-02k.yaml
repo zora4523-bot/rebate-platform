@@ -1,0 +1,28 @@
+id: F1-02k
+repo: rebate-platform
+title: 迁移 0045：app.agreements（协议版本，只插入；type CHECK、version / min_version 约束、requires_resign、文章关联、text_sha256、法务确认列、发布时刻与发布人）及授权
+type: migration
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 04 l.390 agreements（写者 content；legal_confirmed_by / legal_confirm_note，OPS-14）、l.306 consent_records（归 identity，本任务不碰）；08 BR-ID-12、BR-WDR-31 细则。原文由编排者摘入任务书，refs 置空。
+# 要点：列 id、app_id、type CHECK（privacy / agreement / labor_agreement）、version ≥1、min_version ≥1 且 ≤ version、requires_resign（非 labor_agreement 恒 false 的 CHECK）、
+#   article_id + article_version（L1）、text_sha256（64 位小写十六进制 CHECK）、url、legal_confirmed_by / legal_confirm_note NOT NULL（L4）、published_at（应用按 Clock 写，无 SQL 时钟默认）、
+#   published_by、created_at；唯一 (app_id, type, version)；约束与索引具名。无 status、不需状态机（L2）。
+# 只插入：couli_app 只 SELECT、INSERT，couli_readonly 只 SELECT，授权写在本迁移（同 0039）；不给 UPDATE / DELETE。
+# 迁移号 0045（主干最大 0043，B1-03x 已预定 0044）；落地时若主干已有则顺延最大号 + 1。两段式：编排者在沙箱外跑 pnpm db:snapshot 提交 schema.sql 与 db.gen.ts（outside_needed）。
+# 待裁定 L1、L2、L3、L4 用默认。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/content/agreements/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/content/agreements/**'
+status: todo
+pr: null

@@ -1,0 +1,32 @@
+id: F1-02t
+repo: rebate-platform
+title: content：/admin/v1/dict-items* 列表、保存即发布、版本历史与回滚（键级权限按类别选点，同事务 dict_version +1 与审计），去掉其 planned
+type: impl
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 04 l.390 dict_items、l.859、l.963 / l.968 §11.2（content.fund_terms、content.agreement、config.general）；08 BR-TEXT-12 细则 l.648–660。原文由编排者摘入任务书第 9 节，refs 置空。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。
+# 要点：一次请求只许一类键（L12），按类选 config.general（无 step-up）/ content.fund_terms（totp，每次二次验证）/ content.agreement（totp + 法务确认人）调 guard；
+# 保存即发布（L14）：CAS（expected_version 不符 → 20902 resource=dict_item）→ 逐键过 F1-02r（禁用词、分类、变量；只许 texts.default.json 已有键，L16）→ 插入新版本行 →
+#   config_items dict_version +1（整数字符串，从 "1" 起）→ 审计（资金术语标记、前后值）；全在一个事务。回滚 = 以旧值写新版本，照常分类校验。时间只读 Clock。
+# config.texts 不在本任务（L17）。去掉对应操作的 planned，同 PR 重生成 openapi.gen.ts 与路由生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 待裁定 L12、L14、L16、L17 用默认。
+refs: []
+refs_hash: {}
+deps: [CT-02r, F1-02q, F1-02r, F1-02s]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/dict-admin/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/dict-admin/**'
+status: todo
+pr: null

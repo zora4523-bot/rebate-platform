@@ -1,0 +1,37 @@
+id: CT-02q
+repo: rebate-platform
+title: 契约：协议——GET /v1/agreements（x-auth none，privacy / agreement 当前版本）与 /admin/v1/agreements 列表、详情、发布新版本（step-up），全部 planned；20902 data.resource 加 agreement；content.agreement 权限登记；附带 signLaborAgreement 版本不一致改 10004（L5，有条件）
+type: contract
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 02 l.194 / l.209；04 l.390 agreements、l.483 §6.1、l.575 §6.6 agreements 行、l.858/879 legal.* 三键、l.963 §11.2 content.agreement（动态码）；08 BR-ID-12（10_ID l.71，细则 l.682、l.688）、
+# BR-WDR-31（07_WDR l.75，细则 l.936–963）；01 l.541 F-ADM-14。原文由编排者摘入任务书（同 F1-02c 先例），refs 置空。
+# 要点：GET /v1/agreements 返回 privacy / agreement 各自 {type, version, min_version, article_id, article_version, text_sha256, published_at}（labor_agreement 走 identity realname 接口）；
+# 后台 GET /admin/v1/agreements?type=（历史）、详情、POST /admin/v1/agreements/{type}/versions（title、body、min_version、requires_resign、legal_confirmed_by、legal_confirm_note、
+#   legal_confirmed_on、expected_version；AdminStepUpToken）；错误 20001 data.fields、20902 resource=agreement、10003、10403。specs/permissions.yaml 的 content.agreement 登记 step_up_tier 动态码。
+# 计划 §5.4 默认并入：contracts/routes.json Agreement.params.type 加 labor_agreement（劳务协议全文页）。
+# L5：signLaborAgreement 版本与当前有效版本不一致改 10004（BR-WDR-31 细则 l.961）、x-error-codes 补 10004——须 identity 在 notices 回一行同意后才做，否则本任务不碰 signLaborAgreement；
+#   text_sha256 不符、agreed≠true 仍 20001。
+# 待裁定 L1（正文是 tiptap 文章、表存 article_id / article_version / text_sha256）、L2（无草稿）、L3、L4（每次发布必填确认人、说明与日期）、L5、L20 用默认。
+# §6.1 l.483 签署行由编排者摘入任务书（不进 contract_sections，控制任务书大小）。占契约槽（B3-lane/notices.md，三个形状类契约中优先）；全部新增（除 L5），oasdiff 预期非破坏。规划未写的读口与列需规划回写（计划 §5.5）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.2', '6.6']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'contracts/routes.json'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
