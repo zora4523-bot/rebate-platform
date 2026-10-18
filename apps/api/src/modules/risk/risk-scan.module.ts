@@ -1,6 +1,6 @@
 // Risk scans of the worker entry (BR-ID-36, B1-03j): app.module imports this module on `worker`
 // only. It builds the risk state service (the single writer of user_risk_state) over DB and
-// EVENT_BUS, the scan over it, and registers the scan's handler on JOB_QUEUE for queue
+// EVENT_BUS (and REDIS for its version stamp when the entry has one), the scan over it, and registers the scan's handler on JOB_QUEUE for queue
 // `risk-scan` (in the worker's ENTRY_PLAN only). Seeding the chain is entry.ts's job, after the
 // queue runtime started (seedRiskScan with riskScanToken()). Without a database handle nothing
 // is registered, riskScanToken() provides null and one info line `risk_scan_disabled` is logged.
@@ -15,10 +15,12 @@ import {
   DB,
   EVENT_BUS,
   JOB_QUEUE,
+  REDIS,
   ROOT_LOGGER,
   type Clock,
   type EventBus,
   type QueueRuntime,
+  type RedisHandle,
   type RootLogger,
 } from '../platform/index.ts';
 import {
@@ -43,6 +45,7 @@ export class RiskScanModule {
             { token: DB, optional: true },
             { token: EVENT_BUS, optional: true },
             { token: JOB_QUEUE, optional: true },
+            { token: REDIS, optional: true },
           ],
           useFactory: (
             clock: Clock,
@@ -50,12 +53,19 @@ export class RiskScanModule {
             db?: Kysely<Database>,
             events?: EventBus,
             queue?: QueueRuntime,
+            redis?: RedisHandle,
           ): RiskScan | null => {
             if (db === undefined || events === undefined || queue === undefined) {
               logger.info({ queue: RISK_SCAN_QUEUE }, 'risk_scan_disabled');
               return null;
             }
-            const riskState = createRiskStateService({ db, clock, events });
+            // REDIS: an expired freeze's change raises the version stamp (F1-07d) like any other.
+            const riskState = createRiskStateService({
+              db,
+              clock,
+              events,
+              ...(redis === undefined ? {} : { redis }),
+            });
             const scan = createRiskScan({ db, clock, riskState, queue, logger });
             queue.register(RISK_SCAN_QUEUE, (job) => scan.handle(job));
             return scan;

@@ -7,9 +7,14 @@
 // the caller's transaction rolls back), and publishes risk.state_changed on the platform event bus
 // in the same transaction (payload: app_id, user_id, from, to, reason_category, frozen_until — the
 // frozen_until written with `to` = frozen as an ISO 8601 UTC string, null for any other `to`;
-// never the raw reason or rule details). The side effects of a ban (sessions, union bindings, withdrawals) are
-// orchestrated by the admin ban command (F1-10 / B1-27), not here; frozen expiry is B1-03j's job,
-// so a read never restores a state on its own.
+// never the raw reason or rule details). With expected_row_version (the console's compare-and-set,
+// F1-07d) null only creates the user's first row while there is none and an integer only matches
+// the current row_version; every other case is RiskStateConflictError before anything is written
+// (a concurrent first insert losing on the primary key is one as well). Without it the write is
+// as before. The side effects of a ban (sessions, union bindings; withdrawals are blocked by the
+// state itself and never written) are orchestrated by the admin risk state command
+// (admin-risk-state.ts, F1-07d), not here; frozen expiry is B1-03j's job, so a read never restores
+// a state on its own.
 //
 // Reads: no row reads as normal. A process cache (≤60 s, keyed by app_id + user_id, aged with the
 // injected Clock) serves the guard path; `fresh: true` reads the database. A change made through
@@ -24,9 +29,29 @@
 // newer entry, and reads in flight when a write becomes visible lose the right to fill the cache.
 // Before any write the change is checked against the transition table
 // (../domain/risk-state-transitions.ts; not listed → RiskStateTransitionError, nothing written,
-// nothing published). Other instances learn of a change through the
-// risk.state_changed event (a cache consumer is not wired yet: their entries age out within 60 s).
-// A read failure rejects unchanged (50001 through the global filter), never reads as normal.
+// nothing published). A read failure rejects unchanged (50001 through the global filter), never
+// reads as normal.
+//
+// Other processes (F1-07d, BR-ID-01「封禁时必须主动失效」): with `redis` in the options, a Redis
+// version stamp per (app_id, user_id) in namespace `risk-state` carries the highest row_version
+// any process wrote or cached; every write of the stamp is a max (STAMP_SCRIPT: a larger stamp is
+// never lowered) with a TTL of STAMP_TTL_SECONDS (more than twice the cache period).
+// - setRiskState writes the stamp with the version it writes, before its caller commits; a failed
+//   stamp rejects (the caller's transaction rolls back: 50001, never a change other processes
+//   cannot see). The admin command writes it again after the commit (admin-risk-state.ts).
+// - A cache fill first writes the version it caches as the stamp's baseline; when that fails, or
+//   the stamp is then above the version read (a remote write not committed or not yet visible:
+//   the remote pending mark), the value read decides this request and is not cached.
+// - A cache hit first reads the stamp: missing (expired, Redis restarted or flushed), unreadable,
+//   failed or above the entry's version → the database is read as on a miss. A hit is never
+//   served without a stamp at most its version.
+// - Without `redis` (unit and rule tests that build the service from { db, clock, events }) the
+//   process cache works as above, alone; the risk.state_changed event has no cache consumer.
+// Residual risks (accepted, ops/tasks/F1-07d.yaml): both need Redis to lose an acknowledged stamp
+// while a process rebuilds or keeps the old baseline — requests between the commit and the stamp
+// written after it may pass on the old value, and when every stamp after the commit fails remote
+// entries live out the cache period (≤ 60 s). Reads of the sensitive operations always go to the
+// database.
 //
 // Stage ⑤ (checkRequest): only a request with a verified principal (stage ②) is judged; the
 // anonymous / x-auth none operations (the four logins among them) are not. state banned, or
@@ -51,6 +76,7 @@ import {
   type Clock,
   type EventBus,
   type TokenPrincipal,
+  type RedisHandle,
 } from '../../platform/index.ts';
 import { canTransitionRiskState } from '../domain/risk-state-transitions.ts';
 
@@ -70,6 +96,7 @@ export interface RiskStateSnapshot {
 }
 
 export interface SetRiskState extends RiskSubject, RiskStateSnapshot {
+  readonly expected_row_version?: number | null;
   readonly reason: string | null;
   readonly changed_by: string;
 }
@@ -96,9 +123,71 @@ export interface RiskStateService {
 }
 
 export interface RiskStateOptions {
+  /** The cross-process version stamp (above); absent: the process cache alone. */
+  readonly redis?: RedisHandle;
   readonly db: Kysely<DB>;
   readonly clock: Clock;
   readonly events: EventBus;
+}
+
+/** Redis namespace of the risk state version stamps. */
+export const RISK_STATE_STAMP_NAMESPACE = 'risk-state';
+/** More than twice the cache period, so a stamp outlives any entry and a slow transaction. */
+export const STAMP_TTL_SECONDS = 180;
+
+/**
+ * Writes ARGV[2] as the stamp unless the stamp holds a larger number; returns the stamp after.
+ * An equal stamp is rewritten (its TTL renewed); a stamp that is not a number is replaced.
+ */
+const STAMP_SCRIPT = [
+  "local current = redis.call('GET', KEYS[1])",
+  'local wanted = tonumber(ARGV[2])',
+  'local seen = nil',
+  'if current then seen = tonumber(current) end',
+  'if seen == nil or seen <= wanted then',
+  "  redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[1])",
+  '  return ARGV[2]',
+  'end',
+  'return current',
+].join('\n');
+
+function stampKey(subject: RiskSubject): string {
+  return `${subject.app_id}:${subject.user_id}`;
+}
+
+function stampValue(value: unknown): number | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  if (typeof value === 'string' && !/^-?\d{1,15}$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+/**
+ * Raises the stamp of `subject` to `version` (never lowers it) and returns the stamp after the
+ * write. Rejects when Redis fails or answers something that is not a version.
+ */
+export async function raiseRiskStateStamp(
+  redis: RedisHandle,
+  subject: RiskSubject,
+  version: number,
+): Promise<number> {
+  const result = await redis.namespace(RISK_STATE_STAMP_NAMESPACE).eval(STAMP_SCRIPT, {
+    keys: [stampKey(subject)],
+    args: [String(version)],
+    ttlSeconds: STAMP_TTL_SECONDS,
+  });
+  const stamp = stampValue(result);
+  if (stamp === null) throw new Error('risk: the risk state stamp answer is not a version');
+  return stamp;
+}
+
+/** The stamp of `subject`; null when it is missing. Rejects when Redis fails. */
+async function readStamp(redis: RedisHandle, subject: RiskSubject): Promise<number | null> {
+  const value = await redis.namespace(RISK_STATE_STAMP_NAMESPACE).get(stampKey(subject));
+  if (value === null) return null;
+  const stamp = stampValue(value);
+  if (stamp === null) throw new Error('risk: the risk state stamp is not a version');
+  return stamp;
 }
 
 const RISK_STATE_SERVICE = Symbol('RISK_STATE_SERVICE');
@@ -218,6 +307,13 @@ interface Pending {
   readonly version: number;
 }
 
+/** PostgreSQL unique_violation (23505). */
+function uniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '23505'
+  );
+}
+
 function keyOf(subject: RiskSubject): string {
   return JSON.stringify([subject.app_id, subject.user_id]);
 }
@@ -258,7 +354,7 @@ async function appealPrevious(db: Kysely<DB>, subject: RiskSubject): Promise<str
 }
 
 export function createRiskStateService(options: RiskStateOptions): RiskStateService {
-  const { db, clock, events } = options;
+  const { db, clock, events, redis } = options;
   const cache = new Map<string, CacheEntry>();
   const pending = new Map<string, Pending>();
   /** Bumped on every change of any key: a read that straddles a change does not fill the cache. */
@@ -286,6 +382,34 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
     cache.set(key, { snapshot: loaded.snapshot, version, at: now });
   }
 
+  /** Whether a cache hit may be served: its stamp exists and is at most its version. */
+  async function hitConfirmed(
+    handle: RedisHandle,
+    subject: RiskSubject,
+    hit: CacheEntry,
+  ): Promise<boolean> {
+    try {
+      const stamp = await readStamp(handle, subject);
+      return stamp !== null && stamp <= hit.version;
+    } catch {
+      // A failed or unreadable stamp never confirms a hit: the database decides.
+      return false;
+    }
+  }
+
+  /** Writes the baseline of a fill; false (do not cache) on failure or above the version read. */
+  async function baselineHeld(
+    handle: RedisHandle,
+    subject: RiskSubject,
+    version: number,
+  ): Promise<boolean> {
+    try {
+      return (await raiseRiskStateStamp(handle, subject, version)) <= version;
+    } catch {
+      return false;
+    }
+  }
+
   async function readRiskState(
     subject: RiskSubject,
     readOptions?: { readonly fresh: boolean },
@@ -293,10 +417,16 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
     if (readOptions?.fresh === true) return (await load(db, subject)).snapshot;
     const key = keyOf(subject);
     const hit = cache.get(key);
-    if (hit !== undefined) {
-      if (within(hit.at, nowMs())) return hit.snapshot;
-      // Kept as the key's high-water mark; remember() replaces it.
+    // Without Redis no await sits between the checks (the process cache alone, as before).
+    if (
+      hit !== undefined &&
+      within(hit.at, nowMs()) &&
+      (redis === undefined || (await hitConfirmed(redis, subject, hit)))
+    ) {
+      return hit.snapshot;
     }
+    // An entry kept past its age (or not confirmed) stays the key's high-water mark; remember()
+    // replaces it.
     const started = generation;
     const loaded = await load(db, subject);
     const after = nowMs();
@@ -310,10 +440,16 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
       // Reads still in flight may hold the value from before the write: they lose the right to
       // fill the cache (this read's own snapshot is at least the written version).
       generation += 1;
-      remember(key, loaded, after);
+    } else if (started !== generation) {
       return loaded.snapshot;
     }
-    if (started === generation) remember(key, loaded, after);
+    const filling = generation;
+    // The remote pending mark: a stamp above the version read forbids caching it.
+    if (redis !== undefined && !(await baselineHeld(redis, subject, loaded.version ?? -1))) {
+      return loaded.snapshot;
+    }
+    // A change of any key while the baseline was written: the value may predate it.
+    if (filling === generation) remember(key, loaded, after);
     return loaded.snapshot;
   }
 
@@ -327,6 +463,15 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
       .where('app_id', '=', subject.app_id)
       .where('user_id', '=', subject.user_id)
       .executeTakeFirst();
+    const expected = command.expected_row_version;
+    if (
+      expected !== undefined &&
+      (expected === null
+        ? current !== undefined
+        : current === undefined || Number(current.row_version) !== expected)
+    ) {
+      throw new RiskStateConflictError();
+    }
     const from = current === undefined ? null : current.state;
     if (!canTransitionRiskState(from, command.state)) {
       throw new RiskStateTransitionError(from, command.state);
@@ -334,22 +479,26 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
     let written: number;
     if (current === undefined) {
       // A row of the same user_id under another app_id fails here (primary key), never updated.
-      await app
-        .insertInto('user_risk_state')
-        .values({
-          app_id: subject.app_id,
-          user_id: subject.user_id,
-          state: command.state,
-          reason: command.reason,
-          reason_category: command.reason_category,
-          frozen_until: command.frozen_until,
-          changed_by: command.changed_by,
-          changed_at: now,
-          row_version: 0,
-          created_at: now,
-          updated_at: now,
-        })
-        .execute();
+      const inserting = app.insertInto('user_risk_state').values({
+        app_id: subject.app_id,
+        user_id: subject.user_id,
+        state: command.state,
+        reason: command.reason,
+        reason_category: command.reason_category,
+        frozen_until: command.frozen_until,
+        changed_by: command.changed_by,
+        changed_at: now,
+        row_version: 0,
+        created_at: now,
+        updated_at: now,
+      });
+      try {
+        await inserting.execute();
+      } catch (error) {
+        // A concurrent first row won the race: under the compare-and-set that is a conflict.
+        if (expected !== undefined && uniqueViolation(error)) throw new RiskStateConflictError();
+        throw error;
+      }
       written = 0;
     } else {
       const version = Number(current.row_version);
@@ -383,6 +532,8 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
       if (oldest.done !== true) pending.delete(oldest.value);
     }
     pending.set(key, { version: written });
+    // Other processes stop serving their entries of this user before the caller commits.
+    if (redis !== undefined) await raiseRiskStateStamp(redis, subject, written);
     await events.publish(trx, {
       appId: subject.app_id,
       name: 'risk.state_changed',

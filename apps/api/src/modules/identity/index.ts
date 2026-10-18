@@ -46,6 +46,9 @@ export type {
 } from './ports/request-context.ts';
 export { revokeSessionsByUser, revokeSessionsByDevice } from './application/revoke-sessions.ts';
 export type { AfterSessionsRevoked, SessionRevokeReason } from './application/revoke-sessions.ts';
+// F1-07d: the push token unbinding hook of a revocation, for app.module's assembly of the admin
+// ban (the admin entry has no IdentityModule; BR-ID-07 细则「被动结束会话时解绑」).
+export { unbindRevoked } from './application/push-tokens.ts';
 export { IdentityModule } from './identity.module.ts';
 // The admin entry's console routes of identity (F1-07a: the audited phone reveal).
 export { IdentityAdminModule } from './identity-admin.module.ts';

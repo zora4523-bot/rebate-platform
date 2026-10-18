@@ -6913,7 +6913,6 @@ paths:
         BR-ID-31); this operation does not send it and its response does not wait for the
         sending. The response is the risk state as it is now. No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003

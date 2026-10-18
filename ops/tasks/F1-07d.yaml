@@ -35,5 +35,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/risk/admin-risk-state/**'
-status: todo
-pr: null
+status: done
+pr: 841
