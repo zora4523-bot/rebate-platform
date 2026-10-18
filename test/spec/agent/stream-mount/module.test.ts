@@ -128,10 +128,21 @@ async function setup(withDb: boolean) {
 
 /** The four B3-03d operations, as requests without a token (a guest of X-App-Id). */
 function agentRequests() {
-  const headers = { 'x-app-id': 'couli', 'content-type': 'application/json' };
+  // Orchestrator mechanical fix (2026-10-18): the contract's required client headers.
+  const client = {
+    'x-platform': 'ios',
+    'x-channel': 'appstore',
+    'x-app-version': '2.0.0',
+    'x-device-id': randomUUID(),
+  };
+  const headers = { 'x-app-id': 'couli', ...client, 'content-type': 'application/json' };
   return [
     { method: 'POST', url: '/v1/agent/sessions', headers },
-    { method: 'GET', url: '/v1/agent/sessions/current', headers: { 'x-app-id': 'couli' } },
+    {
+      method: 'GET',
+      url: '/v1/agent/sessions/current',
+      headers: { 'x-app-id': 'couli', ...client },
+    },
     {
       method: 'POST',
       url: `/v1/agent/sessions/${randomUUID()}/messages`,

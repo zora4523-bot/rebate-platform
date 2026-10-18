@@ -141,8 +141,24 @@ async function accessToken(app: App, clock: FixedClock, caller: AgentCaller): Pr
   return session.access_token;
 }
 
+/** The device the access token was issued to (its payload's device_id). */
+function tokenDevice(token: string): string {
+  const payload = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString()) as {
+    device_id?: string;
+  };
+  return payload.device_id ?? '';
+}
+
 function client(app: App, token: string, remoteAddress?: string) {
-  const headers = { 'x-app-id': APP, authorization: `Bearer ${token}` };
+  // Orchestrator mechanical fix (2026-10-18): the contract's required client headers.
+  const headers = {
+    'x-app-id': APP,
+    'x-platform': 'ios',
+    'x-channel': 'appstore',
+    'x-app-version': '2.0.0',
+    'x-device-id': tokenDevice(token),
+    authorization: `Bearer ${token}`,
+  };
   return (method: string, url: string, body?: unknown) =>
     app.inject({
       method,
