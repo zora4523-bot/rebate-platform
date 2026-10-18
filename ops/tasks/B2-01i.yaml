@@ -7,12 +7,12 @@ type: impl
 # 其余依据（BR-FUND-08、09、12、20、22，BR-CALC-13）由任务书第 2b 节摘原文（refs 行长度限制）。
 refs: [BR-FUND-05, BR-FUND-13, BR-FUND-15, BR-FUND-16, BR-FUND-24, BR-WDR-09]
 refs_hash:
-  BR-FUND-05: cc4011be188e
+  BR-FUND-05: 668ffe6648b8
   BR-FUND-13: db3a11ed1712
-  BR-FUND-15: 98eb93a46558
+  BR-FUND-15: 79a5dd94f056
   BR-FUND-16: 077f6d412d5a
-  BR-FUND-24: 33fdc9919299
-  BR-WDR-09: 83c9212f1949
+  BR-FUND-24: 29f4118ac556
+  BR-WDR-09: 68225c9af85f
 deps: []
 paths:
   - 'specs/ledger-rules.md'

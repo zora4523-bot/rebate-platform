@@ -7,10 +7,10 @@ type: impl
 # Codex 写规则测试（读 csv 逐组生成并比对、TBD 抛错、红冲反号、属性测试经 PROP_RUNS / PROP_SEED），Claude 过审，Opus 实现，Codex money 评审。
 refs: [BR-FUND-05, BR-FUND-15, BR-FUND-16, BR-WDR-09]
 refs_hash:
-  BR-FUND-05: cc4011be188e
-  BR-FUND-15: 98eb93a46558
+  BR-FUND-05: 668ffe6648b8
+  BR-FUND-15: 79a5dd94f056
   BR-FUND-16: 077f6d412d5a
-  BR-WDR-09: 83c9212f1949
+  BR-WDR-09: 68225c9af85f
 deps: [B2-01h, B2-01i]
 paths:
   - 'packages/domain/src/ledger/**'
