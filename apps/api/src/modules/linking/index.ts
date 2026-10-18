@@ -127,3 +127,9 @@ export type {
 export type { LinkConvertPorts } from './linking.module.ts';
 export { createOrderLinkReader } from './application/order-link-reader.ts';
 export type { OrderLinkProducts } from './application/order-link-reader.ts';
+export { createPendingAttemptStore } from './application/pending-attempts.ts';
+export type {
+  PendingAttempt,
+  PendingAttemptScope,
+  PendingAttemptStore,
+} from './application/pending-attempts.ts';

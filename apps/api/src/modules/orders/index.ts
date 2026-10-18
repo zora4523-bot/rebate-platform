@@ -48,3 +48,7 @@ export type {
 } from './application/order-queries.ts';
 export { OrdersModule } from './orders.module.ts';
 export type { OrdersModuleOptions } from './orders.module.ts';
+export { selectPendingTracks } from './domain/pending-tracks.ts';
+export type { PendingTrackOrder, SelectPendingTracksInput } from './domain/pending-tracks.ts';
+export { PendingTracks, createPendingTracks } from './application/pending-tracks.ts';
+export type { PendingTracksDeps } from './application/pending-tracks.ts';
