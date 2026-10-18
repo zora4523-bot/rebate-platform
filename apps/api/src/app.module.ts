@@ -77,6 +77,7 @@ import {
   LINK_REGISTRATIONS,
   LinkingModule,
   createOrderLinkReader,
+  createPendingAttemptStore,
   createUnionAuthReads,
   type UnionAuthReads,
   createUnavailableAttrCodeReader,
@@ -1109,9 +1110,12 @@ export class AppModule {
               NotificationModule.forApi((db, clock) => createContentReader({ db, clock })),
               // GET /v1/orders and /v1/orders/{order_id} over the shared OrderQueries (B1-08l):
               // content's configuration reader and linking's order-link reader as its ports.
+              // GET /v1/orders/pending-tracks and its dismiss (B1-08m) over linking's open
+              // attempts port.
               OrdersModule.forRoot({
                 config: (db, clock) => createContentReader({ db, clock }),
                 links: (db) => createOrderLinkReader(db),
+                attempts: (db) => createPendingAttemptStore(db),
               }),
             ]
           : []),
