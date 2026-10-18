@@ -15,10 +15,17 @@ export const SECTIONS = [
   ),
   { id: 'both', condition: { union_authorized: 'yes', has_order: 'yes' } },
 ];
+// F1-09k (test-change): SECTIONS minus has_parent_yes / has_parent_no, for the delivery cases whose
+// logged-in expectations must hold both while has_parent is unknown (F1-09g, G3) and once F1-09j
+// wires the real parent relation; has_parent itself is covered by #8 and pages-audience-parent/**.
+export const SECTIONS_WITHOUT_PARENT = SECTIONS.filter(
+  (section) => !section.id.startsWith('has_parent_'),
+);
 
-export async function audiencePage(h: Harness) {
+// F1-09k (test-change): `sections` is optional; the default keeps the original SECTIONS seed.
+export async function audiencePage(h: Harness, sections: typeof SECTIONS = SECTIONS) {
   const id = appId();
-  await seedPage(h, id, { versions: [{ number: 1, sections: SECTIONS }] });
+  await seedPage(h, id, { versions: [{ number: 1, sections }] });
   const device = await registerDevice(h, id);
   const login = await session(h, id, device);
   return {
