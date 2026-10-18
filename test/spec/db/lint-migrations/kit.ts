@@ -15,6 +15,10 @@ import { expect } from 'vitest';
 export const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 export const SCRIPT = join(ROOT, 'tools/ci/lint-migrations.ts');
 export const TIMEOUTS = "SET LOCAL lock_timeout = '5s';\nSET LOCAL statement_timeout = '30s';\n";
+// CLI cases start a Node child (which starts squawk several times); loaded CI runners need more
+// than 10 s (#773, #795, #799 went red with ETIMEDOUT and passed on re-run). One value for the
+// spawnSync timeout of run() and the `it` timeout of the test files. Timing only.
+export const CLI_TIMEOUT_MS = 60_000;
 
 interface Problem {
   file: string;
@@ -71,13 +75,13 @@ export function withFixture(
 
 export function run(
   args: string[],
-  options: { cwd?: string; path?: string; script?: string } = {},
+  options: { cwd?: string; path?: string; script?: string; timeoutMs?: number } = {},
 ) {
   const result = spawnSync(process.execPath, [options.script ?? SCRIPT, ...args], {
     cwd: options.cwd ?? ROOT,
     env: { ...process.env, ...(options.path === undefined ? {} : { PATH: options.path }) },
     encoding: 'utf8',
-    timeout: 10_000,
+    timeout: options.timeoutMs ?? CLI_TIMEOUT_MS,
   });
   expect(result.error, 'Node 子进程应正常启动并结束').toBeUndefined();
   expect(result.signal).toBeNull();

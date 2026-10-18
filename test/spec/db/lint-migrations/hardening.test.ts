@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { gate, ROOT, run, TIMEOUTS, withFixture } from './kit.ts';
+import { CLI_TIMEOUT_MS, gate, ROOT, run, TIMEOUTS, withFixture } from './kit.ts';
 
 // CLI cases start squawk several times per case; CI runners need more than vitest's 5 s default
-// (#18 timed out on CI, rebate-platform#283). Timing only: assertions unchanged.
-const CLI_TIMEOUT_MS = 60_000;
+// (#18 timed out on CI, rebate-platform#283). CLI_TIMEOUT_MS comes from kit.ts since CT-06s so
+// that the `it` timeout and the spawnSync timeout of run() agree. Timing only: assertions unchanged.
 
 // CT-06b §9.2 是本文件的规则来源。通过对照与拒绝样例放在同一断言组，
 // 每组都含 CT-06a 尚未实现的行为；不靠修改实现或测试钩子制造先红。
@@ -250,51 +250,55 @@ it(
   CLI_TIMEOUT_MS,
 );
 
-it('[AC-CT-06b#7] 冻结清单确切收录 19 个原文件及 sha256，保留选择语义和真实仓库空操作', async () => {
-  const module = await gate();
-  expect(module.GATE_BASELINE).toBe(18);
-  const names = [...FROZEN_NAMES, '0021_b.sql', '0020_a.sql', '0019_new.sql', 'README.md'];
-  const before = [...names];
-  expect(module.selectMigrations(names)).toEqual({
-    lint: ['0019_new.sql', '0020_a.sql', '0021_b.sql'],
-    badNames: [],
-  });
-  expect(names).toEqual(before);
-  expect(module.selectMigrations(['0018_old.sql', '0019_new.sql'], 17)).toEqual({
-    lint: ['0018_old.sql', '0019_new.sql'],
-    badNames: [],
-  });
-  const result = run([]);
-  const hasNewMigration = readdirSync(join(ROOT, 'db/migrations')).some(
-    (name) => /^\d{4}_.*\.sql$/.test(name) && Number(name.slice(0, 4)) > 19,
-  );
-  if (!hasNewMigration) {
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('nothing to lint');
-  }
-  for (const message of [
-    'changed after merge',
-    'is missing',
-    'numbered at or below',
-    'not a SQL migration',
-  ])
-    expect(result.stderr).not.toContain(message);
-  const url = new URL('../../../../tools/ci/lint-migrations.ts', import.meta.url).href;
-  const exports = (await import(/* @vite-ignore */ url)) as {
-    FROZEN_MIGRATIONS?: Readonly<Record<string, string>>;
-  };
-  expect(exports.FROZEN_MIGRATIONS, '应导出冻结文件及内容哈希').toBeDefined();
-  const frozen = exports.FROZEN_MIGRATIONS!;
-  expect(Object.keys(frozen).sort()).toEqual([...FROZEN_NAMES].sort());
-  for (const name of FROZEN_NAMES) {
-    expect(frozen[name]).toMatch(/^[a-f0-9]{64}$/);
-    expect(frozen[name], name).toBe(
-      createHash('sha256')
-        .update(readFileSync(join(ROOT, 'db/migrations', name)))
-        .digest('hex'),
+it(
+  '[AC-CT-06b#7] 冻结清单确切收录 19 个原文件及 sha256，保留选择语义和真实仓库空操作',
+  async () => {
+    const module = await gate();
+    expect(module.GATE_BASELINE).toBe(18);
+    const names = [...FROZEN_NAMES, '0021_b.sql', '0020_a.sql', '0019_new.sql', 'README.md'];
+    const before = [...names];
+    expect(module.selectMigrations(names)).toEqual({
+      lint: ['0019_new.sql', '0020_a.sql', '0021_b.sql'],
+      badNames: [],
+    });
+    expect(names).toEqual(before);
+    expect(module.selectMigrations(['0018_old.sql', '0019_new.sql'], 17)).toEqual({
+      lint: ['0018_old.sql', '0019_new.sql'],
+      badNames: [],
+    });
+    const result = run([]);
+    const hasNewMigration = readdirSync(join(ROOT, 'db/migrations')).some(
+      (name) => /^\d{4}_.*\.sql$/.test(name) && Number(name.slice(0, 4)) > 19,
     );
-  }
-});
+    if (!hasNewMigration) {
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain('nothing to lint');
+    }
+    for (const message of [
+      'changed after merge',
+      'is missing',
+      'numbered at or below',
+      'not a SQL migration',
+    ])
+      expect(result.stderr).not.toContain(message);
+    const url = new URL('../../../../tools/ci/lint-migrations.ts', import.meta.url).href;
+    const exports = (await import(/* @vite-ignore */ url)) as {
+      FROZEN_MIGRATIONS?: Readonly<Record<string, string>>;
+    };
+    expect(exports.FROZEN_MIGRATIONS, '应导出冻结文件及内容哈希').toBeDefined();
+    const frozen = exports.FROZEN_MIGRATIONS!;
+    expect(Object.keys(frozen).sort()).toEqual([...FROZEN_NAMES].sort());
+    for (const name of FROZEN_NAMES) {
+      expect(frozen[name]).toMatch(/^[a-f0-9]{64}$/);
+      expect(frozen[name], name).toBe(
+        createHash('sha256')
+          .update(readFileSync(join(ROOT, 'db/migrations', name)))
+          .digest('hex'),
+      );
+    }
+  },
+  CLI_TIMEOUT_MS,
+);
 
 it.each([false, true])(
   '[AC-CT-06b#8] 完整冻结文件可通过，但改动内容必须拒绝且不运行 squawk（有新迁移=%s）',
