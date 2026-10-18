@@ -8,6 +8,7 @@ type: impl
 # 变体判定：to=frozen 且 frozen_until 空 → frozen；to=frozen 且有到期 → frozen_until；from=frozen、to=normal → unfrozen；to=banned → banned；from=banned、to=normal → unbanned；
 # 接线：events/types.ts 的 EVENT_SUBSCRIPTIONS 登记订阅，platform/queue/catalog.ts 加对应 evt.<consumer> 队列与 ENTRY_PLAN 条目（台账评审 r3 S1）。
 # 平台冻结测试 test/spec/platform/events/contract.test.ts（约第 134 行，subscriptions 精确为 []）与 test/spec/platform/queue/contract.test.ts（约第 139、178 行，队列与 worker 精确比较）：测试阶段由测试作者在同一 PR 只加本任务的订阅 / 队列 / worker 条目，其余不动（第一类保护路径，#24 标签；台账评审 r5 S1）。
+# 编排 10-19 01:4x 裁定（选 A ②）：订阅生效后 setRiskState 同事务入队，经 createHttpApp 建 api 入口的冻结集成测试从不启动 JOB_QUEUE（72 条红）。bootstrap.ts 的 createHttpApp 加 startQueue?: boolean（默认 false，entry.ts 不变仍显式 start），init 后启动真实 pg-boss、close 时停；上列四份 kit 只加 startQueue: true（B1-12h 记录，同 PR），不改测试体、不用假队列、不改 runtime 的 not_running 拒绝。
 # 经 appealing 的迁移（申诉撤销 / 维持）归 APPEAL_RESULT 任务（BR-ID-36），本任务不发并留 TODO。标题：BR-TEXT-23 未给，代理默认「账户通知」，可经覆盖列改（记 needs 交规划回写）。
 refs: [BR-TEXT-23]
 refs_hash:
@@ -18,10 +19,16 @@ paths:
   - 'apps/api/src/modules/platform/events/types.ts'
   - 'apps/api/src/modules/platform/queue/catalog.ts'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/bootstrap.ts'
 test_paths:
   - 'test/spec/notification/risk-state-message/**'
   - 'test/spec/platform/events/contract.test.ts'
   - 'test/spec/platform/queue/contract.test.ts'
+  - 'test/spec/platform/idempotency/abandon-route/http-kit.ts'
+  - 'test/spec/identity/identity-level/http-kit.ts'
+  - 'test/spec/identity/bind-phone/http-kit.ts'
+  - 'test/spec/identity/step-up-verify/kit.ts'
+  - 'test/spec/identity/sms-codes/http-kit.ts'
 impl: claude
 tester: codex
 accept:

@@ -1,0 +1,21 @@
+id: B1-12h
+repo: rebate-platform
+title: 测试装配同步：经 createHttpApp 建 api 入口的四份集成测试 kit 打开 startQueue（经 sms-codes buildApp 转发）（init 后启动真实 JOB_QUEUE、close 时停），使 risk.state_changed 订阅生效后的同事务入队可用；不改测试体
+type: test-change
+# 2026-10-19 入账（be-codex；编排 01:4x 裁定 A ③）。与 B1-12g 同一 PR（#807）落地：kit 传的 startQueue 选项由 B1-12g 在 bootstrap.ts 加，分开合任一边主干都会红。
+# 四份 kit：test/spec/platform/idempotency/abandon-route/http-kit.ts（risk-state / appeals 等共用）、identity/identity-level/http-kit.ts、identity/bind-phone/http-kit.ts、identity/step-up-verify/kit.ts；三份 identity kit 经 identity/sms-codes/http-kit.ts 的 buildApp 建应用，buildApp 加可选的 startQueue 参数并转发给 createHttpApp（默认不起，其他调用方行为不变；台账评审 GT-23bes S2）。只加该选项，断言一字不动；Codex 评审确认「只起队列、未动断言」；#24 标签。
+refs: [BR-TEXT-23]
+refs_hash:
+  BR-TEXT-23: e3d452417b5c
+deps: [B1-12g]
+paths:
+  - 'test/spec/platform/idempotency/abandon-route/http-kit.ts'
+  - 'test/spec/identity/identity-level/http-kit.ts'
+  - 'test/spec/identity/bind-phone/http-kit.ts'
+  - 'test/spec/identity/step-up-verify/kit.ts'
+  - 'test/spec/identity/sms-codes/http-kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
