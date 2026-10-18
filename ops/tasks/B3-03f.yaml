@@ -14,7 +14,7 @@ refs_hash:
 # 2026-10-16 编排者：paths 加 agent/stream/mount/**（agent.module.ts 已有 B3-03h 的实现，测试阶段骨架不能放进去，path-guard 只认空壳文件；骨架放新目录，实现阶段 agent.module.ts 调用它）。
 # 2026-10-17 编排者（agent-lane）：不另开 CT-08g，改按 approvals 第 31 条在本任务 PR 里由 Claude 机械提交去掉 createAgentSession、getCurrentAgentSession、sendAgentMessage、cancelAgentRun 的 planned 并重生成（trailer Couli-Mechanical: contract-codegen）；auth / signing / min-version 三份路由生成物已含这四条，去 planned 只改 mechanical_paths 三项。历史、反馈、举报三条仍 planned。
 # 2026-10-17 编排者：deps 加 B1-02x（identity 导出调用方上下文；Codex 实现首轮 blocked 于此）。
-# 2026-10-18 编排者：paths 加 apps/api/src/contract.test.ts（CT-02a 路由归属扩为 /v1/agent/ 归 stream）与 platform/http/request-check-plan.test.ts（两条单测写死「stream 无 token 检查」，本任务按设计给 stream 装 token 检查 ② ③）。
+# 2026-10-18 编排者：paths 加 stream/run/manager.ts（notice 卡不计已下发卡，BR-AI-15「没有下发任何 card」）、apps/api/src/contract.test.ts（CT-02a 路由归属扩为 /v1/agent/ 归 stream）与 platform/http/request-check-plan.test.ts（两条单测写死「stream 无 token 检查」，本任务按设计给 stream 装 token 检查 ② ③）。
 deps: [B3-03d, B3-03g, B3-03h, B3-03i, B1-02r, B3-05a, B3-05b, B3-05c, B1-02x]
 paths:
   - 'apps/api/src/app.module.ts'
@@ -24,6 +24,7 @@ paths:
   - 'apps/api/src/modules/agent/stream/mount/**'
   - 'apps/api/src/contract.test.ts'
   - 'apps/api/src/modules/platform/http/request-check-plan.test.ts'
+  - 'apps/api/src/modules/agent/stream/run/manager.ts'
 mechanical_paths:
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
