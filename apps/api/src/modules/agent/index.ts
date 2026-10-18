@@ -4,3 +4,4 @@
 export * from './http/index.ts';
 export * from './store/index.ts';
 export * from './agent.module.ts';
+export * from './stream/mount/index.ts';

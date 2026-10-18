@@ -42,7 +42,6 @@
 // Also compiled by the `test` project: a class decorator only (no parameter decorators or
 // parameter properties; dependencies are injected through factories); erasable syntax only,
 // `import type` for type-only imports, relative imports with `.ts`, no process.env.
-import { readFileSync } from 'node:fs';
 import { type DynamicModule, Module } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -56,6 +55,16 @@ import {
   type RunTimings,
 } from './stream/pg/index.ts';
 import type { RunTexts } from './stream/run/index.ts';
+import { agentDefaultTexts } from './stream/mount/texts.ts';
+import { agentCallerProvider } from './stream/mount/caller.ts';
+import { agentStreamController } from './stream/mount/controller.ts';
+import {
+  agentStreamProvider,
+  agentStreamToken,
+  type AgentStreamModuleOptions,
+  type AgentStreamRuntime,
+} from './stream/mount/index.ts';
+export { agentDefaultTexts } from './stream/mount/texts.ts';
 import {
   createSweeper,
   sweeperDefaults,
@@ -106,28 +115,6 @@ export function agentSweeperToken(): symbol {
   return AGENT_SWEEPER;
 }
 
-const textDocument = JSON.parse(
-  readFileSync(new URL('../../../../../contracts/texts.default.json', import.meta.url), 'utf8'),
-) as { texts: Record<string, string>; fallbacks: Record<string, string> };
-
-function defaultErrorText(code: number): string | undefined {
-  const key = `error.${String(code)}`;
-  const text = textDocument.fallbacks[key] ?? textDocument.texts[key];
-  return typeof text === 'string' && !/\{[^{}]+\}/u.test(text) ? text : undefined;
-}
-
-const serverErrorText = defaultErrorText(50001);
-if (serverErrorText === undefined) {
-  throw new Error('contracts/texts.default.json: missing placeholder-free error.50001');
-}
-const defaultTexts: Pick<RunTexts, 'errorMsg'> = Object.freeze({
-  errorMsg: (code: number): string => defaultErrorText(code) ?? serverErrorText,
-});
-
-export function agentDefaultTexts(): Pick<RunTexts, 'errorMsg'> {
-  return defaultTexts;
-}
-
 export function createAgentSweeperRuntime(deps: AgentSweeperRuntimeDeps): AgentSweeperRuntime {
   const { db, clock, logger } = deps;
   const texts = agentDefaultTexts();
@@ -161,6 +148,28 @@ export function createAgentSweeperRuntime(deps: AgentSweeperRuntimeDeps): AgentS
 
 @Module({})
 export class AgentModule {
+  static forStream(options: AgentStreamModuleOptions): DynamicModule {
+    return {
+      module: AgentModule,
+      controllers: [agentStreamController(agentStreamToken())],
+      providers: [
+        agentStreamProvider(options),
+        agentCallerProvider(options.callerReader),
+        {
+          provide: Symbol('AGENT_STREAM_SHUTDOWN'),
+          inject: [agentStreamToken()],
+          useFactory: (runtime: AgentStreamRuntime | null) => ({
+            // All destroy hooks precede platform's onApplicationShutdown (PG / Redis close).
+            onModuleDestroy: async () => {
+              await runtime?.close();
+            },
+          }),
+        },
+      ],
+      exports: [agentStreamToken()],
+    };
+  }
+
   static forWorker(): DynamicModule {
     return {
       module: AgentModule,

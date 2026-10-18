@@ -53,13 +53,65 @@
 // relative imports with `.ts`, no process.env, no import of identity.
 import type { FactoryProvider } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
-import type { Kysely } from 'kysely';
-import type { Clock, RootLogger, Scheduler } from '../../../platform/index.ts';
-import type { AgentHttp } from '../../http/index.ts';
-import type { InputCheckPort, OrchestratorTools } from '../../orchestrator/index.ts';
-import type { AgentConsentReader } from '../access/index.ts';
-import type { QuotaLimitsSource, RunTimings } from '../pg/index.ts';
-import type { RunConfig, RunRegistry, RunTexts } from '../run/index.ts';
+import { sql, type Kysely } from 'kysely';
+import { createContentReader } from '../../../content/index.ts';
+import {
+  CLOCK,
+  DB,
+  REDIS,
+  ROOT_LOGGER,
+  newUuidV7,
+  systemScheduler,
+  type Clock,
+  type RedisHandle,
+  type RootLogger,
+  type Scheduler,
+} from '../../../platform/index.ts';
+import { agentHttpDefaults, createAgentHttp, type AgentHttp } from '../../http/index.ts';
+import {
+  createAgentRunBody,
+  createRunLabels,
+  emptyOrchestratorTools,
+  failClosedInputCheck,
+  orchestratorLimitsDefaults,
+  type InputCheckPort,
+  type OrchestratorTools,
+  type AgentRunTexts,
+} from '../../orchestrator/index.ts';
+import { createDegradedPath } from '../../orchestrator/degraded/index.ts';
+import { createRunModelClock, type ResolvedRoute } from '../../model-gateway/routing/index.ts';
+import {
+  createAgentRedactor,
+  maskForTrace,
+  restorePlaceholders,
+} from '../../preprocess/redact/index.ts';
+import { agentSessionDefaults, createPgAgentSessionStore } from '../../store/index.ts';
+import {
+  createAgentAccessPort,
+  createAgentIdentityPort,
+  createAgentConsentPort,
+  createConsentVersionSource,
+  createRunGuardFactory,
+  type AgentConsentReader,
+} from '../access/index.ts';
+import {
+  assertRunTimings,
+  createPgRunPorts,
+  createQuotaLimitsSource,
+  runTimingsDefaults,
+  type QuotaLimitsSource,
+  type RunTimings,
+} from '../pg/index.ts';
+import {
+  createRunManager,
+  runConfigDefaults,
+  type RunConfig,
+  type RunRegistry,
+  type RunTexts,
+} from '../run/index.ts';
+import { createAgentSwitchReader } from './config.ts';
+import { agentDefaultTexts, agentText } from './texts.ts';
+import type { AgentCallerReaderFactory } from './caller.ts';
 
 /** identity's createAiConsentReader (B1-02r), handed in by app.module (agent never imports it). */
 export type AgentConsentReaderFactory = (options: {
@@ -97,22 +149,228 @@ export interface AgentStreamRuntime {
 
 export interface AgentStreamModuleOptions {
   readonly consentReader: AgentConsentReaderFactory;
+  readonly callerReader: AgentCallerReaderFactory;
 }
+
+const STREAM_RUNTIME = Symbol('AGENT_STREAM_RUNTIME');
 
 export function agentStreamToken(): symbol {
-  throw new Error('NotImplemented: agentStreamToken');
+  return STREAM_RUNTIME;
 }
 
-export function agentStreamProvider(options: AgentStreamModuleOptions): FactoryProvider {
-  void options;
-  throw new Error('NotImplemented: agentStreamProvider');
+export function agentStreamProvider(
+  options: Pick<AgentStreamModuleOptions, 'consentReader'>,
+): FactoryProvider {
+  return {
+    provide: agentStreamToken(),
+    inject: [CLOCK, ROOT_LOGGER, { token: DB, optional: true }, { token: REDIS, optional: true }],
+    useFactory: (
+      clock: Clock,
+      logger: RootLogger,
+      db?: Kysely<Database>,
+      redis?: RedisHandle,
+    ): AgentStreamRuntime | null => {
+      if (db == null) {
+        logger.info('agent_stream_disabled');
+        return null;
+      }
+      // Only called after PG's ownership check and committed cancellation. PG remains the
+      // authority; the fast path carries no user data and never extends a run's lifetime.
+      const cache = redis?.namespace('agent_cancel');
+      const signals: AgentStreamRuntimeDeps['signals'] =
+        cache === undefined
+          ? undefined
+          : {
+              async requestCancel(runId) {
+                await cache.set(runId, '1', Math.ceil(runTimingsDefaults().runMaxMs / 1_000));
+                return 'ok';
+              },
+              async cancelRequested(runId) {
+                return (await cache.get(runId)) === '1';
+              },
+            };
+      return createAgentStreamRuntime({
+        db,
+        clock,
+        logger,
+        consentReader: options.consentReader,
+        ...(signals === undefined ? {} : { signals }),
+      });
+    },
+  };
 }
 
 export function createAgentStreamRuntime(
   deps: AgentStreamRuntimeDeps,
   seams?: AgentStreamSeams,
 ): AgentStreamRuntime {
-  void deps;
-  void seams;
-  throw new Error('NotImplemented: createAgentStreamRuntime');
+  const { clock, logger } = deps;
+  const db = deps.db.withSchema('app');
+  const timings = Object.freeze(runTimingsDefaults());
+  const runConfig = Object.freeze({ ...runConfigDefaults(), maxRunMs: timings.runMaxMs });
+  assertRunTimings({ ...timings, admissionRunMaxMs: runConfig.maxRunMs, sweepMarginMs: 0 });
+  const scheduler = seams?.schedule ?? systemScheduler();
+  const texts = agentDefaultTexts();
+  const reader = createContentReader({ db, clock });
+  const switches = createAgentSwitchReader(db, clock, reader);
+  const version = createConsentVersionSource({ reader, logger });
+  // Platform and integration fixtures supply an app-scoped handle. Preserve that handle at
+  // the cross-module factory boundary, as identity's public reader expects.
+  const consent = deps.consentReader({ db: deps.db, currentVersion: version });
+  const limits = createQuotaLimitsSource({ reader, logger });
+  const pg = createPgRunPorts({
+    db,
+    clock,
+    logger,
+    timings,
+    limits,
+    texts,
+    ...(deps.signals === undefined ? {} : { signals: deps.signals }),
+  });
+  const runs = createRunManager({
+    admission: pg.admission,
+    registry: pg.registry,
+    clock,
+    scheduler,
+    config: runConfig,
+    logger,
+    texts: { ...texts, text: agentText },
+    guard: { check: async () => ({ code: 30501 }) },
+    guardFor: createRunGuardFactory({ reader: switches, consent, version }),
+    cards: {
+      async reserve(sessionId, count) {
+        if (!Number.isSafeInteger(count) || count < 1) throw new RangeError('Invalid card count');
+        const row = await db
+          .updateTable('agent_sessions')
+          .set({ card_seq: sql`card_seq + ${count}` })
+          .where('id', '=', sessionId)
+          .returning('card_seq')
+          .executeTakeFirstOrThrow();
+        return row.card_seq - count + 1;
+      },
+    },
+  });
+  const tools = seams?.tools ?? emptyOrchestratorTools();
+  const runTexts: AgentRunTexts = {
+    text: async (_appId, key) => agentText(key),
+    // No model tools are registered in this mount.
+    toolDisplay: async () => {
+      throw new Error('No model tool display in this runtime');
+    },
+  };
+  const route = async (): Promise<ResolvedRoute> => ({
+    mode: 'no_model',
+    attempts: [],
+    dropped: [],
+  });
+  const prompt = { current: async () => null };
+  const traceMask = (args: unknown, table: Readonly<Record<string, string>>): unknown =>
+    maskForTrace(restorePlaceholders(args, table));
+  const body = createAgentRunBody({
+    tools,
+    inputCheck: seams?.inputCheck ?? failClosedInputCheck(),
+    degraded: createDegradedPath({
+      tools,
+      texts: runTexts,
+      errorMsg: async (_appId, code) => texts.errorMsg(code),
+    }),
+    model: {
+      complete: async () => {
+        await route();
+        return { kind: 'degraded', reason: 'route_no_model', attempts: [] };
+      },
+    },
+    modelClock: () => createRunModelClock(timings.runMaxMs),
+    review: { review: async () => 'timeout' },
+    texts: runTexts,
+    prompt,
+    limits: orchestratorLimitsDefaults(),
+    traceMask,
+  });
+
+  let stopping = false;
+  let closing: Promise<void> | undefined;
+  const active = new Set<Promise<void>>();
+  const http = createAgentHttp({
+    access: createAgentAccessPort({ reader: switches }),
+    identity: createAgentIdentityPort({ reader: switches }),
+    consent: createAgentConsentPort({ consent, version }),
+    sessions: createPgAgentSessionStore({ db, clock, ...agentSessionDefaults() }),
+    admission: {
+      admit: (request, currentLimits) => {
+        // A request already checking consent when shutdown starts cannot enter admission.
+        if (stopping) return Promise.reject(new Error('Agent stream is stopping'));
+        return pg.admission.admit(request, currentLimits);
+      },
+    },
+    runs,
+    cancel: pg.cancel,
+    limits,
+    body,
+    redactor: createAgentRedactor(),
+    labels: createRunLabels({
+      route,
+      prompt,
+      modelLabel: async () => '',
+      aiLabel: async () => agentText('ai_label'),
+    }),
+    settings: agentHttpDefaults(),
+    texts,
+    ids: () => newUuidV7(clock.now()),
+    clock,
+    logger,
+  });
+  function tracked<T extends unknown[]>(
+    operation: (...args: T) => Promise<void>,
+    ...args: T
+  ): Promise<void> {
+    const task = operation(...args);
+    active.add(task);
+    void task.then(
+      () => active.delete(task),
+      () => active.delete(task),
+    );
+    return task;
+  }
+  return {
+    timings,
+    runConfig,
+    limits,
+    texts,
+    traceMask,
+    http: {
+      ...http,
+      sendMessage(caller, sessionId, message, reply) {
+        if (stopping) {
+          reply.json(
+            500,
+            { 'content-type': 'application/json' },
+            {
+              code: 50001,
+              msg: texts.errorMsg(50001),
+              trace_id: caller.traceId,
+            },
+          );
+          return Promise.resolve();
+        }
+        return tracked(http.sendMessage, caller, sessionId, message, reply);
+      },
+    },
+    close() {
+      stopping = true;
+      closing ??= (async () => {
+        if (active.size === 0) return;
+        const wait = new AbortController();
+        try {
+          await Promise.race([
+            Promise.allSettled([...active]),
+            scheduler.sleep(timings.runMaxMs + timings.lockGraceMs, wait.signal),
+          ]);
+        } finally {
+          wait.abort();
+        }
+      })();
+      return closing;
+    },
+  };
 }

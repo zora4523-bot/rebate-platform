@@ -1,6 +1,6 @@
 // Contract conformance of the HTTP entries (规划/11 §4.1 契约行, ADR-0001 §4.2 #15, §7):
 // - every implemented operationId maps to exactly one route of its entry (an /admin/v1 operation
-//   to the admin entry, F1-06k; any other to the api entry); planned operations have no
+//   to the admin entry, F1-06k; /v1/agent/ to stream; any other to api); planned operations have no
 //   registered routes, and every registered route is declared in the contract;
 // - real responses validate against the dereferenced response schema with a strict Ajv2020.
 import { fileURLToPath } from 'node:url';
@@ -115,11 +115,11 @@ function routeConformanceErrors(
     }
   }
   const apiRoutes = withoutImplicitHead(entries.get('api') ?? [], declared);
-  const adminRoutes = withoutImplicitHead(entries.get('admin') ?? [], declared);
   for (const { operationId, route, operation } of operations) {
-    const admin = route.split(' ')[1]?.startsWith('/admin/') === true;
-    const owner = admin ? 'admin' : 'api';
-    const ownerRoutes = admin ? adminRoutes : apiRoutes;
+    const path = route.split(' ')[1] ?? '';
+    const admin = path.startsWith('/admin/');
+    const owner = admin ? 'admin' : path.startsWith('/v1/agent/') ? 'stream' : 'api';
+    const ownerRoutes = withoutImplicitHead(entries.get(owner) ?? [], declared);
     if ('x-implementation' in operation) {
       if (operation['x-implementation'] !== 'planned') {
         errors.push(`${operationId}: x-implementation must be planned`);

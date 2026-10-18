@@ -86,6 +86,8 @@ import {
   createIdentityAttrCodeReader,
   isRecordConsentRoute,
   createIdentityCallerContext,
+  createAiConsentReader,
+  createAgentCallerReader,
   createIdentityViewerContext,
   createSameDeviceLoginReader,
   createUserLevelReader,
@@ -249,9 +251,8 @@ import {
  * On the `admin` entry (F1-06k) the only check is admin's: the whitelist on every /admin/v1
  * route, then the admin_token on the contract admin / super routes (BR-ID-34); it reads headers
  * and the client address only, so no body is buffered.
- * The stream entry has no check, so bootstrap refuses on it an x-signed route and a route that
- * takes a token (contract x-auth other than none); the admin entry refuses those too, except the
- * admin levels its check covers.
+ * The stream entry installs only identity's token stages ② ③: Agent routes are unsigned and
+ * x-auth optional. The admin entry covers the admin levels through its own check.
  */
 function requestChecks(options: PlatformOptions): Provider {
   if (options.entry === 'api') {
@@ -283,7 +284,25 @@ function requestChecks(options: PlatformOptions): Provider {
       }),
     };
   }
+  if (options.entry === 'stream') {
+    return {
+      provide: REQUEST_CHECKS,
+      inject: [TOKEN_CHECK],
+      useFactory: (token: RequestCheck): RequestCheckPlan => ({
+        checks: [token],
+        bufferWhen: () => false,
+      }),
+    };
+  }
   return { provide: REQUEST_CHECKS, useValue: { checks: [] } satisfies RequestCheckPlan };
+}
+
+/** Identity services without its /v1 routes; stream only consumes the exported token check. */
+function streamIdentityModule(): DynamicModule {
+  return {
+    ...IdentityModule.forRoot({ config: { useFactory: () => null } }),
+    controllers: [],
+  };
 }
 
 /**
@@ -1840,6 +1859,15 @@ export class AppModule {
         // the queue runs.
         ...(options.entry === 'worker' && union !== undefined
           ? [OrdersModule.forWorker(orderSyncPorts(union))]
+          : []),
+        ...(options.entry === 'stream'
+          ? [
+              streamIdentityModule(),
+              AgentModule.forStream({
+                consentReader: createAiConsentReader,
+                callerReader: createAgentCallerReader,
+              }),
+            ]
           : []),
         ...(options.entry === 'api' && union !== undefined && linking !== undefined
           ? [
