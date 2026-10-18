@@ -420,11 +420,38 @@ it('consents rejects labor agreements and server-written channels (BR-ID-12, 04 
   }
 });
 
-it('consents requires a positive integer version (BR-ID-12)', () => {
-  for (const version of [0, -1, 1.5, '1']) {
+it('consents takes a positive integer or a 1–32 character string version (BR-ID-12)', () => {
+  for (const version of [0, -1, 1.5, '', 'x'.repeat(33), null, true]) {
     expect(validateConsent({ ...consentSample, version }), String(version)).toBe(false);
   }
   expect(validateConsent({ ...consentSample, version: 2 })).toBe(true);
+  // Pairing a string version with clipboard_auto_import only is a server check (20001
+  // data.fields=[version]), stated in the operation description.
+  const schema = contract.components.schemas['RecordConsentRequest'] as {
+    properties: { version: { description: string } };
+  };
+  expect(schema.properties.version.description).toMatch(/20001 with data\.fields=\[version\]/);
+});
+
+it('consents accepts clipboard_auto_import with a string version, always device level and signed in the handler (BR-ID-12, BR-ID-16)', () => {
+  const clipboard = { ...consentSample, type: 'clipboard_auto_import', version: '2026-10-17' };
+  for (const accepted of [true, false]) {
+    expect(validateConsent({ ...clipboard, accepted })).toBe(true);
+  }
+  expect(validateConsent({ ...clipboard, version: 'x'.repeat(32) })).toBe(true);
+  const operation = contract.paths['/v1/consents']!.post as ContractOperation & {
+    'x-error-codes': number[];
+    requestBody: {
+      content: { 'application/json': { examples: Record<string, { value: unknown }> } };
+    };
+  };
+  expect(operation['x-signed']).toBe(false);
+  expect(operation['x-error-codes']).toEqual(expect.arrayContaining([20001, 10401, 10402, 10405]));
+  expect(operation.description).toMatch(/clipboard_auto_import/);
+  expect(operation.description).toMatch(/never takes part in login_merge/);
+  const { examples } = operation.requestBody.content['application/json'];
+  expect(validateConsent(examples['clipboard_auto_import']!.value)).toBe(true);
+  expect(validateConsent(examples['privacy']!.value)).toBe(true);
 });
 
 it('consents requires every field and rejects additional fields (BR-ID-12)', () => {

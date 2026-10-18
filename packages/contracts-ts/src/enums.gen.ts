@@ -613,7 +613,7 @@ export type IdempotencyAbandonOutcome = (typeof idempotency_abandon_outcome)[num
 
 /**
  * consent_type
- * Source: 08 §13.2；BR-ID-12、BR-WDR-31 (contracts/enums/identity.yaml).
+ * Source: 08 §13.2；BR-ID-12、BR-WDR-31、BR-ID-16 (contracts/enums/identity.yaml).
  */
 export const consent_type = [
   "privacy", // 隐私政策
@@ -622,6 +622,7 @@ export const consent_type = [
   "id_verification", // 实名授权
   "personalization", // 个性化推荐
   "labor_agreement", // 劳务协议
+  "clipboard_auto_import", // 剪贴板自动识别功能用途同意
 ] as const;
 export type ConsentType = (typeof consent_type)[number];
 

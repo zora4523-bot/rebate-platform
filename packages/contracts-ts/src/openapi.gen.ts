@@ -404,6 +404,18 @@ export interface paths {
          *     changed; the server then revokes this device's sessions and install_secret and clears its
          *     push token, and the client enters basic mode (BR-ID-13). Other withdrawals (for example
          *     ai_third_party, BR-AI-13) follow the user / device rule above.
+         *     type=clipboard_auto_import (the purpose consent for clipboard auto-recognition, BR-ID-16)
+         *     is likewise always a device-level row, with or without a token and for accepted true or
+         *     false: subject is this device, user_id is kept only as an association, other devices'
+         *     state is not changed (the same subject rule as withdrawing the privacy consent, BR-ID-12
+         *     细则); it never takes part in login_merge. Its `version` is the string
+         *     config.clipboard.consent_version; every other type takes a positive integer version. A
+         *     type and version form that do not pair → 20001 with data.fields=[version]. A
+         *     clipboard_auto_import request must carry the device signature: the operation stays
+         *     x-signed false because the other types are not signed, and the server checks the
+         *     signature headers (X-Timestamp, X-Nonce, X-Sign, same rules as the signing guard) inside
+         *     the handler for this type only; a missing or invalid signature → 10401, a device that is
+         *     not registered, revoked or not server-issued → 10402, the same codes as the signing guard.
          *     `type` never takes labor_agreement (signed only through the labor agreement endpoint,
          *     BR-WDR-31). `channel` never takes login_merge, h5_landing or withdraw_flow: those rows are
          *     written by the server (login merge, landing registration, labor agreement signing).
@@ -3727,12 +3739,14 @@ export interface components {
              * @description consent_type without labor_agreement (BR-ID-12, BR-WDR-31).
              * @enum {string}
              */
-            type: "privacy" | "agreement" | "ai_third_party" | "id_verification" | "personalization";
+            type: "privacy" | "agreement" | "ai_third_party" | "id_verification" | "personalization" | "clipboard_auto_import";
             /**
-             * Format: int32
-             * @description The version of the text the user saw (legal.privacy.version and the like).
+             * @description The version of the text the user saw. A positive integer (legal.privacy.version and the
+             *     like) for every type except clipboard_auto_import, which takes the string
+             *     config.clipboard.consent_version (BR-ID-12 细则, BR-ID-16). A form that does not pair
+             *     with `type` → 20001 with data.fields=[version].
              */
-            version: number;
+            version: number | string;
             /** @description true = agreed; false = withdrawn. */
             accepted: boolean;
             /**
@@ -7948,15 +7962,6 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "type": "privacy",
-                 *       "version": 3,
-                 *       "accepted": true,
-                 *       "channel": "first_launch",
-                 *       "client_at": "2026-10-02T09:30:00+08:00"
-                 *     }
-                 */
                 "application/json": components["schemas"]["RecordConsentRequest"];
             };
         };

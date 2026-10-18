@@ -64,7 +64,7 @@ enums:
       abandoned: 该键已作废（本次写入作废记录，或此前已作废）
       completed: 该键已有完成的结果，随响应原样返回，不作废
   consent_type:
-    source: 08 §13.2；BR-ID-12、BR-WDR-31
+    source: 08 §13.2；BR-ID-12、BR-WDR-31、BR-ID-16
     values:
       privacy: 隐私政策
       agreement: 用户协议
@@ -72,6 +72,7 @@ enums:
       id_verification: 实名授权
       personalization: 个性化推荐
       labor_agreement: 劳务协议
+      clipboard_auto_import: 剪贴板自动识别功能用途同意
   consent_channel:
     source: 规划/04 §3.2 consent_records；BR-ID-12 细则
     description: consent_records.channel，同意发生的入口；login_merge、h5_landing、withdraw_flow 只由服务端写入（登录合并、落地页注册、劳务协议签署），不经 POST /v1/consents 提交

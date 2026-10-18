@@ -163,10 +163,21 @@ async function setPersonalization(
 export function createConsentService(options: ConsentOptions): ConsentService {
   const { db, clock } = options;
   const invalidDevice = { code: 20001, data: { fields: [DEVICE_HEADER_FIELD] } } as const;
+  const invalidVersion = { code: 20001, data: { fields: ['version'] } } as const;
 
   return Object.freeze({
     async record(command: ConsentCommand) {
-      const { principal, body } = command;
+      const { principal } = command;
+      // TODO(规划/11 §2.3): clipboard_auto_import 设备级同意与字符串版本 — blocked on B1-02zc
+      // Transition after CT-15s widened the contract (type clipboard_auto_import, version integer
+      // or string): until B1-02zc ships, the new type and any string version are 20001
+      // fields=[version] (the pairing rule sits on version), before any read or write, so a
+      // string such as '1' is never cast to the integer column.
+      const raw = command.body;
+      if (raw.type === 'clipboard_auto_import' || typeof raw.version !== 'number') {
+        return invalidVersion;
+      }
+      const body = { ...raw, type: raw.type, version: raw.version };
       const appId = principal?.app_id ?? command.app_id;
       const withdrawsPrivacy = body.type === 'privacy' && !body.accepted;
       const deviceId = principal?.device_id ?? command.device_id;
