@@ -41,6 +41,7 @@ import {
 import { HealthModule } from './modules/health/index.ts';
 import {
   appendLevelChange,
+  createFirstAppLoginReview,
   createInviteBinder,
   createRegistrationInviteBinding,
 } from './modules/growth/index.ts';
@@ -66,6 +67,7 @@ import {
   type IdentityConfigReader,
   type IdentityContext,
   type IdentityRequest,
+  type FirstAppLoginReview,
   type InitialLevelLog,
   type RegistrationInviteBindingPort,
   type SessionPushTokens,
@@ -143,6 +145,7 @@ import {
   RiskScanModule,
   SIGNATURE_CHECK,
   createBlocklistService,
+  createInviteRelationHitWriter,
   createRiskStateService,
   createDeviceRegistrationRisk,
   createSmsRisk,
@@ -236,6 +239,9 @@ function requestChecks(options: PlatformOptions): Provider {
  * config_items read on the registration transaction, Redis, the field cipher's blind index, identity's login-device and
  * order / claim readers and risk's fresh state read, each bound to the registration transaction;
  * without a database, Redis or the field cipher there is none (invite_bind { failed, 50001 }).
+ * Its first App login review (BR-INV-09, B1-11f) is growth's landing-bind same-device review over
+ * identity's login-device reader and risk's invite-relation hit writer, all on the login
+ * transaction; the SMS and the third-party login both run it.
  */
 function identityModule(): DynamicModule {
   return IdentityModule.forRoot({
@@ -461,6 +467,16 @@ function identityModule(): DynamicModule {
           }),
         );
       },
+    },
+    // Runs only on the login's own transaction (no handle of its own), so it needs no database.
+    firstAppLoginReview: {
+      inject: [CLOCK],
+      useFactory: (clock: Clock): FirstAppLoginReview =>
+        createFirstAppLoginReview({
+          clock,
+          loginDevices: createInviteLoginDevicesReader(),
+          hitWriter: createInviteRelationHitWriter({ clock }),
+        }),
     },
   });
 }

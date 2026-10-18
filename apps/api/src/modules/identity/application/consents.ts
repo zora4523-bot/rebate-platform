@@ -13,9 +13,14 @@
 // server_at = created_at = one read of the Clock, taken after the locks; client_at is the device's
 // tap time as reported.
 //
-// Concurrency (B1-02f round 2): a user-level write first takes the user's consent lock
-// (lockUserConsents, as the logins do), then reads the Clock, inserts and CASes users, so two
-// toggles of one user cannot leave personalization_off disagreeing with the latest record. A
+// Concurrency (B1-02f round 2): a user-level write takes the user's consent lock (lockUserConsents,
+// as the logins do), then reads the Clock, inserts and CASes users, so two toggles of one user
+// cannot leave personalization_off disagreeing with the latest record. Lock order (B1-11f money
+// review r2 S1), the same in every path that takes both: users row (FOR NO KEY UPDATE) → consent
+// lock → growth's relation write lock. A user-level write therefore locks the users row before the
+// consent lock, never after it; the row lock is FOR NO KEY UPDATE throughout (also in
+// setPersonalization), so it never waits on the foreign-key KEY SHARE of a login inserting the
+// user's consent_records / login_logs / sessions under the consent lock. A
 // withdrawal locks the device row first, the order createSession uses (device row, then sessions),
 // so a concurrent login on the device cannot leave a session unrevoked.
 //
@@ -108,8 +113,23 @@ async function revokeDevice(
 }
 
 /**
+ * The user's users row lock, taken before the consent lock (lock order above). FOR NO KEY UPDATE:
+ * the personalization update changes no key column, and the lock does not block foreign-key checks.
+ */
+async function lockUserRow(trx: Transaction<DB>, appId: string, userId: string): Promise<void> {
+  await trx
+    .selectFrom('users')
+    .select('id')
+    .where('id', '=', userId)
+    .where('app_id', '=', appId)
+    .forNoKeyUpdate()
+    .executeTakeFirst();
+}
+
+/**
  * users.personalization_off = !accepted (BR-ID-13), a CAS on the row_version read under the row
- * lock (users is a CAS entity, ADR-0001 §4.1). The caller holds the user's consent lock, so the
+ * lock (users is a CAS entity, ADR-0001 §4.1). The caller holds the users row lock and then the
+ * user's consent lock, so the
  * record just inserted is the user's latest and this value matches it. A user row that is gone is
  * left alone; a CAS that still misses is a server error (50001), the transaction rolls back.
  */
@@ -125,7 +145,7 @@ async function setPersonalization(
     .select('row_version')
     .where('id', '=', userId)
     .where('app_id', '=', appId)
-    .forUpdate()
+    .forNoKeyUpdate()
     .executeTakeFirst();
   if (user === undefined) return;
   const updated = await trx
@@ -159,8 +179,12 @@ export function createConsentService(options: ConsentOptions): ConsentService {
       return db.transaction().execute(async (trx) => {
         // Locks first, then the Clock: writes of one subject follow each other, so the record with
         // the latest server_at is also the last one written (and users matches it).
-        // User level: one user's consent writes (and logins, sms-login) serialise on this lock.
-        if (userLevel) await lockUserConsents(trx, appId, principal.uid);
+        // User level: one user's consent writes (and logins, sms-login) serialise on this lock,
+        // taken after the users row lock (lock order above).
+        if (userLevel) {
+          await lockUserRow(trx, appId, principal.uid);
+          await lockUserConsents(trx, appId, principal.uid);
+        }
         // A withdrawal locks the device row before it reads the sessions (findDevice).
         const device =
           deviceId !== undefined && (withdrawsPrivacy || guestDevice !== undefined)

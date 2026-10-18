@@ -19,6 +19,12 @@ export type {
 } from './domain/change-logs.ts';
 export type { GrowthExecutor, GrowthHistory, GrowthHistoryOptions } from './infra/history.ts';
 export { createParentRelationReader } from './ports/parent-relation.ts';
+export { createFirstAppLoginReview } from './application/first-app-login-review.ts';
+export type {
+  FirstAppLoginReviewDeps,
+  LandingLoginReview,
+  LandingLoginReviewInput,
+} from './application/first-app-login-review.ts';
 export type {
   ParentRelation,
   ParentRelationReader,

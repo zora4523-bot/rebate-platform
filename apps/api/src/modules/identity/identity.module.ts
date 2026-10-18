@@ -86,6 +86,7 @@ import {
   type SensitiveWords,
 } from './application/registration.ts';
 import { createSmsLoginService, type SmsLoginService } from './application/sms-login.ts';
+import type { FirstAppLoginReview } from './application/login-completion.ts';
 import { createOauthLoginService, type OauthLoginService } from './application/oauth-login.ts';
 import { identityRiskPorts, type IdentityRiskPorts } from './application/risk-ports.ts';
 import { createSmsRiskPorts, type SmsRiskPorts } from './application/sms-risk-ports.ts';
@@ -194,6 +195,13 @@ export interface IdentityModuleOptions {
    * invite code answers invite_bind { failed, 50001 } with a warning, as before.
    */
   readonly inviteBinding?: Omit<FactoryProvider<RegistrationInviteBindingPort | null>, 'provide'>;
+  /**
+   * The first App login's landing-bind same-device review (BR-INV-09, B1-11f), assembled by
+   * app.module from growth's review so identity never imports growth. The SMS and the third-party
+   * login both run it in the login transaction (login-completion.ts selects the first App login of
+   * a landing-bound account). Absent or null: no review (the relation stays).
+   */
+  readonly firstAppLoginReview?: Omit<FactoryProvider<FirstAppLoginReview | null>, 'provide'>;
 }
 
 /** RegistrationOptions['bindInvite'] as app.module assembles it (IdentityModuleOptions.inviteBinding). */
@@ -280,6 +288,7 @@ const SMS_RISK_PORTS = Symbol('IDENTITY_SMS_RISK_PORTS');
 const PUSH_TOKENS = Symbol('IDENTITY_PUSH_TOKENS');
 const INITIAL_LEVEL_LOG = Symbol('IDENTITY_INITIAL_LEVEL_LOG');
 const INVITE_BINDING = Symbol('IDENTITY_INVITE_BINDING');
+const FIRST_APP_LOGIN_REVIEW = Symbol('IDENTITY_FIRST_APP_LOGIN_REVIEW');
 const ACCOUNT_ASSETS = Symbol('IDENTITY_ACCOUNT_ASSETS');
 const ACCOUNT_RISK = Symbol('IDENTITY_ACCOUNT_RISK');
 
@@ -360,6 +369,9 @@ export class IdentityModule {
         options.inviteBinding === undefined
           ? { provide: INVITE_BINDING, useValue: null }
           : { ...options.inviteBinding, provide: INVITE_BINDING },
+        options.firstAppLoginReview === undefined
+          ? { provide: FIRST_APP_LOGIN_REVIEW, useValue: null }
+          : { ...options.firstAppLoginReview, provide: FIRST_APP_LOGIN_REVIEW },
         // The internal revocation entries (merge, ban, admin revocation by user or by device), as
         // the Nest container hands them out: the provider token is identity's exported function
         // itself, the value takes only (trx, input) — the Clock and the push token unbinding of
@@ -519,6 +531,7 @@ export class IdentityModule {
             PUSH_TOKENS,
             INITIAL_LEVEL_LOG,
             INVITE_BINDING,
+            FIRST_APP_LOGIN_REVIEW,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -534,6 +547,7 @@ export class IdentityModule {
             pushTokens: SessionPushTokens | null,
             initialLevelLog: InitialLevelLog | null,
             inviteBinding: RegistrationInviteBindingPort | null,
+            firstAppLoginReview: FirstAppLoginReview | null,
             db?: Kysely<Database>,
             fieldCrypto?: FieldCrypto,
           ): SmsLoginService | null =>
@@ -564,6 +578,7 @@ export class IdentityModule {
                   config: reader,
                   tokens,
                   ...(pushTokens === null ? {} : { pushTokens }),
+                  ...(firstAppLoginReview === null ? {} : { firstAppLoginReview }),
                 }),
         },
         {
@@ -638,6 +653,7 @@ export class IdentityModule {
             PUSH_TOKENS,
             INITIAL_LEVEL_LOG,
             INVITE_BINDING,
+            FIRST_APP_LOGIN_REVIEW,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -654,6 +670,7 @@ export class IdentityModule {
             pushTokens: SessionPushTokens | null,
             initialLevelLog: InitialLevelLog | null,
             inviteBinding: RegistrationInviteBindingPort | null,
+            firstAppLoginReview: FirstAppLoginReview | null,
             db?: Kysely<Database>,
             fieldCrypto?: FieldCrypto,
           ): OauthLoginService | null =>
@@ -670,6 +687,7 @@ export class IdentityModule {
                   tokens,
                   ...(thirdPartyIdentity === null ? {} : { thirdPartyIdentity }),
                   ...(pushTokens === null ? {} : { pushTokens }),
+                  ...(firstAppLoginReview === null ? {} : { firstAppLoginReview }),
                   ...(risk === null ? {} : risk.oauthLogin),
                   registration: createRegistrationService({
                     clock,

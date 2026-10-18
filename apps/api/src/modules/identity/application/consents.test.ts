@@ -1,7 +1,9 @@
 // Unit tests of the consent service without a database (B1-02f round 2 review items): Kysely runs on
 // a scripted driver that answers each compiled statement and records it with the transaction events
 // and the Clock reads. They pin the order the rule tests cannot provoke on a real PostgreSQL: a
-// user-level write takes the user's consent lock before it reads the Clock and writes, and sets
+// user-level write takes the users row lock (FOR NO KEY UPDATE), then the user's consent lock
+// (B1-11f lock order: users row → consent lock → relation lock), before it reads the Clock and
+// writes, and sets
 // users.personalization_off by a CAS on the row_version read under the row lock; a privacy
 // withdrawal locks the device row before it revokes the device's sessions (createSession's order).
 // The SQL itself runs against PostgreSQL in the rule tests (test/spec/identity/step-up).
@@ -41,7 +43,8 @@ interface Script {
 function label(text: string): string {
   if (text.includes('pg_advisory_xact_lock')) return 'lock:user-consents';
   if (text.startsWith('select') && text.includes('from "users"')) {
-    return text.endsWith('for update') ? 'lock:users' : 'select:users';
+    if (text.endsWith('for update')) return 'lock-strong:users';
+    return text.endsWith('for no key update') ? 'lock:users' : 'select:users';
   }
   if (text.startsWith('select') && text.includes('from "devices"')) {
     return text.endsWith('for update') ? 'lock:devices' : 'select:devices';
@@ -126,13 +129,14 @@ function command(
   };
 }
 
-it('[BR-ID-12][BR-ID-13] personalization: the user consent lock, then the Clock, the record and a users CAS', async () => {
+it('[BR-ID-12][BR-ID-13] personalization: the users row lock, the user consent lock, then the Clock, the record and a users CAS', async () => {
   const context = setup({ userRowVersion: 7 });
   expect(
     await context.service.record(command({ type: 'personalization', accepted: false })),
   ).toEqual({ code: 0, data: {} });
   expect(context.events).toEqual([
     'begin',
+    'lock:users',
     'lock:user-consents',
     'clock',
     'insert:consent_records',
@@ -140,6 +144,11 @@ it('[BR-ID-12][BR-ID-13] personalization: the user consent lock, then the Clock,
     'update:users',
     'commit',
   ]);
+  // B1-11f r2 S1: the row lock precedes the consent lock and is keyed by the principal.
+  const rowLock = context.statements[0]!;
+  expect(rowLock.sql).toMatch(/^select "id" from "users" where .* for no key update$/);
+  expect(rowLock.parameters).toEqual([PRINCIPAL.uid, PRINCIPAL.app_id]);
+  expect(context.events).not.toContain('lock-strong:users');
   const cas = context.statements.find((statement) => label(statement.sql) === 'update:users');
   expect(cas?.sql).toContain('"row_version" = $');
   // personalization_off = !accepted, row_version 7 → 8, guarded by row_version = 7.
@@ -155,11 +164,12 @@ it('[BR-ID-12] a users CAS that misses under the lock rolls the whole record bac
   expect(context.events).not.toContain('commit');
 });
 
-it('[BR-ID-12] every user-level record takes the consent lock first; a device-level guest record does not', async () => {
+it('[BR-ID-12] every user-level record takes the users row lock, then the consent lock first; a device-level guest record does neither', async () => {
   const user = setup();
   await user.service.record(command({ type: 'agreement', accepted: true }));
   expect(user.events).toEqual([
     'begin',
+    'lock:users',
     'lock:user-consents',
     'clock',
     'insert:consent_records',

@@ -1,0 +1,107 @@
+{
+  "task": "B1-11f",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "ad750c856534d19bf33792577390c54bffe804d1",
+  "red_tests": [
+    "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#10] 真实短信登录注入 growth 复核，命中也返回有效会话、不通知双方",
+    "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#11] 真实 wechat 登录注入同一复核，命中后仍登录成功且不会重复解除",
+    "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#11] 真实 apple 登录注入同一复核，命中后仍登录成功且不会重复解除",
+    "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#12] sms 首次异设备未命中，后来同设备登录不复核；新账号首次同设备才解除",
+    "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#12] wechat 首次异设备未命中，后来同设备登录不复核；新账号首次同设备才解除",
+    "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#13] 首次登录的 register 关系不复核；同一装配的 landing 关系必须复核",
+    "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#14] H5 登录不触发 App 复核，同一装配的首次 App 登录才触发",
+    "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#15] 首次短信未命中后改用微信同设备登录，也不能重新复核",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#1] 邀请人任一保留登录记录命中：解除三列、保留机会已用、日志与风险各一行",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#2] 本次设备不在邀请人集合内：即使被邀请人旧记录有交集也不解除且零写入",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#3] 来源 register 不属于落地页，不读设备、不写风险、不动关系",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#3] 来源 backfill 不属于落地页，不读设备、不写风险、不动关系",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#3] 来源 admin 不属于落地页，不读设备、不写风险、不动关系",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#3] 来源 null 不属于落地页，不读设备、不写风险、不动关系",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#4] app 隔离：别的应用或别的邀请人的相同设备不能误命中",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#5] 调用方未提交的邀请人登录可见，解除与两种日志随外层回滚",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#6] relation_change_logs 插入失败不能吞掉，关系和另一种日志一并回滚",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#6] risk_hits 插入失败不能吞掉，关系和另一种日志一并回滚",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#7] 同账号两个并发复核均成功返回，只解除一次且重复调用不追加",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#8] 设备读取后上级已变化，旧上级命中不得解除新关系或写命中日志",
+    "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#9] 命中写入前持有 app 关系锁，锁保持至调用方事务结束且不阻挡其他 app"
+  ],
+  "risk_note": "RV2 (growth: invite attribution). BR-INV-09 first App login same-device review: identity's login completion calls growth's FirstAppLoginReview in the login transaction for a landing-bound account's first App login; an inviter device match takes the app relation write lock, conditionally clears parent_id / parent_bind_source / parent_bound_at (self_bind_used kept), writes the relation log (risk_same_device, system) and an inv_09_same_device risk hit (B1-03x writer), and notifies no one; no match writes nothing. Lock order is the same everywhere: users row (FOR NO KEY UPDATE) → consent lock → relation write lock — login takes the row lock first for a review candidate and user-level consents (personalization included) now lock the row before the consent lock (Codex r1 / r2 S1 concurrent-login deadlocks). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ad750c856534d19bf33792577390c54bffe804d1",
+      "tree": "523af060748fe7069e3ea8c20c51d02df666af5c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T08:34:10Z",
+      "finished_at": "2026-10-18T08:34:21Z",
+      "red_tests": [
+        "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#10] 真实短信登录注入 growth 复核，命中也返回有效会话、不通知双方",
+        "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#11] 真实 wechat 登录注入同一复核，命中后仍登录成功且不会重复解除",
+        "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#11] 真实 apple 登录注入同一复核，命中后仍登录成功且不会重复解除",
+        "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#12] sms 首次异设备未命中，后来同设备登录不复核；新账号首次同设备才解除",
+        "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#12] wechat 首次异设备未命中，后来同设备登录不复核；新账号首次同设备才解除",
+        "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#13] 首次登录的 register 关系不复核；同一装配的 landing 关系必须复核",
+        "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#14] H5 登录不触发 App 复核，同一装配的首次 App 登录才触发",
+        "test/spec/growth/landing-review/login.int.test.ts > [AC-B1-11f#15] 首次短信未命中后改用微信同设备登录，也不能重新复核",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#1] 邀请人任一保留登录记录命中：解除三列、保留机会已用、日志与风险各一行",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#2] 本次设备不在邀请人集合内：即使被邀请人旧记录有交集也不解除且零写入",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#3] 来源 register 不属于落地页，不读设备、不写风险、不动关系",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#3] 来源 backfill 不属于落地页，不读设备、不写风险、不动关系",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#3] 来源 admin 不属于落地页，不读设备、不写风险、不动关系",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#3] 来源 null 不属于落地页，不读设备、不写风险、不动关系",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#4] app 隔离：别的应用或别的邀请人的相同设备不能误命中",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#5] 调用方未提交的邀请人登录可见，解除与两种日志随外层回滚",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#6] relation_change_logs 插入失败不能吞掉，关系和另一种日志一并回滚",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#6] risk_hits 插入失败不能吞掉，关系和另一种日志一并回滚",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#7] 同账号两个并发复核均成功返回，只解除一次且重复调用不追加",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#8] 设备读取后上级已变化，旧上级命中不得解除新关系或写命中日志",
+        "test/spec/growth/landing-review/review.int.test.ts > [AC-B1-11f#9] 命中写入前持有 app 关系锁，锁保持至调用方事务结束且不阻挡其他 app"
+      ],
+      "expected": [
+        "test/spec/growth/landing-review/login.int.test.ts",
+        "test/spec/growth/landing-review/review.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "7137b373378f99a88b77356119b75ed2c93097aba9b3320b6f62dea875ae74e0"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 1 fail (S1 SMS / OAuth first-login deadlock), round 2 fail (S1 personalization consent lock order), round 3 (exception round, decision-orchestrator.md) pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (21 tests in 2 files red for the right reason on the test runner) reviewed by a fresh Claude subagent: round 1 pass (one S2 taken into the implementation: no push or notification on a match)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "f9d7654a93ea64ac78a4d0913239cfdedf822d8f",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
