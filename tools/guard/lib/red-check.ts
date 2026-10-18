@@ -709,7 +709,7 @@ export function checkRedReports(
   const notes: string[] = [];
   const exempt: RedExempt[] = [];
   const confirmation =
-    'needs the rule-test reviewer\'s confirmation (evidence spec_test_review.red_exempt_confirmed)';
+    "needs the rule-test reviewer's confirmation (evidence spec_test_review.red_exempt_confirmed)";
   // Declarations that named an expected file (the others are said in the notes at the end).
   const declaredSeen = new Set<RedExemptDeclaration>();
   const prefix = root.endsWith('/') ? root : `${root}/`;

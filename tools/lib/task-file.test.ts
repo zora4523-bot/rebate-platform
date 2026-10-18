@@ -117,26 +117,38 @@ describe('parseTaskFile', () => {
     expect(messageOf(noReason, 'B2-02a.yaml')).toContain(
       'red_exempt[0].reason: must say why the test cannot be shown red (at least 10 characters)',
     );
-    const short = declared("\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: too short");
+    const short = declared(
+      "\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: too short",
+    );
     expect(messageOf(short, 'B2-02a.yaml')).toContain('red_exempt[0].reason');
     const blank = declared(
       "\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: '              '",
     );
     expect(messageOf(blank, 'B2-02a.yaml')).toContain('red_exempt[0].reason');
     // Missing or empty file / test, a file that is not a repository path, an unknown field.
-    const noTest = declared("\n  - file: test/spec/a.test.ts\n    reason: a reason of enough length");
-    expect(messageOf(noTest, 'B2-02a.yaml')).toContain("red_exempt[0].test: must be the test's full name");
+    const noTest = declared(
+      '\n  - file: test/spec/a.test.ts\n    reason: a reason of enough length',
+    );
+    expect(messageOf(noTest, 'B2-02a.yaml')).toContain(
+      "red_exempt[0].test: must be the test's full name",
+    );
     const badFile = declared(
       "\n  - file: /test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: a reason of enough length",
     );
-    expect(messageOf(badFile, 'B2-02a.yaml')).toContain('red_exempt[0].file: "/test/spec/a.test.ts" must be relative');
+    expect(messageOf(badFile, 'B2-02a.yaml')).toContain(
+      'red_exempt[0].file: "/test/spec/a.test.ts" must be relative',
+    );
     const extra = declared(
       "\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: a reason of enough length\n    note: x",
     );
     expect(messageOf(extra, 'B2-02a.yaml')).toContain('red_exempt[0].note: unknown field');
     // Not a list, not mappings, the same test twice.
-    expect(messageOf(declared(' abc'), 'B2-02a.yaml')).toContain('red_exempt: must be a list of mappings');
-    expect(messageOf(declared('\n  - abc'), 'B2-02a.yaml')).toContain('red_exempt[0]: must be a mapping');
+    expect(messageOf(declared(' abc'), 'B2-02a.yaml')).toContain(
+      'red_exempt: must be a list of mappings',
+    );
+    expect(messageOf(declared('\n  - abc'), 'B2-02a.yaml')).toContain(
+      'red_exempt[0]: must be a mapping',
+    );
     const twice = declared(
       "\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: a reason of enough length\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: another reason of enough length",
     );

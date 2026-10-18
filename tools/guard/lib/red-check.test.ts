@@ -1155,7 +1155,9 @@ it('[CT-06r] a declared, unchanged test of a file that may read a changed data f
       redReport(
         BASE_FILE,
         SUPPORT_TESTS.map(([n, s, c]) =>
-          n === '[AC-2] b' ? ['[AC-2] b', 'failed', 'TypeError: rows is not a function'] : [n, s, c],
+          n === '[AC-2] b'
+            ? ['[AC-2] b', 'failed', 'TypeError: rows is not a function']
+            : [n, s, c],
         ) as RedTest[],
       ),
     ],
@@ -1184,10 +1186,18 @@ it('[CT-06r] a declaration does not apply to a new or changed test, nor without 
     [BASE_FILE],
     ROOT,
     supportBaselines(),
-    [declare('[AC-1] a'), declare('[AC-2] b'), declare('[AC-3] c'), declare('[AC-5] e reads ./expected.csv')],
+    [
+      declare('[AC-1] a'),
+      declare('[AC-2] b'),
+      declare('[AC-3] c'),
+      declare('[AC-5] e reads ./expected.csv'),
+    ],
   );
   expect(changed.ok).toBe(false);
-  expect(changed.problems.map((p) => p.test)).toEqual(['[AC-1] a', '[AC-5] e reads ./expected.csv']);
+  expect(changed.problems.map((p) => p.test)).toEqual([
+    '[AC-1] a',
+    '[AC-5] e reads ./expected.csv',
+  ]);
   expect(changed.exempt?.map((e) => e.test)).toEqual(['[AC-2] b', '[AC-3] c']);
   expect(changed.notes).toContain(
     `${BASE_FILE} > [AC-1] a: declared exempt, but the declaration does not apply: the test is new or changed since the base (only an unchanged test may be declared exempt); the test must be red`,
@@ -1216,7 +1226,11 @@ it('[CT-06r] a declaration does not apply to a new or changed test, nor without 
     [BASE_FILE],
     ROOT,
     supportBaselines(),
-    [declare('[AC-2]'), declare('b'), declare('[AC-2] b', REASON, 'test/spec/notify/other.test.ts')],
+    [
+      declare('[AC-2]'),
+      declare('b'),
+      declare('[AC-2] b', REASON, 'test/spec/notify/other.test.ts'),
+    ],
   );
   expect(miss.problems.map((p) => p.test)).toEqual(['[AC-2] b', '[AC-3] c']);
   expect(miss.exempt).toEqual([]);
@@ -1257,7 +1271,9 @@ it('[CT-06r] a declaration applies only to a file judged whole because of a chan
     declared,
   );
   expect(plain.problems.map((p) => p.test)).toEqual(['[AC-2] b', '[AC-3] c']);
-  expect(plain.notes[1]).toContain('2 declared exemption(s) do not apply: the report is not from the red reporter');
+  expect(plain.notes[1]).toContain(
+    '2 declared exemption(s) do not apply: the report is not from the red reporter',
+  );
   // A file judged test by test (no support file changed): the declarations are not needed.
   const tests = checkRedReports(
     [redReport(BASE_FILE, SUPPORT_TESTS)],
@@ -1303,7 +1319,10 @@ it('[CT-06r] a declaration applies only to a file judged whole because of a chan
     "expect(await columns()).toEqual(['app_id', 'variant']);",
     'expect(1).toBe(1);',
   )
-    .replace("expect(await primaryKey()).toEqual(['app_id', 'code', 'variant']);", 'expect(1).toBe(1);')
+    .replace(
+      "expect(await primaryKey()).toEqual(['app_id', 'code', 'variant']);",
+      'expect(1).toBe(1);',
+    )
     .replace(spec('[AC-5] e reads ./expected.csv'), '')
     .replace(/\n+$/, '\n');
   const all = checkRedReports(

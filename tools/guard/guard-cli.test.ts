@@ -494,12 +494,15 @@ describe('path-guard.ts, protected-paths.ts, test-guard.ts, run.ts git', () => {
     expect(guard('red-check.ts', [...args, '--head-tree', tree]).status).toBe(2);
   });
 
-  it('[CT-06r] red-check: the trusted ledger\'s red_exempt lets a declared, unchanged test of a file that reads a changed data file pass', () => {
+  it("[CT-06r] red-check: the trusted ledger's red_exempt lets a declared, unchanged test of a file that reads a changed data file pass", () => {
     const t = (title: string, body: string): string => `it('${title}', () => {\n  ${body}\n});\n`;
     const vitest = "import { expect, it } from 'vitest';\n";
     const file = 'test/spec/ledger/post.test.ts';
     const csv = 'test/spec/ledger/expected.csv';
-    const keeps = t('[AC-2] keeps', "expect(readFileSync('./expected.csv', 'utf8')).toMatch(/a,b/);");
+    const keeps = t(
+      '[AC-2] keeps',
+      "expect(readFileSync('./expected.csv', 'utf8')).toMatch(/a,b/);",
+    );
     const { root, base } = makeRepo({
       [file]: vitest + t('[AC-1] posts', 'expect(1).toBe(1);') + keeps,
       [csv]: 'a,b\n1,2\n',
@@ -559,7 +562,9 @@ describe('path-guard.ts, protected-paths.ts, test-guard.ts, run.ts git', () => {
     // B2-02e declares [AC-2] keeps (unchanged: exempt) and [AC-1] posts (changed: no effect).
     const res = guard('red-check.ts', args('B2-02e'));
     expect(res.status, res.stderr).toBe(0);
-    expect(json<{ ok: boolean; red: string[]; exempt: unknown[]; notes: string[] }>(res.stdout)).toMatchObject({
+    expect(
+      json<{ ok: boolean; red: string[]; exempt: unknown[]; notes: string[] }>(res.stdout),
+    ).toMatchObject({
       ok: true,
       red: [`${file} > [AC-1] posts`],
       exempt: [

@@ -198,7 +198,9 @@ function redExemptList(value: unknown, problems: string[]): RedExemptDeclaration
     if (!ok) return;
     const key = `${file as string}\u0000${test as string}`;
     if (seen.has(key)) {
-      problems.push(`red_exempt[${index}]: "${file as string} > ${test as string}" is declared twice`);
+      problems.push(
+        `red_exempt[${index}]: "${file as string} > ${test as string}" is declared twice`,
+      );
       return;
     }
     seen.add(key);
