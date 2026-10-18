@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import fc from 'fast-check';
 import { propParams } from '@couli/testing';
@@ -49,6 +49,8 @@ it('[AC-B3-04b#29][BR-AI-09] 复筛剔除商品后保留其余商品的原始上
 it('[AC-B3-04b#30][BR-AI-09] 固定上游名次，随机佣金比例变化不影响 relevance', async () => {
   // Reach the skeleton outside fast-check too: first-red is its original NotImplemented.
   createSearchProductsHandler(fixture().deps);
+  const rows: ReturnType<typeof candidate>[] = [];
+  const shared = fixture(rows);
   await fc.assert(
     fc.asyncProperty(
       fc.tuple(
@@ -57,18 +59,28 @@ it('[AC-B3-04b#30][BR-AI-09] 固定上游名次，随机佣金比例变化不影
         fc.integer({ min: 1, max: 10000 }),
       ),
       async (rates) => {
-        const rows = [
+        const base = [
           candidate('tb:synthetic-a', 700),
           candidate('tb:synthetic-b', 100),
           candidate('jd:synthetic-c', 700, 'jd'),
         ];
-        const h = fixture(
-          rows.map((row, index) => ({
+        // One fixture for every run (its rows array is filled per run): a fresh fixture per run
+        // registers new vi.fn mocks each time and ran the 100k-run property job out of memory.
+        rows.splice(
+          0,
+          rows.length,
+          ...base.map((row, index) => ({
             ...row,
             item: { ...row.item, commission_rate_bp: BigInt(rates[index]!) },
           })),
         );
-        expect(keys(await h.run())).toEqual(['jd:synthetic-c', 'tb:synthetic-a', 'tb:synthetic-b']);
+        vi.clearAllMocks();
+        shared.registered.length = 0;
+        expect(keys(await shared.run())).toEqual([
+          'jd:synthetic-c',
+          'tb:synthetic-a',
+          'tb:synthetic-b',
+        ]);
       },
     ),
     propParams(),
