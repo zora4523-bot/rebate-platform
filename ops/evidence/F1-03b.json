@@ -1,0 +1,138 @@
+{
+  "red_tests": [
+    "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#1] 详情匿名请求一次，显示 h1、帮助标签、北京跨日日期及结构化正文",
+    "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#2] 详情未返回时显示加载态，返回后移除",
+    "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#3] 30701 显示不存在或下线空态，返回帮助首页可继续浏览",
+    "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#4] 其他错误显示出错态，重试只重发指定详情一次",
+    "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#5] 正文 JSON 无法解析时显示出错态，不白屏",
+    "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#6] 复用正文组件的媒体白名单，允许 shared/env 配置域，拒绝其他域",
+    "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#1] 首页 客服入口先检查能力，只调用一次且参数只有固定 entry",
+    "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#2] 详情 客服入口先检查能力，只调用一次且参数只有固定 entry",
+    "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#3] {\"inApp\":true,\"support\":false,\"detail\":false} 无能力或 App 外隐藏客服操作，不调用原生",
+    "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#4] {\"inApp\":true,\"support\":false,\"detail\":true} 无能力或 App 外隐藏客服操作，不调用原生",
+    "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#5] {\"inApp\":false,\"support\":true,\"detail\":false} 无能力或 App 外隐藏客服操作，不调用原生",
+    "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#6] {\"inApp\":false,\"support\":true,\"detail\":true} 无能力或 App 外隐藏客服操作，不调用原生",
+    "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#7] 原生 opened=false 时不重发，不在 H5 额外提示安装微信",
+    "test/spec/frontend/h5-help/help.browser.test.ts > [AC-F1-03b-BROWSER#1] h5-help-home",
+    "test/spec/frontend/h5-help/help.browser.test.ts > [AC-F1-03b-BROWSER#2] h5-help-article",
+    "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#1] 匿名列表只请求一次 category=help，按服务端顺序呈现三个常见问题和客服卡片",
+    "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#2] 换一组后台标题和编号仍全部展示，点击请求该编号而非内置常见问题",
+    "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#3] 仅点击加载更多才使用原样游标追加下一页，末页移除入口",
+    "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#4] 首次请求未完成显示加载态，成功后显示列表并移除加载态",
+    "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#5] 空列表提示暂无内容，仍保留联系客服且不请求详情",
+    "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#6] 请求失败显示出错态，手动重试只再请求一次",
+    "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#7] /help 无可用 useApi 时显示错误或占位，不发请求",
+    "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#8] /help?article_id=z-faq-47 无可用 useApi 时显示错误或占位，不发请求",
+    "test/spec/frontend/h5-help/route.test.ts > [AC-F1-03b-ROUTE#1] Help 懒加载本页，Rules 仍加载规则页且保留全部契约 H5 路由",
+    "test/spec/frontend/h5-help/route.test.ts > [AC-F1-03b-ROUTE#2] 带 article_id 的直接入口只请求指定详情，不先请求列表",
+    "test/spec/frontend/h5-help/route.test.ts > [AC-F1-03b-ROUTE#3] 首页点击条目推入查询串历史，后退回帮助首页，不整页跳转",
+    "test/spec/frontend/h5-help/source.test.ts > [AC-F1-03b-SOURCE#1] 页面只经 useApi 与 react-query 取数，客服使用 SDK，不直接 fetch 或访问原生全局",
+    "test/spec/frontend/h5-help/source.test.ts > [AC-F1-03b-SOURCE#2] 正文实际使用已有 ArticleBody 与 shared/env 媒体域，不引入渲染库",
+    "test/spec/frontend/h5-help/source.test.ts > [AC-F1-03b-SOURCE#3] 中文集中 texts/help.ts，颜色使用令牌，无内置分类或文章对应表"
+  ],
+  "risk_note": "RV1 by path (apps/h5; no money logic). H5 help centre: /help lists help-category articles in server order with load-more (in-flight dedupe), /help?article_id= shows one article through the shared ArticleBody (mediaOrigins()), 30701 shows the offline empty state even over cached data, support opens through bridge cs.open with a fixed entry and is hidden when unavailable; the client comes from useApi(). The six category cards and the category list of the board are not built (the contract has no help sub-category; contract slot requested). Rule tests by Codex in one call (29 tests; router pieces re-exported from pages/help/router.ts because the test workspace has no react-router), Claude spec-test review 1 round pass, red on the test machine (red/1). Implementation by Opus 5.5 in two rounds (round 2: the Codex review S1 on a stale body after 30701). Test machine verify-fast/3 and browser/2 green; help route chunk about 3 KB gzip. Review: Codex (approvals id 27 / 34). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 2,
+      "note": "round 1 fail (S1: an expired cached article stayed on screen when the refetch returned 30701), implementation round 2 fixed it with unit tests; round 2 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent: pass with one S2 (double tap on load-more not tested), carried into the implementation brief and implemented"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  },
+  "task": "F1-03b",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "b6e87691cb0a496f6fb917e0802a2d0720de2fa6",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b6e87691cb0a496f6fb917e0802a2d0720de2fa6",
+      "tree": "81d72bc131b414d252c26fcf46cb4857d8582f87",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T10:34:13Z",
+      "finished_at": "2026-10-18T10:34:22Z",
+      "gate": {
+        "commit": "1047593e0b51ab6ed669bbf45d25926bef0b721a",
+        "clean": true,
+        "script_sha256": "a760318276108244f9664229d4673fceafa5692c68dba5ecdc016a9e4b5cd057"
+      },
+      "red_tests": [
+        "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#1] 详情匿名请求一次，显示 h1、帮助标签、北京跨日日期及结构化正文",
+        "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#2] 详情未返回时显示加载态，返回后移除",
+        "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#3] 30701 显示不存在或下线空态，返回帮助首页可继续浏览",
+        "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#4] 其他错误显示出错态，重试只重发指定详情一次",
+        "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#5] 正文 JSON 无法解析时显示出错态，不白屏",
+        "test/spec/frontend/h5-help/article.test.ts > [AC-F1-03b-ARTICLE#6] 复用正文组件的媒体白名单，允许 shared/env 配置域，拒绝其他域",
+        "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#1] 首页 客服入口先检查能力，只调用一次且参数只有固定 entry",
+        "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#2] 详情 客服入口先检查能力，只调用一次且参数只有固定 entry",
+        "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#3] {\"inApp\":true,\"support\":false,\"detail\":false} 无能力或 App 外隐藏客服操作，不调用原生",
+        "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#4] {\"inApp\":true,\"support\":false,\"detail\":true} 无能力或 App 外隐藏客服操作，不调用原生",
+        "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#5] {\"inApp\":false,\"support\":true,\"detail\":false} 无能力或 App 外隐藏客服操作，不调用原生",
+        "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#6] {\"inApp\":false,\"support\":true,\"detail\":true} 无能力或 App 外隐藏客服操作，不调用原生",
+        "test/spec/frontend/h5-help/cs.test.ts > [AC-F1-03b-CS#7] 原生 opened=false 时不重发，不在 H5 额外提示安装微信",
+        "test/spec/frontend/h5-help/help.browser.test.ts > [AC-F1-03b-BROWSER#1] h5-help-home",
+        "test/spec/frontend/h5-help/help.browser.test.ts > [AC-F1-03b-BROWSER#2] h5-help-article",
+        "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#1] 匿名列表只请求一次 category=help，按服务端顺序呈现三个常见问题和客服卡片",
+        "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#2] 换一组后台标题和编号仍全部展示，点击请求该编号而非内置常见问题",
+        "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#3] 仅点击加载更多才使用原样游标追加下一页，末页移除入口",
+        "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#4] 首次请求未完成显示加载态，成功后显示列表并移除加载态",
+        "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#5] 空列表提示暂无内容，仍保留联系客服且不请求详情",
+        "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#6] 请求失败显示出错态，手动重试只再请求一次",
+        "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#7] /help 无可用 useApi 时显示错误或占位，不发请求",
+        "test/spec/frontend/h5-help/home.test.ts > [AC-F1-03b-HOME#8] /help?article_id=z-faq-47 无可用 useApi 时显示错误或占位，不发请求",
+        "test/spec/frontend/h5-help/route.test.ts > [AC-F1-03b-ROUTE#1] Help 懒加载本页，Rules 仍加载规则页且保留全部契约 H5 路由",
+        "test/spec/frontend/h5-help/route.test.ts > [AC-F1-03b-ROUTE#2] 带 article_id 的直接入口只请求指定详情，不先请求列表",
+        "test/spec/frontend/h5-help/route.test.ts > [AC-F1-03b-ROUTE#3] 首页点击条目推入查询串历史，后退回帮助首页，不整页跳转",
+        "test/spec/frontend/h5-help/source.test.ts > [AC-F1-03b-SOURCE#1] 页面只经 useApi 与 react-query 取数，客服使用 SDK，不直接 fetch 或访问原生全局",
+        "test/spec/frontend/h5-help/source.test.ts > [AC-F1-03b-SOURCE#2] 正文实际使用已有 ArticleBody 与 shared/env 媒体域，不引入渲染库",
+        "test/spec/frontend/h5-help/source.test.ts > [AC-F1-03b-SOURCE#3] 中文集中 texts/help.ts，颜色使用令牌，无内置分类或文章对应表"
+      ],
+      "expected": [
+        "test/spec/frontend/h5-help/article.test.ts",
+        "test/spec/frontend/h5-help/cs.test.ts",
+        "test/spec/frontend/h5-help/help.browser.test.ts",
+        "test/spec/frontend/h5-help/home.test.ts",
+        "test/spec/frontend/h5-help/route.test.ts",
+        "test/spec/frontend/h5-help/source.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "ab73b9640b1c286888532ce1dfebe5a25df15d6977d657a280ced99e6250ab51"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "4a6069ce160ab83fc0d25e468c68807e586ab8bb52282376b4ea0f5ef5877655"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "d24058ae345f75f886060cc705ebc2f119a5854b",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  }
+}
