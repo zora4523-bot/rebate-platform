@@ -1,0 +1,108 @@
+{
+  "task": "B3-04e",
+  "spec_ref": "8c91f67e2dc11ad7f50d279cf8103e0f038e5ac8",
+  "spec_commit": "f48cf8980d18483ed29a1b7f46a32d52032a8f92",
+  "red_tests": [
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#1] 参数表声明可选 spec/page 的类型和上限，仍只要求 q 且禁止额外参数与身份字段",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#2] 省略：每个开启平台都收到同一实际页号",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#2] 显式第一页：每个开启平台都收到同一实际页号",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#2] 第三页：每个开启平台都收到同一实际页号",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#2] 上限第五页：每个开启平台都收到同一实际页号",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#3] 页号随本次参数传递，不跨调用或按平台自行递增，省略时重新用第一页",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#4] spec 不拼入上游 q，注册表原样接收规格词",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#5] 相同候选有无 spec 的出卡集合及顺序相同，标题不符或未知规格仍保留",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#6] 生效条件供编排读取且规格原样保留，模型只获商品摘要：24盒 / 3",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#6] 生效条件供编排读取且规格原样保留，模型只获商品摘要： 500ml × 24盒  / 5",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#7] 空结果仍暴露本次生效条件；后续省略参数不能残留上轮 spec/page",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 空规格 被注册表拒绝且不检索，合法对照可执行",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 51字符规格 被注册表拒绝且不检索，合法对照可执行",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 非字符串规格 被注册表拒绝且不检索，合法对照可执行",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 空值规格 被注册表拒绝且不检索，合法对照可执行",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 第零页 被注册表拒绝且不检索，合法对照可执行",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 第六页 被注册表拒绝且不检索，合法对照可执行",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 小数页号 被注册表拒绝且不检索，合法对照可执行",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 字符串页号 被注册表拒绝且不检索，合法对照可执行",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 空值页号 被注册表拒绝且不检索，合法对照可执行",
+    "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 额外字段 被注册表拒绝且不检索，合法对照可执行"
+  ],
+  "risk_note": "RV1 by its paths (apps/api/src/modules/agent/tools/search/**); rule tests under test/** make the PR RV2. Codex wrote test/spec/agent/tools-search-params/** (container red 21 tests); Claude spec-test review round 1 pass. Opus implemented once; Codex review round 1 pass (one S2 fixed). Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f48cf8980d18483ed29a1b7f46a32d52032a8f92",
+      "tree": "239fbf8925309b1e8002afd0a870345bbe4e1897",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T17:48:05Z",
+      "finished_at": "2026-10-18T17:48:12Z",
+      "red_tests": [
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#1] 参数表声明可选 spec/page 的类型和上限，仍只要求 q 且禁止额外参数与身份字段",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#2] 省略：每个开启平台都收到同一实际页号",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#2] 显式第一页：每个开启平台都收到同一实际页号",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#2] 第三页：每个开启平台都收到同一实际页号",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#2] 上限第五页：每个开启平台都收到同一实际页号",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#3] 页号随本次参数传递，不跨调用或按平台自行递增，省略时重新用第一页",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#4] spec 不拼入上游 q，注册表原样接收规格词",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#5] 相同候选有无 spec 的出卡集合及顺序相同，标题不符或未知规格仍保留",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#6] 生效条件供编排读取且规格原样保留，模型只获商品摘要：24盒 / 3",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#6] 生效条件供编排读取且规格原样保留，模型只获商品摘要： 500ml × 24盒  / 5",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#7] 空结果仍暴露本次生效条件；后续省略参数不能残留上轮 spec/page",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 空规格 被注册表拒绝且不检索，合法对照可执行",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 51字符规格 被注册表拒绝且不检索，合法对照可执行",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 非字符串规格 被注册表拒绝且不检索，合法对照可执行",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 空值规格 被注册表拒绝且不检索，合法对照可执行",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 第零页 被注册表拒绝且不检索，合法对照可执行",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 第六页 被注册表拒绝且不检索，合法对照可执行",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 小数页号 被注册表拒绝且不检索，合法对照可执行",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 字符串页号 被注册表拒绝且不检索，合法对照可执行",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 空值页号 被注册表拒绝且不检索，合法对照可执行",
+        "test/spec/agent/tools-search-params/params.test.ts > [AC-B3-04e#8] 额外字段 被注册表拒绝且不检索，合法对照可执行"
+      ],
+      "expected": ["test/spec/agent/tools-search-params/params.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d4a64636851498709d8a6b3fc1cf094786c5b31c2b3aac8c35193ca1a6f89121"
+        }
+      ],
+      "gate": {
+        "commit": "13ffa7c83952969355b8c6412c3a494a1bfd6f18",
+        "clean": true,
+        "script_sha256": "a760318276108244f9664229d4673fceafa5692c68dba5ecdc016a9e4b5cd057"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "Codex general review round 1 pass, 1 S2 (code-point length) fixed by the orchestrator in a follow-up commit (couli-runs/B3-04e/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass (couli-runs/B3-04e/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "f23baaafe9fbca9e9476bf83ae6ab895a7243cb3",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "c8f1398e315d4466aeeef75f0b5130527969a03d"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
