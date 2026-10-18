@@ -16,4 +16,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/growth/parent-reader/**'
-status: todo
+status: done
+pr: 736
