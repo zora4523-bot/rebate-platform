@@ -29,8 +29,9 @@ it('[AC-F1-02f#1] only status exactly "published" with published_at set and not 
   const unpublished = [
     await seedArticle(h.db, { id: newId(), appId, category: 'help', status: 'draft' }),
     await seedArticle(h.db, { id: newId(), appId, category: 'help', status: 'offline' }),
-    await seedArticle(h.db, { id: newId(), appId, category: 'help', status: 'Published' }),
-    await seedArticle(h.db, { id: newId(), appId, category: 'help', status: 'published ' }),
+    // F1-02x (test-change): 'Published' / 'published ' rows were dropped here once F1-02q added
+    // articles_status_check (draft / published / offline); the database now rejects them, which
+    // the F1-02q migration rule tests assert.
     await seedArticle(h.db, { id: newId(), appId, category: 'help', publishedAt: null }),
     // Scheduled: one millisecond in the future is not yet published.
     await seedArticle(h.db, { id: newId(), appId, category: 'help', publishedAt: at(1) }),
