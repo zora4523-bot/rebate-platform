@@ -48,6 +48,13 @@
 //              (tester: none) and the legacy ledgers (tools/guard/legacy-tasks.json) needs a valid container red run: script red, exit 0 (red-check passed), on the
 //              spec_commit tree, its `expected` list covering every rule-test file the task
 //              added inside its test_paths (base..spec_commit), each with a red test.
+//              Declared red exemptions (CT-06r): when the trusted ledger declares `red_exempt`
+//              entries (unchanged tests of a data-driven rule-test file that may read a changed
+//              test-support file, which red-check lets pass on the skeleton), the evidence's
+//              `spec_test_review` must record the rule-test reviewer's confirmation:
+//              `red_exempt_confirmed: true`, `reviewer` the side that did not write the rule
+//              tests (ledger tester codex → claude, claude → codex), `last_verdict: pass`.
+//              Every expected file still needs a red test; MONEY_PATHS are unchanged.
 //              CI records (`mode: ci`) in the evidence file are refused (CR2-06): nothing a copied
 //              record says can be checked against a run; the CI checks count by themselves.
 //              Owner waiver (owner decision 2026-10-02, ops/approvals.yaml id 12): on a branch
@@ -439,6 +446,11 @@ export type RedRequirement = {
   required: boolean;
   /** Rule-test files the task added inside its test_paths, base..spec_commit. */
   expected: string[];
+  /**
+   * CT-06r: the red exemptions the trusted ledger declares (`red_exempt`) and who wrote the rule
+   * tests; absent or 0 declared: no confirmation required.
+   */
+  declared?: { count: number; tester: TaskFile['tester'] };
 };
 
 /** Validates one evidence document against the PR; returns the problems found. */
@@ -580,6 +592,20 @@ export function evidenceProblems(
         );
       }
     });
+    // CT-06r: declared red exemptions need the rule-test reviewer's confirmation on record.
+    if (red.required && red.declared !== undefined && red.declared.count > 0) {
+      const reviewer = red.declared.tester === 'claude' ? 'codex' : 'claude';
+      const field = 'spec_test_review';
+      const want = `the ledger declares ${red.declared.count} red exemption(s) (red_exempt, CT-06r): the rule-test reviewer (${reviewer}) must confirm them in ${field} (reviewer ${reviewer}, last_verdict pass, red_exempt_confirmed true)`;
+      const review = doc[field];
+      if (!isRecord(review)) {
+        at(field, want);
+      } else {
+        if (review['reviewer'] !== reviewer) at(`${field}.reviewer`, want);
+        if (review['last_verdict'] !== 'pass') at(`${field}.last_verdict`, want);
+        if (review['red_exempt_confirmed'] !== true) at(`${field}.red_exempt_confirmed`, want);
+      }
+    }
     if (red.required && red.expected.length === 0) {
       at(
         'runs',
@@ -894,7 +920,13 @@ export function redRequirement(
     path: c.path,
     status: c.status as Change['status'],
   }));
-  return { required: true, expected: expectedRuleTests(changes, ledger.test_paths) };
+  return {
+    required: true,
+    expected: expectedRuleTests(changes, ledger.test_paths),
+    ...(ledger.red_exempt.length > 0
+      ? { declared: { count: ledger.red_exempt.length, tester: ledger.tester } }
+      : {}),
+  };
 }
 
 export function checkEvidence(input: EvidenceInput): EvidenceReport {

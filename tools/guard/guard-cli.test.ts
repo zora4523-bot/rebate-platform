@@ -40,6 +40,11 @@ const DEPS_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: D1-01')
 const AUTHOR_TASK = LEDGER_TASK.replace('id: B2-02a', 'id: B2-02b')
   .replace('impl: codex', 'impl: claude')
   .replace('tester: claude', 'tester: codex\ntest_paths:\n  - "test/spec/ledger/**"');
+/** CT-06r: the same task with two declared red exemptions in the trusted ledger. */
+const DECLARED_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02e').replace(
+  'test_paths:\n  - "test/spec/ledger/**"',
+  'test_paths:\n  - "test/spec/ledger/**"\nred_exempt:\n  - file: test/spec/ledger/post.test.ts\n    test: "[AC-2] keeps"\n    reason: structural, holds for the old csv too\n  - file: test/spec/ledger/post.test.ts\n    test: "[AC-1] posts"\n    reason: declared although the test changed (must not apply)',
+);
 const OLD_LEDGER_TASK = AUTHOR_TASK.replace('id: B2-02b', 'id: B2-02c').replace(
   'test_paths:\n  - "test/spec/ledger/**"\n',
   '',
@@ -119,6 +124,7 @@ beforeAll(() => {
     'ops/tasks/B2-02a.yaml': LEDGER_TASK,
     'ops/tasks/D1-01.yaml': DEPS_TASK,
     'ops/tasks/B2-02b.yaml': AUTHOR_TASK,
+    'ops/tasks/B2-02e.yaml': DECLARED_TASK,
     'ops/tasks/B2-02c.yaml': OLD_LEDGER_TASK,
     'ops/tasks/N1-01.yaml': NO_TESTER_TASK,
     'ops/tasks/B2-02d.yaml': NEW_NO_TEST_PATHS_TASK,
@@ -486,6 +492,99 @@ describe('path-guard.ts, protected-paths.ts, test-guard.ts, run.ts git', () => {
       'cannot compare with the base no-such-ref',
     );
     expect(guard('red-check.ts', [...args, '--head-tree', tree]).status).toBe(2);
+  });
+
+  it('[CT-06r] red-check: the trusted ledger\'s red_exempt lets a declared, unchanged test of a file that reads a changed data file pass', () => {
+    const t = (title: string, body: string): string => `it('${title}', () => {\n  ${body}\n});\n`;
+    const vitest = "import { expect, it } from 'vitest';\n";
+    const file = 'test/spec/ledger/post.test.ts';
+    const csv = 'test/spec/ledger/expected.csv';
+    const keeps = t('[AC-2] keeps', "expect(readFileSync('./expected.csv', 'utf8')).toMatch(/a,b/);");
+    const { root, base } = makeRepo({
+      [file]: vitest + t('[AC-1] posts', 'expect(1).toBe(1);') + keeps,
+      [csv]: 'a,b\n1,2\n',
+    });
+    // The task changes the assertion of [AC-1] and the data file the test file reads.
+    writeFiles(root, {
+      [file]: vitest + t('[AC-1] posts', 'expect(1).toBe(3);') + keeps,
+      [csv]: 'a,b\n1,2\n3,4\n',
+    });
+    fixtureGit(root, ['commit', '-qam', 'test(spec): change [AC-1] and the csv']);
+    const tree = fixtureGit(root, ['rev-parse', 'HEAD^{tree}']);
+    const list = join(root, '..', `expected-${Date.now()}.txt`);
+    writeFileSync(list, `${file}\n`);
+    const reportFile = join(root, '..', `red-report-declared-${Date.now()}.json`);
+    writeFileSync(
+      reportFile,
+      JSON.stringify({
+        reporter: 'couli-red-reporter',
+        testResults: [
+          {
+            name: `${root}/${file}`,
+            assertionResults: [
+              {
+                fullName: '[AC-1] posts',
+                status: 'failed',
+                failures: [{ causes: [{ name: 'AssertionError', message: 'expected 1 to be 3' }] }],
+              },
+              { fullName: '[AC-2] keeps', status: 'passed', failures: [] },
+            ],
+          },
+        ],
+      }),
+    );
+    const args = (task: string): string[] => [
+      '--task',
+      task,
+      '--report',
+      reportFile,
+      '--expected-list',
+      list,
+      '--root',
+      root,
+      '--json',
+      '--cwd',
+      root,
+      '--base',
+      base,
+      '--head-tree',
+      tree,
+    ];
+    // B2-02b declares nothing: the file reads the changed csv, so every test must be red (CT-06p).
+    const undeclared = guard('red-check.ts', args('B2-02b'));
+    expect(undeclared.status).toBe(1);
+    expect(undeclared.stderr).toContain(
+      '[AC-2] keeps: green on the skeleton: the test has no teeth (the file may read a test-support file the task changed and the ledger does not declare this test exempt)',
+    );
+    // B2-02e declares [AC-2] keeps (unchanged: exempt) and [AC-1] posts (changed: no effect).
+    const res = guard('red-check.ts', args('B2-02e'));
+    expect(res.status, res.stderr).toBe(0);
+    expect(json<{ ok: boolean; red: string[]; exempt: unknown[]; notes: string[] }>(res.stdout)).toMatchObject({
+      ok: true,
+      red: [`${file} > [AC-1] posts`],
+      exempt: [
+        {
+          file,
+          test: '[AC-2] keeps',
+          status: 'passed',
+          declared: true,
+          reason: 'structural, holds for the old csv too',
+        },
+      ],
+    });
+    expect(res.stderr).toContain(
+      "[AC-2] keeps: unchanged since the base, exempt by the task's declaration (green; reason: structural, holds for the old csv too); needs the rule-test reviewer's confirmation",
+    );
+    expect(res.stderr).toContain(
+      '[AC-1] posts: declared exempt, but the declaration does not apply: the test is new or changed since the base',
+    );
+    expect(res.stderr).toContain(
+      "1 unchanged test(s) of files that existed at the base exempt (1 by the ledger's red_exempt declarations: the rule-test reviewer must confirm them)",
+    );
+    // Without the base the declarations do not apply: every test must be red, as before.
+    const old = guard('red-check.ts', args('B2-02e').slice(0, 9));
+    expect(old.status).toBe(1);
+    expect(old.stderr).toContain('[AC-2] keeps: green on the skeleton: the test has no teeth');
   });
 
   it('rejects wrong usage with exit 2', () => {

@@ -82,9 +82,28 @@
 // reporter get exemptions. A file that existed at the base and has no new or changed test at all
 // fails (nothing would be shown red; evidence-check wants a red test of every expected file). New
 // files, the expected list (what the red run runs) and every other rule are unchanged.
+//
+// Declared exemptions (CT-06r; orchestrator ruling of 2026-10-18 21:5x after B2-01l): a file that
+// existed at the base, whose code outside the tests is unchanged and whose tests compare cleanly,
+// but which is judged as a whole only because it may read a test-support file the task changed
+// (a fixture, helper or data file inside test_paths: `kind: 'support'`), holds its unchanged
+// tests to the red rule unless the task's trusted ledger declares them exempt one by one
+// (`red_exempt`: file, the test's full name, a reason of at least 10 characters;
+// tools/lib/task-file.ts). A structural test of a data-driven file (the format of a CSV, debits
+// paired with credits) holds for the old data as well and cannot be shown red for a valid
+// reason; forcing it red would be a fake. A declared test may pass on the skeleton (red still
+// needs a valid reason); every other test of the file must be red, as before. A declaration does
+// not apply to a new or changed test (it must be red), to a file judged as a whole for any other
+// reason (code outside the tests changed, unreadable, JSX, not the red reporter), or when the
+// comparison could not be made; what it does not cover stays as CT-06p. The declared tests are
+// listed in `exempt` (with `declared` and the reason) and in `notes`, which say that the
+// rule-test reviewer must confirm them: tools/ci/evidence-check.ts requires
+// `spec_test_review.red_exempt_confirmed` when the ledger declares any. A file whose every test is
+// declared fails (nothing would be shown red).
 import { matchesAny } from '../../lib/glob.ts';
 import type { Change } from '../../lib/git.ts';
-import type { TaskFile } from '../../lib/task-file.ts';
+import { RED_EXEMPT_REASON_MIN } from '../../lib/task-file.ts';
+import type { RedExemptDeclaration, TaskFile } from '../../lib/task-file.ts';
 import {
   type ComparedBlock,
   compareTestFile,
@@ -140,8 +159,18 @@ type FileResult = {
 };
 
 export type RedProblem = { file: string; test: string | null; reason: string };
-/** A test of a file that existed at the base, unchanged since: not held to the red rule. */
-export type RedExempt = { file: string; test: string; status: 'passed' | 'failed' };
+/**
+ * A test of a file that existed at the base, unchanged since: not held to the red rule. With
+ * `declared` (CT-06r) the exemption comes from the task's ledger (`red_exempt`) and needs the
+ * rule-test reviewer's confirmation; `reason` is the declared reason.
+ */
+export type RedExempt = {
+  file: string;
+  test: string;
+  status: 'passed' | 'failed';
+  declared?: true;
+  reason?: string;
+};
 export type RedResult = {
   ok: boolean;
   red: string[];
@@ -160,7 +189,12 @@ export type RuleTestBaseline =
   /** Every test must be red, as for a new file (the reason goes into the notes). */
   | { kind: 'whole'; reason: string }
   /** Only the tests of changed blocks must be red. */
-  | { kind: 'tests'; blocks: ComparedBlock[] };
+  | { kind: 'tests'; blocks: ComparedBlock[] }
+  /**
+   * Every test must be red unless the ledger declares it exempt and its block is unchanged
+   * (CT-06r): the file may read a test-support file the task changed, the reason says which.
+   */
+  | { kind: 'support'; reason: string; blocks: ComparedBlock[] };
 
 export type BaselineReader = {
   /** Content of a file at the base, null when it does not exist there. */
@@ -224,7 +258,11 @@ export function ruleTestBaselines(
       file,
       why === null
         ? { kind: 'tests', blocks: compared.blocks }
-        : { kind: 'whole', reason: `it may read a test-support file the task changed: ${why}` },
+        : {
+            kind: 'support',
+            reason: `it may read a test-support file the task changed: ${why}`,
+            blocks: compared.blocks,
+          },
     );
   }
   return out;
@@ -636,22 +674,44 @@ function testVerdict(
   return wrongRedReason(messages.join('\n'));
 }
 
+/** Why a declared exemption (CT-06r) does not apply, or null when it does. */
+function declarationVerdict(
+  declaration: RedExemptDeclaration,
+  fullName: string,
+  blocks: readonly ComparedBlock[],
+): string | null {
+  if (!unchangedTest(fullName, blocks)) {
+    return 'the test is new or changed since the base (only an unchanged test may be declared exempt)';
+  }
+  if (declaration.reason.trim().length < RED_EXEMPT_REASON_MIN) {
+    return `the reason is shorter than ${RED_EXEMPT_REASON_MIN} characters`;
+  }
+  return null;
+}
+
 /**
  * Checks Vitest JSON reports against the expected rule-test files (repository-relative). `root`
  * is stripped from the absolute file names Vitest reports. `baselines` (CT-06p) say how the
  * expected files that existed at the base are judged (see the header); without them every test
- * of every expected file must be red.
+ * of every expected file must be red. `declared` (CT-06r) are the task's declared exemptions
+ * (the trusted ledger's `red_exempt`); they apply only with baselines, to a file of kind
+ * `support`, and to a test whose block is unchanged.
  */
 export function checkRedReports(
   reports: readonly unknown[],
   expected: readonly string[],
   root: string,
   baselines?: ReadonlyMap<string, RuleTestBaseline>,
+  declared: readonly RedExemptDeclaration[] = [],
 ): RedResult {
   const problems: RedProblem[] = [];
   const red: string[] = [];
   const notes: string[] = [];
   const exempt: RedExempt[] = [];
+  const confirmation =
+    'needs the rule-test reviewer\'s confirmation (evidence spec_test_review.red_exempt_confirmed)';
+  // Declarations that named an expected file (the others are said in the notes at the end).
+  const declaredSeen = new Set<RedExemptDeclaration>();
   const prefix = root.endsWith('/') ? root : `${root}/`;
   const seen = new Map<string, FileResult>();
   // Files reported by the trusted red reporter: only their full names are `describe > … > test`.
@@ -732,40 +792,94 @@ export function checkRedReports(
       continue;
     }
     // CT-06p: a file that existed at the base needs only its new and changed tests red.
+    // CT-06r: a file of kind `support` needs every test red except the declared, unchanged ones.
     const baseline = baselines?.get(file);
+    const declaredHere = baselines === undefined ? [] : declared.filter((d) => d.file === file);
+    for (const d of declaredHere) declaredSeen.add(d);
     let blocks: ComparedBlock[] | null = null;
+    let declarable: ComparedBlock[] | null = null;
+    const wholeDespite = (why: string): void => {
+      if (declaredHere.length > 0) {
+        notes.push(
+          `${file}: ${declaredHere.length} declared exemption(s) do not apply: ${why} (a declaration applies only to a file judged as a whole because it may read a changed test-support file)`,
+        );
+      }
+    };
     if (baseline?.kind === 'whole') {
       notes.push(
         `${file}: existed at the base, judged as a whole (every test must be red): ${baseline.reason}`,
       );
-    } else if (baseline?.kind === 'tests' && !byRedReporter.has(entry)) {
+      wholeDespite(baseline.reason);
+    } else if (
+      (baseline?.kind === 'tests' || baseline?.kind === 'support') &&
+      !byRedReporter.has(entry)
+    ) {
       notes.push(
         `${file}: existed at the base, judged as a whole (every test must be red): the report is not from the red reporter`,
       );
+      wholeDespite('the report is not from the red reporter');
     } else if (baseline?.kind === 'tests') {
       blocks = baseline.blocks;
+      if (declaredHere.length > 0) {
+        notes.push(
+          `${file}: ${declaredHere.length} declared exemption(s) are not needed: the file is judged test by test (its unchanged tests are exempt by themselves)`,
+        );
+      }
+    } else if (baseline?.kind === 'support') {
+      declarable = baseline.blocks;
+      notes.push(
+        `${file}: existed at the base, judged as a whole except the tests the ledger declares exempt (every other test must be red): ${baseline.reason}`,
+      );
+    } else if (declaredHere.length > 0) {
+      wholeDespite('the file is new, renamed or could not be compared with the base');
     }
     let required = 0;
+    const matched = new Set<RedExemptDeclaration>();
     for (const t of tests) {
-      const name = text(t.fullName) || text(t.title);
+      const fullName = text(t.fullName);
+      const name = fullName || text(t.title);
       const status = text(t.status);
-      const unchanged = blocks !== null && unchangedTest(text(t.fullName), blocks);
+      let unchanged = blocks !== null && unchangedTest(fullName, blocks);
+      let declaration: RedExemptDeclaration | null = null;
+      if (declarable !== null && fullName !== '') {
+        const d = declaredHere.find((x) => x.test === fullName);
+        if (d !== undefined) {
+          matched.add(d);
+          const why = declarationVerdict(d, fullName, declarable);
+          if (why === null) {
+            declaration = d;
+            unchanged = true;
+          } else {
+            notes.push(
+              `${file} > ${name}: declared exempt, but the declaration does not apply: ${why}; the test must be red`,
+            );
+          }
+        }
+      }
       if (!unchanged) required += 1;
+      const exemptEntry = (status: 'passed' | 'failed'): RedExempt =>
+        declaration === null
+          ? { file, test: name, status }
+          : { file, test: name, status, declared: true, reason: declaration.reason };
+      const exemptNote = (how: string): string =>
+        declaration === null
+          ? `${file} > ${name}: unchanged since the base, exempt from the red rule (${how})`
+          : `${file} > ${name}: unchanged since the base, exempt by the task's declaration (${how}; reason: ${declaration.reason}); ${confirmation}`;
       if (status === 'passed') {
         if (unchanged) {
-          exempt.push({ file, test: name, status: 'passed' });
-          notes.push(
-            `${file} > ${name}: unchanged since the base, exempt from the red rule (green)`,
-          );
+          exempt.push(exemptEntry('passed'));
+          notes.push(exemptNote('green'));
           continue;
         }
         problems.push({
           file,
           test: name,
           reason:
-            blocks === null
-              ? 'green on the skeleton: the test has no teeth'
-              : 'green on the skeleton: the test has no teeth (new or changed since the base)',
+            blocks !== null
+              ? 'green on the skeleton: the test has no teeth (new or changed since the base)'
+              : declarable !== null
+                ? 'green on the skeleton: the test has no teeth (the file may read a test-support file the task changed and the ledger does not declare this test exempt)'
+                : 'green on the skeleton: the test has no teeth',
         });
         continue;
       }
@@ -804,13 +918,18 @@ export function checkRedReports(
       if (why === null) {
         red.push(`${file} > ${name}`);
         if (unchanged) {
-          exempt.push({ file, test: name, status: 'failed' });
-          notes.push(
-            `${file} > ${name}: unchanged since the base, exempt from the red rule (red for a valid reason)`,
-          );
+          exempt.push(exemptEntry('failed'));
+          notes.push(exemptNote('red for a valid reason'));
         }
       } else {
         problems.push({ file, test: name, reason: why });
+      }
+    }
+    for (const d of declaredHere) {
+      if (declarable !== null && !matched.has(d)) {
+        notes.push(
+          `${file}: the declared exemption of "${d.test}" matches no test of the report (the full name must be exactly the red reporter's)`,
+        );
       }
     }
     if (blocks !== null && required === 0) {
@@ -819,6 +938,22 @@ export function checkRedReports(
         test: null,
         reason: `existed at the base and has no new or changed test: nothing is shown red (${tests.length} unchanged test(s))`,
       });
+    }
+    if (declarable !== null && required === 0) {
+      problems.push({
+        file,
+        test: null,
+        reason: `existed at the base and every test is declared exempt: nothing is shown red (${tests.length} test(s); evidence-check wants a red test of every expected file)`,
+      });
+    }
+  }
+  if (baselines !== undefined) {
+    for (const d of declared) {
+      if (!declaredSeen.has(d)) {
+        notes.push(
+          `declared exemption of ${d.file} > ${d.test}: ${d.file} is not an expected rule-test file (ignored)`,
+        );
+      }
     }
   }
   return {

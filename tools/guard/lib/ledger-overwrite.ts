@@ -9,7 +9,7 @@
 // - `status: done` may not go back to anything else;
 // - the file may not be deleted or renamed (ops/tasks never lost a file; fail-closed).
 // Everything else is free: status forward, `pr`, `paths`, `test_paths`, `refs`, `refs_hash`,
-// `deps`, `accept`, `mechanical_paths`, and the comment lines. A side that cannot be parsed
+// `deps`, `accept`, `mechanical_paths`, `red_exempt` (CT-06r), and the comment lines. A side that cannot be parsed
 // fails (the comparison cannot be made; task.ts check keeps the base parseable).
 // No owner label waives these problems: guard-git lists them next to the path guard.
 import type { Change } from '../../lib/git.ts';
