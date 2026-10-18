@@ -1,0 +1,22 @@
+id: B1-10c
+repo: rebate-platform
+title: 找回证据：每子项按 W_backfill 取申请人成功的 convert / open 外跳日志，算 strong / weak / none（无返利记录只在授权类原因且此后已授权、无未解决冲突时计入），claim 按最弱子项经 transition() 到 auto_matched / manual_review，记命中日志引用；与受理同事务（J-5）
+type: impl
+# 草稿 2026-10-18（W1 线，订单线第二段第二波）。拆分方案 couli-runs/W1-search-linking/orders-plan-b110-b109.md（待编排裁定 J-1～J-22 按默认做法，见 notices 03:10 UTC 登记），依据按 SPEC_REF 逐字摘录进任务书。
+# 分工：订单归属 / 找回属 approvals 30 留 Claude 的范围 → impl claude、tester codex（D10-15）。用户侧、不涉资金；不碰同步流水线（pipeline-port / update-step），与 B1-08i～k 不冲突。
+# linking 只读端口（link_logs 按用户 × 平台 × 时间窗、绑定 / 备案 / 未解决 30151 冲突，J-19）在 linking/index.ts 新增；orders 不直接读 linking 的表。命中引用写 claim_items.evidence_link_log_ids（J-4）。
+refs: []
+refs_hash: {}
+deps: [B1-10b]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/modules/linking/**'
+test_paths:
+  - 'test/spec/orders/claims-evidence/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/claims-evidence/**'
+status: todo
+pr: null
