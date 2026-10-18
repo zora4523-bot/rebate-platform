@@ -130,15 +130,19 @@ it('[AC-B1-12e#1] templates have exactly the agreed columns; inbox_messages keep
     type,
     nullable,
   ]);
+  // B1-12f：新增变体与覆盖列
   expect(shape).toEqual([
     ['app_id', 'text', false],
+    ['body_override', 'text', true],
     ['category', 'text', false],
     ['channels', '_text', false],
     ['code', 'text', false],
     ['created_at', 'timestamptz', false],
     ['route', 'jsonb', true],
     ['row_version', 'int4', false],
+    ['title_override', 'text', true],
     ['updated_at', 'timestamptz', false],
+    ['variant', 'text', false],
   ]);
   expect((await columns('inbox_messages')).map((row) => row.name)).toEqual([
     'app_id',
@@ -230,7 +234,8 @@ it('[AC-B1-12e#3] defaults are version zero, queued and transaction timestamps; 
 
 it('[AC-B1-12e#4] template primary key is (app_id, code), allowing the same code in another app', async () => {
   await requireTable('notify_templates');
-  expect(await primaryKey('notify_templates')).toEqual(['app_id', 'code']);
+  // B1-12f：新增变体与覆盖列
+  expect(await primaryKey('notify_templates')).toEqual(['app_id', 'code', 'variant']);
   const row = template();
   await insert('notify_templates', row);
   expect(await sqlState(insert('notify_templates', row))).toBe('23505');

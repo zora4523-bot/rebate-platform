@@ -739,13 +739,16 @@ export interface NotifyLogs {
 
 export interface NotifyTemplates {
   app_id: string;
+  body_override: string | null;
   category: string;
   channels: string[];
   code: string;
   created_at: Generated<Timestamp>;
   route: Json | null;
   row_version: Generated<number>;
+  title_override: string | null;
   updated_at: Generated<Timestamp>;
+  variant: Generated<string>;
 }
 
 export interface OrderKeys {
