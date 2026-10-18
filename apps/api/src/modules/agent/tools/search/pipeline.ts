@@ -6,7 +6,7 @@
 // keyword / category blocklist).
 import type { SearchProductsQuery } from '../../../catalog/index.ts';
 import type { ToolCallContext } from '../registry/index.ts';
-import type { AgentSearchCandidate, SearchProductsDeps } from './index.ts';
+import type { AgentSearchCandidate, SearchProductsDeps } from './types.ts';
 import {
   maskLoginToView,
   normalizeCard,

@@ -1,54 +1,19 @@
 // B3-04b · search_products (BR-AI-08 / BR-AI-09 / BR-AI-11, with BR-AI-04 / BR-AI-05 /
 // BR-AI-18 / BR-PROD-10) and the keyword fallback search of the degraded path. The pipeline is in
 // pipeline.ts, the Agent card contract in card.ts, the model-facing schema in schema.ts.
-import type {
-  CatalogCardEntry,
-  CatalogConfigReader,
-  SearchCandidate,
-  SearchProductsQuery,
-} from '../../../catalog/index.ts';
-import type { Clock } from '../../../platform/index.ts';
 import { wrapUntrusted } from '../../guard/index.ts';
 import type { OrchestratorTools, ToolContext, ToolOutcome } from '../../orchestrator/index.ts';
 import type { PlatformSearchResult } from '../../model-gateway/degraded/index.ts';
 import type { UnnumberedCard } from '../../stream/run/index.ts';
 import type { ToolCallContext, ToolHandler } from '../registry/index.ts';
 import type { AgentProductCard } from './card.ts';
+import type { SearchProductsDeps } from './types.ts';
 import { runSearch, enabledPlatforms, type Platform, type SearchRequest } from './pipeline.ts';
 import { defaultPageSize, searchProductsDefinition, type SearchSort } from './schema.ts';
 
 export type { AgentProductCard } from './card.ts';
 
-/** Normalized candidates in upstream rank order; no platform wire payloads here. */
-export interface AgentSearchCandidate extends SearchCandidate {
-  readonly categoryId: string;
-  readonly sales: number | null;
-}
-
-export interface SearchProductsDeps {
-  readonly clock: Clock;
-  readonly config: CatalogConfigReader;
-  readonly platforms: readonly SearchProductsQuery['platform'][];
-  /**
-   * Retrieval seam: catalog's query and candidate types, before card/link delivery.
-   * The HTTP searchProducts return type already contains registered links and cannot be
-   * used as this port's result. Wiring must preserve upstream rank and defer registration.
-   */
-  readonly searchProducts: (
-    query: SearchProductsQuery,
-    ctx: ToolCallContext,
-  ) => Promise<readonly AgentSearchCandidate[]>;
-  readonly cardEntry: (ctx: ToolCallContext) => CatalogCardEntry;
-  readonly prohibited: (appId: string, q: string) => Promise<boolean>;
-  readonly categoryAllowed: (appId: string, candidate: AgentSearchCandidate) => Promise<boolean>;
-  readonly newResultSetId: () => string;
-  /** References supplied by the run's numbering owner, including the list container offset.
-   * Never number the outgoing UnnumberedCard here. index is the delivered item index.
-   */
-  readonly cardReference: (ctx: ToolCallContext, index: number) => string;
-  /** Dictionary text for a card's fallback_text (BR-TEXT-12); the text key when not wired. */
-  readonly texts?: (appId: string, key: string) => Promise<string>;
-}
+export type { AgentSearchCandidate, SearchProductsDeps } from './types.ts';
 
 /** Tool result for an inverted price range; the registry's rejected form only carries
  * invalid_args, so this is an ok outcome with no card that B3-05g keys on. */
