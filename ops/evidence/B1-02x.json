@@ -1,0 +1,93 @@
+{
+  "task": "B1-02x",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "946cb67cf2cd640b8eb9760373938a44bee5a951",
+  "red_tests": [
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#1][BR-AI-12] phone_hmac 非空的用户已绑手机",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#2][BR-AI-12] phone_hmac 为 null 时未绑手机，即使有 phone_cipher",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#3][BR-AI-12] 同 uid 跨 app 不可见，交错读取不串应用",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#4][BR-AI-12] 同 app 有已绑用户，但指定 uid 不存在仍返回 false",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#5][BR-AI-12] 同一 reader 即时反映绑定、换绑、解绑和重新绑定",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#6][BR-AI-12] 游客设备无用户或注册记录也返回存储的 device_hash",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#7][BR-AI-12] 同 app 存在其他设备，指定设备不存在返回 null",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#8][BR-AI-12] 设备 ID 跨 app 不可见，交错读取不串应用",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#9][BR-AI-12] revoked_at 非空返回 null，即使同 hash 有有效设备",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#10][BR-AI-12] 不同设备不串，同 hash 不同设备 ID 返回相同索引",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#11][BR-AI-12] 读取后撤销设备，后续读取不返回旧 hash",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#12][BR-AI-12] 所有读取分支不写表，相关表行数及完整内容不变",
+    "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#13][BR-AI-12] 日志替身不接收手机号、手机号密文或原始设备 ID"
+  ],
+  "risk_note": "RV2 by apps/api/src/modules/identity/** and rule tests under test/**. Codex wrote test/spec/identity/agent-caller/** (real PG, container red 13 tests); Claude spec-test review round 1 pass; the orchestrator removed one comment line naming TEST_PG_ADMIN_URL (test-guard text rule; no assertion change). Opus implemented once; Codex money-checklist review round 1 pass; full pnpm verify passed on the AWS test machine. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "946cb67cf2cd640b8eb9760373938a44bee5a951",
+      "tree": "1a0b3278bec5b1a78c9d50e9f8b82f94a37982da",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T02:44:55Z",
+      "finished_at": "2026-10-18T02:45:04Z",
+      "red_tests": [
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#1][BR-AI-12] phone_hmac 非空的用户已绑手机",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#2][BR-AI-12] phone_hmac 为 null 时未绑手机，即使有 phone_cipher",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#3][BR-AI-12] 同 uid 跨 app 不可见，交错读取不串应用",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#4][BR-AI-12] 同 app 有已绑用户，但指定 uid 不存在仍返回 false",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#5][BR-AI-12] 同一 reader 即时反映绑定、换绑、解绑和重新绑定",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#6][BR-AI-12] 游客设备无用户或注册记录也返回存储的 device_hash",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#7][BR-AI-12] 同 app 存在其他设备，指定设备不存在返回 null",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#8][BR-AI-12] 设备 ID 跨 app 不可见，交错读取不串应用",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#9][BR-AI-12] revoked_at 非空返回 null，即使同 hash 有有效设备",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#10][BR-AI-12] 不同设备不串，同 hash 不同设备 ID 返回相同索引",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#11][BR-AI-12] 读取后撤销设备，后续读取不返回旧 hash",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#12][BR-AI-12] 所有读取分支不写表，相关表行数及完整内容不变",
+        "test/spec/identity/agent-caller/reader.int.test.ts > [AC-B1-02x#13][BR-AI-12] 日志替身不接收手机号、手机号密文或原始设备 ID"
+      ],
+      "expected": ["test/spec/identity/agent-caller/reader.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "e032b6925f3623d1cca7f8d6de9c68d9587d386829b53030aa06cf765add0a28"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "f747d9dd13324e6e6e3475311848560edf0b82f2",
+        "clean": true,
+        "script_sha256": "b6af2c27ebee42961c8244e0335ef8f33f62081122197d7a6fa5fad28d6664f7"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "round 1 pass (couli-runs/B1-02x/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass (couli-runs/B1-02x/review-claude-spec-test.json); orchestrator comment-only fix for test-guard"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "4b30f96774a35fda101d86970d5db9570efa03ed",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "90c62738849300167dcbcb993cced80f559dde42"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
