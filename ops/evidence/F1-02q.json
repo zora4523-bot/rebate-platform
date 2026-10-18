@@ -1,0 +1,109 @@
+{
+  "task": "F1-02q",
+  "spec_ref": "8c91f67e2dc11ad7f50d279cf8103e0f038e5ac8",
+  "spec_commit": "d411d4d90cea7261956b1e4d9d29eff56a70dbb6",
+  "red_tests": [
+    "test/spec/db/content/dict-items/access.int.test.ts > [AC-F1-02q#11] effective table and column privileges allow only app SELECT/INSERT and readonly SELECT",
+    "test/spec/db/content/dict-items/access.int.test.ts > [AC-F1-02q#12] PUBLIC receives no dict_items table or column grants",
+    "test/spec/db/content/dict-items/access.int.test.ts > [AC-F1-02q#13] app inserts and both app and readonly read the complete version row",
+    "test/spec/db/content/dict-items/access.int.test.ts > [AC-F1-02q#14] app and readonly cannot update any column, delete or truncate dictionary versions",
+    "test/spec/db/content/dict-items/access.int.test.ts > [AC-F1-02q#15] readonly cannot insert; payout and maint can neither insert nor select",
+    "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#16] validated articles_status_check accepts exactly draft, published and offline",
+    "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#17] article UPDATE has no table grant and permits exactly the five mutable columns",
+    "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#18] app can change each allowed article column and the values persist",
+    "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#19] app cannot update article content, identity or creation time and cannot delete",
+    "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#20] article CHECK also rejects invalid status UPDATE without changing the stored row",
+    "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#21] readonly retains SELECT and cannot insert, update any column, delete or truncate articles",
+    "test/spec/db/content/dict-items/constraints.int.test.ts > [AC-F1-02q#6] version rejects zero and negatives and accepts positive int32 boundaries",
+    "test/spec/db/content/dict-items/constraints.int.test.ts > [AC-F1-02q#7] uniqueness includes app_id, dict, code and version independently",
+    "test/spec/db/content/dict-items/constraints.int.test.ts > [AC-F1-02q#8] dict uses lowercase snake keys while code permits empty and dotted keys",
+    "test/spec/db/content/dict-items/constraints.int.test.ts > [AC-F1-02q#9] created_by requires an existing administrator",
+    "test/spec/db/content/dict-items/constraints.int.test.ts > [AC-F1-02q#10] all required columns reject NULL; text supports explicit and omitted fallback",
+    "test/spec/db/content/dict-items/schema.int.test.ts > [AC-F1-02q#1] dict_items has exactly the specified column types, nullability and defaults",
+    "test/spec/db/content/dict-items/schema.int.test.ts > [AC-F1-02q#2] created_at defaults to transaction time and nullable text preserves fallback",
+    "test/spec/db/content/dict-items/schema.int.test.ts > [AC-F1-02q#3] the named four-column primary key and both checks are validated",
+    "test/spec/db/content/dict-items/schema.int.test.ts > [AC-F1-02q#4] creator references admin_users.id without cascading",
+    "test/spec/db/content/dict-items/schema.int.test.ts > [AC-F1-02q#5] dict_items is an ordinary table with only its primary index and no user triggers"
+  ],
+  "risk_note": "RV2 (migration 0046, no writer yet). New insert-only app.dict_items (app_id, dict, code, version, text, created_by, created_at; four-column primary key, version >= 1, lowercase dict name check, created_by foreign key without cascade; couli_app SELECT / INSERT, couli_readonly SELECT). articles_status_check limits app.articles.status to draft / published / offline (added validated in one statement with a stated squawk-ignore, as 0044). couli_app's table-level UPDATE on app.articles is revoked and re-granted on status, published_at, notice_end_at, row_version and updated_at only; no code updates articles today. Conflicting frozen tests were changed by test-change F1-02x (#769) and F1-02y (#774). db/schema.sql and db.gen.ts regenerated on the test machine. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d411d4d90cea7261956b1e4d9d29eff56a70dbb6",
+      "tree": "a0be0a3a4303c89fe00b89500bb205e9065de0c5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T16:07:09Z",
+      "finished_at": "2026-10-18T16:07:18Z",
+      "red_tests": [
+        "test/spec/db/content/dict-items/access.int.test.ts > [AC-F1-02q#11] effective table and column privileges allow only app SELECT/INSERT and readonly SELECT",
+        "test/spec/db/content/dict-items/access.int.test.ts > [AC-F1-02q#12] PUBLIC receives no dict_items table or column grants",
+        "test/spec/db/content/dict-items/access.int.test.ts > [AC-F1-02q#13] app inserts and both app and readonly read the complete version row",
+        "test/spec/db/content/dict-items/access.int.test.ts > [AC-F1-02q#14] app and readonly cannot update any column, delete or truncate dictionary versions",
+        "test/spec/db/content/dict-items/access.int.test.ts > [AC-F1-02q#15] readonly cannot insert; payout and maint can neither insert nor select",
+        "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#16] validated articles_status_check accepts exactly draft, published and offline",
+        "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#17] article UPDATE has no table grant and permits exactly the five mutable columns",
+        "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#18] app can change each allowed article column and the values persist",
+        "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#19] app cannot update article content, identity or creation time and cannot delete",
+        "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#20] article CHECK also rejects invalid status UPDATE without changing the stored row",
+        "test/spec/db/content/dict-items/articles.int.test.ts > [AC-F1-02q#21] readonly retains SELECT and cannot insert, update any column, delete or truncate articles",
+        "test/spec/db/content/dict-items/constraints.int.test.ts > [AC-F1-02q#6] version rejects zero and negatives and accepts positive int32 boundaries",
+        "test/spec/db/content/dict-items/constraints.int.test.ts > [AC-F1-02q#7] uniqueness includes app_id, dict, code and version independently",
+        "test/spec/db/content/dict-items/constraints.int.test.ts > [AC-F1-02q#8] dict uses lowercase snake keys while code permits empty and dotted keys",
+        "test/spec/db/content/dict-items/constraints.int.test.ts > [AC-F1-02q#9] created_by requires an existing administrator",
+        "test/spec/db/content/dict-items/constraints.int.test.ts > [AC-F1-02q#10] all required columns reject NULL; text supports explicit and omitted fallback",
+        "test/spec/db/content/dict-items/schema.int.test.ts > [AC-F1-02q#1] dict_items has exactly the specified column types, nullability and defaults",
+        "test/spec/db/content/dict-items/schema.int.test.ts > [AC-F1-02q#2] created_at defaults to transaction time and nullable text preserves fallback",
+        "test/spec/db/content/dict-items/schema.int.test.ts > [AC-F1-02q#3] the named four-column primary key and both checks are validated",
+        "test/spec/db/content/dict-items/schema.int.test.ts > [AC-F1-02q#4] creator references admin_users.id without cascading",
+        "test/spec/db/content/dict-items/schema.int.test.ts > [AC-F1-02q#5] dict_items is an ordinary table with only its primary index and no user triggers"
+      ],
+      "expected": [
+        "test/spec/db/content/dict-items/access.int.test.ts",
+        "test/spec/db/content/dict-items/articles.int.test.ts",
+        "test/spec/db/content/dict-items/constraints.int.test.ts",
+        "test/spec/db/content/dict-items/schema.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b4d71f4ed882ef7a95813664ce234519e96bfa0ae718b3aaf31f6cb2b258d07f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass (one S2, the status check must allow exactly three values, followed)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "7e9869fd799f7658f53962003271cce07d9d482e",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
