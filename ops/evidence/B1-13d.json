@@ -1,0 +1,143 @@
+{
+  "task": "B1-13d",
+  "spec_ref": "8c91f67e2dc11ad7f50d279cf8103e0f038e5ac8",
+  "spec_commit": "8a8a5b3e281e0ec401cd65d3fac2eb785ee32145",
+  "red_tests": [
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#1] 提交操作去掉 planned 并通过真实 AppModule 注册",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#2] 未绑手机先于单独同意、格式、年龄且不计次",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#3] user 级当前实名同意缺失（missing）先于格式，不接受其他同意",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#3] user 级当前实名同意缺失（device）先于格式，不接受其他同意",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#3] user 级当前实名同意缺失（other-type）先于格式，不接受其他同意",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#3] user 级当前实名同意缺失（withdrawn）先于格式，不接受其他同意",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#3] user 级当前实名同意缺失（other-user）先于格式，不接受其他同意",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#4] 身份证格式或校验位失败 \"\"：20001 fields，不计次不存敏感字段",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#4] 身份证格式或校验位失败 \"110105491231002\"：20001 fields，不计次不存敏感字段",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#4] 身份证格式或校验位失败 \"110105194912310020\"：20001 fields，不计次不存敏感字段",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#4] 身份证格式或校验位失败 \"110105199902300023\"：20001 fields，不计次不存敏感字段",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#5] 出生 2012-09-29 满 14 岁须生日次日 +08:00；闰日非闰年按 3 月 2 日",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#5] 出生 2012-02-29 满 14 岁须生日次日 +08:00；闰日非闰年按 3 月 2 日",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#25] 校验位错误且未满 14 岁时先回 20001，不计次不调供应商",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#6] 次数已满仍先校验格式、年龄，再拒绝占用证件且不暴露对方",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#7] 不一致计次并持久化 failed；同一用户下一次可成功且 Me 实时接表",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#8] 成功二要素调用、规范化号码与加密落库、Clock 时间、响应不含原文",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#9] 供应商 timeout 回 50401/50301，预占回退，不写失败密文且不泄露异常内容",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#9] 供应商 unavailable 回 50401/50301，预占回退，不写失败密文且不泄露异常内容",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#9] 供应商 throw 回 50401/50301，预占回退，不写失败密文且不泄露异常内容",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#10] 计次按用户独立，+08:00 自然日零点重置而非 UTC 或滚动 24 小时",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#11] 六个并发请求只允许三次供应商调用，预占防止超额",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#12] 不一致的幂等重放不重复调用或计次；新键第三次后封顶",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#13] verified 重提直接返回已存脱敏姓名，忽略新证件且不改行不计次",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#14] verified 仍先检查手机和最新同意",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#15] 成功前其他账号抢先实名，真实 PG 部分唯一冲突回 30405 并计一次",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#16] 不同 app 的已实名号码不占用本 app，失败行不占用证件",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#17] Redis 不可用封闭失败 50001，不调用供应商也不存密文",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#18] 公共只读出口使用调用方事务，隔离 app、不缓存、不改库",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#19] AppModule 给守卫⑨装配真实读取，verified 放行且 failed 再次拒绝",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#22] 未装配供应商时真实路由返回 50301，重复请求不产生实名行",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#23] 已有两次明确失败后供应商超时，只退本次预占，不能清空历史次数",
+    "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#24] 已占用号码的小写 x 与空白规范化后仍 30405，不能绕过去重",
+    "test/spec/identity/realname/verifier.test.ts > [AC-B1-13d#20] local 装配可用的二要素假实现",
+    "test/spec/identity/realname/verifier.test.ts > [AC-B1-13d#20] test 装配可用的二要素假实现",
+    "test/spec/identity/realname/verifier.test.ts > [AC-B1-13d#21] staging 未接供应商不得注入假核验器",
+    "test/spec/identity/realname/verifier.test.ts > [AC-B1-13d#21] prod 未接供应商不得注入假核验器"
+  ],
+  "risk_note": "RV2-level sensitive data (identity realname). POST /v1/me/realname: 10005 (guard ⑧) → 10004 id_verification consent (latest user-level row, no version check) → already verified answers 200 with the masked name (E26) → 20001 (name / 18-digit id and check digit) → 30407 under 14 → 30410 daily limit → 30405 id already verified by someone else → provider (match verified / mismatch 30406 with a failed row, E27). Daily 3 attempts in Redis, deduplicated per request (key + keyed digest of the normalised name and id); the provider's definite outcome is kept on the marker and reused by a same-key retry without calling the provider; a pending marker answers 50401 without giving the attempt back (orchestrator ruling A) and turns terminal after a 30 s lease; markers are not keyed by date (48 h TTL), so a retry across +08:00 midnight cannot bypass them; invariant: provider calls with a definite outcome ≤ the day's count ≤ 3. Name, id and birth date are FieldCrypto columns with a blind index; 23505 → 30405; names and ids never reach logs or responses. The fake verifier is injected only in local / test (staging / prod 50301, E9). Guard ⑨ and GET /v1/me read the table; submitRealname leaves planned. Follow-up recorded: the platform idempotency request hash is an unkeyed sha256 of the body (raised to the orchestrator). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "8a8a5b3e281e0ec401cd65d3fac2eb785ee32145",
+      "tree": "632189028462c8b908c3df9a3715272da7868c86",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T15:49:32Z",
+      "finished_at": "2026-10-18T15:49:47Z",
+      "red_tests": [
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#1] 提交操作去掉 planned 并通过真实 AppModule 注册",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#2] 未绑手机先于单独同意、格式、年龄且不计次",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#3] user 级当前实名同意缺失（missing）先于格式，不接受其他同意",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#3] user 级当前实名同意缺失（device）先于格式，不接受其他同意",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#3] user 级当前实名同意缺失（other-type）先于格式，不接受其他同意",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#3] user 级当前实名同意缺失（withdrawn）先于格式，不接受其他同意",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#3] user 级当前实名同意缺失（other-user）先于格式，不接受其他同意",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#4] 身份证格式或校验位失败 \"\"：20001 fields，不计次不存敏感字段",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#4] 身份证格式或校验位失败 \"110105491231002\"：20001 fields，不计次不存敏感字段",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#4] 身份证格式或校验位失败 \"110105194912310020\"：20001 fields，不计次不存敏感字段",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#4] 身份证格式或校验位失败 \"110105199902300023\"：20001 fields，不计次不存敏感字段",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#5] 出生 2012-09-29 满 14 岁须生日次日 +08:00；闰日非闰年按 3 月 2 日",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#5] 出生 2012-02-29 满 14 岁须生日次日 +08:00；闰日非闰年按 3 月 2 日",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#25] 校验位错误且未满 14 岁时先回 20001，不计次不调供应商",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#6] 次数已满仍先校验格式、年龄，再拒绝占用证件且不暴露对方",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#7] 不一致计次并持久化 failed；同一用户下一次可成功且 Me 实时接表",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#8] 成功二要素调用、规范化号码与加密落库、Clock 时间、响应不含原文",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#9] 供应商 timeout 回 50401/50301，预占回退，不写失败密文且不泄露异常内容",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#9] 供应商 unavailable 回 50401/50301，预占回退，不写失败密文且不泄露异常内容",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#9] 供应商 throw 回 50401/50301，预占回退，不写失败密文且不泄露异常内容",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#10] 计次按用户独立，+08:00 自然日零点重置而非 UTC 或滚动 24 小时",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#11] 六个并发请求只允许三次供应商调用，预占防止超额",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#12] 不一致的幂等重放不重复调用或计次；新键第三次后封顶",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#13] verified 重提直接返回已存脱敏姓名，忽略新证件且不改行不计次",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#14] verified 仍先检查手机和最新同意",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#15] 成功前其他账号抢先实名，真实 PG 部分唯一冲突回 30405 并计一次",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#16] 不同 app 的已实名号码不占用本 app，失败行不占用证件",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#17] Redis 不可用封闭失败 50001，不调用供应商也不存密文",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#18] 公共只读出口使用调用方事务，隔离 app、不缓存、不改库",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#19] AppModule 给守卫⑨装配真实读取，verified 放行且 failed 再次拒绝",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#22] 未装配供应商时真实路由返回 50301，重复请求不产生实名行",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#23] 已有两次明确失败后供应商超时，只退本次预占，不能清空历史次数",
+        "test/spec/identity/realname/submit.int.test.ts > [AC-B1-13d#24] 已占用号码的小写 x 与空白规范化后仍 30405，不能绕过去重",
+        "test/spec/identity/realname/verifier.test.ts > [AC-B1-13d#20] local 装配可用的二要素假实现",
+        "test/spec/identity/realname/verifier.test.ts > [AC-B1-13d#20] test 装配可用的二要素假实现",
+        "test/spec/identity/realname/verifier.test.ts > [AC-B1-13d#21] staging 未接供应商不得注入假核验器",
+        "test/spec/identity/realname/verifier.test.ts > [AC-B1-13d#21] prod 未接供应商不得注入假核验器"
+      ],
+      "expected": [
+        "test/spec/identity/realname/submit.int.test.ts",
+        "test/spec/identity/realname/verifier.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "f17fc0fb9f278ab7d813180e9dd164e94eb989e066705a95893008b4d9915578"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d7f1541a7bd9ddf2a1d260387b05d1d5c78cc10343bf41c0b476be792ccb5c52"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 5,
+      "note": "rounds 1-4 each one S1 on one theme (provider calls and attempt counting under crashes, failed writes and same-key retries); round 3 a lane exception; orchestrator ruling A and approval of rounds 4 and 5 (notices 19:0x, 21:0x); round 5 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (round 2 fixed #19's red reason, round 3 added same-day 30407 not counted and 20001 before 30407) reviewed by fresh Claude subagents: round 1 fail (S1 x2), round 2 pass; 37 tests red for the right reason (red/4)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "484e1c21bd76beeb2848476ec37cc570d7cbf29c",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}

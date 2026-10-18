@@ -188,8 +188,9 @@ export function createIdentityLevelChecks(options: IdentityLevelOptions): Identi
 }
 
 /**
- * The implementation-stage default must read as none.
- * TODO(规划/11 §2.3): 实名状态读 app.realname — blocked on B1-13d
+ * The default of an assembly that hands in no reader (IdentityModuleOptions.realnameStatus absent):
+ * always none, so stage ⑨ refuses. app.module assembles the table reader (infra/realname-reader.ts,
+ * B1-13d).
  */
 export function createDefaultRealnameStatusReader(): RealnameStatusReader {
   return { read: () => Promise.resolve('none') };
