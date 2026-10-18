@@ -13,9 +13,13 @@
 //   4. 30407 — under minor.min_realname_age at the Clock instant (BR-ID-26: the birthday's next day
 //      00:00 +08:00, 29 February → 1 March in common years).
 //   5. 30410 — the user's attempts of the +08:00 day are used up (realname-attempts.ts: reserved
-//      atomically before anything below, so concurrent requests cannot exceed the limit; one count
-//      per Idempotency-Key, so a retry of the same key after a failure without a stored result is
-//      not counted again). Redis unavailable → 50001 (fail closed, nothing called).
+//      atomically before anything below, so concurrent requests cannot exceed the limit). One count
+//      per request (Idempotency-Key + submitted values) and its definite outcome kept with it: a
+//      retry after a failure without a stored idempotent result (e.g. a failed database write)
+//      replays that outcome — no second count, no second vendor call; a retry whose earlier
+//      attempt died before an outcome is 50401 and gives the count back. The limit is judged only
+//      for requests without a mark, so the day's vendor calls never exceed it. Redis unavailable →
+//      50001 (fail closed, nothing called).
 //   6. 30405 — the blind index of the normalised ID number is verified on another user of this
 //      app (the occupant is never revealed). Counts one attempt (no vendor call).
 //   7. vendor: none assembled or an answer that is not definite (unavailable / malformed /
@@ -47,7 +51,12 @@ import {
   type RootLogger,
 } from '../../platform/index.ts';
 import { maskName } from '../domain/mask-name.ts';
-import { createRealnameAttempts, type AttemptSlot } from './realname-attempts.ts';
+import {
+  createRealnameAttempts,
+  type AttemptOutcome,
+  type AttemptSlot,
+  type Reservation,
+} from './realname-attempts.ts';
 import { REALNAME_CONTEXT } from '../infra/realname-reader.ts';
 import type {
   RealnameVerificationResult,
@@ -59,6 +68,8 @@ import type {
  * TODO(规划/11 §2.3): 从配置中心读取 minor.min_realname_age — blocked on 该配置项尚未登记（内容配置注册表不在本任务路径内）
  */
 export const MIN_REALNAME_AGE = 14;
+/** FieldCrypto context of the attempt mark's request digest (keyed; no plaintext in Redis). */
+const ATTEMPT_DIGEST_CONTEXT = 'realname.attempt';
 /** The partial unique index (app_id, id_no_hmac) WHERE status = 'verified' of migration 0041. */
 const VERIFIED_ID_NO_KEY = 'realname_verified_id_no_hmac_key';
 
@@ -81,6 +92,14 @@ export type SubmitRealnameResult =
   | { readonly code: 10004; readonly data: { readonly consent_type: 'id_verification' } }
   | { readonly code: 20001; readonly data: { readonly fields: readonly string[] } }
   | { readonly code: 30405 | 30406 | 30407 | 30410 | 50001 | 50301 | 50401 };
+
+/** The normalised submitted values a verified row stores (ciphertexts and blind index). */
+interface VerifiedValues {
+  readonly name: string;
+  readonly idNo: string;
+  readonly idNoHmac: string;
+  readonly birthDate: string;
+}
 
 export interface RealnameServiceOptions {
   readonly db: Kysely<DB>;
@@ -235,13 +254,7 @@ export function createRealnameService(options: RealnameServiceOptions): Realname
   /** True when this request wrote the verified row; false when the row was already verified. */
   async function writeVerified(
     command: SubmitRealnameCommand,
-    values: {
-      readonly name: string;
-      readonly idNo: string;
-      readonly idNoHmac: string;
-      readonly birthDate: string;
-      readonly provider: string;
-    },
+    values: VerifiedValues & { readonly provider: string },
   ): Promise<boolean> {
     const now = clock.now();
     const verified = {
@@ -274,6 +287,51 @@ export function createRealnameService(options: RealnameServiceOptions): Realname
     return written !== undefined;
   }
 
+  /** Keeps the definite outcome with the mark; a failure only logs (the write still runs). */
+  async function recordOutcome(
+    command: SubmitRealnameCommand,
+    slot: AttemptSlot,
+    outcome: AttemptOutcome,
+  ): Promise<void> {
+    if (attempts === null) return;
+    try {
+      await attempts.record(slot, outcome, clock.now());
+    } catch {
+      logger.warn(
+        { app_id: command.appId, user_id: command.userId },
+        'identity_realname_record_failed',
+      );
+    }
+  }
+
+  /** Applies a definite outcome (fresh or replayed): the answer and the write it requires. */
+  async function settle(
+    command: SubmitRealnameCommand,
+    values: VerifiedValues,
+    outcome: AttemptOutcome,
+  ): Promise<SubmitRealnameResult> {
+    if (outcome.kind === 'occupied') return { code: 30405 };
+    if (outcome.kind === 'mismatch') {
+      await writeFailed(command, outcome.provider);
+      return { code: 30406 };
+    }
+    try {
+      const wrote = await writeVerified(command, { ...values, provider: outcome.provider });
+      if (!wrote) {
+        // A concurrent request of this user verified first: answer the stored record.
+        return (await storedVerified(command)) ?? { code: 50001 };
+      }
+    } catch (error) {
+      if (!uniqueViolationOf(error, VERIFIED_ID_NO_KEY)) throw error;
+      return { code: 30405 };
+    }
+    logger.info(
+      { app_id: command.appId, user_id: command.userId, provider: outcome.provider },
+      'identity_realname_verified',
+    );
+    return verifiedAnswer(values.name);
+  }
+
   return Object.freeze({
     async submit(command: SubmitRealnameCommand): Promise<SubmitRealnameResult> {
       if (!(await consentAccepted(command))) {
@@ -292,13 +350,21 @@ export function createRealnameService(options: RealnameServiceOptions): Realname
       const now = clock.now();
       if (!isAtLeastAge(parsed.birth_date, MIN_REALNAME_AGE, now)) return { code: 30407 };
 
+      const idNoHmac = crypto.blindIndex(parsed.id_no, REALNAME_CONTEXT.idNo);
+      const values: VerifiedValues = {
+        name,
+        idNo: parsed.id_no,
+        idNoHmac,
+        birthDate: parsed.birth_date,
+      };
       const slot: AttemptSlot = {
         appId: command.appId,
         userId: command.userId,
         day: accountingDate(now),
         idempotencyKey: command.idempotencyKey,
+        requestDigest: crypto.blindIndex(`${name}\n${parsed.id_no}`, ATTEMPT_DIGEST_CONTEXT),
       };
-      let reservation;
+      let reservation: Reservation;
       try {
         if (attempts === null) throw new Error('identity: no Redis for real-name attempts');
         reservation = await attempts.reserve(slot, now);
@@ -310,15 +376,28 @@ export function createRealnameService(options: RealnameServiceOptions): Realname
         );
         return { code: 50001 };
       }
-      if (reservation === 'full') return { code: 30410 };
+      if (reservation.kind === 'full') return { code: 30410 };
+      if (reservation.kind === 'recorded') {
+        // A retry of a request whose definite outcome is kept: no vendor call, no count.
+        return settle(command, values, reservation.outcome);
+      }
+      if (reservation.kind === 'pending') {
+        // The earlier attempt of this request died with the outcome unknown: like a timeout,
+        // give its count back (the request may reserve again, within the day's limit).
+        await release(command, slot);
+        logger.warn(
+          { app_id: command.appId, user_id: command.userId, outcome: 'pending' },
+          'identity_realname_vendor_failed',
+        );
+        return { code: 50401 };
+      }
 
-      // From here the reservation is kept (counted) unless released. A key seen before was counted
-      // by its earlier attempt (no stored result, e.g. a failed write): never given back here.
-      let counted = reservation === 'seen';
+      // From here the reservation is kept (counted) unless released.
+      let counted = false;
       try {
-        const idNoHmac = crypto.blindIndex(parsed.id_no, REALNAME_CONTEXT.idNo);
         if (await occupiedElsewhere(command, idNoHmac)) {
           counted = true;
+          await recordOutcome(command, slot, { kind: 'occupied' });
           return { code: 30405 };
         }
         if (verifier === null) return { code: 50301 };
@@ -342,33 +421,12 @@ export function createRealnameService(options: RealnameServiceOptions): Realname
           );
           return { code: outcome === 'timeout' ? 50401 : 50301 };
         }
-        // A definite answer counts, whatever happens to the write below.
+        // A definite answer counts, whatever happens to the write below; it is kept with the
+        // request's mark before the write, so a retry after a failed write replays it.
         counted = true;
-        if (outcome.outcome === 'mismatch') {
-          await writeFailed(command, outcome.provider);
-          return { code: 30406 };
-        }
-        try {
-          const wrote = await writeVerified(command, {
-            name,
-            idNo: parsed.id_no,
-            idNoHmac,
-            birthDate: parsed.birth_date,
-            provider: outcome.provider,
-          });
-          if (!wrote) {
-            // A concurrent request of this user verified first: answer the stored record.
-            return (await storedVerified(command)) ?? { code: 50001 };
-          }
-        } catch (error) {
-          if (!uniqueViolationOf(error, VERIFIED_ID_NO_KEY)) throw error;
-          return { code: 30405 };
-        }
-        logger.info(
-          { app_id: command.appId, user_id: command.userId, provider: outcome.provider },
-          'identity_realname_verified',
-        );
-        return verifiedAnswer(name);
+        const definite: AttemptOutcome = { kind: outcome.outcome, provider: outcome.provider };
+        await recordOutcome(command, slot, definite);
+        return await settle(command, values, definite);
       } finally {
         if (!counted) await release(command, slot);
       }
