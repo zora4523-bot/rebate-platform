@@ -24,4 +24,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/growth/backfill/**'
-status: todo
+status: done
+pr: 766
