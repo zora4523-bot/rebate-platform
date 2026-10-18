@@ -64,7 +64,7 @@
 | 改派重记（平台） | `{order_key}:PLATFORM:REASSIGN_CREDIT:{reassign_id}` | BR-FUND-01 R14 |
 | 联盟回款 | `RECEIPT:{platform}:{receipt_id}` | BR-FUND-20 细则「联盟回款凭证」 |
 | 提现冻结 / 退回 | `wd:{withdrawal_id}:FREEZE`、`wd:{withdrawal_id}:RETURN` | BR-WDR-09 细则 |
-| 提现成功（分录键） | `wd:{withdrawal_id}:PAID`、`wd:{withdrawal_id}:FEE`、`wd:{withdrawal_id}:TAX`；凭证级键待定（第 8 节） | BR-WDR-09 细则 |
+| 提现成功 | `wd:{withdrawal_id}:PAID`（凭证级单键：一张成功凭证一个键，WITHDRAW_PAID、WITHDRAW_FEE、TAX_WITHHOLD 是凭证内分录，以 ledger_type 与分录序号 line 区分，不按分录另设键） | BR-WDR-09 细则（规划 #142 同步）、BR-FUND-16 |
 | 负余额核销 | `BADDEBT:{account_id}:{candidate_id}` | BR-FUND-12 |
 | 人工调账 | `ADJ:{adjust_id}` | BR-FUND-24 ⑥ |
 | 调账红冲 | `ADJ:{adjust_id}:REVERSE` | BR-FUND-24 ⑥、BR-FUND-16 |
@@ -170,7 +170,7 @@ rights_event_id 取值（BR-FUND-08）：来自维权 / 处罚接口或导入 �
 - 金额为 0 的分录不写（如 MVP 手续费为 0 时不写 WITHDRAW_FEE 两行）。
 - W2、W4（EXECUTE）、W7、W9 不写任何分录；冻结金额一直留在 frozen 直到终态，不经过 WITHDRAW_IN_TRANSIT。
 - 分录与状态迁移在同一事务内完成；不变量 frozen_fen = Σ 非终态提现单 amount_fen（BR-FUND-14）。
-- 三个 `WITHDRAW:SUCCESS:*` 模板的 uniq_key 仍为 `TBD(08 未定)`、不可执行（第 8 节）。
+- 三个 `WITHDRAW:SUCCESS:*` 模板全部 6 行的 uniq_key 都是 `wd:{withdrawal_id}:PAID`：一张凭证一个键，三种流水在同一凭证内以 ledger_type 与 line 区分；重放时键冲突视为已记账、跳过；更正按 `{原 uniq_key}:REVERSE` 整张红冲（BR-WDR-09 细则，规划 #142 同步；BR-FUND-16）。
 
 ### 4.7 负余额核销（BR-FUND-12）
 
@@ -286,17 +286,13 @@ csv 中 RECON_FIX、OTHER 按白名单每个科目 × 调增 / 调减 × 正常 
 
 ## 8. 待定
 
-以下格子在 csv 中仍为 `TBD(08 未定)`，或 08 本身有待澄清处。TBD 是非执行占位符，不是第十四种枚举，不能写入数据库；含 TBD 的模板 buildVouchers 整张拒绝。
+csv 现已没有 `TBD(08 未定)` 格；以下是待负责人决定、因而不建模板的情形，以及 08 本身有待澄清处。TBD 是非执行占位符，不是第十四种枚举，不能写入数据库；含 TBD 的模板 buildVouchers 整张拒绝。
 
-### 8.1 提现成功的 uniq_key
-
-`WITHDRAW:SUCCESS:CASH_ALIPAY`、`WITHDRAW:SUCCESS:CASH_WECHAT`、`WITHDRAW:SUCCESS:CASH_BANK` 的 uniq_key_pattern 为 `TBD(08 未定)`：BR-WDR-09 细则要求打款成功「写一张凭证」，同时给了分录级键 `wd:{withdrawal_id}:PAID`、`wd:{withdrawal_id}:FEE`、`wd:{withdrawal_id}:TAX`，而 BR-FUND-16 要求每个 uniq_key 对应 1 张凭证，三键与一张凭证冲突（08 内部冲突），待规划同步后再定凭证级键。科目、方向、类型与金额名（net_fen / fee_fen / tax_fen）已定。
-
-### 8.2 改派遇旧受益人注销
+### 8.1 改派遇旧受益人注销
 
 REASSIGN_REV 遇旧受益人已进入注销 processing 或已注销、且在本单键下还有不为 0 的类型组（用户账户上的，或改记坏账的扣回）：这部分记在哪里待负责人决定（第 7 节第 15 项）；csv 没有该情形的模板，决定前这种改派不执行。
 
-### 8.3 08 内部其他待澄清
+### 8.2 08 内部其他待澄清
 
 - BR-FUND-08「份额从没入过其账户……不写任何分录，没收的份额随平台已入账净额冲回（平台坏账）」：平台这部分是否借 BAD_DEBT 而非 COMMISSION_REVENUE，原文未写清；csv 只按平台差额通用模板（COMMISSION_REVENUE ↔ UNION_RECEIVABLE）列出。
 - BR-FUND-22 R13 的差额只给了一个方向（借 UNION_RECEIVABLE / 贷 用户或 COMMISSION_REVENUE）；新应得低于当前净额时的负差是否出现、如何记，原文未写。

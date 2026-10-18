@@ -109,3 +109,42 @@ it('[AC-B2-01l#u3] 改派红冲按类型组逐组反向，零组省略，全部�
   expect(() => buildVouchers('REASSIGN_REV:BAD_DEBT', zero)).toThrow(RangeError);
   expect(() => buildVouchers('REWARD:newbie', {})).toThrow(RangeError);
 });
+
+it('[AC-B2-01l#u4] 提现成功一张凭证单键 wd:{id}:PAID，三种流水按 line 顺序、零金额分录不写', () => {
+  const full = buildVouchers('WITHDRAW:SUCCESS:CASH_WECHAT', {
+    withdrawal_id: 'w9',
+    user_id: 'u1',
+    net_fen: 9700n,
+    fee_fen: 100n,
+    tax_fen: 200n,
+  });
+  expect(full.map((voucher) => voucher.uniq_key)).toEqual(['wd:w9:PAID']);
+  expect(
+    full[0]?.entries.map((entry) => [
+      entry.ledger_type,
+      entry.account.subject,
+      entry.sub_account,
+      entry.amount_fen,
+    ]),
+  ).toEqual([
+    ['WITHDRAW_PAID', 'USER_BALANCE', 'frozen', 9700n],
+    ['WITHDRAW_PAID', 'CASH_WECHAT', null, -9700n],
+    ['WITHDRAW_FEE', 'USER_BALANCE', 'frozen', 100n],
+    ['WITHDRAW_FEE', 'FEE_INCOME', null, -100n],
+    ['TAX_WITHHOLD', 'USER_BALANCE', 'frozen', 200n],
+    ['TAX_WITHHOLD', 'TAX_PAYABLE', null, -200n],
+  ]);
+  const noFee = buildVouchers('WITHDRAW:SUCCESS:CASH_ALIPAY', {
+    withdrawal_id: 'w9',
+    user_id: 'u1',
+    net_fen: 3000n,
+    fee_fen: 0n,
+    tax_fen: 0n,
+  });
+  expect(noFee).toHaveLength(1);
+  expect(noFee[0]?.uniq_key).toBe('wd:w9:PAID');
+  expect(noFee[0]?.entries.map((entry) => entry.ledger_type)).toEqual([
+    'WITHDRAW_PAID',
+    'WITHDRAW_PAID',
+  ]);
+});
