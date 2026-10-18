@@ -33,6 +33,7 @@ export {
 } from './application/rule-publication.ts';
 export type {
   RulePublicationActor,
+  RulePublicationContext,
   RulePublicationDependencies,
   CreateRuleDraftInput,
   RuleDraftInput,
@@ -42,5 +43,7 @@ export type {
   PublishedRuleVersion,
   RuleTrialResult,
   RuleTrialReport,
+  RuleTrialPlatform,
+  RuleTrialTotals,
   RulePublicationErrorCode,
 } from './application/rule-publication.ts';
