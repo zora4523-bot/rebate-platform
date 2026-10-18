@@ -57,14 +57,16 @@ for (const platform of ['taobao', 'pdd']) {
         }),
       );
       if (row !== undefined && status === 'blocked' && reason === 'ban') {
-        expect(await current(s, row.id)).toMatchObject({
-          status: 'invalid',
+        const after = await current(s, row.id);
+        expect(after).toMatchObject({
+          status: platform === 'taobao' ? 'invalid' : 'active',
           blocked_reason: null,
-          row_version: row.row_version + 1,
           released_at: null,
           cooldown_until: null,
           bound_at: row.bound_at,
         });
+        if (platform === 'taobao') expect(after.row_version).toBe(row.row_version + 1);
+        else expect(after.row_version).toBeGreaterThan(row.row_version);
       } else expect(await s.rows()).toEqual(before);
       const once = await s.rows();
       await h.db.transaction().execute((trx) =>
@@ -105,7 +107,9 @@ it.each(['ban', 'unban'] as const)(
           .execute();
         expect(inside).toHaveLength(2);
         for (const row of inside)
-          expect(row.status).toBe(operation === 'ban' ? 'blocked' : 'invalid');
+          expect(row.status).toBe(
+            operation === 'ban' ? 'blocked' : row.platform === 'taobao' ? 'invalid' : 'active',
+          );
         throw rollback;
       }),
     ).rejects.toBe(rollback);

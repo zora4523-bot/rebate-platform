@@ -92,31 +92,34 @@ async function bannedWithoutActive(s: Scenario) {
   expect((await s.rows()).filter((row) => ['active', 'invalid'].includes(row.status))).toEqual([]);
 }
 
-it('[AC-F1-07c#19] 封禁持用户锁时 enable 等待，提交后不能留下 banned + invalid', async () => {
-  const s = await setup(h);
-  const row = await binding(s, { status: 'blocked', blocked_reason: 'admin_disable' });
-  const token = await s.issue();
-  const ban = await held(s, (trx) => writeBan(trx, s));
-  const response = s.post(
-    'enable',
-    { reason: REASON, expected_row_version: row.row_version },
-    { token },
-  );
-  try {
-    await waitingOnUser(ban.pid);
-  } finally {
-    ban.release();
-    await Promise.allSettled([ban.done, response]);
-  }
-  expect(await ban.done).toEqual({ ok: true });
-  await rejected(await response, 30154);
-  await bannedWithoutActive(s);
-  expect(await current(s, row.id)).toMatchObject({
-    status: 'blocked',
-    blocked_reason: 'admin_disable',
-  });
-  expect(await s.audits()).toEqual([]);
-});
+it.each(['taobao', 'pdd'])(
+  '[AC-F1-07c#19] 封禁持用户锁时 %s enable 等待，提交后无 banned + invalid / active',
+  async (platform) => {
+    const s = await setup(h);
+    const row = await binding(s, { platform, status: 'blocked', blocked_reason: 'admin_disable' });
+    const token = await s.issue();
+    const ban = await held(s, (trx) => writeBan(trx, s));
+    const response = s.post(
+      'enable',
+      { reason: REASON, expected_row_version: row.row_version },
+      { token, platform },
+    );
+    try {
+      await waitingOnUser(ban.pid);
+    } finally {
+      ban.release();
+      await Promise.allSettled([ban.done, response]);
+    }
+    expect(await ban.done).toEqual({ ok: true });
+    await rejected(await response, 30154);
+    await bannedWithoutActive(s);
+    expect(await current(s, row.id)).toMatchObject({
+      status: 'blocked',
+      blocked_reason: 'admin_disable',
+    });
+    expect(await s.audits()).toEqual([]);
+  },
+);
 
 for (const platform of ['taobao', 'pdd']) {
   for (const status of ['released', 'invalid']) {

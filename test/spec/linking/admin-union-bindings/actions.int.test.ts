@@ -41,6 +41,11 @@ for (const action of ACTIONS) {
           },
           { platform },
         );
+        if (action === 'reset' && platform !== 'taobao') {
+          await rejected(response, 20001, { fields: ['platform'] });
+          expect(await snapshot(s)).toEqual(before);
+          return;
+        }
         if (!allowed) {
           await rejected(response, 30154);
           expect(await snapshot(s)).toEqual(before);
@@ -50,7 +55,13 @@ for (const action of ACTIONS) {
         expect(row).toBeDefined();
         const after = await current(s, row!.id);
         const target =
-          action === 'reset' ? 'released' : action === 'disable' ? 'blocked' : 'invalid';
+          action === 'reset'
+            ? 'released'
+            : action === 'disable'
+              ? 'blocked'
+              : platform === 'taobao'
+                ? 'invalid'
+                : 'active';
         expect(after).toMatchObject({
           id: row!.id,
           app_id: s.appId,
@@ -62,8 +73,11 @@ for (const action of ACTIONS) {
           status: target,
           reason: REASON,
           blocked_reason: action === 'disable' ? 'admin_disable' : null,
-          row_version: row!.row_version + 1,
         });
+        if (action === 'enable' && platform !== 'taobao') {
+          // 非淘宝恢复立即生效，不规定内部迁移步数。
+          expect(after.row_version).toBeGreaterThan(row!.row_version);
+        } else expect(after.row_version).toBe(row!.row_version + 1);
         expect(data).toEqual({
           platform,
           status: target,

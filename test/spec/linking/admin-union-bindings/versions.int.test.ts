@@ -5,7 +5,7 @@ import { setup, binding, accepted, rejected, REASON, snapshot, current } from '.
 
 const h = useHarness();
 
-it.each(['taobao', 'pdd'])(
+it.each(['taobao'])(
   '[AC-F1-07c#17] %s 重置再授权的新行承接本用户本平台历史最大版本，旧值不能命中新行',
   async (platform) => {
     const s = await setup(h);
@@ -19,7 +19,7 @@ it.each(['taobao', 'pdd'])(
       updated_at: new Date('2026-09-02T00:00:00Z'),
     });
     await binding(s, {
-      platform: platform === 'taobao' ? 'pdd' : 'taobao',
+      platform: 'pdd',
       status: 'released',
       row_version: 900,
     });
@@ -34,9 +34,7 @@ it.each(['taobao', 'pdd'])(
     );
     const oldRows = await s.rows();
     const auth = await authorization(s, row.union_account_id);
-    if (platform === 'taobao') {
-      expect(await auth.bind()).toMatchObject({ status: 200, envelope: { code: 0 } });
-    } else expect(await auth.pdd()).toMatchObject({ kind: 'active' });
+    expect(await auth.bind()).toMatchObject({ status: 200, envelope: { code: 0 } });
     const rows = await s.rows();
     const fresh = rows.find((r) => r.platform === platform && r.status === 'active');
     expect(fresh).toBeDefined();

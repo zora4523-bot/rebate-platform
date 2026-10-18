@@ -47,11 +47,15 @@ for (const operation of ['ban', 'unban'] as const) {
       // 整行比较包含 status、blocked_reason、row_version、updated_at。
       expect(await other.rows()).toEqual(before);
       for (const row of targetRows) {
-        expect(await current(target, row.id)).toMatchObject({
-          status: operation === 'ban' ? 'blocked' : 'invalid',
+        const after = await current(target, row.id);
+        expect(after).toMatchObject({
+          status:
+            operation === 'ban' ? 'blocked' : row.platform === 'taobao' ? 'invalid' : 'active',
           blocked_reason: operation === 'ban' ? 'ban' : null,
-          row_version: row.row_version + 1,
         });
+        if (operation === 'unban' && row.platform !== 'taobao') {
+          expect(after.row_version).toBeGreaterThan(row.row_version);
+        } else expect(after.row_version).toBe(row.row_version + 1);
       }
     },
   );
