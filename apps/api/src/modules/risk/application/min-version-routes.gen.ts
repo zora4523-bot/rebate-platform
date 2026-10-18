@@ -932,6 +932,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminSearch",
+    "method": "GET",
+    "path": "/admin/v1/search",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminLookupUser",
     "method": "GET",
     "path": "/admin/v1/users/lookup",

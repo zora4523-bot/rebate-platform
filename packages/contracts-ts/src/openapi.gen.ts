@@ -2469,6 +2469,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Top-bar search by a full order number, withdrawal number, phone number or UID
+         * @description The console's top-bar search (01 F-ADM-04; 04 §6.6 search; BR-ID-34 细则「一框搜」). Any
+         *     signed-in admin may call it (read only, no step-up); what comes back is trimmed by the
+         *     server to three permission points, one per hit type (enum admin_search_hit_type): order
+         *     `order.view`, user `user.lookup`, withdrawal `fund.view`. A super admin holds every point.
+         *
+         *     `q` is trimmed of surrounding whitespace and must then be 1–64 characters, else 20001 with
+         *     `data.fields=[q]`. The server tells from its shape what `q` is and matches the full value
+         *     only (no prefix or partial match): an order number (the order's full number), a withdrawal
+         *     number (its full number; no hit until the withdrawal module ships), a full phone number
+         *     (normalised as in BR-ID-05 细则「手机号规范化」) or a UID (the user_id, a UUID). Only
+         *     objects of the console's app are found. Input of no recognised shape is not an error: 200
+         *     with an empty list.
+         *
+         *     Anti-probing (BR-ID-34 细则「一框搜」): no hit and no permission look the same. A hit of a
+         *     type the account has no point for is dropped silently; when nothing is left the response is
+         *     200 with `items=[]` and `truncated=false`. The operation never answers 10403
+         *     `admin_permission_denied` (10403 only for `admin_ip_not_allowed`, common to every admin
+         *     operation) and never 20001 for an unknown number, unlike GET /admin/v1/users/lookup.
+         *
+         *     `items[]` lists the hits (`type`, `id` for the detail route, `summary` a masked one-line
+         *     summary: phone numbers masked 3 + 4 as BR-ID-33, no full phone, identity or payout account
+         *     number). An order or withdrawal hit is followed by its owner as a `user` item, trimmed by
+         *     `user.lookup` like any user hit. At most 10 items; when there are more, the first 10 come
+         *     back with `truncated=true` (the console asks for a more complete number). The console
+         *     opens the detail page directly when exactly one item comes back and lists candidates
+         *     otherwise.
+         *
+         *     Audit: a search by full phone number that returns a user writes an audit entry, as a
+         *     lookup by phone through `user.lookup` does (04 §6.6 search). Other searches are not
+         *     audited.
+         */
+        get: operations["adminSearch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/users/lookup": {
         parameters: {
             query?: never;
@@ -7396,6 +7445,34 @@ export interface components {
             trace_id: components["schemas"]["TraceId"];
         };
         /**
+         * @description Type of a search hit (enum admin_search_hit_type); each is returned only to accounts holding
+         *     its permission point: order order.view, user user.lookup, withdrawal fund.view.
+         * @enum {string}
+         */
+        AdminSearchHitType: "order" | "user" | "withdrawal";
+        /** @description One hit of the top-bar search. */
+        AdminSearchItem: {
+            type: components["schemas"]["AdminSearchHitType"];
+            id: components["schemas"]["Id"];
+            /**
+             * @description Masked one-line summary for the candidate list (phone masked 3 + 4, BR-ID-33); never a
+             *     full phone, identity or payout account number. Display only, not parsed by clients.
+             */
+            summary: string;
+        };
+        AdminSearch: {
+            /** @description Hits the account may see, at most 10; an order or withdrawal is followed by its owner. */
+            items: components["schemas"]["AdminSearchItem"][];
+            /** @description True when there were more than 10 hits and only the first 10 are returned. */
+            truncated: boolean;
+        };
+        AdminSearchResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminSearch"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
          * @description The sensitive field to show in full. Only phone (permission point pii.reveal_phone) for
          *     now; the identity number and payout account (pii.reveal_identity) come later.
          * @enum {string}
@@ -7720,6 +7797,12 @@ export interface components {
         AdminUserRiskStateFilter: components["schemas"]["AdminUserRiskStateCode"];
         /** @description The user_id to look up; give exactly one of uid and phone (else 20001 with data.fields=[uid, phone]). */
         AdminUserLookupUid: components["schemas"]["Id"];
+        /**
+         * @description A full order number, withdrawal number, phone number or UID. Trimmed of surrounding
+         *     whitespace, then 1–64 characters, else 20001 with data.fields=[q]; the bound is checked
+         *     after trimming, so the schema carries none.
+         */
+        AdminSearchQuery: string;
         /**
          * @description The full phone number to look up, normalised as in BR-ID-05 细则「手机号规范化」 (not a
          *     mainland mobile number → 20001 with data.fields=[phone] and data.reason=phone_invalid);
@@ -13673,6 +13756,49 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminSearch: {
+        parameters: {
+            query: {
+                /**
+                 * @description A full order number, withdrawal number, phone number or UID. Trimmed of surrounding
+                 *     whitespace, then 1–64 characters, else 20001 with data.fields=[q]; the bound is checked
+                 *     after trimming, so the schema carries none.
+                 */
+                q: components["parameters"]["AdminSearchQuery"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The hits the account may see; empty for no hit and for no permission alike. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSearchResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Invalid query or not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
