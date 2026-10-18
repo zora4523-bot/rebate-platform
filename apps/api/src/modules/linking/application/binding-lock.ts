@@ -9,8 +9,9 @@
 // - Held until the caller's transaction ends; never taken while an upstream call is in flight.
 //   Every writer takes it before it updates an existing binding row (lock, then row: no deadlock
 //   between them). The user's taobao authorization is the one exception for a new row: it inserts
-//   first (the B1-06h unique-index race must stay reachable) and takes the lock after the insert,
-//   before its commit, then reads the risk state and rolls its write back when banned
+//   first (the B1-06h unique-index race must stay reachable) and takes the lock right after the
+//   insert, before the conflict log's advisory lock and its commit (every path: user lock, then
+//   advisory lock), then reads the risk state and rolls its write back when banned
 //   (union-bindings.ts). A lock taken inside a savepoint that is rolled back is dropped; the
 //   writers take it again (a no-op when held) after their savepoints.
 // - user_risk_state is risk's table; linking only reads it here, on the same transaction right
@@ -52,7 +53,8 @@ export async function userBannedOn(
 
 /**
  * row_version of a new binding row: after the highest of the user's earlier rows on the platform
- * (contracts: a later row never reuses an earlier row's row_version), 0 for the first row.
+ * (contracts: a later row never reuses an earlier row's row_version), 0 for the first row. The
+ * rows must be read under the user lock, or re-read under it before the commit.
  */
 export function nextBindingRowVersion(rows: readonly { readonly row_version: number }[]): number {
   let max = -1;

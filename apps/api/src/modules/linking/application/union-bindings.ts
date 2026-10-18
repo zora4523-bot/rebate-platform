@@ -57,7 +57,8 @@
 // writes union_auth_sessions (used_at only) and union_bindings.
 // F1-07c: the user lock (binding-lock.ts) is never held during the exchange. A new row is inserted
 // first (the unique-index race of B1-06h is unchanged: two submissions both reach their INSERT),
-// and the lock is taken after the write, before the key's transaction commits; an update of an
+// and the lock is taken right after the write, before the conflict log's advisory lock and the
+// key's commit (r3 S2: every path takes the user lock before the advisory lock); an update of an
 // existing row (invalid → active, a cooling row restored) takes the lock just before its UPDATE,
 // in the order the console and the ban ports use (lock, then row), so the two never deadlock.
 // After settling, the lock is taken (again, a no-op when held) and the risk state read: a user
@@ -65,7 +66,10 @@
 // savepoint taken before it. Either order leaves no banned + active: a ban holding the lock first
 // commits before this reads banned; this holding it first commits before the ban reads the rows.
 // A new row's row_version, and a restored row's, follow the highest of the user's taobao rows (an
-// earlier row_version never names the current binding again: the console's CAS stays sound).
+// earlier row_version never names the current binding again: the console's CAS stays sound). That
+// highest is read under the user lock (r3 S1): a restore reads the rows again after the lock, a
+// new row re-reads after its lock and moves its own row_version up when a row created and reset
+// meanwhile went past it.
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
@@ -213,6 +217,21 @@ type Decision =
   | { readonly kind: 'blocked' }
   | { readonly kind: 'retry' };
 
+/** Every taobao row of the user, read on the caller's transaction (as committed now). */
+async function userRows(
+  trx: Transaction<DB>,
+  appId: string,
+  userId: string,
+): Promise<BindingRow[]> {
+  return trx
+    .selectFrom('union_bindings')
+    .selectAll()
+    .where('app_id', '=', appId)
+    .where('user_id', '=', userId)
+    .where('platform', '=', 'taobao')
+    .execute();
+}
+
 export function createUnionBindings(options: UnionBindingsOptions): UnionBindingsService {
   const { db, clock, callerContext, reads, idempotency, exchanger, logger } = options;
 
@@ -247,13 +266,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
     );
     if (othersCooling) return { kind: 'conflict', conflict: 'cooling' };
 
-    const mine: BindingRow[] = await trx
-      .selectFrom('union_bindings')
-      .selectAll()
-      .where('app_id', '=', appId)
-      .where('user_id', '=', userId)
-      .where('platform', '=', platform)
-      .execute();
+    const mine = await userRows(trx, appId, userId);
     const unreleased = mine.find((row) => UNRELEASED.includes(row.status));
     if (unreleased !== undefined) {
       if (unreleased.relation_id !== relationId || unreleased.union_account_id !== accountId) {
@@ -295,6 +308,20 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       assertTransition(cooling.status, 'active');
       // F1-07c: the user lock before the row's (lock order of the console and the ban ports).
       await lockBindingUser(trx, appId, userId);
+      // Codex money review r3 S1: the rows read before the lock may be stale (a row created and
+      // reset meanwhile). Read again under the lock; anything unreleased now, or the cooling row
+      // moved, decides again (the lock stays held), and the new row_version follows the highest
+      // row_version committed by then.
+      const locked = await userRows(trx, appId, userId);
+      const same = locked.find((row) => row.id === cooling.id);
+      if (
+        locked.some((row) => UNRELEASED.includes(row.status)) ||
+        same === undefined ||
+        same.status !== 'released' ||
+        same.row_version !== cooling.row_version
+      ) {
+        return { kind: 'retry' };
+      }
       const restored = await trx
         .updateTable('union_bindings')
         .set((eb) => ({
@@ -305,7 +332,7 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
           updated_at: now,
           // F1-07c: after the highest row_version of the user's taobao rows, never its own + 1
           // (that value may be one a later row already had: a stale console CAS would hit it).
-          row_version: nextBindingRowVersion(mine),
+          row_version: nextBindingRowVersion(locked),
         }))
         .where('id', '=', cooling.id)
         .where('status', '=', 'released')
@@ -318,10 +345,12 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
 
     // pending_auth is never produced (BR-ID-17 细则): the row is written active directly.
     assertTransition(null, 'active');
+    const id = newUuidV7(now);
+    const version = nextBindingRowVersion(mine);
     await trx
       .insertInto('union_bindings')
       .values({
-        id: newUuidV7(now),
+        id,
         app_id: appId,
         user_id: userId,
         platform,
@@ -333,11 +362,27 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
         cooldown_until: null,
         blocked_reason: null,
         // F1-07c: after the highest row_version of the user's earlier rows on the platform.
-        row_version: nextBindingRowVersion(mine),
+        row_version: version,
         created_at: now,
         updated_at: now,
       })
       .execute();
+    // Inserted first (the B1-06h unique race stays reachable), then the user lock before the
+    // conflict log's advisory lock (Codex money review r3 S2: user lock → advisory lock on every
+    // path). Under the lock the earlier rows are read again (r3 S1): a row created and reset
+    // since the pre-insert read may carry a row_version >= this row's, so this row (not yet
+    // visible to anyone else) moves after the highest; its status is not touched.
+    await lockBindingUser(trx, appId, userId);
+    const earlier = (await userRows(trx, appId, userId)).filter((row) => row.id !== id);
+    const after = nextBindingRowVersion(earlier);
+    if (after > version) {
+      await trx
+        .updateTable('union_bindings')
+        .set({ row_version: after })
+        .where('id', '=', id)
+        .where('row_version', '=', version)
+        .execute();
+    }
     return activated(trx, appId, userId, now);
   }
 
