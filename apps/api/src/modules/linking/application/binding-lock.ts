@@ -6,8 +6,13 @@
 // - The anchor is app.users (the row always exists, also before the user's first risk state row),
 //   locked FOR NO KEY UPDATE: child-table inserts hold users' KEY SHARE, which FOR UPDATE would
 //   conflict with (appeal submission, the pdd open's activation) while NO KEY UPDATE does not.
-// - Held until the caller's transaction ends; never taken while an upstream call is in flight and
-//   never inside a savepoint that may be rolled back (that would drop the row lock).
+// - Held until the caller's transaction ends; never taken while an upstream call is in flight.
+//   Every writer takes it before it updates an existing binding row (lock, then row: no deadlock
+//   between them). The user's taobao authorization is the one exception for a new row: it inserts
+//   first (the B1-06h unique-index race must stay reachable) and takes the lock after the insert,
+//   before its commit, then reads the risk state and rolls its write back when banned
+//   (union-bindings.ts). A lock taken inside a savepoint that is rolled back is dropped; the
+//   writers take it again (a no-op when held) after their savepoints.
 // - user_risk_state is risk's table; linking only reads it here, on the same transaction right
 //   after the lock, so a ban committed while it waited is seen (READ COMMITTED). risk/index.ts has
 //   no export that reads on a caller's transaction.

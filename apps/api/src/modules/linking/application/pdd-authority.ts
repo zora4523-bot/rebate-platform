@@ -25,6 +25,15 @@
 // risk state after it: a banned user's binding is never written (`banned`, nothing changed). Its
 // callers query the union authority before they call it, so the lock is never held across the
 // query. A new row's row_version follows the highest of the user's earlier pdd rows.
+// F1-07c (BR-ID-20, Codex money review r1): reauthorizationSince tells a binding the console
+// left waiting for the user's own authorization — the current row made invalid by enable, or,
+// with no current row, the latest released row a reset wrote — by the console's reason on the row
+// (only the console writes union_bindings.reason), and since when (the row's updated_at). Until
+// the user has been sent through a Pinduoduo authorization link issued after that instant (a pdd
+// union_auth_sessions row of the user created at or after it: the open's 30111 auth_jump), neither
+// the authorization page refresh nor the open activates the binding from a filing that is still
+// valid: the open answers 30111 with a new auth_jump (as for no filing), the refresh writes
+// nothing. activatePddBinding itself does not judge it.
 // TODO(规划/11 §4.5): BR-ID-22 的 (user, pid) 粒度 — blocked on union_bindings 加 pid 维度的迁移
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
@@ -183,6 +192,70 @@ export async function pddBindingRows(executor: Kysely<DB>, appId: string, userId
     .where('user_id', '=', userId)
     .where('platform', '=', PDD)
     .execute();
+}
+
+interface ReauthorizationRow {
+  readonly status: string;
+  readonly reason: string | null;
+  readonly released_at: Date | null;
+  readonly updated_at: Date;
+}
+
+/**
+ * F1-07c: since when the console has left the user's binding of this platform waiting for the
+ * user to authorize again (BR-ID-20: after 恢复返利 / 重置授权 the user authorizes again), or null:
+ * the current (unreleased) row is invalid and carries the console's reason, or there is no current
+ * row and the latest released row carries it. The instant is that row's updated_at.
+ */
+export function reauthorizationSince(rows: readonly ReauthorizationRow[]): Date | null {
+  const unreleased = rows.find((row) => UNRELEASED.includes(row.status));
+  if (unreleased !== undefined) {
+    return unreleased.status === 'invalid' && unreleased.reason !== null
+      ? unreleased.updated_at
+      : null;
+  }
+  let latest: ReauthorizationRow | undefined;
+  for (const row of rows) {
+    if (row.status !== 'released') continue;
+    if (
+      latest === undefined ||
+      (row.released_at?.getTime() ?? 0) > (latest.released_at?.getTime() ?? 0)
+    ) {
+      latest = row;
+    }
+  }
+  return latest !== undefined && latest.reason !== null ? latest.updated_at : null;
+}
+
+/**
+ * Whether the user's pdd binding still waits for the user's own authorization, read on
+ * `executor` now: reauthorizationSince, and no pdd authorization link issued to the user since.
+ */
+export async function pddAwaitsReauthorization(
+  executor: Kysely<DB>,
+  appId: string,
+  userId: string,
+): Promise<boolean> {
+  const rows = await executor
+    .selectFrom('union_bindings')
+    .select(['status', 'reason', 'released_at', 'updated_at'])
+    .where('app_id', '=', appId)
+    .where('user_id', '=', userId)
+    .where('platform', '=', PDD)
+    .execute();
+  const since = reauthorizationSince(rows);
+  if (since === null) return false;
+  const issued = await executor
+    .selectFrom('union_auth_sessions')
+    .select('state')
+    .where('app_id', '=', appId)
+    .where('user_id', '=', userId)
+    .where('platform', '=', PDD)
+    .where('mode', '=', 'bind')
+    .where('created_at', '>=', since)
+    .limit(1)
+    .executeTakeFirst();
+  return issued === undefined;
 }
 
 /** One decision on the rows as read now; writes are conditional (canTransition + CAS). */

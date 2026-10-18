@@ -33,6 +33,11 @@
 // An own blocked user's no_rebate refused for maintenance carries the server's no_rebate_reason.
 // B1-06x: the identity, the authority query and the activation are pdd-authority.ts's, shared with
 // the authorization page refresh (union-bindings-pdd.ts); behaviour here is unchanged.
+// F1-07c (BR-ID-20, Codex money review r1): an own open of a binding the console left waiting for
+// the user's own authorization (pdd-authority.ts pddAwaitsReauthorization: after enable / reset,
+// no authorization link issued since) never activates from a filing that is still valid: the
+// union is not asked and the answer is the not-authorized one (30111 with a new auth_jump). After
+// the user has been sent through that link, the next open queries and activates as before.
 // B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ATTR-08, BR-ID-17): every slot this check and the
 // conversion use is the scene's active slot of the account this authorization uses (authAccountId
 // above; after an activation, the binding's account), read with the union port's account filter;
@@ -57,6 +62,7 @@ import {
   PDD,
   activatePddBinding,
   pddAuthorityIdentity,
+  pddAwaitsReauthorization,
   pddBindingRows,
   queryPddAuthority,
 } from './pdd-authority.ts';
@@ -285,6 +291,8 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     );
     if (identity === 'no_pid') throw paused('linking: no active promotion slot');
     if (identity === 'no_attr_code') throw paused('linking: attr_code unavailable');
+    // F1-07c: the console's reset / enable wait for the user's own authorization (BR-ID-20).
+    if (await pddAwaitsReauthorization(executor, appId, subject)) return issue(input, subject);
     const authorized = await queryPddAuthority(
       { registry, logger },
       { appId, identity, traceId: input.traceId, events: 'linking.open' },
