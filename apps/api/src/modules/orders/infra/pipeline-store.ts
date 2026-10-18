@@ -104,12 +104,22 @@ export async function bumpCounter(
     .execute();
 }
 
+/** order_sync_pending.reason 本模块写的取值（db/schema.sql 的 CHECK；快照相关四个为 B1-08k）。 */
+export type PendingReason =
+  | 'UNMAPPED_STATUS'
+  | 'ILLEGAL_TRANSITION'
+  | 'NO_RECEIVED_AT'
+  | 'SERVICE_FEE_RATE_MISSING'
+  | 'RULE_VERSION_PLATFORM_MISSING'
+  | 'TLJ_FACE_VALUE_UNMATCHED'
+  | 'AMOUNT_PARSE_FAILED';
+
 export interface PendingInput {
   readonly app_id: string;
   readonly platform: string;
   readonly sub_order_id: string;
   readonly order_id: string | null;
-  readonly reason: 'UNMAPPED_STATUS' | 'ILLEGAL_TRANSITION' | 'NO_RECEIVED_AT';
+  readonly reason: PendingReason;
   readonly raw_status: string | null;
   readonly raw_payload_id: bigint | null;
   readonly detected_at: Date;
@@ -135,6 +145,29 @@ export async function upsertPending(trx: Trx, input: PendingInput): Promise<bigi
     .returning('id')
     .executeTakeFirst();
   return row?.id ?? null;
+}
+
+/**
+ * B1-08k（BR-CALC-11 细则 ③）：该单 order_status_history 里平台状态首条进入 PAID / RECEIVED / SETTLED 的时刻；
+ * 没有为 null。
+ */
+export async function readFirstPaidAt(
+  trx: Trx,
+  order: { app_id: string; order_id: string },
+): Promise<Date | null> {
+  const row = await trx
+    .withSchema('app')
+    .selectFrom('order_status_history')
+    .select('at')
+    .where('app_id', '=', order.app_id)
+    .where('order_id', '=', order.order_id)
+    .where('field', '=', 'platform')
+    .where('to_status', 'in', ['PAID', 'RECEIVED', 'SETTLED'])
+    .orderBy('at')
+    .orderBy('id')
+    .limit(1)
+    .executeTakeFirst();
+  return row?.at ?? null;
 }
 
 /** 已有子订单的同步更新（B1-08i）：只插入，不改不删（order_status_history append_only）。 */

@@ -5,6 +5,7 @@ import type { Clock, EventBus } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionOrder } from '../../union/index.ts';
 import type { BindingRow } from '../domain/attribution.ts';
 import type { StatusMap } from '../domain/status-map.ts';
+import type { CommissionSnapshotPort, SnapshotOutcome } from './commission-snapshot-step.ts';
 import type { OrderSyncWindow, SyncLogger } from './sync-ports.ts';
 import type { OrderSourcePorts } from './source-backfill.ts';
 
@@ -25,6 +26,11 @@ export interface ImportedOrder {
   readonly attributed: boolean;
   readonly platform_status: OrderPlatformState;
   readonly received_at: Date | null;
+  /**
+   * B1-08k 第 ⑥ 步本次的快照结果（R2 的预估由 settlement 据此与快照表决定）：created / existing = 已有快照；
+   * pending = 跨入资格但进了待处理；none = 本次不生成或未注入快照端口。
+   */
+  readonly snapshot: SnapshotOutcome;
 }
 
 export interface OrderPipelineResult {
@@ -69,6 +75,11 @@ export interface OrderPipelineDeps {
   readonly rebate: {
     onImported(trx: Transaction<DB>, order: ImportedOrder): Promise<void>;
   };
+  /**
+   * 分佣快照端口（B1-08k，BR-ATTR-01 ⑥ / BR-CALC-10）：首次入库即已归因且 PAID+ 时，在 history、待处理之后、
+   * rebate.onImported 之前同事务调用；抛错整事务回滚。未注入时整步跳过（不调用、不写来源与待处理）。
+   */
+  readonly snapshots?: CommissionSnapshotPort;
   readonly updateStep?: {
     apply(
       trx: Transaction<DB>,
