@@ -38,6 +38,7 @@ import { ConfigCenterPage } from './pages/config-center/index.ts';
 import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
+import { UsersPage } from './pages/users/index.ts';
 import { LoginPage } from './pages/login/index.ts';
 import {
   createAccessControl,
@@ -379,8 +380,14 @@ function ShellFrame({
       content = <ConfigCenterPage access={access} />;
     } else if (match !== undefined && match.item.id === 'pages') {
       content = <HomeConfigPage access={access} />;
+    } else if (match !== undefined && match.item.id === 'users') {
+      content = <UsersPage access={access} />;
     } else if (match !== undefined) {
       content = <PagePending title={match.item.label} />;
+    } else if (menuId === 'users' && (snapshot.isSuper || snapshot.permissions.length > 0)) {
+      // A direct address to the users page without user.list / user.lookup: the page itself says
+      // so (and sends nothing) instead of silently landing on the home page.
+      content = <UsersPage access={access} />;
     } else if (menuId !== '') {
       // Unknown or no longer permitted menu (e.g. after 刷新权限): back to the home page.
       content = <Navigate to="/" replace />;

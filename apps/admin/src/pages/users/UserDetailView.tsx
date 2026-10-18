@@ -1,0 +1,454 @@
+// User detail (design-hifi AdmUserDetail): the masked projection of GET /admin/v1/users/{user_id}
+// (basic information and read-only union bindings) and 【查看】 for the full phone number:
+// reason → totp step-up (/admin/v1/auth/step-up) → one POST …/reveal with X-Step-Up-Token. The
+// full number lives in this view's memory only: leaving the view (or opening another user)
+// drops it, and a late answer for a view that is gone is ignored.
+import type { Schema } from '@couli/contracts-ts';
+import { ArrowLeftOutlined, EyeOutlined } from '@ant-design/icons';
+import { useDataProvider } from '@refinedev/core';
+import {
+  Alert,
+  Button,
+  Card,
+  Descriptions,
+  Empty,
+  Flex,
+  Result,
+  Table,
+  Tag,
+  Typography,
+  type DescriptionsProps,
+  type TableColumnsType,
+} from 'antd';
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { StepUpModal, type StepUpResult } from '../../components/step-up/index.ts';
+import { AdminApiError } from '../../providers/data/index.ts';
+import { usersTexts } from '../../texts/users.ts';
+import {
+  beijingTime,
+  bindingStatusLabel,
+  bindingTagColor,
+  blockedReasonLabel,
+  platformLabel,
+  readFailure,
+  registerMethodLabel,
+  revealErrorText,
+  riskLabel,
+  riskTagColor,
+  type UnionBinding,
+  type UserDetail,
+} from './model.ts';
+import { ReasonModal } from './ReasonModal.tsx';
+
+const t = usersTexts.detail;
+const STEP_UP_URL = '/admin/v1/auth/step-up';
+const USERS_URL = '/admin/v1/users';
+
+export interface UserDetailViewProps {
+  readonly userId: string;
+  /** The user as the lookup returned it (no second read). */
+  readonly initial?: UserDetail | undefined;
+  readonly canReveal: boolean;
+  readonly onBack: () => void;
+  readonly onOpenUser: (userId: string) => void;
+}
+
+type LoadStatus = 'loading' | 'ready' | 'failed' | 'forbidden' | 'missing';
+
+type RevealPhase = 'idle' | 'reason' | 'verify' | 'revealing';
+
+interface Reveal {
+  readonly phase: RevealPhase;
+  readonly reason: string;
+  /** The last reveal was refused for its step-up token (10003): verify again, then resend. */
+  readonly again: boolean;
+}
+
+const IDLE: Reveal = { phase: 'idle', reason: '', again: false };
+
+export function UserDetailView({
+  userId,
+  initial,
+  canReveal,
+  onBack,
+  onOpenUser,
+}: UserDetailViewProps): ReactElement {
+  const getProvider = useDataProvider();
+  const [user, setUser] = useState<UserDetail | undefined>(initial);
+  const [status, setStatus] = useState<LoadStatus>(initial === undefined ? 'loading' : 'ready');
+  const [attempt, setAttempt] = useState(0);
+  const [reveal, setRevealState] = useState<Reveal>(IDLE);
+  const [phone, setPhone] = useState<string>();
+  const [revealError, setRevealError] = useState<string>();
+  const revealRef = useRef<Reveal>(IDLE);
+  // Bumped on unmount: answers for a view that is gone never show.
+  const alive = useRef(0);
+
+  const setReveal = useCallback((next: Reveal) => {
+    revealRef.current = next;
+    setRevealState(next);
+  }, []);
+
+  const customOf = () => {
+    const custom = getProvider().custom;
+    if (custom === undefined) throw new Error('Missing custom data provider');
+    return custom;
+  };
+
+  useEffect(() => {
+    const generation = alive.current;
+    return () => {
+      if (alive.current === generation) alive.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (status !== 'loading') return;
+    let current = true;
+    getProvider()
+      .getOne<UserDetail>({ resource: 'users', id: userId })
+      .then(
+        (response) => {
+          if (!current) return;
+          setUser(response.data);
+          setStatus('ready');
+        },
+        (cause: unknown) => {
+          if (!current) return;
+          setStatus(readFailure(cause));
+        },
+      );
+    return () => {
+      current = false;
+    };
+    // `attempt` re-runs the read after 【重试】.
+  }, [getProvider, userId, attempt, status]);
+
+  const retry = () => {
+    setStatus('loading');
+    setAttempt((value) => value + 1);
+  };
+
+  const startReveal = () => {
+    if (revealRef.current.phase !== 'idle') return;
+    setRevealError(undefined);
+    setReveal({ ...IDLE, phase: 'reason' });
+  };
+
+  const cancelReveal = () => {
+    if (revealRef.current.phase === 'revealing') return;
+    setReveal(IDLE);
+  };
+
+  const verifyCode = async (code: string): Promise<StepUpResult> => {
+    const request: Schema<'AdminStepUpRequest'> = { tier: 'totp', code };
+    try {
+      const response = await customOf()<Schema<'AdminStepUpResponse'>['data']>({
+        url: STEP_UP_URL,
+        method: 'post',
+        payload: request,
+      });
+      return { ok: true, stepUpToken: response.data.step_up_token };
+    } catch (cause) {
+      if (cause instanceof AdminApiError)
+        return cause.retryAfterSeconds === undefined
+          ? { ok: false, code: cause.code }
+          : { ok: false, code: cause.code, retryAfterSeconds: cause.retryAfterSeconds };
+      return { ok: false, code: 0 };
+    }
+  };
+
+  const send = async (target: Reveal, stepUpToken: string): Promise<void> => {
+    const generation = alive.current;
+    const payload: Schema<'AdminUserRevealRequest'> = { field: 'phone', reason: target.reason };
+    try {
+      const response = await customOf()<Schema<'AdminUserRevealResponse'>['data']>({
+        url: `${USERS_URL}/${encodeURIComponent(userId)}/reveal`,
+        method: 'post',
+        payload,
+        meta: { stepUpToken },
+      });
+      if (generation !== alive.current) return;
+      setPhone(response.data.value);
+      setReveal(IDLE);
+    } catch (cause) {
+      if (generation !== alive.current) return;
+      if (cause instanceof AdminApiError && cause.code === 10003) {
+        // The token was not accepted: verify again (never resend the old token), then resend.
+        setReveal({ ...target, phase: 'verify', again: true });
+        return;
+      }
+      setReveal(IDLE);
+      setRevealError(revealErrorText(cause));
+    }
+  };
+
+  const onVerified = (stepUpToken: string) => {
+    const current = revealRef.current;
+    if (current.phase !== 'verify') return;
+    const sending: Reveal = { ...current, phase: 'revealing' };
+    setReveal(sending);
+    void send(sending, stepUpToken);
+  };
+
+  const header = (
+    <Flex justify="space-between" align="center" wrap gap={8}>
+      <Flex align="baseline" gap={12} wrap>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {t.title}
+        </Typography.Title>
+      </Flex>
+      <Button icon={<ArrowLeftOutlined aria-hidden />} onClick={onBack}>
+        {t.back}
+      </Button>
+    </Flex>
+  );
+
+  let body: ReactElement;
+  if (status === 'loading') {
+    body = (
+      <Card>
+        <Typography.Text type="secondary" role="status">
+          {t.loading}
+        </Typography.Text>
+      </Card>
+    );
+  } else if (status === 'forbidden') {
+    body = (
+      <Card>
+        <Result status="403" title={t.forbiddenTitle} subTitle={t.forbiddenDescription} />
+      </Card>
+    );
+  } else if (status === 'missing') {
+    body = (
+      <Card>
+        <Result status="404" title={t.notFoundTitle} subTitle={t.notFoundDescription} />
+      </Card>
+    );
+  } else if (status === 'failed' || user === undefined) {
+    body = (
+      <Card>
+        <Result
+          status="error"
+          title={t.loadFailedTitle}
+          subTitle={t.loadFailedDescription}
+          extra={<Button onClick={retry}>{usersTexts.retry}</Button>}
+        />
+      </Card>
+    );
+  } else {
+    body = (
+      <DetailBody
+        user={user}
+        phone={phone}
+        canReveal={canReveal}
+        revealBusy={reveal.phase !== 'idle'}
+        revealError={revealError}
+        onReveal={startReveal}
+        onCloseError={() => setRevealError(undefined)}
+        onOpenUser={onOpenUser}
+      />
+    );
+  }
+
+  return (
+    <Flex vertical gap={16}>
+      {header}
+      {body}
+      {reveal.phase === 'reason' ? (
+        <ReasonModal
+          initialReason={reveal.reason}
+          onCancel={cancelReveal}
+          onConfirm={(reason) => {
+            if (revealRef.current.phase !== 'reason') return;
+            setReveal({ phase: 'verify', reason, again: false });
+          }}
+        />
+      ) : null}
+      <StepUpModal
+        open={reveal.phase === 'verify'}
+        tier="totp"
+        operation={usersTexts.reveal.operation}
+        details={[
+          usersTexts.reveal.stepUpDetail(userId),
+          ...(reveal.again ? [usersTexts.reveal.stepUpAgain] : []),
+        ]}
+        onSubmit={verifyCode}
+        onClose={cancelReveal}
+        onVerified={onVerified}
+      />
+    </Flex>
+  );
+}
+
+interface DetailBodyProps {
+  readonly user: UserDetail;
+  readonly phone: string | undefined;
+  readonly canReveal: boolean;
+  readonly revealBusy: boolean;
+  readonly revealError: string | undefined;
+  readonly onReveal: () => void;
+  readonly onCloseError: () => void;
+  readonly onOpenUser: (userId: string) => void;
+}
+
+function DetailBody({
+  user,
+  phone,
+  canReveal,
+  revealBusy,
+  revealError,
+  onReveal,
+  onCloseError,
+  onOpenUser,
+}: DetailBodyProps): ReactElement {
+  const f = t.fields;
+  const inviter = user.inviter_user_id;
+  const phoneValue =
+    phone !== undefined ? (
+      <Flex align="center" gap={8} wrap>
+        <Typography.Text strong>{phone}</Typography.Text>
+        <Tag>{usersTexts.reveal.revealed}</Tag>
+      </Flex>
+    ) : (
+      <Flex align="center" gap={8} wrap>
+        <Typography.Text>{user.phone_masked ?? usersTexts.dash}</Typography.Text>
+        {canReveal && user.phone_masked !== null ? (
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined aria-hidden />}
+            style={{ paddingInline: 0 }}
+            loading={revealBusy}
+            onClick={onReveal}
+          >
+            {usersTexts.reveal.action}
+          </Button>
+        ) : null}
+      </Flex>
+    );
+  const items: DescriptionsProps['items'] = [
+    {
+      key: 'uid',
+      label: f.uid,
+      children: <span style={{ fontFamily: 'monospace' }}>{user.user_id}</span>,
+    },
+    { key: 'nickname', label: f.nickname, children: user.nickname },
+    { key: 'phone', label: f.phone, children: phoneValue },
+    { key: 'inviteCode', label: f.inviteCode, children: user.invite_code },
+    {
+      key: 'inviter',
+      label: f.inviter,
+      children:
+        inviter === null ? (
+          usersTexts.dash
+        ) : (
+          <Button
+            type="link"
+            size="small"
+            style={{
+              paddingInline: 0,
+              height: 'auto',
+              whiteSpace: 'normal',
+              wordBreak: 'break-all',
+              textAlign: 'start',
+              fontFamily: 'monospace',
+            }}
+            onClick={() => onOpenUser(inviter)}
+          >
+            {inviter}
+          </Button>
+        ),
+    },
+    { key: 'level', label: f.level, children: user.level },
+    {
+      key: 'risk',
+      label: f.risk,
+      children: <Tag color={riskTagColor(user.risk.state)}>{riskLabel(user.risk.state)}</Tag>,
+    },
+    {
+      key: 'registerMethod',
+      label: f.registerMethod,
+      children: registerMethodLabel(user.register_method),
+    },
+    {
+      key: 'registeredChannel',
+      label: f.registeredChannel,
+      children: user.registered_channel ?? usersTexts.dash,
+    },
+    { key: 'createdAt', label: f.createdAt, children: beijingTime(user.created_at) },
+  ];
+
+  const columns: TableColumnsType<UnionBinding> = [
+    {
+      key: 'platform',
+      title: t.bindingColumns.platform,
+      width: 120,
+      render: (_, binding) => platformLabel(binding.platform),
+    },
+    {
+      key: 'status',
+      title: t.bindingColumns.status,
+      width: 220,
+      render: (_, binding) => (
+        <Flex align="center" gap={8} wrap>
+          <Tag color={bindingTagColor(binding.status)} style={{ marginInlineEnd: 0 }}>
+            {bindingStatusLabel(binding.status)}
+          </Tag>
+          {binding.blocked_reason === null ? null : (
+            <Typography.Text type="secondary">
+              {blockedReasonLabel(binding.blocked_reason)}
+            </Typography.Text>
+          )}
+        </Flex>
+      ),
+    },
+    {
+      key: 'boundAt',
+      title: t.bindingColumns.boundAt,
+      width: 160,
+      render: (_, binding) => beijingTime(binding.bound_at),
+    },
+    {
+      key: 'releasedAt',
+      title: t.bindingColumns.releasedAt,
+      width: 160,
+      render: (_, binding) => beijingTime(binding.released_at),
+    },
+    {
+      key: 'cooldownUntil',
+      title: t.bindingColumns.cooldownUntil,
+      width: 160,
+      render: (_, binding) => beijingTime(binding.cooldown_until),
+    },
+    {
+      key: 'reason',
+      title: t.bindingColumns.reason,
+      render: (_, binding) => binding.reason ?? usersTexts.dash,
+    },
+  ];
+
+  return (
+    <Flex vertical gap={16}>
+      <Card title={t.basicTitle}>
+        <Flex vertical gap={12}>
+          {revealError === undefined ? null : (
+            <Alert type="error" showIcon closable message={revealError} onClose={onCloseError} />
+          )}
+          <Descriptions column={4} items={items} />
+        </Flex>
+      </Card>
+      <Card title={t.bindingsTitle} styles={{ body: { paddingTop: 0 } }}>
+        <Table<UnionBinding>
+          rowKey="platform"
+          columns={columns}
+          dataSource={user.union_bindings}
+          pagination={false}
+          locale={{
+            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t.bindingsEmpty} />,
+          }}
+        />
+      </Card>
+    </Flex>
+  );
+}
