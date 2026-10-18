@@ -1,0 +1,32 @@
+id: CT-02s
+repo: rebate-platform
+title: 契约：后台文章 CMS——/admin/v1/articles 列表、详情（全部版本）、新建、存草稿（CAS）、发布（可定时）、下线，全部 planned；20902 data.resource 加 article；content.article 权限登记
+type: contract
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 02 l.209；04 l.390 articles（tiptap 白名单、已发布与当前版本口径、整篇下线）、l.575 §6.6（ExternalPage 命中 union_host → 20001）、l.962 content.article（无 step-up）；
+# 08 BR-ATTR-29 ①（04_ATTR l.75，细则 l.854）、BR-TEXT-13 细则（12_TEXT l.687–693，公告内容版本、不可关闭须有失效时刻、禁用词）。原文由编排者摘入任务书，refs 置空。
+# 要点：GET /admin/v1/articles（category、status、游标）、GET …/{id}、POST /admin/v1/articles、PUT …/{id}/draft（expected_row_version）、POST …/{id}/publish（可带定时 published_at）、
+#   POST …/{id}/offline；请求体不含 notice_content_version（服务端维护）；category=agreement 不经本组发布（L1）。x-auth admin，无 step-up。
+# 错误 20001 data.fields（JSON 路径）、20902 resource=article、10403。permissions.yaml 只登记档位不同的操作，无 step-up 时 operations 预期仍为 []，核实后有变化才改。
+# 待裁定 L1、L15（draft / published / offline）、L18（链接只收 https）、L19（存草稿插入新版本行）用默认。排在 CT-02r 之后占契约槽；全部新增，oasdiff 预期非破坏。
+refs: []
+refs_hash: {}
+contract_sections: ['6.6']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

@@ -1,0 +1,25 @@
+id: F1-02r
+repo: rebate-platform
+title: content 纯函数：禁用词匹配（BR-TEXT-13 归一化，读 banned-words.yaml）、文案键分类（fund-term-keys.yaml，privacy. / perm. 归协议类）与变量校验（对 texts.default.json）
+type: impl
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 08 BR-TEXT-12 细则 l.648–660（变量须与包内默认一致；资金术语键检查，查不到按资金术语；表 D）、BR-TEXT-13 细则（12_TEXT l.684 起归一化、l.693 禁用词 20001）。
+# 原文由编排者摘入任务书第 9 节，refs 置空。分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。
+# 要点：① 禁用词：按细则归一化，支持 banned-words.yaml 的 scopes / allow_keys / allow_articles，须过 specs/banned-words.vectors.json；命中回命中词（供 20001 data.fields）。
+# ② 键分类：fund-term-keys.yaml；privacy. / perm. 前缀 → agreement 类；查不到 → fund_terms。③ 变量：{name} 集合须等于 texts.default.json 同键，键不存在 → 20001（L16）。
+# yaml / json 内容由调用方解析后传入（纯函数，不读文件、不读库），供字典、文章与后台线 notify-templates、config.texts（L17）共用。
+# 待裁定 L16、L17 用默认。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/content/domain/text-guard/**'
+test_paths:
+  - 'test/spec/content/text-guard/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/text-guard/**'
+status: todo
+pr: null

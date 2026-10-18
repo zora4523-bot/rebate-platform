@@ -1,0 +1,29 @@
+id: F1-02m
+repo: rebate-platform
+title: content 纯函数：协议发布校验与需重签起点推导（needsSign）、协议 / 文章正文 tiptap 白名单校验与 text_sha256 计算
+type: impl
+# 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
+# 依据 04 l.390 agreements 与 articles 正文白名单、l.575 §6.6 agreements 行；08 BR-ID-12 细则、BR-WDR-31 细则 l.936、l.957–963。原文由编排者摘入任务书第 9 节，refs 置空。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）。
+# 要点：① 发布校验：version = 当前 + 1；min_version 不降且 ≤ version；劳务协议 requires_resign ⇔ min_version = version，首版必为 true（L3）；隐私 / 用户协议 requires_resign 恒 false；
+#   确认人、说明、确认日期三项非空（L4）；违者 20001 + data.fields。② needsSign(signed|null, current) = 未签或 signed < min_version（resign_from_version = min_version）。
+# ③ 正文白名单：doc / paragraph / heading（1–3，L9）/ bulletList / orderedList / listItem / blockquote / horizontalRule / image（https 且主机 = 媒体 CDN，由调用方传入）/ text / hardBreak，
+#   标记 bold / italic / link；未知节点或属性 → 20001 fields=[body]；body ≤ 200 000 字符、深度 ≤ 20（L10）。④ text_sha256 = sha256(正文 UTF-8)。只用 Node 内置，不读库、不读时钟。
+# 待裁定 L1、L3、L4、L9、L10 用默认。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/content/domain/agreements/**'
+  - 'apps/api/src/modules/content/domain/article-body/**'
+test_paths:
+  - 'test/spec/content/agreements-rules/**'
+  - 'test/spec/content/article-body/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/agreements-rules/**'
+  - 'test/spec/content/article-body/**'
+status: todo
+pr: null
