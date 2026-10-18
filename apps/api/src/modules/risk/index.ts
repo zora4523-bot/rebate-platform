@@ -1,4 +1,9 @@
 // Public surface of the risk module. Other modules import only from this file.
+export { AdminRiskState } from './application/admin-risk-state.ts';
+export type {
+  AdminRiskStateCommand,
+  AdminRiskStateOptions,
+} from './application/admin-risk-state.ts';
 export { createInviteRelationHitWriter } from './application/invite-relation-hits.ts';
 export type {
   InviteRelationHitRuleId,
@@ -74,6 +79,7 @@ export type {
   RiskScanHealSchedule,
 } from './application/risk-scan-heal.ts';
 export {
+  RiskStateConflictError,
   RiskStateTransitionError,
   createRiskStateService,
   riskStateServiceToken,

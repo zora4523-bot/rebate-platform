@@ -51,6 +51,7 @@ import {
   type Clock,
   type EventBus,
   type TokenPrincipal,
+  type RedisHandle,
 } from '../../platform/index.ts';
 import { canTransitionRiskState } from '../domain/risk-state-transitions.ts';
 
@@ -70,6 +71,7 @@ export interface RiskStateSnapshot {
 }
 
 export interface SetRiskState extends RiskSubject, RiskStateSnapshot {
+  readonly expected_row_version?: number | null;
   readonly reason: string | null;
   readonly changed_by: string;
 }
@@ -96,6 +98,7 @@ export interface RiskStateService {
 }
 
 export interface RiskStateOptions {
+  readonly redis?: RedisHandle;
   readonly db: Kysely<DB>;
   readonly clock: Clock;
   readonly events: EventBus;
