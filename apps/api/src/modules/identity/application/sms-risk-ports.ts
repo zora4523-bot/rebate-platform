@@ -1,6 +1,6 @@
 // identity's ports onto risk's SMS send risk (task B1-03g; 规划/08 BR-ID-05 细则「发码与设备注册的
 // 风控默认值」): the 42901 step of the send order (deviceQuota, after the 44001 checks and before
-// the per-phone quota), the counters after an accepted or unknown delivery (afterAccepted) and the
+// the per-phone quota), the landing page send's IP-only step (landingQuota, B1-11g), the counters after an accepted or unknown delivery (afterAccepted) and the
 // new-account counter of the registration core (afterRegistered, every register_method, in the
 // caller's transaction before commit).
 // The device admission is keyed by device_hash, read here by (app_id, device_id); a device row
@@ -20,11 +20,12 @@ export interface SmsDeviceHashReader {
   deviceHashOf(appId: string, deviceId: string): Promise<string | null>;
 }
 export interface SmsRiskPorts {
-  readonly smsHooks: Required<Pick<SmsHooks, 'deviceQuota' | 'afterAccepted'>>;
+  readonly smsHooks: Required<Pick<SmsHooks, 'deviceQuota' | 'landingQuota' | 'afterAccepted'>>;
   readonly registration: Required<Pick<RegistrationOptions, 'afterRegistered'>>;
 }
 export interface SmsRiskPortsOptions {
-  readonly risk: SmsRisk;
+  /** admitIp may be absent (a risk port built before B1-11g): landing sends are then refused. */
+  readonly risk: Omit<SmsRisk, 'admitIp'> & Partial<Pick<SmsRisk, 'admitIp'>>;
   readonly devices: SmsDeviceHashReader;
   readonly logger: RootLogger;
 }
@@ -68,6 +69,23 @@ export function createSmsRiskPorts(options: SmsRiskPortsOptions): SmsRiskPorts {
           phone: request.phone,
           ...(request.client_ip === undefined ? {} : { clientIp: request.client_ip }),
         });
+        return admission.code === 0
+          ? null
+          : { code: 42901, retryAfterSec: admission.retryAfterSec };
+      },
+      // B1-11g (BR-ID-32): the landing page send is judged by the two per-IP items only; it
+      // always comes from an HTTP request, so a missing client IP is refused, never skipped.
+      async landingQuota(request) {
+        const appId = request.app_id;
+        if (request.client_ip === undefined) {
+          logger.warn({ app_id: appId, purpose: request.purpose }, 'sms_landing_ip_missing');
+          return { ...refused };
+        }
+        if (risk.admitIp === undefined) {
+          logger.error({ app_id: appId, purpose: request.purpose }, 'sms_landing_risk_missing');
+          return { ...refused };
+        }
+        const admission = await risk.admitIp({ appId, clientIp: request.client_ip });
         return admission.code === 0
           ? null
           : { code: 42901, retryAfterSec: admission.retryAfterSec };

@@ -3482,7 +3482,6 @@ paths:
       x-signed: false
       x-idempotent: false
       x-min-version-gate: false
-      x-implementation: planned
       x-error-codes:
         - 20001
         - 44001

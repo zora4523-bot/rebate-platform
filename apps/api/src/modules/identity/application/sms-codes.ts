@@ -9,7 +9,10 @@
 //      risk hit through hooks.blockedPrefix);
 //   3. insertion points, in order, each short-circuits: phoneBlocklist (44001, B1-03d) → captcha
 //      (44003, B1-03g) → deviceQuota (42901, B1-03g). They get the request with the normalised
-//      number, the device id and the client IP;
+//      number, the device id and the client IP. A landing page send (channel=landing, B1-11g,
+//      BR-ID-32: purpose=login, no signature, no device, no human verification) runs
+//      phoneBlocklist and then landingQuota (42901: the two per-IP items only) instead of captcha
+//      and deviceQuota; without a landingQuota hook it is refused (42901, Retry-After 5);
 //   4. one atomic call reserves the per-phone quota (60 s / natural hour / natural day / rolling
 //      24 h, uncommitted sends counted over [reservation, reservation + D], D = sendTimeoutMs +
 //      SMS_IN_FLIGHT_MARGIN_MS) and stores the new random code as the reserved candidate of (app,
@@ -94,6 +97,11 @@ export interface SmsRequest {
   readonly device_id?: string;
   /** The client IP Fastify reports, for the IP limits and captcha triggers of B1-03g. */
   readonly client_ip?: string;
+  /**
+   * Where the send comes from: the app route (default) or the landing page route (B1-11g,
+   * BR-ID-32), which has no device and is judged by landingQuota instead of captcha/deviceQuota.
+   */
+  readonly channel?: 'app' | 'landing';
 }
 export type SmsResult =
   | {
@@ -128,6 +136,10 @@ export interface SmsHooks {
   ) => Promise<Extract<SmsResult, { code: 44001 }> | null>;
   readonly captcha?: (request: SmsRequest) => Promise<Extract<SmsResult, { code: 44003 }> | null>;
   readonly deviceQuota?: (
+    request: SmsRequest,
+  ) => Promise<Extract<SmsResult, { code: 42901 }> | null>;
+  /** B1-11g: the landing page send's 42901 step before the phone quota (the per-IP items only). */
+  readonly landingQuota?: (
     request: SmsRequest,
   ) => Promise<Extract<SmsResult, { code: 42901 }> | null>;
   readonly afterAccepted?: (request: SmsRequest) => Promise<void>;
@@ -277,10 +289,20 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
       }
       const blocked = (await hooks.phoneBlocklist?.(checked)) ?? null;
       if (blocked !== null) return blocked;
-      const captcha = (await hooks.captcha?.(checked)) ?? null;
-      if (captcha !== null) return captcha;
-      const device = (await hooks.deviceQuota?.(checked)) ?? null;
-      if (device !== null) return device;
+      if (request.channel === 'landing') {
+        // BR-ID-32: no human verification and no device step; the per-IP items must be judged.
+        if (hooks.landingQuota === undefined) {
+          logger.error({ app_id: appId, purpose }, 'sms_landing_quota_missing');
+          return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
+        }
+        const limited = await hooks.landingQuota(checked);
+        if (limited !== null) return limited;
+      } else {
+        const captcha = (await hooks.captcha?.(checked)) ?? null;
+        if (captcha !== null) return captcha;
+        const device = (await hooks.deviceQuota?.(checked)) ?? null;
+        if (device !== null) return device;
+      }
 
       const keys = keysOf(appId, purpose, phone);
       const token = randomBytes(16).toString('hex');

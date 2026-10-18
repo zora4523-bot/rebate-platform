@@ -594,3 +594,55 @@ it('[BR-ID-05] every ZADD and HSET of the send scripts is followed directly by a
     });
   }
 });
+
+it('[AC-B1-11g#7] a landing send runs phoneBlocklist then landingQuota, never captcha or deviceQuota', async () => {
+  const phoneBlocklist = vi.fn(async () => null);
+  const captcha = vi.fn(async () => ({ code: 44003 as const }));
+  const deviceQuota = vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 9 }));
+  const landingQuota = vi.fn(async () => null);
+  const f = setup({ hooks: { phoneBlocklist, captcha, deviceQuota, landingQuota } });
+  const result = await f.service.send({
+    app_id: 'couli',
+    phone: `+86 ${NUMBER}`,
+    purpose: 'login',
+    client_ip: '203.0.113.7',
+    channel: 'landing',
+  });
+  expect(result).toMatchObject({ code: 0 });
+  expect(phoneBlocklist).toHaveBeenCalledOnce();
+  expect(landingQuota).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ phone: NUMBER, channel: 'landing', client_ip: '203.0.113.7' }),
+  );
+  expect(captcha).not.toHaveBeenCalled();
+  expect(deviceQuota).not.toHaveBeenCalled();
+  expect(f.messages).toHaveLength(1);
+});
+
+it('[AC-B1-11g#10] a landing 42901 from landingQuota short-circuits the phone quota', async () => {
+  const landingQuota = vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 16 }));
+  const f = setup({ hooks: { landingQuota } });
+  const result = await f.service.send({
+    app_id: 'couli',
+    phone: NUMBER,
+    purpose: 'login',
+    client_ip: '203.0.113.7',
+    channel: 'landing',
+  });
+  expect(result).toEqual({ code: 42901, retryAfterSec: 16 });
+  expect(f.calls).toEqual([]);
+  expect(f.messages).toEqual([]);
+});
+
+it('[AC-B1-11g#11] a landing send without a landingQuota hook is refused, never sent unjudged', async () => {
+  const f = setup();
+  const result = await f.service.send({
+    app_id: 'couli',
+    phone: NUMBER,
+    purpose: 'login',
+    client_ip: '203.0.113.7',
+    channel: 'landing',
+  });
+  expect(result).toMatchObject({ code: 42901 });
+  expect(f.calls).toEqual([]);
+  expect(f.messages).toEqual([]);
+});

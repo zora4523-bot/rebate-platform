@@ -150,6 +150,7 @@ import { OauthLoginController } from './http/public/oauth-login.controller.ts';
 import { StepUpController } from './http/public/step-up.controller.ts';
 import { LogoutController } from './http/public/logout.controller.ts';
 import { RefreshController } from './http/public/refresh.controller.ts';
+import { LandingSmsCodesController } from './http/public/landing-sms-codes.controller.ts';
 import { SmsCodesController } from './http/public/sms-codes.controller.ts';
 import { SmsLoginController } from './http/public/sms-login.controller.ts';
 import { TipsController } from './http/public/tips.controller.ts';
@@ -280,6 +281,7 @@ const REFUSING_DEVICE_REGISTRATION: DeviceRegistrationPorts = {
 /** The SMS send risk without risk's assembly: refuse like an unavailable store (Retry-After 1). */
 const REFUSING_SMS_RISK: SmsRisk = {
   admit: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  admitIp: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
   recordAccepted: () => Promise.resolve(),
   recordRegistered: () => Promise.resolve(),
 };
@@ -354,6 +356,7 @@ export class IdentityModule {
         BindPhoneController,
         DevicesController,
         SmsCodesController,
+        LandingSmsCodesController,
         SmsLoginController,
         OauthLoginController,
         RefreshController,

@@ -2,6 +2,8 @@
 // calls these ports from its SMS code service (deviceQuota, afterAccepted) and its account creation
 // core (afterRegistered); app.module assembles them through ../index.ts.
 //
+// admitIp() is the same step ① alone, for the landing page send (BR-ID-32: no signature, no device).
+//
 // admit() is the 42901 step of the send order 签名 → 20001 → 44001 → 42901 (no human
 // verification: 44003 is never answered and sms.captcha_mode is not read):
 //   ① the client IP, one read-only script over two sorted sets of the window [now − 3600 s, now]
@@ -50,11 +52,21 @@ export interface SmsRiskRequest {
    */
   readonly clientIp?: string;
 }
+/** BR-ID-32: the landing page send has no device, only the client IP Fastify reports. */
+export interface SmsRiskIpRequest {
+  readonly appId: string;
+  readonly clientIp: string;
+}
 export type SmsRiskAdmission =
   { readonly code: 0 } | { readonly code: 42901; readonly retryAfterSec: number };
 export interface SmsRisk {
   /** IP checks precede the atomic device admission; admission is never refunded. */
   admit(input: SmsRiskRequest): Promise<SmsRiskAdmission>;
+  /**
+   * The landing page send (BR-ID-32): only the IP step ① (both items), no device admission.
+   * Nothing is recorded; a store failure answers 42901 like admit().
+   */
+  admitIp(input: SmsRiskIpRequest): Promise<SmsRiskAdmission>;
   /** Called once after accepted OR unknown delivery, never for explicit rejection. */
   /** Without a client IP only the daily budget counts. */
   recordAccepted(input: { appId: string; clientIp?: string }): Promise<void>;
@@ -378,7 +390,38 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
     }
   }
 
+  /** Step ①: the IP's new accounts and accepted sends, one read-only script; 0 or 42901. */
+  async function judgeIp(
+    store: RedisHandle,
+    appId: string,
+    clientIp: string,
+    sendLimit: number,
+    now: number,
+  ): Promise<SmsRiskAdmission> {
+    let ipWaits: number[];
+    try {
+      const ip = ipDigest(clientIp);
+      const reply = await store.namespace(SMS_RISK_NAMESPACE).eval(IP_SCRIPT, {
+        keys: [`ip_send:${appId}:${ip}`, `ip_reg:${appId}:${ip}`],
+        args: [String(now), String(WINDOW_MS), String(sendLimit), String(IP_REGISTRATIONS_LIMIT)],
+        ttlSeconds: WINDOW_TTL_SEC,
+      });
+      ipWaits = integers(reply, 2);
+    } catch (error) {
+      return storeFailed(error);
+    }
+    storeAnswered();
+    const ipWait = Math.max(...ipWaits);
+    return ipWait > 0 ? { code: 42901, retryAfterSec: seconds(ipWait) } : { code: 0 };
+  }
+
   return {
+    async admitIp({ appId, clientIp }) {
+      if (redis === null) return storeFailed(new StoreNotConfigured());
+      const sendLimit = await setting(appId, SMS_IP_SENDS_KEY, IP_SENDS_DEFAULT, 1, MAX_THRESHOLD);
+      return judgeIp(redis, appId, clientIp, sendLimit, clock.now().getTime());
+    },
+
     async admit({ appId, deviceHash, phone, clientIp }) {
       if (redis === null) return storeFailed(new StoreNotConfigured());
       const sendLimit = await setting(appId, SMS_IP_SENDS_KEY, IP_SENDS_DEFAULT, 1, MAX_THRESHOLD);
@@ -394,26 +437,8 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
       // ① the IP: both items in one read; either reached ends the decision here. A send with
       // no client IP (no HTTP request behind it) has no IP to judge and goes on to ②.
       if (clientIp !== undefined) {
-        let ipWaits: number[];
-        try {
-          const ip = ipDigest(clientIp);
-          const reply = await redis.namespace(SMS_RISK_NAMESPACE).eval(IP_SCRIPT, {
-            keys: [`ip_send:${appId}:${ip}`, `ip_reg:${appId}:${ip}`],
-            args: [
-              String(now),
-              String(WINDOW_MS),
-              String(sendLimit),
-              String(IP_REGISTRATIONS_LIMIT),
-            ],
-            ttlSeconds: WINDOW_TTL_SEC,
-          });
-          ipWaits = integers(reply, 2);
-        } catch (error) {
-          return storeFailed(error);
-        }
-        storeAnswered();
-        const ipWait = Math.max(...ipWaits);
-        if (ipWait > 0) return { code: 42901, retryAfterSec: seconds(ipWait) };
+        const ipVerdict = await judgeIp(redis, appId, clientIp, sendLimit, now);
+        if (ipVerdict.code !== 0) return ipVerdict;
       }
 
       // ② the device's admission set, judged, recorded and logged in one atomic step. Its time is
