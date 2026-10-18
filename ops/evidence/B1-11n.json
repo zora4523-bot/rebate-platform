@@ -1,0 +1,94 @@
+{
+  "task": "B1-11n",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "8ea5b719a4dbc0aaa4cb75f3c6071a6ffe4be209",
+  "red_tests": [
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#1] 有上级时返回 true 和原绑定时刻，保留毫秒且不依赖关系日志",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#2] 无上级的已存在用户返回 false 和 null，与查不到用户区分",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#3] 同应用有其他用户，指定 userId 不存在时返回 null",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#4] 同 id 在其他 app_id 下不可见，交替查询不串应用或用户",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#5] parent_id 为空但绑定时刻非空的脏数据归一为 false 和 null",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#6] parent_id 非空而时刻为空时仍有上级，原样保留 null 时刻",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#7] 返回对象恰有两个字段，不泄露上级或用户身份字段",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#8] status=deleting 仍返回当前关系",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#9] status=deleted 仍返回当前关系",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#10] 风控状态 banned 不过滤当前关系",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#11] 风控状态 frozen 不过滤当前关系",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#12] 风控状态 appealing 不过滤当前关系",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#13] 同一 reader 对绑定、换绑和解绑的下一次读取立即反映变化",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#14] 缺失结果不缓存，新增和删除用户后下一次读取立即可见",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#15] 只读事务中每次调用恰查询一次，重复查询也不使用缓存",
+    "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#16] 数据访问错误按同一对象抛出，不吞错、包装或回退为无上级"
+  ],
+  "risk_note": "RV2 (growth). Read-only parent relation port for the content lane's has_parent audience condition (F1-09g): createParentRelationReader({ db }).relationOf({ appId, userId }) → { has_parent, parent_bound_at } | null from one app.users query by (app_id, id); the parent's identity never leaves the function; no row (or the id under another app_id) → null; dirty rows (no parent but a bound time) read as no parent; no status or risk filter, uncached, database errors propagate. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "8ea5b719a4dbc0aaa4cb75f3c6071a6ffe4be209",
+      "tree": "be5813c4945f04040430a268917751051f128962",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T03:13:02Z",
+      "finished_at": "2026-10-18T03:13:08Z",
+      "red_tests": [
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#1] 有上级时返回 true 和原绑定时刻，保留毫秒且不依赖关系日志",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#2] 无上级的已存在用户返回 false 和 null，与查不到用户区分",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#3] 同应用有其他用户，指定 userId 不存在时返回 null",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#4] 同 id 在其他 app_id 下不可见，交替查询不串应用或用户",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#5] parent_id 为空但绑定时刻非空的脏数据归一为 false 和 null",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#6] parent_id 非空而时刻为空时仍有上级，原样保留 null 时刻",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#7] 返回对象恰有两个字段，不泄露上级或用户身份字段",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#8] status=deleting 仍返回当前关系",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#9] status=deleted 仍返回当前关系",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#10] 风控状态 banned 不过滤当前关系",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#11] 风控状态 frozen 不过滤当前关系",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#12] 风控状态 appealing 不过滤当前关系",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#13] 同一 reader 对绑定、换绑和解绑的下一次读取立即反映变化",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#14] 缺失结果不缓存，新增和删除用户后下一次读取立即可见",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#15] 只读事务中每次调用恰查询一次，重复查询也不使用缓存",
+        "test/spec/growth/parent-reader/reader.int.test.ts > [AC-B1-11n#16] 数据访问错误按同一对象抛出，不吞错、包装或回退为无上级"
+      ],
+      "expected": ["test/spec/growth/parent-reader/reader.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "323f2d9ffa7199800ac68d6eafe04a41701fe19d276a910004a4e11b444875e1"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (16 tests in 1 file red for the right reason on the test runner) reviewed by a fresh Claude subagent: round 1 pass, 0 findings"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "4b30f96774a35fda101d86970d5db9570efa03ed",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "a0374355c36834fe35c2a8806a5cbdc233d4edd5",
+    "specs": "e58ab9698a712cff0512d0a5b9f383c334794e71"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
