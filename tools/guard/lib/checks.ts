@@ -572,6 +572,18 @@ export function migrationSequenceCheck(root: string, base: string): CheckResult 
     .files.filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'))
     .map((p) => p.slice(prefix.length));
   const { problems, notices } = migrationSequenceProblems(baseNames, headNames);
+  // The tree listing leaves symbolic links out, so a link named like a migration would pass
+  // unseen (Codex review r1, S2): every entry of the directory that is not a regular file or a
+  // directory is refused by name, whether git tracks or ignores it.
+  const dir = join(root, MIGRATIONS_DIR);
+  if (existsSync(dir)) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isFile() || entry.isDirectory()) continue;
+      problems.push(
+        `${prefix}${entry.name}: 不是普通文件（${entry.isSymbolicLink() ? '符号链接' : '特殊文件'}），迁移只能是普通文件`,
+      );
+    }
+  }
   return result(name, problems, notices);
 }
 

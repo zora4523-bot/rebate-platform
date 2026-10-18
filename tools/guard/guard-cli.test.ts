@@ -1,6 +1,6 @@
 // End-to-end tests of the guard command lines against fixture trees and repositories.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { repoRoot } from '../lib/paths.ts';
@@ -1764,6 +1764,25 @@ describe('run.ts git: ledger-overwrite and migration-sequence (CT-06q, 2026-10-1
       'PASS ledger-overwrite',
       'PASS migration-sequence',
     ]);
+  });
+
+  it('a symbolic link in db/migrations is refused, named, whatever it points to (Codex r1, S2)', () => {
+    const { root, base } = repo();
+    symlinkSync('0002_second.sql', join(root, 'db/migrations/0002_again.sql'));
+    const res = runGit(root, base);
+    expect(res.status).toBe(1);
+    expect(lines(res.stdout, 2)).toEqual([
+      'PASS ledger-overwrite',
+      'FAIL migration-sequence (1 problem)',
+    ]);
+    expect(res.stderr).toContain(
+      'migration-sequence: db/migrations/0002_again.sql: 不是普通文件（符号链接），迁移只能是普通文件',
+    );
+    // Staged, the link is still not a migration file.
+    fixtureGit(root, ['add', '-A']);
+    expect(runGit(root, base).stderr).toContain(
+      'db/migrations/0002_again.sql: 不是普通文件（符号链接）',
+    );
   });
 
   it('a base that is not a commit fails both checks as internal errors', () => {
