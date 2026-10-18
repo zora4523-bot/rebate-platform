@@ -42,8 +42,12 @@ it('[AC-S1-55#7] a1/a2 已上报，a3 取消无上报：跟随 a2 的 open 时�
   await f.report(a1.attempt_id, 1);
   const a2 = await f.open(5);
   await f.report(a2.attempt_id, 6);
-  await f.open(10);
+  await f.open(10, { link_id: a1.link_id });
   const { q } = await f.service();
+  f.clock.set(at(12));
+  expect(await q.list(f.subject)).toEqual({ items: [expected(a2)] });
+  f.clock.set(at(16));
+  expect(await q.list(f.subject)).toEqual({ items: [expected(a2)] });
   f.clock.set(at(20));
   expect(await q.list(f.subject)).toEqual({ items: [expected(a2)] });
   f.clock.set(at(35));

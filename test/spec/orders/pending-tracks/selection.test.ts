@@ -14,6 +14,19 @@ it('[AC-B1-08m#2] 无上报时选较晚 open，同 link 的尝试也独立', asy
   expect(await select([b, a])).toEqual([card(b)]);
 });
 
+it('[AC-S1-55#7] 同一 link 的尝试分别分档，取消的新尝试不能继承旧尝试的上报', async () => {
+  const a1 = attempt(0, { jump_reported_at: at(1) });
+  const a2 = attempt(5, { jump_reported_at: at(6) });
+  const a3 = attempt(10, { link_id: a1.link_id });
+  for (const input of [
+    [a1, a2, a3],
+    [a3, a2, a1],
+  ]) {
+    expect(await select(input, { now: at(12) })).toEqual([card(a2)]);
+    expect(await select(input, { now: at(16) })).toEqual([card(a2)]);
+  }
+});
+
 it.each([false, true])(
   '[AC-B1-08m#3] 同时刻按 UUID 字符串最大决胜，上报档=%s',
   async (reported) => {

@@ -63,6 +63,7 @@ export async function fixture(db: Kysely<DB>) {
         .values({
           app_id: row.app_id,
           user_id: row.user_id,
+          opener_user_id: row.user_id,
           link_id: row.link_id,
           platform: linked.platform,
           pid_scene: 'self_buy',
