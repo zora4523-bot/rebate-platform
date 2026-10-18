@@ -18,13 +18,16 @@ export interface BuyTypeDecision {
   readonly scene_basis: 'pid' | 'param' | 'fallback';
 }
 
-/** BR-ATTR-06 京东 subUnionId：整串完全匹配（JS 的 `$` 不吞结尾换行）。 */
-const JD_SUB_UNION = /^n_([0-9a-z]{8})(?:_([0-9a-z]{1,16}))?$/;
+/**
+ * BR-ATTR-06 京东 subUnionId：整串完全匹配（JS 的 `$` 不吞结尾换行）。第 1 组 attr_code，第 2 组 link 短码 lk
+ * （1–16 位，BR-ATTR-15 exact 用，B1-08j 共用）。
+ */
+export const JD_SUB_UNION = /^n_([0-9a-z]{8})(?:_([0-9a-z]{1,16}))?$/;
 /** BR-ATTR-06 拼多多 uid：8 位 [0-9a-z] 字符串。 */
 const PDD_UID = /^[0-9a-z]{8}$/;
 
 /** Parses JSON and keeps only a plain object (not null, not an array, not a primitive). */
-function parseJsonObject(text: string | null): Record<string, unknown> | null {
+export function parseJsonObject(text: string | null): Record<string, unknown> | null {
   if (text === null || text === '') return null;
   let value: unknown;
   try {

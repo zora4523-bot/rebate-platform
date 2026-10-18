@@ -1,5 +1,5 @@
 // B1-08i：已有订单同步更新的 CAS UPDATE（BR-FUND-01；规划/02 §18）。只写 orders 模块拥有的同步列与
-// 未归因时的归属列；返利列（rebate_status、hold*、rights_pending、locked、booked_*、settle_period、reason*）、
+// 未归因时的归属列与来源四列（B1-08j）；返利列（rebate_status、hold*、rights_pending、locked、booked_*、settle_period、reason*）、
 // 身份列与 attr_at 不在可写集合里。调用方已在本事务里取得子订单 advisory 锁。
 import type { DB } from '@couli/db';
 import type { Selectable, Transaction, Updateable } from 'kysely';
@@ -17,6 +17,11 @@ export type OrderUpdateSet = OrderSyncColumns &
     readonly custom_params?: string | null;
     readonly user_id?: string;
     readonly user_basis?: 'param';
+    /** 来源回填（B1-08j，BR-ATTR-15）：只在本次写 user_id 且库内 source_match 为空时随同写入。 */
+    readonly source_match?: 'exact' | 'product' | 'shop' | 'none';
+    readonly link_id?: string | null;
+    readonly source_scene?: string | null;
+    readonly agent_session_id?: string | null;
   };
 
 export interface CasGuards {
@@ -24,6 +29,8 @@ export interface CasGuards {
   readonly unattributed: boolean;
   /** 本次写 user_id（R3a / R3b）：WHERE 另加 locked = false。 */
   readonly attributing: boolean;
+  /** 本次写来源四列（B1-08j）：WHERE 另加 source_match IS NULL（已有来源不覆盖）。 */
+  readonly backfilling?: boolean;
 }
 
 /**
@@ -47,6 +54,7 @@ export async function casUpdateOrder(
     .where('platform_status', '=', current.platform_status);
   if (guards.unattributed) query = query.where('user_id', 'is', null);
   if (guards.attributing) query = query.where('locked', '=', false);
+  if (guards.backfilling === true) query = query.where('source_match', 'is', null);
   const result = await query.executeTakeFirst();
   return (result.numUpdatedRows ?? 0n) > 0n;
 }

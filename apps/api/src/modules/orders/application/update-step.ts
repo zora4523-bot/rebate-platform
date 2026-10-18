@@ -10,6 +10,9 @@
 //   order.attr_param_changed；重跑归属遇淘宝绑定冲突 → order.attr_binding_conflict。映射表外的码
 //   （UNMAPPED_STATUS）08 未写该事件，只告警进待处理。
 // - 未归因（user_id 为空，含 VOID 的 R3b）每次重跑用户归属：命中且 locked=false 才写 user_id、user_basis=param。
+// - ⑤ 来源回填（B1-08j，BR-ATTR-15）：本次写 user_id、库内 source_match 为空且注入 sources 时，按订单推广位
+//   （current.pid 经 pids 端口取首行 pid_scene；查不到按 fallback 并告警）、current.shop_id 与本次报文匹配，
+//   四列并入同一条 CAS UPDATE（WHERE 另加 source_match IS NULL）；端口抛错整事务回滚。不改 product_key / shop_id。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
 //   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
 // 日志只打平铺字段（platform、app_id、reason、outcome、rule、event），不打子订单号与买家参数。
@@ -34,6 +37,7 @@ import {
   type OrderAttrParamColumn,
 } from './alert-events.ts';
 import { attributeOrderUser } from './attribute-user.ts';
+import { backfillOrderSource, sourceColumns } from './source-backfill.ts';
 import type {
   OrderPipelineContext,
   OrderPipelineDeps,
@@ -116,7 +120,10 @@ function pendingDetail(plan: OrderUpdatePlan, from: string): string | null {
   return `order_illegal_transition ${plan.rule ?? 'illegal'} ${from}→${plan.event ?? '-'}`;
 }
 
-// TODO(规划/11 §4.5): 来源回填与分佣快照 — blocked on B1-08j、B1-08k
+/** 订单推广位查不到时按 fallback（不限 pid_scene）匹配（编排者口径 5）。 */
+const FALLBACK_PID_SCENE = 'fallback';
+
+// TODO(规划/11 §4.5): 分佣快照 — blocked on B1-08k
 export function createOrderUpdateStep(
   deps: OrderUpdateDeps,
 ): NonNullable<OrderPipelineDeps['updateStep']> {
@@ -171,6 +178,23 @@ export function createOrderUpdateStep(
 
   type Attempt = OrderPipelineResult | 'conflict';
 
+  /** 订单推广位的 pid_scene：按库内 pid 取 pids 端口的首行；端口未注入、无 pid 或查无 → null。 */
+  async function orderPidScene(
+    current: OrderRow,
+    ctx: OrderPipelineContext,
+    platform: RegisteredPlatform,
+  ): Promise<string | null> {
+    const pid = current.pid;
+    if (deps.pids === undefined || pid === null || pid === '') return null;
+    const rows = await deps.pids.find({
+      appId: current.app_id,
+      platform,
+      unionAccountId: ctx.union_account_id,
+      pid,
+    });
+    return rows[0]?.pid_scene ?? null;
+  }
+
   async function attempt(
     trx: Transaction<DB>,
     current: OrderRow,
@@ -214,6 +238,8 @@ export function createOrderUpdateStep(
     const unattributed = current.user_id === null;
     let attributedNow = false;
     let bindingConflict = false;
+    let backfilled: string | null = null;
+    let pidSceneMissing = false;
     if (unattributed) {
       Object.assign(set, {
         pid: slot,
@@ -233,6 +259,22 @@ export function createOrderUpdateStep(
         // R3a / R3b：只写 user_id、user_basis=param，不置 locked，不碰 rebate_status。
         Object.assign(set, { user_id: user.user_id, user_basis: 'param' });
         attributedNow = true;
+        // ⑤ 来源回填：只在本次把 user_id 由空写为非空、且尚无 source_match（含 none）时执行。
+        if (deps.sources !== undefined && current.source_match === null) {
+          const pidScene = await orderPidScene(current, ctx, platform);
+          pidSceneMissing = pidScene === null;
+          const source = await backfillOrderSource(deps.sources, {
+            appId: current.app_id,
+            platform,
+            userId: user.user_id,
+            attrAt: current.attr_at,
+            pidScene: pidScene ?? FALLBACK_PID_SCENE,
+            order: incoming,
+            shopId: current.shop_id,
+          });
+          Object.assign(set, sourceColumns(source));
+          backfilled = source.source_match;
+        }
       }
       bindingConflict = user.kind === 'unattributed' && user.conflict;
     }
@@ -240,6 +282,7 @@ export function createOrderUpdateStep(
     const updated = await casUpdateOrder(trx, current, set, {
       unattributed,
       attributing: attributedNow,
+      backfilling: backfilled !== null,
     });
     if (!updated) return 'conflict';
 
@@ -375,6 +418,18 @@ export function createOrderUpdateStep(
       log?.error(
         { ...base, alert: ALERT_SYNC, event: 'attr_binding_conflict', outcome: 'unattributed' },
         'taobao binding conflict',
+      );
+    }
+    if (pidSceneMissing) {
+      log?.warn(
+        { ...base, reason: 'PID_SCENE_NOT_FOUND', outcome: 'source_fallback_scene' },
+        'order promotion slot not found; source backfill matched without pid_scene',
+      );
+    }
+    if (backfilled !== null) {
+      log?.info(
+        { ...base, source_match: backfilled, outcome: 'backfilled' },
+        'order source backfilled',
       );
     }
     log?.info(
