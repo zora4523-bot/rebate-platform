@@ -1,0 +1,35 @@
+{
+  "task": "CT-06q",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "356521df3359c30caedfa710aa3c5e9097074f00",
+  "red_tests": [],
+  "risk_note": "RV2 gate change (tools/guard only; orchestrator ruling of 2026-10-18 under ops/approvals.yaml id 16 after chore(ops) #778 overwrote the done task file ops/tasks/F1-09i.yaml and #775 / #750 both carried db/migrations/0046_*.sql). guard-git gains two checks that no owner label waives: ledger-overwrite (a task file that exists at the fork point keeps id, type and title, a done one stays done, none is deleted or renamed; status forward and field additions stay free) and migration-sequence (the migrations the tree adds to the base tip are numbered max(base) + 1, + 2 … with no gap, repeat or number the base has; a symbolic link or special file under db/migrations is refused; the rename hotfix of approvals id 32 passes). Checked on the real trees: #778 against its parent fails ledger-overwrite, the #750 head against main fails migration-sequence with the intended message. path-guard, protected-paths, test-guard, the label waiver scope, evidence-check and MONEY_PATHS are unchanged; no money test touched. Fable implementation; tester none (guard-change), so no red run. Codex money review 2 rounds: r1 pass with one S2 (symlink bypass) fixed with a regression test, r2 pass with no finding. Labelled by the orchestrator under approvals #16 / #24 (none of the four reserved categories).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 2 pass with no finding; round 1 pass with one S2 (a symbolic link under db/migrations passed unseen), fixed with a regression test (couli-runs/CT-06q/review-codex*.json)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "43f6b40e45df6d5f6fa5d40ebabd7436af1894d0",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
