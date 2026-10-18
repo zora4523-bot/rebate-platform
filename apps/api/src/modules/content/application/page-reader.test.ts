@@ -98,3 +98,65 @@ it('[AC-F1-09d#u5] 没有库句柄时每次拒绝', async () => {
   await expect(reader.read('a', 'home', null, guest)).rejects.toThrow(/database/);
   await expect(reader.read('a', 'home', null, guest)).rejects.toThrow(/database/);
 });
+
+it('[AC-F1-09g#u8] 游客事实全 false 不查；登录用户每请求查一次、只在有条件时查', async () => {
+  const pointer = vi.fn<PageStore['pointer']>(async () => ({
+    currentVersion: 1,
+    grayVersion: null,
+    grayPercent: 0,
+  }));
+  const sections = [
+    { id: 'p' },
+    { id: 'no', condition: { has_order: 'no' } },
+    { id: 'yes', condition: { has_order: 'yes' } },
+  ];
+  const version = vi.fn<PageStore['version']>(async () => ({ status: 'published', sections }));
+  let count = 0;
+  const facts = vi.fn(async () => ({
+    hasParent: null,
+    unionAuthorized: null,
+    hasOrder: count > 0,
+  }));
+  const reader = new PageReader({ pointer, version }, new FixedClock(START), { facts });
+  const ids = async (user: string | null) =>
+    (
+      await reader.read('a', 'home', null, { ...guest, loggedIn: user !== null }, user)
+    )?.sections.map((s) => s['id']);
+  expect(await ids(null)).toEqual(['p', 'no']);
+  expect(facts).not.toHaveBeenCalled();
+  expect(await ids('u')).toEqual(['p', 'no']);
+  count = 1;
+  expect(await ids('u')).toEqual(['p', 'yes']);
+  expect(facts).toHaveBeenCalledTimes(2);
+  expect(facts).toHaveBeenLastCalledWith('a', 'u', new Set(['hasOrder']));
+});
+
+it('[AC-F1-09g#u9] 无人群条件的页面不查事实；无事实端口时登录用户只命中 any', async () => {
+  const facts = vi.fn();
+  const plain = fixture(
+    { 'a|home': { currentVersion: 1, grayVersion: null, grayPercent: 0 } },
+    { 'a|home|1': published('x') },
+  );
+  const reader = new PageReader({ pointer: plain.pointer, version: plain.version }, plain.clock, {
+    facts,
+  });
+  expect(
+    (await reader.read('a', 'home', null, { ...guest, loggedIn: true }, 'u'))?.sections,
+  ).toEqual([{ id: 'x' }]);
+  expect(facts).not.toHaveBeenCalled();
+  const f = fixture(
+    { 'a|home': { currentVersion: 1, grayVersion: null, grayPercent: 0 } },
+    {
+      'a|home|1': {
+        status: 'published',
+        sections: [
+          { id: 'any', condition: { has_order: 'any' } },
+          { condition: { has_order: 'no' } },
+        ],
+      },
+    },
+  );
+  expect(
+    (await f.reader.read('a', 'home', null, { ...guest, loggedIn: true }, 'u'))?.sections,
+  ).toEqual([{ id: 'any', condition: { has_order: 'any' } }]);
+});

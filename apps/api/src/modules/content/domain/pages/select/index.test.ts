@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { h5Bucket } from '../../client-config.ts';
 import {
   matchesCondition,
+  neededAudienceFacts,
   passesVersionGate,
   pickPageVersion,
   selectSections,
@@ -94,6 +95,31 @@ describe('matchesCondition', () => {
     expect(matchesCondition({ condition: { other: 'any' } }, ios)).toBe(false);
     expect(matchesCondition({ condition: ['any'] }, ios)).toBe(false);
     expect(matchesCondition({ condition: null }, ios)).toBe(true);
+  });
+});
+
+describe('audience facts (F1-09g)', () => {
+  it('[AC-F1-09g#u1] yes / no need an exact fact; null or no audience matches only any', () => {
+    const known = { ...ios, audience: { hasParent: true, unionAuthorized: false, hasOrder: null } };
+    expect(matchesCondition({ condition: { has_parent: 'yes' } }, known)).toBe(true);
+    expect(matchesCondition({ condition: { has_parent: 'no' } }, known)).toBe(false);
+    expect(matchesCondition({ condition: { union_authorized: 'no' } }, known)).toBe(true);
+    expect(matchesCondition({ condition: { has_order: 'no' } }, known)).toBe(false);
+    expect(matchesCondition({ condition: { has_order: 'yes' } }, known)).toBe(false);
+    expect(matchesCondition({ condition: { has_order: 'any' } }, known)).toBe(true);
+    expect(matchesCondition({ condition: { has_parent: 'yes' } }, ios)).toBe(false);
+  });
+
+  it('[AC-F1-09g#u2] neededAudienceFacts lists only non-any fact keys', () => {
+    expect([
+      ...neededAudienceFacts([
+        { condition: { has_parent: 'any', login: 'yes' } },
+        { condition: { has_order: 'no' } },
+        null,
+        { condition: 'x' },
+      ]),
+    ]).toEqual(['hasOrder']);
+    expect(neededAudienceFacts([{ id: 'a' }]).size).toBe(0);
   });
 });
 

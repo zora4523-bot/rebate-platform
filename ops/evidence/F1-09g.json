@@ -1,0 +1,111 @@
+{
+  "task": "F1-09g",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "62b8677a5d35fa299bbf672a8419092aa934345e",
+  "red_tests": [
+    "test/spec/content/pages-audience/condition.test.ts > [AC-F1-09g#1] has_parent 的三态全表、缺失事实和非法条件值",
+    "test/spec/content/pages-audience/condition.test.ts > [AC-F1-09g#1] union_authorized 的三态全表、缺失事实和非法条件值",
+    "test/spec/content/pages-audience/condition.test.ts > [AC-F1-09g#1] has_order 的三态全表、缺失事实和非法条件值",
+    "test/spec/content/pages-audience/condition.test.ts > [AC-F1-09g#2] 多键全部命中、login 独立、未知键拒绝且保留原顺序",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#3] 游客三事实为 false 且不查事实，同设备登录后按令牌用户判定",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#4] 仅 taobao active 即已授权，另一平台 pending_auth 不阻止命中",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#4] 仅 pdd active 即已授权，另一平台 pending_auth 不阻止命中",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#5] taobao 的缺失绑定及全部非 active 状态均不算已授权",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#5] pdd 的缺失绑定及全部非 active 状态均不算已授权",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 DEPOSIT_PAID / ESTIMATED 订单仍算有订单",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 PAID / ESTIMATED 订单仍算有订单",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 RECEIVED / WAITING 订单仍算有订单",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 SETTLED / CREDITED 订单仍算有订单",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 INVALID / VOID 订单仍算有订单",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 INVALID / CLAWED_BACK 订单仍算有订单",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 PAID / UNATTRIBUTED 订单仍算有订单",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#7] 同设备不同用户和其他应用的事实不串用，查询同时限定 app_id 与 user_id",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#8] 登录用户有无 parent_id 均未知，yes/no 均不下发；游客 no 下发",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#9] 页面缓存期内授权和订单变化立即生效，过滤结果不跨请求缓存",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#10] orders 读取失败只使该事实未知，其他事实仍过滤，返回 200 并 warn",
+    "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#10] union_bindings 读取失败只使该事实未知，其他事实仍过滤，返回 200 并 warn"
+  ],
+  "risk_note": "RV2 (content page audience facts). GET /v1/pages/{page_key} now evaluates section conditions union_authorized and has_order for signed-in users through a content-owned read port PageAudienceReads, wired in app.module.ts from read ports linking and identity already export (content imports no other module). Anonymous users get all facts false without a query; signed-in users get at most one read per request, only for facts the selected version uses, never cached across requests. union_authorized is true when any platform binding is active; a failed platform read with the others unauthorized gives unknown, not false. A failed read makes only that fact unknown (warn log, page still 200); sections whose condition is yes/no on an unknown fact are withheld, 'any' sections are served. has_parent is not wired yet (identity exports no read port; TODO left, those sections withheld for signed-in users). No funds, no writes. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "62b8677a5d35fa299bbf672a8419092aa934345e",
+      "tree": "42748d435bb94799f426b0e6b05464aaa7fd1916",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T01:32:07Z",
+      "finished_at": "2026-10-18T01:32:21Z",
+      "red_tests": [
+        "test/spec/content/pages-audience/condition.test.ts > [AC-F1-09g#1] has_parent 的三态全表、缺失事实和非法条件值",
+        "test/spec/content/pages-audience/condition.test.ts > [AC-F1-09g#1] union_authorized 的三态全表、缺失事实和非法条件值",
+        "test/spec/content/pages-audience/condition.test.ts > [AC-F1-09g#1] has_order 的三态全表、缺失事实和非法条件值",
+        "test/spec/content/pages-audience/condition.test.ts > [AC-F1-09g#2] 多键全部命中、login 独立、未知键拒绝且保留原顺序",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#3] 游客三事实为 false 且不查事实，同设备登录后按令牌用户判定",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#4] 仅 taobao active 即已授权，另一平台 pending_auth 不阻止命中",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#4] 仅 pdd active 即已授权，另一平台 pending_auth 不阻止命中",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#5] taobao 的缺失绑定及全部非 active 状态均不算已授权",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#5] pdd 的缺失绑定及全部非 active 状态均不算已授权",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 DEPOSIT_PAID / ESTIMATED 订单仍算有订单",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 PAID / ESTIMATED 订单仍算有订单",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 RECEIVED / WAITING 订单仍算有订单",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 SETTLED / CREDITED 订单仍算有订单",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 INVALID / VOID 订单仍算有订单",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 INVALID / CLAWED_BACK 订单仍算有订单",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#6] 本人仅有一笔 PAID / UNATTRIBUTED 订单仍算有订单",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#7] 同设备不同用户和其他应用的事实不串用，查询同时限定 app_id 与 user_id",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#8] 登录用户有无 parent_id 均未知，yes/no 均不下发；游客 no 下发",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#9] 页面缓存期内授权和订单变化立即生效，过滤结果不跨请求缓存",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#10] orders 读取失败只使该事实未知，其他事实仍过滤，返回 200 并 warn",
+        "test/spec/content/pages-audience/delivery.int.test.ts > [AC-F1-09g#10] union_bindings 读取失败只使该事实未知，其他事实仍过滤，返回 200 并 warn"
+      ],
+      "expected": [
+        "test/spec/content/pages-audience/condition.test.ts",
+        "test/spec/content/pages-audience/delivery.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2c6cb79821bc26f554da5817b5dc9a66c965bf88131600fea123d7a4ef8da7f0"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "37f5645d6f59ff57c0b219a774a114aa411d6597cf68c170805a32797147c299"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass (one S2, single-platform read failure not covered, handled in the implementation with unit tests)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "dc319fdb936fc9ae340f459936e53f5d5567efe5",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "acafefd42020845b5d0e3c18c22a05e574cf6dc7",
+    "specs": "3030daffce230ca321928167ab05aa0b6a68efe6"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}

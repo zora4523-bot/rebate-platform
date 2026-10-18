@@ -36,6 +36,7 @@ import {
   ContentPublicModule,
   createContentReader,
   type ContentReader,
+  type PageAudienceReads,
 } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
 import { appendLevelChange } from './modules/growth/index.ts';
@@ -77,6 +78,7 @@ import {
   LinkingModule,
   createOrderLinkReader,
   createUnionAuthReads,
+  type UnionAuthReads,
   createUnavailableAttrCodeReader,
   inOpenReads,
   loadLinkOpenApps,
@@ -390,6 +392,34 @@ function identityModule(): DynamicModule {
       }),
     },
   });
+}
+
+/**
+ * F1-09g: the reads behind content's page audience facts, over linking's and identity's exported
+ * read ports (content imports neither).
+ */
+function pageAudienceReads(
+  db: Kysely<Database>,
+  config: ContentReader,
+  appConfig: AppConfig,
+): PageAudienceReads {
+  // Built on first use: entries and tests that never serve a page need no query builder here.
+  let unionReads: UnionAuthReads | undefined;
+  const reads = (): UnionAuthReads =>
+    (unionReads ??= createUnionAuthReads({
+      db: db.withSchema('app'),
+      config,
+      appEnv: appConfig.appEnv,
+      // binding() has no PID dependency. Refuse accidental use of an auth command here.
+      pids: { getActivePid: () => Promise.reject(new Error('pages: binding projection only')) },
+    }));
+  const activity = createInviteBackfillActivityReader(db);
+  return {
+    unionBindingStatus: async (appId, userId, platform) =>
+      (await reads().binding(appId, userId, platform)).status,
+    orderCount: (appId, userId) => activity.orderCount({ appId, userId }),
+    // TODO(规划/11 §2.3): has_parent 接 identity 的上级只读口 hasParent({appId, userId}) — blocked on identity 导出该读口（F1-09g G3）
+  };
 }
 
 @Module({})
@@ -1061,6 +1091,19 @@ export class AppModule {
                   inject: [CLOCK, { token: DB, optional: true }],
                   useFactory: (clock: Clock, db?: Kysely<Database>): ContentReader | null =>
                     db === undefined ? null : contentReader(db, clock),
+                },
+                // F1-09g: page audience facts over linking's binding projection and identity's
+                // order count (both scoped by app_id and user_id).
+                audienceReads: {
+                  inject: [APP_CONFIG, CLOCK, { token: DB, optional: true }],
+                  useFactory: (
+                    appConfig: AppConfig,
+                    clock: Clock,
+                    db?: Kysely<Database>,
+                  ): PageAudienceReads | null =>
+                    db === undefined
+                      ? null
+                      : pageAudienceReads(db, contentReader(db, clock), appConfig),
                 },
               }),
               NotificationModule.forApi((db, clock) => createContentReader({ db, clock })),

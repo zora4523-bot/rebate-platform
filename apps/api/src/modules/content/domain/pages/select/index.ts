@@ -7,8 +7,10 @@
 // - min_app_version is per platform {ios, android, harmony}; only a "not lower than" gate.
 //   Anything unreadable (missing entry for this platform, malformed threshold, missing or
 //   malformed client version) fails closed: the section is not served.
-// - condition only knows login today; has_parent / union_authorized / has_order match only
-//   `any` until their facts are wired (F1-09g). Unknown keys or values fail closed.
+// - condition: login from the token; has_parent / union_authorized / has_order from the request's
+//   audience facts (F1-09g, 编排者默认 G1–G4): `any` always matches, `yes` / `no` need the fact to be
+//   exactly true / false. An unknown fact (null) or a viewer without facts matches only `any`.
+//   Unknown keys or values fail closed.
 import { compareClientVersions, isVersionGatedPlatform } from '../../../../platform/index.ts';
 import { h5Bucket } from '../../client-config.ts';
 
@@ -48,7 +50,23 @@ export interface PageViewer {
   readonly platform: string;
   /** Raw X-App-Version. */
   readonly appVersion: string | undefined;
+  /** Request-time audience facts (F1-09g); absent → only `any` matches the three fact keys. */
+  readonly audience?: AudienceFacts;
 }
+
+/** F1-09g §9.2: request-time facts; null means unavailable, never false. */
+export interface AudienceFacts {
+  readonly hasParent: boolean | null;
+  readonly unionAuthorized: boolean | null;
+  readonly hasOrder: boolean | null;
+}
+
+/** The condition keys judged from AudienceFacts, and the fact each one reads. */
+export const AUDIENCE_FACT_KEYS: ReadonlyMap<string, keyof AudienceFacts> = new Map([
+  ['has_parent', 'hasParent'],
+  ['union_authorized', 'unionAuthorized'],
+  ['has_order', 'hasOrder'],
+]);
 
 type Fields = Readonly<Record<string, unknown>>;
 
@@ -80,18 +98,37 @@ export function passesVersionGate(section: unknown, viewer: PageViewer): boolean
 }
 
 const ANY = 'any';
-/** Facts not wired yet (F1-09g): only `any` matches. */
-const DEFERRED_FACTS: ReadonlySet<string> = new Set([
-  'has_parent',
-  'union_authorized',
-  'has_order',
-]);
 
 function matchesLogin(value: unknown, loggedIn: boolean): boolean {
   if (value === ANY) return true;
   if (value === 'yes') return loggedIn;
   if (value === 'no') return !loggedIn;
   return false;
+}
+
+function matchesFact(value: unknown, fact: boolean | null): boolean {
+  if (value === ANY) return true;
+  if (value === 'yes') return fact === true;
+  if (value === 'no') return fact === false;
+  return false;
+}
+
+/**
+ * Which audience facts the sections' conditions actually need (a value other than `any` under a
+ * fact key), so a page that never filters on a fact does not read it.
+ */
+export function neededAudienceFacts(sections: readonly unknown[]): Set<keyof AudienceFacts> {
+  const needed = new Set<keyof AudienceFacts>();
+  for (const section of sections) {
+    if (!isRecord(section)) continue;
+    const condition = field(section, 'condition');
+    if (!isRecord(condition)) continue;
+    for (const key of Object.keys(condition)) {
+      const fact = AUDIENCE_FACT_KEYS.get(key);
+      if (fact !== undefined && condition[key] !== ANY) needed.add(fact);
+    }
+  }
+  return needed;
 }
 
 /** Whether the viewer is in the section's audience; absent / null condition matches everyone. */
@@ -103,7 +140,8 @@ export function matchesCondition(section: unknown, viewer: PageViewer): boolean 
   return Object.keys(condition).every((key) => {
     const value = condition[key];
     if (key === 'login') return matchesLogin(value, viewer.loggedIn);
-    if (DEFERRED_FACTS.has(key)) return value === ANY;
+    const fact = AUDIENCE_FACT_KEYS.get(key);
+    if (fact !== undefined) return matchesFact(value, viewer.audience?.[fact] ?? null);
     return false;
   });
 }

@@ -1,7 +1,7 @@
 // GET /v1/pages/{page_key} (task F1-09d; contract getPage: x-auth optional, unsigned, session
 // scope full only). The request checks have already verified any bearer token; the caller comes
-// from the request-scoped ConfigViewerContext (identity's, assembled by app.module) and only
-// decides `loggedIn`. The X-Device-Id header is read only to bucket the gray rollout, never as an
+// from the request-scoped ConfigViewerContext (identity's, assembled by app.module): it decides
+// `loggedIn`, and its user id is whose audience facts are read (F1-09g). The X-Device-Id header is read only to bucket the gray rollout, never as an
 // identity; X-Platform and X-App-Version only gate sections. The page_key shape is checked by the
 // contract route schema (20001 fields=[page_key]) before this handler runs.
 //
@@ -46,6 +46,7 @@ export class PagesController {
         platform: header(request, 'x-platform') ?? '',
         appVersion: header(request, 'x-app-version'),
       },
+      viewer.userId,
     );
     if (data === null) {
       throw new HttpException(
