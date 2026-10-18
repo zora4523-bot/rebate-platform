@@ -28,9 +28,10 @@ export interface ImportedOrder {
   readonly received_at: Date | null;
   /**
    * B1-08k 第 ⑥ 步本次的快照结果（R2 的预估由 settlement 据此与快照表决定）：created / existing = 已有快照；
-   * pending = 跨入资格但进了待处理；none = 本次不生成或未注入快照端口。
+   * pending = 跨入资格但进了待处理；none = 本次不生成。只在注入 snapshots 时出现；未注入时不带此字段
+   * （与 B1-08h 的入参逐字段一致，D10-69；同 OrderUpdateChange.snapshot）。
    */
-  readonly snapshot: SnapshotOutcome;
+  readonly snapshot?: SnapshotOutcome;
 }
 
 export interface OrderPipelineResult {
@@ -77,7 +78,8 @@ export interface OrderPipelineDeps {
   };
   /**
    * 分佣快照端口（B1-08k，BR-ATTR-01 ⑥ / BR-CALC-10）：首次入库即已归因且 PAID+ 时，在 history、待处理之后、
-   * rebate.onImported 之前同事务调用；抛错整事务回滚。未注入时整步跳过（不调用、不写来源与待处理）。
+   * rebate.onImported 之前同事务调用；抛错整事务回滚。未注入时整步跳过（不调用、不写来源与待处理，
+   * ImportedOrder 不带 snapshot 字段）。
    */
   readonly snapshots?: CommissionSnapshotPort;
   readonly updateStep?: {

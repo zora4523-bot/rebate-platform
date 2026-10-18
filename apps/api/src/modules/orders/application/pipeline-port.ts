@@ -11,7 +11,8 @@
 //   端口抛错整事务回滚。
 // - ⑥ 分佣快照（B1-08k，BR-ATTR-01 ⑥ / BR-CALC-10）：注入 snapshots 且首次入库即已归因、PAID+ 时，判定阶段定
 //   paid_at_source（随 INSERT 写），history、待处理之后、rebate.onImported 之前同事务调端口
-//   （application/commission-snapshot-step.ts）；结果经 ImportedOrder.snapshot 交 settlement。
+//   （application/commission-snapshot-step.ts）；结果经 ImportedOrder.snapshot 交 settlement。未注入时整步跳过，
+//   ImportedOrder 不带 snapshot 字段（与 B1-08h 一致，D10-69）。
 // 日志只打平铺字段（platform、app_id、reason、outcome），不打子订单号与买家参数。
 import { accountingDate } from '@couli/domain';
 import type { DB } from '@couli/db';
@@ -374,10 +375,10 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
     // BR-ATTR-01（D10-39）：开启乱序判定而首次入库也没有 platform_modified_at → 照常按 content_hash
     // 入库，同事务计一次 order_sync_no_mtime；丢弃与只进待处理（不建行）的不计。
     if (missingMtime(order, platform)) await countNoMtime(trx, ctx, platform, attrAt);
-    // ⑥ 分佣快照：端口抛错不吞，整事务（含订单、history、待处理）回滚。
-    const snapshot: SnapshotOutcome =
+    // ⑥ 分佣快照：端口抛错不吞，整事务（含订单、history、待处理）回滚。未注入端口时不带 snapshot 字段。
+    const snapshot: SnapshotOutcome | undefined =
       deps.snapshots === undefined || snapshotPlan === null
-        ? 'none'
+        ? undefined
         : await runCommissionSnapshot(
             trx,
             deps.snapshots,
@@ -400,7 +401,7 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       attributed,
       platform_status: plan.platform_status,
       received_at: plan.received_at,
-      snapshot,
+      ...(snapshot === undefined ? {} : { snapshot }),
     });
     // B1-08i（D10-41 第 1 条；02 §11）：注入 events 时，order.created 与首次入库同一事务入队。
     await deps.events?.publish(trx, {

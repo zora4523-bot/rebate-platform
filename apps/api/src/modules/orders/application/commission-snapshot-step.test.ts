@@ -257,7 +257,7 @@ const ctx: OrderPipelineContext = {
   requestId: 'unit-request',
 };
 
-it('[AC-B1-08k#U11] 首次入库：paid_at_source 随 INSERT，端口在 history 后、settlement 前；未注入时 none 且不写来源', async () => {
+it('[AC-B1-08k#U11] 首次入库：paid_at_source 随 INSERT，端口在 history 后、settlement 前；未注入时不带 snapshot 字段且不写来源', async () => {
   for (const injected of [true, false]) {
     const { db, log, mark } = scriptedDb();
     const port = fakePort(mark);
@@ -289,10 +289,9 @@ it('[AC-B1-08k#U11] 首次入库：paid_at_source 随 INSERT，端口在 history
     expect(await createOrderPipeline(deps).process(order, ctx)).toMatchObject({ kind: 'inserted' });
     const sqls = log.map((s) => s.sql);
     const insert = log.find((s) => s.sql.startsWith('insert into "app"."orders"'))!;
-    expect(onImported.mock.calls[0]?.[1]).toMatchObject({
-      snapshot: injected ? 'created' : 'none',
-    });
+    const imported = onImported.mock.calls[0]?.[1];
     if (injected) {
+      expect(imported).toMatchObject({ snapshot: 'created' });
       expect(insert.sql).toContain('"paid_at_source"');
       expect(insert.parameters).toContain('platform');
       expect(port.create.mock.calls[0]?.[1]).toMatchObject({ nBaseFen: 480n, orderType: 'share' });
@@ -302,6 +301,15 @@ it('[AC-B1-08k#U11] 首次入库：paid_at_source 随 INSERT，端口在 history
       expect(historyAt).toBeLessThan(sqls.indexOf('snapshot.create'));
       expect(sqls.indexOf('snapshot.create')).toBeLessThan(sqls.indexOf('rebate.onImported'));
     } else {
+      // D10-69：未注入端口时交给 settlement 的对象恰为 B1-08h 的 6 个字段（不带 snapshot）。
+      expect(Object.keys(imported ?? {}).sort()).toEqual([
+        'app_id',
+        'attr_at',
+        'attributed',
+        'order_id',
+        'platform_status',
+        'received_at',
+      ]);
       expect(insert.sql).not.toContain('"paid_at_source"');
       expect(port.create).not.toHaveBeenCalled();
     }
