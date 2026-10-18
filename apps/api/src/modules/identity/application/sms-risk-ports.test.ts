@@ -4,7 +4,7 @@
 // recordAccepted so that exactly that in-flight record becomes the send's record. The Lua scripts themselves run against a real Redis only in the rule tests
 // (test/spec/identity/landing-sms, test/spec/risk/sms-risk); here an in-memory model of the same
 // sets (dispatched on each script's `-- sms_risk:<name>` label) checks which records each step
-// touches, including lost replies and the lease.
+// touches, including lost replies and failures (never an under-count).
 import { expect, it, vi } from 'vitest';
 import { FixedClock, createRootLogger, type RedisHandle } from '../../platform/index.ts';
 import { createSmsRisk, ephemeralSmsRiskIndex, type SmsRisk } from '../../risk/index.ts';
@@ -154,20 +154,12 @@ function modelRedis(clock: FixedClock) {
   const calls: { label: string; keys: string[] }[] = [];
   /** Labels whose next call runs and then loses its reply; `during` runs before the throw. */
   const lost = new Map<string, () => Promise<void>>();
-  /** Labels whose next call fails before it runs. */
-  const failing = new Set<string>();
+  /** Labels whose next calls fail before they run (one entry per failing call). */
+  const failing: string[] = [];
   const set = (key: string) => {
     let found = zsets.get(key);
     if (found === undefined) zsets.set(key, (found = new Map()));
     return found;
-  };
-  const prune = (send: string, pend: string, now: number, lease: number) => {
-    for (const [token, score] of set(pend)) {
-      if (score < now - lease) {
-        set(pend).delete(token);
-        set(send).delete(`p:${token}`);
-      }
-    }
   };
   const dropBefore = (key: string, low: number) => {
     for (const [member, score] of set(key)) if (score < low) set(key).delete(member);
@@ -185,10 +177,10 @@ function modelRedis(clock: FixedClock) {
       case 'ip_reserve': {
         const [send, reg, pend] = keys as [string, string, string];
         const now = num(2);
-        prune(send, pend, now, num(7));
         const waits = [wait(send, num(4), now, num(3)), wait(reg, num(5), now, num(3))];
         if (waits[0]! > 0 || waits[1]! > 0) return waits;
         dropBefore(send, now - num(3));
+        dropBefore(pend, now - num(3));
         set(send).set(`p:${argv[5]}`, now);
         set(pend).set(argv[5]!, now);
         return [0, 0];
@@ -202,8 +194,8 @@ function modelRedis(clock: FixedClock) {
         const [send, pend] = keys as [string, string];
         const now = num(2);
         dropBefore(send, now - num(3));
-        prune(send, pend, now, num(5));
-        const own = argv[5]!;
+        dropBefore(pend, now - num(3));
+        const own = argv[4]!;
         if (own !== '') {
           if (set(pend).delete(own)) set(send).delete(`p:${own}`);
         } else {
@@ -234,7 +226,9 @@ function modelRedis(clock: FixedClock) {
       ) => {
         const label = /^-- sms_risk:([a-z_]+)/.exec(script)?.[1] ?? options.keys[0]!.split(':')[0]!;
         calls.push({ label, keys: [...options.keys] });
-        if (failing.delete(label)) {
+        const failure = failing.indexOf(label);
+        if (failure >= 0) {
+          failing.splice(failure, 1);
           throw Object.assign(new Error('unavailable'), { reason: 'command_failed' });
         }
         const reply = run(label, [...options.keys], [String(options.ttlSeconds), ...options.args]);
@@ -311,15 +305,34 @@ it('[AC-B1-11g#11] A reply lost, B reserves and accepts with its own id: B turns
   expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
 });
 
-it('[AC-B1-11g#11] a reservation no one accepts or releases stops counting after the lease, not the window', async () => {
+it('[AC-B1-11g#11] a reservation whose release also fails counts at its reservation time until it leaves the window (stricter)', async () => {
   const m = model({ 'sms.ip_sends_per_hour': 1 });
   m.store.lost.set('ip_reserve', async () => {
-    m.store.failing.add('ip_release');
+    m.store.failing.push('ip_release');
   });
   expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 1 });
   expect(m.store.pending()).toBe(1);
+  m.clock.advanceMs(61_000);
+  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 3540 });
+  m.clock.set('2026-10-18T11:00:00+08:00');
+  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 1 });
+  m.clock.set('2026-10-18T11:00:01+08:00');
+  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
+});
+
+it('[AC-B1-11g#11] r5: the 20th send is accepted but both record attempts fail; the 21st stays 42901 at 61 s and 59 min, passes after the window', async () => {
+  const m = model();
+  for (let i = 0; i < 19; i++) await m.risk.recordAccepted(m.ip);
+  const twentieth = await m.reserve();
+  m.store.failing.push('ip_accept', 'ip_accept');
+  await m.risk.recordAccepted({ ...m.ip, reservation: twentieth });
+  expect(m.store.pending()).toBe(1);
+  expect(m.store.sendCount()).toBe(20);
+  m.clock.advanceMs(61_000);
   expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 42901 });
-  m.clock.advanceMs(60_001);
+  m.clock.set('2026-10-18T10:59:00+08:00');
+  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 42901 });
+  m.clock.set('2026-10-18T11:00:01+08:00');
   expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
 });
 
@@ -341,12 +354,12 @@ it("[AC-B1-11g#11] r4: A accepted, then a Redis blip fails B's record once; the 
   const a = await m.reserve();
   const b = await m.reserve();
   await m.risk.recordAccepted({ ...m.ip, reservation: a });
-  m.store.failing.add('ip_accept');
+  m.store.failing.push('ip_accept');
   await m.risk.recordAccepted({ ...m.ip, reservation: b });
   expect(m.store.pending()).toBe(0);
   expect(m.store.sendCount()).toBe(20);
-  // Past the lease nothing drops: both sends stay counted, the 21st is refused.
-  m.clock.advanceMs(60_001);
+  // Later nothing drops: both sends stay counted, the 21st is refused.
+  m.clock.advanceMs(61_000);
   expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 42901 });
   expect(m.store.sendCount()).toBe(20);
 });

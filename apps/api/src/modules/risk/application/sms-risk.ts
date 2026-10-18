@@ -9,14 +9,17 @@
 // pass. admitIp() is step ① alone (the landing page: no signature, no device); admitAndReserve()
 // is admit() with ① reserving (the app route; ② unchanged, and a ② refusal releases ①).
 // - recordAccepted({ clientIp, reservation }), on an accepted or unknown send, turns exactly that
-//   in-flight record into a sent record stamped now (the provider's answer); when it is gone (the
-//   lease dropped it) a sent record is added, and no other in-flight record is touched. Without a
-//   reservation (callers that did not reserve) it turns the oldest in-flight record into a sent
-//   one, or adds one when none is in flight.
-// - releaseIp(reservation) drops only that in-flight record (nothing when it is gone).
-// - Lease: an in-flight record older than IP_LEASE_MS (far above the send's bound, sendTimeout +
-//   margin) is dropped by every write script, so a record no one accepts or releases (a lost
-//   reply, a crashed process) stops counting after the lease, not after the window.
+//   in-flight record into a sent record stamped now (the provider's answer); when it is gone a
+//   sent record is added, and no other in-flight record is touched. Without a reservation (callers
+//   that did not reserve) it turns the oldest in-flight record into a sent one, or adds one when
+//   none is in flight.
+// - releaseIp(reservation) drops only that in-flight record (nothing when it is gone); only the
+//   sender calls it, on a definite non-send.
+// - No lease (B1-13d ruling A, «rather count a rare failure once more than over-send»): an
+//   in-flight record never accepted nor released (a lost reply, a crash, a store outage around
+//   the acceptance) counts at its reservation time and leaves with the window like any record.
+// Invariant: under any combination of failures the IP's count is ≥ the sends that really went out
+// (it may over-count, never under-count), and an over-count lasts at most one window.
 // admit() stays the read-only step ① + ② (callers that count with recordAccepted afterwards).
 //
 // admit() is the 42901 step of the send order 签名 → 20001 → 44001 → 42901 (no human
@@ -140,12 +143,6 @@ export const SMS_RISK_IP_CONTEXT = 'risk.sms.ip';
 
 const WINDOW_MS = 3_600_000;
 const WINDOW_TTL_SEC = 3_602;
-/**
- * Lease of an in-flight IP reservation: far above the longest span from
- * a reservation to its acceptance or release (identity's sendTimeout 10 s + in-flight margin 5 s,
- * plus the store retries around them).
- */
-export const IP_LEASE_MS = 60_000;
 const BUDGET_TTL_SEC = 172_800;
 const DAY_MS = 86_400_000;
 const OFFSET_MS = 8 * 3_600_000;
@@ -176,34 +173,19 @@ return {wait(KEYS[1], tonumber(ARGV[4])), wait(KEYS[2], tonumber(ARGV[5]))}
 `;
 
 /**
- * Lua prelude of the IP write scripts: prune(send key, in-flight key, now, lease) drops the
- * in-flight records older than the lease from both sets.
- */
-const IP_LEASE_PRUNE = `
-local function prune(sendKey, pendKey, now, lease)
-  local cut = '(' .. string.format('%.0f', now - lease)
-  local stale = redis.call('ZRANGEBYSCORE', pendKey, '-inf', cut)
-  for _, token in ipairs(stale) do redis.call('ZREM', sendKey, 'p:' .. token) end
-  if #stale > 0 then redis.call('ZREMRANGEBYSCORE', pendKey, '-inf', cut) end
-end
-`;
-
-/**
  * KEYS[1]: IP sends, KEYS[2]: IP registrations, KEYS[3]: IP in-flight reservations. ARGV[1]: TTL
  * (s), ARGV[2]: now (ms), ARGV[3]: window (ms), ARGV[4]: send limit, ARGV[5]: registration limit,
- * ARGV[6]: reservation, ARGV[7]: lease (ms). Drops expired in-flight records, judges both items as
- * IP_SCRIPT (live in-flight records count); neither reached → `p:<reservation>` joins the sends
- * and the reservation the in-flight set, both at now. Returns {send wait ms, registration wait
+ * ARGV[6]: reservation. Judges both items as IP_SCRIPT (in-flight records count like sent ones);
+ * neither reached → `p:<reservation>` joins the sends and the reservation the in-flight set, both
+ * at now (what left the window is dropped from both sets). Returns {send wait ms, registration wait
  * ms}; {0, 0} means reserved.
  */
 const IP_RESERVE_SCRIPT = `-- sms_risk:ip_reserve
-${IP_LEASE_PRUNE}
 local ttl = tonumber(ARGV[1])
 local now = tonumber(ARGV[2])
 local window = tonumber(ARGV[3])
 local low = string.format('%.0f', now - window)
 local high = string.format('%.0f', now)
-prune(KEYS[1], KEYS[3], now, tonumber(ARGV[7]))
 local function wait(key, limit)
   local count = redis.call('ZCOUNT', key, low, high)
   if count < limit then return 0 end
@@ -216,6 +198,7 @@ local sendWait = wait(KEYS[1], tonumber(ARGV[4]))
 local regWait = wait(KEYS[2], tonumber(ARGV[5]))
 if sendWait > 0 or regWait > 0 then return {sendWait, regWait} end
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. low)
+redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', '(' .. low)
 redis.call('ZADD', KEYS[1], high, 'p:' .. ARGV[6])
 redis.call('ZADD', KEYS[3], high, ARGV[6])
 redis.call('EXPIRE', KEYS[1], ttl)
@@ -236,18 +219,17 @@ return 1
 
 /**
  * KEYS[1]: IP sends, KEYS[2]: IP in-flight reservations. ARGV[1]: TTL (s), ARGV[2]: now (ms),
- * ARGV[3]: window (ms), ARGV[4]: sent record member, ARGV[5]: lease (ms), ARGV[6]: reservation or
- * ''. With a reservation: that in-flight record (if still there) is removed, and the sent record is
+ * ARGV[3]: window (ms), ARGV[4]: sent record member, ARGV[5]: reservation or ''. With a reservation: that in-flight record (if still there) is removed, and the sent record is
  * added at now; no other in-flight record is touched. Without one: the oldest live in-flight
  * record (removed) becomes the sent record, or the sent record is just added.
  */
 const IP_ACCEPT_SCRIPT = `-- sms_risk:ip_accept
-${IP_LEASE_PRUNE}
 local ttl = tonumber(ARGV[1])
 local now = tonumber(ARGV[2])
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. string.format('%.0f', now - tonumber(ARGV[3])))
-prune(KEYS[1], KEYS[2], now, tonumber(ARGV[5]))
-local own = ARGV[6]
+local low = '(' .. string.format('%.0f', now - tonumber(ARGV[3]))
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', low)
+redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', low)
+local own = ARGV[5]
 if own ~= '' then
   if redis.call('ZREM', KEYS[2], own) == 1 then redis.call('ZREM', KEYS[1], 'p:' .. own) end
 else
@@ -467,7 +449,8 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
     // A send turns its own in-flight record (or, without a reservation, the oldest one) into a
     // sent record (IP_ACCEPT_SCRIPT); a registration is a plain record. A send with a reservation
     // writes the sent record `s:<reservation>`, so the script is idempotent and is retried once
-    // (a transient failure must not leave the send to the lease); the others run once.
+    // (a transient failure leaves the in-flight record counting at its reservation time: an
+    // over-count until it leaves the window, never an under-count); the others run once.
     const own = kind === 'ip_send' ? reservation : undefined;
     const attempts = own === undefined ? 1 : 2;
     for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -483,7 +466,7 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
               String(clock.now().getTime()),
               String(WINDOW_MS),
               own === undefined ? randomUUID() : `s:${own}`,
-              ...(kind === 'ip_send' ? [String(IP_LEASE_MS), own ?? ''] : []),
+              ...(kind === 'ip_send' ? [own ?? ''] : []),
             ],
             ttlSeconds: WINDOW_TTL_SEC,
           });
@@ -607,14 +590,13 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
           String(sendLimit),
           String(IP_REGISTRATIONS_LIMIT),
           reservation,
-          String(IP_LEASE_MS),
         ],
         ttlSeconds: WINDOW_TTL_SEC,
       });
       ipWaits = integers(reply, 2);
     } catch (error) {
-      // The script may have run with its reply lost: drop this reservation's record (the lease
-      // drops it anyway if this release fails too).
+      // The script may have run with its reply lost: drop this reservation's record. If this
+      // release fails too, the record counts until it leaves the window (stricter, never looser).
       await releaseReservation(store, appId, clientIp, reservation);
       return storeFailed(error);
     }
