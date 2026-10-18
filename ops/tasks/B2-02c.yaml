@@ -8,8 +8,8 @@ type: migration
 refs: [BR-FUND-13, BR-FUND-15, BR-FUND-16]
 refs_hash:
   BR-FUND-13: db3a11ed1712
-  BR-FUND-15: d9a926b42d3c
-  BR-FUND-16: 26bf83a019b1
+  BR-FUND-15: 98eb93a46558
+  BR-FUND-16: 077f6d412d5a
 deps: [B2-02b]
 paths:
   - 'db/migrations/**'

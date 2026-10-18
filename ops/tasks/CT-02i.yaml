@@ -12,7 +12,7 @@ type: contract
 refs: [BR-WDR-17, BR-INV-21]
 refs_hash:
   BR-WDR-17: f6119a685e00
-  BR-INV-21: 97103f163904
+  BR-INV-21: 2fc6984b9c13
 contract_sections: ['10.2', '11.2']
 deps: []
 paths:
