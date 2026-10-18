@@ -111,11 +111,11 @@ it.each(['', '110105491231002', '110105194912310020', '110105199902300023'])(
 );
 
 it.each([
-  ['2012-09-29', '2026-09-29T15:59:59.999Z', '2026-09-29T16:00:00.000Z'],
-  ['2012-02-29', '2026-03-01T15:59:59.999Z', '2026-03-01T16:00:00.000Z'],
+  ['2012-09-29', '2026-09-29T15:59:59.999Z', '2026-09-29T16:00:00.000Z', '2026-09-29'],
+  ['2012-02-29', '2026-03-01T15:59:59.999Z', '2026-03-01T16:00:00.000Z', '2026-03-01'],
 ])(
   '[AC-B1-13d#5] 出生 %s 满 14 岁须生日次日 +08:00；闰日非闰年按 3 月 2 日',
-  async (birth, before, boundary) => {
+  async (birth, before, boundary, day) => {
     kit.clock.set(before);
     const f = await fixture(kit);
     const body = { name: NAME, id_no: residentId(birth) };
@@ -123,13 +123,40 @@ it.each([
     for (let i = 0; i < 4; i++) envelope(kit, await f.submit(body), 30407);
     expect(await f.rows()).toEqual([]);
     expect(kit.vendor).not.toHaveBeenCalled();
+    // Stay on the same +08:00 day: only this adult mismatch may consume one attempt.
+    envelope(kit, await f.submit(), 30406);
+    expect(kit.vendor).toHaveBeenCalledTimes(1);
+    const counts = await Promise.all(
+      [...kit.namespaces]
+        .filter((name) => name.includes('realname'))
+        .map((name) => kit.redis.namespace(name).get(`${f.appId}:${day}:${f.uid}`)),
+    );
+    expect(counts.filter((count) => count !== null)).toEqual(['1']);
     kit.clock.set(boundary);
     kit.vendor.mockResolvedValue({ outcome: 'match', provider: 'test-two-elements' });
     envelope(kit, await f.submit(body), 0);
-    expect(kit.vendor).toHaveBeenCalledTimes(1);
+    expect(kit.vendor).toHaveBeenCalledTimes(2);
     expect((await f.rows())[0]?.['verified_at']).toEqual(new Date(boundary));
   },
 );
+
+it('[AC-B1-13d#25] 校验位错误且未满 14 岁时先回 20001，不计次不调供应商', async () => {
+  const f = await fixture(kit);
+  // Birth date is 2020-01-01; the valid check digit is 3, deliberately replaced by 0.
+  const response = await f.submit({ name: NAME, id_no: '110105202001010020' });
+  expect(envelope(kit, response, 20001).data).toEqual({ fields: ['id_no'] });
+  expect(kit.vendor).not.toHaveBeenCalled();
+  expect(await f.rows()).toEqual([]);
+  const counts = await Promise.all(
+    [...kit.namespaces]
+      .filter((name) => name.includes('realname'))
+      .map((name) => kit.redis.namespace(name).get(`${f.appId}:2026-09-29:${f.uid}`)),
+  );
+  expect(counts.every((count) => count === null || count === '0')).toBe(true);
+  for (let i = 0; i < 3; i++) envelope(kit, await f.submit(), 30406);
+  envelope(kit, await f.submit(), 30410);
+  expect(kit.vendor).toHaveBeenCalledTimes(3);
+});
 
 it('[AC-B1-13d#6] 次数已满仍先校验格式、年龄，再拒绝占用证件且不暴露对方', async () => {
   const f = await fixture(kit);
