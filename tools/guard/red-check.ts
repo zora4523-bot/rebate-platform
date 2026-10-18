@@ -8,23 +8,50 @@
 // task's test_paths (trusted ledger). A task without a rule-test author (tester: none) is skipped.
 // --json: stdout is exactly one JSON document; everything else goes to stderr (CR-16).
 //
+// With --base (and --cwd), the expected files that existed at the base need only their new and
+// changed tests red (CT-06p, lib/red-check.ts): their base content is read from the base, the head
+// content from --head-tree <tree> (the snapshot the red run ran; verify-container.sh --red passes
+// it) or else from the work tree. Without --base, or when the comparison cannot be made, every
+// test of every expected file must be red, as before (the reason is in the notes).
+//
 //   node tools/guard/red-check.ts --task <id> --cwd <worktree> --base <ref> --print-expected
 //     prints the expected rule-test files, one per line (tools/ops/verify-container.sh --red uses
 //     it to pick what to run, and later checks the report against the same list).
 import { readFileSync } from 'node:fs';
-import { changedFiles } from '../lib/git.ts';
+import { join } from 'node:path';
+import { type Change, changedBetweenCommits, changedFiles, tryGit } from '../lib/git.ts';
 import { trustedRoot } from '../lib/paths.ts';
 import { loadLegacyTasks, ruleTestScope } from '../lib/legacy-tasks.ts';
 import { loadTask } from '../lib/task-file.ts';
 import { ruleTestAssets } from './lib/checks.ts';
 import { UsageError, parseArgs, printJson, resolveRoot, runCli } from './lib/cli.ts';
-import { checkRedReports, expectedRuleTests, redCheckRequired } from './lib/red-check.ts';
+import {
+  type RuleTestBaseline,
+  checkRedReports,
+  expectedRuleTests,
+  redCheckRequired,
+  ruleTestBaselines,
+} from './lib/red-check.ts';
+
+/** `<ref>:<path>` in the repository at `cwd`, or null when it does not exist. */
+function showAt(cwd: string, ref: string, path: string): string | null {
+  const res = tryGit(['show', `${ref}:${path}`], { cwd });
+  return res.status === 0 ? res.stdout : null;
+}
+
+function readWorkTree(cwd: string, path: string): string | null {
+  try {
+    return readFileSync(join(cwd, path), 'utf8');
+  } catch {
+    return null;
+  }
+}
 
 runCli(
-  'red-check.ts --task <id> --report <json>[,<json>] (--expected-list <file> | --cwd <dir> --base <ref>) [--root <dir>] [--json]',
+  'red-check.ts --task <id> --report <json>[,<json>] (--expected-list <file> | --cwd <dir> --base <ref>) [--cwd <dir> --base <ref> [--head-tree <tree>]] [--root <dir>] [--json]',
   (argv) => {
     const args = parseArgs(argv, {
-      values: ['task', 'report', 'root', 'expected-list', 'cwd', 'base'],
+      values: ['task', 'report', 'root', 'expected-list', 'cwd', 'base', 'head-tree'],
       flags: ['json', 'print-expected'],
     });
     if (args.rest.length > 0) throw new UsageError(`unexpected argument "${args.rest[0]}"`);
@@ -62,18 +89,38 @@ runCli(
     let expected: string[];
     const list = args.values.get('expected-list');
     const base = args.values.get('base');
+    const headTree = args.values.get('head-tree');
+    if (headTree !== undefined && base === undefined) {
+      throw new UsageError('--head-tree needs --cwd <dir> --base <ref>');
+    }
+    const cwd = resolveRoot(args.values.get('cwd'));
     if (list !== undefined) {
       expected = readFileSync(list, 'utf8')
         .split('\n')
         .map((l) => l.trim())
         .filter((l) => l !== '');
     } else if (base !== undefined) {
-      expected = expectedRuleTests(
-        changedFiles(base, { cwd: resolveRoot(args.values.get('cwd')) }),
-        scope,
-      );
+      expected = expectedRuleTests(changedFiles(base, { cwd }), scope);
     } else {
       throw new UsageError('give --expected-list <file> or --cwd <dir> --base <ref>');
+    }
+    // CT-06p: which expected files existed at the base, and which of their tests changed.
+    let baselines: Map<string, RuleTestBaseline> | undefined;
+    let baselineNote: string | null = null;
+    if (base !== undefined) {
+      try {
+        const changes: Change[] =
+          headTree === undefined
+            ? changedFiles(base, { cwd })
+            : changedBetweenCommits(base, headTree, { cwd });
+        baselines = ruleTestBaselines(expected, changes, scope, {
+          base: (p) => showAt(cwd, base, p),
+          head: (p) => (headTree === undefined ? readWorkTree(cwd, p) : showAt(cwd, headTree, p)),
+        });
+      } catch (err) {
+        baselines = undefined;
+        baselineNote = `cannot compare with the base ${base} (${err instanceof Error ? err.message : String(err)}): every test of every expected file must be red`;
+      }
     }
     const reports = reportArg.split(',').map((file) => {
       try {
@@ -85,14 +132,25 @@ runCli(
       }
     });
     // The verify container reports files under /work/repo.
-    const result = checkRedReports(reports, expected, args.values.get('root') ?? '/work/repo');
+    const result = checkRedReports(
+      reports,
+      expected,
+      args.values.get('root') ?? '/work/repo',
+      baselines,
+    );
+    if (baselineNote !== null) result.notes.unshift(baselineNote);
     for (const p of result.problems) {
       console.error(`red-check: ${p.file}${p.test === null ? '' : ` > ${p.test}`}: ${p.reason}`);
     }
+    for (const n of result.notes) console.error(`red-check note: ${n}`);
     if (json) printJson({ task: id, required: true, expected, ...result });
+    const exempt = result.exempt?.length ?? 0;
     say(
       result.ok
-        ? `PASS red-check: ${result.red.length} rule test(s) in ${expected.length} file(s) red for the right reason`
+        ? `PASS red-check: ${result.red.length} rule test(s) in ${expected.length} file(s) red for the right reason` +
+            (exempt > 0
+              ? `; ${exempt} unchanged test(s) of files that existed at the base exempt`
+              : '')
         : `FAIL red-check: ${result.problems.length} problem(s)`,
     );
     return result.ok ? 0 : 1;

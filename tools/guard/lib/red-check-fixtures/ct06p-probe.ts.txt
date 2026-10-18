@@ -1,0 +1,52 @@
+import { describe, expect, it as spec, test } from 'vitest';
+
+const names = ['alpha', 'beta'];
+spec('[AC-X#1] plain title', () => {
+  expect(1).toBe(1);
+});
+test(`[AC-X#2] template ${names.length} items`, () => {
+  expect(names).toHaveLength(2);
+});
+spec.each([
+  [1, 'one'],
+  [2, 'two'],
+])('[AC-X#3] row %i is %s', (n, s) => {
+  expect(typeof s).toBe('string');
+  expect(n).toBeGreaterThan(0);
+});
+spec.each<{ value: number; label: string }>([
+  { value: 1, label: 'a' },
+  { value: 2, label: 'b' },
+])('[AC-X#4] value=$value label=$label %#', ({ value }) => {
+  expect(value).toBeGreaterThan(0);
+});
+spec.each`
+  a    | b
+  ${1} | ${2}
+`('[AC-X#5] tagged $a + $b', ({ a, b }) => {
+  expect(a + b).toBe(3);
+});
+for (const n of names) {
+  spec(`[AC-X#6] loop ${n} works`, () => {
+    expect(n.length).toBeGreaterThan(0);
+  });
+}
+describe('outer suite', () => {
+  spec('[AC-X#7] nested', () => {
+    expect(true).toBe(true);
+  });
+  describe.each(['p', 'q'])('inner %s', (k) => {
+    spec('[AC-X#8] deep', () => {
+      expect(k).toBeTruthy();
+    });
+  });
+});
+spec('[AC-X#9] fails on purpose', () => {
+  expect(1).toBe(2);
+});
+spec.for([[3, 'c']])('[AC-X#10] for %d %s', ([n]) => {
+  expect(n).toBe(3);
+});
+spec('[AC-X#11] escaped é \'quote\' \\ back', () => {
+  expect(1).toBe(1);
+});

@@ -398,6 +398,96 @@ describe('path-guard.ts, protected-paths.ts, test-guard.ts, run.ts git', () => {
     expect(res.stderr).toContain('PASS red-check');
   });
 
+  it('[CT-06p] red-check --base / --head-tree: a file that existed at the base needs only its changed tests red', () => {
+    const t = (title: string, body: string): string => `it('${title}', () => {\n  ${body}\n});\n`;
+    const vitest = "import { expect, it } from 'vitest';\n";
+    const file = 'test/spec/ledger/post.test.ts';
+    const { root, base } = makeRepo({
+      [file]:
+        vitest + t('[AC-1] posts', 'expect(1).toBe(1);') + t('[AC-2] keeps', 'expect(2).toBe(2);'),
+    });
+    // The task changes the assertion of [AC-1] only; the head tree is what the red run ran.
+    writeFiles(root, {
+      [file]:
+        vitest + t('[AC-1] posts', 'expect(1).toBe(3);') + t('[AC-2] keeps', 'expect(2).toBe(2);'),
+    });
+    fixtureGit(root, ['commit', '-qam', 'test(spec): change [AC-1]']);
+    const tree = fixtureGit(root, ['rev-parse', 'HEAD^{tree}']);
+    // A later edit of the work tree is not what ran: --head-tree is read, not the work tree.
+    writeFiles(root, {
+      [file]:
+        vitest + t('[AC-1] posts', 'expect(1).toBe(1);') + t('[AC-2] keeps', 'expect(9).toBe(9);'),
+    });
+    const list = join(root, '..', `expected-${Date.now()}.txt`);
+    writeFileSync(list, `${file}\n`);
+    const reportFile = join(root, '..', `red-report-${Date.now()}.json`);
+    writeFileSync(
+      reportFile,
+      JSON.stringify({
+        reporter: 'couli-red-reporter',
+        testResults: [
+          {
+            name: `${root}/${file}`,
+            assertionResults: [
+              {
+                fullName: '[AC-1] posts',
+                status: 'failed',
+                failures: [{ causes: [{ name: 'AssertionError', message: 'expected 1 to be 3' }] }],
+              },
+              { fullName: '[AC-2] keeps', status: 'passed', failures: [] },
+            ],
+          },
+        ],
+      }),
+    );
+    const args = [
+      '--task',
+      'B2-02b',
+      '--report',
+      reportFile,
+      '--expected-list',
+      list,
+      '--root',
+      root,
+      '--json',
+    ];
+    const res = guard('red-check.ts', [
+      ...args,
+      '--cwd',
+      root,
+      '--base',
+      base,
+      '--head-tree',
+      tree,
+    ]);
+    expect(res.status, res.stderr).toBe(0);
+    expect(json<{ ok: boolean; red: string[]; exempt: unknown[] }>(res.stdout)).toMatchObject({
+      ok: true,
+      red: [`${file} > [AC-1] posts`],
+      exempt: [{ file, test: '[AC-2] keeps', status: 'passed' }],
+    });
+    expect(res.stderr).toContain('1 unchanged test(s) of files that existed at the base exempt');
+    // Without the base every test must be red, as before.
+    const old = guard('red-check.ts', args);
+    expect(old.status).toBe(1);
+    expect(old.stderr).toContain('[AC-2] keeps: green on the skeleton: the test has no teeth');
+    // A base that cannot be read: the old rule, said in the notes.
+    const bad = guard('red-check.ts', [
+      ...args,
+      '--cwd',
+      root,
+      '--base',
+      'no-such-ref',
+      '--head-tree',
+      tree,
+    ]);
+    expect(bad.status).toBe(1);
+    expect(json<{ notes: string[] }>(bad.stdout).notes[0]).toContain(
+      'cannot compare with the base no-such-ref',
+    );
+    expect(guard('red-check.ts', [...args, '--head-tree', tree]).status).toBe(2);
+  });
+
   it('rejects wrong usage with exit 2', () => {
     const { root, base } = workRepo();
     expect(guard('path-guard.ts', ['--task', 'B2-02a', '--cwd', root]).status).toBe(2);

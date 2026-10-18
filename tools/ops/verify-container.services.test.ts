@@ -94,6 +94,10 @@ if (args[0] === 'run' && args.includes('couli-verify-entrypoint')) {
   if (process.env.STUB_DOCKER_ECHO_URL === '1' && url) process.stdout.write('connecting to ' + url + '\n');
   if (process.env.STUB_DOCKER_RED_URL === '1' && url && out)
     fs.writeFileSync(out.slice(0, -':/out'.length) + '/spec-int.json', JSON.stringify({ title: 'probe ' + url }));
+  // STUB_DOCKER_RED_REPORT=<file>: every group of the red plan gets that report (CT-06p).
+  if (process.env.STUB_DOCKER_RED_REPORT && out && process.env.RED_PLAN)
+    for (const g of JSON.parse(process.env.RED_PLAN).groups)
+      fs.copyFileSync(process.env.STUB_DOCKER_RED_REPORT, out.slice(0, -':/out'.length) + '/' + g.name + '.json');
   if (process.env.STUB_DOCKER_SLEEP)
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.STUB_DOCKER_SLEEP) * 1000);
   if (process.env.STUB_DOCKER_SCREENSHOT === '1' && args.at(-1) === 'browser' && out) {
@@ -1655,6 +1659,67 @@ it(
       ),
     ).toBe(true);
     expect(readdirOf(res.svcRoot)).toEqual([]);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
+  '[CT-06p] --red hands red-check the base and the snapshot tree: unchanged tests of a file that existed at the base are exempt',
+  () => {
+    const t = (title: string, body: string): string => `it('${title}', () => {\n  ${body}\n});\n`;
+    const vitest = "import { expect, it } from 'vitest';\n";
+    const file = 'test/spec/identity/devices.test.ts';
+    // main holds the rule test as merged; the task changes the assertion of [BR-ID-05] a only.
+    const repo = redFixture('red-base-exempt', {
+      [file]:
+        vitest + t('[BR-ID-05] a', 'expect(1).toBe(1);') + t('[BR-ID-05] b', 'expect(2).toBe(2);'),
+    });
+    fixtureGit(repo, ['add', '-A']);
+    fixtureGit(repo, ['commit', '-q', '-m', 'base: the rule test as merged']);
+    writeFiles(repo, {
+      [file]:
+        vitest + t('[BR-ID-05] a', 'expect(1).toBe(3);') + t('[BR-ID-05] b', 'expect(2).toBe(2);'),
+    });
+    const report = join(base, 'red-base-exempt.json');
+    writeFileSync(
+      report,
+      JSON.stringify({
+        reporter: 'couli-red-reporter',
+        testResults: [
+          {
+            name: `/work/repo/${file}`,
+            assertionResults: [
+              {
+                fullName: '[BR-ID-05] a',
+                status: 'failed',
+                failures: [{ causes: [{ name: 'AssertionError', message: 'expected 1 to be 3' }] }],
+              },
+              { fullName: '[BR-ID-05] b', status: 'passed', failures: [] },
+            ],
+          },
+        ],
+      }),
+    );
+    const res = run(['B1-02b', '--worktree', repo, '--red', '--base', 'main'], {
+      STUB_DOCKER_RED_REPORT: report,
+    });
+    expect(res.status, res.stderr).toBe(0);
+    const n = readdirSync(join(runs, 'B1-02b', 'red'))
+      .map(Number)
+      .sort((x, y) => x - y)
+      .at(-1);
+    const dir = join(runs, 'B1-02b', 'red', String(n));
+    expect(JSON.parse(readFileSync(join(dir, 'red-check.json'), 'utf8'))).toMatchObject({
+      ok: true,
+      expected: [file],
+      red: [`${file} > [BR-ID-05] a`],
+      exempt: [{ file, test: '[BR-ID-05] b', status: 'passed' }],
+    });
+    expect(JSON.parse(readFileSync(join(dir, 'result.json'), 'utf8'))).toMatchObject({
+      script: 'red',
+      exit_code: 0,
+      red_tests: [`${file} > [BR-ID-05] a`],
+    });
   },
   CLI_TIMEOUT,
 );

@@ -1278,8 +1278,13 @@ if [ "$SCRIPT" = red ]; then
   done
   [ -n "$reports" ] || die "the red run wrote no report, see $LOG"
   rc=0
+  # CT-06p: the base and the snapshot tree let red-check hold the rule-test files that existed at
+  # the base to their new and changed tests only (the expected list above is unchanged). Without a
+  # tree (a plain directory) every test of every expected file must be red, as before.
+  red_base=()
+  if [ -n "${tree:-}" ]; then red_base=(--cwd "$WT" --base "$BASE_ARG" --head-tree "$tree"); fi
   (cd "$TRUSTED" && node tools/guard/red-check.ts --task "$ID" --report "$reports" \
-    --expected-list "$VDIR/expected.txt" --root /work/repo --json) \
+    --expected-list "$VDIR/expected.txt" ${red_base[@]+"${red_base[@]}"} --root /work/repo --json) \
     >"$VDIR/red-check.json" 2>>"$LOG" || rc=$?
   [ "$rc" = 0 ] || [ "$rc" = 1 ] || die "red-check failed to run (exit $rc), see $LOG"
   finish "$rc"
