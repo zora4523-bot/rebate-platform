@@ -571,6 +571,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/orders/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My order claims
+         * @description The claims of the current account only (app_id and user_id of the token), newest created
+         *     first, each with its child orders, their decision (null while pending) and reject reason
+         *     (BR-ATTR-17, BR-ATTR-18). Shared orders never appear: they were removed when the claim was
+         *     accepted.
+         */
+        get: operations["listOrderClaims"];
+        put?: never;
+        /**
+         * Submit an order claim
+         * @description Claims an order that was not attributed to the current account (BR-ATTR-17). The H5 form
+         *     calls it through the bridge `net.signedRequest`, which signs it (bridge signed_paths). The
+         *     check order and every error code, including 30202 and 30203 `data.reason`, are only in
+         *     BR-ATTR-17 and BR-ATTR-19: 30203 without data is the daily limit of created claims,
+         *     30203 with data.reason=RISK_BLOCKED is the risk block. Orders are matched only in the app of
+         *     the token. A shared order is treated as not existing: it never enters the claim, and the
+         *     response is the same 30201 (same HTTP status, msg and no data) as an unknown order number.
+         *     When no child order passes, the error of the first child order by sub_order_id ascending is
+         *     returned. For pdd the hyphens are removed from both the input and the stored order numbers
+         *     before comparing. The 200 response carries only the claim that was created, whose items are
+         *     the child orders that passed; acceptance and the evidence computation (BR-ATTR-18) share one
+         *     transaction, so status is auto_matched or manual_review. Version gate: applied.
+         */
+        post: operations["createOrderClaim"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/orders/pending-tracks": {
         parameters: {
             query?: never;
@@ -4213,11 +4251,72 @@ export interface components {
             next_cursor: string | null;
             /** Format: date */
             earliest_visible_date: string | null;
+            /** @description Whether the claim entry is pinned on the order page (J-6). Only with scope=self, absent with scope=share; computed by the server at the current time per BR-ATTR-17 (latest own jump-out at least 30 minutes and at most 72 hours ago and no new order attributed to the user since; a no-rebate purchase counts only under 拍板第二批 TRADE-09). Not the same as show_claim_entry of the pending-track card. */
+            claim_entry_pinned?: boolean;
         };
         OrderListResponse: {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["OrderListData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Claim status (contracts/enums/order.yaml claim_status; BR-ATTR-16, BR-ATTR-18).
+         * @enum {string}
+         */
+        ClaimStatus: "submitted" | "auto_matched" | "manual_review" | "approved" | "rejected" | "cancelled";
+        /**
+         * @description Decision on one child order of a claim (enum claim_item_decision).
+         * @enum {string}
+         */
+        ClaimItemDecision: "approved" | "rejected" | "cancelled";
+        /**
+         * @description Reject reason of a child order (enum claim_reject_reason; NOT_IN_POOL and ORDER_INVALID are set by the system).
+         * @enum {string}
+         */
+        ClaimRejectReason: "NO_EVIDENCE" | "EXPIRED_CLICK" | "NOT_TRACKED" | "OTHER_TLJ" | "FRAUD" | "OTHER" | "NOT_IN_POOL" | "ORDER_INVALID";
+        CreateOrderClaimRequest: {
+            platform: components["schemas"]["PlatformCode"];
+            /** @description Order number; spaces are removed, then it is matched exactly as a string, first against child order numbers, then against parent order numbers (BR-ATTR-17). For pdd the hyphens are removed from both the input and the stored numbers before comparing; stored and displayed numbers are unchanged. Empty after removing spaces is 20001. */
+            order_no: string;
+            /**
+             * Format: date
+             * @description Payment date, YYYY-MM-DD in +08:00 (second factor); for a pre-sale order the date the deposit was paid.
+             */
+            paid_date: string;
+        };
+        OrderClaimItem: {
+            sub_order_id: string;
+            /** @description null while pending. */
+            decision: components["schemas"]["ClaimItemDecision"] | null;
+            reject_reason: components["schemas"]["ClaimRejectReason"] | null;
+        };
+        OrderClaim: {
+            claim_id: components["schemas"]["Id"];
+            platform: components["schemas"]["PlatformCode"];
+            /** @description The order number as submitted, spaces removed. */
+            order_no: string;
+            /** Format: date */
+            paid_date: string;
+            status: components["schemas"]["ClaimStatus"];
+            /** Format: date-time */
+            created_at: string;
+            items: components["schemas"]["OrderClaimItem"][];
+        };
+        OrderClaimResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["OrderClaim"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        OrderClaimListData: {
+            items: components["schemas"]["OrderClaim"][];
+            next_cursor: string | null;
+        };
+        OrderClaimListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["OrderClaimListData"];
             trace_id: components["schemas"]["TraceId"];
         };
         OrderTimelineItem: {
@@ -8497,6 +8596,165 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["OrderListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    listOrderClaims: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Page size, at most 50 (04 §5). */
+                limit?: components["parameters"]["Limit"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of claims. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "claim_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5aa0",
+                     *             "platform": "pdd",
+                     *             "order_no": "231006-1234567890",
+                     *             "paid_date": "2026-10-06",
+                     *             "status": "rejected",
+                     *             "created_at": "2026-10-07T10:15:00+08:00",
+                     *             "items": [
+                     *               {
+                     *                 "sub_order_id": "231006-1234567890",
+                     *                 "decision": "rejected",
+                     *                 "reject_reason": "NO_EVIDENCE"
+                     *               }
+                     *             ]
+                     *           }
+                     *         ],
+                     *         "next_cursor": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["OrderClaimListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    createOrderClaim: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "platform": "pdd",
+                 *       "order_no": "231006-1234567890",
+                 *       "paid_date": "2026-10-06"
+                 *     }
+                 */
+                "application/json": components["schemas"]["CreateOrderClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description The claim that was created. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "claim_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5aa0",
+                     *         "platform": "pdd",
+                     *         "order_no": "231006-1234567890",
+                     *         "paid_date": "2026-10-06",
+                     *         "status": "manual_review",
+                     *         "created_at": "2026-10-07T10:15:00+08:00",
+                     *         "items": [
+                     *           {
+                     *             "sub_order_id": "231006-1234567890",
+                     *             "decision": null,
+                     *             "reject_reason": null
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["OrderClaimResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

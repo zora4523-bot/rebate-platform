@@ -65,6 +65,9 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminUserLevel: 'user_level',
   AdminUnionBindingStatus: 'union_binding_status',
   AdminUnionBindingBlockedReason: 'union_binding_blocked_reason',
+  ClaimStatus: 'claim_status',
+  ClaimItemDecision: 'claim_item_decision',
+  ClaimRejectReason: 'claim_reject_reason',
 };
 
 /**

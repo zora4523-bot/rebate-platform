@@ -203,6 +203,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "listOrderClaims",
+    "method": "GET",
+    "path": "/v1/orders/claims",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "createOrderClaim",
+    "method": "POST",
+    "path": "/v1/orders/claims",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": true
+  },
+  {
     "operationId": "listPendingTracks",
     "method": "GET",
     "path": "/v1/orders/pending-tracks",

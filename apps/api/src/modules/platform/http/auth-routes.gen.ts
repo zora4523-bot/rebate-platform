@@ -98,6 +98,16 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/orders/claims",
+    "auth": "login"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/orders/claims",
+    "auth": "login"
+  },
+  {
+    "method": "GET",
     "path": "/v1/orders/pending-tracks",
     "auth": "login"
   },
