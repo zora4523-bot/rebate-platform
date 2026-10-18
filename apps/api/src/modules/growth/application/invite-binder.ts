@@ -23,6 +23,15 @@
 //      inviter's retained login_logs hashes).
 // Only the 30401 of steps 7 and 8 increment the count (an atomic INCR; the key gets its TTL, the
 // window plus 60 s, when it is created). Redis failing to read or to count → 50001.
+// Attempt de-duplication (B1-11e review r1 S1): the count lives outside the caller's transaction,
+// so a backfill whose PG commit fails after the count was incremented would count again when the
+// client retries the same Idempotency-Key (no record survived the rollback). The backfill route
+// passes that key as `options.attemptKey`; the same script then first sets
+// `<count key>:seen:<sha256 of [user_id, attemptKey]>` with SET NX EX (same TTL, set only when
+// created, so neither key outlives the day's window) and increments only when that key was new: a
+// retry of one key counts once, different keys count once each. Without an attemptKey (the
+// register channel: identity's registration has its own idempotency and no key reaches the binder)
+// the count is exactly as before.
 // When everything passes: one conditional UPDATE of users (parent_id IS NULL AND
 // self_bind_used = false); 0 rows → 30402 with nothing written; 1 row → appendRelationChange in
 // the same transaction. A failing log insert rejects, and the caller rolls back.
@@ -46,6 +55,7 @@ import {
   withinBackfill,
   type InviteFailWindow,
 } from '@couli/domain';
+import { createHash } from 'node:crypto';
 import { sql, type Transaction } from 'kysely';
 import type { Clock, FieldCrypto, RedisHandle, RootLogger } from '../../platform/index.ts';
 import type { RiskStateSnapshot } from '../../risk/index.ts';
@@ -120,8 +130,21 @@ export interface InviteBinderDeps {
   ) => Promise<string | null>;
 }
 
+/** Per-call options outside the command (the command stays the rule tests' exact shape). */
+export interface InviteBindOptions {
+  /**
+   * Backfill: the request's Idempotency-Key. A 30401 is counted once per (user, attemptKey) and
+   * day, so a retry after a rolled-back commit never counts twice. Omitted: every 30401 counts.
+   */
+  readonly attemptKey?: string;
+}
+
 export interface InviteBinder {
-  bind(trx: Transaction<DB>, command: InviteBindCommand): Promise<InviteBindingResult>;
+  bind(
+    trx: Transaction<DB>,
+    command: InviteBindCommand,
+    options?: InviteBindOptions,
+  ): Promise<InviteBindingResult>;
 }
 
 type FailureCode = Extract<InviteBindingResult, { result: 'failed' }>['code'];
@@ -148,9 +171,14 @@ const DEFAULT_FAIL_LIMIT = 5;
 const DEFAULT_BACKFILL_HOURS = 168;
 const INT32_MAX = 2_147_483_647;
 
-// INCR, then the TTL (ARGV[1]) only on a key without one (the first increment of the day), so a
-// later failure never extends the day's window. Returns the new count.
+// With a second key (the attempt's seen marker): SET NX EX ARGV[1] first; a marker that already
+// exists means this attempt was counted, and nothing changes (returns 0). Then INCR, and the TTL
+// (ARGV[1]) only on a key without one (the first increment of the day), so a later failure never
+// extends the day's window. Returns the new count.
 const COUNT_FAILURE = `
+if #KEYS > 1 and not redis.call('SET', KEYS[2], '1', 'NX', 'EX', ARGV[1]) then
+  return 0
+end
 local count = redis.call('INCR', KEYS[1])
 if count == 1 or redis.call('TTL', KEYS[1]) < 0 then
   redis.call('EXPIRE', KEYS[1], ARGV[1])
@@ -172,6 +200,25 @@ function errorClass(error: unknown): string {
 
 function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value !== '';
+}
+
+function checkOptions(options: InviteBindOptions | undefined): void {
+  if (options === undefined) return;
+  if (
+    typeof options !== 'object' ||
+    options === null ||
+    (options.attemptKey !== undefined && !nonEmpty(options.attemptKey))
+  ) {
+    throw new TypeError('growth: malformed invite bind options');
+  }
+}
+
+/** The attempt's seen marker: one hash of user and key (the raw key never reaches Redis). */
+function seenKey(countKey: string, userId: string, attemptKey: string): string {
+  const digest = createHash('sha256')
+    .update(JSON.stringify([userId, attemptKey]), 'utf8')
+    .digest('hex');
+  return `${countKey}:seen:${digest}`;
 }
 
 function checkCommand(command: InviteBindCommand): void {
@@ -348,8 +395,9 @@ export function createInviteBinder(deps: InviteBinderDeps): InviteBinder {
   }
 
   return {
-    async bind(trx, command) {
+    async bind(trx, command, options) {
       checkCommand(command);
+      checkOptions(options);
       const at = clock.now();
       const { app_id: appId, user_id: userId, channel } = command;
       const backfill = channel === 'backfill';
@@ -406,8 +454,9 @@ export function createInviteBinder(deps: InviteBinderDeps): InviteBinder {
       /** 30401 of steps 7 and 8: counted first; a count that cannot be written is 50001. */
       const invalidCode = async (): Promise<InviteBindingResult> => {
         try {
+          const attemptKey = options?.attemptKey;
           await counter.eval(COUNT_FAILURE, {
-            keys: [key],
+            keys: attemptKey === undefined ? [key] : [key, seenKey(key, userId, attemptKey)],
             args: [],
             ttlSeconds: window.retry_after_seconds + FAIL_KEY_GRACE_SECONDS,
           });
