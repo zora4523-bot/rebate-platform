@@ -1,0 +1,24 @@
+id: B1-08q
+repo: rebate-platform
+title: 订单来源回填接线：生产装配向归因流水线与更新步骤注入来源端口（linking 按用户 × 平台 × 时间窗取外跳日志、短码反查链接、商品键前缀与京东模式），读取配置 attr.click_code.<platform> 与 attr.backfill_window_hours；规则测试断言生产装配注入了 sources
+type: impl
+# 草稿 2026-10-19（W1 线，订单线）。来源：B1-08j 实现只在 orders 声明来源端口、未装配（followups）；编排裁定 D10-64 ④：本任务 deps 必须含 B1-08p，没有 B1-08p done 不得接线。
+# link_logs 缺 (app_id, user_id, platform, created_at) 类索引（followups）：若接线后的时间窗查询需要，另立迁移任务，不在本任务。
+# 分工：订单归属 → impl claude、tester codex（D10-15）。
+refs: []
+refs_hash: {}
+deps: [B1-08j, B1-08n, B1-08p]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/modules/linking/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/orders/source-wiring/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/source-wiring/**'
+status: todo
+pr: null
