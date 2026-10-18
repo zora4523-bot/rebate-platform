@@ -1,0 +1,117 @@
+{
+  "task": "F1-09h",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "7b8426ee64e7769637ab8f2f513a8cebc4a603fb",
+  "red_tests": [
+    "test/spec/domain/state-machines/page-version/cli.test.ts > [AC-F1-09h#11] --verify 接受一致的生成物，且所有源文件和生成物保持不变",
+    "test/spec/domain/state-machines/page-version/cli.test.ts > [AC-F1-09h#12] 过期生成物 使 --verify 失败且不修复，重新生成后通过且其他状态机不变",
+    "test/spec/domain/state-machines/page-version/cli.test.ts > [AC-F1-09h#12] 缺失生成物 使 --verify 失败且不修复，重新生成后通过且其他状态机不变",
+    "test/spec/domain/state-machines/page-version/cli.test.ts > [AC-F1-09h#12] YAML 守卫变更 使 --verify 失败且不修复，重新生成后通过且其他状态机不变",
+    "test/spec/domain/state-machines/page-version/generator.test.ts > [AC-F1-09h#8] 自动发现 page-version，并保留已登记的状态机",
+    "test/spec/domain/state-machines/page-version/generator.test.ts > [AC-F1-09h#9] render 稳定且与生成物逐字一致，生成表保持合法迁移",
+    "test/spec/domain/state-machines/page-version/generator.test.ts > [AC-F1-09h#10] 守卫只保留文字，不由生成的 transition 执行",
+    "test/spec/domain/state-machines/page-version/source.test.ts > [AC-F1-09h#1] YAML 只含三个状态、三个事件及 P1/P2/P3 三行迁移",
+    "test/spec/domain/state-machines/page-version/source.test.ts > [AC-F1-09h#2] YAML 与公开状态集合均匹配 0039 的 page_versions_status_check",
+    "test/spec/domain/state-machines/page-version/source.test.ts > [AC-F1-09h#3] 包入口导出 YAML 的状态、事件和完整迁移表",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#4] 包入口 接受三行合法迁移并返回固定行号",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#4] 生成物 接受三行合法迁移并返回固定行号",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] null + PUBLISH 是表外组合，不得迁移或 noop",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] null + ROLLBACK 是表外组合，不得迁移或 noop",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] draft + DRAFT_SAVED 是表外组合，不得迁移或 noop",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] draft + ROLLBACK 是表外组合，不得迁移或 noop",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] published + DRAFT_SAVED 是表外组合，不得迁移或 noop",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] published + PUBLISH 是表外组合，不得迁移或 noop",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] rolled_back + DRAFT_SAVED 是表外组合，不得迁移或 noop",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] rolled_back + PUBLISH 是表外组合，不得迁移或 noop",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] rolled_back + ROLLBACK 是表外组合，不得迁移或 noop",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#6] 包入口 拒绝未知状态、大小写变体及原型属性名",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#6] 生成物 拒绝未知状态、大小写变体及原型属性名",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#7] 包入口 拒绝未知事件；调灰度和转全量不新增状态迁移",
+    "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#7] 生成物 拒绝未知事件；调灰度和转全量不新增状态迁移"
+  ],
+  "risk_note": "RV2 (packages/domain state machine, no runtime caller yet). New specs/state-machines/page-version.yaml for page_versions.status (draft / published / rolled_back, same values as the 0039_pages CHECK): P1 null → draft (DRAFT_SAVED), P2 draft → published (PUBLISH, gray 1..99 or full 100, once per version), P3 published → rolled_back (ROLLBACK, manual or automatic with render_count >= 200); every other pair is out of table, rolled_back is final, gray changes are not transitions. Guards are text only. page-version.gen.ts written by the generator (--verify 0); packages/domain/src/index.ts exports it like commission-rule-version; generator and content module unchanged (F1-09f switches to it next). All state-machine rule tests, including the frozen ones of earlier machines, pass. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "7b8426ee64e7769637ab8f2f513a8cebc4a603fb",
+      "tree": "b17cc3c493bc758fa80ed77da7cd04dfd4f76be1",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T01:05:43Z",
+      "finished_at": "2026-10-18T01:05:47Z",
+      "red_tests": [
+        "test/spec/domain/state-machines/page-version/cli.test.ts > [AC-F1-09h#11] --verify 接受一致的生成物，且所有源文件和生成物保持不变",
+        "test/spec/domain/state-machines/page-version/cli.test.ts > [AC-F1-09h#12] 过期生成物 使 --verify 失败且不修复，重新生成后通过且其他状态机不变",
+        "test/spec/domain/state-machines/page-version/cli.test.ts > [AC-F1-09h#12] 缺失生成物 使 --verify 失败且不修复，重新生成后通过且其他状态机不变",
+        "test/spec/domain/state-machines/page-version/cli.test.ts > [AC-F1-09h#12] YAML 守卫变更 使 --verify 失败且不修复，重新生成后通过且其他状态机不变",
+        "test/spec/domain/state-machines/page-version/generator.test.ts > [AC-F1-09h#8] 自动发现 page-version，并保留已登记的状态机",
+        "test/spec/domain/state-machines/page-version/generator.test.ts > [AC-F1-09h#9] render 稳定且与生成物逐字一致，生成表保持合法迁移",
+        "test/spec/domain/state-machines/page-version/generator.test.ts > [AC-F1-09h#10] 守卫只保留文字，不由生成的 transition 执行",
+        "test/spec/domain/state-machines/page-version/source.test.ts > [AC-F1-09h#1] YAML 只含三个状态、三个事件及 P1/P2/P3 三行迁移",
+        "test/spec/domain/state-machines/page-version/source.test.ts > [AC-F1-09h#2] YAML 与公开状态集合均匹配 0039 的 page_versions_status_check",
+        "test/spec/domain/state-machines/page-version/source.test.ts > [AC-F1-09h#3] 包入口导出 YAML 的状态、事件和完整迁移表",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#4] 包入口 接受三行合法迁移并返回固定行号",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#4] 生成物 接受三行合法迁移并返回固定行号",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] null + PUBLISH 是表外组合，不得迁移或 noop",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] null + ROLLBACK 是表外组合，不得迁移或 noop",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] draft + DRAFT_SAVED 是表外组合，不得迁移或 noop",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] draft + ROLLBACK 是表外组合，不得迁移或 noop",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] published + DRAFT_SAVED 是表外组合，不得迁移或 noop",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] published + PUBLISH 是表外组合，不得迁移或 noop",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] rolled_back + DRAFT_SAVED 是表外组合，不得迁移或 noop",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] rolled_back + PUBLISH 是表外组合，不得迁移或 noop",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#5] rolled_back + ROLLBACK 是表外组合，不得迁移或 noop",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#6] 包入口 拒绝未知状态、大小写变体及原型属性名",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#6] 生成物 拒绝未知状态、大小写变体及原型属性名",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#7] 包入口 拒绝未知事件；调灰度和转全量不新增状态迁移",
+        "test/spec/domain/state-machines/page-version/transition.test.ts > [AC-F1-09h#7] 生成物 拒绝未知事件；调灰度和转全量不新增状态迁移"
+      ],
+      "expected": [
+        "test/spec/domain/state-machines/page-version/cli.test.ts",
+        "test/spec/domain/state-machines/page-version/generator.test.ts",
+        "test/spec/domain/state-machines/page-version/source.test.ts",
+        "test/spec/domain/state-machines/page-version/transition.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "73ecb14ddd3499adf2f3e9fadf42fa1b3e31c4b1a78530e2923c296ce89a615b"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass (one S2, guard text not pinned by tests; guard text written per the brief)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "4b30f96774a35fda101d86970d5db9570efa03ed",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "450430df723276d43fddbec7a070b26ef64466ff",
+    "specs": "c2b838de9c813844ae68fb6f74f1bb0dc1b2879d"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
