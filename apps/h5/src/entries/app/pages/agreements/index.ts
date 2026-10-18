@@ -1,8 +1,5 @@
-import type { ReactElement } from 'react';
+import { AgreementPage } from './agreement-page.tsx';
 
-export function AgreementPage(props: Record<string, never>): ReactElement {
-  void props;
-  throw new Error('NotImplemented: AgreementPage');
-}
-
+export { AgreementPage } from './agreement-page.tsx';
+/** Route module shape (React Router `lazy`): the Agreement route renders this page. */
 export { AgreementPage as Component };

@@ -1,8 +1,5 @@
-import type { ReactElement } from 'react';
+import { NoticePage } from './notice-page.tsx';
 
-export function NoticePage(props: Record<string, never>): ReactElement {
-  void props;
-  throw new Error('NotImplemented: NoticePage');
-}
-
+export { NoticePage } from './notice-page.tsx';
+/** Route module shape (React Router `lazy`): the Notice route renders this page. */
 export { NoticePage as Component };
