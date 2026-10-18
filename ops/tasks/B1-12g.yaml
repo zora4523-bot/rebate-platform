@@ -6,6 +6,7 @@ type: impl
 # 依据：BR-TEXT-23 细则模板与原因类别字典（{reason_category} 取 risk_reason.<category> 用户文案；{frozen_until} 按 BR-TEXT-11）；risk.state_changed 由 risk 的 setRiskState 在同一事务发出（载荷 app_id、user_id、from、to、reason_category），
 # 事件至少一次投递、消费端去重（AGENTS 硬规则 4）。frozen_until 由 risk 在同一事务写进载荷（快照，ISO 8601 UTC 字符串，非冻结为 null；台账评审 GT-23bep S1：消费者不得读 user_risk_state 当前行代替事件当时的值），发布改动与测试同步在 B1-03y，本任务只消费。
 # 变体判定：to=frozen 且 frozen_until 空 → frozen；to=frozen 且有到期 → frozen_until；from=frozen、to=normal → unfrozen；to=banned → banned；from=banned、to=normal → unbanned；
+# 接线：events/types.ts 的 EVENT_SUBSCRIPTIONS 登记订阅，platform/queue/catalog.ts 加对应 evt.<consumer> 队列与 ENTRY_PLAN 条目（台账评审 r3 S1）。
 # 经 appealing 的迁移（申诉撤销 / 维持）归 APPEAL_RESULT 任务（BR-ID-36），本任务不发并留 TODO。标题：BR-TEXT-23 未给，代理默认「账户通知」，可经覆盖列改（记 needs 交规划回写）。
 refs: [BR-TEXT-23]
 refs_hash:
@@ -14,6 +15,7 @@ deps: [B1-12f, B1-03y]
 paths:
   - 'apps/api/src/modules/notification/**'
   - 'apps/api/src/modules/platform/events/types.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/notification/risk-state-message/**'
