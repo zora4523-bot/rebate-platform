@@ -38,6 +38,7 @@ import {
   type ContentReader,
 } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
+import { appendLevelChange } from './modules/growth/index.ts';
 import {
   IdentityAdminModule,
   IdentityModule,
@@ -59,6 +60,7 @@ import {
   type IdentityConfigReader,
   type IdentityContext,
   type IdentityRequest,
+  type InitialLevelLog,
   type SessionPushTokens,
   type UserLevelReader,
   type IdentityLevelChecks,
@@ -374,6 +376,19 @@ function identityModule(): DynamicModule {
     // Stage ⑨'s real-name status port (B1-02za): always none until app.realname is read.
     // TODO(规划/11 §2.3): 实名状态读 app.realname — blocked on B1-13d
     realnameStatus: { useFactory: createDefaultRealnameStatusReader },
+    initialLevelLog: {
+      inject: [],
+      useFactory: (): InitialLevelLog => ({
+        append: (trx, input) =>
+          appendLevelChange(trx, {
+            ...input,
+            from_level: null,
+            source: 'register',
+            operator: 'system',
+            reason: null,
+          }),
+      }),
+    },
   });
 }
 
