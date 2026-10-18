@@ -1,0 +1,25 @@
+id: CT-06q
+repo: rebate-platform
+title: 门禁小修：guard-git 拦台账覆盖（base 上已有的 ops/tasks/<id>.yaml 不得改 id / type / title，status done 不得改回）与迁移撞号 / 跳号（PR 新增的 db/migrations 编号必须紧接 base 主干最大号连号、不与 base 已有编号重复）
+type: guard-change
+# 2026-10-18 入账（编排会话）。起因（同日两起）：① chore(ops) #778 把已 done 的 test-change 任务文件 ops/tasks/F1-09i.yaml（#717）整个覆盖成一个新的 impl 任务；② #775 与 #750 都带 db/migrations/0046_*.sql，先合并的占了号，后者再合并就会出现两个 0046（packages/db migrations.test 只在变基后的树上才红，guard-git 不拦）。
+# 做法：run.ts git 新增两项检查，台账与迁移都按「base 树 vs 受检树」比对，不认负责人标签：
+#   ledger-overwrite：对 base 上已存在的 ops/tasks/<id>.yaml，id、type、title 任一改变即失败；status: done 改回非 done 即失败；删除或改名也失败；允许 status 推进、pr / paths / test_paths / refs / refs_hash / deps / accept 等字段补充与注释改动；错误信息指出「<id> 已存在且为 done，新任务请换编号」。
+#   migration-sequence：PR 新增（base 上没有、受检树里有）的 db/migrations/NNNN_*.sql，编号必须 = base 最大号 + 1、+2 … 连号、不重复、不跳号；与 base 已有编号重复时信息指出「NNNN 已被 <文件> 占用，请改为 <下一号>」；文件名不合 NNNN_kebab-name.sql 也失败。approvals #32 的 fix/migration-<NNNN>-collision 改名（改成 base 最大号 + 1）照常通过。
+# 不变：path-guard / protected-paths / test-guard 与负责人标签的豁免范围；evidence-check（含 MONEY_PATHS）；lint-migrations 的 squawk 与冻结校验；不涉资金测试删改、不涉四类例外。
+# tools/ 属保护路径第三类：负责人 10-02 常设授权的流程门禁小修（approvals #16），Claude 实现、Codex 对抗评审，评审通过、检查全绿后按 approvals #24 加标签。tools 自己的单元测试由实现者写，不需要先写规则测试。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/guard/lib/ledger-overwrite*'
+  - 'tools/guard/lib/migration-sequence*'
+  - 'tools/guard/lib/checks.ts'
+  - 'tools/guard/run.ts'
+  - 'tools/guard/guard-cli.test.ts'
+  - 'tools/README.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
