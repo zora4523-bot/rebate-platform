@@ -21,4 +21,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/db/notification/send-log/**'
-status: todo
+status: done
+pr: 710
