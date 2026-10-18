@@ -10,6 +10,7 @@ type: impl
 #   解封联动导出给申诉撤销复用；
 #   顺手改过时注释（risk-state.ts「F1-10 / B1-27」、revoke-sessions.ts「ban (B1-31)」）。
 #   会话吊销与 linking 联动都以端口注入、在 app.module.ts 装配（identity 已导入 risk，risk 直接 import identity 会成环，.dependency-cruiser no-circular）。
+#   并发：风控状态变更事务先取用户级锁 `SELECT … FROM app.users WHERE app_id = ? AND id = ? FOR UPDATE`（与 F1-07c 的绑定操作同一把锁），再 setRiskState 与绑定联动，避免与 enable 交错出 banned + invalid（GitHub Codex #696 P2）。
 #   SetRiskState 加可选 expected_row_version（null 只在无记录时首建，其余不匹配 20902），不传时行为不变，冻结测试不改。
 #   封禁要跨进程失效风控状态缓存（BR-ID-01：封禁时主动失效缓存；admin 进程写、api 进程读；risk-state.ts 注明尚无消费者）：在 risk/** 内接上。
 #   站内信 RISK_STATE_CHANGED：不加发送调用（notification 尚无发送端口）；触发源是 setRiskState 已发的 risk.state_changed，发送由通知线订阅实现，代码里写 TODO 指向通知线跟进任务；契约措辞由 CT-02p 改为「由通知模块发送」，不保留 planned（编排 10-18 09:2x 裁定 ②；台账评审 r2 S2-3）。
