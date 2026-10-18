@@ -6,7 +6,7 @@ type: test-change
 # 四份 kit：test/spec/platform/idempotency/abandon-route/http-kit.ts（risk-state / appeals 等共用）、identity/identity-level/http-kit.ts、identity/bind-phone/http-kit.ts、identity/step-up-verify/kit.ts；三份 identity kit 经 identity/sms-codes/http-kit.ts 的 buildApp 建应用，buildApp 加可选的 startQueue 参数并转发给 createHttpApp（默认不起，其他调用方行为不变；台账评审 GT-23bes S2）。只加该选项，断言一字不动；Codex 评审确认「只起队列、未动断言」；#24 标签。
 refs: [BR-TEXT-23]
 refs_hash:
-  BR-TEXT-23: e3d452417b5c
+  BR-TEXT-23: 9fbb1b3ed5ec
 deps: [B1-12g]
 paths:
   - 'test/spec/platform/idempotency/abandon-route/http-kit.ts'
