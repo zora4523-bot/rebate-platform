@@ -299,6 +299,20 @@ export interface CommissionRules {
   rule_version_id: string;
 }
 
+export interface CommissionRuleTrials {
+  app_id: string;
+  base_version_id: string | null;
+  created_at: Timestamp;
+  created_by: string;
+  report: Json;
+  rule_version_id: string;
+  sample_count: number;
+  sample_from: Timestamp;
+  sample_hash: string;
+  sample_to: Timestamp;
+  trial_id: string;
+}
+
 export interface CommissionRuleVersions {
   app_id: string;
   base_version_id: string | null;
@@ -1347,6 +1361,7 @@ export interface DB {
   blocklist: Blocklist;
   category_blocklist: CategoryBlocklist;
   commission_rule_reserves: CommissionRuleReserves;
+  commission_rule_trials: CommissionRuleTrials;
   commission_rule_versions: CommissionRuleVersions;
   commission_rules: CommissionRules;
   commission_split_amounts: CommissionSplitAmounts;
