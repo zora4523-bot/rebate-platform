@@ -23,5 +23,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/db/content/dict-items/**'
-status: todo
-pr: null
+status: done
+pr: 780
