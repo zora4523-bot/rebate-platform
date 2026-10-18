@@ -95,8 +95,8 @@ it.each([
       settle_commission_fen: raw === 'settled' ? 500n : null,
       attributed_now: false,
     });
-    expect(f.publish).toHaveBeenCalledTimes(1);
-    expect(f.publish.mock.calls[0]?.[1]).toEqual({
+    expect(f.publishedOf('order.updated')).toHaveLength(1);
+    expect(f.publishedOf('order.updated')[0]?.[1]).toEqual({
       appId: f.ctx.app_id,
       name: 'order.updated',
       payload: {
@@ -203,8 +203,8 @@ it.each([
       est_before: 789n,
       est_after: 990n,
     });
-    expect(f.publish).toHaveBeenCalledTimes(1);
-    expect(f.publish.mock.calls[0]?.[1]).toMatchObject({
+    expect(f.publishedOf('order.updated')).toHaveLength(1);
+    expect(f.publishedOf('order.updated')[0]?.[1]).toMatchObject({
       name: 'order.updated',
       payload: { rule },
     });

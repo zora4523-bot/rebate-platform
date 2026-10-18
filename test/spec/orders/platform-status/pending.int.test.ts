@@ -17,7 +17,7 @@ afterAll(async () => {
     await database?.drop();
   }
 }, 30_000);
-import { at, expectSafeLogs, RECEIVED, scenario, SETTLED } from './kit.ts';
+import { at, expectAlert, expectSafeLogs, RECEIVED, scenario, SETTLED } from './kit.ts';
 
 function expectUnmappedAlert(f: Awaited<ReturnType<typeof scenario>>) {
   expect([...f.logger.warn.mock.calls, ...f.logger.error.mock.calls]).toEqual(
@@ -92,6 +92,18 @@ it.each([
         detail: `order_illegal_transition ${rule} ${from}→${event}`,
       }),
     ]);
+    expect(f.publishedOf('order.updated')).toHaveLength(0);
+    expect(f.publishedOf('order.created')).toHaveLength(0);
+    expectAlert(
+      f,
+      'order.illegal_transition',
+      {
+        reason: 'ILLEGAL_TRANSITION',
+        from_status: from,
+      },
+      ['private-relation', 'private-sub', 'private-buyer'],
+    );
+    f.publish.mockClear();
     f.clock.advanceMs(70_000);
     expect(await f.pipeline.process({ ...incoming, raw_payload_id: '303' }, f.ctx)).toEqual(first);
     const repeated = await f.read();
@@ -102,7 +114,17 @@ it.each([
     expect(repeated.history).toEqual(f.before.history);
     expect(f.onUpdated).not.toHaveBeenCalled();
     expect(f.onUnmappedStatus).not.toHaveBeenCalled();
-    expect(f.publish).not.toHaveBeenCalled();
+    expect(f.publishedOf('order.updated')).toHaveLength(0);
+    expect(f.publishedOf('order.created')).toHaveLength(0);
+    expectAlert(
+      f,
+      'order.illegal_transition',
+      {
+        reason: 'ILLEGAL_TRANSITION',
+        from_status: from,
+      },
+      ['private-relation', 'private-sub', 'private-buyer'],
+    );
     expect(f.findUser).not.toHaveBeenCalled();
     expect(f.queries.some((q) => /^update "app"."orders"/i.test(q.sql))).toBe(false);
     expect(f.logger.error).toHaveBeenCalledWith(
@@ -146,7 +168,14 @@ it('[AC-B1-08i#25] P10 开关关闭仍留待处理与告警，金额照写、状
   expect(after.pending).toEqual([expect.objectContaining({ reason: 'ILLEGAL_TRANSITION' })]);
   expect(platforms).toContain('pdd');
   expect(f.onUpdated).toHaveBeenCalledTimes(1);
-  expect(f.publish).toHaveBeenCalledTimes(1);
+  expect(f.publishedOf('order.updated')).toHaveLength(1);
+  expectAlert(f, 'order.illegal_transition', {
+    reason: 'ILLEGAL_TRANSITION',
+    from_status: 'RECEIVED',
+  });
+  expect(f.publishedOf('order.illegal_transition')[0]?.[0]).toBe(
+    f.publishedOf('order.updated')[0]?.[0],
+  );
   expect(f.onUpdated.mock.calls[0]?.[1]).toMatchObject({ rule: 'P10', to_status: 'RECEIVED' });
   expectSafeLogs(f);
 });
@@ -178,7 +207,9 @@ it.each(['CREDITED', 'CLAWED_BACK'])(
     ]);
     expect(f.onUpdated).not.toHaveBeenCalled();
     expect(f.onUnmappedStatus).not.toHaveBeenCalled();
-    expect(f.publish).not.toHaveBeenCalled();
+    expect(f.publishedOf('order.updated')).toHaveLength(0);
+    expect(f.publishedOf('order.created')).toHaveLength(0);
+    expect(f.publishedOf('order.illegal_transition')).toHaveLength(0);
     expectUnmappedAlert(f);
   },
 );
@@ -212,9 +243,10 @@ it.each(['ESTIMATED', 'WAITING', 'UNATTRIBUTED', 'VOID'])(
       rebate_status: rebate,
     });
     expect(f.onUpdated).toHaveBeenCalledTimes(1);
-    expect(f.publish).toHaveBeenCalledTimes(1);
+    expect(f.publishedOf('order.updated')).toHaveLength(1);
+    expect(f.publishedOf('order.illegal_transition')).toHaveLength(0);
     expect(f.onUnmappedStatus.mock.calls[0]?.[0]).toBe(f.onUpdated.mock.calls[0]?.[0]);
-    expect(f.publish.mock.calls[0]?.[0]).toBe(f.onUpdated.mock.calls[0]?.[0]);
+    expect(f.publishedOf('order.updated')[0]?.[0]).toBe(f.onUpdated.mock.calls[0]?.[0]);
     expectUnmappedAlert(f);
   },
 );

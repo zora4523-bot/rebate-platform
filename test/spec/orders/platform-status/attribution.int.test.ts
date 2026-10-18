@@ -18,7 +18,7 @@ afterAll(async () => {
   }
 }, 30_000);
 import { randomUUID } from 'node:crypto';
-import { at, expectSafeLogs, scenario } from './kit.ts';
+import { at, expectAlert, expectSafeLogs, scenario } from './kit.ts';
 
 it.each([
   { rebate: 'UNATTRIBUTED', locked: false },
@@ -70,7 +70,9 @@ it.each([
     expect(updates).toHaveLength(1);
     expect(updates[0]?.sql.split(' where ')[0]).not.toMatch(/"rebate_status"\s*=/i);
     expect(f.onUpdated.mock.calls[0]?.[1]).toMatchObject({ attributed_now: !locked });
-    expect(f.publish.mock.calls[0]?.[1]).toMatchObject({ payload: { attributed_now: !locked } });
+    expect(f.publishedOf('order.updated')[0]?.[1]).toMatchObject({
+      payload: { attributed_now: !locked },
+    });
     if (!locked) {
       expect(f.findUser).toHaveBeenCalledWith({ appId: f.ctx.app_id, attrCode: 'abcd1234' });
       const where =
@@ -114,7 +116,16 @@ it('[AC-B1-08i#34] 已归属订单不查用户、不覆盖四项参数，只告�
     }),
     expect.any(String),
   );
-  expect(f.publish).toHaveBeenCalledTimes(1);
+  expect(f.publishedOf('order.updated')).toHaveLength(1);
+  expectAlert(f, 'order.attr_param_changed', {}, [
+    'private-pid',
+    'private-relation',
+    'private-sub',
+    'private-buyer',
+  ]);
+  expect(f.publishedOf('order.attr_param_changed')[0]?.[0]).toBe(
+    f.publishedOf('order.updated')[0]?.[0],
+  );
   expectSafeLogs(f);
 });
 
@@ -227,4 +238,6 @@ it('[AC-B1-08i#37] 淘宝多用户绑定冲突不归属、告警、不重复计�
     expect.any(String),
   );
   expect(f.onUpdated.mock.calls[0]?.[1]).toMatchObject({ attributed_now: false });
+  expectAlert(f, 'order.attr_binding_conflict', {}, [f.userId, secondUser]);
+  expect(f.publishedOf('order.attr_binding_conflict')[0]?.[0]).toBe(f.onUpdated.mock.calls[0]?.[0]);
 });

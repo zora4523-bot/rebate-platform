@@ -18,7 +18,7 @@ afterAll(async () => {
   }
 }, 30_000);
 import { createOrderPipeline } from '../../../../apps/api/src/modules/orders/index.ts';
-import { at, RECEIVED, scenario } from './kit.ts';
+import { at, expectAlert, RECEIVED, scenario } from './kit.ts';
 
 it.each([false, true])(
   '[AC-B1-08i#38] 另一连接改变版本后重读一次，重新判定（已推进=%s）',
@@ -60,7 +60,12 @@ it.each([false, true])(
         }),
       ]);
       expect(f.onUpdated).not.toHaveBeenCalled();
-      expect(f.publish).not.toHaveBeenCalled();
+      expect(f.publishedOf('order.updated')).toHaveLength(0);
+      expect(f.publishedOf('order.created')).toHaveLength(0);
+      expectAlert(f, 'order.illegal_transition', {
+        reason: 'ILLEGAL_TRANSITION',
+        from_status: 'RECEIVED',
+      });
     } else {
       expect(outcome).toMatchObject({ kind: 'updated' });
       expect(after.orders[0]).toMatchObject({
@@ -70,7 +75,7 @@ it.each([false, true])(
       });
       expect(f.onUpdated).toHaveBeenCalledTimes(1);
       expect(f.onUpdated.mock.calls[0]?.[1]).toMatchObject({ est_before: 444n, est_after: 555n });
-      expect(f.publish).toHaveBeenCalledTimes(1);
+      expect(f.publishedOf('order.updated')).toHaveLength(1);
     }
     const selects = f.queries.filter(
       (q) => /^select /i.test(q.sql) && /from "app"."orders"/i.test(q.sql),
@@ -118,5 +123,5 @@ it('[AC-B1-08i#39] 两次 CAS 都影响零行则 ORDER_CAS_CONFLICT，无无限�
   expect(attempts).toBe(2);
   expect(await f.read()).toEqual(f.before);
   expect(f.onUpdated).not.toHaveBeenCalled();
-  expect(f.publish).not.toHaveBeenCalled();
+  expect(f.publishedOf('order.updated')).toHaveLength(0);
 });

@@ -22,10 +22,12 @@ import { vi } from 'vitest';
 import { createOrderPipeline } from '../../../../apps/api/src/modules/orders/index.ts';
 import type { EventBus } from '../../../../apps/api/src/modules/platform/index.ts';
 import { capture, fixture, snapshot } from '../attribution/kit.ts';
+import { publishedOf } from './kit.ts';
 
 it('[AC-B1-08i#43] 可选 events 注入后首次入库同事务发 order.created，重复不重发', async () => {
   const f = await fixture(db);
   const publish = vi.fn<EventBus['publish']>().mockImplementation(async (trx, event) => {
+    if (event.name !== 'order.created') return { eventId: randomUUID(), duplicate: false };
     expect(trx.isTransaction).toBe(true);
     expect(trx).toBe(f.onImported.mock.calls[0]?.[0]);
     const rows = await trx
@@ -50,13 +52,13 @@ it('[AC-B1-08i#43] 可选 events 注入后首次入库同事务发 order.created
   const pipeline = createOrderPipeline({ ...f.deps, events: { publish } });
   const result = await capture(() => pipeline.process(f.incoming, f.ctx));
   expect(result).toMatchObject({ ok: true, value: { kind: 'inserted' } });
-  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publishedOf(publish, 'order.created')).toHaveLength(1);
   f.clock.advanceMs(100_000);
   const duplicate = await capture(() =>
     pipeline.process({ ...f.incoming, raw_payload_id: '202' }, f.ctx),
   );
   expect(duplicate).toMatchObject({ ok: true, value: { kind: 'unchanged' } });
-  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publishedOf(publish, 'order.created')).toHaveLength(1);
 });
 
 it('[AC-B1-08i#44] order.created 入队失败回滚首次订单与归因产物', async () => {
@@ -67,6 +69,6 @@ it('[AC-B1-08i#44] order.created 入队失败回滚首次订单与归因产物',
   const pipeline = createOrderPipeline({ ...f.deps, events: { publish } });
   const result = await capture(() => pipeline.process(f.incoming, f.ctx));
   expect(result).toEqual({ ok: false, error: failure });
-  expect(publish).toHaveBeenCalledTimes(1);
+  expect(publishedOf(publish, 'order.created')).toHaveLength(1);
   expect(await snapshot(db, f.ctx.app_id)).toEqual(before);
 });

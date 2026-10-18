@@ -176,5 +176,5 @@ it('[AC-B1-08i#32] 重复投递更新后的相同内容短路，不二次加版�
   });
   expect(await f.read()).toEqual(before);
   expect(f.onUpdated).toHaveBeenCalledTimes(1);
-  expect(f.publish).toHaveBeenCalledTimes(1);
+  expect(f.publishedOf('order.updated')).toHaveLength(1);
 });

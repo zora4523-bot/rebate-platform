@@ -1,6 +1,6 @@
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
 // Global setup supplies the migrated template; this file clones it and queries as couli_app.
@@ -18,7 +18,7 @@ afterAll(async () => {
   }
 }, 30_000);
 import { randomUUID } from 'node:crypto';
-import { at, RECEIVED, scenario } from './kit.ts';
+import { at, expectAlert, RECEIVED, scenario } from './kit.ts';
 
 it('[AC-B1-08i#40] 端口在同一事务看到 UPDATE、history、pending，且 rebate 先于事件', async () => {
   const f = await scenario(db, {
@@ -65,6 +65,7 @@ it('[AC-B1-08i#40] 端口在同一事务看到 UPDATE、history、pending，且 
     expect(await f.read()).toEqual(f.before);
   });
   f.publish.mockImplementation(async (trx, event) => {
+    if (event.name !== 'order.updated') return { eventId: randomUUID(), duplicate: false };
     order.push('event');
     connections.push(trx);
     expect(event.name).toBe('order.updated');
@@ -112,7 +113,7 @@ it('[AC-B1-08i#41] 状态 history 在 settlement 前写入且其他连接提交�
   });
   await f.pipeline.process(f.next({ raw_status: 'received', received_at: at(RECEIVED) }), f.ctx);
   expect(f.onUpdated).toHaveBeenCalledTimes(1);
-  expect(f.publish.mock.calls[0]?.[0]).toBe(f.onUpdated.mock.calls[0]?.[0]);
+  expect(f.publishedOf('order.updated')[0]?.[0]).toBe(f.onUpdated.mock.calls[0]?.[0]);
 });
 
 it.each(['rebate', 'events', 'unmapped'] as const)(
@@ -153,10 +154,105 @@ it.each(['rebate', 'events', 'unmapped'] as const)(
       ),
     ).rejects.toBe(error);
     expect(await f.read()).toEqual(f.before);
-    if (failure !== 'events') expect(f.publish).not.toHaveBeenCalled();
+    if (failure !== 'events') expect(f.publishedOf('order.updated')).toHaveLength(0);
     else {
       expect(f.onUpdated).toHaveBeenCalledTimes(1);
-      expect(f.publish).toHaveBeenCalledTimes(1);
+      expect(f.publishedOf('order.updated')).toHaveLength(1);
+    }
+  },
+);
+
+it.each([
+  { initial: 'received', raw: 'paid', regressionHold: true, fail: false },
+  { initial: 'received', raw: 'paid', regressionHold: true, fail: true },
+  { initial: 'deposit', raw: 'rights', regressionHold: true, fail: false },
+  { initial: 'deposit', raw: 'rights', regressionHold: true, fail: true },
+  { initial: 'received', raw: 'paid', regressionHold: false, fail: false },
+  { initial: 'received', raw: 'paid', regressionHold: false, fail: true },
+])(
+  '[AC-B1-08i#45] $initial + $raw，hold=$regressionHold，告警与 pending 同事务提交或回滚（失败=$fail）',
+  async ({ initial, raw, regressionHold, fail }) => {
+    const f = await scenario(
+      db,
+      {
+        raw_status: initial,
+        ...(initial === 'received'
+          ? { received_at: at(RECEIVED) }
+          : { deposit_paid_at: at('2026-10-14T03:04:05Z'), paid_at: null }),
+      },
+      { regressionHold: () => regressionHold },
+    );
+    const failure = new Error('synthetic-alert-failure');
+    const readEvents = () =>
+      db.selectFrom('event_log').selectAll().where('app_id', '=', f.ctx.app_id).execute();
+    f.publish.mockImplementation(async (trx, event) => {
+      expect(trx.isTransaction).toBe(true);
+      const pending = await trx
+        .selectFrom('order_sync_pending')
+        .selectAll()
+        .where('app_id', '=', f.ctx.app_id)
+        .execute();
+      expect(pending).toEqual([
+        expect.objectContaining({
+          order_id: f.original.order_id,
+          reason: 'ILLEGAL_TRANSITION',
+        }),
+      ]);
+      // A transactional event-port write must share the pending row's commit/rollback.
+      const eventId = randomUUID();
+      await trx
+        .insertInto('event_log')
+        .values({
+          app_id: event.appId,
+          event_id: eventId,
+          name: event.name,
+          payload: sql`${JSON.stringify(event.payload)}::jsonb`,
+          occurred_at: f.clock.now(),
+          created_at: f.clock.now(),
+        })
+        .execute();
+      expect(
+        await trx
+          .selectFrom('event_log')
+          .selectAll()
+          .where('app_id', '=', f.ctx.app_id)
+          .where('name', '=', event.name)
+          .execute(),
+      ).toHaveLength(1);
+      expect(await f.read()).toEqual(f.before);
+      expect(await readEvents()).toEqual([]);
+      if (event.name === 'order.illegal_transition' && fail) throw failure;
+      return { eventId, duplicate: false };
+    });
+    const result = f.pipeline.process(f.next({ raw_status: raw, est_commission_fen: 555n }), f.ctx);
+    if (fail) {
+      await expect(result).rejects.toBe(failure);
+      expect(await f.read()).toEqual(f.before);
+      expect(await readEvents()).toEqual([]);
+    } else {
+      await expect(result).resolves.toMatchObject({ kind: regressionHold ? 'pending' : 'updated' });
+      expect((await f.read()).pending).toEqual([
+        expect.objectContaining({
+          order_id: f.original.order_id,
+          reason: 'ILLEGAL_TRANSITION',
+        }),
+      ]);
+      const events = await readEvents();
+      expect(events.filter((event) => event.name === 'order.illegal_transition')).toHaveLength(1);
+      expect(events.filter((event) => event.name === 'order.updated')).toHaveLength(
+        regressionHold ? 0 : 1,
+      );
+    }
+    expectAlert(f, 'order.illegal_transition', { reason: 'ILLEGAL_TRANSITION' });
+    expect(f.publishedOf('order.created')).toHaveLength(0);
+    if (regressionHold) {
+      expect(f.publishedOf('order.updated')).toHaveLength(0);
+      expect(f.onUpdated).not.toHaveBeenCalled();
+    } else if (!fail) {
+      expect(f.publishedOf('order.updated')).toHaveLength(1);
+      expect(f.publishedOf('order.illegal_transition')[0]?.[0]).toBe(
+        f.publishedOf('order.updated')[0]?.[0],
+      );
     }
   },
 );

@@ -16,6 +16,13 @@ import { capture, fixture, snapshot, traceQueries } from '../attribution/kit.ts'
 
 export { at, capture, RECEIVED, SETTLED, snapshot } from '../attribution/kit.ts';
 
+export function publishedOf(
+  publish: { mock: { calls: Parameters<OrderUpdateDeps['events']['publish']>[] } },
+  name: string,
+) {
+  return publish.mock.calls.filter(([, event]) => event.name === name);
+}
+
 export async function scenario(
   db: Kysely<DB>,
   patch: Partial<UnionOrder> & { platform?: RegisteredPlatform } = {},
@@ -80,9 +87,36 @@ export async function scenario(
     onUpdated,
     onUnmappedStatus,
     publish,
+    publishedOf: (name: string) => publishedOf(publish, name),
     queries: traced.queries,
     read: () => snapshot(db, f.ctx.app_id),
   };
+}
+
+export function expectAlert(
+  f: Awaited<ReturnType<typeof scenario>>,
+  name: string,
+  payload: Record<string, unknown> = {},
+  privateValues: readonly string[] = [],
+) {
+  const calls = f.publishedOf(name);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.[0].isTransaction).toBe(true);
+  expect(calls[0]?.[1]).toMatchObject({
+    appId: f.ctx.app_id,
+    name,
+    payload: { order_id: f.original.order_id, platform: f.incoming.platform, ...payload },
+  });
+  const text = JSON.stringify(calls[0]?.[1].payload);
+  for (const value of [
+    f.incoming.sub_order_id,
+    f.incoming.promotion_slot,
+    ...Object.values(f.incoming.attr_params ?? {}),
+    'abcd1234',
+    ...privateValues,
+  ]) {
+    if (value) expect(text).not.toContain(JSON.stringify(value).slice(1, -1));
+  }
 }
 
 export function historySteps(history: Awaited<ReturnType<typeof snapshot>>['history']) {
