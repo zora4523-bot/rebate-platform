@@ -1029,6 +1029,135 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/inviter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bind an inviter by invite code (backfill, once)
+         * @description The "我的" backfill of an invite code (source backfill, BR-INV-03, BR-INV-07). The server
+         *     normalises invite_code in three steps: Unicode NFKC → remove all Unicode white space
+         *     (U+3000 included) and the zero-width characters U+200B–U+200D, U+FEFF → upper case; no
+         *     O→0 style correction (BR-INV-02). Order of checks, the first hit is returned (BR-INV-02):
+         *     10005 (no bound phone) → 30408 (growth.invite_bind.enabled off) → 42901 → 30402 (already
+         *     has an inviter or has used the self-binding chance) → 30404 (now ≥ users.created_at +
+         *     invite.backfill_hours, default 168 hours, to the second; the boundary instant itself is
+         *     rejected) → 30409 (has an order, a claim or a direct invitee, any status) → 30401
+         *     (normalised code empty, length ≠ 6 or outside the character set; no lookup) → 30401
+         *     (inviter missing or unavailable) → 30403 (self, own invitee or same device, BR-INV-08).
+         *     30401 never tells the reason. Every 30401 counts per phone_hmac per natural day
+         *     (+08:00); once the count reaches invite.fail_limit_per_day (5) the following requests that
+         *     day stop at the rate-limit step with 42901 and Retry-After up to the next 00:00 +08:00.
+         *     Succeeds at most once per account: the write is conditional (no inviter and the
+         *     self-binding chance unused), so of two concurrent requests with different keys exactly one
+         *     binds and the other gets 30402. The client fetches GET /v1/me again after success.
+         *     Version gate: applied.
+         */
+        post: operations["bindInviter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invites/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My invite code, landing link and poster
+         * @description The invite page (BR-INV-18). 10005 when no phone is bound. A user identified as under 18
+         *     (realname verified, BR-INV-19) gets 30413 with data.reason=self_minor and the client hides
+         *     the invite and share entries. Otherwise 200: when inviter_unavailable(self) is true
+         *     (BR-INV-02) can_invite=false and invite_code, landing_url and poster_url are null while
+         *     direct_count is still returned; the client shows "暂不可邀请" without a reason.
+         *     landing_url is `{a current share domain}/i/{invite_code}` and may carry a channel code
+         *     parameter; it never contains the UID, the phone number or the nickname. poster_url is the
+         *     poster image drawn by the server (04 §6.4, TECH-13); null while poster drawing is not
+         *     available.
+         */
+        get: operations["getMyInvite"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/landing/sms-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send an SMS login code from the invite landing page
+         * @description Used only by the invite landing page opened outside the app (BR-ID-32, BR-INV-05); the
+         *     code is a purpose=login code (not sent in the body). No device id, no request signature
+         *     and no human verification. `phone` is normalised by the server (BR-ID-05 细则「手机号规范化」).
+         *     Order of checks: 20001 (not a mainland mobile number after normalisation:
+         *     `data.fields=[phone]`, `data.reason=phone_invalid`; no SMS, nothing counted) → 44001
+         *     (blocked number prefix or blacklisted phone) → 42901 with Retry-After (the two per-IP
+         *     limits and the per-phone limits of BR-ID-05 细则「判定位置」). Code rules as BR-ID-05:
+         *     6 digits, valid 5 minutes, a new code voids the previous one. Not signed. Version gate:
+         *     不判定：落地页 (written false, BR-ID-01 细则).
+         */
+        post: operations["sendLandingSmsCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invites/landing-register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register on the invite landing page and bind the inviter
+         * @description The landing-page registration (source landing, BR-INV-05; the `POST /v1/landing/login` of
+         *     BR-ID-32). No device id, no request signature, no human verification; phone and invite_code
+         *     are normalised by the server (BR-ID-05 细则「手机号规范化」, BR-INV-02). Order of checks,
+         *     the first hit is returned: agreed=true, otherwise 10004 with data.consent_type=agreement →
+         *     30408 (growth.invite_bind.enabled off; no account is created) → 42901 with Retry-After (the
+         *     same IP or the same phone_hmac already has invite.fail_limit_per_day (5) 30401 today,
+         *     +08:00) → 30401 (normalised code empty, length ≠ 6 or outside the character set) → 30401
+         *     (inviter missing or unavailable) → 20002 / 20003 (the purpose=login SMS code is checked and
+         *     used up, BR-ID-05) → the phone already has an account → result=already_registered → 44001
+         *     (landing.ip_register_limit reached for the IP in the last 3600 s, BR-ID-32; no account) →
+         *     the account is created and the inviter bound in one transaction (result=registered). A
+         *     phone that is not a mainland mobile number after normalisation is 20001. An invite code
+         *     failure does not use up the SMS code. already_registered changes no relation and tells
+         *     nothing more; an account in the deletion cooling period or processing counts as
+         *     registered, a phone whose only account finished deletion counts as new. The same IP or
+         *     phone_hmac counts every 30401 (BR-INV-02). No token is issued; the page sends the user to
+         *     the app to log in with the same number. Idempotency subject `p:<phone_hmac>` (04 §5).
+         *     Not signed. Version gate: 不判定：落地页 (written false, BR-ID-01 细则).
+         */
+        post: operations["landingRegister"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/payout-account": {
         parameters: {
             query?: never;
@@ -3955,6 +4084,85 @@ export interface components {
              *     once. Its format is not part of the contract.
              */
             merge_ticket: string;
+        };
+        BindInviterRequest: {
+            /**
+             * @description Invite code as typed or pasted. The server normalises it and checks the format
+             *     (BR-INV-02); an empty or malformed code is 30401 and counts towards the daily limit, so
+             *     the schema has no pattern or minLength.
+             */
+            invite_code: string;
+        };
+        MyInvite: {
+            /** @description false when inviter_unavailable(self) (BR-INV-02); the reason is not given. */
+            can_invite: boolean;
+            /** @description My invite code; null when can_invite=false. */
+            invite_code: string | null;
+            /**
+             * Format: uri
+             * @description `{share domain}/i/{invite_code}`, optionally with a channel code parameter; never the
+             *     UID, phone number or nickname. null when can_invite=false.
+             */
+            landing_url: string | null;
+            /**
+             * Format: uri
+             * @description Poster image drawn by the server (04 §6.4, TECH-13); null when can_invite=false and
+             *     while poster drawing is not available.
+             */
+            poster_url: string | null;
+            /**
+             * Format: int32
+             * @description Number of my direct invitees (BR-INV-16); returned even when can_invite=false.
+             */
+            direct_count: number;
+        };
+        MyInviteResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["MyInvite"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        LandingSmsCodeRequest: {
+            phone: components["schemas"]["Phone"];
+        };
+        LandingRegisterRequest: {
+            phone: components["schemas"]["Phone"];
+            /**
+             * @description The purpose=login code from POST /v1/landing/sms-codes; a wrong or expired code is
+             *     20002 / 20003 (BR-ID-05).
+             */
+            sms_code: string;
+            /**
+             * @description Invite code of the landing link. Normalised and checked by the server (BR-INV-02); an
+             *     empty or malformed code is 30401 and counts towards the daily limit, so the schema has
+             *     no pattern or minLength.
+             */
+            invite_code: string;
+            /**
+             * @description The user agreement and privacy policy box was ticked. false is 10004 with
+             *     data.consent_type=agreement, not a validation error; on success the agreement and
+             *     privacy consents are recorded with channel h5_landing (BR-INV-05, BR-ID-32).
+             */
+            agreed: boolean;
+            /**
+             * @description Optional channel code of the landing link, kept as the account's registered channel
+             *     (BR-ID-04, BR-INV-05).
+             */
+            channel?: string;
+        };
+        LandingRegisterData: {
+            /**
+             * @description registered = account created and bound to the inviter; already_registered = the phone
+             *     already has an account (in deletion included), nothing changed (BR-INV-05).
+             * @enum {string}
+             */
+            result: "registered" | "already_registered";
+        };
+        LandingRegisterResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["LandingRegisterData"];
+            trace_id: components["schemas"]["TraceId"];
         };
         /**
          * @description One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则).
@@ -9262,6 +9470,231 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    bindInviter: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+                /** @description Unix seconds; |server time − ts| ≤ 300 s (BR-ID-09). */
+                "X-Timestamp": components["parameters"]["Timestamp"];
+                /** @description 32 lowercase hex characters; (device_id, nonce) unique within 600 s (BR-ID-09). */
+                "X-Nonce": components["parameters"]["Nonce"];
+                /**
+                 * @description lowercase_hex(HMAC-SHA256(install_secret, METHOD + "\n" + path with raw query + "\n" + ts
+                 *     + "\n" + nonce + "\n" + lowercase_hex(sha256(raw body)))) (BR-ID-09).
+                 */
+                "X-Sign": components["parameters"]["Sign"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "invite_code": "K7M2QX"
+                 *     }
+                 */
+                "application/json": components["schemas"]["BindInviterRequest"];
+            };
+        };
+        responses: {
+            /** @description The inviter is bound. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {},
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getMyInvite: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description My invite information. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyInviteResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    sendLandingSmsCode: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13800138000"
+                 *     }
+                 */
+                "application/json": components["schemas"]["LandingSmsCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description The provider accepted the SMS, or its outcome is unknown (counted as sent). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "resend_after_sec": 60,
+                     *         "expires_in_sec": 300
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SendSmsCodeResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    landingRegister: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description Required on operations marked I (04 §6); missing → 20001. Same key while processing →
+                 *     40901; same key with another body → 20901; a retry after a timeout reuses the key and gets
+                 *     the first result (拍板第二批 TRADE-22). On the x-step-up operations a key abandoned through
+                 *     POST /v1/idempotency-keys/abandon → 20903, without comparing the body (04 §5「幂等」).
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13800138000",
+                 *       "sms_code": "246810",
+                 *       "invite_code": "K7M2QX",
+                 *       "agreed": true,
+                 *       "channel": "wx_group_01"
+                 *     }
+                 */
+                "application/json": components["schemas"]["LandingRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Registered and bound, or the phone already has an account. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LandingRegisterResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

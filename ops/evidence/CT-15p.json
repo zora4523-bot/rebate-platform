@@ -1,0 +1,37 @@
+{
+  "task": "CT-15p",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "174a721658927e6dd0ea8f0f7048769ff74b3f22",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml): adds bindInviter (POST /v1/me/inviter, phone, signed, idempotent), getMyInvite (GET /v1/invites/me, phone; poster_url nullable per 04, ruling E11), sendLandingSmsCode (POST /v1/landing/sms-codes, none, unsigned, no device header), landingRegister (POST /v1/invites/landing-register, none, idempotent; result registered / already_registered), all x-implementation planned; top-level tag growth; no new error codes; regenerated openapi.gen.ts and the auth / signing / min-version route tables. 04 §6.1 / §6.4, 08 BR-INV-02～10, BR-ID-32; plan couli-runs/IDENTITY-tips/wave2-plan.md. tester none (contract task); Opus 5.5 implementation; Codex contract review round 1 passed. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "dc319fdb936fc9ae340f459936e53f5d5567efe5",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "b07dc1dc0bd41ce718eb05f1e9b86d11716da043",
+    "specs": "3030daffce230ca321928167ab05aa0b6a68efe6"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
