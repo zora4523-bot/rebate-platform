@@ -1,0 +1,96 @@
+{
+  "task": "F1-02j",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "aab60032c415c4bec8c336e7be7248a64eab2715",
+  "red_tests": [
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#1] 有效版本及自由字段原样下发，1/64 字符有效，65 字符整键回退",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#2] 缺行或缺版本不补字段且仍成功；显式空版本须整键回退",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 number 时整键 {}、200、warn 键名且不记录值",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 empty 时整键 {}、200、warn 键名且不记录值",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 null 时整键 {}、200、warn 键名且不记录值",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 object 时整键 {}、200、warn 键名且不记录值",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 boolean 时整键 {}、200、warn 键名且不记录值",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 array 时整键 {}、200、warn 键名且不记录值",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 65 characters 时整键 {}、200、warn 键名且不记录值",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 65 Unicode code points 时整键 {}、200、warn 键名且不记录值",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#4] 不读取拆开的 consent_version 行，也不拿它修复非法整键",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#5] ios 请求遇到非法 clipboard，仍透传 auto_read 且只覆盖两个既有派生键",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#5] android 请求遇到非法 clipboard，仍透传 auto_read 且只覆盖两个既有派生键",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#5] harmony 请求遇到非法 clipboard，仍透传 auto_read 且只覆盖两个既有派生键",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#6] auto_read 混入 off 时整个基础 flags 回退，与 clipboard 分别 warn",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#7] 不读取单独 auto_read 行，不补缺键，不用它覆盖基础字典",
+    "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#8] 登录与游客交替读取各自 app_id，非法配置回退不污染另一 app"
+  ],
+  "risk_note": "RV2 (content /v1/config clipboard, couli#124). The clipboard config value is now checked against the contract ConfigClipboard (CT-02o): a plain object whose optional consent_version is a 1..64 code-point string; other fields pass through; a non-conforming value makes the whole key {} with the existing content_config_value_invalid warn that records only app_id and config_key, never the value; a missing consent_version is not filled in and does not trigger 50001. features.flags code is unchanged: clipboard.auto_read.<client> passes through as configured, missing clients are not filled in, the two derived keys still win, separate clipboard.* rows are not read. Frozen F1-02c / F1-02h config tests keep their clipboard assertions. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "aab60032c415c4bec8c336e7be7248a64eab2715",
+      "tree": "3f6ccc0c14869e2689eb9f1a2a01c68761e25576",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T02:53:09Z",
+      "finished_at": "2026-10-18T02:53:17Z",
+      "red_tests": [
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#1] 有效版本及自由字段原样下发，1/64 字符有效，65 字符整键回退",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#2] 缺行或缺版本不补字段且仍成功；显式空版本须整键回退",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 number 时整键 {}、200、warn 键名且不记录值",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 empty 时整键 {}、200、warn 键名且不记录值",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 null 时整键 {}、200、warn 键名且不记录值",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 object 时整键 {}、200、warn 键名且不记录值",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 boolean 时整键 {}、200、warn 键名且不记录值",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 array 时整键 {}、200、warn 键名且不记录值",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 65 characters 时整键 {}、200、warn 键名且不记录值",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#3] consent_version 为 65 Unicode code points 时整键 {}、200、warn 键名且不记录值",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#4] 不读取拆开的 consent_version 行，也不拿它修复非法整键",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#5] ios 请求遇到非法 clipboard，仍透传 auto_read 且只覆盖两个既有派生键",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#5] android 请求遇到非法 clipboard，仍透传 auto_read 且只覆盖两个既有派生键",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#5] harmony 请求遇到非法 clipboard，仍透传 auto_read 且只覆盖两个既有派生键",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#6] auto_read 混入 off 时整个基础 flags 回退，与 clipboard 分别 warn",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#7] 不读取单独 auto_read 行，不补缺键，不用它覆盖基础字典",
+        "test/spec/content/config-clipboard/delivery.int.test.ts > [AC-F1-02j#8] 登录与游客交替读取各自 app_id，非法配置回退不污染另一 app"
+      ],
+      "expected": ["test/spec/content/config-clipboard/delivery.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "d7b191446dacc2e29fec90085353f32eb8819ed3125a037e88b12562feb196d2"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass (one S2, warn-without-value assertion weak; covered by unit tests in the implementation)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "4b30f96774a35fda101d86970d5db9570efa03ed",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "14d96e94dfd7ba1fe8fefa57be0428c39671c769",
+    "specs": "c2b838de9c813844ae68fb6f74f1bb0dc1b2879d"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}

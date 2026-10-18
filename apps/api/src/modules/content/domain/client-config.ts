@@ -142,6 +142,20 @@ const isBoolean: Check<boolean> = (value): value is boolean => typeof value === 
 const isUriString: Check<string> = (value): value is string =>
   typeof value === 'string' && isUri(value);
 const isFreeForm: Check<Record<string, unknown>> = isPlainObject;
+// Contract ConfigClipboard: an object whose consent_version, when present, is a string of 1..64
+// characters counted as Unicode code points (as ajv's minLength / maxLength count them).
+// Other fields pass through as-is.
+const CONSENT_VERSION_MAX = 64;
+const isConfigClipboard: Check<Record<string, unknown>> = (
+  value,
+): value is Record<string, unknown> => {
+  if (!isPlainObject(value)) return false;
+  if (!Object.hasOwn(value, 'consent_version')) return true;
+  const version = value['consent_version'];
+  if (typeof version !== 'string') return false;
+  const length = [...version].length;
+  return length >= 1 && length <= CONSENT_VERSION_MAX;
+};
 function arrayOf<T>(item: Check<T>): Check<T[]> {
   return (value): value is T[] => Array.isArray(value) && value.every((v) => item(v));
 }
@@ -343,7 +357,7 @@ export function buildClientConfig(input: ClientConfigInput): ClientConfig | unde
     agent,
     kf: kf ?? { url: '' },
     jump_tip: optional('jump_tip', isFreeForm, {}),
-    clipboard: optional('clipboard', isFreeForm, {}),
+    clipboard: optional('clipboard', isConfigClipboard, {}),
     bridge_origins: optional('bridge_origins', isFreeForm, {}),
     auth_tips: optional('auth_tips', isFreeForm, {}),
     compliance: optional('compliance', isFreeForm, {}),
