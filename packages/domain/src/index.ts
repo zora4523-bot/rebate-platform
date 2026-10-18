@@ -106,6 +106,18 @@ export type {
   CommissionRuleVersionTransitionRow,
 } from './state-machines/commission-rule-version.gen.ts';
 export {
+  PAGE_VERSION_EVENTS,
+  PAGE_VERSION_STATES,
+  PAGE_VERSION_TRANSITIONS,
+  transitionPageVersion,
+} from './state-machines/page-version.gen.ts';
+export type {
+  PageVersionState,
+  PageVersionEvent,
+  PageVersionTransitionResult,
+  PageVersionTransitionRow,
+} from './state-machines/page-version.gen.ts';
+export {
   WITHDRAWAL_EVENTS,
   WITHDRAWAL_STATES,
   WITHDRAWAL_TRANSITIONS,
