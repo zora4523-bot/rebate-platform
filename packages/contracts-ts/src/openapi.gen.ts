@@ -2350,8 +2350,10 @@ export interface paths {
          *     (withdrawals 30303 and held credits follow from the state, BR-WDR-05, BR-CALC-13); a
          *     freeze with `frozen_until` ends by itself at that time. Every action writes an audit
          *     record (action user_risk_state_change, before and after state, reason category and
-         *     reason) and sends the in-app message RISK_STATE_CHANGED (BR-TEXT-23). The response is the
-         *     risk state as it is now. No Idempotency-Key (04 §6.6).
+         *     reason). After the risk state changes, the notification module sends the in-app message
+         *     RISK_STATE_CHANGED (BR-TEXT-23; a ban notice becomes visible only after the unban,
+         *     BR-ID-31); this operation does not send it and its response does not wait for the
+         *     sending. The response is the risk state as it is now. No Idempotency-Key (04 §6.6).
          */
         put: operations["adminUpdateUserRiskState"];
         post?: never;
@@ -2458,6 +2460,11 @@ export interface paths {
          *     enabled; any other status, a binding blocked for ban or deletion, or no binding row on
          *     that platform is 30154 without data (a binding blocked for ban comes back through unban
          *     only). The binding becomes invalid: the user authorizes again before rebates resume.
+         *     A user whose risk state is banned is refused with 30154 without data whatever the
+         *     binding's blocked_reason: while the ban lasts every binding of the user stays blocked
+         *     (BR-ID-31), and a ban followed by deletion releases nothing by itself (BR-ID-20). The
+         *     binding operations of the admin console and ban / unban are serialized per user, so
+         *     concurrent requests on the same user never leave a banned user with an invalid binding.
          *     CAS: `expected_row_version` is the binding's `row_version`; a mismatch → 20902 with
          *     `data.resource=union_binding` (04 §6.6). As for reset, a later binding row on the platform
          *     never reuses an earlier row's row_version. Writes an audit record (action
