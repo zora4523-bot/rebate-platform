@@ -142,6 +142,17 @@ describe('parseTaskFile', () => {
       "\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: a reason of enough length\n    note: x",
     );
     expect(messageOf(extra, 'B2-02a.yaml')).toContain('red_exempt[0].note: unknown field');
+    // CT-06t: at most 20 declarations (the section is not counted in the file's line limit).
+    const many = (n: number): string =>
+      declared(
+        Array.from(
+          { length: n },
+          (_, i) =>
+            `\n  - file: test/spec/a.test.ts\n    test: '[AC-${i + 1}] a'\n    reason: a reason of enough length`,
+        ).join(''),
+      );
+    expect(parseTaskFile(many(20), 'B2-02a.yaml').red_exempt).toHaveLength(20);
+    expect(messageOf(many(21), 'B2-02a.yaml')).toContain('red_exempt: 21 entries, the limit is 20');
     // Not a list, not mappings, the same test twice.
     expect(messageOf(declared(' abc'), 'B2-02a.yaml')).toContain(
       'red_exempt: must be a list of mappings',

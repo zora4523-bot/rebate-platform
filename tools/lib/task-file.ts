@@ -65,6 +65,11 @@ export type RedExemptDeclaration = {
 
 /** The least a red-exemption reason may say (CT-06r: a non-empty reason of ≥ 10 characters). */
 export const RED_EXEMPT_REASON_MIN = 10;
+/**
+ * The most declarations a task may make (CT-06t): the section is left out of the task file's
+ * line limit (tools/ops/task.ts countedLines), so it has its own, by entries.
+ */
+export const RED_EXEMPT_MAX = 20;
 
 export const TASK_REPOS = ['rebate-platform', 'ios', 'android', 'harmony'] as const;
 export const TASK_TYPES = [
@@ -158,6 +163,11 @@ function redExemptList(value: unknown, problems: string[]): RedExemptDeclaration
   if (!Array.isArray(value)) {
     problems.push('red_exempt: must be a list of mappings (file / test / reason)');
     return [];
+  }
+  if (value.length > RED_EXEMPT_MAX) {
+    problems.push(
+      `red_exempt: ${value.length} entries, the limit is ${RED_EXEMPT_MAX} (CT-06t; the section is not counted in the file's line limit, so it has its own)`,
+    );
   }
   const out: RedExemptDeclaration[] = [];
   const seen = new Set<string>();

@@ -25,6 +25,31 @@ import type { SpecSource } from './spec.ts';
 
 export const MAX_TASK_LINES = 40;
 
+/**
+ * The lines of a task file that count towards MAX_TASK_LINES (CT-06t, orchestrator ruling of
+ * 2026-10-19, option A): the `red_exempt` section is left out — the `red_exempt:` line and the
+ * indented lines that follow it up to the next top-level line — because yaml-lite writes one
+ * declaration as three lines (file / test / reason) and the section has its own limit
+ * (RED_EXEMPT_MAX entries, tools/lib/task-file.ts). Everything under that key must parse as
+ * such declarations, so nothing else can hide there.
+ */
+export function countedLines(text: string): number {
+  const lines = text.split('\n');
+  if (text.endsWith('\n')) lines.pop();
+  let count = 0;
+  let inExempt = false;
+  for (const line of lines) {
+    if (/^red_exempt:/.test(line)) {
+      inExempt = true;
+      continue;
+    }
+    if (inExempt && /^[ \t]/.test(line)) continue;
+    inExempt = false;
+    count += 1;
+  }
+  return count;
+}
+
 export type RiskLevel = 'RV0' | 'RV1' | 'RV2';
 export type RiskReport = {
   risk: RiskLevel;
@@ -241,9 +266,11 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
   const problems: string[] = [];
   const text = readTaskText(id, root);
 
-  const lines = text.endsWith('\n') ? text.split('\n').length - 1 : text.split('\n').length;
+  const lines = countedLines(text);
   if (lines > MAX_TASK_LINES) {
-    problems.push(`${lines} lines, the limit is ${MAX_TASK_LINES} (规划/11 §5.1)`);
+    problems.push(
+      `${lines} lines, the limit is ${MAX_TASK_LINES} (规划/11 §5.1; the red_exempt section is not counted, CT-06t)`,
+    );
   }
 
   let task: TaskFile;
