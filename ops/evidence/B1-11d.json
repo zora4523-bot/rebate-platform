@@ -88,7 +88,7 @@
     "test/spec/growth/bind/transactions.int.test.ts > [AC-B1-11d#38] 非本人参与的既有环也会触达遍历上限并告警",
     "test/spec/growth/bind/transactions.int.test.ts > [AC-B1-11d#39] identity 设备只读端口：全部保留记录、app 隔离、调用方未提交行可见"
   ],
-  "risk_note": "RV2 (growth: invite attribution). bindInviter in the caller's transaction per BR-INV-02: 10005 (backfill without phone) → 30408 switch → 42901 daily 30401 count (Redis, +08 day, atomic INCR with TTL to next midnight + 60 s) → 30402 → 30404 backfill deadline → 30409 (orders / appeals / direct subordinates) → 30401 format / inviter unavailable (domain isAtLeastAge per BR-ID-26) → 30403 self / descendant (recursive CTE ≤1000 levels, over-limit counts as a hit with a warning) / same device (login_logs hashes plus the signed device). Parent writes per app are serialized with a transaction advisory lock taken before the descendant, chain and same-device checks (Codex r1 S0: concurrent mutual binding could form a cycle); the users update is conditional and writes appendRelationChange in the same transaction. Invite config is read on the caller's transaction (r1 S2). Registration binding and the login-devices reader are wired through app.module (identity never imports growth). 30403 writes no risk_hits yet (E18; B1-03x adds the port). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "risk_note": "RV2 (growth: invite attribution). bindInviter in the caller's transaction per BR-INV-02: 10005 (backfill without phone) → 30408 switch → 42901 daily 30401 count (Redis, +08 day, atomic INCR with TTL to next midnight + 60 s) → 30402 → 30404 backfill deadline → 30409 (orders / appeals / direct subordinates) → 30401 format / inviter unavailable (domain isAtLeastAge per BR-ID-26) → 30403 self / descendant (recursive CTE ≤1000 levels, over-limit counts as a hit with a warning) / same device (login_logs hashes plus the signed device). Parent writes per app are serialized with a transaction advisory lock taken before the descendant, chain and same-device checks (Codex r1 S0: concurrent mutual binding could form a cycle); the users update is conditional and writes appendRelationChange in the same transaction. Invite config is read on the caller's transaction (r1 S2). Registration binding and the login-devices reader are wired through app.module (identity never imports growth). 30403 writes no risk_hits yet (E18; B1-03x adds the port). Full verification by the required CI checks (ops/approvals.yaml id 21). A CI integration run showed a closed Redis client throwing from namespace() outside the try ([AC-B1-11d#28]); the namespace is now taken inside the same try (50001, no writes) — a small follow-up after the round 2 review.",
   "runs": [
     {
       "mode": "container",
@@ -97,8 +97,8 @@
       "commit": "afc5d04a067c369cc66d2f438d0d94751dc89914",
       "tree": "7733c7c0f15ae61ea3024de5a50f894aaeb6681c",
       "prop_seed": 20261001,
-      "started_at": "2026-10-18T05:53:06Z",
-      "finished_at": "2026-10-18T05:53:27Z",
+      "started_at": "2026-10-18T05:59:20Z",
+      "finished_at": "2026-10-18T05:59:32Z",
       "red_tests": [
         "test/spec/growth/bind/registration.int.test.ts > [AC-B1-11d#40] 真短信新号：开关 false 时建号成功但绑定 30408",
         "test/spec/growth/bind/registration.int.test.ts > [AC-B1-11d#40] 真短信新号：开关 off 时建号成功但绑定 30408",
