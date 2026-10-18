@@ -267,12 +267,34 @@ it('[AC-B1-02b#7] [BR-ID-12] both consent subjects and every contracted type can
   for (const subject_type of ['user', 'device']) {
     expect(await sqlState(newConsent({ subject_type })), subject_type).toBe('no error');
   }
+  // B1-02zd: B1-02zc (migration 0050) adds consent_records.version_label with a pairing CHECK —
+  // clipboard_auto_import must be device-scoped with device_id, version = 0 and a non-empty
+  // version_label; every other type keeps version_label NULL. Use that legal combination for
+  // clipboard_auto_import only, writing version_label only once the column exists (before 0050 the
+  // type CHECK already allows the type and nothing constrains version, so version = 0 is legal).
+  const hasVersionLabel =
+    (
+      await sql<{ found: number }>`
+        SELECT 1 AS found FROM information_schema.columns
+        WHERE table_schema = 'app' AND table_name = 'consent_records'
+          AND column_name = 'version_label'
+      `.execute(app)
+    ).rows.length > 0;
   for (const type of contractValues('consent_type')) {
+    const clipboard =
+      type === 'clipboard_auto_import'
+        ? {
+            subject_type: 'device',
+            version: 0,
+            ...(hasVersionLabel ? { version_label: '2026-10-17' } : {}),
+          }
+        : {};
     expect(
       await sqlState(
         newConsent({
           type,
           channel: type === 'labor_agreement' ? 'withdraw_flow' : 'privacy_center',
+          ...clipboard,
         }),
       ),
       type,
