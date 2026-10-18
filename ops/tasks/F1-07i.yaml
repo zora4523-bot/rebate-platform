@@ -1,0 +1,22 @@
+id: F1-07i
+repo: rebate-platform
+title: 后台「用户」页：用户列表（user.list，页码分页，只列非敏感字段）、按 UID 或完整手机号查找（user.lookup）、用户详情的基础信息（按数据权限点脱敏的投影）与【查看完整手机号】（pii.reveal_phone，totp 档二次验证），加载 / 空 / 出错 / 无权限四态
+type: impl
+# 2026-10-18 入账（前端线 f1-frontend-7）。approvals 第 34 条：Claude 实现，Codex 写规则测试与浏览器测试并对抗评审；截图对照画板 AdmUsers、AdmUserDetail、AdmUserDetailNoPerm（design-hifi）。
+# 后端 F1-07a（脱敏投影与 reveal）、F1-07b（列表、lookup、详情）已合并、不再 planned。宿主 05 F1-07；详情的余额与流水 / 订单 / 找回 / 提现页签、直推名单与代办操作属 F1-07g 等（依赖 CT-24），本任务只做基础信息，不预留假数据。
+# 编排 2026-10-18 19:2x「先逻辑后视觉」：后台画板未全部定稿，先做数据接线、表格 / 表单、权限点裁剪、二次验证接入、三态，视觉定稿后统一调。
+refs: []
+refs_hash: {}
+deps: [F1-07a, F1-07b, F1-06r, F1-06zb]
+paths:
+  - 'apps/admin/src/pages/users/**'
+  - 'apps/admin/src/texts/users.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-users/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-users/**'
+status: todo
