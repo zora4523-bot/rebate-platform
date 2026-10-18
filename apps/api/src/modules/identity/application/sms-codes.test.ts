@@ -719,7 +719,37 @@ it('[AC-B1-11g#6] a failing slot release is only logged; the answer stays the re
   f.release.mockRejectedValueOnce(new Error('down 203.0.113.7'));
   expect(await f.send()).toEqual({ code: 50001 });
   const text = f.lines.join('');
-  expect(text).toContain('sms_landing_slot_release_failed');
+  expect(text).toContain('sms_ip_slot_release_failed');
   expect(text).not.toContain('203.0.113.7');
   expect(text).not.toContain(NUMBER);
+});
+
+it('[AC-B1-11g#13] an app send whose deviceQuota reserved the IP releases it when refused and keeps it when accepted', async () => {
+  for (const [delivery, released] of [
+    ['rejected', true],
+    ['accepted', false],
+    ['unknown', false],
+  ] as const) {
+    const release = vi.fn(async () => undefined);
+    const deviceQuota = vi.fn(async () => ({ code: 0 as const, release }));
+    const afterAccepted = vi.fn(async () => undefined);
+    const f = setup({
+      hooks: { deviceQuota, afterAccepted },
+      sender: { send: async () => delivery },
+    });
+    const result = await f.send();
+    expect(result.code).toBe(delivery === 'rejected' ? 50001 : 0);
+    expect(release).toHaveBeenCalledTimes(released ? 1 : 0);
+    expect(afterAccepted).toHaveBeenCalledTimes(released ? 0 : 1);
+  }
+});
+
+it('[AC-B1-11g#13] a phone-limited app send releases the IP its deviceQuota reserved', async () => {
+  const release = vi.fn(async () => undefined);
+  const f = setup({
+    hooks: { deviceQuota: async () => ({ code: 0 as const, release }) },
+    reply: (kind) => (kind === 'reserve' ? [0, Date.parse(START) + 60_000] : 1),
+  });
+  expect(await f.send()).toEqual({ code: 42901, retryAfterSec: 60 });
+  expect(release).toHaveBeenCalledOnce();
 });

@@ -282,6 +282,7 @@ const REFUSING_DEVICE_REGISTRATION: DeviceRegistrationPorts = {
 const REFUSING_SMS_RISK: SmsRisk = {
   admit: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
   admitIp: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  admitAndReserve: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
   releaseIp: () => Promise.resolve(),
   recordAccepted: () => Promise.resolve(),
   recordRegistered: () => Promise.resolve(),

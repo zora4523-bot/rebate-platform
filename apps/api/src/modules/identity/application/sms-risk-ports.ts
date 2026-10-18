@@ -1,6 +1,8 @@
 // identity's ports onto risk's SMS send risk (task B1-03g; 规划/08 BR-ID-05 细则「发码与设备注册的
 // 风控默认值」): the 42901 step of the send order (deviceQuota, after the 44001 checks and before
-// the per-phone quota), the landing page send's IP-only step (landingQuota, B1-11g), the counters after an accepted or unknown delivery (afterAccepted) and the
+// the per-phone quota), the landing page send's IP-only step
+// (landingQuota, B1-11g; both reserve the IP send atomically, released when nothing went out), the
+// counters after an accepted or unknown delivery (afterAccepted) and the
 // new-account counter of the registration core (afterRegistered, every register_method, in the
 // caller's transaction before commit).
 // The device admission is keyed by device_hash, read here by (app_id, device_id); a device row
@@ -25,14 +27,16 @@ export interface SmsRiskPorts {
 }
 export interface SmsRiskPortsOptions {
   /**
-   * admitIp / releaseIp may be absent (a risk port built before B1-11g): landing sends are then
-   * refused.
+   * The reserving methods of B1-11g may be absent (a risk port built before it): landing sends
+   * are then refused, and the app route falls back to the read-only admit() (counted by
+   * afterAccepted's recordAccepted alone).
    */
-  readonly risk: Omit<SmsRisk, 'admitIp' | 'releaseIp'> &
-    Partial<Pick<SmsRisk, 'admitIp' | 'releaseIp'>>;
+  readonly risk: Omit<SmsRisk, ReservingMethods> & Partial<Pick<SmsRisk, ReservingMethods>>;
   readonly devices: SmsDeviceHashReader;
   readonly logger: RootLogger;
 }
+
+type ReservingMethods = 'admitIp' | 'admitAndReserve' | 'releaseIp';
 
 /** Retry-After of a refusal whose device could not be resolved. */
 const UNRESOLVED_RETRY_AFTER_SEC = 1;
@@ -67,15 +71,32 @@ export function createSmsRiskPorts(options: SmsRiskPortsOptions): SmsRiskPorts {
         }
         // The HTTP route always passes the client IP; an in-process send (no request behind it)
         // has none, so only the device admission judges it.
-        const admission = await risk.admit({
+        const clientIp = request.client_ip;
+        const input = {
           appId,
           deviceHash,
           phone: request.phone,
-          ...(request.client_ip === undefined ? {} : { clientIp: request.client_ip }),
-        });
-        return admission.code === 0
-          ? null
-          : { code: 42901, retryAfterSec: admission.retryAfterSec };
+          ...(clientIp === undefined ? {} : { clientIp }),
+        };
+        const { admitAndReserve, releaseIp } = risk;
+        if (admitAndReserve === undefined || releaseIp === undefined) {
+          const admission = await risk.admit(input);
+          return admission.code === 0
+            ? null
+            : { code: 42901, retryAfterSec: admission.retryAfterSec };
+        }
+        // B1-11g r2: the IP send is reserved atomically (shared with the landing page), so
+        // concurrent sends from one IP cannot all pass a read of N < L.
+        const admission = await admitAndReserve.call(risk, input);
+        if (admission.code !== 0) {
+          return { code: 42901, retryAfterSec: admission.retryAfterSec };
+        }
+        const { reservation } = admission;
+        if (reservation === undefined || clientIp === undefined) return null;
+        return {
+          code: 0,
+          release: () => releaseIp.call(risk, { appId, clientIp, reservation }),
+        };
       },
       // B1-11g (BR-ID-32): the landing page send is judged by the two per-IP items only; it
       // always comes from an HTTP request, so a missing client IP is refused, never skipped.
@@ -102,12 +123,12 @@ export function createSmsRiskPorts(options: SmsRiskPortsOptions): SmsRiskPorts {
           release: () => releaseIp.call(risk, { appId, clientIp, reservation }),
         };
       },
+      // With a reservation (app or landing) recordAccepted settles one in-flight record of the IP
+      // at the provider's answer instead of adding one, so nothing is counted twice.
       async afterAccepted(request) {
-        // A landing send's IP count is its admitIp reservation: only the daily budget counts here.
-        const countsIp = request.client_ip !== undefined && request.channel !== 'landing';
         await risk.recordAccepted({
           appId: request.app_id,
-          ...(countsIp ? { clientIp: request.client_ip } : {}),
+          ...(request.client_ip === undefined ? {} : { clientIp: request.client_ip }),
         });
       },
     },
