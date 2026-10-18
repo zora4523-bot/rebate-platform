@@ -1,0 +1,23 @@
+id: B1-08p
+repo: rebate-platform
+title: 订单来源回填补店铺维度：UnionOrder 与 orders 入库补 shop_id（只取联盟订单报文能给的字段，写明出处）；店铺未知且无 exact / product 命中时来源列留空待补、不写 none，按 BR-ATTR-15 下次同步重试（重试上限与放弃条件引用 08 原文）
+type: impl
+# 草稿 2026-10-19（W1 线，订单线）。来源：B1-08j Codex 资金评审 r4 S1（首次入库 shopId 恒为 null，同店异品订单永久拿不到 shop 来源）；编排裁定 D10-64 B（W1 decision D10-65）。
+# a) shop_id 字段先查私有库 docs-mirror 的淘宝 tbk 订单字段手册（seller / shop 相关）与拼多多订单字段，任务书写明出处、只记字段名与含义，不把私有库原文抄进本仓库；平台资料没有的不臆造（AGENTS 硬规则 7）。b) 留空待补的重试上限与放弃条件引用 BR-ATTR-15 原文，08 没写清的列「待编排裁定」给默认。c) 改到的 B1-08j 冻结用例（test/spec/orders/source-backfill/**）走 test-change 声明。
+# 分工：订单归属 → impl claude、tester codex（D10-15）。
+refs: [BR-ATTR-15]
+refs_hash:
+  BR-ATTR-15: fa1574dfc628
+deps: [B1-08j]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/modules/union/**'
+test_paths:
+  - 'test/spec/orders/source-shop/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/source-shop/**'
+status: todo
+pr: null
