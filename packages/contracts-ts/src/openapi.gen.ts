@@ -1730,6 +1730,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/dict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Enum text dictionary
+         * @description The text dictionary of BR-TEXT-12 (02 §10, 04 §6.2 `GET /v1/dict`): clients read a text as
+         *     config.texts first, then this dictionary at `items[<dict>][<code>]`, then the bundled
+         *     default (contracts/texts.default.json), and cache the dictionary by `version`, which
+         *     equals data.dict_version of GET /v1/config. `version` in the query is only a cache hint:
+         *     the response is always the whole current dictionary, also when it equals the current
+         *     version (no 304; the client compares versions itself, 编排者默认). A dictionary key
+         *     `<dict>.<code>` is split at its first dot: `dict` is the first segment and `code` the
+         *     rest (a key without a dot has the empty string as code). Keys whose current text is null
+         *     (set back to the bundled default) are left out. Before the first publish `version` is
+         *     "0" and `items` is empty. Readable anonymously, without a device id. Session scopes:
+         *     accepts deletion_only (BR-ID-01 细则「受限会话」: the forced-update and deletion pages
+         *     read it).
+         */
+        get: operations["getDict"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/products/search": {
         parameters: {
             query?: never;
@@ -3759,6 +3790,119 @@ export interface paths {
          *     same transaction.
          */
         post: operations["adminOfflineArticle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/dict-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dictionary keys with their bundled default and current text
+         * @description Permission point: any of `config.general`, `content.fund_terms` or `content.agreement`
+         *     (04 §11.2; read only, no step-up). One row per key of contracts/texts.default.json (the
+         *     keys the dictionary may override, 编排者默认), in key order, page by page (`page`,
+         *     `page_size` ≤ 200), optionally narrowed by `class` and `key_prefix`: the key's class (which
+         *     permission point writes it, BR-TEXT-12 细则: `fund_terms` = a fund term key, `agreement`
+         *     = privacy and permission texts of table D (`privacy.`, `perm.`), `general` = every other
+         *     key), the bundled default, the current override (null = the bundled default applies) and
+         *     the version of the key's current row (null = never written). `dict_version` is the
+         *     dictionary's current version ("0" before the first publish), the `expected_version` of
+         *     the writes.
+         */
+        get: operations["adminListDictItems"];
+        /**
+         * Save and publish dictionary texts
+         * @description Saving publishes (no separate draft step, 编排者默认): the changed keys take effect as a new
+         *     dictionary version (BR-TEXT-12 细则). One request changes keys of one class only, and the
+         *     class picks the permission point and step-up (04 §11.2, BR-ID-34): `general` →
+         *     `config.general`, no step-up; `fund_terms` → `content.fund_terms`, totp tier every time;
+         *     `agreement` → `content.agreement`, totp tier, and `legal_confirmed_by` is required. Keys
+         *     of more than one class → 20001 with `data.fields=[changes]`; lacking the class's point →
+         *     10403 with `data.reason=admin_permission_denied`; without a valid totp-tier
+         *     `X-Step-Up-Token` where needed → 10003 with `data.tier=totp`. A key the server cannot
+         *     classify counts as a fund term key (BR-TEXT-12 细则). Every change is checked first, and
+         *     any failure is 20001 with nothing saved: a key not in contracts/texts.default.json, a key
+         *     listed twice, or a text equal to the current one → `data.fields` names
+         *     `changes[<i>].key`; a text whose variables (`{name}` placeholders) differ from the
+         *     bundled default's, or that contains a forbidden word → `data.fields` names
+         *     `changes[<i>].text` followed by the forbidden words found; an `agreement` change without
+         *     `legal_confirmed_by` → `data.fields=[legal_confirmed_by]`. Only then is
+         *     `expected_version` compared with the current dictionary version, and a mismatch is 20902
+         *     with `data.resource=dict_item` and nothing saved (04 §6.6). On success every changed key
+         *     gets a new row (text null = back to the bundled default) at the new version (current
+         *     plus 1), dict_version moves to it in the same transaction, and the audit log records
+         *     the keys with before and after texts, whether they are fund terms and the legal
+         *     confirmer. Clients see the change when their GET /v1/dict cache refreshes. No
+         *     Idempotency-Key (04 §6.6).
+         */
+        put: operations["adminSaveDictItems"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/dict-items/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Version history of dictionary keys
+         * @description Permission point: any of `config.general`, `content.fund_terms` or `content.agreement`
+         *     (04 §11.2; read only, no step-up). Every stored dictionary row, newest first (by version,
+         *     then key), page by page (`page`, `page_size` ≤ 200), optionally for one `key`: the key, the
+         *     dictionary version it was written at, its text (null = back to the bundled default), who
+         *     wrote it and when. Rows are never changed; a rollback adds new rows (POST
+         *     /admin/v1/dict-items/rollback).
+         */
+        get: operations["adminListDictItemVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/dict-items/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Roll dictionary keys back to an older dictionary version
+         * @description Writes, for every key in `keys`, the text the key had at dictionary version `to_version`
+         *     (its newest row at or below that version; none, or `to_version` 0 → null, back to the
+         *     bundled default) as a new row at a new dictionary version (current plus 1); history is
+         *     never rewritten (BR-TEXT-12 细则). Classes, permission point, step-up and
+         *     `legal_confirmed_by` as for PUT /admin/v1/dict-items (one class per request: `general` →
+         *     `config.general`, no step-up; `fund_terms` → `content.fund_terms`, totp tier;
+         *     `agreement` → `content.agreement`, totp tier and `legal_confirmed_by`; mixed classes →
+         *     20001 with `data.fields=[keys]`; lacking the point → 10403; without a valid totp-tier
+         *     `X-Step-Up-Token` where needed → 10003 with `data.tier=totp`). Checked first, with nothing
+         *     written on failure (20001): `to_version` not lower than the current dictionary version →
+         *     `data.fields=[to_version]`; a key not in contracts/texts.default.json or listed twice →
+         *     `data.fields` names `keys[<i>]`; a restored text that no longer passes the variable or
+         *     forbidden-word check → `data.fields` names `keys[<i>]` followed by the forbidden words
+         *     found. Then CAS: `expected_version` is the current dictionary version, and a mismatch is
+         *     20902 with `data.resource=dict_item`. Audited like a save. No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminRollbackDictItems"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6384,6 +6528,23 @@ export interface components {
             alipay?: components["schemas"]["ConfigPlatformIcon"];
             wecom?: components["schemas"]["ConfigPlatformIcon"];
         };
+        /** @description The text dictionary (BR-TEXT-12); a key `<dict>.<code>` is items[dict][code]. */
+        Dict: {
+            /** @description Dictionary version, equal to data.dict_version of GET /v1/config; "0" before the first publish. */
+            version: string;
+            /** @description Texts by dict (the key's first segment), then by code (the rest of the key). */
+            items: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+        };
+        DictResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["Dict"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         ConfigResponse: {
             code: components["schemas"]["SuccessCode"];
             msg: string;
@@ -7923,6 +8084,109 @@ export interface components {
             /** @description Keys of one permission point, each at most once. */
             items: components["schemas"]["AdminConfigItemBatchEntry"][];
             reason?: components["schemas"]["AdminConfigReason"];
+        };
+        /**
+         * @description Which permission point writes a dictionary key (BR-TEXT-12 细则, 04 §11.2): general →
+         *     config.general, fund_terms → content.fund_terms, agreement (table D, `privacy.` and
+         *     `perm.`) → content.agreement.
+         * @enum {string}
+         */
+        DictKeyClass: "general" | "fund_terms" | "agreement";
+        /** @description A key of contracts/texts.default.json. */
+        DictKey: string;
+        /** @description A dictionary version (dict_version, an integer as a string; "0" before the first publish). */
+        DictVersion: string;
+        /** @description The override text; null = back to the bundled default. */
+        DictText: string | null;
+        /** @description One dictionary key with its bundled default and current override. */
+        AdminDictItem: {
+            key: components["schemas"]["DictKey"];
+            class: components["schemas"]["DictKeyClass"];
+            /** @description The text in contracts/texts.default.json. */
+            default_text: string;
+            text: components["schemas"]["DictText"];
+            /**
+             * Format: int32
+             * @description Dictionary version of the key's current row; null = never written.
+             */
+            version: number | null;
+        };
+        AdminDictItemPage: {
+            /** @description Dictionary keys in key order. */
+            items: components["schemas"]["AdminDictItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+            dict_version: components["schemas"]["DictVersion"];
+        };
+        AdminDictItemPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminDictItemPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminDictChange: {
+            key: components["schemas"]["DictKey"];
+            text: components["schemas"]["DictText"];
+        };
+        /** @description Who in legal confirmed the change; required when the keys are of class agreement (04 §11.2 content.agreement). */
+        AdminDictLegalConfirmedBy: string;
+        AdminDictSaveRequest: {
+            /** @description Keys of one class, each at most once. */
+            changes: components["schemas"]["AdminDictChange"][];
+            expected_version: components["schemas"]["DictVersion"];
+            legal_confirmed_by?: components["schemas"]["AdminDictLegalConfirmedBy"];
+        };
+        AdminDictRollbackRequest: {
+            /** @description Keys of one class, each at most once. */
+            keys: components["schemas"]["DictKey"][];
+            /**
+             * Format: int32
+             * @description The dictionary version to restore the keys to; lower than the current one, 0 = the bundled default.
+             */
+            to_version: number;
+            expected_version: components["schemas"]["DictVersion"];
+            legal_confirmed_by?: components["schemas"]["AdminDictLegalConfirmedBy"];
+        };
+        AdminDictSaveResult: {
+            version: components["schemas"]["DictVersion"];
+            /** @description The keys written at that version, in request order. */
+            keys: components["schemas"]["DictKey"][];
+        };
+        AdminDictSaveResultResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminDictSaveResult"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description One stored dictionary row (dict_items). */
+        AdminDictItemVersion: {
+            key: components["schemas"]["DictKey"];
+            /** Format: int32 */
+            version: number;
+            text: components["schemas"]["DictText"];
+            created_by: components["schemas"]["Id"];
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminDictItemVersionPage: {
+            /** @description Dictionary rows, newest first. */
+            items: components["schemas"]["AdminDictItemVersion"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminDictItemVersionPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminDictItemVersionPage"];
+            trace_id: components["schemas"]["TraceId"];
         };
         AdminConfigItemRollbackRequest: {
             /**
@@ -13282,6 +13546,66 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    getDict: {
+        parameters: {
+            query?: {
+                /** @description The dictionary version the client has cached; a hint only, the whole dictionary is returned either way. */
+                version?: string;
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices, when the device is registered. */
+                "X-Device-Id"?: components["parameters"]["OptionalDeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current dictionary. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "version": "3",
+                     *         "items": {
+                     *           "order_status_group": {
+                     *             "credited": "已到账"
+                     *           },
+                     *           "order_status": {
+                     *             "CREDITED.summary": "这笔返利已到账，可以去钱包提现，详情见卡片。"
+                     *           }
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["DictResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     searchProducts: {
         parameters: {
             query: {
@@ -17919,6 +18243,296 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not taken offline (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListDictItems: {
+        parameters: {
+            query?: {
+                /** @description Only keys of this class. */
+                class?: components["schemas"]["DictKeyClass"];
+                /** @description Only keys starting with this text. */
+                key_prefix?: string;
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of dictionary keys. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "key": "order_status_group.credited",
+                     *             "class": "general",
+                     *             "default_text": "已结算",
+                     *             "text": "已到账",
+                     *             "version": 3
+                     *           },
+                     *           {
+                     *             "key": "order_status_group.estimating",
+                     *             "class": "general",
+                     *             "default_text": "预估中",
+                     *             "text": null,
+                     *             "version": null
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2,
+                     *         "dict_version": "3"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminDictItemPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminSaveDictItems: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "changes": [
+                 *         {
+                 *           "key": "order_status_group.credited",
+                 *           "text": "已到账"
+                 *         },
+                 *         {
+                 *           "key": "order_status_group.estimating",
+                 *           "text": null
+                 *         }
+                 *       ],
+                 *       "expected_version": "2"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminDictSaveRequest"];
+            };
+        };
+        responses: {
+            /** @description The new dictionary version and the keys written. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "version": "3",
+                     *         "keys": [
+                     *           "order_status_group.credited",
+                     *           "order_status_group.estimating"
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminDictSaveResultResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Nothing saved (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListDictItemVersions: {
+        parameters: {
+            query?: {
+                /** @description Only the rows of this key. */
+                key?: string;
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of dictionary rows, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "key": "order_status_group.credited",
+                     *             "version": 3,
+                     *             "text": "已到账",
+                     *             "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a01",
+                     *             "created_at": "2026-10-18T10:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "key": "order_status_group.credited",
+                     *             "version": 1,
+                     *             "text": "已结算到钱包",
+                     *             "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a01",
+                     *             "created_at": "2026-10-17T09:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminDictItemVersionPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRollbackDictItems: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "keys": [
+                 *         "order_status_group.credited"
+                 *       ],
+                 *       "to_version": 1,
+                 *       "expected_version": "3"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminDictRollbackRequest"];
+            };
+        };
+        responses: {
+            /** @description The new dictionary version and the keys written. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "version": "4",
+                     *         "keys": [
+                     *           "order_status_group.credited"
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminDictSaveResultResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Nothing rolled back (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

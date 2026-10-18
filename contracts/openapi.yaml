@@ -4879,6 +4879,77 @@ paths:
           $ref: '#/components/responses/ClientError'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /v1/dict:
+    get:
+      operationId: getDict
+      tags:
+        - content
+      summary: Enum text dictionary
+      description: |
+        The text dictionary of BR-TEXT-12 (02 §10, 04 §6.2 `GET /v1/dict`): clients read a text as
+        config.texts first, then this dictionary at `items[<dict>][<code>]`, then the bundled
+        default (contracts/texts.default.json), and cache the dictionary by `version`, which
+        equals data.dict_version of GET /v1/config. `version` in the query is only a cache hint:
+        the response is always the whole current dictionary, also when it equals the current
+        version (no 304; the client compares versions itself, 编排者默认). A dictionary key
+        `<dict>.<code>` is split at its first dot: `dict` is the first segment and `code` the
+        rest (a key without a dot has the empty string as code). Keys whose current text is null
+        (set back to the bundled default) are left out. Before the first publish `version` is
+        "0" and `items` is empty. Readable anonymously, without a device id. Session scopes:
+        accepts deletion_only (BR-ID-01 细则「受限会话」: the forced-update and deletion pages
+        read it).
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-session-scopes:
+        - full
+        - deletion_only
+      x-implementation: planned
+      x-error-codes: []
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/OptionalDeviceId'
+        - name: version
+          in: query
+          required: false
+          description: The dictionary version the client has cached; a hint only, the whole dictionary is returned either way.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 32
+      responses:
+        '200':
+          description: The current dictionary.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DictResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  version: '3'
+                  items:
+                    order_status_group:
+                      credited: 已到账
+                    order_status:
+                      CREDITED.summary: 这笔返利已到账，可以去钱包提现，详情见卡片。
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /v1/products/search:
     get:
       operationId: searchProducts
@@ -11009,6 +11080,368 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/dict-items:
+    get:
+      operationId: adminListDictItems
+      tags:
+        - admin-content
+      summary: Dictionary keys with their bundled default and current text
+      description: |
+        Permission point: any of `config.general`, `content.fund_terms` or `content.agreement`
+        (04 §11.2; read only, no step-up). One row per key of contracts/texts.default.json (the
+        keys the dictionary may override, 编排者默认), in key order, page by page (`page`,
+        `page_size` ≤ 200), optionally narrowed by `class` and `key_prefix`: the key's class (which
+        permission point writes it, BR-TEXT-12 细则: `fund_terms` = a fund term key, `agreement`
+        = privacy and permission texts of table D (`privacy.`, `perm.`), `general` = every other
+        key), the bundled default, the current override (null = the bundled default applies) and
+        the version of the key's current row (null = never written). `dict_version` is the
+        dictionary's current version ("0" before the first publish), the `expected_version` of
+        the writes.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - name: class
+          in: query
+          required: false
+          description: Only keys of this class.
+          schema:
+            $ref: '#/components/schemas/DictKeyClass'
+        - name: key_prefix
+          in: query
+          required: false
+          description: Only keys starting with this text.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of dictionary keys.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDictItemPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - key: order_status_group.credited
+                      class: general
+                      default_text: 已结算
+                      text: 已到账
+                      version: 3
+                    - key: order_status_group.estimating
+                      class: general
+                      default_text: 预估中
+                      text: null
+                      version: null
+                  page: 1
+                  page_size: 20
+                  total: 2
+                  dict_version: '3'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    put:
+      operationId: adminSaveDictItems
+      tags:
+        - admin-content
+      summary: Save and publish dictionary texts
+      description: |
+        Saving publishes (no separate draft step, 编排者默认): the changed keys take effect as a new
+        dictionary version (BR-TEXT-12 细则). One request changes keys of one class only, and the
+        class picks the permission point and step-up (04 §11.2, BR-ID-34): `general` →
+        `config.general`, no step-up; `fund_terms` → `content.fund_terms`, totp tier every time;
+        `agreement` → `content.agreement`, totp tier, and `legal_confirmed_by` is required. Keys
+        of more than one class → 20001 with `data.fields=[changes]`; lacking the class's point →
+        10403 with `data.reason=admin_permission_denied`; without a valid totp-tier
+        `X-Step-Up-Token` where needed → 10003 with `data.tier=totp`. A key the server cannot
+        classify counts as a fund term key (BR-TEXT-12 细则). Every change is checked first, and
+        any failure is 20001 with nothing saved: a key not in contracts/texts.default.json, a key
+        listed twice, or a text equal to the current one → `data.fields` names
+        `changes[<i>].key`; a text whose variables (`{name}` placeholders) differ from the
+        bundled default's, or that contains a forbidden word → `data.fields` names
+        `changes[<i>].text` followed by the forbidden words found; an `agreement` change without
+        `legal_confirmed_by` → `data.fields=[legal_confirmed_by]`. Only then is
+        `expected_version` compared with the current dictionary version, and a mismatch is 20902
+        with `data.resource=dict_item` and nothing saved (04 §6.6). On success every changed key
+        gets a new row (text null = back to the bundled default) at the new version (current
+        plus 1), dict_version moves to it in the same transaction, and the audit log records
+        the keys with before and after texts, whether they are fund terms and the legal
+        confirmer. Clients see the change when their GET /v1/dict cache refreshes. No
+        Idempotency-Key (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminDictSaveRequest'
+            example:
+              changes:
+                - key: order_status_group.credited
+                  text: 已到账
+                - key: order_status_group.estimating
+                  text: null
+              expected_version: '2'
+      responses:
+        '200':
+          description: The new dictionary version and the keys written.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDictSaveResultResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  version: '3'
+                  keys:
+                    - order_status_group.credited
+                    - order_status_group.estimating
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Nothing saved (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                mixedClasses:
+                  $ref: '#/components/examples/AdminDictMixedClasses'
+                textInvalid:
+                  $ref: '#/components/examples/AdminDictTextInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminDictConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/dict-items/versions:
+    get:
+      operationId: adminListDictItemVersions
+      tags:
+        - admin-content
+      summary: Version history of dictionary keys
+      description: |
+        Permission point: any of `config.general`, `content.fund_terms` or `content.agreement`
+        (04 §11.2; read only, no step-up). Every stored dictionary row, newest first (by version,
+        then key), page by page (`page`, `page_size` ≤ 200), optionally for one `key`: the key, the
+        dictionary version it was written at, its text (null = back to the bundled default), who
+        wrote it and when. Rows are never changed; a rollback adds new rows (POST
+        /admin/v1/dict-items/rollback).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - name: key
+          in: query
+          required: false
+          description: Only the rows of this key.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of dictionary rows, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDictItemVersionPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - key: order_status_group.credited
+                      version: 3
+                      text: 已到账
+                      created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a01
+                      created_at: '2026-10-18T10:00:00+08:00'
+                    - key: order_status_group.credited
+                      version: 1
+                      text: 已结算到钱包
+                      created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a01
+                      created_at: '2026-10-17T09:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/dict-items/rollback:
+    post:
+      operationId: adminRollbackDictItems
+      tags:
+        - admin-content
+      summary: Roll dictionary keys back to an older dictionary version
+      description: |
+        Writes, for every key in `keys`, the text the key had at dictionary version `to_version`
+        (its newest row at or below that version; none, or `to_version` 0 → null, back to the
+        bundled default) as a new row at a new dictionary version (current plus 1); history is
+        never rewritten (BR-TEXT-12 细则). Classes, permission point, step-up and
+        `legal_confirmed_by` as for PUT /admin/v1/dict-items (one class per request: `general` →
+        `config.general`, no step-up; `fund_terms` → `content.fund_terms`, totp tier;
+        `agreement` → `content.agreement`, totp tier and `legal_confirmed_by`; mixed classes →
+        20001 with `data.fields=[keys]`; lacking the point → 10403; without a valid totp-tier
+        `X-Step-Up-Token` where needed → 10003 with `data.tier=totp`). Checked first, with nothing
+        written on failure (20001): `to_version` not lower than the current dictionary version →
+        `data.fields=[to_version]`; a key not in contracts/texts.default.json or listed twice →
+        `data.fields` names `keys[<i>]`; a restored text that no longer passes the variable or
+        forbidden-word check → `data.fields` names `keys[<i>]` followed by the forbidden words
+        found. Then CAS: `expected_version` is the current dictionary version, and a mismatch is
+        20902 with `data.resource=dict_item`. Audited like a save. No Idempotency-Key (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminDictRollbackRequest'
+            example:
+              keys:
+                - order_status_group.credited
+              to_version: 1
+              expected_version: '3'
+      responses:
+        '200':
+          description: The new dictionary version and the keys written.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDictSaveResultResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  version: '4'
+                  keys:
+                    - order_status_group.credited
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Nothing rolled back (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                versionInvalid:
+                  $ref: '#/components/examples/AdminDictToVersionInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminDictConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/kill-switches:
     get:
       operationId: adminListKillSwitches
@@ -13617,6 +14050,41 @@ components:
         data:
           fields:
             - items
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminDictMixedClasses:
+      summary: 20001 the request mixes dictionary keys of different classes
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - changes
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminDictTextInvalid:
+      summary: 20001 a text whose variables differ from the bundled default (nothing saved)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - changes[0].text
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminDictToVersionInvalid:
+      summary: 20001 to_version is not lower than the current dictionary version
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - to_version
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminDictConflict:
+      summary: 20902 the dictionary was published by someone else (version moved on)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: dict_item
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminConfigItemConflict:
       summary: 20902 the item was changed by someone else (version moved on)
@@ -18683,6 +19151,43 @@ components:
           $ref: '#/components/schemas/ConfigPlatformIcon'
         wecom:
           $ref: '#/components/schemas/ConfigPlatformIcon'
+    Dict:
+      type: object
+      description: The text dictionary (BR-TEXT-12); a key `<dict>.<code>` is items[dict][code].
+      additionalProperties: false
+      required:
+        - version
+        - items
+      properties:
+        version:
+          type: string
+          minLength: 1
+          maxLength: 32
+          description: Dictionary version, equal to data.dict_version of GET /v1/config; "0" before the first publish.
+        items:
+          type: object
+          description: Texts by dict (the key's first segment), then by code (the rest of the key).
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
+    DictResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/Dict'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
     ConfigResponse:
       type: object
       additionalProperties: false
@@ -21975,6 +22480,264 @@ components:
             $ref: '#/components/schemas/AdminConfigItemBatchEntry'
         reason:
           $ref: '#/components/schemas/AdminConfigReason'
+    DictKeyClass:
+      type: string
+      description: |
+        Which permission point writes a dictionary key (BR-TEXT-12 细则, 04 §11.2): general →
+        config.general, fund_terms → content.fund_terms, agreement (table D, `privacy.` and
+        `perm.`) → content.agreement.
+      enum:
+        - general
+        - fund_terms
+        - agreement
+    DictKey:
+      type: string
+      description: A key of contracts/texts.default.json.
+      minLength: 1
+      maxLength: 128
+    DictVersion:
+      type: string
+      description: A dictionary version (dict_version, an integer as a string; "0" before the first publish).
+      minLength: 1
+      maxLength: 32
+    DictText:
+      type:
+        - string
+        - 'null'
+      description: The override text; null = back to the bundled default.
+      minLength: 1
+      maxLength: 2000
+    AdminDictItem:
+      type: object
+      description: One dictionary key with its bundled default and current override.
+      additionalProperties: false
+      required:
+        - key
+        - class
+        - default_text
+        - text
+        - version
+      properties:
+        key:
+          $ref: '#/components/schemas/DictKey'
+        class:
+          $ref: '#/components/schemas/DictKeyClass'
+        default_text:
+          type: string
+          description: The text in contracts/texts.default.json.
+        text:
+          $ref: '#/components/schemas/DictText'
+        version:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: Dictionary version of the key's current row; null = never written.
+    AdminDictItemPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+        - dict_version
+      properties:
+        items:
+          type: array
+          description: Dictionary keys in key order.
+          items:
+            $ref: '#/components/schemas/AdminDictItem'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+        dict_version:
+          $ref: '#/components/schemas/DictVersion'
+    AdminDictItemPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminDictItemPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminDictChange:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - text
+      properties:
+        key:
+          $ref: '#/components/schemas/DictKey'
+        text:
+          $ref: '#/components/schemas/DictText'
+    AdminDictLegalConfirmedBy:
+      type: string
+      description: Who in legal confirmed the change; required when the keys are of class agreement (04 §11.2 content.agreement).
+      minLength: 1
+      maxLength: 64
+    AdminDictSaveRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - changes
+        - expected_version
+      properties:
+        changes:
+          type: array
+          description: Keys of one class, each at most once.
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/AdminDictChange'
+        expected_version:
+          $ref: '#/components/schemas/DictVersion'
+        legal_confirmed_by:
+          $ref: '#/components/schemas/AdminDictLegalConfirmedBy'
+    AdminDictRollbackRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - keys
+        - to_version
+        - expected_version
+      properties:
+        keys:
+          type: array
+          description: Keys of one class, each at most once.
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/DictKey'
+        to_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The dictionary version to restore the keys to; lower than the current one, 0 = the bundled default.
+        expected_version:
+          $ref: '#/components/schemas/DictVersion'
+        legal_confirmed_by:
+          $ref: '#/components/schemas/AdminDictLegalConfirmedBy'
+    AdminDictSaveResult:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - keys
+      properties:
+        version:
+          $ref: '#/components/schemas/DictVersion'
+        keys:
+          type: array
+          description: The keys written at that version, in request order.
+          items:
+            $ref: '#/components/schemas/DictKey'
+    AdminDictSaveResultResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminDictSaveResult'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminDictItemVersion:
+      type: object
+      description: One stored dictionary row (dict_items).
+      additionalProperties: false
+      required:
+        - key
+        - version
+        - text
+        - created_by
+        - created_at
+      properties:
+        key:
+          $ref: '#/components/schemas/DictKey'
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        text:
+          $ref: '#/components/schemas/DictText'
+        created_by:
+          $ref: '#/components/schemas/Id'
+        created_at:
+          type: string
+          format: date-time
+    AdminDictItemVersionPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Dictionary rows, newest first.
+          items:
+            $ref: '#/components/schemas/AdminDictItemVersion'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminDictItemVersionPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminDictItemVersionPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
     AdminConfigItemRollbackRequest:
       type: object
       additionalProperties: false

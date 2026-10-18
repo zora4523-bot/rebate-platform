@@ -213,6 +213,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'agreement',
     // CT-02s: admin article draft / publish / offline CAS (04 §6.6 articles).
     'article',
+    // CT-02r: admin dictionary save / rollback CAS (04 §6.6, BR-TEXT-12).
+    'dict_item',
   ]);
 });
 

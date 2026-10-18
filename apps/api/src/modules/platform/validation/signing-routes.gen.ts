@@ -328,6 +328,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/dict",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/v1/products/search",
     "signed": false
   },
@@ -659,6 +664,26 @@ export const CONTRACT_SIGNING_ROUTES = [
   {
     "method": "POST",
     "path": "/admin/v1/articles/:article_id/offline",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/dict-items",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/dict-items",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/dict-items/versions",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/dict-items/rollback",
     "signed": false
   },
   {

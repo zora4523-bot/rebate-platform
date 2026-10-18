@@ -672,6 +672,17 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "getDict",
+    "method": "GET",
+    "path": "/v1/dict",
+    "gate": null,
+    "sessionScopes": [
+      "full",
+      "deletion_only"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "searchProducts",
     "method": "GET",
     "path": "/v1/products/search",
@@ -1335,6 +1346,46 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "operationId": "adminOfflineArticle",
     "method": "POST",
     "path": "/admin/v1/articles/:article_id/offline",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListDictItems",
+    "method": "GET",
+    "path": "/admin/v1/dict-items",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminSaveDictItems",
+    "method": "PUT",
+    "path": "/admin/v1/dict-items",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListDictItemVersions",
+    "method": "GET",
+    "path": "/admin/v1/dict-items/versions",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRollbackDictItems",
+    "method": "POST",
+    "path": "/admin/v1/dict-items/rollback",
     "gate": null,
     "sessionScopes": [
       "full"
