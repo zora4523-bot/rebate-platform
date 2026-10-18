@@ -16,10 +16,12 @@ export interface AppRouteOptions {
 }
 
 /**
- * Lazy page module per route path. Business pages (F1-03 and later) add an entry keyed by the
- * generated path, e.g. `[bridge.routes.Rules.h5_path]: () => import('./pages/rules.tsx')`.
+ * Lazy page module per route path, keyed by the generated path. Each page is its own chunk (the
+ * rules page carries the tiptap static renderer, kept out of the entry bundle).
  */
-const pages: Readonly<Partial<Record<string, H5Route['lazy']>>> = {};
+const pages: Readonly<Partial<Record<string, H5Route['lazy']>>> = {
+  [bridge.routes.Rules.h5_path]: () => import('./pages/rules/index.ts'),
+};
 
 /** Every route without its own page yet shares one lazily loaded placeholder chunk. */
 const pagePending: H5Route['lazy'] = () => import('./pages/page-pending.tsx');
