@@ -1,0 +1,24 @@
+id: F1-09k
+repo: rebate-platform
+title: F1-09g 规则测试去掉「登录用户 has_parent 未知、yes / no 不下发」的期望——F1-09j 接入真实上级关系后该期望必红，login / union_authorized / has_order 断言不变
+type: test-change
+# 2026-10-18 入账（content-client）。F1-09g（#715）时 has_parent 没有读口，按 G3 登录用户 has_parent 视为未知，
+# 条件写 yes / no 的区块不下发；Codex 规则测试 pages-audience/delivery.int.test.ts 把这一口径写进 #3–#10 登录用户的期望列表与 #8 整条。
+# F1-09j 把 has_parent 接到 growth 的 createParentRelationReader（无上级 false、有上级 true）后，登录用户会多出 has_parent_no / has_parent_yes，这些断言必红。
+# 在 F1-09j 的规则测试提交里改会被 path-guard-author 拒（别的任务的冻结测试），放在实现之后会被 evidence-check 拒（先例 F1-02g #588、F1-09i #717）。
+# 做法：kit.ts 加 SECTIONS_WITHOUT_PARENT 与 audiencePage 的可选 sections 参数（默认不变）；#3–#7、#9、#10 改用不含 has_parent yes / no 的种子，
+# #3 游客列表相应去掉 has_parent_no；#8 保留全部区块，游客断言不变，登录用户只比对 has_parent_* 以外的区块，标题去掉「未知」半句。
+# login / union_authorized / has_order 的期望一字不改；has_parent 的判定由 F1-09j 的 test/spec/content/pages-audience-parent/** 覆盖。主干现在与 F1-09j 合并后都成立。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-09g]
+paths:
+  - 'test/spec/content/pages-audience/delivery.int.test.ts'
+  - 'test/spec/content/pages-audience/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null

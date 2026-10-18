@@ -3,7 +3,15 @@ import { createDb, destroyDb } from '@couli/db';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { seedUser } from '../../identity/request-context/db-kit.ts';
 import { harness, session, type Harness } from '../config/kit.ts';
-import { audiencePage, binding, hasEquality, order, queryProbe, visible } from './kit.ts';
+import {
+  audiencePage,
+  binding,
+  hasEquality,
+  order,
+  queryProbe,
+  SECTIONS_WITHOUT_PARENT,
+  visible,
+} from './kit.ts';
 
 let database: Awaited<ReturnType<(typeof import('@couli/db/testing'))['createTestDatabase']>>;
 let redis: Awaited<ReturnType<(typeof import('@couli/db/testing'))['acquireTestRedis']>>;
@@ -31,21 +39,20 @@ afterAll(async () => {
 
 const BASE = ['public', 'any', 'login_yes'];
 const UNAUTHORIZED = [...BASE, 'union_authorized_no', 'has_order_no'];
+// F1-09k (test-change): every case except #8 seeds the page without has_parent yes / no sections,
+// so its logged-in expectations hold both while has_parent is unknown (F1-09g, G3) and after
+// F1-09j wires the real parent relation (pages-audience-parent/** covers that judgement).
+const page = () => audiencePage(h, SECTIONS_WITHOUT_PARENT);
 
 it('[AC-F1-09g#3] 游客三事实为 false 且不查事实，同设备登录后按令牌用户判定', async () => {
-  const subject = await audiencePage(h);
+  const subject = await page();
   await binding(h, subject, 'taobao', 'active');
   await order(h, subject, 'PAID', 'ESTIMATED');
   const probe = queryProbe();
   const app = await h.start('api', db.withPlugin(probe.plugin));
-  const guest = [
-    'public',
-    'any',
-    'login_no',
-    'has_parent_no',
-    'union_authorized_no',
-    'has_order_no',
-  ];
+  // F1-09k (test-change): has_parent_no left the seed, so it leaves the guest list; the guest
+  // has_parent judgement stays asserted in #8.
+  const guest = ['public', 'any', 'login_no', 'union_authorized_no', 'has_order_no'];
   expect(await visible(app, subject, true)).toEqual(guest);
   expect(probe.queries).toHaveLength(0);
   expect(await visible(app, subject)).toEqual([
@@ -62,7 +69,7 @@ it('[AC-F1-09g#3] 游客三事实为 false 且不查事实，同设备登录后�
 it.each(['taobao', 'pdd'] as const)(
   '[AC-F1-09g#4] 仅 %s active 即已授权，另一平台 pending_auth 不阻止命中',
   async (platform) => {
-    const subject = await audiencePage(h);
+    const subject = await page();
     await binding(h, subject, platform, 'active');
     await binding(h, subject, platform === 'taobao' ? 'pdd' : 'taobao', 'pending_auth');
     expect(await visible(h.app, subject)).toEqual([
@@ -84,7 +91,7 @@ it.each(['taobao', 'pdd'] as const)(
       'released',
       'blocked',
     ] as const) {
-      const subject = await audiencePage(h);
+      const subject = await page();
       if (status !== null) await binding(h, subject, platform, status);
       expect.soft(await visible(h.app, subject), String(status)).toEqual(UNAUTHORIZED);
     }
@@ -100,20 +107,20 @@ it.each([
   ['INVALID', 'CLAWED_BACK'],
   ['PAID', 'UNATTRIBUTED'],
 ] as const)('[AC-F1-09g#6] 本人仅有一笔 %s / %s 订单仍算有订单', async (platform, rebate) => {
-  const subject = await audiencePage(h);
+  const subject = await page();
   await order(h, subject, platform, rebate);
   expect(await visible(h.app, subject)).toEqual([...BASE, 'union_authorized_no', 'has_order_yes']);
 });
 
 it('[AC-F1-09g#7] 同设备不同用户和其他应用的事实不串用，查询同时限定 app_id 与 user_id', async () => {
-  const subject = await audiencePage(h);
+  const subject = await page();
   const another = await session(h, subject.id, subject.device);
   const otherUser = {
     ...subject,
     userId: another.user.id,
     headers: { ...subject.guest, ...another.headers },
   };
-  const otherApp = await audiencePage(h);
+  const otherApp = await page();
   for (const owner of [otherUser, otherApp]) {
     await binding(h, owner, 'pdd', 'active');
     await order(h, owner, 'SETTLED', 'CREDITED');
@@ -144,7 +151,11 @@ it('[AC-F1-09g#7] 同设备不同用户和其他应用的事实不串用，查�
   }
 });
 
-it('[AC-F1-09g#8] 登录用户有无 parent_id 均未知，yes/no 均不下发；游客 no 下发', async () => {
+// F1-09k (test-change): the logged-in has_parent result changes when F1-09j wires the parent
+// relation (unknown now, real afterwards; covered by pages-audience-parent/**), so only the
+// has_parent_* sections are left out of the logged-in comparison and the title drops that half.
+// The guest assertion is unchanged: a guest's has_parent is false under both implementations.
+it('[AC-F1-09g#8] 游客 has_parent no 下发；登录用户有无 parent_id 不影响其他条件', async () => {
   for (const withParent of [false, true]) {
     const subject = await audiencePage(h);
     if (withParent) {
@@ -161,7 +172,10 @@ it('[AC-F1-09g#8] 登录用户有无 parent_id 均未知，yes/no 均不下发�
         .where('id', '=', subject.userId)
         .execute();
     }
-    expect.soft(await visible(h.app, subject)).toEqual(UNAUTHORIZED);
+    const loggedIn = await visible(h.app, subject);
+    expect
+      .soft(loggedIn.filter((id) => !String(id).startsWith('has_parent_')))
+      .toEqual(UNAUTHORIZED);
     expect
       .soft(await visible(h.app, subject, true))
       .toEqual([
@@ -176,7 +190,7 @@ it('[AC-F1-09g#8] 登录用户有无 parent_id 均未知，yes/no 均不下发�
 });
 
 it('[AC-F1-09g#9] 页面缓存期内授权和订单变化立即生效，过滤结果不跨请求缓存', async () => {
-  const subject = await audiencePage(h);
+  const subject = await page();
   const bindingId = await binding(h, subject, 'pdd', 'pending_auth');
   const before = h.deps.clock.now().getTime();
   expect(await visible(h.app, subject)).toEqual(UNAUTHORIZED);
@@ -213,7 +227,7 @@ it('[AC-F1-09g#9] 页面缓存期内授权和订单变化立即生效，过滤�
 it.each(['orders', 'union_bindings'] as const)(
   '[AC-F1-09g#10] %s 读取失败只使该事实未知，其他事实仍过滤，返回 200 并 warn',
   async (failing) => {
-    const subject = await audiencePage(h);
+    const subject = await page();
     await binding(h, subject, 'taobao', 'active');
     await order(h, subject, 'PAID', 'ESTIMATED');
     const probe = queryProbe(failing);
