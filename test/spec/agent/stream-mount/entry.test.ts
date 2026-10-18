@@ -97,7 +97,12 @@ async function fixture(env: Record<string, string> = {}) {
     dbRead: null,
     close: dbClose,
   });
-  const queue = { start: vi.fn(async () => undefined), stop: vi.fn(async () => undefined) };
+  // Orchestrator mechanical fix (2026-10-18): the platform event bus requires the queue's send.
+  const queue = {
+    start: vi.fn(async () => undefined),
+    stop: vi.fn(async () => undefined),
+    send: vi.fn(async () => null),
+  };
   const original = platform.PlatformModule.forRoot.bind(platform.PlatformModule);
   vi.spyOn(platform.PlatformModule, 'forRoot').mockImplementation((options) => {
     const module = original(options);
@@ -122,10 +127,12 @@ async function fixture(env: Record<string, string> = {}) {
   const createHttpApp = boot.createHttpApp.bind(boot);
   vi.spyOn(boot, 'createHttpApp').mockImplementation(async (...args: unknown[]) => {
     const app = await createHttpApp(...args);
-    app.listen = async () => {
+    // Orchestrator mechanical fix (2026-10-18): Nest's application proxy ignores a plain
+    // assignment, so the listen double is installed through a spy.
+    vi.spyOn(app, 'listen').mockImplementation(async () => {
       state.listen += 1;
-      return undefined;
-    };
+      return undefined as never;
+    });
     if (args[0] === 'stream') {
       const runtime = app.get(token, { strict: false }) as AgentStreamRuntime | null;
       expect(runtime, 'the stream runtime').not.toBeNull();
