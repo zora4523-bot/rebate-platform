@@ -1,0 +1,18 @@
+id: CT-24i
+repo: rebate-platform
+title: test-change：后台权限点冻结预言 test/spec/admin/permissions/expected.ts 的无二次验证组在枚举含 dashboard.view 时才纳入它（04 §11.1 工作台，step-up「–」），改前改后都绿，为 CT-24a 新增权限点放行；不改断言逻辑、不删既有权限点
+type: test-change
+# 2026-10-18 入账（admin-backend；台账 #800 Claude 评审 r1 S1）。CT-24a 在 contracts/enums/admin.yaml 与 specs/permissions.yaml 增 dashboard.view 后，冻结测试 catalog.test.ts:18-25（[AC-F1-06l#1]，与 expectedCatalog() 逐项比对）与 me.int.test.ts:18（expectedGrants 对未知键 find(...)! 取空）会红；expected.ts 把四组权限点写死。
+# 改法（照 B1-11q「改前改后都绿」，台账 #800 Claude 评审 r2 S1）：只对这一个键放宽——枚举里有 dashboard.view 时才把它放进 NONE（如 ...(enumKeys().includes('dashboard.view') ? ['dashboard.view'] : [])），否则清单与现在逐项相同；catalog.test.ts、guard.int.test.ts、me.int.test.ts 在 CT-24a 合并前后都绿。CT-24a 合并后由后续 test-change CT-24j（已在 notices 预占）去掉该条件。先合本任务，再落 CT-24a。非 task/ 分支走 #24 标签；Claude 实现、Codex 评审。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/admin/permissions/expected.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/permissions/**'
+status: todo
+pr: null

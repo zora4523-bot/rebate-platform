@@ -1,0 +1,26 @@
+id: CT-24b
+repo: rebate-platform
+title: 契约：后台顶栏一框搜 GET /admin/v1/search?q=（订单号 / 提现单号 / 完整手机号 / UID 完整值匹配，按 order.view / user.lookup / fund.view 由服务端裁剪；无命中与无权限都返回空列表、不返回 10403；最多 10 条，超出带 truncated；按完整手机号命中写审计）；planned
+type: contract
+# 2026-10-18 入账（admin-backend，编排 19:2x 派工规划 #137、21:3x 第 1 批定稿 ②）。依据 01 F-ADM-04（一框搜）、04 §6.6 search、08 BR-ID-34 细则「一框搜」、design/specs/admin-search.md。
+# 本线技术取舍（由编排者摘进任务书第 9 节：04 §6.6 search 段、01 F-ADM-04 一框搜原文、08 BR-ID-34 细则「一框搜」、design/specs/admin-search.md 要点）：只做完整值匹配（定稿画板 AdmSearchNoHit 写明「订单号、提现单号、UID 按完整值匹配」；规格草稿里的前缀长度是代理补全，不采用）；UID 为 uuid（现无短 UID 列）；items[] {type: order | user | withdrawal, id, summary（脱敏摘要）}，type 为 contracts/enums/admin.yaml 的枚举（可进字典），一次列全，提现单类在提现模块上线前不产生命中；单号（订单 / 提现单）命中时附带所属用户一条，该条按 user.lookup 裁剪（定稿画板「同一单号命中提现单与所属用户」）；q 去首尾空白后 1–64 字符，否则 20001 [q]；格式认不出的输入（如提现单号格式未定前）返回 200 空列表，不报错；与 adminLookupUser「查不到 20001」不同，一框搜无命中是 200 空列表（防探测）。
+# 实现由 B1-34 承接。
+refs: [BR-ID-34]
+refs_hash:
+  BR-ID-34: 2d77bebd2767
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
