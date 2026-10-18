@@ -1290,6 +1290,8 @@ export type Module = {
    * a file-system API, `import.meta`, a module mock, a listing, a dynamic load; null when none.
    */
   opaque: string | null;
+  /** Why the module mocks modules (usesMocking): its own imports may be redirected; null when none. */
+  mocking: string | null;
   /**
    * The module is closed (CT-06w): it is not opaque and every relative / `#` import of it
    * resolves to a closed module of the closure or to a file outside the test code. Only an
@@ -1338,8 +1340,43 @@ const FILE_ACCESS = new Set([
   'glob',
   'globSync',
   'cwd',
+  // Code or process execution the rules cannot look into (Codex review r5).
+  'eval',
+  'Function',
+  'execSync',
+  'execFileSync',
+  'spawnSync',
+  'execFile',
+  'spawn',
+  'fork',
+  'Worker',
+  'getBuiltinModule',
+  'runInThisContext',
+  'runInNewContext',
+  'runInContext',
+  'compileFunction',
+  'binding',
+  'mainModule',
+  'dlopen',
 ]);
-const FILE_MODULES = new Set(['fs', 'node:fs', 'fs/promises', 'node:fs/promises']);
+const FILE_MODULES = new Set([
+  'fs',
+  'node:fs',
+  'fs/promises',
+  'node:fs/promises',
+  'child_process',
+  'node:child_process',
+  'vm',
+  'node:vm',
+  'worker_threads',
+  'node:worker_threads',
+  'module',
+  'node:module',
+  'process',
+  'node:process',
+  'wasi',
+  'node:wasi',
+]);
 const MOCKING = new Set([
   'mock',
   'doMock',
@@ -1371,14 +1408,32 @@ function fileAccess(code: readonly Token[]): string | null {
     ) {
       return 'it uses import.meta';
     }
-    if (
-      t.kind === 'id' &&
-      MOCKING.has(t.text) &&
-      tokens[i - 1]?.text === '.' &&
-      tokens[i - 2]?.text === 'vi'
-    ) {
-      return `it uses vi.${t.text}`;
+    // A template specifier, or an import inside a template's expressions, is not in `imports`.
+    if (t.kind === 'id' && t.text === 'import' && tokens[i + 1]?.text === '(') {
+      if (tokens[i + 2]?.kind === 'tpl') return 'it imports a module by a template';
     }
+    if (
+      t.kind === 'tpl' &&
+      flatten(t.inner ?? []).some((x) => x.kind === 'id' && x.text === 'import')
+    ) {
+      return 'it imports inside a template';
+    }
+  }
+  return usesMocking(tokens);
+}
+
+/**
+ * Why a module mocks modules (CT-06w, Codex reviews r4, r5): `vi.<mock…>` / `vitest.<mock…>`, or
+ * a call of such a method on anything (`m.mock(…)`); Vitest hoists mocks and redirects imports
+ * to `__mocks__` or a factory, which the rules here do not follow. Null when none.
+ */
+function usesMocking(tokens: readonly Token[]): string | null {
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i] as Token;
+    if (t.kind !== 'id' || !MOCKING.has(t.text) || tokens[i - 1]?.text !== '.') continue;
+    const ns = tokens[i - 2]?.text;
+    if (ns === 'vi' || ns === 'vitest' || tokens[i + 1]?.text === '(')
+      return `it uses ${ns}.${t.text}`;
   }
   return null;
 }
@@ -1712,6 +1767,7 @@ export function relativeClosure(
           ? 'it cannot be read as code'
           : (dynamic ??
             (listed.dirs.length > 0 ? `it lists ${listed.dirs.join(', ')}` : fileAccess(tokens))),
+      mocking: tokens === null ? 'it cannot be read as code' : usesMocking(flatten(tokens)),
       closed: false,
     });
     for (const { text: s } of literals ?? []) {
@@ -1724,8 +1780,10 @@ export function relativeClosure(
   }
   // Closed modules (a fixpoint: a module importing a module that is not closed is not closed).
   const byPath = new Map(out.map((m) => [m.path, m]));
+  // A package: a bare name (`vitest`, `node:fs`, `@scope/pkg/sub`); an absolute path, a URL or
+  // anything else is a load the rules here do not follow (Codex review r5).
   const bare = (spec: string): boolean =>
-    !spec.startsWith('#') && !/^\.\.?(\/|$)/.test(spec.replace(/[?#].*$/, ''));
+    /^(node:)?(@[\w-][\w.-]*\/)?[\w-][\w.-]*(\/[\w.-]+)*$/.test(spec.replace(/[?#].*$/, ''));
   for (const m of out) {
     if (m.opaque !== null) continue;
     const open = m.imports.find((i) =>
@@ -1803,6 +1861,7 @@ export function mayReadSupport(
     const within = (start: number, end: number): ModuleImport | undefined =>
       m.imports.find((i) => i.start <= start && end <= i.end);
     const uncertain = (i: ModuleImport): string | null => {
+      if (m.mocking !== null) return `${m.path} mocks modules (${m.mocking})`;
       if (i.resolved === null) return i.why;
       const dep = byPath.get(i.resolved);
       if (dep === undefined) return `${i.resolved} is not followed by the closure`;

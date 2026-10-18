@@ -1383,3 +1383,84 @@ it('[CT-06w] only an import of a closed module is skipped by the name rules (Cod
     ),
   ).toBe(`${file} names kit.ts`);
 });
+
+it('[CT-06w] execution, absolute or template loads and mocks keep a module open; a mocking root masks nothing (Codex review r5)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/real/kit.ts';
+  const files: Record<string, string> = {
+    'test/spec/a/bridge.ts': 'export const n = 1;',
+    'test/spec/a/__mocks__/bridge.ts': "export { n } from '../../real/kit.ts';",
+    'test/spec/a/__mocks__/kit.ts': '',
+    'test/spec/real/bridge.ts': "export { n } from './kit.ts';",
+    'test/spec/real/kit.ts': '',
+    'test/package.json': JSON.stringify({ imports: { '#payload': './spec/real/kit.ts' } }),
+  };
+  const closure = (text: string, kit: string) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : p === 'test/spec/a/kit.ts' ? kit : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  const root = "import { n } from './kit.ts';";
+  const why = (kit: string) => mayReadSupport(file, support, closure(root, kit));
+  const prefix = `${file} names kit.ts in an unresolved import ./kit.ts (test/spec/a/kit.ts is not closed: `;
+  // A helper that runs a process, evaluates code or starts a worker.
+  expect(
+    why(
+      "import { execFileSync } from 'node:child_process';\nexport const n = execFileSync('cat', ['spec/real/' + ['ki', 't.ts'].join('')], { encoding: 'utf8' });",
+    ),
+  ).toBe(`${prefix}it uses execFileSync)`);
+  expect(why('export const n = eval("process.getBuiltinModule(\'fs\')");')).toBe(
+    `${prefix}it uses eval)`,
+  );
+  expect(why("export const n = new Worker(new URL('./w.ts', import.meta.url));")).toBe(
+    `${prefix}it uses Worker)`,
+  );
+  expect(why("import vm from 'node:vm';\nexport const n = vm;")).toBe(`${prefix}it uses node:vm)`);
+  // An absolute specifier (Vite resolves it against the project root) is not a package.
+  expect(why("export { n } from '/spec/real/bridge.ts';")).toBe(
+    `${prefix}it imports /spec/real/bridge.ts, which cannot be resolved)`,
+  );
+  // A template specifier and an import inside a template expression are loads not in `imports`.
+  expect(why('export const n = (await import(`#payload`)).n;')).toBe(
+    `${prefix}it imports a module by a template)`,
+  );
+  expect(why("export const n = `${(await import('#payload')).n}`;")).toBe(
+    `${prefix}it imports inside a template)`,
+  );
+  // A helper that mocks through the `vitest` namespace or any `.mock(` call.
+  expect(
+    why(
+      "import { vitest } from 'vitest';\nvitest.mock('./bridge.ts');\nexport { n } from './bridge.ts';",
+    ),
+  ).toBe(`${prefix}it uses vitest.mock)`);
+  expect(
+    why(
+      "import { vi as m } from 'vitest';\nm.mock('./bridge.ts');\nexport { n } from './bridge.ts';",
+    ),
+  ).toBe(`${prefix}it uses m.mock)`);
+  // `spy.mock.calls` is a property, not a mock registration: still closed.
+  expect(
+    why(
+      "import { vi } from 'vitest';\nconst spy = vi.fn();\nexport const n = spy.mock.calls.length;",
+    ),
+  ).toBeNull();
+  // A root that mocks (in any spelling) masks nothing: its imports may be redirected.
+  for (const mocking of [
+    "vi.mock((import('./kit.ts')));",
+    "vi.mock(await import('./kit.ts'));",
+    "vi.mock('./bridge.ts');",
+    "vitest.doMock('./bridge.ts');",
+  ]) {
+    const c = closure(
+      `import { vi, vitest } from 'vitest';\n${mocking}\nimport { n } from './kit.ts';`,
+      "export { n } from './bridge.ts';",
+    );
+    expect(mayReadSupport(file, support, c), mocking).toBe(
+      `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (${c[0]?.mocking}))`,
+    );
+    expect(mayReadSupport(file, 'test/spec/a/__mocks__/kit.ts', c), mocking).toBe(
+      `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (${c[0]?.mocking}))`,
+    );
+  }
+});
