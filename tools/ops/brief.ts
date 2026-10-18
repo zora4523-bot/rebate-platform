@@ -95,6 +95,11 @@ export type BriefInput = {
   spec?: SpecSource;
   /** Byte budget of the previous failure output in section 7 (default 8 KB). */
   failureTailBytes?: number;
+  /**
+   * CT-06o: list the one-hop references of section 2 by id, title and status only. generateBrief
+   * sets it when the full brief (without the previous failure output) is over MAX_BRIEF_BYTES.
+   */
+  compactHops?: boolean;
 };
 
 export function readProtectedPaths(root: string): ProtectedPaths {
@@ -187,6 +192,27 @@ function threeColumnRow(rule: Rule): string {
   return rule.rowText.trim();
 }
 
+const HOP_TITLE_CHARS = 40;
+
+/**
+ * Title of a one-hop reference in the compact table (CT-06o): the bold lead of the 规则 cell; with
+ * no bold lead, its first sentence (up to the first `<br>` or `。`), whitespace collapsed and cut
+ * to HOP_TITLE_CHARS characters followed by `…`.
+ */
+export function hopTitle(rule: Rule): string {
+  const cell = ((splitTableRow(rule.rowText) ?? [])[1] ?? '').trim();
+  const bold = /^\*\*(.+?)\*\*/.exec(cell);
+  if (bold?.[1]) return bold[1].trim();
+  const first = (cell.split(/<br\s*\/?>|。/).find((s) => s.trim() !== '') ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const chars = [...first];
+  return chars.length > HOP_TITLE_CHARS ? `${chars.slice(0, HOP_TITLE_CHARS).join('')}…` : first;
+}
+
+/** The line above the compact one-hop table. */
+export const COMPACT_HOPS_NOTE = '任务书超过 24KB，一跳引用只列标题；原文见 SPEC_REF 版本的规划/08';
+
 function ruleSection(rule: Rule): string[] {
   const out: string[] = [];
   const status = rule.status === '' ? '' : `（状态：${rule.status}）`;
@@ -228,8 +254,11 @@ function isCommand(entry: string): boolean {
   return /^(pnpm|node|npx|bash|sh)\s/.test(entry);
 }
 
-/** Section 2 of an ordinary brief: the full text of each ref and its one-hop references. */
-function ruleTexts(task: TaskFile, spec: SpecSource | undefined): string[] {
+/**
+ * Section 2 of an ordinary brief: the full text of each ref and its one-hop references (their
+ * table rows; with `compact`, id, title and status only).
+ */
+function ruleTexts(task: TaskFile, spec: SpecSource | undefined, compact: boolean): string[] {
   const out: string[] = [];
   out.push('## 2. 规则原文（来自 08，版本同 SPEC_REF）', '');
   const rules = task.refs.map((ref) => findRule(ref, spec));
@@ -244,13 +273,25 @@ function ruleTexts(task: TaskFile, spec: SpecSource | undefined): string[] {
   const hopRows: string[] = [];
   for (const id of hopIds) {
     try {
-      hopRows.push(threeColumnRow(findRule(id, spec)));
+      const hop = findRule(id, spec);
+      hopRows.push(
+        compact ? `| ${hop.id} | ${hopTitle(hop)} | ${hop.status} |` : threeColumnRow(hop),
+      );
     } catch {
       // A mention that is not a rule at SPEC_REF (prose, retired id): nothing to quote.
     }
   }
   if (hopRows.length === 0) out.push('（无）', '');
-  else out.push('| 编号 | 规则 | 状态 |', '| --- | --- | --- |', ...hopRows, '');
+  else if (compact) {
+    out.push(
+      COMPACT_HOPS_NOTE,
+      '',
+      '| 编号 | 标题 | 状态 |',
+      '| --- | --- | --- |',
+      ...hopRows,
+      '',
+    );
+  } else out.push('| 编号 | 规则 | 状态 |', '| --- | --- | --- |', ...hopRows, '');
   out.push(
     '列名、错误码、枚举值以 `contracts/` 与 `db/schema.sql` 为准；技术实现以 ADR-0001 为准。规则原文与它们冲突时不要自行取舍，在输出的 `blocked_reason` 里写明。',
     '',
@@ -332,7 +373,7 @@ export function renderBrief(input: BriefInput): string {
   );
 
   if (task.type === 'contract') out.push(...contractRules(task, input.spec));
-  else out.push(...ruleTexts(task, input.spec));
+  else out.push(...ruleTexts(task, input.spec, input.compactHops === true));
 
   const prot = readProtectedPaths(input.rulesRoot);
   const code = (globs: readonly string[]): string => globs.map((g) => `\`${g}\``).join('、');
@@ -563,7 +604,7 @@ export function generateBrief(id: string, opts: GenerateOptions = {}): string {
         : 1;
   const attempt = opts.attempt ?? Math.max(1, used);
   const report = (opts.risk ?? riskOfPaths)(task.paths);
-  const render = (failureTailBytes: number): string =>
+  const render = (failureTailBytes: number, compactHops: boolean): string =>
     renderBrief({
       task,
       legacy,
@@ -576,20 +617,25 @@ export function generateBrief(id: string, opts: GenerateOptions = {}): string {
       rulesRoot: opts.root ?? trustedRoot(),
       gitRoot: root,
       failureTailBytes,
+      compactHops,
       ...(opts.spec ? { spec: opts.spec } : {}),
     });
-  let text = render(FAILURE_TAIL_BYTES);
+  // CT-06o: the format is chosen on the brief without the previous failure output, so a long
+  // failure log never switches to the compact one-hop table; a brief that fits keeps the full one.
+  const compact =
+    task.type !== 'contract' && Buffer.byteLength(render(0, false), 'utf8') > MAX_BRIEF_BYTES;
+  let text = render(FAILURE_TAIL_BYTES, compact);
   if (attempt >= 2 && Buffer.byteLength(text, 'utf8') > MAX_BRIEF_BYTES) {
     // A retry must not fail on the size of the failure it reports: the previous output gets
-    // whatever room the rest of the brief leaves, newest lines first.
-    const room = MAX_BRIEF_BYTES - Buffer.byteLength(render(0), 'utf8');
-    if (room >= MIN_FAILURE_TAIL_BYTES) text = render(room);
+    // whatever room the rest of the brief (in the chosen format) leaves, newest lines first.
+    const room = MAX_BRIEF_BYTES - Buffer.byteLength(render(0, compact), 'utf8');
+    if (room >= MIN_FAILURE_TAIL_BYTES) text = render(room, compact);
   }
 
   const bytes = Buffer.byteLength(text, 'utf8');
   if (bytes > MAX_BRIEF_BYTES) {
     throw new CheckError(
-      `任务书 ${bytes} 字节，超过上限 ${MAX_BRIEF_BYTES} 字节（24KB）：任务 ${id} 该拆小（规划/11 §5.3），没有写出文件\n` +
+      `任务书 ${bytes} 字节，超过上限 ${MAX_BRIEF_BYTES} 字节（24KB）：任务 ${id} 该拆小（规划/11 §5.3），没有写出文件${compact ? '（第 2 节一跳引用已改用精简表，只列编号、标题与状态，仍然超限）' : ''}\n` +
         `各节字节数：${sectionSizes(text)
           .map((s) => `${s.title} ${s.bytes}`)
           .join('；')}`,
