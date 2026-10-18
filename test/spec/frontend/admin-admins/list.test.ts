@@ -165,7 +165,7 @@ it('[AC-F1-06i-LIST#3] 默认页面接线只对超管 admins 生效，保留调�
   expect(within(screen.getByRole('main')).queryByRole('table')).toBeNull();
   custom.unmount();
 
-  const other = mount(undefined, { initialRoute: { menuId: 'users' } });
+  const other = mount(undefined, { initialRoute: { menuId: 'reports' } });
   await waitFor(() => expect(screen.queryByText(/尚未接入/)).not.toBeNull());
   expect(other.requests).toHaveLength(0);
   other.unmount();

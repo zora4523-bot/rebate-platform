@@ -1,0 +1,18 @@
+id: F1-06zh
+repo: rebate-platform
+title: F1-06i 规则测试 [AC-F1-06i-LIST#3] 的「其余占位页」样例由「用户查询」（users）改为「报表」（reports）——F1-07i 接入用户查询页后 users 不再是占位页，该断言必红；其余断言一字不改
+type: test-change
+# 2026-10-18 入账（前端线 f1-frontend-7）。F1-06i（#417）时 users 菜单还是占位页，LIST#3 拿它验证「默认接线只对 admins 生效、其余仍是占位且不发请求」；
+# F1-07i（后台用户页，spec 7e4c916）的 LIST#8 要求 App.tsx 默认把 users 渲染为用户页，两条不能同时成立（F1-07i 规则测试过审 r1 S1）。
+# 在 F1-07i 的规则测试提交里改会被 path-guard-author 拒（别的任务的冻结测试）。做法：LIST#3 的占位样例换成 reports（F1-14b 报表入口，排在最后；AC-F1-06p-PAGES#3 也用 reports 作占位样例），
+# 断言内容（出现「尚未接入」、不发请求）不变。改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-06i]
+paths:
+  - 'test/spec/frontend/admin-admins/list.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
