@@ -59,7 +59,16 @@ it('[AC-B1-03j#1][AC-S1-60 ③] 到期前一毫秒不解冻，等于到期时跨
     expect(event).toMatchObject({
       app_id: subject.app_id,
       name: 'risk.state_changed',
-      payload: { v: 1, data: { ...subject, from: 'frozen', to: 'normal', reason_category: null } },
+      payload: {
+        v: 1,
+        data: {
+          ...subject,
+          from: 'frozen',
+          to: 'normal',
+          reason_category: null,
+          frozen_until: null,
+        },
+      },
     });
     const publication = f.publish.mock.calls.find(
       ([, e]) => (e as { appId: string }).appId === subject.app_id,

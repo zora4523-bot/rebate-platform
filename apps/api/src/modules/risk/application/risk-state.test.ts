@@ -112,9 +112,81 @@ it('[B1-03h §10] first change inserts row_version 0 and publishes from normal o
     expect(event).toEqual({
       appId: SUBJECT.app_id,
       name: 'risk.state_changed',
-      payload: { ...SUBJECT, from: 'normal', to: 'banned', reason_category: 'other' },
+      payload: {
+        ...SUBJECT,
+        from: 'normal',
+        to: 'banned',
+        reason_category: 'other',
+        frozen_until: null,
+      },
     });
     expect(JSON.stringify(event)).not.toContain(BAN.reason);
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it('[B1-03y] the payload carries the frozen_until written with `to` as an ISO 8601 UTC string', async () => {
+  const f = scripted();
+  try {
+    const until = new Date('2031-05-13T07:08:09.123+08:00');
+    await f.db
+      .transaction()
+      .execute((trx) =>
+        f.service.setRiskState(trx, { ...BAN, state: 'frozen', frozen_until: until }),
+      );
+    expect(f.publish.mock.calls[0]![1].payload).toEqual({
+      ...SUBJECT,
+      from: 'normal',
+      to: 'frozen',
+      reason_category: 'other',
+      frozen_until: '2031-05-12T23:08:09.123Z',
+    });
+  } finally {
+    await f.db.destroy();
+  }
+});
+
+it('[B1-03y] appealing keeps the row frozen_until but the payload reports null; frozen with expiry reports the ISO string', async () => {
+  const f = scripted();
+  try {
+    const until = new Date('2031-05-13T07:08:09.123Z');
+    f.state.row = {
+      state: 'frozen',
+      reason_category: 'other',
+      frozen_until: until,
+      row_version: 1,
+    };
+    await f.db
+      .transaction()
+      .execute((trx) =>
+        f.service.setRiskState(trx, { ...BAN, state: 'appealing', frozen_until: until }),
+      );
+    expect(f.publish.mock.calls[0]![1].payload).toEqual({
+      ...SUBJECT,
+      from: 'frozen',
+      to: 'appealing',
+      reason_category: 'other',
+      frozen_until: null,
+    });
+    f.state.row = {
+      state: 'appealing',
+      reason_category: 'other',
+      frozen_until: until,
+      row_version: 2,
+    };
+    await f.db
+      .transaction()
+      .execute((trx) =>
+        f.service.setRiskState(trx, { ...BAN, state: 'frozen', frozen_until: until }),
+      );
+    expect(f.publish.mock.calls[1]![1].payload).toEqual({
+      ...SUBJECT,
+      from: 'appealing',
+      to: 'frozen',
+      reason_category: 'other',
+      frozen_until: '2031-05-13T07:08:09.123Z',
+    });
   } finally {
     await f.db.destroy();
   }

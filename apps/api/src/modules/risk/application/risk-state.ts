@@ -5,8 +5,9 @@
 // inserts the user's row (row_version 0) or updates it with a compare-and-set on row_version
 // (Kysely updateTable, `WHERE app_id AND user_id AND row_version`; 0 rows → RiskStateConflictError,
 // the caller's transaction rolls back), and publishes risk.state_changed on the platform event bus
-// in the same transaction (payload: app_id, user_id, from, to, reason_category; never the raw
-// reason or rule details). The side effects of a ban (sessions, union bindings, withdrawals) are
+// in the same transaction (payload: app_id, user_id, from, to, reason_category, frozen_until — the
+// frozen_until written with `to` = frozen as an ISO 8601 UTC string, null for any other `to`;
+// never the raw reason or rule details). The side effects of a ban (sessions, union bindings, withdrawals) are
 // orchestrated by the admin ban command (F1-10 / B1-27), not here; frozen expiry is B1-03j's job,
 // so a read never restores a state on its own.
 //
@@ -391,6 +392,12 @@ export function createRiskStateService(options: RiskStateOptions): RiskStateServ
         from: current === undefined ? 'normal' : current.state,
         to: command.state,
         reason_category: command.reason_category,
+        // Only a freeze reports its expiry; every other state (appealing included, whose row may
+        // keep the freeze's frozen_until) reports null.
+        frozen_until:
+          command.state === 'frozen' && command.frozen_until !== null
+            ? command.frozen_until.toISOString()
+            : null,
       },
     });
   }

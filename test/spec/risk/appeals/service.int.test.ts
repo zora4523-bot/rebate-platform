@@ -76,6 +76,7 @@ for (const state of ['banned', 'frozen'] as const) {
         from: state,
         to: 'appealing',
         reason_category: f.command.reason_category,
+        frozen_until: null,
       },
     });
   });

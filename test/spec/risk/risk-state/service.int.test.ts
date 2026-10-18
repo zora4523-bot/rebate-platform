@@ -128,6 +128,7 @@ it('[AC-B1-03h#11][BR-ID-36] 发布 risk.state_changed 使用调用者事务，p
       from: 'normal',
       to: 'banned',
       reason_category: 'malicious_rights',
+      frozen_until: null,
     });
     expect(
       await trx
@@ -144,7 +145,13 @@ it('[AC-B1-03h#11][BR-ID-36] 发布 risk.state_changed 使用调用者事务，p
   expect(events).toHaveLength(1);
   expect(events[0]!.payload).toEqual({
     v: 1,
-    data: { ...f.subject, from: 'normal', to: 'banned', reason_category: 'malicious_rights' },
+    data: {
+      ...f.subject,
+      from: 'normal',
+      to: 'banned',
+      reason_category: 'malicious_rights',
+      frozen_until: null,
+    },
   });
   // event_log rows carry bigint columns: stringify with a bigint-safe replacer
   expect(
