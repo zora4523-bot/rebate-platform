@@ -5,12 +5,16 @@ type: contract
 # 草稿 2026-10-18（身份与风控线 identity-lane；编排 11:4x 提醒「三端剪贴板同意上报在等，请优先入账」）。依据：08 BR-ID-12 正文与细则（type 加 clipboard_auto_import，只记设备级、不参与 login_merge，version 存 config.clipboard.consent_version 的字符串）、BR-ID-16；04 §3.2 consent_records（列类型由契约线按 db/schema.sql 定）、§6.1 POST /v1/consents 例外（请求须带设备签名，带令牌时 user_id 只作关联）；docs/changes/20261017-剪贴板自动识别改版.md。
 # 编排已定（E33）：version 用 oneOf（integer ≥1 | string 1–32 字符），类型与版本形态不配对 → 20001 data.fields=[version]；签名：契约无按类型的 x-signed，recordConsent 保持 x-signed false，描述写明 type=clipboard_auto_import 时服务端在处理函数内校验设备签名（缺失或无效回签名守卫同样的错误码，列入 x-error-codes）；表结构另由 B1-02zc 加 version_label 列（不在本任务）。
 # 2026-10-18 补 paths：version 改 oneOf 后路由校验放行新类型与字符串版本，现有 recordConsent 会撞 consent_records CHECK 回 500、字符串版本被 PG 隐式转整数；本任务在 consents.ts record() 开头加过渡判断（type=clipboard_auto_import 或 version 非整数 → 20001 data.fields=[version]），B1-02zc 再替换为正式实现。
+# 2026-10-18 补 paths（编排 18:3x 裁定）：冻结测试 [AC-B1-02b#7] / [#13] 要求库内 consent 类型域 = 契约值集合，同一 PR 带一条只放宽 consent_records.type CHECK 的迁移（号 0048，notices 19:1x）；version_label 与配对约束仍归 B1-02zc。
 # 形状类契约任务，占契约槽（notices 排队）。重生成 openapi.gen.ts、enums.gen.ts 与三份路由表（mechanical 命令同 CT 先例）。模型 Opus 5.5；Codex 契约评审。
 refs: []
 refs_hash: {}
 deps: []
 paths:
   - 'contracts/openapi.yaml'
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
   - 'contracts/enums/identity.yaml'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
