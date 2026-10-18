@@ -35,6 +35,7 @@ import { Sidebar } from './layout/Sidebar.tsx';
 import { TopBar } from './layout/TopBar.tsx';
 import { AdminsPage } from './pages/admins/index.ts';
 import { ConfigCenterPage } from './pages/config-center/index.ts';
+import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
 import { LoginPage } from './pages/login/index.ts';
@@ -376,6 +377,8 @@ function ShellFrame({
       content = <KillSwitchesPage access={access} />;
     } else if (match !== undefined && match.item.id === 'config') {
       content = <ConfigCenterPage access={access} />;
+    } else if (match !== undefined && match.item.id === 'pages') {
+      content = <HomeConfigPage access={access} />;
     } else if (match !== undefined) {
       content = <PagePending title={match.item.label} />;
     } else if (menuId !== '') {
