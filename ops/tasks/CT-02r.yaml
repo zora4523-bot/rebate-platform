@@ -12,7 +12,8 @@ type: contract
 # 待裁定 L12、L13、L14（每次保存即发布一个新 dict_version）、L16（只许改 texts.default.json 已有键）用默认。排在 CT-02q 之后占契约槽；全部新增，oasdiff 预期非破坏。
 refs: []
 refs_hash: {}
-contract_sections: ['6.2', '6.6']
+# 2026-10-19 改：contract_sections 只留 6.6（两节原文让任务书超 24KB，brief.ts 拒写）；§6.2 公共读 GET /v1/dict 由编排者摘入任务书（同 CT-02q #763）。
+contract_sections: ['6.6']
 deps: []
 paths:
   - 'contracts/openapi.yaml'
