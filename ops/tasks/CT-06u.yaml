@@ -7,8 +7,9 @@ type: guard-change
 # 被拦（#799、#815 同日），只能对被取消那轮 gh run rerun 才解开。
 # 做法（经 Codex r1 否决「改 `if: !cancelled()` 让汇总 skipped」——GitHub 把 skipped 的必需检查视为通过，手动取消或旧提交重跑取消新头时
 # 头提交可未经验证合并，S1）：ci-gate 保留 `if: always()`；步骤里若任一依赖结果为 cancelled，查同一 workflow 在同一 head 提交上是否存在
-# 更新的运行（gh api …/actions/workflows/ci.yml/runs?head_sha=，id 更大、同事件）：有则打 notice「superseded by run N」退出 0——后继运行
-# 自己的 ci-gate 检查已在该提交上排队，由它裁决；没有后继（手动取消、旧提交重跑经共享并发组取消本次）则 error 退出 1，未验证的头不放行。
+# 更新的运行（gh api …/actions/workflows/ci.yml/runs?head_sha=，id 更大、同事件，且该运行的作业里已有 ci-gate——工作流级 pending 时就被取消
+# 的运行没有作业、不算，Codex r2）：有则打 notice「superseded by run N」退出 0——后继运行自己的 ci-gate 检查已在该提交上排队，由它
+# 裁决；没有后继（手动取消、旧提交重跑经共享并发组取消本次）或 API 失败则 error 退出 1，未验证的头不放行。
 # 未取消时判定不变（依赖非 success 仍红）。不改 concurrency 组、不改必需检查名、不改 ops/branch-protection.json、不改 check-workflows
 # 规则（always() 汇总仍是唯一允许形式）。contracts-gate、longrun-props 所在工作流没有 concurrency 块，取消只能手动、无后继，不改。
 # 验证：PR 上先连推两次提交让一轮被取消（run 39149084953，排队中即被取消，全部作业 cancelled、无 failure），再用标签事件在同一提交上

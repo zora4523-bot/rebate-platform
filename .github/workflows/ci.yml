@@ -238,9 +238,11 @@ jobs:
     # blocked the merge next to the newer run's pass until the cancelled run was re-run
     # (rebate-platform #799, #815). The summary of a cancelled run therefore passes with a notice
     # when, and only when, a newer run of this workflow exists on the same head commit: that run's
-    # own ci-gate check is already queued on the commit and decides. A cancellation without such a
-    # successor (a manual cancel, or an older commit's re-run cancelling this one through the shared
-    # group) stays red, so an unverified head never passes by being skipped or superseded.
+    # own ci-gate check is already queued on the commit and decides. A newer run counts only when
+    # its jobs exist (a run cancelled while still pending at the workflow level has no ci-gate check
+    # on the commit, Codex r2). A cancellation without such a successor (a manual cancel, or an older
+    # commit's re-run cancelling this one through the shared group) stays red, so an unverified head
+    # never passes by being skipped or superseded; an API failure is red the same way.
     # `always()` stays: a skipped required check would count as passing (tools/ci/check-workflows.ts).
     if: always()
     needs: [verify-fast, verify-props, verify-int, guard-git]
@@ -251,8 +253,14 @@ jobs:
         run: |
           echo "verify-fast=${FAST} verify-props=${PROPS} verify-int=${INT} guard-git=${GUARD} event=${EVENT}"
           if [ "$FAST" = cancelled ] || [ "$PROPS" = cancelled ] || [ "$INT" = cancelled ] || [ "$GUARD" = cancelled ]; then
-            successor=$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${HEAD_SHA}&per_page=50" \
-              --jq "[.workflow_runs[] | select(.id > ${RUN_ID} and .event == \"${EVENT}\") | .id] | max // empty")
+            successor=''
+            for id in $(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${HEAD_SHA}&per_page=50" \
+              --jq "[.workflow_runs[] | select(.id > ${RUN_ID} and .event == \"${EVENT}\") | .id] | sort | reverse | .[]"); do
+              if gh api "repos/${REPO}/actions/runs/${id}/jobs?per_page=100" --jq '.jobs[] | select(.name == "ci-gate") | .id' | grep -q .; then
+                successor=$id
+                break
+              fi
+            done
             if [ -n "$successor" ]; then
               echo "::notice title=ci-gate::run ${RUN_ID} was cancelled and superseded by run ${successor} on the same commit ${HEAD_SHA}; that run's ci-gate decides"
               exit 0
