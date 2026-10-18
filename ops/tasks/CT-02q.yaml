@@ -12,10 +12,10 @@ type: contract
 # L5：signLaborAgreement 版本与当前有效版本不一致改 10004（BR-WDR-31 细则 l.961）、x-error-codes 补 10004——须 identity 在 notices 回一行同意后才做，否则本任务不碰 signLaborAgreement；
 #   text_sha256 不符、agreed≠true 仍 20001。
 # 待裁定 L1（正文是 tiptap 文章、表存 article_id / article_version / text_sha256）、L2（无草稿）、L3、L4（每次发布必填确认人、说明与日期）、L5、L20 用默认。
-# §6.1 l.483 签署行由编排者摘入任务书（不进 contract_sections，控制任务书大小）。占契约槽（B3-lane/notices.md，三个形状类契约中优先）；全部新增（除 L5），oasdiff 预期非破坏。规划未写的读口与列需规划回写（计划 §5.5）。
+# 2026-10-18 改：contract_sections 只留 6.6（两节合计任务书 26KB 超限）；§6.2 公共读（GET /v1/agreements）与 §6.1 l.483 签署行由编排者摘入任务书（不进 contract_sections，控制任务书大小）。占契约槽（B3-lane/notices.md，三个形状类契约中优先）；全部新增（除 L5），oasdiff 预期非破坏。规划未写的读口与列需规划回写（计划 §5.5）。
 refs: []
 refs_hash: {}
-contract_sections: ['6.2', '6.6']
+contract_sections: ['6.6']
 deps: []
 paths:
   - 'contracts/openapi.yaml'

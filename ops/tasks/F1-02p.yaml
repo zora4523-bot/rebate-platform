@@ -12,7 +12,8 @@ type: impl
 # 待裁定 L1、L2、L3、L4、L7（主体仍是配置项，不在本任务）用默认。
 refs: []
 refs_hash: {}
-deps: [CT-02q, F1-02k, F1-02m, F1-02n]
+# 2026-10-18 补 deps F1-02v（L26：协议正文也是文章行，链接检查复用 F1-02v）。
+deps: [CT-02q, F1-02k, F1-02m, F1-02n, F1-02v]
 paths:
   - 'apps/api/src/modules/content/**'
   - 'contracts/openapi.yaml'
