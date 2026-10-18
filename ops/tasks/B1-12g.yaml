@@ -11,7 +11,7 @@ type: impl
 # 经 appealing 的迁移（申诉撤销 / 维持）归 APPEAL_RESULT 任务（BR-ID-36），本任务不发并留 TODO。标题：BR-TEXT-23 未给，代理默认「账户通知」，可经覆盖列改（记 needs 交规划回写）。
 refs: [BR-TEXT-23]
 refs_hash:
-  BR-TEXT-23: e3d452417b5c
+  BR-TEXT-23: 9fbb1b3ed5ec
 deps: [B1-12f, B1-03y]
 paths:
   - 'apps/api/src/modules/notification/**'

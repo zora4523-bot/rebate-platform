@@ -17,7 +17,7 @@ type: impl
 # 2026-10-18 负责人决定（规划 #135）：非淘宝联盟无重新授权——后台只有停用 / 恢复，恢复直接回 active；重置只对淘宝，其他平台 20001 [platform]；去掉「发过授权链接才放行」判定（Codex r2 S1 不再适用），锁后复查后台标记保留；淘宝流程不变。非淘宝 blocked → active 在同一事务内分两步 blocked → invalid → active，复用 canTransitionBinding 已有的边，不加新边、不改 binding-status-transitions 的单元测试（#773 Claude 评审 S2）。
 refs: [BR-ID-20]
 refs_hash:
-  BR-ID-20: cee54e66a900
+  BR-ID-20: 1ffd995f311a
 deps: [CT-02j, CT-02p, CT-06o]
 paths:
   - 'apps/api/src/modules/linking/**'
