@@ -1539,6 +1539,154 @@ paths:
           $ref: '#/components/responses/ClientError'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /v1/orders/claims:
+    post:
+      operationId: createOrderClaim
+      tags:
+        - order
+      summary: Submit an order claim
+      description: |
+        Claims an order that was not attributed to the current account (BR-ATTR-17). The H5 form
+        calls it through the bridge `net.signedRequest`, which signs it (bridge signed_paths). The
+        check order and every error code, including 30202 and 30203 `data.reason`, are only in
+        BR-ATTR-17 and BR-ATTR-19: 30203 without data is the daily limit of created claims,
+        30203 with data.reason=RISK_BLOCKED is the risk block. Orders are matched only in the app of
+        the token. A shared order is treated as not existing: it never enters the claim, and the
+        response is the same 30201 (same HTTP status, msg and no data) as an unknown order number.
+        When no child order passes, the error of the first child order by sub_order_id ascending is
+        returned. For pdd the hyphens are removed from both the input and the stored order numbers
+        before comparing. The 200 response carries only the claim that was created, whose items are
+        the child orders that passed; acceptance and the evidence computation (BR-ATTR-18) share one
+        transaction, so status is auto_matched or manual_review. Version gate: applied.
+      x-auth: login
+      x-signed: true
+      x-idempotent: true
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 20001
+        - 30201
+        - 30202
+        - 30203
+        - 30204
+        - 30205
+        - 30206
+        - 10405
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderClaimRequest'
+            example:
+              platform: pdd
+              order_no: 231006-1234567890
+              paid_date: '2026-10-06'
+      responses:
+        '200':
+          description: The claim that was created.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderClaimResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  claim_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5aa0
+                  platform: pdd
+                  order_no: 231006-1234567890
+                  paid_date: '2026-10-06'
+                  status: manual_review
+                  created_at: '2026-10-07T10:15:00+08:00'
+                  items:
+                    - sub_order_id: 231006-1234567890
+                      decision: null
+                      reject_reason: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    get:
+      operationId: listOrderClaims
+      tags:
+        - order
+      summary: My order claims
+      description: |
+        The claims of the current account only (app_id and user_id of the token), newest created
+        first, each with its child orders, their decision (null while pending) and reject reason
+        (BR-ATTR-17, BR-ATTR-18). Shared orders never appear: they were removed when the claim was
+        accepted.
+      x-auth: login
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes: []
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of claims.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderClaimListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - claim_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5aa0
+                      platform: pdd
+                      order_no: 231006-1234567890
+                      paid_date: '2026-10-06'
+                      status: rejected
+                      created_at: '2026-10-07T10:15:00+08:00'
+                      items:
+                        - sub_order_id: 231006-1234567890
+                          decision: rejected
+                          reject_reason: NO_EVIDENCE
+                  next_cursor: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /v1/orders/pending-tracks:
     get:
       operationId: listPendingTracks
@@ -12957,6 +13105,9 @@ components:
             - string
             - 'null'
           format: date
+        claim_entry_pinned:
+          type: boolean
+          description: Whether the claim entry is pinned on the order page (J-6). Only with scope=self, absent with scope=share; computed by the server at the current time per BR-ATTR-17 (latest own jump-out at least 30 minutes and at most 72 hours ago and no new order attributed to the user since; a no-rebate purchase counts only under 拍板第二批 TRADE-09). Not the same as show_claim_entry of the pending-track card.
     OrderListResponse:
       type: object
       additionalProperties: false
@@ -12972,6 +13123,155 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/OrderListData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    ClaimStatus:
+      type: string
+      description: Claim status (contracts/enums/order.yaml claim_status; BR-ATTR-16, BR-ATTR-18).
+      enum:
+        - submitted
+        - auto_matched
+        - manual_review
+        - approved
+        - rejected
+        - cancelled
+    ClaimItemDecision:
+      type: string
+      description: Decision on one child order of a claim (enum claim_item_decision).
+      enum:
+        - approved
+        - rejected
+        - cancelled
+    ClaimRejectReason:
+      type: string
+      description: Reject reason of a child order (enum claim_reject_reason; NOT_IN_POOL and ORDER_INVALID are set by the system).
+      enum:
+        - NO_EVIDENCE
+        - EXPIRED_CLICK
+        - NOT_TRACKED
+        - OTHER_TLJ
+        - FRAUD
+        - OTHER
+        - NOT_IN_POOL
+        - ORDER_INVALID
+    CreateOrderClaimRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - platform
+        - order_no
+        - paid_date
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        order_no:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Order number; spaces are removed, then it is matched exactly as a string, first against child order numbers, then against parent order numbers (BR-ATTR-17). For pdd the hyphens are removed from both the input and the stored numbers before comparing; stored and displayed numbers are unchanged. Empty after removing spaces is 20001.
+        paid_date:
+          type: string
+          format: date
+          description: Payment date, YYYY-MM-DD in +08:00 (second factor); for a pre-sale order the date the deposit was paid.
+    OrderClaimItem:
+      type: object
+      additionalProperties: false
+      required:
+        - sub_order_id
+        - decision
+        - reject_reason
+      properties:
+        sub_order_id:
+          type: string
+          minLength: 1
+        decision:
+          description: null while pending.
+          anyOf:
+            - $ref: '#/components/schemas/ClaimItemDecision'
+            - type: 'null'
+        reject_reason:
+          anyOf:
+            - $ref: '#/components/schemas/ClaimRejectReason'
+            - type: 'null'
+    OrderClaim:
+      type: object
+      additionalProperties: false
+      required:
+        - claim_id
+        - platform
+        - order_no
+        - paid_date
+        - status
+        - created_at
+        - items
+      properties:
+        claim_id:
+          $ref: '#/components/schemas/Id'
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        order_no:
+          type: string
+          description: The order number as submitted, spaces removed.
+        paid_date:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/ClaimStatus'
+        created_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OrderClaimItem'
+    OrderClaimResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/OrderClaim'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    OrderClaimListData:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderClaim'
+        next_cursor:
+          type:
+            - string
+            - 'null'
+    OrderClaimListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/OrderClaimListData'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     OrderTimelineItem:

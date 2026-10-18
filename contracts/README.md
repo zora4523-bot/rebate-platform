@@ -6,7 +6,7 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `openapi.yaml` | OAS 3.1，v0.9：`GET /healthz` 加「登录 → 搜索 → 转链跳转」11 个接口（CT-02a）、幂等键作废接口与 `x-step-up` 扩展（CT-16a）、设备与第三方登录（CT-15b）、`x-min-version-gate` 与 `x-session-scopes`（CT-17a）、Agent 会话与消息流 4 个接口（新建会话、当前会话、发送消息的 SSE 与重复消息两帧、停止生成，CT-08d）；其余接口随功能补 |
+| `openapi.yaml` | OAS 3.1，v0.9：`GET /healthz` 加「登录 → 搜索 → 转链跳转」11 个接口（CT-02a）、幂等键作废接口与 `x-step-up` 扩展（CT-16a）、设备与第三方登录（CT-15b）、`x-min-version-gate` 与 `x-session-scopes`（CT-17a）、Agent 会话与消息流 4 个接口（新建会话、当前会话、发送消息的 SSE 与重复消息两帧、停止生成，CT-08d）、订单找回 POST /v1/orders/claims 与找回记录 GET /v1/orders/claims（planned，CT-04f）；其余接口随功能补 |
 | `redocly.yaml` | lint 规则：`recommended-strict`（推荐规则集，警告一律按错误）；关掉的规则逐条写了原因 |
 | `.redocly.lint-ignore.yaml` | 精确到位置的例外，逐条写原因；手工维护，不用 `--generate-ignore-file` 重新生成 |
 | `error-codes.yaml` | 错误码：码值、HTTP 状态（个别码另在 `http_also` 列出额外状态，如 20001 的 413 / 415）、含义、客户端动作、可重试、`data` 字段形状、来源条目（CT-01；码值只按 08 §13.11） |

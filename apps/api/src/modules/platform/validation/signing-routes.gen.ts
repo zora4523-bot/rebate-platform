@@ -98,6 +98,16 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/orders/claims",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/v1/orders/claims",
+    "signed": true
+  },
+  {
+    "method": "GET",
     "path": "/v1/orders/pending-tracks",
     "signed": false
   },
