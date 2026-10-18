@@ -1,10 +1,32 @@
-import { sql } from 'kysely';
-import { expect, it } from 'vitest';
+import { createDb, destroyDb, type DB } from '@couli/db';
+import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
+import { sql, type Kysely } from 'kysely';
+import { afterAll, beforeAll, expect, it } from 'vitest';
 
 import { indexes } from './catalog.ts';
-import { AT, EVIDENCE, STATUSES, claim, insert, ready, sqlState, useHarness } from './kit.ts';
+import { AT, EVIDENCE, STATUSES, claim, insert, ready, sqlState } from './kit.ts';
 
-const h = useHarness();
+let database: TestDatabase;
+let app: Kysely<DB>;
+let readonly: Kysely<DB>;
+beforeAll(async () => {
+  database = await createTestDatabase();
+  app = createDb({ connectionString: database.urlFor('couli_app'), max: 2 });
+  readonly = createDb({ connectionString: database.urlFor('couli_readonly'), max: 1 });
+});
+afterAll(async () => {
+  if (app) await destroyDb(app);
+  if (readonly) await destroyDb(readonly);
+  if (database) await database.drop();
+});
+const h = {
+  get app() {
+    return app;
+  },
+  get readonly() {
+    return readonly;
+  },
+};
 
 it('[AC-B1-10a#8] J-b claims creation and update times come from the application clock', async () => {
   await ready(h.app);

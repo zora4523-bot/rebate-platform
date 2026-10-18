@@ -1,9 +1,32 @@
-import { expect, it } from 'vitest';
+import { createDb, destroyDb, type DB } from '@couli/db';
+import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
+import type { Kysely } from 'kysely';
+import { afterAll, beforeAll, expect, it } from 'vitest';
 
 import { columns, constraints, indexes } from './catalog.ts';
-import { EVIDENCE, DECISIONS, REASONS, STATUSES, TABLES, ready, useHarness } from './kit.ts';
+import { EVIDENCE, DECISIONS, REASONS, STATUSES, TABLES, ready } from './kit.ts';
 
-const h = useHarness();
+let database: TestDatabase;
+let app: Kysely<DB>;
+let readonly: Kysely<DB>;
+beforeAll(async () => {
+  database = await createTestDatabase();
+  app = createDb({ connectionString: database.urlFor('couli_app'), max: 2 });
+  readonly = createDb({ connectionString: database.urlFor('couli_readonly'), max: 1 });
+});
+afterAll(async () => {
+  if (app) await destroyDb(app);
+  if (readonly) await destroyDb(readonly);
+  if (database) await database.drop();
+});
+const h = {
+  get app() {
+    return app;
+  },
+  get readonly() {
+    return readonly;
+  },
+};
 
 it('[AC-B1-10a#1] claims columns have the exact types, nullability and application defaults', async () => {
   await ready(h.app);

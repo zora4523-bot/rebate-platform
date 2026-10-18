@@ -1,10 +1,9 @@
 // B1-10a / D10-56: storage contract only; all records below are synthetic fixtures.
 import { randomUUID } from 'node:crypto';
 
-import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
+import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
-import { afterAll, beforeAll, expect } from 'vitest';
+import { expect } from 'vitest';
 
 export { sqlState } from '../orders/kit.ts';
 export type Table = 'claims' | 'claim_items';
@@ -32,30 +31,6 @@ export const REASONS = [
   'NOT_IN_POOL',
   'ORDER_INVALID',
 ] as const;
-
-export function useHarness() {
-  let database: TestDatabase;
-  let app: Kysely<DB>;
-  let readonly: Kysely<DB>;
-  beforeAll(async () => {
-    database = await createTestDatabase();
-    app = createDb({ connectionString: database.urlFor('couli_app'), max: 2 });
-    readonly = createDb({ connectionString: database.urlFor('couli_readonly'), max: 1 });
-  });
-  afterAll(async () => {
-    if (app) await destroyDb(app);
-    if (readonly) await destroyDb(readonly);
-    if (database) await database.drop();
-  });
-  return {
-    get app() {
-      return app;
-    },
-    get readonly() {
-      return readonly;
-    },
-  };
-}
 
 // Called inside each test, before any DML or regclass cast of the proposed tables.
 export async function ready(db: Kysely<DB>) {
