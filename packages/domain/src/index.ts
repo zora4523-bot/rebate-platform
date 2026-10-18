@@ -119,6 +119,18 @@ export type {
   CommissionRuleVersionTransitionRow,
 } from './state-machines/commission-rule-version.gen.ts';
 export {
+  ARTICLE_VERSION_EVENTS,
+  ARTICLE_VERSION_STATES,
+  ARTICLE_VERSION_TRANSITIONS,
+  transitionArticleVersion,
+} from './state-machines/article-version.gen.ts';
+export type {
+  ArticleVersionState,
+  ArticleVersionEvent,
+  ArticleVersionTransitionResult,
+  ArticleVersionTransitionRow,
+} from './state-machines/article-version.gen.ts';
+export {
   PAGE_VERSION_EVENTS,
   PAGE_VERSION_STATES,
   PAGE_VERSION_TRANSITIONS,
