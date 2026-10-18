@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createHttpApp, createWorkerContext } from './bootstrap.ts';
+import { MAX_PARAM_LENGTH, createHttpApp, createWorkerContext } from './bootstrap.ts';
 import {
   APP_CONFIG,
   APP_ENTRY,
@@ -69,6 +69,19 @@ describe('createHttpApp', () => {
       const server = app.getHttpAdapter().getInstance();
       expect(server.hasContentTypeParser('multipart/form-data')).toBe(entry === 'admin');
       expect(server.initialConfig.bodyLimit).toBe(1_048_576);
+      await app.close();
+    },
+  );
+
+  it.each(HTTP_ENTRIES)(
+    '[AC-B1-01zze] routes path parameters up to the percent-encoded contract maximum (%s)',
+    async (entry) => {
+      // ProductKey (maxLength 128) is the contract's longest path parameter; fully
+      // percent-encoded it is three times as long, above Fastify's default limit of 100.
+      expect(MAX_PARAM_LENGTH).toBeGreaterThanOrEqual(128 * 3);
+      const app = await createHttpApp(entry, overrides(entry));
+      const server = app.getHttpAdapter().getInstance();
+      expect(server.initialConfig.routerOptions?.maxParamLength).toBe(MAX_PARAM_LENGTH);
       await app.close();
     },
   );
