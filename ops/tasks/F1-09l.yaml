@@ -1,0 +1,22 @@
+id: F1-09l
+repo: rebate-platform
+title: 后台「首页配置」页：页面列表、页面详情（当前全量 / 灰度版本与比例）、版本列表与详情、存草稿（JSON 编辑、服务端校验错误逐条展示、页级 revision CAS 冲突 20902 重读）、发布（gray_percent）、调灰度 / 转全量、回滚、预览 token 与草稿二维码，content.page 权限点裁剪，加载 / 空 / 出错四态
+type: impl
+# 2026-10-18 入账（前端线 f1-frontend-7；#778 误用编号 F1-09i 覆盖了已完成任务，同日改为 F1-09l，原 F1-09i 已原样恢复）。approvals 第 34 条：Claude 实现，Codex 写规则测试与浏览器测试并对抗评审；截图对照画板 AdmHomeConfig、AdmHomeConfigVersions、AdmHomeConfigPublish、AdmHomeConfigQr、AdmHomeNoPerm（design-hifi）。
+# 后端 F1-09f（/admin/v1/pages* 8 个操作）、F1-09g（预览 token）已合并、不再 planned。宿主 05 F1-09；JSON Schema 表单与近似预览、商品池不在本任务（另立），本任务的编辑器是带校验提示的 JSON 编辑。
+# 保存与发布的校验（频道白名单、公告 api 数据源、跳转目标、ExternalPage 主机拦截）全以服务端为准，页面只展示服务端返回的错误，不在前端重写规则。编排 2026-10-18 19:2x「先逻辑后视觉」。
+refs: []
+refs_hash: {}
+deps: [F1-09f, F1-09g, F1-06r, F1-06zb]
+paths:
+  - 'apps/admin/src/pages/home-config/**'
+  - 'apps/admin/src/texts/home-config.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-home-config/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-home-config/**'
+status: todo
