@@ -305,7 +305,10 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
       userId: subject,
       accountId,
       custom,
+      // F1-07c: a reset / enable committed while the union was queried is re-judged after the lock.
+      respectAdminMark: true,
     });
+    if (written.kind === 'awaits_reauthorization') return issue(input, subject);
     if (written.kind === 'blocked') return { kind: 'refused', code: 30153 };
     // F1-07c: banned meanwhile (read after the user lock): the banned user's answer, as above.
     if (written.kind === 'banned') return { kind: 'refused', code: 10001 };

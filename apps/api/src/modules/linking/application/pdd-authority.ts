@@ -33,7 +33,9 @@
 // union_auth_sessions row of the user created at or after it: the open's 30111 auth_jump), neither
 // the authorization page refresh nor the open activates the binding from a filing that is still
 // valid: the open answers 30111 with a new auth_jump (as for no filing), the refresh writes
-// nothing. activatePddBinding itself does not judge it.
+// nothing. activatePddBinding judges it only when asked (respectAdminMark: the refresh and the
+// open pass it), after the user lock, so a reset / enable committed while the union was queried is
+// seen and the stale filing activates nothing; called without it ([AC-F1-07c#17]) it does not.
 // TODO(规划/11 §4.5): BR-ID-22 的 (user, pid) 粒度 — blocked on union_bindings 加 pid 维度的迁移
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
@@ -61,6 +63,11 @@ export type PddActivation =
   | { readonly kind: 'blocked' }
   /** F1-07c: the user is banned (read after the user lock); nothing written. */
   | { readonly kind: 'banned' }
+  /**
+   * F1-07c: asked with respectAdminMark, the binding still waits for the user's own authorization
+   * after the console's reset / enable (pddAwaitsReauthorization, read after the user lock).
+   */
+  | { readonly kind: 'awaits_reauthorization' }
   | { readonly kind: 'retry' };
 
 function uniqueViolation(error: unknown): boolean {
@@ -331,8 +338,8 @@ async function activateOnce(
 /**
  * Writes the user's pdd binding active (the filing is valid). `executor` must be a transaction:
  * each attempt runs under its own savepoint, so a lost unique race undoes only that attempt and
- * the next one reads what won. Returns active (written now or found), blocked or banned (nothing
- * written). The user lock is taken first, before any savepoint, and held by the caller's
+ * the next one reads what won. Returns active (written now or found), blocked, banned or
+ * awaits_reauthorization (nothing written). The user lock is taken first, before any savepoint, and held by the caller's
  * transaction.
  */
 export async function activatePddBinding(
@@ -343,6 +350,11 @@ export async function activatePddBinding(
     readonly userId: string;
     readonly accountId: string;
     readonly custom: string;
+    /**
+     * F1-07c (BR-ID-20): after the user lock, re-judge pddAwaitsReauthorization; when it holds,
+     * nothing is written (`awaits_reauthorization`). The refresh and the open pass true.
+     */
+    readonly respectAdminMark?: boolean;
   },
 ): Promise<Exclude<PddActivation, { readonly kind: 'retry' }>> {
   const { appId, userId, accountId, custom } = input;
@@ -350,6 +362,12 @@ export async function activatePddBinding(
     throw new Error('linking: the pdd binding user does not exist');
   }
   if (await userBannedOn(executor, appId, userId)) return { kind: 'banned' };
+  if (
+    input.respectAdminMark === true &&
+    (await pddAwaitsReauthorization(executor, appId, userId))
+  ) {
+    return { kind: 'awaits_reauthorization' };
+  }
   for (let attempt = 1; ; attempt += 1) {
     let decision: PddActivation;
     await sql`SAVEPOINT pdd_binding_activate`.execute(executor);

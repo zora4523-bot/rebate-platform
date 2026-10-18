@@ -94,10 +94,15 @@ export function createUnionBindingsWithPddQuery(
       const custom = JSON.stringify(identity.custom_parameters);
       await db.transaction().execute(async (trx) => {
         // F1-07c: the console's reset / enable take the same lock; one committed while the query
-        // ran is read here, and the filing then activates nothing.
+        // ran is re-judged by activatePddBinding after it, and the filing then activates nothing.
         if (!(await lockBindingUser(trx, appId, userId))) return;
-        if (await pddAwaitsReauthorization(trx, appId, userId)) return;
-        await activatePddBinding(trx, clock, { appId, userId, accountId, custom });
+        await activatePddBinding(trx, clock, {
+          appId,
+          userId,
+          accountId,
+          custom,
+          respectAdminMark: true,
+        });
       });
     } catch (error) {
       skipped('pdd_refresh_failed', appId, traceId, {
