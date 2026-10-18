@@ -5,7 +5,7 @@
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
 import type { AuditPort } from '../../platform/index.ts';
-import { transitionPageVersion } from '../domain/pages/version-status.ts';
+import { newPageVersionStatus, pageVersionChange } from '../domain/pages/version-status.ts';
 import type {
   PageConfigReads,
   PageConfigStore,
@@ -226,7 +226,7 @@ function writeTx(trx: Kysely<DB>, audit: AuditPort): PageConfigTx {
           page_key: input.key,
           version: input.version,
           sections: sql`${JSON.stringify(input.sections)}::jsonb`,
-          status: 'draft',
+          status: newPageVersionStatus(),
           created_by_admin_id: input.adminId,
           created_at: input.at,
         })
@@ -234,8 +234,11 @@ function writeTx(trx: Kysely<DB>, audit: AuditPort): PageConfigTx {
     },
 
     async setVersionStatus(appId, key, version, change, stamp) {
-      // The store writes no change the table refuses, whatever the caller passed in.
-      const { from, to } = transitionPageVersion(change.from, change.to);
+      // The store writes no change the generated table refuses, whatever the caller passed in.
+      const { from, to } = pageVersionChange(change.from, change.event);
+      if (to !== change.to) {
+        throw new Error('page version: change.to differs from the generated transition');
+      }
       if ((to === 'published') !== (stamp !== null)) {
         throw new Error('page version: publish_at / publisher go with the change to published');
       }

@@ -1,50 +1,70 @@
-// page_versions.status transition table (F1-09f, 编排者裁定 13; 0040_pages.sql: draft /
-// published / rolled_back). Pure: no Nest, no data access, erasable syntax only.
+// page_versions.status (F1-09f, 编排者裁定 13; 9.14): a thin adapter over the generated page
+// version state machine (specs/state-machines/page-version.yaml → @couli/domain
+// transitionPageVersion; events DRAFT_SAVED / PUBLISH / ROLLBACK). It keeps no transition table
+// of its own: every target status comes from the generated transition, and anything the table
+// does not allow (an unknown stored value included) throws. Pure: no Nest, no data access.
 //
-// TODO(规划/11 §4.5): 换用生成的 transition() — blocked on 页面版本状态机 yaml（specs/state-machines/page-version.yaml，另立任务）
-// Until then this function is the single place that says which version status changes are legal;
-// the page config store applies it before its `WHERE status = from` CAS, and the console's publish
-// and rollback reach page_versions.status only through it.
-//
-// - draft → published (publish, gray or full; a version is published once)
-// - published → rolled_back (rollback of the gray or the fully released version)
-// - rolled_back is final; a same-status rewrite is not a transition (going full keeps published)
+// - newPageVersionStatus: the status of a newly saved version row (P1, null → DRAFT_SAVED).
+// - pageVersionChange: the checked change of a stored version's status by PUBLISH or ROLLBACK
+//   (P2, P3); the page config store re-derives it before its `WHERE status = from` CAS.
+import {
+  PAGE_VERSION_STATES,
+  type PageVersionEvent,
+  type PageVersionState,
+  transitionPageVersion,
+} from '@couli/domain';
 
-export type PageVersionStatus = 'draft' | 'published' | 'rolled_back';
+export type PageVersionStatus = PageVersionState;
 
-/** A legal change of page_versions.status, as returned by transitionPageVersion. */
+/** The events that change a stored version's status (DRAFT_SAVED only creates a row). */
+export type PageVersionChangeEvent = Exclude<PageVersionEvent, 'DRAFT_SAVED'>;
+
+/** A legal change of page_versions.status, as returned by pageVersionChange. */
 export interface PageVersionTransition {
   readonly from: PageVersionStatus;
+  readonly event: PageVersionChangeEvent;
   readonly to: PageVersionStatus;
 }
 
-const NEXT: Readonly<Record<PageVersionStatus, readonly PageVersionStatus[]>> = Object.freeze({
-  draft: Object.freeze(['published'] as const),
-  published: Object.freeze(['rolled_back'] as const),
-  rolled_back: Object.freeze([] as const),
-});
-
 export function isPageVersionStatus(value: unknown): value is PageVersionStatus {
-  return value === 'draft' || value === 'published' || value === 'rolled_back';
+  return (PAGE_VERSION_STATES as readonly unknown[]).includes(value);
 }
 
-/** An illegal page version status change (an unknown value included); a bug, not a 20001. */
+/** A change the generated table refuses (an unknown value included); a bug, not a 20001. */
 export class PageVersionTransitionError extends Error {
   readonly from: unknown;
-  readonly to: unknown;
+  readonly event: unknown;
 
-  constructor(from: unknown, to: unknown) {
-    super(`page version: illegal status change ${String(from)} → ${String(to)}`);
+  constructor(from: unknown, event: unknown) {
+    super(`page version: illegal status change ${String(from)} on ${String(event)}`);
     this.name = 'PageVersionTransitionError';
     this.from = from;
-    this.to = to;
+    this.event = event;
   }
 }
 
-/** The checked change from → to; throws PageVersionTransitionError when the table has no such edge. */
-export function transitionPageVersion(from: unknown, to: unknown): PageVersionTransition {
-  if (!isPageVersionStatus(from) || !isPageVersionStatus(to) || !NEXT[from].includes(to)) {
-    throw new PageVersionTransitionError(from, to);
+function next(from: PageVersionStatus | null, event: PageVersionEvent): PageVersionStatus {
+  const result = transitionPageVersion(from, event);
+  if (!result.ok || result.noop) throw new PageVersionTransitionError(from, event);
+  return result.to;
+}
+
+/** The status a newly saved version row is inserted with (P1: null → DRAFT_SAVED). */
+export function newPageVersionStatus(): PageVersionStatus {
+  return next(null, 'DRAFT_SAVED');
+}
+
+/** Whether the generated table has a change of the stored status `from` by `event`. */
+export function canChangePageVersion(from: unknown, event: PageVersionChangeEvent): boolean {
+  if (!isPageVersionStatus(from)) return false;
+  const result = transitionPageVersion(from, event);
+  return result.ok && !result.noop;
+}
+
+/** The checked change of a stored status by `event`; throws PageVersionTransitionError otherwise. */
+export function pageVersionChange(from: unknown, event: unknown): PageVersionTransition {
+  if (!isPageVersionStatus(from) || (event !== 'PUBLISH' && event !== 'ROLLBACK')) {
+    throw new PageVersionTransitionError(from, event);
   }
-  return Object.freeze({ from, to });
+  return Object.freeze({ from, event, to: next(from, event) });
 }

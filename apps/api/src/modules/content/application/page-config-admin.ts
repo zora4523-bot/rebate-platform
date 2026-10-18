@@ -13,7 +13,8 @@ import type { Schema } from '@couli/contracts-ts';
 import type { AuditInput, Clock } from '../../platform/index.ts';
 import {
   type PageVersionTransition,
-  transitionPageVersion,
+  canChangePageVersion,
+  pageVersionChange,
 } from '../domain/pages/version-status.ts';
 
 export type PageView = Schema<'AdminPageConfig'>;
@@ -85,7 +86,7 @@ export interface PageConfigTx extends PageConfigReads {
     at: Date;
   }): Promise<void>;
   /**
-   * The only write of page_versions.status: re-checks `change` against the transition table, then
+   * The only write of page_versions.status: re-derives `change` from the generated transition (from + event), then
    * one UPDATE … SET status = change.to WHERE status = change.from (publish_at and publisher are
    * set with `stamp` when the change is to published). False when no row matched (a CAS miss).
    */
@@ -241,14 +242,16 @@ export class PageConfigAdmin {
   ): Promise<PageView> {
     return this.#write(actor, key, body.expected_revision, async (tx, row) => {
       const target = await tx.versionRow(actor.appId, key, body.version);
-      if (target === undefined || target.status !== 'draft') throw new PageFieldsError(['version']);
+      if (target === undefined || !canChangePageVersion(target.status, 'PUBLISH')) {
+        throw new PageFieldsError(['version']);
+      }
       if (row.grayVersion !== null) throw new PageFieldsError(['version']);
       if (row.currentVersion === null && body.gray_percent !== 100) {
         throw new PageFieldsError(['gray_percent']);
       }
       this.#validate(target.sections, await tx.unionHostBlock(actor.appId));
       const at = this.#clock.now();
-      const change = transitionPageVersion(target.status, 'published');
+      const change = pageVersionChange(target.status, 'PUBLISH');
       const stamp = { publisher: actor.adminId, at };
       if (!(await tx.setVersionStatus(actor.appId, key, body.version, change, stamp))) {
         throw new PageConflictError();
@@ -313,7 +316,7 @@ export class PageConfigAdmin {
       }
       // The gray and the fully released pointers only ever name published versions; the CAS
       // turns a version changed meanwhile into a conflict instead of a blind write.
-      const change = transitionPageVersion('published', 'rolled_back');
+      const change = pageVersionChange('published', 'ROLLBACK');
       if (!(await tx.setVersionStatus(actor.appId, key, body.version, change, null))) {
         throw new PageConflictError();
       }

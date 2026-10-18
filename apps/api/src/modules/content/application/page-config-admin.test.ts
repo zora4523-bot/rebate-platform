@@ -30,7 +30,7 @@ function memory(switchValue: unknown = undefined) {
   let page: (PageRow & { updatedBy: string | null }) | undefined;
   let versions: Version[] = [];
   const audits: AuditInput[] = [];
-  const changes: { version: number; from: string; to: string }[] = [];
+  const changes: { version: number; from: string; event: string; to: string }[] = [];
   let casMisses = 0;
   const view = (): PageView | undefined =>
     page === undefined || versions.length === 0
@@ -91,7 +91,7 @@ function memory(switchValue: unknown = undefined) {
     },
     // Same CAS as the store: the row changes only while its status is still change.from.
     setVersionStatus: async (_a, _k, n, change, stamp) => {
-      changes.push({ version: n, from: change.from, to: change.to });
+      changes.push({ version: n, from: change.from, event: change.event, to: change.to });
       const row = find(n);
       if (row === undefined || row.status !== change.from || casMisses-- > 0) return false;
       Object.assign(row, { status: change.to }, stamp === null ? {} : { publishAt: stamp.at });
@@ -279,7 +279,7 @@ it('[AC-F1-09f] reads: unknown page or version is 30701; list pages by page_size
   expect(await t.admin.version('a1', 'home', 1)).toMatchObject({ version: 1 });
 });
 
-it('[F1-09f 裁定13#4] publish and rollback change status only through the table, by CAS', async () => {
+it('[F1-09f 裁定13#4] publish and rollback change status only through the generated transition, by CAS', async () => {
   const t = setup();
   await t.save(0);
   await t.publish(1, 1);
@@ -288,9 +288,9 @@ it('[F1-09f 裁定13#4] publish and rollback change status only through the tabl
   t.clock.ms += 1000;
   await t.admin.rollback(ACTOR, 'home', { version: 2, expected_revision: 4 });
   expect(t.changes).toEqual([
-    { version: 1, from: 'draft', to: 'published' },
-    { version: 2, from: 'draft', to: 'published' },
-    { version: 2, from: 'published', to: 'rolled_back' },
+    { version: 1, from: 'draft', event: 'PUBLISH', to: 'published' },
+    { version: 2, from: 'draft', event: 'PUBLISH', to: 'published' },
+    { version: 2, from: 'published', event: 'ROLLBACK', to: 'rolled_back' },
   ]);
 });
 
