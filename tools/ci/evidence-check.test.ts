@@ -12,7 +12,7 @@ import {
   headTreeWithoutEvidence,
   redRequirement,
 } from './evidence-check.ts';
-import type { HandoverPolicy } from './evidence-check.ts';
+import type { HandoverPolicy, RedRequirement } from './evidence-check.ts';
 import { loadProtected } from '../guard/lib/protected.ts';
 import { loadRiskMap } from '../guard/lib/risk.ts';
 
@@ -937,7 +937,7 @@ it("[CT-06r] declared red exemptions need the rule-test reviewer's confirmation 
     ...RED,
     declared: { count, tester },
   });
-  const problemsOf = (doc: Evidence, red = declared('codex')): string =>
+  const problemsOf = (doc: Evidence, red: RedRequirement = declared('codex')): string =>
     evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg, red }).join('\n');
   const want =
     'the ledger declares 2 red exemption(s) (red_exempt, CT-06r): the rule-test reviewer (claude) must confirm them in spec_test_review (reviewer claude, last_verdict pass, red_exempt_confirmed true)';
