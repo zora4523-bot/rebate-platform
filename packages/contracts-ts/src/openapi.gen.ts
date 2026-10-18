@@ -790,6 +790,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My inbox messages
+         * @description In-app messages of the logged-in account, newest first (created_at, then message_id, both
+         *     descending; 04 §6.4 站内消息). Each item has the same fields as GET
+         *     /v1/messages/{message_id}: message_id, code, title, body, created_at, read_at (null =
+         *     unread) and route ({route, params} or null). Listing does not change read_at.
+         *     `next_cursor` fetches the next (older) page; null means no more. A malformed or foreign
+         *     cursor is 20001 with data.fields=[cursor]. Messages are written whatever the push
+         *     settings are (GET /v1/me/notification-settings). Not signed and no Idempotency-Key: a
+         *     read of the user's own data, 04 §6 marks neither S nor I.
+         */
+        get: operations["listMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark inbox messages as read
+         * @description The body is exactly one of two forms: `{message_ids: [...]}` (1–100 ids) marks those
+         *     messages, `{all: true}` marks every unread message of the logged-in account. Duplicate ids
+         *     are counted once; ids that do not exist or belong to someone else are skipped silently
+         *     (no error, so the call reveals nothing about other accounts' messages, as 30701 of GET
+         *     /v1/messages/{message_id} does not either). A message already read keeps its read_at.
+         *     Response: `marked_count` is how many messages this call turned from unread to read (0
+         *     when nothing was unread), `unread_count` the account's unread messages left after the
+         *     call (same value as GET /v1/messages/unread-count). A body with both or neither form, an
+         *     empty list, more than 100 ids or `all` other than true is 20001 with data.fields.
+         *     Repeating the call is harmless (idempotent by its effect: the second call marks 0), so no
+         *     Idempotency-Key is required; not signed, as 04 §6 marks neither S nor I. Version gate:
+         *     applied.
+         */
+        post: operations["markMessagesRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/messages/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Number of my unread inbox messages
+         * @description `unread_count` is the number of the logged-in account's messages with read_at null (the
+         *     badge on the message entry). Not signed and no Idempotency-Key: a read of the user's own
+         *     data, 04 §6 marks neither S nor I.
+         */
+        get: operations["getUnreadMessageCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/wallet/summary": {
         parameters: {
             query?: never;
@@ -1360,6 +1440,44 @@ export interface paths {
          *     20001). Version gate: applied.
          */
         delete: operations["resetTip"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/notification-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My push settings
+         * @description Push switches per message category (BR-WATCH-19 ③, 拍板第二批 OPS-16): `service_push`
+         *     (trade and withdrawal messages are both service), `subscription_push` and
+         *     `marketing_push`. MVP opens only the service switch; subscription and marketing are
+         *     reserved and not shown by the client. A switch only affects push: with it off nothing of
+         *     that category is pushed, the in-app message is still written (GET /v1/messages). A user
+         *     who never saved settings gets all three true. PRD v2.1's /v1/notification-prefs is this
+         *     operation (04 §6.1). Not signed and no Idempotency-Key: 04 §6 marks neither S nor I.
+         */
+        get: operations["getNotificationSettings"];
+        /**
+         * Save my push settings
+         * @description Full replacement, like the repository's other PUT operations that save a whole resource:
+         *     the body carries all three switches (`service_push`, `subscription_push`,
+         *     `marketing_push`); a missing or extra field is 20001 with data.fields. The MVP client only
+         *     shows service_push and sends the other two back as read from GET
+         *     /v1/me/notification-settings. Meanings as in GET (BR-WATCH-19 ③, 拍板第二批 OPS-16):
+         *     turning a switch off stops push for that category only, in-app messages are still written.
+         *     The response is the settings as saved. Saving the same values again changes nothing, so no
+         *     Idempotency-Key is required; not signed, as 04 §6 marks neither S nor I. Version gate:
+         *     applied.
+         */
+        put: operations["updateNotificationSettings"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4688,6 +4806,65 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["InboxMessage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        InboxMessageListData: {
+            items: components["schemas"]["InboxMessage"][];
+            next_cursor: string | null;
+        };
+        InboxMessageListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["InboxMessageListData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Exactly one of message_ids (1–100 ids, duplicates counted once) or all=true. */
+        MarkMessagesReadRequest: {
+            message_ids: components["schemas"]["Id"][];
+        } | {
+            /** @enum {boolean} */
+            all: true;
+        };
+        MarkMessagesReadData: {
+            /**
+             * Format: int32
+             * @description Messages this call turned from unread to read.
+             */
+            marked_count: number;
+            /**
+             * Format: int32
+             * @description Unread messages of the account left after the call.
+             */
+            unread_count: number;
+        };
+        MarkMessagesReadResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["MarkMessagesReadData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        UnreadMessageCountData: {
+            /** Format: int32 */
+            unread_count: number;
+        };
+        UnreadMessageCountResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["UnreadMessageCountData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        NotificationSettings: {
+            /** @description Push of service messages (trades and withdrawals); the only switch shown in the MVP. */
+            service_push: boolean;
+            /** @description Push of subscription messages; reserved, not shown in the MVP. */
+            subscription_push: boolean;
+            /** @description Push of marketing messages; reserved, not shown in the MVP. */
+            marketing_push: boolean;
+        };
+        NotificationSettingsResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["NotificationSettings"];
             trace_id: components["schemas"]["TraceId"];
         };
         /**
@@ -8905,6 +9082,186 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    listMessages: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Page size, at most 50 (04 §5). */
+                limit?: components["parameters"]["Limit"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of my messages, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "message_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a80",
+                     *             "code": "WITHDRAW_PAID",
+                     *             "title": "提现已到账",
+                     *             "body": "你的提现已到账",
+                     *             "created_at": "2026-10-02T09:30:00+08:00",
+                     *             "read_at": null,
+                     *             "route": {
+                     *               "route": "WithdrawRecords",
+                     *               "params": {}
+                     *             }
+                     *           },
+                     *           {
+                     *             "message_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a7f",
+                     *             "code": "RISK_STATE_CHANGED",
+                     *             "title": "账号状态变更",
+                     *             "body": "你的账号状态已变更",
+                     *             "created_at": "2026-10-01T20:15:00+08:00",
+                     *             "read_at": "2026-10-01T21:00:00+08:00",
+                     *             "route": null
+                     *           }
+                     *         ],
+                     *         "next_cursor": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["InboxMessageListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    markMessagesRead: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkMessagesReadRequest"];
+            };
+        };
+        responses: {
+            /** @description The messages are read; counts of this call and of what is left. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "marked_count": 1,
+                     *         "unread_count": 3
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["MarkMessagesReadResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getUnreadMessageCount: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The unread count. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "unread_count": 3
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["UnreadMessageCountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     getWalletSummary: {
         parameters: {
             query?: never;
@@ -10341,6 +10698,119 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["EmptyResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getNotificationSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description My push settings (defaults when never saved). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "service_push": true,
+                     *         "subscription_push": true,
+                     *         "marketing_push": true
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["NotificationSettingsResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    updateNotificationSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "service_push": false,
+                 *       "subscription_push": true,
+                 *       "marketing_push": true
+                 *     }
+                 */
+                "application/json": components["schemas"]["NotificationSettings"];
+            };
+        };
+        responses: {
+            /** @description The settings as saved. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "service_push": false,
+                     *         "subscription_push": true,
+                     *         "marketing_push": true
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["NotificationSettingsResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

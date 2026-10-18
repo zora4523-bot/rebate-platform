@@ -143,6 +143,21 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/messages",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/v1/messages/read",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/v1/messages/unread-count",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/v1/wallet/summary",
     "signed": false
   },
@@ -249,6 +264,16 @@ export const CONTRACT_SIGNING_ROUTES = [
   {
     "method": "DELETE",
     "path": "/v1/me/tips/:tip_key",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/v1/me/notification-settings",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/v1/me/notification-settings",
     "signed": false
   },
   {
