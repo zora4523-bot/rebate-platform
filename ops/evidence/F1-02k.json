@@ -1,0 +1,106 @@
+{
+  "task": "F1-02k",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "af1cbce7faae7ce97af433e1c6cfdf9de6f01a25",
+  "red_tests": [
+    "test/spec/db/content/agreements/access.int.test.ts > [AC-F1-02k#16] effective table and column grants match the complete business-role matrix",
+    "test/spec/db/content/agreements/access.int.test.ts > [AC-F1-02k#17] PUBLIC has no table or column grants",
+    "test/spec/db/content/agreements/access.int.test.ts > [AC-F1-02k#18] app inserts and reads; readonly reads the exact immutable publication",
+    "test/spec/db/content/agreements/access.int.test.ts > [AC-F1-02k#19] app and readonly cannot update any column, delete or truncate",
+    "test/spec/db/content/agreements/access.int.test.ts > [AC-F1-02k#20] readonly cannot insert; payout and maint cannot read or insert publications",
+    "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#6] type accepts exactly privacy, agreement and labor_agreement",
+    "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#7] version must be positive; min_version lies in 1..version inclusive",
+    "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#8] non-labor agreements never require resigning, including minimum-version bumps",
+    "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#9] labor requires_resign equals min_version=version; first version must require it",
+    "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#10] digest accepts exactly 64 lowercase hexadecimal characters",
+    "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#11] publication URL must start with lowercase https://",
+    "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#12] every publication requires nonblank legal reviewer and note",
+    "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#13] all mandatory columns reject NULL; publication time and id cannot be omitted",
+    "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#14] uniqueness is app/type/version; other apps, types and versions remain insertable",
+    "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#15] article reference must match both UUID and revision; publisher must exist",
+    "test/spec/db/content/agreements/schema.int.test.ts > [AC-F1-02k#1] exact columns, types, nullability and defaults; no status or body",
+    "test/spec/db/content/agreements/schema.int.test.ts > [AC-F1-02k#2] created_at defaults to transaction time; published_at preserves supplied clock",
+    "test/spec/db/content/agreements/schema.int.test.ts > [AC-F1-02k#3] primary key, tenant/type/version uniqueness and all named checks are validated",
+    "test/spec/db/content/agreements/schema.int.test.ts > [AC-F1-02k#4] named foreign keys retain article revision and publisher identity without cascading",
+    "test/spec/db/content/agreements/schema.int.test.ts > [AC-F1-02k#5] agreements is an ordinary table without user triggers"
+  ],
+  "risk_note": "RV2 (migration 0045, new insert-only table, no writer yet). app.agreements holds agreement versions per app and type (privacy / agreement / labor_agreement): unique (app_id, type, version); named checks for type, version >= 1, 1 <= min_version <= version, labor_agreement requires_resign = (min_version = version) and false for other types, 64-hex text_sha256, https url, non-blank legal confirmer and note; foreign keys to the article version and the publishing admin, no cascade; published_at has no SQL clock default (written from the injected Clock). Grants: couli_app SELECT / INSERT only, couli_readonly SELECT, nothing else, so rows are immutable by privilege. db/schema.sql and db.gen.ts regenerated on the test machine. Two S2 from review (blank check only trims spaces; foreign keys do not pin app_id) are tracked for F1-02p, the first writer. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "af1cbce7faae7ce97af433e1c6cfdf9de6f01a25",
+      "tree": "36bf0414398693a467edf4ba67963c815cce1a2b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T07:56:38Z",
+      "finished_at": "2026-10-18T07:56:44Z",
+      "red_tests": [
+        "test/spec/db/content/agreements/access.int.test.ts > [AC-F1-02k#16] effective table and column grants match the complete business-role matrix",
+        "test/spec/db/content/agreements/access.int.test.ts > [AC-F1-02k#17] PUBLIC has no table or column grants",
+        "test/spec/db/content/agreements/access.int.test.ts > [AC-F1-02k#18] app inserts and reads; readonly reads the exact immutable publication",
+        "test/spec/db/content/agreements/access.int.test.ts > [AC-F1-02k#19] app and readonly cannot update any column, delete or truncate",
+        "test/spec/db/content/agreements/access.int.test.ts > [AC-F1-02k#20] readonly cannot insert; payout and maint cannot read or insert publications",
+        "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#6] type accepts exactly privacy, agreement and labor_agreement",
+        "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#7] version must be positive; min_version lies in 1..version inclusive",
+        "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#8] non-labor agreements never require resigning, including minimum-version bumps",
+        "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#9] labor requires_resign equals min_version=version; first version must require it",
+        "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#10] digest accepts exactly 64 lowercase hexadecimal characters",
+        "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#11] publication URL must start with lowercase https://",
+        "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#12] every publication requires nonblank legal reviewer and note",
+        "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#13] all mandatory columns reject NULL; publication time and id cannot be omitted",
+        "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#14] uniqueness is app/type/version; other apps, types and versions remain insertable",
+        "test/spec/db/content/agreements/constraints.int.test.ts > [AC-F1-02k#15] article reference must match both UUID and revision; publisher must exist",
+        "test/spec/db/content/agreements/schema.int.test.ts > [AC-F1-02k#1] exact columns, types, nullability and defaults; no status or body",
+        "test/spec/db/content/agreements/schema.int.test.ts > [AC-F1-02k#2] created_at defaults to transaction time; published_at preserves supplied clock",
+        "test/spec/db/content/agreements/schema.int.test.ts > [AC-F1-02k#3] primary key, tenant/type/version uniqueness and all named checks are validated",
+        "test/spec/db/content/agreements/schema.int.test.ts > [AC-F1-02k#4] named foreign keys retain article revision and publisher identity without cascading",
+        "test/spec/db/content/agreements/schema.int.test.ts > [AC-F1-02k#5] agreements is an ordinary table without user triggers"
+      ],
+      "expected": [
+        "test/spec/db/content/agreements/access.int.test.ts",
+        "test/spec/db/content/agreements/constraints.int.test.ts",
+        "test/spec/db/content/agreements/schema.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "0b5e22ba0398632d1ef40a7fd55d5da397e8255a75e732569f210db473023e83"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; two S2 tracked in F1-02p followups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass with no findings"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "6ddd85d11df37ebe730ab8679e189dcafb8b84cd",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "bb2392441c53776804db251c9c3ee71dc6012a76",
+    "specs": "e58ab9698a712cff0512d0a5b9f383c334794e71"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
