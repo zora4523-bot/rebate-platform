@@ -1,13 +1,14 @@
-// Page audience facts for GET /v1/pages/{page_key} (task F1-09g; 03 §6.1; BR-INV-23; 编排者默认
-// G1–G4). Only facts the server can read at request time: has_parent, union_authorized, has_order.
+// Page audience facts for GET /v1/pages/{page_key} (tasks F1-09g, F1-09j; 03 §6.1; BR-INV-23;
+// 编排者默认 G1–G4). Only facts the server can read at request time: has_parent, union_authorized, has_order.
 // The reads come from other modules' public read ports, assembled by app.module as
-// PageAudienceReads (content never imports identity / linking / orders). Facts are read per
+// PageAudienceReads (content never imports identity / linking / growth / orders). Facts are read per
 // request and never cached across requests.
 //
 // - union_authorized: taobao or pdd binding `active` (G1). Any other status is not authorized. When
 //   no platform is active and some platform read failed, the fact is unknown (9.12 followup).
 // - has_order: the user's orders in this app, any status (G2).
-// - has_parent: no exported identity read port yet (G3) → unknown unless app.module supplies one.
+// - has_parent: users.parent_id via growth's parent-relation reader (F1-09j; BR-INV-11); app.module
+//   maps "no user row in this app" to false. Read only when a section needs it.
 // - A failed read makes only that fact unknown (null, matching `any` only) and warns (G4).
 import type { Logger } from 'pino';
 import type { AudienceFacts } from '../domain/pages/select/index.ts';
@@ -41,7 +42,10 @@ export interface PageAudienceReads {
   ): Promise<string>;
   /** identity's count of the user's orders in this app, any status. */
   orderCount(appId: string, userId: string): Promise<number>;
-  /** Whether the user has a parent; absent until identity exports a read port. */
+  /**
+   * Whether the user has a parent in this app, from growth's parent-relation read port (F1-09j).
+   * app.module always supplies it; optional only for assemblies that serve no has_parent page.
+   */
   readonly hasParent?: (appId: string, userId: string) => Promise<boolean>;
 }
 
@@ -125,7 +129,6 @@ export function createPageAudienceFacts(deps: PageAudienceFactsDeps): PageAudien
         : Promise.resolve(null);
 
       const readParent = reads.hasParent;
-      // TODO(规划/11 §2.3): has_parent 读 users.parent_id — blocked on identity 导出只读口（G3）
       const parent =
         wants('hasParent') && readParent !== undefined
           ? attempt(() => readParent(appId, userId)).then(

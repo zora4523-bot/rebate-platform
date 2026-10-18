@@ -84,3 +84,42 @@ it('[AC-F1-09g#u7] has_parent is read when a port is supplied', async () => {
   );
   expect(facts.hasParent).toBe(true);
 });
+
+it('[AC-F1-09j#u1] has_parent true / false pass through; a failed parent read is unknown and warns once', async () => {
+  for (const value of [true, false]) {
+    const hasParent = vi.fn(() => Promise.resolve(value));
+    const facts = await createPageAudienceFacts({
+      reads: reads({ hasParent }),
+      logger: logger(),
+    }).facts('a', 'u');
+    expect(facts.hasParent).toBe(value);
+    expect(hasParent).toHaveBeenCalledExactlyOnceWith('a', 'u');
+  }
+  const log = logger();
+  const facts = await createPageAudienceFacts({
+    reads: reads({
+      hasParent: () => Promise.reject(new Error('down')),
+      orderCount: () => Promise.resolve(3),
+    }),
+    logger: log,
+  }).facts('a', 'u');
+  expect(facts).toEqual({ hasParent: null, unionAuthorized: false, hasOrder: true });
+  expect(log.warn).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      event: 'content_page_audience_unavailable',
+      app_id: 'a',
+      fact: 'has_parent',
+    }),
+    expect.any(String),
+  );
+});
+
+it('[AC-F1-09j#u2] has_parent is not read when the page does not need it', async () => {
+  const hasParent = vi.fn(() => Promise.resolve(true));
+  const facts = await createPageAudienceFacts({
+    reads: reads({ hasParent }),
+    logger: logger(),
+  }).facts('a', 'u', new Set(['hasOrder'] as const));
+  expect(facts.hasParent).toBeNull();
+  expect(hasParent).not.toHaveBeenCalled();
+});

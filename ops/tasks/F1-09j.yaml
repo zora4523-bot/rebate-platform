@@ -19,5 +19,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/content/pages-audience-parent/**'
-status: todo
-pr: null
+status: done
+pr: 782

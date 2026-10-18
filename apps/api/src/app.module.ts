@@ -43,7 +43,9 @@ import {
   appendLevelChange,
   createFirstAppLoginReview,
   createInviteBinder,
+  createParentRelationReader,
   createRegistrationInviteBinding,
+  type ParentRelationReader,
 } from './modules/growth/index.ts';
 import {
   IdentityAdminModule,
@@ -482,8 +484,8 @@ function identityModule(): DynamicModule {
 }
 
 /**
- * F1-09g: the reads behind content's page audience facts, over linking's and identity's exported
- * read ports (content imports neither).
+ * F1-09g / F1-09j: the reads behind content's page audience facts, over linking's, identity's and
+ * growth's exported read ports (content imports none of them).
  */
 function pageAudienceReads(
   db: Kysely<Database>,
@@ -501,11 +503,18 @@ function pageAudienceReads(
       pids: { getActivePid: () => Promise.reject(new Error('pages: binding projection only')) },
     }));
   const activity = createInviteBackfillActivityReader(db);
+  // Built on first use, like the union reads above.
+  let parentReader: ParentRelationReader | undefined;
+  const parents = (): ParentRelationReader =>
+    (parentReader ??= createParentRelationReader({ db: db.withSchema('app') }));
   return {
     unionBindingStatus: async (appId, userId, platform) =>
       (await reads().binding(appId, userId, platform)).status,
     orderCount: (appId, userId) => activity.orderCount({ appId, userId }),
-    // TODO(规划/11 §2.3): has_parent 接 identity 的上级只读口 hasParent({appId, userId}) — blocked on identity 导出该读口（F1-09g G3）
+    // F1-09j: growth's current-relation reader (B1-11n). No row in this app → no parent (false);
+    // a read error propagates, and content turns it into an unknown fact with a warn.
+    hasParent: async (appId, userId) =>
+      (await parents().relationOf({ appId, userId }))?.has_parent ?? false,
   };
 }
 
