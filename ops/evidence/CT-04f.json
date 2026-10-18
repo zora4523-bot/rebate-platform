@@ -1,0 +1,116 @@
+{
+  "task": "CT-04f",
+  "spec_ref": "8c91f67e2dc11ad7f50d279cf8103e0f038e5ac8",
+  "spec_commit": "f47b91a157e2f7144f3523ba8170acf133727980",
+  "red_tests": [
+    "test/spec/contracts/order-claims/enums.test.ts > [CT-04f#10] 三个找回枚举均登记 ENUM_BINDINGS，绑定 schema 与枚举源及独立预期一致",
+    "test/spec/contracts/order-claims/enums.test.ts > [CT-04f#11] 响应状态和子项 decision / reject_reason 引用已绑定枚举，子项允许 null",
+    "test/spec/contracts/order-claims/generated.test.ts > [CT-04f#13] post createOrderClaim 已生成鉴权、签名和版本策略，planned 不进入运行时 schema",
+    "test/spec/contracts/order-claims/generated.test.ts > [CT-04f#13] get listOrderClaims 已生成鉴权、签名和版本策略，planned 不进入运行时 schema",
+    "test/spec/contracts/order-claims/generated.test.ts > [CT-04f#14] contracts-ts 生成路径和 post createOrderClaim 的 operation 类型",
+    "test/spec/contracts/order-claims/generated.test.ts > [CT-04f#14] contracts-ts 生成路径和 get listOrderClaims 的 operation 类型",
+    "test/spec/contracts/order-claims/generated.test.ts > [CT-04f#15] contracts-ts 的订单列表类型同步新增可选 boolean 字段",
+    "test/spec/contracts/order-claims/list-entry.test.ts > [CT-04f#12] 订单列表置顶字段可选且仅为 boolean，旧响应 required 保持不变",
+    "test/spec/contracts/order-claims/operations.test.ts > [CT-04f#1] post 的 createOrderClaim 鉴权、签名、幂等和版本门禁完整",
+    "test/spec/contracts/order-claims/operations.test.ts > [CT-04f#1] get 的 listOrderClaims 鉴权、签名、幂等和版本门禁完整",
+    "test/spec/contracts/order-claims/operations.test.ts > [CT-04f#2] POST 使用已登记错误码，30202 / 30203 的 reason 复用原表全集",
+    "test/spec/contracts/order-claims/operations.test.ts > [CT-04f#3] README 的 openapi 条目登记两个新增接口",
+    "test/spec/contracts/order-claims/request.test.ts > [CT-04f#4] 请求仅有三个必填字段，复用平台枚举并约束日期和单号长度",
+    "test/spec/contracts/order-claims/request.test.ts > [CT-04f#5] Ajv2020 strict 接受合法请求及单号长度两端，拒绝缺字段、错日期和扩展字段",
+    "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#6] post createOrderClaim 的用户投影封闭，子项不泄露证据、匹配路径或他人信息",
+    "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#6] get listOrderClaims 的用户投影封闭，子项不泄露证据、匹配路径或他人信息",
+    "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#7] post createOrderClaim 接受全部 claim 状态、待审 null 及全部驳回码，拒绝非法投影",
+    "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#7] get listOrderClaims 接受全部 claim 状态、待审 null 及全部驳回码，拒绝非法投影",
+    "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#8] GET 列表仅含必填 items / next_cursor，支持空页、末页和继续翻页",
+    "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#9] post createOrderClaim 成功信封和响应示例通过 strict schema，POST 示例为证据计算后的状态",
+    "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#9] get listOrderClaims 成功信封和响应示例通过 strict schema，POST 示例为证据计算后的状态"
+  ],
+  "risk_note": "RV1 (contracts). New user-side claim operations createOrderClaim (POST /v1/orders/claims: login, x-signed, Idempotency-Key, min-version gate; error codes only the registered 30201–30206 with data.reason) and listOrderClaims (GET /v1/orders/claims: per-item status and reject reason, share orders excluded), both x-implementation: planned; listOrders gains an optional claim_entry_pinned boolean (D10-54, non-breaking). Generated types and route tables regenerated; conformance ENUM_BINDINGS gains the three claim enums.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f47b91a157e2f7144f3523ba8170acf133727980",
+      "tree": "63828d074ea06bdece6acce0107f8a95a6ddeb1a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T15:39:58Z",
+      "finished_at": "2026-10-18T15:40:03Z",
+      "gate": {
+        "commit": "9ff9a9a63f099d176259f7f63de1f36773a8051f",
+        "clean": true,
+        "script_sha256": "a760318276108244f9664229d4673fceafa5692c68dba5ecdc016a9e4b5cd057"
+      },
+      "red_tests": [
+        "test/spec/contracts/order-claims/enums.test.ts > [CT-04f#10] 三个找回枚举均登记 ENUM_BINDINGS，绑定 schema 与枚举源及独立预期一致",
+        "test/spec/contracts/order-claims/enums.test.ts > [CT-04f#11] 响应状态和子项 decision / reject_reason 引用已绑定枚举，子项允许 null",
+        "test/spec/contracts/order-claims/generated.test.ts > [CT-04f#13] post createOrderClaim 已生成鉴权、签名和版本策略，planned 不进入运行时 schema",
+        "test/spec/contracts/order-claims/generated.test.ts > [CT-04f#13] get listOrderClaims 已生成鉴权、签名和版本策略，planned 不进入运行时 schema",
+        "test/spec/contracts/order-claims/generated.test.ts > [CT-04f#14] contracts-ts 生成路径和 post createOrderClaim 的 operation 类型",
+        "test/spec/contracts/order-claims/generated.test.ts > [CT-04f#14] contracts-ts 生成路径和 get listOrderClaims 的 operation 类型",
+        "test/spec/contracts/order-claims/generated.test.ts > [CT-04f#15] contracts-ts 的订单列表类型同步新增可选 boolean 字段",
+        "test/spec/contracts/order-claims/list-entry.test.ts > [CT-04f#12] 订单列表置顶字段可选且仅为 boolean，旧响应 required 保持不变",
+        "test/spec/contracts/order-claims/operations.test.ts > [CT-04f#1] post 的 createOrderClaim 鉴权、签名、幂等和版本门禁完整",
+        "test/spec/contracts/order-claims/operations.test.ts > [CT-04f#1] get 的 listOrderClaims 鉴权、签名、幂等和版本门禁完整",
+        "test/spec/contracts/order-claims/operations.test.ts > [CT-04f#2] POST 使用已登记错误码，30202 / 30203 的 reason 复用原表全集",
+        "test/spec/contracts/order-claims/operations.test.ts > [CT-04f#3] README 的 openapi 条目登记两个新增接口",
+        "test/spec/contracts/order-claims/request.test.ts > [CT-04f#4] 请求仅有三个必填字段，复用平台枚举并约束日期和单号长度",
+        "test/spec/contracts/order-claims/request.test.ts > [CT-04f#5] Ajv2020 strict 接受合法请求及单号长度两端，拒绝缺字段、错日期和扩展字段",
+        "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#6] post createOrderClaim 的用户投影封闭，子项不泄露证据、匹配路径或他人信息",
+        "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#6] get listOrderClaims 的用户投影封闭，子项不泄露证据、匹配路径或他人信息",
+        "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#7] post createOrderClaim 接受全部 claim 状态、待审 null 及全部驳回码，拒绝非法投影",
+        "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#7] get listOrderClaims 接受全部 claim 状态、待审 null 及全部驳回码，拒绝非法投影",
+        "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#8] GET 列表仅含必填 items / next_cursor，支持空页、末页和继续翻页",
+        "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#9] post createOrderClaim 成功信封和响应示例通过 strict schema，POST 示例为证据计算后的状态",
+        "test/spec/contracts/order-claims/responses.test.ts > [CT-04f#9] get listOrderClaims 成功信封和响应示例通过 strict schema，POST 示例为证据计算后的状态"
+      ],
+      "expected": [
+        "test/spec/contracts/order-claims/enums.test.ts",
+        "test/spec/contracts/order-claims/generated.test.ts",
+        "test/spec/contracts/order-claims/list-entry.test.ts",
+        "test/spec/contracts/order-claims/operations.test.ts",
+        "test/spec/contracts/order-claims/request.test.ts",
+        "test/spec/contracts/order-claims/responses.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2580414cbbab56a24c9caf2dc1036cecad644b511a1cab50325608093cd3c3d7"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass with no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (2 runs, 21 tests). Round 1 fail: two assertions locked x-implementation to planned (S1, the CT-04b lesson); run 2 accepts planned or implemented and makes route-schema presence follow the flag; round 2 pass. One prettier-only test(spec) edit by the orchestrator (D10-55)."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "1763a0a6a9425c3e5a19e5ccc23b2cf8ea71aaf7",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
