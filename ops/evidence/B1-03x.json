@@ -1,0 +1,106 @@
+{
+  "task": "B1-03x",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "21da1193d1a76b1d8492d1fd2a7931500c759e44",
+  "red_tests": [
+    "test/spec/risk/invite-hits/migration.int.test.ts > [AC-B1-03x#7] risk_hits CHECK 接受 invite_relation 和旧值，仍拒绝未知值及 unbind",
+    "test/spec/risk/invite-hits/migration.int.test.ts > [AC-B1-03x#8] 不放宽 risk_judgements.ref_type 或 risk_rules.risk_action",
+    "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id  抛 TypeError，登记规则前也不得发 SQL",
+    "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id inv_08_unknown 抛 TypeError，登记规则前也不得发 SQL",
+    "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id INV_08_SELF 抛 TypeError，登记规则前也不得发 SQL",
+    "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id inv_08_self  抛 TypeError，登记规则前也不得发 SQL",
+    "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id SAME_DEVICE_MULTI_ACCOUNT 抛 TypeError，登记规则前也不得发 SQL",
+    "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id null 抛 TypeError，登记规则前也不得发 SQL",
+    "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id undefined 抛 TypeError，登记规则前也不得发 SQL",
+    "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id 8 抛 TypeError，登记规则前也不得发 SQL",
+    "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#2] inv_08_self 首次命中登记规则并准确写入一行，时间来自 Clock",
+    "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#2] inv_08_descendant 首次命中登记规则并准确写入一行，时间来自 Clock",
+    "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#2] inv_08_same_device 首次命中登记规则并准确写入一行，时间来自 Clock",
+    "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#2] inv_09_same_device 首次命中登记规则并准确写入一行，时间来自 Clock",
+    "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#3] 同 app 同规则再次命中只追加命中，不更新或重复登记已有规则",
+    "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#4] 两个 app 使用同一规则时各自登记，命中不串应用",
+    "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#5] 调用方回滚后规则和命中均不留行，随后可正常重试",
+    "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#6] 同 app 同规则并发首次命中，唯一约束只保留一条规则、两条命中"
+  ],
+  "risk_note": "RV2 (db migration + risk). Migration 0044 widens risk_hits.ref_type CHECK with invite_relation (drop and re-add the same-named constraint; the new check is wider so existing rows hold; lock_timeout / statement_timeout set; risk_judgements and both risk_action CHECKs untouched). risk exports createInviteRelationHitWriter({ clock }).record(trx, input): validates rule_id (inv_08_self / inv_08_descendant / inv_08_same_device / inv_09_same_device), dimension matching the rule, and non-empty fields before any SQL; in the caller's transaction registers the rule row (scene invite_relation, risk_action block) with on conflict do nothing, then inserts one block hit (ref_type invite_relation, ref_id = invitee user_id); time only from the injected clock (ruling E32). No caller yet (growth wires it in later tasks). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "21da1193d1a76b1d8492d1fd2a7931500c759e44",
+      "tree": "4f064bb69106b7faf6cf877a9af83ffaea647307",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T03:51:11Z",
+      "finished_at": "2026-10-18T03:51:22Z",
+      "red_tests": [
+        "test/spec/risk/invite-hits/migration.int.test.ts > [AC-B1-03x#7] risk_hits CHECK 接受 invite_relation 和旧值，仍拒绝未知值及 unbind",
+        "test/spec/risk/invite-hits/migration.int.test.ts > [AC-B1-03x#8] 不放宽 risk_judgements.ref_type 或 risk_rules.risk_action",
+        "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id  抛 TypeError，登记规则前也不得发 SQL",
+        "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id inv_08_unknown 抛 TypeError，登记规则前也不得发 SQL",
+        "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id INV_08_SELF 抛 TypeError，登记规则前也不得发 SQL",
+        "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id inv_08_self  抛 TypeError，登记规则前也不得发 SQL",
+        "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id SAME_DEVICE_MULTI_ACCOUNT 抛 TypeError，登记规则前也不得发 SQL",
+        "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id null 抛 TypeError，登记规则前也不得发 SQL",
+        "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id undefined 抛 TypeError，登记规则前也不得发 SQL",
+        "test/spec/risk/invite-hits/validation.test.ts > [AC-B1-03x#1] 非法 rule_id 8 抛 TypeError，登记规则前也不得发 SQL",
+        "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#2] inv_08_self 首次命中登记规则并准确写入一行，时间来自 Clock",
+        "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#2] inv_08_descendant 首次命中登记规则并准确写入一行，时间来自 Clock",
+        "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#2] inv_08_same_device 首次命中登记规则并准确写入一行，时间来自 Clock",
+        "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#2] inv_09_same_device 首次命中登记规则并准确写入一行，时间来自 Clock",
+        "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#3] 同 app 同规则再次命中只追加命中，不更新或重复登记已有规则",
+        "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#4] 两个 app 使用同一规则时各自登记，命中不串应用",
+        "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#5] 调用方回滚后规则和命中均不留行，随后可正常重试",
+        "test/spec/risk/invite-hits/writer.int.test.ts > [AC-B1-03x#6] 同 app 同规则并发首次命中，唯一约束只保留一条规则、两条命中"
+      ],
+      "expected": [
+        "test/spec/risk/invite-hits/migration.int.test.ts",
+        "test/spec/risk/invite-hits/validation.test.ts",
+        "test/spec/risk/invite-hits/writer.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "7664ae01a1744d94b1b023c204b6d5dcb7d9b3085ff4c144c4011bdb03be6f01"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8598ed977378bc938a6917ccf18eb6734f6ca71d28d8ace599a856315b9a12d6"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (18 tests in 3 files red for the right reason on the test runner) reviewed by a fresh Claude subagent: round 1 pass (two S2 notes taken into the implementation: dimension matches the rule; on conflict for the rule row)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "4b30f96774a35fda101d86970d5db9570efa03ed",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "e474fa3f71e2cedee658b017a439659f7f773dd7",
+    "specs": "e58ab9698a712cff0512d0a5b9f383c334794e71"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
