@@ -665,3 +665,153 @@ it('[CT-06n] a task that may change contracts/openapi.yaml is told which generat
     removeDir(join(root, 'ops', 'tasks', 'X1-09.yaml'));
   }
 });
+
+// CT-06o: over 24 KB, the one-hop references of section 2 shrink to id, title and status.
+
+/** A rule that names `hops` long rules plus one without a bold lead. */
+const bigSpec = (hops: number): ReturnType<typeof memorySpec> => {
+  const ids = Array.from({ length: hops }, (_, i) => `BR-BIG-${String(i + 2).padStart(2, '0')}`);
+  const rows = ids.map(
+    (id, i) => `| ${id} | **被引用的长规则 ${i + 2}**<br>${'长文'.repeat(150)} | 已确认 | 影响面 |`,
+  );
+  return memorySpec({
+    '规划/08_业务规则/01_BIG.md': [
+      '| 编号 | 规则 | 状态 | 影响面 |',
+      '| --- | --- | --- | --- |',
+      `| BR-BIG-01 | **大规则**<br>见 ${ids.join('、')}、BR-BIG-99 | 已确认 | 影响面 |`,
+      ...rows,
+      `| BR-BIG-99 | 没有加粗标题的规则首句写得很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长。第二句不该出现<br>${'尾巴'.repeat(150)} | 默认假设 | 影响面 |`,
+      '',
+      '#### BR-BIG-01 细则 · 大规则',
+      '',
+      '- 状态：已确认',
+      '- 大规则的细则全文',
+      '',
+    ].join('\n'),
+    '规划/10_首个完整流程验收用例.md': CASES,
+  });
+};
+
+/** Writes task `id` on packages/pad/** with an AGENTS.md of `pad` ASCII bytes after its heading. */
+const padTask = (id: string, pad: number): void => {
+  writeFiles(root, {
+    'packages/pad/AGENTS.md': `# pad\n\n${'x'.repeat(pad)}\n`,
+    [`ops/tasks/${id}.yaml`]: taskYaml({
+      id,
+      refs: '[BR-BIG-01]',
+      refs_hash: '\n  BR-BIG-01: aaaa00000000',
+      paths: "\n  - 'packages/pad/**'",
+    }),
+  });
+};
+
+/** Pad bytes that make the first-attempt brief of `id` exactly `target` bytes in the full format. */
+const padFor = (id: string, spec2: ReturnType<typeof memorySpec>, target: number): number => {
+  padTask(id, 1);
+  const out = join(base, 'runs', id, 'measure.md');
+  const size = Buffer.byteLength(
+    readFileSync(generateBrief(id, opts({ spec: spec2, attempt: 1, out })), 'utf8'),
+    'utf8',
+  );
+  return 1 + target - size;
+};
+
+it('[CT-06o] a brief that fits keeps the full one-hop rows byte for byte; one byte over switches to the compact table with the refs still in full', () => {
+  const spec2 = bigSpec(10);
+  try {
+    padTask('X2-01', padFor('X2-01', spec2, MAX_BRIEF_BYTES));
+    const full = readFileSync(generateBrief('X2-01', opts({ spec: spec2, attempt: 1 })), 'utf8');
+    expect(Buffer.byteLength(full, 'utf8')).toBe(MAX_BRIEF_BYTES);
+    expect(full).toContain(
+      `| 编号 | 规则 | 状态 |\n| --- | --- | --- |\n| BR-BIG-02 | **被引用的长规则 2**<br>${'长文'.repeat(150)} | 已确认 |\n`,
+    );
+    expect(full).not.toContain('一跳引用只列标题');
+
+    padTask('X2-01', padFor('X2-01', spec2, MAX_BRIEF_BYTES) + 1);
+    const text = readFileSync(generateBrief('X2-01', opts({ spec: spec2, attempt: 1 })), 'utf8');
+    expect(Buffer.byteLength(text, 'utf8')).toBeLessThan(MAX_BRIEF_BYTES - 8000);
+    const section2 = text.slice(text.indexOf('## 2. '), text.indexOf('## 3. '));
+    // The refs keep their row and their detail in full.
+    expect(section2).toContain('### BR-BIG-01（状态：已确认）');
+    expect(section2).toContain('| BR-BIG-01 | **大规则**<br>见 BR-BIG-02、');
+    expect(section2).toContain(
+      '#### BR-BIG-01 细则 · 大规则\n\n- 状态：已确认\n- 大规则的细则全文',
+    );
+    // The one-hop references: id, bold title (or the first sentence, cut at 40 chars), status.
+    expect(section2).toContain(
+      '### 一跳引用\n\n任务书超过 24KB，一跳引用只列标题；原文见 SPEC_REF 版本的规划/08\n\n| 编号 | 标题 | 状态 |\n| --- | --- | --- |\n| BR-BIG-02 | 被引用的长规则 2 | 已确认 |\n',
+    );
+    expect(section2).toContain('| BR-BIG-11 | 被引用的长规则 11 | 已确认 |\n');
+    expect(section2).toContain(
+      `| BR-BIG-99 | 没有加粗标题的规则首句写得${'很长'.repeat(13)}很… | 默认假设 |\n`,
+    );
+    expect(section2).not.toContain('长文');
+    expect(section2).not.toContain('第二句');
+    expect(section2).not.toContain('影响面');
+    expect(section2).toContain('列名、错误码、枚举值以 `contracts/` 与 `db/schema.sql` 为准');
+  } finally {
+    removeDir(join(root, 'packages', 'pad'));
+  }
+});
+
+it('[CT-06o] a brief still over 24 KB with the compact table is refused, and the refusal says so', () => {
+  const spec2 = bigSpec(10);
+  try {
+    padTask('X2-02', MAX_BRIEF_BYTES);
+    const out = join(base, 'runs', 'X2-02', 'brief.md');
+    expect(() => generateBrief('X2-02', opts({ spec: spec2, attempt: 1 }))).toThrow(
+      /超过上限 24576 字节（24KB）：任务 X2-02 该拆小（规划\/11 §5\.3），没有写出文件（第 2 节一跳引用已改用精简表，只列编号、标题与状态，仍然超限）\n各节字节数：[\s\S]*5\. 必须遵守的仓库规则 2\d{4}；/,
+    );
+    expect(existsSync(out)).toBe(false);
+  } finally {
+    removeDir(join(root, 'packages', 'pad'));
+  }
+});
+
+it(
+  '[CT-06o] on a retry the format is chosen without the failure output, then the failure output gets the room the chosen format leaves',
+  () => {
+    const log = join(base, 'ct06o-log.txt');
+    const lines = Array.from({ length: 200 }, (_, i) => `失败输出 ${i + 1} ${'x'.repeat(80)}`);
+    writeFileSync(log, `${lines.join('\n')}\n`);
+    try {
+      // About 4 KB under the limit without the failure output: the 8 KB tail would pass it, yet
+      // the full format stays and the tail is cut to the room that is left.
+      const spec10 = bigSpec(10);
+      padTask('X2-03', padFor('X2-03', spec10, MAX_BRIEF_BYTES - 4000));
+      updateState('X2-03', { state: 'doing', last_error: log });
+      const kept = readFileSync(generateBrief('X2-03', opts({ spec: spec10, attempt: 2 })), 'utf8');
+      expect(kept).not.toContain('一跳引用只列标题');
+      expect(kept).toContain(
+        `| BR-BIG-02 | **被引用的长规则 2**<br>${'长文'.repeat(150)} | 已确认 |`,
+      );
+      expect(Buffer.byteLength(kept, 'utf8')).toBeLessThanOrEqual(MAX_BRIEF_BYTES);
+      expect(Buffer.byteLength(kept, 'utf8')).toBeGreaterThan(MAX_BRIEF_BYTES - 200);
+      const tail1 = kept.slice(kept.indexOf('## 7.'), kept.indexOf('## 8.'));
+      expect(tail1).toMatch(/（更早的 \d+ 行已截去）/);
+      expect(tail1).toContain('失败输出 200 ');
+
+      // Over the limit without the failure output: the compact table, and the room is the one
+      // the compact brief leaves (about 3 KB with four long hops), so the tail is still cut.
+      const spec4 = bigSpec(4);
+      padTask('X2-04', padFor('X2-04', spec4, MAX_BRIEF_BYTES + 500));
+      updateState('X2-04', { state: 'doing', last_error: log });
+      const compact = readFileSync(
+        generateBrief('X2-04', opts({ spec: spec4, attempt: 2 })),
+        'utf8',
+      );
+      expect(compact).toContain('任务书超过 24KB，一跳引用只列标题；原文见 SPEC_REF 版本的规划/08');
+      expect(compact).toContain('| BR-BIG-05 | 被引用的长规则 5 | 已确认 |');
+      expect(compact).toContain('- 大规则的细则全文');
+      expect(Buffer.byteLength(compact, 'utf8')).toBeLessThanOrEqual(MAX_BRIEF_BYTES);
+      expect(Buffer.byteLength(compact, 'utf8')).toBeGreaterThan(MAX_BRIEF_BYTES - 200);
+      const tail2 = compact.slice(compact.indexOf('## 7.'), compact.indexOf('## 8.'));
+      expect(tail2).toMatch(/（更早的 \d+ 行已截去）/);
+      expect(tail2).toContain('失败输出 200 ');
+      expect(tail2).not.toContain('失败输出 1 ');
+    } finally {
+      removeDir(join(root, 'packages', 'pad'));
+    }
+  },
+  CLI_TIMEOUT,
+);

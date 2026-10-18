@@ -1,0 +1,35 @@
+{
+  "task": "CT-06o",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "ccede0c9a833a9dec5e571bb640b65b29126a9cd",
+  "red_tests": [],
+  "risk_note": "RV2 gate change (tools/ops only; orchestrator ruling A′ of 2026-10-18 09:2x restoring the rule-test review gate for F1-07c / F1-07d instead of carrying their BR as an excerpt). brief.ts decides the layout on the brief without the section 7 failure output: within 24KB the output is byte-identical to before (checked on 40 existing tasks); over it, the one-hop table lists only id, title and status (bold title of the rule cell, else its first sentence cut at 40 characters) with a note that the full text is in 08 at SPEC_REF, while the rules listed in refs keep their full row and detail text, so the trusted review prompt still checks against refs. The failure output is then trimmed for the chosen layout; a brief still over the limit is refused as before. Contract briefs and the banned-term check are unchanged. Measured: F1-07c 32,791 → 14,940 bytes, F1-07d 57,044 → 18,605 bytes. Opus implementation; tester none (guard-change), so no red run. Labelled by the lane orchestrator under approvals #24 (none of the four reserved categories).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "4b30f96774a35fda101d86970d5db9570efa03ed",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "e474fa3f71e2cedee658b017a439659f7f773dd7",
+    "specs": "e58ab9698a712cff0512d0a5b9f383c334794e71"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
