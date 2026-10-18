@@ -311,7 +311,9 @@ export function createAgentStreamRuntime(
     labels: createRunLabels({
       route,
       prompt,
-      modelLabel: async () => '',
+      // The fixed no_model route still needs a nonempty meta.model_label. An empty label
+      // fails frame validation before meta is written or the body/settlement can run.
+      modelLabel: async () => '未调用模型',
       aiLabel: async () => agentText('ai_label'),
     }),
     settings: agentHttpDefaults(),
