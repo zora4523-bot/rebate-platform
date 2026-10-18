@@ -1,0 +1,32 @@
+id: B1-11h
+repo: rebate-platform
+title: 落地页注册并绑定 POST /v1/invites/landing-register（landingRegister）：按 BR-INV-05 固定顺序（10004 → 30408 → 42901 → 30401 → 30401 → 20002 / 20003 → already_registered → 44001 → 建号并绑定），新号同事务写 users（h5_landing、parent_* 、self_bind_used）、relation_change_logs、两条 consent_records；幂等主体 p:<phone_hmac>；去掉该操作的 planned
+type: impl
+# 草稿 2026-10-18（身份与风控线 identity-lane，第二波第三批；计划 couli-runs/IDENTITY-tips/wave2-plan.md §3，调研 wave2-research.md §A.6、§A.8）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-INV-05（顺序、already_registered、短信码核销时机、建号事务）、BR-INV-02（规范化、inviter_unavailable、30401 频控：phone_hmac 与 IP 各自计数）、BR-INV-03（条件更新、source=landing）、BR-ID-32（同 IP 注册上限 landing.ip_register_limit 默认 3、[now−3600s, now] 闭区间、只计落地页建号成功）、BR-ID-04（register_method / registered_channel）、BR-ID-12（同意记录）；契约 landingRegister（CT-15p）。细则合计远超 24KB，refs 置空，由编排者摘入（E13）。
+# 现状（可复用）：建号核心 registration.ts 已支持无设备命令（第 4–5 步跳过，注释写明给落地页）；短信码 verifyAndConsume（B1-02j）；consents 写入；growth 的 B1-11d 绑定核心（30401 计数、inviterUnavailable、appendRelationChange）；B1-11f 首次 App 登录复核已合并（落地页上线前置）；B1-03x risk_hits 端口已合并（落地页新号无设备、无下级，30403 不会出现）；platform 幂等已支持主体 p:<phone_hmac>。
+# 编排已定（E3）：控制器放 identity（建号、短信核销、同意、同 IP 上限都在 identity），契约 tag 为 growth 不影响落点；邀请码前置判定与绑定写入经 growth 端口（app.module 注入，identity 不 import growth）。growth 需补 landing 渠道：建号前的「开关 / 频控（phone_hmac 与 IP）/ 格式 / 邀请人」判定，与建号事务内的条件更新 + appendRelationChange(source=landing, operator=user:<新号 id>, at=Clock)。
+# 规则：邀请码失败不核销短信码；already_registered 在短信码通过之后判，存在非 done 注销账号（cooling / processing，注销表未建前只认 users.status≠'deleted'，TODO blocked on B1-15）即 already_registered、不改任何关系；只有 done（status='deleted'）的视为新号。44001 时短信码已核销、不建号。consent_records agreement 与 privacy 各一条（version=当前 legal.*.version、channel=h5_landing、accepted=true、user 级）。不签发令牌、不采集设备。日志不含手机号、IP、邀请码。
+# 幂等：3xxxx（30401 / 30408）存结果回放、重放不再计 30401；already_registered 与 registered 是 200 成功同样存；42901、2xxxx、44001、5xxxx 不存（platform 现有口径）。
+# 模型：Opus 5.5 高推理（effort high）——归属（建号即绑定上级）+ 无签名公网入口。契约与生成物（含 CT-06n 要求的三份路由表）写进 paths（先例 B1-11e）。测试标题 AC-B1-11h#n（E14）。
+refs: []
+refs_hash: {}
+deps: [B1-11g, B1-11d, B1-11f, B1-03x, CT-15p]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/growth/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/growth/landing-register/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/growth/landing-register/**'
+status: todo

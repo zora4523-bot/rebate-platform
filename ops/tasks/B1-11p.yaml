@@ -1,0 +1,24 @@
+id: B1-11p
+repo: rebate-platform
+title: 补填条件接通找回申请：identity 的补填活动读取器 hasClaims 改为读 app.claims（本人提交过任一状态的找回申请即 true），补填接口 POST /v1/me/inviter 有找回申请 → 30409、GET /v1/me 的 invite_backfill.eligible=false 由此生效；补「真实找回申请行经 HTTP 回 30409」的规则测试
+type: impl
+# 草稿 2026-10-18（身份与风控线 identity-lane；跟进 couli-runs/B1-11e/followups.md「找回申请 → 30409 的真实入口用例无法写，B1-10 落地时须补」）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-INV-07（无任何找回申请，含任意状态；例「用户提交过找回申请（submitted，订单仍在未归因池）→ 30409」）、BR-INV-02 backfill 顺序（30409 在 30404 之后、格式之前）。
+# 为什么不是 test-change：主干 identity infra/me-reads.ts 的 createInviteBackfillActivityReader.hasClaims 仍恒 false（TODO blocked on B1-10），只补测试会红；须先接读取器。新用例是新增规则测试（新目录，保护路径第一类只增不改，不动 B1-11e 冻结的 test/spec/growth/backfill/**；其 assembly.int.test.ts:92 的 TODO 注释留着，不改冻结文件）。
+# 现状：B1-10a（#775，迁移 0046）已建 app.claims（user_id = 申请人，status 六值，couli_app 有 SELECT）；同一读取器已供 GET /v1/me（B1-02z）与 growth 绑定核心（B1-11d，经 app.module 绑到调用方事务）。读取口径照 countOrders 先例（identity 读 orders 表）：EXISTS app.claims WHERE app_id、user_id，不看状态。
+# 范围外：app.module.ts accountAssets.hasClaims（并号条件，TODO blocked on B1-10）口径属 BR-ID 并号规则，不在本任务（见 report 待裁定）。
+# 模型：Opus 5.5。测试标题 AC-B1-11p#n。规则测试可 import test/spec/growth/backfill/http-kit.ts（只读引用，不改）。
+refs: []
+refs_hash: {}
+deps: [B1-10a, B1-11e]
+paths:
+  - 'apps/api/src/modules/identity/infra/me-reads.ts'
+  - 'apps/api/src/modules/identity/infra/me-reads.test.ts'
+test_paths:
+  - 'test/spec/growth/backfill-claims/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/growth/backfill-claims/**'
+status: todo

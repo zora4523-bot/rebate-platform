@@ -1,0 +1,25 @@
+id: B1-13g
+repo: rebate-platform
+title: 收款账号核验记录的后台接管与复核：worker 进程内定时循环——reserved 超过在途租约 → unknown（记 unknown_at）；unknown 按原 vendor_request_id 查询（不重发），一致 matched / 不一致 mismatched / 供应商答无此请求 expired_unresolved；自 unknown_at 起超过复核期限 → expired_unresolved 并告警；只改核验记录，不写收款账号、不退额度
+type: impl
+# 草稿 2026-10-18（身份与风控线 identity-lane，第二波第三批；计划 couli-runs/IDENTITY-tips/wave2-plan.md §3，调研 wave2-research.md §B.6）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-WDR-02 细则「核验次数上限」的「在途租约」「结果未知的复核」「复核的终点」「核验结果与保存分开」与例（预占后进程中断、跨日、结果迟到）；配置 withdraw.payout_account_verify_inflight_timeout_sec（默认 60）、withdraw.payout_account_verify_recheck_minutes（默认 30）。细则远超 24KB，refs 置空，由编排者摘入（E13）。
+# 现状：接管 / 复核的公共函数与 BankCardVerifierPort.query 由 B1-13f 建；本任务只加定时驱动与装配。供应商未注入（staging / prod）时无从查询，到期直接记 expired_unresolved（08 原文）。
+# 做法：仿 B1-03u（startRiskScanHeal）——worker 入口经 app.module 装配、entry.ts 服务启动后起循环、停机先停；多实例用 PG advisory lock 或逐行条件更新（WHERE status 未变、row_version）防重复处理，实现定并写进文件头；不新增 pg-boss 队列（不改受保护的队列契约测试）。每条状态更新与读到的旧状态做条件更新，和请求内复核并发时只一方生效。
+# 告警：notification 未接运营告警通道，expired_unresolved 先记一行 pino error（字段：用户 ID、核验日期、vendor_request_id；不含卡号、姓名、证件号），TODO(规划/11 §2.3) 运营告警 blocked on 告警通道（先例 B3-03h 以日志代替指标）。
+# 模型：Opus 5.5。测试标题 AC-B1-13g#n。
+refs: []
+refs_hash: {}
+deps: [B1-13f, B1-03u]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/identity/payout-verify-recheck/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/payout-verify-recheck/**'
+status: todo

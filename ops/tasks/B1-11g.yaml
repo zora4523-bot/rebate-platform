@@ -1,0 +1,33 @@
+id: B1-11g
+repo: rebate-platform
+title: 落地页发码 POST /v1/landing/sms-codes（sendLandingSmsCode）：复用 identity 发码核心（purpose=login），按 BR-ID-32 去掉签名、设备与人机验证三步，判定顺序 20001 → 44001 → 42901（同 IP 两项与手机号频控）；成功或结果未知回 SendSmsCodeResponse；去掉该操作的 planned
+type: impl
+# 草稿 2026-10-18（身份与风控线 identity-lane，第二波第三批；计划 couli-runs/IDENTITY-tips/wave2-plan.md §3，调研 wave2-research.md §A.6）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-ID-32（落地页两接口的身份与风控参数：不签名、不要求 X-Device-Id、不要求人机验证；发码按 BR-ID-05 判定，只是没有签名与设备两步）、BR-ID-05（验证码规则、手机号规范化、同 IP 两项与手机号频控）、BR-INV-05（落地页流程）；契约 sendLandingSmsCode（CT-15p）。BR-ID-32 单条即远超 24KB，refs 置空，由编排者摘入（E13）。
+# 现状：identity application/sms-codes.ts send() 已按 BR-ID-05 实现（规范化 → 前缀黑名单 → phoneBlocklist → captcha → deviceQuota → 手机号额度 → 发送）；sms-risk-ports.ts 的 deviceQuota 按 (app_id, device_id) 取设备哈希，「无客户端 IP 只跳过 IP 项」，但没有「无设备只判 IP 项」的分支；fake-sms 只在 local / test 注入。
+# 范围：控制器放 identity/http/public（与 sendSmsCode 同模块，路由 x-auth none、无令牌）；purpose 固定 login，不收请求体 purpose；captcha 插入点不判（BR-ID-32）；42901 只取同 IP 两项与手机号额度，不取设备项（若须改 risk 的 SmsRisk 加「仅 IP」入口，限 paths 所列 risk 文件）；验证码生成、作废前码、发送结果未知计为已发全部复用现有核心，不复写。
+# 日志不含手机号、验证码、IP（BR-ID-33）。不签发任何令牌；版本门 x-min-version-gate false（BR-ID-01 细则「不判定」）。
+# 契约与生成物（openapi.yaml 去 planned；openapi.gen.ts、route-schemas.gen.ts 与三份路由表按 CT-06n 一并列入，pnpm codegen 重生成，不手改）写进 paths（Claude 实现，先例 B1-11e）。
+# 模型：Opus 5.5。测试标题 AC-B1-11g#n（E14）。与 B1-11h、B1-11k、B1-13e 同改 identity/**，按 deps 或后合并者变基。
+refs: []
+refs_hash: {}
+deps: [CT-15p, B1-03g]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/risk/application/sms-risk.ts'
+  - 'apps/api/src/modules/risk/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/identity/landing-sms/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/landing-sms/**'
+status: todo
