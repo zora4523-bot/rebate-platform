@@ -4,6 +4,7 @@ title: 剪贴板自动识别功能同意 clipboard_auto_import：迁移给 conse
 type: impl
 # 草稿 2026-10-18（身份与风控线 identity-lane；编排 11:4x 提醒优先）。依据：08 BR-ID-12 细则（clipboard_auto_import 设备级、不参与 login_merge、version 为 config.clipboard.consent_version 的字符串）、BR-ID-13（撤回隐私同意的设备主体先例）、BR-ID-16；04 §3.2、§6.1。契约由 CT-15s 先合并。
 # 编排已定（E33）：不改 version 列类型（整数，存 0 占位），新增 version_label 承载字符串版本；读取当前状态按 (device_id, type) 取 server_at 最新一行；login_merge 跳过该类型；版本门（BR-ID-01 conditional）照现有 recordConsent 规则。迁移号落地时取主干最大号 + 1（notices 登记）；编排在测试机重生成 db/schema.sql 与 db.gen.ts。模型 Opus 5.5。
+# 2026-10-18 补 paths：处理函数内校验设备签名需 risk 导出不受 x-signed 路由限制的单请求校验（createSignatureCheck 复用它），并由 app.module 的原文缓冲 bufferWhen 纳入 recordConsent（签名按原始字节计算，编排定不用重新序列化）。
 refs: []
 refs_hash: {}
 deps: [CT-15s]
@@ -12,6 +13,10 @@ paths:
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
   - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/risk/application/signature-check.ts'
+  - 'apps/api/src/modules/risk/application/signature-check.test.ts'
+  - 'apps/api/src/modules/risk/index.ts'
+  - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/identity/consents-clipboard/**'
 impl: claude
