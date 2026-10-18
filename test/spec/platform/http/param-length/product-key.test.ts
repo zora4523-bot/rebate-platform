@@ -15,14 +15,17 @@ afterEach(async () => {
 });
 
 function productKey(length: number): string {
-  return `tb:${'x'.repeat(length - 3)}`;
+  // A 128-character key needs a three-letter prefix: stable_id is limited to 124.
+  const prefix = length === 128 ? 'pdd' : 'tb';
+  return `${prefix}:${'x'.repeat(length - prefix.length - 1)}`;
 }
 
 function request(key: string, encoded: boolean) {
   const segment = encoded ? encodeURIComponent(key) : key;
+  const platform = key.startsWith('pdd:') ? 'pdd' : 'taobao';
   return {
     method: 'GET' as const,
-    url: `/v1/products/${segment}/price-trend?platform=taobao`,
+    url: `/v1/products/${segment}/price-trend?platform=${platform}`,
     headers,
   };
 }
