@@ -62,7 +62,18 @@ export function createInviteBackfillActivityReader(db: Kysely<DB>): InviteBackfi
         .executeTakeFirstOrThrow();
       return Number(row.count);
     },
-    // TODO(规划/11 §2.3): 找回申请任意状态读取 — blocked on B1-10 找回申请
-    hasClaims: () => Promise.resolve(false),
+    // BR-INV-07 (c): a recovery claim of any status the user filed in this app disqualifies the
+    // backfill. Runs on the handle it was given (the caller's transaction), never a second one.
+    async hasClaims(subject) {
+      const row = await db
+        .withSchema('app')
+        .selectFrom('claims')
+        .select('id')
+        .where('app_id', '=', subject.appId)
+        .where('user_id', '=', subject.userId)
+        .limit(1)
+        .executeTakeFirst();
+      return row !== undefined;
+    },
   };
 }

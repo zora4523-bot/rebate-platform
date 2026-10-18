@@ -1,0 +1,91 @@
+{
+  "task": "B1-11p",
+  "spec_ref": "e89cfee3cb807072888b36482b8f26035b1d5565",
+  "spec_commit": "0c2c0abbd4cb58ea9890a7f7a6553ef3cff623f7",
+  "red_tests": [
+    "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 submitted 真实申请时 HTTP 回 30409 且关系、日志零写入",
+    "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 auto_matched 真实申请时 HTTP 回 30409 且关系、日志零写入",
+    "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 manual_review 真实申请时 HTTP 回 30409 且关系、日志零写入",
+    "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 approved 真实申请时 HTTP 回 30409 且关系、日志零写入",
+    "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 rejected 真实申请时 HTTP 回 30409 且关系、日志零写入",
+    "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 cancelled 真实申请时 HTTP 回 30409 且关系、日志零写入",
+    "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#3] hasClaims 同时限定 app_id 与 user_id，且读取提交后最新状态",
+    "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 submitted 申请不影响本人，本人提交后 eligible=false",
+    "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 auto_matched 申请不影响本人，本人提交后 eligible=false",
+    "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 manual_review 申请不影响本人，本人提交后 eligible=false",
+    "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 approved 申请不影响本人，本人提交后 eligible=false",
+    "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 rejected 申请不影响本人，本人提交后 eligible=false",
+    "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 cancelled 申请不影响本人，本人提交后 eligible=false"
+  ],
+  "risk_note": "RV1 (identity read port feeding growth's invite backfill). The backfill activity reader's hasClaims now reads app.claims (B1-10a): any claim of this user in this app, any status, makes POST /v1/me/inviter answer 30409 (BR-INV-07 (c)) before any relation write and GET /v1/me report backfill not eligible; one limit-1 query scoped by app_id and user_id on the caller's connection (the backfill transaction), no status filter, no clock. The account-merge condition accountAssets.hasClaims is unchanged (E43, separate follow-up). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0c2c0abbd4cb58ea9890a7f7a6553ef3cff623f7",
+      "tree": "e7a3dc3cfcdd7c3b8d57e8681d0a9c52832f0138",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T14:24:57Z",
+      "finished_at": "2026-10-18T14:25:07Z",
+      "red_tests": [
+        "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 submitted 真实申请时 HTTP 回 30409 且关系、日志零写入",
+        "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 auto_matched 真实申请时 HTTP 回 30409 且关系、日志零写入",
+        "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 manual_review 真实申请时 HTTP 回 30409 且关系、日志零写入",
+        "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 approved 真实申请时 HTTP 回 30409 且关系、日志零写入",
+        "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 rejected 真实申请时 HTTP 回 30409 且关系、日志零写入",
+        "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#1] 本人无申请可绑定；本人有 cancelled 真实申请时 HTTP 回 30409 且关系、日志零写入",
+        "test/spec/growth/backfill-claims/http.int.test.ts > [AC-B1-11p#3] hasClaims 同时限定 app_id 与 user_id，且读取提交后最新状态",
+        "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 submitted 申请不影响本人，本人提交后 eligible=false",
+        "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 auto_matched 申请不影响本人，本人提交后 eligible=false",
+        "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 manual_review 申请不影响本人，本人提交后 eligible=false",
+        "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 approved 申请不影响本人，本人提交后 eligible=false",
+        "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 rejected 申请不影响本人，本人提交后 eligible=false",
+        "test/spec/growth/backfill-claims/me.int.test.ts > [AC-B1-11p#2] GET /v1/me：其他人的 cancelled 申请不影响本人，本人提交后 eligible=false"
+      ],
+      "expected": [
+        "test/spec/growth/backfill-claims/http.int.test.ts",
+        "test/spec/growth/backfill-claims/me.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "35cdff69953e26489ebd5ef91b05f2949dab5817d37063f6476966993be971ce"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (13 tests in 2 files red for the right reason on the test runner) reviewed by a fresh Claude subagent: round 1 pass, 0 findings"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "51346599b15b63e97d0b091cddae780a5c7f1e6c",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
