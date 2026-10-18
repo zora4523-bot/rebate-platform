@@ -136,8 +136,11 @@ function agentRequests() {
     'x-device-id': randomUUID(),
   };
   const headers = { 'x-app-id': 'couli', ...client, 'content-type': 'application/json' };
+  // Orchestrator mechanical fix (2026-10-18): a body-less POST carries no Content-Type
+  // (Fastify answers an empty application/json body with 400 before any handler).
+  const bare = { 'x-app-id': 'couli', ...client };
   return [
-    { method: 'POST', url: '/v1/agent/sessions', headers },
+    { method: 'POST', url: '/v1/agent/sessions', headers: bare },
     {
       method: 'GET',
       url: '/v1/agent/sessions/current',
@@ -149,7 +152,7 @@ function agentRequests() {
       headers,
       payload: { client_msg_id: randomUUID(), text: '提现记录在哪看' },
     },
-    { method: 'POST', url: `/v1/agent/runs/${randomUUID()}/cancel`, headers },
+    { method: 'POST', url: `/v1/agent/runs/${randomUUID()}/cancel`, headers: bare },
   ];
 }
 
