@@ -1890,6 +1890,73 @@ paths:
           $ref: '#/components/responses/ClientError'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /v1/agreements:
+    get:
+      operationId: getAgreements
+      tags:
+        - content
+      summary: Current privacy policy and user agreement
+      description: |
+        The currently effective version of the privacy policy and of the user agreement (04 §6.2
+        agreements; the versions match legal.privacy.version and legal.agreement.version of GET
+        /v1/config). Each carries `min_version` (re-consent starts below it, BR-ID-12), the
+        article holding its text (`article_id`, `article_version`, readable with GET
+        /v1/articles/{article_id}?version=), the lower-case hex sha256 of that text, the address of
+        the full text and when it was published. A type never published is null. The labor
+        agreement is not listed here; it is read with GET /v1/me/labor-agreement (BR-WDR-31).
+        Readable anonymously in basic mode, without a device id (BR-ID-11 细则).
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes: []
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: The current privacy policy and user agreement.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgreementsResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  privacy:
+                    type: privacy
+                    version: 3
+                    min_version: 2
+                    article_id: 0199a3b4-0000-7000-8000-000000000001
+                    article_version: 3
+                    text_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+                    url: https://cdn.example.test/legal/privacy-v3.html
+                    published_at: '2026-10-01T09:00:00+08:00'
+                  agreement:
+                    type: agreement
+                    version: 2
+                    min_version: 2
+                    article_id: 0199a3b4-0000-7000-8000-000000000002
+                    article_version: 2
+                    text_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+                    url: https://cdn.example.test/legal/agreement-v2.html
+                    published_at: '2026-10-01T09:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /v1/articles:
     get:
       operationId: listArticles
@@ -9051,6 +9118,264 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/agreements:
+    get:
+      operationId: adminListAgreements
+      tags:
+        - admin-content
+      summary: Published versions of the privacy policy, user agreement and labor agreement
+      description: |
+        Permission point `content.agreement` (04 §11.2; read only, no step-up). Every published
+        version, newest first (by published_at), page by page (`page`, `page_size` ≤ 200),
+        optionally of one `type`; without the text (read one version for its title and body).
+        Published versions never change and are never deleted (04 §6.2).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - name: type
+          in: query
+          required: false
+          description: Only versions of this type; absent = all three types.
+          schema:
+            $ref: '#/components/schemas/AgreementType'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of published versions, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAgreementVersionListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - type: labor_agreement
+                      version: 2
+                      min_version: 2
+                      requires_resign: true
+                      article_id: 0199a3b4-0000-7000-8000-000000000003
+                      article_version: 2
+                      text_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+                      url: https://cdn.example.test/legal/labor-agreement-v2.html
+                      legal_confirmed_by: legal-zhang
+                      legal_confirm_note: 劳务协议第 2 版需重签
+                      published_at: '2026-10-02T09:00:00+08:00'
+                      published_by: 0199a3b4-0000-7000-8000-00000000000a
+                  page: 1
+                  page_size: 20
+                  total: 1
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/agreements/{type}/versions:
+    post:
+      operationId: adminPublishAgreementVersion
+      tags:
+        - admin-content
+      summary: Publish a new version of an agreement
+      description: |
+        Permission point `content.agreement` (04 §11.2); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Step-up: totp tier for every publish (without a
+        valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`; 04 §11.2 动态码, OPS-14).
+        The version number is the type's current newest version + 1 (1 for the first), set by the
+        server. `title` and `body` (tiptap JSON as a string, nodes and marks within the agreement
+        body whitelist) are the text; `min_version` is where re-consent (privacy, agreement,
+        BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts; `legal_confirmed_by`,
+        `legal_confirm_note` and `legal_confirmed_on` record the legal confirmation (OPS-14,
+        BR-ID-12). A failed check is 20001 with `data.fields` naming the field: min_version below
+        the current version's min_version or above the new version, requires_resign not as the
+        publish rules require for the type and min_version, a legal confirmation field missing or
+        blank, or a body outside the whitelist. CAS: `expected_version` is the type's newest
+        version as the console showed it (0 when none is published yet); a mismatch → 20902 with
+        `data.resource=agreement`, refresh and retry (04 §6.6). In one transaction the server
+        inserts the agreement article (category agreement) and the agreements row, and for
+        privacy and agreement also writes legal.<type>.version (privacy also
+        legal.privacy.min_version, 04 §10.1). Writes an audit record with the legal confirmer,
+        the confirmation date and min_version and requires_resign before and after (BR-ID-12).
+        Published versions are never changed or deleted. The response is the new version. No
+        Idempotency-Key (04 §6.6; the CAS keeps a retry from publishing twice).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AgreementTypePath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAgreementPublishRequest'
+            example:
+              title: 劳务协议
+              body: '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"协议正文"}]}]}'
+              min_version: 3
+              requires_resign: true
+              legal_confirmed_by: legal-zhang
+              legal_confirm_note: 劳务协议第 3 版需重签
+              legal_confirmed_on: '2026-10-17'
+              expected_version: 2
+      responses:
+        '200':
+          description: The new version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAgreementVersionResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  type: labor_agreement
+                  version: 3
+                  min_version: 3
+                  requires_resign: true
+                  article_id: 0199a3b4-0000-7000-8000-000000000004
+                  article_version: 3
+                  text_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+                  url: https://cdn.example.test/legal/labor-agreement-v3.html
+                  legal_confirmed_by: legal-zhang
+                  legal_confirm_note: 劳务协议第 3 版需重签
+                  published_at: '2026-10-17T10:00:00+08:00'
+                  published_by: 0199a3b4-0000-7000-8000-00000000000a
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not published (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                minVersionInvalid:
+                  $ref: '#/components/examples/AdminAgreementMinVersionInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminAgreementConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/agreements/{type}/versions/{version}:
+    get:
+      operationId: adminGetAgreementVersion
+      tags:
+        - admin-content
+      summary: One published version of an agreement with its text
+      description: |
+        Permission point `content.agreement` (04 §11.2; read only, no step-up). One published
+        version with the title and body of its article. A version the type does not have → 30701.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AgreementTypePath'
+        - $ref: '#/components/parameters/AgreementVersionPath'
+      responses:
+        '200':
+          description: The version with its text.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAgreementVersionDetailResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  type: privacy
+                  version: 3
+                  min_version: 2
+                  requires_resign: false
+                  article_id: 0199a3b4-0000-7000-8000-000000000001
+                  article_version: 3
+                  text_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+                  url: https://cdn.example.test/legal/privacy-v3.html
+                  legal_confirmed_by: legal-zhang
+                  legal_confirm_note: 隐私政策第 3 版，第 2 版起需重新同意
+                  published_at: '2026-10-01T09:00:00+08:00'
+                  published_by: 0199a3b4-0000-7000-8000-00000000000a
+                  title: 隐私政策
+                  body: '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"政策正文"}]}]}'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notFound:
+                  $ref: '#/components/examples/AdminAgreementNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/kill-switches:
     get:
       operationId: adminListKillSwitches
@@ -10664,6 +10989,22 @@ components:
         type: integer
         format: int32
         minimum: 1
+    AgreementTypePath:
+      name: type
+      in: path
+      required: true
+      description: Agreement type (privacy, agreement or labor_agreement); another value → 20001 with data.fields=[type].
+      schema:
+        $ref: '#/components/schemas/AgreementType'
+    AgreementVersionPath:
+      name: version
+      in: path
+      required: true
+      description: Version of the agreement, counted per type from 1.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
     PageKeyPath:
       name: page_key
       in: path
@@ -11294,6 +11635,29 @@ components:
         msg: 状态已变化，请刷新后重试
         data:
           resource: platform_icon
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAgreementNotFound:
+      summary: 30701 the agreement version does not exist
+      value:
+        code: 30701
+        msg: 内容不存在
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAgreementMinVersionInvalid:
+      summary: 20001 min_version below the current one or above the new version
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - min_version
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAgreementConflict:
+      summary: 20902 another version of the type was published meanwhile
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: agreement
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminPageConfigNotFound:
       summary: 30701 the page (or the version read) does not exist
@@ -14398,6 +14762,94 @@ components:
         agreed:
           type: boolean
           description: Must be true; the server returns 20001 data.fields=[agreed] otherwise.
+    AgreementType:
+      type: string
+      description: Agreement type (04 §6.2 agreements.type).
+      enum:
+        - privacy
+        - agreement
+        - labor_agreement
+    PublicAgreement:
+      type: object
+      description: The currently effective version of the privacy policy or the user agreement (04 §6.2).
+      additionalProperties: false
+      required:
+        - type
+        - version
+        - min_version
+        - article_id
+        - article_version
+        - text_sha256
+        - url
+        - published_at
+      properties:
+        type:
+          type: string
+          enum:
+            - privacy
+            - agreement
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Currently effective version.
+        min_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Consent to a version below this one must be given again (BR-ID-12).
+        article_id:
+          $ref: '#/components/schemas/Id'
+        article_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Version of the article holding the text (GET /v1/articles/{article_id}?version=).
+        text_sha256:
+          type: string
+          description: Lower-case hex sha256 of the text.
+          pattern: '^[0-9a-f]{64}$'
+        url:
+          type: string
+          format: uri
+          description: Address of the full text of this version.
+        published_at:
+          type: string
+          format: date-time
+    AgreementsData:
+      type: object
+      additionalProperties: false
+      required:
+        - privacy
+        - agreement
+      properties:
+        privacy:
+          description: The current privacy policy; null when never published.
+          anyOf:
+            - $ref: '#/components/schemas/PublicAgreement'
+            - type: 'null'
+        agreement:
+          description: The current user agreement; null when never published.
+          anyOf:
+            - $ref: '#/components/schemas/PublicAgreement'
+            - type: 'null'
+    AgreementsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AgreementsData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
     ArticleCategory:
       type: string
       description: Article category (04 §6.2：帮助、规则、公告、协议; codes defined here, no enums/ entry yet).
@@ -18526,6 +18978,266 @@ components:
           $ref: '#/components/schemas/AdminPageConfigVersion'
         trace_id:
           $ref: '#/components/schemas/TraceId'
+    AdminAgreementVersion:
+      type: object
+      description: One published agreement version (04 §6.2 agreements); never changed after publishing.
+      additionalProperties: false
+      required:
+        - type
+        - version
+        - min_version
+        - requires_resign
+        - article_id
+        - article_version
+        - text_sha256
+        - url
+        - legal_confirmed_by
+        - legal_confirm_note
+        - published_at
+        - published_by
+      properties:
+        type:
+          $ref: '#/components/schemas/AgreementType'
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        min_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Where re-consent (privacy, agreement, BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts.
+        requires_resign:
+          type: boolean
+          description: Whether this version is marked as requiring a new signature (04 §6.2).
+        article_id:
+          $ref: '#/components/schemas/Id'
+        article_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Version of the agreement article holding the text.
+        text_sha256:
+          type: string
+          description: Lower-case hex sha256 of the text.
+          pattern: '^[0-9a-f]{64}$'
+        url:
+          type: string
+          format: uri
+          description: Address of the full text of this version.
+        legal_confirmed_by:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Who confirmed the version for legal (OPS-14).
+        legal_confirm_note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: The legal confirmation note (OPS-14).
+        published_at:
+          type: string
+          format: date-time
+        published_by:
+          $ref: '#/components/schemas/Id'
+    AdminAgreementVersionDetail:
+      type: object
+      description: One published agreement version with the title and body of its article.
+      additionalProperties: false
+      required:
+        - type
+        - version
+        - min_version
+        - requires_resign
+        - article_id
+        - article_version
+        - text_sha256
+        - url
+        - legal_confirmed_by
+        - legal_confirm_note
+        - published_at
+        - published_by
+        - title
+        - body
+      properties:
+        type:
+          $ref: '#/components/schemas/AgreementType'
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        min_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Where re-consent (privacy, agreement, BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts.
+        requires_resign:
+          type: boolean
+          description: Whether this version is marked as requiring a new signature (04 §6.2).
+        article_id:
+          $ref: '#/components/schemas/Id'
+        article_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Version of the agreement article holding the text.
+        text_sha256:
+          type: string
+          description: Lower-case hex sha256 of the text.
+          pattern: '^[0-9a-f]{64}$'
+        url:
+          type: string
+          format: uri
+          description: Address of the full text of this version.
+        legal_confirmed_by:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Who confirmed the version for legal (OPS-14).
+        legal_confirm_note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: The legal confirmation note (OPS-14).
+        published_at:
+          type: string
+          format: date-time
+        published_by:
+          $ref: '#/components/schemas/Id'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        body:
+          type: string
+          description: tiptap JSON of the text, as a string.
+    AdminAgreementVersionList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Newest version first.
+          items:
+            $ref: '#/components/schemas/AdminAgreementVersion'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminAgreementVersionListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAgreementVersionList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAgreementVersionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAgreementVersion'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAgreementVersionDetailResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAgreementVersionDetail'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAgreementPublishRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - body
+        - min_version
+        - requires_resign
+        - legal_confirmed_by
+        - legal_confirm_note
+        - legal_confirmed_on
+        - expected_version
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        body:
+          type: string
+          minLength: 1
+          maxLength: 200000
+          description: tiptap JSON of the text, as a string; nodes and marks outside the agreement body whitelist are 20001 with data.fields=[body].
+        min_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Where re-consent or re-signing starts; not below the current version's, not above the new version.
+        requires_resign:
+          type: boolean
+          description: Whether the new version requires a new signature; must agree with the publish rules for the type and min_version.
+        legal_confirmed_by:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Who confirmed the version for legal (OPS-14).
+        legal_confirm_note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: The legal confirmation note (OPS-14).
+        legal_confirmed_on:
+          type: string
+          format: date
+          description: Date of the legal confirmation, written to the audit record (BR-ID-12).
+        expected_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The type's newest version as the console showed it, 0 when none is published; a mismatch is 20902.
     AdminPageConfigDraftRequest:
       type: object
       additionalProperties: false

@@ -209,6 +209,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'union_binding',
     // CT-02l: admin page draft / publish / gray / rollback CAS (04 §6.6 pages).
     'page',
+    // CT-02q: admin agreement publish CAS (04 §6.6 agreements, BR-ID-12).
+    'agreement',
   ]);
 });
 

@@ -123,6 +123,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/agreements",
+    "auth": "none"
+  },
+  {
+    "method": "GET",
     "path": "/v1/articles",
     "auth": "none"
   },
@@ -564,6 +569,21 @@ export const CONTRACT_AUTH_ROUTES = [
   {
     "method": "POST",
     "path": "/admin/v1/pages/:page_key/preview-tokens",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/agreements",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/agreements/:type/versions",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/agreements/:type/versions/:version",
     "auth": "admin"
   },
   {

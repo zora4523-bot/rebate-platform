@@ -782,7 +782,11 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["agreement", "privacy", "sdk_list"]
+            "enum": ["agreement", "privacy", "sdk_list", "labor_agreement"]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": []
