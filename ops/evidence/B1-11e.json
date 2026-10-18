@@ -1,0 +1,150 @@
+{
+  "task": "B1-11e",
+  "spec_ref": "e89cfee3cb807072888b36482b8f26035b1d5565",
+  "spec_commit": "410c007686f3a2f195126ed69a9377c81b5f823e",
+  "red_tests": [
+    "test/spec/growth/backfill/assembly.int.test.ts > [AC-B1-11e#4] 真实订单读取器：已有 PAID/ESTIMATED 订单返回 30409，关系与日志零写入",
+    "test/spec/growth/backfill/assembly.int.test.ts > [AC-B1-11e#4] 真实订单读取器：已有 INVALID/VOID 订单返回 30409，关系与日志零写入",
+    "test/spec/growth/backfill/assembly.int.test.ts > [AC-B1-11e#14] 真实风控读取器：邀请人 banned 返回 30401 并计一次当日失败，关系与日志零写入",
+    "test/spec/growth/backfill/assembly.int.test.ts > [AC-B1-11e#14] 真实风控读取器：邀请人 appealing 返回 30401 并计一次当日失败，关系与日志零写入",
+    "test/spec/growth/backfill/assembly.int.test.ts > [AC-B1-11e#14] 真实风控读取器：邀请人 frozen 返回 30401 并计一次当日失败，关系与日志零写入",
+    "test/spec/growth/backfill/contract.test.ts > [AC-B1-11e#13] bindInviter 取消 planned 并生成请求校验，保持 phone、签名和幂等且不进入 Agent 白名单",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#1] 真 AppModule 成功：原始码交给 backfill 核心，事务内一次绑定并返回 EmptyResponse",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 10005 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30401 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30402 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30403 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30404 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30408 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30409 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 42901 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 50001 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#3] phone 守卫先于开关与 binder；10005 不存键，绑手机后同键能成功",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 empty 失败按契约回且不改归属",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 missing 失败按契约回且不改归属",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 unavailable 失败按契约回且不改归属",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 used 失败按契约回且不改归属",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 self 失败按契约回且不改归属",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 expired 失败按契约回且不改归属",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 child 失败按契约回且不改归属",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 disabled 失败按契约回且不改归属",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 bad-config 失败按契约回且不改归属",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#5] 30401 同键回放不再计数、不调 binder；第六个不同键返回 42901 和次日秒数",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#6] 成功同键在另一设备回放原响应；不同请求体冲突，新键 30402，关系日志始终一条",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#7] 同用户不同键并发两次补填只有一个成功，另一个 30402，失败方不覆盖关系",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#8] 核心已写关系与日志后抛错，两者回滚；同键恢复可成功，50001 不当成成功存储",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#9] 请求体不能注入 user_id，校验拒绝后仅签名和令牌里的身份用于绑定",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#9] 请求体不能注入 app_id，校验拒绝后仅签名和令牌里的身份用于绑定",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#9] 请求体不能注入 device_id，校验拒绝后仅签名和令牌里的身份用于绑定",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#9] 请求体不能注入 channel，校验拒绝后仅签名和令牌里的身份用于绑定",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#10] 本次签名设备并入同设备判定，即使本人尚无登录日志也返回 30403",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#11] 缺幂等键 由真实入口拒绝且不调用核心，修复请求后可绑定",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#11] 无令牌 由真实入口拒绝且不调用核心，修复请求后可绑定",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#11] 坏签名 由真实入口拒绝且不调用核心，修复请求后可绑定",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#11] 跨 app 头 由真实入口拒绝且不调用核心，修复请求后可绑定",
+    "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#12] 同一邀请码在两个 app 各自解析为该 app 的邀请人，用户与日志不串 app"
+  ],
+  "risk_note": "RV2 (growth: invite attribution entry). POST /v1/me/inviter (bindInviter, backfill): GrowthModule and InviterController run the merged B1-11d binder inside the idempotency transaction (relation write, relation log and the idempotency record commit together); user_id / app_id from the verified token and device_id from the verified signature, never from the body; codes exactly as the binder answers, 42901 with Retry-After, 0 / 3xxxx stored and replayed without calling the binder again; the daily 30401 count is deduplicated per idempotency key (SET NX marker in the same Lua step), so a retry after a rolled-back transaction does not count twice (Codex r1 S1). bindInviter leaves planned. The recovery-claim source of 30409 still reads false until B1-10 adds its table (follow-up recorded). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "410c007686f3a2f195126ed69a9377c81b5f823e",
+      "tree": "2cf783d26524586946a00b37741102b0ef09b853",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T12:27:28Z",
+      "finished_at": "2026-10-18T12:27:48Z",
+      "red_tests": [
+        "test/spec/growth/backfill/assembly.int.test.ts > [AC-B1-11e#4] 真实订单读取器：已有 PAID/ESTIMATED 订单返回 30409，关系与日志零写入",
+        "test/spec/growth/backfill/assembly.int.test.ts > [AC-B1-11e#4] 真实订单读取器：已有 INVALID/VOID 订单返回 30409，关系与日志零写入",
+        "test/spec/growth/backfill/assembly.int.test.ts > [AC-B1-11e#14] 真实风控读取器：邀请人 banned 返回 30401 并计一次当日失败，关系与日志零写入",
+        "test/spec/growth/backfill/assembly.int.test.ts > [AC-B1-11e#14] 真实风控读取器：邀请人 appealing 返回 30401 并计一次当日失败，关系与日志零写入",
+        "test/spec/growth/backfill/assembly.int.test.ts > [AC-B1-11e#14] 真实风控读取器：邀请人 frozen 返回 30401 并计一次当日失败，关系与日志零写入",
+        "test/spec/growth/backfill/contract.test.ts > [AC-B1-11e#13] bindInviter 取消 planned 并生成请求校验，保持 phone、签名和幂等且不进入 Agent 白名单",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#1] 真 AppModule 成功：原始码交给 backfill 核心，事务内一次绑定并返回 EmptyResponse",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 10005 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30401 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30402 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30403 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30404 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30408 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 30409 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 42901 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#2] binder 50001 原样映射；仅 0/3xxxx 保存，其他结果同键可重试",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#3] phone 守卫先于开关与 binder；10005 不存键，绑手机后同键能成功",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 empty 失败按契约回且不改归属",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 missing 失败按契约回且不改归属",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 unavailable 失败按契约回且不改归属",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 used 失败按契约回且不改归属",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 self 失败按契约回且不改归属",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 expired 失败按契约回且不改归属",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 child 失败按契约回且不改归属",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 disabled 失败按契约回且不改归属",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#4] 已装配真实核心的 bad-config 失败按契约回且不改归属",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#5] 30401 同键回放不再计数、不调 binder；第六个不同键返回 42901 和次日秒数",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#6] 成功同键在另一设备回放原响应；不同请求体冲突，新键 30402，关系日志始终一条",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#7] 同用户不同键并发两次补填只有一个成功，另一个 30402，失败方不覆盖关系",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#8] 核心已写关系与日志后抛错，两者回滚；同键恢复可成功，50001 不当成成功存储",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#9] 请求体不能注入 user_id，校验拒绝后仅签名和令牌里的身份用于绑定",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#9] 请求体不能注入 app_id，校验拒绝后仅签名和令牌里的身份用于绑定",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#9] 请求体不能注入 device_id，校验拒绝后仅签名和令牌里的身份用于绑定",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#9] 请求体不能注入 channel，校验拒绝后仅签名和令牌里的身份用于绑定",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#10] 本次签名设备并入同设备判定，即使本人尚无登录日志也返回 30403",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#11] 缺幂等键 由真实入口拒绝且不调用核心，修复请求后可绑定",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#11] 无令牌 由真实入口拒绝且不调用核心，修复请求后可绑定",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#11] 坏签名 由真实入口拒绝且不调用核心，修复请求后可绑定",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#11] 跨 app 头 由真实入口拒绝且不调用核心，修复请求后可绑定",
+        "test/spec/growth/backfill/http.int.test.ts > [AC-B1-11e#12] 同一邀请码在两个 app 各自解析为该 app 的邀请人，用户与日志不串 app"
+      ],
+      "expected": [
+        "test/spec/growth/backfill/assembly.int.test.ts",
+        "test/spec/growth/backfill/contract.test.ts",
+        "test/spec/growth/backfill/http.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "bff0055a1f566bb7cdf1d9c5af9bb2a06162c0d637db3dad51c79c08723733a6"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d9553fdad5d02c2293a91bf5aa9a0c3964b2b2abcf4f8d2163906376015de622"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1 retry after rollback counted 30401 twice), fixed by Opus; round 2 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by fresh Claude subagents: round 1 fail (S1 x2: real-entry assembly of the order reader and the inviter risk-state reader), round 2 pass; round 3 (exception round after the PR head CI: no Authorization header for the no-token case, a registered second app within the 32-character X-App-Id limit, comment without the admin URL variable) pass with 0 findings; 40 tests red for the right reason (red/3)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "4b395c53c888df56cd81559658f044e4df2e0bb1",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
