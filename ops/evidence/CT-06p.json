@@ -1,0 +1,35 @@
+{
+  "task": "CT-06p",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "ee0822608e5f842d08212335235cb5e8b90dd786",
+  "red_tests": [],
+  "risk_note": "RV2 gate change (tools/guard red-check and the verify-container red-check call only; orchestrator ruling of 2026-10-18 14:1x, B1-12f #750 and funds B2-01l / B2-01m blocked by the whole-file red rule). red-check now holds an expected rule-test file that existed at the base (same path) to its new and changed tests only: a test whose block is unchanged since the base (same normalised text at the same place of the shared rest, in the same describes, same relative order) may pass, a red one still needs a valid reason, skipped / todo stays refused; the exempt tests are listed in exempt and notes. Anything not readable for certain keeps the whole-file rule (every test red, reason in notes): code outside the tests changed, the file cannot be tokenized or is JSX, it may read a test-support file the task changed inside its test_paths, or the report is not from the red reporter; a base file without any new or changed test fails. New files, the expected list (what the red run runs), evidence-check and its money paths are unchanged; no money test is touched. Checked on the real B1-12f commits: only [AC-B1-12e#1] and #4 must be red, 16 unchanged tests exempt. Opus implementation; tester none (guard-change), so no red run. Codex money review 3 rounds, all pass with one S2 each, all fixed with regression tests (the r3 fix only makes the comparison finer). Labelled by the orchestrator under approvals #16 / #24 (none of the four reserved categories).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 3 pass; rounds 1-3 each pass with one S2 (same-header describes, moves between loops, a regex read as a division), all fixed with regression tests (couli-runs/CT-06p/review-codex*.json)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "4a898c9a687de4f5cb994c3f2ee3d6030bf20b15",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
