@@ -79,7 +79,7 @@ it('[CT-06p] parseTestFile: test blocks are the it / test calls imported from vi
       "import { it as other } from './helpers.ts';",
       'const re = /x/;',
       "spec('[AC-1] plain', () => { expect(re.test('x')).toBe(true); });",
-      "test.skip('[AC-2] skipped', () => {});",
+      "test.concurrent('[AC-2] concurrent', () => {});",
       'spec.each([[1], [2]])(\'[AC-3] row %i\', (n) => { spec("inner", () => {}); });',
       "spec.each<[number, string]>([[1, 'a']])('[AC-4] typed $0', () => {});",
       "spec.each`\n  a\n  ${1}\n`('[AC-5] tagged $a', () => {});",
@@ -94,7 +94,7 @@ it('[CT-06p] parseTestFile: test blocks are the it / test calls imported from vi
   );
   expect(parsed.blocks.map((b) => b.title)).toEqual([
     '[AC-1] plain',
-    '[AC-2] skipped',
+    '[AC-2] concurrent',
     '[AC-3] row *',
     '[AC-4] typed *',
     '[AC-5] tagged *',

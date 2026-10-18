@@ -7,7 +7,7 @@
 // cannot read for certain counts as changed (the test must be red, as before):
 //
 // - The file is cut into test blocks — every outermost call of `it` / `test` imported from
-//   'vitest' (with its modifier chain: `.each(table)`, `.skip`, `.for`, type arguments …, and the
+//   'vitest' (with its modifier chain: `.each(table)`, `.concurrent`, `.for`, type arguments …, and the
 //   `;` that ends it) — and the shared rest: imports, helpers, top-level constants and tables,
 //   hooks, loops, `describe` headers and bodies. Both are compared token by token: comments and
 //   the amount of whitespace do not count, a line break between two tokens does (ASI), string,
