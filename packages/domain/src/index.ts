@@ -69,6 +69,13 @@ export type {
   LedgerBalance,
   NegativeBalanceInput,
 } from './ledger/ledger.ts';
+export { buildVouchers } from './ledger/build-vouchers.ts';
+export type {
+  VoucherAccount,
+  BuiltVoucherEntry,
+  BuiltVoucher,
+  BuildVoucherParams,
+} from './ledger/build-vouchers.ts';
 export {
   ORDER_PLATFORM_EVENTS,
   ORDER_PLATFORM_STATES,
