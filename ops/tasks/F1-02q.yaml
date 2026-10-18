@@ -1,6 +1,6 @@
 id: F1-02q
 repo: rebate-platform
-title: 迁移 0048：app.dict_items（字典版本行，只插入）；articles.status 加 CHECK（draft / published / offline）并把 couli_app 对 articles 的整表 UPDATE 收窄为列级
+title: 迁移 0046：app.dict_items（字典版本行，只插入）；articles.status 加 CHECK（draft / published / offline）并把 couli_app 对 articles 的整表 UPDATE 收窄为列级
 type: migration
 # 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
 # 依据 04 l.390 dict_items（dict、code、text、version）与 articles 行、l.859 dict_version；08 BR-TEXT-12 细则 l.648–649。原文由编排者摘入任务书，refs 置空。
