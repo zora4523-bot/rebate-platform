@@ -1,0 +1,24 @@
+id: B1-11k
+repo: rebate-platform
+title: GET /v1/me 邀请字段对齐：invite_code 改为 inviterUnavailable(本人) 即 null（风险态 banned / appealing / frozen、注销、未绑手机、已实名未满 18），补填截止改用 packages/domain 的 inviteBackfillDeadline / withinBackfill，与 growth 绑定、邀请页同一口径
+type: impl
+# 草稿 2026-10-18（身份与风控线 identity-lane，第二波第三批；计划 couli-runs/IDENTITY-tips/wave2-plan.md §3，E4；调研 wave2-research.md §A.7 差异 2）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-INV-18（「我的」页显示本人邀请码，can_invite=false 或 30413 时不显示）、BR-INV-02 inviter_unavailable 唯一判定函数（三处必须共用）、BR-INV-07（补填期限 168 小时不含边界）；契约 Me.invite_code「Null when the user cannot invite」。BR-INV-18 加一跳约 16KB，连同摘录超 24KB，refs 置空，由编排者摘入（E13）。
+# 现状：identity application/me.ts:149 只在 banned（或申诉中且申诉前为 banned，D4）置 null；截止在 me.ts:105 自算 instantPlus。packages/domain/src/invite 已有 inviterUnavailable、inviteBackfillDeadline、withinBackfill（B1-11c）；实名生日读取由 B1-13d 导出。
+# 编排已定（E4）：Me.invite_code 收窄到「不可邀请即 null」，D4 作废。verified_minor 由调用方用 reachedAgeAt(birth, 18)（B1-13c）算好传入（E17）；风险态取 risk 只读读取（appealing 不再看申诉前状态，08 原文 appealing 即不可用）；注销只认 users.status='deleted'（TODO blocked on B1-15）。invite_backfill 的 eligible 判定不变（B1-02z 已与 BR-INV-07 一致）。
+# 冻结测试冲突：test/spec/identity/me/me.int.test.ts 的 [AC-B1-02z#1] / [#14] / [#15] / [#30] 按 D4 断言未绑手机或 frozen 时 invite_code 照常返回，本任务上线后会红 → 先合测试修改 B1-11q（删去这几处 invite_code 断言，改前改后都绿），新口径由本任务规则测试全量覆盖。
+# 模型：Opus 5.5。测试标题 AC-B1-11k#n（E14）。不改契约。与 B1-11g、B1-11h、B1-13e 同改 identity/**，后合并者变基。
+refs: []
+refs_hash: {}
+deps: [B1-11c, B1-13d, B1-11q]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/me-invite/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/me-invite/**'
+status: todo

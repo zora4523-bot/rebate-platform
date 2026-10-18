@@ -1,0 +1,19 @@
+id: B1-11q
+repo: rebate-platform
+title: 测试修改：B1-02z 冻结测试 [AC-B1-02z#1]、[#14]、[#15]、[#30] 按旧裁定 D4 断言未绑手机或 frozen 的用户 GET /v1/me 照常返回 invite_code，与 BR-INV-18 / E4「不可邀请即 null」冲突；删去这几处对 invite_code 取值的断言（其余断言不动），新口径由 B1-11k 的规则测试覆盖
+type: test-change
+# 草稿 2026-10-18（身份与风控线 identity-lane；B1-11k 前置，wave2-plan E4）。依据：08 BR-INV-02 inviter_unavailable（frozen、appealing、phone_hmac IS NULL 都不可用）、BR-INV-18（不可邀请时「我的」页不显示邀请码）。
+# 冲突点（主干 test/spec/identity/me/me.int.test.ts）：#1 新微信号未绑手机 toEqual 里 invite_code: row.invite_code；#14 申诉前为 frozen 与 #15 frozen 的 expect(data.invite_code).toBe(row.invite_code)；#30 同 app 未绑手机用户 expect(same.invite_code).toBe(sameRow.invite_code)。#12 / #13（banned → null）不动。
+# 改法（编排者定）：#1 先 const { invite_code: _inviteCode, ...rest } = data（变量名按 eslint 未用变量规则取），rest 用原 toEqual（期望对象去掉 invite_code）比对，另断言 data 有 invite_code 键；#14 / #15 / #30 删去 invite_code 那一行，保留风控字段等其余断言。标题、向量不改，注释写明「invite_code 取值改由 [AC-B1-11k#*] 覆盖（E4）」。
+# 改前（main）改后（叠 B1-11k）都要绿。不属削弱资金测试（邀请码展示口径，非资金；新口径另有更严的规则测试）；保护路径第一类改已有文件，走非 task/ 分支 test-change/B1-11q，Codex 评审 pass 后按 approvals #24 加标签合并。B1-11k 依赖本任务。模型 Opus 5.5。
+refs: []
+refs_hash: {}
+deps: [B1-02z]
+paths:
+  - 'test/spec/identity/me/me.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/me/**'
+status: todo

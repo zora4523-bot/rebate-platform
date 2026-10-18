@@ -1,0 +1,31 @@
+id: B1-13e
+repo: rebate-platform
+title: 收款账号（支付宝路径）：GET /v1/me/payout-account（脱敏，含本月剩余变更次数）上线并去掉 getPayoutAccount 的 planned；支付宝绑定 / 换绑应用服务——users 行锁内重读当前绑定与当月次数，⓪ 黑名单 44001、① 姓名规范化比对 30307、② 加密 + HMAC 与 30308、④ 月上限 30303、首绑与同账号不计次，payout_account_changes 只插入，step-up 经 withStepUp 同事务核销
+type: impl
+# 草稿 2026-10-18（身份与风控线 identity-lane，第二波第三批；计划 couli-runs/IDENTITY-tips/wave2-plan.md §3，调研 wave2-research.md §B.6、§B.7）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-WDR-02（①–④ 与细则「保存在用户级锁内」「支付宝登录号的规范化」）、BR-WDR-01（只允许原生 App、签名 + Idempotency-Key + step_up_token action=payout_account_change，成功同事务核销 jti）、BR-ID-31（黑名单收款账号维度）、BR-ID-33（脱敏格式）；契约 getPayoutAccount / savePayoutAccount（CT-16ca、CT-20a）。BR-WDR-02 细则远超 24KB，refs 置空，由编排者摘入（E13）。
+# 现状：表 payout_accounts / payout_account_changes（B1-13a，0009）已建：payout_accounts 只给 couli_app UPDATE(is_current)，换绑 = 旧行 is_current=false + 插新行；payout_account_changes 只插入且 old_* 非空（首绑不写变更行）；三个部分唯一（用户 / alipay_hmac / bank_card_hmac WHERE is_current）。platform masking/payout-account.ts 已有脱敏；risk blocklist 已支持 alipay 类型；withStepUp（B1-02y）；specs/payout-logon-normalize.vectors.json；B1-13c normalizePersonName；access-tokens.ts 的 h5 禁入已含 /v1/me/payout-account；30304 由 B1-02za 守卫 ⑨。
+# 编排已定（E7）：本任务先合时 savePayoutAccount 保持 planned（契约测试要求 planned 操作无路由）——PUT 控制器挂载与去 planned 在 B1-13f；本任务交付 GET 路由与支付宝路径的应用服务（可被 B1-13f 的 PUT 控制器直接调用），规则测试在服务层与 GET HTTP 层。
+# 锁与顺序（BR-WDR-02 细则）：一个事务内先 SELECT users … FOR UPDATE，锁内重读当前绑定与本月（+08:00 自然月）变更行数，依次校验 ⓪ ① ② ③ ④ 与当前绑定状态，全部通过后写变更行（计次时）、写 payout_accounts、核销 jti、写幂等结果，一起提交；任何一项不通过按原码返回、jti 不核销。23505（部分唯一竞态）→ 30308。不锁余额行、不取收款账号 advisory lock。
+# 配置：withdraw.payout_methods（默认 [alipay, bank_card]）、withdraw.payout_account_change_per_month（默认 2）读 config_items，缺失或不合法按 08 默认并 warn（不在 content 后台配置登记表里，见 report 待裁定）。payee_name 存规范化值；登录号规范化：邮箱转小写、手机号形式走 normalize_phone（否则 20001 data.reason=phone_invalid）。
+# 模型：Opus 5.5 高推理（effort high）——资金归属 + 锁。契约与生成物（含 CT-06n 要求的三份路由表）写进 paths（先例 B1-11e）。测试标题 AC-B1-13e#n。与 B1-13f 串行（B1-13f 依赖本任务）。
+refs: []
+refs_hash: {}
+deps: [B1-13d, B1-13c, B1-13a, B1-02y, B1-02za]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/identity/payout-account/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/payout-account/**'
+status: todo

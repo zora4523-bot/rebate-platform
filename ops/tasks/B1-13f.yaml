@@ -1,0 +1,30 @@
+id: B1-13f
+repo: rebate-platform
+title: 收款账号银行卡路径与付费三要素核验：卡号 12–19 位 + Luhn、卡 BIN 端口（借记卡、带出开户行；只演示数据）、三要素核验端口 + 假实现；payout_account_verify_attempts 在 users 行锁内「重查幂等键 → 同键核验记录 → 同指纹记录 → 预占当日额度」，锁外调供应商，结果与业务结果同事务落库；40901 / 50401 / 复用 / 30303 verify_limit；挂载 PUT /v1/me/payout-account 并去掉 savePayoutAccount 的 planned
+type: impl
+# 草稿 2026-10-18（身份与风控线 identity-lane，第二波第三批；计划 couli-runs/IDENTITY-tips/wave2-plan.md §3，调研 wave2-research.md §B.6）。实现口径按 notices 17:3x：Claude 实现、Codex 写规则测试与评审。
+# 依据：08 BR-WDR-02 ⑥ ⑦ 与细则「核验次数上限」全部子项（预占临界区、核验记录、落结果、在途租约、结果未知的复核、复核终点、同一账号再次提交、同一个键再次提交、核验结果与保存分开）、BR-WDR-01、BR-ID-10 细则「敏感操作的幂等键」（20903 整笔回滚）；契约 savePayoutAccount。细则远超 24KB，refs 置空，由编排者摘入（E13）。
+# 现状：表 payout_account_verify_attempts（B1-13a）已建：状态六值、vendor_request_id 唯一、在途指纹部分唯一（reserved / unknown）、(app_id, user_id, idempotency_key) 部分唯一、只给 status / unknown_at / resolved_at / row_version / updated_at 列级 UPDATE；配置键 withdraw.payout_account_verify_per_day / _inflight_timeout_sec / _recheck_minutes / _reuse_hours 已在后台登记表。B1-13e 的锁内保存服务可复用。
+# 供应商（E8、E9）：CardBinPort 与 BankCardVerifierPort（verify(vendor_request_id, …) 与 query(vendor_request_id)）只在 local / test 注入假实现与演示 BIN；staging / prod 未接真实供应商不注入 → 50301，不伪造供应商报文。真实 BIN 来源与三要素供应商属负责人项（花钱 / 新供应商），现在不停。
+# 要点：请求指纹 = 实名记录 ID + 卡号 HMAC（不存明文卡号）；当日已占 = 当日（+08:00）非 released 记录数；同一张卡并发首发只一个预占；租约已过的 reserved 在请求内先接管为 unknown；unknown 在请求内按原 vendor_request_id 复核一次（不重发）；同键复用不论状态、不新建记录、不新占额度；超时 / 无法判定 → unknown + 50401（未接 50301），5xxxx 不写幂等记录；不一致锁内写 mismatched + 该键 30307 幂等结果；一致在保存事务里改 matched（保存校验不过也保留 matched）。接管 / 复核的公共函数在本任务建，后台定时任务在 B1-13g。卡号、身份证号、姓名不进日志。
+# 模型：Opus 5.5 effort xhigh（编排定，E44）——最难的一段：付费外调 + 并发临界区 + 幂等交叉。契约与生成物（含 CT-06n 要求的三份路由表）写进 paths（先例 B1-11e）。测试标题 AC-B1-13f#n。
+refs: []
+refs_hash: {}
+deps: [B1-13e]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/identity/payout-bank-card/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/payout-bank-card/**'
+status: todo
