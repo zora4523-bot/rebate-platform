@@ -1,0 +1,132 @@
+{
+  "task": "B3-04b",
+  "spec_ref": "8c91f67e2dc11ad7f50d279cf8103e0f038e5ac8",
+  "spec_commit": "55e85035c2c62f5f7ca5eef34f2d08bae2861f5a",
+  "red_tests": [
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#14][BR-AI-11][BR-AI-04] 仅一张未编号 product_list，内嵌卡也未编号，最终出卡才登记链接",
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#15][BR-AI-04] 必需字段缺失与 no_rebate 不出卡，无券的 0 与未知返利的 null 合法",
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#16][BR-AI-04] 普通返利缺任一上下界不出卡，不能补零",
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#17][BR-AI-11] 游客仅开关开启的平台显示 login_required，关闭及缺省平台保留报价",
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#18][BR-AI-11] 已登录用户不受游客开关影响，已有 login_required 的空返利合法",
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#19][BR-AI-05] 模型仅见外部编号引用、转义且包裹的标题、平台和标签，不见价格等字段",
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#20][BR-AI-04] 缓存年龄默认最多 300 秒，边界保留，quoted_at 沿用上游时间",
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#21][BR-AI-04] 缓存年龄按注入时钟复核，配置可降低有效期",
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#28][BR-AI-04] 价格、来源、状态或报价时间缺失均不得登记或出卡",
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#22][BR-AI-18] 模型关键词命中禁售不调用搜索、不登记，返回 prohibited 提示",
+    "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#23][BR-AI-18] 类目过滤只丢禁售商品；全部滤空为 prohibited 且不重搜放宽",
+    "test/spec/agent/tools-search/keyword.test.ts > [AC-B3-04b#24][BR-PROD-10] 降级平台列表从实时开关派生，不开启缺省平台",
+    "test/spec/agent/tools-search/keyword.test.ts > [AC-B3-04b#31][BR-AI-18] searchKeyword 共用禁售检查，命中时不搜索也不登记",
+    "test/spec/agent/tools-search/keyword.test.ts > [AC-B3-04b#25][BR-AI-09][BR-AI-11] searchKeyword 逐平台返回成功或失败，结果可交给降级判定器",
+    "test/spec/agent/tools-search/keyword.test.ts > [AC-B3-04b#26][BR-AI-11][BR-PROD-10][BR-AI-04] 降级执行时再看开关，沿用游客与必需字段过滤、延迟登记",
+    "test/spec/agent/tools-search/keyword.test.ts > [AC-B3-04b#27][BR-AI-04] 降级空成功与全部失败可区分，不把失败当作空结果",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#1][BR-PROD-10][BR-AI-09] 平台开关与参数取交集，所有启用平台在任一结果返回前启动",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#29][BR-AI-09] 复筛剔除商品后保留其余商品的原始上游名次",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#30][BR-AI-09] 固定上游名次，随机佣金比例变化不影响 relevance",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#2][BR-PROD-10] 未传 platforms 查开启集合；指定平台不扩展，缺配置默认关闭且每轮重读",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#3][BR-AI-04] 一个平台失败不吞掉其他平台商品，不泄露上游错误",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#4][BR-AI-08] 价格复筛比较组卡到手价，闭区间保留两端、剔除上下界之外",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#5][BR-AI-08] 相等上下界与单侧界限均按闭区间执行",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#6][BR-AI-09] 相同 product_key 仅一张，同名同价但跨平台不同 key 均保留",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#7][BR-AI-09] relevance 按上游名次交错，同名次按到手价再按 key，默认 K=8",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#8][BR-AI-09] 每平台只取前 K 条，即使替身多返也不从 K 之后补货",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#9][BR-AI-09] rebate_desc 依次比较返利下界、上界、到手价和 key",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#10][BR-AI-09] final_price_asc 跨平台排序，同价按 key，与上游名次及返利无关",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#11][BR-AI-09] sales_desc 以销量降序，同销量按价格与 key",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#12][BR-AI-09] relevance 不随佣金、返利或登录用户变化，也不自行从关键词猜排序",
+    "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#13][BR-AI-08][BR-AI-09] 模型参数 schema 只接受四种排序及合法整数分，拒绝多余字段"
+  ],
+  "risk_note": "RV1 by its paths (apps/api/src/modules/agent/tools/search/**); rule tests under test/** make the PR RV2. Codex wrote test/spec/agent/tools-search/** in 2 attempts (container red 31 tests); Claude spec-test review round 1 fail (list price equal to final price in the fixture, S1 x2), round 2 pass. Opus implemented 3 times plus one orchestrator-ruling alignment of the card index (couli-runs/B3-04b/attempts-note.md, B3-05i/spec-review-ruling.md); Codex reviews 4 rounds, last pass. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "55e85035c2c62f5f7ca5eef34f2d08bae2861f5a",
+      "tree": "6ba9c3ae894fa90cb250a468c91f9c75c20d7606",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T15:10:58Z",
+      "finished_at": "2026-10-18T15:11:02Z",
+      "red_tests": [
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#14][BR-AI-11][BR-AI-04] 仅一张未编号 product_list，内嵌卡也未编号，最终出卡才登记链接",
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#15][BR-AI-04] 必需字段缺失与 no_rebate 不出卡，无券的 0 与未知返利的 null 合法",
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#16][BR-AI-04] 普通返利缺任一上下界不出卡，不能补零",
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#17][BR-AI-11] 游客仅开关开启的平台显示 login_required，关闭及缺省平台保留报价",
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#18][BR-AI-11] 已登录用户不受游客开关影响，已有 login_required 的空返利合法",
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#19][BR-AI-05] 模型仅见外部编号引用、转义且包裹的标题、平台和标签，不见价格等字段",
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#20][BR-AI-04] 缓存年龄默认最多 300 秒，边界保留，quoted_at 沿用上游时间",
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#21][BR-AI-04] 缓存年龄按注入时钟复核，配置可降低有效期",
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#28][BR-AI-04] 价格、来源、状态或报价时间缺失均不得登记或出卡",
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#22][BR-AI-18] 模型关键词命中禁售不调用搜索、不登记，返回 prohibited 提示",
+        "test/spec/agent/tools-search/cards.test.ts > [AC-B3-04b#23][BR-AI-18] 类目过滤只丢禁售商品；全部滤空为 prohibited 且不重搜放宽",
+        "test/spec/agent/tools-search/keyword.test.ts > [AC-B3-04b#24][BR-PROD-10] 降级平台列表从实时开关派生，不开启缺省平台",
+        "test/spec/agent/tools-search/keyword.test.ts > [AC-B3-04b#31][BR-AI-18] searchKeyword 共用禁售检查，命中时不搜索也不登记",
+        "test/spec/agent/tools-search/keyword.test.ts > [AC-B3-04b#25][BR-AI-09][BR-AI-11] searchKeyword 逐平台返回成功或失败，结果可交给降级判定器",
+        "test/spec/agent/tools-search/keyword.test.ts > [AC-B3-04b#26][BR-AI-11][BR-PROD-10][BR-AI-04] 降级执行时再看开关，沿用游客与必需字段过滤、延迟登记",
+        "test/spec/agent/tools-search/keyword.test.ts > [AC-B3-04b#27][BR-AI-04] 降级空成功与全部失败可区分，不把失败当作空结果",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#1][BR-PROD-10][BR-AI-09] 平台开关与参数取交集，所有启用平台在任一结果返回前启动",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#29][BR-AI-09] 复筛剔除商品后保留其余商品的原始上游名次",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#30][BR-AI-09] 固定上游名次，随机佣金比例变化不影响 relevance",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#2][BR-PROD-10] 未传 platforms 查开启集合；指定平台不扩展，缺配置默认关闭且每轮重读",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#3][BR-AI-04] 一个平台失败不吞掉其他平台商品，不泄露上游错误",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#4][BR-AI-08] 价格复筛比较组卡到手价，闭区间保留两端、剔除上下界之外",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#5][BR-AI-08] 相等上下界与单侧界限均按闭区间执行",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#6][BR-AI-09] 相同 product_key 仅一张，同名同价但跨平台不同 key 均保留",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#7][BR-AI-09] relevance 按上游名次交错，同名次按到手价再按 key，默认 K=8",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#8][BR-AI-09] 每平台只取前 K 条，即使替身多返也不从 K 之后补货",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#9][BR-AI-09] rebate_desc 依次比较返利下界、上界、到手价和 key",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#10][BR-AI-09] final_price_asc 跨平台排序，同价按 key，与上游名次及返利无关",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#11][BR-AI-09] sales_desc 以销量降序，同销量按价格与 key",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#12][BR-AI-09] relevance 不随佣金、返利或登录用户变化，也不自行从关键词猜排序",
+        "test/spec/agent/tools-search/search.test.ts > [AC-B3-04b#13][BR-AI-08][BR-AI-09] 模型参数 schema 只接受四种排序及合法整数分，拒绝多余字段"
+      ],
+      "expected": [
+        "test/spec/agent/tools-search/cards.test.ts",
+        "test/spec/agent/tools-search/keyword.test.ts",
+        "test/spec/agent/tools-search/search.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b66edebd7dd99778d238dcce639cadd0e61a839989fd73ea2c32e73b7c0a8a1d"
+        }
+      ],
+      "gate": {
+        "commit": "e6b708ad9bc9e87366b87c1703a18eb702bee3b5",
+        "clean": true,
+        "script_sha256": "a760318276108244f9664229d4673fceafa5692c68dba5ecdc016a9e4b5cd057"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 4,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "Codex general reviews: round 1 fail (inverted price range S1; per-platform isolation S2), round 2 pass, round 3 on the B3-05i index alignment fail (guest rebate sort S1; degraded commit failures S2), round 4 pass (couli-runs/B3-04b/review-codex-r1.json, r3.json, review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "round 1 fail (2 S1), round 2 pass r2 (couli-runs/B3-04b/review-claude-spec-test.json, review-claude-spec-test-r2.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "871c0bf64b1d9c8895695776d83a0aad40affda4"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
