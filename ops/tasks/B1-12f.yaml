@@ -5,6 +5,7 @@ type: impl
 # 2026-10-18 入账（be-codex，编排 11:1x 裁定 ③：交易类文案以 08 BR-TEXT-09 表为唯一来源、非交易类按 BR-TEXT-23 细则表；notify_templates 只存 code、category、渠道、跳转与「可改措辞」覆盖值，加可空 title_override / body_override）。
 # 编排者技术决定：BR-TEXT-23 的 RISK_STATE_CHANGED 有 frozen / frozen_until / unfrozen / banned / unbanned 五个变体、APPEAL_RESULT 与 DELETION_PROGRESS 也有变体，
 # 只按 code 存一份覆盖装不下，故加 variant 并入主键（无变体的模板用 'default'）。表在 B1-12e（#710，0042）新建、尚无数据，改主键无存量风险。迁移号落地时取主干最大号 + 1（notices 登记）。
+# B1-12e 的冻结测试 send-log.int.test.ts 精确断言 notify_templates 列全集（约第 133 行）与两列主键（约第 233 行）：测试阶段由测试作者在同一 PR 同步改这两处（只改为新列全集与三列主键，其余不动），属第一类保护路径改动，按 approvals #24 由编排会话加标签（台账评审 r4 S1）。
 refs: []
 refs_hash: {}
 deps: [B1-12e]
@@ -14,6 +15,7 @@ paths:
   - 'packages/db/src/db.gen.ts'
 test_paths:
   - 'test/spec/db/notification/template-override/**'
+  - 'test/spec/db/notification/send-log/send-log.int.test.ts'
 impl: claude
 tester: codex
 accept:
