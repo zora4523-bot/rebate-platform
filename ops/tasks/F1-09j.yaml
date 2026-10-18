@@ -1,0 +1,23 @@
+id: F1-09j
+repo: rebate-platform
+title: content：页面人群条件 has_parent 接 growth 导出的 createParentRelationReader（B1-11n #736），去掉 F1-09g 留下的 TODO；未接前登录用户 has_parent 条件区块不下发的保守口径随之取消
+type: impl
+# 2026-10-18 入账（content-client；notices 预登记 F1-09j）。F1-09g（#715）按 G3 因无读口未接 has_parent，代码留 TODO(规划/11 §2.3)；
+# identity 线 B1-11n（#736）已在 growth/index.ts 导出 createParentRelationReader({ db }).relationOf({ appId, userId }) → { has_parent, parent_bound_at } | null。
+# 要点：app.module 的 pageAudienceReads() 把它接进 content 的 PageAudienceReads.hasParent；null（无关系行）→ false；读失败按 F1-09g 口径（该项未知、warn、yes/no 区块不下发、整页 200）。
+# 只读、不缓存跨请求；content 不 import growth（经 app.module 注入）。依据同 F1-09g（03 §6.1 condition、08 BR-ID-11 细则），refs 置空，由编排者摘入任务书。
+refs: []
+refs_hash: {}
+deps: [F1-09g]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/content/pages-audience-parent/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/pages-audience-parent/**'
+status: todo
+pr: null
