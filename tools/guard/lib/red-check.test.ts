@@ -3,12 +3,15 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
+import type { Change } from '../../lib/git.ts';
 import {
+  type BaselineReader,
   browserCauseVerdict,
   causeVerdict,
   checkRedReports,
   expectedRuleTests,
   redCheckRequired,
+  ruleTestBaselines,
   scriptFaultConsoleError,
   smokeCauseVerdict,
   smokeDiagnosticsOf,
@@ -797,4 +800,275 @@ it('[F1-01m] smokeDiagnosticsVerdict: preload errors, unhandled rejections, the 
   expect(v([{ kind: 'diagnostics-incomplete', message: 'the page could not be read: x' }])).toBe(
     'red for an unproven reason (the page events are not fully known: the page could not be read: x)',
   );
+});
+
+// CT-06p: files that existed at the base need only their new and changed tests red.
+const BASE_FILE = 'test/spec/notify/send-log.int.test.ts';
+const VITEST = "import { expect, it } from 'vitest';";
+const spec = (title: string, body = 'expect(1).toBe(1);'): string =>
+  `it('${title}', async () => {\n  ${body}\n});`;
+const file = (...tests: string[]): string => `${[VITEST, ...tests].join('\n\n')}\n`;
+const BASE_SOURCE = file(spec('[AC-1] a'), spec('[AC-2] b'), spec('[AC-3] c'), spec('[AC-4] d'));
+/** Tests 1 and 4 changed, test 5 is new (the B1-12f shape plus a new test). */
+const HEAD_SOURCE = file(
+  spec('[AC-1] a', "expect(await columns()).toEqual(['app_id', 'variant']);"),
+  spec('[AC-2] b'),
+  spec('[AC-3] c'),
+  spec('[AC-4] d', "expect(await primaryKey()).toEqual(['app_id', 'code', 'variant']);"),
+  spec('[AC-5] e'),
+);
+
+type RedTest = [name: string, status: string, cause?: string];
+/** A report as the red reporter writes it (reporter name, failure causes). */
+function redReport(name: string, tests: RedTest[], reporter = 'couli-red-reporter') {
+  const causesOf = (cause: string) => {
+    const at = cause.indexOf(': ');
+    return [{ name: cause.slice(0, at), message: cause.slice(at + 2) }];
+  };
+  return {
+    reporter,
+    testResults: [
+      {
+        name: `${ROOT}/${name}`,
+        status: 'failed',
+        message: '',
+        failures: [],
+        assertionResults: tests.map(([fullName, status, cause]) => ({
+          fullName,
+          title: fullName,
+          status,
+          failureMessages: cause === undefined ? [] : [cause],
+          failures: cause === undefined ? [] : [{ causes: causesOf(cause) }],
+        })),
+      },
+    ],
+  };
+}
+
+function reader(base: Record<string, string>, head: Record<string, string>): BaselineReader {
+  return { base: (p) => base[p] ?? null, head: (p) => head[p] ?? null };
+}
+
+const baselinesOf = (
+  head: string,
+  changes: Change[] = [{ path: BASE_FILE, status: 'M' }],
+  extra: Record<string, string> = {},
+) =>
+  ruleTestBaselines(
+    [BASE_FILE],
+    changes,
+    ['test/spec/notify/**'],
+    reader({ [BASE_FILE]: BASE_SOURCE }, { [BASE_FILE]: head, ...extra }),
+  );
+
+it('[CT-06p] a file that existed at the base: only new and changed tests must be red, unchanged ones are listed', () => {
+  const result = checkRedReports(
+    [
+      redReport(BASE_FILE, [
+        ['[AC-1] a', 'failed', 'AssertionError: expected [ …(2) ] to deeply equal [ …(3) ]'],
+        ['[AC-2] b', 'passed'],
+        ['[AC-3] c', 'failed', 'Error: NotImplemented: columns'],
+        ['[AC-4] d', 'failed', 'AssertionError: expected [ …(2) ] to deeply equal [ …(3) ]'],
+        ['[AC-5] e', 'failed', 'Error: NotImplemented: insert'],
+      ]),
+    ],
+    [BASE_FILE],
+    ROOT,
+    baselinesOf(HEAD_SOURCE),
+  );
+  expect(result).toEqual({
+    ok: true,
+    red: [
+      `${BASE_FILE} > [AC-1] a`,
+      `${BASE_FILE} > [AC-3] c`,
+      `${BASE_FILE} > [AC-4] d`,
+      `${BASE_FILE} > [AC-5] e`,
+    ],
+    problems: [],
+    exempt: [
+      { file: BASE_FILE, test: '[AC-2] b', status: 'passed' },
+      { file: BASE_FILE, test: '[AC-3] c', status: 'failed' },
+    ],
+    notes: [
+      `${BASE_FILE} > [AC-2] b: unchanged since the base, exempt from the red rule (green)`,
+      `${BASE_FILE} > [AC-3] c: unchanged since the base, exempt from the red rule (red for a valid reason)`,
+    ],
+  });
+});
+
+it('[CT-06p] an unchanged test that is red still needs a valid reason; skipped stays refused; a changed green test has no teeth', () => {
+  const result = checkRedReports(
+    [
+      redReport(BASE_FILE, [
+        ['[AC-1] a', 'passed'],
+        ['[AC-2] b', 'failed', 'TypeError: columns is not a function'],
+        ['[AC-3] c', 'skipped'],
+        ['[AC-4] d', 'failed', 'AssertionError: x'],
+        ['[AC-5] e', 'passed'],
+      ]),
+    ],
+    [BASE_FILE],
+    ROOT,
+    baselinesOf(HEAD_SOURCE),
+  );
+  expect(result.ok).toBe(false);
+  expect(result.problems.map((p) => `${p.test}: ${p.reason}`)).toEqual([
+    '[AC-1] a: green on the skeleton: the test has no teeth (new or changed since the base)',
+    '[AC-2] b: red for the wrong reason (TypeError)',
+    '[AC-3] c: status "skipped" (skipped, todo or pending is not red)',
+    '[AC-5] e: green on the skeleton: the test has no teeth (new or changed since the base)',
+  ]);
+  expect(result.exempt).toEqual([]);
+});
+
+it('[CT-06p] a file that existed at the base and has no new or changed test fails: nothing is shown red', () => {
+  const comments = BASE_SOURCE.replace('expect(1)', '// only a comment\n  expect(1)');
+  const result = checkRedReports(
+    [
+      redReport(BASE_FILE, [
+        ['[AC-1] a', 'passed'],
+        ['[AC-2] b', 'passed'],
+        ['[AC-3] c', 'passed'],
+        ['[AC-4] d', 'passed'],
+      ]),
+    ],
+    [BASE_FILE],
+    ROOT,
+    baselinesOf(comments),
+  );
+  expect(result.ok).toBe(false);
+  expect(result.problems).toEqual([
+    {
+      file: BASE_FILE,
+      test: null,
+      reason:
+        'existed at the base and has no new or changed test: nothing is shown red (4 unchanged test(s))',
+    },
+  ]);
+  expect(result.exempt).toHaveLength(4);
+});
+
+it('[CT-06p] judged as a whole, as before: shared code changed, a support file it may read, not the red reporter', () => {
+  const tests: RedTest[] = [
+    ['[AC-1] a', 'failed', 'AssertionError: x'],
+    ['[AC-2] b', 'passed'],
+    ['[AC-3] c', 'passed'],
+    ['[AC-4] d', 'failed', 'AssertionError: x'],
+    ['[AC-5] e', 'failed', 'Error: NotImplemented: x'],
+  ];
+  const greenOnes = (r: ReturnType<typeof checkRedReports>) =>
+    r.problems.map((p) => `${p.test}: ${p.reason}`);
+  const teeth = 'green on the skeleton: the test has no teeth';
+
+  // A helper outside the tests changed.
+  const helper = HEAD_SOURCE.replace(VITEST, `${VITEST}\nconst helper = () => 2;`);
+  const shared = checkRedReports(
+    [redReport(BASE_FILE, tests)],
+    [BASE_FILE],
+    ROOT,
+    baselinesOf(helper),
+  );
+  expect(greenOnes(shared)).toEqual([`[AC-2] b: ${teeth}`, `[AC-3] c: ${teeth}`]);
+  expect(shared.notes).toEqual([
+    `${BASE_FILE}: existed at the base, judged as a whole (every test must be red): code outside the tests changed (imports, helpers, hooks, top-level tables or describe titles)`,
+  ]);
+  expect(shared.exempt).toEqual([]);
+
+  // A data file the task changed, which the test file names.
+  const reads = HEAD_SOURCE.replace('[AC-5] e', '[AC-5] e reads ./expected.csv');
+  const support = checkRedReports(
+    [
+      redReport(
+        BASE_FILE,
+        tests.map(([n, s, c]) =>
+          n === '[AC-5] e' ? ['[AC-5] e reads ./expected.csv', s, c] : [n, s, c],
+        ) as RedTest[],
+      ),
+    ],
+    [BASE_FILE],
+    ROOT,
+    baselinesOf(reads, [
+      { path: BASE_FILE, status: 'M' },
+      { path: 'test/spec/notify/expected.csv', status: 'M' },
+    ]),
+  );
+  expect(greenOnes(support)).toEqual([`[AC-2] b: ${teeth}`, `[AC-3] c: ${teeth}`]);
+  expect(support.notes[0]).toBe(
+    `${BASE_FILE}: existed at the base, judged as a whole (every test must be red): it may read a test-support file the task changed: ${BASE_FILE} names expected.csv`,
+  );
+
+  // Vitest's own JSON report (no reporter name): its full names are not `suite > test`.
+  const plain = checkRedReports(
+    [redReport(BASE_FILE, tests, 'vitest-json')],
+    [BASE_FILE],
+    ROOT,
+    baselinesOf(HEAD_SOURCE),
+  );
+  expect(greenOnes(plain)).toEqual([`[AC-2] b: ${teeth}`, `[AC-3] c: ${teeth}`]);
+  expect(plain.notes).toEqual([
+    `${BASE_FILE}: existed at the base, judged as a whole (every test must be red): the report is not from the red reporter`,
+  ]);
+});
+
+it('[CT-06p] ruleTestBaselines: new and renamed files keep the old rule; JSX, unreadable heads and support files are whole', () => {
+  const NEW = 'test/spec/notify/override.int.test.ts';
+  const RENAMED = 'test/spec/notify/renamed.test.ts';
+  const JSX = 'test/spec/notify/page.browser.test.tsx';
+  const GONE = 'test/spec/notify/gone.test.ts';
+  const read = reader(
+    {
+      [BASE_FILE]: BASE_SOURCE,
+      'test/spec/notify/old.test.ts': BASE_SOURCE,
+      [JSX]: BASE_SOURCE,
+      [GONE]: BASE_SOURCE,
+    },
+    { [BASE_FILE]: HEAD_SOURCE, [NEW]: HEAD_SOURCE, [RENAMED]: BASE_SOURCE, [JSX]: HEAD_SOURCE },
+  );
+  const changes: Change[] = [
+    { path: BASE_FILE, status: 'M' },
+    { path: NEW, status: 'A' },
+    { path: RENAMED, status: 'R', oldPath: 'test/spec/notify/old.test.ts' },
+    { path: JSX, status: 'M' },
+    { path: GONE, status: 'M' },
+    // Outside the test_paths: never a test-support file.
+    { path: 'apps/api/src/modules/notification/expected.csv', status: 'M' },
+  ];
+  const b = ruleTestBaselines(
+    [BASE_FILE, NEW, RENAMED, JSX, GONE],
+    changes,
+    ['test/spec/notify/**'],
+    read,
+  );
+  expect([...b.keys()].sort()).toEqual([BASE_FILE, GONE, JSX].sort());
+  expect(b.get(BASE_FILE)?.kind).toBe('tests');
+  expect(b.get(JSX)).toEqual({
+    kind: 'whole',
+    reason: 'only .ts / .js rule-test files are compared test by test (JSX is not read)',
+  });
+  expect(b.get(GONE)).toEqual({
+    kind: 'whole',
+    reason: 'its content in the red run cannot be read',
+  });
+  // The renamed file's old path is a changed file in scope: a file that names it is whole.
+  const naming = HEAD_SOURCE.replace('[AC-5] e', '[AC-5] e after old.test.ts');
+  const n = ruleTestBaselines(
+    [BASE_FILE],
+    changes,
+    ['test/spec/notify/**'],
+    reader({ [BASE_FILE]: BASE_SOURCE }, { [BASE_FILE]: naming }),
+  );
+  expect(n.get(BASE_FILE)).toEqual({
+    kind: 'whole',
+    reason: `it may read a test-support file the task changed: ${BASE_FILE} names old.test.ts`,
+  });
+});
+
+it('[CT-06p] without baselines the result keeps its old shape (no exempt list)', () => {
+  const result = checkRedReports(
+    [redReport(BASE_FILE, [['[AC-1] a', 'passed']])],
+    [BASE_FILE],
+    ROOT,
+  );
+  expect(result.exempt).toBeUndefined();
+  expect(result.problems[0]?.reason).toBe('green on the skeleton: the test has no teeth');
 });

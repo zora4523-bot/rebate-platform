@@ -66,9 +66,32 @@
 // such a test is judged by its failure alone. Both are said in the result (`notes`). Smoke rule
 // tests that open a page must write the annotation. On a green run the build-smoke project's
 // strict reporter (tools/ops/build-smoke/strict-reporter.mjs) fails on the same page problems.
+//
+// Files that already existed at the base (CT-06p; orchestrator ruling of 2026-10-18 14:1x): a task
+// that changes a rule-test file merged earlier (an exact assertion synchronised with its new
+// column, a new test next to the old ones) needs only its new and changed tests red. Given the
+// base and head content of the expected files (ruleTestBaselines; verify-container.sh --red passes
+// the base and the snapshot tree), a test of such a file whose block is unchanged since the base
+// (lib/test-blocks.ts: same test text under the same describe titles, same order, same code
+// outside the tests) is exempt: it may pass on the skeleton; if it fails, the failure must still
+// be a valid red; skipped / todo stays refused. The exempt tests are listed in `exempt` and in
+// `notes`. Whatever cannot be read for certain counts as changed: the whole file is judged as
+// before (every test red, the reason in `notes`) when code outside its tests changed, it cannot be
+// tokenized (or is JSX), or it may read a test-support file the task changed inside its
+// test_paths (a helper, fixture or data file; mayReadSupport), and only reports of the red
+// reporter get exemptions. A file that existed at the base and has no new or changed test at all
+// fails (nothing would be shown red; evidence-check wants a red test of every expected file). New
+// files, the expected list (what the red run runs) and every other rule are unchanged.
 import { matchesAny } from '../../lib/glob.ts';
 import type { Change } from '../../lib/git.ts';
 import type { TaskFile } from '../../lib/task-file.ts';
+import {
+  type ComparedBlock,
+  compareTestFile,
+  mayReadSupport,
+  relativeClosure,
+  unchangedTest,
+} from './test-blocks.ts';
 
 /** True when the task must show red rule tests before it is implemented. */
 export function redCheckRequired(task: Pick<TaskFile, 'tester'>): boolean {
@@ -117,13 +140,95 @@ type FileResult = {
 };
 
 export type RedProblem = { file: string; test: string | null; reason: string };
+/** A test of a file that existed at the base, unchanged since: not held to the red rule. */
+export type RedExempt = { file: string; test: string; status: 'passed' | 'failed' };
 export type RedResult = {
   ok: boolean;
   red: string[];
   problems: RedProblem[];
-  /** How a valid red was judged when that is worth saying (a smoke test without diagnostics). */
+  /**
+   * How a valid red was judged when that is worth saying (a smoke test without diagnostics), the
+   * exempt tests and why a file that existed at the base was judged as a whole (CT-06p).
+   */
   notes: string[];
+  /** The exempt tests (present when baselines were given, CT-06p). */
+  exempt?: RedExempt[];
 };
+
+/** How an expected rule-test file that existed at the base is judged (CT-06p). */
+export type RuleTestBaseline =
+  /** Every test must be red, as for a new file (the reason goes into the notes). */
+  | { kind: 'whole'; reason: string }
+  /** Only the tests of changed blocks must be red. */
+  | { kind: 'tests'; blocks: ComparedBlock[] };
+
+export type BaselineReader = {
+  /** Content of a file at the base, null when it does not exist there. */
+  base(path: string): string | null;
+  /** Content of a file at the head (the tree the red run ran), null when it does not exist. */
+  head(path: string): string | null;
+};
+
+/** Rule-test files compared test by test: TypeScript / JavaScript without JSX. */
+const COMPARABLE = /\.[cm]?[jt]s$/;
+
+/**
+ * The baselines of the expected files that existed at the base (same path; a renamed or new file
+ * has none: every test must be red). `changes` are the task's changes against the base; the ones
+ * inside `scope` (test_paths) other than the file itself are its test-support files.
+ */
+export function ruleTestBaselines(
+  expected: readonly string[],
+  changes: readonly Change[],
+  scope: readonly string[],
+  read: BaselineReader,
+): Map<string, RuleTestBaseline> {
+  const out = new Map<string, RuleTestBaseline>();
+  const support = new Set<string>();
+  for (const c of changes) {
+    for (const p of [c.path, c.oldPath]) {
+      if (p !== undefined && matchesAny(p, scope)) support.add(p);
+    }
+  }
+  // Test code only: implementation modules do not read test-support files.
+  const follow = (p: string): boolean =>
+    p.startsWith('test/') || p.startsWith('packages/testing/') || matchesAny(p, scope);
+  for (const file of expected) {
+    const before = read.base(file);
+    if (before === null) continue;
+    const after = read.head(file);
+    if (after === null) {
+      out.set(file, { kind: 'whole', reason: 'its content in the red run cannot be read' });
+      continue;
+    }
+    if (!COMPARABLE.test(file)) {
+      out.set(file, {
+        kind: 'whole',
+        reason: 'only .ts / .js rule-test files are compared test by test (JSX is not read)',
+      });
+      continue;
+    }
+    const compared = compareTestFile(before, after);
+    if (compared.whole) {
+      out.set(file, { kind: 'whole', reason: compared.reason });
+      continue;
+    }
+    const others = [...support].filter((s) => s !== file).sort();
+    const closure = others.length === 0 ? [] : relativeClosure(file, (p) => read.head(p), follow);
+    let why: string | null = null;
+    for (const s of others) {
+      why = mayReadSupport(file, s, closure);
+      if (why !== null) break;
+    }
+    out.set(
+      file,
+      why === null
+        ? { kind: 'tests', blocks: compared.blocks }
+        : { kind: 'whole', reason: `it may read a test-support file the task changed: ${why}` },
+    );
+  }
+  return out;
+}
 
 /** Failures that prove nothing about the rule; checked first, they win over any wrapper. */
 const WRONG_RED: [RegExp, string][] = [
@@ -533,18 +638,24 @@ function testVerdict(
 
 /**
  * Checks Vitest JSON reports against the expected rule-test files (repository-relative). `root`
- * is stripped from the absolute file names Vitest reports.
+ * is stripped from the absolute file names Vitest reports. `baselines` (CT-06p) say how the
+ * expected files that existed at the base are judged (see the header); without them every test
+ * of every expected file must be red.
  */
 export function checkRedReports(
   reports: readonly unknown[],
   expected: readonly string[],
   root: string,
+  baselines?: ReadonlyMap<string, RuleTestBaseline>,
 ): RedResult {
   const problems: RedProblem[] = [];
   const red: string[] = [];
   const notes: string[] = [];
+  const exempt: RedExempt[] = [];
   const prefix = root.endsWith('/') ? root : `${root}/`;
   const seen = new Map<string, FileResult>();
+  // Files reported by the trusted red reporter: only their full names are `describe > … > test`.
+  const byRedReporter = new Set<FileResult>();
   for (const report of reports) {
     const files =
       typeof report === 'object' &&
@@ -563,9 +674,11 @@ export function checkRedReports(
         causeVerdict(causesOf(unhandled[0] as Failure)) ?? 'an assertion outside any test';
       problems.push({ file: '', test: null, reason: `the run had unhandled errors: ${why}` });
     }
+    const fromRedReporter = (report as { reporter?: unknown }).reporter === 'couli-red-reporter';
     for (const entry of files) {
       const abs = text(entry.name);
       seen.set(abs.startsWith(prefix) ? abs.slice(prefix.length) : abs, entry);
+      if (fromRedReporter) byRedReporter.add(entry);
     }
   }
   if (expected.length === 0) {
@@ -618,11 +731,42 @@ export function checkRedReports(
       });
       continue;
     }
+    // CT-06p: a file that existed at the base needs only its new and changed tests red.
+    const baseline = baselines?.get(file);
+    let blocks: ComparedBlock[] | null = null;
+    if (baseline?.kind === 'whole') {
+      notes.push(
+        `${file}: existed at the base, judged as a whole (every test must be red): ${baseline.reason}`,
+      );
+    } else if (baseline?.kind === 'tests' && !byRedReporter.has(entry)) {
+      notes.push(
+        `${file}: existed at the base, judged as a whole (every test must be red): the report is not from the red reporter`,
+      );
+    } else if (baseline?.kind === 'tests') {
+      blocks = baseline.blocks;
+    }
+    let required = 0;
     for (const t of tests) {
       const name = text(t.fullName) || text(t.title);
       const status = text(t.status);
+      const unchanged = blocks !== null && unchangedTest(text(t.fullName), blocks);
+      if (!unchanged) required += 1;
       if (status === 'passed') {
-        problems.push({ file, test: name, reason: 'green on the skeleton: the test has no teeth' });
+        if (unchanged) {
+          exempt.push({ file, test: name, status: 'passed' });
+          notes.push(
+            `${file} > ${name}: unchanged since the base, exempt from the red rule (green)`,
+          );
+          continue;
+        }
+        problems.push({
+          file,
+          test: name,
+          reason:
+            blocks === null
+              ? 'green on the skeleton: the test has no teeth'
+              : 'green on the skeleton: the test has no teeth (new or changed since the base)',
+        });
         continue;
       }
       if (status !== 'failed') {
@@ -657,9 +801,31 @@ export function checkRedReports(
           }
         }
       }
-      if (why === null) red.push(`${file} > ${name}`);
-      else problems.push({ file, test: name, reason: why });
+      if (why === null) {
+        red.push(`${file} > ${name}`);
+        if (unchanged) {
+          exempt.push({ file, test: name, status: 'failed' });
+          notes.push(
+            `${file} > ${name}: unchanged since the base, exempt from the red rule (red for a valid reason)`,
+          );
+        }
+      } else {
+        problems.push({ file, test: name, reason: why });
+      }
+    }
+    if (blocks !== null && required === 0) {
+      problems.push({
+        file,
+        test: null,
+        reason: `existed at the base and has no new or changed test: nothing is shown red (${tests.length} unchanged test(s))`,
+      });
     }
   }
-  return { ok: problems.length === 0, red, problems, notes };
+  return {
+    ok: problems.length === 0,
+    red,
+    problems,
+    notes,
+    ...(baselines === undefined ? {} : { exempt }),
+  };
 }

@@ -1,0 +1,152 @@
+{
+  "reporter": "couli-red-reporter",
+  "testResults": [
+    {
+      "name": "/work/repo/test/spec/zzct06p/probe.test.ts",
+      "browser": false,
+      "poll_in_source": false,
+      "status": "failed",
+      "message": "",
+      "failures": [],
+      "assertionResults": [
+        {
+          "fullName": "[AC-X#1] plain title",
+          "title": "[AC-X#1] plain title",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#2] template 2 items",
+          "title": "[AC-X#2] template 2 items",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#3] row 1 is one",
+          "title": "[AC-X#3] row 1 is one",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#3] row 2 is two",
+          "title": "[AC-X#3] row 2 is two",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#4] value=1 label=a 0",
+          "title": "[AC-X#4] value=1 label=a 0",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#4] value=2 label=b 1",
+          "title": "[AC-X#4] value=2 label=b 1",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#5] tagged 1 + 2",
+          "title": "[AC-X#5] tagged 1 + 2",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#6] loop alpha works",
+          "title": "[AC-X#6] loop alpha works",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#6] loop beta works",
+          "title": "[AC-X#6] loop beta works",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "outer suite > [AC-X#7] nested",
+          "title": "[AC-X#7] nested",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "outer suite > inner p > [AC-X#8] deep",
+          "title": "[AC-X#8] deep",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "outer suite > inner q > [AC-X#8] deep",
+          "title": "[AC-X#8] deep",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#9] fails on purpose",
+          "title": "[AC-X#9] fails on purpose",
+          "status": "failed",
+          "failureMessages": [
+            "AssertionError: expected 1 to be 2 // Object.is equality\n    at /work/repo/test/spec/zzct06p/probe.test.ts:45:13\n    at file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_@vitest+browser-playwright@5.0.1_@vitest+ui@5.0.1_jsdo_9920c168f6420f2372378ee2fb5f6476/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:1628:35\n    at file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_@vitest+browser-playwright@5.0.1_@vitest+ui@5.0.1_jsdo_9920c168f6420f2372378ee2fb5f6476/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:2783:26\n    at file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_@vitest+browser-playwright@5.0.1_@vitest+ui@5.0.1_jsdo_9920c168f6420f2372378ee2fb5f6476/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:3319:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_@vitest+browser-playwright@5.0.1_@vitest+ui@5.0.1_jsdo_9920c168f6420f2372378ee2fb5f6476/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:3314:10)\n    at file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_@vitest+browser-playwright@5.0.1_@vitest+ui@5.0.1_jsdo_9920c168f6420f2372378ee2fb5f6476/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:3299:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_@vitest+browser-playwright@5.0.1_@vitest+ui@5.0.1_jsdo_9920c168f6420f2372378ee2fb5f6476/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:3257:10)\n    at file:///work/repo/node_modules/.pnpm/vitest@5.0.1_@types+node@24.13.6_@vitest+browser-playwright@5.0.1_@vitest+ui@5.0.1_jsdo_9920c168f6420f2372378ee2fb5f6476/node_modules/vitest/dist/chunks/run.C5UmxDPh.js:3876:64"
+          ],
+          "failures": [
+            {
+              "causes": [
+                {
+                  "name": "AssertionError",
+                  "message": "expected 1 to be 2 // Object.is equality"
+                }
+              ],
+              "site": {
+                "file": "/work/repo/test/spec/zzct06p/probe.test.ts",
+                "line": 45,
+                "column": 13
+              }
+            }
+          ],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#10] for 3 c",
+          "title": "[AC-X#10] for 3 c",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        },
+        {
+          "fullName": "[AC-X#11] escaped é 'quote' \\ back",
+          "title": "[AC-X#11] escaped é 'quote' \\ back",
+          "status": "passed",
+          "failureMessages": [],
+          "failures": [],
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "unhandledErrors": []
+}

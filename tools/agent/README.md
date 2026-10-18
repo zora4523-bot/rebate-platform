@@ -158,7 +158,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 | `action` | 什么时候 |
 | --- | --- |
 | `verify` | 换家实现（或 2026-10-05 前的 Codex 实现）有产出、路径守卫与保护路径守卫都过。附 `revert_first`（`ops/`、`docs/` 下要先还原的越界改动）和 `outside_needed`（要在沙箱外跑的命令） |
-| `red-check` | Codex 写测试（`phase: test`）有产出、守卫都过。不验证（测试本来就该红）：编排者跑 `tools/ops/verify-container.sh <id> --red`（隔离容器里只跑本任务 `test_paths` 内新写的测试文件，导出 Vitest JSON 报告，`red-check.ts` 逐个文件对账，退出码就是它的），过了才提交 `test(spec): …`、`state.ts set --spec-commit`，把 `red/<n>/result.json` 记进证据；RV2 再交 Claude 新子代理过审（§11），然后派 Opus 实现（§10） |
+| `red-check` | Codex 写测试（`phase: test`）有产出、守卫都过。不验证（测试本来就该红）：编排者跑 `tools/ops/verify-container.sh <id> --red`（隔离容器里只跑本任务 `test_paths` 内新写的测试文件，导出 Vitest JSON 报告，`red-check.ts` 逐个文件对账，退出码就是它的；base 上已存在的规则测试文件只要求新增或测试体改动的用例有效红，未改用例可绿、列在 `exempt` / `notes`，CT-06p，口径见 `tools/README.md`），过了才提交 `test(spec): …`、`state.ts set --spec-commit`，把 `red/<n>/result.json` 记进证据；RV2 再交 Claude 新子代理过审（§11），然后派 Opus 实现（§10） |
 | `retry` | 失败的一次尝试（无产出、超时、越界、自称没做完、孤儿）。附 `backoff_min`：第 1 次后 15 分钟，第 2 次后 30 分钟；超时与无产出另附 `counts_as_attempt`（`false` = 包装脚本已还回这一轮）。孤儿（包装脚本没写完 `meta.json`）没有结算，照计一次 |
 | `blocked` | 三次用完、位置断言失败、要装依赖（`deps-needed`）、实现者自报受阻、守卫出错 |
 | `ask` | 改动碰了保护路径第二、三类，交负责人确认 |
