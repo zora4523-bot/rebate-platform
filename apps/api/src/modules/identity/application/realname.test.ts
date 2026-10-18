@@ -22,6 +22,7 @@ import {
 } from '../../platform/index.ts';
 import type { RealnameVerificationResult } from '../ports/realname-verifier.ts';
 import {
+  REALNAME_PENDING_LEASE_MS,
   RECORD_SCRIPT,
   RELEASE_SCRIPT,
   RESERVE_SCRIPT,
@@ -97,6 +98,7 @@ function scriptedDb(state: { row: Row | undefined; failWrites: number }): Kysely
 /** Applies the three scripts' rules to an in-memory map; records each call. */
 function scriptedRedis() {
   const store = new Map<string, string>();
+  const faults = { record: false };
   const calls: { script: string; options: RedisScriptOptions }[] = [];
   const handle: RedisHandle = {
     namespace: () => ({
@@ -110,15 +112,23 @@ function scriptedRedis() {
         const [count, mark] = options.keys as [string, string];
         const n = Number(store.get(count) ?? '0');
         if (script === RESERVE_SCRIPT) {
+          const [limit, now, lease] = options.args.map(Number) as [number, number, number];
           const value = store.get(mark);
-          if (value !== undefined) return Promise.resolve(value);
-          if (n >= Number(options.args[0])) return Promise.resolve(0);
+          if (value !== undefined) {
+            if (value.startsWith('pending:') && now - Number(value.slice(8)) >= lease) {
+              store.set(mark, 'expired');
+              return Promise.resolve('expired');
+            }
+            return Promise.resolve(value);
+          }
+          if (n >= limit) return Promise.resolve(0);
           store.set(count, String(n + 1));
-          store.set(mark, 'pending');
+          store.set(mark, `pending:${String(now)}`);
           return Promise.resolve(1);
         }
         if (script === RECORD_SCRIPT) {
-          if (!store.has(mark)) store.set(count, String(n + 1));
+          if (faults.record) return Promise.reject(new Error('redis down'));
+          if (!store.get(mark)?.startsWith('pending:')) return Promise.resolve(0);
           store.set(mark, options.args[0]!);
           return Promise.resolve(1);
         }
@@ -134,7 +144,7 @@ function scriptedRedis() {
     close: () => Promise.resolve(),
     onApplicationShutdown: () => Promise.resolve(),
   };
-  return { handle, store, calls };
+  return { handle, store, calls, faults };
 }
 
 const crypto: FieldCrypto = {
@@ -239,21 +249,64 @@ it('[AC-B1-13d][BR-ID-25] after 50401 the same key reserves again and finally co
   ]);
 });
 
-it('[AC-B1-13d][BR-ID-25] a pending mark (earlier attempt died) answers 50401 without the vendor and gives back', async () => {
+it('[AC-B1-13d][BR-ID-25] a pending mark: 50401 within its lease, then terminal expired; never a call or a give-back', async () => {
   const t = setup();
-  // The first attempt never returns from the vendor: its mark stays pending.
+  // The first attempt never returns from the vendor (as if the process died): its mark stays pending.
   t.verify.mockImplementationOnce(() => new Promise<never>(() => undefined));
   void t.submit('key-cccccccc');
   await vi.waitFor(() => expect(t.verify).toHaveBeenCalledTimes(1));
-  expect(t.redis.store.get(COUNT_KEY)).toBe('1');
-  await expect(t.submit('key-cccccccc')).resolves.toEqual({ code: 50401 });
-  expect(t.verify).toHaveBeenCalledTimes(1);
-  expect(t.redis.store.get(COUNT_KEY)).toBe('0');
-  expect([...t.redis.store.keys()]).toEqual([COUNT_KEY]);
+  const marks = () => [...t.redis.store.entries()].filter(([key]) => key !== COUNT_KEY);
+  const pending = `pending:${String(Date.parse(NOW))}`;
+  expect(marks().map(([, value]) => value)).toEqual([pending]);
+  // Within the lease: 50401, nothing changes.
+  t.clock.set(new Date(Date.parse(NOW) + REALNAME_PENDING_LEASE_MS - 1).toISOString());
+  for (let i = 0; i < 2; i++) {
+    await expect(t.submit('key-cccccccc')).resolves.toEqual({ code: 50401 });
+    expect(t.verify).toHaveBeenCalledTimes(1);
+    expect(t.redis.store.get(COUNT_KEY)).toBe('1');
+    expect(marks().map(([, value]) => value)).toEqual([pending]);
+  }
+  // At the end of the lease the mark turns terminal: still 50401, no call, nothing given back.
+  t.clock.set(new Date(Date.parse(NOW) + REALNAME_PENDING_LEASE_MS).toISOString());
+  for (let i = 0; i < 2; i++) {
+    await expect(t.submit('key-cccccccc')).resolves.toEqual({ code: 50401 });
+    expect(t.verify).toHaveBeenCalledTimes(1);
+    expect(t.redis.store.get(COUNT_KEY)).toBe('1');
+    expect(marks().map(([, value]) => value)).toEqual(['expired']);
+  }
+  expect(t.redis.calls.map((c) => c.script)).not.toContain(RELEASE_SCRIPT);
+  // A new key is a new request under the normal count.
   t.verify.mockResolvedValueOnce({ outcome: 'mismatch', provider: 'unit' });
-  await expect(t.submit('key-cccccccc')).resolves.toEqual({ code: 30406 });
-  expect(t.redis.store.get(COUNT_KEY)).toBe('1');
+  await expect(t.submit('key-ffffffff')).resolves.toEqual({ code: 30406 });
+  expect(t.redis.store.get(COUNT_KEY)).toBe('2');
   expect(t.verify).toHaveBeenCalledTimes(2);
+});
+
+it('[AC-B1-13d][BR-ID-25] outcome not kept and write failed: the retry is pending (50401), never a second call', async () => {
+  const t = setup();
+  t.verify.mockResolvedValue({ outcome: 'match', provider: 'unit' });
+  t.redis.faults.record = true;
+  t.state.failWrites = 1;
+  await expect(t.submit('key-gggggggg')).rejects.toThrow('connection terminated');
+  t.redis.faults.record = false;
+  await expect(t.submit('key-gggggggg')).resolves.toEqual({ code: 50401 });
+  expect(t.verify).toHaveBeenCalledTimes(1);
+  expect(t.redis.store.get(COUNT_KEY)).toBe('1');
+});
+
+it('[AC-B1-13d][BR-ID-25] record() never recreates a missing mark nor touches the count', async () => {
+  const redis = scriptedRedis();
+  const attempts = createRealnameAttempts(redis.handle);
+  const slot = {
+    appId: APP,
+    userId: USER,
+    day: '2026-09-29',
+    idempotencyKey: 'key-hhhhhhhh',
+    requestDigest: 'digest',
+  };
+  const now = new FixedClock(NOW).now();
+  await attempts.record(slot, { kind: 'match', provider: 'unit' }, now);
+  expect([...redis.store.keys()]).toEqual([]);
 });
 
 it('[AC-B1-13d][BR-ID-25] writes of one day key expire at one instant: the window never extends', async () => {

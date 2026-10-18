@@ -17,9 +17,11 @@
 //      per request (Idempotency-Key + submitted values) and its definite outcome kept with it: a
 //      retry after a failure without a stored idempotent result (e.g. a failed database write)
 //      replays that outcome — no second count, no second vendor call; a retry whose earlier
-//      attempt died before an outcome is 50401 and gives the count back. The limit is judged only
-//      for requests without a mark, so the day's vendor calls never exceed it. Redis unavailable →
-//      50001 (fail closed, nothing called).
+//      attempt ended before its outcome was kept (mark pending; after its lease, terminal expired)
+//      is 50401 and changes nothing (no vendor call, nothing given back). The
+//      limit is judged only for requests without a mark. Invariant: vendor calls with a definite
+//      answer ≤ the day's count ≤ 3 (timeouts / unavailability are given back by rule). Redis
+//      unavailable → 50001 (fail closed, nothing called).
 //   6. 30405 — the blind index of the normalised ID number is verified on another user of this
 //      app (the occupant is never revealed). Counts one attempt (no vendor call).
 //   7. vendor: none assembled or an answer that is not definite (unavailable / malformed /
@@ -381,12 +383,13 @@ export function createRealnameService(options: RealnameServiceOptions): Realname
         // A retry of a request whose definite outcome is kept: no vendor call, no count.
         return settle(command, values, reservation.outcome);
       }
-      if (reservation.kind === 'pending') {
-        // The earlier attempt of this request died with the outcome unknown: like a timeout,
-        // give its count back (the request may reserve again, within the day's limit).
-        await release(command, slot);
+      if (reservation.kind === 'pending' || reservation.kind === 'expired') {
+        // The earlier attempt of this request ended before its outcome was kept, which does not
+        // prove the vendor gave no definite answer: no vendor call, nothing given back. Within the
+        // pending lease, or after it (the mark is then terminal), this request answers 50401; a new
+        // Idempotency-Key is a new request.
         logger.warn(
-          { app_id: command.appId, user_id: command.userId, outcome: 'pending' },
+          { app_id: command.appId, user_id: command.userId, outcome: reservation.kind },
           'identity_realname_vendor_failed',
         );
         return { code: 50401 };

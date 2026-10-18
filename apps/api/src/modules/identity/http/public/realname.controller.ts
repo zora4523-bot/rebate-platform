@@ -41,7 +41,9 @@ const ERRORS = {
   30410: { status: 422, msg: '今日实名次数已用完，请明天再试' },
   50001: { status: 500, msg: '服务端错误' },
   50301: { status: 503, msg: '服务暂不可用，请稍后再试' },
-  50401: { status: 504, msg: '出了点问题，请稍后再试' },
+  // Outcome unknown (vendor timeout, or a retry of an attempt whose outcome was not kept): the
+  // existing text of contracts/texts.default.json buy.timeout.
+  50401: { status: 504, msg: '网络不稳定，请重试' },
 } as const;
 
 function response(result: SubmitRealnameResult, traceId: string): HandlerResult {
