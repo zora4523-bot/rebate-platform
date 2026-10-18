@@ -23,6 +23,7 @@ import {
   type InviteBindingResult,
 } from '../index.ts';
 import { INVITE_FAIL_NAMESPACE, LOGIN_DEVICE_ID_CONTEXT } from './invite-binder.ts';
+import { relationWriteLockKey } from '../infra/relation-lock.ts';
 
 const NOW = '2031-05-06T09:00:00.000Z';
 const APP = 'couli';
@@ -103,6 +104,7 @@ async function fixture(overrides: Partial<World> = {}) {
     const text = query.sql;
     const rows = (value: unknown[]) => ({ rows: value as R[] });
     if (text.startsWith('select "phone_hmac", "created_at"')) return rows([world.user]);
+    if (text.startsWith('SELECT pg_advisory_xact_lock(')) return rows([{}]);
     if (/"parent_id" = \$2 limit/.test(text)) return rows(world.child ? [{ id: 'child' }] : []);
     if (/"invite_code" = \$2/.test(text)) return rows(world.inviter ? [world.inviter] : []);
     if (/WITH RECURSIVE chain/.test(text)) return rows([world.chain]);
@@ -142,7 +144,7 @@ async function fixture(overrides: Partial<World> = {}) {
     redis: redis.handle,
     crypto: { blindIndex: (value, context) => `${context}|${value}` },
     config: {
-      configValue: vi.fn(async (_app: string, key: string) =>
+      configValue: vi.fn<InviteBinderDeps['config']['configValue']>(async (_app, key) =>
         values.has(key) ? { value: values.get(key), version: 1 } : null,
       ),
     },
@@ -173,6 +175,7 @@ async function fixture(overrides: Partial<World> = {}) {
   };
   const writes = () => queries.filter((q) => /^(insert|update|delete)\b/i.test(q.sql));
   return {
+    db,
     world,
     queries,
     lines,
@@ -538,4 +541,77 @@ it('[AC-B1-11d#48] register adapter maps bound to { bound, code: null }', async 
 
 it('the login device context copy equals identity’s', () => {
   expect(LOGIN_DEVICE_ID_CONTEXT).toBe(LOGIN_LOGS_DEVICE_ID_CONTEXT);
+});
+
+it('[AC-B1-11d#35] review r1 S0: the app relation lock is taken before the child check, the walk and the update', async () => {
+  const f = await fixture();
+  expect(await f.bind()).toMatchObject({ result: 'bound' });
+  const kinds = f.queries.map((q) =>
+    q.sql.startsWith('SELECT pg_advisory_xact_lock(')
+      ? 'lock'
+      : /"parent_id" = \$2 limit/.test(q.sql)
+        ? 'child'
+        : /WITH RECURSIVE/.test(q.sql)
+          ? 'walk'
+          : q.sql.split(' ')[0],
+  );
+  expect(kinds).toEqual(['select', 'lock', 'child', 'select', 'walk', 'update', 'insert']);
+  const lock = f.queries.find((q) => q.sql.startsWith('SELECT pg_advisory_xact_lock('));
+  expect(lock?.sql).toBe('SELECT pg_advisory_xact_lock($1::bigint)');
+  expect(lock?.parameters).toEqual([relationWriteLockKey(APP).toString()]);
+});
+
+it('[AC-B1-11d#19] review r1 S0: register takes the same lock before the walk', async () => {
+  const f = await fixture();
+  expect(await f.bind({ channel: 'register' })).toMatchObject({ result: 'bound' });
+  const order = f.queries.map((q) => q.sql.slice(0, 30));
+  const lock = order.findIndex((q) => q.startsWith('SELECT pg_advisory_xact_lock('));
+  const walk = order.findIndex((q) => q.includes('WITH RECURSIVE'));
+  expect(lock).toBeGreaterThan(-1);
+  expect(walk).toBeGreaterThan(lock);
+});
+
+it('[AC-B1-11d#35] review r1 S0: failures before the relation checks never wait on the lock', async () => {
+  const f = await fixture();
+  f.world.user.parent_id = INVITER;
+  expect(await f.bind()).toEqual({ result: 'failed', code: 30402 });
+  const orders = await fixture();
+  orders.orders.count = 1;
+  expect(await orders.bind()).toEqual({ result: 'failed', code: 30409 });
+  for (const queries of [f.queries, orders.queries]) {
+    expect(queries.some((q) => q.sql.includes('pg_advisory_xact_lock'))).toBe(false);
+  }
+});
+
+it('review r1 S0: the relation lock key is stable per app and differs between apps', () => {
+  expect(relationWriteLockKey('couli')).toBe(relationWriteLockKey('couli'));
+  expect(relationWriteLockKey('couli')).not.toBe(relationWriteLockKey('couli2'));
+  expect(relationWriteLockKey('a:b')).not.toBe(relationWriteLockKey('a'));
+  for (const app of ['couli', 'x', '']) {
+    const key = relationWriteLockKey(app);
+    expect(key >= -(2n ** 63n) && key < 2n ** 63n).toBe(true);
+  }
+});
+
+it('review r1 S2: every configuration read goes through the caller transaction', async () => {
+  const f = await fixture();
+  await f.db.transaction().execute(async (trx) => {
+    const binder = createInviteBinder(f.deps);
+    expect(
+      await binder.bind(trx, {
+        channel: 'backfill',
+        app_id: APP,
+        user_id: USER,
+        invite_code: 'K7Q2MZ',
+        device_id: 'device-1',
+      }),
+    ).toMatchObject({ result: 'bound' });
+    const calls = vi.mocked(f.deps.config.configValue).mock.calls;
+    expect(calls.map((c) => c[1])).toEqual([
+      'growth.invite_bind.enabled',
+      'invite.fail_limit_per_day',
+      'invite.backfill_hours',
+    ]);
+    for (const call of calls) expect(call[2]).toBe(trx);
+  });
 });

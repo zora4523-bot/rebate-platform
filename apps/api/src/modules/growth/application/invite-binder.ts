@@ -11,6 +11,9 @@
 //   4. parent_id set or self_bind_used → 30402;
 //   5. backfill only: not before created_at + invite.backfill_hours (missing = 168) → 30404;
 //   6. backfill only: any order, any claim, or any direct child (any status) → 30409;
+//      before the child check, the app-level relation write lock (lockRelationWrites) is taken in
+//      the caller's transaction (also on register, after step 4) and held to its end, so the child
+//      check, the walk of step 9 and the conditional update are serialised per app;
 //   7. the normalised code is empty or not of the invite-code format → 30401, no lookup;
 //   8. no inviter with (app_id, invite_code), or inviter_unavailable(facts) → 30401;
 //   9. relation conflict (BR-INV-08) → 30403: the inviter is the invitee; the invitee is found
@@ -23,6 +26,9 @@
 // When everything passes: one conditional UPDATE of users (parent_id IS NULL AND
 // self_bind_used = false); 0 rows → 30402 with nothing written; 1 row → appendRelationChange in
 // the same transaction. A failing log insert rejects, and the caller rolls back.
+//
+// Configuration is read on the caller's transaction (deps.config gets the trx): no second
+// connection is borrowed from the pool while the caller's one is held.
 //
 // Nothing logged identifies the person beyond app and user ids: no phone hash, no code, no device.
 //
@@ -44,6 +50,7 @@ import { sql, type Transaction } from 'kysely';
 import type { Clock, FieldCrypto, RedisHandle, RootLogger } from '../../platform/index.ts';
 import type { RiskStateSnapshot } from '../../risk/index.ts';
 import { appendRelationChange } from '../infra/change-logs.ts';
+import { lockRelationWrites } from '../infra/relation-lock.ts';
 
 export interface InviteBindCommand {
   readonly channel: 'register' | 'backfill';
@@ -89,10 +96,15 @@ export interface InviteBinderDeps {
   readonly logger: RootLogger;
   readonly redis: RedisHandle;
   readonly crypto: Pick<FieldCrypto, 'blindIndex'>;
+  /**
+   * Read on the caller's transaction (`trx`), never through a second pooled connection: bind runs
+   * inside the registration or backfill transaction (review r1 S2).
+   */
   readonly config: {
     configValue(
       appId: string,
       key: string,
+      trx: Transaction<DB>,
     ): Promise<{ readonly value: unknown; readonly version: number } | null>;
   };
   readonly loginDevices: {
@@ -348,7 +360,7 @@ export function createInviteBinder(deps: InviteBinderDeps): InviteBinder {
       if (backfill && user.phone_hmac === null) return failed(10005);
 
       // 2. switch.
-      const enabled = switchOn(await config.configValue(appId, SWITCH_KEY));
+      const enabled = switchOn(await config.configValue(appId, SWITCH_KEY, trx));
       if (enabled === null) {
         logger.warn({ ...fields, config_key: SWITCH_KEY }, 'invite_bind_config_invalid');
         return failed(50001);
@@ -357,7 +369,7 @@ export function createInviteBinder(deps: InviteBinderDeps): InviteBinder {
 
       // 3. daily 30401 count of the phone.
       const limit = integerConfig(
-        await config.configValue(appId, FAIL_LIMIT_KEY),
+        await config.configValue(appId, FAIL_LIMIT_KEY, trx),
         DEFAULT_FAIL_LIMIT,
         1,
       );
@@ -409,7 +421,7 @@ export function createInviteBinder(deps: InviteBinderDeps): InviteBinder {
       if (backfill) {
         // 5. backfill period.
         const hours = integerConfig(
-          await config.configValue(appId, BACKFILL_HOURS_KEY),
+          await config.configValue(appId, BACKFILL_HOURS_KEY, trx),
           DEFAULT_BACKFILL_HOURS,
           0,
         );
@@ -427,13 +439,19 @@ export function createInviteBinder(deps: InviteBinderDeps): InviteBinder {
         }
         if (!withinBackfill(at, deadline)) return failed(30404);
 
-        // 6. no order, claim or direct child of any status.
+        // 6. no order, claim or direct child of any status (children below, under the lock).
         const reader = activity(trx);
         const subject = { appId, userId };
         if ((await reader.orderCount(subject)) > 0) return failed(30409);
         if (await reader.hasClaims(subject)) return failed(30409);
-        if (await hasDirectChild(trx, command)) return failed(30409);
       }
+
+      // The app's relation write lock, held to the end of the caller's transaction: the child
+      // check, the descendant walk and the conditional update all see every earlier relation write
+      // committed, so concurrent binds can never close a cycle (review r1 S0). Taken only now, so
+      // nothing waits on it before the prechecks above (no row lock is held either).
+      await lockRelationWrites(trx, appId);
+      if (backfill && (await hasDirectChild(trx, command))) return failed(30409);
 
       // 7. format of the normalised code (no lookup).
       const code = normalizeInviteCode(command.invite_code);

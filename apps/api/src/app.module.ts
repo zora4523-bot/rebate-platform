@@ -233,7 +233,7 @@ function requestChecks(options: PlatformOptions): Provider {
  * revocation and the revocation entries by user / by device unbind, in the session's transaction.
  * Its real-name status port (stage ⑨, B1-02za) is the default reader (none) until B1-13d.
  * Its invite binding port (BR-INV-06, B1-11d) is growth's binder on the register channel, over
- * content's configValue, Redis, the field cipher's blind index, identity's login-device and
+ * config_items read on the registration transaction, Redis, the field cipher's blind index, identity's login-device and
  * order / claim readers and risk's fresh state read, each bound to the registration transaction;
  * without a database, Redis or the field cipher there is none (invite_bind { failed, 50001 }).
  */
@@ -444,7 +444,13 @@ function identityModule(): DynamicModule {
             logger,
             redis,
             crypto,
-            config: createContentReader({ db, clock }),
+            // On the registration transaction: no second pooled connection while it is held (a
+            // cold or expired cache would otherwise borrow one per pending sign-up). A plain read of
+            // config_items each time, so the value is never older than the transaction.
+            config: {
+              configValue: (appId, key, trx) =>
+                createContentReader({ db: trx, clock }).configValue(appId, key),
+            },
             loginDevices: devices,
             activity: (trx) => createInviteBackfillActivityReader(trx),
             // Bind risk's reader to the caller's transaction: no second connection.
