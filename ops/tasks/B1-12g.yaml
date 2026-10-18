@@ -4,19 +4,18 @@ title: notification：订阅 risk.state_changed，按 BR-TEXT-23 发站内信 RI
 type: impl
 # 2026-10-18 入账（be-codex；编排 09:4x 派工「发送风控状态变更站内信」归本线，admin-backend 10-18 01:20 跨线请求：F1-07d 不加发送调用、只写 TODO 指向本任务）。
 # 依据：BR-TEXT-23 细则模板与原因类别字典（{reason_category} 取 risk_reason.<category> 用户文案；{frozen_until} 按 BR-TEXT-11）；risk.state_changed 由 risk 的 setRiskState 在同一事务发出（载荷 app_id、user_id、from、to、reason_category），
-# 事件至少一次投递、消费端去重（AGENTS 硬规则 4）。frozen_until 不在载荷里：经 risk 模块导出的只读口读 user_risk_state（只加导出 / 只读函数，不改 risk 的写路径）。
+# 事件至少一次投递、消费端去重（AGENTS 硬规则 4）。frozen_until 由 risk 在同一事务写进载荷（快照，非冻结为 null；台账评审 GT-23bep S1：消费者不得读 user_risk_state 当前行代替事件当时的值），规则测试同步见 B1-03y。
 # 变体判定：to=frozen 且 frozen_until 空 → frozen；to=frozen 且有到期 → frozen_until；from=frozen、to=normal → unfrozen；to=banned → banned；from=banned、to=normal → unbanned；
 # 经 appealing 的迁移（申诉撤销 / 维持）归 APPEAL_RESULT 任务（BR-ID-36），本任务不发并留 TODO。标题：BR-TEXT-23 未给，代理默认「账户通知」，可经覆盖列改（记 needs 交规划回写）。
 refs: [BR-TEXT-23]
 refs_hash:
   BR-TEXT-23: e3d452417b5c
-deps: [B1-12f]
+deps: [B1-12f, B1-03y]
 paths:
   - 'apps/api/src/modules/notification/**'
   - 'apps/api/src/modules/platform/events/types.ts'
-  - 'apps/api/src/modules/risk/index.ts'
-  - 'apps/api/src/modules/risk/application/risk-state-read.ts'
-  - 'apps/api/src/modules/risk/application/risk-state-read.test.ts'
+  - 'apps/api/src/modules/risk/application/risk-state.ts'
+  - 'apps/api/src/modules/risk/application/risk-state.test.ts'
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/notification/risk-state-message/**'
