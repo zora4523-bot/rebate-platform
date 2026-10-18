@@ -16,7 +16,12 @@ import {
   type RequestCheckInput,
   type RootLogger,
 } from '../platform/index.ts';
-import { DEVICE_SIGNING_KEYS, type BlocklistService, type SmsRisk } from '../risk/index.ts';
+import {
+  DEVICE_SIGNING_KEYS,
+  createRequestSignatureVerifier,
+  type BlocklistService,
+  type SmsRisk,
+} from '../risk/index.ts';
 import {
   H5_READ_ONLY_MSG,
   createTokenCheck,
@@ -25,6 +30,7 @@ import {
   type TokenKeyProvider,
   type TokenService,
 } from './application/access-tokens.ts';
+import { createConsentSignatureCheck } from './application/consent-signature.ts';
 import { createConsentService, type ConsentService } from './application/consents.ts';
 import {
   createLaborAgreementService,
@@ -106,6 +112,7 @@ import type { MinimumVersionReader } from './application/session-scope.ts';
 import {
   BIND_PHONE,
   CONSENTS,
+  CONSENT_SIGNATURE_CHECK,
   H5_TOKENS,
   IDENTITY_CONFIG,
   LABOR_AGREEMENT,
@@ -289,6 +296,8 @@ function h5ReadOnlyRejection(request: RequestCheckInput): HttpException {
  * (50001).
  * Exports the risk module's DEVICE_SIGNING_KEYS port (request signatures, BR-ID-09); app.module
  * passes this module to RiskModule.
+ * Exports CONSENT_SIGNATURE_CHECK (B1-02zc), recordConsent's clipboard_auto_import signature,
+ * which app.module places between the signature check and the token check.
  * Exports TOKEN_CHECK, the token stages ② ③ (BR-ID-01) that app.module places right after the
  * signature check in the api entry's REQUEST_CHECKS.
  * Push tokens (B1-12b): app.module hands in notification's commands as the push token port
@@ -796,6 +805,24 @@ export class IdentityModule {
                 }),
         },
         {
+          // recordConsent's clipboard_auto_import signature (B1-02zc): risk's single-request
+          // verifier over this module's device port, the same Redis nonce store as stage ①.
+          provide: CONSENT_SIGNATURE_CHECK,
+          inject: [DeviceSigningKeysService, CLOCK, { token: REDIS, optional: true }],
+          useFactory: (
+            devices: DeviceSigningKeysService,
+            clock: Clock,
+            redis?: RedisHandle,
+          ): RequestCheck =>
+            createConsentSignatureCheck(
+              createRequestSignatureVerifier({
+                devices,
+                clock,
+                ...(redis === undefined ? {} : { redis }),
+              }),
+            ),
+        },
+        {
           provide: CONSENTS,
           inject: [CLOCK, { token: DB, optional: true }],
           useFactory: (clock: Clock, db?: Kysely<Database>): ConsentService | null =>
@@ -934,7 +961,13 @@ export class IdentityModule {
           ): Logout => createLogout({ db, clock, pushTokens }),
         },
       ],
-      exports: [DEVICE_SIGNING_KEYS, TOKEN_CHECK, STEP_UP_CHECK, IDENTITY_LEVEL_CHECKS],
+      exports: [
+        DEVICE_SIGNING_KEYS,
+        TOKEN_CHECK,
+        CONSENT_SIGNATURE_CHECK,
+        STEP_UP_CHECK,
+        IDENTITY_LEVEL_CHECKS,
+      ],
     };
   }
 }

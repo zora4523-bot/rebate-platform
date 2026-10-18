@@ -127,14 +127,17 @@ export {
   DEVICE_SIGNING_KEYS,
   SIGNATURE_CHECK,
   SignatureError,
+  createRequestSignatureVerifier,
   createSignatureCheck,
   isSignatureCheck,
 } from './application/signature-check.ts';
 export type {
   DeviceSigningKey,
   DeviceSigningKeys,
+  RequestSignatureVerifier,
   SignatureDependencies,
   SignatureRequest,
+  SignedRequest,
 } from './application/signature-check.ts';
 export { createBlocklistService, blocklistHmacContexts } from './application/blocklist.ts';
 export type {

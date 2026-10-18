@@ -54,6 +54,9 @@ export const H5_TOKENS = Symbol('H5_TOKENS');
 /** The ConsentService (consents.ts); null when the process has no database. */
 export const CONSENTS = Symbol('CONSENTS');
 
+/** recordConsent's clipboard_auto_import signature RequestCheck (consent-signature.ts, B1-02zc). */
+export const CONSENT_SIGNATURE_CHECK = Symbol('CONSENT_SIGNATURE_CHECK');
+
 // Nest token of the one-time tips wiring (B1-02s, identity.module.ts).
 
 /** The TipsService (tips.ts); null when the process has no database. */

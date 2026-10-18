@@ -216,18 +216,91 @@ it('[BR-ID-13] a guest withdrawal on a revoked or unknown device is 20001 [X-Dev
   }
 });
 
-it('[BR-ID-12][BR-ID-16] until B1-02zc, clipboard_auto_import is 20001 [version] before any read or write, with or without a token', async () => {
+const SIGNED_DEVICE = '019a0000-0000-7000-8000-000000000002';
+
+/** The clipboard_auto_import command, verified by the controller for SIGNED_DEVICE of `appId`. */
+function clipboard(
+  principal: TokenPrincipal | null,
+  version: string | number = '2026-10-17',
+  appId = 'couli',
+): ConsentCommand {
+  return {
+    ...command({ type: 'clipboard_auto_import', accepted: true, version }, principal),
+    verified_device: { deviceId: SIGNED_DEVICE, appId },
+  };
+}
+
+/** The inserted row as column → value (one single-row insert). */
+function insertedRow(statements: readonly CompiledQuery[]): Record<string, unknown> {
+  const insert = statements.find((statement) => label(statement.sql) === 'insert:consent_records');
+  if (insert === undefined) throw new Error('no insert');
+  const columns = /\(([^)]*)\) values/.exec(insert.sql)![1]!.split(', ');
+  return Object.fromEntries(
+    columns.map((column, index) => [column.replaceAll('"', ''), insert.parameters[index]]),
+  );
+}
+
+it('[BR-ID-12][BR-ID-16] clipboard_auto_import with an integer version is 20001 [version] before any read or write, with or without a token', async () => {
   for (const principal of [PRINCIPAL, null]) {
-    for (const version of ['2026-10-17', 3]) {
-      const context = setup({ device: { revoked_at: null } });
-      expect(
-        await context.service.record(
-          command({ type: 'clipboard_auto_import', accepted: true, version }, principal),
-        ),
-      ).toEqual({ code: 20001, data: { fields: ['version'] } });
-      expect(context.events).toEqual([]);
-    }
+    const context = setup({ device: { revoked_at: null } });
+    expect(await context.service.record(clipboard(principal, 3))).toEqual({
+      code: 20001,
+      data: { fields: ['version'] },
+    });
+    expect(context.events).toEqual([]);
   }
+});
+
+it('[BR-ID-12][BR-ID-16] clipboard_auto_import is recorded for the signed device, not the token device; user_id only rides along; only the device row is locked', async () => {
+  // PRINCIPAL.device_id differs from SIGNED_DEVICE (B1-02zc rule-test review r1 S2).
+  for (const principal of [PRINCIPAL, null]) {
+    const context = setup({ device: { revoked_at: null } });
+    expect(await context.service.record(clipboard(principal))).toEqual({ code: 0, data: {} });
+    expect(context.events).toEqual([
+      'begin',
+      'lock:devices',
+      'clock',
+      'insert:consent_records',
+      'commit',
+    ]);
+    const lock = context.statements[0]!;
+    expect(lock.parameters).toEqual([SIGNED_DEVICE, 'couli']);
+    expect(insertedRow(context.statements)).toMatchObject({
+      app_id: 'couli',
+      subject_type: 'device',
+      device_id: SIGNED_DEVICE,
+      user_id: principal === null ? null : PRINCIPAL.uid,
+      type: 'clipboard_auto_import',
+      version: 0,
+      version_label: '2026-10-17',
+      accepted: true,
+    });
+  }
+});
+
+it('[BR-ID-12] clipboard_auto_import: a signed device revoked or gone under its row lock is 10402 with nothing written', async () => {
+  for (const device of [{ revoked_at: new Date('2026-10-01T00:00:00.000Z') }, undefined]) {
+    const context = setup({ device });
+    expect(await context.service.record(clipboard(PRINCIPAL))).toEqual({ code: 10402 });
+    expect(context.events).toEqual(['begin', 'lock:devices', 'commit']);
+  }
+});
+
+it('[BR-ID-12] clipboard_auto_import: a signed device of another app is 10403; no verified device is a server error', async () => {
+  for (const principal of [PRINCIPAL, null]) {
+    const context = setup({ device: { revoked_at: null } });
+    expect(await context.service.record(clipboard(principal, 'v1', 'other'))).toEqual({
+      code: 10403,
+    });
+    expect(context.events).toEqual([]);
+  }
+  const context = setup({ device: { revoked_at: null } });
+  await expect(
+    context.service.record(
+      command({ type: 'clipboard_auto_import', accepted: true, version: 'v1' }),
+    ),
+  ).rejects.toThrow(/verified device/);
+  expect(context.events).toEqual([]);
 });
 
 it('[BR-ID-12] a string version on another type is 20001 [version] and is never cast into the integer column', async () => {
