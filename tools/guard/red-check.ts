@@ -21,13 +21,14 @@
 //   node tools/guard/red-check.ts --task <id> --cwd <worktree> --base <ref> --print-expected
 //     prints the expected rule-test files, one per line (tools/ops/verify-container.sh --red uses
 //     it to pick what to run, and later checks the report against the same list).
-import { lstatSync, readFileSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Change, changedBetweenCommits, changedFiles, tryGit } from '../lib/git.ts';
 import { trustedRoot } from '../lib/paths.ts';
 import { loadLegacyTasks, ruleTestScope } from '../lib/legacy-tasks.ts';
 import { loadTask } from '../lib/task-file.ts';
 import { ruleTestAssets } from './lib/checks.ts';
+import type { PathKind } from './lib/test-blocks.ts';
 import { UsageError, parseArgs, printJson, resolveRoot, runCli } from './lib/cli.ts';
 import {
   type RuleTestBaseline,
@@ -52,22 +53,43 @@ function readWorkTree(cwd: string, path: string): string | null {
 }
 
 /**
- * Whether `<ref>:<path>` is a regular file (a blob of mode 100644 / 100755: not a directory, not
- * a symbolic link; CT-06w, Codex review r1 — `git show` of a directory lists it, which is no file).
+ * What `<ref>:<path>` is in the tree (CT-06w, Codex reviews r1, r2): a blob of mode 100644 / 100755
+ * is a file, a tree a directory, nothing absent; a symbolic link, a submodule, a quoted (non-ASCII)
+ * path or a failed query is `other` — not certain, so an import never resolves through it.
  */
-function isFileAt(cwd: string, ref: string, path: string): boolean {
+function kindAt(cwd: string, ref: string, path: string): PathKind {
   const res = tryGit(['ls-tree', ref, '--', path], { cwd });
-  if (res.status !== 0) return false;
+  if (res.status !== 0) return 'other';
   const line = res.stdout.split('\n')[0] ?? '';
-  return /^(100644|100755) blob /.test(line) && line.endsWith(`\t${path}`);
+  if (line === '') return 'absent';
+  if (!line.endsWith(`\t${path}`)) return 'other';
+  if (/^(100644|100755) blob /.test(line)) return 'file';
+  if (/^040000 tree /.test(line)) return 'dir';
+  return 'other';
 }
 
-function isFileInWorkTree(cwd: string, path: string): boolean {
+/**
+ * What a path is in the work tree at `cwd`: a regular file or a directory whose canonical path
+ * (realpath: no symbolic link in any component, the tree's own case) is the path itself; a
+ * symbolic link, a path through one, a case alias or anything else is `other` (Codex review r2).
+ */
+function kindInWorkTree(cwd: string, path: string): PathKind {
+  const abs = join(cwd, path);
+  let stat: ReturnType<typeof lstatSync>;
   try {
-    return lstatSync(join(cwd, path)).isFile();
+    stat = lstatSync(abs);
   } catch {
-    return false;
+    return 'absent';
   }
+  if (stat.isSymbolicLink()) return 'other';
+  try {
+    if (realpathSync.native(abs) !== join(realpathSync.native(cwd), path)) return 'other';
+  } catch {
+    return 'other';
+  }
+  if (stat.isFile()) return 'file';
+  if (stat.isDirectory()) return 'dir';
+  return 'other';
 }
 
 runCli(
@@ -139,8 +161,8 @@ runCli(
         baselines = ruleTestBaselines(expected, changes, scope, {
           base: (p) => showAt(cwd, base, p),
           head: (p) => (headTree === undefined ? readWorkTree(cwd, p) : showAt(cwd, headTree, p)),
-          headIsFile: (p) =>
-            headTree === undefined ? isFileInWorkTree(cwd, p) : isFileAt(cwd, headTree, p),
+          headKind: (p) =>
+            headTree === undefined ? kindInWorkTree(cwd, p) : kindAt(cwd, headTree, p),
         });
       } catch (err) {
         baselines = undefined;

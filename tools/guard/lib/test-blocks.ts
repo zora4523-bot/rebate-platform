@@ -1304,38 +1304,42 @@ function literalsOf(tokens: readonly Token[]): Literal[] {
 
 /**
  * The module specifiers of a module (CT-06w): the string after `from` (`import … from`,
- * `export … from`), after `import` (`import 'x'`) and the single literal of `import('x')` — none
- * of them a member (`reader.import('x')` is a method call, Codex review r1). A template
- * specifier, `vi.mock(…)`, `new URL(…)` and `require` are not imports here: their literals keep
- * the name rules of mayReadSupport.
+ * `export … from`), after `import` (`import 'x'`) and the single literal of `import('x')` — in
+ * the module's own token list only (the expressions of a template are lexed into one list, so
+ * `${from}${'./x'}` would look like an import there; Codex review r2), the keyword not a member
+ * (`reader.import('x')` is a method call; Codex review r1) and, for `from`, preceded by what an
+ * import or export clause ends with (`}`, `*` or a name). A template specifier, `vi.mock(…)`,
+ * `new URL(…)` and `require` are not imports here: their literals keep the name rules of
+ * mayReadSupport.
  */
 function importSpecifiers(
   tokens: readonly Token[],
 ): { spec: string; start: number; end: number }[] {
   const out: { spec: string; start: number; end: number }[] = [];
   const member = (t: Token | undefined): boolean => t?.text === '.' || t?.text === '?.';
-  const walk = (ts: readonly Token[]): void => {
-    for (let i = 0; i < ts.length; i += 1) {
-      const t = ts[i] as Token;
-      if (t.inner !== undefined) walk(t.inner);
-      if (t.kind !== 'str' || typeof t.value !== 'string' || t.start === undefined) continue;
-      const prev = ts[i - 1];
-      const before = ts[i - 2];
-      const next = ts[i + 1]?.text;
-      const isImport =
-        (prev?.kind === 'id' &&
-          (prev.text === 'from' || prev.text === 'import') &&
-          !member(before)) ||
-        (prev?.kind === 'punct' &&
-          prev.text === '(' &&
-          before?.kind === 'id' &&
-          before.text === 'import' &&
-          !member(ts[i - 3]) &&
-          (next === ')' || next === ','));
-      if (isImport) out.push({ spec: t.value, start: t.start, end: t.start + t.text.length });
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i] as Token;
+    if (t.kind !== 'str' || typeof t.value !== 'string' || t.start === undefined) continue;
+    const prev = tokens[i - 1];
+    const before = tokens[i - 2];
+    const next = tokens[i + 1]?.text;
+    let isImport = false;
+    if (prev?.kind === 'id' && prev.text === 'from') {
+      isImport =
+        before !== undefined &&
+        (before.kind === 'id' || before.text === '}' || before.text === '*') &&
+        !member(tokens[i - 3]);
+    } else if (prev?.kind === 'id' && prev.text === 'import') {
+      isImport = !member(before);
+    } else if (prev?.kind === 'punct' && prev.text === '(') {
+      isImport =
+        before?.kind === 'id' &&
+        before.text === 'import' &&
+        !member(tokens[i - 3]) &&
+        (next === ')' || next === ',');
     }
-  };
-  walk(tokens);
+    if (isImport) out.push({ spec: t.value, start: t.start, end: t.start + t.text.length });
+  }
   return out;
 }
 
@@ -1345,22 +1349,34 @@ function candidatesOf(target: string): string[] {
 }
 
 /**
- * How the closure sees files: `read` the text of a path (null: none), `isFile` whether a path is
- * a regular file of the tree (a directory listing or a symbolic link is none; Codex review r1).
- * Without `isFile`, a path `read` finds counts as a file (in-memory trees).
+ * What a repository path is (CT-06w): a regular file, a directory, absent, or `other` — a
+ * symbolic link, a submodule, a path whose spelling is not the tree's (a directory link or a
+ * case alias in a work tree), anything whose identity is not certain (Codex reviews r1, r2). An
+ * import never resolves through `other`.
  */
-type Files = { read: Reader; isFile: (path: string) => boolean };
+export type PathKind = 'file' | 'dir' | 'absent' | 'other';
 
-/** The nearest file called `name` at or above `dir`: its directory and text. */
+/** How the closure sees files: `read` the text of a path (null: none) and the kind of a path. */
+type Files = { read: Reader; kind: (path: string) => PathKind };
+
+/**
+ * The nearest file called `name` at or above `dir`: its directory and text — or the reason it
+ * cannot be told: a `name` on the way that is not a regular file (a symbolic link; Codex review
+ * r2) stops the search, since the runtime would read it.
+ */
 function nearestFile(
   dir: string,
   name: string,
   files: Files,
-): { dir: string; text: string } | null {
+): { dir: string; text: string } | { why: string } | null {
   for (let d = dir; ; d = dirOf(d)) {
     const path = d === '' ? name : `${d}/${name}`;
-    const text = files.isFile(path) ? files.read(path) : null;
-    if (text !== null) return { dir: d, text };
+    const kind = files.kind(path);
+    if (kind === 'file') {
+      const text = files.read(path);
+      if (text !== null) return { dir: d, text };
+    }
+    if (kind === 'other' || kind === 'dir') return { why: `${path} is not a regular file` };
     if (d === '') return null;
   }
 }
@@ -1377,33 +1393,33 @@ function parseJson(text: string): Record<string, unknown> | null {
 }
 
 /**
- * The key of `keys` that matches `spec` the way Node matches subpath imports: the key itself, or
- * a key with one `*` whose prefix and suffix enclose it — the longest prefix first, then the
- * longest key (Codex review r1: `#kits/*.ts` beats `#kits/*`) — and the text the `*` stands for.
+ * The key of `keys` that matches `spec`: the key itself, or the single key with one `*` whose
+ * prefix and suffix enclose a non-empty rest — and that rest. Two matching patterns are not
+ * decided here (Node and Vite's resolver rank them differently; Codex review r2), nor is a folder
+ * key (`#x/`) that covers the specifier: both come back as `ambiguous`.
  */
-function matchKey(keys: readonly string[], spec: string): { key: string; star: string } | null {
-  let best: { key: string; star: string; prefix: number } | null = null;
+function matchKey(
+  keys: readonly string[],
+  spec: string,
+): { key: string; star: string } | 'ambiguous' | null {
+  const hits: { key: string; star: string }[] = [];
   for (const key of keys) {
     const star = key.indexOf('*');
     if (star < 0) {
       if (key === spec) return { key, star: '' };
+      if (key.endsWith('/') && spec.startsWith(key)) return 'ambiguous';
       continue;
     }
     if (key.indexOf('*', star + 1) >= 0) continue;
     const pre = key.slice(0, star);
     const post = key.slice(star + 1);
-    if (spec.length < pre.length + post.length || !spec.startsWith(pre) || !spec.endsWith(post)) {
+    if (spec.length <= pre.length + post.length || !spec.startsWith(pre) || !spec.endsWith(post)) {
       continue;
     }
-    if (
-      best === null ||
-      pre.length > best.prefix ||
-      (pre.length === best.prefix && key.length > best.key.length)
-    ) {
-      best = { key, star: spec.slice(pre.length, spec.length - post.length), prefix: pre.length };
-    }
+    hits.push({ key, star: spec.slice(pre.length, spec.length - post.length) });
   }
-  return best === null ? null : { key: best.key, star: best.star };
+  if (hits.length > 1) return 'ambiguous';
+  return hits[0] ?? null;
 }
 
 type Resolution = { resolved: string | null; why: string | null };
@@ -1416,39 +1432,59 @@ const RESOLVE_EXTENSIONS = ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json
 
 /**
  * The file a repository path stands for as a module (CT-06w; the rules Vite applies, and only
- * where one file is certain, Codex review r1): a path with an extension is that file, or — as
- * TypeScript lets `./x.js` name `./x.ts` — the `.ts` file when the `.js` file does not exist; a
- * path without one is the single file among `path` + Vite's extensions, else the single
- * `path/index` + extension when no such file and no `path/package.json` exists. Two candidates,
- * a package directory or nothing at all are unresolved.
+ * where one file is certain, Codex reviews r1 and r2): the path itself when it is a regular
+ * file; else, for a `.js` path, the `.ts` file (TypeScript lets `./x.js` name it) when the `.js`
+ * path is absent; else, for a path without an extension, the single file among path + Vite's
+ * extensions, else the single `path/index` + extension when the path is a directory without a
+ * package.json. A candidate of kind `other` on the way (a symbolic link the runtime may follow),
+ * two candidates, a package directory or nothing at all are unresolved.
  */
 function resolveModuleFile(target: string, files: Files): Resolution {
+  const kind = files.kind(target);
+  if (kind === 'file') return resolvedAs(target);
+  if (kind === 'other') return unresolved(`${target} is not a regular file`);
   if (/\.[A-Za-z0-9]+$/.test(baseName(target))) {
-    if (files.isFile(target)) return resolvedAs(target);
-    const ts = target.replace(/\.js$/, '.ts');
-    if (ts !== target && files.isFile(ts)) return resolvedAs(ts);
+    if (kind === 'dir') return unresolved(`${target} is a directory`);
+    if (target.endsWith('.js')) {
+      const ts = target.replace(/\.js$/, '.ts');
+      const tsKind = files.kind(ts);
+      if (tsKind === 'file') return resolvedAs(ts);
+      if (tsKind !== 'absent') return unresolved(`${ts} is not a regular file`);
+    }
     return unresolved(`no file at ${target}`);
   }
-  const own = RESOLVE_EXTENSIONS.map((e) => `${target}${e}`).filter((p) => files.isFile(p));
+  const certain = (paths: string[]): string[] | string => {
+    const found: string[] = [];
+    for (const p of paths) {
+      const k = files.kind(p);
+      if (k === 'file') found.push(p);
+      else if (k !== 'absent') return `${p} is not a regular file`;
+    }
+    return found;
+  };
+  const own = certain(RESOLVE_EXTENSIONS.map((e) => `${target}${e}`));
+  if (typeof own === 'string') return unresolved(own);
   if (own.length > 1) return unresolved(`${target} is ambiguous (${own.join(', ')})`);
-  if (files.isFile(`${target}/package.json`)) {
+  if (kind === 'absent') {
+    return own.length === 1 ? resolvedAs(own[0] as string) : unresolved(`no file at ${target}`);
+  }
+  // A directory: its package.json decides, else its index file — unless a file competes.
+  const pkg = files.kind(`${target}/package.json`);
+  if (pkg !== 'absent')
     return unresolved(`${target} is a package directory (${target}/package.json)`);
-  }
-  const index = RESOLVE_EXTENSIONS.map((e) => `${target}/index${e}`).filter((p) => files.isFile(p));
-  if (own.length === 1) {
-    return index.length === 0
-      ? resolvedAs(own[0] as string)
-      : unresolved(`${target} is ambiguous (${[...own, ...index].join(', ')})`);
-  }
-  if (index.length === 1) return resolvedAs(index[0] as string);
-  if (index.length === 0) return unresolved(`no file at ${target}`);
-  return unresolved(`${target} is ambiguous (${index.join(', ')})`);
+  const index = certain(RESOLVE_EXTENSIONS.map((e) => `${target}/index${e}`));
+  if (typeof index === 'string') return unresolved(index);
+  const all = [...own, ...index];
+  if (all.length === 1) return resolvedAs(all[0] as string);
+  if (all.length === 0) return unresolved(`no file at ${target}`);
+  return unresolved(`${target} is ambiguous (${all.join(', ')})`);
 }
 
 /** A `#…` specifier through the `imports` of the nearest package.json (a string entry only). */
 function resolveSubpathImport(from: string, spec: string, files: Files): Resolution {
   const pkg = nearestFile(dirOf(from), 'package.json', files);
   if (pkg === null) return unresolved('no package.json above the module');
+  if ('why' in pkg) return unresolved(pkg.why);
   const file = pkg.dir === '' ? 'package.json' : `${pkg.dir}/package.json`;
   const json = parseJson(pkg.text);
   if (json === null) return unresolved(`${file} cannot be parsed`);
@@ -1458,13 +1494,15 @@ function resolveSubpathImport(from: string, spec: string, files: Files): Resolut
   }
   const hit = matchKey(Object.keys(imports), spec);
   if (hit === null) return unresolved(`${file} maps no imports entry to ${spec}`);
+  if (hit === 'ambiguous') return unresolved(`${file} cannot decide the imports entry for ${spec}`);
   const value = (imports as Record<string, unknown>)[hit.key];
   if (typeof value !== 'string') return unresolved(`${file} imports ${hit.key} is conditional`);
-  if (!value.startsWith('./')) return unresolved(`${file} imports ${hit.key} names a package`);
+  if (!value.startsWith('./')) return unresolved(`${file} imports ${hit.key} is not a ./ path`);
   const target = joinPath(pkg.dir, value.split('*').join(hit.star));
-  return target === null
-    ? unresolved(`${file} imports ${hit.key} leaves the repository`)
-    : resolveModuleFile(target, files);
+  if (target === null || (pkg.dir !== '' && !target.startsWith(`${pkg.dir}/`))) {
+    return unresolved(`${file} imports ${hit.key} leaves the package`);
+  }
+  return resolveModuleFile(target, files);
 }
 
 /**
@@ -1473,7 +1511,8 @@ function resolveSubpathImport(from: string, spec: string, files: Files): Resolut
  * package.json `imports` (a string entry, one `*`; the query and fragment after the first `#`
  * dropped). A bare specifier is a package: Vitest resolves it through node_modules, not through
  * tsconfig `paths` (`resolve.tsconfigPaths` is off here), so it stays unresolved — as does a
- * conditional entry, a config that cannot be parsed, a directory, an ambiguous or missing file.
+ * conditional entry, a config that cannot be parsed, a directory, a symbolic link, an ambiguous
+ * or missing file.
  */
 export function resolveImport(from: string, spec: string, files: Files): Resolution {
   const clean = spec.startsWith('#')
@@ -1495,14 +1534,14 @@ export function resolveImport(from: string, spec: string, files: Files): Resolut
  * (imports, re-exports, dynamic imports, vi.mock paths, new URL(…) of a module), and so is every
  * import that resolves through `#…` (CT-06w), as long as `follow` accepts its path (the caller
  * keeps the walk to test code: implementation modules do not read test-support files). `read`
- * returns null for a file that does not exist; `isFile` says whether a path is a regular file
- * (without it, a path `read` finds is one).
+ * returns null for a file that does not exist; `kindOf` says what a path is (PathKind; without
+ * it, a path `read` finds is a file and any other is absent).
  */
 export function relativeClosure(
   file: string,
   read: Reader,
   follow: (path: string) => boolean,
-  isFile?: (path: string) => boolean,
+  kindOf?: (path: string) => PathKind,
 ): Module[] {
   const cache = new Map<string, string | null>();
   const cached: Reader = (p) => {
@@ -1513,16 +1552,16 @@ export function relativeClosure(
     }
     return text;
   };
-  const kinds = new Map<string, boolean>();
+  const kinds = new Map<string, PathKind>();
   const files: Files = {
     read: cached,
-    isFile: (p) => {
-      let is = kinds.get(p);
-      if (is === undefined) {
-        is = isFile === undefined ? cached(p) !== null : isFile(p);
-        kinds.set(p, is);
+    kind: (p) => {
+      let k = kinds.get(p);
+      if (k === undefined) {
+        k = kindOf === undefined ? (cached(p) !== null ? 'file' : 'absent') : kindOf(p);
+        kinds.set(p, k);
       }
-      return is;
+      return k;
     },
   };
   const out: Module[] = [];

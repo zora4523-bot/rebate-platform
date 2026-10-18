@@ -107,6 +107,7 @@ import type { RedExemptDeclaration, TaskFile } from '../../lib/task-file.ts';
 import {
   type ComparedBlock,
   compareTestFile,
+  type PathKind,
   mayReadSupport,
   relativeClosure,
   unchangedTest,
@@ -202,10 +203,11 @@ export type BaselineReader = {
   /** Content of a file at the head (the tree the red run ran), null when it does not exist. */
   head(path: string): string | null;
   /**
-   * Whether a path is a regular file at the head (CT-06w: a directory or a symbolic link is none,
-   * so an import never resolves to one). Without it, a path `head` finds counts as a file.
+   * What a path is at the head (CT-06w, PathKind: a regular file, a directory, absent, or `other`
+   * — a symbolic link, a spelling that is not the tree's; an import never resolves through
+   * `other`). Without it, a path `head` finds is a file and any other is absent.
    */
-  headIsFile?(path: string): boolean;
+  headKind?(path: string): PathKind;
 };
 
 /** Rule-test files compared test by test: TypeScript / JavaScript without JSX. */
@@ -260,7 +262,7 @@ export function ruleTestBaselines(
             file,
             (p) => read.head(p),
             follow,
-            read.headIsFile === undefined ? undefined : (p) => read.headIsFile?.(p) === true,
+            read.headKind === undefined ? undefined : (p) => read.headKind?.(p) ?? 'other',
           );
     let why: string | null = null;
     for (const s of others) {

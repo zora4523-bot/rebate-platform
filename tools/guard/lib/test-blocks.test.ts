@@ -7,6 +7,7 @@ import {
   type ComparedBlock,
   type Module,
   type ModuleImport,
+  type PathKind,
   TestParseError,
   compareTestFile,
   cook,
@@ -854,7 +855,7 @@ it('[CT-06w] an import that cannot be resolved keeps the name rules, and the rea
   expect(mayReadSupport(file, support, other("import './kit.ts?raw';"))).toBeNull();
 });
 
-it('[CT-06w] `#…` imports resolve through the nearest package.json the way Node matches them; a bare specifier is a package', () => {
+it('[CT-06w] `#…` imports resolve through the nearest package.json where one entry is certain; a bare specifier is a package', () => {
   const file = 'test/spec/l/rules.test.ts';
   const support = 'test/spec/identity/step-up-verify/kit.ts';
   const base: Record<string, string> = {
@@ -868,9 +869,12 @@ it('[CT-06w] `#…` imports resolve through the nearest package.json the way Nod
         '#one': './kits/kit.ts',
         '#cond': { default: './kits/kit.ts' },
         '#pkg': 'some-package',
-        // Codex review r1: the longer key wins on the same prefix (Node PATTERN_KEY_COMPARE).
+        '#up': '../tsconfig.json',
+        // Codex reviews r1, r2: Node and Vite's resolver rank two matching patterns differently
+        // (longest prefix vs longest key): not decided here.
         '#same/*': './other/kit.ts',
         '#same/*.ts': './support/kit.ts',
+        '#folder/': './other/',
         // Codex review r1: only the first `#` belongs to the specifier, the rest is a fragment.
         '#kit.ts': './support/kit.ts',
         '#kit.ts#preview': './other/kit.ts',
@@ -900,6 +904,9 @@ it('[CT-06w] `#…` imports resolve through the nearest package.json the way Nod
         "import { f } from '#same/kit.ts';",
         "import { g } from '#kit.ts#preview';",
         "import { h } from '#one?raw';",
+        "import { i } from '#folder/kit.ts';",
+        "import { j } from '#up';",
+        "import { k } from '#kits/';",
       ].join('\n'),
     ),
   ).toEqual([
@@ -907,17 +914,27 @@ it('[CT-06w] `#…` imports resolve through the nearest package.json the way Nod
     ['#one', 'test/kits/kit.ts', null],
     ['#cond', null, 'test/package.json imports #cond is conditional'],
     ['#none', null, 'test/package.json maps no imports entry to #none'],
-    ['#pkg', null, 'test/package.json imports #pkg names a package'],
-    ['#same/kit.ts', 'test/support/kit.ts', null],
+    ['#pkg', null, 'test/package.json imports #pkg is not a ./ path'],
+    ['#same/kit.ts', null, 'test/package.json cannot decide the imports entry for #same/kit.ts'],
     ['#kit.ts#preview', 'test/support/kit.ts', null],
     ['#one?raw', 'test/kits/kit.ts', null],
+    [
+      '#folder/kit.ts',
+      null,
+      'test/package.json cannot decide the imports entry for #folder/kit.ts',
+    ],
+    ['#up', null, 'test/package.json imports #up is not a ./ path'],
+    ['#kits/', null, 'test/package.json maps no imports entry to #kits/'],
   ]);
-  // `#same/kit.ts` and `#kit.ts#preview` name the support file: whole.
-  for (const spec of ['#same/kit.ts', '#kit.ts#preview']) {
-    expect(
-      mayReadSupport(file, 'test/support/kit.ts', closure(`import { x } from '${spec}';`)),
-    ).toBe(`it loads test/support/kit.ts`);
-  }
+  // `#same/kit.ts` is undecided and names the support file: whole; `#kit.ts#preview` loads it.
+  expect(
+    mayReadSupport(file, 'test/support/kit.ts', closure("import { f } from '#same/kit.ts';")),
+  ).toBe(
+    `${file} names kit.ts in an unresolved import #same/kit.ts (test/package.json cannot decide the imports entry for #same/kit.ts)`,
+  );
+  expect(
+    mayReadSupport(file, 'test/support/kit.ts', closure("import { g } from '#kit.ts#preview';")),
+  ).toBe('it loads test/support/kit.ts');
   expect(imports("import { a } from '@kits/kit';\nimport { b } from 'vitest';")).toEqual([
     ['@kits/kit', null, 'a package (a bare specifier; tsconfig paths are not used by Vitest here)'],
     ['vitest', null, 'a package (a bare specifier; tsconfig paths are not used by Vitest here)'],
@@ -938,44 +955,96 @@ it('[CT-06w] `#…` imports resolve through the nearest package.json the way Nod
   expect(mayReadSupport(file, support, closure("import { a } from '#kit.ts';", broken))).toBe(
     `${file} names kit.ts in an unresolved import #kit.ts (test/package.json cannot be parsed)`,
   );
+  // Codex review r2: a nearer package.json that is not a regular file (a symbolic link) stops the
+  // search — the runtime would read it, the gate cannot.
+  const linked: Record<string, string> = {
+    ...base,
+    'test/spec/l/package.json': '../../../config/imports.json',
+  };
+  const kinds = (p: string): PathKind =>
+    p === 'test/spec/l/package.json' ? 'other' : linked[p] === undefined ? 'absent' : 'file';
+  const viaLink = relativeClosure(
+    file,
+    (p) => (p === file ? "import { a } from '#kit.ts';" : (linked[p] ?? null)),
+    (p) => p.startsWith('test/'),
+    kinds,
+  );
+  expect((viaLink[0] as Module).imports[0]?.why).toBe(
+    'test/spec/l/package.json is not a regular file',
+  );
+  expect(mayReadSupport(file, 'test/spec/l/support/kit.ts', viaLink)).toBe(
+    `${file} names kit.ts in an unresolved import #kit.ts (test/spec/l/package.json is not a regular file)`,
+  );
 });
 
-it('[CT-06w] a relative import resolves only where one file is certain (Codex review r1)', () => {
+it('[CT-06w] a relative import resolves only where one file is certain (Codex reviews r1, r2)', () => {
   const file = 'test/spec/a/rules.test.ts';
   const support = 'test/spec/identity/step-up-verify/kit.ts';
-  const closure = (text: string, files: Record<string, string>, isFile?: (p: string) => boolean) =>
+  const closure = (text: string, files: Record<string, string>, kindOf?: (p: string) => PathKind) =>
     relativeClosure(
       file,
       (p) => (p === file ? text : (files[p] ?? null)),
       (p) => p.startsWith('test/'),
-      isFile,
+      kindOf,
     );
-  const why = (text: string, files: Record<string, string>, isFile?: (p: string) => boolean) =>
-    (closure(text, files, isFile)[0] as Module).imports.map((i) => i.resolved ?? i.why);
+  const why = (text: string, files: Record<string, string>, kindOf?: (p: string) => PathKind) =>
+    (closure(text, files, kindOf)[0] as Module).imports.map((i) => i.resolved ?? i.why);
+  /** An in-memory tree with directories and `other` paths (symbolic links) marked. */
+  const tree = (files: Record<string, string>, dirs: string[] = [], others: string[] = []) => {
+    const kindOf = (p: string): PathKind =>
+      others.includes(p)
+        ? 'other'
+        : dirs.includes(p)
+          ? 'dir'
+          : files[p] === undefined
+            ? 'absent'
+            : 'file';
+    return { files, kindOf };
+  };
   // `./kit` with both kit.js and kit.ts: Vite picks one by its extension order; not certain here.
   expect(
     why("import { k } from './kit';", { 'test/spec/a/kit.js': '', 'test/spec/a/kit.ts': '' }),
   ).toEqual(['test/spec/a/kit is ambiguous (test/spec/a/kit.js, test/spec/a/kit.ts)']);
-  // `./kit` with only kit.ts: that file; with only kit/index.ts: that file; both: ambiguous.
+  // `./kit` with only kit.ts: that file; a directory with only index.ts: that file; both: ambiguous.
   expect(why("import { k } from './kit';", { 'test/spec/a/kit.ts': '' })).toEqual([
     'test/spec/a/kit.ts',
   ]);
-  expect(why("import { k } from './kit';", { 'test/spec/a/kit/index.ts': '' })).toEqual([
+  const dirIndex = tree({ 'test/spec/a/kit/index.ts': '' }, ['test/spec/a/kit']);
+  expect(why("import { k } from './kit';", dirIndex.files, dirIndex.kindOf)).toEqual([
     'test/spec/a/kit/index.ts',
   ]);
-  expect(
-    why("import { k } from './kit';", {
-      'test/spec/a/kit.ts': '',
-      'test/spec/a/kit/index.ts': '',
-    }),
-  ).toEqual(['test/spec/a/kit is ambiguous (test/spec/a/kit.ts, test/spec/a/kit/index.ts)']);
+  const both = tree({ 'test/spec/a/kit.ts': '', 'test/spec/a/kit/index.ts': '' }, [
+    'test/spec/a/kit',
+  ]);
+  expect(why("import { k } from './kit';", both.files, both.kindOf)).toEqual([
+    'test/spec/a/kit is ambiguous (test/spec/a/kit.ts, test/spec/a/kit/index.ts)',
+  ]);
+  // Without kinds, a directory is unknown to the in-memory tree: its index is not found.
+  expect(why("import { k } from './kit';", { 'test/spec/a/kit/index.ts': '' })).toEqual([
+    'no file at test/spec/a/kit',
+  ]);
   // A directory with a package.json: its entry decides, not resolved here.
+  const pkgDir = tree(
+    { 'test/spec/a/kit/package.json': '{"main":"./kit.ts"}', 'test/spec/a/kit/index.ts': '' },
+    ['test/spec/a/kit'],
+  );
+  expect(why("import { k } from './kit';", pkgDir.files, pkgDir.kindOf)).toEqual([
+    'test/spec/a/kit is a package directory (test/spec/a/kit/package.json)',
+  ]);
+  // Codex review r2: `./kit?raw` with a file called `kit` next to kit.ts loads `kit` itself.
   expect(
-    why("import { k } from './kit';", {
-      'test/spec/a/kit/package.json': '{"main":"./kit.ts"}',
-      'test/spec/a/kit/index.ts': '',
-    }),
-  ).toEqual(['test/spec/a/kit is a package directory (test/spec/a/kit/package.json)']);
+    why("import raw from './kit?raw';", { 'test/spec/a/kit': 'rows', 'test/spec/a/kit.ts': '' }),
+  ).toEqual(['test/spec/a/kit']);
+  expect(
+    mayReadSupport(
+      file,
+      'test/spec/a/kit',
+      closure("import raw from './kit?raw';", {
+        'test/spec/a/kit': 'rows',
+        'test/spec/a/kit.ts': '',
+      }),
+    ),
+  ).toBe(`${file} imports test/spec/a/kit (./kit?raw)`);
   // `./kit.js`: the .js file when it exists, else the .ts file; `./kit.jsx` is not rewritten.
   expect(
     why("import { k } from './kit.js';", { 'test/spec/a/kit.js': '', 'test/spec/a/kit.ts': '' }),
@@ -999,44 +1068,72 @@ it('[CT-06w] a relative import resolves only where one file is certain (Codex re
   ).toBe(
     `${file} names kit in an unresolved import ./kit (test/spec/a/kit is ambiguous (test/spec/a/kit.js, test/spec/a/kit.ts))`,
   );
-  // `isFile`: a path `read` lists (a directory of the tree) or a symbolic link is no file.
-  const tree: Record<string, string> = {
-    'test/spec/a/kit.json': 'tree abc:test/spec/a/kit.json\n\npackage.json\ndata\n',
-    'test/spec/a/kit.json/data/kit.json': '{}',
-    'test/spec/a/link.ts': '../real/kit.ts',
-    'test/spec/real/kit.ts': '',
-  };
-  const regular = new Set(['test/spec/a/kit.json/data/kit.json', 'test/spec/real/kit.ts', file]);
-  const isFile = (p: string): boolean => regular.has(p);
-  expect(why("import data from './kit.json';", tree, isFile)).toEqual([
-    'no file at test/spec/a/kit.json',
+  // Codex reviews r1, r2: a path that is a directory or `other` (a symbolic link, a path whose
+  // spelling is not the tree's) is no file, and a candidate of kind `other` on the way makes the
+  // whole resolution uncertain — a rejected candidate is not an absent one.
+  const links = tree(
+    {
+      'test/spec/a/kit.json/data/kit.json': '{}',
+      'test/spec/a/link.ts': '../real/kit.ts',
+      'test/spec/a/kit.js': '../real/kit.js',
+      'test/spec/a/kit.ts': '',
+      'test/spec/real/kit.ts': '',
+      'test/spec/real/kit.js': '',
+    },
+    ['test/spec/a/kit.json'],
+    ['test/spec/a/link.ts', 'test/spec/a/kit.js', 'test/spec/a/alias/kit.json'],
+  );
+  expect(why("import data from './kit.json';", links.files, links.kindOf)).toEqual([
+    'test/spec/a/kit.json is a directory',
   ]);
   expect(
     mayReadSupport(
       file,
       'test/spec/a/kit.json/data/kit.json',
-      closure("import data from './kit.json';", tree, isFile),
+      closure("import data from './kit.json';", links.files, links.kindOf),
     ),
   ).toBe(
-    `${file} names kit.json in an unresolved import ./kit.json (no file at test/spec/a/kit.json)`,
+    `${file} names kit.json in an unresolved import ./kit.json (test/spec/a/kit.json is a directory)`,
   );
-  expect(why("import { k } from './link.ts';", tree, isFile)).toEqual([
-    'no file at test/spec/a/link.ts',
+  expect(why("import { k } from './link.ts';", links.files, links.kindOf)).toEqual([
+    'test/spec/a/link.ts is not a regular file',
   ]);
   expect(
     mayReadSupport(
       file,
       'test/spec/real/kit.ts',
-      closure("import { k } from './link.ts';\nload('kit');", tree, isFile),
+      closure("import { k } from './link.ts';", links.files, links.kindOf),
     ),
-  ).toBe(`${file} names kit`);
-  // Without `isFile` the in-memory tree is all files (the tests above).
-  expect(why("import data from './kit.json';", tree)).toEqual(['test/spec/a/kit.json']);
+  ).toBe('test/spec/a/link.ts names kit.ts'); // the closure still follows the link's own text
+  // `./kit` where kit.js is a link and kit.ts a file: Vite would follow the link; not decided.
+  expect(why("import { k } from './kit';", links.files, links.kindOf)).toEqual([
+    'test/spec/a/kit.js is not a regular file',
+  ]);
+  expect(
+    mayReadSupport(
+      file,
+      'test/spec/real/kit.js',
+      closure("import { k } from './kit';", links.files, links.kindOf),
+    ),
+  ).toBe(
+    `${file} names kit in an unresolved import ./kit (test/spec/a/kit.js is not a regular file)`,
+  );
+  // A path through a directory link (a work tree spelling that is not the tree's).
+  expect(why("import data from './alias/kit.json';", links.files, links.kindOf)).toEqual([
+    'test/spec/a/alias/kit.json is not a regular file',
+  ]);
+  // Without kinds the in-memory tree is all files (the tests above).
+  expect(why("import data from './kit.json';", links.files)).toEqual([
+    'no file at test/spec/a/kit.json',
+  ]);
 });
 
-it('[CT-06w] a member call named import or from is not an import (Codex review r1)', () => {
+it('[CT-06w] only the import and export syntax makes a string an import specifier (Codex reviews r1, r2)', () => {
   const file = 'test/spec/a/rules.test.ts';
-  const files: Record<string, string> = { 'test/spec/a/data/rows.json': '[]' };
+  const files: Record<string, string> = {
+    'test/spec/a/data/rows.json': '[]',
+    'test/spec/a/kit.ts': '',
+  };
   const closure = (text: string) =>
     relativeClosure(
       file,
@@ -1044,24 +1141,52 @@ it('[CT-06w] a member call named import or from is not an import (Codex review r
       (p) => p.startsWith('test/'),
     );
   const specs = (text: string) => (closure(text)[0] as Module).imports.map((i) => i.spec);
+  // Imports and re-exports in every spelling.
+  expect(
+    specs(
+      [
+        "import './kit.ts';",
+        "import k from './kit.ts';",
+        "import * as ns from './kit.ts';",
+        "import k2, { a } from './kit.ts';",
+        "import type { T } from './kit.ts';",
+        "export * from './kit.ts';",
+        "export * as all from './kit.ts';",
+        "export { a } from './kit.ts';",
+        "const m = await import('./kit.ts');",
+        "import('./data/rows.json', { with: { type: 'json' } });",
+      ].join('\n'),
+    ),
+  ).toEqual([...Array<string>(9).fill('./kit.ts'), './data/rows.json']);
+  // Not imports: member calls, object keys, a string after a `from` variable, template expressions.
   expect(
     specs("const reader = { import: (p: string) => p };\nreader.import('./data/rows.json');"),
   ).toEqual([]);
   expect(specs("reader?.import('./data/rows.json');")).toEqual([]);
   expect(specs("x.from('./data/rows.json');")).toEqual([]);
   expect(specs("const q = { from: './data/rows.json' };")).toEqual([]);
-  expect(specs("import('./data/rows.json', { with: { type: 'json' } });")).toEqual([
-    './data/rows.json',
-  ]);
-  expect(specs("export { a } from './data/rows.json';")).toEqual(['./data/rows.json']);
-  // The task changed test/data/rows.json: the member call reads it by a computed path, the
-  // name rule still fires (nothing is masked).
+  expect(specs("const from = '';\nconst u = `${from}${'./data/rows.json'}`;")).toEqual([]);
+  expect(specs("const u = `${a}${from}${'./data/rows.json'}`;")).toEqual([]);
+  expect(specs("const m = `${await import('./kit.ts')}`;")).toEqual([]);
+  expect(specs("import.meta.resolve('./kit.ts');")).toEqual([]);
+  expect(specs("vi.importActual('./kit.ts');")).toEqual([]);
+  // The task changed test/data/rows.json: the member call and the template read it by a computed
+  // path; nothing is masked, the name rule still fires (Codex reviews r1, r2).
   expect(
     mayReadSupport(
       file,
       'test/data/rows.json',
       closure(
         "const reader = { import: (p: string) => readFileSync(new URL(p, new URL('../../', import.meta.url)), 'utf8') };\nreader.import('./data/rows.json');",
+      ),
+    ),
+  ).toBe(`${file} names rows.json`);
+  expect(
+    mayReadSupport(
+      file,
+      'test/data/rows.json',
+      closure(
+        "const from = '';\nreadFileSync(new URL(`${from}${'./data/rows.json'}`, new URL('../../', import.meta.url)), 'utf8');",
       ),
     ),
   ).toBe(`${file} names rows.json`);
