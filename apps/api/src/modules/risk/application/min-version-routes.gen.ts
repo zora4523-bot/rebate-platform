@@ -922,6 +922,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListAuditLogs",
+    "method": "GET",
+    "path": "/admin/v1/audit-logs",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetAuditLog",
+    "method": "GET",
+    "path": "/admin/v1/audit-logs/:id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListUsers",
     "method": "GET",
     "path": "/admin/v1/users",
