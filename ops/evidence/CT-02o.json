@@ -1,0 +1,35 @@
+{
+  "task": "CT-02o",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "d069e4b6785c35fb8d7221527d26b7cf015e0f80",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only, non-breaking). New component ConfigClipboard (object, additionalProperties true, optional consent_version string 1..64); Config.clipboard refers to it instead of FreeForm; ConfigFeatures.flags keeps its boolean-map shape and only documents clipboard.enabled.<platform> and clipboard.auto_read.<client> (missing key means on, config can only turn off; BR-ID-16). /v1/config response example updated with low-entropy values. Route generators re-run with no change. Server-side validation of consent_version is F1-02j. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "dc319fdb936fc9ae340f459936e53f5d5567efe5",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "d9d1451473379a3f24fdb6cb33d729f63aa74dd0",
+    "specs": "3030daffce230ca321928167ab05aa0b6a68efe6"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
