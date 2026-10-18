@@ -68,6 +68,7 @@ import {
   createUserLevelReader,
   createInviteBackfillActivityReader,
   createInviteLoginDevicesReader,
+  createOrderUserReader,
   type IdentityAttrCodeReader,
   type IdentityConfigReader,
   type IdentityContext,
@@ -90,6 +91,7 @@ import {
   LINK_REGISTRATIONS,
   LinkingAdminModule,
   LinkingModule,
+  createOrderBindingReader,
   createOrderLinkReader,
   createPendingAttemptStore,
   createUnionAuthReads,
@@ -111,7 +113,7 @@ import {
   bindPushTokensForSession,
   unbindPushTokensForSession,
 } from './modules/notification/index.ts';
-import { OrdersModule } from './modules/orders/index.ts';
+import { OrdersModule, type OrdersWorkerOptions } from './modules/orders/index.ts';
 import {
   ParsingLinkRegistrars,
   ParsingModule,
@@ -686,6 +688,25 @@ function governedUnion(
       if (adapter === undefined) throw new Error(`union: no endpoint for ${platform}`);
       return adapter;
     },
+  };
+}
+
+/**
+ * B1-08n: the worker's order-sync ports, assembled here so orders never imports identity or
+ * linking: identity's attr_code → user reader, linking's relation_id binding reader, and one
+ * memory quota bucket per platform for the worker's own governed adapters (the same capacity
+ * and shares as the api's governedUnion; each process keeps its own bucket and breakers).
+ */
+function orderSyncPorts(union: DynamicModule): OrdersWorkerOptions {
+  return {
+    union,
+    users: (db) => createOrderUserReader(db),
+    bindings: (db) => createOrderBindingReader(db),
+    quota: (endpoint, scheduler) =>
+      createMemoryQuotaLimiter(
+        { bucketKey: endpoint.quotaKey, ...UNION_QUOTA, shares: quotaShares('mvp') },
+        scheduler,
+      ),
   };
 }
 
@@ -1307,6 +1328,12 @@ export class AppModule {
         // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.
         ...(options.entry === 'worker'
           ? [RiskScanModule.forWorker(), AgentModule.forWorker()]
+          : []),
+        // Order sync (B1-08n): the order-sync handler and its scheduler, worked by the worker
+        // entry only over its own governed union adapters; entry.ts starts the scheduler after
+        // the queue runs.
+        ...(options.entry === 'worker' && union !== undefined
+          ? [OrdersModule.forWorker(orderSyncPorts(union))]
           : []),
         ...(options.entry === 'api' && union !== undefined && linking !== undefined
           ? [

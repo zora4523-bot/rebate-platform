@@ -142,4 +142,5 @@ export { blockForBan, restoreAfterUnban } from './application/binding-risk.ts';
 export type { BindingRiskInput } from './application/binding-risk.ts';
 export { LinkingAdminModule } from './linking-admin.module.ts';
 export type { LinkingAdminOptions, LinkingAuditWriterFactory } from './linking-admin.module.ts';
+// B1-08n: orders' relation_id binding reader (every status, raw instants), assembled by app.module.
 export { createOrderBindingReader } from './infra/order-binding-reader.ts';

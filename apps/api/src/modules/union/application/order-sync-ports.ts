@@ -1,8 +1,31 @@
+// B1-08n: union's side of the order-sync wiring (规划/02 §7.1、§7.3). orders reads union only
+// through these exports (index.ts); every read is one SELECT on union's own tables, re-run on every
+// call (no cache) and never a write.
+// - createUnionSyncAccess: the scheduler / handler SyncAccessPort. listEnabledAccounts enumerates
+//   union_accounts of every App on a registered platform (status has no on/off meaning yet, so it
+//   is not filtered; 待裁定 2). siteAuthAvailable is linking's rule: the row of exactly
+//   (app_id, platform, id) exists and auth_status ≠ 'expired' (BR-ID-24 ④). offlineCircuitOpen
+//   reads the worker's own offline governor of that platform (never the online one).
+//   queryableAccount (D10-36, 待裁定 1): the adapter holds one credential set per platform and
+//   union_accounts has no column tying it to a row, so only a live endpoint with exactly one
+//   union_accounts row of that platform (all Apps) answers that row's id; demo / replay answer null
+//   without a query; zero or several rows answer null and log one error per platform per instance.
+// - createUnionOrderReaders: the attribution pipeline's raw-row readers (union_pids by its four
+//   keys, any status; union_accounts.sync_start_at by App and id). Decisions stay in orders.
+// - createGovernedSyncAdapter: createGovernedAdapter plus the offline breaker state, for the
+//   worker's own governance set (its breakers and quota are per process, 待裁定 6).
+// Logs carry flat fields only (platform, reason, rows); never credentials or order data.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { RootLogger } from '../../platform/index.ts';
-import type { RegisteredPlatform, UnionAdapter, UnionEndpoint } from '../domain/types.ts';
-import type { GovernedAdapterOptions } from './governed-adapter.ts';
+import {
+  REGISTERED_PLATFORMS,
+  isRegisteredPlatform,
+  type RegisteredPlatform,
+  type UnionAdapter,
+  type UnionEndpoint,
+} from '../domain/types.ts';
+import { governAdapter, type GovernedAdapterOptions } from './governed-adapter.ts';
 
 export interface UnionSyncAccount {
   readonly app_id: string;
@@ -27,9 +50,79 @@ export interface UnionSyncAccessOptions {
   readonly logger: Pick<RootLogger, 'error'>;
 }
 
+const PLATFORMS: RegisteredPlatform[] = [...REGISTERED_PLATFORMS];
+
 export function createUnionSyncAccess(options: UnionSyncAccessOptions): UnionSyncAccess {
-  void options;
-  throw new Error('NotImplemented: createUnionSyncAccess');
+  const { db, endpoints, breaker, logger } = options;
+  /** Platforms whose unresolved credential owner was already logged by this instance. */
+  const reported = new Set<RegisteredPlatform>();
+  return {
+    async listEnabledAccounts() {
+      const rows = await db
+        .withSchema('app')
+        .selectFrom('union_accounts')
+        .select(['id', 'app_id', 'platform', 'sync_start_at'])
+        .where('platform', 'in', PLATFORMS)
+        .orderBy('app_id')
+        .orderBy('platform')
+        .orderBy('id')
+        .execute();
+      const accounts: UnionSyncAccount[] = [];
+      for (const row of rows) {
+        if (!isRegisteredPlatform(row.platform)) continue;
+        accounts.push({
+          app_id: row.app_id,
+          platform: row.platform,
+          union_account_id: row.id,
+          sync_start_at: row.sync_start_at === null ? null : row.sync_start_at.toISOString(),
+        });
+      }
+      return accounts;
+    },
+
+    async siteAuthAvailable(account) {
+      const row = await db
+        .withSchema('app')
+        .selectFrom('union_accounts')
+        .select('auth_status')
+        .where('app_id', '=', account.app_id)
+        .where('platform', '=', account.platform)
+        .where('id', '=', account.union_account_id)
+        .executeTakeFirst();
+      return row !== undefined && row.auth_status !== 'expired';
+    },
+
+    async offlineCircuitOpen(platform) {
+      return breaker(platform) === 'open';
+    },
+
+    async queryableAccount(platform) {
+      const endpoint = endpoints.find((entry) => entry.platform === platform);
+      // Demo and replay adapters hold no real credentials: nothing is ever synced from them.
+      if (endpoint?.mode !== 'live') return null;
+      const rows = await db
+        .withSchema('app')
+        .selectFrom('union_accounts')
+        .select('id')
+        .where('platform', '=', platform)
+        .orderBy('id')
+        .limit(2)
+        .execute();
+      const [only] = rows;
+      if (rows.length === 1 && only !== undefined) return only.id;
+      if (!reported.has(platform)) {
+        reported.add(platform);
+        logger.error(
+          {
+            platform,
+            reason: rows.length === 0 ? 'no_union_account' : 'ambiguous_union_account',
+          },
+          'order_sync_queryable_account_unresolved',
+        );
+      }
+      return null;
+    },
+  };
 }
 
 export interface UnionOrderReaders {
@@ -47,8 +140,34 @@ export interface UnionOrderReaders {
 }
 
 export function createUnionOrderReaders(db: Kysely<DB>): UnionOrderReaders {
-  void db;
-  throw new Error('NotImplemented: createUnionOrderReaders');
+  return {
+    pids: {
+      async find(input) {
+        return await db
+          .withSchema('app')
+          .selectFrom('union_pids')
+          .select(['pid_scene', 'status', 'site_id'])
+          .where('app_id', '=', input.appId)
+          .where('platform', '=', input.platform)
+          .where('union_account_id', '=', input.unionAccountId)
+          .where('pid', '=', input.pid)
+          .orderBy('id')
+          .execute();
+      },
+    },
+    accounts: {
+      async syncStartAt(input) {
+        const row = await db
+          .withSchema('app')
+          .selectFrom('union_accounts')
+          .select('sync_start_at')
+          .where('app_id', '=', input.appId)
+          .where('id', '=', input.unionAccountId)
+          .executeTakeFirst();
+        return row?.sync_start_at ?? null;
+      },
+    },
+  };
 }
 
 export function createGovernedSyncAdapter(
@@ -58,7 +177,9 @@ export function createGovernedSyncAdapter(
   readonly adapter: UnionAdapter;
   offlineBreakerState(): 'closed' | 'open';
 } {
-  void adapter;
-  void options;
-  throw new Error('NotImplemented: createGovernedSyncAdapter');
+  const { adapter: governed, governors } = governAdapter(adapter, options);
+  return Object.freeze({
+    adapter: governed,
+    offlineBreakerState: () => governors.offline.breakerState(),
+  });
 }
