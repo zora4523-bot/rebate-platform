@@ -1,0 +1,27 @@
+id: CT-24c
+repo: rebate-platform
+title: 契约：后台审计日志查询 GET /admin/v1/audit-logs（actor_id / target_type / target_id / permission / from / to 筛选，页码分页 page_size ≤200）与 GET /admin/v1/audit-logs/{id}（含前后值）；登录即可、无二次验证，未勾 audit.view_all 时服务端把 actor_id 强制为本人、带他人 actor_id 返回空列表；planned
+type: contract
+# 2026-10-19 入账（admin-backend，编排 10-18 19:2x 派工「后台缺口」规划 #137，优先级第二档）。依据 01 F-ADM-03、04 §6.6 audit-logs 段与 §11.1 audit.view_all、10 AC-S2-111、db/schema.sql audit_logs（只追加）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：from / to 为 ISO 8601 时刻（无 _date 后缀，04 §5）；列表项 {id, actor_id, actor_name?, action, target_type, target_id, permission, ip, at}——target_type / target_id / permission / ip 可空（audit_logs.target、ip 可空，历史行或无对象的行返回 null），target_type 为自由文本（不做枚举）；详情另含 before / after；不持 audit.view_all 访问他人记录的详情与不存在同码 20001 [id]（防探测）；时间倒序、同刻按 id 倒序；分页沿用 AdminPage / AdminPageSize（超限 20001）；查询本身不写审计。
+#   permission 与 target_type / target_id 的筛选所需数据现表没有（无 permission 列、target 为混用格式的单列，表只追加、历史行不能回填）：契约只定参数与语义；实现任务 B1-34 **优先在读侧做映射**（按 target 前缀或 action 推出 target_type 与 permission），新增列只作可选方案，不要求改各模块写入方；推不出的行为 null、不命中该筛选（在 description 写明）。
+# 实现由 B1-34 承接。权限点 audit.view_all 已存在（无需 test-change）。
+refs: [BR-ID-34]
+refs_hash:
+  BR-ID-34: 2d77bebd2767
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
