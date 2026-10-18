@@ -153,11 +153,17 @@ function requestFromArgs(args: Readonly<Record<string, unknown>>): SearchRequest
  */
 function modelItems(
   deps: SearchProductsDeps,
-  cards: readonly AgentProductCard[],
+  products: readonly AgentProductCard[],
+  outcomeCards: readonly UnnumberedCard[],
   ctx: ToolCallContext,
 ) {
-  return cards.map((card, index) => ({
-    card_id: deps.cardReference(ctx, index),
+  // B3-05i ruling: the reference index addresses the final outcome.cards array, not products.
+  // Every delivered product lives in the one product_list card, so it references that card's
+  // position; a product dropped before delivery never appears here and takes no reference.
+  const listIndex = outcomeCards.findIndex((card) => card.type === 'product_list');
+  if (listIndex < 0) return [];
+  return products.map((card) => ({
+    card_id: deps.cardReference(ctx, listIndex),
     title: card.title === null ? null : wrapUntrusted(card.title),
     platform: card.platform,
     benefit_tags: [...card.benefit_tags],
@@ -183,7 +189,7 @@ export function createSearchProductsHandler(deps: SearchProductsDeps): ToolHandl
       }
       const run = await runSearch(deps, request, ctx);
       const cards = await outcomeCards(deps, ctx.appId, run.prohibited, run.cards);
-      const items = modelItems(deps, run.cards, ctx);
+      const items = modelItems(deps, run.cards, cards, ctx);
       return {
         kind: 'ok',
         modelView: run.prohibited ? { items, refused: 'prohibited' } : { items },

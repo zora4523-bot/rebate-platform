@@ -208,3 +208,39 @@ describe('assembly failure isolation', () => {
     expect(h.registered).toEqual([]);
   });
 });
+
+describe('card references (B3-05i: index addresses outcome.cards)', () => {
+  it('a middle item failing to assemble: later items reference the list card in outcome.cards', async () => {
+    const rows = [
+      candidate('tb:synthetic-1', 'taobao'),
+      candidate('tb:synthetic-2', 'taobao'),
+      candidate('tb:synthetic-3', 'taobao'),
+    ];
+    const h = setup(rows, new Set(['tb:synthetic-2']));
+    const indices: number[] = [];
+    const deps: SearchProductsDeps = {
+      ...h.deps,
+      cardReference: (_c, index) => {
+        indices.push(index);
+        return `@ref:${index}`;
+      },
+    };
+    const outcome = await createSearchProductsHandler(deps).run(
+      { q: '合成商品', platforms: ['taobao'] },
+      ctx(),
+    );
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+    expect(outcome.cards.map((c) => c.type)).toEqual(['product_list']);
+    expect(listKeys(outcome.cards)).toEqual(['tb:synthetic-1', 'tb:synthetic-3']);
+    const view = outcome.modelView as { items: { card_id: string; title: string }[] };
+    expect(view.items.map((item) => item.card_id)).toEqual(['@ref:0', '@ref:0']);
+    expect(view.items.map((item) => item.title)).toEqual([
+      '<untrusted>合成商品 tb:synthetic-1</untrusted>',
+      '<untrusted>合成商品 tb:synthetic-3</untrusted>',
+    ]);
+    // Never an index past outcome.cards, never one for the dropped item.
+    expect(indices.every((index) => index >= 0 && index < outcome.cards.length)).toBe(true);
+    expect(indices).toHaveLength(2);
+  });
+});
