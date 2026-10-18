@@ -1606,6 +1606,67 @@ CREATE TABLE app.category_blocklist (
 
 
 --
+-- Name: claim_items; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.claim_items (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    claim_id uuid NOT NULL,
+    applicant_user_id uuid NOT NULL,
+    platform text NOT NULL,
+    sub_order_id text NOT NULL,
+    order_id uuid NOT NULL,
+    evidence text,
+    evidence_link_log_ids bigint[],
+    decision text,
+    reject_reason text,
+    decided_by uuid,
+    decided_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    CONSTRAINT claim_items_decided_pair_check CHECK ((((decision IS NULL) = (decided_at IS NULL)) AND ((decision IS NOT NULL) OR (decided_by IS NULL)))),
+    CONSTRAINT claim_items_decision_check CHECK ((decision = ANY (ARRAY['approved'::text, 'rejected'::text, 'cancelled'::text]))),
+    CONSTRAINT claim_items_evidence_check CHECK ((evidence = ANY (ARRAY['strong'::text, 'weak'::text, 'none'::text]))),
+    CONSTRAINT claim_items_evidence_links_check CHECK ((((evidence IS NULL) AND (evidence_link_log_ids IS NULL)) OR ((evidence IS NOT NULL) AND (evidence_link_log_ids IS NOT NULL) AND (array_position(evidence_link_log_ids, NULL::bigint) IS NULL) AND
+CASE
+    WHEN (evidence = 'none'::text) THEN (cardinality(evidence_link_log_ids) = 0)
+    ELSE (cardinality(evidence_link_log_ids) > 0)
+END))),
+    CONSTRAINT claim_items_reject_reason_check CHECK ((reject_reason = ANY (ARRAY['NO_EVIDENCE'::text, 'EXPIRED_CLICK'::text, 'NOT_TRACKED'::text, 'OTHER_TLJ'::text, 'FRAUD'::text, 'OTHER'::text, 'NOT_IN_POOL'::text, 'ORDER_INVALID'::text]))),
+    CONSTRAINT claim_items_reject_reason_pair_check CHECK (((NOT (decision IS DISTINCT FROM 'rejected'::text)) = (reject_reason IS NOT NULL)))
+);
+
+
+--
+-- Name: claims; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.claims (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    platform text NOT NULL,
+    order_no text NOT NULL,
+    order_no_type text NOT NULL,
+    paid_date date NOT NULL,
+    evidence_level text,
+    status text NOT NULL,
+    handler_admin_id uuid,
+    reason text,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    CONSTRAINT claims_evidence_level_check CHECK ((evidence_level = ANY (ARRAY['strong'::text, 'weak'::text, 'none'::text]))),
+    CONSTRAINT claims_evidence_status_check CHECK ((((status = 'submitted'::text) = (evidence_level IS NULL)) AND ((status <> 'auto_matched'::text) OR (evidence_level = 'strong'::text)) AND ((status <> 'manual_review'::text) OR (evidence_level = ANY (ARRAY['weak'::text, 'none'::text]))))),
+    CONSTRAINT claims_order_no_check CHECK (((order_no <> ''::text) AND (strpos(order_no, ' '::text) = 0))),
+    CONSTRAINT claims_order_no_type_check CHECK ((order_no_type = ANY (ARRAY['sub'::text, 'parent'::text]))),
+    CONSTRAINT claims_status_check CHECK ((status = ANY (ARRAY['submitted'::text, 'auto_matched'::text, 'manual_review'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])))
+);
+
+
+--
 -- Name: commission_rule_reserves; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4321,6 +4382,38 @@ ALTER TABLE ONLY app.category_blocklist
 
 
 --
+-- Name: claim_items claim_items_applicant_order_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.claim_items
+    ADD CONSTRAINT claim_items_applicant_order_key UNIQUE (app_id, applicant_user_id, platform, sub_order_id);
+
+
+--
+-- Name: claim_items claim_items_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.claim_items
+    ADD CONSTRAINT claim_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: claims claims_item_ref_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.claims
+    ADD CONSTRAINT claims_item_ref_key UNIQUE (app_id, id, user_id, platform);
+
+
+--
+-- Name: claims claims_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.claims
+    ADD CONSTRAINT claims_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: commission_rule_reserves commission_rule_reserves_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -4654,6 +4747,14 @@ ALTER TABLE ONLY app.notify_templates
 
 ALTER TABLE ONLY app.order_keys
     ADD CONSTRAINT order_keys_app_order_key UNIQUE (app_id, order_id);
+
+
+--
+-- Name: order_keys order_keys_claim_ref_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.order_keys
+    ADD CONSTRAINT order_keys_claim_ref_key UNIQUE (app_id, platform, sub_order_id, order_id);
 
 
 --
@@ -5521,6 +5622,34 @@ CREATE INDEX blocklist_value_hmac_idx ON app.blocklist USING btree (app_id, dime
 --
 
 CREATE INDEX blocklist_value_idx ON app.blocklist USING btree (app_id, dimension, value) WHERE (value IS NOT NULL);
+
+
+--
+-- Name: claim_items_claim_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX claim_items_claim_idx ON app.claim_items USING btree (app_id, claim_id);
+
+
+--
+-- Name: claim_items_pending_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX claim_items_pending_idx ON app.claim_items USING btree (app_id, platform, sub_order_id) WHERE (decision IS NULL);
+
+
+--
+-- Name: claims_review_queue_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX claims_review_queue_idx ON app.claims USING btree (app_id, status, created_at) WHERE (status = ANY (ARRAY['auto_matched'::text, 'manual_review'::text]));
+
+
+--
+-- Name: claims_user_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX claims_user_created_idx ON app.claims USING btree (app_id, user_id, created_at DESC);
 
 
 --
@@ -6624,6 +6753,54 @@ ALTER TABLE ONLY app.audit_logs
 
 ALTER TABLE ONLY app.category_blocklist
     ADD CONSTRAINT category_blocklist_platform_fkey FOREIGN KEY (platform) REFERENCES app.platforms(code);
+
+
+--
+-- Name: claim_items claim_items_claim_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.claim_items
+    ADD CONSTRAINT claim_items_claim_fkey FOREIGN KEY (app_id, claim_id, applicant_user_id, platform) REFERENCES app.claims(app_id, id, user_id, platform);
+
+
+--
+-- Name: claim_items claim_items_decided_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.claim_items
+    ADD CONSTRAINT claim_items_decided_by_fkey FOREIGN KEY (app_id, decided_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: claim_items claim_items_order_key_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.claim_items
+    ADD CONSTRAINT claim_items_order_key_fkey FOREIGN KEY (app_id, platform, sub_order_id, order_id) REFERENCES app.order_keys(app_id, platform, sub_order_id, order_id);
+
+
+--
+-- Name: claims claims_handler_admin_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.claims
+    ADD CONSTRAINT claims_handler_admin_fkey FOREIGN KEY (app_id, handler_admin_id) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: claims claims_platform_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.claims
+    ADD CONSTRAINT claims_platform_fkey FOREIGN KEY (platform) REFERENCES app.platforms(code);
+
+
+--
+-- Name: claims claims_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.claims
+    ADD CONSTRAINT claims_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -8513,6 +8690,120 @@ GRANT UPDATE(updated_by) ON TABLE app.category_blocklist TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.category_blocklist TO couli_app;
+
+
+--
+-- Name: TABLE claim_items; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.claim_items TO couli_app;
+GRANT SELECT ON TABLE app.claim_items TO couli_readonly;
+
+
+--
+-- Name: COLUMN claim_items.evidence; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(evidence) ON TABLE app.claim_items TO couli_app;
+
+
+--
+-- Name: COLUMN claim_items.evidence_link_log_ids; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(evidence_link_log_ids) ON TABLE app.claim_items TO couli_app;
+
+
+--
+-- Name: COLUMN claim_items.decision; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(decision) ON TABLE app.claim_items TO couli_app;
+
+
+--
+-- Name: COLUMN claim_items.reject_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reject_reason) ON TABLE app.claim_items TO couli_app;
+
+
+--
+-- Name: COLUMN claim_items.decided_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(decided_by) ON TABLE app.claim_items TO couli_app;
+
+
+--
+-- Name: COLUMN claim_items.decided_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(decided_at) ON TABLE app.claim_items TO couli_app;
+
+
+--
+-- Name: COLUMN claim_items.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.claim_items TO couli_app;
+
+
+--
+-- Name: COLUMN claim_items.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.claim_items TO couli_app;
+
+
+--
+-- Name: TABLE claims; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.claims TO couli_app;
+GRANT SELECT ON TABLE app.claims TO couli_readonly;
+
+
+--
+-- Name: COLUMN claims.evidence_level; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(evidence_level) ON TABLE app.claims TO couli_app;
+
+
+--
+-- Name: COLUMN claims.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.claims TO couli_app;
+
+
+--
+-- Name: COLUMN claims.handler_admin_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(handler_admin_id) ON TABLE app.claims TO couli_app;
+
+
+--
+-- Name: COLUMN claims.reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reason) ON TABLE app.claims TO couli_app;
+
+
+--
+-- Name: COLUMN claims.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.claims TO couli_app;
+
+
+--
+-- Name: COLUMN claims.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.claims TO couli_app;
 
 
 --
