@@ -1,0 +1,22 @@
+id: CT-04e
+repo: rebate-platform
+title: 状态机（找回两份）：specs/state-machines/claim.yaml（claim_status：submitted → auto_matched / manual_review → approved / rejected / cancelled，汇总守卫按 BR-ATTR-18 与 12 §3.3）与 claim-item.yaml（decision：null → approved / rejected / cancelled），复用 CT-04a 生成器生成 *.gen.ts 与一致性测试
+type: contract
+# 草稿 2026-10-18（W1 线，订单线第二段）。拆分方案 couli-runs/W1-search-linking/orders-plan-b110-b109.md（待编排裁定 J-1～J-22 按默认做法），依据按 SPEC_REF 逐字摘录进任务书。
+# 分工：订单归属 / 找回属 approvals 30 留 Claude 的范围 → impl claude、tester codex（D10-15）。
+# 不改 openapi，不占契约槽（先例 F1-09h page-version）；状态字段只经生成的 transition()（硬规则 2）。迁移表取值只照 08 原文转写，08 没写清的写「待编排裁定」。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'specs/state-machines/**'
+  - 'packages/domain/**'
+test_paths:
+  - 'test/spec/state-machines/claim/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/state-machines/claim/**'
+status: todo
+pr: null

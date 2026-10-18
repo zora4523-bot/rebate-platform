@@ -1,0 +1,25 @@
+id: B1-10a
+repo: rebate-platform
+title: 迁移：找回表 claims（app_id、user_id、platform、order_no、order_no_type、paid_date、evidence_level、status、handler_admin_id、reason、row_version）与 claim_items（claim_id、applicant_user_id、sub_order_id、order_id、evidence、evidence_link_log_ids、decision、reject_reason、decided_by / decided_at、row_version）
+type: migration
+# 草稿 2026-10-18（W1 线，订单线第二段）。拆分方案 couli-runs/W1-search-linking/orders-plan-b110-b109.md（待编排裁定 J-1～J-22 按默认做法），依据按 SPEC_REF 逐字摘录进任务书。
+# 分工：订单归属 / 找回属 approvals 30 留 Claude 的范围 → impl claude、tester codex（D10-15）。
+# 按 04 §3.2 claims 行全量写；唯一 (app_id, applicant_user_id, platform, sub_order_id)；外键 (app_id, platform, sub_order_id) → order_keys（不指向分区表）；status / reject_reason 命名 CHECK 照契约 enums；evidence_link_log_ids 为逻辑引用（J-4，link_logs 是分区表，不建外键）；不给 DELETE；授权写在建对象的那条迁移里。
+# 迁移号落地时取主干最大号 + 1（notices 登记）；两段式：编排者在测试机跑 remote-snapshot 提交生成物。lint-migrations 资金 / 归属表名单如需同步，只加行（先例 D7-22）。
+refs: []
+refs_hash: {}
+deps: [CT-04e]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+test_paths:
+  - 'test/spec/db/order-claims/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/order-claims/**'
+status: todo
+pr: null

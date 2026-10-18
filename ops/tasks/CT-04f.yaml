@@ -1,0 +1,28 @@
+id: CT-04f
+repo: rebate-platform
+title: 契约——找回用户侧：POST /v1/orders/claims（login、x-signed、Idempotency-Key；platform、order_no、paid_date；30201～30206 与 data.reason）与 GET /v1/orders/claims（本人找回记录，按子项列状态与驳回原因码，分享单不出现）；订单列表置顶入口字段 claim_entry_pinned（J-6）；全部 x-implementation planned
+type: contract
+# 草稿 2026-10-18（W1 线，订单线第二段）。拆分方案 couli-runs/W1-search-linking/orders-plan-b110-b109.md（待编排裁定 J-1～J-22 按默认做法），依据按 SPEC_REF 逐字摘录进任务书。
+# 分工：订单归属 / 找回属 approvals 30 留 Claude 的范围 → impl claude、tester codex（D10-15）。
+# 新增操作类，占契约槽（B3-lane/notices.md 规则，就绪即占）。错误码 30201～30206、enums claim_status / claim_reject_reason 等已登记，只引用不新造；bridge signed_paths 已含 POST /v1/orders/claims。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/contracts/order-claims/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+  - 'test/spec/contracts/order-claims/**'
+status: todo
+pr: null
