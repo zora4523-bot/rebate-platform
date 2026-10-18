@@ -84,9 +84,7 @@ it('[AC-F1-07i-BROWSER#1] 1440 用户列表：筛选、查找、脱敏列及详�
     await expect.element(main.getByRole('columnheader', { name, exact: true })).toBeVisible();
   await expect.element(main.getByText('138****5678', { exact: true }).first()).toBeVisible();
   await expect.element(main.getByText('2026-10-13 01:05', { exact: true })).toBeVisible();
-  await expect
-    .element(main.getByRole('button', { name: /^详情(?:\s|$)/ }).first())
-    .toBeVisible();
+  await expect.element(main.getByRole('button', { name: /^详情(?:\s|$)/ }).first()).toBeVisible();
   await screenshot('admin-users-list', marker);
 });
 
