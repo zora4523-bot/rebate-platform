@@ -1,0 +1,20 @@
+id: F1-09i
+repo: rebate-platform
+title: F1-09d 规则测试 [AC-F1-09d#10] 去掉「暂未接入的人群条件不下发」部分——F1-09g 接入 has_parent / union_authorized / has_order 后该断言必红，login yes / no / any 断言不变
+type: test-change
+# 2026-10-18 入账（content-client）。F1-09d（#708）时人群条件只接了 login，Codex 写的 #10 同时断言 has_parent:yes、union_authorized:no、has_order:yes 三个区块一律不下发；
+# F1-09g（#715）按裁定 G1–G4 接入真实判定后，新用户 union_authorized=false，union_authorized:no 区块按设计下发，#10 在 F1-09g 分支 CI verify-int 必红。
+# 在 F1-09g 的规则测试提交里改会被 path-guard-author 拒（别的任务的冻结测试），放在实现之后会被 evidence-check 拒（先例 F1-02g #588）。
+# 做法：#10 去掉三个延后区块及标题后半句，login yes / no / any 三处断言一字不改；三项人群条件的判定由 test/spec/content/pages-audience/**（F1-09g 冻结测试）覆盖。主干现在与 F1-09g 合并后都成立。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-09d]
+paths:
+  - 'test/spec/content/pages-read/delivery.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 717

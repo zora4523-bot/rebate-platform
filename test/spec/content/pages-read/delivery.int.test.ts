@@ -220,7 +220,10 @@ it('[AC-F1-09d#9] 每端按自身门槛过滤且等值可见，h5 不过滤，�
   ).toEqual([...FULL, gated]);
 });
 
-it('[AC-F1-09d#10] login yes/no/any 每次按令牌判定，暂未接入的人群条件不下发', async () => {
+// F1-09i (test-change): the deferred has_parent / union_authorized / has_order sections were
+// dropped here once F1-09g wired those facts; their judgement is covered by
+// test/spec/content/pages-audience/**. The login yes / no / any assertions are unchanged.
+it('[AC-F1-09d#10] login yes/no/any 每次按令牌判定', async () => {
   const id = appId();
   const yes = { id: 'yes', condition: { login: 'yes' } };
   const no = { id: 'no', condition: { login: 'no' } };
@@ -228,13 +231,8 @@ it('[AC-F1-09d#10] login yes/no/any 每次按令牌判定，暂未接入的人�
     id: 'any',
     condition: { login: 'any', has_parent: 'any', union_authorized: 'any', has_order: 'any' },
   };
-  const deferred = [
-    { id: 'parent', condition: { has_parent: 'yes' } },
-    { id: 'union', condition: { union_authorized: 'no' } },
-    { id: 'order', condition: { has_order: 'yes' } },
-  ];
   await seedPage(h, id, {
-    versions: [{ number: 1, sections: [yes, no, any, ...deferred, ...FULL] }],
+    versions: [{ number: 1, sections: [yes, no, any, ...FULL] }],
   });
   const login = await session(h, id, await registerDevice(h, id));
   expect((await success(h.app, id)).sections).toEqual([no, any, ...FULL]);
