@@ -34,6 +34,7 @@ import { LoadFailedPage, NoPermissionPage, PagePending, WelcomePage } from './la
 import { Sidebar } from './layout/Sidebar.tsx';
 import { TopBar } from './layout/TopBar.tsx';
 import { AdminsPage } from './pages/admins/index.ts';
+import { ConfigCenterPage } from './pages/config-center/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
 import { LoginPage } from './pages/login/index.ts';
@@ -373,6 +374,8 @@ function ShellFrame({
       content = <PlatformIconsPage />;
     } else if (match !== undefined && match.item.id === 'switches') {
       content = <KillSwitchesPage access={access} />;
+    } else if (match !== undefined && match.item.id === 'config') {
+      content = <ConfigCenterPage access={access} />;
     } else if (match !== undefined) {
       content = <PagePending title={match.item.label} />;
     } else if (menuId !== '') {
