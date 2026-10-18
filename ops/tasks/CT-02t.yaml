@@ -1,0 +1,25 @@
+id: CT-02t
+repo: rebate-platform
+title: 契约补缺（新增操作，全部 planned）：站内消息 GET /v1/messages（游标分页，本人消息倒序）、POST /v1/messages/read（按 message_id 列表或全部标已读）、GET /v1/messages/unread-count；通知设置 GET / PUT /v1/me/notification-settings（MVP 只开放 service 推送开关，subscription / marketing 字段预埋不展示）
+type: contract
+# 2026-10-18 入账（be-codex，编排 11:1x 裁定 ②：通知开关、/v1/messages 列表 / 已读 / 未读数、notification-settings 契约缺失，开一个 CT 契约任务，形状类占契约槽，B1-12 后续接口任务排在它之后）。
+# 依据：规划/04 §6.1 两行（/v1/messages*、/v1/me/notification-settings）、§3.2 inbox_messages 行；BR-WATCH-19 (3)（站内信与推送带分类，通知设置按分类关闭）。关闭推送后站内信照写。
+refs: [BR-WATCH-19]
+refs_hash:
+  BR-WATCH-19: d14905e58b39
+contract_sections: ['6.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'apps/h5/src/shared/api/signed.ts'
+  - 'apps/h5/src/shared/api/anonymous.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
