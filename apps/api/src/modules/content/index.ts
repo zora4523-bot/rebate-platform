@@ -29,6 +29,8 @@ export type {
 // F1-02c: GET /v1/config, loaded by app.module on the api entry only with identity's viewer.
 export { ContentPublicModule } from './content-public.module.ts';
 export type { ContentPublicPorts } from './content-public.module.ts';
+// F1-09g: the cross-module reads app.module assembles for the page audience facts.
+export type { AudienceUnionPlatform, PageAudienceReads } from './application/page-audience.ts';
 
 export interface ContentReaderOptions {
   /** Primary handle (ADR-0001 §4.2 #11); the reader only reads. */

@@ -36,6 +36,7 @@ import { createKyselyArticleStore } from './infra/kysely-article-store.ts';
 import { AppVersionsController } from './http/public/app-versions.controller.ts';
 import { createKyselyContentStore } from './infra/kysely-content-store.ts';
 import { PageReader } from './application/page-reader.ts';
+import { createPageAudienceFacts, type PageAudienceReads } from './application/page-audience.ts';
 import { PagesController } from './http/public/pages.controller.ts';
 import { createKyselyPageStore } from './infra/kysely-page-store.ts';
 import { PagePreviewService, type PagePreviewStore } from './application/page-preview.ts';
@@ -65,7 +66,14 @@ export interface ContentPublicPorts {
    * absent the module builds its own over DB.
    */
   readonly contentReader?: Omit<FactoryProvider<ContentReader | null>, 'provide'>;
+  /**
+   * F1-09g: the cross-module reads behind the page audience facts (null: no database handle).
+   * When absent, a logged-in viewer's facts are unknown and only `any` matches them.
+   */
+  readonly audienceReads?: Omit<FactoryProvider<PageAudienceReads | null>, 'provide'>;
 }
+
+const AUDIENCE_READS = Symbol('AUDIENCE_READS');
 
 function ownContentReader(db: Kysely<Database> | undefined, clock: Clock): ContentReader | null {
   if (db === undefined) return null;
@@ -104,10 +112,23 @@ export class ContentPublicModule {
             new ArticleReader(db === undefined ? null : createKyselyArticleStore(db), clock),
         },
         {
+          provide: AUDIENCE_READS,
+          ...(ports.audienceReads ?? { useFactory: (): PageAudienceReads | null => null }),
+        },
+        {
           provide: PageReader,
-          inject: [{ token: DB, optional: true }, CLOCK],
-          useFactory: (db: Kysely<Database> | undefined, clock: Clock): PageReader =>
-            new PageReader(db === undefined ? null : createKyselyPageStore(db), clock),
+          inject: [{ token: DB, optional: true }, CLOCK, AUDIENCE_READS, ROOT_LOGGER],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            clock: Clock,
+            reads: PageAudienceReads | null,
+            logger: RootLogger,
+          ): PageReader =>
+            new PageReader(
+              db === undefined ? null : createKyselyPageStore(db),
+              clock,
+              createPageAudienceFacts({ reads, logger: logger.child({ module: 'content' }) }),
+            ),
         },
         {
           provide: CONTENT_READER_SOURCE,

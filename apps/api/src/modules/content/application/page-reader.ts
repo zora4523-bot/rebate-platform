@@ -7,11 +7,14 @@ import type { Schema } from '@couli/contracts-ts';
 import type { Clock } from '../../platform/index.ts';
 import { CONTENT_CACHE_TTL_MS } from '../domain/cache-policy.ts';
 import {
+  neededAudienceFacts,
   pickPageVersion,
   selectSections,
+  type AudienceFacts,
   type PagePointer,
   type PageViewer,
 } from '../domain/pages/select/index.ts';
+import { GUEST_AUDIENCE, UNKNOWN_AUDIENCE, type PageAudienceFacts } from './page-audience.ts';
 import { TtlCache } from './ttl-cache.ts';
 
 /** Server constant of the response's ttl_sec (03 §6.1 example; 编排者默认 R8, contract getPage). */
@@ -37,9 +40,12 @@ export class PageReader {
   readonly #store: PageStore | null;
   readonly #pointers: TtlCache<PagePointer | null>;
   readonly #versions: TtlCache<PageVersion | null>;
+  readonly #audience: PageAudienceFacts | null;
 
-  constructor(store: PageStore | null, clock: Clock) {
+  /** `audience` null: a logged-in viewer's facts are unknown (only `any` matches them). */
+  constructor(store: PageStore | null, clock: Clock, audience: PageAudienceFacts | null = null) {
     this.#store = store;
+    this.#audience = audience;
     this.#pointers = new TtlCache(clock, CONTENT_CACHE_TTL_MS);
     this.#versions = new TtlCache(clock, CONTENT_CACHE_TTL_MS);
   }
@@ -48,12 +54,15 @@ export class PageReader {
    * The page as served to this request, or null when it is not deliverable (no page row, no
    * pointer for this device, or the chosen version missing or not published; the caller answers
    * 30701). A device id that is null or empty gets the full version. Rejects without a database.
+   * `userId` is the token's user (F1-09g): a guest's audience facts are all false; a logged-in
+   * user's are read once per request, only when a section filters on them, and never cached.
    */
   async read(
     appId: string,
     pageKey: string,
     deviceId: string | null,
     viewer: PageViewer,
+    userId: string | null = null,
   ): Promise<Schema<'Page'> | null> {
     const store = this.#available();
     const pointer = await this.#pointers.get(cacheKey(appId, pageKey), () =>
@@ -73,12 +82,31 @@ export class PageReader {
     if (version === null || version.status !== PUBLISHED || !Array.isArray(version.sections)) {
       return null;
     }
+    const audience = await this.#audienceOf(appId, userId, viewer, version.sections);
     return {
       page_key: pageKey,
       version: chosen,
       ttl_sec: PAGE_TTL_SEC,
-      sections: selectSections(version.sections, viewer) as Record<string, unknown>[],
+      sections: selectSections(
+        version.sections,
+        audience === undefined ? viewer : { ...viewer, audience },
+      ) as Record<string, unknown>[],
     };
+  }
+
+  async #audienceOf(
+    appId: string,
+    userId: string | null,
+    viewer: PageViewer,
+    sections: readonly unknown[],
+  ): Promise<AudienceFacts | undefined> {
+    if (viewer.audience !== undefined) return viewer.audience;
+    if (!viewer.loggedIn) return GUEST_AUDIENCE;
+    if (userId === null) return undefined;
+    const needed = neededAudienceFacts(sections);
+    if (needed.size === 0) return undefined;
+    if (this.#audience === null) return UNKNOWN_AUDIENCE;
+    return this.#audience.facts(appId, userId, needed);
   }
 
   #available(): PageStore {
