@@ -116,7 +116,7 @@ it('[AC-B1-08j#33] 重跑使用 current.shop_id：商品不可用时写 shop，�
 });
 
 it.each(['missing-row', 'missing-port'] as const)(
-  '[AC-B1-08j#34] 推广位 %s 时按 fallback 匹配并告警',
+  '[AC-B1-08j#34] 推广位 %s 时不跨场景匹配并告警',
   async (condition) => {
     const f = await scenario(db, {}, { unattributed: true });
     const s = await sourcesFor(f);
@@ -126,7 +126,60 @@ it.each(['missing-row', 'missing-port'] as const)(
     expect(await runUpdate(f, s.ports, f.next(), {}, condition === 'missing-port')).toMatchObject({
       ok: true,
     });
-    expect((await f.read()).orders[0]).toMatchObject(s.expected);
+    expect((await f.read()).orders[0]).toMatchObject({
+      source_match: 'none',
+      source_scene: null,
+      link_id: null,
+      agent_session_id: null,
+    });
+    expect(f.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ app_id: f.ctx.app_id, platform: 'pdd' }),
+      expect.any(String),
+    );
+    expectPrivateLogs(f);
+  },
+);
+
+it.each(['missing-row', 'missing-port'] as const)(
+  '[AC-B1-08j#42] 推广位 %s 时本人短码仍命中 exact',
+  async (condition) => {
+    const f = await scenario(db, {}, { unattributed: true });
+    const s = await sourcesFor(f);
+    s.linkLogs.mockResolvedValue([{ ...s.row, pid_scene: 'self_buy' }]);
+    s.linkByCode.mockResolvedValue({
+      ...s.row,
+      link_id: s.row.link_id!,
+      scene: 'share',
+    });
+    f.findUser.mockResolvedValue(f.userId);
+    f.findPid.mockResolvedValue([]);
+    const next = f.next({
+      attr_params: {
+        relation_id: null,
+        sub_union_id: null,
+        custom_parameters: '{"app":"n","uid":"abcd1234","lk":"a1b2c3"}',
+      },
+    });
+    expect(
+      await runUpdate(
+        f,
+        { ...s.ports, clickCode: (platform) => platform === 'pdd' },
+        next,
+        {},
+        condition === 'missing-port',
+      ),
+    ).toMatchObject({ ok: true });
+    expect((await f.read()).orders[0]).toMatchObject({
+      ...s.expected,
+      source_match: 'exact',
+      source_scene: 'share',
+      user_id: f.userId,
+    });
+    expect(s.linkByCode).toHaveBeenCalledExactlyOnceWith({
+      appId: f.ctx.app_id,
+      platform: 'pdd',
+      lk: 'a1b2c3',
+    });
     expect(f.logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ app_id: f.ctx.app_id, platform: 'pdd' }),
       expect.any(String),
