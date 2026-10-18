@@ -460,7 +460,6 @@ const b = tsFiles(QUEUE_DIR);
       `const ROOT = new URL('../../', import.meta.url);
 const D1 = join(__dirname, 'data');
 const D2 = resolve(import.meta.dirname, '..', 'shared');
-readdirSync('./fixtures');
 readdirSync(D1, { withFileTypes: true });
 readdirSync((D2));
 readdirSync(new URL('./seeds/', ROOT).pathname);
@@ -474,7 +473,6 @@ list('./db/migrations');
       'test/db/migrations',
       'test/seeds',
       'test/spec/a/data',
-      'test/spec/a/fixtures',
       'test/spec/a/pages',
       'test/spec/shared',
     ],
@@ -485,6 +483,19 @@ list('./db/migrations');
   // template expression, a call without arguments.
   const cases: [string, string][] = [
     ['readdirSync(process.cwd());', 'cannot be resolved statically'],
+    // Codex review r1, S2: a file-system path literal is relative to the working directory, which
+    // is not known — not to the module.
+    ["readdirSync('./fixtures');", 'cannot be resolved statically'],
+    ["readdirSync('./test/spec/a/data');", 'cannot be resolved statically'],
+    ["readdirSync(join('./x', 'data'));", 'cannot be resolved statically'],
+    ["function f(d) { return readdirSync(d); }\nf('./data');", 'cannot be resolved statically'],
+    // Codex review r1, S2: a constant whose initialiser goes on past the resolved part is unknown.
+    [
+      "const D = new URL('./unused/', import.meta.url).pathname.replace('unused', 'data');\nreaddirSync(D);",
+      'cannot be resolved statically',
+    ],
+    ["const D = join(__dirname, 'a') + '/b';\nreaddirSync(D);", 'cannot be resolved statically'],
+    ["const D = join(__dirname, 'a').slice(1);\nreaddirSync(D);", 'cannot be resolved statically'],
     [
       'function f(d) { return readdirSync(d); }',
       'in f() on a directory that cannot be resolved statically',
@@ -503,7 +514,10 @@ list('./db/migrations');
     expect(r.unresolved, text).toContain(reason);
   }
   // A resolved call next to an unresolved one: the resolved directory is kept, the reason too.
-  const mixed = listed('test/spec/a/x.test.ts', "readdirSync('./data'); readdirSync(somewhere);");
+  const mixed = listed(
+    'test/spec/a/x.test.ts',
+    "readdirSync(join(__dirname, 'data')); readdirSync(somewhere);",
+  );
   expect(mixed.dirs).toEqual(['test/spec/a/data']);
   expect(mixed.unresolved).toContain('cannot be resolved statically');
   // No listing at all.

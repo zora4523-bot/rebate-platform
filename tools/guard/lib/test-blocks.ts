@@ -902,8 +902,10 @@ function argsOf(ts: readonly Token[], open: number): [number, number][] | null {
 /**
  * A path value resolved statically: `url` marks `new URL(…)` / import.meta.url semantics; `raw`
  * keeps the literal text a parameter was called with, for `new URL(p, base)` and join segments.
+ * A bare literal has no `path`: a file-system path is relative to the working directory, which
+ * is not known (Codex review r1, S2), so it resolves only as a URL spec or a join segment.
  */
-type PathValue = { path: string; url: boolean; raw?: string };
+type PathValue = { path: string | null; url: boolean; raw?: string };
 
 /** The static string of a literal or expression-free template token, or null. */
 function staticString(t: Token | undefined): string | null {
@@ -915,7 +917,9 @@ function staticString(t: Token | undefined): string | null {
 
 /**
  * Resolves the path expression at ts[i] (CT-06r), given the module's path and the constants
- * already resolved: a `./` or `../` literal (relative to the module), `__dirname`,
+ * already resolved: a literal (only its text: as a file-system path it is relative to the
+ * working directory, which is unknown, so it resolves only as a URL spec or a join segment),
+ * `__dirname`,
  * `import.meta.dirname`, `import.meta.url`, a known constant, `path.join` / `join` /
  * `path.resolve` / `resolve` of a resolved first argument and literal segments, `path.dirname` /
  * `dirname` of a resolved value, `fileURLToPath(…)`, `new URL(literal, resolved)`, and
@@ -943,11 +947,7 @@ function resolveExpr(
     return { value, end };
   };
   const literal = staticString(t);
-  if (literal !== null) {
-    if (!literal.startsWith('./') && !literal.startsWith('../')) return none;
-    const path = joinPath(dirOf(modulePath), literal.replace(/[?#].*$/, ''));
-    return path === null ? none : { value: { path, url: false, raw: literal }, end: i + 1 };
-  }
+  if (literal !== null) return { value: { path: null, url: false, raw: literal }, end: i + 1 };
   // The literal text a parameter or constant stands for (a call like list('./x')).
   const rawOf = (k: number): string | null =>
     staticString(ts[k]) ??
@@ -976,7 +976,7 @@ function resolveExpr(
     const [specArg, baseArg] = args as [[number, number], [number, number]];
     const spec = specArg[1] - specArg[0] === 1 ? rawOf(specArg[0]) : null;
     const base = resolveExpr(ts, baseArg[0], modulePath, env);
-    if (spec === null || base.value === null || base.end !== baseArg[1]) return none;
+    if (spec === null || base.value?.path == null || base.end !== baseArg[1]) return none;
     if (spec.startsWith('/') || /^[a-z]+:/i.test(spec)) return none;
     const from = base.value.path.endsWith('/')
       ? base.value.path.slice(0, -1)
@@ -1004,7 +1004,7 @@ function resolveExpr(
     const end = closeOf(ts, open) + 1;
     const first = args[0] as [number, number];
     const head = resolveExpr(ts, first[0], modulePath, env);
-    if (head.value === null || head.end !== first[1]) return none;
+    if (head.value?.path == null || head.end !== first[1]) return none;
     const headPath = head.value.path.endsWith('/') ? head.value.path.slice(0, -1) : head.value.path;
     if (fn === 'fileURLToPath') {
       return args.length === 1 ? after({ path: headPath, url: false }, end) : none;
@@ -1094,8 +1094,12 @@ export function listedDirectories(
   modulePath: string,
 ): { dirs: string[]; unresolved: string | null } {
   const ts = code;
-  // Constants: `const NAME = <path expression>`; two passes for a forward reference.
+  // Constants: `const NAME = <path expression>` whose initialiser is the whole expression (a
+  // `.replace(…)`, an operator or anything else after it leaves the name unknown; Codex review
+  // r1, S2); two passes for a forward reference.
   const env = new Map<string, PathValue>();
+  const initialiserEnds = (k: number): boolean =>
+    k >= ts.length || ts[k]?.text === ';' || ts[k]?.text === ',' || (ts[k] as Token).nl;
   for (let pass = 0; pass < 2; pass += 1) {
     for (let i = 0; i + 3 < ts.length; i += 1) {
       const t = ts[i] as Token;
@@ -1103,7 +1107,7 @@ export function listedDirectories(
       const name = ts[i + 1];
       if (name?.kind !== 'id' || ts[i + 2]?.text !== '=') continue;
       const r = resolveExpr(ts, i + 3, modulePath, env);
-      if (r.value !== null) env.set(name.text, r.value);
+      if (r.value !== null && initialiserEnds(r.end)) env.set(name.text, r.value);
     }
   }
   const fns = functionsOf(ts);
@@ -1133,7 +1137,7 @@ export function listedDirectories(
     }
     const resolveWith = (scope: ReadonlyMap<string, PathValue>): string | null => {
       const r = resolveExpr(ts, first[0], modulePath, scope);
-      if (r.value === null || r.end !== first[1]) return null;
+      if (r.value?.path == null || r.end !== first[1]) return null;
       return r.value.path.endsWith('/') ? r.value.path.slice(0, -1) : r.value.path;
     };
     const direct = resolveWith(env);
