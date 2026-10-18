@@ -1,0 +1,22 @@
+id: CT-06t
+repo: rebate-platform
+title: 门禁小修：任务文件行数上限不计 red_exempt 段（该段单独上限 ≤ 20 条，每条仍是 file / test / reason 三键、reason ≥ 10 字，不允许按文件放行、不走旁路文件）
+type: guard-change
+# 2026-10-19 入账（编排裁定选 A）。起因：资金线 B2-01l 要声明 13 条 red_exempt（CT-06r），yaml-lite 不支持流式映射，每条 file / test / reason 三行共约 40 行，而 task.ts check 的 MAX_TASK_LINES=40，B2-01l 正文已 35 行，放不下。
+# 做法：task.ts check 数行数时不计 red_exempt 段（从 `red_exempt:` 行到下一个顶层键之前的缩进行）；task-file.ts 对该段单独限 ≤ 20 条，超出拒绝并写明；每条仍须 file / test / reason 三键、reason ≥ 10 字，混入非三键条目拒绝；不允许 test: '*' 之类按文件放行（不选 B），不走旁路文件（不选 C）。
+# 单测：35 行正文 + 13 条 red_exempt 通过；21 条拒绝；不含 red_exempt 的 41 行正文仍拒绝；red_exempt 段里混入非三键条目拒绝。README / tools/ops 说明同步一句。
+# tools/ 属保护路径第三类：负责人 10-02 常设授权的流程门禁小修（approvals #16），Claude 实现、Codex 对抗评审一轮，评审通过、检查全绿后按 approvals #24 加标签（编排 10-19 授权：改动限于 tools/ops/task.ts、tools/lib/task-file*、对应单测与台账 / 证据）。tools 自己的单元测试由实现者写，不需要先写规则测试。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/task{,.test}.ts'
+  - 'tools/lib/task-file{,.test}.ts'
+  - 'tools/ops/README.md'
+  - 'tools/README.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
