@@ -23,7 +23,9 @@ import type { AllowEntry, Term } from './banned-terms.ts';
 import { result, skipped } from './cli.ts';
 import type { CheckResult } from './cli.ts';
 import { scanFilesForHiddenUnicode } from './hidden-unicode.ts';
+import { LEDGER_FILE, ledgerOverwriteProblems } from './ledger-overwrite.ts';
 import { checkLockfile } from './lockfile.ts';
+import { MIGRATIONS_DIR, migrationSequenceProblems } from './migration-sequence.ts';
 import { checkPaths } from './path-guard.ts';
 import type { PathGuardResult } from './path-guard.ts';
 import { compareEmbedded, compareEmbeddedScript } from './protected-sync.ts';
@@ -42,6 +44,7 @@ import { authorProblems, checkAuthorPaths } from './spec-base.ts';
 import { checkSpecRef } from './spec-ref.ts';
 import { addOnlyViolations, scanTree } from './test-guard.ts';
 import type { Finding } from './test-guard.ts';
+import { listTreeFiles } from './tree.ts';
 import type { TreeListing } from './tree.ts';
 
 export const SCHEMA_DIR = 'tools/agent/schemas';
@@ -481,6 +484,95 @@ export function authorWorktreeCheck(
     ),
     detail,
   };
+}
+
+function assertBase(base: string): void {
+  if (base === '' || base.startsWith('-')) throw new Error(`invalid base: "${base}"`);
+}
+
+/**
+ * Where the inspected branch forked from `base`: their merge base, so a branch behind the base
+ * is held to its own changes only; `base` itself when git cannot tell (unrelated histories, a
+ * base that is not a commit), which then counts every difference as the branch's.
+ */
+export function forkPoint(root: string, base: string): { ref: string; notice: string | null } {
+  assertBase(base);
+  const resolved = tryGit(['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { cwd: root });
+  const merge = tryGit(['merge-base', base, 'HEAD'], { cwd: root });
+  const sha = merge.stdout.trim();
+  if (resolved.status !== 0 || merge.status !== 0 || !/^[0-9a-f]{40,64}$/.test(sha)) {
+    return {
+      ref: base,
+      notice: `no merge base of ${base.slice(0, 12)} and HEAD; compared with ${base.slice(0, 12)} itself`,
+    };
+  }
+  if (sha === resolved.stdout.trim()) return { ref: sha, notice: null };
+  return {
+    ref: sha,
+    notice: `the branch forked from ${sha.slice(0, 12)}, behind ${base.slice(0, 12)}: compared with the fork point`,
+  };
+}
+
+/**
+ * ledger-overwrite (CT-06q): a task file that exists at the fork point keeps its id, type and
+ * title, a done one stays done, and none is deleted or renamed (lib/ledger-overwrite.ts). Not
+ * waived by the owner label.
+ */
+export function ledgerOverwriteCheck(root: string, base: string): CheckResult {
+  const name = 'ledger-overwrite';
+  const fork = forkPoint(root, base);
+  const changes = changedFiles(fork.ref, { cwd: root }).filter(
+    (c) => LEDGER_FILE.test(c.path) || (c.oldPath !== undefined && LEDGER_FILE.test(c.oldPath)),
+  );
+  const problems = ledgerOverwriteProblems(changes, {
+    before: (path) => {
+      const res = tryGit(['show', `${fork.ref}:${path}`], { cwd: root });
+      return res.status === 0 ? res.stdout : null;
+    },
+    after: (path) => {
+      const file = join(root, path);
+      return existsSync(file) ? readFileSync(file, 'utf8') : null;
+    },
+  });
+  return result(name, problems, [
+    ...(fork.notice === null ? [] : [fork.notice]),
+    `${changes.length} task file(s) changed since ${fork.ref.slice(0, 12)}`,
+  ]);
+}
+
+/**
+ * migration-sequence (CT-06q): the migrations the inspected tree adds to `base` (the base tip,
+ * not the fork point: what was merged meanwhile counts) continue its numbering without a gap,
+ * a repeat or a number the base already has (lib/migration-sequence.ts). Not waived by the
+ * owner label.
+ */
+export function migrationSequenceCheck(root: string, base: string): CheckResult {
+  const name = 'migration-sequence';
+  assertBase(base);
+  const listing = tryGit(
+    ['-c', 'core.quotepath=false', 'ls-tree', '-z', base, `${MIGRATIONS_DIR}/`],
+    { cwd: root },
+  );
+  if (listing.status !== 0) {
+    return result(name, [
+      `cannot list ${MIGRATIONS_DIR} at ${base.slice(0, 12)}: ${listing.stderr.trim()}`,
+    ]);
+  }
+  const prefix = `${MIGRATIONS_DIR}/`;
+  const baseNames: string[] = [];
+  for (const entry of listing.stdout.split('\0')) {
+    // "<mode> <type> <object>\t<path>": only blobs directly under the directory are migrations.
+    const tab = entry.indexOf('\t');
+    if (tab === -1) continue;
+    const [, type] = entry.slice(0, tab).split(' ');
+    const path = entry.slice(tab + 1);
+    if (type === 'blob' && path.startsWith(prefix)) baseNames.push(path.slice(prefix.length));
+  }
+  const headNames = listTreeFiles(root)
+    .files.filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes('/'))
+    .map((p) => p.slice(prefix.length));
+  const { problems, notices } = migrationSequenceProblems(baseNames, headNames);
+  return result(name, problems, notices);
 }
 
 export type ProtectedOutcome = { check: CheckResult; hits: ProtectedHit[] };

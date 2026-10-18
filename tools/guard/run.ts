@@ -17,6 +17,12 @@
 //     path-guard-author checks --base..spec_commit against the rule-test author's paths
 //     (lib/spec-base.ts). Without a usable spec_commit, path-guard runs from --base as before.
 //     protected-paths and test-guard always run from --base.
+//     ledger-overwrite and migration-sequence (CT-06q, 2026-10-18) run on every branch: a task
+//     file ops/tasks/<id>.yaml that exists at the fork point (merge base of --base and HEAD)
+//     keeps its id, type and title, a done one stays done, none is deleted or renamed
+//     (lib/ledger-overwrite.ts); the migrations db/migrations/NNNN_*.sql the tree adds to
+//     --base are numbered max(base) + 1, + 2, … with no gap, repeat or number the base has
+//     (lib/migration-sequence.ts). The owner label waives neither.
 //     Commits of that range marked `Couli-Mechanical: contract-codegen` (ops/approvals.yaml id 31)
 //     are held to the ledger's mechanical_paths instead (planned markers removed from the
 //     contract, files regenerated; lib/mechanical.ts), every other commit to the task paths
@@ -35,7 +41,9 @@ import {
   agentsTableCheck,
   bannedTermsSpecCheck,
   hiddenUnicodeCheck,
+  ledgerOverwriteCheck,
   lockfileCheck,
+  migrationSequenceCheck,
   protectedPathsCheck,
   protectedSyncCheck,
   riskMapCoverageCheck,
@@ -177,6 +185,11 @@ async function runGit(argv: string[]): Promise<number> {
       );
     }
   }
+  // CT-06q: a task file that exists at the fork point is not turned into another task, and the
+  // migrations added to the base continue its numbering (lib/ledger-overwrite.ts,
+  // lib/migration-sequence.ts). Neither is waived by the owner label.
+  results.push(runCheck('ledger-overwrite', () => ledgerOverwriteCheck(root, base)));
+  results.push(runCheck('migration-sequence', () => migrationSequenceCheck(root, base)));
   results.push(
     runCheck('protected-paths', () => protectedPathsCheck(root, base, task?.type).check),
   );
