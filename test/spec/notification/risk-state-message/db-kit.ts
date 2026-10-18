@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { PostgresQueryCompiler, sql, type Insertable, type Kysely } from 'kysely';
+import { PostgresQueryCompiler, type Insertable, type Kysely } from 'kysely';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import {
   createRiskStateMessageHandler,
@@ -125,6 +125,10 @@ export async function fixture(suite: Suite) {
 /** Real database error on either insert, with no DDL or privileged connection. */
 export function failInsert(table: 'inbox_messages' | 'notify_logs') {
   let fired = false;
+  // Kysely forbids a plugin from changing the node kind (an InsertQueryNode cannot become a
+  // RawNode), so the matching insert runs and its result is replaced by PostgreSQL's
+  // division-by-zero error (22012): the caller's transaction still fails and rolls back.
+  const matched = new Set<unknown>();
   return {
     fired: () => fired,
     plugin: {
@@ -134,12 +138,15 @@ export function failInsert(table: 'inbox_messages' | 'notify_logs') {
         if (
           new RegExp(`\\binsert\\s+into\\s+(?:"?app"?\\.)?"?${table}"?\\b`, 'i').test(statement)
         ) {
-          fired = true;
-          return sql`select 1 / 0`.toOperationNode();
+          matched.add(args.queryId);
         }
         return args.node;
       },
       async transformResult(args: Parameters<import('kysely').KyselyPlugin['transformResult']>[0]) {
+        if (matched.delete(args.queryId)) {
+          fired = true;
+          throw Object.assign(new Error('division by zero'), { code: '22012' });
+        }
         return args.result;
       },
     },
