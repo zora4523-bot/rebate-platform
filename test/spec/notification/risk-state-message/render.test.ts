@@ -36,8 +36,7 @@ it.each([
   ['other', '你的账户提现已暂停，原因：违反用户协议。如有疑问，可在帮助中心提交申诉。'],
 ] as const)('[AC-B1-12g#2] 原因类别 %s 转成用户文案', (category, body) => {
   expect(
-    renderRiskStateMessage(payload({ reason_category: category }), null, new FixedClock(NOW))
-      ?.body,
+    renderRiskStateMessage(payload({ reason_category: category }), null, new FixedClock(NOW))?.body,
   ).toBe(body);
 });
 
@@ -60,11 +59,7 @@ it.each([
 
 it('[AC-B1-12g#4] 冻结转封禁按目标生成 banned 文案', () => {
   expect(
-    renderRiskStateMessage(
-      payload({ from: 'frozen', to: 'banned' }),
-      null,
-      new FixedClock(NOW),
-    ),
+    renderRiskStateMessage(payload({ from: 'frozen', to: 'banned' }), null, new FixedClock(NOW)),
   ).toMatchObject({
     variant: 'banned',
     body: '你的账号已被限制使用，原因：异常交易。可在说明页提交申诉。',
@@ -95,9 +90,9 @@ it.each([
 ] as const)(
   '[AC-B1-12g#5] 当前 %s、到期 %s 按上海年份判断跨年，并使用24小时制补零',
   (now, frozen_until, body) => {
-    expect(
-      renderRiskStateMessage(payload({ frozen_until }), null, new FixedClock(now))?.body,
-    ).toBe(body);
+    expect(renderRiskStateMessage(payload({ frozen_until }), null, new FixedClock(now))?.body).toBe(
+      body,
+    );
   },
 );
 
