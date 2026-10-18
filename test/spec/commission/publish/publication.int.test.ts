@@ -134,7 +134,18 @@ it('[AC-B2-03k#1] BR-CALC-22 首版起草与草稿修改均追加，基准、行
 });
 
 it('[AC-B2-03k#2] BR-CALC-22 起草保存当前基准且不改已有版本', async () => {
-  const f = await setup(db);
+  const f = await setup(db, {
+    rules: draftInput().rules.map((r, i) => ({
+      ...r,
+      r_own_bp: 4100n + BigInt(i),
+      r_direct_bp: 1200n + BigInt(i),
+      r_indirect_bp: 600n + BigInt(i),
+    })),
+    reserves: PLATFORMS.map((platform, i) => ({
+      platform,
+      reserve_bp: 1375n + BigInt(i),
+    })),
+  });
   const before = await stored(db, f.input.appId);
   const draft = await db.transaction().execute((tx) => service.createDraft(tx, f.input, f.deps));
   const after = await stored(db, f.input.appId);
@@ -144,6 +155,23 @@ it('[AC-B2-03k#2] BR-CALC-22 起草保存当前基准且不改已有版本', asy
   );
   expect(after.rules).toHaveLength(before.rules.length + 18);
   expect(after.reserves).toHaveLength(before.reserves.length + 3);
+  const rules = after.rules
+    .filter((r) => r.rule_version_id === draft.rule_version_id)
+    .map((r) => ({
+      platform: r.platform,
+      level: r.level,
+      order_type: r.order_type,
+      r_own_bp: BigInt(r.r_own_bp),
+      r_direct_bp: BigInt(r.r_direct_bp),
+      r_indirect_bp: BigInt(r.r_indirect_bp),
+    }));
+  const reserves = after.reserves
+    .filter((r) => r.rule_version_id === draft.rule_version_id)
+    .map((r) => ({ platform: r.platform, reserve_bp: BigInt(r.reserve_bp) }));
+  expect(rules).toHaveLength(f.input.rules.length);
+  expect(rules).toEqual(expect.arrayContaining([...f.input.rules]));
+  expect(reserves).toHaveLength(f.input.reserves.length);
+  expect(reserves).toEqual(expect.arrayContaining([...f.input.reserves]));
 });
 
 it('[AC-B2-03k#3] BR-CALC-06/07 校验原样返回领域结果且只读', async () => {
@@ -247,7 +275,11 @@ it.each(invalidDrafts)(
         f.deps,
       ),
     );
-    expect(result).toEqual(expected);
+    expect(result.ok).toBe(false);
+    expect(expected.ok).toBe(false);
+    if (result.ok || expected.ok) throw new Error('Expected invalid rules');
+    expect(result.errors).toHaveLength(expected.errors.length);
+    expect(result.errors).toEqual(expect.arrayContaining([...expected.errors]));
     expect(result).toMatchObject({
       ok: false,
       errors: expect.arrayContaining([expect.objectContaining({ code })]),
@@ -1083,4 +1115,76 @@ it('[AC-B2-03k#44] BR-CALC-11/22 修改生效时间须另建草稿并重新试�
   const result = await publish(next, refreshed.trialId);
   expect(result.effective_from).toEqual(replacement.effective_from);
   expect(result.status).toBe('published');
+});
+
+it('[AC-B2-03k#45] BR-CALC-22 已有已发布版本时空基准不能绕过基准校验', async () => {
+  const f = await setup(db, { baseVersionId: null });
+  const report = await trial(f);
+  await rejectUnchanged(f, 'BASE_VERSION_MISMATCH', () => publish(f, report.trialId));
+});
+
+it('[AC-B2-03k#46] BR-CALC-22 不同管理员起草、试算、发布、撤销各自如实留痕', async () => {
+  const f = await setup(db);
+  const trialActor = { adminUserId: randomUUID() };
+  const publisher = { adminUserId: randomUUID() };
+  const revoker = { adminUserId: randomUUID() };
+  for (const actor of [trialActor, publisher, revoker]) await seedActor(db, { ...f.input, actor });
+
+  const draft = await db.transaction().execute((tx) => service.createDraft(tx, f.input, f.deps));
+  const context = { ...f.context, draftId: draft.rule_version_id };
+  const report = await db
+    .transaction()
+    .execute((tx) => service.runTrial(tx, { ...context, actor: trialActor }, f.deps));
+  await db
+    .transaction()
+    .execute((tx) =>
+      service.publish(tx, { ...context, actor: publisher, trialId: report.trialId }, f.deps),
+    );
+  const published = await stored(db, f.input.appId);
+  const publishedVersion = published.versions.find(
+    (v) => v.rule_version_id === draft.rule_version_id,
+  );
+  expect(publishedVersion).toMatchObject({
+    status: 'published',
+    drafter_id: f.input.actor.adminUserId,
+    publisher_id: publisher.adminUserId,
+  });
+  expect(published.trials.find((r) => r.trial_id === report.trialId)).toMatchObject({
+    rule_version_id: draft.rule_version_id,
+    created_by: trialActor.adminUserId,
+  });
+
+  await db
+    .transaction()
+    .execute((tx) =>
+      service.revoke(
+        tx,
+        { appId: f.input.appId, actor: revoker, versionId: draft.rule_version_id },
+        f.deps,
+      ),
+    );
+  const revoked = await stored(db, f.input.appId);
+  expect(revoked.versions.find((v) => v.rule_version_id === draft.rule_version_id)).toMatchObject({
+    status: 'revoked',
+    drafter_id: f.input.actor.adminUserId,
+    publisher_id: publisher.adminUserId,
+    revoked_at: new Date(NOW),
+  });
+  expect(revoked.trials).toEqual(published.trials);
+  expect(f.append).toHaveBeenCalledTimes(4);
+  for (const [index, operation] of [
+    { actor: f.input.actor, action: 'draft', target: draft.rule_version_id },
+    { actor: trialActor, action: 'trial', target: report.trialId },
+    { actor: publisher, action: 'publish', target: draft.rule_version_id },
+    { actor: revoker, action: 'revoke', target: draft.rule_version_id },
+  ].entries())
+    expect(f.append).toHaveBeenNthCalledWith(
+      index + 1,
+      expect.objectContaining({
+        appId: f.input.appId,
+        actor: operation.actor.adminUserId,
+        action: `commission.rule.${operation.action}`,
+        target: operation.target,
+      }),
+    );
 });

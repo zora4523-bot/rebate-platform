@@ -78,6 +78,7 @@ export async function seedVersion(
 ): Promise<string> {
   const id = randomUUID();
   const app = db.withSchema('app');
+  const effective = new Date(options.effective ?? input.effectiveFrom);
   await app
     .insertInto('commission_rule_versions')
     .values({
@@ -89,7 +90,11 @@ export async function seedVersion(
       base_version_id: input.baseVersionId,
       drafter_id: input.actor.adminUserId,
       publisher_id: options.status === 'published' ? input.actor.adminUserId : null,
-      published_at: options.status === 'published' ? BASE_TIME : null,
+      // 各用例内已发布版本的生效时间不同；未来版在 NOW 发布，避免并列发布时间。
+      published_at:
+        options.status === 'published'
+          ? new Date(Math.min(effective.getTime(), new Date(NOW).getTime()))
+          : null,
       revoked_at: options.status === 'revoked' ? BASE_TIME : null,
       created_at: BASE_TIME,
     })
@@ -212,7 +217,8 @@ export async function seedSample(
       order_id: orderId,
       platform: options.platform ?? 'taobao',
       sub_order_id: `synthetic-${orderId}`,
-      attr_at: paidAt,
+      // 归属时间落在窗口外，付款时间可能在窗口内；不能用 attr_at 筛试算样本。
+      attr_at: new Date(new Date(paidAt).getTime() - 8 * 24 * 60 * 60 * 1000),
     })
     .execute();
   if (options.snapshot === false) return orderId;
