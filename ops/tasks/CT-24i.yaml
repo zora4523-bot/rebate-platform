@@ -14,5 +14,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/admin/permissions/**'
-status: todo
-pr: null
+status: done
+pr: 813
