@@ -12,3 +12,10 @@ export type {
   UserLevel,
 } from './domain/change-logs.ts';
 export type { GrowthExecutor, GrowthHistory, GrowthHistoryOptions } from './infra/history.ts';
+export { createParentRelationReader } from './ports/parent-relation.ts';
+export type {
+  ParentRelation,
+  ParentRelationReader,
+  ParentRelationReaderOptions,
+  ParentRelationSubject,
+} from './ports/parent-relation.ts';
