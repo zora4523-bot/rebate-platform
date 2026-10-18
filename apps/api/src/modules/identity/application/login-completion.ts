@@ -83,12 +83,12 @@ export async function completeLogin(
     isVersionGatedPlatform(command.platform) &&
     account.parent_bind_source === 'landing' &&
     !(await hasLoginLog(trx, appId, userId));
-  // Lock order (B1-11f review r1 S1): users row → consent lock → relation write lock. The review
-  // may UPDATE this users row after the consent lock; taking the row lock first, as the OAuth
-  // lookup does (findOauthAccount), keeps an SMS and a WeChat / Apple first login of the same
-  // account from each holding one lock and waiting for the other. Only a candidate takes it: such
-  // an account has no login yet, hence no session, so no consent write (consents.ts: consent lock,
-  // then the users row) can be running for it.
+  // Lock order (B1-11f money review r1 / r2 S1), the same in every path that takes both locks:
+  // users row (FOR NO KEY UPDATE) → consent lock → growth's relation write lock. The OAuth lookup
+  // (findOauthAccount) and a user-level consent write (consents.ts) lock the row first too. Only a
+  // candidate takes it here: the review may UPDATE this users row after the consent lock, while any
+  // other login writes under the consent lock only rows that reference users (their foreign-key
+  // KEY SHARE does not conflict with FOR NO KEY UPDATE), so it never waits on the row lock.
   if (reviewCandidate) {
     await trx
       .selectFrom('users')
