@@ -10258,8 +10258,15 @@ paths:
         - admin-content
       summary: Create an article as a first draft
       description: |
-        Permission point `content.article`. Creates an article with a server-generated id
-        (lowercase canonical UUID) and version 1 in status draft; nothing is published. Category
+        Permission point `content.article`. Creates an article with the client-generated
+        `article_id` (a UUIDv7 the console generates once per new article and reuses on every retry
+        of that create; lowercase canonical form) and version 1 in status draft; nothing is
+        published. Admin writes carry no Idempotency-Key (04 §6.6), so the id is what makes a retry
+        safe: retrying the same article_id never creates a second article — when an article with
+        that id already exists → 20902 with `data.resource=article` and nothing is written; the
+        console then reads it back with GET /admin/v1/articles/{article_id} (编排者默认). An
+        article_id that is not a lowercase canonical UUIDv7 → 20001 `data.fields=[article_id]`,
+        checked before the save checks. Category
         agreement is refused with 20001 `data.fields=[category]` (agreements are written through
         /admin/v1/agreements). Save checks (04 §6.6 articles, shared by create, draft and
         publish): an empty title or a title hitting the forbidden-word list (BR-TEXT-12 细则); a
@@ -10282,6 +10289,7 @@ paths:
         - 10001
         - 10403
         - 20001
+        - 20902
       security:
         - adminBearerAuth: []
       parameters:
@@ -10293,6 +10301,7 @@ paths:
             schema:
               $ref: '#/components/schemas/AdminArticleCreateRequest'
             example:
+              article_id: 00000000-0000-7000-8000-000000000001
               category: notice
               title: 国庆期间到账说明
               body: '{"type":"doc","content":[]}'
@@ -10312,7 +10321,7 @@ paths:
                 code: 0
                 msg: ''
                 data:
-                  article_id: 00000000-0000-4000-8000-000000000001
+                  article_id: 00000000-0000-7000-8000-000000000001
                   category: notice
                   row_version: 0
                   current_version: null
@@ -10344,6 +10353,8 @@ paths:
                   $ref: '#/components/examples/AdminArticleFieldInvalid'
                 categoryReadOnly:
                   $ref: '#/components/examples/AdminArticleCategoryReadOnly'
+                alreadyExists:
+                  $ref: '#/components/examples/AdminArticleAlreadyExists'
                 noPermission:
                   $ref: '#/components/examples/AdminPermissionDenied'
                 tokenExpired:
@@ -13206,6 +13217,14 @@ components:
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminArticleConflict:
       summary: 20902 the article was changed by someone else (row_version moved on)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: article
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminArticleAlreadyExists:
+      summary: 20902 an article with this article_id already exists (a retried create); read it back
       value:
         code: 20902
         msg: 状态已变化，请刷新后重试
@@ -16795,10 +16814,18 @@ components:
       type: object
       additionalProperties: false
       required:
+        - article_id
         - category
         - title
         - body
       properties:
+        article_id:
+          $ref: '#/components/schemas/Id'
+          description: |
+            Client-generated UUIDv7 (lowercase canonical form), generated once per new article and
+            reused on every retry of the same create. An id that already exists → 20902
+            `data.resource=article` (no second article); read it back with GET
+            /admin/v1/articles/{article_id}.
         category:
           $ref: '#/components/schemas/ArticleCategory'
         title:

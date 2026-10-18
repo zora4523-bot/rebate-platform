@@ -3520,8 +3520,15 @@ export interface paths {
         put?: never;
         /**
          * Create an article as a first draft
-         * @description Permission point `content.article`. Creates an article with a server-generated id
-         *     (lowercase canonical UUID) and version 1 in status draft; nothing is published. Category
+         * @description Permission point `content.article`. Creates an article with the client-generated
+         *     `article_id` (a UUIDv7 the console generates once per new article and reuses on every retry
+         *     of that create; lowercase canonical form) and version 1 in status draft; nothing is
+         *     published. Admin writes carry no Idempotency-Key (04 §6.6), so the id is what makes a retry
+         *     safe: retrying the same article_id never creates a second article — when an article with
+         *     that id already exists → 20902 with `data.resource=article` and nothing is written; the
+         *     console then reads it back with GET /admin/v1/articles/{article_id} (编排者默认). An
+         *     article_id that is not a lowercase canonical UUIDv7 → 20001 `data.fields=[article_id]`,
+         *     checked before the save checks. Category
          *     agreement is refused with 20001 `data.fields=[category]` (agreements are written through
          *     /admin/v1/agreements). Save checks (04 §6.6 articles, shared by create, draft and
          *     publish): an empty title or a title hitting the forbidden-word list (BR-TEXT-12 细则); a
@@ -5575,6 +5582,13 @@ export interface components {
             trace_id: components["schemas"]["TraceId"];
         };
         AdminArticleCreateRequest: {
+            /**
+             * @description Client-generated UUIDv7 (lowercase canonical form), generated once per new article and
+             *     reused on every retry of the same create. An id that already exists → 20902
+             *     `data.resource=article` (no second article); read it back with GET
+             *     /admin/v1/articles/{article_id}.
+             */
+            article_id: components["schemas"]["Id"];
             category: components["schemas"]["ArticleCategory"];
             title: string;
             /** @description tiptap JSON document as a string. */
@@ -17028,6 +17042,7 @@ export interface operations {
             content: {
                 /**
                  * @example {
+                 *       "article_id": "00000000-0000-7000-8000-000000000001",
                  *       "category": "notice",
                  *       "title": "国庆期间到账说明",
                  *       "body": "{\"type\":\"doc\",\"content\":[]}",
@@ -17051,7 +17066,7 @@ export interface operations {
                      *       "code": 0,
                      *       "msg": "",
                      *       "data": {
-                     *         "article_id": "00000000-0000-4000-8000-000000000001",
+                     *         "article_id": "00000000-0000-7000-8000-000000000001",
                      *         "category": "notice",
                      *         "row_version": 0,
                      *         "current_version": null,
