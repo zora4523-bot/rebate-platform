@@ -1,0 +1,24 @@
+id: CT-06s
+repo: rebate-platform
+title: AC-CT-06b#7 子进程超时与 CLI_TIMEOUT_MS 对齐（CI 偶发 ETIMEDOUT）
+type: test-change
+# 2026-10-19 入账（编排会话）。起因：test/spec/db/lint-migrations/hardening.test.ts 的 [AC-CT-06b#7] 经 kit.ts 的 run()
+# 起子进程跑 tools/ci/lint-migrations.ts，run() 的 spawnSync timeout 只有 10 秒；CI 负载高时不够，同日在 #773、#795、#799
+# 三个无关 PR 上以 ETIMEDOUT 红掉，重跑即过。同文件其他跑子进程的用例都把 CLI_TIMEOUT_MS = 60_000 作为 it 的第三参数，#7 没有。
+# 做法：kit.ts 导出 CLI_TIMEOUT_MS = 60_000，run() 的 spawnSync timeout 改为 options.timeoutMs ?? CLI_TIMEOUT_MS（可配置、默认与
+# it 超时一致）；hardening.test.ts 改为从 kit.ts 引入 CLI_TIMEOUT_MS，#7 的 it 加第三参数 CLI_TIMEOUT_MS。只改超时，不改任何断言、
+# 不删用例、不改 lint-migrations.ts。目录下其他测试文件仍各自定义 CLI_TIMEOUT_MS，不动。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走
+# 非 task 分支（chore/test-change-CT-06s）、不带证据文件（先例 F1-09k #770）；Claude 实现、Codex 只读对抗评审。
+refs: []
+refs_hash: {}
+deps: [CT-06b]
+paths:
+  - 'test/spec/db/lint-migrations/hardening.test.ts'
+  - 'test/spec/db/lint-migrations/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
