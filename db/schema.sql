@@ -1915,7 +1915,7 @@ CREATE TABLE app.consent_records (
     CONSTRAINT consent_records_labor_agreement_check CHECK (((type <> 'labor_agreement'::text) OR ((subject_type = 'user'::text) AND (text_sha256 IS NOT NULL) AND (signer_snapshot IS NOT NULL) AND (device_id IS NOT NULL)))),
     CONSTRAINT consent_records_subject_check CHECK ((((subject_type = 'user'::text) AND (user_id IS NOT NULL)) OR ((subject_type = 'device'::text) AND (device_id IS NOT NULL)))),
     CONSTRAINT consent_records_subject_type_check CHECK ((subject_type = ANY (ARRAY['user'::text, 'device'::text]))),
-    CONSTRAINT consent_records_type_check CHECK ((type = ANY (ARRAY['privacy'::text, 'agreement'::text, 'ai_third_party'::text, 'id_verification'::text, 'personalization'::text, 'labor_agreement'::text])))
+    CONSTRAINT consent_records_type_check CHECK ((type = ANY (ARRAY['privacy'::text, 'agreement'::text, 'ai_third_party'::text, 'id_verification'::text, 'personalization'::text, 'labor_agreement'::text, 'clipboard_auto_import'::text])))
 );
 
 
