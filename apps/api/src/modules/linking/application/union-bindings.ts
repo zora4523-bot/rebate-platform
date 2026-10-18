@@ -55,6 +55,10 @@
 // echoed. Responses carry only {platform, status}: no account name, relation id or other user.
 // Cross-module reads (devices, user_risk_state, union_accounts, pids) are read-only; this module
 // writes union_auth_sessions (used_at only) and union_bindings.
+// F1-07c: after the exchange (never during it) and outside the decide savepoints, the submission
+// takes the user lock (binding-lock.ts) on the key's transaction and reads the risk state again: a
+// user banned meanwhile gets the banned answer (10001) and no binding is written. A new row's
+// row_version follows the highest of the user's earlier taobao rows.
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
@@ -66,6 +70,7 @@ import {
   type RootLogger,
 } from '../../platform/index.ts';
 import { canTransitionBinding } from '../domain/binding-status-transitions.ts';
+import { lockBindingUser, nextBindingRowVersion, userBannedOn } from './binding-lock.ts';
 import {
   recordBindingConflict,
   resolveBindingConflictsOnActive,
@@ -314,6 +319,8 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
         released_at: null,
         cooldown_until: null,
         blocked_reason: null,
+        // F1-07c: after the highest row_version of the user's earlier rows on the platform.
+        row_version: nextBindingRowVersion(mine),
         created_at: now,
         updated_at: now,
       })
@@ -445,6 +452,14 @@ export function createUnionBindings(options: UnionBindingsOptions): UnionBinding
       throw new AuthConfigError('linking: the credential exchange returned no relation id');
     }
 
+    // F1-07c: the user lock, taken only now that the upstream has answered and outside the
+    // decide savepoints (a rollback to one would drop it); held until the key's transaction
+    // commits. A ban committed meanwhile (or while this waited) is read after the lock: nothing
+    // is written and the answer is the banned user's (BR-ID-31: no session, 10001).
+    if (!(await lockBindingUser(trx, appId, userId))) {
+      throw new Error('linking: the bound user does not exist');
+    }
+    if (await userBannedOn(trx, appId, userId)) return result(10001, traceId);
     const decision = await settle(trx, appId, userId, accountId, exchanged.relationId);
     if (decision.kind === 'conflict') {
       // BR-ID-18 / BR-ID-19: one conflict row per 30151, committed with the stored answer; it

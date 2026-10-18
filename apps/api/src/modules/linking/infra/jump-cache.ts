@@ -3,7 +3,14 @@
 // name; the value is the cached jump as JSON, expiring with the jump (at most 900 seconds). Redis
 // is called while the open holds its database transaction, never the database (B1-06m).
 // A Redis failure is a miss on read and a skipped write: the open converts afresh instead.
-import { createHash } from 'node:crypto';
+// F1-07c: the console's reset clears every cached jump of one user (all platforms, products and
+// variants) by moving that user's generation: a per-(app, user) key, also hashed, whose random
+// value joins the hashed identity of every entry key. Reads and writes look the generation up
+// first; a reset sets a fresh one, so the user's earlier entries are never read again and expire
+// on their own TTL. The generation lives 2 × MAX_CONVERT_CACHE_TTL_SEC and every entry at most
+// MAX_CONVERT_CACHE_TTL_SEC, so once it expires no entry written before that reset is left alive.
+// No generation stored (never reset, or expired) keeps the entry key of B1-06w unchanged.
+import { createHash, randomUUID } from 'node:crypto';
 import type { Clock, RedisNamespace } from '../../platform/index.ts';
 import { MAX_CONVERT_CACHE_TTL_SEC } from '../domain/rules.ts';
 import type { LinkOpenCacheKey, LinkOpenCachedJump } from '../application/link-open-requote.ts';
@@ -19,7 +26,17 @@ interface Warn {
   warn(fields: Readonly<Record<string, unknown>>, message: string): void;
 }
 
-function redisKey(key: LinkOpenCacheKey): string {
+/** A user's generation lives longer than any entry written before it moved. */
+const GENERATION_TTL_SEC = 2 * MAX_CONVERT_CACHE_TTL_SEC;
+
+function generationKey(appId: string, userId: string): string {
+  const owner = createHash('sha256')
+    .update(JSON.stringify(['generation', userId]))
+    .digest('hex');
+  return `${appId}:g:${owner}`;
+}
+
+function redisKey(key: LinkOpenCacheKey, generation: string | null): string {
   const identity = JSON.stringify([
     key.userId,
     key.platform,
@@ -29,6 +46,7 @@ function redisKey(key: LinkOpenCacheKey): string {
     key.pidScene,
     key.noRebate,
     key.variant ?? null,
+    ...(generation === null ? [] : [generation]),
   ]);
   return `${key.appId}:${createHash('sha256').update(identity).digest('hex')}`;
 }
@@ -133,11 +151,13 @@ export function createRedisJumpCache(
   clock: Clock,
   logger: Warn,
 ): LinkJumpCache {
+  const generationOf = async (key: LinkOpenCacheKey): Promise<string | null> =>
+    key.userId === null ? null : redis.get(generationKey(key.appId, key.userId));
   return {
     async get(key) {
       let text: string | null;
       try {
-        text = await redis.get(redisKey(key));
+        text = await redis.get(redisKey(key, await generationOf(key)));
       } catch (error) {
         logger.warn(
           {
@@ -157,7 +177,7 @@ export function createRedisJumpCache(
       if (!Number.isFinite(remainingMs) || remainingMs <= 0) return;
       const ttlSeconds = Math.min(MAX_CONVERT_CACHE_TTL_SEC, Math.ceil(remainingMs / 1000));
       try {
-        await redis.set(redisKey(key), JSON.stringify(value), ttlSeconds);
+        await redis.set(redisKey(key, await generationOf(key)), JSON.stringify(value), ttlSeconds);
       } catch (error) {
         logger.warn(
           {
@@ -169,6 +189,20 @@ export function createRedisJumpCache(
           'linking: jump cache write failed; not cached',
         );
       }
+    },
+  };
+}
+
+export interface LinkJumpCachePurger {
+  /** Every cached jump of the user in this app is a miss from now on. Throws on a Redis failure. */
+  purgeUser(appId: string, userId: string): Promise<void>;
+}
+
+/** F1-07c: the reset's per-user clear over the same namespace the open caches in. */
+export function createRedisJumpCachePurger(redis: RedisNamespace): LinkJumpCachePurger {
+  return {
+    async purgeUser(appId, userId) {
+      await redis.set(generationKey(appId, userId), randomUUID(), GENERATION_TTL_SEC);
     },
   };
 }

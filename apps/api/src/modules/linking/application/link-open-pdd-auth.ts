@@ -299,6 +299,8 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
       custom,
     });
     if (written.kind === 'blocked') return { kind: 'refused', code: 30153 };
+    // F1-07c: banned meanwhile (read after the user lock): the banned user's answer, as above.
+    if (written.kind === 'banned') return { kind: 'refused', code: 10001 };
     return allow(owner, false, { id: written.id, accountId: written.accountId }, written.accountId);
   }
 

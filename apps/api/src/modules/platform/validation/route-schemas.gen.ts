@@ -5209,6 +5209,240 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminResetUserUnionBinding": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        }
+      },
+      "required": [
+        "user_id",
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "expected_row_version"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Required free-text reason, kept in the audit record."
+        },
+        "expected_row_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "row_version of the row as read (users' risk state, a union binding); plus 1 on every\nchange. The CAS value `expected_row_version` of the writes.\n"
+            }
+          ],
+          "description": "The binding's row_version as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminDisableUserUnionBinding": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        }
+      },
+      "required": [
+        "user_id",
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "expected_row_version"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Required free-text reason, kept in the audit record."
+        },
+        "expected_row_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "row_version of the row as read (users' risk state, a union binding); plus 1 on every\nchange. The CAS value `expected_row_version` of the writes.\n"
+            }
+          ],
+          "description": "The binding's row_version as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminEnableUserUnionBinding": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        }
+      },
+      "required": [
+        "user_id",
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "expected_row_version"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Required free-text reason, kept in the audit record."
+        },
+        "expected_row_version": {
+          "allOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "row_version of the row as read (users' risk state, a union binding); plus 1 on every\nchange. The CAS value `expected_row_version` of the writes.\n"
+            }
+          ],
+          "description": "The binding's row_version as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
   "adminListPlatformIcons": {
     "headers": {
       "type": "object",
