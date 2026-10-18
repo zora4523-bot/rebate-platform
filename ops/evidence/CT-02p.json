@@ -1,0 +1,35 @@
+{
+  "task": "CT-02p",
+  "spec_ref": "e89cfee3cb807072888b36482b8f26035b1d5565",
+  "spec_commit": "bf71d54cc14dfca854fb3614719227e0d1f6eada",
+  "red_tests": [],
+  "risk_note": "RV1 contract task, description text only (orchestrator rulings ① ② of 2026-10-18 09:2x, ledger #696): adminEnableUserUnionBinding now states that a user whose risk state is banned is refused with 30154 whatever the blocked_reason (bindings stay blocked while banned, BR-ID-31; no automatic release after deletion of a banned user, BR-ID-20) and that admin binding operations and ban / unban are serialised per user; adminUpdateUserRiskState now says the in-app message RISK_STATE_CHANGED (BR-TEXT-23) is sent by the notification module after the change and the response does not wait for it. Round 2 (owner decision of 2026-10-18, planning #135, SPEC_REF e89cfee): after enable or unban a taobao binding returns to invalid (30102 at the next purchase) and other alliances return to active at once; reset is the admin unbinding of the taobao filing and only for taobao, other platforms 20001 data.fields=[platform]. No operation, parameter, schema, error code, enum or x-implementation changed; openapi.gen.ts regenerated (comments only), the auth, signing and minimum-version route tables unchanged. tester none; implementation by an Opus 5.5 subagent in one run. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 3,
+      "note": "round 1 pass (two descriptions); round 2 fail (S1: other alliances back to active contradicted BR-ID-20 / 31 at the old SPEC_REF 99cc36f); SPEC_REF advanced to e89cfee in #773 (owner decision of 2026-10-18, planning #135) and the branch rebased; round 3 pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "f8c32eb0b372eab9e0c83252304c36e1265a0741",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}

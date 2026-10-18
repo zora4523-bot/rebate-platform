@@ -6562,13 +6562,17 @@ paths:
         every session and refresh token of the user and sets the user's active and invalid union
         bindings to blocked with blocked_reason ban (a binding already blocked keeps its reason);
         new withdrawal requests are refused with 10006, existing withdrawals are not changed; a
-        ban has no end. `unban` sets the bindings blocked for ban back to invalid (the user
-        authorizes again). `freeze` and `unfreeze` touch neither sessions nor bindings
+        ban has no end. `unban` sets the bindings blocked for ban back: a taobao binding becomes
+        invalid (the user authorizes again), a binding on any other platform (such as pdd, which
+        has no re-authorization) becomes active and takes effect at once (BR-ID-20). `freeze` and
+        `unfreeze` touch neither sessions nor bindings
         (withdrawals 30303 and held credits follow from the state, BR-WDR-05, BR-CALC-13); a
         freeze with `frozen_until` ends by itself at that time. Every action writes an audit
         record (action user_risk_state_change, before and after state, reason category and
-        reason) and sends the in-app message RISK_STATE_CHANGED (BR-TEXT-23). The response is the
-        risk state as it is now. No Idempotency-Key (04 §6.6).
+        reason). After the risk state changes, the notification module sends the in-app message
+        RISK_STATE_CHANGED (BR-TEXT-23; a ban notice becomes visible only after the unban,
+        BR-ID-31); this operation does not send it and its response does not wait for the
+        sending. The response is the risk state as it is now. No Idempotency-Key (04 §6.6).
       x-auth: admin
       x-implementation: planned
       x-error-codes:
@@ -6692,11 +6696,14 @@ paths:
       description: |
         Permission point `union.binding_reset` (04 §11.2); lacking it is 10403 with
         `data.reason=admin_permission_denied`. Step-up: totp tier (without a valid totp-tier
-        `X-Step-Up-Token` → 10003 with `data.tier=totp`). For correcting a wrong binding (OPS-11;
-        users cannot rebind themselves, BR-ID-19). `reason` is required (1–200 characters, else
-        20001 with `data.fields=[reason]`). An unknown `user_id` is 20001 with
-        `data.fields=[user_id]`; a platform without user authorization (no union binding, such as
-        jd) is 20001 with `data.fields=[platform]`.
+        `X-Step-Up-Token` → 10003 with `data.tier=totp`). Reset is the console's "unbind the
+        taobao filing" (解绑淘宝备案) in the user's filing details, for correcting a wrong binding
+        (OPS-11); users cannot unbind or rebind themselves (BR-ID-19, BR-ID-20). `reason` is
+        required (1–200 characters, else 20001 with `data.fields=[reason]`). An unknown `user_id`
+        is 20001 with `data.fields=[user_id]`. Reset exists for `platform=taobao` only: any other
+        platform is 20001 with `data.fields=[platform]`, the same as a platform without user
+        authorization (such as jd); pdd and other unions have no re-authorization, so their
+        bindings are only disabled and enabled (BR-ID-20).
         State rule (BR-ID-20): only an active or invalid binding is reset; a blocked one (any
         blocked_reason), a released one, or no binding row on that platform is 30154 without data.
         The binding becomes released with released_at = now and cooldown_until = released_at +
@@ -6804,8 +6811,9 @@ paths:
         one (any blocked_reason, admin_disable included), a released one, or no binding row on
         that platform is 30154 without data. The binding becomes blocked with blocked_reason
         admin_disable; it is never released by itself and only POST
-        …/union-bindings/{platform}/enable brings it back. While it is blocked the user's purchase
-        entry answers 30153 (BR-ID-17, BR-ID-18).
+        …/union-bindings/{platform}/enable brings it back (on taobao as invalid, on other
+        platforms as active, see enable). While it is blocked the user's purchase entry answers
+        30153 (BR-ID-17, BR-ID-18).
         CAS: `expected_row_version` is the binding's `row_version`; a mismatch → 20902 with
         `data.resource=union_binding` (04 §6.6). As for reset, a later binding row on the platform
         never reuses an earlier row's row_version. Writes an audit record (action
@@ -6903,7 +6911,15 @@ paths:
         State rule (BR-ID-20): only a binding blocked with blocked_reason admin_disable is
         enabled; any other status, a binding blocked for ban or deletion, or no binding row on
         that platform is 30154 without data (a binding blocked for ban comes back through unban
-        only). The binding becomes invalid: the user authorizes again before rebates resume.
+        only). On taobao the binding becomes invalid: the user authorizes again (30102 at the next
+        purchase) before rebates resume. On any other platform (such as pdd, which has no
+        re-authorization: the user authorizes once) it becomes active and rebates resume at once,
+        without asking the user to authorize again (BR-ID-20).
+        A user whose risk state is banned is refused with 30154 without data whatever the
+        binding's blocked_reason: while the ban lasts every binding of the user stays blocked
+        (BR-ID-31), and a ban followed by deletion releases nothing by itself (BR-ID-20). The
+        binding operations of the admin console and ban / unban are serialized per user, so
+        concurrent requests on the same user never leave a banned user with an invalid binding.
         CAS: `expected_row_version` is the binding's `row_version`; a mismatch → 20902 with
         `data.resource=union_binding` (04 §6.6). As for reset, a later binding row on the platform
         never reuses an earlier row's row_version. Writes an audit record (action
@@ -6936,7 +6952,7 @@ paths:
               expected_row_version: 2
       responses:
         '200':
-          description: The binding as it is now (invalid, waiting for the user to authorize again).
+          description: 'The binding as it is now (taobao: invalid until the user authorizes again; other: active).'
           headers:
             X-Trace-Id:
               $ref: '#/components/headers/TraceId'
