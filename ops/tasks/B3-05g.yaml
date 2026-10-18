@@ -1,0 +1,26 @@
+id: B3-05g
+repo: rebate-platform
+title: Orchestrator 第七段：结果集与指代（第 N 个、card_id 引用）、再便宜点、换一批 / 换平台、价格条件校验与追问（每槽位一次）、无结果放宽（工具上限内）与 relaxed 标记输入；agent_result_sets 写入端口
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，plan.md §3.2）。05 B3-05 行「结果集与指代、clarify 意图、放宽重试」。
+# 依据：BR-AI-05 细则（ref_ordinal 解析到最近含 product_list 的结果集、越界 clarify；refine=cheaper 按 BR-PRICE-15、结果过小不检索出 notice；换一批 page+1；换平台只改 platforms；结果集只存条件与卡片引用）；
+#   BR-AI-08（价格条件闭区间、合法范围、不合法只出 clarify、已追问过则丢弃条件出 notice；无结果最多放宽若干次，计入工具上限）；BR-AI-24（放宽后入选且不满足原始条件的卡为 relaxed，标记由代码判定）。
+# 结果集持久化经 ResultSetStore 端口（agent_result_sets 由 agent 模块写；PG 实现可在本段或随 B3-09，派发前定，plan.md §3.2）。搜索调用经 B3-04b 的 search_products handler。
+# 分工：清单外新台账，Codex 先写规则测试，Opus 实现，Codex 评审。风险 RV1。
+refs: [BR-AI-05, BR-AI-08, BR-AI-24]
+refs_hash:
+  BR-AI-05: ee8fd647fd43
+  BR-AI-08: e932a052720f
+  BR-AI-24: e6144dd5290b
+deps: [B3-05f, B3-04b]
+paths:
+  - 'apps/api/src/modules/agent/orchestrator/results/**'
+test_paths:
+  - 'test/spec/agent/orchestrator-results/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/orchestrator-results/**'
+status: todo
+pr: null

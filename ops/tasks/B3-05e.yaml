@@ -1,0 +1,26 @@
+id: B3-05e
+repo: rebate-platform
+title: Orchestrator 第五段：确定性路径——消息里的链接 / 口令按出现顺序经 resolve_link → get_rebate_quote 逐个出 rebate_quote 卡（只登记不转链），逐个失败各自处置，素材其余部分按不可信文本；不调模型
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，plan.md §3.2、§4 U-4）。02 §9.1 图「PRE →|链接 / 口令| DET」；B3-05b 的核心在 inputCheck 给出链接候选时交本段。
+# 依据：BR-AI-01 A 级表（parse_input、resolve_link 模型不可见 / 不可调，register_links 出卡前自动执行、不预转链）；BR-AI-04（卡片数字只来自同一次取数，必需字段缺失不出卡）；
+#   BR-AI-05（素材里的指令一律不生效）；评测冒烟 T1 期望 intent=find_by_link、tool_calls 含 get_rebate_quote（packages/evals/samples/smoke/find.jsonl）。
+# 工具经 B3-04c 的 handler（tools.execute 的确定性入口）；本段只编排顺序、notice、trace 与结束原因。无模型降级时链接照常走本段（BR-AI-14 细则「无模型降级」做法第 1 句）。
+# 只有链接的消息不调模型（plan.md U-4，代理自定）；素材结构化（黑话、claimed_price）属 B3-07，不在本段。
+# 分工：清单外新台账，Codex 先写规则测试，Opus 实现，Codex 评审。风险 RV1。
+refs: [BR-AI-01, BR-AI-04]
+refs_hash:
+  BR-AI-01: b624c86b4643
+  BR-AI-04: a07587a282ba
+deps: [B3-05b, B3-05d, B3-04c]
+paths:
+  - 'apps/api/src/modules/agent/orchestrator/deterministic/**'
+test_paths:
+  - 'test/spec/agent/orchestrator-deterministic/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/orchestrator-deterministic/**'
+status: todo
+pr: null

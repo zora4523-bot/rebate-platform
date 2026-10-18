@@ -1,0 +1,25 @@
+id: B3-04d
+repo: rebate-platform
+title: Agent 工具第四段：逐张 match_tag（matched / relaxed / spec_unconfirmed）、spec_text 与 benefit_tags 的代码判定；规格比对纯函数放 packages/domain
+type: impl
+# 2026-10-15 草稿（B3-05 拆分规划子代理，plan.md §3.4）。05 B3-04 行「逐张 match_tag 与服务端标签（BR-AI-24，AI-04、AI-08）」。
+# 依据：BR-AI-24（三种标记的判定、模型不参与、卡片只能写「标题显示为 X」或「规格待确认」、不做逐张推荐理由；规格比对函数在 packages/domain）；BR-AI-08（放宽与原始条件，relaxed 的输入来自 B3-05g）。
+# Jev 结果核对（B3-12）只能把 matched 降为 spec_unconfirmed，本段留端口、默认 rules（agent.result_check.provider 默认 rules，BR-AI-14 细则 TypeSafe 一段）。
+# packages/domain 在 risk-map 为 RV2，评审 Codex；不碰 packages/money。分工：清单外新台账，Codex 先写规则测试，Opus 实现。
+refs: [BR-AI-24, BR-AI-08]
+refs_hash:
+  BR-AI-24: e6144dd5290b
+  BR-AI-08: e932a052720f
+deps: [B3-04b]
+paths:
+  - 'packages/domain/src/spec-match/**'
+  - 'apps/api/src/modules/agent/tools/match/**'
+test_paths:
+  - 'test/spec/agent/tools-match/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-match/**'
+status: todo
+pr: null
