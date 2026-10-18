@@ -135,3 +135,5 @@ export type {
   PendingAttemptScope,
   PendingAttemptStore,
 } from './application/pending-attempts.ts';
+export { blockForBan, restoreAfterUnban } from './application/binding-risk.ts';
+export type { BindingRiskInput } from './application/binding-risk.ts';
