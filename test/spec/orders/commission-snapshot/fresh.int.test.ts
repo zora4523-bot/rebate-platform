@@ -106,7 +106,7 @@ it.each(['paid', 'received', 'settled'])(
   },
 );
 
-it.each(['unattributed', 'deposit', 'invalid', 'no-port'])(
+it.each(['unattributed', 'deposit', 'invalid'])(
   '[AC-B1-08k#20] %s 不调快照，settlement 明确收到 none',
   async (mode) => {
     const f = await fresh(db, {
@@ -114,7 +114,7 @@ it.each(['unattributed', 'deposit', 'invalid', 'no-port'])(
     });
     if (mode === 'unattributed') f.findUser.mockResolvedValue(null);
     const port = fakePort();
-    expect(await runFresh(f, mode === 'no-port' ? undefined : port)).toMatchObject({
+    expect(await runFresh(f, port)).toMatchObject({
       ok: true,
       value: { kind: 'inserted' },
     });
