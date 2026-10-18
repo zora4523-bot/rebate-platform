@@ -127,7 +127,13 @@ export type SmsResult =
 /** An IP send reserved by landingQuota / deviceQuota before the phone quota (B1-11g). */
 export interface SmsIpSlot {
   readonly code: 0;
+  /** No SMS went out, or the provider refused it: drops exactly this reservation. */
   release(): Promise<void>;
+  /**
+   * Accepted or unknown: turns exactly this reservation into a sent record stamped now; called
+   * before afterAccepted, whose IP count it replaces.
+   */
+  settle(): Promise<void>;
 }
 /** The identity configuration port (content implements it; app.module assembles it). */
 export interface SmsConfigReader {
@@ -404,8 +410,19 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
           logger.error({ app_id: appId, purpose }, 'sms_commit_failed');
           releaseAt = Math.max(reservation.releaseAtMs, acceptedAt + SMS_RESEND_INTERVAL_MS);
         }
-        // The SMS went out (or may have): the post-acceptance counters see it either way, and
-        // their failure does not change the answer.
+        // The SMS went out (or may have): the IP reservation becomes this send's record at the
+        // provider's answer, then the post-acceptance counters see it; neither failure changes
+        // the answer.
+        if (slot !== null) {
+          try {
+            await slot.settle();
+          } catch (error) {
+            logger.warn(
+              { app_id: appId, purpose, error_class: errorClass(error) },
+              'sms_ip_slot_settle_failed',
+            );
+          }
+        }
         try {
           await hooks.afterAccepted?.(checked);
         } catch (error) {

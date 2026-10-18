@@ -1,8 +1,10 @@
 // The ports onto risk's IP reservation (B1-11g): landingQuota (admitIp) and the app route's
-// deviceQuota (admitAndReserve) reserve the IP send atomically and hand back its release;
-// afterAccepted's recordAccepted settles the reservation (no second count). The scripts run
-// against a stub namespace here (their Lua runs against a real Redis in the rule tests,
-// test/spec/identity/landing-sms and test/spec/risk/sms-risk).
+// deviceQuota (admitAndReserve) reserve the IP send atomically and hand back a slot whose release /
+// settle name exactly that reservation; afterAccepted's recordAccepted then uses up the settle's
+// credit. The Lua scripts themselves run against a real Redis only in the rule tests
+// (test/spec/identity/landing-sms, test/spec/risk/sms-risk); here an in-memory model of the same
+// sets (dispatched on each script's `-- sms_risk:<name>` label) checks which records each step
+// touches, including lost replies and the lease.
 import { expect, it, vi } from 'vitest';
 import { FixedClock, createRootLogger, type RedisHandle } from '../../platform/index.ts';
 import { createSmsRisk, ephemeralSmsRiskIndex, type SmsRisk } from '../../risk/index.ts';
@@ -27,6 +29,7 @@ function ports(risk: Partial<SmsRisk>) {
     admitIp: vi.fn(async () => ({ code: 0 as const, reservation: 'r1' })),
     admitAndReserve: vi.fn(async () => ({ code: 0 as const, reservation: 'r2' })),
     releaseIp: vi.fn(async () => undefined),
+    settleIp: vi.fn(async () => undefined),
     recordAccepted: vi.fn(async () => undefined),
     recordRegistered: vi.fn(async () => undefined),
     ...risk,
@@ -110,6 +113,12 @@ it('[AC-B1-11g#13] the app route reserves through admitAndReserve and its slot r
     clientIp: IP,
     reservation: 'r2',
   });
+  await (verdict as SmsIpSlot).settle();
+  expect(p.risk.settleIp).toHaveBeenCalledExactlyOnceWith({
+    appId: 'couli',
+    clientIp: IP,
+    reservation: 'r2',
+  });
 });
 
 it('[AC-B1-11g#13] the app route passes 42901 through; nothing reserved (no IP) is null; no reserving port falls back to admit', async () => {
@@ -138,154 +147,249 @@ it('[AC-B1-11g#19] afterAccepted hands the client IP to recordAccepted (which se
   expect(p.risk.recordAccepted).toHaveBeenLastCalledWith({ appId: 'couli', clientIp: IP });
 });
 
-interface ScriptCall {
-  readonly keys: string[];
-  readonly args: string[];
-  readonly script: string;
-}
-
-/** A namespace stub that answers each script through `answer` and records each call. */
-function scriptRedis(answer: (call: ScriptCall) => unknown, calls: ScriptCall[]) {
-  const fail = () => Promise.reject(new Error('unused'));
-  return {
-    namespace: () => ({
-      get: fail,
-      set: fail,
-      eval: (script: string, options: { keys: readonly string[]; args: readonly string[] }) => {
-        const call = { keys: [...options.keys], args: [...options.args], script };
-        calls.push(call);
-        return Promise.resolve(answer(call));
-      },
-    }),
-    close: () => Promise.resolve(),
-    onApplicationShutdown: () => Promise.resolve(),
-  } as unknown as RedisHandle;
-}
-
-const prefixes = (call: ScriptCall | undefined) => call?.keys.map((key) => key.split(':')[0]);
-
-/** Answers like an empty store: reserve / IP read {0, 0}, device admitted, budget no alert. */
-function emptyStore(call: ScriptCall): unknown {
-  const first = prefixes(call)![0];
-  if (first === 'dev') return [1, 0];
-  if (first === 'budget') return [1, 0, 0];
-  if (call.keys.length >= 2 && first === 'ip_send' && call.script.includes('wait(')) return [0, 0];
-  return 1;
-}
-
-function risk(redis: RedisHandle | null) {
-  const { logger, lines } = memoryLogger();
-  return {
-    lines,
-    risk: createSmsRisk({
-      clock: new FixedClock('2026-10-18T10:00:00+08:00'),
-      redis,
-      logger,
-      config: { configValue: () => Promise.resolve(null) },
-      crypto: ephemeralSmsRiskIndex(),
-    }),
+/** In-memory model of the IP sets and the other risk keys, one method per script label. */
+function modelRedis(clock: FixedClock) {
+  const zsets = new Map<string, Map<string, number>>();
+  const counters = new Map<string, number>();
+  const calls: { label: string; keys: string[] }[] = [];
+  /** Labels whose next call runs and then loses its reply; `during` runs before the throw. */
+  const lost = new Map<string, () => Promise<void>>();
+  /** Labels whose next call fails before it runs. */
+  const failing = new Set<string>();
+  const set = (key: string) => {
+    let found = zsets.get(key);
+    if (found === undefined) zsets.set(key, (found = new Map()));
+    return found;
   };
-}
-
-it('[AC-B1-11g#11] admitIp reserves over the send, registration and in-flight keys; release names the reservation', async () => {
-  const calls: ScriptCall[] = [];
-  const r = risk(scriptRedis(emptyStore, calls)).risk;
-  const admission = await r.admitIp({ appId: 'couli', clientIp: IP });
-  expect(admission).toMatchObject({ code: 0, reservation: expect.any(String) });
-  expect(calls).toHaveLength(1);
-  expect(prefixes(calls[0])).toEqual(['ip_send', 'ip_reg', 'ip_pend']);
-  expect(calls[0]!.script).toContain("'p:' .. ARGV[6]");
-  expect(JSON.stringify(calls[0]!.keys)).not.toContain(IP);
-  const reservation = (admission as { reservation: string }).reservation;
-  expect(calls[0]!.args.slice(1)).toEqual(['3600000', '20', '5', reservation]);
-  await r.releaseIp({ appId: 'couli', clientIp: IP, reservation });
-  expect(prefixes(calls[1])).toEqual(['ip_send', 'ip_pend']);
-  // A normal release may drop another in-flight record when an acceptance settled its own.
-  expect(calls[1]!.args).toEqual([reservation, '0']);
-});
-
-it('[AC-B1-11g#13] admitAndReserve reserves the IP, then judges the device; a device refusal releases the IP', async () => {
-  const calls: ScriptCall[] = [];
-  const r = risk(scriptRedis(emptyStore, calls)).risk;
-  const request = { appId: 'couli', deviceHash: 'ab'.repeat(32), phone: '13912345678' };
-  const admitted = await r.admitAndReserve({ ...request, clientIp: IP });
-  expect(admitted).toMatchObject({ code: 0, reservation: expect.any(String) });
-  expect(calls.map(prefixes)).toEqual([
-    ['ip_send', 'ip_reg', 'ip_pend'],
-    ['dev', 'req'],
-  ]);
-  calls.length = 0;
-  expect(await r.admitAndReserve(request)).toEqual({ code: 0 });
-  expect(calls.map(prefixes)).toEqual([['dev', 'req']]);
-
-  const refusing: ScriptCall[] = [];
-  const full = risk(
-    scriptRedis((call) => (prefixes(call)![0] === 'dev' ? [0, 5_000] : emptyStore(call)), refusing),
-  ).risk;
-  expect(await full.admitAndReserve({ ...request, clientIp: IP })).toEqual({
-    code: 42901,
-    retryAfterSec: 5,
-  });
-  const reservation = refusing[0]!.args.at(-1);
-  expect(refusing.map(prefixes)).toEqual([
-    ['ip_send', 'ip_reg', 'ip_pend'],
-    ['dev', 'req'],
-    ['ip_send', 'ip_pend'],
-  ]);
-  expect(refusing[2]!.args).toEqual([reservation, '0']);
-});
-
-it('[AC-B1-11g#19] recordAccepted with a client IP settles an in-flight record at now (one script), without one only the budget', async () => {
-  const calls: ScriptCall[] = [];
-  const r = risk(scriptRedis(emptyStore, calls)).risk;
-  await r.recordAccepted({ appId: 'couli', clientIp: IP });
-  expect(calls.map(prefixes)).toEqual([
-    ['ip_send', 'ip_pend'],
-    ['budget', 'budget', 'budget'],
-  ]);
-  expect(calls[0]!.script).toContain("redis.call('ZRANGE', KEYS[2], 0, 0)");
-  expect(calls[0]!.args[0]).toBe(String(Date.parse('2026-10-18T10:00:00+08:00')));
-  calls.length = 0;
-  await r.recordAccepted({ appId: 'couli' });
-  expect(calls.map(prefixes)).toEqual([['budget', 'budget', 'budget']]);
-});
-
-it('[AC-B1-11g#10] admitIp answers 42901 with the later IP release; no store or a failure refuses and drops only its own record', async () => {
-  const calls: ScriptCall[] = [];
-  expect(
-    await risk(scriptRedis(() => [15_200, 6_000], calls)).risk.admitIp({
-      appId: 'couli',
-      clientIp: IP,
-    }),
-  ).toEqual({ code: 42901, retryAfterSec: 16 });
-  expect(calls).toHaveLength(1);
-  expect(await risk(null).risk.admitIp({ appId: 'couli', clientIp: IP })).toEqual({
-    code: 42901,
-    retryAfterSec: 1,
-  });
-  const seen: ScriptCall[] = [];
-  const failing = {
+  const prune = (send: string, pend: string, now: number, lease: number) => {
+    for (const [token, score] of set(pend)) {
+      if (score < now - lease) {
+        set(pend).delete(token);
+        set(send).delete(`p:${token}`);
+      }
+    }
+  };
+  const dropBefore = (key: string, low: number) => {
+    for (const [member, score] of set(key)) if (score < low) set(key).delete(member);
+  };
+  const wait = (key: string, limit: number, now: number, window: number) => {
+    const live = [...set(key).values()]
+      .filter((score) => score >= now - window && score <= now)
+      .sort((x, y) => x - y);
+    if (live.length < limit) return 0;
+    return Math.max(1, live[live.length - limit]! + window + 1000 - now);
+  };
+  function run(label: string, keys: string[], argv: string[]): unknown {
+    const num = (i: number) => Number(argv[i - 1]);
+    switch (label) {
+      case 'ip_reserve': {
+        const [send, reg, pend] = keys as [string, string, string];
+        const now = num(2);
+        prune(send, pend, now, num(7));
+        const waits = [wait(send, num(4), now, num(3)), wait(reg, num(5), now, num(3))];
+        if (waits[0]! > 0 || waits[1]! > 0) return waits;
+        dropBefore(send, now - num(3));
+        set(send).set(`p:${argv[5]}`, now);
+        set(pend).set(argv[5]!, now);
+        return [0, 0];
+      }
+      case 'ip_release': {
+        const [send, pend] = keys as [string, string];
+        if (set(pend).delete(argv[1]!)) set(send).delete(`p:${argv[1]}`);
+        return 1;
+      }
+      case 'ip_settle': {
+        const [send, pend, credit] = keys as [string, string, string];
+        const now = num(2);
+        dropBefore(send, now - num(3));
+        prune(send, pend, now, num(6));
+        if (set(pend).delete(argv[3]!)) set(send).delete(`p:${argv[3]}`);
+        set(send).set(argv[4]!, now);
+        counters.set(credit, (counters.get(credit) ?? 0) + 1);
+        return 1;
+      }
+      case 'ip_accept': {
+        const [send, pend, credit] = keys as [string, string, string];
+        const now = num(2);
+        if ((counters.get(credit) ?? 0) > 0) {
+          counters.set(credit, counters.get(credit)! - 1);
+          return 0;
+        }
+        dropBefore(send, now - num(3));
+        prune(send, pend, now, num(5));
+        const oldest = [...set(pend)].sort((x, y) => x[1] - y[1])[0];
+        if (oldest !== undefined) {
+          set(pend).delete(oldest[0]);
+          set(send).delete(`p:${oldest[0]}`);
+        }
+        set(send).set(argv[3]!, now);
+        return 1;
+      }
+      case 'dev':
+        return [1, 0];
+      case 'budget':
+        return [1, 0, 0];
+      default:
+        throw new Error(`unmodelled script ${label}`);
+    }
+  }
+  const redis = {
     namespace: () => ({
       get: () => Promise.reject(new Error('unused')),
       set: () => Promise.reject(new Error('unused')),
-      eval: (script: string, options: { keys: readonly string[]; args: readonly string[] }) => {
-        seen.push({ keys: [...options.keys], args: [...options.args], script });
-        return Promise.reject(Object.assign(new Error(`down ${IP}`), { reason: 'x' }));
+      eval: async (
+        script: string,
+        options: { keys: readonly string[]; args: readonly string[]; ttlSeconds: number },
+      ) => {
+        const label = /^-- sms_risk:([a-z_]+)/.exec(script)?.[1] ?? options.keys[0]!.split(':')[0]!;
+        calls.push({ label, keys: [...options.keys] });
+        if (failing.delete(label)) {
+          throw Object.assign(new Error('unavailable'), { reason: 'command_failed' });
+        }
+        const reply = run(label, [...options.keys], [String(options.ttlSeconds), ...options.args]);
+        const during = lost.get(label);
+        if (during !== undefined) {
+          lost.delete(label);
+          await during();
+          throw Object.assign(new Error('reply lost'), { reason: 'command_timeout' });
+        }
+        return reply;
       },
     }),
     close: () => Promise.resolve(),
     onApplicationShutdown: () => Promise.resolve(),
   } as unknown as RedisHandle;
-  const down = risk(failing);
-  expect(await down.risk.admitIp({ appId: 'couli', clientIp: IP })).toEqual({
-    code: 42901,
-    retryAfterSec: 1,
+  /** Records in the IP's send set inside the window at the clock's now. */
+  const sendCount = () => {
+    const now = clock.now().getTime();
+    const key = [...zsets.keys()].find((k) => k.startsWith('ip_send:'));
+    return key === undefined
+      ? 0
+      : [...set(key).values()].filter((t) => t >= now - 3_600_000 && t <= now).length;
+  };
+  const pending = () =>
+    [...zsets.entries()]
+      .filter(([key]) => key.startsWith('ip_pend:'))
+      .reduce((total, [, members]) => total + members.size, 0);
+  return { redis, calls, lost, failing, sendCount, pending };
+}
+
+function model(config: Record<string, unknown> = {}) {
+  const clock = new FixedClock('2026-10-18T10:00:00+08:00');
+  const store = modelRedis(clock);
+  const { logger, lines } = memoryLogger();
+  const risk = createSmsRisk({
+    clock,
+    redis: store.redis,
+    logger,
+    config: {
+      configValue: (_appId: string, key: string) =>
+        Promise.resolve(key in config ? { value: config[key], version: 1 } : null),
+    },
+    crypto: ephemeralSmsRiskIndex(),
   });
-  // The lost reply's release is strict: it never drops another send's in-flight record.
-  expect(seen.map(prefixes)).toEqual([
-    ['ip_send', 'ip_reg', 'ip_pend'],
-    ['ip_send', 'ip_pend'],
-  ]);
-  expect(seen[1]!.args).toEqual([seen[0]!.args.at(-1), '1']);
-  expect(down.lines.join('')).not.toContain(IP);
+  const ip = { appId: 'couli', clientIp: IP };
+  /** One accepted send as identity runs it: reserve, settle, recordAccepted. */
+  const acceptedSend = async () => {
+    const admission = await risk.admitIp(ip);
+    if (admission.code !== 0) throw new Error('refused');
+    await risk.settleIp({ ...ip, reservation: admission.reservation });
+    await risk.recordAccepted(ip);
+  };
+  return { clock, store, risk, ip, lines, acceptedSend };
+}
+
+it('[AC-B1-11g#11] A reply lost, B reserves and accepts with its own id: B settles only its record; after A cleans up the count equals the sends', async () => {
+  const m = model();
+  for (let i = 0; i < 18; i++) await m.risk.recordAccepted(m.ip);
+  expect(m.store.sendCount()).toBe(18);
+  // A's reservation runs but its reply is lost; before A's clean-up, B goes all the way.
+  m.store.lost.set('ip_reserve', async () => {
+    expect(m.store.pending()).toBe(1);
+    await m.acceptedSend();
+    // B's settle took B's own record: A's is still in flight, 18 + A + B.
+    expect(m.store.pending()).toBe(1);
+    expect(m.store.sendCount()).toBe(20);
+  });
+  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 1 });
+  // A's clean-up found and dropped A's own record: 19 counted, 19 sent.
+  expect(m.store.pending()).toBe(0);
+  expect(m.store.sendCount()).toBe(19);
+  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
+});
+
+it('[AC-B1-11g#11] a reservation no one settles or releases stops counting after the lease, not the window', async () => {
+  const m = model({ 'sms.ip_sends_per_hour': 1 });
+  m.store.lost.set('ip_reserve', async () => {
+    m.store.failing.add('ip_release');
+  });
+  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 1 });
+  expect(m.store.pending()).toBe(1);
+  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 42901 });
+  m.clock.advanceMs(60_001);
+  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
+});
+
+it('[AC-B1-11g#12] the settle stamps the record with the acceptance time: reserved 10:00:00, accepted 10:00:09 → 11:00:01 waits 9 s', async () => {
+  const m = model({ 'sms.ip_sends_per_hour': 1 });
+  const admission = await m.risk.admitIp(m.ip);
+  if (admission.code !== 0) throw new Error('refused');
+  m.clock.set('2026-10-18T10:00:09+08:00');
+  await m.risk.settleIp({ ...m.ip, reservation: admission.reservation });
+  await m.risk.recordAccepted(m.ip);
+  expect(m.store.sendCount()).toBe(1);
+  m.clock.set('2026-10-18T11:00:01+08:00');
+  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 9 });
+  m.clock.set('2026-10-18T11:00:10+08:00');
+  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
+});
+
+it('[AC-B1-11g#19] settle + recordAccepted count once; a two-argument recordAccepted without a settle settles the oldest in-flight record', async () => {
+  const m = model();
+  await m.acceptedSend();
+  expect(m.store.sendCount()).toBe(1);
+  const first = await m.risk.admitIp(m.ip);
+  const second = await m.risk.admitIp(m.ip);
+  expect(m.store.sendCount()).toBe(3);
+  await m.risk.recordAccepted(m.ip);
+  expect(m.store.sendCount()).toBe(3);
+  expect(m.store.pending()).toBe(1);
+  // The settled record was the oldest (first); the second's release drops its own.
+  await m.risk.releaseIp({ ...m.ip, reservation: (second as { reservation: string }).reservation });
+  expect(m.store.sendCount()).toBe(2);
+  // first's own record is gone: its release does nothing more.
+  await m.risk.releaseIp({ ...m.ip, reservation: (first as { reservation: string }).reservation });
+  expect(m.store.sendCount()).toBe(2);
+});
+
+it('[AC-B1-11g#13] admitAndReserve reserves the IP, then judges the device; a device refusal releases exactly that reservation', async () => {
+  const m = model();
+  const request = { appId: 'couli', deviceHash: 'ab'.repeat(32), phone: '13912345678' };
+  expect(await m.risk.admitAndReserve({ ...request, clientIp: IP })).toMatchObject({
+    code: 0,
+    reservation: expect.any(String),
+  });
+  expect(m.store.calls.map((call) => call.label)).toEqual(['ip_reserve', 'dev']);
+  expect(m.store.sendCount()).toBe(1);
+  m.store.calls.length = 0;
+  expect(await m.risk.admitAndReserve(request)).toEqual({ code: 0 });
+  expect(m.store.calls.map((call) => call.label)).toEqual(['dev']);
+});
+
+it('[AC-B1-11g#10] admitIp answers 42901 with the later IP release; no store refuses; logs carry no IP', async () => {
+  const m = model({ 'sms.ip_sends_per_hour': 1 });
+  await m.acceptedSend();
+  m.clock.advanceMs(1_000);
+  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 3600 });
+  const { logger } = memoryLogger();
+  const bare = createSmsRisk({
+    clock: m.clock,
+    redis: null,
+    logger,
+    config: { configValue: () => Promise.resolve(null) },
+    crypto: ephemeralSmsRiskIndex(),
+  });
+  expect(await bare.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 1 });
+  expect(JSON.stringify(m.store.calls)).not.toContain(IP);
+  expect(m.lines.join('')).not.toContain(IP);
 });

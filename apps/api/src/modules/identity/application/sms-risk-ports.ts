@@ -36,7 +36,7 @@ export interface SmsRiskPortsOptions {
   readonly logger: RootLogger;
 }
 
-type ReservingMethods = 'admitIp' | 'admitAndReserve' | 'releaseIp';
+type ReservingMethods = 'admitIp' | 'admitAndReserve' | 'releaseIp' | 'settleIp';
 
 /** Retry-After of a refusal whose device could not be resolved. */
 const UNRESOLVED_RETRY_AFTER_SEC = 1;
@@ -78,8 +78,8 @@ export function createSmsRiskPorts(options: SmsRiskPortsOptions): SmsRiskPorts {
           phone: request.phone,
           ...(clientIp === undefined ? {} : { clientIp }),
         };
-        const { admitAndReserve, releaseIp } = risk;
-        if (admitAndReserve === undefined || releaseIp === undefined) {
+        const { admitAndReserve, releaseIp, settleIp } = risk;
+        if (admitAndReserve === undefined || releaseIp === undefined || settleIp === undefined) {
           const admission = await risk.admit(input);
           return admission.code === 0
             ? null
@@ -96,6 +96,7 @@ export function createSmsRiskPorts(options: SmsRiskPortsOptions): SmsRiskPorts {
         return {
           code: 0,
           release: () => releaseIp.call(risk, { appId, clientIp, reservation }),
+          settle: () => settleIp.call(risk, { appId, clientIp, reservation }),
         };
       },
       // B1-11g (BR-ID-32): the landing page send is judged by the two per-IP items only; it
@@ -106,8 +107,8 @@ export function createSmsRiskPorts(options: SmsRiskPortsOptions): SmsRiskPorts {
           logger.warn({ app_id: appId, purpose: request.purpose }, 'sms_landing_ip_missing');
           return { ...refused };
         }
-        const { admitIp, releaseIp } = risk;
-        if (admitIp === undefined || releaseIp === undefined) {
+        const { admitIp, releaseIp, settleIp } = risk;
+        if (admitIp === undefined || releaseIp === undefined || settleIp === undefined) {
           logger.error({ app_id: appId, purpose: request.purpose }, 'sms_landing_risk_missing');
           return { ...refused };
         }
@@ -121,6 +122,7 @@ export function createSmsRiskPorts(options: SmsRiskPortsOptions): SmsRiskPorts {
         return {
           code: 0,
           release: () => releaseIp.call(risk, { appId, clientIp, reservation }),
+          settle: () => settleIp.call(risk, { appId, clientIp, reservation }),
         };
       },
       // With a reservation (app or landing) recordAccepted settles one in-flight record of the IP

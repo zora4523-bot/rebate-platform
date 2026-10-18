@@ -600,7 +600,8 @@ it('[AC-B1-11g#7] a landing send runs phoneBlocklist then landingQuota, never ca
   const captcha = vi.fn(async () => ({ code: 44003 as const }));
   const deviceQuota = vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 9 }));
   const release = vi.fn(async () => undefined);
-  const landingQuota = vi.fn(async () => ({ code: 0 as const, release }));
+  const settle = vi.fn(async () => undefined);
+  const landingQuota = vi.fn(async () => ({ code: 0 as const, release, settle }));
   const f = setup({ hooks: { phoneBlocklist, captcha, deviceQuota, landingQuota } });
   const result = await f.service.send({
     app_id: 'couli',
@@ -617,8 +618,9 @@ it('[AC-B1-11g#7] a landing send runs phoneBlocklist then landingQuota, never ca
   expect(captcha).not.toHaveBeenCalled();
   expect(deviceQuota).not.toHaveBeenCalled();
   expect(f.messages).toHaveLength(1);
-  // Accepted: the IP slot reserved before the phone quota stays counted.
+  // Accepted: the IP slot reserved before the phone quota is settled, not released.
   expect(release).not.toHaveBeenCalled();
+  expect(settle).toHaveBeenCalledOnce();
 });
 
 it('[AC-B1-11g#10] a landing 42901 from landingQuota short-circuits the phone quota', async () => {
@@ -653,9 +655,10 @@ it('[AC-B1-11g#11] a landing send without a landingQuota hook is refused, never 
 function landing(overrides: Parameters<typeof setup>[0] = {}) {
   const order: string[] = [];
   const release = vi.fn(async () => void order.push('release'));
+  const settle = vi.fn(async () => void order.push('settle'));
   const landingQuota = vi.fn(async () => {
     order.push('reserve');
-    return { code: 0 as const, release };
+    return { code: 0 as const, release, settle };
   });
   const afterAccepted = vi.fn(async () => void order.push('afterAccepted'));
   const f = setup({ ...overrides, hooks: { landingQuota, afterAccepted } });
@@ -667,7 +670,7 @@ function landing(overrides: Parameters<typeof setup>[0] = {}) {
       client_ip: '203.0.113.7',
       channel: 'landing',
     });
-  return { ...f, order, release, landingQuota, afterAccepted, send };
+  return { ...f, order, release, settle, landingQuota, afterAccepted, send };
 }
 
 it('[AC-B1-11g#27] a phone-limited landing send releases its IP slot (the 42901 does not count for the IP)', async () => {
@@ -697,7 +700,7 @@ it('[AC-B1-11g#19] an unknown landing send (timeout or thrown adapter error) kee
   ]) {
     const f = landing({ sender });
     expect(await f.send()).toMatchObject({ code: 0 });
-    expect(f.order).toEqual(['reserve', 'afterAccepted']);
+    expect(f.order).toEqual(['reserve', 'settle', 'afterAccepted']);
     expect(f.release).not.toHaveBeenCalled();
   }
 });
@@ -731,7 +734,8 @@ it('[AC-B1-11g#13] an app send whose deviceQuota reserved the IP releases it whe
     ['unknown', false],
   ] as const) {
     const release = vi.fn(async () => undefined);
-    const deviceQuota = vi.fn(async () => ({ code: 0 as const, release }));
+    const settle = vi.fn(async () => undefined);
+    const deviceQuota = vi.fn(async () => ({ code: 0 as const, release, settle }));
     const afterAccepted = vi.fn(async () => undefined);
     const f = setup({
       hooks: { deviceQuota, afterAccepted },
@@ -740,6 +744,7 @@ it('[AC-B1-11g#13] an app send whose deviceQuota reserved the IP releases it whe
     const result = await f.send();
     expect(result.code).toBe(delivery === 'rejected' ? 50001 : 0);
     expect(release).toHaveBeenCalledTimes(released ? 1 : 0);
+    expect(settle).toHaveBeenCalledTimes(released ? 0 : 1);
     expect(afterAccepted).toHaveBeenCalledTimes(released ? 0 : 1);
   }
 });
@@ -747,9 +752,18 @@ it('[AC-B1-11g#13] an app send whose deviceQuota reserved the IP releases it whe
 it('[AC-B1-11g#13] a phone-limited app send releases the IP its deviceQuota reserved', async () => {
   const release = vi.fn(async () => undefined);
   const f = setup({
-    hooks: { deviceQuota: async () => ({ code: 0 as const, release }) },
+    hooks: { deviceQuota: async () => ({ code: 0 as const, release, settle: vi.fn() }) },
     reply: (kind) => (kind === 'reserve' ? [0, Date.parse(START) + 60_000] : 1),
   });
   expect(await f.send()).toEqual({ code: 42901, retryAfterSec: 60 });
   expect(release).toHaveBeenCalledOnce();
+});
+
+it('[AC-B1-11g#19] a failing settle is only logged; afterAccepted still runs and the answer stays 0', async () => {
+  const f = landing();
+  f.settle.mockRejectedValueOnce(new Error('down 203.0.113.7'));
+  expect(await f.send()).toMatchObject({ code: 0 });
+  expect(f.afterAccepted).toHaveBeenCalledOnce();
+  expect(f.lines.join('')).toContain('sms_ip_slot_settle_failed');
+  expect(f.lines.join('')).not.toContain('203.0.113.7');
 });
