@@ -1,0 +1,27 @@
+id: CT-02o
+repo: rebate-platform
+title: 契约：Config.clipboard 定型为 ConfigClipboard（consent_version 可选非空字符串 ≤64，其余字段放行）；features.flags 说明补 clipboard.enabled.<platform> 与 clipboard.auto_read.<client>
+type: contract
+# 2026-10-18 入账（content-client；规划 couli#124 剪贴板自动识别改版，SPEC_REF 99cc36f）。依据 04 §10.1 clipboard 行（consent_version 字符串版本号）与 features 行、
+# 08 BR-ID-16 正文门槛②③与细则（两个键缺键都按开启；功能同意版本分开记录）。原文由编排者摘入任务书（couli-runs/F1-02j/excerpt.md），refs 置空。
+# 要点：新组件 ConfigClipboard（type object、additionalProperties: true，只定 consent_version：string、minLength 1、maxLength 64，可选，不进 required）；Config.clipboard 改指它；
+# ConfigFeatures.flags 形状不变（布尔字典），只补 description：clipboard.enabled.<platform> 按平台过滤、clipboard.auto_read.<client> 按端停自动读取（缺键按开启，只能关）。
+# 过滤规则 schema 不在本任务（归 native 线）。全部非破坏（oasdiff 预期无 breaking）。占契约槽（B3-lane/notices.md）。待裁定 D2–D4 用默认（couli-runs/CONTENT-client/decisions-pending.md）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.2']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
