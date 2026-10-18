@@ -1324,10 +1324,11 @@ export interface paths {
          *     error (50401 / 50301) do not count. The verification service being unavailable, including
          *     not yet connected, is 50301 and does not count. A mismatch is 30406. A failed attempt
          *     keeps neither the name nor the ID number. After verified the user cannot change it
-         *     themselves (corrections only by customer service in the admin console); the code for a
-         *     resubmission after verified is set by the implementing task. The name and the ID number
-         *     never go into logs. The client fetches GET /v1/me again after success. Version gate:
-         *     applied.
+         *     themselves (corrections only by customer service in the admin console); a resubmission
+         *     after verified passes 10005 / 10004 and then answers 200 with the stored masked name,
+         *     ignoring the submitted values, without a vendor call or an attempt. A mismatch leaves the
+         *     user's realname_status failed. The name and the ID number never go into logs. The client
+         *     fetches GET /v1/me again after success. Version gate: applied.
          */
         post: operations["submitRealname"];
         delete?: never;

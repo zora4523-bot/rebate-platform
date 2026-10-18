@@ -57,7 +57,7 @@ import {
   TOKEN_CHECK,
   STEP_UP_CHECK,
   IDENTITY_LEVEL_CHECKS,
-  createDefaultRealnameStatusReader,
+  createRealnameStatusReader,
   createSmsSender,
   createThirdPartyIdentity,
   smsSenderToken,
@@ -398,9 +398,9 @@ function identityModule(): DynamicModule {
         unbind: (trx, session) => unbindPushTokensForSession(trx, session, clock),
       }),
     },
-    // Stage ⑨'s real-name status port (B1-02za): always none until app.realname is read.
-    // TODO(规划/11 §2.3): 实名状态读 app.realname — blocked on B1-13d
-    realnameStatus: { useFactory: createDefaultRealnameStatusReader },
+    // Stage ⑨'s real-name status port (B1-02za), also GET /v1/me's realname_status: app.realname
+    // read on the caller's handle, uncached (B1-13d).
+    realnameStatus: { useFactory: createRealnameStatusReader },
     initialLevelLog: {
       inject: [],
       useFactory: (): InitialLevelLog => ({

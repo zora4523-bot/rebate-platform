@@ -123,7 +123,7 @@ export type {
   RealnameVerificationInput,
   RealnameVerificationResult,
 } from './ports/realname-verifier.ts';
-export { createRealnameReader } from './infra/realname-reader.ts';
+export { createRealnameReader, createRealnameStatusReader } from './infra/realname-reader.ts';
 export type { RealnameReader, VerifiedRealname } from './infra/realname-reader.ts';
 export { projectAdminUser } from './application/admin-user-view.ts';
 export type { AdminUserViewReader, AdminUserViewSource } from './application/admin-user-view.ts';

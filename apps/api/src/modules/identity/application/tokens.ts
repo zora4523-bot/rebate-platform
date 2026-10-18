@@ -69,3 +69,7 @@ export const ME_READ_PORTS = Symbol('IDENTITY_ME_READ_PORTS');
 export const NICKNAME_REVIEW = Symbol('IDENTITY_NICKNAME_REVIEW');
 /** The nickname update service, or null without the database. */
 export const UPDATE_NICKNAME = Symbol('IDENTITY_UPDATE_NICKNAME');
+/** The real-name verifier (fake in local / test), or null when no vendor is assembled. */
+export const REALNAME_VERIFIER = Symbol('IDENTITY_REALNAME_VERIFIER');
+/** The real-name submission service, or null without the database or field cipher. */
+export const SUBMIT_REALNAME = Symbol('IDENTITY_SUBMIT_REALNAME');
