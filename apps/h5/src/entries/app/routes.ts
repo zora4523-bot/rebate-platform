@@ -17,11 +17,13 @@ export interface AppRouteOptions {
 
 /**
  * Lazy page module per route path, keyed by the generated path. Each page is its own chunk (the
- * rules and help pages share the tiptap static renderer, kept out of the entry bundle).
+ * rules, help, notice and agreement pages share the tiptap static renderer, kept out of the entry bundle).
  */
 const pages: Readonly<Partial<Record<string, H5Route['lazy']>>> = {
   [bridge.routes.Rules.h5_path]: () => import('./pages/rules/index.ts'),
   [bridge.routes.Help.h5_path]: () => import('./pages/help/index.ts'),
+  [bridge.routes.Notice.h5_path]: () => import('./pages/notices/index.ts'),
+  [bridge.routes.Agreement.h5_path]: () => import('./pages/agreements/index.ts'),
 };
 
 /** Every route without its own page yet shares one lazily loaded placeholder chunk. */
