@@ -1,0 +1,97 @@
+{
+  "task": "B1-12f",
+  "spec_ref": "e89cfee3cb807072888b36482b8f26035b1d5565",
+  "spec_commit": "5beb91d9fc1eb67acbf40b92f904e7fb4267ef4f",
+  "red_tests": [
+    "test/spec/db/notification/send-log/send-log.int.test.ts > [AC-B1-12e#1] templates have exactly the agreed columns; inbox_messages keeps its columns",
+    "test/spec/db/notification/send-log/send-log.int.test.ts > [AC-B1-12e#4] template primary key is (app_id, code), allowing the same code in another app",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#1] template columns have the agreed types, nullability and defaults",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#2] old-style inserts receive default variant, null overrides and unchanged defaults",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#3] variant is an open lowercase snake-case identifier on insert and update",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#4] named primary key uses app_id, code and variant in that order",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#5] simultaneous inserts of the same triple persist exactly one row",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#6] each override independently accepts NULL or nonblank text without rewriting wording",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#7] both override CHECKs reject empty or whitespace-only values on insert and update",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#8] editing one variant leaves the other variant and app wording intact",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#9] existing template CHECKs and required fields still apply to every variant",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#10] table-level app grants and readonly restrictions cover the new columns",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#11] notify_logs and inbox_messages retain their existing column sets"
+  ],
+  "risk_note": "RV2 (db/**). Migration 0047 gives app.notify_templates a variant column (default 'default', lowercase snake case CHECK) in a (app_id, code, variant) primary key, and nullable title_override / body_override that may not be blank. The package default wording stays in code (BR-TEXT-09 for trade messages, BR-TEXT-23 for account and risk messages); the override columns only carry admin rewording (orchestrator ruling 11:1x ③). BR-TEXT-23's RISK_STATE_CHANGED has five variants, so one override per code would not fit. Grants unchanged from 0042 (table level). The table was created by B1-12e (0042) and holds no rows, so changing the primary key has no stock risk. The B1-12e rule test's exact column-set and primary-key assertions are synced in the same rule-test commit (ledger test_paths; class 1, label under approvals #24); under CT-06p (#771) only the added and changed tests must be red. Migration number taken as main max + 1 at landing (0045 went to F1-02k #761, 0046 to B1-10a #775).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "5beb91d9fc1eb67acbf40b92f904e7fb4267ef4f",
+      "tree": "3e05034628359021855eaa9917c3c031dcc62659",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T13:25:21Z",
+      "finished_at": "2026-10-18T13:25:52Z",
+      "gate": {
+        "commit": "16b6f5aa611740b3486a2206d855ccc89c1fe5b7",
+        "clean": true,
+        "script_sha256": "a760318276108244f9664229d4673fceafa5692c68dba5ecdc016a9e4b5cd057"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/notification/send-log/send-log.int.test.ts > [AC-B1-12e#1] templates have exactly the agreed columns; inbox_messages keeps its columns",
+        "test/spec/db/notification/send-log/send-log.int.test.ts > [AC-B1-12e#4] template primary key is (app_id, code), allowing the same code in another app",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#1] template columns have the agreed types, nullability and defaults",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#2] old-style inserts receive default variant, null overrides and unchanged defaults",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#3] variant is an open lowercase snake-case identifier on insert and update",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#4] named primary key uses app_id, code and variant in that order",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#5] simultaneous inserts of the same triple persist exactly one row",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#6] each override independently accepts NULL or nonblank text without rewriting wording",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#7] both override CHECKs reject empty or whitespace-only values on insert and update",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#8] editing one variant leaves the other variant and app wording intact",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#9] existing template CHECKs and required fields still apply to every variant",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#10] table-level app grants and readonly restrictions cover the new columns",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#11] notify_logs and inbox_messages retain their existing column sets"
+      ],
+      "expected": [
+        "test/spec/db/notification/send-log/send-log.int.test.ts",
+        "test/spec/db/notification/template-override/template-override.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "6a3028e3d56e3538e4c04f8f6a0dbae355858bcc1d8cdfab3534b99df3a928d0"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "11 rule tests by Codex (1 run) plus the two synced B1-12e assertions, reviewed by a fresh Claude subagent: round 1 pass with one S2 (blank-only checks do not cover non-ASCII whitespace)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "b6c66c783c0f916e0665ead516d9fd262e42ddea",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
