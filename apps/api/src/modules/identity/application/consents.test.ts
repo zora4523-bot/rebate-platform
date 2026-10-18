@@ -215,3 +215,41 @@ it('[BR-ID-13] a guest withdrawal on a revoked or unknown device is 20001 [X-Dev
     expect(context.events).toEqual(['begin', 'lock:devices', 'commit']);
   }
 });
+
+it('[BR-ID-12][BR-ID-16] until B1-02zc, clipboard_auto_import is 20001 [version] before any read or write, with or without a token', async () => {
+  for (const principal of [PRINCIPAL, null]) {
+    for (const version of ['2026-10-17', 3]) {
+      const context = setup({ device: { revoked_at: null } });
+      expect(
+        await context.service.record(
+          command({ type: 'clipboard_auto_import', accepted: true, version }, principal),
+        ),
+      ).toEqual({ code: 20001, data: { fields: ['version'] } });
+      expect(context.events).toEqual([]);
+    }
+  }
+});
+
+it('[BR-ID-12] a string version on another type is 20001 [version] and is never cast into the integer column', async () => {
+  for (const type of ['privacy', 'agreement'] as const) {
+    const context = setup({ device: { revoked_at: null } });
+    expect(await context.service.record(command({ type, accepted: true, version: '1' }))).toEqual({
+      code: 20001,
+      data: { fields: ['version'] },
+    });
+    expect(context.events).toEqual([]);
+    expect(context.statements).toEqual([]);
+  }
+});
+
+it('[BR-ID-12] an integer version still records as before, the version written as a number', async () => {
+  const context = setup();
+  expect(
+    await context.service.record(command({ type: 'privacy', accepted: true, version: 4 })),
+  ).toEqual({ code: 0, data: {} });
+  const insert = context.statements.find(
+    (statement) => label(statement.sql) === 'insert:consent_records',
+  );
+  expect(insert?.parameters).toContain(4);
+  expect(insert?.parameters).not.toContain('4');
+});

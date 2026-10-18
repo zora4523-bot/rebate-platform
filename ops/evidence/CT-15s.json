@@ -1,0 +1,35 @@
+{
+  "task": "CT-15s",
+  "spec_ref": "e89cfee3cb807072888b36482b8f26035b1d5565",
+  "spec_commit": "063a6b4290012f7d4aa53195b1a65358d1b6a960",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml, contracts/enums/identity.yaml): consent_type adds clipboard_auto_import (08 BR-ID-12 / BR-ID-16, 04 §3.2 / §6.1); RecordConsentRequest.version becomes oneOf positive integer | string 1–32 (ruling E33); recordConsent describes the device-level subject, no login merge and the in-handler signature check (x-error-codes add 10401 / 10402). Because the route validator now accepts the new type and string versions, recordConsent gets a transition guard (20001 fields [version]) until B1-02zc implements them, so neither a CHECK violation (500) nor an implicit string-to-integer write can happen. Regenerated openapi.gen.ts, enums.gen.ts and route-schemas.gen.ts. tester none (contract task); Opus 5.5 implementation; Codex contract review round 1 passed. Full verification by the required CI checks (ops/approvals.yaml id 21). Migration 0048 widens consent_records.type with clipboard_auto_import in the same PR (orchestrator 18:3x: frozen [AC-B1-02b#7] / [#13] require the database domain to equal the contract set); schema snapshots regenerated on the test machine.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "db00770ebd8167d459c28548558df44fcd33f278",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}

@@ -1331,14 +1331,24 @@ export const CONTRACT_ROUTE_SCHEMAS = {
             "agreement",
             "ai_third_party",
             "id_verification",
-            "personalization"
+            "personalization",
+            "clipboard_auto_import"
           ]
         },
         "version": {
-          "type": "integer",
-          "format": "int32",
-          "minimum": 1,
-          "description": "The version of the text the user saw (legal.privacy.version and the like)."
+          "description": "The version of the text the user saw. A positive integer (legal.privacy.version and the\nlike) for every type except clipboard_auto_import, which takes the string\nconfig.clipboard.consent_version (BR-ID-12 细则, BR-ID-16). A form that does not pair\nwith `type` → 20001 with data.fields=[version].\n",
+          "oneOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            }
+          ]
         },
         "accepted": {
           "type": "boolean",
