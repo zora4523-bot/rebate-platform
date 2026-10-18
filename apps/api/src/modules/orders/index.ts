@@ -48,3 +48,19 @@ export type {
 } from './application/order-queries.ts';
 export { OrdersModule } from './orders.module.ts';
 export type { OrdersModuleOptions } from './orders.module.ts';
+// Task B1-08m: the pending-track cards (BR-ATTR-21) — the pure per-attempt selection and the
+// shared queries behind GET /v1/orders/pending-tracks and its dismiss, over linking's port.
+export {
+  PENDING_TRACK_CLAIM_AFTER_MS,
+  PENDING_TRACK_LIFETIME_MS,
+  selectPendingTracks,
+} from './domain/pending-tracks.ts';
+export type { PendingTrackOrder, SelectPendingTracksInput } from './domain/pending-tracks.ts';
+export {
+  DEFAULT_TRACK_COMPLETE_TOLERANCE_SEC,
+  PendingTrackError,
+  PendingTracks,
+  TRACK_COMPLETE_TOLERANCE_KEY,
+  createPendingTracks,
+} from './application/pending-tracks.ts';
+export type { PendingTracksDeps } from './application/pending-tracks.ts';
