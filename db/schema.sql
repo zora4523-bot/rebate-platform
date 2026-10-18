@@ -3303,7 +3303,7 @@ CASE
     WHEN (request_type = 'withdraw'::text) THEN ((amount_fen IS NOT NULL) AND (amount_fen > 0))
     ELSE (amount_fen IS NULL)
 END),
-    CONSTRAINT risk_hits_ref_type_check CHECK ((ref_type = ANY (ARRAY['order'::text, 'withdrawal'::text, 'blocked_request'::text]))),
+    CONSTRAINT risk_hits_ref_type_check CHECK ((ref_type = ANY (ARRAY['order'::text, 'withdrawal'::text, 'blocked_request'::text, 'invite_relation'::text]))),
     CONSTRAINT risk_hits_related_phone_check CHECK (
 CASE
     WHEN (request_type = ANY (ARRAY['register'::text, 'phone_change'::text])) THEN ((related_phone_hmac IS NOT NULL) AND (related_phone_masked IS NOT NULL))

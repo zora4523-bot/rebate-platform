@@ -1,4 +1,11 @@
 // Public surface of the risk module. Other modules import only from this file.
+export { createInviteRelationHitWriter } from './application/invite-relation-hits.ts';
+export type {
+  InviteRelationHitRuleId,
+  InviteRelationHitInput,
+  InviteRelationHitWriter,
+  InviteRelationHitWriterOptions,
+} from './application/invite-relation-hits.ts';
 export { createSmsRisk, ephemeralSmsRiskIndex } from './application/sms-risk.ts';
 export type {
   SmsRisk,
