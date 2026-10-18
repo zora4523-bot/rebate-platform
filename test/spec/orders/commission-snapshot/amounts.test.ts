@@ -88,9 +88,9 @@ it('[AC-B1-08k#12] PDD 服务费缺失待处理，明确的零费有效', () => 
   ).toMatchObject({ kind: 'call', input: { nBaseFen: 1001n } });
 });
 
-it('[AC-B1-08k#13] 淘礼金场景只进待处理，不擅自组快照', () => {
-  expect(planCommissionSnapshot(input({ pidScene: 'taolijin' }))).toEqual({
-    kind: 'pending',
-    reason: 'TLJ_FACE_VALUE_UNMATCHED',
+it('[AC-B1-08k#13] 淘礼金面额未匹配仍生成快照，红包记空且默认不返利', () => {
+  expect(planCommissionSnapshot(input({ pidScene: 'taolijin' }))).toMatchObject({
+    kind: 'call',
+    input: { tljRedpacketFen: null, rebateMode: 'none' },
   });
 });

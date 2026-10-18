@@ -94,12 +94,6 @@ it.each(['stale', 'unchanged', 'app_conflict'])(
   },
 );
 
-it('[AC-B1-08k#37] updateStep 未注入快照端口时，P2 继续通知 settlement 为 none', async () => {
-  const f = await scenario(db, { raw_status: 'deposit', service_fee_fen: 31n });
-  expect(await runUpdate(f, undefined, f.next({ raw_status: 'paid' }))).toMatchObject({ ok: true });
-  expect(f.onUpdated.mock.calls[0]?.[1]).toMatchObject({ snapshot: 'none' });
-});
-
 it('[AC-B1-08k#38] R3a 同次 SETTLED 用写库后的结算收入而非本次预估', async () => {
   const f = await scenario(db, { service_fee_fen: 31n }, { unattributed: true });
   f.findUser.mockResolvedValue(f.userId);

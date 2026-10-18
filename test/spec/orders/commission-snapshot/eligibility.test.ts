@@ -70,7 +70,7 @@ it.each(['VOID', 'CLAWED_BACK'])(
 );
 
 it.each(['PAID', 'RECEIVED', 'SETTLED'] as const)(
-  '[AC-B1-08k#6] 已跨入资格的 %s 再更新或重放不重建、不重试 pending',
+  '[AC-B1-08k#6] 已跨入资格的 %s 再更新或重放不重建',
   (platform_status) => {
     const i = input();
     expect(
