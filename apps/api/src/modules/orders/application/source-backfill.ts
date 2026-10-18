@@ -43,7 +43,8 @@ export interface BackfillOrderSourceInput {
   readonly platform: RegisteredPlatform;
   readonly userId: string;
   readonly attrAt: Date;
-  readonly pidScene: string;
+  /** 订单推广位的 pid_scene；null = 推广位场景未知 → 只做 ① exact，不取商品键与外跳日志（② / ③ 不匹配）。 */
+  readonly pidScene: string | null;
   readonly order: UnionOrder;
   // TODO(规划/11 §4.5): 首次入库的 shopId 映射 — blocked on 联盟订单映射 shop_id
   readonly shopId: string | null;
@@ -59,7 +60,8 @@ const HOUR_MS = 3_600_000;
 
 /**
  * 按当时的 userId 重新匹配来源：开关 attr.click_code.<platform> 打开、订单参数解析出 lk、且注入了
- * linkByCode → 先反查 exact 候选；随后取 product_key、取窗口内 link_logs，交给 matchOrderSource。
+ * linkByCode → 先反查 exact 候选；推广位场景已知时再取 product_key、取窗口内 link_logs，交给
+ * matchOrderSource。推广位场景未知（pidScene=null）不跨场景匹配：不调 productKey / linkLogs，只看 exact。
  */
 export async function backfillOrderSource(
   ports: OrderSourcePorts,
@@ -73,15 +75,19 @@ export async function backfillOrderSource(
     if (lk !== null) exactLink = await lookup.call(ports, { appId, platform, lk });
   }
   const windowHours = ports.windowHours?.() ?? DEFAULT_BACKFILL_WINDOW_HOURS;
-  const productKey = await ports.productKey({ platform, order: input.order });
-  const toMs = input.attrAt.getTime();
-  const candidates = await ports.linkLogs({
-    appId,
-    userId: input.userId,
-    platform,
-    from: instantAt(input.attrAt, toMs - windowHours * HOUR_MS),
-    to: instantAt(input.attrAt, toMs),
-  });
+  let productKey: string | null = null;
+  let candidates: readonly LinkLogCandidate[] = [];
+  if (input.pidScene !== null) {
+    productKey = await ports.productKey({ platform, order: input.order });
+    const toMs = input.attrAt.getTime();
+    candidates = await ports.linkLogs({
+      appId,
+      userId: input.userId,
+      platform,
+      from: instantAt(input.attrAt, toMs - windowHours * HOUR_MS),
+      to: instantAt(input.attrAt, toMs),
+    });
+  }
   return matchOrderSource({
     userId: input.userId,
     platform,

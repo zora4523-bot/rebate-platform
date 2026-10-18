@@ -12,8 +12,9 @@
 // - 未归因（user_id 为空，含 VOID 的 R3b）每次重跑用户归属：命中且 locked=false 才写 user_id、user_basis=param。
 // - ⑤ 来源回填（B1-08j，BR-ATTR-15）：本次写 user_id、库内 source_match 为空且注入 sources 时，按订单推广位
 //   （本次 UPDATE 将写入的 pid——未归因重跑写入本次报文的推广位，未改时即原值——经 pids 端口取首行 pid_scene；
-//   查不到按 fallback 并告警）、current.shop_id 与本次报文匹配，四列并入同一条 CAS UPDATE（WHERE 另加
-//   source_match IS NULL）；端口抛错整事务回滚。不改 product_key / shop_id。
+//   推广位为空、端口未注入或查不到 → 场景未知：② product / ③ shop 不跨场景匹配，① exact 照常，否则 none，
+//   并在写后告警；只有推广位本身是 fallback 才不限场景，D10-60）、current.shop_id 与本次报文匹配，四列并入
+//   同一条 CAS UPDATE（WHERE 另加 source_match IS NULL）；端口抛错整事务回滚。不改 product_key / shop_id。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
 //   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
 // 日志只打平铺字段（platform、app_id、reason、outcome、rule、event），不打子订单号与买家参数。
@@ -120,9 +121,6 @@ function pendingDetail(plan: OrderUpdatePlan, from: string): string | null {
   if (plan.pending !== 'ILLEGAL_TRANSITION') return null;
   return `order_illegal_transition ${plan.rule ?? 'illegal'} ${from}→${plan.event ?? '-'}`;
 }
-
-/** 订单推广位查不到时按 fallback（不限 pid_scene）匹配（编排者口径 5）。 */
-const FALLBACK_PID_SCENE = 'fallback';
 
 // TODO(规划/11 §4.5): 分佣快照 — blocked on B1-08k
 export function createOrderUpdateStep(
@@ -274,7 +272,8 @@ export function createOrderUpdateStep(
             platform,
             userId: user.user_id,
             attrAt: current.attr_at,
-            pidScene: pidScene ?? FALLBACK_PID_SCENE,
+            // 场景未知传 null：不当作 fallback（BR-ATTR-15 ② 只对 fallback 推广位不限，D10-60）。
+            pidScene,
             order: incoming,
             shopId: current.shop_id,
           });
@@ -428,8 +427,8 @@ export function createOrderUpdateStep(
     }
     if (pidSceneMissing) {
       log?.warn(
-        { ...base, reason: 'PID_SCENE_NOT_FOUND', outcome: 'source_fallback_scene' },
-        'order promotion slot not found; source backfill matched without pid_scene',
+        { ...base, reason: 'PID_SCENE_NOT_FOUND', outcome: 'source_scene_unknown' },
+        'order promotion slot scene unknown; source backfill skipped product / shop matching',
       );
     }
     if (backfilled !== null) {

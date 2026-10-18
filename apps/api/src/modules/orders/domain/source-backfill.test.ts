@@ -84,6 +84,36 @@ it('[AC-B1-08j#U3] fallback 推广位不限 pid_scene；其余场景（含 BR-AT
   );
 });
 
+it('[AC-B1-08j#U10] 推广位场景未知（null）不当作 fallback：② / ③ 不匹配任何场景的点击，exact 照常', () => {
+  const clicks = [
+    row({ pid_scene: 'share', link_id: 'share' }),
+    row({ pid_scene: 'self_buy', link_id: 'self' }),
+    row({ pid_scene: 'fallback', link_id: 'fb' }),
+    row({ pid_scene: null, link_id: 'nil' }),
+  ];
+  expect(matchOrderSource(input({ pidScene: null, candidates: clicks }))).toEqual({
+    source_match: 'none',
+    link_id: null,
+    source_scene: null,
+    agent_session_id: null,
+  });
+  expect(
+    matchOrderSource(input({ pidScene: null, productKey: null, candidates: clicks })).source_match,
+  ).toBe('none');
+  const link = { link_id: 'exact', user_id: 'u1', scene: 'agent', agent_session_id: 'S1' };
+  expect(matchOrderSource(input({ pidScene: null, exactLink: link, candidates: clicks }))).toEqual({
+    source_match: 'exact',
+    link_id: 'exact',
+    source_scene: 'agent',
+    agent_session_id: 'S1',
+  });
+  expect(
+    matchOrderSource(
+      input({ pidScene: null, exactLink: { ...link, user_id: 'u2' }, candidates: clicks }),
+    ).source_match,
+  ).toBe('none');
+});
+
 it('[AC-B1-08j#U4] parseLinkCode 只看本平台字段：京东第 2 组、拼多多 JSON 对象 lk、淘宝恒空', () => {
   const params = {
     relation_id: 'r',

@@ -167,6 +167,46 @@ it('[AC-B1-08j#U5] 用例：开关缺省不查 lk；窗口 [attr_at−360h, attr
   });
 });
 
+it('[AC-B1-08j#U11] 用例：推广位场景未知（pidScene=null）不取商品键与外跳日志，只看 exact，否则 none', async () => {
+  const p = ports([]);
+  const input = {
+    appId: 'unit-app',
+    platform: 'pdd' as const,
+    userId: USER,
+    attrAt: at(ATTR),
+    pidScene: null,
+    order: incoming(),
+    shopId: 'shop-1',
+  };
+  expect(await backfillOrderSource(p.sources, input)).toEqual({
+    source_match: 'none',
+    link_id: null,
+    source_scene: null,
+    agent_session_id: null,
+  });
+  expect(p.productKey).not.toHaveBeenCalled();
+  expect(p.linkLogs).not.toHaveBeenCalled();
+  p.linkByCode.mockResolvedValue({
+    link_id: click.link_id!,
+    user_id: USER,
+    scene: 'share',
+    agent_session_id: null,
+  });
+  expect(await backfillOrderSource({ ...p.sources, clickCode: () => true }, input)).toEqual({
+    source_match: 'exact',
+    link_id: click.link_id,
+    source_scene: 'share',
+    agent_session_id: null,
+  });
+  expect(p.linkByCode).toHaveBeenCalledExactlyOnceWith({
+    appId: 'unit-app',
+    platform: 'pdd',
+    lk: 'q1w2e3',
+  });
+  expect(p.productKey).not.toHaveBeenCalled();
+  expect(p.linkLogs).not.toHaveBeenCalled();
+});
+
 it('[AC-B1-08j#U6] 首次入库已归因：端口在任何写之前调用，四列只出现在 orders INSERT；未归因不调端口', async () => {
   for (const attributed of [true, false]) {
     const trace: string[] = [];
@@ -250,10 +290,12 @@ function updateDeps(sources: OrderSourcePorts, pids: OrderUpdateDeps['pids']): O
   };
 }
 
-it('[AC-B1-08j#U7] 未归因重跑成功：四列并入同一 CAS UPDATE（WHERE source_match IS NULL）；推广位查无按 fallback 并在写后告警', async () => {
+it('[AC-B1-08j#U7] 未归因重跑成功：四列并入同一 CAS UPDATE（WHERE source_match IS NULL），端口先于 UPDATE', async () => {
   const trace: string[] = [];
   const p = ports(trace, [{ ...click, pid_scene: 'agent' }]);
-  const find = vi.fn<NonNullable<OrderUpdateDeps['pids']>['find']>(() => Promise.resolve([]));
+  const find = vi.fn<NonNullable<OrderUpdateDeps['pids']>['find']>(() =>
+    Promise.resolve([{ pid_scene: 'agent', status: 'active' as const, site_id: null }]),
+  );
   const deps = updateDeps(p.sources, { find });
   const step = createOrderUpdateStep(deps);
   const outcome = await scriptedDb(trace)
@@ -275,11 +317,55 @@ it('[AC-B1-08j#U7] 未归因重跑成功：四列并入同一 CAS UPDATE（WHERE
   expect(set).not.toMatch(/"(shop_id|product_key)"/);
   expect(where).toContain('"source_match" is null');
   expect(trace.indexOf('port:linkLogs')).toBeLessThan(trace.indexOf(updates[0]!));
-  expect(deps.logger?.warn).toHaveBeenCalledWith(
-    expect.objectContaining({ app_id: 'unit-app', platform: 'pdd', reason: 'PID_SCENE_NOT_FOUND' }),
+  expect(deps.logger?.warn).not.toHaveBeenCalledWith(
+    expect.objectContaining({ reason: 'PID_SCENE_NOT_FOUND' }),
     expect.any(String),
   );
 });
+
+it.each([
+  { label: '查不到推广位行', pids: 'empty' as const, slot: 'slot-ours' as string | null },
+  { label: '未注入 pids 端口', pids: 'missing' as const, slot: 'slot-ours' as string | null },
+  { label: '推广位为空', pids: 'empty' as const, slot: null as string | null },
+])(
+  '[AC-B1-08j#U12] $label（场景未知）：不当作 fallback，不跨场景匹配点击，写 none 并在写后告警',
+  async ({ pids, slot }) => {
+    const trace: string[] = [];
+    const compiled: { sql: string; parameters: readonly unknown[] }[] = [];
+    // 窗口内同商品的 self_buy 点击：按 fallback 不限场景会被选中并永久写入来源。
+    const selfBuy: LinkLogCandidate = { ...click, pid_scene: 'self_buy', scene: 'search' };
+    const p = ports(trace, [selfBuy]);
+    const find = vi.fn<NonNullable<OrderUpdateDeps['pids']>['find']>(() => Promise.resolve([]));
+    const deps = updateDeps(p.sources, pids === 'empty' ? { find } : undefined);
+    const step = createOrderUpdateStep(deps);
+    const outcome = await scriptedDb(trace, compiled)
+      .transaction()
+      .execute((trx) => step.apply(trx, current, incoming({ promotion_slot: slot }), ctx));
+    expect(outcome).toEqual({ kind: 'updated', order_id: current.order_id });
+    expect(p.productKey).not.toHaveBeenCalled();
+    expect(p.linkLogs).not.toHaveBeenCalled();
+    const updates = compiled.filter((q) => q.sql.startsWith('update "app"."orders"'));
+    expect(updates).toHaveLength(1);
+    const [set, where] = updates[0]!.sql.split(' where ');
+    for (const column of ['source_match', 'link_id', 'source_scene', 'agent_session_id']) {
+      expect(set).toContain(`"${column}"`);
+    }
+    expect(where).toContain('"source_match" is null');
+    const values = updates[0]!.parameters;
+    expect(values).toContain('none');
+    expect(values).not.toContain(selfBuy.link_id);
+    expect(values).not.toContain('search');
+    expect(deps.logger?.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        app_id: 'unit-app',
+        platform: 'pdd',
+        reason: 'PID_SCENE_NOT_FOUND',
+        outcome: 'source_scene_unknown',
+      }),
+      expect.any(String),
+    );
+  },
+);
 
 it.each([
   { label: '已有 source_match', row: { source_match: 'none' } },

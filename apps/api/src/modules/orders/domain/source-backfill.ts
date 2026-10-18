@@ -2,7 +2,8 @@
 // 调用方经端口取 link 与 link_logs 原始行，判定全部在这里。匹配顺序命中即停：
 // ① exact：订单参数里的 lk 反查到的 link 属于订单 user_id；
 // ② product / ③ shop：同 user_id、同平台、event ∈ {convert, open}、result_code=0、pid_scene 与订单推广位一致
-//   （推广位是 fallback 时不限）、created_at ∈ [attr_at − W_backfill, attr_at]（两端闭，绝对时长）；
+//   （推广位本身是 fallback 时不限；推广位场景未知时 ② / ③ 不匹配，不跨场景）、
+//   created_at ∈ [attr_at − W_backfill, attr_at]（两端闭，绝对时长）；
 //   ② 另要同 product_key，③ 另要同 shop_id；取 created_at 最大，同刻取 id 最大；
 // ④ none：三个来源字段置空。
 import type { RegisteredPlatform, UnionOrderAttrParams } from '../../union/index.ts';
@@ -32,7 +33,11 @@ export interface MatchOrderSourceInput {
   readonly platform: RegisteredPlatform;
   readonly productKey: string | null;
   readonly shopId: string | null;
-  readonly pidScene: string;
+  /**
+   * 订单推广位的 pid_scene。null = 推广位场景未知（推广位为空或查不到推广位行）：② / ③ 不匹配
+   * （08 只对 fallback 推广位不限场景，未知不等于 fallback），只看 ① exact，否则 ④ none。
+   */
+  readonly pidScene: string | null;
   readonly attrAt: Date;
   readonly windowHours: number;
   readonly exactLink: ExactLink | null;
@@ -52,7 +57,10 @@ export const DEFAULT_BACKFILL_WINDOW_HOURS = 360;
 /** BR-ATTR-14：只有这两种事件（且 result_code=0）算点击证据；precompute、register 不算。 */
 const CLICK_EVENTS: ReadonlySet<string> = new Set(['convert', 'open']);
 
-/** 订单推广位是 fallback 时 ② / ③ 不限 pid_scene（BR-ATTR-15 ②）；其余取值按字面比较（待裁定 6）。 */
+/**
+ * 订单推广位本身是 fallback 时 ② / ③ 不限 pid_scene（BR-ATTR-15 ②）；其余取值按字面比较（待裁定 6）；
+ * 推广位场景未知（null）不当作 fallback。
+ */
 const FALLBACK_PID_SCENE = 'fallback';
 
 /** BR-ATTR-15 lk：1–16 位 [0-9a-z]（BR-ATTR-06 解析口径，便于将来调长）。 */
@@ -102,16 +110,19 @@ export function matchOrderSource(input: MatchOrderSourceInput): OrderSourceMatch
       agent_session_id: exact.agent_session_id,
     };
   }
+  const pidScene = input.pidScene;
+  // 推广位场景未知：② / ③ 不跨场景匹配（D10-60），直接 ④ none。
+  if (pidScene === null) return { ...NONE };
   const toMs = input.attrAt.getTime();
   const fromMs = toMs - input.windowHours * HOUR_MS;
-  const anyScene = input.pidScene === FALLBACK_PID_SCENE;
+  const anyScene = pidScene === FALLBACK_PID_SCENE;
   const clicks = input.candidates.filter((row) => {
     if (row.user_id === null || row.user_id !== input.userId) return false;
     if (row.platform !== input.platform) return false;
     if (!CLICK_EVENTS.has(row.event) || row.result_code !== 0) return false;
     const createdMs = row.created_at.getTime();
     if (!(createdMs >= fromMs && createdMs <= toMs)) return false;
-    return anyScene || (row.pid_scene !== null && row.pid_scene === input.pidScene);
+    return anyScene || (row.pid_scene !== null && row.pid_scene === pidScene);
   });
   const productKey = input.productKey;
   if (productKey !== null) {
