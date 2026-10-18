@@ -2,15 +2,17 @@ id: CT-06u
 repo: rebate-platform
 title: ci 汇总作业在运行被取消时跳过而非失败（避免遗留 failure 必需检查）
 type: guard-change
-# 2026-10-19 入账（编排会话）。起因：PR 加 owner-approved 标签（ci.yml 监听 labeled）再触发一轮 ci，上一轮被并发组取消；ci-gate
-# 是 `if: always()` 的汇总作业，依赖被取消时仍跑并以 failure 结束，同一提交上留下一条 ci-gate=failure 的必需检查，rollup 一直 FAILURE、
-# 合并被拦（#799 同日，只能对被取消那轮 gh run rerun 才解开）。
-# 做法：① ci-gate、contracts-gate、longrun-props 三个汇总作业的 `if: always()` 改为 `if: ${{ !cancelled() }}`——运行被取消时汇总作业
-# skipped 而不是 failure；其余结果照旧由步骤判定，依赖非 success 仍红（步骤只能绿或红，不把 cancelled 判绿，避免验证没跑完却放行）。
-# ② 不改 concurrency 组的取消行为，不改任何必需检查名、不改 ops/branch-protection.json。③ tools/ci/check-workflows.ts 的
-# required-job-condition 规则改为只认 `${{ !cancelled() }}`（导出 SUMMARY_CONDITION），always() 汇总作业从此拒收；单测补三个工作流的
-# always() 拒收用例与真实文件断言。④ 验证：PR 上连推两次提交让一轮被取消，确认被取消那轮的 ci-gate 是 skipped 而非 failure，两次 run id
-# 写进 PR 描述。已知取舍：被取消那轮没有后继运行时，skipped 的必需检查在 GitHub 视为通过——本仓库的取消只来自并发组（必有后继运行）。
+# 2026-10-19 入账（编排会话）。起因：PR 加 owner-approved 标签（ci.yml 监听 labeled）再触发一轮 ci，上一轮被并发组取消；ci-gate 是
+# `if: always()` 的汇总作业，依赖被取消时仍跑并以 failure 结束，同一提交上留下一条 ci-gate=failure 的必需检查，rollup 一直 FAILURE、合并
+# 被拦（#799、#815 同日），只能对被取消那轮 gh run rerun 才解开。
+# 做法（经 Codex r1 否决「改 `if: !cancelled()` 让汇总 skipped」——GitHub 把 skipped 的必需检查视为通过，手动取消或旧提交重跑取消新头时
+# 头提交可未经验证合并，S1）：ci-gate 保留 `if: always()`；步骤里若任一依赖结果为 cancelled，查同一 workflow 在同一 head 提交上是否存在
+# 更新的运行（gh api …/actions/workflows/ci.yml/runs?head_sha=，id 更大、同事件）：有则打 notice「superseded by run N」退出 0——后继运行
+# 自己的 ci-gate 检查已在该提交上排队，由它裁决；没有后继（手动取消、旧提交重跑经共享并发组取消本次）则 error 退出 1，未验证的头不放行。
+# 未取消时判定不变（依赖非 success 仍红）。不改 concurrency 组、不改必需检查名、不改 ops/branch-protection.json、不改 check-workflows
+# 规则（always() 汇总仍是唯一允许形式）。contracts-gate、longrun-props 所在工作流没有 concurrency 块，取消只能手动、无后继，不改。
+# 验证：PR 上先连推两次提交让一轮被取消（run 39149084953，排队中即被取消，全部作业 cancelled、无 failure），再用标签事件在同一提交上
+# 制造「验证进行中被取消」的一轮，确认被取消那轮的 ci-gate 以 superseded 通过、新一轮正常裁决、合并不再需要重跑；run id 写进 PR 描述。
 # tools/** 与 .github/** 属保护路径第三类：approvals #16 常设授权的门禁小修，Claude 实现、Codex 对抗评审，评审通过、检查全绿后按
 # approvals #24 加标签；按 approvals #12 走非 task 分支（chore/guard-change-CT-06u）、不带证据文件（先例 F1-01k 自举）。
 refs: []
@@ -18,9 +20,6 @@ refs_hash: {}
 deps: []
 paths:
   - '.github/workflows/ci.yml'
-  - '.github/workflows/contracts.yml'
-  - '.github/workflows/longrun-props.yml'
-  - 'tools/ci/check-workflows{,.test}.ts'
 impl: claude
 tester: none
 accept:

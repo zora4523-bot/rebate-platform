@@ -4,10 +4,10 @@
 #
 # Rules for every workflow in this repo (checked by tools/ci/check-workflows.ts):
 #   - no workflow-level `paths` filters; path-conditional work uses a job-level `if` plus an
-#     `if: ${{ !cancelled() }}` summary job, and only summary jobs are required checks. The
-#     summary job runs on every outcome of its needs except a cancelled run (CT-06u): a run
-#     superseded by concurrency (the next push, or the owner label) then leaves its summary
-#     check `skipped`, not `failure`, on the commit, so the rollup of the newer run decides;
+#     `if: always()` summary job, and only summary jobs are required checks;
+#   - a summary job of a run that the concurrency group cancelled (the next push, or the owner
+#     approval label this workflow listens to) reports "superseded" instead of failure when a
+#     newer run of the same workflow exists on the same head commit (CT-06u, see ci-gate);
 #   - job ids are unique across all workflows and jobs carry no `name:`, so the check context
 #     equals the job id;
 #   - every action is pinned to a full commit SHA with a version comment.
@@ -233,9 +233,16 @@ jobs:
 
   ci-gate:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).
-    # Skipped, not failed, when the run is cancelled (CT-06u, see the rules above); every other
-    # outcome of the needs is judged below, a non-success is red.
-    if: ${{ !cancelled() }}
+    # CT-06u: a run cancelled by the concurrency group must not leave a ci-gate failure on the
+    # commit — with `always()` the summary ran against cancelled needs, failed, and that check
+    # blocked the merge next to the newer run's pass until the cancelled run was re-run
+    # (rebate-platform #799, #815). The summary of a cancelled run therefore passes with a notice
+    # when, and only when, a newer run of this workflow exists on the same head commit: that run's
+    # own ci-gate check is already queued on the commit and decides. A cancellation without such a
+    # successor (a manual cancel, or an older commit's re-run cancelling this one through the shared
+    # group) stays red, so an unverified head never passes by being skipped or superseded.
+    # `always()` stays: a skipped required check would count as passing (tools/ci/check-workflows.ts).
+    if: always()
     needs: [verify-fast, verify-props, verify-int, guard-git]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -243,6 +250,16 @@ jobs:
       - name: Summarise
         run: |
           echo "verify-fast=${FAST} verify-props=${PROPS} verify-int=${INT} guard-git=${GUARD} event=${EVENT}"
+          if [ "$FAST" = cancelled ] || [ "$PROPS" = cancelled ] || [ "$INT" = cancelled ] || [ "$GUARD" = cancelled ]; then
+            successor=$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${HEAD_SHA}&per_page=50" \
+              --jq "[.workflow_runs[] | select(.id > ${RUN_ID} and .event == \"${EVENT}\") | .id] | max // empty")
+            if [ -n "$successor" ]; then
+              echo "::notice title=ci-gate::run ${RUN_ID} was cancelled and superseded by run ${successor} on the same commit ${HEAD_SHA}; that run's ci-gate decides"
+              exit 0
+            fi
+            echo "::error title=ci-gate::run ${RUN_ID} was cancelled and no newer ci run exists on ${HEAD_SHA}: the head is not verified"
+            exit 1
+          fi
           [ "$FAST" = success ] || exit 1
           [ "$PROPS" = success ] || exit 1
           [ "$INT" = success ] || exit 1
@@ -257,3 +274,7 @@ jobs:
           INT: ${{ needs.verify-int.result }}
           GUARD: ${{ needs.guard-git.result }}
           EVENT: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}

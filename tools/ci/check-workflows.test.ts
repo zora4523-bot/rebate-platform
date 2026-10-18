@@ -4,11 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterAll, expect, it } from 'vitest';
-import {
-  checkWorkflows,
-  extractEmbeddedProtectedPaths,
-  SUMMARY_CONDITION,
-} from './check-workflows.ts';
+import { checkWorkflows, extractEmbeddedProtectedPaths } from './check-workflows.ts';
 
 const REPO = resolve(import.meta.dirname, '../..');
 const SCRATCH = join(REPO, '.tmp', `ci-check-workflows-${process.pid}`);
@@ -119,36 +115,12 @@ it('rejects a required summary job that can be skipped', () => {
   const root = fixture((edit) =>
     edit('.github/workflows/ci.yml', (t) =>
       t.replace(
-        `    if: ${SUMMARY_CONDITION}\n    needs: [verify-fast`,
+        '    if: always()\n    needs: [verify-fast',
         '    if: success()\n    needs: [verify-fast',
       ),
     ),
   );
   expect(codes(root)).toEqual(['required-job-condition']);
-});
-
-it('[CT-06u] rejects an always() summary job: it fails on a cancelled run instead of being skipped', () => {
-  for (const file of ['ci.yml', 'contracts.yml', 'longrun-props.yml']) {
-    const root = fixture((edit) =>
-      edit(`.github/workflows/${file}`, (t) => {
-        expect(t).toContain(`    if: ${SUMMARY_CONDITION}\n    needs: [`);
-        return t.replace(
-          `    if: ${SUMMARY_CONDITION}\n    needs: [`,
-          '    if: always()\n    needs: [',
-        );
-      }),
-    );
-    expect(codes(root), file).toEqual(['required-job-condition']);
-  }
-});
-
-it('[CT-06u] every required summary job of the real workflows is skipped on a cancelled run', () => {
-  const summaries = ['ci.yml', 'contracts.yml', 'longrun-props.yml'];
-  for (const file of summaries) {
-    const text = readFileSync(join(REPO, '.github/workflows', file), 'utf8');
-    expect(text, file).toContain(`    if: ${SUMMARY_CONDITION}\n    needs: [`);
-    expect(text, file).not.toMatch(/^ {4}if: always\(\)/m);
-  }
 });
 
 it('rejects a checkout in the pull_request_target workflow', () => {
