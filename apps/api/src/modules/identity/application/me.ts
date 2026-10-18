@@ -4,10 +4,13 @@
 // - identity_level from the database (BR-ID-01): phone when users.phone_hmac is set, else member;
 //   realname when the phone is bound and app.realname is verified; realname_status from the
 //   realname table (none without a row, BR-ID-25; read through the stage ⑨ reader).
-// - invite_code null when banned, or appealing with a processing account appeal whose
-//   prev_risk_state is banned (BR-INV-18); inviter_bound = parent_id set.
-// - invite_backfill per BR-INV-07 (a)(b)(c) and growth.invite_bind.enabled (BR-INV-21);
-//   deadline_at = created_at + invite.backfill_hours when eligible, else null.
+// - invite_code null when inviter_unavailable(self) (BR-INV-18, BR-INV-02; task B1-11k): the
+//   domain's inviterUnavailable over the current facts — risk_state read fresh, deletion from
+//   users.status, phone_hmac, and a verified real name under 18 at the Clock's instant (BR-INV-19;
+//   unverified counts as adult). inviter_bound = parent_id set.
+// - invite_backfill per BR-INV-07 (a)(b)(c) and growth.invite_bind.enabled (BR-INV-21); the
+//   deadline is the domain's inviteBackfillDeadline, open while withinBackfill (now < deadline);
+//   deadline_at is that deadline when eligible, else null.
 // - balance through MeBalancePort (ledger, B2; zero default assembled by app.module).
 // - union_bindings taobao then pdd through MeUnionBindingsPort (linking's binding projection).
 // - need_reconsent per BR-ID-12: the user-level current state of privacy or agreement is not
@@ -19,12 +22,18 @@ import type { Kysely } from 'kysely';
 import type { Clock, RootLogger } from '../../platform/index.ts';
 import type { RiskStateService } from '../../risk/index.ts';
 import type { SmsConfigReader } from './sms-codes.ts';
-import { instantPlus } from './config-seconds.ts';
+import {
+  inviteBackfillDeadline,
+  inviterUnavailable,
+  isAtLeastAge,
+  withinBackfill,
+} from '@couli/domain';
 import { currentStates } from '../domain/login.ts';
 import { DEFAULT_AVATAR } from '../domain/registration.ts';
 import { userConsentRecords } from '../infra/consent-records.ts';
 import type { RealnameStatusReader } from './identity-level.ts';
-import { meUser, hasDirectChildren, hasBannedAccountAppeal } from '../infra/me-reads.ts';
+import type { RealnameReader } from '../infra/realname-reader.ts';
+import { meUser, hasDirectChildren } from '../infra/me-reads.ts';
 import type { InviteBackfillActivityPort, MeSubject } from '../ports/invite-backfill-activity.ts';
 export type { InviteBackfillActivityPort, MeSubject } from '../ports/invite-backfill-activity.ts';
 
@@ -52,13 +61,19 @@ export interface MeServiceOptions {
   readonly balance: MeBalancePort;
   readonly unionBindings: MeUnionBindingsPort;
   readonly activity: InviteBackfillActivityPort;
-  /** app.realname status, uncached (the stage ⑨ reader). */
-  readonly realname: RealnameStatusReader;
+  /**
+   * app.realname status, uncached (the stage ⑨ reader), plus the verified birth date for the age
+   * check (B1-13d's reader). The name and birth date never reach the response or the logs.
+   */
+  readonly realname: RealnameStatusReader & Pick<RealnameReader, 'verified'>;
 }
 
 export interface MeService {
   read(subject: MeSubject): Promise<Me>;
 }
+
+/** BR-INV-19: a verified user under this age cannot invite. */
+const INVITER_MIN_AGE = 18;
 
 /** Ports assembled outside identity; risk uses the same instance as the request guard. */
 export type MeReadPorts = Pick<MeServiceOptions, 'risk' | 'balance' | 'unionBindings' | 'activity'>;
@@ -106,12 +121,11 @@ export function createMeService(options: MeServiceOptions): MeService {
       if (bindValue !== true && bindValue !== false && bindValue !== 'on' && bindValue !== 'off') {
         throw new Error('identity: invalid growth.invite_bind.enabled');
       }
-      const deadline = instantPlus(user.created_at, hours * 3_600_000);
-      if (!Number.isFinite(deadline.getTime())) {
-        throw new Error('identity: invalid invite.backfill_hours deadline');
-      }
+      const deadline = inviteBackfillDeadline(user.created_at, hours);
+      const now = clock.now();
       const [snapshot, records, summary, taobao, pdd, realnameStatus] = await Promise.all([
-        risk.readRiskState({ app_id: subject.appId, user_id: subject.userId }),
+        // Fresh: the invitation view follows the risk state at the call (BR-INV-02), never a cache.
+        risk.readRiskState({ app_id: subject.appId, user_id: subject.userId }, { fresh: true }),
         userConsentRecords(db, subject.appId, subject.userId),
         balance.balanceOf(subject),
         unionBindings.statusOf(subject, 'taobao'),
@@ -121,7 +135,7 @@ export function createMeService(options: MeServiceOptions): MeService {
       let eligible =
         user.parent_id === null &&
         !user.self_bind_used &&
-        clock.now().getTime() < deadline.getTime() &&
+        withinBackfill(now, deadline) &&
         bindValue !== false &&
         bindValue !== 'off';
       if (eligible) {
@@ -132,9 +146,20 @@ export function createMeService(options: MeServiceOptions): MeService {
         ]);
         eligible = orders === 0 && !claims && !children;
       }
-      const banned =
-        snapshot.state === 'banned' ||
-        (snapshot.state === 'appealing' && (await hasBannedAccountAppeal(db, subject)));
+      const phoneBound = user.phone_hmac !== null;
+      const verifiedRealname =
+        realnameStatus === 'verified'
+          ? await realname.verified(db, { app_id: subject.appId, user_id: subject.userId })
+          : null;
+      const cannotInvite = inviterUnavailable({
+        risk_state: snapshot.state,
+        // TODO(规划/11 §2.3): 读注销单 deletion_status（cooling / processing / done）— blocked on B1-15
+        deletion_status: user.status === 'deleted' ? 'done' : null,
+        phone_bound: phoneBound,
+        verified_minor:
+          verifiedRealname !== null &&
+          !isAtLeastAge(verifiedRealname.birth_date, INVITER_MIN_AGE, now),
+      });
       const current = currentStates(records);
       const needReconsent = (
         [
@@ -146,12 +171,11 @@ export function createMeService(options: MeServiceOptions): MeService {
         const state = current.get(type);
         return state?.accepted !== true || (version !== null && state.version < version);
       });
-      const phoneBound = user.phone_hmac !== null;
       return {
         user_id: subject.userId,
         nickname: user.nickname,
         avatar_url: avatarUrl,
-        invite_code: banned ? null : user.invite_code,
+        invite_code: cannotInvite ? null : user.invite_code,
         inviter_bound: user.parent_id !== null,
         invite_backfill: { eligible, deadline_at: eligible ? deadline.toISOString() : null },
         identity_level: !phoneBound

@@ -1,0 +1,88 @@
+{
+  "task": "B1-11k",
+  "spec_ref": "8c91f67e2dc11ad7f50d279cf8103e0f038e5ac8",
+  "spec_commit": "692046053bf64e819d6b0c24efa1f3f49b8de551",
+  "red_tests": [
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#1] normal 未实名按成年展示本人码，未绑手机仍 200 但邀请码为 null",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#2] 风险矩阵：banned、frozen、appealing 均隐藏，申诉前状态及有无申诉单不影响结果",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#3] 同一账号已读取后变为 frozen 再恢复 normal，按调用时当前风险决定邀请码",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#4] users.status=deleted 即不可邀请，full 与 deletion_only 均只隐藏本人码",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#5] 已实名普通生日：满 18 周岁时刻前 1ms 隐藏，等于及之后恢复本人码",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#6] 2 月 29 日出生非闰年按 3 月 1 日生日，次日零点才满 18 周岁",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#7] 实名年龄只看当前用户及 app，同 app 成年人和另一 app 未实名用户不受未成年人影响",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#8] 未绑手机邀请码隐藏；第 5 天绑手机后恢复本人码，补填截止仍从建号起算",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#9] 未绑手机默认 168h 补填窗口：前 1 秒可补填，等于及超过截止不可补填",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#10] 各 app 的 backfill_hours 改值生效，0 小时立即截止，均不使未绑手机展示邀请码",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#11] 补填保留建号毫秒精度：截止前 1ms 可补填，等于边界不可补填，未实名未绑手机不展示码",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#12] 本人未成年隐藏本人码但保留已绑定状态，其余字段不变，不透露邀请人或实名资料",
+    "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#13] 无法展示邀请码不替代补填条件：自助绑定已用、已有下级或开关关闭仍不可补填"
+  ],
+  "risk_note": "RV2-level (identity Me reads feeding invite display). GET /v1/me invite_code is null whenever inviterUnavailable (BR-INV-02 / BR-INV-18, ruling E4): risk state read fresh (no process cache), deleted, no bound phone, or a verified realname under 18 (packages/domain isAtLeastAge, birth date through the B1-13d realname reader; unverified counts as adult); the old appeal-based exception (D4) is gone. The backfill deadline uses packages/domain inviteBackfillDeadline / withinBackfill. No crypto, no /v1/me (as the realname service). Frozen B1-02z me assertions were relaxed first by B1-11q. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "692046053bf64e819d6b0c24efa1f3f49b8de551",
+      "tree": "51ad964f04099a518b594a835235f4d566aefdcf",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T18:06:42Z",
+      "finished_at": "2026-10-18T18:06:50Z",
+      "red_tests": [
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#1] normal 未实名按成年展示本人码，未绑手机仍 200 但邀请码为 null",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#2] 风险矩阵：banned、frozen、appealing 均隐藏，申诉前状态及有无申诉单不影响结果",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#3] 同一账号已读取后变为 frozen 再恢复 normal，按调用时当前风险决定邀请码",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#4] users.status=deleted 即不可邀请，full 与 deletion_only 均只隐藏本人码",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#5] 已实名普通生日：满 18 周岁时刻前 1ms 隐藏，等于及之后恢复本人码",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#6] 2 月 29 日出生非闰年按 3 月 1 日生日，次日零点才满 18 周岁",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#7] 实名年龄只看当前用户及 app，同 app 成年人和另一 app 未实名用户不受未成年人影响",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#8] 未绑手机邀请码隐藏；第 5 天绑手机后恢复本人码，补填截止仍从建号起算",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#9] 未绑手机默认 168h 补填窗口：前 1 秒可补填，等于及超过截止不可补填",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#10] 各 app 的 backfill_hours 改值生效，0 小时立即截止，均不使未绑手机展示邀请码",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#11] 补填保留建号毫秒精度：截止前 1ms 可补填，等于边界不可补填，未实名未绑手机不展示码",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#12] 本人未成年隐藏本人码但保留已绑定状态，其余字段不变，不透露邀请人或实名资料",
+        "test/spec/identity/me-invite/me-invite.int.test.ts > [AC-B1-11k#13] 无法展示邀请码不替代补填条件：自助绑定已用、已有下级或开关关闭仍不可补填"
+      ],
+      "expected": ["test/spec/identity/me-invite/me-invite.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "d081064ac1e8aec45ad1c9ea8eb1805416fe2eaca1920d36966fe3469efc6d2c"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (13 tests red for the right reason, red/1) reviewed by a fresh Claude subagent: round 1 pass (one S2: the shared inviterUnavailable call is not observable over HTTP; the implementation calls it)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "f23baaafe9fbca9e9476bf83ae6ab895a7243cb3",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "e1b6fbd72edc56949dcbe2b811e6923b46d33209",
+    "specs": "7a193fbf1b465577355777514eb186c7de4991bf"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}

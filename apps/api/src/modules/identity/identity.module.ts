@@ -37,6 +37,7 @@ import { createMeService, type MeService, type MeReadPorts } from './application
 import { createRealnameService, type RealnameService } from './application/realname.ts';
 import type { RealnameVerifierPort } from './ports/realname-verifier.ts';
 import { createRealnameVerifier } from './infra/fake-realname-verifier.ts';
+import { createRealnameReader } from './infra/realname-reader.ts';
 import {
   createUpdateNicknameService,
   type UpdateNicknameService,
@@ -807,18 +808,32 @@ export class IdentityModule {
             REALNAME_STATUS_READER,
             { token: DB, optional: true },
             { token: ME_READ_PORTS, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
           ],
           useFactory: (
             clock: Clock,
             config: SmsConfigReader | null,
             logger: RootLogger,
-            realname: RealnameStatusReader,
+            status: RealnameStatusReader,
             db?: Kysely<Database>,
             ports?: MeReadPorts | null,
+            crypto?: FieldCrypto,
           ): MeService | null =>
-            db === undefined || config === null || ports == null
+            // The age check of invite_code (BR-INV-19) decrypts the verified birth date (B1-13d's
+            // reader); without the field cipher there is no GET /v1/me, as with real-name itself.
+            db === undefined || config === null || ports == null || crypto === undefined
               ? null
-              : createMeService({ db, clock, config, logger, realname, ...ports }),
+              : createMeService({
+                  db,
+                  clock,
+                  config,
+                  logger,
+                  realname: {
+                    read: (handle, subject) => status.read(handle, subject),
+                    verified: createRealnameReader(crypto).verified,
+                  },
+                  ...ports,
+                }),
         },
         {
           // BR-ID-25: the fake two-element verifier in local / test; staging / prod have no vendor
