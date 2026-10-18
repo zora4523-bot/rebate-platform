@@ -40,12 +40,15 @@ import {
 } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
 import {
+  GrowthModule,
   appendLevelChange,
   createFirstAppLoginReview,
   createInviteBinder,
   createParentRelationReader,
   createRegistrationInviteBinding,
   type ParentRelationReader,
+  type InviteBinder,
+  type InviteBinderDeps,
 } from './modules/growth/index.ts';
 import {
   IdentityAdminModule,
@@ -444,29 +447,8 @@ function identityModule(): DynamicModule {
           );
           return null;
         }
-        const devices = createInviteLoginDevicesReader();
-        // TODO(规划/11 §2.3): 邀请人实名生日端口（verifiedBirthDate）— blocked on B1-13d
         return createRegistrationInviteBinding(
-          createInviteBinder({
-            clock,
-            logger,
-            redis,
-            crypto,
-            // On the registration transaction: no second pooled connection while it is held (a
-            // cold or expired cache would otherwise borrow one per pending sign-up). A plain read of
-            // config_items each time, so the value is never older than the transaction.
-            config: {
-              configValue: (appId, key, trx) =>
-                createContentReader({ db: trx, clock }).configValue(appId, key),
-            },
-            loginDevices: devices,
-            activity: (trx) => createInviteBackfillActivityReader(trx),
-            // Bind risk's reader to the caller's transaction: no second connection.
-            readRisk: (trx, subject) =>
-              createRiskStateService({ db: trx, clock, events }).readRiskState(subject, {
-                fresh: true,
-              }),
-          }),
+          createInviteBinder(inviteBinderDeps(clock, logger, redis, crypto, events)),
         );
       },
     },
@@ -479,6 +461,91 @@ function identityModule(): DynamicModule {
           loginDevices: createInviteLoginDevicesReader(),
           hitWriter: createInviteRelationHitWriter({ clock }),
         }),
+    },
+  });
+}
+
+/**
+ * growth's binding core dependencies (B1-11d), shared by the register channel (identity's
+ * inviteBinding port) and the backfill route (GrowthModule, B1-11e): config_items, identity's
+ * login-device and order / claim readers and risk's fresh state read, each bound to the caller's
+ * transaction (no second pooled connection while it is held), Redis and the field cipher's blind
+ * index.
+ */
+function inviteBinderDeps(
+  clock: Clock,
+  logger: RootLogger,
+  redis: RedisHandle,
+  crypto: FieldCrypto,
+  events: EventBus,
+): InviteBinderDeps {
+  // TODO(规划/11 §2.3): 邀请人实名生日端口（verifiedBirthDate）— blocked on B1-13d
+  return {
+    clock,
+    logger,
+    redis,
+    crypto,
+    // On the caller's transaction: no second pooled connection while it is held (a cold or
+    // expired cache would otherwise borrow one per pending request). A plain read of config_items
+    // each time, so the value is never older than the transaction.
+    config: {
+      configValue: (appId, key, trx) =>
+        createContentReader({ db: trx, clock }).configValue(appId, key),
+    },
+    loginDevices: createInviteLoginDevicesReader(),
+    activity: (trx) => createInviteBackfillActivityReader(trx),
+    // Bind risk's reader to the caller's transaction: no second connection.
+    readRisk: (trx, subject) =>
+      createRiskStateService({ db: trx, clock, events }).readRiskState(subject, {
+        fresh: true,
+      }),
+  };
+}
+
+/**
+ * growth's routes (B1-11e): POST /v1/me/inviter runs growth's binding core on the backfill channel
+ * over the same dependencies as the register channel. Without a database, Redis, the field cipher
+ * or the event bus there is no core and the route answers 50001.
+ */
+function growthModule(): DynamicModule {
+  return GrowthModule.forRoot({
+    inviteBinder: {
+      inject: [
+        CLOCK,
+        ROOT_LOGGER,
+        { token: DB, optional: true },
+        { token: REDIS, optional: true },
+        { token: FIELD_CRYPTO, optional: true },
+        { token: EVENT_BUS, optional: true },
+      ],
+      useFactory: (
+        clock: Clock,
+        logger: RootLogger,
+        db?: Kysely<Database>,
+        redis?: RedisHandle,
+        crypto?: FieldCrypto,
+        events?: EventBus,
+      ): InviteBinder | null => {
+        if (
+          db === undefined ||
+          redis === undefined ||
+          crypto === undefined ||
+          events === undefined
+        ) {
+          logger.info(
+            {
+              route: '/v1/me/inviter',
+              db: db !== undefined,
+              redis: redis !== undefined,
+              field_crypto: crypto !== undefined,
+              event_bus: events !== undefined,
+            },
+            'invite_backfill_unassembled',
+          );
+          return null;
+        }
+        return createInviteBinder(inviteBinderDeps(clock, logger, redis, crypto, events));
+      },
     },
   });
 }
@@ -1216,6 +1283,9 @@ export class AppModule {
         ...(identity === undefined || risk === undefined
           ? []
           : [identity, risk, identityMePorts(risk)]),
+        // growth's POST /v1/me/inviter (B1-11e): on the api entry, beside identity and risk, whose
+        // global guard and idempotency post-miss hooks run stages ①–⑧ before it.
+        ...(options.entry === 'api' ? [growthModule()] : []),
         ...(union === undefined ? [] : [union]),
         // The ledger posting port (B2-02f) on every entry that books money: settlement (worker),
         // withdrawals (api, payout) and adjustments (admin); the stream entry books nothing.
