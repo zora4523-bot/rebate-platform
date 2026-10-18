@@ -92,16 +92,21 @@ export class RealnameController {
         body: request.body,
         traceId: request.id,
       },
-      async () =>
-        response(
+      async () => {
+        // The idempotency module answered 20001 before the handler when the key is missing.
+        if (typeof key !== 'string')
+          throw new Error('identity: real-name submission without a key');
+        return response(
           await realname.submit({
             appId: principal.app_id,
             userId: principal.uid,
             name: request.body.name,
             idNo: request.body.id_no,
+            idempotencyKey: key,
           }),
           request.id,
-        ),
+        );
+      },
     );
     reply.code(result.status).type('application/json; charset=utf-8').send(result.body);
   }

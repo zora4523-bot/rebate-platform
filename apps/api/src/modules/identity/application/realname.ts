@@ -12,10 +12,10 @@
 //      parseResidentIdNo (18 characters, date, check digit; trim and trailing x → X).
 //   4. 30407 — under minor.min_realname_age at the Clock instant (BR-ID-26: the birthday's next day
 //      00:00 +08:00, 29 February → 1 March in common years).
-//   5. 30410 — the user's attempts of the +08:00 day are used up. Redis key
-//      <app_id>:<YYYY-MM-DD +08:00>:<user_id> in namespace REALNAME_ATTEMPTS_NAMESPACE, reserved
-//      atomically (count < limit → +1) before anything below, so concurrent requests cannot
-//      exceed the limit. Redis unavailable → 50001 (fail closed, nothing called).
+//   5. 30410 — the user's attempts of the +08:00 day are used up (realname-attempts.ts: reserved
+//      atomically before anything below, so concurrent requests cannot exceed the limit; one count
+//      per Idempotency-Key, so a retry of the same key after a failure without a stored result is
+//      not counted again). Redis unavailable → 50001 (fail closed, nothing called).
 //   6. 30405 — the blind index of the normalised ID number is verified on another user of this
 //      app (the occupant is never revealed). Counts one attempt (no vendor call).
 //   7. vendor: none assembled or an answer that is not definite (unavailable / malformed /
@@ -47,37 +47,20 @@ import {
   type RootLogger,
 } from '../../platform/index.ts';
 import { maskName } from '../domain/mask-name.ts';
+import { createRealnameAttempts, type AttemptSlot } from './realname-attempts.ts';
 import { REALNAME_CONTEXT } from '../infra/realname-reader.ts';
 import type {
   RealnameVerificationResult,
   RealnameVerifierPort,
 } from '../ports/realname-verifier.ts';
 
-/** BR-ID-25: attempts per user and +08:00 natural day. */
-export const REALNAME_DAILY_ATTEMPTS = 3;
 /**
  * BR-ID-26 配置 minor.min_realname_age (default 14).
  * TODO(规划/11 §2.3): 从配置中心读取 minor.min_realname_age — blocked on 该配置项尚未登记（内容配置注册表不在本任务路径内）
  */
 export const MIN_REALNAME_AGE = 14;
-/** Redis namespace of the daily attempt counters (keys carry the day, so they outlive it briefly). */
-export const REALNAME_ATTEMPTS_NAMESPACE = 'realname_attempts';
-const ATTEMPTS_TTL_SECONDS = 2 * 24 * 3600;
 /** The partial unique index (app_id, id_no_hmac) WHERE status = 'verified' of migration 0041. */
 const VERIFIED_ID_NO_KEY = 'realname_verified_id_no_hmac_key';
-
-/** ARGV[1] ttl, ARGV[2] limit: 1 reserved, 0 used up. */
-const RESERVE = `
-local n = tonumber(redis.call('GET', KEYS[1]) or '0')
-if n >= tonumber(ARGV[2]) then return 0 end
-redis.call('SET', KEYS[1], tostring(n + 1), 'EX', ARGV[1])
-return 1`;
-/** ARGV[1] ttl: gives back one reservation, never below zero. */
-const RELEASE = `
-local n = tonumber(redis.call('GET', KEYS[1]) or '0')
-if n <= 0 then return 0 end
-redis.call('SET', KEYS[1], tostring(n - 1), 'EX', ARGV[1])
-return 1`;
 
 export interface SubmitRealnameCommand {
   readonly appId: string;
@@ -86,6 +69,8 @@ export interface SubmitRealnameCommand {
   readonly name: string;
   /** As submitted; normalised here. */
   readonly idNo: string;
+  /** The request's Idempotency-Key (validated): one daily count per key (realname-attempts.ts). */
+  readonly idempotencyKey: string;
 }
 
 export type SubmitRealnameResult =
@@ -183,28 +168,13 @@ export function createRealnameService(options: RealnameServiceOptions): Realname
     return latest?.accepted === true;
   }
 
-  /** 1 reserved, 0 used up; throws when Redis is unavailable or answers anything else. */
-  async function reserve(key: string): Promise<boolean> {
-    if (redis === null) throw new Error('identity: no Redis for real-name attempts');
-    const reserved = await redis.namespace(REALNAME_ATTEMPTS_NAMESPACE).eval(RESERVE, {
-      keys: [key],
-      args: [String(REALNAME_DAILY_ATTEMPTS)],
-      ttlSeconds: ATTEMPTS_TTL_SECONDS,
-    });
-    if (reserved === 1) return true;
-    if (reserved === 0) return false;
-    throw new Error('identity: unexpected real-name reservation answer');
-  }
+  const attempts = redis === null ? null : createRealnameAttempts(redis);
 
-  /** Gives this request's reservation back; a failure only logs (the count stays stricter). */
-  async function release(command: SubmitRealnameCommand, key: string): Promise<void> {
-    if (redis === null) return;
+  /** Gives this key's reservation back; a failure only logs (the count stays stricter). */
+  async function release(command: SubmitRealnameCommand, slot: AttemptSlot): Promise<void> {
+    if (attempts === null) return;
     try {
-      await redis.namespace(REALNAME_ATTEMPTS_NAMESPACE).eval(RELEASE, {
-        keys: [key],
-        args: [],
-        ttlSeconds: ATTEMPTS_TTL_SECONDS,
-      });
+      await attempts.release(slot, clock.now());
     } catch {
       logger.warn(
         { app_id: command.appId, user_id: command.userId },
@@ -322,9 +292,16 @@ export function createRealnameService(options: RealnameServiceOptions): Realname
       const now = clock.now();
       if (!isAtLeastAge(parsed.birth_date, MIN_REALNAME_AGE, now)) return { code: 30407 };
 
-      const key = `${command.appId}:${accountingDate(now)}:${command.userId}`;
+      const slot: AttemptSlot = {
+        appId: command.appId,
+        userId: command.userId,
+        day: accountingDate(now),
+        idempotencyKey: command.idempotencyKey,
+      };
+      let reservation;
       try {
-        if (!(await reserve(key))) return { code: 30410 };
+        if (attempts === null) throw new Error('identity: no Redis for real-name attempts');
+        reservation = await attempts.reserve(slot, now);
       } catch {
         // Never the Redis error (no PII, but no need either): one flat line.
         logger.warn(
@@ -333,9 +310,11 @@ export function createRealnameService(options: RealnameServiceOptions): Realname
         );
         return { code: 50001 };
       }
+      if (reservation === 'full') return { code: 30410 };
 
-      // From here the reservation is kept (counted) unless released explicitly.
-      let counted = false;
+      // From here the reservation is kept (counted) unless released. A key seen before was counted
+      // by its earlier attempt (no stored result, e.g. a failed write): never given back here.
+      let counted = reservation === 'seen';
       try {
         const idNoHmac = crypto.blindIndex(parsed.id_no, REALNAME_CONTEXT.idNo);
         if (await occupiedElsewhere(command, idNoHmac)) {
@@ -391,7 +370,7 @@ export function createRealnameService(options: RealnameServiceOptions): Realname
         );
         return verifiedAnswer(name);
       } finally {
-        if (!counted) await release(command, key);
+        if (!counted) await release(command, slot);
       }
     },
   });
