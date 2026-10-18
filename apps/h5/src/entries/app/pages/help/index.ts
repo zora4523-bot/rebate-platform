@@ -1,14 +1,5 @@
-import type { ReactElement } from 'react';
-import type { AppApiBridge } from '../../../../shared/api/app-api.ts';
+import { HelpPage } from './help-page.tsx';
 
-export interface HelpPageProps {
-  /** Injectable SDK facade; production uses @couli/bridge-sdk. */
-  bridge?: Pick<AppApiBridge, 'isInApp' | 'has' | 'call'>;
-}
-
-export function HelpPage(props: HelpPageProps): ReactElement {
-  void props;
-  throw new Error('NotImplemented: HelpPage');
-}
-
+export { HelpPage, type HelpPageProps } from './help-page.tsx';
+/** Route module shape (React Router `lazy`): the Help route renders this page. */
 export { HelpPage as Component };
