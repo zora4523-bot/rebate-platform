@@ -82,6 +82,7 @@ import {
 import {
   createDefaultInviteCodeFilter,
   createRegistrationService,
+  type RegistrationOptions,
   type SensitiveWords,
 } from './application/registration.ts';
 import { createSmsLoginService, type SmsLoginService } from './application/sms-login.ts';
@@ -187,7 +188,16 @@ export interface IdentityModuleOptions {
   readonly realnameStatus?: Omit<FactoryProvider<RealnameStatusReader>, 'provide'>;
   /** Register-time level log, assembled by app.module so identity never imports growth. */
   readonly initialLevelLog?: Omit<FactoryProvider<InitialLevelLog | null>, 'provide'>;
+  /**
+   * The registration core's invite binding port (BR-INV-06, B1-11d), assembled by app.module from
+   * growth's binder so identity never imports growth. Absent or null: a new account sent with an
+   * invite code answers invite_bind { failed, 50001 } with a warning, as before.
+   */
+  readonly inviteBinding?: Omit<FactoryProvider<RegistrationInviteBindingPort | null>, 'provide'>;
 }
+
+/** RegistrationOptions['bindInvite'] as app.module assembles it (IdentityModuleOptions.inviteBinding). */
+export type RegistrationInviteBindingPort = NonNullable<RegistrationOptions['bindInvite']>;
 
 const REALNAME_STATUS_READER = Symbol('REALNAME_STATUS_READER');
 
@@ -269,6 +279,7 @@ const SMS_RISK_PORTS = Symbol('IDENTITY_SMS_RISK_PORTS');
 /** The push token port as app.module builds it (IdentityModuleOptions.pushTokens), or null. */
 const PUSH_TOKENS = Symbol('IDENTITY_PUSH_TOKENS');
 const INITIAL_LEVEL_LOG = Symbol('IDENTITY_INITIAL_LEVEL_LOG');
+const INVITE_BINDING = Symbol('IDENTITY_INVITE_BINDING');
 const ACCOUNT_ASSETS = Symbol('IDENTITY_ACCOUNT_ASSETS');
 const ACCOUNT_RISK = Symbol('IDENTITY_ACCOUNT_RISK');
 
@@ -346,6 +357,9 @@ export class IdentityModule {
         options.initialLevelLog === undefined
           ? { provide: INITIAL_LEVEL_LOG, useValue: null }
           : { ...options.initialLevelLog, provide: INITIAL_LEVEL_LOG },
+        options.inviteBinding === undefined
+          ? { provide: INVITE_BINDING, useValue: null }
+          : { ...options.inviteBinding, provide: INVITE_BINDING },
         // The internal revocation entries (merge, ban, admin revocation by user or by device), as
         // the Nest container hands them out: the provider token is identity's exported function
         // itself, the value takes only (trx, input) — the Clock and the push token unbinding of
@@ -504,6 +518,7 @@ export class IdentityModule {
             SMS_RISK_PORTS,
             PUSH_TOKENS,
             INITIAL_LEVEL_LOG,
+            INVITE_BINDING,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -518,6 +533,7 @@ export class IdentityModule {
             smsRisk: SmsRiskPorts,
             pushTokens: SessionPushTokens | null,
             initialLevelLog: InitialLevelLog | null,
+            inviteBinding: RegistrationInviteBindingPort | null,
             db?: Kysely<Database>,
             fieldCrypto?: FieldCrypto,
           ): SmsLoginService | null =>
@@ -530,7 +546,6 @@ export class IdentityModule {
                   logger,
                   versions: reader,
                   sms,
-                  // TODO(规划/11 §2.3): invite binding (bindInvite) — blocked on B1-11
                   registration: createRegistrationService({
                     clock,
                     config: reader,
@@ -542,6 +557,7 @@ export class IdentityModule {
                     ...(initialLevelLog === null
                       ? {}
                       : { recordInitialLevel: createRecordInitialLevel(initialLevelLog) }),
+                    ...(inviteBinding === null ? {} : { bindInvite: inviteBinding }),
                   }),
                   ...(risk === null ? {} : risk.login),
                   // Registration keys are snapshotted before the login transaction opens.
@@ -621,6 +637,7 @@ export class IdentityModule {
             SMS_RISK_PORTS,
             PUSH_TOKENS,
             INITIAL_LEVEL_LOG,
+            INVITE_BINDING,
             { token: DB, optional: true },
             { token: FIELD_CRYPTO, optional: true },
           ],
@@ -636,6 +653,7 @@ export class IdentityModule {
             smsRisk: SmsRiskPorts,
             pushTokens: SessionPushTokens | null,
             initialLevelLog: InitialLevelLog | null,
+            inviteBinding: RegistrationInviteBindingPort | null,
             db?: Kysely<Database>,
             fieldCrypto?: FieldCrypto,
           ): OauthLoginService | null =>
@@ -664,6 +682,7 @@ export class IdentityModule {
                     ...(initialLevelLog === null
                       ? {}
                       : { recordInitialLevel: createRecordInitialLevel(initialLevelLog) }),
+                    ...(inviteBinding === null ? {} : { bindInvite: inviteBinding }),
                   }),
                 }),
         },

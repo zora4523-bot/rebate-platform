@@ -58,6 +58,7 @@ export type {
   AssembledRevokeByUser,
   IdentityConfigReader,
   IdentityModuleOptions,
+  RegistrationInviteBindingPort,
 } from './identity.module.ts';
 // B1-12b: the push token port app.module builds from notification's commands.
 export type { SessionPushTokens } from './application/push-tokens.ts';

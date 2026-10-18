@@ -39,7 +39,11 @@ import {
   type PageAudienceReads,
 } from './modules/content/index.ts';
 import { HealthModule } from './modules/health/index.ts';
-import { appendLevelChange } from './modules/growth/index.ts';
+import {
+  appendLevelChange,
+  createInviteBinder,
+  createRegistrationInviteBinding,
+} from './modules/growth/index.ts';
 import {
   IdentityAdminModule,
   IdentityModule,
@@ -57,11 +61,13 @@ import {
   createSameDeviceLoginReader,
   createUserLevelReader,
   createInviteBackfillActivityReader,
+  createInviteLoginDevicesReader,
   type IdentityAttrCodeReader,
   type IdentityConfigReader,
   type IdentityContext,
   type IdentityRequest,
   type InitialLevelLog,
+  type RegistrationInviteBindingPort,
   type SessionPushTokens,
   type UserLevelReader,
   type IdentityLevelChecks,
@@ -226,6 +232,10 @@ function requestChecks(options: PlatformOptions): Provider {
  * notification (and notification nothing of identity): login binds, logout, the refresh reuse
  * revocation and the revocation entries by user / by device unbind, in the session's transaction.
  * Its real-name status port (stage ⑨, B1-02za) is the default reader (none) until B1-13d.
+ * Its invite binding port (BR-INV-06, B1-11d) is growth's binder on the register channel, over
+ * content's configValue, Redis, the field cipher's blind index, identity's login-device and
+ * order / claim readers and risk's fresh state read, each bound to the registration transaction;
+ * without a database, Redis or the field cipher there is none (invite_bind { failed, 50001 }).
  */
 function identityModule(): DynamicModule {
   return IdentityModule.forRoot({
@@ -391,6 +401,60 @@ function identityModule(): DynamicModule {
             reason: null,
           }),
       }),
+    },
+    inviteBinding: {
+      inject: [
+        CLOCK,
+        ROOT_LOGGER,
+        { token: DB, optional: true },
+        { token: REDIS, optional: true },
+        { token: FIELD_CRYPTO, optional: true },
+        { token: EVENT_BUS, optional: true },
+      ],
+      useFactory: (
+        clock: Clock,
+        logger: RootLogger,
+        db?: Kysely<Database>,
+        redis?: RedisHandle,
+        crypto?: FieldCrypto,
+        events?: EventBus,
+      ): RegistrationInviteBindingPort | null => {
+        if (
+          db === undefined ||
+          redis === undefined ||
+          crypto === undefined ||
+          events === undefined
+        ) {
+          logger.info(
+            {
+              db: db !== undefined,
+              redis: redis !== undefined,
+              field_crypto: crypto !== undefined,
+              event_bus: events !== undefined,
+            },
+            'invite_binding_unassembled',
+          );
+          return null;
+        }
+        const devices = createInviteLoginDevicesReader();
+        // TODO(规划/11 §2.3): 邀请人实名生日端口（verifiedBirthDate）— blocked on B1-13d
+        return createRegistrationInviteBinding(
+          createInviteBinder({
+            clock,
+            logger,
+            redis,
+            crypto,
+            config: createContentReader({ db, clock }),
+            loginDevices: devices,
+            activity: (trx) => createInviteBackfillActivityReader(trx),
+            // Bind risk's reader to the caller's transaction: no second connection.
+            readRisk: (trx, subject) =>
+              createRiskStateService({ db: trx, clock, events }).readRiskState(subject, {
+                fresh: true,
+              }),
+          }),
+        );
+      },
     },
   });
 }
