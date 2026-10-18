@@ -1,0 +1,37 @@
+{
+  "task": "CT-15r",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "f747d9dd13324e6e6e3475311848560edf0b82f2",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml): adds submitRealname (POST /v1/me/realname, phone, signed, idempotent; vendor not connected → 50301, ruling E9), getLaborAgreement (GET /v1/me/labor-agreement, realname; h5_token → 10403 per 04 §6.1) and signLaborAgreement (POST /v1/me/labor-agreement/sign, realname, signed, idempotent; h5 10403; mismatch → 20001 with fields, ruling E20), all x-implementation planned; no new error codes; regenerated openapi.gen.ts and the route tables. 04 §6.1, 08 BR-WDR-31, BR-ID-25. tester none; Opus 5.5 implementation in two rounds; Codex contract review round 1 S1 (h5_token read), round 2 passed. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 2 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "4b30f96774a35fda101d86970d5db9570efa03ed",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c",
+    "test/spec": "81645e78ec558f33b6a570aa523ebcff9503ffa5",
+    "specs": "c2b838de9c813844ae68fb6f74f1bb0dc1b2879d"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "0280faf32df903d8641c5cf12d5eb3291b4cfd9c"
+  }
+}
