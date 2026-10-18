@@ -64,3 +64,15 @@ export {
   createPendingTracks,
 } from './application/pending-tracks.ts';
 export type { PendingTracksDeps } from './application/pending-tracks.ts';
+export { createOrderUpdateStep } from './application/update-step.ts';
+export type {
+  OrderUpdateDeps,
+  OrderUpdateChange,
+  OrderStatusSource,
+  UnmappedOrderInfo,
+} from './application/update-step.ts';
+export type { PlatformStatusEvent } from './domain/status-map.ts';
+// B1-08i（D10-47 / D10-48）：order.attr_param_changed 载荷 changed 里的列名（告警事件与领域事件同经 events 总线）。
+export type { OrderAttrParamColumn } from './application/alert-events.ts';
+export { planOrderUpdate, planOrderSyncColumns } from './domain/update-plan.ts';
+export type { OrderUpdatePlan, OrderSyncColumns, UpdateStateInput } from './domain/update-plan.ts';

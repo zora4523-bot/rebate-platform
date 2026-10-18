@@ -26,8 +26,11 @@
 //    order.invalidated, order.clawed_back, order.settle_adjusted, claim.resolved, binding.changed,
 //    member.registered, member.bound_parent, member.level_changed, wallet.withdrawal_changed,
 //    withdrawal.created, account.went_negative, settle.batch_done, risk.state_changed,
-//    appeal.resolved, agent.run_finished. A frozen array. Publishing any other name is refused
-//    ('unknown_event'): a new event is added here, with its 02 §11 line, by the task that needs it.
+//    appeal.resolved, agent.run_finished, order.attr_param_changed, order.illegal_transition,
+//    order.attr_binding_conflict (the last three: alert events of the order sync, B1-08i, D10-48).
+//    A frozen array. Publishing any other name is refused ('unknown_event'): a new event is added
+//    here, at its 02 §11 position, by the task that needs it (02 §11 also lists order.reassigned and
+//    order.blacklist_hit_after_credit, not registered until a task publishes them).
 //    Every name is `<entity>.<past-tense verb>` in snake_case, i.e. matches
 //    /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/ (also a valid job name of the queue contract 3b).
 //

@@ -113,11 +113,16 @@ export interface PendingInput {
   readonly raw_status: string | null;
   readonly raw_payload_id: bigint | null;
   readonly detected_at: Date;
+  /** 判定说明（B1-08i：非法迁移的状态与事件），不含个人信息；同键 open 已存在时不改。 */
+  readonly detail?: string | null;
 }
 
-/** 待处理记录：同键 open 记录已存在时只更新 detected_at（order_sync_pending_open_key）。 */
-export async function upsertPending(trx: Trx, input: PendingInput): Promise<void> {
-  await trx
+/**
+ * 待处理记录：同键 open 记录已存在时只更新 detected_at（order_sync_pending_open_key）。返回该 open 记录的 id
+ * （新插入或已存在的那条；B1-08i 的告警事件据此派生事件 ID），驱动未回行时为 null。
+ */
+export async function upsertPending(trx: Trx, input: PendingInput): Promise<bigint | null> {
+  const row = await trx
     .withSchema('app')
     .insertInto('order_sync_pending')
     .values({ ...input, status: 'open' })
@@ -127,7 +132,34 @@ export async function upsertPending(trx: Trx, input: PendingInput): Promise<void
         .where('status', '=', sql.lit('open'))
         .doUpdateSet((eb) => ({ detected_at: eb.ref('excluded.detected_at') })),
     )
-    .execute();
+    .returning('id')
+    .executeTakeFirst();
+  return row?.id ?? null;
+}
+
+/** 已有子订单的同步更新（B1-08i）：只插入，不改不删（order_status_history append_only）。 */
+export async function insertPlatformHistory(
+  trx: Trx,
+  order: { app_id: string; order_id: string },
+  history: readonly HistoryInput[],
+  at: Date,
+): Promise<void> {
+  for (const step of history) {
+    await trx
+      .withSchema('app')
+      .insertInto('order_status_history')
+      .values({
+        app_id: order.app_id,
+        order_id: order.order_id,
+        field: 'platform',
+        from_status: step.from_status,
+        event: step.event,
+        to_status: step.to_status,
+        source: 'sync',
+        at,
+      })
+      .execute();
+  }
 }
 
 export interface HistoryInput {

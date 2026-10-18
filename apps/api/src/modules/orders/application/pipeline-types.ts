@@ -1,7 +1,7 @@
 import type { DB } from '@couli/db';
 import type { OrderPlatformState } from '@couli/domain';
 import type { Kysely, Selectable, Transaction } from 'kysely';
-import type { Clock } from '../../platform/index.ts';
+import type { Clock, EventBus } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionOrder } from '../../union/index.ts';
 import type { BindingRow } from '../domain/attribution.ts';
 import type { StatusMap } from '../domain/status-map.ts';
@@ -27,12 +27,19 @@ export interface ImportedOrder {
 }
 
 export interface OrderPipelineResult {
-  readonly kind: 'inserted' | 'dropped' | 'pending' | 'unchanged' | 'stale' | 'app_conflict';
+  readonly kind:
+    'inserted' | 'updated' | 'dropped' | 'pending' | 'unchanged' | 'stale' | 'app_conflict';
   readonly order_id?: string;
   readonly reason?: string;
 }
 
 export interface OrderPipelineDeps {
+  /**
+   * 事件总线（B1-08i，02 §11）：领域事件 order.created 与告警事件 order.illegal_transition、
+   * order.attr_binding_conflict 都经它、与本次写库同一事务入队，入队失败整事务回滚。
+   * 未注入（B1-08h 的用法）时不发事件，告警只记日志；装配在 B1-08n。
+   */
+  readonly events?: Pick<EventBus, 'publish'>;
   readonly db: Kysely<DB>;
   readonly clock: Clock;
   readonly statusMaps: (platform: RegisteredPlatform) => StatusMap;
