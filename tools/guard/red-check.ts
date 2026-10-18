@@ -12,7 +12,11 @@
 // changed tests red (CT-06p, lib/red-check.ts): their base content is read from the base, the head
 // content from --head-tree <tree> (the snapshot the red run ran; verify-container.sh --red passes
 // it) or else from the work tree. Without --base, or when the comparison cannot be made, every
-// test of every expected file must be red, as before (the reason is in the notes).
+// test of every expected file must be red, as before (the reason is in the notes). The trusted
+// ledger's `red_exempt` declarations (CT-06r) are handed to the check with the baselines: an
+// unchanged test of a file judged as a whole only because it may read a changed test-support
+// file may be declared exempt (lib/red-check.ts); the notes say which and that the rule-test
+// reviewer must confirm them.
 //
 //   node tools/guard/red-check.ts --task <id> --cwd <worktree> --base <ref> --print-expected
 //     prints the expected rule-test files, one per line (tools/ops/verify-container.sh --red uses
@@ -137,6 +141,7 @@ runCli(
       expected,
       args.values.get('root') ?? '/work/repo',
       baselines,
+      task.red_exempt,
     );
     if (baselineNote !== null) result.notes.unshift(baselineNote);
     for (const p of result.problems) {
@@ -145,11 +150,15 @@ runCli(
     for (const n of result.notes) console.error(`red-check note: ${n}`);
     if (json) printJson({ task: id, required: true, expected, ...result });
     const exempt = result.exempt?.length ?? 0;
+    const declared = result.exempt?.filter((e) => e.declared === true).length ?? 0;
     say(
       result.ok
         ? `PASS red-check: ${result.red.length} rule test(s) in ${expected.length} file(s) red for the right reason` +
             (exempt > 0
               ? `; ${exempt} unchanged test(s) of files that existed at the base exempt`
+              : '') +
+            (declared > 0
+              ? ` (${declared} by the ledger's red_exempt declarations: the rule-test reviewer must confirm them)`
               : '')
         : `FAIL red-check: ${result.problems.length} problem(s)`,
     );

@@ -44,8 +44,23 @@ const EVENTS: ReadonlySet<string> = new Set<PlatformStatusEvent>([
 
 const HEADER = ['raw_code', 'event', 'source', 'verified', 'note'] as const;
 
-function fail(platform: string, code: string, detail: string): never {
-  throw new Error(`${code}: order-status-map/${platform}.csv ${detail}`);
+/** 映射表错误；code 为 MISSING_STATUS_MAP 或 INVALID_STATUS_MAP（B1-08n：装配层据 code 判定启动失败原因）。 */
+export class StatusMapError extends Error {
+  override readonly name = 'StatusMapError';
+  readonly code: 'MISSING_STATUS_MAP' | 'INVALID_STATUS_MAP';
+
+  constructor(code: 'MISSING_STATUS_MAP' | 'INVALID_STATUS_MAP', message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+function fail(
+  platform: string,
+  code: 'MISSING_STATUS_MAP' | 'INVALID_STATUS_MAP',
+  detail: string,
+): never {
+  throw new StatusMapError(code, `${code}: order-status-map/${platform}.csv ${detail}`);
 }
 
 /** 按 RFC 4180 拆行与字段（双引号包裹、"" 转义、CRLF / LF 换行）；引号不闭合或引号后跟杂字符即报错。 */

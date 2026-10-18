@@ -30,6 +30,15 @@ describe('status-map（单元）', () => {
     expect(() => loadStatusMap('taobao', null)).toThrow(/MISSING_STATUS_MAP/);
   });
 
+  it('[AC-B1-08n#u1] 错误带 code，装配层据此区分缺表与坏表', () => {
+    expect(() => loadStatusMap('jd', null)).toThrow(
+      expect.objectContaining({ name: 'StatusMapError', code: 'MISSING_STATUS_MAP' }),
+    );
+    expect(() => loadStatusMap('pdd', `${HEADER}\n`)).toThrow(
+      expect.objectContaining({ code: 'INVALID_STATUS_MAP' }),
+    );
+  });
+
   it('[AC-B1-08f#8] 查找不做归一，原码原样返回', () => {
     const map = loadStatusMap('pdd', `${HEADER}\n5,PLATFORM_SETTLED,doc,false,a\n`);
     expect(mapPlatformStatus(map, '5 ')).toEqual({ kind: 'unmapped', rawCode: '5 ' });

@@ -7,6 +7,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { matchesAny } from '../lib/glob.ts';
+import { RULE_TEST_FILE } from '../guard/lib/red-check.ts';
 import {
   isCodexFirst,
   loadCodexImplForbidden,
@@ -387,6 +388,24 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
         problems.push(
           `test_paths: "${glob}" is not inside the rule-test assets (class 1 of tools/guard/protected-paths.json)`,
         );
+      }
+    }
+  }
+
+  // CT-06r: declared red-run exemptions name rule-test files of the task's own test_paths, and
+  // only a task with a rule-test author has a red run to exempt from (the shape, the reason
+  // length and duplicates are checked by parseTaskFile).
+  if (task.red_exempt.length > 0) {
+    if (task.tester === 'none') {
+      problems.push(
+        'red_exempt: a task without a rule-test author (tester: none) has no red run to exempt from',
+      );
+    }
+    for (const entry of task.red_exempt) {
+      if (!RULE_TEST_FILE.test(entry.file)) {
+        problems.push(`red_exempt: "${entry.file}" is not a rule-test file (*.test.ts)`);
+      } else if (!matchesAny(entry.file, task.test_paths)) {
+        problems.push(`red_exempt: "${entry.file}" is not inside the task's test_paths`);
       }
     }
   }

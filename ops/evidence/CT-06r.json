@@ -1,0 +1,35 @@
+{
+  "task": "CT-06r",
+  "spec_ref": "8c91f67e2dc11ad7f50d279cf8103e0f038e5ac8",
+  "spec_commit": "cfddf922108474a61dbeb4f588f33697369a75cf",
+  "red_tests": [],
+  "risk_note": "RV2 gate change (tools/guard, tools/lib, tools/ops, tools/ci only; orchestrator ruling of 2026-10-18 21:5x under ops/approvals.yaml id 16 after B2-01l: a data-driven rule-test file judged as a whole only because it reads a changed test-support file cannot show its structural tests red for a valid reason). red-check lets the trusted ledger declare exemptions (red_exempt: file / test full name / reason of 10+ characters) for the unchanged tests of such a file (baseline kind support); undeclared, new or changed tests stay red as under CT-06p, a declaration never applies to a file judged whole for another reason, a file whose every test is declared fails; task.ts check validates the field, evidence-check requires spec_test_review.red_exempt_confirmed by the side that did not write the rule tests when the ledger declares any. Orchestrator addition after B1-12g: test-blocks resolves directory listings statically (only the files under a listed directory count; an unresolved listing still counts for everything) and 'named after it' (snapshot / screenshot) applies only below the test file's own directory; B1-12g's red/1 report re-checked on the new code passes (61 red, 27 unchanged exempt). path-guard, protected-paths, test-guard, the label waiver scope, the expected list, the one-red-per-file rule and MONEY_PATHS are unchanged; no money test touched. Fable implementation; tester none (guard-change), so no red run. Codex money review 3 rounds, all pass with no S0 / S1: r1 two S2 (a file-system path literal resolved against the module instead of the unknown working directory; a constant kept when its initialiser went on), r2 two S2 (the repository root as a listed directory; a parameter shadowing a same-named constant), r3 two S2 (a name declared twice; a recursive call that may leave the listed tree) — all six fixed with regression tests, each fix only narrows what resolves (more files judged whole, never fewer), so no 4th round. Labelled by the orchestrator under approvals #16 / #24 (none of the four reserved categories).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "rounds 1-3 pass, no S0 / S1; six S2 (directory resolution of test-blocks) fixed with regression tests (couli-runs/CT-06r/review-codex*.json)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "e7bab14d99f29ac2957d2fa9e632eb54091074da",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}

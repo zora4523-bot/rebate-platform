@@ -24,6 +24,7 @@ import {
   loadConfig,
   loadConnectionConfig,
 } from './modules/platform/index.ts';
+import { orderSyncToken, type OrderSyncRuntime } from './modules/orders/index.ts';
 import { riskScanToken, seedRiskScan, startRiskScanHeal } from './modules/risk/index.ts';
 
 // Keeps a worker process alive until a signal arrives; longer than any deployment lives.
@@ -99,6 +100,32 @@ function watchSignals(logger: RootLogger, attach: boolean): StartupSignals {
       process.off('SIGINT', onSignal);
     },
   };
+}
+
+/**
+ * The worker's order-sync loops (B1-08n): resolved and started only while no stop was requested.
+ * Older or isolated worker contexts may lack the runtime; that is not a startup failure.
+ */
+function startOrderSync(
+  resolve: () => unknown,
+  queue: QueueRuntime,
+  stopping: () => boolean,
+): { stop(): Promise<void> } | undefined {
+  if (stopping()) return undefined;
+  let runtime: Partial<OrderSyncRuntime> | null | undefined;
+  try {
+    runtime = resolve() as Partial<OrderSyncRuntime> | null | undefined;
+  } catch {
+    return undefined;
+  }
+  if (stopping() || runtime === (queue as unknown) || typeof runtime?.start !== 'function') {
+    return undefined;
+  }
+  try {
+    return runtime.start();
+  } catch {
+    return undefined;
+  }
 }
 
 /** A start step whose rejection marks the startup as failed before any cleanup runs. */
@@ -227,13 +254,25 @@ async function start(
         typeof runtime?.start === 'function'
           ? runtime.start()
           : undefined;
+      // Order sync (B1-08n): the scheduler's timer loops, started once the queue runs (nothing is
+      // dispatched at start). Optional like the agent runtime: a throw, null, a value without a
+      // start function, a failing start or a stop already requested → no loops, no crash, no log.
+      const sync = startOrderSync(
+        () => context.get<unknown>(orderSyncToken(), { strict: false }),
+        queue,
+        () => signals.stopping(),
+      );
       const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
       await signals.serve(
         async () => {
           try {
             heal.stop();
             try {
-              await loop?.stop();
+              try {
+                await sync?.stop();
+              } finally {
+                await loop?.stop();
+              }
             } finally {
               await services.stop();
             }

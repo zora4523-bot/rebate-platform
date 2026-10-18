@@ -1,0 +1,22 @@
+id: F1-07k
+repo: rebate-platform
+title: F1-07i 规则测试的三处定位方式改为与布局无关——基本信息取值兼容横排 / 竖排 antd Descriptions、点上级改为点上级链接本身、【详情】按钮名允许带 UID（「详情 <UID>」）；断言内容一字不改
+type: test-change
+# 2026-10-18 入账（前端线 f1-frontend-7）。后台第 1 批定稿（规划 #141，design/specs/admin-users.md、admin-user-detail.md）要求：基本信息用竖排 Descriptions（标签在上）、
+# 标题行带 UID 与风控 Tag、行操作读屏名「详情 U10023」。F1-07i（#797）冻结测试写死了横排（label 的 nextElementSibling 即内容）、在全页按文本找上级 UID（标题行重复时失败）、
+# 【详情】按钮名精确等于「详情」，与规格冲突（F1-07j 视觉落实的前置）。做法：只改定位方式（detailValue 横竖排都能取到同一字段内容；上级取「上级」字段 / 链接本身；按钮名 /^详情(\s|$)/），
+# 被断言的值、请求次数、权限与流程断言都不变；改后在现有 F1-07i 实现上仍全绿（测试机核对）。改既有规则测试属第一类保护路径，合并要负责人标签（approvals #24），按 approvals 第 12 条走非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-07i]
+paths:
+  - 'test/spec/frontend/admin-users/detail.test.ts'
+  - 'test/spec/frontend/admin-users/helpers.ts'
+  - 'test/spec/frontend/admin-users/pages.browser.test.ts'
+  - 'test/spec/frontend/admin-users/reveal.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 799

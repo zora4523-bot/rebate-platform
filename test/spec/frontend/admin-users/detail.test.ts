@@ -35,9 +35,21 @@ afterEach(() => {
 
 function detailValue(label: string): Element {
   const labelNode = within(mainElement()).getByText(label, { exact: true });
-  // Both bordered and borderless horizontal antd Descriptions place this field's
-  // content immediately after its label, even when the row contains other fields.
-  const value = labelNode.closest('.ant-descriptions-item-label')?.nextElementSibling;
+  // antd Descriptions, horizontal or vertical (F1-07k: the finalized spec lays the basic
+  // information out vertically): find the content cell paired with this label.
+  const labelCell = labelNode.closest('.ant-descriptions-item-label');
+  expect(labelCell, `label cell for ${label}`).not.toBeNull();
+  let value: Element | null | undefined = labelCell!.nextElementSibling;
+  if (!value?.matches('.ant-descriptions-item-content')) {
+    // Vertical layout: the item holds label and content in one container, or the content sits
+    // in the same column of the next row.
+    value = labelCell!.parentElement?.querySelector('.ant-descriptions-item-content');
+    if (!value) {
+      const row = labelCell!.closest('tr');
+      const index = row ? Array.from(row.children).indexOf(labelCell as HTMLElement) : -1;
+      value = row?.nextElementSibling?.children.item(index) ?? null;
+    }
+  }
   expect(value, `value associated with ${label}`).toBeDefined();
   expect(value?.matches('.ant-descriptions-item-content')).toBe(true);
   return value!;
@@ -88,7 +100,7 @@ it(
     const { server } = await mount();
     await openDetail();
     await detailLoaded();
-    const parent = within(mainElement()).getByText(PARENT, { exact: true });
+    const parent = within(detailValue('上级') as HTMLElement).getByText(PARENT, { exact: true });
     expect(parent.closest('button, a')).not.toBeNull();
     await click(parent);
     await detailLoaded('P3RT8N');

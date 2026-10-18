@@ -12,7 +12,7 @@ import {
   headTreeWithoutEvidence,
   redRequirement,
 } from './evidence-check.ts';
-import type { HandoverPolicy } from './evidence-check.ts';
+import type { HandoverPolicy, RedRequirement } from './evidence-check.ts';
 import { loadProtected } from '../guard/lib/protected.ts';
 import { loadRiskMap } from '../guard/lib/risk.ts';
 
@@ -928,6 +928,95 @@ it('[CR2-05] the requirement comes from the trusted ledger and the switch-baseli
   const runs = doc['runs'] as Evidence[];
   const noRed = commitEvidence({ ...doc, runs: runs.slice(1) });
   expect(check(noRed).problems.join('\n')).toContain('no valid red run');
+});
+
+it("[CT-06r] declared red exemptions need the rule-test reviewer's confirmation in spec_test_review", () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const declared = (tester: 'codex' | 'claude', count = 2) => ({
+    ...RED,
+    declared: { count, tester },
+  });
+  const problemsOf = (doc: Evidence, red: RedRequirement = declared('codex')): string =>
+    evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg, red }).join('\n');
+  const want =
+    'the ledger declares 2 red exemption(s) (red_exempt, CT-06r): the rule-test reviewer (claude) must confirm them in spec_test_review (reviewer claude, last_verdict pass, red_exempt_confirmed true)';
+  const confirmed = {
+    reviewer: 'claude',
+    rounds: 1,
+    last_verdict: 'pass',
+    red_exempt_confirmed: true,
+    note: 'the 2 declared structural tests are no weakening',
+  };
+  // Confirmed by the side that did not write the rule tests: fine.
+  expect(problemsOf(evidence({ spec_test_review: confirmed }))).toBe('');
+  // No review record, the wrong reviewer, a verdict other than pass, not confirmed or not true.
+  expect(problemsOf(evidence())).toBe(`spec_test_review: ${want}`);
+  expect(problemsOf(evidence({ spec_test_review: 'pass' }))).toBe(`spec_test_review: ${want}`);
+  expect(problemsOf(evidence({ spec_test_review: { ...confirmed, reviewer: 'codex' } }))).toBe(
+    `spec_test_review.reviewer: ${want}`,
+  );
+  expect(problemsOf(evidence({ spec_test_review: { ...confirmed, last_verdict: 'fail' } }))).toBe(
+    `spec_test_review.last_verdict: ${want}`,
+  );
+  expect(
+    problemsOf(evidence({ spec_test_review: { ...confirmed, red_exempt_confirmed: 'yes' } })),
+  ).toBe(`spec_test_review.red_exempt_confirmed: ${want}`);
+  const unconfirmed = { ...confirmed, red_exempt_confirmed: undefined };
+  expect(problemsOf(evidence({ spec_test_review: unconfirmed }))).toBe(
+    `spec_test_review.red_exempt_confirmed: ${want}`,
+  );
+  // Claude wrote the rule tests: Codex is the reviewer who confirms.
+  expect(
+    problemsOf(
+      evidence({ spec_test_review: { ...confirmed, reviewer: 'codex' } }),
+      declared('claude'),
+    ),
+  ).toBe('');
+  // Nothing declared, or the red run not required: no confirmation asked for.
+  expect(problemsOf(evidence(), declared('codex', 0))).toBe('');
+  expect(problemsOf(evidence(), RED)).toBe('');
+  expect(
+    problemsOf(evidence({ runs: [] }), {
+      required: false,
+      expected: [],
+      declared: { count: 2, tester: 'codex' },
+    }),
+  ).toBe('');
+
+  // The requirement reads the declarations from the trusted ledger.
+  const declaredTrusted = join(SCRATCH, 'trusted-declared');
+  for (const file of [
+    'tools/guard/protected-paths.json',
+    'ops/risk-map.yaml',
+    'tools/guard/legacy-tasks.json',
+  ]) {
+    write(declaredTrusted, { [file]: readFileSync(join(TRUSTED, file), 'utf8') });
+  }
+  write(declaredTrusted, {
+    'ops/tasks/B2-01a.yaml': `${readFileSync(join(TRUSTED, 'ops/tasks/B2-01a.yaml'), 'utf8').trimEnd()}
+red_exempt:
+  - file: ${FLOOR}
+    test: 'floors the format'
+    reason: structural, holds for the old data too
+`,
+  });
+  const text = JSON.stringify({ task: 'B2-01a', spec_commit: specCommit });
+  const input = { prDir: repo, base, head, headRef: 'task/B2-01a', trusted: declaredTrusted };
+  expect(redRequirement(input, 'B2-01a', base, text)).toEqual({
+    required: true,
+    expected: [FLOOR],
+    declared: { count: 1, tester: 'codex' },
+  });
+  expect(redRequirement({ ...input, trusted: TRUSTED }, 'B2-01a', base, text)).toEqual(RED);
+  // The full check: the declared exemption without the confirmation fails, with it passes.
+  const branch = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const run = (doc: Evidence) =>
+    checkEvidence({ ...input, head: commitEvidence(doc) }).problems.join('\n');
+  expect(run(evidence())).toContain('spec_test_review: the ledger declares 1 red exemption(s)');
+  expect(run(evidence({ spec_test_review: confirmed }))).toBe('');
+  git(repo, ['reset', '-q', '--hard', head]);
+  expect(git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).toBe(branch);
 });
 
 it('[legacy flow] a legacy ledger needs no red run and no test_paths, but still the full container verify', () => {

@@ -155,6 +155,58 @@ it('checks every file of the ledger and reports the failing ones', () => {
   ]);
 });
 
+it('[CT-06r] red_exempt names rule-test files inside test_paths of a task with a rule-test author', () => {
+  const entry = (file: string): string =>
+    `\n  - file: '${file}'\n    test: '[AC-1] a'\n    reason: structural, holds for the old data too`;
+  writeFiles(root, {
+    'tools/guard/protected-paths.json': JSON.stringify({
+      class1_add_only: ['test/spec/**', 'test/properties/**'],
+      class2_verify_config: [],
+      class3_gates: [],
+    }),
+    'ops/tasks/X1-02a.yaml': good({
+      id: 'X1-02a',
+      impl: 'claude',
+      tester: 'codex',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      red_exempt: entry('test/spec/demo/rules.test.ts'),
+    }),
+    // Outside test_paths; not a rule-test file; no rule-test author.
+    'ops/tasks/X1-02b.yaml': good({
+      id: 'X1-02b',
+      impl: 'claude',
+      tester: 'codex',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      red_exempt: entry('test/spec/other/rules.test.ts') + entry('test/spec/demo/expected.csv'),
+    }),
+    'ops/tasks/X1-02c.yaml': good({
+      id: 'X1-02c',
+      impl: 'claude',
+      tester: 'none',
+      red_exempt: entry('test/spec/demo/rules.test.ts'),
+    }),
+  });
+  try {
+    expect(checkTask('X1-02a', opts('RV1'))).toEqual([]);
+    expect(loadTask('X1-02a', root).red_exempt).toEqual([
+      {
+        file: 'test/spec/demo/rules.test.ts',
+        test: '[AC-1] a',
+        reason: 'structural, holds for the old data too',
+      },
+    ]);
+    expect(checkTask('X1-02b', opts('RV1'))).toEqual([
+      `red_exempt: "test/spec/other/rules.test.ts" is not inside the task's test_paths`,
+      'red_exempt: "test/spec/demo/expected.csv" is not a rule-test file (*.test.ts)',
+    ]);
+    expect(checkTask('X1-02c', opts('RV1'))).toContain(
+      'red_exempt: a task without a rule-test author (tester: none) has no red run to exempt from',
+    );
+  } finally {
+    for (const id of ['X1-02a', 'X1-02b', 'X1-02c']) removeDir(`${root}/ops/tasks/${id}.yaml`);
+  }
+});
+
 it('[ops/approvals.yaml id 19] test_paths stay inside the rule-test assets of a task with a tester', () => {
   writeFiles(root, {
     'tools/guard/protected-paths.json': JSON.stringify({

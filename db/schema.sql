@@ -1509,6 +1509,7 @@ CREATE TABLE app.articles (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT articles_category_check CHECK ((category = ANY (ARRAY['help'::text, 'rule'::text, 'notice'::text, 'agreement'::text]))),
     CONSTRAINT articles_notice_content_version_check CHECK ((notice_content_version >= 1)),
+    CONSTRAINT articles_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'offline'::text]))),
     CONSTRAINT articles_version_check CHECK ((version >= 1))
 );
 
@@ -2025,6 +2026,23 @@ CREATE TABLE app.devices (
     CONSTRAINT devices_device_hash_check CHECK ((device_hash ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT devices_id_source_check CHECK ((id_source = ANY (ARRAY['idfv'::text, 'android_id'::text, 'oaid'::text, 'odid'::text]))),
     CONSTRAINT devices_install_secret_present_check CHECK (((revoked_at IS NOT NULL) OR (octet_length(install_secret_cipher) > 0)))
+);
+
+
+--
+-- Name: dict_items; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.dict_items (
+    app_id text NOT NULL,
+    dict text NOT NULL,
+    code text NOT NULL,
+    version integer NOT NULL,
+    text text,
+    created_by uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT dict_items_dict_check CHECK ((dict ~ '^[a-z][a-z0-9_]*$'::text)),
+    CONSTRAINT dict_items_version_check CHECK ((version >= 1))
 );
 
 
@@ -4548,6 +4566,14 @@ ALTER TABLE ONLY app.devices
 
 
 --
+-- Name: dict_items dict_items_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.dict_items
+    ADD CONSTRAINT dict_items_pkey PRIMARY KEY (app_id, dict, code, version);
+
+
+--
 -- Name: event_log event_log_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -6986,6 +7012,14 @@ ALTER TABLE ONLY app.devices
 
 
 --
+-- Name: dict_items dict_items_created_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.dict_items
+    ADD CONSTRAINT dict_items_created_by_fkey FOREIGN KEY (created_by) REFERENCES app.admin_users(id);
+
+
+--
 -- Name: inbox_messages inbox_messages_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -8565,8 +8599,43 @@ GRANT UPDATE(updated_at) ON TABLE app.appeals TO couli_app;
 -- Name: TABLE articles; Type: ACL; Schema: app; Owner: -
 --
 
-GRANT SELECT,INSERT,UPDATE ON TABLE app.articles TO couli_app;
+GRANT SELECT,INSERT ON TABLE app.articles TO couli_app;
 GRANT SELECT ON TABLE app.articles TO couli_readonly;
+
+
+--
+-- Name: COLUMN articles.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.articles TO couli_app;
+
+
+--
+-- Name: COLUMN articles.published_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(published_at) ON TABLE app.articles TO couli_app;
+
+
+--
+-- Name: COLUMN articles.notice_end_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(notice_end_at) ON TABLE app.articles TO couli_app;
+
+
+--
+-- Name: COLUMN articles.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.articles TO couli_app;
+
+
+--
+-- Name: COLUMN articles.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.articles TO couli_app;
 
 
 --
@@ -9106,6 +9175,14 @@ GRANT SELECT(created_at) ON TABLE app.devices TO couli_readonly;
 --
 
 GRANT SELECT(updated_at) ON TABLE app.devices TO couli_readonly;
+
+
+--
+-- Name: TABLE dict_items; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.dict_items TO couli_app;
+GRANT SELECT ON TABLE app.dict_items TO couli_readonly;
 
 
 --

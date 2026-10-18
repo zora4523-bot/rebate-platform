@@ -71,7 +71,7 @@ export function row(uid = UID): HTMLElement {
 }
 export async function openDetail(uid = UID): Promise<void> {
   await loaded(uid);
-  await click(button(row(uid), /^详情$/));
+  await click(button(row(uid), /^详情(?:\s|$)/));
 }
 export async function detailLoaded(code = 'K7QX2M'): Promise<void> {
   await waitFor(() => expect(mainElement().textContent).toContain(code));

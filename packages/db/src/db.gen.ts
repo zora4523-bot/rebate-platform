@@ -534,6 +534,16 @@ export interface Devices {
   user_id: string | null;
 }
 
+export interface DictItems {
+  app_id: string;
+  code: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  dict: string;
+  text: string | null;
+  version: number;
+}
+
 export interface EventLog {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1443,6 +1453,7 @@ export interface DB {
   deleted_identities: DeletedIdentities;
   device_registrations: DeviceRegistrations;
   devices: Devices;
+  dict_items: DictItems;
   event_log: EventLog;
   favorites: Favorites;
   idempotency_keys: IdempotencyKeys;

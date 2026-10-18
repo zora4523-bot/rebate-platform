@@ -32,7 +32,12 @@ it(
     await detailLoaded();
     await verify(await startReveal());
     await waitFor(() => expect(mainElement().textContent).toContain(PHONE));
-    await click(within(mainElement()).getByText(PARENT, { exact: true }));
+    // F1-07k: the title row may repeat a UID; click the inviter link itself.
+    const parentLink = within(mainElement())
+      .getAllByText(PARENT, { exact: true })
+      .find((node) => node.closest('button, a') !== null);
+    expect(parentLink, 'inviter link').toBeDefined();
+    await click(parentLink!);
     await detailLoaded('P3RT8N');
     expect(mainElement().textContent).not.toContain(PHONE);
     expect(server.requests('POST', REVEAL)).toHaveLength(1);

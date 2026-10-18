@@ -34,6 +34,9 @@ import {
 } from './application/bind-phone.ts';
 import { createTipsService, type TipsService } from './application/tips.ts';
 import { createMeService, type MeService, type MeReadPorts } from './application/me.ts';
+import { createRealnameService, type RealnameService } from './application/realname.ts';
+import type { RealnameVerifierPort } from './ports/realname-verifier.ts';
+import { createRealnameVerifier } from './infra/fake-realname-verifier.ts';
 import {
   createUpdateNicknameService,
   type UpdateNicknameService,
@@ -101,6 +104,8 @@ import {
   ME_READ_PORTS,
   NICKNAME_REVIEW,
   OAUTH_ATTEMPTS,
+  REALNAME_VERIFIER,
+  SUBMIT_REALNAME,
   OAUTH_LOGIN,
   REFRESH,
   SMS_CODES,
@@ -126,6 +131,7 @@ import { SmsCodesController } from './http/public/sms-codes.controller.ts';
 import { SmsLoginController } from './http/public/sms-login.controller.ts';
 import { TipsController } from './http/public/tips.controller.ts';
 import { MeController } from './http/public/me.controller.ts';
+import { RealnameController } from './http/public/realname.controller.ts';
 import { DevicesRepository } from './infra/devices.repository.ts';
 import { deviceHashOf } from './infra/login-accounts.ts';
 import { createSmsSender, smsSenderToken } from './infra/fake-sms.ts';
@@ -183,8 +189,9 @@ export interface IdentityModuleOptions {
    */
   readonly pushTokens?: Omit<FactoryProvider<SessionPushTokens | null>, 'provide'>;
   /**
-   * Builds the real-name status port of stage ⑨ (B1-02za), assembled by app.module. Absent, the
-   * default reader (createDefaultRealnameStatusReader: always none) is used.
+   * Builds the real-name status port of stage ⑨ (B1-02za) and GET /v1/me, assembled by app.module
+   * (the app.realname reader, B1-13d). Absent, the default reader (createDefaultRealnameStatusReader:
+   * always none) is used.
    */
   readonly realnameStatus?: Omit<FactoryProvider<RealnameStatusReader>, 'provide'>;
   /** Register-time level log, assembled by app.module so identity never imports growth. */
@@ -311,6 +318,7 @@ export class IdentityModule {
         ConsentsController,
         TipsController,
         MeController,
+        RealnameController,
       ],
       providers: [
         options.accountAssets === undefined
@@ -796,6 +804,7 @@ export class IdentityModule {
             CLOCK,
             IDENTITY_CONFIG,
             ROOT_LOGGER,
+            REALNAME_STATUS_READER,
             { token: DB, optional: true },
             { token: ME_READ_PORTS, optional: true },
           ],
@@ -803,12 +812,53 @@ export class IdentityModule {
             clock: Clock,
             config: SmsConfigReader | null,
             logger: RootLogger,
+            realname: RealnameStatusReader,
             db?: Kysely<Database>,
             ports?: MeReadPorts | null,
           ): MeService | null =>
             db === undefined || config === null || ports == null
               ? null
-              : createMeService({ db, clock, config, logger, ...ports }),
+              : createMeService({ db, clock, config, logger, realname, ...ports }),
+        },
+        {
+          // BR-ID-25: the fake two-element verifier in local / test; staging / prod have no vendor
+          // yet (null → 50301), announced once while the entry starts.
+          provide: REALNAME_VERIFIER,
+          inject: [APP_CONFIG, ROOT_LOGGER],
+          useFactory: (config: AppConfig, logger: RootLogger): RealnameVerifierPort | null => {
+            const verifier = createRealnameVerifier(config.appEnv);
+            if (verifier === null) logger.warn({}, 'realname_verifier_unconfigured');
+            return verifier;
+          },
+        },
+        {
+          provide: SUBMIT_REALNAME,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            REALNAME_VERIFIER,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+            { token: REDIS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            verifier: RealnameVerifierPort | null,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+            redis?: RedisHandle,
+          ): RealnameService | null =>
+            db === undefined || crypto === undefined
+              ? null
+              : createRealnameService({
+                  db,
+                  clock,
+                  crypto,
+                  redis: redis ?? null,
+                  verifier,
+                  logger,
+                }),
         },
         {
           provide: LOGOUT,

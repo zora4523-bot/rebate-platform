@@ -34,12 +34,37 @@ export type TaskFile = {
    * `mechanical_paths` of tools/guard/codex-impl-tasks.json (task.ts check).
    */
   mechanical_paths: string[];
+  /**
+   * CT-06r: red-run exemptions the task declares for tests of a rule-test file that existed at
+   * the base, whose block is unchanged, in a file that red-check would otherwise judge as a whole
+   * only because it may read a test-support file (a fixture, helper or data file inside
+   * test_paths) the task changed: such a test (a structural assertion that holds for the old
+   * data too) cannot be shown red for a valid reason. Each entry names the file (inside
+   * test_paths), the test's full name as the red report gives it and a reason of at least 10
+   * characters; the rule-test reviewer confirms them in the evidence
+   * (spec_test_review.red_exempt_confirmed, tools/ci/evidence-check.ts). Optional, [] when absent.
+   * Read from the trusted root like test_paths, so a declaration goes through a ledger PR first.
+   */
+  red_exempt: RedExemptDeclaration[];
   impl: 'codex' | 'claude';
   tester: 'codex' | 'claude' | 'none';
   accept: string[];
   status: 'todo' | 'done';
   pr: number | null;
 };
+
+/** One declared red-run exemption (CT-06r). */
+export type RedExemptDeclaration = {
+  /** The rule-test file, repository-relative, inside the task's test_paths. */
+  file: string;
+  /** The test's full name as the red reporter writes it (`describe > … > title`). */
+  test: string;
+  /** Why the test cannot be shown red (at least RED_EXEMPT_REASON_MIN characters). */
+  reason: string;
+};
+
+/** The least a red-exemption reason may say (CT-06r: a non-empty reason of ≥ 10 characters). */
+export const RED_EXEMPT_REASON_MIN = 10;
 
 export const TASK_REPOS = ['rebate-platform', 'ios', 'android', 'harmony'] as const;
 export const TASK_TYPES = [
@@ -73,6 +98,7 @@ const KNOWN_KEYS = new Set([
   'paths',
   'test_paths',
   'mechanical_paths',
+  'red_exempt',
   'impl',
   'tester',
   'accept',
@@ -122,6 +148,67 @@ function pathProblem(glob: string): string | null {
   return null;
 }
 
+/**
+ * The `red_exempt` list (CT-06r): a list of mappings `file` / `test` / `reason`, each a non-empty
+ * string, the file a repository-relative path, the reason at least RED_EXEMPT_REASON_MIN
+ * characters once trimmed, and no file + test named twice. Whether the file lies inside
+ * test_paths and the task has a rule-test author is checked by tools/ops/task.ts.
+ */
+function redExemptList(value: unknown, problems: string[]): RedExemptDeclaration[] {
+  if (!Array.isArray(value)) {
+    problems.push('red_exempt: must be a list of mappings (file / test / reason)');
+    return [];
+  }
+  const out: RedExemptDeclaration[] = [];
+  const seen = new Set<string>();
+  value.forEach((item, index) => {
+    if (!isRecord(item)) {
+      problems.push(`red_exempt[${index}]: must be a mapping (file / test / reason)`);
+      return;
+    }
+    for (const key of Object.keys(item)) {
+      if (!['file', 'test', 'reason'].includes(key)) {
+        problems.push(`red_exempt[${index}].${key}: unknown field`);
+      }
+    }
+    const file = item['file'];
+    const test = item['test'];
+    const reason = item['reason'];
+    let ok = true;
+    if (typeof file !== 'string' || file === '') {
+      problems.push(`red_exempt[${index}].file: must be a non-empty repository path`);
+      ok = false;
+    } else {
+      const problem = pathProblem(file);
+      if (problem !== null) {
+        problems.push(`red_exempt[${index}].file: "${file}" ${problem}`);
+        ok = false;
+      }
+    }
+    if (typeof test !== 'string' || test.trim() === '') {
+      problems.push(`red_exempt[${index}].test: must be the test's full name (non-empty)`);
+      ok = false;
+    }
+    if (typeof reason !== 'string' || reason.trim().length < RED_EXEMPT_REASON_MIN) {
+      problems.push(
+        `red_exempt[${index}].reason: must say why the test cannot be shown red (at least ${RED_EXEMPT_REASON_MIN} characters)`,
+      );
+      ok = false;
+    }
+    if (!ok) return;
+    const key = `${file as string}\u0000${test as string}`;
+    if (seen.has(key)) {
+      problems.push(
+        `red_exempt[${index}]: "${file as string} > ${test as string}" is declared twice`,
+      );
+      return;
+    }
+    seen.add(key);
+    out.push({ file: file as string, test: test as string, reason: reason as string });
+  });
+  return out;
+}
+
 /** Parses and validates one task file; throws a single Error listing every problem found. */
 export function parseTaskFile(text: string, fileName: string): TaskFile {
   const label = basename(fileName);
@@ -143,6 +230,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
       key !== 'contract_sections' &&
       key !== 'test_paths' &&
       key !== 'mechanical_paths' &&
+      key !== 'red_exempt' &&
       !Object.hasOwn(doc, key)
     ) {
       problems.push(`${key}: missing`);
@@ -196,6 +284,9 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
     const problem = pathProblem(glob);
     if (problem) problems.push(`mechanical_paths: "${glob}" ${problem}`);
   }
+  const redExempt = Object.hasOwn(doc, 'red_exempt')
+    ? redExemptList(doc['red_exempt'], problems)
+    : [];
   const accept = Object.hasOwn(doc, 'accept')
     ? stringList(doc, 'accept', problems, { nonEmpty: true })
     : [];
@@ -271,6 +362,7 @@ export function parseTaskFile(text: string, fileName: string): TaskFile {
     paths,
     test_paths: testPaths,
     mechanical_paths: mechanicalPaths,
+    red_exempt: redExempt,
     impl: impl as TaskFile['impl'],
     tester: tester as TaskFile['tester'],
     accept,

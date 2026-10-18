@@ -9,6 +9,7 @@ type: impl
 # 锁与顺序（BR-WDR-02 细则）：一个事务内先 SELECT users … FOR UPDATE，锁内重读当前绑定与本月（+08:00 自然月）变更行数，依次校验 ⓪ ① ② ③ ④ 与当前绑定状态，全部通过后写变更行（计次时）、写 payout_accounts、核销 jti、写幂等结果，一起提交；任何一项不通过按原码返回、jti 不核销。23505（部分唯一竞态）→ 30308。不锁余额行、不取收款账号 advisory lock。
 # 配置：withdraw.payout_methods（默认 [alipay, bank_card]）、withdraw.payout_account_change_per_month（默认 2）读 config_items，缺失或不合法按 08 默认并 warn（不在 content 后台配置登记表里，见 report 待裁定）。payee_name 存规范化值；登录号规范化：邮箱转小写、手机号形式走 normalize_phone（否则 20001 data.reason=phone_invalid）。
 # 模型：Opus 5.5 高推理（effort high）——资金归属 + 锁。契约与生成物（含 CT-06n 要求的三份路由表）写进 paths（先例 B1-11e）。测试标题 AC-B1-13e#n。与 B1-13f 串行（B1-13f 依赖本任务）。
+# 2026-10-19 补 paths：收款方式与月上限配置照 B1-11d 先例由 app.module 注入 content 读取器（调用方事务上读），identity 不直接读 content 的表；用户锁用 FOR NO KEY UPDATE（与 B1-11f 统一顺序一致，FOR UPDATE 会与黑名单命中写 risk_hits 的外键检查互锁）。
 refs: []
 refs_hash: {}
 deps: [B1-13d, B1-13c, B1-13a, B1-02y, B1-02za]

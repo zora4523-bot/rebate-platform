@@ -2,7 +2,8 @@
 // uid only. Cross-module ports are assembled by app.module.
 //
 // - identity_level from the database (BR-ID-01): phone when users.phone_hmac is set, else member;
-//   realname_status none until the real-name task (BR-ID-25).
+//   realname when the phone is bound and app.realname is verified; realname_status from the
+//   realname table (none without a row, BR-ID-25; read through the stage ⑨ reader).
 // - invite_code null when banned, or appealing with a processing account appeal whose
 //   prev_risk_state is banned (BR-INV-18); inviter_bound = parent_id set.
 // - invite_backfill per BR-INV-07 (a)(b)(c) and growth.invite_bind.enabled (BR-INV-21);
@@ -22,6 +23,7 @@ import { instantPlus } from './config-seconds.ts';
 import { currentStates } from '../domain/login.ts';
 import { DEFAULT_AVATAR } from '../domain/registration.ts';
 import { userConsentRecords } from '../infra/consent-records.ts';
+import type { RealnameStatusReader } from './identity-level.ts';
 import { meUser, hasDirectChildren, hasBannedAccountAppeal } from '../infra/me-reads.ts';
 import type { InviteBackfillActivityPort, MeSubject } from '../ports/invite-backfill-activity.ts';
 export type { InviteBackfillActivityPort, MeSubject } from '../ports/invite-backfill-activity.ts';
@@ -50,6 +52,8 @@ export interface MeServiceOptions {
   readonly balance: MeBalancePort;
   readonly unionBindings: MeUnionBindingsPort;
   readonly activity: InviteBackfillActivityPort;
+  /** app.realname status, uncached (the stage ⑨ reader). */
+  readonly realname: RealnameStatusReader;
 }
 
 export interface MeService {
@@ -67,7 +71,7 @@ function configuredNumber(value: unknown, key: string): number {
 }
 
 export function createMeService(options: MeServiceOptions): MeService {
-  const { clock, config, logger, risk, balance, unionBindings, activity } = options;
+  const { clock, config, logger, risk, balance, unionBindings, activity, realname } = options;
   const db = options.db.withSchema('app');
   return {
     async read(subject) {
@@ -106,12 +110,13 @@ export function createMeService(options: MeServiceOptions): MeService {
       if (!Number.isFinite(deadline.getTime())) {
         throw new Error('identity: invalid invite.backfill_hours deadline');
       }
-      const [snapshot, records, summary, taobao, pdd] = await Promise.all([
+      const [snapshot, records, summary, taobao, pdd, realnameStatus] = await Promise.all([
         risk.readRiskState({ app_id: subject.appId, user_id: subject.userId }),
         userConsentRecords(db, subject.appId, subject.userId),
         balance.balanceOf(subject),
         unionBindings.statusOf(subject, 'taobao'),
         unionBindings.statusOf(subject, 'pdd'),
+        realname.read(db, { app_id: subject.appId, user_id: subject.userId }),
       ]);
       let eligible =
         user.parent_id === null &&
@@ -149,15 +154,18 @@ export function createMeService(options: MeServiceOptions): MeService {
         invite_code: banned ? null : user.invite_code,
         inviter_bound: user.parent_id !== null,
         invite_backfill: { eligible, deadline_at: eligible ? deadline.toISOString() : null },
-        identity_level: phoneBound ? 'phone' : 'member',
+        identity_level: !phoneBound
+          ? 'member'
+          : realnameStatus === 'verified'
+            ? 'realname'
+            : 'phone',
         phone_bound: phoneBound,
         balance: summary,
         union_bindings: [
           { platform: 'taobao', status: taobao },
           { platform: 'pdd', status: pdd },
         ],
-        // TODO(规划/11 §2.3): 实名状态与 realname 等级 — blocked on 实名任务（BR-ID-25）
-        realname_status: 'none',
+        realname_status: realnameStatus,
         need_reconsent: needReconsent,
         risk: {
           state: snapshot.state,
