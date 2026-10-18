@@ -229,7 +229,7 @@ it('[AC-B1-11d#17] normal 且已绑手机邀请人成功；缺省实名端口不
   });
 });
 
-it('[AC-B1-11d#52] 已实名邀请人距满 18 岁还差一天，30401 且不写数据库', async () => {
+it('[AC-B1-11d#52] 已实名邀请人尚未到第 18 个生日次日零点，30401 且不写数据库', async () => {
   await withFixture(suite, async (f) => {
     const verifiedBirthDate = vi.fn<NonNullable<typeof f.deps.verifiedBirthDate>>(
       async () => '2013-05-07',
@@ -244,31 +244,41 @@ it('[AC-B1-11d#52] 已实名邀请人距满 18 岁还差一天，30401 且不写
   });
 });
 
-it.each(['2013-05-06', null])(
-  '[AC-B1-11d#53] 实名生日 %j：当天满 18 岁或未实名均可绑定',
-  async (birthday) => {
+it.each([
+  ['2013-05-06', '2031-05-06T23:59:59.999+08:00', 'failed'],
+  ['2013-05-06', '2031-05-07T00:00:00.000+08:00', 'bound'],
+  [null, NOW, 'bound'],
+] as const)(
+  '[AC-B1-11d#53] 实名生日 %j，在 %s 判定为 %s：第 18 个生日次日零点满 18 岁，未实名可绑定',
+  async (birthday, at, result) => {
     await withFixture(suite, async (f) => {
+      f.clock.set(at);
       const before = await f.row();
       const verifiedBirthDate = vi.fn<NonNullable<typeof f.deps.verifiedBirthDate>>(
         async () => birthday,
       );
-      expect(await f.bind({}, { verifiedBirthDate })).toEqual({
-        result: 'bound',
-        parent_id: f.parentId,
-        bound_at: new Date(NOW),
-      });
+      expect(await f.bind({}, { verifiedBirthDate })).toEqual(
+        result === 'failed'
+          ? { result: 'failed', code: 30401 }
+          : { result: 'bound', parent_id: f.parentId, bound_at: new Date(at) },
+      );
       expect(verifiedBirthDate).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
         app_id: f.app,
         user_id: f.parentId,
       });
       expect(verifiedBirthDate.mock.calls[0]![0].isTransaction).toBe(true);
+      if (result === 'failed') {
+        expect(await f.row()).toEqual(before);
+        expect(await f.logs()).toEqual([]);
+        return;
+      }
       expect(await f.row()).toEqual({
         ...before,
         parent_id: f.parentId,
         parent_bind_source: 'backfill',
-        parent_bound_at: new Date(NOW),
+        parent_bound_at: new Date(at),
         self_bind_used: true,
-        updated_at: new Date(NOW),
+        updated_at: new Date(at),
         row_version: before.row_version + 1,
       });
       expect(await f.logs()).toEqual([
@@ -280,7 +290,7 @@ it.each(['2013-05-06', null])(
           source: 'backfill',
           operator: `user:${f.userId}`,
           reason: null,
-          at: new Date(NOW),
+          at: new Date(at),
         },
       ]);
     });
