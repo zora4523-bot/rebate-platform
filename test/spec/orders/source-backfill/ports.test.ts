@@ -48,8 +48,8 @@ it('[AC-B1-08j#21] 开关按当前平台查询，exact 只使用本 app/platform
     platform: 'pdd',
     lk: 'a1b2c3',
   });
-  expect(f.productKey).toHaveBeenCalledTimes(1);
-  expect(f.linkLogs).toHaveBeenCalledTimes(1);
+  expect(f.productKey).not.toHaveBeenCalled();
+  expect(f.linkLogs).not.toHaveBeenCalled();
 });
 
 it.each(['missing', 'other-user', 'no-port', 'no-code'] as const)(
