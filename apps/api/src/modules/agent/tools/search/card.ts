@@ -64,8 +64,8 @@ function textOrNull(value: unknown): string | null {
 /**
  * BR-AI-04: required fields (prices, rebate_basis, availability, quoted_at, source) are never null;
  * no_rebate is filtered here; quoted_at stays the upstream fetch time and age_sec is recomputed on
- * the injected clock against the search cache age cap. BR-AI-11: the guest login_to_view switch
- * turns the card into login_required with no rebate amounts.
+ * the injected clock against the search cache age cap. BR-AI-11: with the guest login_to_view switch
+ * the raw rebate is kept for sorting; maskLoginToView hides it once the cards are chosen.
  */
 export function normalizeCard(
   card: UnlinkedCard,
@@ -89,7 +89,17 @@ export function normalizeCard(
   let estNet = nullableFen(card.est_net_price_fen);
   if (estNet === undefined) return null;
   if (card.rebate_basis === 'no_rebate') return null;
-  if (options.loginToView || card.rebate_basis === 'login_required') {
+  if (options.loginToView) {
+    // Raw rebate stays for sorting (rebate_desc); maskLoginToView hides it after selection.
+    // Bounds the quote could not give are null here (sorted last), never a reason to drop.
+    const known =
+      (card.rebate_basis === 'normal' || card.rebate_basis === 'price_compare_risk') &&
+      fen(card.rebate_min_fen) &&
+      fen(card.rebate_max_fen);
+    basis = known ? (card.rebate_basis as 'normal' | 'price_compare_risk') : 'login_required';
+    rebateMin = known ? card.rebate_min_fen : null;
+    rebateMax = known ? card.rebate_max_fen : null;
+  } else if (card.rebate_basis === 'login_required') {
     basis = 'login_required';
     rebateMin = null;
     rebateMax = null;
@@ -149,5 +159,19 @@ export function normalizeCard(
     // BR-TEXT-17: Agent search cards are natural results, never a promoted slot.
     ad_label: null,
     availability: card.availability,
+  };
+}
+
+/**
+ * BR-AI-11: applied to a selected guest card after sorting, never before. The card becomes
+ * login_required without rebate amounts, and without the net price that would reveal them.
+ */
+export function maskLoginToView<T extends AgentUnlinkedCard>(card: T): T {
+  return {
+    ...card,
+    rebate_basis: 'login_required',
+    rebate_min_fen: null,
+    rebate_max_fen: null,
+    est_net_price_fen: null,
   };
 }

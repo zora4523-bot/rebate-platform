@@ -188,6 +188,9 @@ export function createSearchProductsHandler(deps: SearchProductsDeps): ToolHandl
         return { kind: 'ok', modelView: priceRangeInvalidView(), cards: [] };
       }
       const run = await runSearch(deps, request, ctx);
+      // Every searched platform failed (upstream, assembly or registration): a tool failure,
+      // never an empty result; the registry shows the model only the generic error.
+      if (run.allFailed) return { kind: 'failed', modelView: { error: 'tool_failed' } };
       const cards = await outcomeCards(deps, ctx.appId, run.prohibited, run.cards);
       const items = modelItems(deps, run.cards, cards, ctx);
       return {

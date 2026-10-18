@@ -7,7 +7,12 @@
 import type { SearchProductsQuery } from '../../../catalog/index.ts';
 import type { ToolCallContext } from '../registry/index.ts';
 import type { AgentSearchCandidate, SearchProductsDeps } from './index.ts';
-import { normalizeCard, type AgentProductCard, type AgentUnlinkedCard } from './card.ts';
+import {
+  maskLoginToView,
+  normalizeCard,
+  type AgentProductCard,
+  type AgentUnlinkedCard,
+} from './card.ts';
 import type { SearchSort } from './schema.ts';
 
 export type Platform = SearchProductsQuery['platform'];
@@ -26,6 +31,8 @@ export type PlatformStatus = 'ok' | 'failed' | 'disabled';
 
 export interface SearchRun {
   readonly prohibited: boolean;
+  /** At least one platform was searched and every searched platform failed. */
+  readonly allFailed: boolean;
   readonly status: ReadonlyMap<Platform, PlatformStatus>;
   readonly cards: readonly AgentProductCard[];
 }
@@ -38,6 +45,8 @@ interface Ranked {
 interface Prepared {
   readonly ranked: Ranked;
   readonly card: AgentUnlinkedCard;
+  /** BR-AI-11 guest switch: hide the rebate only after sorting and selection. */
+  readonly hideRebate: boolean;
   readonly commit: () => Promise<{ readonly link_id: string }>;
 }
 
@@ -152,7 +161,7 @@ export async function runSearch(
 
   // BR-AI-18: a prohibited model keyword never reaches the upstream.
   if (await deps.prohibited(appId, request.q)) {
-    return { prohibited: true, status, cards: [] };
+    return { prohibited: true, allFailed: false, status, cards: [] };
   }
 
   const enabled = await enabledPlatforms(deps, appId);
@@ -161,6 +170,8 @@ export async function runSearch(
       ? enabled
       : enabled.filter((platform) => request.platforms!.includes(platform));
   for (const platform of deps.platforms) status.set(platform, 'disabled');
+  const allFailed = () =>
+    requested.length > 0 && requested.every((platform) => status.get(platform) === 'failed');
 
   // All platforms start before any answer returns; one failure leaves the others intact.
   const answers = await Promise.allSettled(
@@ -183,14 +194,14 @@ export async function runSearch(
       ranked.push({ candidate, rank });
     });
   });
-  if (ranked.length === 0) return { prohibited: false, status, cards: [] };
+  if (ranked.length === 0) return { prohibited: false, allFailed: allFailed(), status, cards: [] };
 
   // BR-AI-18: category blocklist; emptied by it means prohibited, never relaxed.
   const allowedFlags = await Promise.all(
     ranked.map((row) => allowedByCategory(deps, appId, row.candidate)),
   );
   const allowed = ranked.filter((_, index) => allowedFlags[index]);
-  if (allowed.length === 0) return { prohibited: true, status, cards: [] };
+  if (allowed.length === 0) return { prohibited: true, allFailed: false, status, cards: [] };
 
   const [ageCap, loginToView] = await Promise.all([
     maxAgeSec(deps, appId),
@@ -217,13 +228,14 @@ export async function runSearch(
         maxAgeSec: ageCap,
         loginToView: loginToView.has(candidate.item.platform),
       });
+      const hideRebate = loginToView.has(candidate.item.platform);
       if (card === null || !inPriceRange(card, request)) return null;
       const linked = result.kind === 'card' ? result.card : null;
       const commit =
         linked === null && result.kind === 'prepared'
           ? result.commit
           : async () => ({ link_id: linked!.link_id });
-      return { ranked: row, card, commit };
+      return { ranked: row, card, hideRebate, commit };
     }),
   );
   // A platform whose every item failed to assemble counts as a failed platform (BR-AI-09
@@ -251,13 +263,25 @@ export async function runSearch(
   // BR-AI-11 / B1-05j: register links only for the cards actually delivered.
   const committed = await Promise.allSettled(chosen.map((row) => row.commit()));
   const cards: AgentProductCard[] = [];
+  const registered = new Map<Platform, { total: number; ok: number }>();
   committed.forEach((outcome, index) => {
+    const row = chosen[index]!;
+    const count = registered.get(row.card.platform) ?? { total: 0, ok: 0 };
+    count.total += 1;
+    registered.set(row.card.platform, count);
     if (outcome.status !== 'fulfilled') return;
     const linkId = outcome.value.link_id;
     if (typeof linkId !== 'string' || linkId === '') return;
-    cards.push({ ...chosen[index]!.card, link_id: linkId });
+    count.ok += 1;
+    const card = row.hideRebate ? maskLoginToView(row.card) : row.card;
+    cards.push({ ...card, link_id: linkId });
   });
-  return { prohibited: false, status, cards };
+  // Same platform-failure rule as assembly: every registration of a platform failing makes the
+  // platform failed, so the degraded path reports a failure (50302), not an empty result.
+  for (const [platform, count] of registered) {
+    if (count.total > 0 && count.ok === 0) status.set(platform, 'failed');
+  }
+  return { prohibited: false, allFailed: allFailed(), status, cards };
 }
 
 /** BR-AI-11: guests only; the per-platform switch defaults to off. */

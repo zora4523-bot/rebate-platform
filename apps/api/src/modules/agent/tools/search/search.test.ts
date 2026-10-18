@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CatalogCardEntry, ProductCard } from '../../../catalog/index.ts';
 import { FixedClock } from '../../../platform/index.ts';
 import type { ToolContext } from '../../orchestrator/index.ts';
+import { resolveDegradedOutcome } from '../../model-gateway/degraded/index.ts';
 import type { ToolCallContext } from '../registry/index.ts';
 import {
   createKeywordSearch,
@@ -95,7 +96,17 @@ function card(row: AgentSearchCandidate): ProductCard {
   };
 }
 
-function setup(rows: readonly AgentSearchCandidate[], failing: ReadonlySet<string>) {
+interface SetupOptions {
+  readonly commitFailing?: ReadonlySet<string>;
+  readonly settings?: Readonly<Record<string, boolean>>;
+  readonly patch?: Readonly<Record<string, Partial<ProductCard>>>;
+}
+
+function setup(
+  rows: readonly AgentSearchCandidate[],
+  failing: ReadonlySet<string>,
+  options: SetupOptions = {},
+) {
   const registered: string[] = [];
   const searchProducts = vi.fn<SearchProductsDeps['searchProducts']>(async (query) =>
     rows.filter((row) => row.item.platform === query.platform),
@@ -103,11 +114,14 @@ function setup(rows: readonly AgentSearchCandidate[], failing: ReadonlySet<strin
   const assemble = vi.fn<CatalogCardEntry['assemble']>(async (input) => {
     if (failing.has(input.ref.productKey)) throw new Error('synthetic quote timeout');
     const row = rows.find((r) => r.ref.productKey === input.ref.productKey)!;
-    const { link_id, ...unlinked } = card(row);
+    const { link_id, ...unlinked } = { ...card(row), ...options.patch?.[input.ref.productKey] };
     return {
       kind: 'prepared',
       card: unlinked,
       commit: async () => {
+        if (options.commitFailing?.has(input.ref.productKey) === true) {
+          throw new Error('synthetic link registration failure');
+        }
         registered.push(input.ref.productKey);
         return { ...unlinked, link_id };
       },
@@ -116,8 +130,11 @@ function setup(rows: readonly AgentSearchCandidate[], failing: ReadonlySet<strin
   const deps: SearchProductsDeps = {
     clock: new FixedClock(NOW),
     config: {
-      configValue: async (_app, key) =>
-        key.startsWith('search.enabled.') ? { value: true, version: 1 } : null,
+      configValue: async (_app, key) => {
+        if (key.startsWith('search.enabled.')) return { value: true, version: 1 };
+        const value = options.settings?.[key];
+        return value === undefined ? null : { value, version: 1 };
+      },
     },
     platforms: ['taobao', 'jd'],
     searchProducts,
@@ -242,5 +259,93 @@ describe('card references (B3-05i: index addresses outcome.cards)', () => {
     // Never an index past outcome.cards, never one for the dropped item.
     expect(indices.every((index) => index >= 0 && index < outcome.cards.length)).toBe(true);
     expect(indices).toHaveLength(2);
+  });
+});
+
+function guestCtx(): ToolCallContext {
+  return { ...ctx(), userId: null, phoneBound: false };
+}
+
+describe('guest login_to_view keeps the raw rebate for sorting (BR-AI-09 / BR-AI-11)', () => {
+  it('rebate_desc: rebate 500 before rebate 100, rebate fields still hidden on the cards', async () => {
+    const low = candidate('tb:synthetic-low', 'taobao');
+    const high = candidate('tb:synthetic-zhigh', 'taobao');
+    const h = setup([low, high], new Set(), {
+      settings: { 'agent.guest_login_to_view.taobao': true },
+      patch: {
+        'tb:synthetic-low': { rebate_min_fen: 100, rebate_max_fen: 100, est_net_price_fen: 900 },
+        'tb:synthetic-zhigh': { rebate_min_fen: 500, rebate_max_fen: 500, est_net_price_fen: 500 },
+      },
+    });
+    const outcome = await createSearchProductsHandler(h.deps).run(
+      { q: '合成商品', platforms: ['taobao'], sort: 'rebate_desc' },
+      guestCtx(),
+    );
+    expect(outcome.kind).toBe('ok');
+    if (outcome.kind !== 'ok') return;
+    expect(listKeys(outcome.cards)).toEqual(['tb:synthetic-zhigh', 'tb:synthetic-low']);
+    const items = (outcome.cards[0]!.data as { items: ProductCard[] }).items;
+    for (const item of items) {
+      expect(item).toMatchObject({
+        rebate_basis: 'login_required',
+        rebate_min_fen: null,
+        rebate_max_fen: null,
+        est_net_price_fen: null,
+      });
+    }
+    expect(JSON.stringify(outcome)).not.toMatch(/"(rebate_min_fen|rebate_max_fen)":(100|500)/u);
+  });
+});
+
+describe('link registration failure counts as a platform failure', () => {
+  const rows = [candidate('tb:synthetic-a', 'taobao'), candidate('jd:synthetic-b', 'jd')];
+
+  it('keyword search: one platform failing every registration is ok=false, the other ok', async () => {
+    const h = setup(rows, new Set(), { commitFailing: new Set(['tb:synthetic-a']) });
+    const result = await createKeywordSearch(h.deps).searchKeyword(
+      { q: '合成商品', platforms: ['taobao', 'jd'], sort: 'relevance' },
+      keywordCtx(),
+    );
+    expect(result.results).toEqual([
+      { platform: 'taobao', ok: false },
+      {
+        platform: 'jd',
+        ok: true,
+        items: [expect.objectContaining({ product_key: 'jd:synthetic-b' })],
+      },
+    ]);
+    expect(listKeys(result.cards)).toEqual(['jd:synthetic-b']);
+  });
+
+  it('keyword search: every registration failing is all-failed (50302), not an empty success', async () => {
+    const plan = { q: '合成商品', platforms: ['taobao', 'jd'], sort: 'relevance' as const };
+    const h = setup(rows, new Set(), {
+      commitFailing: new Set(['tb:synthetic-a', 'jd:synthetic-b']),
+    });
+    const result = await createKeywordSearch(h.deps).searchKeyword(plan, keywordCtx());
+    expect(result.results).toEqual([
+      { platform: 'taobao', ok: false },
+      { platform: 'jd', ok: false },
+    ]);
+    expect(result.cards).toEqual([]);
+    expect(resolveDegradedOutcome('models_failed', plan, result.results)).toMatchObject({
+      kind: 'error',
+      code: 50302,
+    });
+  });
+
+  it('search_products: every registration failing is a tool failure, not an empty result', async () => {
+    const h = setup(rows, new Set(), {
+      commitFailing: new Set(['tb:synthetic-a', 'jd:synthetic-b']),
+    });
+    const outcome = await createSearchProductsHandler(h.deps).run({ q: '合成商品' }, ctx());
+    expect(outcome).toEqual({ kind: 'failed', modelView: { error: 'tool_failed' } });
+    expect(h.registered).toEqual([]);
+  });
+
+  it('search_products: a registration failure on one platform keeps the other', async () => {
+    const h = setup(rows, new Set(), { commitFailing: new Set(['tb:synthetic-a']) });
+    const outcome = await createSearchProductsHandler(h.deps).run({ q: '合成商品' }, ctx());
+    expect(outcome.kind === 'ok' && listKeys(outcome.cards)).toEqual(['jd:synthetic-b']);
   });
 });
