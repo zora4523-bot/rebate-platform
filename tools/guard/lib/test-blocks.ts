@@ -1110,7 +1110,25 @@ export function listedDirectories(
       if (r.value !== null && initialiserEnds(r.end)) env.set(name.text, r.value);
     }
   }
+  // A name assigned anywhere outside its declaration is not a constant (Codex review r2, S2).
+  for (let i = 1; i < ts.length; i += 1) {
+    const t = ts[i] as Token;
+    if (t.kind !== 'id' || !env.has(t.text) || ts[i + 1]?.text !== '=') continue;
+    const before = ts[i - 1]?.text;
+    if (before === 'const' || before === 'let' || before === 'var' || before === '.') continue;
+    env.delete(t.text);
+  }
   const fns = functionsOf(ts);
+  // The scope at a position: the constants minus the parameters of every function enclosing it
+  // (a parameter shadows a same-named constant; Codex review r2, S2).
+  const scopeAt = (k: number): Map<string, PathValue> => {
+    const scope = new Map(env);
+    for (const f of fns) {
+      if (f.bodyStart < k && k < f.bodyEnd)
+        for (const p of f.params) if (p !== null) scope.delete(p);
+    }
+    return scope;
+  };
   const dirs = new Set<string>();
   let unresolved: string | null = null;
   const note = (what: string): void => {
@@ -1140,7 +1158,7 @@ export function listedDirectories(
       if (r.value?.path == null || r.end !== first[1]) return null;
       return r.value.path.endsWith('/') ? r.value.path.slice(0, -1) : r.value.path;
     };
-    const direct = resolveWith(env);
+    const direct = resolveWith(scopeAt(i));
     if (direct !== null) {
       dirs.add(direct);
       continue;
@@ -1161,12 +1179,14 @@ export function listedDirectories(
       if (ts[k - 1]?.text === 'function') continue; // the declaration itself
       calls += 1;
       const cargs = argsOf(ts, k + 1) ?? [];
-      const scope = new Map(env);
+      const callScope = scopeAt(k);
+      const scope = new Map(callScope);
       fn.params.forEach((p, idx) => {
         const a = cargs[idx];
         if (p === null || a === undefined) return;
-        const r = resolveExpr(ts, a[0], modulePath, env);
+        const r = resolveExpr(ts, a[0], modulePath, callScope);
         if (r.value !== null && r.end === a[1]) scope.set(p, r.value);
+        else scope.delete(p);
       });
       const dir = resolveWith(scope);
       if (dir === null) {
@@ -1282,7 +1302,8 @@ export function mayReadSupport(
     if (m.text.includes(name)) return `${m.path} names ${name}`;
     if (m.literals === null) return `${m.path} cannot be read as code, so it may read ${support}`;
     if (m.literals.some((s) => word.test(s))) return `${m.path} names ${stem}`;
-    const listed = m.lists.find((d) => support === d || support.startsWith(`${d}/`));
+    // The repository root is '' and holds every path (Codex review r2, S2).
+    const listed = m.lists.find((d) => d === '' || support === d || support.startsWith(`${d}/`));
     if (listed !== undefined) return `${m.path} lists ${listed}, which holds ${support}`;
     if (m.dynamic !== null) return `${m.path} may read ${support}: ${m.dynamic}`;
   }

@@ -496,6 +496,11 @@ list('./db/migrations');
     ],
     ["const D = join(__dirname, 'a') + '/b';\nreaddirSync(D);", 'cannot be resolved statically'],
     ["const D = join(__dirname, 'a').slice(1);\nreaddirSync(D);", 'cannot be resolved statically'],
+    // Codex review r2, S2: a reassigned name is no constant.
+    [
+      "let D = join(__dirname, 'a');\nD = somewhere();\nreaddirSync(D);",
+      'cannot be resolved statically',
+    ],
     [
       'function f(d) { return readdirSync(d); }',
       'in f() on a directory that cannot be resolved statically',
@@ -513,6 +518,27 @@ list('./db/migrations');
     const r = listed('test/spec/a/x.test.ts', text);
     expect(r.unresolved, text).toContain(reason);
   }
+  // Codex review r2, S2: a parameter shadows a same-named constant; the call site decides.
+  expect(
+    listed(
+      'test/spec/a/x.test.ts',
+      "const dir = join(__dirname, 'unused');\nfunction load(dir) { return readdirSync(dir); }\nload(join(__dirname, 'data'));",
+    ),
+  ).toEqual({ dirs: ['test/spec/a/data'], unresolved: null });
+  // … and a call site inside another function whose parameter shadows the constant is unresolved.
+  expect(
+    listed(
+      'test/spec/a/x.test.ts',
+      "const dir = join(__dirname, 'unused');\nfunction load(d) { return readdirSync(d); }\nfunction outer(dir) { return load(dir); }",
+    ).unresolved,
+  ).toContain('cannot be resolved statically');
+  // The repository root: `new URL('../../../', import.meta.url)` from test/spec/a resolves to ''.
+  expect(
+    listed(
+      'test/spec/a/x.test.ts',
+      "readdirSync(new URL('../../../', import.meta.url), { recursive: true });",
+    ),
+  ).toEqual({ dirs: [''], unresolved: null });
   // A resolved call next to an unresolved one: the resolved directory is kept, the reason too.
   const mixed = listed(
     'test/spec/a/x.test.ts',
@@ -544,6 +570,15 @@ it('[CT-06r] mayReadSupport: a listed directory counts only for the files it hol
   expect(mayReadSupport(file, 'test/spec/l/rows.csv', [lists])).toBeNull();
   // The word rule of CT-06p is untouched: a support file named like a literal still counts.
   expect(mayReadSupport(file, 'test/spec/l/data.csv', [lists])).toContain('names data');
+  // Codex review r2, S2: a listing of the repository root ('') holds every file.
+  const root = mod(
+    file,
+    "for (const f of readdirSync(new URL('../../../', import.meta.url), { recursive: true })) load(f);",
+  );
+  expect(root.lists).toEqual(['']);
+  expect(mayReadSupport(file, 'test/spec/m/other.csv', [root])).toBe(
+    `${file} lists , which holds test/spec/m/other.csv`,
+  );
   const vague = mod(file, 'for (const f of readdirSync(here)) load(f);');
   expect(mayReadSupport(file, 'test/spec/m/other.csv', [vague])).toBe(
     `${file} may read test/spec/m/other.csv: it uses readdirSync(…) on a directory that cannot be resolved statically`,
