@@ -11,7 +11,7 @@ type: impl
 # 模型：Opus 5.5。测试标题 AC-B1-11g#n（E14）。与 B1-11h、B1-11k、B1-13e 同改 identity/**，按 deps 或后合并者变基。
 refs: []
 refs_hash: {}
-deps: [CT-15p, B1-03g]
+deps: [CT-15p, B1-03g, B1-11r]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/modules/risk/application/sms-risk.ts'
