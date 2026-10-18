@@ -8,7 +8,7 @@ type: impl
 # BR-WDR-30：withdraw.auto_payout.enabled 只能从后台关闭（开启要负责人确认，另一流程），页面只做界面，不改取值规则。admin_editable=false 的开关只读。
 refs: [BR-WDR-30]
 refs_hash:
-  BR-WDR-30: aaff79caf8a2
+  BR-WDR-30: 9ce8ae5c92d4
 deps: [F1-10d, F1-06r, F1-06zb]
 paths:
   - 'apps/admin/src/pages/kill-switches/**'

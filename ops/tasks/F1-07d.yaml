@@ -17,7 +17,7 @@ type: impl
 # 与 F1-07b / F1-07c 并行改 openapi.yaml、两份生成物与 app.module.ts：后合并者变基并重生成。
 refs: [BR-ID-31]
 refs_hash:
-  BR-ID-31: 9d0a87b99069
+  BR-ID-31: ac2c03e8d41c
 deps: [CT-02j, CT-02p, CT-06o, F1-07c]
 paths:
   - 'apps/api/src/modules/risk/**'
