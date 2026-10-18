@@ -1,0 +1,95 @@
+{
+  "task": "F1-09j",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "28ec296de4cc24d2b7dc0e72e03da26c5c2c865f",
+  "red_tests": [
+    "test/spec/content/pages-audience-parent/assembly.test.ts > [AC-F1-09j#9] 装配后的 hasParent 返回 true 原样进入 AudienceFacts",
+    "test/spec/content/pages-audience-parent/assembly.test.ts > [AC-F1-09j#9] 装配后的 hasParent 返回 false 原样进入 AudienceFacts",
+    "test/spec/content/pages-audience-parent/assembly.test.ts > [AC-F1-09j#10] 直调 facts 时上级读口抛错只令 hasParent=null，另两项继续且 warn 一次",
+    "test/spec/content/pages-audience-parent/assembly.test.ts > [AC-F1-09j#11] relationOf 无行返回 null 时按无上级，不能当未知或记录失败",
+    "test/spec/content/pages-audience-parent/assembly.test.ts > [AC-F1-09j#12] needed 不含 hasParent 不查上级，后续需要时仅查一次",
+    "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#1] 登录用户 parent=false 按当前关系下发 yes/no，any 均命中",
+    "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#2] 登录用户 parent=true 按当前关系下发 yes/no，any 均命中",
+    "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#3] 同设备游客不查事实，登录后读上级，退出为游客不沿用登录事实",
+    "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#4] 其他应用和同应用其他用户有上级均不串用，查询限定 app_id 和 id",
+    "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#5] 页面缓存 60 秒内绑定上级，下一请求立即改为 yes，事实每请求只查一次",
+    "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#6] has_parent 与 union_authorized 组合条件四种事实组合只有双 yes 命中",
+    "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#7] 同一登录用户访问无条件或仅 any 的页面不查上级，条件页面才查",
+    "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#8] 上级读取失败整页仍 200，仅该事实未知且 warn 一次，下次请求恢复"
+  ],
+  "risk_note": "RV2 (content page audience). The has_parent page condition is now judged for signed-in users: app.module's pageAudienceReads() wires growth's exported createParentRelationReader (B1-11n) into content's PageAudienceReads.hasParent, built on first use like the union reader; no relation row means false; a failed read makes only that fact unknown (warn once, sections with yes / no withheld, page still 200); guests and pages without has_parent conditions do not read it. content does not import growth. The F1-09g TODO is removed; F1-09g's old expectations were changed by test-change F1-09k (#770). Rule test #7 page keys were mechanically fixed to custom:* by the orchestrator before the implementation (two commits). No funds, read-only. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "28ec296de4cc24d2b7dc0e72e03da26c5c2c865f",
+      "tree": "c40739375bb68e684439016e700cdaa54b6c7150",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T11:46:27Z",
+      "finished_at": "2026-10-18T11:46:41Z",
+      "red_tests": [
+        "test/spec/content/pages-audience-parent/assembly.test.ts > [AC-F1-09j#9] 装配后的 hasParent 返回 true 原样进入 AudienceFacts",
+        "test/spec/content/pages-audience-parent/assembly.test.ts > [AC-F1-09j#9] 装配后的 hasParent 返回 false 原样进入 AudienceFacts",
+        "test/spec/content/pages-audience-parent/assembly.test.ts > [AC-F1-09j#10] 直调 facts 时上级读口抛错只令 hasParent=null，另两项继续且 warn 一次",
+        "test/spec/content/pages-audience-parent/assembly.test.ts > [AC-F1-09j#11] relationOf 无行返回 null 时按无上级，不能当未知或记录失败",
+        "test/spec/content/pages-audience-parent/assembly.test.ts > [AC-F1-09j#12] needed 不含 hasParent 不查上级，后续需要时仅查一次",
+        "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#1] 登录用户 parent=false 按当前关系下发 yes/no，any 均命中",
+        "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#2] 登录用户 parent=true 按当前关系下发 yes/no，any 均命中",
+        "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#3] 同设备游客不查事实，登录后读上级，退出为游客不沿用登录事实",
+        "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#4] 其他应用和同应用其他用户有上级均不串用，查询限定 app_id 和 id",
+        "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#5] 页面缓存 60 秒内绑定上级，下一请求立即改为 yes，事实每请求只查一次",
+        "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#6] has_parent 与 union_authorized 组合条件四种事实组合只有双 yes 命中",
+        "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#7] 同一登录用户访问无条件或仅 any 的页面不查上级，条件页面才查",
+        "test/spec/content/pages-audience-parent/delivery.int.test.ts > [AC-F1-09j#8] 上级读取失败整页仍 200，仅该事实未知且 warn 一次，下次请求恢复"
+      ],
+      "expected": [
+        "test/spec/content/pages-audience-parent/assembly.test.ts",
+        "test/spec/content/pages-audience-parent/delivery.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ea14c1d470d9a098b7b5951ffe603974533c9a81d0846da9ed96339fa18e4ece"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "183d707bf9c6d23a96df089e0c3667cd9493668ecbd8453da385e38cbf7d52a1"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by fresh Claude subagents: r1 fail (S1, the orchestrator's mechanical page-key fix missed one request), r2 pass after that line was fixed"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "902c1c9b4c148c9157466be64bb5e408e2929ae0",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
