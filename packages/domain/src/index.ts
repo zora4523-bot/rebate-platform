@@ -1,4 +1,5 @@
 export { accountingDate, chinaMonth, chinaDayRange, chinaMonthRange } from './calendar/index.ts';
+export { summarizeClaimDecisions, evidenceEvent } from './claims/summarize.ts';
 export {
   parseResidentIdNo,
   reachedAgeAt,
