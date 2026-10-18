@@ -1,0 +1,24 @@
+id: B1-03x
+repo: rebate-platform
+title: risk_hits 记录邀请关系命中：迁移放宽 risk_hits（及 risk_judgements 如需）ref_type CHECK 加 invite_relation（ref_id=被邀请人 user_id）；risk 模块导出只插入的命中写入端口（调用方事务内），供 growth 在 BR-INV-08 30403 与 BR-INV-09 同设备解除时记录命中
+type: impl
+# 草稿 2026-10-18（身份与风控线 identity-lane；第二波第二批裁定 E23，couli-runs/IDENTITY-tips/batch2-ledger/report.md）。依据：08 BR-INV-08「risk_hits（记录命中）」、BR-INV-09 命中解除；现 risk_hits.ref_type CHECK 只许 order / withdrawal / blocked_request，写者 risk，无写入端口。
+# 编排已定：ref_type 新值 invite_relation、ref_id=被邀请人 user_id、rule_id 取 inv_08_self / inv_08_descendant / inv_08_same_device / inv_09_same_device（规则编号只作命中标识，不进用户可见文案）；dimension / value_hmac 按命中维度（同设备取 device_id_hash，自身与下级取 user_id 的 hmac）；risk_action 记 block（30403）或 unbind（BR-INV-09）。
+# E18 原定「30403 不写 risk_hits」随本任务改为写一行（与 30403 同事务）；B1-11d 已合并后由 B1-11f 或后续修订接入调用（本任务只建端口与迁移，不改 growth）。须先于 B1-11h 合并。
+# 迁移号：落地时取主干最大号 + 1（notices 登记）。编排者在沙箱外跑 remote-snapshot.sh 生成 db/schema.sql 与 db.gen.ts。模型 Opus 5.5。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'apps/api/src/modules/risk/**'
+test_paths:
+  - 'test/spec/risk/invite-hits/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/invite-hits/**'
+status: todo
