@@ -9,6 +9,7 @@ type: impl
 # 装配：IdentityModuleOptions 加 firstAppLoginReview（先例 initialLevelLog / inviteBinding），sms 与 OAuth 两处工厂注入；app.module 组装 growth 实现。
 # 编排已定（2026-10-17，E23–E31 按默认，见 IDENTITY-tips/batch2-ledger/report.md）：① risk_hits 现 CHECK 只许 ref_type order / withdrawal / blocked_request 且写者 risk、无写入端口——默认 growth 声明命中记录端口、缺省不写 + warn + TODO(规划/11 §2.3) blocked on risk_hits 扩展任务，该任务须先于 B1-11h 合并；② 解除时 parent_bind_source、parent_bound_at 默认一并置空（历史看日志）。
 # 模型：Opus 5.5 高推理（effort high）——归属（解除上级）。测试直接造 parent_bind_source=landing 的账号（落地页注册 B1-11h 未做）。测试标题 AC-B1-11f#n。与 B1-11e、B1-11j 同改 growth/** 与 app.module.ts，不互相依赖，后合并者变基（不依赖 GrowthModule，只经 identity 端口注入）。
+# 2026-10-18 补 paths：Codex r1 S1 并发登录死锁（短信路径先 consent 锁、OAuth 路径先 users 行锁），修法为 completeLogin 先取 users 行锁再取 consent 锁，需改 identity/application/login-completion.ts。
 refs: [BR-INV-09]
 refs_hash:
   BR-INV-09: 2292628ed588
@@ -17,6 +18,7 @@ paths:
   - 'apps/api/src/modules/growth/**'
   - 'apps/api/src/modules/identity/identity.module.ts'
   - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/modules/identity/application/**'
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/growth/landing-review/**'
