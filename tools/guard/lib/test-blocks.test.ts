@@ -6,6 +6,7 @@ import { expect, it } from 'vitest';
 import {
   type ComparedBlock,
   type Module,
+  type ModuleImport,
   TestParseError,
   compareTestFile,
   cook,
@@ -673,5 +674,265 @@ it('[CT-06r] the two B1-12g files: a same-named test elsewhere and a listing of 
     mayReadSupport(queue, 'apps/api/src/modules/platform/queue/zz-added.ts', queueClosure),
   ).toBe(
     `${queue} lists apps/api/src, which holds apps/api/src/modules/platform/queue/zz-added.ts`,
+  );
+});
+
+// CT-06w (B1-12g red/4): the two platform contract tests import `./kit.ts` of their own
+// directory; the task changed test/spec/identity/step-up-verify/kit.ts. The name rule matched
+// the basename `kit.ts` and judged 27 unchanged tests whole.
+const B112G_R4_FILES = (): Record<string, string> => {
+  const read = (p: string): string => readFileSync(join(FIXTURES, `b112g-${p}.txt`), 'utf8');
+  return {
+    'test/spec/platform/events/contract.test.ts': read('events-contract.test.ts'),
+    'test/spec/platform/queue/contract.test.ts': read('queue-contract.test.ts'),
+    'test/spec/platform/events/kit.ts': read('events-kit.ts'),
+    'test/spec/platform/queue/kit.ts': read('queue-kit.ts'),
+    'test/spec/platform/db/kit.ts': read('db-kit.ts'),
+    'test/spec/identity/step-up-verify/kit.ts': read('identity-step-up-verify-kit.ts'),
+  };
+};
+/** What B1-12g changed inside its test_paths at red/4 (couli-runs/B1-12g/red/4). */
+const B112G_R4_SUPPORTS = [
+  'test/spec/platform/events/contract.test.ts',
+  'test/spec/platform/queue/contract.test.ts',
+  'test/spec/platform/idempotency/abandon-route/http-kit.ts',
+  'test/spec/identity/identity-level/http-kit.ts',
+  'test/spec/identity/sms-codes/http-kit.ts',
+  'test/spec/identity/step-up-verify/kit.ts',
+  ...[
+    'consumer.int.test.ts',
+    'db-kit.ts',
+    'delivery.int.test.ts',
+    'fixtures.ts',
+    'reauth.int.test.ts',
+    'render.test.ts',
+    'templates.int.test.ts',
+    'wiring.test.ts',
+    'worker-kit.ts',
+  ].map((n) => `test/spec/notification/risk-state-message/${n}`),
+];
+
+it('[CT-06w] the two B1-12g files (red/4): `./kit.ts` of their own directory is not the identity kit the task changed', () => {
+  const files = B112G_R4_FILES();
+  const closureOf = (file: string) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  const events = 'test/spec/platform/events/contract.test.ts';
+  const queue = 'test/spec/platform/queue/contract.test.ts';
+  const eventsClosure = closureOf(events);
+  const queueClosure = closureOf(queue);
+  // The imports resolve to the files of their own directories; a package stays unresolved.
+  const resolved = (c: readonly Module[]) =>
+    Object.fromEntries((c[0] as Module).imports.map((i) => [i.spec, i.resolved]));
+  expect(resolved(eventsClosure)).toMatchObject({
+    './kit.ts': 'test/spec/platform/events/kit.ts',
+    '../queue/kit.ts': 'test/spec/platform/queue/kit.ts',
+    vitest: null,
+  });
+  expect(resolved(queueClosure)).toMatchObject({
+    './kit.ts': 'test/spec/platform/queue/kit.ts',
+    '../db/kit.ts': 'test/spec/platform/db/kit.ts',
+  });
+  expect((eventsClosure[0] as Module).imports.find((i) => i.spec === 'vitest')?.why).toBe(
+    'a package (no tsconfig paths map it)',
+  );
+  // The identity kit is in neither closure.
+  expect(eventsClosure.map((m) => m.path)).toEqual([
+    events,
+    'test/spec/platform/events/kit.ts',
+    'test/spec/platform/queue/kit.ts',
+  ]);
+  expect(queueClosure.map((m) => m.path)).toEqual([
+    queue,
+    'test/spec/platform/db/kit.ts',
+    'test/spec/platform/queue/kit.ts',
+  ]);
+  // The 27 unchanged tests of red/4: neither file may read any changed support file.
+  for (const s of B112G_R4_SUPPORTS) {
+    if (s !== events) expect(mayReadSupport(events, s, eventsClosure), s).toBeNull();
+    if (s !== queue) expect(mayReadSupport(queue, s, queueClosure), s).toBeNull();
+  }
+});
+
+it('[CT-06w] the same `./kit.ts` that the task did change still makes the file whole', () => {
+  const files = B112G_R4_FILES();
+  const events = 'test/spec/platform/events/contract.test.ts';
+  const closure = relativeClosure(
+    events,
+    (p) => files[p] ?? null,
+    (p) => p.startsWith('test/'),
+  );
+  expect(mayReadSupport(events, 'test/spec/platform/events/kit.ts', closure)).toBe(
+    'it loads test/spec/platform/events/kit.ts',
+  );
+  expect(mayReadSupport(events, 'test/spec/platform/queue/kit.ts', closure)).toBe(
+    'it loads test/spec/platform/queue/kit.ts',
+  );
+  // A support file the closure does not follow (data) counts through the resolved import.
+  const file = 'test/spec/l/rules.test.ts';
+  const rows: Record<string, string> = {
+    [file]: "import rows from './rows.json';",
+    'test/spec/l/rows.json': '[]',
+  };
+  const data = relativeClosure(
+    file,
+    (p) => rows[p] ?? null,
+    (p) => p.startsWith('test/'),
+  );
+  expect(mayReadSupport(file, 'test/spec/l/rows.json', data)).toBe(
+    `${file} imports test/spec/l/rows.json (./rows.json)`,
+  );
+  // A code file that `follow` keeps out of the closure counts the same way.
+  const kept = relativeClosure(
+    file,
+    (p) => ({ [file]: "import { k } from './kit.ts';", 'test/spec/l/kit.ts': '' })[p] ?? null,
+    () => false,
+  );
+  expect(kept.map((m) => m.path)).toEqual([file]);
+  expect(mayReadSupport(file, 'test/spec/l/kit.ts', kept)).toBe(
+    `${file} imports test/spec/l/kit.ts (./kit.ts)`,
+  );
+});
+
+it('[CT-06w] an import that cannot be resolved keeps the name rules, and the reason says so', () => {
+  const file = 'test/spec/l/rules.test.ts';
+  const support = 'test/spec/identity/step-up-verify/kit.ts';
+  // A package whose specifier carries the name: not a repository file, so it counts as before.
+  const pkg = mod(file, "import { k } from 'fixtures-pkg/kit.ts';");
+  expect(mayReadSupport(file, support, [pkg])).toBe(
+    `${file} names kit.ts in an unresolved import fixtures-pkg/kit.ts (a package (no tsconfig paths map it))`,
+  );
+  // A relative import of a file that does not exist at the head.
+  const gone = mod(file, "import { k } from './kit.ts';");
+  expect((gone.imports[0] as ModuleImport).resolved).toBeNull();
+  expect(mayReadSupport(file, support, [gone])).toBe(
+    `${file} names kit.ts in an unresolved import ./kit.ts (no file at test/spec/l/kit.ts)`,
+  );
+  // The word rule the same way (an extension-less specifier).
+  const word = mod(file, "import { k } from 'fixtures-pkg/kit';");
+  expect(mayReadSupport(file, support, [word])).toBe(
+    `${file} names kit in an unresolved import fixtures-pkg/kit (a package (no tsconfig paths map it))`,
+  );
+  // One that leaves the repository.
+  const out = mod('test/x.test.ts', "import { k } from '../../kit.ts';");
+  expect(mayReadSupport('test/x.test.ts', support, [out])).toBe(
+    `test/x.test.ts names kit.ts in an unresolved import ../../kit.ts (it leaves the repository)`,
+  );
+  // A template specifier, vi.mock and new URL are not imports: the name rules apply unchanged.
+  const files: Record<string, string> = { 'test/spec/l/kit.ts': '' };
+  const other = (text: string) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      () => false,
+    );
+  expect(mayReadSupport(file, support, other('const m = await import(`./kit.ts`);'))).toBe(
+    `${file} names kit.ts`,
+  );
+  expect(mayReadSupport(file, support, other("vi.mock('./kit.ts', () => ({}));"))).toBe(
+    `${file} names kit.ts`,
+  );
+  expect(mayReadSupport(file, support, other("new URL('./kit.ts', import.meta.url);"))).toBe(
+    `${file} names kit.ts`,
+  );
+  // The name elsewhere in the file (a comment, another literal) still counts even when the
+  // import of the same name resolves to another file.
+  expect(
+    mayReadSupport(file, support, other("import { k } from './kit.ts'; // see kit.ts of identity")),
+  ).toBe(`${file} names kit.ts`);
+  expect(
+    mayReadSupport(file, support, other("import { k } from './kit.ts';\nload('../identity/kit');")),
+  ).toBe(`${file} names kit`);
+  // Resolved to another file, nothing else names it: not this support file.
+  expect(mayReadSupport(file, support, other("import { k } from './kit.ts';"))).toBeNull();
+  expect(mayReadSupport(file, support, other("import { k } from './kit';"))).toBeNull();
+  expect(mayReadSupport(file, support, other("export * from './kit.js';"))).toBeNull();
+  expect(mayReadSupport(file, support, other("const k = await import('./kit.ts');"))).toBeNull();
+  expect(mayReadSupport(file, support, other("import './kit.ts?raw';"))).toBeNull();
+});
+
+it('[CT-06w] `#…` and tsconfig paths imports resolve through the nearest package.json / tsconfig.json', () => {
+  const file = 'test/spec/l/rules.test.ts';
+  const support = 'test/spec/identity/step-up-verify/kit.ts';
+  const base: Record<string, string> = {
+    'test/kits/kit.ts': '',
+    'test/kits/data/kit.ts': '',
+    'test/package.json': JSON.stringify({
+      imports: {
+        '#kits/*': './kits/*.ts',
+        '#one': './kits/kit.ts',
+        '#cond': { default: './kits/kit.ts' },
+      },
+    }),
+    'tsconfig.base.json': JSON.stringify({
+      compilerOptions: { baseUrl: '.', paths: { '@kits/*': ['test/kits/*'] } },
+    }),
+    'test/tsconfig.json': JSON.stringify({ extends: '../tsconfig.base' }),
+  };
+  const closure = (text: string, files = base) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  const imports = (text: string, files = base) =>
+    (closure(text, files)[0] as Module).imports.map((i) => [i.spec, i.resolved, i.why]);
+  expect(
+    imports(
+      "import { a } from '#kits/kit';\nimport { b } from '#one';\nimport { c } from '#cond';\nimport { d } from '#none';",
+    ),
+  ).toEqual([
+    ['#kits/kit', 'test/kits/kit.ts', null],
+    ['#one', 'test/kits/kit.ts', null],
+    ['#cond', null, 'test/package.json imports #cond is conditional'],
+    ['#none', null, 'test/package.json maps no imports entry to #none'],
+  ]);
+  expect(
+    imports(
+      "import { a } from '@kits/kit';\nimport { b } from '@kits/data/kit.ts';\nimport { c } from '@kits/none';",
+    ),
+  ).toEqual([
+    ['@kits/kit', 'test/kits/kit.ts', null],
+    ['@kits/data/kit.ts', 'test/kits/data/kit.ts', null],
+    ['@kits/none', null, 'no file for tsconfig.base.json paths @kits/*'],
+  ]);
+  // Resolved elsewhere: not the identity kit; a resolved alias import is followed.
+  const c = closure("import { a } from '#kits/kit';\nimport { b } from '@kits/data/kit.ts';");
+  expect(c.map((m) => m.path)).toEqual([file, 'test/kits/kit.ts', 'test/kits/data/kit.ts']);
+  expect(mayReadSupport(file, support, c)).toBeNull();
+  expect(mayReadSupport(file, 'test/kits/kit.ts', c)).toBe('it loads test/kits/kit.ts');
+  // A config that cannot be parsed, an extends chain that is not a file: unresolved, conservative.
+  expect(
+    imports("import { a } from '#one';", { ...base, 'test/package.json': '{ imports: }' }),
+  ).toEqual([['#one', null, 'test/package.json cannot be parsed']]);
+  expect(
+    imports("import { a } from '@kits/kit';", {
+      ...base,
+      'test/tsconfig.json': JSON.stringify({ extends: '@tsconfig/node' }),
+    }),
+  ).toEqual([
+    [
+      '@kits/kit',
+      null,
+      'test/tsconfig.json extends "@tsconfig/node", which is not a relative file',
+    ],
+  ]);
+  expect(
+    imports("import { a } from '@kits/kit';", { ...base, 'test/tsconfig.json': '// comment\n{}' }),
+  ).toEqual([['@kits/kit', null, 'test/tsconfig.json cannot be parsed']]);
+  expect(
+    mayReadSupport(
+      file,
+      support,
+      closure("import { a } from '@kits/kit';", {
+        ...base,
+        'test/tsconfig.json': '// comment\n{}',
+      }),
+    ),
+  ).toBe(
+    `${file} names kit in an unresolved import @kits/kit (test/tsconfig.json cannot be parsed)`,
   );
 });

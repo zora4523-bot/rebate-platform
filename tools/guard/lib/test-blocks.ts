@@ -30,7 +30,9 @@
 //   as a whole.
 //
 // Test-support files (a helper, fixture or data file the task changed inside its test_paths) are
-// judged by mayReadSupport: a file that may read one is judged as a whole (see there).
+// judged by mayReadSupport: a file that may read one is judged as a whole (see there). Import
+// specifiers are resolved to repository paths first (CT-06w): an import of a same-named file in
+// another directory is not a read of the support file.
 //
 // Node built-ins only; pure functions (the caller reads the files).
 
@@ -815,16 +817,6 @@ function flatten(tokens: readonly Token[]): Token[] {
   return out;
 }
 
-/** String contents of a module: string literals and the static parts of templates, nested too. */
-function literalTexts(tokens: readonly Token[]): string[] {
-  const out: string[] = [];
-  for (const t of flatten(tokens)) {
-    if (t.kind === 'str' && typeof t.value === 'string') out.push(t.value);
-    if (t.kind === 'tpl') for (const p of t.parts ?? []) if (p !== null) out.push(p);
-  }
-  return out;
-}
-
 /** Calls that load files / modules by a computed name (never resolved: always dynamic). */
 const DYNAMIC_ACCESS = new Set(['glob', 'globSync', 'require', 'createRequire']);
 /** Calls that list a directory: resolved statically when they can be (listedDirectories). */
@@ -1266,37 +1258,297 @@ export function listedDirectories(
   return { dirs: [...dirs].sort(), unresolved };
 }
 
+/** A string literal (or the static parts of a template) with its offsets in the module text. */
+export type Literal = { text: string; start: number; end: number };
+
+/**
+ * An import of a module (CT-06w): the specifier as written, where its string literal sits in the
+ * module text (the quotes included) and the repository file it names once resolved — or null with
+ * `why` when it cannot be resolved (mayReadSupport then judges the literal as before).
+ */
+export type ModuleImport = {
+  spec: string;
+  start: number;
+  end: number;
+  resolved: string | null;
+  why: string | null;
+};
+
 export type Module = {
   path: string;
   text: string;
   /** String contents (literals, static template parts); null when the text cannot be tokenized. */
-  literals: string[] | null;
+  literals: Literal[] | null;
   /** Why the module may load files it does not name (dynamicAccess), or null. */
   dynamic: string | null;
   /** The directories it lists, resolved statically (CT-06r); [] when it lists none. */
   lists: string[];
+  /** Its import specifiers resolved to repository paths (CT-06w); [] when it cannot be tokenized. */
+  imports: ModuleImport[];
 };
 
+type Reader = (path: string) => string | null;
+
+/** The string literals of a module with their offsets (nested template parts too). */
+function literalsOf(tokens: readonly Token[]): Literal[] {
+  const out: Literal[] = [];
+  for (const t of flatten(tokens)) {
+    const start = t.start ?? 0;
+    const end = start + t.text.length;
+    if (t.kind === 'str' && typeof t.value === 'string') out.push({ text: t.value, start, end });
+    if (t.kind === 'tpl')
+      for (const p of t.parts ?? []) if (p !== null) out.push({ text: p, start, end });
+  }
+  return out;
+}
+
 /**
- * The modules a rule-test file loads through relative specifiers (./, ../), itself first, at the
- * head: every string literal of a module that resolves to a code file `read` finds is followed
- * (imports, re-exports, dynamic imports, vi.mock paths, new URL(…) of a module), as long as
- * `follow` accepts its path (the caller keeps the walk to test code: implementation modules do
- * not read test-support files). `read` returns null for a file that does not exist.
+ * The module specifiers of a module (CT-06w): the string after `from` (`import … from`,
+ * `export … from`), after `import` (`import 'x'`) and the single literal of `import('x')`. A
+ * template specifier, `vi.mock(…)`, `new URL(…)` and `require` are not imports here: their
+ * literals keep the name rules of mayReadSupport.
+ */
+function importSpecifiers(
+  tokens: readonly Token[],
+): { spec: string; start: number; end: number }[] {
+  const out: { spec: string; start: number; end: number }[] = [];
+  const walk = (ts: readonly Token[]): void => {
+    for (let i = 0; i < ts.length; i += 1) {
+      const t = ts[i] as Token;
+      if (t.inner !== undefined) walk(t.inner);
+      if (t.kind !== 'str' || typeof t.value !== 'string' || t.start === undefined) continue;
+      const prev = ts[i - 1];
+      const before = ts[i - 2];
+      const next = ts[i + 1]?.text;
+      const isImport =
+        (prev?.kind === 'id' && (prev.text === 'from' || prev.text === 'import')) ||
+        (prev?.kind === 'punct' &&
+          prev.text === '(' &&
+          before?.kind === 'id' &&
+          before.text === 'import' &&
+          (next === ')' || next === ','));
+      if (isImport) out.push({ spec: t.value, start: t.start, end: t.start + t.text.length });
+    }
+  };
+  walk(tokens);
+  return out;
+}
+
+/** The files a module specifier may stand for once it names a repository path. */
+function candidatesOf(target: string): string[] {
+  return [target, target.replace(/\.js$/, '.ts'), `${target}.ts`, `${target}/index.ts`];
+}
+
+/**
+ * The first candidate of `target` that is a file `read` finds, or null. A candidate without an
+ * extension is not tried: `read` of a tree can list a directory, which is no file.
+ */
+function existingFile(target: string, read: Reader): string | null {
+  for (const c of candidatesOf(target)) {
+    if (/\.[A-Za-z0-9]+$/.test(baseName(c)) && read(c) !== null) return c;
+  }
+  return null;
+}
+
+/** The nearest file called `name` at or above `dir`: its directory and text. */
+function nearestFile(
+  dir: string,
+  name: string,
+  read: Reader,
+): { dir: string; text: string } | null {
+  for (let d = dir; ; d = dirOf(d)) {
+    const text = read(d === '' ? name : `${d}/${name}`);
+    if (text !== null) return { dir: d, text };
+    if (d === '') return null;
+  }
+}
+
+function parseJson(text: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The key of `keys` that matches `spec` — the key itself, or a key with one `*` whose prefix and
+ * suffix enclose it, the longest prefix first (Node subpath imports, TypeScript paths) — and the
+ * text the `*` stands for.
+ */
+function matchKey(keys: readonly string[], spec: string): { key: string; star: string } | null {
+  let best: { key: string; star: string; prefix: number } | null = null;
+  for (const key of keys) {
+    const star = key.indexOf('*');
+    if (star < 0) {
+      if (key === spec) return { key, star: '' };
+      continue;
+    }
+    if (key.indexOf('*', star + 1) >= 0) continue;
+    const pre = key.slice(0, star);
+    const post = key.slice(star + 1);
+    if (spec.length < pre.length + post.length || !spec.startsWith(pre) || !spec.endsWith(post)) {
+      continue;
+    }
+    if (best === null || pre.length > best.prefix) {
+      best = { key, star: spec.slice(pre.length, spec.length - post.length), prefix: pre.length };
+    }
+  }
+  return best === null ? null : { key: best.key, star: best.star };
+}
+
+type Resolution = { resolved: string | null; why: string | null };
+
+const unresolved = (why: string): Resolution => ({ resolved: null, why });
+const resolvedTo = (target: string, read: Reader): Resolution => {
+  const file = existingFile(target, read);
+  return file === null ? unresolved(`no file at ${target}`) : { resolved: file, why: null };
+};
+
+/** A `#…` specifier through the `imports` of the nearest package.json (a string entry only). */
+function resolveSubpathImport(from: string, spec: string, read: Reader): Resolution {
+  const pkg = nearestFile(dirOf(from), 'package.json', read);
+  if (pkg === null) return unresolved('no package.json above the module');
+  const file = pkg.dir === '' ? 'package.json' : `${pkg.dir}/package.json`;
+  const json = parseJson(pkg.text);
+  if (json === null) return unresolved(`${file} cannot be parsed`);
+  const imports = json['imports'];
+  if (typeof imports !== 'object' || imports === null || Array.isArray(imports)) {
+    return unresolved(`${file} has no imports map`);
+  }
+  const hit = matchKey(Object.keys(imports), spec);
+  if (hit === null) return unresolved(`${file} maps no imports entry to ${spec}`);
+  const value = (imports as Record<string, unknown>)[hit.key];
+  if (typeof value !== 'string') return unresolved(`${file} imports ${hit.key} is conditional`);
+  if (!value.startsWith('./')) return unresolved(`${file} imports ${hit.key} names a package`);
+  const target = joinPath(pkg.dir, value.split('*').join(hit.star));
+  return target === null
+    ? unresolved(`${file} imports ${hit.key} leaves the repository`)
+    : resolvedTo(target, read);
+}
+
+/**
+ * The `paths` of the nearest tsconfig.json at or above `dir`, through its relative `extends`
+ * chain: the innermost `paths` and the directory they are relative to (the innermost `baseUrl`,
+ * else the directory of the config that declares `paths`). null: no paths; a string: why the
+ * chain cannot be read.
+ */
+function tsconfigPaths(
+  dir: string,
+  read: Reader,
+): { paths: Record<string, unknown>; base: string; file: string } | string | null {
+  const nearest = nearestFile(dir, 'tsconfig.json', read);
+  if (nearest === null) return null;
+  let file = nearest.dir === '' ? 'tsconfig.json' : `${nearest.dir}/tsconfig.json`;
+  let text: string | null = nearest.text;
+  let baseUrl: string | null = null;
+  const seen = new Set<string>();
+  for (let hops = 0; text !== null && hops < 16; hops += 1) {
+    if (seen.has(file)) return `${file} extends itself`;
+    seen.add(file);
+    const json = parseJson(text);
+    if (json === null) return `${file} cannot be parsed`;
+    const options = json['compilerOptions'];
+    const opts =
+      typeof options === 'object' && options !== null && !Array.isArray(options)
+        ? (options as Record<string, unknown>)
+        : {};
+    const here = dirOf(file);
+    if (baseUrl === null && typeof opts['baseUrl'] === 'string') {
+      baseUrl = joinPath(here, opts['baseUrl']);
+      if (baseUrl === null) return `${file} baseUrl leaves the repository`;
+    }
+    const paths = opts['paths'];
+    if (typeof paths === 'object' && paths !== null && !Array.isArray(paths)) {
+      return { paths: paths as Record<string, unknown>, base: baseUrl ?? here, file };
+    }
+    const parent = json['extends'];
+    if (parent === undefined) return null;
+    if (typeof parent !== 'string' || (!parent.startsWith('./') && !parent.startsWith('../'))) {
+      return `${file} extends ${JSON.stringify(parent)}, which is not a relative file`;
+    }
+    const next = joinPath(here, parent.endsWith('.json') ? parent : `${parent}.json`);
+    if (next === null) return `${file} extends a file outside the repository`;
+    file = next;
+    text = read(file);
+    if (text === null) return `${file} (extended) does not exist`;
+  }
+  return `${file}: the extends chain is too long`;
+}
+
+/** A bare specifier through the `paths` of the nearest tsconfig.json; a package stays unresolved. */
+function resolveTsPath(from: string, spec: string, read: Reader): Resolution {
+  const found = tsconfigPaths(dirOf(from), read);
+  if (found === null) return unresolved('a package (no tsconfig paths map it)');
+  if (typeof found === 'string') return unresolved(found);
+  const hit = matchKey(Object.keys(found.paths), spec);
+  if (hit === null) return unresolved(`a package (${found.file} paths do not map it)`);
+  const targets = found.paths[hit.key];
+  if (!Array.isArray(targets)) return unresolved(`${found.file} paths ${hit.key} is not a list`);
+  for (const t of targets) {
+    if (typeof t !== 'string') continue;
+    const target = joinPath(found.base, t.split('*').join(hit.star));
+    if (target === null) continue;
+    const file = existingFile(target, read);
+    if (file !== null) return { resolved: file, why: null };
+  }
+  return unresolved(`no file for ${found.file} paths ${hit.key}`);
+}
+
+/**
+ * The repository file an import specifier names, seen from the module at `from` (CT-06w): `./`
+ * and `../` against the module's directory (the same candidates the closure follows: as written,
+ * `.js` → `.ts`, `+ .ts`, `/index.ts`, the first that exists); `#…` through the nearest
+ * package.json `imports` (a string entry, one `*`); anything else through the nearest tsconfig.json
+ * `paths` (relative `extends` followed). Everything else — a package, a conditional entry, a
+ * config that cannot be parsed, a file that does not exist — is unresolved, with the reason.
+ */
+export function resolveImport(from: string, spec: string, read: Reader): Resolution {
+  const clean = spec.startsWith('#') ? spec.replace(/\?.*$/, '') : spec.replace(/[?#].*$/, '');
+  if (clean === '.' || clean === '..' || clean.startsWith('./') || clean.startsWith('../')) {
+    const target = resolveRelative(from, clean);
+    return target === null ? unresolved('it leaves the repository') : resolvedTo(target, read);
+  }
+  if (clean.startsWith('#')) return resolveSubpathImport(from, clean, read);
+  return resolveTsPath(from, clean, read);
+}
+
+/**
+ * The modules a rule-test file loads, itself first, at the head: every string literal of a module
+ * that resolves through a relative specifier (./, ../) to a code file `read` finds is followed
+ * (imports, re-exports, dynamic imports, vi.mock paths, new URL(…) of a module), and so is every
+ * import that resolves through `#…` or tsconfig paths (CT-06w), as long as `follow` accepts its
+ * path (the caller keeps the walk to test code: implementation modules do not read test-support
+ * files). `read` returns null for a file that does not exist.
  */
 export function relativeClosure(
   file: string,
-  read: (path: string) => string | null,
+  read: Reader,
   follow: (path: string) => boolean,
 ): Module[] {
+  const cache = new Map<string, string | null>();
+  const cached: Reader = (p) => {
+    let text = cache.get(p);
+    if (text === undefined) {
+      text = read(p);
+      cache.set(p, text);
+    }
+    return text;
+  };
   const out: Module[] = [];
   const seen = new Set<string>();
   const queue = [file];
+  const enqueue = (c: string): void => {
+    if (CODE_FILE.test(c) && !seen.has(c) && follow(c) && cached(c) !== null) queue.push(c);
+  };
   while (queue.length > 0) {
     const path = queue.shift() as string;
     if (seen.has(path)) continue;
     seen.add(path);
-    const text = read(path);
+    const text = cached(path);
     if (text === null) continue;
     let tokens: Token[] | null;
     try {
@@ -1304,30 +1556,28 @@ export function relativeClosure(
     } catch {
       tokens = null; // mayReadSupport: a module that cannot be read may read anything
     }
-    const literals = tokens === null ? null : literalTexts(tokens);
+    const literals = tokens === null ? null : literalsOf(tokens);
     const listed =
       tokens === null ? { dirs: [], unresolved: null } : listedDirectories(tokens, path);
+    const imports: ModuleImport[] =
+      tokens === null
+        ? []
+        : importSpecifiers(tokens).map((s) => ({ ...s, ...resolveImport(path, s.spec, cached) }));
     out.push({
       path,
       text,
       literals,
       dynamic: tokens === null ? null : (dynamicAccess(tokens) ?? listed.unresolved),
       lists: listed.dirs,
+      imports,
     });
-    for (const s of literals ?? []) {
+    for (const { text: s } of literals ?? []) {
       if (!s.startsWith('./') && !s.startsWith('../')) continue;
       const target = resolveRelative(path, s.replace(/[?#].*$/, ''));
       if (target === null) continue;
-      const candidates = [
-        target,
-        target.replace(/\.js$/, '.ts'),
-        `${target}.ts`,
-        `${target}/index.ts`,
-      ];
-      for (const c of candidates) {
-        if (CODE_FILE.test(c) && !seen.has(c) && follow(c) && read(c) !== null) queue.push(c);
-      }
+      for (const c of candidatesOf(target)) enqueue(c);
     }
+    for (const i of imports) if (i.resolved !== null) enqueue(i.resolved);
   }
   return out;
 }
@@ -1336,8 +1586,12 @@ export function relativeClosure(
  * Why a rule-test file may read a test-support file the task changed (a helper, fixture or data
  * file inside its test_paths), or null when it cannot (CT-06p; conservative: the file is then
  * judged as a whole). `closure` is the file and the modules it loads (relativeClosure). It may
- * when: the support file is one of those modules; its file name occurs anywhere in their text;
- * its name without the extension occurs as a word in their string literals; one of them lists a
+ * when: the support file is one of those modules; one of them imports it (CT-06w: an import
+ * specifier resolved to the support file's repository path); its file name occurs anywhere in
+ * their text; its name without the extension occurs as a word in their string literals — except
+ * inside an import specifier that resolves to another file (CT-06w, after B1-12g: `./kit.ts` of
+ * test/spec/platform/events is not test/spec/identity/step-up-verify/kit.ts; a specifier that
+ * cannot be resolved still counts, the reason says `unresolved import`); one of them lists a
  * directory that holds the support file (CT-06r: readdir & co. resolved statically; a listing
  * whose directory cannot be resolved counts as reading anything, the reason says so) or loads by
  * a computed name (glob, require, a dynamic import of a computed specifier) or cannot be
@@ -1361,11 +1615,28 @@ export function mayReadSupport(
   const dot = name.lastIndexOf('.');
   const stem = dot > 0 ? name.slice(0, dot) : name;
   const word = new RegExp(`(?<![\\w$.-])${escapeRegex(stem)}(?![\\w$-])`, 'u');
+  if (closure.some((m) => m.path === support)) return `it loads ${support}`;
   for (const m of closure) {
-    if (m.path === support) return `it loads ${support}`;
-    if (m.text.includes(name)) return `${m.path} names ${name}`;
+    const imported = m.imports.find((i) => i.resolved === support);
+    if (imported !== undefined) return `${m.path} imports ${support} (${imported.spec})`;
+    // CT-06w: the name rules skip an import specifier that resolves to another file; a specifier
+    // that cannot be resolved counts as before (`unresolved import`).
+    const within = (start: number, end: number): ModuleImport | undefined =>
+      m.imports.find((i) => i.start <= start && end <= i.end);
+    const unresolvedNote = (what: string, i: ModuleImport): string =>
+      `${m.path} names ${what} in an unresolved import ${i.spec} (${i.why})`;
+    for (let at = m.text.indexOf(name); at >= 0; at = m.text.indexOf(name, at + 1)) {
+      const i = within(at, at + name.length);
+      if (i === undefined) return `${m.path} names ${name}`;
+      if (i.resolved === null) return unresolvedNote(name, i);
+    }
     if (m.literals === null) return `${m.path} cannot be read as code, so it may read ${support}`;
-    if (m.literals.some((s) => word.test(s))) return `${m.path} names ${stem}`;
+    for (const l of m.literals) {
+      if (!word.test(l.text)) continue;
+      const i = within(l.start, l.end);
+      if (i === undefined) return `${m.path} names ${stem}`;
+      if (i.resolved === null) return unresolvedNote(stem, i);
+    }
     // The repository root is '' and holds every path (Codex review r2, S2).
     const listed = m.lists.find((d) => d === '' || support === d || support.startsWith(`${d}/`));
     if (listed !== undefined) return `${m.path} lists ${listed}, which holds ${support}`;
