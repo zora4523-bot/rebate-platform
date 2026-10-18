@@ -1394,15 +1394,18 @@ function parseJson(text: string): Record<string, unknown> | null {
 
 /**
  * The key of `keys` that matches `spec`: the key itself, or the single key with one `*` whose
- * prefix and suffix enclose a non-empty rest — and that rest. Two matching patterns are not
- * decided here (Node and Vite's resolver rank them differently; Codex review r2), nor is a folder
- * key (`#x/`) that covers the specifier: both come back as `ambiguous`.
+ * prefix and suffix enclose a non-empty rest — and that rest. Undecided (`ambiguous`): two
+ * matching patterns (Node and Vite's resolver rank them differently; Codex review r2), a folder
+ * key (`#x/`) that covers the specifier, a pattern with a regular-expression character (Vite's
+ * resolver builds an unescaped RegExp from the key, so `#k.t.*` also matches `#kit.ts`; Codex
+ * review r3), or a pattern that such a RegExp matches although its prefix and suffix do not.
  */
 function matchKey(
   keys: readonly string[],
   spec: string,
 ): { key: string; star: string } | 'ambiguous' | null {
   const hits: { key: string; star: string }[] = [];
+  let loose = 0;
   for (const key of keys) {
     const star = key.indexOf('*');
     if (star < 0) {
@@ -1410,15 +1413,21 @@ function matchKey(
       if (key.endsWith('/') && spec.startsWith(key)) return 'ambiguous';
       continue;
     }
-    if (key.indexOf('*', star + 1) >= 0) continue;
+    if (key.indexOf('*', star + 1) >= 0) return 'ambiguous';
+    try {
+      if (new RegExp(`^${key.replace('*', '(.*)')}$`).test(spec)) loose += 1;
+    } catch {
+      return 'ambiguous';
+    }
     const pre = key.slice(0, star);
     const post = key.slice(star + 1);
     if (spec.length <= pre.length + post.length || !spec.startsWith(pre) || !spec.endsWith(post)) {
       continue;
     }
+    if (/[.+?^${}()|[\]\\]/.test(key)) return 'ambiguous';
     hits.push({ key, star: spec.slice(pre.length, spec.length - post.length) });
   }
-  if (hits.length > 1) return 'ambiguous';
+  if (hits.length > 1 || loose > hits.length) return 'ambiguous';
   return hits[0] ?? null;
 }
 
@@ -1480,7 +1489,12 @@ function resolveModuleFile(target: string, files: Files): Resolution {
   return unresolved(`${target} is ambiguous (${all.join(', ')})`);
 }
 
-/** A `#…` specifier through the `imports` of the nearest package.json (a string entry only). */
+/**
+ * A `#…` specifier through the `imports` of the nearest package.json: a string entry that is a
+ * plain `./` path — one `*` for a pattern key and none for an exact key, no trailing `/` (Vite's
+ * resolver appends the rest to a folder value), no `?` / `#` (a query the loader would strip;
+ * Codex review r3) — kept inside the package directory.
+ */
 function resolveSubpathImport(from: string, spec: string, files: Files): Resolution {
   const pkg = nearestFile(dirOf(from), 'package.json', files);
   if (pkg === null) return unresolved('no package.json above the module');
@@ -1497,8 +1511,16 @@ function resolveSubpathImport(from: string, spec: string, files: Files): Resolut
   if (hit === 'ambiguous') return unresolved(`${file} cannot decide the imports entry for ${spec}`);
   const value = (imports as Record<string, unknown>)[hit.key];
   if (typeof value !== 'string') return unresolved(`${file} imports ${hit.key} is conditional`);
-  if (!value.startsWith('./')) return unresolved(`${file} imports ${hit.key} is not a ./ path`);
-  const target = joinPath(pkg.dir, value.split('*').join(hit.star));
+  const stars = value.split('*').length - 1;
+  if (
+    !value.startsWith('./') ||
+    value.endsWith('/') ||
+    /[?#]/.test(value) ||
+    stars !== (hit.key.includes('*') ? 1 : 0)
+  ) {
+    return unresolved(`${file} imports ${hit.key} is not a plain ./ path`);
+  }
+  const target = joinPath(pkg.dir, value.replace('*', hit.star));
   if (target === null || (pkg.dir !== '' && !target.startsWith(`${pkg.dir}/`))) {
     return unresolved(`${file} imports ${hit.key} leaves the package`);
   }
@@ -1615,9 +1637,10 @@ export function relativeClosure(
  * when: the support file is one of those modules; one of them imports it (CT-06w: an import
  * specifier resolved to the support file's repository path); its file name occurs anywhere in
  * their text; its name without the extension occurs as a word in their string literals — except
- * inside an import specifier that resolves to another file (CT-06w, after B1-12g: `./kit.ts` of
- * test/spec/platform/events is not test/spec/identity/step-up-verify/kit.ts; a specifier that
- * cannot be resolved still counts, the reason says `unresolved import`); one of them lists a
+ * inside an import specifier that resolves to another module of the closure (CT-06w, after
+ * B1-12g: `./kit.ts` of test/spec/platform/events is not test/spec/identity/step-up-verify/kit.ts;
+ * a specifier that cannot be resolved, or resolved to a file the closure does not follow, still
+ * counts, the reason says `unresolved import`); one of them lists a
  * directory that holds the support file (CT-06r: readdir & co. resolved statically; a listing
  * whose directory cannot be resolved counts as reading anything, the reason says so) or loads by
  * a computed name (glob, require, a dynamic import of a computed specifier) or cannot be
@@ -1641,27 +1664,39 @@ export function mayReadSupport(
   const dot = name.lastIndexOf('.');
   const stem = dot > 0 ? name.slice(0, dot) : name;
   const word = new RegExp(`(?<![\\w$.-])${escapeRegex(stem)}(?![\\w$-])`, 'u');
-  if (closure.some((m) => m.path === support)) return `it loads ${support}`;
+  const followed = new Set(closure.map((m) => m.path));
+  if (followed.has(support)) return `it loads ${support}`;
   for (const m of closure) {
     const imported = m.imports.find((i) => i.resolved === support);
     if (imported !== undefined) return `${m.path} imports ${support} (${imported.spec})`;
-    // CT-06w: the name rules skip an import specifier that resolves to another file; a specifier
-    // that cannot be resolved counts as before (`unresolved import`).
+    // CT-06w: the name rules skip an import specifier that resolves to another file of the
+    // closure (a module read here, whose own reads are judged); a specifier that cannot be
+    // resolved, or that resolves to a file the closure does not follow (data, a style sheet, a
+    // module outside the test code — it may load the support file in a way not read here; Codex
+    // review r3), counts as before (`unresolved import`).
     const within = (start: number, end: number): ModuleImport | undefined =>
       m.imports.find((i) => i.start <= start && end <= i.end);
-    const unresolvedNote = (what: string, i: ModuleImport): string =>
-      `${m.path} names ${what} in an unresolved import ${i.spec} (${i.why})`;
+    const uncertain = (i: ModuleImport): string | null =>
+      i.resolved === null
+        ? i.why
+        : followed.has(i.resolved)
+          ? null
+          : `${i.resolved} is not followed by the closure`;
+    const note = (what: string, i: ModuleImport, why: string): string =>
+      `${m.path} names ${what} in an unresolved import ${i.spec} (${why})`;
     for (let at = m.text.indexOf(name); at >= 0; at = m.text.indexOf(name, at + 1)) {
       const i = within(at, at + name.length);
       if (i === undefined) return `${m.path} names ${name}`;
-      if (i.resolved === null) return unresolvedNote(name, i);
+      const why = uncertain(i);
+      if (why !== null) return note(name, i, why);
     }
     if (m.literals === null) return `${m.path} cannot be read as code, so it may read ${support}`;
     for (const l of m.literals) {
       if (!word.test(l.text)) continue;
       const i = within(l.start, l.end);
       if (i === undefined) return `${m.path} names ${stem}`;
-      if (i.resolved === null) return unresolvedNote(stem, i);
+      const why = uncertain(i);
+      if (why !== null) return note(stem, i, why);
     }
     // The repository root is '' and holds every path (Codex review r2, S2).
     const listed = m.lists.find((d) => d === '' || support === d || support.startsWith(`${d}/`));

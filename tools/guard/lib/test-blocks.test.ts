@@ -828,7 +828,7 @@ it('[CT-06w] an import that cannot be resolved keeps the name rules, and the rea
     relativeClosure(
       file,
       (p) => (p === file ? text : (files[p] ?? null)),
-      () => false,
+      (p) => p.startsWith('test/'),
     );
   expect(mayReadSupport(file, support, other('const m = await import(`./kit.ts`);'))).toBe(
     `${file} names kit.ts`,
@@ -914,7 +914,7 @@ it('[CT-06w] `#…` imports resolve through the nearest package.json where one e
     ['#one', 'test/kits/kit.ts', null],
     ['#cond', null, 'test/package.json imports #cond is conditional'],
     ['#none', null, 'test/package.json maps no imports entry to #none'],
-    ['#pkg', null, 'test/package.json imports #pkg is not a ./ path'],
+    ['#pkg', null, 'test/package.json imports #pkg is not a plain ./ path'],
     ['#same/kit.ts', null, 'test/package.json cannot decide the imports entry for #same/kit.ts'],
     ['#kit.ts#preview', 'test/support/kit.ts', null],
     ['#one?raw', 'test/kits/kit.ts', null],
@@ -923,8 +923,8 @@ it('[CT-06w] `#…` imports resolve through the nearest package.json where one e
       null,
       'test/package.json cannot decide the imports entry for #folder/kit.ts',
     ],
-    ['#up', null, 'test/package.json imports #up is not a ./ path'],
-    ['#kits/', null, 'test/package.json maps no imports entry to #kits/'],
+    ['#up', null, 'test/package.json imports #up is not a plain ./ path'],
+    ['#kits/', null, 'test/package.json cannot decide the imports entry for #kits/'],
   ]);
   // `#same/kit.ts` is undecided and names the support file: whole; `#kit.ts#preview` loads it.
   expect(
@@ -1190,4 +1190,103 @@ it('[CT-06w] only the import and export syntax makes a string an import specifie
       ),
     ),
   ).toBe(`${file} names rows.json`);
+});
+
+it('[CT-06w] `#…` entries the runtime may expand differently stay unresolved (Codex review r3)', () => {
+  const file = 'test/spec/l/rules.test.ts';
+  const files: Record<string, string> = {
+    'test/other/kit.ts': '',
+    'test/other/index.ts': '',
+    'test/support/kit.ts': '',
+    'test/data/kit.json': '{}',
+    'test/package.json': JSON.stringify({
+      imports: {
+        // Vite's resolver builds an unescaped RegExp from a pattern: `#k.t.*` matches `#kit.ts`.
+        '#kit.*': './other/kit.ts',
+        '#k.t.*': './support/kit.ts',
+        // A folder value: the resolver appends the rest; a literal `*` in an exact entry's value.
+        '#kits/*': './other/',
+        '#star': './other/*/kit.ts',
+        // A query the loader strips.
+        '#kit.json': './data/kit.json?raw',
+        // Plain entries resolve.
+        '#plain/*': './support/*.ts',
+        '#exact': './support/kit.ts',
+      },
+    }),
+  };
+  const imports = (text: string) =>
+    (
+      relativeClosure(
+        file,
+        (p) => (p === file ? text : (files[p] ?? null)),
+        (p) => p.startsWith('test/'),
+      )[0] as Module
+    ).imports.map((i) => [i.spec, i.resolved, i.why]);
+  expect(
+    imports(
+      [
+        "import { a } from '#kit.ts';",
+        "import { b } from '#kits/kit.ts';",
+        "import { c } from '#star';",
+        "import { d } from '#kit.json';",
+        "import { e } from '#plain/kit';",
+        "import { f } from '#exact';",
+      ].join('\n'),
+    ),
+  ).toEqual([
+    ['#kit.ts', null, 'test/package.json cannot decide the imports entry for #kit.ts'],
+    ['#kits/kit.ts', null, 'test/package.json cannot decide the imports entry for #kits/kit.ts'],
+    ['#star', null, 'test/package.json imports #star is not a plain ./ path'],
+    ['#kit.json', null, 'test/package.json cannot decide the imports entry for #kit.json'],
+    ['#plain/kit', 'test/support/kit.ts', null],
+    ['#exact', 'test/support/kit.ts', null],
+  ]);
+});
+
+it('[CT-06w] an import resolved to a file the closure does not follow keeps the name rules (Codex review r3)', () => {
+  const file = 'test/spec/a/rules.browser.test.ts';
+  const files: Record<string, string> = {
+    'test/spec/a/theme.css': "@import '../real/theme.css';",
+    'test/spec/a/kit': "export * from '../real/kit.ts';",
+    'test/spec/a/rows.json': '[]',
+    'test/spec/real/theme.css': '',
+    'test/spec/real/kit.ts': '',
+    'apps/api/src/x.ts': '',
+  };
+  const closure = (text: string) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  // A style sheet (its @import is not read here), an extension-less module (not code to the
+  // closure), a data file, a module outside the test code: resolved, not followed, still named.
+  const css = closure("import './theme.css';");
+  expect((css[0] as Module).imports[0]?.resolved).toBe('test/spec/a/theme.css');
+  expect(css.map((m) => m.path)).toEqual([file]);
+  expect(mayReadSupport(file, 'test/spec/real/theme.css', css)).toBe(
+    `${file} names theme.css in an unresolved import ./theme.css (test/spec/a/theme.css is not followed by the closure)`,
+  );
+  expect(mayReadSupport(file, 'test/spec/real/kit.ts', closure("import { k } from './kit';"))).toBe(
+    `${file} names kit in an unresolved import ./kit (test/spec/a/kit is not followed by the closure)`,
+  );
+  expect(
+    mayReadSupport(file, 'test/other/rows.json', closure("import rows from './rows.json';")),
+  ).toBe(
+    `${file} names rows.json in an unresolved import ./rows.json (test/spec/a/rows.json is not followed by the closure)`,
+  );
+  expect(
+    mayReadSupport(
+      file,
+      'test/spec/real/x.ts',
+      closure("import { x } from '../../../apps/api/src/x.ts';"),
+    ),
+  ).toBe(
+    `${file} names x.ts in an unresolved import ../../../apps/api/src/x.ts (apps/api/src/x.ts is not followed by the closure)`,
+  );
+  // The resolved file itself as the support file still counts by its path.
+  expect(mayReadSupport(file, 'test/spec/a/theme.css', css)).toBe(
+    `${file} imports test/spec/a/theme.css (./theme.css)`,
+  );
 });

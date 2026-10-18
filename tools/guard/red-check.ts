@@ -70,8 +70,9 @@ function kindAt(cwd: string, ref: string, path: string): PathKind {
 
 /**
  * What a path is in the work tree at `cwd`: a regular file or a directory whose canonical path
- * (realpath: no symbolic link in any component, the tree's own case) is the path itself; a
- * symbolic link, a path through one, a case alias or anything else is `other` (Codex review r2).
+ * (realpath: no symbolic link in any component, the tree's own case) is the path itself and, for
+ * a file, whose spelling is the index's; a symbolic link, a path through one, a case alias, an
+ * untracked file or anything else is `other` (Codex reviews r2, r3).
  */
 function kindInWorkTree(cwd: string, path: string): PathKind {
   const abs = join(cwd, path);
@@ -87,9 +88,13 @@ function kindInWorkTree(cwd: string, path: string): PathKind {
   } catch {
     return 'other';
   }
-  if (stat.isFile()) return 'file';
   if (stat.isDirectory()) return 'dir';
-  return 'other';
+  if (!stat.isFile()) return 'other';
+  // The index may spell the path differently on a case-insensitive file system (a renamed
+  // directory): the support paths come from git, so a file counts only under git's spelling
+  // (Codex review r3); an untracked file is not certain either.
+  const tracked = tryGit(['ls-files', '--full-name', '--', path], { cwd });
+  return tracked.status === 0 && tracked.stdout.split('\n')[0] === path ? 'file' : 'other';
 }
 
 runCli(
