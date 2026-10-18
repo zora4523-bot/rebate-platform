@@ -1,0 +1,28 @@
+id: B1-10b
+repo: rebate-platform
+title: 找回受理：POST /v1/orders/claims 按 ⓪～④ 顺序校验（开关 → 风控当日禁止 → 当日上限 → 匹配（先子单号后父单号、先去掉全部分享单、拼多多去连字符）→ 逐子订单校验），通过的子订单写 claim_items、claim 经 transition() 置 submitted；GET /v1/orders/claims；挂载控制器、去 planned
+type: impl
+# 草稿 2026-10-18（W1 线，订单线第二段第二波）。拆分方案 couli-runs/W1-search-linking/orders-plan-b110-b109.md（待编排裁定 J-1～J-22 按默认做法，见 notices 03:10 UTC 登记），依据按 SPEC_REF 逐字摘录进任务书。
+# 分工：订单归属 / 找回属 approvals 30 留 Claude 的范围 → impl claude、tester codex（D10-15）。用户侧、不涉资金；不碰同步流水线（pipeline-port / update-step），与 B1-08i～k 不冲突。
+# 计数按 J-2（当日已建 claim 数以 PG 为准，失败次数与当日封禁标记用 08 的 Redis 键，Redis 不可用时失败关闭）；claim_fail_burst 按 J-3（告警日志 + Redis 当日封禁标记，risk_hits 落点交 risk 线）；(app_id, user_id) advisory 锁内读写计数；全失败按 sub_order_id 升序回第一个错误。去 planned 为机械提交，不占契约槽。
+refs: []
+refs_hash: {}
+deps: [B1-10a, CT-04e, CT-04f, B1-08h, B1-08d]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/orders/claims-submit/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/claims-submit/**'
+status: todo
+pr: null
