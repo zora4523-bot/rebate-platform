@@ -75,6 +75,29 @@ export async function completeLogin(
   const { clock, crypto, tokens } = options;
   const { app_id: appId, device_id: deviceId, body } = command;
   const userId = account.id;
+  // BR-INV-09 candidate, decided before any lock is waited for: a landing-bound account with no
+  // login_logs yet, logging in on an App platform with the review assembled.
+  const review = options.firstAppLoginReview;
+  const reviewCandidate =
+    review !== undefined &&
+    isVersionGatedPlatform(command.platform) &&
+    account.parent_bind_source === 'landing' &&
+    !(await hasLoginLog(trx, appId, userId));
+  // Lock order (B1-11f review r1 S1): users row → consent lock → relation write lock. The review
+  // may UPDATE this users row after the consent lock; taking the row lock first, as the OAuth
+  // lookup does (findOauthAccount), keeps an SMS and a WeChat / Apple first login of the same
+  // account from each holding one lock and waiting for the other. Only a candidate takes it: such
+  // an account has no login yet, hence no session, so no consent write (consents.ts: consent lock,
+  // then the users row) can be running for it.
+  if (reviewCandidate) {
+    await trx
+      .selectFrom('users')
+      .select('id')
+      .where('app_id', '=', appId)
+      .where('id', '=', userId)
+      .forNoKeyUpdate()
+      .executeTakeFirst();
+  }
   // BR-ID-12: one user's logins on several devices merge one after another (lockUserConsents).
   await lockUserConsents(trx, appId, userId);
   const now = clock.now();
@@ -131,14 +154,11 @@ export async function completeLogin(
     method,
     created_at: now,
   });
-  // BR-INV-09: only an App login, only a landing-bound user, only the first login log.
-  const review = options.firstAppLoginReview;
-  if (
-    review !== undefined &&
-    firstLogin &&
-    isVersionGatedPlatform(command.platform) &&
-    account.parent_bind_source === 'landing'
-  ) {
+  // BR-INV-09: only an App login, only a landing-bound user, only the first login log (checked
+  // again under the consent lock: a concurrent first login may have committed meanwhile). Only a
+  // candidate holds the users row lock, so the review never waits for a row lock after the
+  // consent lock.
+  if (review !== undefined && reviewCandidate && firstLogin) {
     await review.review(trx, { app_id: appId, user_id: userId, device_id_hash: deviceIdHash });
   }
   const pushTokens = options.pushTokens;
