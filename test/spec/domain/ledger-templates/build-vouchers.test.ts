@@ -20,7 +20,6 @@ it('[AC-B2-01j#1] 每个完整模板逐业务组匹配 CSV，分录无序但不�
       'WITHDRAW:RETURN',
       'CREDIT:SELF',
       'CREDIT:PLATFORM',
-      'WITHDRAW:SUCCESS:CASH_WECHAT',
       'ADJ:DEFERRED:RESTORE',
       'FORFEIT:DEFERRED',
       'UNION_RECEIPT:CASH_ALIPAY',
@@ -46,7 +45,12 @@ it('[AC-B2-01j#1] 每个完整模板逐业务组匹配 CSV，分录无序但不�
 it('[AC-B2-01j#2] 已定模板出正确分录，任一格 TBD 仍整张拒绝，P1 奖励 id 不登记且拒绝', () => {
   const templates = readTemplates();
   const pending = [...readTemplates()].filter(([, rows]) => isTbd(rows));
-  for (const id of ['CREDIT:SELF', 'WITHDRAW:SUCCESS:CASH_WECHAT']) {
+  for (const id of [
+    'CREDIT:SELF',
+    'WITHDRAW:SUCCESS:CASH_ALIPAY',
+    'WITHDRAW:SUCCESS:CASH_BANK',
+    'WITHDRAW:SUCCESS:CASH_WECHAT',
+  ]) {
     const rows = templates.get(id);
     expect(rows, id).toBeDefined();
     expect(isTbd(rows!), id).toBe(false);
@@ -55,6 +59,10 @@ it('[AC-B2-01j#2] 已定模板出正确分录，任一格 TBD 仍整张拒绝，
     const vouchers = buildVouchers(id, params);
     expect(vouchers, id).toHaveLength(1);
     expect(voucherGroups(vouchers), id).toEqual(csvGroups(rows!, params));
+    expect(validVouchers(vouchers), id).toBe(true);
+    if (id.startsWith('WITHDRAW:SUCCESS:')) {
+      expect(vouchers[0]?.uniq_key, id).toBe(`wd:${params['withdrawal_id']}:PAID`);
+    }
   }
   for (const id of ['REWARD:newbie', 'REWARD:checkin', 'REWARD:invite']) {
     expect(templates.has(id), id).toBe(false);
@@ -93,7 +101,12 @@ it('[AC-B2-01j#3] 缺金额、键占位值或用户归属参数均拒绝', () =>
 });
 
 it('[AC-B2-01j#4] 多余金额、别名或无关上下文不能被默默忽略', () => {
-  for (const [id, rows] of executableTemplates()) {
+  const templates = executableTemplates();
+  expect(templates.map(([id]) => id)).toEqual(
+    expect.arrayContaining(['CREDIT:SELF', 'CREDIT:PLATFORM', 'WITHDRAW:SUCCESS:CASH_WECHAT']),
+  );
+  for (const [id, rows] of templates) {
+    const params = parameters(rows);
     for (const [key, value] of Object.entries({
       extra_fen: 1n,
       fee_fen: 1n,
@@ -101,7 +114,8 @@ it('[AC-B2-01j#4] 多余金额、别名或无关上下文不能被默默忽略',
       platform: 'jd',
       role: 'self',
     })) {
-      expect(() => buildVouchers(id, { ...parameters(rows), [key]: value }), key).toThrow(
+      if (Object.hasOwn(params, key)) continue;
+      expect(() => buildVouchers(id, { ...params, [key]: value }), `${id} extra ${key}`).toThrow(
         RangeError,
       );
     }
@@ -109,7 +123,11 @@ it('[AC-B2-01j#4] 多余金额、别名或无关上下文不能被默默忽略',
 });
 
 it('[AC-B2-01j#5] 金额只接受非负 int64 bigint，拒绝负数、溢出与隐式转换', () => {
-  for (const [id, rows] of executableTemplates()) {
+  const templates = executableTemplates();
+  expect(templates.map(([id]) => id)).toEqual(
+    expect.arrayContaining(['CREDIT:SELF', 'CREDIT:PLATFORM', 'WITHDRAW:SUCCESS:CASH_WECHAT']),
+  );
+  for (const [id, rows] of templates) {
     for (const invalid of [
       -1n,
       -9223372036854775808n,
@@ -122,20 +140,31 @@ it('[AC-B2-01j#5] 金额只接受非负 int64 bigint，拒绝负数、溢出与�
       null,
       undefined,
     ]) {
-      const params = { ...parameters(rows), withdraw_fen: invalid };
-      expect(() => buildVouchers(id, params as unknown as BuildVoucherParams)).toThrow(RangeError);
+      for (const amountRef of new Set(rows.map((row) => row.amount_ref))) {
+        const params = { ...parameters(rows), [amountRef]: invalid };
+        expect(
+          () => buildVouchers(id, params as unknown as BuildVoucherParams),
+          `${id} invalid ${amountRef}`,
+        ).toThrow(RangeError);
+      }
     }
   }
 });
 
 it('[AC-B2-01j#6] 零金额不产生零分录或空凭证，参数校验仍执行', () => {
-  for (const [id, rows] of executableTemplates()) {
+  const templates = executableTemplates();
+  expect(templates.map(([id]) => id)).toEqual(
+    expect.arrayContaining(['CREDIT:SELF', 'CREDIT:PLATFORM', 'WITHDRAW:SUCCESS:CASH_WECHAT']),
+  );
+  for (const [id, rows] of templates) {
     const params = parameters(rows, 0n);
     expect(buildVouchers(id, params), id).toEqual([]);
     expect(() => buildVouchers(id, { ...params, unknown: 'x' })).toThrow(RangeError);
-    const missing = { ...params };
-    delete missing['withdrawal_id'];
-    expect(() => buildVouchers(id, missing)).toThrow(RangeError);
+    for (const key of Object.keys(params)) {
+      const missing = { ...params };
+      delete missing[key];
+      expect(() => buildVouchers(id, missing), `${id} missing ${key} at zero`).toThrow(RangeError);
+    }
   }
 });
 
@@ -177,13 +206,24 @@ it('[AC-B2-01j#7] BR-WDR-09 冻结/退回方向及 wd 键固定，用户所有�
 });
 
 it('[AC-B2-01j#8] 相同输入结果相同且不修改冻结的参数或先前结果', () => {
-  for (const [id, rows] of executableTemplates()) {
+  const templates = executableTemplates();
+  expect(templates.map(([id]) => id)).toEqual(
+    expect.arrayContaining(['CREDIT:SELF', 'CREDIT:PLATFORM', 'WITHDRAW:SUCCESS:CASH_WECHAT']),
+  );
+  for (const [id, rows] of templates) {
     const params = Object.freeze(parameters(rows, 9007199254740993n));
     const before = structuredClone(params);
     const first = buildVouchers(id, params);
     const saved = structuredClone(first);
     expect(buildVouchers(id, params)).toEqual(saved);
-    buildVouchers(id, { ...params, user_id: 'another-user', withdraw_fen: 1n });
+    const changed = { ...parameters(rows, 1n) };
+    for (const key of Object.keys(changed)) {
+      if (typeof changed[key] !== 'string') continue;
+      if (key === 'order_key') changed[key] = 'jd:another-order';
+      else if (key === 'platform') changed[key] = 'jd';
+      else if (key !== 'role') changed[key] = 'another-value';
+    }
+    expect(() => buildVouchers(id, changed), id).not.toThrow();
     expect(params).toEqual(before);
     expect(first).toEqual(saved);
   }

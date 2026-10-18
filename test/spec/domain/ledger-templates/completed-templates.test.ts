@@ -1,7 +1,8 @@
 import { buildVouchers, type BuildVoucherParams, type BuiltVoucher } from '@couli/domain';
 import { expect, it } from 'vitest';
+import { executableTemplates, parameters } from './fixtures.ts';
 
-// Independent examples from SPEC_REF e89cfee, task §2b and §9; no generated table imports.
+// Independent examples from SPEC_REF 8c91f67, task §2b and §9–11; no generated table imports.
 const order = { order_key: 'taobao:1234567', platform: 'taobao' };
 const beneficiary = { ...order, user_id: 'u42', role: 'self' };
 const union = 'UNION_RECEIVABLE:taobao';
@@ -35,7 +36,7 @@ function entry(
       owner_id: subject === 'USER_BALANCE' ? userId : 'platform',
       subject,
     },
-    sub_account: subAccount,
+    sub_account: subject === 'USER_BALANCE' ? subAccount : null,
     amount_fen: amount,
     ledger_type: type,
     sub_type: sub,
@@ -54,7 +55,7 @@ function voucher(
   expect(actual[0]?.entries.reduce((sum, row) => sum + row.amount_fen, 0n)).toBe(0n);
 }
 
-it('[AC-B2-01l#1] 四角色入账及含预留的平台入账按独立期望出分录，平台子户为 available', () => {
+it('[AC-B2-01l#1] 四角色入账及含预留的平台入账按独立期望出分录，平台输出子户为 null', () => {
   for (const [id, role, type, sub] of roles) {
     voucher(
       build(`CREDIT:${id}`, { ...beneficiary, role, share_fen: 617n }),
@@ -132,38 +133,64 @@ it('[AC-B2-01l#4] 延后补记四模板保留开立类型，义务 id 隔离且�
   }
 });
 
-it('[AC-B2-01l#5] 提现成功三通道各只出一张凭证，净额手续费税分开记且零分录省略', () => {
+it('[AC-B2-01l#5] 提现成功三通道只写一张 PAID 凭证，净额手续费税逐分录匹配且零金额省略', () => {
   for (const cash of ['CASH_ALIPAY', 'CASH_BANK', 'CASH_WECHAT']) {
     const id = `WITHDRAW:SUCCESS:${cash}`;
     for (const [net, fee, tax] of [
       [9700n, 100n, 200n],
       [10000n, 0n, 0n],
       [0n, 100n, 200n],
-    ]) {
-      const actual = build(id, {
+      [9700n, 0n, 200n],
+      [9700n, 100n, 0n],
+      [0n, 100n, 0n],
+      [0n, 0n, 200n],
+      [0n, 0n, 0n],
+    ] as const) {
+      const params = {
         withdrawal_id: 'w7',
         user_id: 'u42',
-        net_fen: net!,
-        fee_fen: fee!,
-        tax_fen: tax!,
-      });
-      const entries = [
-        entry('USER_BALANCE', net!, 'WITHDRAW_PAID', null, 'u42', 'frozen'),
-        entry(cash, -net!, 'WITHDRAW_PAID'),
-        entry('USER_BALANCE', fee!, 'WITHDRAW_FEE', null, 'u42', 'frozen'),
-        entry('FEE_INCOME', -fee!, 'WITHDRAW_FEE'),
-        entry('USER_BALANCE', tax!, 'TAX_WITHHOLD', null, 'u42', 'frozen'),
-        entry('TAX_PAYABLE', -tax!, 'TAX_WITHHOLD'),
-      ].filter((row) => row.amount_fen !== 0n);
-      expect(actual).toHaveLength(1);
-      expect(actual[0]?.entries).toHaveLength(entries.length);
-      expect(actual[0]?.entries).toEqual(expect.arrayContaining(entries));
-      expect(
-        actual[0]?.entries
-          .filter((row) => row.account.owner_type === 'user')
-          .reduce((sum, row) => sum + row.amount_fen, 0n),
-      ).toBe(net! + fee! + tax!);
+        net_fen: net,
+        fee_fen: fee,
+        tax_fen: tax,
+      };
+      const expected = [
+        [net, 'WITHDRAW_PAID', cash],
+        [fee, 'WITHDRAW_FEE', 'FEE_INCOME'],
+        [tax, 'TAX_WITHHOLD', 'TAX_PAYABLE'],
+      ] as const;
+      const entries = expected.flatMap(([amount, type, subject]) =>
+        amount === 0n
+          ? []
+          : [
+              entry('USER_BALANCE', amount, type, null, 'u42', 'frozen'),
+              entry(subject, -amount, type),
+            ],
+      );
+      const actual = build(id, params);
+      if (entries.length === 0) expect(actual, id).toEqual([]);
+      else voucher(actual, 'wd:w7:PAID', entries);
     }
+  }
+});
+
+it('[AC-B2-01l#11] 订单平台与应收科目平台必须一致，不得把京东订单记入淘宝应收', () => {
+  const templates = executableTemplates().filter(([, rows]) => {
+    const params = parameters(rows);
+    return Object.hasOwn(params, 'order_key') && Object.hasOwn(params, 'platform');
+  });
+  expect(templates.map(([id]) => id)).toEqual(
+    expect.arrayContaining([
+      'CREDIT:SELF',
+      'CREDIT:PLATFORM',
+      'FORFEIT',
+      'ADJ:DEFERRED:SETTLE_DIFF',
+    ]),
+  );
+  for (const [id, rows] of templates) {
+    const params = parameters(rows);
+    // First prove the template is executable; rejection must not just be a TBD rejection.
+    expect(build(id, params)).toHaveLength(1);
+    expect(() => buildVouchers(id, { ...params, order_key: 'jd:1234567' }), id).toThrow(RangeError);
   }
 });
 

@@ -119,7 +119,8 @@ export function csvGroups(rows: readonly TemplateRow[], params: BuildVoucherPara
           row.account_owner,
           row.account_owner === 'user' ? params['user_id'] : 'platform',
           substitute(row.subject, params),
-          row.sub_account === '' ? null : row.sub_account,
+          // Decision 29: CSV platform 'available' maps to the domain's null sub-account.
+          row.account_owner === 'platform' || row.sub_account === '' ? null : row.sub_account,
           String(row.sign === 'debit' ? amount : -amount),
         ]),
       ];
