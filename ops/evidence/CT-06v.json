@@ -1,0 +1,35 @@
+{
+  "task": "CT-06v",
+  "spec_ref": "b90e712f5255a9600ebf6f0f3b561afd1b4f8d9e",
+  "spec_commit": "083e237f061b523cb6888dfabdb3571e6bbf6a71",
+  "red_tests": [],
+  "risk_note": "RV2 gate change (tools/ops/verify-container.sh, its unit tests and README only; orchestrator ruling of 2026-10-19 under ops/approvals.yaml id 16 after CT-06t ran past the 1200 s stage limit in test:browser with 464 integration test files). The limit defaults to 2400 s and is capped at 3600 s (both were 1200); the switch COULI_VERIFY_TIMEOUT_SECS may lower or raise it up to the cap; the host-services limits (svc_run, RuntimeMaxSec) follow it. Nothing else of the verify recipe, red-check, evidence-check or MONEY_PATHS changes; no money test touched. Fable implementation; tester none (guard-change), so no red run. Codex money review 1 round: see reviews. Labelled by the orchestrator session under approvals #16 / #24 (orchestrator authorisation of 2026-10-19 for changes limited to tools/ops and the ledger / evidence; none of the four reserved categories).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no finding (couli-runs/CT-06v/review-codex.json; an earlier run with the same verdict was rejected by the position assertion, exit 12, and not counted)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "f23baaafe9fbca9e9476bf83ae6ab895a7243cb3",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "19708d0af8f3d5b11575a4764ef2f910ed66bd6c",
+    "specs": "7a193fbf1b465577355777514eb186c7de4991bf"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
