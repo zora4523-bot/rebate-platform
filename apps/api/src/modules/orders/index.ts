@@ -1,4 +1,10 @@
 // Public surface of the orders module (规划/02 §4.1); other modules import only from this file.
+export { planCommissionSnapshot } from './domain/commission-snapshot.ts';
+export type {
+  SnapshotEligibility,
+  PlanCommissionSnapshotInput,
+  CommissionSnapshotPlan,
+} from './domain/commission-snapshot.ts';
 export { matchOrderSource, parseLinkCode } from './domain/source-backfill.ts';
 export type {
   ExactLink,
