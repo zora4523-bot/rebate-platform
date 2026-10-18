@@ -1262,6 +1262,66 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListArticles",
+    "method": "GET",
+    "path": "/admin/v1/articles",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreateArticle",
+    "method": "POST",
+    "path": "/admin/v1/articles",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetArticle",
+    "method": "GET",
+    "path": "/admin/v1/articles/:article_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminSaveArticleDraft",
+    "method": "PUT",
+    "path": "/admin/v1/articles/:article_id/draft",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminPublishArticle",
+    "method": "POST",
+    "path": "/admin/v1/articles/:article_id/publish",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminOfflineArticle",
+    "method": "POST",
+    "path": "/admin/v1/articles/:article_id/offline",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListKillSwitches",
     "method": "GET",
     "path": "/admin/v1/kill-switches",
