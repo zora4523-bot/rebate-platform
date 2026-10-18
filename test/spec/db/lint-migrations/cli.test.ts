@@ -118,28 +118,36 @@ it.each([
   ['改类型', 'ALTER TABLE app.orders ALTER COLUMN count TYPE bigint;', 'changing-column-type'],
   ['RENAME 列', 'ALTER TABLE app.orders RENAME COLUMN old_title TO title;', 'renaming-column'],
   ['RENAME 表', 'ALTER TABLE app.orders RENAME TO orders_archive;', 'renaming-table'],
-])('[AC-CT-06a#18] %s 被 squawk 拦截，gcc 报告写 stdout', (_label, sql, rule) => {
-  withFixture({ '0019_unsafe.sql': TIMEOUTS + sql }, (root) => {
-    const result = run(['--root', root]);
-    expect(result.status, result.stderr + result.stdout).toBe(1);
-    expect(result.stdout).toMatch(new RegExp(`0019_unsafe\\.sql:\\d+:\\d+: warning:.*${rule}`));
-  });
-});
+])(
+  '[AC-CT-06a#18] %s 被 squawk 拦截，gcc 报告写 stdout',
+  (_label, sql, rule) => {
+    withFixture({ '0019_unsafe.sql': TIMEOUTS + sql }, (root) => {
+      const result = run(['--root', root]);
+      expect(result.status, result.stderr + result.stdout).toBe(1);
+      expect(result.stdout).toMatch(new RegExp(`0019_unsafe\\.sql:\\d+:\\d+: warning:.*${rule}`));
+    });
+  },
+  CLI_TIMEOUT_MS,
+);
 
 it.each([
   ['', ['require-lock-timeout', 'require-statement-timeout']],
   ["SET LOCAL lock_timeout = '5s';\n", ['require-statement-timeout']],
   ["SET LOCAL statement_timeout = '30s';\n", ['require-lock-timeout']],
-])('[AC-CT-06a#19] 缺失任一种超时都不能通过：%j', (prefix, rules) => {
-  withFixture(
-    { '0019_timeout.sql': `${prefix}CREATE TABLE app.articles (id bigint PRIMARY KEY);` },
-    (root) => {
-      const result = run(['--root', root]);
-      expect(result.status, result.stderr + result.stdout).toBe(1);
-      for (const rule of rules) expect(result.stdout).toContain(rule);
-    },
-  );
-});
+])(
+  '[AC-CT-06a#19] 缺失任一种超时都不能通过：%j',
+  (prefix, rules) => {
+    withFixture(
+      { '0019_timeout.sql': `${prefix}CREATE TABLE app.articles (id bigint PRIMARY KEY);` },
+      (root) => {
+        const result = run(['--root', root]);
+        expect(result.status, result.stderr + result.stdout).toBe(1);
+        for (const rule of rules) expect(result.stdout).toContain(rule);
+      },
+    );
+  },
+  CLI_TIMEOUT_MS,
+);
 
 it.each([
   ['CREATE TABLE app.articles (amount_fen integer);', 'amount_fen', 'must be bigint'],
@@ -163,15 +171,19 @@ it.each([
     'funds or attribution table links',
     '',
   ],
-])('[AC-CT-06a#20] 包装自检优先拒绝 %s，并写 stderr', (sql, message, extra) => {
-  withFixture({ '0019_self-check.sql': TIMEOUTS + sql }, (root) => {
-    const result = run(['--root', root]);
-    expect(result.status, result.stderr + result.stdout).toBe(1);
-    expect(result.stderr).toContain(message);
-    if (extra) expect(result.stderr).toContain(extra);
-    expect(result.stdout).not.toMatch(/:\d+:\d+: warning:/);
-  });
-});
+])(
+  '[AC-CT-06a#20] 包装自检优先拒绝 %s，并写 stderr',
+  (sql, message, extra) => {
+    withFixture({ '0019_self-check.sql': TIMEOUTS + sql }, (root) => {
+      const result = run(['--root', root]);
+      expect(result.status, result.stderr + result.stdout).toBe(1);
+      expect(result.stderr).toContain(message);
+      if (extra) expect(result.stderr).toContain(extra);
+      expect(result.stdout).not.toMatch(/:\d+:\d+: warning:/);
+    });
+  },
+  CLI_TIMEOUT_MS,
+);
 
 it(
   '[AC-CT-06a#21] 多文件自检错误都输出，不只检查首文件',

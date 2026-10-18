@@ -69,6 +69,7 @@ it.each(IGNORE_CASES)(
       expect(result.stdout).not.toMatch(/:\d+:\d+: warning:/);
     });
   },
+  CLI_TIMEOUT_MS,
 );
 
 it('[AC-CT-06a#31] 块注释中的 squawk-ignore-file 也必须拒绝', async () => {
