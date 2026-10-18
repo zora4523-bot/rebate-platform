@@ -7466,7 +7466,6 @@ paths:
         newest saved version, who changed the page last and when, and the page's `revision`, the
         CAS value of every page write (04 §6.6 `pages`; 编排者默认).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7534,7 +7533,6 @@ paths:
         version, last change and `revision` (the CAS value of every page write). A page_key of the
         right shape with no saved version → 30701.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7600,7 +7598,6 @@ paths:
         render report of TECH-29 exists (编排者默认). A page_key of the right shape with no saved
         version → 30701.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7692,7 +7689,6 @@ paths:
         yet; saving adds 1, and a mismatch → 20902 with `data.resource=page` (编排者默认: drafts
         are whole pages, so two editors must not save over each other unseen).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7770,7 +7766,6 @@ paths:
         page_key of the right shape with no saved version, or a version the page does not have →
         30701.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7848,7 +7843,6 @@ paths:
         mismatch → 20902 with `data.resource=page`. A page with no saved version → 30701. Written
         to the audit log.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7945,7 +7939,6 @@ paths:
         with `data.resource=page`. A page with no saved version → 30701. Written to the audit
         log.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -8040,7 +8033,6 @@ paths:
         `revision` the console showed, the rollback adds 1, and a mismatch → 20902 with
         `data.resource=page`. A page with no saved version → 30701. Written to the audit log.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
