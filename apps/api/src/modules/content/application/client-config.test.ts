@@ -155,3 +155,15 @@ it('[AC-F1-02h] rank_platforms comes from the selectable material channels', asy
   const config = await s.svc.read({ appId: 'a', userId: null }, null);
   expect(config.features.rank_platforms).toEqual(['jd']);
 });
+
+it('[AC-F1-02j] a malformed clipboard warns with the key only, never the value', async () => {
+  const s = service({
+    ...REQUIRED,
+    clipboard: { consent_version: 'secret-marker'.repeat(6), min_len: 10 },
+  });
+  expect((await s.svc.read({ appId: 'a', userId: null }, null)).clipboard).toEqual({});
+  expect(s.warns).toEqual([
+    { event: 'content_config_value_invalid', app_id: 'a', config_key: 'clipboard' },
+  ]);
+  expect(JSON.stringify(s.warns)).not.toContain('secret-marker');
+});

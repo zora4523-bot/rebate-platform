@@ -234,3 +234,64 @@ it('[AC-F1-02h] features.rank_platforms comes from the input, never from config 
   expect(config!.features.rank_platforms).toEqual(['jd', 'pdd']);
   expect(missing).toEqual([]);
 });
+
+it('[AC-F1-02j] a well-formed clipboard passes through as-is; no consent_version is invented', () => {
+  for (const clipboard of [
+    { consent_version: '2026-10-17', min_len: 10 },
+    { consent_version: 'v'.repeat(64) },
+    { consent_version: '😀'.repeat(64) },
+    { consent_version: ' ' },
+    { min_len: 10 },
+    {},
+  ]) {
+    const { config, invalid } = build({ clipboard });
+    expect(config!.clipboard).toEqual(clipboard);
+    expect(invalid).toEqual([]);
+  }
+  expect(build().config!.clipboard).toEqual({});
+});
+
+it('[AC-F1-02j] a malformed consent_version drops the whole clipboard key and reports it', () => {
+  for (const version of [7, '', null, {}, [], true, 'v'.repeat(65), '😀'.repeat(65)]) {
+    const { config, invalid } = build({ clipboard: { consent_version: version, min_len: 10 } });
+    expect(config!.clipboard).toEqual({});
+    expect(invalid).toEqual(['clipboard']);
+  }
+  for (const clipboard of ['x', [], null, 7]) {
+    const { config, invalid } = build({ clipboard });
+    expect(config!.clipboard).toEqual({});
+    expect(invalid).toEqual(['clipboard']);
+  }
+});
+
+it('[AC-F1-02j] split clipboard rows are never read', () => {
+  const { config, invalid } = build({
+    'clipboard.consent_version': 'x',
+    'clipboard.auto_read.ios': false,
+    'features.clipboard.auto_read.ios': false,
+  });
+  expect(config!.clipboard).toEqual({});
+  expect(config!.features.flags).toEqual({
+    'external_page.union_host_block': true,
+    'earnings.dashboard.visible': true,
+  });
+  expect(invalid).toEqual([]);
+});
+
+it('[AC-F1-02j] clipboard.auto_read flags pass through as-is; missing clients are not filled', () => {
+  const { config } = build({
+    'features.flags': { 'clipboard.auto_read.ios': false, 'clipboard.auto_read.android': true },
+  });
+  expect(config!.features.flags).toEqual({
+    'clipboard.auto_read.ios': false,
+    'clipboard.auto_read.android': true,
+    'external_page.union_host_block': true,
+    'earnings.dashboard.visible': true,
+  });
+  const bad = build({ 'features.flags': { 'clipboard.auto_read.ios': 'off', other: true } });
+  expect(bad.config!.features.flags).toEqual({
+    'external_page.union_host_block': true,
+    'earnings.dashboard.visible': true,
+  });
+  expect(bad.invalid).toEqual(['features.flags']);
+});
