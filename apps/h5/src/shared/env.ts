@@ -18,3 +18,18 @@ export function detectRuntime(win: RuntimeWindow): Runtime {
   if (isInApp()) return 'app';
   return WECHAT_UA.test(win.navigator.userAgent) ? 'wechat' : 'browser';
 }
+
+export interface AppApiEnv {
+  apiBaseUrl: string | null;
+  appId: string | null;
+}
+
+/** VITE_API_BASE_URL and VITE_APP_ID; missing or blank values become null. */
+export function readAppApiEnv(): AppApiEnv {
+  throw new Error('NotImplemented: readAppApiEnv');
+}
+
+/** VITE_MEDIA_ORIGINS: comma-separated complete HTTP(S) origins; absent means deny all. */
+export function mediaOrigins(): readonly string[] {
+  throw new Error('NotImplemented: mediaOrigins');
+}
