@@ -1,12 +1,14 @@
 id: CT-06s
 repo: rebate-platform
-title: AC-CT-06b#7 / AC-CT-06c#21 子进程超时与 CLI_TIMEOUT_MS 对齐（CI 偶发 ETIMEDOUT）
+title: lint-migrations 子进程超时与 CLI_TIMEOUT_MS 对齐——AC-CT-06a#13 / 06b#7 / 06c#21 及同目录其余未带超时参数的 run() 用例（CI 偶发 ETIMEDOUT）
 type: test-change
 # 2026-10-19 入账（编排会话）。起因：test/spec/db/lint-migrations/hardening.test.ts 的 [AC-CT-06b#7] 经 kit.ts 的 run()
 # 起子进程跑 tools/ci/lint-migrations.ts，run() 的 spawnSync timeout 只有 10 秒；CI 负载高时不够，同日在 #773、#795、#799
 # 三个无关 PR 上以 ETIMEDOUT 红掉，重跑即过。同文件其他跑子进程的用例都把 CLI_TIMEOUT_MS = 60_000 作为 it 的第三参数，#7 没有。
 # 同日 #809 的 verify-fast 里 [AC-CT-06b#7] 与 funds-objects.test.ts 的 [AC-CT-06c#21]（含 0020 的真实仓库无参数运行）同时以约 10190ms 超时失败；
 # #21 同样经 kit.ts 的 run() 起子进程、it 已带 CLI_TIMEOUT_MS，卡的是 run() 的 10 秒，改 kit 默认超时一并覆盖。目录内没有别处的 spawnSync 10_000。
+# 编排 10-19 再并入：cli.test.ts 的 [AC-CT-06a#13]（同样 run([]) 真实仓库运行，本机约 7 s、撞 vitest 默认 5 s）加第三参数；同目录扫一遍，
+# 凡经 run() 起子进程而 it 没带第三参数的一并加：cli.test.ts 的 #13、#14、#15（两条）、#16、#17、#21、#22、#23、#24，bypass.test.ts 的 #32，均从 kit.ts 引入 CLI_TIMEOUT_MS。
 # 做法：kit.ts 导出 CLI_TIMEOUT_MS = 60_000，run() 的 spawnSync timeout 改为 options.timeoutMs ?? CLI_TIMEOUT_MS（可配置、默认与
 # it 超时一致）；hardening.test.ts 改为从 kit.ts 引入 CLI_TIMEOUT_MS，#7 的 it 加第三参数 CLI_TIMEOUT_MS。只改超时，不改任何断言、
 # 不删用例、不改 lint-migrations.ts。目录下其他测试文件仍各自定义 CLI_TIMEOUT_MS，不动。
@@ -16,6 +18,8 @@ refs: []
 refs_hash: {}
 deps: [CT-06b]
 paths:
+  - 'test/spec/db/lint-migrations/bypass.test.ts'
+  - 'test/spec/db/lint-migrations/cli.test.ts'
   - 'test/spec/db/lint-migrations/hardening.test.ts'
   - 'test/spec/db/lint-migrations/kit.ts'
 impl: claude

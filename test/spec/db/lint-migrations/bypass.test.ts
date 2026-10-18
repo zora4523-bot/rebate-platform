@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { gate, run, TIMEOUTS, withFixture } from './kit.ts';
+import { CLI_TIMEOUT_MS, gate, run, TIMEOUTS, withFixture } from './kit.ts';
 
 // 续接首轮 #1–#28；对应任务 §10 的补充要求，不改首轮规则测试。
 const IGNORE_CASES = [
@@ -89,20 +89,24 @@ it('[AC-CT-06a#31] 块注释中的 squawk-ignore-file 也必须拒绝', async ()
   );
 });
 
-it('[AC-CT-06a#32] CLI 拒绝块注释中的文件级 ignore，不运行 squawk', () => {
-  withFixture(
-    {
-      '0019_ignore-file.sql':
-        TIMEOUTS + '/* squawk-ignore-file */\nCREATE TABLE app.articles (id bigint);',
-    },
-    (root) => {
-      const result = run(['--root', root]);
-      expect(result.status, result.stderr + result.stdout).toBe(1);
-      expect(result.stderr).toContain('squawk-ignore-file is not accepted');
-      expect(result.stdout).not.toMatch(/:\d+:\d+: warning:/);
-    },
-  );
-});
+it(
+  '[AC-CT-06a#32] CLI 拒绝块注释中的文件级 ignore，不运行 squawk',
+  () => {
+    withFixture(
+      {
+        '0019_ignore-file.sql':
+          TIMEOUTS + '/* squawk-ignore-file */\nCREATE TABLE app.articles (id bigint);',
+      },
+      (root) => {
+        const result = run(['--root', root]);
+        expect(result.status, result.stderr + result.stdout).toBe(1);
+        expect(result.stderr).toContain('squawk-ignore-file is not accepted');
+        expect(result.stdout).not.toMatch(/:\d+:\d+: warning:/);
+      },
+    );
+  },
+  CLI_TIMEOUT_MS,
+);
 
 it.each([
   ['金额列内联 CHECK', 'CREATE TABLE app.t (amount_fen bigint NOT NULL CHECK (amount_fen > 0));'],
