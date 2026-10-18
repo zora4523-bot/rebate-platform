@@ -57,7 +57,7 @@
 - `result.json`：`mode`（`container`）、`script`（`verify` / `verify:fast` / `red` / `browser`）、`exit_code`、`commit`、`tree`（含未提交改动的工作区树哈希）、`prop_seed`、起止时间。基础设施出错（Docker 起不来、镜像构建失败）退出码 2，不写 `result.json`。
 - 宿主回退已取消（Codex 评审 CR-01，2026-10-05）：原来的 `--host` 会在宿主上执行任务快照里的代码和测试（含 Codex 写的），清空环境变量挡不住。现在 `--host` 一律拒绝、退出 2；Docker 用不了就停下，把这次运行交给 CI。原 `timeout-group.pl` 随之删除。
 - worktree 在 `/tmp`、`/private/tmp`、`$TMPDIR` 下一律拒绝（那里是 Codex 沙箱的可写根，11 §0）。
-- 可调环境变量：`COULI_VERIFY_TIMEOUT_SECS`（默认与上限 1200，只能调小）、`COULI_VERIFY_PREFIX`（容器、网络、数据卷的名字前缀，默认 `couli-verify`）、`PROP_SEED`、`PROP_RUNS`。
+- 可调环境变量：`COULI_VERIFY_TIMEOUT_SECS`（默认 2400、上限 3600，可调小调大但不能超过上限；CT-06v，集成测试已 464 文件、1200 不够，遇 exit 124 先变基再跑）、`COULI_VERIFY_PREFIX`（容器、网络、数据卷的名字前缀，默认 `couli-verify`）、`PROP_SEED`、`PROP_RUNS`。
 - 宿主一次性服务模式（负责人 2026-10-08 / 09：本机不跑 Docker，容器验证放到 AWS 测试机；测试库不进 Docker；10-09 定方案 A）。设 `COULI_VERIFY_HOST_SERVICES=1` 开启（其他取值退出 2），只改要连库的那次运行（`pnpm verify`、`--red` 里需要库的组），其余（`--fast`、`--browser`、只有单元组的 `--red`）与原来一样：
 
   | 变量 | 默认 | 含义 |

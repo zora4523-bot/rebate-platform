@@ -69,7 +69,7 @@
 # trusted root, never from the task worktree (规划/11 §2.4).
 #
 # Environment: COULI_RUNS, COULI_TRUSTED_ROOT, COULI_SPEC_REPO (conventions C7);
-#   COULI_VERIFY_TIMEOUT_SECS (default 1200); COULI_VERIFY_PREFIX (default couli-verify;
+#   COULI_VERIFY_TIMEOUT_SECS (default 2400, at most 3600; CT-06v); COULI_VERIFY_PREFIX (default couli-verify;
 #   prefix of every container, network and volume this script creates);
 #   PROP_SEED / PROP_RUNS are passed through.
 #
@@ -266,10 +266,13 @@ done
 
 [ -f "$WT/package.json" ] || die "no package.json in $WT"
 
-MAX_TIMEOUT_SECS=1200
-TIMEOUT_SECS="${COULI_VERIFY_TIMEOUT_SECS:-$MAX_TIMEOUT_SECS}"
+# CT-06v (2026-10-19): the default was 1200 and the cap too; with 464 integration test files a full
+# verify ran past it (exit 124 in test:browser). The switch may lower or raise the limit up to the
+# cap; the host-services limits (svc_run, RuntimeMaxSec) follow TIMEOUT_SECS.
+MAX_TIMEOUT_SECS=3600
+DEFAULT_TIMEOUT_SECS=2400
+TIMEOUT_SECS="${COULI_VERIFY_TIMEOUT_SECS:-$DEFAULT_TIMEOUT_SECS}"
 if ! [[ "$TIMEOUT_SECS" =~ ^[1-9][0-9]*$ ]]; then die "COULI_VERIFY_TIMEOUT_SECS must be a positive integer"; fi
-# The switch can only tighten the limit (.env.example: 都只能收紧).
 if [ "$TIMEOUT_SECS" -gt "$MAX_TIMEOUT_SECS" ]; then die "COULI_VERIFY_TIMEOUT_SECS is capped at $MAX_TIMEOUT_SECS"; fi
 PROP_SEED_VALUE="${PROP_SEED:-$DEFAULT_PROP_SEED}"
 if ! [[ "$PROP_SEED_VALUE" =~ ^[0-9]+$ ]]; then die "PROP_SEED must be a non-negative integer"; fi
