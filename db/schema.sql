@@ -1379,6 +1379,40 @@ CREATE TABLE app.agent_tool_calls (
 
 
 --
+-- Name: agreements; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agreements (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    type text NOT NULL,
+    version integer NOT NULL,
+    min_version integer NOT NULL,
+    requires_resign boolean NOT NULL,
+    article_id uuid NOT NULL,
+    article_version integer NOT NULL,
+    text_sha256 text NOT NULL,
+    url text NOT NULL,
+    legal_confirmed_by text NOT NULL,
+    legal_confirm_note text NOT NULL,
+    published_at timestamp with time zone NOT NULL,
+    published_by uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agreements_legal_confirm_check CHECK (((btrim(legal_confirmed_by) <> ''::text) AND (btrim(legal_confirm_note) <> ''::text))),
+    CONSTRAINT agreements_min_version_check CHECK (((min_version >= 1) AND (min_version <= version))),
+    CONSTRAINT agreements_requires_resign_check CHECK (
+CASE
+    WHEN (type = 'labor_agreement'::text) THEN (requires_resign = (min_version = version))
+    ELSE (requires_resign = false)
+END),
+    CONSTRAINT agreements_text_sha256_check CHECK ((text_sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT agreements_type_check CHECK ((type = ANY (ARRAY['privacy'::text, 'agreement'::text, 'labor_agreement'::text]))),
+    CONSTRAINT agreements_url_check CHECK ((url ~ '^https://'::text)),
+    CONSTRAINT agreements_version_check CHECK ((version >= 1))
+);
+
+
+--
 -- Name: app_versions; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4207,6 +4241,22 @@ ALTER TABLE ONLY app.agent_tool_calls
 
 
 --
+-- Name: agreements agreements_app_type_version_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agreements
+    ADD CONSTRAINT agreements_app_type_version_key UNIQUE (app_id, type, version);
+
+
+--
+-- Name: agreements agreements_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agreements
+    ADD CONSTRAINT agreements_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: app_versions app_versions_app_platform_channel_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -6537,6 +6587,22 @@ ALTER TABLE ONLY app.agent_tool_calls
 
 
 --
+-- Name: agreements agreements_article_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agreements
+    ADD CONSTRAINT agreements_article_fkey FOREIGN KEY (article_id, article_version) REFERENCES app.articles(id, version);
+
+
+--
+-- Name: agreements agreements_published_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agreements
+    ADD CONSTRAINT agreements_published_by_fkey FOREIGN KEY (published_by) REFERENCES app.admin_users(id);
+
+
+--
 -- Name: appeals appeals_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -8251,6 +8317,14 @@ GRANT SELECT(latency_ms) ON TABLE app.agent_tool_calls TO couli_readonly;
 --
 
 GRANT SELECT(created_at) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: TABLE agreements; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agreements TO couli_app;
+GRANT SELECT ON TABLE app.agreements TO couli_readonly;
 
 
 --
