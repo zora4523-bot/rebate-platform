@@ -172,6 +172,16 @@ it('[CT-06p] comments and indentation do not count; a line break, a literal or a
   expect(changes(base, literal)['[AC-1] a']).toBe(true);
   const re = (r: string): string => src(test('[AC-1] a', `expect('x').toMatch(${r});`));
   expect(changes(re('/x/'), re('/x /'))['[AC-1] a']).toBe(true);
+  // A regex the lexer reads as a division (after the `)` of an `if`) keeps its spaces: a line
+  // with a division is compared with its exact spacing (Codex review r3, S2).
+  const after = (r: string): string =>
+    src(test('[AC-1] a', `if (true) ${r}.test('a  b') || expect.fail('mismatch');`));
+  expect(changes(after('/a b/'), after('/a  b/'))['[AC-1] a']).toBe(true);
+  expect(changes(after('/a b/'), after('/a b/'))['[AC-1] a']).toBe(false);
+  const division = (d: string): string => src(test('[AC-1] a', `expect(${d}).toBe(2);`));
+  expect(changes(division('4 / 2'), division('4  /  2'))['[AC-1] a']).toBe(true);
+  expect(changes(division('4 / 2'), division('4 / /* two */ 2'))['[AC-1] a']).toBe(true);
+  expect(changes(division('4 / 2'), division('4 / 2'))['[AC-1] a']).toBe(false);
 });
 
 it('[CT-06p] a new test, inserted anywhere, is the only changed block', () => {

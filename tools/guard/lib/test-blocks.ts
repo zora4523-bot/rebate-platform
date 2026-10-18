@@ -47,6 +47,10 @@ export type Token = {
   text: string;
   /** A line break occurs in the whitespace or comments before the token. */
   nl: boolean;
+  /** Offset of the token in the source. */
+  start?: number;
+  /** The exact whitespace and comments between the previous token and this one. */
+  gap?: string;
   /** str: the cooked value (null when an escape cannot be decoded for certain). */
   value?: string | null;
   /** tpl: the cooked static parts around the `${…}` expressions (null when not decodable). */
@@ -226,6 +230,7 @@ function lex(src: string, start: number, inTemplate: boolean): Lexed {
   let i = start;
   let nl = false;
   let depth = 0;
+  let prevEnd = start;
   while (i < n) {
     const c = src[i] as string;
     if (lineTerminator(c)) {
@@ -253,6 +258,7 @@ function lex(src: string, start: number, inTemplate: boolean): Lexed {
       continue;
     }
     let token: Token;
+    const at = i;
     if (c === '"' || c === "'") {
       let j = i + 1;
       for (;;) {
@@ -326,6 +332,9 @@ function lex(src: string, start: number, inTemplate: boolean): Lexed {
         i += text.length;
       }
     }
+    token.start = at;
+    token.gap = src.slice(prevEnd, at);
+    prevEnd = i;
     if (inTemplate && token.kind === 'punct') {
       if (token.text === '{') depth += 1;
       if (token.text === '}') {
@@ -367,12 +376,45 @@ function matchBrackets(tokens: readonly Token[]): number[] {
   return match;
 }
 
-/** Normalised text of tokens[from..to]: single separators, a line break kept as a line break. */
-function joinTokens(tokens: readonly Token[], from: number, to: number): string {
+/**
+ * The separator before token k in a normalised text: a line break when the gap has one, else
+ * one space — except on a line that has a division `/` or `/=`, where the exact gap is kept: a
+ * regular expression literal the lexer takes for a division (after `)` of an `if (…)`, after a
+ * `}`) is then compared byte for byte, its spaces included (Codex review r3, S2).
+ */
+type Separator = (k: number) => string;
+
+function separators(source: string, tokens: readonly Token[]): Separator {
+  const breaks: number[] = [];
+  for (const m of source.matchAll(/\r\n|[\n\r\u2028\u2029]/g)) breaks.push(m.index ?? 0);
+  const lineOf = (offset: number): number => {
+    let lo = 0;
+    let hi = breaks.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((breaks[mid] as number) < offset) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  const division = new Set<number>();
+  for (const t of tokens) {
+    if (t.kind === 'punct' && (t.text === '/' || t.text === '/='))
+      division.add(lineOf(t.start ?? 0));
+  }
+  return (k) => {
+    const t = tokens[k] as Token;
+    if (t.nl) return '\n';
+    return division.has(lineOf(t.start ?? 0)) ? (t.gap ?? ' ') : ' ';
+  };
+}
+
+/** Normalised text of tokens[from..to]: see separators. */
+function joinTokens(tokens: readonly Token[], from: number, to: number, sep: Separator): string {
   let out = '';
   for (let i = from; i <= to; i += 1) {
     const t = tokens[i] as Token;
-    out += i === from ? t.text : `${t.nl ? '\n' : ' '}${t.text}`;
+    out += i === from ? t.text : `${sep(i)}${t.text}`;
   }
   return out;
 }
@@ -505,6 +547,7 @@ function callAt(
   match: readonly number[],
   i: number,
   kind: 'test' | 'suite',
+  sep: Separator,
 ): Call | null {
   const prev = tokens[i - 1];
   if (prev !== undefined && ['.', '?.', 'function'].includes(prev.text)) return null;
@@ -555,7 +598,7 @@ function callAt(
     open,
     close,
     title: titleOf(tokens, open + 1, to, each),
-    head: joinTokens(tokens, i, to - 1),
+    head: joinTokens(tokens, i, to - 1, sep),
   };
 }
 
@@ -579,13 +622,14 @@ export function parseTestFile(source: string): ParsedTestFile {
   const tokens = tokenize(source);
   const match = matchBrackets(tokens);
   const names = vitestNames(tokens);
+  const sep = separators(source, tokens);
   const suites: Call[] = [];
   const tests: Call[] = [];
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i] as Token;
     const kind = t.kind === 'id' ? names.get(t.text) : undefined;
     if (kind === undefined) continue;
-    const call = callAt(tokens, match, i, kind);
+    const call = callAt(tokens, match, i, kind, sep);
     if (call === null) continue;
     if (kind === 'suite') {
       suites.push(call);
@@ -608,7 +652,9 @@ export function parseTestFile(source: string): ParsedTestFile {
       pendingNl ||= t.nl;
       return;
     }
-    shared += first ? t.text : `${pendingNl || t.nl ? '\n' : ' '}${t.text}`;
+    if (first) shared += t.text;
+    else if (pendingNl || t.nl) shared += `\n${t.text}`;
+    else shared += `${inBlock[k - 1] === true ? ' ' : sep(k)}${t.text}`;
     first = false;
     pendingNl = false;
     sharedCount += 1;
@@ -630,7 +676,7 @@ export function parseTestFile(source: string): ParsedTestFile {
       key: [
         String(anchor[c.start]),
         around.map((s) => `${suites.indexOf(s)}:${s.head}`).join('\u0001'),
-        joinTokens(tokens, c.start, c.end),
+        joinTokens(tokens, c.start, c.end, sep),
       ].join('\u0000'),
     };
   });
