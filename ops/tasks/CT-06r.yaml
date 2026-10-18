@@ -8,6 +8,7 @@ type: guard-change
 #   台账新字段 red_exempt（可选，列表，每项 file / test / reason）：file 是 test_paths 内的规则测试文件，test 是红测报告里的用例全名（describe > … > 用例标题），reason 非空且 ≥ 10 字；task.ts check 校验形状、文件在 test_paths 内、tester 不是 none。声明写在主干台账（red-check 与 evidence-check 都从可信副本读台账，同 test_paths），所以先入账再重跑先红。
 #   red-check（lib/red-check.ts）：base 上已存在、测试体比较正常、只因「可能读到本任务改动的 test_paths 内夹具 / helper / 数据文件」而整文件入列的文件，改判为「声明制」（baseline kind support）：测试体未变且台账逐条声明（file + test 精确匹配、reason 合规）的用例可绿（若红仍须有效原因），其余用例照旧须有效红；声明命中的用例列在 exempt（带 declared、reason）与 notes，notes 标明「需规则测试评审确认」。声明对新增 / 改动用例无效（仍须红）；测试体之外代码改动、读不懂、JSX、报告不是红测报告器的文件仍整文件全红，声明无效；全部用例都声明则失败（每文件至少一条红，与 evidence-check 一致）。拿不准一律全红。
 #   evidence-check：可信台账 red_exempt 非空时，证据 spec_test_review 必须有 red_exempt_confirmed: true，reviewer 是规则测试作者之外的一家（tester codex → claude，tester claude → codex）、last_verdict pass；否则拒绝。每个应跑文件至少一条红、MONEY_PATHS、新文件 / 新用例先红要求、应跑清单都不变。
+# 2026-10-18 编排追加范围：B1-12g 撞到的两处 CT-06p 误判（B3-lane/notices.md 14:42 UTC 条，红测产物 couli-runs/B1-12g/red/1/）：① 「X is named after it（快照 / 截图）」按 basename 匹配，不同目录同名的 contract.test.ts 也被判——改为只认测试文件自己目录之下的 __snapshots__ / __screenshots__ 等；② 「uses readdirSync, may read <某测试文件>」过宽——readdir / opendir 的目录静态解出（字面量、__dirname / import.meta 常量、path.join / resolve / dirname / new URL 链、函数参数按调用点解），只有支持文件落在该目录内才整份判，解不出仍整份判并在 notes 写明。各加单测，用 B1-12g 的两份文件作夹具复现并验证放行；不放宽新用例先红。因此 paths 补 tools/guard/lib/test-blocks*。
 # tools/ 属保护路径第三类：负责人 10-02 常设授权的流程门禁小修（approvals #16），Claude 实现、Codex 对抗评审，评审通过、检查全绿后按 approvals #24 加标签。tools 自己的单元测试由实现者写，不需要先写规则测试。
 refs: []
 refs_hash: {}
@@ -15,6 +16,7 @@ deps: []
 paths:
   - 'tools/guard/lib/red-check{*,-fixtures/**}'
   - 'tools/guard/red-check.ts'
+  - 'tools/guard/lib/test-blocks*'
   - 'tools/guard/lib/ledger-overwrite.ts'
   - 'tools/guard/guard-cli.test.ts'
   - 'tools/lib/task-file{,.test}.ts'
