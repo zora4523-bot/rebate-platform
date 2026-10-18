@@ -294,6 +294,13 @@ it('[CT-06p] imports, helpers, hooks and loops are shared: any change there chan
     src(`for (const x of ${xs}) {`, '  it(`[AC-1] ${x}`, () => { expect(x).toBeTruthy(); });', '}');
   expect(whole(loop("['a']"), loop("['a', 'b']"))).toContain('code outside the tests');
   expect(changes(loop("['a']"), loop("['a']"))).toEqual({ '[AC-1] *': false });
+  // A block moved into another loop (or branch, function …) with the same text is a different
+  // block: its place in the shared rest changed (Codex review r2, S2).
+  const loops = (first: string, second: string): string =>
+    src('for (const n of [1]) {', first, '}', 'for (const n of [2, 3]) {', second, '}');
+  const inLoop = 'it(`[AC-1] case ${n}`, () => {\n  expect(n).toBeGreaterThan(0);\n});';
+  expect(changes(loops(inLoop, ''), loops('', inLoop))).toEqual({ '[AC-1] case *': true });
+  expect(changes(loops(inLoop, ''), loops(inLoop, ''))).toEqual({ '[AC-1] case *': false });
 });
 
 it('[CT-06p] a file that cannot be read as tests is judged as a whole', () => {

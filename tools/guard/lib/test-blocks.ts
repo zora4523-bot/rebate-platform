@@ -14,8 +14,8 @@
 //   template and regular-expression literals count byte for byte.
 // - Any difference in the shared rest makes every test of the file changed (a helper, a hook, an
 //   import, a top-level table or a describe title can change what any test means).
-// - A test block is unchanged only when the same block (same text in the same describes: same
-//   position among the file's describes and same header)
+// - A test block is unchanged only when the same block (same text at the same place of the
+//   shared rest — same number of shared tokens before it — in the same describes)
 //   occurs exactly once at the base and exactly once at the head, and the unchanged blocks keep
 //   their relative order (a moved test is changed: the order of a file's tests can matter).
 //   A renamed test is a new block; a row of a parameterised table (`it.each([...])`) that changed
@@ -599,7 +599,11 @@ export function parseTestFile(source: string): ParsedTestFile {
   let shared = '';
   let first = true;
   let pendingNl = false;
+  // anchor[k]: how many shared tokens come before token k (where in the shared rest a block sits).
+  const anchor = new Array<number>(tokens.length).fill(0);
+  let sharedCount = 0;
   tokens.forEach((t, k) => {
+    anchor[k] = sharedCount;
     if (inBlock[k]) {
       pendingNl ||= t.nl;
       return;
@@ -607,6 +611,7 @@ export function parseTestFile(source: string): ParsedTestFile {
     shared += first ? t.text : `${pendingNl || t.nl ? '\n' : ' '}${t.text}`;
     first = false;
     pendingNl = false;
+    sharedCount += 1;
   });
   const blocks = tests.map((c) => {
     const around = suites.filter((s) => s.open < c.start && c.start < s.close);
@@ -618,9 +623,15 @@ export function parseTestFile(source: string): ParsedTestFile {
         c.title,
       ),
       title: [...around.map((s) => show(s.title)), show(c.title)].join(' > '),
-      // Each describe by its position among the file's describes as well as its text: two
-      // describes with the same header are different suites (Codex review r1, S2).
-      key: `${around.map((s) => `${suites.indexOf(s)}:${s.head}`).join('\u0001')}\u0000${joinTokens(tokens, c.start, c.end)}`,
+      // Where the block sits in the shared rest (its anchor: the shared tokens before it), its
+      // describes (position among the file's describes and header) and its text: a block moved
+      // into another describe, loop, branch or function — also between two with the same
+      // header — is a different block (Codex review r1 / r2, S2).
+      key: [
+        String(anchor[c.start]),
+        around.map((s) => `${suites.indexOf(s)}:${s.head}`).join('\u0001'),
+        joinTokens(tokens, c.start, c.end),
+      ].join('\u0000'),
     };
   });
   return { shared, blocks };
