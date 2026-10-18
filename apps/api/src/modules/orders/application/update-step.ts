@@ -3,7 +3,11 @@
 // - 判定先于写库（domain/update-plan.ts）：表外事件、P10 倒退（开关开）、表外码且已入账 → 整条不落 orders，
 //   只写 order_sync_pending 并告警（order_illegal_transition），结果 pending，不抛错（IllegalTransition 不重试）。
 // - 其余：一条 CAS UPDATE（row_version + 当前 platform_status）；影响 0 行 → 重读一次重新判定，仍 0 行抛
-//   ORDER_CAS_CONFLICT。写序：UPDATE orders → history（按步序，只插入）→ pending → settlement 端口 → order.updated。
+//   ORDER_CAS_CONFLICT。写序：UPDATE orders → history（按步序，只插入）→ pending → settlement 端口 → order.updated
+//   → 告警事件。
+// - 告警事件（注入 alertEvents 时，与上述写入同一事务；application/alert-events.ts）：表外事件与 P10 倒退（含开关关）
+//   → order.illegal_transition；已归属订单归因参数变化 → order.attr_param_changed；重跑归属遇淘宝绑定冲突 →
+//   order.attr_binding_conflict。映射表外的码（UNMAPPED_STATUS）08 未写该事件，只告警进待处理。
 // - 未归因（user_id 为空，含 VOID 的 R3b）每次重跑用户归属：命中且 locked=false 才写 user_id、user_basis=param。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
 //   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
@@ -22,6 +26,12 @@ import {
 } from '../domain/update-plan.ts';
 import { casUpdateOrder, type OrderUpdateSet } from '../infra/order-update-store.ts';
 import { insertPlatformHistory, readOrder, upsertPending } from '../infra/pipeline-store.ts';
+import {
+  publishBindingConflict,
+  publishIllegalTransition,
+  publishParamChanged,
+  type OrderAttrParamColumn,
+} from './alert-events.ts';
 import { attributeOrderUser } from './attribute-user.ts';
 import type {
   OrderPipelineContext,
@@ -66,7 +76,7 @@ export interface OrderStatusSource {
 
 export interface OrderUpdateDeps extends Pick<
   OrderPipelineDeps,
-  'clock' | 'users' | 'bindings' | 'statusMaps' | 'logger'
+  'clock' | 'users' | 'bindings' | 'statusMaps' | 'logger' | 'alertEvents'
 > {
   /** settlement 实现（B1-08n 接线）；与本次写库同一事务调用，抛错整事务回滚。 */
   readonly rebate: {
@@ -102,7 +112,6 @@ function pendingDetail(plan: OrderUpdatePlan, from: string): string | null {
   return `order_illegal_transition ${plan.rule ?? 'illegal'} ${from}→${plan.event ?? '-'}`;
 }
 
-// TODO(规划/11 §4.5): 订单告警事件同事务入队 — blocked on B1-08o（platform EVENT_NAMES 登记）
 // TODO(规划/11 §4.5): 来源回填与分佣快照 — blocked on B1-08j、B1-08k
 export function createOrderUpdateStep(
   deps: OrderUpdateDeps,
@@ -118,7 +127,7 @@ export function createOrderUpdateStep(
     plan: OrderUpdatePlan,
   ): Promise<OrderPipelineResult> {
     const reason = plan.pending ?? 'ILLEGAL_TRANSITION';
-    await upsertPending(trx, {
+    const pendingId = await upsertPending(trx, {
       app_id: current.app_id,
       platform,
       sub_order_id: current.sub_order_id,
@@ -129,6 +138,18 @@ export function createOrderUpdateStep(
       detected_at: deps.clock.now(),
       detail: pendingDetail(plan, current.platform_status),
     });
+    if (reason === 'ILLEGAL_TRANSITION') {
+      await publishIllegalTransition(deps.alertEvents, trx, {
+        appId: current.app_id,
+        orderId: current.order_id,
+        pendingId,
+        platform,
+        rule: plan.rule ?? 'illegal',
+        fromStatus: current.platform_status,
+        event: plan.event ?? null,
+        outcome: 'rejected',
+      });
+    }
     log?.error(
       {
         alert: ALERT_SYNC,
@@ -179,11 +200,13 @@ export function createOrderUpdateStep(
     // 归属参数（BR-ATTR-01）：已归属不覆盖四项参数，变化只告警；未归因写入参并重跑 ②（BR-ATTR-06 / 07）。
     const params = incoming.attr_params ?? NO_PARAMS;
     const slot = incoming.promotion_slot ?? null;
-    const paramsChanged =
-      slot !== current.pid ||
-      params.relation_id !== current.relation_id ||
-      params.sub_union_id !== current.sub_union_id ||
-      params.custom_parameters !== current.custom_params;
+    const changedParams: OrderAttrParamColumn[] = [
+      ...(slot !== current.pid ? (['pid'] as const) : []),
+      ...(params.relation_id !== current.relation_id ? (['relation_id'] as const) : []),
+      ...(params.sub_union_id !== current.sub_union_id ? (['sub_union_id'] as const) : []),
+      ...(params.custom_parameters !== current.custom_params ? (['custom_params'] as const) : []),
+    ];
+    const paramsChanged = changedParams.length > 0;
     const unattributed = current.user_id === null;
     let attributedNow = false;
     let bindingConflict = false;
@@ -217,8 +240,9 @@ export function createOrderUpdateStep(
     if (!updated) return 'conflict';
 
     await insertPlatformHistory(trx, current, plan.history, now);
+    let pendingId: bigint | null = null;
     if (plan.pending !== null) {
-      await upsertPending(trx, {
+      pendingId = await upsertPending(trx, {
         app_id: current.app_id,
         platform,
         sub_order_id: current.sub_order_id,
@@ -275,8 +299,37 @@ export function createOrderUpdateStep(
         attributed_now: attributedNow,
       },
     });
+    // 告警事件与本次写库同一事务（BR-ATTR-01 ⑦、BR-ATTR-07、BR-FUND-01 P10）。
+    if (plan.pending === 'ILLEGAL_TRANSITION') {
+      // P10 且开关关：状态不迁移、其余列已照写，仍与待处理记录同事务记 order.illegal_transition。
+      await publishIllegalTransition(deps.alertEvents, trx, {
+        appId: current.app_id,
+        orderId: current.order_id,
+        pendingId,
+        platform,
+        rule: plan.rule ?? 'illegal',
+        fromStatus: from,
+        event: plan.event ?? null,
+        outcome: 'status_kept',
+      });
+    }
+    if (!unattributed && paramsChanged) {
+      await publishParamChanged(deps.alertEvents, trx, {
+        appId: current.app_id,
+        orderId: current.order_id,
+        platform,
+        changed: changedParams,
+      });
+    }
+    if (bindingConflict) {
+      await publishBindingConflict(deps.alertEvents, trx, {
+        appId: current.app_id,
+        orderId: current.order_id,
+        platform,
+      });
+    }
 
-    // —— 告警（写库成功后才打，重读重试不重复）——
+    // —— 告警日志（写库成功后才打，重读重试不重复）——
     const base = { platform, app_id: current.app_id };
     if (plan.pending === 'ILLEGAL_TRANSITION' || plan.pending === 'UNMAPPED_STATUS') {
       log?.error(

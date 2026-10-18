@@ -117,9 +117,12 @@ export interface PendingInput {
   readonly detail?: string | null;
 }
 
-/** 待处理记录：同键 open 记录已存在时只更新 detected_at（order_sync_pending_open_key）。 */
-export async function upsertPending(trx: Trx, input: PendingInput): Promise<void> {
-  await trx
+/**
+ * 待处理记录：同键 open 记录已存在时只更新 detected_at（order_sync_pending_open_key）。返回该 open 记录的 id
+ * （新插入或已存在的那条；B1-08i 的告警事件据此派生事件 ID），驱动未回行时为 null。
+ */
+export async function upsertPending(trx: Trx, input: PendingInput): Promise<bigint | null> {
+  const row = await trx
     .withSchema('app')
     .insertInto('order_sync_pending')
     .values({ ...input, status: 'open' })
@@ -129,7 +132,9 @@ export async function upsertPending(trx: Trx, input: PendingInput): Promise<void
         .where('status', '=', sql.lit('open'))
         .doUpdateSet((eb) => ({ detected_at: eb.ref('excluded.detected_at') })),
     )
-    .execute();
+    .returning('id')
+    .executeTakeFirst();
+  return row?.id ?? null;
 }
 
 /** 已有子订单的同步更新（B1-08i）：只插入，不改不删（order_status_history append_only）。 */

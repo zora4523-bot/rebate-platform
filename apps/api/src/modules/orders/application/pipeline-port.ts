@@ -1,7 +1,9 @@
 // B1-08h：归因流水线主事务（BR-ATTR-01；规划/02 §7.3、§18；D10-35）。每个子订单一个事务：
 // 第一句取该子订单的 advisory 锁，锁后重读 order_keys；判定全部完成后才写库。
 // - 已存在：app 不同 → 零写入、P1 告警；同 App → 乱序（可选）→ content_hash 短路 → updateStep（B1-08i）。
-// - 注入 events（B1-08i）时，首次入库在 rebate.onImported 之后同事务发 order.created。
+// - 注入 events（B1-08i）时，首次入库在 rebate.onImported 之后同事务发 order.created；注入 alertEvents 时，
+//   首态为表外事件（非法首态）在写待处理的同一事务发 order.illegal_transition，淘宝绑定冲突在入库同一事务
+//   发 order.attr_binding_conflict（application/alert-events.ts）。
 // - 新子订单：① App 归属（推广位白名单）→ attr_at（定金优先）→ 同步起点 → 首态（表外码 / 非法首态只写
 //   pending，不建行）→ ② 用户归属 → ④ buy_type → 写 order_keys、orders、history（+ NO_RECEIVED_AT）、
 //   未归因计数、无 mtime 计数（开启排序时）→ rebate.onImported（同事务）。①、无付款时间、同步起点之前 → 只记丢弃计数。
@@ -26,6 +28,7 @@ import {
   upsertPending,
   type OrderKeyRow,
 } from '../infra/pipeline-store.ts';
+import { publishBindingConflict, publishIllegalTransition } from './alert-events.ts';
 import { attributeOrderUser } from './attribute-user.ts';
 import type {
   OrderPipeline,
@@ -45,8 +48,6 @@ const NO_PARAMS: UnionOrderAttrParams = {
 };
 
 // TODO(规划/11 §4.5): 淘宝 SITE_MISMATCH 判定 — blocked on 淘宝订单映射（无 site_id）。
-// 首次入库的 attr_binding_conflict、order_illegal_transition 目前只记日志。
-// TODO(规划/11 §4.5): 订单告警事件同事务入队 — blocked on B1-08o（platform EVENT_NAMES 登记）
 export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
   const log = deps.logger;
 
@@ -180,7 +181,7 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
         { platform, app_id: ctx.app_id, reason, outcome: 'pending' },
         'order status pending',
       );
-      await upsertPending(trx, {
+      const pendingId = await upsertPending(trx, {
         app_id: ctx.app_id,
         platform,
         sub_order_id: order.sub_order_id,
@@ -190,6 +191,20 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
         raw_payload_id: payloadId,
         detected_at: now,
       });
+      // BR-ATTR-01：迁移表外的首态事件（非法首态）与待处理记录同事务记 order.illegal_transition；
+      // 映射表外的码（UNMAPPED_STATUS，BR-FUND-02）只告警进待处理，08 未写该事件。
+      if (reason === 'ILLEGAL_TRANSITION') {
+        await publishIllegalTransition(deps.alertEvents, trx, {
+          appId: ctx.app_id,
+          orderId: null,
+          pendingId,
+          platform,
+          rule: 'illegal',
+          fromStatus: null,
+          event: mapped.kind === 'event' ? mapped.event : null,
+          outcome: 'rejected',
+        });
+      }
       return { kind: 'pending', reason };
     }
     // ② 用户归属（BR-ATTR-06 / 07）。
@@ -302,6 +317,14 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       name: 'order.created',
       payload: { order_id: orderId, platform, platform_status: plan.platform_status, attributed },
     });
+    // BR-ATTR-07：多条绑定命中且用户不同 → 未归因入库，同事务记 order.attr_binding_conflict。
+    if (user.kind === 'unattributed' && user.conflict) {
+      await publishBindingConflict(deps.alertEvents, trx, {
+        appId: ctx.app_id,
+        orderId,
+        platform,
+      });
+    }
     log?.info({ platform, app_id: ctx.app_id, outcome: 'inserted', attributed }, 'order imported');
     return { kind: 'inserted', order_id: orderId };
   }

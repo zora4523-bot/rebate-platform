@@ -13,7 +13,11 @@ export const MAX_EVENT_PAYLOAD_DEPTH = 3;
 /** Version range (section 2). */
 export const MAX_EVENT_VERSION = 999;
 
-/** Event names of 规划/02 §11 (section 1). */
+/**
+ * Event names of 规划/02 §11 (section 1), in its order. Names 02 §11 lists but no task publishes yet
+ * (order.reassigned, order.blacklist_hit_after_credit) are added, at their 02 position, by the task
+ * that needs them.
+ */
 export const EVENT_NAMES: readonly string[] = Object.freeze([
   'order.created',
   'order.updated',
@@ -33,6 +37,10 @@ export const EVENT_NAMES: readonly string[] = Object.freeze([
   'risk.state_changed',
   'appeal.resolved',
   'agent.run_finished',
+  // Alert events of the order sync (B1-08i; BR-ATTR-01, BR-ATTR-07, BR-FUND-01 P10; D10-48).
+  'order.attr_param_changed',
+  'order.illegal_transition',
+  'order.attr_binding_conflict',
 ]);
 
 export interface EventSubscription {
