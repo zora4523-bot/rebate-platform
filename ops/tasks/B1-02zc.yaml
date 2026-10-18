@@ -1,0 +1,22 @@
+id: B1-02zc
+repo: rebate-platform
+title: 剪贴板自动识别功能同意 clipboard_auto_import：迁移给 consent_records 加 version_label（text，可空）并放宽 type CHECK；配对约束（该类型 ⇒ subject_type=device、version_label 非空、version=0；其他类型 ⇒ version_label 为空）；POST /v1/consents 接受该类型：不论是否带令牌都以当前设备为主体（带令牌时 user_id 只作关联）、处理函数内校验设备签名、不参与 login_merge
+type: impl
+# 草稿 2026-10-18（身份与风控线 identity-lane；编排 11:4x 提醒优先）。依据：08 BR-ID-12 细则（clipboard_auto_import 设备级、不参与 login_merge、version 为 config.clipboard.consent_version 的字符串）、BR-ID-13（撤回隐私同意的设备主体先例）、BR-ID-16；04 §3.2、§6.1。契约由 CT-15s 先合并。
+# 编排已定（E33）：不改 version 列类型（整数，存 0 占位），新增 version_label 承载字符串版本；读取当前状态按 (device_id, type) 取 server_at 最新一行；login_merge 跳过该类型；版本门（BR-ID-01 conditional）照现有 recordConsent 规则。迁移号落地时取主干最大号 + 1（notices 登记）；编排在测试机重生成 db/schema.sql 与 db.gen.ts。模型 Opus 5.5。
+refs: []
+refs_hash: {}
+deps: [CT-15s]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'apps/api/src/modules/identity/**'
+test_paths:
+  - 'test/spec/identity/consents-clipboard/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/consents-clipboard/**'
+status: todo
