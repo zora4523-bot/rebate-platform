@@ -1,0 +1,18 @@
+id: B1-02zd
+repo: rebate-platform
+title: 测试修改：B1-02b 冻结测试 test/spec/db/identity-sessions/identity-sessions.int.test.ts [AC-B1-02b#7] 对契约每种 consent_type 用同一组通用值插入；clipboard_auto_import 在 B1-02zc 的配对约束下须为设备级、version_label 非空、version=0，夹具对该类型改用合法组合（断言不变）
+type: test-change
+# 草稿 2026-10-19（身份与风控线 identity-lane）。B1-02zc（迁移 0050 version_label 配对约束，E33）PR 头 CI：[AC-B1-02b#7] 插 clipboard_auto_import 得 23514（version 整数、无 version_label）。按编排 2026-10-18 23:1x 先例（冻结测试的夹具 / 形状挡住正确实现时开 test-change，不削弱断言）。
+# 改法：#7 循环里对 clipboard_auto_import 使用 subject_type=device、device_id 有值、version=0、version_label 为非空字符串（如 '2026-10-17'），其余类型照旧；断言「每种契约类型都能插入」不变，标题、向量不改，注释写明原因（B1-02zc 配对约束）。改前（main，无 version_label 列）改后（叠 B1-02zc）都要绿：改前该列不存在，夹具须在列不存在时省略 version_label（按 information_schema 判断或按 B1-02zc 合并顺序处理，编排定：本任务与 B1-02zc 同时落地，夹具直接写 version_label，B1-02zc 依赖本任务、本任务合并后立即合并 B1-02zc；若须单独先合，则用列存在判断）。
+# 不属削弱资金测试；保护路径第一类改已有文件，走非 task/ 分支 test-change/B1-02zd，Claude 只读复审「不削弱」后按 approvals #24 加标签合并。模型 Opus 5.5。
+refs: []
+refs_hash: {}
+deps: [B1-02b]
+paths:
+  - 'test/spec/db/identity-sessions/identity-sessions.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/identity-sessions/**'
+status: todo

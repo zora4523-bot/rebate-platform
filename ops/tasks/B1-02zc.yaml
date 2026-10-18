@@ -7,7 +7,7 @@ type: impl
 # 2026-10-18 补 paths：处理函数内校验设备签名需 risk 导出不受 x-signed 路由限制的单请求校验（createSignatureCheck 复用它），并由 app.module 的原文缓冲 bufferWhen 纳入 recordConsent（签名按原始字节计算，编排定不用重新序列化）。
 refs: []
 refs_hash: {}
-deps: [CT-15s]
+deps: [CT-15s, B1-02zd]
 paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
