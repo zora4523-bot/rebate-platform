@@ -23,3 +23,24 @@ export type {
   CreateCommissionSnapshotResult,
 } from './application/snapshot.ts';
 export { createInMemoryBeneficiaryResolver } from './infra/in-memory-beneficiary-resolver.ts';
+export {
+  createDraft,
+  validateDraft,
+  runTrial,
+  publish,
+  revoke,
+  RulePublicationError,
+} from './application/rule-publication.ts';
+export type {
+  RulePublicationActor,
+  RulePublicationDependencies,
+  CreateRuleDraftInput,
+  RuleDraftInput,
+  ValidateRuleDraftInput,
+  PublishRuleInput,
+  RevokeRuleInput,
+  PublishedRuleVersion,
+  RuleTrialResult,
+  RuleTrialReport,
+  RulePublicationErrorCode,
+} from './application/rule-publication.ts';
