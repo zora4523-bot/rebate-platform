@@ -34,7 +34,7 @@ type Operation = {
   'x-step-up'?: string;
   'x-idempotent'?: boolean;
 };
-type Schema = { required?: string[]; properties?: Record<string, Schema> };
+type Schema = { required?: string[]; properties?: Record<string, Schema>; description?: string };
 type Document = {
   paths: Record<string, { get?: Operation }>;
   components: { schemas: Record<string, Schema> };
@@ -115,7 +115,7 @@ it('[CT-24c] without audit.view_all the server forces actor_id to the caller and
   expect(description).toContain('`audit.view_all`');
   expect(description).toContain('forces `actor_id` to the caller');
   expect(description).toContain('empty page (`items=[]`, `total=0`), not an error');
-  expect(description).toContain('`at` descending, then `id` descending');
+  expect(description).toContain("`at` descending, then the server's internal order");
   expect(description).toContain('never matches a filter');
   const detailText = flat(detail().description);
   expect(detailText).toContain("another account's record is 20001 with `data.fields=[id]`");
@@ -147,7 +147,7 @@ it('[CT-24c] rows keep nullable target / permission / ip; only the detail carrie
   ]);
 });
 
-it('[CT-24c] the examples satisfy the schemas, nulls included; ids are decimal strings', () => {
+it('[CT-24c] the examples satisfy the schemas, nulls included; ids are opaque strings, not primary keys', () => {
   const listMedia = okMedia(list());
   const validateList = ajv.compile(listMedia.schema);
   expect(validateList(listMedia.example)).toBe(true);
@@ -176,8 +176,16 @@ it('[CT-24c] the examples satisfy the schemas, nulls included; ids are decimal s
   expect(validateDetail(numericId)).toBe(false);
 
   const idParam = ajv.compile(detail().parameters!.find((p) => p.name === 'id')!.schema);
-  expect(idParam('1031')).toBe(true);
-  expect(idParam('9223372036854775807')).toBe(true);
-  expect(idParam('0')).toBe(false);
-  expect(idParam('01')).toBe(false);
+  expect(idParam((detailMedia.example as { data: { id: string } }).data.id)).toBe(true);
+  expect(idParam('aud_7Qm2Xv9KpL4sTn8R')).toBe(true);
+  expect(idParam('0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b')).toBe(true);
+  expect(idParam('1031')).toBe(false);
+  expect(idParam('aud_7Qm2Xv9K/pL4sT')).toBe(false);
+  expect(idParam('a'.repeat(65))).toBe(false);
+  for (const row of rows) expect(row['id']).toMatch(/^(?![0-9]+$)[A-Za-z0-9_-]{16,64}$/);
+  const idSchema = contract.components.schemas['AdminAuditLogId']!;
+  const idText = flat(idSchema.description ?? '');
+  expect(idText).toContain('not the database');
+  expect(idText).toContain('must not');
+  expect(idText).toContain('stable for the life of the record');
 });
