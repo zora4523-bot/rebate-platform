@@ -3345,6 +3345,239 @@ paths:
           $ref: '#/components/responses/ClientError'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /v1/me/realname:
+    post:
+      operationId: submitRealname
+      tags:
+        - identity
+      summary: Real-name verification (name and ID number)
+      description: |
+        Two-element verification of name plus an 18-digit resident ID number, no face check
+        (BR-ID-25). The client only offers it when the user first enters a withdrawal or binds a
+        payout account while realname_status≠verified; no other entry may ask for the ID number.
+        Preconditions: no phone bound → 10005, checked before the consent (a member without phone
+        never gets 10004 or 30406, BR-ID-01 细则); no id_verification consent → 10004 with
+        data.consent_type=id_verification. Then, first hit wins (BR-ID-25): 20001 format (18
+        digits and check digit; the format is judged by the server, not by the request schema,
+        so that 10005 / 10004 come first) → 30407 age (computed locally from the ID number,
+        BR-ID-26) → 30410 today's attempts used up → 30405 (the ID number is already verified on
+        another account of this app; that account is never revealed) → vendor call. At most 3
+        attempts per user per natural day (+08:00): a vendor call with a definite result (match or
+        mismatch) counts 1, 30405 counts 1 (no vendor call); 20001, 30407 and vendor timeout or
+        error (50401 / 50301) do not count. The verification service being unavailable, including
+        not yet connected, is 50301 and does not count. A mismatch is 30406. A failed attempt
+        keeps neither the name nor the ID number. After verified the user cannot change it
+        themselves (corrections only by customer service in the admin console); the code for a
+        resubmission after verified is set by the implementing task. The name and the ID number
+        never go into logs. The client fetches GET /v1/me again after success. Version gate:
+        applied.
+      x-auth: phone
+      x-signed: true
+      x-idempotent: true
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 10005
+        - 10004
+        - 20001
+        - 30407
+        - 30410
+        - 30405
+        - 30406
+        - 50401
+        - 50301
+        - 10405
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitRealnameRequest'
+            example:
+              name: 张三
+              id_no: '11010519491231002X'
+      responses:
+        '200':
+          description: Verified.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitRealnameResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  realname_status: verified
+                  masked_name: '**三'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/me/labor-agreement:
+    get:
+      operationId: getLaborAgreement
+      tags:
+        - identity
+      summary: Current labor agreement and whether I must sign it
+      description: |
+        The currently effective labor agreement version, the address of its full text, its sha256
+        and whether the user must sign (BR-WDR-31; 04 §6.1). need_sign is true when the user has
+        not signed the current version, or when the current version is marked as requiring a new
+        signature and the signed version is older. signed_version / signed_at are the latest
+        signature, null when never signed. The version comes from server configuration; the
+        contract does not promise how it is managed in the admin console. Native App only, the
+        same as signing (04 §6.1): an h5_token gets 10403 even though this is a read. Not
+        realname → 30304.
+      x-auth: realname
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30304
+        - 10403
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: The current labor agreement and the signing state.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaborAgreementResponse'
+              examples:
+                needSign:
+                  summary: Must sign the current version
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      version: 2
+                      text_url: https://cdn.example.test/legal/labor-agreement-v2.html
+                      text_sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                      need_sign: true
+                      signed_version: 1
+                      signed_at: '2026-10-01T10:00:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                signed:
+                  summary: Current version signed
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      version: 2
+                      text_url: https://cdn.example.test/legal/labor-agreement-v2.html
+                      text_sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                      need_sign: false
+                      signed_version: 2
+                      signed_at: '2026-10-17T09:30:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/me/labor-agreement/sign:
+    post:
+      operationId: signLaborAgreement
+      tags:
+        - identity
+      summary: Sign the labor agreement
+      description: |
+        Signs the currently effective labor agreement version (BR-WDR-31). Native App only: an
+        h5_token gets 10403, and neither JSBridge nor the Agent may sign on the user's behalf. The
+        signer is the verified real-name person; not realname → 30304. version not the currently
+        effective version → 20001 data.fields=[version]; text_sha256 not the digest of that
+        version → 20001 data.fields=[text_sha256]; agreed not true → 20001 data.fields=[agreed].
+        Every signature inserts one record and never changes an earlier one (version, text
+        digest, server time, signer snapshot, channel, device_id). The client fetches
+        GET /v1/me/labor-agreement again after success. Version gate: applied.
+      x-auth: realname
+      x-signed: true
+      x-idempotent: true
+      x-min-version-gate: true
+      x-implementation: planned
+      x-error-codes:
+        - 30304
+        - 10403
+        - 20001
+        - 10405
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/Sign'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignLaborAgreementRequest'
+            example:
+              version: 2
+              text_sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+              agreed: true
+      responses:
+        '200':
+          description: Signed.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+              example:
+                code: 0
+                msg: ''
+                data: {}
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /v1/me/tips:
     get:
       operationId: getTips
@@ -13232,6 +13465,134 @@ components:
       oneOf:
         - $ref: '#/components/schemas/SavePayoutAccountByAlipay'
         - $ref: '#/components/schemas/SavePayoutAccountByBankCard'
+    SubmitRealnameRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - id_no
+      properties:
+        name:
+          type: string
+          description: Real name as typed; normalised by the server.
+          minLength: 1
+          maxLength: 64
+        id_no:
+          type: string
+          description: |
+            18-digit resident ID number as typed. No pattern here: length and check digit are judged
+            by the server (20001 data.fields=[id_no], BR-ID-25) after the phone and consent checks.
+          maxLength: 32
+    SubmitRealnameResult:
+      type: object
+      additionalProperties: false
+      required:
+        - realname_status
+        - masked_name
+      properties:
+        realname_status:
+          type: string
+          description: contracts/enums/identity.yaml realname_status; always verified on success.
+          enum:
+            - verified
+        masked_name:
+          type: string
+          description: Masked by the server (BR-ID-33).
+    SubmitRealnameResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/SubmitRealnameResult'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    LaborAgreement:
+      type: object
+      description: Currently effective labor agreement and the user's signing state (BR-WDR-31).
+      additionalProperties: false
+      required:
+        - version
+        - text_url
+        - text_sha256
+        - need_sign
+        - signed_version
+        - signed_at
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Currently effective version.
+        text_url:
+          type: string
+          format: uri
+          description: Address of the full text of that version.
+        text_sha256:
+          type: string
+          description: Lower-case hex sha256 of that version's text.
+          pattern: '^[0-9a-f]{64}$'
+        need_sign:
+          type: boolean
+          description: |
+            True when the current version is not signed, or it is marked as requiring a new signature
+            and the signed version is older.
+        signed_version:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: Version of the latest signature; null when never signed.
+        signed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Server time of the latest signature; null when never signed.
+    LaborAgreementResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/LaborAgreement'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    SignLaborAgreementRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - text_sha256
+        - agreed
+      properties:
+        version:
+          type: integer
+          format: int32
+          description: The version shown to the user (GET /v1/me/labor-agreement); must be the current one.
+        text_sha256:
+          type: string
+          description: sha256 of the text shown; must match that version (20001 data.fields=[text_sha256]).
+        agreed:
+          type: boolean
+          description: Must be true; the server returns 20001 data.fields=[agreed] otherwise.
     ArticleCategory:
       type: string
       description: Article category (04 §6.2：帮助、规则、公告、协议; codes defined here, no enums/ entry yet).
