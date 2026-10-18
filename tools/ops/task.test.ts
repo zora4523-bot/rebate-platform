@@ -9,6 +9,7 @@ import {
   CONTRACT_GENERATED,
   CONTRACT_GENERATED_EXEMPT,
   MAX_TASK_LINES,
+  countedLines,
   missingContractGenerated,
   showTask,
 } from './task.ts';
@@ -153,6 +154,70 @@ it('checks every file of the ledger and reports the failing ones', () => {
   expect(checkTasks(['X1-99'], opts())[0]?.problems).toEqual([
     'ops/tasks/X1-99.yaml does not exist',
   ]);
+});
+
+it('[CT-06t] the red_exempt section is not counted in the line limit; it has its own limit of 20 entries', () => {
+  const entries = (n: number): string =>
+    Array.from(
+      { length: n },
+      (_, i) =>
+        `\n  - file: 'test/spec/demo/rules.test.ts'\n    test: '[AC-${i + 1}] structural case ${i + 1}'\n    reason: structural, holds for the old data too`,
+    ).join('');
+  // A body of exactly MAX_TASK_LINES - 5 = 35 lines (the B2-01l shape) plus 13 declarations.
+  const body = (fields: Record<string, string>): string => {
+    const base = good({
+      impl: 'claude',
+      tester: 'codex',
+      test_paths: "\n  - 'test/spec/demo/**'",
+      ...fields,
+    });
+    const have = countedLines(base);
+    return `${'# padding\n'.repeat(MAX_TASK_LINES - 5 - have)}${base}`;
+  };
+  const thirteen = body({ id: 'X1-02d', red_exempt: entries(13) });
+  expect(thirteen.split('\n').length - 1).toBe(MAX_TASK_LINES - 5 + 13 * 3 + 1);
+  expect(countedLines(thirteen)).toBe(MAX_TASK_LINES - 5);
+  writeFiles(root, {
+    'tools/guard/protected-paths.json': JSON.stringify({
+      class1_add_only: ['test/spec/**', 'test/properties/**'],
+      class2_verify_config: [],
+      class3_gates: [],
+    }),
+    'ops/tasks/X1-02d.yaml': thirteen,
+    // 21 declarations: over the section's own limit.
+    'ops/tasks/X1-02e.yaml': body({ id: 'X1-02e', red_exempt: entries(21) }),
+    // 41 body lines without red_exempt: still over the line limit.
+    'ops/tasks/X1-02f.yaml': `${'# padding\n'.repeat(6)}${body({ id: 'X1-02f' })}`,
+    // An entry that is not file / test / reason hides nothing in the section.
+    'ops/tasks/X1-02g.yaml': body({
+      id: 'X1-02g',
+      red_exempt: `${entries(1)}\n  - note: a stray mapping\n  - 'test/spec/demo/rules.test.ts'`,
+    }),
+  });
+  try {
+    expect(checkTask('X1-02d', opts('RV1'))).toEqual([]);
+    expect(loadTask('X1-02d', root).red_exempt).toHaveLength(13);
+    expect(checkTask('X1-02e', opts('RV1')).join('\n')).toContain(
+      'red_exempt: 21 entries, the limit is 20',
+    );
+    const long = checkTask('X1-02f', opts('RV1')).join('\n');
+    expect(long).toMatch(/41 lines, the limit is 40/);
+    expect(long).toContain('the red_exempt section is not counted');
+    const mixed = checkTask('X1-02g', opts('RV1')).join('\n');
+    expect(mixed).toContain('red_exempt[1].note: unknown field');
+    expect(mixed).toContain('red_exempt[1].file: must be a non-empty repository path');
+    expect(mixed).toContain('red_exempt[2]: must be a mapping (file / test / reason)');
+  } finally {
+    for (const id of ['X1-02d', 'X1-02e', 'X1-02f', 'X1-02g'])
+      removeDir(`${root}/ops/tasks/${id}.yaml`);
+  }
+  // countedLines: the section ends at the next top-level line; a comment line counts.
+  expect(
+    countedLines(
+      'id: X\nred_exempt:\n  - file: a\n    test: b\n    reason: cccccccccc\n# c\nstatus: todo\n',
+    ),
+  ).toBe(3);
+  expect(countedLines('id: X\nstatus: todo')).toBe(2);
 });
 
 it('[CT-06r] red_exempt names rule-test files inside test_paths of a task with a rule-test author', () => {
