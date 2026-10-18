@@ -2,11 +2,13 @@ import { expect, it } from 'vitest';
 import {
   TrialComputationError,
   buildTrialReport,
+  needsIndirectPerson,
   peopleOfSnapshot,
   sampleDigest,
   shiftMs,
   toChinaIso,
   wholeSeconds,
+  withResolvedIndirect,
   type DigestAmount,
   type DigestSplit,
   type TrialSample,
@@ -211,4 +213,52 @@ it('[AC-B2-03k-UNIT#6] 快照受益人按角色读回，缺本人或数据非法
     peopleOfSnapshot([{ user_id: 'u1', role: 'self', level: 'L9', initial_status: 'active' }]),
   ).toThrow(TrialComputationError);
   expect(() => peopleOfSnapshot({})).toThrow(TrialComputationError);
+});
+
+it('[AC-B2-03k-UNIT#13] 只有比较版本开间推、快照有直推人却无间推人时才需要补间推人', () => {
+  const on = version({ own: 5000, direct: 1000, indirect: 500 }, 0, true);
+  const off = version({ own: 5000, direct: 1000, indirect: 0 }, 0, false);
+  const missing = sample({ indirect: null });
+  expect(needsIndirectPerson(missing, [off, on])).toBe(true);
+  expect(needsIndirectPerson(missing, [on, off])).toBe(true);
+  expect(needsIndirectPerson(missing, [null, on])).toBe(true);
+  expect(needsIndirectPerson(missing, [off, off])).toBe(false);
+  expect(needsIndirectPerson(sample(), [off, on])).toBe(false);
+  expect(needsIndirectPerson(sample({ direct: null, indirect: null }), [on])).toBe(false);
+});
+
+it('[AC-B2-03k-UNIT#14] 补出的间推人参与草稿重算；解析结果与快照不符或格式不对即抛错', () => {
+  const missing = sample({ indirect: null, rawNFen: 1000n });
+  const owner = missing.owner;
+  const direct = missing.direct!;
+  const grand = { userId: 'u3', level: 'L3', status: 'active', forfeitReason: null } as const;
+  const filled = withResolvedIndirect(missing, { owner, direct, indirect: grand });
+  expect(filled.indirect).toEqual(grand);
+  expect(withResolvedIndirect(missing, { owner, direct, indirect: null }).indirect).toBeNull();
+  const [row] = buildTrialReport({
+    platforms: ['taobao'],
+    current: null,
+    draft: version({ own: 5000, direct: 1000, indirect: 500 }, 0, true),
+    samples: [filled],
+  });
+  expect(row?.draft.indirectFen).toBe(50);
+  for (const bad of [
+    { owner: { ...owner, userId: 'x' }, direct, indirect: grand },
+    { owner, direct: { ...direct, userId: 'x' }, indirect: grand },
+    { owner, direct: { ...direct, level: 'L1' }, indirect: grand },
+    { owner, direct: { ...direct, status: 'forfeited' }, indirect: grand },
+    { owner, direct: null, indirect: grand },
+    { owner, direct, indirect: undefined },
+    { owner, direct, indirect: { ...grand, level: 'L9' } },
+    { owner, direct, indirect: { ...grand, userId: '' } },
+  ]) {
+    expect(() => withResolvedIndirect(missing, bad)).toThrow(TrialComputationError);
+  }
+  expect(() =>
+    withResolvedIndirect(sample({ direct: null, indirect: null }), {
+      owner,
+      direct,
+      indirect: grand,
+    }),
+  ).toThrow(TrialComputationError);
 });

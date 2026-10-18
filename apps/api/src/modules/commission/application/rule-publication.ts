@@ -27,11 +27,13 @@ import {
   TrialComputationError,
   buildTrialReport,
   isValidInstant,
+  needsIndirectPerson,
   peopleOfSnapshot,
   sampleDigest,
   shiftMs,
   toChinaIso,
   wholeSeconds,
+  withResolvedIndirect,
   type TrialSample,
 } from '../domain/rule-trial.ts';
 import {
@@ -53,6 +55,7 @@ import {
   type VersionRow,
 } from '../infra/rule-publication-store.ts';
 import type { RuleVersion } from '../domain/rules.ts';
+import type { SnapshotBeneficiaryResolver } from './snapshot.ts';
 
 /** 路由已核验权限与 step-up；本服务不接受客户端指定的身份。 */
 export interface RulePublicationActor {
@@ -63,6 +66,11 @@ export interface RulePublicationDependencies {
   readonly clock: Clock;
   readonly platforms: readonly string[];
   readonly audit: AuditPort;
+  /**
+   * B2-03g 的受益人解析端口（按 paid_at）。草稿或现行版本开间推而快照没有间推人时用它补出
+   * 间推人；未注入、解析失败或与快照不一致 → TRIAL_FAILED，不以 0 代替（BR-CALC-05/22）。
+   */
+  readonly beneficiaries?: SnapshotBeneficiaryResolver;
 }
 
 export interface RulePublicationContext {
@@ -351,6 +359,57 @@ function samplesOf(splits: readonly SplitRow[]): TrialSample[] {
   });
 }
 
+function trialFailed(error: unknown, fallback: string): RulePublicationError {
+  if (error instanceof RulePublicationError) return error;
+  return new RulePublicationError(
+    'TRIAL_FAILED',
+    error instanceof Error ? error.message : fallback,
+  );
+}
+
+/**
+ * BR-CALC-05 / BR-CALC-22: fills in the indirect person of every sample whose snapshot has none
+ * while a compared version enables indirect, through the injected resolver at the order's paid_at.
+ * No resolver, a resolver error or an answer that disagrees with the snapshot → TRIAL_FAILED.
+ */
+async function completeIndirect(
+  tx: Transaction<DB>,
+  appId: string,
+  samples: readonly TrialSample[],
+  splits: readonly SplitRow[],
+  versions: readonly (RuleVersion | null)[],
+  resolver: SnapshotBeneficiaryResolver | undefined,
+): Promise<TrialSample[]> {
+  const out: TrialSample[] = [];
+  for (const [i, sample] of samples.entries()) {
+    const split = splits[i];
+    if (split === undefined || split.order_id !== sample.orderId) {
+      throw new RulePublicationError('TRIAL_FAILED', 'sample rows out of step');
+    }
+    if (!needsIndirectPerson(sample, versions)) {
+      out.push(sample);
+      continue;
+    }
+    if (resolver === undefined) {
+      throw new RulePublicationError(
+        'TRIAL_FAILED',
+        `snapshot ${sample.orderId} has no indirect person and no beneficiary resolver is wired`,
+      );
+    }
+    try {
+      const resolved = await resolver.resolve(tx, {
+        appId,
+        ownerUserId: sample.owner.userId,
+        paidAt: split.paid_at,
+      });
+      out.push(withResolvedIndirect(sample, resolved));
+    } catch (error) {
+      throw trialFailed(error, 'beneficiary resolution failed');
+    }
+  }
+  return out;
+}
+
 /**
  * 所有用例接受调用方事务；调用方须在成功时提交、异常时回滚。
  * 起草只追加，经 DRAFT_CREATED；审计 action=commission.rule.draft。
@@ -483,22 +542,22 @@ export async function runTrial(
   let sampleHash: string;
   let report: RuleTrialReport;
   try {
-    // Pure recomputation only: any failure here (bad snapshot data, missing row or reserve,
-    // amount beyond the safe JSON range) is TRIAL_FAILED and leaves no report.
+    // Any failure here (bad snapshot data, indirect person not resolvable, missing row or
+    // reserve, amount beyond the safe JSON range) is TRIAL_FAILED and leaves no report.
     sampleHash = digestOf(rows);
+    const samples = await completeIndirect(
+      tx,
+      input.appId,
+      samplesOf(rows.splits),
+      rows.splits,
+      [current, draft],
+      deps.beneficiaries,
+    );
     report = {
-      platforms: buildTrialReport({
-        platforms: deps.platforms,
-        current,
-        draft,
-        samples: samplesOf(rows.splits),
-      }),
+      platforms: buildTrialReport({ platforms: deps.platforms, current, draft, samples }),
     };
   } catch (error) {
-    throw new RulePublicationError(
-      'TRIAL_FAILED',
-      error instanceof Error ? error.message : 'trial recomputation failed',
-    );
+    throw trialFailed(error, 'trial recomputation failed');
   }
 
   const trial = await insertTrial(tx, {
@@ -551,8 +610,10 @@ export async function publish(
   input: PublishRuleInput,
   deps: RulePublicationDependencies,
 ): Promise<PublishedRuleVersion> {
-  const now = deps.clock.now();
   await lockAppVersions(tx, input.appId);
+  // Read the clock only once the lock is held: a publish that waited on the lock judges trial
+  // age, effective_from and published_at by the time it actually runs.
+  const now = deps.clock.now();
   const versions = await readAppVersions(tx, input.appId);
   const row = versions.find((v) => v.rule_version_id === input.draftId);
   if (row === undefined) throw new RulePublicationError('VERSION_NOT_FOUND');
@@ -611,8 +672,9 @@ export async function revoke(
   input: RevokeRuleInput,
   deps: RulePublicationDependencies,
 ): Promise<PublishedRuleVersion> {
-  const now = deps.clock.now();
   await lockAppVersions(tx, input.appId);
+  // Clock after the lock: whether the version is already in force is judged when revoke runs.
+  const now = deps.clock.now();
   const versions = await readAppVersions(tx, input.appId);
   const row = versions.find((v) => v.rule_version_id === input.versionId);
   if (row === undefined) throw new RulePublicationError('VERSION_NOT_FOUND');

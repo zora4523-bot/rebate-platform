@@ -267,6 +267,84 @@ export function sampleDigest(input: {
   return createHash('sha256').update(canonical).digest('hex');
 }
 
+/**
+ * BR-CALC-05 / BR-CALC-22: a snapshot made under a version without indirect has no indirect
+ * person, yet a compared version (draft or current) that enables indirect pays one. Such a sample
+ * needs the indirect person at paid_at from the beneficiary resolver; it is never read as "none".
+ * Without a direct layer there is no indirect share (planSnapshot), so nothing is missing then.
+ */
+export function needsIndirectPerson(
+  sample: TrialSample,
+  versions: readonly (RuleVersion | null)[],
+): boolean {
+  if (sample.direct === null || sample.indirect !== null) return false;
+  return versions.some((v) => v !== null && v.indirect_enabled);
+}
+
+function samePerson(a: SnapshotPerson, b: SnapshotPerson): boolean {
+  return a.userId === b.userId && a.level === b.level && a.status === b.status;
+}
+
+function checkedPerson(raw: unknown, who: string): SnapshotPerson {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new TrialComputationError(`resolved ${who} is not an object`);
+  }
+  const p = raw as Record<string, unknown>;
+  const userId = p['userId'];
+  const level = p['level'];
+  const status = p['status'];
+  const reason = p['forfeitReason'];
+  if (typeof userId !== 'string' || userId === '') {
+    throw new TrialComputationError(`resolved ${who} has no user id`);
+  }
+  if (level !== 'L1' && level !== 'L2' && level !== 'L3') {
+    throw new TrialComputationError(`resolved ${who} level is not L1/L2/L3`);
+  }
+  if (status !== 'active' && status !== 'forfeited') {
+    throw new TrialComputationError(`resolved ${who} status is not active/forfeited`);
+  }
+  if (reason !== null && typeof reason !== 'string') {
+    throw new TrialComputationError(`resolved ${who} forfeit reason is not a string`);
+  }
+  return { userId, level, status, forfeitReason: reason };
+}
+
+/**
+ * The sample with the indirect person the resolver gave for paid_at. The resolver must agree with
+ * the stored snapshot on the owner and the direct person (same user, level and status); any
+ * disagreement or malformed answer means the result is not certain and throws (the trial fails,
+ * the indirect share is never taken as 0). A resolved indirect of null means none at paid_at.
+ */
+export function withResolvedIndirect(
+  sample: TrialSample,
+  resolved: { readonly owner: unknown; readonly direct: unknown; readonly indirect: unknown },
+): TrialSample {
+  if (sample.direct === null) {
+    throw new TrialComputationError(
+      `sample ${sample.orderId} has no direct person to resolve from`,
+    );
+  }
+  if (typeof resolved !== 'object' || resolved === null) {
+    throw new TrialComputationError(`resolver answer for ${sample.orderId} is not an object`);
+  }
+  const owner = checkedPerson(resolved.owner, 'owner');
+  if (!samePerson(owner, sample.owner)) {
+    throw new TrialComputationError(`resolver owner differs from snapshot ${sample.orderId}`);
+  }
+  if (resolved.direct === null || resolved.direct === undefined) {
+    throw new TrialComputationError(`resolver has no direct person for snapshot ${sample.orderId}`);
+  }
+  const direct = checkedPerson(resolved.direct, 'direct');
+  if (!samePerson(direct, sample.direct)) {
+    throw new TrialComputationError(`resolver direct differs from snapshot ${sample.orderId}`);
+  }
+  if (resolved.indirect === undefined) {
+    throw new TrialComputationError(`resolver gave no indirect answer for ${sample.orderId}`);
+  }
+  const indirect = resolved.indirect === null ? null : checkedPerson(resolved.indirect, 'indirect');
+  return { ...sample, indirect };
+}
+
 /** Reads the people of a stored snapshot (commission_splits.beneficiaries). Bad data throws. */
 export function peopleOfSnapshot(beneficiaries: unknown): {
   owner: SnapshotPerson;
