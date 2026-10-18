@@ -1,0 +1,20 @@
+id: F1-07j
+repo: rebate-platform
+title: 后台「用户查询」与「用户详情」视觉定稿落实：按 design/specs/admin-users.md、admin-user-detail.md 调布局、间距、字号、状态与三态（筛选卡、已应用条、空 / 加载 / 出错、标题行 UID 与风控 Tag、竖排基本信息、联盟授权表读屏名、行操作读屏名），只在现有契约字段内，逻辑不动
+type: impl
+# 2026-10-18 入账（前端线 f1-frontend-7；编排 22:5x 派工，负责人 21:3x 后台第 1 批定稿，规划 #141）。approvals 第 34 条：Claude 实现，Codex 写规则 / 浏览器测试并对抗评审；截图与 design-hifi/review-admin 对应画板并排进证据。
+# 契约外内容（邀请码 / 余额 / 淘宝授权列、注册时间与邀请码筛选、导出、详情页签、直推名单、调等级 / 改上级、调整余额、封禁冻结、客服代办）仍不做，等 CT-24 / F1-07g。前置 test-change F1-07k（冻结测试定位方式与布局无关）。
+refs: []
+refs_hash: {}
+deps: [F1-07i, F1-07k]
+paths:
+  - 'apps/admin/src/pages/users/**'
+  - 'apps/admin/src/texts/users.ts'
+test_paths:
+  - 'test/spec/frontend/admin-users-visual/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-users-visual/**'
+status: todo
