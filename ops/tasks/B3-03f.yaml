@@ -12,7 +12,7 @@ refs_hash:
   BR-AI-13: 870069e3ab76
 # 2026-10-15 编排者：按 B3-05 拆分（couli-runs/B3-05-plan/plan.md §3.3、§3.6）补依赖——同意读取（B1-02r）、访问三端口与按 run 取守卫（B3-03i）、最小可挂载 RunBody（B3-05a/b/c）、worker 侧 sweeper 已占用并改完 app.module.ts / agent.module.ts（B3-03h）。 2026-10-16 编排者：paths 加 agent/stream/mount/**（agent.module.ts 已有 B3-03h 的实现，测试阶段骨架不能放进去，path-guard 只认空壳文件；骨架放新目录，实现阶段 agent.module.ts 调用它）。
 # 2026-10-17 编排者（agent-lane）：不另开 CT-08g，改按 approvals 第 31 条在本任务 PR 里由 Claude 机械提交去掉 createAgentSession、getCurrentAgentSession、sendAgentMessage、cancelAgentRun 的 planned 并重生成（trailer Couli-Mechanical: contract-codegen）；auth / signing / min-version 三份路由生成物已含这四条，去 planned 只改 mechanical_paths 三项。历史、反馈、举报三条仍 planned。 2026-10-17 编排者：deps 加 B1-02x（identity 导出调用方上下文；Codex 实现首轮 blocked 于此）。
-# 2026-10-18 编排者：paths 加 stream/run/manager.ts（notice 卡不计已下发卡，BR-AI-15「没有下发任何 card」）、apps/api/src/contract.test.ts（CT-02a 路由归属扩为 /v1/agent/ 归 stream）与 platform/http/request-check-plan.test.ts（两条单测写死「stream 无 token 检查」，本任务按设计给 stream 装 token 检查 ② ③）。；10-18 test_paths 加 CT-08d / CT-08f 两个契约测试文件（四个操作去掉 x-implementation 的断言随规则测试提交，guard-git path-guard-author）。
+# 2026-10-18 编排者：paths 加 stream/run/manager.ts（notice 卡不计已下发卡，BR-AI-15「没有下发任何 card」）、apps/api/src/contract.test.ts（CT-02a 路由归属扩为 /v1/agent/ 归 stream）与 platform/http/request-check-plan.test.ts（两条单测写死「stream 无 token 检查」，本任务按设计给 stream 装 token 检查 ② ③）。；10-19 CT-08d / CT-08f 两个契约测试文件从 test_paths 移到 paths（去 planned 后的断言同步属实现侧提交；放 test_paths 会被 red-check 整文件判红，CT-06r 豁免需逐条 3 行超 40 行上限）。
 deps: [B3-03d, B3-03g, B3-03h, B3-03i, B1-02r, B3-05a, B3-05b, B3-05c, B1-02x]
 paths:
   - 'apps/api/src/app.module.ts'
@@ -23,14 +23,14 @@ paths:
   - 'apps/api/src/contract.test.ts'
   - 'apps/api/src/modules/platform/http/request-check-plan.test.ts'
   - 'apps/api/src/modules/agent/stream/run/manager.ts'
+  - 'test/spec/contracts/agent-accept/baseline.ts'
+  - 'test/spec/contracts/agent-http/http.test.ts'
 mechanical_paths:
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
 test_paths:
   - 'test/spec/agent/stream-mount/**'
-  - 'test/spec/contracts/agent-accept/baseline.ts'
-  - 'test/spec/contracts/agent-http/http.test.ts'
 impl: codex
 tester: claude
 accept:
