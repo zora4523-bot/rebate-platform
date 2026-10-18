@@ -67,26 +67,36 @@ export function HelpArticle({
     if (scroller != null) scroller.scrollTop = 0;
   }, [articleId]);
 
+  // A finished request answering 30701 wins over cached data: an article taken offline after it
+  // was cached (a stale refetch fails, React Query keeps the old data) must not stay readable.
+  const gone =
+    detail.isError &&
+    !detail.isFetching &&
+    detail.error instanceof ApiError &&
+    detail.error.code === ARTICLE_NOT_FOUND;
+  if (gone) {
+    return (
+      <Page>
+        <CenteredState>
+          <EmptyState
+            icon={<DocumentIcon />}
+            title={helpTexts.notFoundTitle}
+            description={helpTexts.notFoundDescription}
+            action={{
+              label: helpTexts.backHome,
+              onClick: () => void navigate({ search: '' }, { replace: true }),
+            }}
+          />
+        </CenteredState>
+      </Page>
+    );
+  }
+
+  // Any other failure keeps an article already loaded (stale beats nothing); without one the
+  // error state offers a retry of this article request.
   const article = detail.data;
   if (article === undefined) {
     if (detail.isError && !detail.isFetching) {
-      if (detail.error instanceof ApiError && detail.error.code === ARTICLE_NOT_FOUND) {
-        return (
-          <Page>
-            <CenteredState>
-              <EmptyState
-                icon={<DocumentIcon />}
-                title={helpTexts.notFoundTitle}
-                description={helpTexts.notFoundDescription}
-                action={{
-                  label: helpTexts.backHome,
-                  onClick: () => void navigate({ search: '' }, { replace: true }),
-                }}
-              />
-            </CenteredState>
-          </Page>
-        );
-      }
       return (
         <Page>
           <CenteredState>
