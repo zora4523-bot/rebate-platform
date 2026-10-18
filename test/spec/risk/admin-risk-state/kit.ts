@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import type { components } from '../../../../packages/contracts-ts/src/openapi.gen.ts';
 import { expect } from 'vitest';
-import { apiRequire, signedIn, type Harness, type Response } from '../../admin/auth/kit.ts';
+import { apiRequire, signedIn, totp, type Harness, type Response } from '../../admin/auth/kit.ts';
+import { ok, STEP, type Grant } from '../../admin/step-up/kit.ts';
 import { setup as bindingSetup } from '../../linking/admin-union-bindings/kit.ts';
 import {
   createValidatorCompiler,
@@ -37,6 +38,33 @@ export async function setup(h: Harness, options: Parameters<typeof bindingSetup>
   });
   s.f.clock.advanceMs(30_000);
   const session = await signedIn(s.f, s.a);
+  // Step-up tokens and both write helpers must use this same admin session.
+  const issue = async () => {
+    s.f.clock.advanceMs(30_000);
+    const grant = await ok<Grant>(
+      await s.f.post(
+        '/step-up',
+        { tier: 'totp', code: totp(s.a.secret, s.f.clock) },
+        { authorization: `Bearer ${session.admin_token}` },
+      ),
+      STEP,
+    );
+    return grant.step_up_token;
+  };
+  const post: typeof s.post = async (action, input, opts = {}) => {
+    const token = opts.token === undefined ? await issue() : opts.token;
+    return s.f.app.inject({
+      method: 'POST',
+      url: `/admin/v1/users/${opts.userId ?? s.userId}/union-bindings/${opts.platform ?? 'taobao'}/${action}`,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${session.admin_token}`,
+        ...(token === null ? {} : { 'x-step-up-token': token }),
+        ...opts.headers,
+      },
+      payload: JSON.stringify(input),
+    });
+  };
   // Shared harness predates PUT: widen only the transport, never register a fake route.
   const app = s.f.app as unknown as {
     inject(request: {
@@ -50,7 +78,7 @@ export async function setup(h: Harness, options: Parameters<typeof bindingSetup>
     input: Record<string, unknown>,
     opts: { token?: string | null; userId?: string; headers?: Record<string, string> } = {},
   ) => {
-    const token = opts.token === undefined ? await s.issue() : opts.token;
+    const token = opts.token === undefined ? await issue() : opts.token;
     return app.inject({
       method: 'PUT',
       url: `/admin/v1/users/${opts.userId ?? s.userId}/risk-state`,
@@ -101,7 +129,7 @@ export async function setup(h: Harness, options: Parameters<typeof bindingSetup>
     sessions: await sessions(),
     bindings: await s.rows(),
   });
-  return { ...s, put, riskRows, riskAudits: audits, events, sessions, snapshot };
+  return { ...s, issue, post, put, riskRows, riskAudits: audits, events, sessions, snapshot };
 }
 export type Scenario = Awaited<ReturnType<typeof setup>>;
 export async function seedState(
