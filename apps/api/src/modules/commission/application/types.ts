@@ -7,7 +7,7 @@ import type {
 } from '../../catalog/index.ts';
 import type { UnionItem } from '../../union/index.ts';
 
-/** Configuration keys a quote reads (all in the viewer's app scope); prepare() pre-reads all. */
+/** Configuration keys a quote reads (all in the viewer's app scope); an open pre-reads all. */
 export type COMMISSION_QUOTE_CONFIG_KEYS = readonly [
   'commission.platforms',
   'tech_fee_bp',
@@ -31,6 +31,4 @@ export interface CommissionQuoteContext extends Omit<CardQuoteContext, 'buyType'
 
 export interface CommissionRebateQuoter extends CardRebateQuoter {
   quote(item: UnionItem, viewer: Viewer, context?: CommissionQuoteContext): Promise<RebateQuote>;
-  /** Replaces the previous prepared scope. Subsequent quotes use only these pre-read values. */
-  prepare(appId: string, userIds: readonly string[]): Promise<void>;
 }

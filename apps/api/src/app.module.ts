@@ -605,11 +605,10 @@ function planUsers(plan: LinkOpenReadPlan): string[] {
  * commission's real quoter over the rule versions, user levels and quote configuration, each
  * wrapped in the open's read scope; it needs the database handle and refuses to start without
  * one (never the demo quoter instead). Every other environment keeps the demo quoter.
- * The real quoter's own prepare() is never called: it would switch the one shared quoter to a
- * single open's scope, so concurrent opens and search cards would answer for each other. An
- * open's pre-reads go through the wrapped ports instead (the AsyncLocalStorage scope of
- * link-open-reads.ts), so inside an open's transaction the quoter answers only from them and
- * outside an open it reads straight through. Pre-read failures are settled and surface where
+ * The real quoter is stateless (live only, B2-03n), so concurrent opens and search cards never
+ * answer for each other. An open's pre-reads go through the wrapped ports (the
+ * AsyncLocalStorage scope of link-open-reads.ts), so inside an open's transaction the quoter
+ * answers only from them and outside an open it reads straight through. Pre-read failures are settled and surface where
  * the transaction reads them (B1-06m).
  */
 function assembleQuoter(

@@ -5,17 +5,14 @@
 // whole formula at ⌊rate × compare_rate_ratio_bp⌋; max = 0 is no_rebate without a net price
 // (BR-PRICE-08), otherwise est_net_price_fen = final − min (BR-PRICE-09).
 //
-// Two modes. Live (no prepare() yet): every quote reads rules, the level and configuration in
-// the viewer's app scope, nothing is cached across quotes. The quote instant is taken once,
-// before any port is read, and the version is selected at that instant: the list read afterwards
-// always contains the version in force then, while a version that becomes effective (or is
-// revoked) during the reads is never picked from a list that may already be stale. Scoped (after
-// prepare()): quotes only answer from the values pre-read by the latest prepare(), never touch a
-// port or the clock again; the prepare instant (taken before its reads) is the quote instant of
-// the whole scope (BR-CALC-20), so crossing a version's effective_from inside the scope never
-// switches to a version that was not yet in force at prepare time (the link
-// open transaction must not borrow another connection); a viewer outside that scope, or a
-// failed prepare(), rejects. Every failure rejects the quote; nothing ever quotes as 0.
+// Live only (B2-03n removed prepare() and the scoped mode): every quote reads rules, the level
+// and configuration in the viewer's app scope; the quoter keeps no state, so concurrent quotes for
+// different apps or viewers never answer for each other. The quote instant is taken once, in the
+// synchronous part of quote() before any port is read, and the version is selected at that
+// instant: the list read afterwards always contains the version in force then, while a version
+// that becomes effective (or is revoked) during the reads is never picked from a list that may
+// already be stale. An open's pre-reads happen in the wrapped ports app.module.ts passes in, not
+// here. Every failure rejects the quote; nothing ever quotes as 0.
 //
 // Also compiled by the `test` project: erasable syntax only, relative imports with `.ts`.
 import type { UserLevel } from '@couli/contracts-ts';
@@ -32,10 +29,10 @@ import {
   type RuleVersion,
 } from '../domain/rules.ts';
 import { bpConfig, platformsConfig, techFeeConfig } from './quote-config.ts';
-import {
+import type {
   COMMISSION_QUOTE_CONFIG_KEYS,
-  type CommissionQuoteContext,
-  type CommissionRebateQuoter,
+  CommissionQuoteContext,
+  CommissionRebateQuoter,
 } from './types.ts';
 
 export interface CommissionRebateQuoterOptions {
@@ -66,19 +63,6 @@ interface QuoteInputs {
   readonly level: UserLevel;
   readonly config: ReadonlyMap<string, unknown>;
 }
-
-/** Everything one prepare() pre-read for one app scope. */
-interface PreparedScope {
-  readonly appId: string;
-  /** The scope's quote instant: read before prepare() reads any port (BR-CALC-20). */
-  readonly preparedAt: Date;
-  readonly versions: readonly RuleVersion[];
-  readonly levels: ReadonlyMap<string, UserLevel>;
-  readonly config: ReadonlyMap<string, unknown>;
-}
-
-type QuoterState =
-  { readonly mode: 'live' } | { readonly mode: 'scoped'; readonly scope: PreparedScope | null };
 
 interface ResolvedContext {
   readonly buyType: 'self' | 'share';
@@ -137,8 +121,6 @@ export function createCommissionRebateQuoter(
   options: CommissionRebateQuoterOptions,
 ): CommissionRebateQuoter {
   const { rules, levels, config, clock } = options;
-  let state: QuoterState = { mode: 'live' };
-  let generation = 0;
 
   async function readConfig(
     appId: string,
@@ -245,84 +227,14 @@ export function createCommissionRebateQuoter(
     return { at, versions, level, config: values };
   }
 
-  // Scoped mode: production wiring must not call prepare() (the scope is shared process state).
-  // TODO(规划/11 §2.3): 删除或改为无状态 — blocked on 后续任务.
-  // Every time-dependent decision uses scope.preparedAt; the clock is not read here.
-  function scopedInputs(scope: PreparedScope | null, viewer: Viewer): QuoteInputs {
-    if (scope === null) {
-      throw new Error('commission quote: no prepared scope (last prepare failed or is pending)');
-    }
-    if (viewer.appId !== scope.appId) {
-      throw new Error('commission quote: viewer app is outside the prepared scope');
-    }
-    let level: UserLevel;
-    if (viewer.userId === null) {
-      level = GUEST_LEVEL;
-    } else {
-      const prepared = scope.levels.get(viewer.userId);
-      if (prepared === undefined) {
-        throw new Error('commission quote: viewer is outside the prepared scope');
-      }
-      level = prepared;
-    }
-    return { at: scope.preparedAt, versions: scope.versions, level, config: scope.config };
-  }
-
   async function quote(
     item: UnionItem,
     viewer: Viewer,
     context?: CommissionQuoteContext,
   ): Promise<RebateQuote> {
     const ctx = resolveContext(item, context);
-    const current = state;
-    const inputs =
-      current.mode === 'live'
-        ? await liveInputs(item, ctx, viewer)
-        : scopedInputs(current.scope, viewer);
-    return compute(item, ctx, inputs);
+    return compute(item, ctx, await liveInputs(item, ctx, viewer));
   }
 
-  // 生产装配不得调用 prepare()。TODO(规划/11 §2.3): 删除或改为无状态 — blocked on 后续任务.
-  async function prepare(appId: string, userIds: readonly string[]): Promise<void> {
-    // The previous scope stops answering immediately; only this call's result may replace it.
-    generation += 1;
-    const mine = generation;
-    state = { mode: 'scoped', scope: null };
-    const scopeAppId = checkAppId(appId);
-    const ids = [...new Set(userIds)];
-    for (const id of ids) {
-      if (typeof id !== 'string' || id.length === 0) {
-        throw new TypeError('commission prepare: user ids must be non-empty strings');
-      }
-    }
-    // The scope's quote instant: read before any port, never during or after the reads.
-    const preparedAt = clock.now();
-    const [versions, levelList, values] = await Promise.all([
-      rules.publishedVersions(scopeAppId),
-      Promise.all(ids.map((userId) => readLevel(scopeAppId, userId))),
-      readConfig(scopeAppId, COMMISSION_QUOTE_CONFIG_KEYS),
-    ]);
-    // Keys every quote needs must be usable now; the rest are checked by the quote that uses them.
-    platformsConfig(required(values, PLATFORMS_KEY), PLATFORMS_KEY);
-    const techFee = required(values, TECH_FEE_KEY);
-    if (typeof techFee !== 'object' || techFee === null || Array.isArray(techFee)) {
-      throw new Error(`commission quote: config missing or malformed (${TECH_FEE_KEY})`);
-    }
-    if (!Array.isArray(versions)) {
-      throw new TypeError('commission prepare: rule reader returned no version list');
-    }
-    if (mine !== generation) return; // a later prepare() owns the scope now
-    state = {
-      mode: 'scoped',
-      scope: {
-        appId: scopeAppId,
-        preparedAt,
-        versions: [...versions],
-        levels: new Map(ids.map((id, i) => [id, levelList[i]!])),
-        config: values,
-      },
-    };
-  }
-
-  return { quote, prepare };
+  return { quote };
 }
