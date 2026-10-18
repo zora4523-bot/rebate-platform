@@ -1,0 +1,23 @@
+id: CT-15s
+repo: rebate-platform
+title: 契约 consent_type 加 clipboard_auto_import：enums/identity.yaml 与 RecordConsentRequest.type 加值；version 对该类型为字符串（config.clipboard.consent_version）、其他类型仍为正整数；recordConsent 描述写明该类型不论是否带令牌都记设备级、须带设备签名、不参与 login_merge
+type: impl
+# 草稿 2026-10-18（身份与风控线 identity-lane；编排 11:4x 提醒「三端剪贴板同意上报在等，请优先入账」）。依据：08 BR-ID-12 正文与细则（type 加 clipboard_auto_import，只记设备级、不参与 login_merge，version 存 config.clipboard.consent_version 的字符串）、BR-ID-16；04 §3.2 consent_records（列类型由契约线按 db/schema.sql 定）、§6.1 POST /v1/consents 例外（请求须带设备签名，带令牌时 user_id 只作关联）；docs/changes/20261017-剪贴板自动识别改版.md。
+# 编排已定（E33）：version 用 oneOf（integer ≥1 | string 1–32 字符），类型与版本形态不配对 → 20001 data.fields=[version]；签名：契约无按类型的 x-signed，recordConsent 保持 x-signed false，描述写明 type=clipboard_auto_import 时服务端在处理函数内校验设备签名（缺失或无效回签名守卫同样的错误码，列入 x-error-codes）；表结构另由 B1-02zc 加 version_label 列（不在本任务）。
+# 形状类契约任务，占契约槽（notices 排队）。重生成 openapi.gen.ts、enums.gen.ts 与三份路由表（mechanical 命令同 CT 先例）。模型 Opus 5.5；Codex 契约评审。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/identity.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
