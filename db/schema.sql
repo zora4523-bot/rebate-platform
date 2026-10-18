@@ -2348,6 +2348,50 @@ ALTER TABLE app.login_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: notify_logs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.notify_logs (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid,
+    code text NOT NULL,
+    channel text NOT NULL,
+    dedupe_key text NOT NULL,
+    planned_at timestamp with time zone NOT NULL,
+    sent_at timestamp with time zone,
+    status text DEFAULT 'queued'::text NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notify_logs_channel_check CHECK ((channel = ANY (ARRAY['inbox'::text, 'push'::text, 'sms'::text]))),
+    CONSTRAINT notify_logs_dedupe_key_check CHECK ((dedupe_key <> ''::text)),
+    CONSTRAINT notify_logs_sent_at_check CHECK ((((status <> 'success'::text) OR (sent_at IS NOT NULL)) AND ((status <> 'queued'::text) OR (sent_at IS NULL)))),
+    CONSTRAINT notify_logs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'success'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: notify_templates; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.notify_templates (
+    app_id text NOT NULL,
+    code text NOT NULL,
+    category text NOT NULL,
+    channels text[] NOT NULL,
+    route jsonb,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notify_templates_category_check CHECK ((category = ANY (ARRAY['service'::text, 'subscription'::text, 'marketing'::text]))),
+    CONSTRAINT notify_templates_channels_check CHECK (((cardinality(channels) >= 1) AND (array_position(channels, NULL::text) IS NULL) AND (channels <@ ARRAY['inbox'::text, 'push'::text, 'sms'::text]))),
+    CONSTRAINT notify_templates_code_check CHECK ((code ~ '^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$'::text)),
+    CONSTRAINT notify_templates_route_check CHECK (((route IS NULL) OR (jsonb_typeof(route) = 'object'::text)))
+);
+
+
+--
 -- Name: order_keys; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4500,6 +4544,30 @@ ALTER TABLE ONLY app.login_logs
 
 
 --
+-- Name: notify_logs notify_logs_dedupe_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.notify_logs
+    ADD CONSTRAINT notify_logs_dedupe_key UNIQUE (app_id, dedupe_key);
+
+
+--
+-- Name: notify_logs notify_logs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.notify_logs
+    ADD CONSTRAINT notify_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notify_templates notify_templates_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.notify_templates
+    ADD CONSTRAINT notify_templates_pkey PRIMARY KEY (app_id, code);
+
+
+--
 -- Name: order_keys order_keys_app_order_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -5592,6 +5660,20 @@ CREATE INDEX login_logs_device_created_idx ON app.login_logs USING btree (app_id
 
 
 --
+-- Name: notify_logs_due_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX notify_logs_due_idx ON app.notify_logs USING btree (status, planned_at);
+
+
+--
+-- Name: notify_logs_user_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX notify_logs_user_created_idx ON app.notify_logs USING btree (app_id, user_id, created_at);
+
+
+--
 -- Name: order_rights_order_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -6671,6 +6753,14 @@ ALTER TABLE ONLY app.links
 
 ALTER TABLE ONLY app.login_logs
     ADD CONSTRAINT login_logs_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: notify_logs notify_logs_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.notify_logs
+    ADD CONSTRAINT notify_logs_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -8721,6 +8811,22 @@ GRANT SELECT ON TABLE app.links TO couli_readonly;
 
 GRANT SELECT,INSERT ON TABLE app.login_logs TO couli_app;
 GRANT SELECT ON TABLE app.login_logs TO couli_readonly;
+
+
+--
+-- Name: TABLE notify_logs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.notify_logs TO couli_app;
+GRANT SELECT ON TABLE app.notify_logs TO couli_readonly;
+
+
+--
+-- Name: TABLE notify_templates; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.notify_templates TO couli_app;
+GRANT SELECT ON TABLE app.notify_templates TO couli_readonly;
 
 
 --
