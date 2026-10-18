@@ -3634,7 +3634,6 @@ paths:
       x-auth: realname
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 30304
       security:

@@ -92,6 +92,7 @@ import {
   type AccountRiskPort,
   type MeReadPorts,
   type MeUnionBindingStatus,
+  type PayoutAccountConfigPort,
 } from './modules/identity/index.ts';
 import { LedgerModule } from './modules/ledger/index.ts';
 import {
@@ -354,6 +355,15 @@ function identityModule(): DynamicModule {
       inject: [CLOCK, { token: DB, optional: true }],
       useFactory: (clock: Clock, db?: Kysely<Database>): IdentityConfigReader | null =>
         db === undefined ? null : createContentReader({ db, clock }),
+    },
+    // B1-13e: content's reader on the caller's handle (B1-11d precedent): a plain read each time,
+    // never a second pooled connection while the caller's transaction is held.
+    payoutAccountConfig: {
+      inject: [CLOCK],
+      useFactory: (clock: Clock): PayoutAccountConfigPort => ({
+        configValue: (appId, key, handle) =>
+          createContentReader({ db: handle, clock }).configValue(appId, key),
+      }),
     },
     blocklist: {
       inject: [
