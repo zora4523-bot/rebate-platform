@@ -96,7 +96,8 @@ it('[AC-B1-03g#9][AC-B1-03g#10] 受理后计数失败只记日志，不改成功
       await result(await client.send(number), 0);
       for (let i = 0; i < 2; i++) await result(await client.send(phone()), 0);
       expect(record).toHaveBeenCalledTimes(3);
-      expect(record).toHaveBeenCalledWith({ appId: f.id, clientIp: IP });
+      // 放宽字段形状：B1-11g 给 recordAccepted 传本次预占标识（编排 2026-10-18 23:1x）
+      expect(record).toHaveBeenCalledWith(expect.objectContaining({ appId: f.id, clientIp: IP }));
       await result(await client.send(phone()), 42901, 3601);
       expect(f.sender.outbox()).toHaveLength(3);
       expect(
