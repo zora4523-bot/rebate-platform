@@ -1,0 +1,19 @@
+id: F1-02x
+repo: rebate-platform
+title: F1-02f 规则测试 [AC-F1-02f#1] 去掉插入非法 status 'Published' / 'published ' 的两例——F1-02q 给 articles.status 加 CHECK（draft / published / offline）后这两行插入必败，其余断言不变
+type: test-change
+# 2026-10-18 入账（content-client 第三阶段）。F1-02f（GET /v1/articles）的 Codex 规则测试在 status 无 CHECK 时用两行非法取值验证「只认精确的 published」；
+# F1-02q（迁移 0046，L15）加 articles_status_check 后这两行 INSERT 违反约束，#1 在 F1-02q 分支必红。在 F1-02q 的规则测试提交里改会被 path-guard-author 拒（别的任务的冻结测试），
+# 放在实现之后会被 evidence-check 拒（先例 F1-02g #588、F1-09i #717）。做法：删这两行并加注释，其余断言一字不改；非法取值被拒由 F1-02q 迁移规则测试覆盖。主干现在与 F1-02q 合并后都成立。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-02f]
+paths:
+  - 'test/spec/content/articles/published.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 769
