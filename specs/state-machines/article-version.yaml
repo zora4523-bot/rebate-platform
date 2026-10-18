@@ -1,0 +1,44 @@
+# 文章版本状态 articles.status 的状态机（规划/04 §3.2 articles 行「版本、状态」；08 12_TEXT 公告整篇下线；任务 F1-02u）。
+# 生成 packages/domain/src/state-machines/article-version.gen.ts
+# （node packages/domain/scripts/state-machines.ts；--verify 只比对）。生成物勿手改，改这里再生成。
+#
+# 依据与来历：
+# - 规划/04 §4 表与 08 都没有 articles 的迁移表；下面三行迁移是编排默认（F1-02u 任务书 §9.2，计划 L15、L19），待编排复核。
+# - 04 articles：已发布 = status 精确等于 published 且 published_at 非空、不晚于当前时刻（定时未到按未发布）；
+#   当前版本 = (app_id, id) 下已发布行里 version 最大的一行；整篇下线须把该 id 全部版本都改离 published。
+#
+# 写法约定（同 CT-04a、B2-03j、F1-09h）：
+# - from 中 null 表示「—」（入库首态：存草稿时插入新版本行）。
+# - guard 只是规则文字说明，transition() 不求值；权限、row_version CAS（CT-02s）、发布时刻与副作用由服务层（F1-02w）负责。
+# - 状态值与 db/migrations/0049_dict-items-articles-status.sql 的 articles_status_check 一致（小写，区分大小写）；事件用大写蛇形名。
+#
+# 表外说明：
+# - 只有下面三行迁移，其余组合一律为表外事件。
+# - 改正文或标题 = 存一个新草稿版本（插入新行），不是迁移；published 不回 draft。
+# - offline 是终态，不回 published 或 draft；下线后重新上线 = 存新草稿再 PUBLISH（新行）。
+# - 取消未到点的定时发布 = OFFLINE。
+# - category=agreement 的协议由 F1-02p 直接插入 published 行，不经本状态机的迁移。
+name: article-version
+field: status
+states: [draft, published, offline]
+# DRAFT_SAVED 后台新建文章或存草稿（插入新版本行）；PUBLISH 立即或定时发布；OFFLINE 整篇下线。
+events: [DRAFT_SAVED, PUBLISH, OFFLINE]
+transitions:
+  - id: A1
+    from: [null]
+    event: DRAFT_SAVED
+    to: draft
+    guard: '后台账号持 content.article 权限新建文章或存草稿，按 expected_row_version 做 CAS（CT-02s），插入新版本行（version = 该 id 最大 version + 1，新建为 1；published_at 为空）'
+    test_id: AC-F1-02u#1
+  - id: A2
+    from: [draft]
+    event: PUBLISH
+    to: published
+    guard: '持 content.article 权限发布；只能发布该 id 的最新版本行（更旧的草稿留在 draft，不再可发布）；写 published_at（立即 = Clock 当前时刻，定时 = 请求给的未来时刻）；同 id 更早的 published 行不改，仍是 published（当前版本 = 已发布行里最大 version）'
+    test_id: AC-F1-02u#1
+  - id: A3
+    from: [published]
+    event: OFFLINE
+    to: offline
+    guard: '持 content.article 权限整篇下线：同一事务把该 id 全部 status=published 的行（含定时未到的）逐行经本迁移改为 offline；draft 行不动；offline 为终态'
+    test_id: AC-F1-02u#1
