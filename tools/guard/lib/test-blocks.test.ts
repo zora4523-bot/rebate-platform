@@ -684,6 +684,8 @@ it('[CT-06r] the two B1-12g files: a same-named test elsewhere and a listing of 
 const B112G_R4_FILES = (): Record<string, string> => {
   const read = (p: string): string => readFileSync(join(FIXTURES, `b112g-${p}.txt`), 'utf8');
   return {
+    // The implementation modules the fixtures import (outside the test code: not followed).
+    ...Object.fromEntries(B112G_IMPL.map((p) => [p, ''])),
     'test/spec/platform/events/contract.test.ts': read('events-contract.test.ts'),
     'test/spec/platform/queue/contract.test.ts': read('queue-contract.test.ts'),
     'test/spec/platform/events/kit.ts': read('events-kit.ts'),
@@ -692,6 +694,14 @@ const B112G_R4_FILES = (): Record<string, string> => {
     'test/spec/identity/step-up-verify/kit.ts': read('identity-step-up-verify-kit.ts'),
   };
 };
+const B112G_IMPL = [
+  'events/index.ts',
+  'logging/redaction.ts',
+  'logging/logger.ts',
+  'queue/index.ts',
+  'db/index.ts',
+  'config/index.ts',
+].map((p) => `apps/api/src/modules/platform/${p}`);
 /** What B1-12g changed inside its test_paths at red/4 (couli-runs/B1-12g/red/4). */
 const B112G_R4_SUPPORTS = [
   'test/spec/platform/events/contract.test.ts',
@@ -751,6 +761,10 @@ it('[CT-06w] the two B1-12g files (red/4): `./kit.ts` of their own directory is 
     'test/spec/platform/db/kit.ts',
     'test/spec/platform/queue/kit.ts',
   ]);
+  // The kits are closed (no file-system access, import.meta, mock, listing or unread import).
+  for (const m of [...eventsClosure.slice(1), ...queueClosure.slice(1)]) {
+    expect([m.path, m.closed, m.opaque]).toEqual([m.path, true, null]);
+  }
   // The 27 unchanged tests of red/4: neither file may read any changed support file.
   for (const s of B112G_R4_SUPPORTS) {
     if (s !== events) expect(mayReadSupport(events, s, eventsClosure), s).toBeNull();
@@ -1289,4 +1303,83 @@ it('[CT-06w] an import resolved to a file the closure does not follow keeps the 
   expect(mayReadSupport(file, 'test/spec/a/theme.css', css)).toBe(
     `${file} imports test/spec/a/theme.css (./theme.css)`,
   );
+});
+
+it('[CT-06w] only an import of a closed module is skipped by the name rules (Codex review r4)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/real/kit.ts';
+  const files: Record<string, string> = {
+    'test/spec/a/bridge': "export { n } from '../real/kit.ts';",
+    'test/spec/a/__mocks__/kit.ts': '',
+    'test/spec/a/payload.txt': 'rows',
+    'apps/api/src/x.ts': '',
+    'test/spec/a/plain.ts': "import { x } from '../../../apps/api/src/x.ts';\nexport const n = x;",
+    'test/spec/a/chain.ts': "export { n } from './plain.ts';",
+    'test/spec/real/kit.ts': '',
+  };
+  const closure = (text: string, kit: string) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : p === 'test/spec/a/kit.ts' ? kit : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  const root = "import { n } from './kit.ts';";
+  const why = (kit: string) => mayReadSupport(file, support, closure(root, kit));
+  const prefix = `${file} names kit.ts in an unresolved import ./kit.ts (test/spec/a/kit.ts is not closed: `;
+  // A helper that reads a file by a path built from import.meta.url, with no name literal.
+  expect(
+    why(
+      "import { readFileSync } from 'node:fs';\nexport const n = readFileSync(new URL(import.meta.url.replace('/a/', '/real/')), 'utf8');",
+    ),
+  ).toBe(`${prefix}it uses readFileSync)`);
+  expect(why('export const n = import.meta.url;')).toBe(`${prefix}it uses import.meta)`);
+  expect(why("import fs from 'fs';\nexport const n = fs;")).toBe(`${prefix}it uses fs)`);
+  expect(why("import { vi } from 'vitest';\nvi.mock('./x.ts');\nexport const n = 1;")).toBe(
+    `${prefix}it uses vi.mock)`,
+  );
+  // A listing (its directory resolved or not) and a dynamic load.
+  expect(
+    why(
+      "import { readdirSync } from 'node:fs';\nexport const n = readdirSync(new URL('../d%61ta/', import.meta.url));",
+    ),
+  ).toBe(`${prefix}it lists test/spec/d%61ta)`);
+  expect(why("export const n = await import(`./${'x'}.ts`);")).toBe(
+    `${prefix}it imports a module by a computed name)`,
+  );
+  // A two-step re-export through an extension-less module the closure does not read.
+  expect(why("export { n } from './bridge';")).toBe(
+    `${prefix}it imports test/spec/a/bridge, which is not read here)`,
+  );
+  expect(why("export { n } from './gone.ts';")).toBe(
+    `${prefix}it imports ./gone.ts, which cannot be resolved)`,
+  );
+  // A raw import of a file not read here.
+  expect(why("import raw from './payload.txt?raw';\nexport const n = raw;")).toBe(
+    `${prefix}it imports test/spec/a/payload.txt, which is not read here)`,
+  );
+  // Closed: a plain module, a chain of plain modules, implementation and package imports.
+  expect(why('export const n = 1;')).toBeNull();
+  expect(why("export { n } from './chain.ts';")).toBeNull();
+  expect(
+    why(
+      "import { it } from 'vitest';\nimport { x } from '../../../apps/api/src/x.ts';\nexport const n = [it, x];",
+    ),
+  ).toBeNull();
+  // The closure records why a module is not closed, transitively.
+  const c = closure(root, "export { n } from './bridge';");
+  expect(c.map((m) => [m.path, m.closed, m.opaque])).toEqual([
+    [file, false, 'it imports test/spec/a/kit.ts, which is not closed'],
+    ['test/spec/a/kit.ts', false, 'it imports test/spec/a/bridge, which is not read here'],
+  ]);
+  // `vi.mock(import('./kit.ts'))` is a mock, not a load: the specifier keeps the name rules.
+  expect(
+    mayReadSupport(
+      file,
+      'test/spec/a/__mocks__/kit.ts',
+      closure(
+        "import { vi } from 'vitest';\nvi.mock(import('./kit.ts'));\nimport { n } from './kit.ts';",
+        'export const n = 1;',
+      ),
+    ),
+  ).toBe(`${file} names kit.ts`);
 });

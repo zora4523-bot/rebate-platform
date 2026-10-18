@@ -1285,6 +1285,17 @@ export type Module = {
   lists: string[];
   /** Its import specifiers resolved to repository paths (CT-06w); [] when it cannot be tokenized. */
   imports: ModuleImport[];
+  /**
+   * Why the module may read files in a way the rules here do not see (CT-06w, Codex review r4):
+   * a file-system API, `import.meta`, a module mock, a listing, a dynamic load; null when none.
+   */
+  opaque: string | null;
+  /**
+   * The module is closed (CT-06w): it is not opaque and every relative / `#` import of it
+   * resolves to a closed module of the closure or to a file outside the test code. Only an
+   * import of a closed module may be skipped by the name rules of mayReadSupport.
+   */
+  closed: boolean;
 };
 
 type Reader = (path: string) => string | null;
@@ -1300,6 +1311,76 @@ function literalsOf(tokens: readonly Token[]): Literal[] {
       for (const p of t.parts ?? []) if (p !== null) out.push({ text: p, start, end });
   }
   return out;
+}
+
+/** Identifiers of file-system access, module loading by path and process state (fileAccess). */
+const FILE_ACCESS = new Set([
+  'readFileSync',
+  'readFile',
+  'readdirSync',
+  'readdir',
+  'opendirSync',
+  'opendir',
+  'createReadStream',
+  'openSync',
+  'statSync',
+  'lstatSync',
+  'existsSync',
+  'accessSync',
+  'realpathSync',
+  'readlinkSync',
+  'fileURLToPath',
+  'pathToFileURL',
+  '__dirname',
+  '__filename',
+  'createRequire',
+  'require',
+  'glob',
+  'globSync',
+  'cwd',
+]);
+const FILE_MODULES = new Set(['fs', 'node:fs', 'fs/promises', 'node:fs/promises']);
+const MOCKING = new Set([
+  'mock',
+  'doMock',
+  'unmock',
+  'doUnmock',
+  'importActual',
+  'importMock',
+  'hoisted',
+]);
+
+/**
+ * Why a module may read files in a way the rules of mayReadSupport do not see (CT-06w, Codex
+ * review r4): a file-system API or a path built from `import.meta` / `__dirname`, a module mock
+ * (Vitest redirects it to `__mocks__`), `require` / `glob`. Null when it uses none of them.
+ */
+function fileAccess(code: readonly Token[]): string | null {
+  const tokens = flatten(code);
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i] as Token;
+    if (t.kind === 'id' && FILE_ACCESS.has(t.text)) return `it uses ${t.text}`;
+    if (t.kind === 'str' && typeof t.value === 'string' && FILE_MODULES.has(t.value)) {
+      return `it uses ${t.value}`;
+    }
+    if (
+      t.kind === 'id' &&
+      t.text === 'meta' &&
+      tokens[i - 1]?.text === '.' &&
+      tokens[i - 2]?.text === 'import'
+    ) {
+      return 'it uses import.meta';
+    }
+    if (
+      t.kind === 'id' &&
+      MOCKING.has(t.text) &&
+      tokens[i - 1]?.text === '.' &&
+      tokens[i - 2]?.text === 'vi'
+    ) {
+      return `it uses vi.${t.text}`;
+    }
+  }
+  return null;
 }
 
 /**
@@ -1332,10 +1413,17 @@ function importSpecifiers(
     } else if (prev?.kind === 'id' && prev.text === 'import') {
       isImport = !member(before);
     } else if (prev?.kind === 'punct' && prev.text === '(') {
+      // `vi.mock(import('x'))` is a mock, not a load (Vitest redirects it; Codex review r4).
+      const mocked =
+        tokens[i - 3]?.text === '(' &&
+        tokens[i - 4]?.kind === 'id' &&
+        MOCKING.has((tokens[i - 4] as Token).text) &&
+        tokens[i - 5]?.text === '.';
       isImport =
         before?.kind === 'id' &&
         before.text === 'import' &&
         !member(tokens[i - 3]) &&
+        !mocked &&
         (next === ')' || next === ',');
     }
     if (isImport) out.push({ spec: t.value, start: t.start, end: t.start + t.text.length });
@@ -1611,13 +1699,20 @@ export function relativeClosure(
       tokens === null
         ? []
         : importSpecifiers(tokens).map((s) => ({ ...s, ...resolveImport(path, s.spec, files) }));
+    const dynamic = tokens === null ? null : (dynamicAccess(tokens) ?? listed.unresolved);
     out.push({
       path,
       text,
       literals,
-      dynamic: tokens === null ? null : (dynamicAccess(tokens) ?? listed.unresolved),
+      dynamic,
       lists: listed.dirs,
       imports,
+      opaque:
+        tokens === null
+          ? 'it cannot be read as code'
+          : (dynamic ??
+            (listed.dirs.length > 0 ? `it lists ${listed.dirs.join(', ')}` : fileAccess(tokens))),
+      closed: false,
     });
     for (const { text: s } of literals ?? []) {
       if (!s.startsWith('./') && !s.startsWith('../')) continue;
@@ -1626,6 +1721,34 @@ export function relativeClosure(
       for (const c of candidatesOf(target)) enqueue(c);
     }
     for (const i of imports) if (i.resolved !== null) enqueue(i.resolved);
+  }
+  // Closed modules (a fixpoint: a module importing a module that is not closed is not closed).
+  const byPath = new Map(out.map((m) => [m.path, m]));
+  const bare = (spec: string): boolean =>
+    !spec.startsWith('#') && !/^\.\.?(\/|$)/.test(spec.replace(/[?#].*$/, ''));
+  for (const m of out) {
+    if (m.opaque !== null) continue;
+    const open = m.imports.find((i) =>
+      i.resolved === null ? !bare(i.spec) : !byPath.has(i.resolved) && follow(i.resolved),
+    );
+    if (open === undefined) m.closed = true;
+    else if (open.resolved === null) m.opaque = `it imports ${open.spec}, which cannot be resolved`;
+    else m.opaque = `it imports ${open.resolved}, which is not read here`;
+  }
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const m of out) {
+      if (!m.closed) continue;
+      const open = m.imports.find((i) => {
+        const dep = i.resolved === null ? undefined : byPath.get(i.resolved);
+        return dep !== undefined && !dep.closed;
+      });
+      if (open !== undefined) {
+        m.closed = false;
+        m.opaque = `it imports ${open.resolved}, which is not closed`;
+        changed = true;
+      }
+    }
   }
   return out;
 }
@@ -1637,10 +1760,11 @@ export function relativeClosure(
  * when: the support file is one of those modules; one of them imports it (CT-06w: an import
  * specifier resolved to the support file's repository path); its file name occurs anywhere in
  * their text; its name without the extension occurs as a word in their string literals — except
- * inside an import specifier that resolves to another module of the closure (CT-06w, after
- * B1-12g: `./kit.ts` of test/spec/platform/events is not test/spec/identity/step-up-verify/kit.ts;
- * a specifier that cannot be resolved, or resolved to a file the closure does not follow, still
- * counts, the reason says `unresolved import`); one of them lists a
+ * inside an import specifier that resolves to another, closed module of the closure (CT-06w,
+ * after B1-12g: `./kit.ts` of test/spec/platform/events is not
+ * test/spec/identity/step-up-verify/kit.ts; a specifier that cannot be resolved, or resolved to a
+ * file the closure does not follow or to a module that is not closed, still counts, the reason
+ * says `unresolved import`); one of them lists a
  * directory that holds the support file (CT-06r: readdir & co. resolved statically; a listing
  * whose directory cannot be resolved counts as reading anything, the reason says so) or loads by
  * a computed name (glob, require, a dynamic import of a computed specifier) or cannot be
@@ -1664,24 +1788,26 @@ export function mayReadSupport(
   const dot = name.lastIndexOf('.');
   const stem = dot > 0 ? name.slice(0, dot) : name;
   const word = new RegExp(`(?<![\\w$.-])${escapeRegex(stem)}(?![\\w$-])`, 'u');
-  const followed = new Set(closure.map((m) => m.path));
-  if (followed.has(support)) return `it loads ${support}`;
+  const byPath = new Map(closure.map((m) => [m.path, m]));
+  if (byPath.has(support)) return `it loads ${support}`;
   for (const m of closure) {
     const imported = m.imports.find((i) => i.resolved === support);
     if (imported !== undefined) return `${m.path} imports ${support} (${imported.spec})`;
-    // CT-06w: the name rules skip an import specifier that resolves to another file of the
-    // closure (a module read here, whose own reads are judged); a specifier that cannot be
-    // resolved, or that resolves to a file the closure does not follow (data, a style sheet, a
-    // module outside the test code — it may load the support file in a way not read here; Codex
-    // review r3), counts as before (`unresolved import`).
+    // CT-06w: the name rules skip an import specifier that resolves to another, closed module of
+    // the closure (read here, every read of it and of what it imports seen by these rules); a
+    // specifier that cannot be resolved, that resolves to a file the closure does not follow
+    // (data, a style sheet, a module outside the test code) or to a module that is not closed
+    // (it uses a file-system API, import.meta, a mock, a listing, an import not read here — it
+    // may reach the support file in a way not seen; Codex reviews r3, r4) counts as before
+    // (`unresolved import`).
     const within = (start: number, end: number): ModuleImport | undefined =>
       m.imports.find((i) => i.start <= start && end <= i.end);
-    const uncertain = (i: ModuleImport): string | null =>
-      i.resolved === null
-        ? i.why
-        : followed.has(i.resolved)
-          ? null
-          : `${i.resolved} is not followed by the closure`;
+    const uncertain = (i: ModuleImport): string | null => {
+      if (i.resolved === null) return i.why;
+      const dep = byPath.get(i.resolved);
+      if (dep === undefined) return `${i.resolved} is not followed by the closure`;
+      return dep.closed ? null : `${i.resolved} is not closed: ${dep.opaque}`;
+    };
     const note = (what: string, i: ModuleImport, why: string): string =>
       `${m.path} names ${what} in an unresolved import ${i.spec} (${why})`;
     for (let at = m.text.indexOf(name); at >= 0; at = m.text.indexOf(name, at + 1)) {

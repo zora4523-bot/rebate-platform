@@ -1370,6 +1370,17 @@ it('[CT-06w] ruleTestBaselines: an import of a same-named file in another direct
   const QUEUE = 'test/spec/platform/queue/contract.test.ts';
   const IDENTITY_KIT = 'test/spec/identity/step-up-verify/kit.ts';
   const tree: Record<string, string> = {
+    // The implementation modules the fixtures import (outside the test code).
+    ...Object.fromEntries(
+      [
+        'events/index.ts',
+        'logging/redaction.ts',
+        'logging/logger.ts',
+        'queue/index.ts',
+        'db/index.ts',
+        'config/index.ts',
+      ].map((p) => [`apps/api/src/modules/platform/${p}`, '']),
+    ),
     [EVENTS]: fixture('events-contract.test.ts'),
     [QUEUE]: fixture('queue-contract.test.ts'),
     'test/spec/platform/events/kit.ts': fixture('events-kit.ts'),
