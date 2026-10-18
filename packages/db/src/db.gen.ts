@@ -5,6 +5,14 @@
 
 import type { ColumnType } from "kysely";
 
+export type ArrayType<T> = ArrayTypeImpl<T> extends (infer U)[]
+  ? U[]
+  : ArrayTypeImpl<T>;
+
+export type ArrayTypeImpl<T> = T extends ColumnType<infer S, infer I, infer U>
+  ? ColumnType<S[], I[], U[]>
+  : T[];
+
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
   : ColumnType<T, T | undefined, T>;
@@ -295,6 +303,42 @@ export interface CategoryBlocklist {
   status: string;
   updated_at: Generated<Timestamp>;
   updated_by: string;
+}
+
+export interface ClaimItems {
+  app_id: string;
+  applicant_user_id: string;
+  claim_id: string;
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  decision: string | null;
+  evidence: string | null;
+  evidence_link_log_ids: ArrayType<ColumnType<bigint, bigint, bigint>> | null;
+  id: string;
+  order_id: string;
+  platform: string;
+  reject_reason: string | null;
+  row_version: Generated<number>;
+  sub_order_id: string;
+  updated_at: Timestamp;
+}
+
+export interface Claims {
+  app_id: string;
+  created_at: Timestamp;
+  evidence_level: string | null;
+  handler_admin_id: string | null;
+  id: string;
+  order_no: string;
+  order_no_type: string;
+  paid_date: Timestamp;
+  platform: string;
+  reason: string | null;
+  row_version: Generated<number>;
+  status: string;
+  updated_at: Timestamp;
+  user_id: string;
 }
 
 export interface CommissionRuleReserves {
@@ -1379,6 +1423,8 @@ export interface DB {
   audit_logs: AuditLogs;
   blocklist: Blocklist;
   category_blocklist: CategoryBlocklist;
+  claim_items: ClaimItems;
+  claims: Claims;
   commission_rule_reserves: CommissionRuleReserves;
   commission_rule_trials: CommissionRuleTrials;
   commission_rule_versions: CommissionRuleVersions;

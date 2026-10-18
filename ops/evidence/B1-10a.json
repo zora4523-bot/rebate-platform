@@ -1,0 +1,143 @@
+{
+  "task": "B1-10a",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "322bb7bbabd59bb614724396b201d8f70ce39301",
+  "red_tests": [
+    "test/spec/db/order-claims/access.int.test.ts > [AC-B1-10a#28] effective table and column privileges match the complete two-role matrix",
+    "test/spec/db/order-claims/access.int.test.ts > [AC-B1-10a#29] populated tables deny immutable-column updates, deletion and readonly writes",
+    "test/spec/db/order-claims/access.int.test.ts > [AC-B1-10a#30] application can write every mutable column without automatic row_version changes",
+    "test/spec/db/order-claims/access.int.test.ts > [AC-B1-10a#31] no user trigger maintains decisions, versions or deletion policy",
+    "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#8] J-b claims creation and update times come from the application clock",
+    "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#9] J-c claims reason is nullable free text rather than a reason-code enum",
+    "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#10] J-d order numbers reject only empty strings or half-width spaces and retain hyphens",
+    "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#11] J-e status and weakest evidence obey the complete cross-column matrix",
+    "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#12] order type and enum domains reject unknown, empty and case-altered values",
+    "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#13] J-h review queue index covers exactly auto_matched and manual_review",
+    "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#14] J-j platform uses the dictionary FK and no fixed platform CHECK",
+    "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#15] J-f evidence/link arrays reject NULL loopholes and retain bigint precision",
+    "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#16] rejected iff reason present, including pending NULL and all eight reason codes",
+    "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#17] decision and decided_at are paired; pending rows cannot have a deciding admin",
+    "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#18] J-g system decisions need no admin and the DB does not impose service-only actor rules",
+    "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#19] pending index has exactly the task keys and NULL decision predicate",
+    "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#20] item insertion time defaults in the DB while update time stays application supplied",
+    "test/spec/db/order-claims/migration.int.test.ts > [AC-B1-10a#32] migration explicitly names constraints/indexes and grants both tables in the same file",
+    "test/spec/db/order-claims/migration.int.test.ts > [AC-B1-10a#33] J-a reference key uses an added unique index followed by UNIQUE USING INDEX",
+    "test/spec/db/order-claims/migration.int.test.ts > [AC-B1-10a#34] migration adds no deletion, partition or retention logic and preserves order_keys permissions",
+    "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#21] order FK rejects missing keys, cross-tenant keys and a different key row order_id",
+    "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#22] item applicant, platform and tenant must equal the same parent claim",
+    "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#23] claim users and both admin references reject missing or foreign-tenant identities",
+    "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#24] every existing decision blocks a second claim for the same applicant and child order",
+    "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#25] same number on a different platform and same child for another applicant remain allowed",
+    "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#26] concurrent duplicate applicants resolve to one insert and one unique violation",
+    "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#27] UUID primary keys reject duplicate ids independently of business unique keys",
+    "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#1] claims columns have the exact types, nullability and application defaults",
+    "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#2] claim_items columns preserve bigint references and nullable pending decision",
+    "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#3] named primary and business unique keys compare column sets",
+    "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#4] named foreign keys bind tenants and only reference ordinary app tables",
+    "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#5] J-a order_keys has the named four-column unique reference key",
+    "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#6] named CHECK sets and enum literals match the storage contract",
+    "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#7] user and claim lookup indexes have named column sets and correct sort direction"
+  ],
+  "risk_note": "RV2 (db/migrations, schema snapshot, db types). Migration 0046 creates app.claims and app.claim_items: named CHECKs from the claim enums (and the CT-04e state machines), one claim item per (app_id, applicant_user_id, platform, sub_order_id), a four-column foreign key (app_id, platform, sub_order_id, order_id) to order_keys through a new unique order_keys_claim_ref_key (added, nothing existing altered), evidence_link_log_ids as a logical reference (link_logs is partitioned), column grants without DELETE. Snapshot regenerated on the test machine.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "322bb7bbabd59bb614724396b201d8f70ce39301",
+      "tree": "ea80cc1c32d6c3ae9659dcbe9b5f4cdbb8c8368d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T10:38:39Z",
+      "finished_at": "2026-10-18T10:39:08Z",
+      "gate": {
+        "commit": "1047593e0b51ab6ed669bbf45d25926bef0b721a",
+        "clean": true,
+        "script_sha256": "a760318276108244f9664229d4673fceafa5692c68dba5ecdc016a9e4b5cd057"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/order-claims/access.int.test.ts > [AC-B1-10a#28] effective table and column privileges match the complete two-role matrix",
+        "test/spec/db/order-claims/access.int.test.ts > [AC-B1-10a#29] populated tables deny immutable-column updates, deletion and readonly writes",
+        "test/spec/db/order-claims/access.int.test.ts > [AC-B1-10a#30] application can write every mutable column without automatic row_version changes",
+        "test/spec/db/order-claims/access.int.test.ts > [AC-B1-10a#31] no user trigger maintains decisions, versions or deletion policy",
+        "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#8] J-b claims creation and update times come from the application clock",
+        "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#9] J-c claims reason is nullable free text rather than a reason-code enum",
+        "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#10] J-d order numbers reject only empty strings or half-width spaces and retain hyphens",
+        "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#11] J-e status and weakest evidence obey the complete cross-column matrix",
+        "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#12] order type and enum domains reject unknown, empty and case-altered values",
+        "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#13] J-h review queue index covers exactly auto_matched and manual_review",
+        "test/spec/db/order-claims/claims.int.test.ts > [AC-B1-10a#14] J-j platform uses the dictionary FK and no fixed platform CHECK",
+        "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#15] J-f evidence/link arrays reject NULL loopholes and retain bigint precision",
+        "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#16] rejected iff reason present, including pending NULL and all eight reason codes",
+        "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#17] decision and decided_at are paired; pending rows cannot have a deciding admin",
+        "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#18] J-g system decisions need no admin and the DB does not impose service-only actor rules",
+        "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#19] pending index has exactly the task keys and NULL decision predicate",
+        "test/spec/db/order-claims/items.int.test.ts > [AC-B1-10a#20] item insertion time defaults in the DB while update time stays application supplied",
+        "test/spec/db/order-claims/migration.int.test.ts > [AC-B1-10a#32] migration explicitly names constraints/indexes and grants both tables in the same file",
+        "test/spec/db/order-claims/migration.int.test.ts > [AC-B1-10a#33] J-a reference key uses an added unique index followed by UNIQUE USING INDEX",
+        "test/spec/db/order-claims/migration.int.test.ts > [AC-B1-10a#34] migration adds no deletion, partition or retention logic and preserves order_keys permissions",
+        "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#21] order FK rejects missing keys, cross-tenant keys and a different key row order_id",
+        "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#22] item applicant, platform and tenant must equal the same parent claim",
+        "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#23] claim users and both admin references reject missing or foreign-tenant identities",
+        "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#24] every existing decision blocks a second claim for the same applicant and child order",
+        "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#25] same number on a different platform and same child for another applicant remain allowed",
+        "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#26] concurrent duplicate applicants resolve to one insert and one unique violation",
+        "test/spec/db/order-claims/ownership.int.test.ts > [AC-B1-10a#27] UUID primary keys reject duplicate ids independently of business unique keys",
+        "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#1] claims columns have the exact types, nullability and application defaults",
+        "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#2] claim_items columns preserve bigint references and nullable pending decision",
+        "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#3] named primary and business unique keys compare column sets",
+        "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#4] named foreign keys bind tenants and only reference ordinary app tables",
+        "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#5] J-a order_keys has the named four-column unique reference key",
+        "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#6] named CHECK sets and enum literals match the storage contract",
+        "test/spec/db/order-claims/shape.int.test.ts > [AC-B1-10a#7] user and claim lookup indexes have named column sets and correct sort direction"
+      ],
+      "expected": [
+        "test/spec/db/order-claims/access.int.test.ts",
+        "test/spec/db/order-claims/claims.int.test.ts",
+        "test/spec/db/order-claims/items.int.test.ts",
+        "test/spec/db/order-claims/migration.int.test.ts",
+        "test/spec/db/order-claims/ownership.int.test.ts",
+        "test/spec/db/order-claims/shape.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "968d1bcaeaf3d641b99a40faf5b4335400a31bfb302e97aef0cfd2de06df6297"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (2 runs, 34 tests). Round 1 pass; run 2 only moved test-database setup into the *.int.test.ts files (depcruise testcontainers-only-in-int-tests), round 2 confirmed cases and expectations unchanged."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "cf9063221cb4d88608d87771796ba0eb86ab3d22",
+    "specs": "a7f7e972bb751e72f84c6c0903631fbe37179fd7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
