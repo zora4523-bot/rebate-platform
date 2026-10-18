@@ -1,0 +1,35 @@
+{
+  "task": "CT-06t",
+  "spec_ref": "b90e712f5255a9600ebf6f0f3b561afd1b4f8d9e",
+  "spec_commit": "71e9f71e1add3ce1ec9a17b965eeef058d5770d6",
+  "red_tests": [],
+  "risk_note": "RV2 gate change (tools/ops/task.ts, tools/lib/task-file.ts and their tests only; orchestrator ruling of 2026-10-19, option A, under ops/approvals.yaml id 16 after B2-01l: 13 red_exempt declarations of CT-06r do not fit the 40-line task file limit because yaml-lite writes one as three lines). task.ts check leaves the red_exempt section out of the line count (countedLines: the red_exempt: line and the indented lines up to the next top-level line; everything under that key must parse as file / test / reason declarations, so nothing else can hide there); the section has its own limit of 20 declarations (RED_EXEMPT_MAX in task-file.ts), each still file / test / reason with a reason of 10+ characters; no per-file waiver, no side file. Unit tests: 35 body lines + 13 declarations pass, 21 declarations refused, 41 body lines without the section still refused, a non-three-key entry in the section refused. Nothing of red-check, evidence-check, MONEY_PATHS or the other ledger rules changes; no money test touched. Fable implementation; tester none (guard-change), so no red run. Codex money review 1 round: see reviews. Labelled by the orchestrator session under approvals #16 / #24 (orchestrator authorisation of 2026-10-19 for changes limited to these files; none of the four reserved categories).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no finding (couli-runs/CT-06t/review-codex.json)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "f23baaafe9fbca9e9476bf83ae6ab895a7243cb3",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "19708d0af8f3d5b11575a4764ef2f910ed66bd6c",
+    "specs": "7a193fbf1b465577355777514eb186c7de4991bf"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
