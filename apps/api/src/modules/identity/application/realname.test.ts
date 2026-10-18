@@ -22,6 +22,7 @@ import {
 } from '../../platform/index.ts';
 import type { RealnameVerificationResult } from '../ports/realname-verifier.ts';
 import {
+  MARK_LIFETIME_MS,
   REALNAME_PENDING_LEASE_MS,
   RECORD_SCRIPT,
   RELEASE_SCRIPT,
@@ -99,6 +100,7 @@ function scriptedDb(state: { row: Row | undefined; failWrites: number }): Kysely
 function scriptedRedis() {
   const store = new Map<string, string>();
   const faults = { record: false };
+  const markExpiries: number[] = [];
   const calls: { script: string; options: RedisScriptOptions }[] = [];
   const handle: RedisHandle = {
     namespace: () => ({
@@ -111,25 +113,35 @@ function scriptedRedis() {
         calls.push({ script, options });
         const [count, mark] = options.keys as [string, string];
         const n = Number(store.get(count) ?? '0');
+        const [now, lifetime] = options.args.map(Number) as [number, number];
+        const setMark = (day: string, at: string, state: string) => {
+          store.set(mark, `${day}|${at}|${state}`);
+          // Absolute expiry instant of this write (the scripts' markTtl, whole seconds).
+          markExpiries.push(
+            now + Math.max(1, Math.ceil((Number(at) + lifetime - now) / 1000)) * 1000,
+          );
+        };
+        const parsed = /^([^|]*)\|(\d+)\|(.+)$/.exec(store.get(mark) ?? '');
         if (script === RESERVE_SCRIPT) {
-          const [limit, now, lease] = options.args.map(Number) as [number, number, number];
-          const value = store.get(mark);
-          if (value !== undefined) {
-            if (value.startsWith('pending:') && now - Number(value.slice(8)) >= lease) {
-              store.set(mark, 'expired');
+          const [limit, lease] = options.args.slice(2).map(Number) as [number, number];
+          if (store.has(mark)) {
+            if (parsed === null) return Promise.resolve('expired');
+            const [, day, at, state] = parsed as unknown as [string, string, string, string];
+            if (state === 'pending' && now - Number(at) >= lease) {
+              setMark(day, at, 'expired');
               return Promise.resolve('expired');
             }
-            return Promise.resolve(value);
+            return Promise.resolve(state);
           }
           if (n >= limit) return Promise.resolve(0);
           store.set(count, String(n + 1));
-          store.set(mark, `pending:${String(now)}`);
+          setMark(options.args[4]!, String(now), 'pending');
           return Promise.resolve(1);
         }
         if (script === RECORD_SCRIPT) {
           if (faults.record) return Promise.reject(new Error('redis down'));
-          if (!store.get(mark)?.startsWith('pending:')) return Promise.resolve(0);
-          store.set(mark, options.args[0]!);
+          if (parsed === null || parsed[3] !== 'pending') return Promise.resolve(0);
+          setMark(parsed[1]!, parsed[2]!, options.args[2]!);
           return Promise.resolve(1);
         }
         if (script === RELEASE_SCRIPT) {
@@ -144,7 +156,7 @@ function scriptedRedis() {
     close: () => Promise.resolve(),
     onApplicationShutdown: () => Promise.resolve(),
   };
-  return { handle, store, calls, faults };
+  return { handle, store, calls, faults, markExpiries };
 }
 
 const crypto: FieldCrypto = {
@@ -255,8 +267,8 @@ it('[AC-B1-13d][BR-ID-25] a pending mark: 50401 within its lease, then terminal 
   t.verify.mockImplementationOnce(() => new Promise<never>(() => undefined));
   void t.submit('key-cccccccc');
   await vi.waitFor(() => expect(t.verify).toHaveBeenCalledTimes(1));
-  const marks = () => [...t.redis.store.entries()].filter(([key]) => key !== COUNT_KEY);
-  const pending = `pending:${String(Date.parse(NOW))}`;
+  const marks = () => [...t.redis.store.entries()].filter(([key]) => key.startsWith('seen:'));
+  const pending = `2026-09-29|${String(Date.parse(NOW))}|pending`;
   expect(marks().map(([, value]) => value)).toEqual([pending]);
   // Within the lease: 50401, nothing changes.
   t.clock.set(new Date(Date.parse(NOW) + REALNAME_PENDING_LEASE_MS - 1).toISOString());
@@ -272,7 +284,9 @@ it('[AC-B1-13d][BR-ID-25] a pending mark: 50401 within its lease, then terminal 
     await expect(t.submit('key-cccccccc')).resolves.toEqual({ code: 50401 });
     expect(t.verify).toHaveBeenCalledTimes(1);
     expect(t.redis.store.get(COUNT_KEY)).toBe('1');
-    expect(marks().map(([, value]) => value)).toEqual(['expired']);
+    expect(marks().map(([, value]) => value)).toEqual([
+      `2026-09-29|${String(Date.parse(NOW))}|expired`,
+    ]);
   }
   expect(t.redis.calls.map((c) => c.script)).not.toContain(RELEASE_SCRIPT);
   // A new key is a new request under the normal count.
@@ -307,6 +321,45 @@ it('[AC-B1-13d][BR-ID-25] record() never recreates a missing mark nor touches th
   const now = new FixedClock(NOW).now();
   await attempts.record(slot, { kind: 'match', provider: 'unit' }, now);
   expect([...redis.store.keys()]).toEqual([]);
+});
+
+it("[AC-B1-13d][BR-ID-25] 23:59 outcome kept, write failed; the 00:01 same-key retry replays it on no day's count", async () => {
+  const t = setup();
+  const nextDay = `${APP}:2026-09-30:${USER}`;
+  t.clock.set('2026-09-29T15:59:00.000Z');
+  t.verify.mockResolvedValue({ outcome: 'match', provider: 'unit' });
+  t.state.failWrites = 1;
+  await expect(t.submit('key-iiiiiiii')).rejects.toThrow('connection terminated');
+  t.clock.set('2026-09-29T16:01:00.000Z');
+  await expect(t.submit('key-iiiiiiii')).resolves.toMatchObject({ code: 0 });
+  expect(t.verify).toHaveBeenCalledTimes(1);
+  expect(t.redis.store.get(COUNT_KEY)).toBe('1');
+  expect(t.redis.store.has(nextDay)).toBe(false);
+  // The mark keeps the expiry of its first write (48 h), whatever later writes did.
+  expect(new Set(t.redis.markExpiries)).toEqual(
+    new Set([Date.parse('2026-09-29T15:59:00.000Z') + MARK_LIFETIME_MS]),
+  );
+});
+
+it('[AC-B1-13d][BR-ID-25] 23:59 attempt died pending; the 00:01 same-key retry is 50401, a new key counts on the new day', async () => {
+  const t = setup();
+  const nextDay = `${APP}:2026-09-30:${USER}`;
+  t.clock.set('2026-09-29T15:59:00.000Z');
+  t.verify.mockImplementationOnce(() => new Promise<never>(() => undefined));
+  void t.submit('key-jjjjjjjj');
+  await vi.waitFor(() => expect(t.verify).toHaveBeenCalledTimes(1));
+  t.clock.set('2026-09-29T16:01:00.000Z');
+  for (let i = 0; i < 2; i++) {
+    await expect(t.submit('key-jjjjjjjj')).resolves.toEqual({ code: 50401 });
+  }
+  expect(t.verify).toHaveBeenCalledTimes(1);
+  expect(t.redis.store.get(COUNT_KEY)).toBe('1');
+  expect(t.redis.store.has(nextDay)).toBe(false);
+  t.verify.mockResolvedValueOnce({ outcome: 'mismatch', provider: 'unit' });
+  await expect(t.submit('key-kkkkkkkk')).resolves.toEqual({ code: 30406 });
+  expect(t.redis.store.get(nextDay)).toBe('1');
+  expect(t.redis.store.get(COUNT_KEY)).toBe('1');
+  expect(t.verify).toHaveBeenCalledTimes(2);
 });
 
 it('[AC-B1-13d][BR-ID-25] writes of one day key expire at one instant: the window never extends', async () => {

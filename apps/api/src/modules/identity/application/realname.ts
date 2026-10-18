@@ -16,7 +16,8 @@
 //      atomically before anything below, so concurrent requests cannot exceed the limit). One count
 //      per request (Idempotency-Key + submitted values) and its definite outcome kept with it: a
 //      retry after a failure without a stored idempotent result (e.g. a failed database write)
-//      replays that outcome — no second count, no second vendor call; a retry whose earlier
+//      replays that outcome — no second count, no second vendor call, also after midnight (the
+//      mark has no date; a reservation counts on the day it was made); a retry whose earlier
 //      attempt ended before its outcome was kept (mark pending; after its lease, terminal expired)
 //      is 50401 and changes nothing (no vendor call, nothing given back). The
 //      limit is judged only for requests without a mark. Invariant: vendor calls with a definite
