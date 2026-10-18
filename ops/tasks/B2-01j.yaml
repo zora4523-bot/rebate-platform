@@ -1,0 +1,27 @@
+id: B2-01j
+repo: rebate-platform
+title: packages/domain buildVouchers(template, params)：按 specs/ledger-templates.csv 的模板出凭证分录（科目、子户、借贷、ledger_type、sub_type、uniq_key），与模板表逐组一致
+type: impl
+# 2026-10-18 资金线（ledger-plan §2.2；前置 B2-01h 账务纯函数、B2-01i 模板表）。纯函数：不读时钟、不做 I/O；金额只经 @couli/money（整数分），分录借正贷负（decision 20）。
+# 模板表 TBD 格对应的模板调用即抛错（不臆造）；红冲模板借贷与原单相反（B2-01i 过审 S2 提醒）；产出凭证须过 validateVoucher（Σ=0）。
+# Codex 写规则测试（读 csv 逐组生成并比对、TBD 抛错、红冲反号、属性测试经 PROP_RUNS / PROP_SEED），Claude 过审，Opus 实现，Codex money 评审。
+refs: [BR-FUND-05, BR-FUND-15, BR-FUND-16, BR-WDR-09]
+refs_hash:
+  BR-FUND-05: f69410c13896
+  BR-FUND-15: d9a926b42d3c
+  BR-FUND-16: 26bf83a019b1
+  BR-WDR-09: 83c9212f1949
+deps: [B2-01h, B2-01i]
+paths:
+  - 'packages/domain/src/ledger/**'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/domain/ledger-templates/**'
+  - 'test/properties/domain/ledger-templates/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/ledger-templates/**'
+status: todo
+pr: null
