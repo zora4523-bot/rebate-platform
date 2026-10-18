@@ -25,5 +25,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/orchestrator-intents/**'
-status: todo
-pr: null
+status: done
+pr: 651

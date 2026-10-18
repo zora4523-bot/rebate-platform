@@ -1,0 +1,22 @@
+id: B3-09c
+repo: rebate-platform
+title: Agent 结果集与卡片留痕的 PG 存储：实现 B3-05g 的 ResultSetStore 端口（agent_result_sets，经 agent_runs 关联会话）与卡片 / 工具调用记录写入
+type: impl
+# 2026-10-18 编排者：B3-09a/b 只建表，尚无代码写 agent_result_sets、agent_cards、agent_tool_calls；B3-05g 只交端口与内存实现（第 4 批起草裁定）。
+# 结果集只存条件（含用户给的价格上下限）与卡片引用，不存卡片价格字段。分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 评审。风险 RV1。
+refs: [BR-AI-05, BR-AI-23]
+refs_hash:
+  BR-AI-05: ee8fd647fd43
+  BR-AI-23: 5ebdbaff580d
+deps: [B3-05g, B3-09b]
+paths:
+  - 'apps/api/src/modules/agent/store/results/**'
+test_paths:
+  - 'test/spec/agent/store-results/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/store-results/**'
+status: todo
+pr: null

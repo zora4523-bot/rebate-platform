@@ -1,0 +1,22 @@
+id: B3-04e
+repo: rebate-platform
+title: Agent 工具 search_products 参数表补 spec 与 page：spec 原样交给结果卡判定（不参与检索词拼接以外的筛选），page 用于换一批（page+1）；参数校验与上限照 registry
+type: impl
+# 2026-10-18 编排者（staging-b3-term）：第 4 批测试要点起草时发现 B3-04b 参数表缺 spec、page（BR-AI-08 search_products 加 spec；BR-AI-05 换一批 page+1），B3-05g 与 B3-04d 依赖它。
+# B3-04b 已近合并，不回头改；本任务在 tools/search 内补参数与传递。若参数表实际在 registry，派发前改 paths。分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 评审。风险 RV1。
+refs: [BR-AI-08, BR-AI-05]
+refs_hash:
+  BR-AI-08: e932a052720f
+  BR-AI-05: ee8fd647fd43
+deps: [B3-04b]
+paths:
+  - 'apps/api/src/modules/agent/tools/search/**'
+test_paths:
+  - 'test/spec/agent/tools-search-params/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-search-params/**'
+status: todo
+pr: null
