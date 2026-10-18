@@ -1,0 +1,35 @@
+{
+  "task": "B1-03y",
+  "spec_ref": "99cc36f45438dac03b780355f63ce9e2f86ba406",
+  "spec_commit": "171bac120851e3c70dec31ebb265f967fbc836de",
+  "red_tests": [],
+  "risk_note": "RV2 by PR (test/spec class-1 sync; risk module RV1). setRiskState now publishes risk.state_changed with frozen_until: the expiry written in the same transaction as an ISO 8601 UTC string when the state becomes frozen, null for every other state (appealing may keep its expiry in the row but publishes null). Other payload fields and the publish moment are unchanged; the payload still carries no raw reason or rule details. The three rule tests that pin the payload exactly ([AC-B1-03h#11], the freeze-expiry scan test and the appeal test [AC-B1-03i#7]) add only frozen_until: null and stay exact (toEqual); publish and tests land in one PR because either alone turns main red. Reason: the B1-12g notification consumer must not read the current user_risk_state row for an event's freeze variant (ledger review GT-23bep S1). Tester none (test-change), so no red run. Labelled by the lane orchestrator under approvals #24 (none of the four reserved categories: no money or attribution rule, no secret scanning, no weakened fund test, no production).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 1 fail with one S1 (an account appeal from a frozen user published appealing with a non-null frozen_until), fixed; round 2 pass; CI verify-int then found the appeal rule test [AC-B1-03i#7] also pins the payload, ledger #751 added it and the test gained frozen_until: null; round 3 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "6ddd85d11df37ebe730ab8679e189dcafb8b84cd",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "08a011036dca3d6193cbbbe66fa0f0fd94879d8d",
+    "specs": "e58ab9698a712cff0512d0a5b9f383c334794e71"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
