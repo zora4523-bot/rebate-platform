@@ -234,6 +234,37 @@ export function blankInput(row: ConfigRow, raw: FieldValue): boolean {
   return raw === undefined;
 }
 
+/** Whether a batch control still holds what it started with, or nothing (left as it is). */
+export function unchangedInput(row: ConfigRow, raw: FieldValue): boolean {
+  return blankInput(row, raw) || sameValue(raw, initialInput(row));
+}
+
+export type BatchCollected =
+  | { readonly ok: true; readonly entries: readonly { row: ConfigRow; value: NewValue }[] }
+  | { readonly ok: false; readonly key: string; readonly message: string };
+
+/**
+ * The batch entries: only items the operator touched whose control differs from its starting
+ * value and from the current value. An untouched item (including a never-written one whose
+ * control starts at a placeholder such as a switch shown off) is never sent.
+ */
+export function collectBatch(
+  rows: readonly ConfigRow[],
+  values: Readonly<Record<string, FieldValue>>,
+  touched: (key: string) => boolean,
+): BatchCollected {
+  const entries: { row: ConfigRow; value: NewValue }[] = [];
+  for (const row of rows) {
+    if (!touched(row.key)) continue;
+    const raw = values[row.key];
+    if (unchangedInput(row, raw)) continue;
+    const parsed = parseInput(row, raw);
+    if (!parsed.ok) return { ok: false, key: row.key, message: parsed.message };
+    if (!sameValue(parsed.value, row.value)) entries.push({ row, value: parsed.value });
+  }
+  return { ok: true, entries };
+}
+
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 function two(value: number): string {
   return String(value).padStart(2, '0');

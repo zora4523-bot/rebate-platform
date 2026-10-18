@@ -6,7 +6,7 @@ import { useState, type ReactElement, type ReactNode } from 'react';
 import type { SelectProps } from 'antd';
 import { configCenterTexts as t } from '../../texts/config-center.ts';
 import {
-  blankInput,
+  unchangedInput,
   fenLabel,
   isMoney,
   parseInput,
@@ -68,7 +68,7 @@ export function ValueField({
   const rules = [
     {
       validator: (_: unknown, raw: FieldValue): Promise<void> => {
-        if (optional && blankInput(row, raw)) return Promise.resolve();
+        if (optional && unchangedInput(row, raw)) return Promise.resolve();
         const parsed = parseInput(row, raw);
         if (!parsed.ok) return Promise.reject(new Error(parsed.message));
         if (!optional && sameValue(parsed.value, row.value))
@@ -87,7 +87,22 @@ export function ValueField({
   const common = { name: path, label, rules, extra } as const;
   switch (row.value_type) {
     case 'number': {
-      const unit = isMoney(row) ? t.drawer.yuan : unitOf(row.key);
+      if (isMoney(row))
+        // Amounts keep the exact typed text (an InputNumber would normalise 12.340 to 12.34);
+        // parseYuan checks it and @couli/money converts it to whole fen.
+        return (
+          <Form.Item {...common}>
+            <Input
+              role="spinbutton"
+              inputMode="decimal"
+              autoComplete="off"
+              disabled={disabled}
+              placeholder={valueLabel(row, row.value)}
+              suffix={t.drawer.yuan}
+            />
+          </Form.Item>
+        );
+      const unit = unitOf(row.key);
       return (
         <Form.Item {...common}>
           <InputNumber<string>

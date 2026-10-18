@@ -7,12 +7,10 @@ import { useState, type ReactElement, type ReactNode } from 'react';
 import { configCenterTexts as t } from '../../texts/config-center.ts';
 import {
   REASON_MAX,
-  blankInput,
+  collectBatch,
   initialInput,
   nameOf,
   needsStepUp,
-  parseInput,
-  sameValue,
   valueLabel,
   type ConfigPermission,
   type ConfigRow,
@@ -62,14 +60,11 @@ export function BatchDrawer({
     if (busy || permission === undefined) return;
     form.validateFields().then(
       (values) => {
-        const entries: BatchEntry[] = [];
-        for (const row of listed) {
-          const raw = values.values[row.key];
-          if (blankInput(row, raw)) continue;
-          const parsed = parseInput(row, raw);
-          if (!parsed.ok) return;
-          if (!sameValue(parsed.value, row.value)) entries.push({ row, value: parsed.value });
-        }
+        const collected = collectBatch(listed, values.values, (key) =>
+          form.isFieldTouched(['values', key]),
+        );
+        if (!collected.ok) return;
+        const entries: readonly BatchEntry[] = collected.entries;
         if (entries.length === 0) {
           setEmpty(true);
           return;
