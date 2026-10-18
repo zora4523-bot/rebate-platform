@@ -62,11 +62,21 @@ export function normalizeOrigin(value: string | undefined): string | null {
   return value === origin || value === `${origin}/` ? origin : null;
 }
 
-/** Image source on exactly the allowed origin (scheme, host and port); otherwise null. */
-export function safeImageUrl(value: unknown, origin: string | null): string | null {
-  if (origin === null) return null;
+/** The usable media origins of a configuration list; unusable entries are left out. */
+export function normalizeOrigins(values: readonly string[]): ReadonlySet<string> {
+  const origins = new Set<string>();
+  for (const value of values) {
+    const origin = normalizeOrigin(value);
+    if (origin !== null) origins.add(origin);
+  }
+  return origins;
+}
+
+/** Image source on exactly one of the allowed origins (scheme, host and port); otherwise null. */
+export function safeImageUrl(value: unknown, origins: ReadonlySet<string>): string | null {
+  if (origins.size === 0) return null;
   const href = safeHttpsUrl(value);
-  return href !== null && new URL(href).origin === origin ? href : null;
+  return href !== null && origins.has(new URL(href).origin) ? href : null;
 }
 
 function sanitizeMarks(value: unknown): ArticleNode['marks'] {
@@ -91,16 +101,16 @@ function sanitizeMarks(value: unknown): ArticleNode['marks'] {
   return marks.length > 0 ? marks : undefined;
 }
 
-function sanitizeImage(node: Json, origin: string | null): ArticleNode | null {
+function sanitizeImage(node: Json, origins: ReadonlySet<string>): ArticleNode | null {
   const attrs = attrsOf(node);
-  const src = safeImageUrl(attrs['src'], origin);
+  const src = safeImageUrl(attrs['src'], origins);
   if (src === null) return null;
   const alt = typeof attrs['alt'] === 'string' ? attrs['alt'] : '';
   return { type: 'image', attrs: { src, alt } };
 }
 
 /** Text, hard breaks and (inline-configured) images inside a paragraph or heading. */
-function sanitizeInline(value: unknown, origin: string | null): ArticleNode[] {
+function sanitizeInline(value: unknown, origins: ReadonlySet<string>): ArticleNode[] {
   if (!Array.isArray(value)) return [];
   const result: ArticleNode[] = [];
   for (const node of value) {
@@ -114,28 +124,36 @@ function sanitizeInline(value: unknown, origin: string | null): ArticleNode[] {
     } else if (node['type'] === 'hardBreak') {
       result.push({ type: 'hardBreak' });
     } else if (node['type'] === 'image') {
-      const image = sanitizeImage(node, origin);
+      const image = sanitizeImage(node, origins);
       if (image !== null) result.push(image);
     }
   }
   return result;
 }
 
-function sanitizeBlocks(value: unknown, origin: string | null, depth: number): ArticleNode[] {
+function sanitizeBlocks(
+  value: unknown,
+  origins: ReadonlySet<string>,
+  depth: number,
+): ArticleNode[] {
   if (!Array.isArray(value) || depth > MAX_DEPTH) return [];
   const result: ArticleNode[] = [];
   for (const node of value) {
-    const clean = isObject(node) ? sanitizeBlock(node, origin, depth) : null;
+    const clean = isObject(node) ? sanitizeBlock(node, origins, depth) : null;
     if (clean !== null) result.push(clean);
   }
   return result;
 }
 
-function sanitizeBlock(node: Json, origin: string | null, depth: number): ArticleNode | null {
+function sanitizeBlock(
+  node: Json,
+  origins: ReadonlySet<string>,
+  depth: number,
+): ArticleNode | null {
   const type = node['type'];
   if (typeof type !== 'string') return null;
   if (TEXT_BLOCKS.has(type)) {
-    const content = sanitizeInline(node['content'], origin);
+    const content = sanitizeInline(node['content'], origins);
     if (type === 'paragraph') return { type, content };
     const level = attrsOf(node)['level'];
     // Heading levels outside 1-3 are not on the whitelist; the node is dropped.
@@ -143,16 +161,16 @@ function sanitizeBlock(node: Json, origin: string | null, depth: number): Articl
     return { type, attrs: { level }, content };
   }
   if (LEAF_BLOCKS.has(type)) {
-    return type === 'horizontalRule' ? { type } : sanitizeImage(node, origin);
+    return type === 'horizontalRule' ? { type } : sanitizeImage(node, origins);
   }
   if (LISTS.has(type)) {
-    const items = sanitizeBlocks(node['content'], origin, depth + 1).filter(
+    const items = sanitizeBlocks(node['content'], origins, depth + 1).filter(
       (child) => child.type === 'listItem',
     );
     return items.length > 0 ? { type, content: items } : null;
   }
   if (BLOCK_CONTAINERS.has(type) && type !== 'doc') {
-    const content = sanitizeBlocks(node['content'], origin, depth + 1).filter(
+    const content = sanitizeBlocks(node['content'], origins, depth + 1).filter(
       (child) => child.type !== 'listItem',
     );
     return content.length > 0 ? { type, content } : null;
@@ -165,7 +183,10 @@ function sanitizeBlock(node: Json, origin: string | null, depth: number): Articl
  * Parses and whitelists an article body. Returns null when the string is not JSON or not a
  * document (`type: "doc"` with an optional content array); the caller shows its error state.
  */
-export function sanitizeArticleBody(body: string, mediaOrigin: string | null): ArticleNode | null {
+export function sanitizeArticleBody(
+  body: string,
+  mediaOrigins: ReadonlySet<string>,
+): ArticleNode | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
@@ -177,7 +198,7 @@ export function sanitizeArticleBody(body: string, mediaOrigin: string | null): A
   if (content !== undefined && !Array.isArray(content)) return null;
   return {
     type: 'doc',
-    content: sanitizeBlocks(content ?? [], mediaOrigin, 1).filter(
+    content: sanitizeBlocks(content ?? [], mediaOrigins, 1).filter(
       (child) => child.type !== 'listItem',
     ),
   };

@@ -1,20 +1,26 @@
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { ArticleBody } from '../../../../components/article-body/index.ts';
 import { EmptyState, ErrorState, Skeleton } from '../../../../components/base/index.ts';
+import { useApi } from '../../../../shared/api/app-api.ts';
 import type { H5ApiClient } from '../../../../shared/api/index.ts';
+import { mediaOrigins } from '../../../../shared/env.ts';
 import { rulesTexts } from '../../../../texts/rules.ts';
 import { Component as PagePending } from '../page-pending.tsx';
 
 export interface RulesPageProps {
-  /** Tests and embedding callers can supply the existing H5 API client. */
+  /** Injected H5 API client (tests, embedding); wins over the App client from useApi(). */
   api?: H5ApiClient;
-  /** Media CDN origin for body images; absent, no image is shown (wiring is a later task). */
+  /** Injected media origin for body images; wins over the configured mediaOrigins(). */
   mediaCdnOrigin?: string;
 }
 
 /** Rule articles change rarely; switching back and forth reuses what was loaded. */
 const STALE_MS = 5 * 60 * 1000;
+/** Page size of the rule list (contract maximum 50). */
+const PAGE_LIMIT = 50;
+/** Safety stop for a server that keeps returning cursors; far beyond any real rule count. */
+const MAX_PAGES = 20;
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 /** Calendar date in Beijing (UTC+8, no daylight saving) of an RFC 3339 instant; null if invalid. */
@@ -107,11 +113,14 @@ function CenteredState({ children }: { children: ReactNode }): ReactElement {
  * Loading, empty and error states; a retry resends only the request that failed.
  */
 export function RulesPage({ api, mediaCdnOrigin }: RulesPageProps): ReactElement {
-  // TODO(规划/11 §2.1): pass the app-level H5 API client (base URL, common headers) from the app
-  // shell — blocked on the app-level API client wiring task (apps/h5 has none yet). Until then the
-  // route keeps the shared "page not open yet" placeholder and sends no request.
-  if (api === undefined) return <PagePending />;
-  return <RulesContent api={api} {...(mediaCdnOrigin === undefined ? {} : { mediaCdnOrigin })} />;
+  const appApi = useApi();
+  const client = api ?? appApi;
+  // Outside the App or without build configuration there is no API client: the route keeps the
+  // shared "page not open yet" placeholder and sends no request.
+  if (client === null) return <PagePending />;
+  return (
+    <RulesContent api={client} {...(mediaCdnOrigin === undefined ? {} : { mediaCdnOrigin })} />
+  );
 }
 
 function RulesContent({
@@ -122,12 +131,51 @@ function RulesContent({
   const titleRef = useRef<HTMLHeadingElement>(null);
   const switched = useRef(false);
 
-  const list = useQuery({
+  const configuredOrigins = useMemo(() => mediaOrigins(), []);
+
+  // Every page of the rule list, in server order: the first page shows the page, later pages are
+  // loaded one after another (each once) until next_cursor is null.
+  const list = useInfiniteQuery({
     queryKey: ['articles', 'rule'],
-    queryFn: () => api.request('GET', '/v1/articles', { params: { query: { category: 'rule' } } }),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      api.request('GET', '/v1/articles', {
+        params: {
+          query: {
+            category: 'rule',
+            limit: PAGE_LIMIT,
+            ...(pageParam === null ? {} : { cursor: pageParam }),
+          },
+        },
+      }),
+    getNextPageParam: (last, pages, lastCursor) =>
+      last.next_cursor === null ||
+      last.next_cursor === '' ||
+      last.next_cursor === lastCursor ||
+      pages.length >= MAX_PAGES
+        ? undefined
+        : last.next_cursor,
     staleTime: STALE_MS,
   });
-  const items = list.data?.items ?? [];
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = list;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) {
+      fetchNextPage().catch(() => undefined);
+    }
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
+  const items = useMemo(() => {
+    // Server order across pages; an article repeated on a later page keeps its first place.
+    const seen = new Set<string>();
+    const result = [];
+    for (const page of list.data?.pages ?? []) {
+      for (const item of page.items) {
+        if (seen.has(item.article_id)) continue;
+        seen.add(item.article_id);
+        result.push(item);
+      }
+    }
+    return result;
+  }, [list.data]);
   const selected = items.find((item) => item.article_id === selectedId) ?? items[0];
   const articleId = selected?.article_id;
 
@@ -194,6 +242,8 @@ function RulesContent({
 
   const article = detail.data?.article_id === selected.article_id ? detail.data : undefined;
   const updated = beijingDate(article?.published_at ?? selected.published_at);
+  // A later page failed: offer a retry of that page only (the shown article stays).
+  const moreFailed = isFetchNextPageError && !isFetchingNextPage;
   const others = items.filter((item) => item.article_id !== selected.article_id);
 
   let body: ReactElement;
@@ -201,7 +251,9 @@ function RulesContent({
     body = (
       <ArticleBody
         body={article.body}
-        {...(mediaCdnOrigin === undefined ? {} : { mediaCdnOrigin })}
+        {...(mediaCdnOrigin === undefined
+          ? { mediaOrigins: configuredOrigins }
+          : { mediaCdnOrigin })}
       />
     );
   } else if (detail.isError && !detail.isFetching) {
@@ -238,7 +290,7 @@ function RulesContent({
         </header>
         {body}
       </article>
-      {others.length === 0 ? null : (
+      {others.length === 0 && !hasNextPage ? null : (
         <nav aria-label={rulesTexts.otherRules} className={`${CARD} px-couli-4 py-couli-1`}>
           <ul className="flex flex-col divide-y divide-couli-border-subtle">
             {others.map((item) => (
@@ -260,6 +312,29 @@ function RulesContent({
               </li>
             ))}
           </ul>
+          {moreFailed ? (
+            <div className="flex min-h-11 items-center justify-between gap-couli-3 border-t border-couli-border-subtle py-couli-2">
+              <p
+                role="alert"
+                className="text-couli-footnote leading-couli-footnote text-couli-text-secondary"
+              >
+                {rulesTexts.moreFailed}
+              </p>
+              <button
+                type="button"
+                className="min-h-11 flex-none cursor-pointer px-couli-2 text-couli-footnote leading-couli-footnote font-couli-medium text-couli-text-link focus-visible:outline-solid focus-visible:outline-[length:var(--focus-width)] focus-visible:outline-offset-[var(--focus-offset)] focus-visible:outline-couli-focus-ring"
+                onClick={() => {
+                  fetchNextPage().catch(() => undefined);
+                }}
+              >
+                {rulesTexts.retry}
+              </button>
+            </div>
+          ) : hasNextPage ? (
+            <div className="border-t border-couli-border-subtle py-couli-3">
+              <Skeleton width="50%" height="0.875rem" />
+            </div>
+          ) : null}
         </nav>
       )}
     </Page>

@@ -3,7 +3,7 @@ import { renderJSONContentToReactElement } from '@tiptap/static-renderer/json/re
 import { call, has } from '@couli/bridge-sdk';
 import { rulesTexts } from '../../texts/rules.ts';
 import {
-  normalizeOrigin,
+  normalizeOrigins,
   safeHttpsUrl,
   sanitizeArticleBody,
   type ArticleMark,
@@ -18,6 +18,11 @@ export interface ArticleBodyProps {
    * empty, no image is rendered at all.
    */
   mediaCdnOrigin?: string;
+  /**
+   * Allowed media origins from deployment configuration (VITE_MEDIA_ORIGINS); used when no
+   * `mediaCdnOrigin` is given. Only https origins are honoured.
+   */
+  mediaOrigins?: readonly string[];
 }
 
 interface NodeProps {
@@ -128,8 +133,8 @@ function Unhandled(): null {
   return null;
 }
 
-function renderBody(body: string, mediaCdnOrigin: string | undefined): ReactNode | null {
-  const content = sanitizeArticleBody(body, normalizeOrigin(mediaCdnOrigin));
+function renderBody(body: string, origins: readonly string[]): ReactNode | null {
+  const content = sanitizeArticleBody(body, normalizeOrigins(origins));
   if (content === null) return null;
   try {
     // Static renderer over plain JSON (no editor schema, no ProseMirror): node and mark types map
@@ -151,8 +156,18 @@ function renderBody(body: string, mediaCdnOrigin: string | undefined): ReactNode
  * `@tiptap/static-renderer` straight to React elements — never through an HTML string. A body that
  * is not a document shows an error line in place of the text and never throws.
  */
-export function ArticleBody({ body, mediaCdnOrigin }: ArticleBodyProps): ReactElement {
-  const rendered = useMemo(() => renderBody(body, mediaCdnOrigin), [body, mediaCdnOrigin]);
+export function ArticleBody({
+  body,
+  mediaCdnOrigin,
+  mediaOrigins,
+}: ArticleBodyProps): ReactElement {
+  // An explicit origin wins (an empty one allows none); then the configured list; else none.
+  const origins = mediaCdnOrigin !== undefined ? [mediaCdnOrigin] : (mediaOrigins ?? []);
+  const originsKey = origins.join(' ');
+  const rendered = useMemo(
+    () => renderBody(body, originsKey === '' ? [] : originsKey.split(' ')),
+    [body, originsKey],
+  );
   if (rendered === null) {
     return (
       <div

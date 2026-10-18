@@ -1,7 +1,15 @@
 import { expect, it } from 'vitest';
-import { normalizeOrigin, safeHttpsUrl, safeImageUrl, sanitizeArticleBody } from './sanitize.ts';
+import {
+  normalizeOrigin,
+  normalizeOrigins,
+  safeHttpsUrl,
+  safeImageUrl,
+  sanitizeArticleBody,
+} from './sanitize.ts';
 
 const ORIGIN = 'https://media.example.invalid';
+const ALLOWED = new Set([ORIGIN]);
+const NONE = new Set<string>();
 
 it('keeps only absolute https link addresses without credentials', () => {
   expect(safeHttpsUrl('https://a.example/x?q=1')).toBe('https://a.example/x?q=1');
@@ -23,9 +31,14 @@ it('accepts only an exact https origin as media origin and compares it exactly',
   expect(normalizeOrigin(`${ORIGIN}/`)).toBe(ORIGIN);
   for (const bad of [undefined, '', `${ORIGIN}/path`, 'http://media.example.invalid', 'x'])
     expect(normalizeOrigin(bad)).toBeNull();
-  expect(safeImageUrl(`${ORIGIN}/a.png`, ORIGIN)).toBe(`${ORIGIN}/a.png`);
-  expect(safeImageUrl(`${ORIGIN}:8443/a.png`, ORIGIN)).toBeNull();
-  expect(safeImageUrl(`${ORIGIN}/a.png`, null)).toBeNull();
+  expect(safeImageUrl(`${ORIGIN}/a.png`, ALLOWED)).toBe(`${ORIGIN}/a.png`);
+  expect(safeImageUrl(`${ORIGIN}:8443/a.png`, ALLOWED)).toBeNull();
+  expect(safeImageUrl(`${ORIGIN}/a.png`, NONE)).toBeNull();
+  const two = normalizeOrigins([ORIGIN, 'nope', 'https://b.example.invalid']);
+  expect([...two]).toEqual([ORIGIN, 'https://b.example.invalid']);
+  expect(safeImageUrl('https://b.example.invalid/x.png', two)).toBe(
+    'https://b.example.invalid/x.png',
+  );
 });
 
 it('drops unknown subtrees, foreign attributes, empty text and stray list items', () => {
@@ -51,7 +64,7 @@ it('drops unknown subtrees, foreign attributes, empty text and stray list items'
       },
     ],
   });
-  expect(sanitizeArticleBody(body, ORIGIN)).toEqual({
+  expect(sanitizeArticleBody(body, ALLOWED)).toEqual({
     type: 'doc',
     content: [
       { type: 'paragraph', content: [] },
@@ -73,6 +86,6 @@ it('drops unknown subtrees, foreign attributes, empty text and stray list items'
 
 it('rejects bodies that are not a document', () => {
   for (const body of ['{', 'null', '[]', '{}', '{"type":"doc","content":{}}'])
-    expect(sanitizeArticleBody(body, null)).toBeNull();
-  expect(sanitizeArticleBody('{"type":"doc"}', null)).toEqual({ type: 'doc', content: [] });
+    expect(sanitizeArticleBody(body, NONE)).toBeNull();
+  expect(sanitizeArticleBody('{"type":"doc"}', NONE)).toEqual({ type: 'doc', content: [] });
 });

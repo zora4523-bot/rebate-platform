@@ -8,6 +8,8 @@ export const rulesTexts = {
   loadFailedTitle: '加载失败',
   loadFailedDescription: '网络不太稳定，请稍后重试',
   retry: '重试',
+  /** A later page of the rule list failed; the entries so far stay. */
+  moreFailed: '更多规则加载失败',
   emptyTitle: '暂无规则内容',
   emptyDescription: '规则发布后会显示在这里',
   /** Article body that is not a valid document (shared article body component). */
