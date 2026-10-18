@@ -6,7 +6,7 @@ import {
   type AdminUnionBindingCommand,
 } from './admin-union-bindings.ts';
 import { nextBindingRowVersion } from './binding-lock.ts';
-import { reauthorizationSince } from './pdd-authority.ts';
+import { restoreSteps } from './binding-risk.ts';
 
 const command: AdminUnionBindingCommand = {
   action: 'reset',
@@ -53,31 +53,23 @@ describe('admin union bindings (F1-07c)', () => {
     for (const stale of [0, 1, 2, 3]) expect(stale).not.toBe(restored);
   });
 
-  it('[AC-F1-07c] pdd refresh and open: only rows the console left for re-authorization are held back', () => {
-    const at = (iso: string) => new Date(iso);
-    const t1 = at('2031-01-01T00:00:00Z');
-    const t2 = at('2031-02-01T00:00:00Z');
-    const row = (status: string, reason: string | null, released: Date | null, updated: Date) => ({
-      status,
-      reason,
-      released_at: released,
-      updated_at: updated,
+  it('[AC-F1-07c] reset of a union other than Taobao is 20001 platform, nothing opened', async () => {
+    const transaction = vi.fn();
+    const service = new AdminUnionBindings({
+      store: { transaction },
+      clock: new FixedClock('2031-05-06T07:00:00.000Z'),
+      logger: { warn: vi.fn() },
     });
-    expect(reauthorizationSince([])).toBeNull();
-    // enable → invalid with the console's reason; inspection's invalid carries none.
-    expect(reauthorizationSince([row('invalid', 'synthetic', null, t2)])).toEqual(t2);
-    expect(reauthorizationSince([row('invalid', null, null, t2)])).toBeNull();
-    expect(reauthorizationSince([row('pending_auth', null, null, t2)])).toBeNull();
-    // reset → released with a reason, no current row: no automatic new row.
-    expect(
-      reauthorizationSince([row('released', null, t1, t1), row('released', 'synthetic', t2, t2)]),
-    ).toEqual(t2);
-    expect(
-      reauthorizationSince([row('released', 'synthetic', t1, t1), row('released', null, t2, t2)]),
-    ).toBeNull();
-    // A current row decides over the released history.
-    expect(
-      reauthorizationSince([row('released', 'synthetic', t1, t1), row('invalid', null, null, t2)]),
-    ).toBeNull();
+    const refused = await service
+      .apply({ ...command, platform: 'pdd' })
+      .catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(AdminUnionBindingFieldsError);
+    expect((refused as AdminUnionBindingFieldsError).fields).toEqual(['platform']);
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('[AC-F1-07c] enable and unban: Taobao back to invalid, another union to active through invalid', () => {
+    expect(restoreSteps('taobao')).toEqual(['invalid']);
+    expect(restoreSteps('pdd')).toEqual(['invalid', 'active']);
   });
 });

@@ -17,19 +17,21 @@ const APP = 'synthetic-app';
 const USER = '0199a3b4-5c6d-7000-8000-0000000000a1';
 const ACCOUNT = '0199a3b4-5c6d-7000-8000-0000000000b1';
 const NOW = new Date('2026-10-18T02:00:00.000Z');
-const RESET_AT = new Date('2026-10-18T01:00:00.000Z');
+const RELEASED_AT = new Date('2026-08-01T00:00:00.000Z');
 
 /**
  * A scripted connection: every statement is recorded, and the answer is chosen by the table it
- * reads. The rows are what another transaction committed while the union was queried (the
- * console's reset): a released row with the console's reason, no authorization link since.
+ * reads. The user's only pdd row is an old released one at row_version 3; `banned` sets the
+ * committed risk state.
  */
-function scripted(): { readonly db: Kysely<DB>; readonly statements: string[] } {
+function scripted(banned = false): { readonly db: Kysely<DB>; readonly statements: string[] } {
   const statements: string[] = [];
   const rowsFor = (sql: string): unknown[] => {
     if (sql.includes('from "users"')) return [{ id: USER }];
-    if (sql.includes('from "user_risk_state"')) return [];
-    if (sql.includes('from "union_auth_sessions"')) return [];
+    if (sql.includes('from "user_risk_state"')) return banned ? [{ state: 'banned' }] : [];
+    if (sql.startsWith('insert into "union_bindings"')) {
+      return [{ id: '0199a3b4-5c6d-7000-8000-0000000000c2', union_account_id: ACCOUNT }];
+    }
     if (sql.includes('from "union_bindings"')) {
       return [
         {
@@ -37,9 +39,8 @@ function scripted(): { readonly db: Kysely<DB>; readonly statements: string[] } 
           status: 'released',
           union_account_id: ACCOUNT,
           row_version: 3,
-          reason: 'synthetic console reason',
-          released_at: RESET_AT,
-          updated_at: RESET_AT,
+          released_at: RELEASED_AT,
+          cooldown_until: RELEASED_AT,
         },
       ];
     }
@@ -79,22 +80,21 @@ function scripted(): { readonly db: Kysely<DB>; readonly statements: string[] } 
 const clock = { now: () => NOW } as Parameters<typeof activatePddBinding>[1];
 const input = { appId: APP, userId: USER, accountId: ACCOUNT, custom: '{"app":"n"}' };
 
-describe('activatePddBinding respectAdminMark (F1-07c, BR-ID-20)', () => {
-  it('[AC-F1-07c] a reset committed while the union was queried: after the lock nothing is activated', async () => {
-    const { db, statements } = scripted();
-    const written = await activatePddBinding(db, clock, { ...input, respectAdminMark: true });
-    expect(written).toEqual({ kind: 'awaits_reauthorization' });
-    // The lock came first, then the re-judgement; no savepoint, insert or update followed.
+describe('activatePddBinding user lock (F1-07c, BR-ID-20 / BR-ID-31)', () => {
+  it('[AC-F1-07c] the user lock comes first; a banned user gets banned and nothing is written', async () => {
+    const { db, statements } = scripted(true);
+    const written = await activatePddBinding(db, clock, input);
+    expect(written).toEqual({ kind: 'banned' });
     expect(statements[0]).toContain('for no key update');
     expect(statements.some((s) => s.startsWith('insert'))).toBe(false);
     expect(statements.some((s) => s.startsWith('update'))).toBe(false);
-    expect(statements.some((s) => s.includes('SAVEPOINT'))).toBe(false);
   });
 
-  it('[AC-F1-07c] called without respectAdminMark the activation does not judge the mark', async () => {
+  it('[AC-F1-07c] a valid filing activates as before, after the lock and outside its savepoints', async () => {
     const { db, statements } = scripted();
     const written = await activatePddBinding(db, clock, input);
     expect(written.kind).toBe('active');
+    expect(statements[0]).toContain('for no key update');
     expect(statements.some((s) => s.includes('from "union_auth_sessions"'))).toBe(false);
     expect(statements.some((s) => s.startsWith('insert into "union_bindings"'))).toBe(true);
   });

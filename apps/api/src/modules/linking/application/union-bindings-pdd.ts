@@ -24,21 +24,12 @@
 // open does); that account having none is the no-slot failure above, never another account's slot.
 // Taobao is never queried. No concurrency cap or timeout is added to the query yet (followup:
 // before the real pdd adapter); same-user concurrent GETs converge on the unique index + CAS.
-// F1-07c (BR-ID-20, Codex money review r1): a binding the console left waiting for the user's
-// own authorization (pdd-authority.ts pddAwaitsReauthorization: invalid after enable, or released
-// by a reset with no current row, and no authorization link issued to the user since) is never
-// activated here, nor is a new row created for it: the filing at the union may still be valid,
-// but the user has not authorized again (the open sends the user through the link). It is checked
-// before the query (no upstream call) and again inside the write's transaction after the user
-// lock (binding-lock.ts), so a reset / enable committed while the query ran is seen.
 // TODO(规划/11 §4.5): BR-ID-22 的 (user, pid) 粒度 — blocked on union_bindings 加 pid 维度的迁移
 import type { PddAuthLinkOpenOptions } from './link-open-pdd-auth.ts';
-import { lockBindingUser } from './binding-lock.ts';
 import {
   PDD,
   activatePddBinding,
   pddAuthorityIdentity,
-  pddAwaitsReauthorization,
   queryPddAuthority,
 } from './pdd-authority.ts';
 import {
@@ -83,27 +74,15 @@ export function createUnionBindingsWithPddQuery(
         { appId, userId, pidScene: SCENE, unionAccountId: accountId, traceId, events: EVENTS },
       );
       if (typeof identity === 'string') return;
-      // F1-07c: waiting for the user's own authorization after the console's reset / enable:
-      // the union is not even asked.
-      if (await pddAwaitsReauthorization(db, appId, userId)) return;
       const authorized = await queryPddAuthority(
         { registry, logger },
         { appId, identity, traceId, events: EVENTS },
       );
       if (authorized !== true) return;
       const custom = JSON.stringify(identity.custom_parameters);
-      await db.transaction().execute(async (trx) => {
-        // F1-07c: the console's reset / enable take the same lock; one committed while the query
-        // ran is re-judged by activatePddBinding after it, and the filing then activates nothing.
-        if (!(await lockBindingUser(trx, appId, userId))) return;
-        await activatePddBinding(trx, clock, {
-          appId,
-          userId,
-          accountId,
-          custom,
-          respectAdminMark: true,
-        });
-      });
+      await db
+        .transaction()
+        .execute((trx) => activatePddBinding(trx, clock, { appId, userId, accountId, custom }));
     } catch (error) {
       skipped('pdd_refresh_failed', appId, traceId, {
         error_name: error instanceof Error ? error.name : typeof error,
