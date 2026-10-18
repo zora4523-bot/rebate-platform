@@ -3397,6 +3397,19 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * @description Clipboard block of /v1/config (04 §10.1). consent_version is the current version (a
+         *     string) of the purpose statement for automatic clipboard recognition; the client compares
+         *     it with the user's feature consent version (BR-ID-16 门槛②). The other fields (local
+         *     filter rules and so on) are typed later by the contract / native line and pass through
+         *     as-is for now. When the stored value does not fit this shape the server sends {} for the
+         *     whole key (04 config_items 统一规则).
+         */
+        ConfigClipboard: {
+            consent_version?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * @description Which device identifier was hashed (enum device_id_source, BR-ID-09).
          * @enum {string}
          */
@@ -4539,6 +4552,10 @@ export interface components {
              *     the same name; a client that cannot read it treats it as on) (BR-ATTR-29);
              *     earnings.dashboard.visible (earnings dashboard entry, derived from
              *     earnings.dashboard.enabled, BR-FUND-25).
+             *     Clipboard switches (BR-ID-16 细则「服务端开关」): clipboard.enabled.<platform> filters
+             *     recognition by e-commerce platform; clipboard.auto_read.<client> (client is ios, android
+             *     or harmony) turns off automatic clipboard reading on that client. A missing key counts
+             *     as on; these keys can only turn a feature off, never turn on what the user turned off.
              */
             flags: {
                 [key: string]: boolean;
@@ -4689,9 +4706,9 @@ export interface components {
          *     link_patterns, external_hosts, app_update, help_links, claim, platform_icons,
          *     lkg_max_age_sec, config_version, bridge_disabled_methods) are optional, so a client keeps reading an older last-good configuration (04 §5「兼容」); the
          *     server always sends them, except that platform_icons lists only the marks with a published
-         *     replacement image (BR-TEXT-24). jump_tip, clipboard, bridge_origins, auth_tips, compliance and display are not
+         *     replacement image (BR-TEXT-24). jump_tip, bridge_origins, auth_tips, compliance and display are not
          *     shaped by 04 yet and stay free-form; the task that consumes each one types it
-         *     (bridge_origins with CT-03, clipboard with B1-07).
+         *     (bridge_origins with CT-03). clipboard is ConfigClipboard (only consent_version is typed).
          */
         Config: {
             /** @description Version of the /v1/dict dictionary (BR-TEXT-12). */
@@ -4710,7 +4727,7 @@ export interface components {
             agent: components["schemas"]["ConfigAgent"];
             kf: components["schemas"]["ConfigKf"];
             jump_tip: components["schemas"]["FreeForm"];
-            clipboard: components["schemas"]["FreeForm"];
+            clipboard: components["schemas"]["ConfigClipboard"];
             bridge_origins: components["schemas"]["FreeForm"];
             auth_tips: components["schemas"]["FreeForm"];
             compliance: components["schemas"]["FreeForm"];
@@ -9977,6 +9994,7 @@ export interface operations {
                      *           "flags": {
                      *             "agent.entry.visible": true,
                      *             "clipboard.enabled.taobao": true,
+                     *             "clipboard.auto_read.ios": true,
                      *             "ui.grayscale": false,
                      *             "external_page.product_intercept": true,
                      *             "external_page.union_host_block": true,
@@ -10024,7 +10042,9 @@ export interface operations {
                      *           "url": "https://work.weixin.qq.com/kfid/example"
                      *         },
                      *         "jump_tip": {},
-                     *         "clipboard": {},
+                     *         "clipboard": {
+                     *           "consent_version": "2026-10-01"
+                     *         },
                      *         "bridge_origins": {},
                      *         "auth_tips": {},
                      *         "compliance": {},
