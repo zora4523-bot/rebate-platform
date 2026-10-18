@@ -7,6 +7,8 @@
 // - 新子订单：① App 归属（推广位白名单）→ attr_at（定金优先）→ 同步起点 → 首态（表外码 / 非法首态只写
 //   pending，不建行）→ ② 用户归属 → ④ buy_type → 写 order_keys、orders、history（+ NO_RECEIVED_AT）、
 //   未归因计数、无 mtime 计数（开启排序时）→ rebate.onImported（同事务）。①、无付款时间、同步起点之前 → 只记丢弃计数。
+// - ⑤ 来源回填（B1-08j，BR-ATTR-15）：② 成功且注入 sources 时在判定阶段经端口匹配，四列随 orders INSERT 写入；
+//   端口抛错整事务回滚。
 // 日志只打平铺字段（platform、app_id、reason、outcome），不打子订单号与买家参数。
 import { accountingDate } from '@couli/domain';
 import type { DB } from '@couli/db';
@@ -30,6 +32,7 @@ import {
 } from '../infra/pipeline-store.ts';
 import { publishBindingConflict, publishIllegalTransition } from './alert-events.ts';
 import { attributeOrderUser } from './attribute-user.ts';
+import { backfillOrderSource, sourceColumns } from './source-backfill.ts';
 import type {
   OrderPipeline,
   OrderPipelineContext,
@@ -234,6 +237,21 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
     if (itemId === '') {
       log?.warn({ platform, app_id: ctx.app_id, outcome: 'no_item_id' }, 'order without item id');
     }
+    // ⑤ 来源回填（BR-ATTR-15；B1-08j）：只在本次把 user_id 由空写为非空（② 成功）且注入 sources 时，
+    // 按订单推广位的 pid_scene 匹配；四列随 orders INSERT 一起写。未归因 / 未注入 → 四列 NULL，不调端口。
+    // 首次入库 shopId 恒为 null（UnionOrder 无 shop_id，待编排裁定 4）。
+    const source =
+      user.kind === 'attributed' && deps.sources !== undefined
+        ? await backfillOrderSource(deps.sources, {
+            appId: ctx.app_id,
+            platform,
+            userId: user.user_id,
+            attrAt,
+            pidScene: pidRow.pid_scene,
+            order,
+            shopId: null,
+          })
+        : null;
 
     // —— 判定完成，开始写库 ——
     const orderId = newUuidV7(now);
@@ -265,6 +283,7 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       platform_modified_at: order.modified_at ?? null,
       content_hash: orderContentHash(order),
       raw_payload_id: payloadId,
+      ...(source === null ? {} : sourceColumns(source)),
     };
     await insertImportedOrder(
       trx,
@@ -324,6 +343,12 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
         orderId,
         platform,
       });
+    }
+    if (source !== null) {
+      log?.info(
+        { platform, app_id: ctx.app_id, source_match: source.source_match, outcome: 'backfilled' },
+        'order source backfilled',
+      );
     }
     log?.info({ platform, app_id: ctx.app_id, outcome: 'inserted', attributed }, 'order imported');
     return { kind: 'inserted', order_id: orderId };
