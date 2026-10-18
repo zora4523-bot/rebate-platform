@@ -1,6 +1,6 @@
 id: B1-03y
 repo: rebate-platform
-title: risk.state_changed 载荷加 frozen_until（与 to 同一事务的冻结到期快照，ISO 8601 UTC 字符串，非冻结为 null）：setRiskState 发布时写入，[AC-B1-03h#11] 与 freeze-expiry 扫描测试的载荷精确断言同 PR 各加该键，其余断言不变
+title: risk.state_changed 载荷加 frozen_until（与 to 同一事务的冻结到期快照，ISO 8601 UTC 字符串，只在 to=frozen 时非空）：setRiskState 发布时写入，[AC-B1-03h#11]、freeze-expiry 扫描测试与申诉 [AC-B1-03i#7] 的载荷精确断言同 PR 各加该键，其余断言不变
 type: test-change
 # 2026-10-18 入账（be-codex；B1-12g 台账评审 GT-23bep 的 S1：通知消费者异步读 user_risk_state 当前行判断冻结变体，会被之后的解冻 / 再冻结覆盖，须由事件带上状态变更当时的 frozen_until 快照）。
 # 只加一个键，不放宽任何已有断言（仍是精确 toEqual）；载荷里仍不含原始原因与规则细节。发布改动与两份测试必须同一 PR 落地（单独合任一边主干都会红），故 risk-state.ts 也在本任务；B1-12g 只消费。按 approvals #24 由编排会话加标签（不属四类例外）。
@@ -10,6 +10,7 @@ deps: [B1-03h]
 paths:
   - 'test/spec/risk/risk-state/service.int.test.ts'
   - 'test/spec/risk/freeze-expiry/scans.int.test.ts'
+  - 'test/spec/risk/appeals/service.int.test.ts'
   - 'apps/api/src/modules/risk/application/risk-state.ts'
   - 'apps/api/src/modules/risk/application/risk-state.test.ts'
 impl: claude
