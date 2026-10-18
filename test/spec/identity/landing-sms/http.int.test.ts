@@ -273,18 +273,27 @@ it('[AC-B1-11g#16] 自然小时五条与六十秒同时命中取最晚解除时�
 it('[AC-B1-11g#17] 当日十条跨午夜仍受滑动二十四小时保护，最早一条满二十四小时后可发', async () => {
   const f = fixture(kit);
   const number = phone();
-  for (const hour of [22, 23]) {
-    for (const minute of [10, 20, 30, 40, 50]) {
-      kit.clock.set(`2026-10-18T${hour}:${minute}:00+08:00`);
-      envelope(kit, await f.send(number));
-    }
+  for (const [time, resendAfterSec] of [
+    ['22:10:00', 60],
+    ['22:20:00', 60],
+    ['22:30:00', 60],
+    ['22:40:00', 60],
+    ['22:50:00', 600],
+    ['23:10:00', 60],
+    ['23:20:00', 60],
+    ['23:30:00', 60],
+    ['23:40:00', 60],
+    ['23:50:00', 80_400],
+  ] as const) {
+    kit.clock.set(`2026-10-18T${time}+08:00`);
+    envelope(kit, await f.send(number), 0, undefined, resendAfterSec);
   }
   kit.clock.set('2026-10-18T23:55:00+08:00');
   envelope(kit, await f.send(number), 42901, 80_100);
   kit.clock.set('2026-10-19T00:10:00+08:00');
   envelope(kit, await f.send(number), 42901, 79_200);
   kit.clock.set('2026-10-19T22:10:00+08:00');
-  envelope(kit, await f.send(number));
+  envelope(kit, await f.send(number), 0, undefined, 600);
   expect(f.messages()).toHaveLength(11);
 });
 
@@ -391,3 +400,16 @@ for (const extra of [{ purpose: 'bind' }, { captcha_token: 'unused' }, { app_id:
     expect(f.messages()).toEqual([]);
   });
 }
+
+it('[AC-B1-11g#27] 手机号频控的 42901 不计入同 IP 发码条数，换号可用完剩余额度', async () => {
+  const f = fixture(kit);
+  await f.config('sms.ip_sends_per_hour', 2);
+  const number = phone();
+  envelope(kit, await f.send(number));
+  envelope(kit, await f.send(number), 42901, 60);
+  expect(f.messages()).toHaveLength(1);
+  envelope(kit, await f.send(phone()));
+  expect(f.messages()).toHaveLength(2);
+  envelope(kit, await f.send(phone()), 42901, 3601);
+  expect(f.messages()).toHaveLength(2);
+});

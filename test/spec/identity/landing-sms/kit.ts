@@ -284,7 +284,13 @@ export function fixture(kit: Kit) {
     },
   };
 }
-export function envelope(kit: Kit, response: Response, code = 0, retryAfter?: number): void {
+export function envelope(
+  kit: Kit,
+  response: Response,
+  code = 0,
+  retryAfter?: number,
+  resendAfterSec = 60,
+): void {
   const status =
     code === 0 ? 200 : code === 20001 ? 400 : code === 44001 ? 403 : code === 42901 ? 429 : 500;
   expect(response.statusCode).toBe(status);
@@ -296,7 +302,7 @@ export function envelope(kit: Kit, response: Response, code = 0, retryAfter?: nu
   const validate = kit.compile({ schema, httpPart: 'body' });
   expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
   if (code === 0) {
-    expect(body['data']).toEqual({ resend_after_sec: 60, expires_in_sec: 300 });
+    expect(body['data']).toEqual({ resend_after_sec: resendAfterSec, expires_in_sec: 300 });
     expect(response.headers['set-cookie']).toBeUndefined();
   }
   if (retryAfter !== undefined)
