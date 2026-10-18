@@ -5,10 +5,6 @@
 # Rules for every workflow in this repo (checked by tools/ci/check-workflows.ts):
 #   - no workflow-level `paths` filters; path-conditional work uses a job-level `if` plus an
 #     `if: always()` summary job, and only summary jobs are required checks;
-#   - the summary job of a run that the concurrency group cancelled (the next push, or the owner
-#     approval label this workflow listens to) waits for the newer run on the same head commit
-#     to reach its own summary job, then passes as "superseded" instead of failing; without such
-#     a newer run it fails as before (CT-06u, see ci-gate);
 #   - job ids are unique across all workflows and jobs carry no `name:`, so the check context
 #     equals the job id;
 #   - every action is pinned to a full commit SHA with a version comment.
@@ -234,55 +230,14 @@ jobs:
 
   ci-gate:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).
-    # CT-06u: a run cancelled by the concurrency group (the next push, or the owner-approval label
-    # this workflow listens to) must not leave a ci-gate failure on the commit — with a plain
-    # `always()` summary it ran against cancelled needs, failed, and that failure blocked the merge
-    # next to the newer run's success until the cancelled run was re-run (#799, #815). It must not
-    # end as skipped or success before the newer run's own ci-gate exists either: GitHub counts a
-    # skipped required check as passing and a dependent job is created only when its needs finish,
-    # so the head would be mergeable unverified meanwhile (Codex reviews r1, r2 of #824). So the
-    # summary of a cancelled run stays running (blocking) until a newer run of this workflow on the
-    # same head commit and branch has its ci-gate job, then passes with a "superseded" notice and
-    # that run's ci-gate decides. No newer run, every newer run cancelled before its ci-gate, an API
-    # failure or the timeout: red, as before. `always()` stays: a skippable required check would
-    # count as passing (tools/ci/check-workflows.ts).
     if: always()
     needs: [verify-fast, verify-props, verify-int, guard-git]
     runs-on: ubuntu-latest
-    # 5 → 40 (CT-06u): a superseded run waits for the newer run's verify jobs (verify-props 35).
-    timeout-minutes: 40
+    timeout-minutes: 5
     steps:
       - name: Summarise
         run: |
           echo "verify-fast=${FAST} verify-props=${PROPS} verify-int=${INT} guard-git=${GUARD} event=${EVENT}"
-          if [ "$FAST" = cancelled ] || [ "$PROPS" = cancelled ] || [ "$INT" = cancelled ] || [ "$GUARD" = cancelled ]; then
-            echo "run ${RUN_ID} was cancelled: waiting for a newer ci run on ${HEAD_SHA} (${HEAD_REF}) to reach its ci-gate"
-            runs_url="repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${HEAD_SHA}&per_page=50"
-            newer_jq="[.workflow_runs[] | select(.id > ${RUN_ID} and .event == \"${EVENT}\" and .head_branch == \"${HEAD_REF}\")] | sort_by(.id) | reverse | .[] | \"\(.id) \(.status)\""
-            for _ in $(seq 1 76); do
-              newer=$(gh api "$runs_url" --jq "$newer_jq") || newer=''
-              if [ -z "$newer" ]; then
-                echo "::error title=ci-gate::run ${RUN_ID} was cancelled and no newer ci run exists on ${HEAD_SHA}: the head is not verified"
-                exit 1
-              fi
-              live=0
-              while read -r id status; do
-                [ -n "$id" ] || continue
-                if gh api "repos/${REPO}/actions/runs/${id}/jobs?per_page=100" --jq '.jobs[] | select(.name == "ci-gate") | .id' | grep -q .; then
-                  echo "::notice title=ci-gate::run ${RUN_ID} was cancelled and superseded by run ${id} on the same commit ${HEAD_SHA}; that run's ci-gate decides"
-                  exit 0
-                fi
-                [ "$status" = completed ] || live=1
-              done <<< "$newer"
-              if [ "$live" = 0 ]; then
-                echo "::error title=ci-gate::run ${RUN_ID} was cancelled and every newer ci run on ${HEAD_SHA} ended without a ci-gate: the head is not verified"
-                exit 1
-              fi
-              sleep 30
-            done
-            echo "::error title=ci-gate::run ${RUN_ID} was cancelled and no newer ci run on ${HEAD_SHA} reached its ci-gate in time: the head is not verified"
-            exit 1
-          fi
           [ "$FAST" = success ] || exit 1
           [ "$PROPS" = success ] || exit 1
           [ "$INT" = success ] || exit 1
@@ -297,8 +252,3 @@ jobs:
           INT: ${{ needs.verify-int.result }}
           GUARD: ${{ needs.guard-git.result }}
           EVENT: ${{ github.event_name }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          HEAD_REF: ${{ github.head_ref || github.ref_name }}
-          RUN_ID: ${{ github.run_id }}
-          REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
