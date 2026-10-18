@@ -13,6 +13,8 @@ type: contract
 #   text_sha256 不符、agreed≠true 仍 20001。
 # 待裁定 L1（正文是 tiptap 文章、表存 article_id / article_version / text_sha256）、L2（无草稿）、L3、L4（每次发布必填确认人、说明与日期）、L5、L20 用默认。
 # 2026-10-18 改：contract_sections 只留 6.6（两节合计任务书 26KB 超限）；§6.2 公共读（GET /v1/agreements）与 §6.1 l.483 签署行由编排者摘入任务书（不进 contract_sections，控制任务书大小）。占契约槽（B3-lane/notices.md，三个形状类契约中优先）；全部新增（除 L5），oasdiff 预期非破坏。规划未写的读口与列需规划回写（计划 §5.5）。
+# 2026-10-19 补：新增匿名操作 GET /v1/agreements 须同 PR 更新 H5 匿名清单 apps/h5/src/shared/api/anonymous.ts（anonymous.test.ts 要求清单与契约双向相等，
+#   单独的 test-change PR 在主干上必红；先例 CT-04f #814 signed.ts），故加进 paths。
 refs: []
 refs_hash: {}
 contract_sections: ['6.6']
@@ -28,6 +30,7 @@ paths:
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
   - 'contracts/routes.json'
+  - 'apps/h5/src/shared/api/anonymous.ts'
 impl: claude
 tester: none
 accept:
