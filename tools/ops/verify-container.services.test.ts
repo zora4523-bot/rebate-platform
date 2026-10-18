@@ -627,7 +627,7 @@ it(
     // The projects come from the trusted table, in its order; nothing else is handed over.
     expect(browser?.env).toEqual({
       PROP_SEED: '20261001',
-      VERIFY_TIMEOUT_SECS: '1200',
+      VERIFY_TIMEOUT_SECS: '2400',
       BROWSER_PROJECTS:
         'spec-browser:test:vitest.browser.config.ts build-smoke:test:vitest.build-smoke.config.ts',
     });

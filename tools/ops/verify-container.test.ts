@@ -135,6 +135,33 @@ it(
 );
 
 it(
+  '[CT-06v] the time limit defaults to 2400 s and may be raised up to 3600 s, not beyond',
+  () => {
+    const ok = fixture('limit', 'true');
+    const over = run(['V1-01', '--worktree', ok, '--dry-run'], {
+      COULI_VERIFY_TIMEOUT_SECS: '3601',
+    });
+    expect(over.status).toBe(2);
+    expect(over.stderr).toContain('COULI_VERIFY_TIMEOUT_SECS is capped at 3600');
+    expect(
+      run(['V1-01', '--worktree', ok, '--dry-run'], { COULI_VERIFY_TIMEOUT_SECS: '0' }).stderr,
+    ).toContain('must be a positive integer');
+    for (const value of ['3600', '2400', '5']) {
+      expect(
+        run(['V1-01', '--worktree', ok, '--dry-run'], { COULI_VERIFY_TIMEOUT_SECS: value }).stderr,
+      ).not.toContain('capped at');
+    }
+    // The script's own numbers: default 2400, cap 3600 (the switch may lower or raise up to the cap).
+    const text = readFileSync(SCRIPT, 'utf8');
+    expect(text).toContain('MAX_TIMEOUT_SECS=3600');
+    expect(text).toContain('DEFAULT_TIMEOUT_SECS=2400');
+    expect(text).toContain('TIMEOUT_SECS="${COULI_VERIFY_TIMEOUT_SECS:-$DEFAULT_TIMEOUT_SECS}"');
+    expect(existsSync(join(runs, 'V1-01'))).toBe(false);
+  },
+  CLI_TIMEOUT,
+);
+
+it(
   '[CR-01] there is no host fallback: --host is refused for verify and verify:fast alike',
   () => {
     const dir = fixture('host', 'node -e "process.exit(0)"');
