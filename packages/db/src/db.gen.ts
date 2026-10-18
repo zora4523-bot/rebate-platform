@@ -179,6 +179,24 @@ export interface AgentToolCalls {
   status: string;
 }
 
+export interface Agreements {
+  app_id: string;
+  article_id: string;
+  article_version: number;
+  created_at: Generated<Timestamp>;
+  id: string;
+  legal_confirm_note: string;
+  legal_confirmed_by: string;
+  min_version: number;
+  published_at: Timestamp;
+  published_by: string;
+  requires_resign: boolean;
+  text_sha256: string;
+  type: string;
+  url: string;
+  version: number;
+}
+
 export interface Appeals {
   app_id: string;
   closed_at: Timestamp | null;
@@ -1354,6 +1372,7 @@ export interface DB {
   agent_runs: AgentRuns;
   agent_sessions: AgentSessions;
   agent_tool_calls: AgentToolCalls;
+  agreements: Agreements;
   app_versions: AppVersions;
   appeals: Appeals;
   articles: Articles;
