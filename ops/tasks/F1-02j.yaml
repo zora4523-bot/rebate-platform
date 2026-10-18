@@ -16,5 +16,5 @@ test_paths: ['test/spec/content/config-clipboard/**']
 impl: claude
 tester: codex
 accept: ['pnpm verify', 'test/spec/content/config-clipboard/**']
-status: todo
-pr: null
+status: done
+pr: 733
