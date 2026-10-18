@@ -1,0 +1,38 @@
+id: F1-07c
+repo: rebate-platform
+title: linking：后台联盟授权管理——POST /admin/v1/users/{user_id}/union-bindings/{platform}/reset（union.binding_reset，只 active / invalid → released + 冷却）、/disable（→ blocked(admin_disable)）、/enable（只 blocked(admin_disable) → invalid）；动态码、原因必填、row_version 比较（20902 union_binding）、状态不允许 30154、审计；同平台新绑定行的 row_version 接在旧行最大值之后；导出封禁 / 解封联动端口；去掉 3 条 planned
+type: impl
+# 2026-10-18 入账（后台后端线 admin-backend，F1-07 第三批；编排会话 10-17 admin-prompt5 第 2 项）。依据 05 F1-07、04 §6.6 / §11.2、契约 CT-02j（#647）三个操作的 description。
+# refs 为 BR-ID-20（编排 10-18 09:2x 裁定 A′：CT-06o 合并后 brief.ts 对超限任务一跳引用只列标题，可信评审提示词照常按 refs 核对）。
+# 取值裁定见 couli-runs/ADMIN-backend/f107-plan.md（裁定 2、5、7 与「CT-02j 实现方自定、编排者认可」）。
+# 要点：union_bindings 唯一写者是 linking，状态改动只经 canTransitionBinding 已有的边（不加新边，冻结测试不改）；
+#   版本承接要改 linking/application/union-bindings.ts 与 pdd-authority.ts 两处 insertInto('union_bindings')（同平台旧行最大 row_version + 1，契约已写明）；
+#   导出 blockForBan / restoreAfterUnban（接收调用方事务；解封只恢复因 ban 置 blocked 的行，裁定 2）供 F1-07d 调用；重置时清该用户转链缓存（契约 reset 描述；linking/infra/jump-cache.ts 的键是整体哈希，按用户清理要另设计，如每用户代次键，仍在 linking/** 内）。
+#   用户已封禁（user_risk_state.state = banned）时 enable 一律 30154（编排 10-18 09:2x 裁定 ①，契约由 CT-02p 同步）。
+#   并发：reset / disable / enable 与封禁联动（blockForBan / restoreAfterUnban）在同一事务里先取同一把用户级锁——`SELECT … FROM app.users WHERE app_id = ? AND id = ? FOR NO KEY UPDATE`（不用 FOR UPDATE：子表外键插入会持 users 的 KEY SHARE，FOR UPDATE 与之互斥会与申诉提交、拼多多转链激活死锁；Claude 台账评审 r3）（users 行总存在，无风控行时同样有效），再读风控状态与绑定；F1-07d 的风控状态变更同样先取这把锁。规则测试加「封禁与 enable 并发」用例：无论先后，提交后不得出现 banned + invalid（GitHub Codex #696 P2）。
+#   用户侧普通授权写入（union-bindings.ts:304 与 pdd-authority.ts:226 的 insert，以及同文件里把绑定改为 active 的 update）写入前也取这把锁、锁后重查风控状态（锁在调用上游换取凭据之后才取，不在上游调用期间占锁；锁在 SAVEPOINT union_binding_decide 之外取，或每次重试都重新取——回滚到保存点会丢行锁，pdd-authority.ts 的激活循环同理）：已封禁则不写绑定、按既有封禁拒绝口径返回（BR-ID-01 第⑤关）；规则测试加「封禁与普通授权并发」用例，提交后不得出现 banned + active（GitHub Codex #696 第 3 轮 P2）。
+#   规则测试直接调用导出的 blockForBan / restoreAfterUnban，覆盖：已是 blocked(admin_disable) 的绑定封禁时保持原因；解封不碰 admin_disable 的绑定（裁定 2；Claude 台账评审 r2 S2-6）。
+#   规则测试取 expected_row_version 直接读库，不走 GET /admin/v1/users/{user_id}（F1-07b 可能晚合并）。
+# 与 F1-07b / F1-07d 并行改 openapi.yaml、两份生成物与 app.module.ts：后合并者变基并重生成。
+refs: [BR-ID-20]
+refs_hash:
+  BR-ID-20: 137b3e93abfb
+deps: [CT-02j, CT-02p, CT-06o]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/linking/admin-union-bindings/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/admin-union-bindings/**'
+status: todo
+pr: null

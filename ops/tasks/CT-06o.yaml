@@ -1,0 +1,23 @@
+id: CT-06o
+repo: rebate-platform
+title: 门禁小修：tools/ops/brief.ts 生成的任务书超 24KB 时，第 2 节「一跳引用」改为只列编号、标题与状态（不展开规则全文），refs 列出的 BR 仍放正文与细则全文；改后仍超限照旧拒收
+type: guard-change
+# 2026-10-18 入账（admin-backend，编排 10-18 09:2x 裁定 A′；起因 notices 10-17 05:02 / 19:30 与台账 #696 Claude 评审 r1 S1）。
+# 现状：F1-07c（refs BR-ID-20）第 2 节 23.6KB、F1-07d（refs BR-ID-31）48KB，其中 BR 本体 + 细则只有 5KB / 9KB，其余是一跳引用的整行原文；把 BR 移出 refs 会使可信评审提示词（只按 refs 核对）失去依据，削弱归属门禁。
+# 做法：先按现行格式渲染；超上限时改用精简一跳表（编号 | 标题 | 状态，标题取规则行加粗标题），并在该小节注明「一跳引用只列标题，原文见 SPEC_REF 的 08」；仍超限按现有逻辑拒收并打印各节字节数。
+#   判断是否精简时不计第 7 节「上一轮失败输出」：先按不带失败输出的完整格式算大小，超限才选精简格式；选定格式后再用现有 attempt >= 2 逻辑截断失败输出（剩余空间按所选格式算），brief.test.ts 加一条第 2 次尝试的用例（Claude 台账评审 r2 S2-1）。
+#   不超限的任务输出与现在逐字节相同（既有 brief 测试不改期望）；契约任务的第 2 节格式不变。
+# tools/ 属保护路径第三类：负责人 10-02 常设授权的流程门禁小修（approvals #16），Claude 实现、Codex 对抗评审，评审通过、检查全绿后按 approvals #24 加标签。tools 自己的单元测试由实现者写（tools/**/*.test.ts），不需要先写规则测试。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/brief.ts'
+  - 'tools/ops/brief.test.ts'
+  - 'tools/ops/README.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
