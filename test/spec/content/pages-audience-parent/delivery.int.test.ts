@@ -175,7 +175,7 @@ it('[AC-F1-09j#7] 同一登录用户访问无条件或仅 any 的页面不查上
   expect(await visible(app, subject)).toEqual(WITH_PARENT);
   expect(probe.queries.filter((query) => query.fact === 'parent')).toHaveLength(1);
   probe.queries.length = 0;
-  expect(await visible(app, subject, false, 'any')).toEqual(['any']);
+  expect(await visible(app, subject, false, 'custom:any')).toEqual(['any']);
   expect(probe.queries).toHaveLength(0);
 });
 
