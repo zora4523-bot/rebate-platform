@@ -39,6 +39,8 @@ export const TOTP = [
 ];
 export const SMS = ['fund.adjust', 'fund.writeoff'];
 export const NONE = [
+  // 04 §11.1 工作台（step-up「–」）：枚举含 dashboard.view 才纳入。CT-24a 合并后由 CT-24j 去掉该条件。
+  ...(enumKeys().includes('dashboard.view') ? ['dashboard.view'] : []),
   'user.list',
   'user.lookup',
   'fund.view',
