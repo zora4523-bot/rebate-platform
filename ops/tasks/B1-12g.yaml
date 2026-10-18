@@ -28,6 +28,7 @@ test_paths:
   - 'test/spec/identity/identity-level/http-kit.ts'
   - 'test/spec/identity/bind-phone/http-kit.ts'
   - 'test/spec/identity/step-up-verify/kit.ts'
+  - 'test/spec/identity/sms-codes/http-kit.ts'
 impl: claude
 tester: codex
 accept:
