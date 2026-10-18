@@ -1,0 +1,23 @@
+id: B3-05j
+repo: rebate-platform
+title: Orchestrator core：汇总确定性、降级等路径的 intent、工具调用与 trace 片段，合成一份 run trace 交评测适配器；评测冒烟 T1 全过
+type: impl
+# 2026-10-18 编排者：core 的 trace 只记模型发起的工具调用，确定性端口只回结束结果，评测适配器收不到 intent=find_by_link 与 tool_calls（B3-05c 注释已提「后续任务」，台账原无）。
+# B3-05e 只断言帧与链接登记，T1 gradeCase 全过移到本任务验收。分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 评审。风险 RV1。
+refs: [BR-AI-14, BR-AI-21]
+refs_hash:
+  BR-AI-14: e8ed6052e898
+  BR-AI-21: 7e5eb4e48745
+deps: [B3-05e, B3-05c]
+paths:
+  - 'apps/api/src/modules/agent/orchestrator/core/**'
+  - 'apps/api/src/modules/agent/orchestrator/eval/**'
+test_paths:
+  - 'test/spec/agent/orchestrator-trace/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/orchestrator-trace/**'
+status: todo
+pr: null

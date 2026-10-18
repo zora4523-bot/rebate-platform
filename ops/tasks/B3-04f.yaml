@@ -1,0 +1,22 @@
+id: B3-04f
+repo: rebate-platform
+title: 确定性路径的口令：口令候选经解析得到商品后走与链接相同的 get_rebate_quote → register_links 报价流程；解析失败按单个失败处置
+type: impl
+# 2026-10-18 编排者：B3-04c 的 createLinkQuoteRunner 只收 url 候选，口令直接 no_card；B3-05e 先按默认出 notice。本任务补口令解析与报价。
+# 口令解析依赖平台能力（09 未验证的不得当承诺），解析端口缺省按不可用处置。分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 评审。风险 RV1。
+refs: [BR-AI-01, BR-AI-04]
+refs_hash:
+  BR-AI-01: b624c86b4643
+  BR-AI-04: a07587a282ba
+deps: [B3-04c, B3-05e]
+paths:
+  - 'apps/api/src/modules/agent/tools/quote/**'
+test_paths:
+  - 'test/spec/agent/tools-quote-tpwd/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-quote-tpwd/**'
+status: todo
+pr: null
