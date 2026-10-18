@@ -1,0 +1,120 @@
+{
+  "task": "B3-05e",
+  "spec_ref": "8c91f67e2dc11ad7f50d279cf8103e0f038e5ac8",
+  "spec_commit": "2f7f797645303d90623825397efedc113cb16c09",
+  "red_tests": [
+    "test/spec/agent/orchestrator-deterministic/eval.test.ts > [AC-B3-05e#12] T1 smoke-syn-t1-01：真实帧回放逐链接出卡、无文本泄漏、登记 trace 完整",
+    "test/spec/agent/orchestrator-deterministic/eval.test.ts > [AC-B3-05e#12] T1 smoke-syn-t1-02：真实帧回放逐链接出卡、无文本泄漏、登记 trace 完整",
+    "test/spec/agent/orchestrator-deterministic/eval.test.ts > [AC-B3-05e#12] T1 smoke-syn-t1-03：真实帧回放逐链接出卡、无文本泄漏、登记 trace 完整",
+    "test/spec/agent/orchestrator-deterministic/eval.test.ts > [AC-B3-05e#12] T1 smoke-syn-t1-04：真实帧回放逐链接出卡、无文本泄漏、登记 trace 完整",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#1] 单链接原样出报价卡，状态使用文案端口，正常结束",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#2] 三链接按出现顺序串行取数出卡，身份只取 caller，其余上下文原样传递",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#3] 中间链接解析错误 30131 只出对应 notice，前后报价照常",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#3] 中间链接解析错误 30132 只出对应 notice，前后报价照常",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#3] 中间链接解析错误 30141 只出对应 notice，前后报价照常",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#3] 中间链接解析错误 50301 只出对应 notice，前后报价照常",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#4][AC-B3-05e#5] price_unavailable 仅出依赖不可用提示，不补金额且继续后续链接",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#4][AC-B3-05e#5] no_card 仅出依赖不可用提示，不补金额且继续后续链接",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#4][AC-B3-05e#5] exception 仅出依赖不可用提示，不补金额且继续后续链接",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#6] 全部失败逐个提示，结束为 stop 而非 fallback 或错误终帧",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#13] 口令只提示 30132，不调用 URL runner，前后 URL 照常",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#10] 第一张卡写出后取消，不再调用 runner 或写任何帧",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#10] before runner 取消不输出迟到卡片或状态",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#10] during runner 取消不输出迟到卡片或状态",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#11] trace collect：成功片段原样依次转交，回调故障不改变结果",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#11] trace throws：成功片段原样依次转交，回调故障不改变结果",
+    "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#11] trace absent：成功片段原样依次转交，回调故障不改变结果",
+    "test/spec/agent/orchestrator-deterministic/wiring.test.ts > [AC-B3-05e#1][AC-B3-05e#7] core 链接接线绕过 prompt/模型，link_limit 只发一次且先于报价",
+    "test/spec/agent/orchestrator-deterministic/wiring.test.ts > [AC-B3-05e#8] 素材指令不能改金额或打开钱包，不输出 text.delta 或 page_guide",
+    "test/spec/agent/orchestrator-deterministic/wiring.test.ts > [AC-B3-05e#9] no_prompt 无模型时链接照常出卡，不进 degraded",
+    "test/spec/agent/orchestrator-deterministic/wiring.test.ts > [AC-B3-05e#9] budget 无模型时链接照常出卡，不进 degraded"
+  ],
+  "risk_note": "RV1 by its paths (apps/api/src/modules/agent/orchestrator/deterministic/**); rule tests under test/** make the PR RV2. Codex wrote test/spec/agent/orchestrator-deterministic/** (container red 25 tests); Claude spec-test review round 1 pass. Opus implemented once; Codex review round 1 pass. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2f7f797645303d90623825397efedc113cb16c09",
+      "tree": "4b0b38b2b557fa188ec51cf01fca391d608724fd",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-18T16:09:29Z",
+      "finished_at": "2026-10-18T16:09:34Z",
+      "red_tests": [
+        "test/spec/agent/orchestrator-deterministic/eval.test.ts > [AC-B3-05e#12] T1 smoke-syn-t1-01：真实帧回放逐链接出卡、无文本泄漏、登记 trace 完整",
+        "test/spec/agent/orchestrator-deterministic/eval.test.ts > [AC-B3-05e#12] T1 smoke-syn-t1-02：真实帧回放逐链接出卡、无文本泄漏、登记 trace 完整",
+        "test/spec/agent/orchestrator-deterministic/eval.test.ts > [AC-B3-05e#12] T1 smoke-syn-t1-03：真实帧回放逐链接出卡、无文本泄漏、登记 trace 完整",
+        "test/spec/agent/orchestrator-deterministic/eval.test.ts > [AC-B3-05e#12] T1 smoke-syn-t1-04：真实帧回放逐链接出卡、无文本泄漏、登记 trace 完整",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#1] 单链接原样出报价卡，状态使用文案端口，正常结束",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#2] 三链接按出现顺序串行取数出卡，身份只取 caller，其余上下文原样传递",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#3] 中间链接解析错误 30131 只出对应 notice，前后报价照常",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#3] 中间链接解析错误 30132 只出对应 notice，前后报价照常",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#3] 中间链接解析错误 30141 只出对应 notice，前后报价照常",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#3] 中间链接解析错误 50301 只出对应 notice，前后报价照常",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#4][AC-B3-05e#5] price_unavailable 仅出依赖不可用提示，不补金额且继续后续链接",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#4][AC-B3-05e#5] no_card 仅出依赖不可用提示，不补金额且继续后续链接",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#4][AC-B3-05e#5] exception 仅出依赖不可用提示，不补金额且继续后续链接",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#6] 全部失败逐个提示，结束为 stop 而非 fallback 或错误终帧",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#13] 口令只提示 30132，不调用 URL runner，前后 URL 照常",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#10] 第一张卡写出后取消，不再调用 runner 或写任何帧",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#10] before runner 取消不输出迟到卡片或状态",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#10] during runner 取消不输出迟到卡片或状态",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#11] trace collect：成功片段原样依次转交，回调故障不改变结果",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#11] trace throws：成功片段原样依次转交，回调故障不改变结果",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts > [AC-B3-05e#11] trace absent：成功片段原样依次转交，回调故障不改变结果",
+        "test/spec/agent/orchestrator-deterministic/wiring.test.ts > [AC-B3-05e#1][AC-B3-05e#7] core 链接接线绕过 prompt/模型，link_limit 只发一次且先于报价",
+        "test/spec/agent/orchestrator-deterministic/wiring.test.ts > [AC-B3-05e#8] 素材指令不能改金额或打开钱包，不输出 text.delta 或 page_guide",
+        "test/spec/agent/orchestrator-deterministic/wiring.test.ts > [AC-B3-05e#9] no_prompt 无模型时链接照常出卡，不进 degraded",
+        "test/spec/agent/orchestrator-deterministic/wiring.test.ts > [AC-B3-05e#9] budget 无模型时链接照常出卡，不进 degraded"
+      ],
+      "expected": [
+        "test/spec/agent/orchestrator-deterministic/eval.test.ts",
+        "test/spec/agent/orchestrator-deterministic/path.test.ts",
+        "test/spec/agent/orchestrator-deterministic/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b9c30f358f5f68e113f1eb26a2a6f69440deb407ececa502814648286e8e318c"
+        }
+      ],
+      "gate": {
+        "commit": "cfddf922108474a61dbeb4f588f33697369a75cf",
+        "clean": true,
+        "script_sha256": "a760318276108244f9664229d4673fceafa5692c68dba5ecdc016a9e4b5cd057"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "Codex general review round 1 pass (couli-runs/B3-05e/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass (couli-runs/B3-05e/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "cfa2c51dbf6da7c09001a868cb899b21886511ab",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "b3185331718543f73422373f6018edcecb760805"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
