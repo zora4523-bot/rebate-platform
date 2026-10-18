@@ -1,0 +1,20 @@
+id: CT-06v
+repo: rebate-platform
+title: 门禁小修：verify 容器阶段时限默认 2400、上限 3600（集成测试已 464 文件，1200 不够）
+type: guard-change
+# 2026-10-19 入账（编排裁定）。起因：CT-06t 在测试机的完整验证在 test:browser 阶段撞到 verify-container.sh 的 1200 秒时限（exit 124，不是测试失败）；主干集成测试已 464 个文件，CT-06r 那次 1034 秒险过；COULI_VERIFY_TIMEOUT_SECS 超过 MAX_TIMEOUT_SECS 会直接 die「capped at 1200」。
+# 做法：verify-container.sh 的 MAX_TIMEOUT_SECS 改 3600、默认值改 2400（svc_run 的 limit = TIMEOUT_SECS + 900、宿主服务 RuntimeMaxSec = TIMEOUT_SECS * 2 + 1800 随之放大）；头注释、tools/ops/README.md 可调环境变量一句、verify-container.services.test.ts 里默认值断言同步。其余不变。
+# tools/ 属保护路径第三类：负责人 10-02 常设授权的流程门禁小修（approvals #16），Claude 实现、Codex 对抗评审一轮，评审通过、检查全绿后按 approvals #24 加标签（编排 10-19 授权：改动限于 tools/ops 与台账 / 证据）。tools 自己的单元测试由实现者写，不需要先写规则测试。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/verify-container.sh'
+  - 'tools/ops/verify-container.services.test.ts'
+  - 'tools/ops/README.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
