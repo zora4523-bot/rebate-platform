@@ -1,4 +1,10 @@
 export { accountingDate, chinaMonth, chinaDayRange, chinaMonthRange } from './calendar/index.ts';
+export { summarizeClaimDecisions, evidenceEvent } from './claims/summarize.ts';
+export type {
+  ClaimEvidenceEvent,
+  ClaimEvidenceLevel,
+  ClaimResolveEvent,
+} from './claims/summarize.ts';
 export {
   parseResidentIdNo,
   reachedAgeAt,
@@ -136,3 +142,27 @@ export type {
   WithdrawalTransitionResult,
   WithdrawalTransitionRow,
 } from './state-machines/withdrawal.gen.ts';
+export {
+  CLAIM_EVENTS,
+  CLAIM_STATES,
+  CLAIM_TRANSITIONS,
+  transitionClaim,
+} from './state-machines/claim.gen.ts';
+export type {
+  ClaimState,
+  ClaimEvent,
+  ClaimTransitionResult,
+  ClaimTransitionRow,
+} from './state-machines/claim.gen.ts';
+export {
+  CLAIM_ITEM_EVENTS,
+  CLAIM_ITEM_STATES,
+  CLAIM_ITEM_TRANSITIONS,
+  transitionClaimItem,
+} from './state-machines/claim-item.gen.ts';
+export type {
+  ClaimItemState,
+  ClaimItemEvent,
+  ClaimItemTransitionResult,
+  ClaimItemTransitionRow,
+} from './state-machines/claim-item.gen.ts';

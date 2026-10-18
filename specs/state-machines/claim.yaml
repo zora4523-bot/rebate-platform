@@ -1,0 +1,64 @@
+# 找回状态 claims.status（claim_status）的状态机（规划/04 §4.3、§2.3 / §2.5；规划/08 BR-ATTR-16、BR-ATTR-17、BR-ATTR-18、BR-ATTR-20；
+# 规划/12 §3.3；任务 CT-04e）。迁移表只在 08 维护；本文件按 SPEC_REF 转写，生成
+# packages/domain/src/state-machines/claim.gen.ts（node packages/domain/scripts/state-machines.ts；--verify 只比对）。
+# 生成物勿手改，改这里再生成。
+#
+# 写法约定（同 CT-04a、F1-09h）：
+# - from 中 null 表示「—」（入库首态：受理时插入 claims 行）。
+# - guard 只是规则文字说明，transition() 不求值；守卫、CAS、锁、通知与副作用由服务层负责。
+# - 状态值与 contracts/enums/order.yaml 的 claim_status 一致（小写蛇形）；事件用大写蛇形名。
+# - 汇总事件由 @couli/domain 的 evidenceEvent()、summarizeClaimDecisions() 按子项算出（BR-ATTR-18）。
+#
+# 表外说明：
+# - 只有下面六行迁移，其余组合一律为表外事件。
+# - 受理与证据计算在同一事务（BR-ATTR-17「随后立即计算证据」），claim 不会停在 submitted 上结案。
+# - 还有未决子项时保持当前状态、继续审核，不是迁移（12 §3.3）；auto_matched 与 manual_review 不互转。
+# - approved / rejected / cancelled 是终态。
+name: claim
+field: status
+states: [submitted, auto_matched, manual_review, approved, rejected, cancelled]
+# SUBMIT 受理；EVIDENCE_ALL_STRONG / EVIDENCE_NOT_ALL_STRONG 证据算完；RESOLVE_* 全部子项已决后的汇总结果。
+events:
+  - SUBMIT
+  - EVIDENCE_ALL_STRONG
+  - EVIDENCE_NOT_ALL_STRONG
+  - RESOLVE_APPROVED
+  - RESOLVE_REJECTED
+  - RESOLVE_CANCELLED
+transitions:
+  - id: C1
+    from: [null]
+    event: SUBMIT
+    to: submitted
+    guard: '按 BR-ATTR-17 的校验顺序受理，至少一个子订单通过全部检查并写入 claim_items（插入 claims 行）；一个都没通过时不建 claim，按 sub_order_id 升序返回第一个子订单的错误码'
+    test_id: SM-CLM-C1
+  - id: C2
+    from: [submitted]
+    event: EVIDENCE_ALL_STRONG
+    to: auto_matched
+    guard: '证据按子项针对申请人本人算完，全部子项 evidence 为 strong（BR-ATTR-18）；MVP 仍须客服确认，后台置顶并提供一键通过'
+    test_id: SM-CLM-C2
+  - id: C3
+    from: [submitted]
+    event: EVIDENCE_NOT_ALL_STRONG
+    to: manual_review
+    guard: '证据按子项针对申请人本人算完，至少一个子项不是 strong（按最弱的证据确定，BR-ATTR-18）'
+    test_id: SM-CLM-C3
+  - id: C4
+    from: [auto_matched, manual_review]
+    event: RESOLVE_APPROVED
+    to: approved
+    guard: '全部子项已决，且至少一个子项 approved（BR-ATTR-18）'
+    test_id: SM-CLM-C4
+  - id: C5
+    from: [auto_matched, manual_review]
+    event: RESOLVE_REJECTED
+    to: rejected
+    guard: '全部子项已决，没有 approved，至少一个子项 rejected（BR-ATTR-18）'
+    test_id: SM-CLM-C5
+  - id: C6
+    from: [auto_matched, manual_review]
+    event: RESOLVE_CANCELLED
+    to: cancelled
+    guard: '全部子项已决，且都是 cancelled（同步已自动归因给申请人，BR-ATTR-16、BR-ATTR-18）'
+    test_id: SM-CLM-C6
