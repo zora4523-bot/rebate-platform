@@ -9,10 +9,12 @@ type: impl
 # need_sign 默认按 08：从未签署，或最近签署版本 < resign_from_version（签一次持续有效，直到需重签的新版本）。签署：version≠当前 / sha256 不符 / agreed≠true → 20001 带 fields（E20）；快照 = 主体名称与信用代码 + user_id、realname 记录 id、脱敏姓名；server_at=Clock。
 # 编排已定（2026-10-17，E23–E31 按默认，见 IDENTITY-tips/batch2-ledger/report.md）：① 契约 need_sign 描述首句「未签当前版本即 true」与 08「签一次持续有效到需重签」字面不一致，默认按 08 并请契约线改描述；② consent_records.client_at 必填而签署请求无客户端时间，默认写服务器时间。
 # 模型：Opus 5.5 高推理（effort high）——提现前置、资金相关。契约三件写进 paths（Claude 实现，先例 B1-02s）。测试标题 AC-B1-13h#n。与 B1-13d 同改 identity/**，deps 串行。
+# 2026-10-19 补 paths：劳务协议配置（legal.labor_agreement.* / legal.operator_entity.*）照 B1-11d 先例由 app.module 注入 content 读取器（在调用方事务上读 config_items），identity 不直接读 content 的表。
 refs: []
 refs_hash: {}
 deps: [B1-13d, B1-13b, CT-15r, B1-02za]
 paths:
+  - 'apps/api/src/app.module.ts'
   - 'apps/api/src/modules/identity/**'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
