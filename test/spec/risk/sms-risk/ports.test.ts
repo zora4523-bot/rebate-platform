@@ -41,10 +41,13 @@ it('[AC-B1-03g#4][AC-B1-03g#8] identity 用 app_id/device_id 读哈希后调用�
   f.risk.admit.mockResolvedValue({ code: 42901, retryAfterSec: 17 });
   expect(await ports.smsHooks.deviceQuota(f.request)).toEqual({ code: 42901, retryAfterSec: 17 });
   await ports.smsHooks.afterAccepted(f.request);
-  expect(f.risk.recordAccepted).toHaveBeenCalledExactlyOnceWith({
-    appId: f.request.app_id,
-    clientIp: f.request.client_ip,
-  });
+  // 放宽字段形状：B1-11g 给 recordAccepted 传本次预占标识（编排 2026-10-18 23:1x）
+  expect(f.risk.recordAccepted).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      appId: f.request.app_id,
+      clientIp: f.request.client_ip,
+    }),
+  );
   expect(ports.smsHooks).not.toHaveProperty('captcha');
 });
 
