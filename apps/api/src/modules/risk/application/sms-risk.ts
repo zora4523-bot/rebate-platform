@@ -8,17 +8,15 @@
 // concurrent sends from one IP — app route and landing page alike — cannot all read N < L and
 // pass. admitIp() is step ① alone (the landing page: no signature, no device); admitAndReserve()
 // is admit() with ① reserving (the app route; ② unchanged, and a ② refusal releases ①).
-// - settleIp(reservation), on an accepted or unknown send, turns exactly that in-flight record into
-//   a sent record stamped now (the provider's answer; added anyway when the record is gone) and
-//   leaves one settle credit for the IP. recordAccepted({ clientIp }), which the send then calls
-//   as before, uses up a credit instead of counting the IP again. Without a credit (a caller with
-//   no reservation, or a settle that failed) it turns the oldest in-flight record into a sent one,
-//   or adds one when none is in flight.
+// - recordAccepted({ clientIp, reservation }), on an accepted or unknown send, turns exactly that
+//   in-flight record into a sent record stamped now (the provider's answer); when it is gone (the
+//   lease dropped it) a sent record is added, and no other in-flight record is touched. Without a
+//   reservation (callers that did not reserve) it turns the oldest in-flight record into a sent
+//   one, or adds one when none is in flight.
 // - releaseIp(reservation) drops only that in-flight record (nothing when it is gone).
 // - Lease: an in-flight record older than IP_LEASE_MS (far above the send's bound, sendTimeout +
-//   margin) is dropped by every write script, so a record no one settles or releases (a lost
-//   reply, a crashed process) stops counting after the lease, not after the window. Credits
-//   expire after the lease too.
+//   margin) is dropped by every write script, so a record no one accepts or releases (a lost
+//   reply, a crashed process) stops counting after the lease, not after the window.
 // admit() stays the read-only step ① + ② (callers that count with recordAccepted afterwards).
 //
 // admit() is the 42901 step of the send order 签名 → 20001 → 44001 → 42901 (no human
@@ -101,17 +99,13 @@ export interface SmsRisk {
   /** Drops a reservation's own in-flight record (no SMS went out, or refused); never throws. */
   releaseIp(input: SmsRiskIpRequest & { readonly reservation: string }): Promise<void>;
   /**
-   * An accepted or unknown send: its own in-flight record becomes a sent record stamped now, and
-   * the recordAccepted that follows does not count the IP again; never throws.
-   */
-  settleIp(input: SmsRiskIpRequest & { readonly reservation: string }): Promise<void>;
-  /**
    * Called once after accepted OR unknown delivery, never for explicit rejection. With a client
-   * IP: a settle credit of the IP is used up (settleIp already counted the send), otherwise the
-   * oldest in-flight record becomes a sent one at now (or one is added); without one only the
+   * IP and the send's reservation: exactly that in-flight record becomes a sent record at now (or
+   * one is added when it is gone), no other is touched. With a client IP and no reservation: the
+   * oldest in-flight record becomes a sent one (or one is added). Without a client IP only the
    * daily budget counts.
    */
-  recordAccepted(input: { appId: string; clientIp?: string }): Promise<void>;
+  recordAccepted(input: { appId: string; clientIp?: string; reservation?: string }): Promise<void>;
   /** All register_method values count; called by identity before commit. */
   recordRegistered(input: { appId: string; clientIp: string; userId: string }): Promise<void>;
 }
@@ -147,8 +141,8 @@ export const SMS_RISK_IP_CONTEXT = 'risk.sms.ip';
 const WINDOW_MS = 3_600_000;
 const WINDOW_TTL_SEC = 3_602;
 /**
- * Lease of an in-flight IP reservation (and of a settle credit): far above the longest span from
- * a reservation to its settle or release (identity's sendTimeout 10 s + in-flight margin 5 s,
+ * Lease of an in-flight IP reservation: far above the longest span from
+ * a reservation to its acceptance or release (identity's sendTimeout 10 s + in-flight margin 5 s,
  * plus the store retries around them).
  */
 export const IP_LEASE_MS = 60_000;
@@ -241,52 +235,27 @@ return 1
 `;
 
 /**
- * KEYS[1]: IP sends, KEYS[2]: IP in-flight reservations, KEYS[3]: IP settle credits. ARGV[1]: TTL
- * (s), ARGV[2]: now (ms), ARGV[3]: window (ms), ARGV[4]: reservation, ARGV[5]: sent record member,
- * ARGV[6]: lease (ms). Turns that reservation's in-flight record into a sent record at now (the
- * sent record is added even when the in-flight one is gone) and adds one credit (expires with the
- * lease), used up by the recordAccepted that follows.
- */
-const IP_SETTLE_SCRIPT = `-- sms_risk:ip_settle
-${IP_LEASE_PRUNE}
-local ttl = tonumber(ARGV[1])
-local now = tonumber(ARGV[2])
-local lease = tonumber(ARGV[6])
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. string.format('%.0f', now - tonumber(ARGV[3])))
-prune(KEYS[1], KEYS[2], now, lease)
-if redis.call('ZREM', KEYS[2], ARGV[4]) == 1 then
-  redis.call('ZREM', KEYS[1], 'p:' .. ARGV[4])
-end
-redis.call('ZADD', KEYS[1], string.format('%.0f', now), ARGV[5])
-redis.call('INCR', KEYS[3])
-redis.call('PEXPIRE', KEYS[3], lease)
-redis.call('EXPIRE', KEYS[1], ttl)
-redis.call('EXPIRE', KEYS[2], ttl)
-return 1
-`;
-
-/**
- * KEYS[1]: IP sends, KEYS[2]: IP in-flight reservations, KEYS[3]: IP settle credits. ARGV[1]: TTL
- * (s), ARGV[2]: now (ms), ARGV[3]: window (ms), ARGV[4]: sent record member, ARGV[5]: lease (ms).
- * A credit → used up, nothing else (that send was counted by its settle). Otherwise the oldest
- * live in-flight record (removed) becomes a sent record at now, or the sent record is just added.
- * Returns 0 when a credit was used, 1 when a record was written.
+ * KEYS[1]: IP sends, KEYS[2]: IP in-flight reservations. ARGV[1]: TTL (s), ARGV[2]: now (ms),
+ * ARGV[3]: window (ms), ARGV[4]: sent record member, ARGV[5]: lease (ms), ARGV[6]: reservation or
+ * ''. With a reservation: that in-flight record (if still there) is removed, and the sent record is
+ * added at now; no other in-flight record is touched. Without one: the oldest live in-flight
+ * record (removed) becomes the sent record, or the sent record is just added.
  */
 const IP_ACCEPT_SCRIPT = `-- sms_risk:ip_accept
 ${IP_LEASE_PRUNE}
 local ttl = tonumber(ARGV[1])
 local now = tonumber(ARGV[2])
-local credits = tonumber(redis.call('GET', KEYS[3]) or '0')
-if credits > 0 then
-  redis.call('DECR', KEYS[3])
-  return 0
-end
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. string.format('%.0f', now - tonumber(ARGV[3])))
 prune(KEYS[1], KEYS[2], now, tonumber(ARGV[5]))
-local oldest = redis.call('ZRANGE', KEYS[2], 0, 0)
-if oldest[1] then
-  redis.call('ZREM', KEYS[2], oldest[1])
-  redis.call('ZREM', KEYS[1], 'p:' .. oldest[1])
+local own = ARGV[6]
+if own ~= '' then
+  if redis.call('ZREM', KEYS[2], own) == 1 then redis.call('ZREM', KEYS[1], 'p:' .. own) end
+else
+  local oldest = redis.call('ZRANGE', KEYS[2], 0, 0)
+  if oldest[1] then
+    redis.call('ZREM', KEYS[2], oldest[1])
+    redis.call('ZREM', KEYS[1], 'p:' .. oldest[1])
+  end
 end
 redis.call('ZADD', KEYS[1], string.format('%.0f', now), ARGV[4])
 redis.call('EXPIRE', KEYS[1], ttl)
@@ -492,31 +461,39 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
     kind: 'ip_send' | 'ip_reg',
     appId: string,
     clientIp: string,
+    reservation?: string,
   ): Promise<void> {
-    try {
-      const ip = ipDigest(clientIp);
-      // A send uses up its settle credit, or settles one in-flight reservation of the IP
-      // (IP_ACCEPT_SCRIPT); a registration is a plain record.
-      await store
-        .namespace(SMS_RISK_NAMESPACE)
-        .eval(kind === 'ip_send' ? IP_ACCEPT_SCRIPT : RECORD_SCRIPT, {
-          keys:
-            kind === 'ip_send'
-              ? [`ip_send:${appId}:${ip}`, `ip_pend:${appId}:${ip}`, `ip_credit:${appId}:${ip}`]
-              : [`ip_reg:${appId}:${ip}`],
-          args: [
-            String(clock.now().getTime()),
-            String(WINDOW_MS),
-            randomUUID(),
-            ...(kind === 'ip_send' ? [String(IP_LEASE_MS)] : []),
-          ],
-          ttlSeconds: WINDOW_TTL_SEC,
-        });
-    } catch (error) {
-      logger.warn(
-        { stage: STAGE, app_id: appId, kind, ...failureFields(error) },
-        'sms_risk_record_failed',
-      );
+    const ip = ipDigest(clientIp);
+    // A send turns its own in-flight record (or, without a reservation, the oldest one) into a
+    // sent record (IP_ACCEPT_SCRIPT); a registration is a plain record. A send with a reservation
+    // writes the sent record `s:<reservation>`, so the script is idempotent and is retried once
+    // (a transient failure must not leave the send to the lease); the others run once.
+    const own = kind === 'ip_send' ? reservation : undefined;
+    const attempts = own === undefined ? 1 : 2;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        await store
+          .namespace(SMS_RISK_NAMESPACE)
+          .eval(kind === 'ip_send' ? IP_ACCEPT_SCRIPT : RECORD_SCRIPT, {
+            keys:
+              kind === 'ip_send'
+                ? [`ip_send:${appId}:${ip}`, `ip_pend:${appId}:${ip}`]
+                : [`ip_reg:${appId}:${ip}`],
+            args: [
+              String(clock.now().getTime()),
+              String(WINDOW_MS),
+              own === undefined ? randomUUID() : `s:${own}`,
+              ...(kind === 'ip_send' ? [String(IP_LEASE_MS), own ?? ''] : []),
+            ],
+            ttlSeconds: WINDOW_TTL_SEC,
+          });
+        return;
+      } catch (error) {
+        logger.warn(
+          { stage: STAGE, app_id: appId, kind, attempt, ...failureFields(error) },
+          'sms_risk_record_failed',
+        );
+      }
     }
   }
 
@@ -703,29 +680,6 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
       await releaseReservation(redis, appId, clientIp, reservation);
     },
 
-    async settleIp({ appId, clientIp, reservation }) {
-      if (redis === null) return;
-      try {
-        const ip = ipDigest(clientIp);
-        await redis.namespace(SMS_RISK_NAMESPACE).eval(IP_SETTLE_SCRIPT, {
-          keys: [`ip_send:${appId}:${ip}`, `ip_pend:${appId}:${ip}`, `ip_credit:${appId}:${ip}`],
-          args: [
-            String(clock.now().getTime()),
-            String(WINDOW_MS),
-            reservation,
-            randomUUID(),
-            String(IP_LEASE_MS),
-          ],
-          ttlSeconds: WINDOW_TTL_SEC,
-        });
-      } catch (error) {
-        logger.warn(
-          { stage: STAGE, app_id: appId, kind: 'ip_settle', ...failureFields(error) },
-          'sms_risk_record_failed',
-        );
-      }
-    },
-
     async admitAndReserve({ appId, deviceHash, phone, clientIp }) {
       if (redis === null) return storeFailed(new StoreNotConfigured());
       const sendLimit = await sendLimitOf(appId);
@@ -765,9 +719,9 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
       return judgeDevice(redis, appId, deviceHash, phone, deviceLimit);
     },
 
-    async recordAccepted({ appId, clientIp }) {
+    async recordAccepted({ appId, clientIp, reservation }) {
       if (redis === null) return;
-      if (clientIp !== undefined) await recordIp(redis, 'ip_send', appId, clientIp);
+      if (clientIp !== undefined) await recordIp(redis, 'ip_send', appId, clientIp, reservation);
       await countBudget(redis, appId);
     },
 

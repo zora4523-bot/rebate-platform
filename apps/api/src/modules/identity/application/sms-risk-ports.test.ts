@@ -1,7 +1,7 @@
 // The ports onto risk's IP reservation (B1-11g): landingQuota (admitIp) and the app route's
-// deviceQuota (admitAndReserve) reserve the IP send atomically and hand back a slot whose release /
-// settle name exactly that reservation; afterAccepted's recordAccepted then uses up the settle's
-// credit. The Lua scripts themselves run against a real Redis only in the rule tests
+// deviceQuota (admitAndReserve) reserve the IP send atomically and hand back a slot carrying the
+// reservation; release names exactly that reservation, and afterAccepted hands it to
+// recordAccepted so that exactly that in-flight record becomes the send's record. The Lua scripts themselves run against a real Redis only in the rule tests
 // (test/spec/identity/landing-sms, test/spec/risk/sms-risk); here an in-memory model of the same
 // sets (dispatched on each script's `-- sms_risk:<name>` label) checks which records each step
 // touches, including lost replies and the lease.
@@ -29,7 +29,6 @@ function ports(risk: Partial<SmsRisk>) {
     admitIp: vi.fn(async () => ({ code: 0 as const, reservation: 'r1' })),
     admitAndReserve: vi.fn(async () => ({ code: 0 as const, reservation: 'r2' })),
     releaseIp: vi.fn(async () => undefined),
-    settleIp: vi.fn(async () => undefined),
     recordAccepted: vi.fn(async () => undefined),
     recordRegistered: vi.fn(async () => undefined),
     ...risk,
@@ -113,12 +112,7 @@ it('[AC-B1-11g#13] the app route reserves through admitAndReserve and its slot r
     clientIp: IP,
     reservation: 'r2',
   });
-  await (verdict as SmsIpSlot).settle();
-  expect(p.risk.settleIp).toHaveBeenCalledExactlyOnceWith({
-    appId: 'couli',
-    clientIp: IP,
-    reservation: 'r2',
-  });
+  expect((verdict as SmsIpSlot).reservation).toBe('r2');
 });
 
 it('[AC-B1-11g#13] the app route passes 42901 through; nothing reserved (no IP) is null; no reserving port falls back to admit', async () => {
@@ -139,18 +133,24 @@ it('[AC-B1-11g#13] the app route passes 42901 through; nothing reserved (no IP) 
   expect(admit).toHaveBeenCalledOnce();
 });
 
-it('[AC-B1-11g#19] afterAccepted hands the client IP to recordAccepted (which settles the reservation)', async () => {
+it("[AC-B1-11g#19] afterAccepted hands recordAccepted the send's reservation; without a slot the two-argument call", async () => {
   const p = ports({});
-  await p.smsHooks.afterAccepted(landing);
-  expect(p.risk.recordAccepted).toHaveBeenLastCalledWith({ appId: 'couli', clientIp: IP });
+  const slot = { code: 0 as const, reservation: 'r9', release: async () => undefined };
+  await p.smsHooks.afterAccepted(landing, slot);
+  expect(p.risk.recordAccepted).toHaveBeenLastCalledWith({
+    appId: 'couli',
+    clientIp: IP,
+    reservation: 'r9',
+  });
   await p.smsHooks.afterAccepted(app);
+  expect(p.risk.recordAccepted).toHaveBeenLastCalledWith({ appId: 'couli', clientIp: IP });
+  await p.smsHooks.afterAccepted(app, null);
   expect(p.risk.recordAccepted).toHaveBeenLastCalledWith({ appId: 'couli', clientIp: IP });
 });
 
 /** In-memory model of the IP sets and the other risk keys, one method per script label. */
 function modelRedis(clock: FixedClock) {
   const zsets = new Map<string, Map<string, number>>();
-  const counters = new Map<string, number>();
   const calls: { label: string; keys: string[] }[] = [];
   /** Labels whose next call runs and then loses its reply; `during` runs before the throw. */
   const lost = new Map<string, () => Promise<void>>();
@@ -198,29 +198,20 @@ function modelRedis(clock: FixedClock) {
         if (set(pend).delete(argv[1]!)) set(send).delete(`p:${argv[1]}`);
         return 1;
       }
-      case 'ip_settle': {
-        const [send, pend, credit] = keys as [string, string, string];
-        const now = num(2);
-        dropBefore(send, now - num(3));
-        prune(send, pend, now, num(6));
-        if (set(pend).delete(argv[3]!)) set(send).delete(`p:${argv[3]}`);
-        set(send).set(argv[4]!, now);
-        counters.set(credit, (counters.get(credit) ?? 0) + 1);
-        return 1;
-      }
       case 'ip_accept': {
-        const [send, pend, credit] = keys as [string, string, string];
+        const [send, pend] = keys as [string, string];
         const now = num(2);
-        if ((counters.get(credit) ?? 0) > 0) {
-          counters.set(credit, counters.get(credit)! - 1);
-          return 0;
-        }
         dropBefore(send, now - num(3));
         prune(send, pend, now, num(5));
-        const oldest = [...set(pend)].sort((x, y) => x[1] - y[1])[0];
-        if (oldest !== undefined) {
-          set(pend).delete(oldest[0]);
-          set(send).delete(`p:${oldest[0]}`);
+        const own = argv[5]!;
+        if (own !== '') {
+          if (set(pend).delete(own)) set(send).delete(`p:${own}`);
+        } else {
+          const oldest = [...set(pend)].sort((x, y) => x[1] - y[1])[0];
+          if (oldest !== undefined) {
+            set(pend).delete(oldest[0]);
+            set(send).delete(`p:${oldest[0]}`);
+          }
         }
         set(send).set(argv[3]!, now);
         return 1;
@@ -289,17 +280,19 @@ function model(config: Record<string, unknown> = {}) {
     crypto: ephemeralSmsRiskIndex(),
   });
   const ip = { appId: 'couli', clientIp: IP };
-  /** One accepted send as identity runs it: reserve, settle, recordAccepted. */
-  const acceptedSend = async () => {
+  const reserve = async () => {
     const admission = await risk.admitIp(ip);
     if (admission.code !== 0) throw new Error('refused');
-    await risk.settleIp({ ...ip, reservation: admission.reservation });
-    await risk.recordAccepted(ip);
+    return admission.reservation;
   };
-  return { clock, store, risk, ip, lines, acceptedSend };
+  /** One accepted send as identity runs it: reserve, then recordAccepted with the reservation. */
+  const acceptedSend = async () => {
+    await risk.recordAccepted({ ...ip, reservation: await reserve() });
+  };
+  return { clock, store, risk, ip, lines, reserve, acceptedSend };
 }
 
-it('[AC-B1-11g#11] A reply lost, B reserves and accepts with its own id: B settles only its record; after A cleans up the count equals the sends', async () => {
+it('[AC-B1-11g#11] A reply lost, B reserves and accepts with its own id: B turns only its own record; after A cleans up the count equals the sends', async () => {
   const m = model();
   for (let i = 0; i < 18; i++) await m.risk.recordAccepted(m.ip);
   expect(m.store.sendCount()).toBe(18);
@@ -307,7 +300,7 @@ it('[AC-B1-11g#11] A reply lost, B reserves and accepts with its own id: B settl
   m.store.lost.set('ip_reserve', async () => {
     expect(m.store.pending()).toBe(1);
     await m.acceptedSend();
-    // B's settle took B's own record: A's is still in flight, 18 + A + B.
+    // B's acceptance took B's own record: A's is still in flight, 18 + A + B.
     expect(m.store.pending()).toBe(1);
     expect(m.store.sendCount()).toBe(20);
   });
@@ -318,7 +311,7 @@ it('[AC-B1-11g#11] A reply lost, B reserves and accepts with its own id: B settl
   expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
 });
 
-it('[AC-B1-11g#11] a reservation no one settles or releases stops counting after the lease, not the window', async () => {
+it('[AC-B1-11g#11] a reservation no one accepts or releases stops counting after the lease, not the window', async () => {
   const m = model({ 'sms.ip_sends_per_hour': 1 });
   m.store.lost.set('ip_reserve', async () => {
     m.store.failing.add('ip_release');
@@ -330,13 +323,11 @@ it('[AC-B1-11g#11] a reservation no one settles or releases stops counting after
   expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
 });
 
-it('[AC-B1-11g#12] the settle stamps the record with the acceptance time: reserved 10:00:00, accepted 10:00:09 → 11:00:01 waits 9 s', async () => {
+it('[AC-B1-11g#12] a slow acceptance stamps the record with the acceptance time: reserved 10:00:00, accepted 10:00:09 → 11:00:01 waits 9 s', async () => {
   const m = model({ 'sms.ip_sends_per_hour': 1 });
-  const admission = await m.risk.admitIp(m.ip);
-  if (admission.code !== 0) throw new Error('refused');
+  const reservation = await m.reserve();
   m.clock.set('2026-10-18T10:00:09+08:00');
-  await m.risk.settleIp({ ...m.ip, reservation: admission.reservation });
-  await m.risk.recordAccepted(m.ip);
+  await m.risk.recordAccepted({ ...m.ip, reservation });
   expect(m.store.sendCount()).toBe(1);
   m.clock.set('2026-10-18T11:00:01+08:00');
   expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 9 });
@@ -344,21 +335,57 @@ it('[AC-B1-11g#12] the settle stamps the record with the acceptance time: reserv
   expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
 });
 
-it('[AC-B1-11g#19] settle + recordAccepted count once; a two-argument recordAccepted without a settle settles the oldest in-flight record', async () => {
+it("[AC-B1-11g#11] r4: A accepted, then a Redis blip fails B's record once; the retry records B: counted = sent", async () => {
+  const m = model();
+  for (let i = 0; i < 18; i++) await m.risk.recordAccepted(m.ip);
+  const a = await m.reserve();
+  const b = await m.reserve();
+  await m.risk.recordAccepted({ ...m.ip, reservation: a });
+  m.store.failing.add('ip_accept');
+  await m.risk.recordAccepted({ ...m.ip, reservation: b });
+  expect(m.store.pending()).toBe(0);
+  expect(m.store.sendCount()).toBe(20);
+  // Past the lease nothing drops: both sends stay counted, the 21st is refused.
+  m.clock.advanceMs(60_001);
+  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 42901 });
+  expect(m.store.sendCount()).toBe(20);
+});
+
+it('[AC-B1-11g#11] a lost acceptance reply is retried without counting the send twice', async () => {
+  const m = model();
+  const reservation = await m.reserve();
+  m.store.lost.set('ip_accept', async () => undefined);
+  await m.risk.recordAccepted({ ...m.ip, reservation });
+  expect(m.store.pending()).toBe(0);
+  expect(m.store.sendCount()).toBe(1);
+});
+
+it('[AC-B1-11g#19] with a reservation whose record is gone a sent record is added and no other in-flight record moves', async () => {
+  const m = model();
+  const other = await m.reserve();
+  await m.risk.recordAccepted({ ...m.ip, reservation: 'gone' });
+  expect(m.store.pending()).toBe(1);
+  expect(m.store.sendCount()).toBe(2);
+  await m.risk.releaseIp({ ...m.ip, reservation: other });
+  expect(m.store.sendCount()).toBe(1);
+});
+
+it('[AC-B1-11g#19] a direct two-argument recordAccepted keeps the old path: the oldest in-flight record becomes sent', async () => {
   const m = model();
   await m.acceptedSend();
-  expect(m.store.sendCount()).toBe(1);
-  const first = await m.risk.admitIp(m.ip);
-  const second = await m.risk.admitIp(m.ip);
+  const first = await m.reserve();
+  const second = await m.reserve();
   expect(m.store.sendCount()).toBe(3);
   await m.risk.recordAccepted(m.ip);
   expect(m.store.sendCount()).toBe(3);
   expect(m.store.pending()).toBe(1);
-  // The settled record was the oldest (first); the second's release drops its own.
-  await m.risk.releaseIp({ ...m.ip, reservation: (second as { reservation: string }).reservation });
+  // The record turned was the oldest (first); the second's release drops its own.
+  await m.risk.releaseIp({ ...m.ip, reservation: second });
   expect(m.store.sendCount()).toBe(2);
   // first's own record is gone: its release does nothing more.
-  await m.risk.releaseIp({ ...m.ip, reservation: (first as { reservation: string }).reservation });
+  await m.risk.releaseIp({ ...m.ip, reservation: first });
+  expect(m.store.sendCount()).toBe(2);
+  await m.risk.recordAccepted({ appId: 'couli' });
   expect(m.store.sendCount()).toBe(2);
 });
 

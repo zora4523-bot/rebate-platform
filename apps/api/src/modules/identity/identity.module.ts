@@ -284,7 +284,6 @@ const REFUSING_SMS_RISK: SmsRisk = {
   admitIp: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
   admitAndReserve: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
   releaseIp: () => Promise.resolve(),
-  settleIp: () => Promise.resolve(),
   recordAccepted: () => Promise.resolve(),
   recordRegistered: () => Promise.resolve(),
 };
