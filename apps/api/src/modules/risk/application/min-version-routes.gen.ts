@@ -295,6 +295,36 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "listMessages",
+    "method": "GET",
+    "path": "/v1/messages",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "markMessagesRead",
+    "method": "POST",
+    "path": "/v1/messages/read",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "getUnreadMessageCount",
+    "method": "GET",
+    "path": "/v1/messages/unread-count",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "getWalletSummary",
     "method": "GET",
     "path": "/v1/wallet/summary",
@@ -510,6 +540,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "operationId": "resetTip",
     "method": "DELETE",
     "path": "/v1/me/tips/:tip_key",
+    "gate": true,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "getNotificationSettings",
+    "method": "GET",
+    "path": "/v1/me/notification-settings",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "updateNotificationSettings",
+    "method": "PUT",
+    "path": "/v1/me/notification-settings",
     "gate": true,
     "sessionScopes": [
       "full"

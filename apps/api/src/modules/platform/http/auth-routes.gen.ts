@@ -143,6 +143,21 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/messages",
+    "auth": "login"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/messages/read",
+    "auth": "login"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/messages/unread-count",
+    "auth": "login"
+  },
+  {
+    "method": "GET",
     "path": "/v1/wallet/summary",
     "auth": "login"
   },
@@ -249,6 +264,16 @@ export const CONTRACT_AUTH_ROUTES = [
   {
     "method": "DELETE",
     "path": "/v1/me/tips/:tip_key",
+    "auth": "login"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/me/notification-settings",
+    "auth": "login"
+  },
+  {
+    "method": "PUT",
+    "path": "/v1/me/notification-settings",
     "auth": "login"
   },
   {
