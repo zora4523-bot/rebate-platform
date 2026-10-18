@@ -496,6 +496,20 @@ list('./db/migrations');
     ],
     ["const D = join(__dirname, 'a') + '/b';\nreaddirSync(D);", 'cannot be resolved statically'],
     ["const D = join(__dirname, 'a').slice(1);\nreaddirSync(D);", 'cannot be resolved statically'],
+    // Codex review r3, S2: a name declared twice (a same-named local elsewhere) is no constant.
+    [
+      "const D = join(__dirname, 'data');\nfunction unused() { const D = join(__dirname, 'other'); }\nreaddirSync(D);",
+      'cannot be resolved statically',
+    ],
+    // Codex review r3, S2: a recursive call that may leave the listed tree is not resolved.
+    [
+      "function scan(d, up) { const rows = readdirSync(d); if (up) scan(dirname(d), false); return rows; }\nscan(join(__dirname, 'data'), true);",
+      'cannot be resolved statically',
+    ],
+    [
+      "function scan(d) { for (const n of readdirSync(d)) scan(join(__dirname, n)); }\nscan(join(__dirname, 'data'));",
+      'cannot be resolved statically',
+    ],
     // Codex review r2, S2: a reassigned name is no constant.
     [
       "let D = join(__dirname, 'a');\nD = somewhere();\nreaddirSync(D);",
@@ -517,6 +531,21 @@ list('./db/migrations');
   for (const [text, reason] of cases) {
     const r = listed('test/spec/a/x.test.ts', text);
     expect(r.unresolved, text).toContain(reason);
+  }
+  // A recursive call stays in the tree: the parameter itself, join(param, …), a local const of it.
+  for (const body of [
+    'scan(d)',
+    'scan(join(d, n))',
+    'scan(path.join(d, n))',
+    'const full = path.join(d, n); scan(full)',
+  ]) {
+    expect(
+      listed(
+        'test/spec/a/x.test.ts',
+        `function scan(d) { for (const n of readdirSync(d)) { ${body}; } }\nscan(join(__dirname, 'data'));`,
+      ),
+      body,
+    ).toEqual({ dirs: ['test/spec/a/data'], unresolved: null });
   }
   // Codex review r2, S2: a parameter shadows a same-named constant; the call site decides.
   expect(

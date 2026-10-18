@@ -1100,23 +1100,36 @@ export function listedDirectories(
   const env = new Map<string, PathValue>();
   const initialiserEnds = (k: number): boolean =>
     k >= ts.length || ts[k]?.text === ';' || ts[k]?.text === ',' || (ts[k] as Token).nl;
+  // A name declared twice (a same-named local in another scope) or assigned anywhere outside its
+  // declaration is no constant: scopes are not tracked, so it stays unknown (Codex review r2 and
+  // r3, S2).
+  const declared = new Map<string, number>();
+  const unknown = new Set<string>();
+  for (let i = 0; i + 2 < ts.length; i += 1) {
+    const t = ts[i] as Token;
+    const name = ts[i + 1];
+    if (name?.kind !== 'id') continue;
+    if (t.kind === 'id' && (t.text === 'const' || t.text === 'let' || t.text === 'var')) {
+      declared.set(name.text, (declared.get(name.text) ?? 0) + 1);
+    }
+  }
+  for (const [name, count] of declared) if (count > 1) unknown.add(name);
+  for (let i = 1; i < ts.length; i += 1) {
+    const t = ts[i] as Token;
+    if (t.kind !== 'id' || !declared.has(t.text) || ts[i + 1]?.text !== '=') continue;
+    const before = ts[i - 1]?.text;
+    if (before === 'const' || before === 'let' || before === 'var' || before === '.') continue;
+    unknown.add(t.text);
+  }
   for (let pass = 0; pass < 2; pass += 1) {
     for (let i = 0; i + 3 < ts.length; i += 1) {
       const t = ts[i] as Token;
       if (t.kind !== 'id' || (t.text !== 'const' && t.text !== 'let' && t.text !== 'var')) continue;
       const name = ts[i + 1];
-      if (name?.kind !== 'id' || ts[i + 2]?.text !== '=') continue;
+      if (name?.kind !== 'id' || ts[i + 2]?.text !== '=' || unknown.has(name.text)) continue;
       const r = resolveExpr(ts, i + 3, modulePath, env);
       if (r.value !== null && initialiserEnds(r.end)) env.set(name.text, r.value);
     }
-  }
-  // A name assigned anywhere outside its declaration is not a constant (Codex review r2, S2).
-  for (let i = 1; i < ts.length; i += 1) {
-    const t = ts[i] as Token;
-    if (t.kind !== 'id' || !env.has(t.text) || ts[i + 1]?.text !== '=') continue;
-    const before = ts[i - 1]?.text;
-    if (before === 'const' || before === 'let' || before === 'var' || before === '.') continue;
-    env.delete(t.text);
   }
   const fns = functionsOf(ts);
   // The scope at a position: the constants minus the parameters of every function enclosing it
@@ -1170,13 +1183,64 @@ export function listedDirectories(
       note(`it uses ${call} on a directory that cannot be resolved statically`);
       continue;
     }
+    // The parameter the listing reads (the listed expression must be that parameter itself, or
+    // a resolvable expression over it is handled by resolveWith below).
+    const listedParam =
+      first[1] - first[0] === 1 && ts[first[0]]?.kind === 'id'
+        ? (ts[first[0]] as Token).text
+        : null;
+    const paramIndex = listedParam === null ? -1 : fn.params.indexOf(listedParam);
+    // A recursive call stays in the listed tree only when its argument is the parameter itself,
+    // `join(param, …)` / `path.join(param, …)`, or a local const defined as one of those; anything
+    // else (dirname(param), a sibling) may leave the tree and is not resolved (Codex review r3,
+    // S2).
+    const staysInside = (a: [number, number]): boolean => {
+      if (paramIndex < 0) return false;
+      const isJoinOfParam = (from: number, to: number): boolean => {
+        let j = from;
+        if (ts[j]?.text === 'path' && ts[j + 1]?.text === '.') j += 2;
+        if (ts[j]?.text !== 'join' || ts[j + 1]?.text !== '(') return false;
+        const inner = argsOf(ts, j + 1);
+        const close = closeOf(ts, j + 1);
+        if (inner === null || inner.length === 0 || close !== to - 1) return false;
+        const head = inner[0] as [number, number];
+        return head[1] - head[0] === 1 && ts[head[0]]?.text === listedParam;
+      };
+      if (a[1] - a[0] === 1 && ts[a[0]]?.kind === 'id') {
+        const id = (ts[a[0]] as Token).text;
+        if (id === listedParam) return true;
+        // A local `const id = join(param, …)` inside the function body.
+        for (let j = fn.bodyStart; j < fn.bodyEnd - 3; j += 1) {
+          if (ts[j]?.text === 'const' && ts[j + 1]?.text === id && ts[j + 2]?.text === '=') {
+            // The initialiser: up to a `;`, `,` or line break outside brackets.
+            let end = j + 3;
+            let depth = 0;
+            while (end < fn.bodyEnd) {
+              const text = ts[end]?.kind === 'punct' ? (ts[end] as Token).text : '';
+              if (depth === 0 && end > j + 3 && initialiserEnds(end)) break;
+              if (text === '(' || text === '[' || text === '{') depth += 1;
+              else if (text === ')' || text === ']' || text === '}') depth -= 1;
+              end += 1;
+            }
+            return isJoinOfParam(j + 3, end);
+          }
+        }
+        return false;
+      }
+      return isJoinOfParam(a[0], a[1]);
+    };
     let calls = 0;
     let failed = false;
     for (let k = 0; k < ts.length; k += 1) {
       const c = ts[k] as Token;
       if (c.kind !== 'id' || c.text !== fn.name || ts[k + 1]?.text !== '(') continue;
-      if (fn.bodyStart <= k && k <= fn.bodyEnd) continue; // a recursive call: the same tree
       if (ts[k - 1]?.text === 'function') continue; // the declaration itself
+      if (fn.bodyStart <= k && k <= fn.bodyEnd) {
+        const rarg = (argsOf(ts, k + 1) ?? [])[paramIndex];
+        if (rarg !== undefined && staysInside(rarg)) continue; // a recursive walk of the same tree
+        failed = true;
+        break;
+      }
       calls += 1;
       const cargs = argsOf(ts, k + 1) ?? [];
       const callScope = scopeAt(k);
