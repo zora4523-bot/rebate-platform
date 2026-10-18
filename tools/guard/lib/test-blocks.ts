@@ -825,19 +825,12 @@ function literalTexts(tokens: readonly Token[]): string[] {
   return out;
 }
 
-/** Calls that list directories or load files / modules by a computed name. */
-const DYNAMIC_ACCESS = new Set([
-  'readdir',
-  'readdirSync',
-  'opendir',
-  'opendirSync',
-  'glob',
-  'globSync',
-  'require',
-  'createRequire',
-]);
+/** Calls that load files / modules by a computed name (never resolved: always dynamic). */
+const DYNAMIC_ACCESS = new Set(['glob', 'globSync', 'require', 'createRequire']);
+/** Calls that list a directory: resolved statically when they can be (listedDirectories). */
+const LISTING = new Set(['readdir', 'readdirSync', 'opendir', 'opendirSync']);
 
-/** The reason a module may load files it does not name, or null. */
+/** The reason a module may load files it does not name, or null (directory listings aside). */
 function dynamicAccess(code: readonly Token[]): string | null {
   const tokens = flatten(code);
   for (let i = 0; i < tokens.length; i += 1) {
@@ -857,6 +850,334 @@ function dynamicAccess(code: readonly Token[]): string | null {
   return null;
 }
 
+/** Repo-relative normalised path of `dir` + `spec` (POSIX segments), or null when it escapes. */
+function joinPath(dir: string, spec: string): string | null {
+  const parts = dir === '' ? [] : dir.split('/');
+  for (const p of spec.split('/')) {
+    if (p === '' || p === '.') continue;
+    if (p === '..') {
+      if (parts.length === 0) return null;
+      parts.pop();
+    } else {
+      parts.push(p);
+    }
+  }
+  return parts.join('/');
+}
+
+/** Index of the bracket that closes the one at `open`, or -1. */
+function closeOf(ts: readonly Token[], open: number): number {
+  let depth = 0;
+  for (let i = open; i < ts.length; i += 1) {
+    const text = ts[i]?.kind === 'punct' ? (ts[i] as Token).text : '';
+    if (text === '(' || text === '[' || text === '{') depth += 1;
+    else if (text === ')' || text === ']' || text === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** The top-level arguments between ts[open] === '(' and its close: [start, end) index pairs. */
+function argsOf(ts: readonly Token[], open: number): [number, number][] | null {
+  const close = closeOf(ts, open);
+  if (close < 0) return null;
+  const out: [number, number][] = [];
+  let start = open + 1;
+  let depth = 0;
+  for (let i = open + 1; i < close; i += 1) {
+    const text = ts[i]?.kind === 'punct' ? (ts[i] as Token).text : '';
+    if (text === '(' || text === '[' || text === '{') depth += 1;
+    else if (text === ')' || text === ']' || text === '}') depth -= 1;
+    else if (text === ',' && depth === 0) {
+      out.push([start, i]);
+      start = i + 1;
+    }
+  }
+  if (start < close) out.push([start, close]);
+  return out;
+}
+
+/**
+ * A path value resolved statically: `url` marks `new URL(…)` / import.meta.url semantics; `raw`
+ * keeps the literal text a parameter was called with, for `new URL(p, base)` and join segments.
+ */
+type PathValue = { path: string; url: boolean; raw?: string };
+
+/** The static string of a literal or expression-free template token, or null. */
+function staticString(t: Token | undefined): string | null {
+  if (t === undefined) return null;
+  if (t.kind === 'str') return typeof t.value === 'string' ? t.value : null;
+  if (t.kind === 'tpl' && t.parts?.length === 1) return t.parts[0] ?? null;
+  return null;
+}
+
+/**
+ * Resolves the path expression at ts[i] (CT-06r), given the module's path and the constants
+ * already resolved: a `./` or `../` literal (relative to the module), `__dirname`,
+ * `import.meta.dirname`, `import.meta.url`, a known constant, `path.join` / `join` /
+ * `path.resolve` / `resolve` of a resolved first argument and literal segments, `path.dirname` /
+ * `dirname` of a resolved value, `fileURLToPath(…)`, `new URL(literal, resolved)`, and
+ * parentheses around any of these. Anything else is null (not resolved). `end` is the index after
+ * the expression when resolved.
+ */
+function resolveExpr(
+  ts: readonly Token[],
+  i: number,
+  modulePath: string,
+  env: ReadonlyMap<string, PathValue>,
+): { value: PathValue | null; end: number } {
+  const none = { value: null, end: i };
+  const t = ts[i];
+  if (t === undefined) return none;
+  const after = (value: PathValue | null, end: number) => {
+    // `.href` / `.pathname` of a URL value: the same path.
+    if (
+      value !== null &&
+      ts[end]?.text === '.' &&
+      /^(href|pathname)$/.test(ts[end + 1]?.text ?? '')
+    ) {
+      return { value, end: end + 2 };
+    }
+    return { value, end };
+  };
+  const literal = staticString(t);
+  if (literal !== null) {
+    if (!literal.startsWith('./') && !literal.startsWith('../')) return none;
+    const path = joinPath(dirOf(modulePath), literal.replace(/[?#].*$/, ''));
+    return path === null ? none : { value: { path, url: false, raw: literal }, end: i + 1 };
+  }
+  // The literal text a parameter or constant stands for (a call like list('./x')).
+  const rawOf = (k: number): string | null =>
+    staticString(ts[k]) ??
+    (ts[k]?.kind === 'id' ? (env.get((ts[k] as Token).text)?.raw ?? null) : null);
+  if (t.kind === 'punct' && t.text === '(') {
+    const inner = resolveExpr(ts, i + 1, modulePath, env);
+    if (inner.value === null || ts[inner.end]?.text !== ')') return none;
+    return after(inner.value, inner.end + 1);
+  }
+  if (t.kind !== 'id') return none;
+  if (t.text === '__dirname') return { value: { path: dirOf(modulePath), url: false }, end: i + 1 };
+  if (t.text === 'import' && ts[i + 1]?.text === '.' && ts[i + 2]?.text === 'meta') {
+    if (ts[i + 3]?.text === '.' && ts[i + 4]?.text === 'dirname') {
+      return { value: { path: dirOf(modulePath), url: false }, end: i + 5 };
+    }
+    if (ts[i + 3]?.text === '.' && ts[i + 4]?.text === 'url') {
+      return { value: { path: modulePath, url: true }, end: i + 5 };
+    }
+    return none;
+  }
+  // `new URL(literal, base)`: the literal is resolved against the directory of the base file (or
+  // the base directory when it ends with "/").
+  if (t.text === 'new' && ts[i + 1]?.text === 'URL' && ts[i + 2]?.text === '(') {
+    const args = argsOf(ts, i + 2);
+    if (args === null || args.length !== 2) return none;
+    const [specArg, baseArg] = args as [[number, number], [number, number]];
+    const spec = specArg[1] - specArg[0] === 1 ? rawOf(specArg[0]) : null;
+    const base = resolveExpr(ts, baseArg[0], modulePath, env);
+    if (spec === null || base.value === null || base.end !== baseArg[1]) return none;
+    if (spec.startsWith('/') || /^[a-z]+:/i.test(spec)) return none;
+    const from = base.value.path.endsWith('/')
+      ? base.value.path.slice(0, -1)
+      : dirOf(base.value.path);
+    const joined = joinPath(from, spec.replace(/[?#].*$/, ''));
+    if (joined === null) return none;
+    return after(
+      { path: spec.endsWith('/') ? `${joined}/` : joined, url: true },
+      closeOf(ts, i + 2) + 1,
+    );
+  }
+  // `path.x(…)` or a bare `x(…)` (x = join, resolve, dirname); `fileURLToPath(…)`.
+  let fn = t.text;
+  let open = i + 1;
+  if ((fn === 'path' || fn === 'node') && ts[i + 1]?.text === '.' && ts[i + 2]?.kind === 'id') {
+    fn = (ts[i + 2] as Token).text;
+    open = i + 3;
+  }
+  if (
+    ts[open]?.text === '(' &&
+    (fn === 'join' || fn === 'resolve' || fn === 'dirname' || fn === 'fileURLToPath')
+  ) {
+    const args = argsOf(ts, open);
+    if (args === null || args.length === 0) return none;
+    const end = closeOf(ts, open) + 1;
+    const first = args[0] as [number, number];
+    const head = resolveExpr(ts, first[0], modulePath, env);
+    if (head.value === null || head.end !== first[1]) return none;
+    const headPath = head.value.path.endsWith('/') ? head.value.path.slice(0, -1) : head.value.path;
+    if (fn === 'fileURLToPath') {
+      return args.length === 1 ? after({ path: headPath, url: false }, end) : none;
+    }
+    if (fn === 'dirname') {
+      return args.length === 1 ? after({ path: dirOf(headPath), url: false }, end) : none;
+    }
+    let path: string | null = headPath;
+    for (const [s, e] of args.slice(1)) {
+      const segment = e - s === 1 ? rawOf(s) : null;
+      if (segment === null || segment.startsWith('/')) return none;
+      path = joinPath(path, segment);
+      if (path === null) return none;
+    }
+    return after({ path, url: false }, end);
+  }
+  const known = env.get(t.text);
+  if (known !== undefined && ts[i + 1]?.text !== '(') return after(known, i + 1);
+  return none;
+}
+
+/** A function of the module: its name, parameter names (null: not a plain name) and body range. */
+type Fn = { name: string; params: (string | null)[]; bodyStart: number; bodyEnd: number };
+
+/** Parameter names of the list between ts[open] === '(' and its close. */
+function paramNames(ts: readonly Token[], open: number): (string | null)[] | null {
+  const args = argsOf(ts, open);
+  if (args === null) return null;
+  return args.map(([s]) => (ts[s]?.kind === 'id' ? (ts[s] as Token).text : null));
+}
+
+/** The named functions of the module (declarations and `const f = (…) => {…}`). */
+function functionsOf(ts: readonly Token[]): Fn[] {
+  const out: Fn[] = [];
+  for (let i = 0; i < ts.length; i += 1) {
+    const t = ts[i] as Token;
+    if (t.kind !== 'id') continue;
+    let name: string | null = null;
+    let open = -1;
+    if (t.text === 'function' && ts[i + 1]?.kind === 'id' && ts[i + 2]?.text === '(') {
+      name = (ts[i + 1] as Token).text;
+      open = i + 2;
+    } else if (
+      (t.text === 'const' || t.text === 'let' || t.text === 'var') &&
+      ts[i + 1]?.kind === 'id' &&
+      ts[i + 2]?.text === '='
+    ) {
+      let j = i + 3;
+      if (ts[j]?.text === 'async') j += 1;
+      if (ts[j]?.text === 'function') {
+        j += 1;
+        if (ts[j]?.kind === 'id') j += 1;
+      }
+      if (ts[j]?.text === '(') {
+        name = (ts[i + 1] as Token).text;
+        open = j;
+      }
+    }
+    if (name === null || open < 0) continue;
+    const close = closeOf(ts, open);
+    if (close < 0) continue;
+    const params = paramNames(ts, open);
+    if (params === null) continue;
+    // The body: `{` after the parameters (past a return type or `=>`), or an expression body.
+    let j = close + 1;
+    while (j < ts.length && ts[j]?.text !== '{' && ts[j]?.text !== '=>' && !(ts[j] as Token).nl)
+      j += 1;
+    if (ts[j]?.text === '=>') j += 1;
+    if (ts[j]?.text !== '{') continue;
+    const bodyEnd = closeOf(ts, j);
+    if (bodyEnd < 0) continue;
+    out.push({ name, params, bodyStart: j, bodyEnd });
+  }
+  return out;
+}
+
+/**
+ * The directories a module lists (readdir, readdirSync, opendir, opendirSync; CT-06r, after
+ * B1-12g): each listing's directory is resolved statically (resolveExpr) through the module's
+ * constants; a listing inside a named function whose directory comes from a parameter is
+ * resolved at every call of that function outside its own body (a recursive call inside it
+ * walks the same tree). `dirs` are repo-relative; `unresolved` says why a listing could not be
+ * resolved (the module is then treated as able to read anything, as before).
+ */
+export function listedDirectories(
+  code: readonly Token[],
+  modulePath: string,
+): { dirs: string[]; unresolved: string | null } {
+  const ts = code;
+  // Constants: `const NAME = <path expression>`; two passes for a forward reference.
+  const env = new Map<string, PathValue>();
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (let i = 0; i + 3 < ts.length; i += 1) {
+      const t = ts[i] as Token;
+      if (t.kind !== 'id' || (t.text !== 'const' && t.text !== 'let' && t.text !== 'var')) continue;
+      const name = ts[i + 1];
+      if (name?.kind !== 'id' || ts[i + 2]?.text !== '=') continue;
+      const r = resolveExpr(ts, i + 3, modulePath, env);
+      if (r.value !== null) env.set(name.text, r.value);
+    }
+  }
+  const fns = functionsOf(ts);
+  const dirs = new Set<string>();
+  let unresolved: string | null = null;
+  const note = (what: string): void => {
+    if (unresolved === null) unresolved = what;
+  };
+  // A listing inside a template expression is not followed.
+  for (const t of flatten(ts)) {
+    if (t.kind === 'tpl') {
+      for (const x of flatten(t.inner ?? [])) {
+        if (x.kind === 'id' && LISTING.has(x.text))
+          note(`it uses ${x.text} inside a template expression`);
+      }
+    }
+  }
+  for (let i = 0; i < ts.length; i += 1) {
+    const t = ts[i] as Token;
+    if (t.kind !== 'id' || !LISTING.has(t.text) || ts[i + 1]?.text !== '(') continue;
+    const call = `${t.text}(…)`;
+    const args = argsOf(ts, i + 1);
+    const first = args?.[0];
+    if (first === undefined) {
+      note(`it uses ${call} without a directory`);
+      continue;
+    }
+    const resolveWith = (scope: ReadonlyMap<string, PathValue>): string | null => {
+      const r = resolveExpr(ts, first[0], modulePath, scope);
+      if (r.value === null || r.end !== first[1]) return null;
+      return r.value.path.endsWith('/') ? r.value.path.slice(0, -1) : r.value.path;
+    };
+    const direct = resolveWith(env);
+    if (direct !== null) {
+      dirs.add(direct);
+      continue;
+    }
+    // Inside a named function: resolve the directory at each call outside the function.
+    const inside = fns.filter((f) => f.bodyStart < i && i < f.bodyEnd);
+    const fn = inside.length === 0 ? undefined : inside[inside.length - 1];
+    if (fn === undefined || fn.params.every((p) => p === null)) {
+      note(`it uses ${call} on a directory that cannot be resolved statically`);
+      continue;
+    }
+    let calls = 0;
+    let failed = false;
+    for (let k = 0; k < ts.length; k += 1) {
+      const c = ts[k] as Token;
+      if (c.kind !== 'id' || c.text !== fn.name || ts[k + 1]?.text !== '(') continue;
+      if (fn.bodyStart <= k && k <= fn.bodyEnd) continue; // a recursive call: the same tree
+      if (ts[k - 1]?.text === 'function') continue; // the declaration itself
+      calls += 1;
+      const cargs = argsOf(ts, k + 1) ?? [];
+      const scope = new Map(env);
+      fn.params.forEach((p, idx) => {
+        const a = cargs[idx];
+        if (p === null || a === undefined) return;
+        const r = resolveExpr(ts, a[0], modulePath, env);
+        if (r.value !== null && r.end === a[1]) scope.set(p, r.value);
+      });
+      const dir = resolveWith(scope);
+      if (dir === null) {
+        failed = true;
+        break;
+      }
+      dirs.add(dir);
+    }
+    if (calls === 0 || failed) {
+      note(`it uses ${call} in ${fn.name}() on a directory that cannot be resolved statically`);
+    }
+  }
+  return { dirs: [...dirs].sort(), unresolved };
+}
+
 export type Module = {
   path: string;
   text: string;
@@ -864,6 +1185,8 @@ export type Module = {
   literals: string[] | null;
   /** Why the module may load files it does not name (dynamicAccess), or null. */
   dynamic: string | null;
+  /** The directories it lists, resolved statically (CT-06r); [] when it lists none. */
+  lists: string[];
 };
 
 /**
@@ -894,7 +1217,15 @@ export function relativeClosure(
       tokens = null; // mayReadSupport: a module that cannot be read may read anything
     }
     const literals = tokens === null ? null : literalTexts(tokens);
-    out.push({ path, text, literals, dynamic: tokens === null ? null : dynamicAccess(tokens) });
+    const listed =
+      tokens === null ? { dirs: [], unresolved: null } : listedDirectories(tokens, path);
+    out.push({
+      path,
+      text,
+      literals,
+      dynamic: tokens === null ? null : (dynamicAccess(tokens) ?? listed.unresolved),
+      lists: listed.dirs,
+    });
     for (const s of literals ?? []) {
       if (!s.startsWith('./') && !s.startsWith('../')) continue;
       const target = resolveRelative(path, s.replace(/[?#].*$/, ''));
@@ -918,11 +1249,13 @@ export function relativeClosure(
  * file inside its test_paths), or null when it cannot (CT-06p; conservative: the file is then
  * judged as a whole). `closure` is the file and the modules it loads (relativeClosure). It may
  * when: the support file is one of those modules; its file name occurs anywhere in their text;
- * its name without the extension occurs as a word in their string literals; one of them lists
- * directories or loads by a computed name (readdir, glob, require, a dynamic import of a computed
- * specifier) or cannot be tokenized; or the support file is named after the rule-test file (a
- * snapshot or screenshot: a path segment equal to its file name, or a file name that starts with
- * it).
+ * its name without the extension occurs as a word in their string literals; one of them lists a
+ * directory that holds the support file (CT-06r: readdir & co. resolved statically; a listing
+ * whose directory cannot be resolved counts as reading anything, the reason says so) or loads by
+ * a computed name (glob, require, a dynamic import of a computed specifier) or cannot be
+ * tokenized; or the support file is named after the rule-test file (a snapshot or screenshot:
+ * CT-06r, after B1-12g, only below the rule-test file's own directory — `__snapshots__/x.test.ts.snap`,
+ * `__screenshots__/x.test.ts/…` — a same-named file in another directory is another test).
  */
 export function mayReadSupport(
   file: string,
@@ -931,7 +1264,10 @@ export function mayReadSupport(
 ): string | null {
   const name = baseName(support);
   const own = baseName(file);
-  if (support.split('/').includes(own) || name.startsWith(`${own}.`)) {
+  const dir = dirOf(file);
+  const below =
+    dir === '' ? support : support.startsWith(`${dir}/`) ? support.slice(dir.length + 1) : null;
+  if (below !== null && (below.split('/').includes(own) || name.startsWith(`${own}.`))) {
     return `${support} is named after it (a snapshot or screenshot file)`;
   }
   const dot = name.lastIndexOf('.');
@@ -942,6 +1278,8 @@ export function mayReadSupport(
     if (m.text.includes(name)) return `${m.path} names ${name}`;
     if (m.literals === null) return `${m.path} cannot be read as code, so it may read ${support}`;
     if (m.literals.some((s) => word.test(s))) return `${m.path} names ${stem}`;
+    const listed = m.lists.find((d) => support === d || support.startsWith(`${d}/`));
+    if (listed !== undefined) return `${m.path} lists ${listed}, which holds ${support}`;
     if (m.dynamic !== null) return `${m.path} may read ${support}: ${m.dynamic}`;
   }
   return null;
