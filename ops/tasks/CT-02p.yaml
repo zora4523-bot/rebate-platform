@@ -1,0 +1,29 @@
+id: CT-02p
+repo: rebate-platform
+title: 契约同步（只改说明文字）：adminEnableUserUnionBinding 对风控状态为 banned 的用户拒绝 30154（封禁期间绑定保持 blocked）；adminUpdateUserRiskState 的站内信 RISK_STATE_CHANGED 改写为「由通知模块发送」
+type: contract
+# 2026-10-18 入账（admin-backend，编排 10-18 09:2x 裁定 ① ②；起因台账 #696 Claude 评审 r1 S1-1 与 S2-3）。
+# ① 已封禁用户的绑定若为 blocked(admin_disable)，后台执行 enable 会回到 invalid，违反 BR-ID-31「封禁时绑定置 blocked」与 BR-ID-20 封禁后注销不自动释放：enable 对 banned 用户一律 30154。
+# ② 主干没有站内信发送实现：契约改为风控状态变更后由通知模块发送 RISK_STATE_CHANGED（BR-TEXT-23），F1-07d 只调通知端口，缺的发送部分留 TODO。
+# 不加操作、字段、错误码与枚举（30154 已由 CT-02j 定）；说明文字进 openapi.gen.ts，生成物必变，按形状类登记占契约槽。
+# 站内信的发送（订阅 setRiskState 已发的 risk.state_changed、发 RISK_STATE_CHANGED）归通知线，本线已在 notices 请其入账（见 10-17 04:56 与 10-18 条）。
+refs: [BR-ID-20, BR-ID-31, BR-TEXT-23]
+refs_hash:
+  BR-ID-20: 137b3e93abfb
+  BR-ID-31: 9d0a87b99069
+  BR-TEXT-23: e3d452417b5c
+contract_sections: ['6.6']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
