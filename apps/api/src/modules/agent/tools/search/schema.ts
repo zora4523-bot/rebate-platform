@@ -13,6 +13,16 @@ export function defaultPageSize(): number {
   return 8;
 }
 
+/** B3-04e · BR-AI-05 "换一批" → page+1; 08 sets no cap, 5 only guards abuse. */
+export function maxSearchPage(): number {
+  return 5;
+}
+
+/** B3-04e · BR-AI-08 spec word (e.g. 24盒, 500ml); 08 sets no cap, 50 characters. */
+export function maxSpecLength(): number {
+  return 50;
+}
+
 /** BR-AI-08: 0 < price ≤ 10,000,000 fen. */
 export function maxPriceFen(): number {
   return 10_000_000;
@@ -24,7 +34,8 @@ export function searchProductsDefinition(platforms: readonly string[]): ToolDefi
     name: 'search_products',
     description:
       'Search products on the enabled shopping platforms. Prices are integer fen and compare ' +
-      'with the final price; sort is one of the listed values (default relevance).',
+      'with the final price; sort is one of the listed values (default relevance). Put a ' +
+      'spec word (size, count, volume) in spec, not in q; page asks for the next batch.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -41,6 +52,10 @@ export function searchProductsDefinition(platforms: readonly string[]): ToolDefi
         price_min_fen: price,
         price_max_fen: { ...price },
         limit: { type: 'integer', minimum: 1, maximum: defaultPageSize() },
+        // BR-AI-08: the spec word the model splits out of the user text; q never contains it.
+        spec: { type: 'string', minLength: 1, maxLength: maxSpecLength() },
+        // BR-AI-05: the page for "换一批" (page+1); omitted means the first page.
+        page: { type: 'integer', minimum: 1, maximum: maxSearchPage() },
       },
     },
   };
