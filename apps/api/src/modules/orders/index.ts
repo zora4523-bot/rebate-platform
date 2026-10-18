@@ -1,4 +1,13 @@
 // Public surface of the orders module (规划/02 §4.1); other modules import only from this file.
+export { matchOrderSource, parseLinkCode } from './domain/source-backfill.ts';
+export type {
+  ExactLink,
+  LinkLogCandidate,
+  MatchOrderSourceInput,
+  OrderSourceMatch,
+} from './domain/source-backfill.ts';
+export { backfillOrderSource } from './application/source-backfill.ts';
+export type { BackfillOrderSourceInput, OrderSourcePorts } from './application/source-backfill.ts';
 // Task B1-08h: attribution pipeline main transaction (BR-ATTR-01/02/06/07/08/22/25). The lock,
 // user attribution and buy_type helpers are shared with B1-08i, claim and admin changes.
 export { createOrderPipeline } from './application/pipeline-port.ts';

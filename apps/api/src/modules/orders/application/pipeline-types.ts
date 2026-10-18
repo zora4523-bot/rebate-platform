@@ -6,6 +6,7 @@ import type { RegisteredPlatform, UnionOrder } from '../../union/index.ts';
 import type { BindingRow } from '../domain/attribution.ts';
 import type { StatusMap } from '../domain/status-map.ts';
 import type { OrderSyncWindow, SyncLogger } from './sync-ports.ts';
+import type { OrderSourcePorts } from './source-backfill.ts';
 
 export interface OrderPipelineContext extends OrderSyncWindow {
   readonly requestId: string;
@@ -34,6 +35,7 @@ export interface OrderPipelineResult {
 }
 
 export interface OrderPipelineDeps {
+  readonly sources?: OrderSourcePorts;
   /**
    * 事件总线（B1-08i，02 §11）：领域事件 order.created 与告警事件 order.illegal_transition、
    * order.attr_binding_conflict 都经它、与本次写库同一事务入队，入队失败整事务回滚。

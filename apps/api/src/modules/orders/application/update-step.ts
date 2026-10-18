@@ -79,6 +79,8 @@ export interface OrderUpdateDeps extends Pick<
   OrderPipelineDeps,
   'clock' | 'users' | 'bindings' | 'statusMaps' | 'logger'
 > {
+  readonly sources?: OrderPipelineDeps['sources'];
+  readonly pids?: OrderPipelineDeps['pids'];
   /** settlement 实现（B1-08n 接线）；与本次写库同一事务调用，抛错整事务回滚。 */
   readonly rebate: {
     onUpdated(
