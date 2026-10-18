@@ -5325,6 +5325,106 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminUpdateUserRiskState": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "user_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "reason",
+        "expected_row_version"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "ban and unban (permission point risk.ban), freeze and unfreeze (risk.freeze); 04 §11.2,\nBR-ID-31, BR-ID-36.\n",
+          "enum": [
+            "ban",
+            "unban",
+            "freeze",
+            "unfreeze"
+          ]
+        },
+        "reason_category": {
+          "allOf": [
+            {
+              "type": "string",
+              "description": "User-visible reason category of a ban or freeze (enum risk_reason_category; BR-TEXT-23 细则\n「原因类别」, user text from the dictionary risk_reason.<category>).\n",
+              "enum": [
+                "malicious_rights",
+                "fraud_invite",
+                "abnormal_trade",
+                "account_security",
+                "other"
+              ]
+            }
+          ],
+          "description": "Required for ban and freeze; not accepted for unban and unfreeze (20001)."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Required free-text reason, kept in the audit record."
+        },
+        "frozen_until": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Only for freeze: end of the freeze, later than the server's current time; null or\nabsent = without end (BR-ID-36). Given with another action → 20001.\n"
+        },
+        "expected_row_version": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "description": "row_version of the row as read (users' risk state, a union binding); plus 1 on every\nchange. The CAS value `expected_row_version` of the writes.\n"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "risk.row_version as the console showed it; null = no row seen, only accepted while the\nuser still has no row. Any mismatch (null against an existing row, an integer against\nno row or another version) is 20902.\n"
+        }
+      }
+    }
+  },
   "adminResetUserUnionBinding": {
     "headers": {
       "type": "object",

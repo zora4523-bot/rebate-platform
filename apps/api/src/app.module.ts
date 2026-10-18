@@ -69,6 +69,8 @@ import {
   createInviteBackfillActivityReader,
   createInviteLoginDevicesReader,
   createOrderUserReader,
+  revokeSessionsByUser,
+  unbindRevoked,
   type IdentityAttrCodeReader,
   type IdentityConfigReader,
   type IdentityContext,
@@ -92,6 +94,8 @@ import {
   LinkingAdminModule,
   LinkingModule,
   createOrderBindingReader,
+  blockForBan,
+  restoreAfterUnban,
   createOrderLinkReader,
   createPendingAttemptStore,
   createUnionAuthReads,
@@ -149,6 +153,7 @@ import {
   isHttpEntry,
 } from './modules/platform/index.ts';
 import {
+  RiskAdminModule,
   RiskModule,
   RiskScanModule,
   SIGNATURE_CHECK,
@@ -395,10 +400,7 @@ function identityModule(): DynamicModule {
     },
     pushTokens: {
       inject: [CLOCK],
-      useFactory: (clock: Clock): SessionPushTokens => ({
-        bind: (trx, session) => bindPushTokensForSession(trx, session, clock),
-        unbind: (trx, session) => unbindPushTokensForSession(trx, session, clock),
-      }),
+      useFactory: sessionPushTokens,
     },
     // Stage ⑨'s real-name status port (B1-02za), also GET /v1/me's realname_status: app.realname
     // read on the caller's handle, uncached (B1-13d).
@@ -1223,6 +1225,14 @@ const identityAttrCodes = {
     db === undefined ? createUnavailableAttrCodeReader() : createIdentityAttrCodeReader(db),
 };
 
+/** identity's push token port onto notification's commands (B1-12b), for every entry that ends sessions. */
+function sessionPushTokens(clock: Clock): SessionPushTokens {
+  return {
+    bind: (trx, session) => bindPushTokensForSession(trx, session, clock),
+    unbind: (trx, session) => unbindPushTokensForSession(trx, session, clock),
+  };
+}
+
 @Module({})
 export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
@@ -1273,6 +1283,23 @@ export class AppModule {
                 auditWriter: (db, clock) =>
                   createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
                 configReader: (db, clock) => createContentReader({ db, clock }),
+              }),
+            ]
+          : []),
+        // risk's /admin/v1 ban / unban / freeze / unfreeze (F1-07d, BR-ID-31): guarded by
+        // AdminOperationGuard; the state change, identity's revocation of every session of the
+        // user (with the push token unbinding, as on the api entry), linking's binding ports and
+        // the audit row (admin's writer bound to the change's transaction) commit together. Its
+        // risk state writer stamps REDIS so the api entry's cached states end at once.
+        ...(options.entry === 'admin'
+          ? [
+              RiskAdminModule.forAdmin({
+                auditWriter: (db, clock) =>
+                  createAuditWriter({ db, clock, sensitiveKeys: SENSITIVE_KEYS }),
+                revokeSessions: (clock) => (trx, input) =>
+                  revokeSessionsByUser(trx, input, clock, unbindRevoked(sessionPushTokens(clock))),
+                blockForBan,
+                restoreAfterUnban,
               }),
             ]
           : []),

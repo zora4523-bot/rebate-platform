@@ -1,9 +1,18 @@
 // Public surface of the risk module. Other modules import only from this file.
-export { AdminRiskState } from './application/admin-risk-state.ts';
+// Task F1-07d: the console's ban / unban / freeze / unfreeze (PUT /admin/v1/users/{user_id}/
+// risk-state; BR-ID-31; admin entry only). Rule tests: test/spec/risk/admin-risk-state/**.
+export {
+  AdminRiskState,
+  AdminRiskStateFieldsError,
+  AdminRiskStateNotAllowedError,
+} from './application/admin-risk-state.ts';
 export type {
+  AdminRiskAction,
   AdminRiskStateCommand,
   AdminRiskStateOptions,
 } from './application/admin-risk-state.ts';
+export { RiskAdminModule } from './risk-admin.module.ts';
+export type { RiskAdminOptions } from './risk-admin.module.ts';
 export { createInviteRelationHitWriter } from './application/invite-relation-hits.ts';
 export type {
   InviteRelationHitRuleId,
@@ -79,9 +88,11 @@ export type {
   RiskScanHealSchedule,
 } from './application/risk-scan-heal.ts';
 export {
+  RISK_STATE_STAMP_NAMESPACE,
   RiskStateConflictError,
   RiskStateTransitionError,
   createRiskStateService,
+  raiseRiskStateStamp,
   riskStateServiceToken,
 } from './application/risk-state.ts';
 export { canTransitionRiskState } from './domain/risk-state-transitions.ts';

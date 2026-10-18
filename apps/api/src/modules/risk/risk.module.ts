@@ -14,7 +14,8 @@
 // Stage ⑤ (risk state, 10006, B1-03h) sits between ④a and ⑬ on both paths: the chained guard
 // runs ④a, ⑤, ⑬, and ⑤'s post-miss hook is registered after ④a's and before ⑬'s. Its service
 // (riskStateServiceToken(), the single writer of user_risk_state) needs DB and EVENT_BUS; without
-// them stage ⑤ is not installed (one info line `risk_state_gate_disabled` at startup).
+// them stage ⑤ is not installed (one info line `risk_state_gate_disabled` at startup). With REDIS
+// it reads and writes the cross-process version stamp of the cached states (F1-07d).
 // Stages ⑥–⑫ of other modules (today identity's ⑧ ⑨ level check and ⑫ step-up) come from
 // app.module through two optional lists: `beforeRateLimit` (post-miss checks, after ⑤'s hook) and
 // `beforeRateLimitGuards` (chained in the global guard after ⑤); risk imports none of them.
@@ -456,18 +457,27 @@ export class RiskModule {
             ROOT_LOGGER,
             { token: DB, optional: true },
             { token: EVENT_BUS, optional: true },
+            { token: REDIS, optional: true },
           ],
           useFactory: (
             clock: Clock,
             logger: RootLogger,
             db?: Kysely<Database>,
             events?: EventBus,
+            redis?: RedisHandle,
           ): RiskStateService | null => {
             if (db === undefined || events === undefined) {
               logger.info({ stage: '5' }, 'risk_state_gate_disabled');
               return null;
             }
-            return createRiskStateService({ db, clock, events });
+            // REDIS carries the cross-process version stamp (F1-07d): a ban on the admin entry
+            // ends this entry's cached state at once.
+            return createRiskStateService({
+              db,
+              clock,
+              events,
+              ...(redis === undefined ? {} : { redis }),
+            });
           },
         },
         {

@@ -1,7 +1,8 @@
 // Ending every session of a user or of a device (规划/08 BR-ID-07 细则「退出登录」「被动结束会话时
 // 解绑」, BR-ID-06 细则「改号后全部设备退出登录」; 04 §3.2 sessions; migration 0013). The internal
 // entries other modules call through identity's index.ts: phone change (B1-27), merge (B1-20),
-// ban (B1-31), admin revocation by user or by device.
+// the console's ban (F1-07d: risk's admin risk state command, through app.module's assembly with
+// the push token unbinding), admin revocation by user or by device.
 //   - The caller owns the transaction: the revocation commits or rolls back with the caller's work.
 //   - Every session of the user / device in that app whose revoked_at is still empty gets
 //     revoked_at = the Clock's now, the given revoke_reason and updated_at, once (`revoked_at IS
