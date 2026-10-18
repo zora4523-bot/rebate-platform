@@ -1,13 +1,13 @@
 id: F1-02q
 repo: rebate-platform
-title: 迁移 0046：app.dict_items（字典版本行，只插入）；articles.status 加 CHECK（draft / published / offline）并把 couli_app 对 articles 的整表 UPDATE 收窄为列级
+title: 迁移 0048：app.dict_items（字典版本行，只插入）；articles.status 加 CHECK（draft / published / offline）并把 couli_app 对 articles 的整表 UPDATE 收窄为列级
 type: migration
 # 2026-10-18 入账（content-client 第三阶段，计划 couli-runs/CONTENT-client/phase3-plan.md §3；SPEC_REF 99cc36f，规划摘录 couli-runs/CONTENT-client/phase3/spec/）。
 # 依据 04 l.390 dict_items（dict、code、text、version）与 articles 行、l.859 dict_version；08 BR-TEXT-12 细则 l.648–649。原文由编排者摘入任务书，refs 置空。
 # 要点：app.dict_items（app_id, dict, code, version, text NULL = 回到包内默认, created_by, created_at）PK 四列；只插入，couli_app 只 SELECT、INSERT；当前值 = version ≤ dict_version 的最大行（L14）。
 # 同迁移：articles.status 命名 CHECK（L15），先 NOT VALID 再 VALIDATE，落地前核对现有值；couli_app 对 articles 的整表 UPDATE 收回，
 #   改为列级 UPDATE (status, published_at, notice_end_at, row_version, updated_at)（配合 L19 存草稿插入新行）。授权写在本迁移。
-# 迁移号 0046；落地时若主干已有则顺延最大号 + 1。两段式：编排者在沙箱外跑 pnpm db:snapshot 提交 schema.sql 与 db.gen.ts（outside_needed）。
+# 迁移号 0048；落地时若主干已有则顺延最大号 + 1。两段式：编排者在沙箱外跑 pnpm db:snapshot 提交 schema.sql 与 db.gen.ts（outside_needed）。
 # 待裁定 L14、L15、L19 用默认。
 refs: []
 refs_hash: {}
