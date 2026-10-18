@@ -39,6 +39,13 @@ import { ADMIN_HTTP_POLICY, isAdminCheck, type AdminHttpPolicy } from './modules
 import { isTokenCheck } from './modules/identity/index.ts';
 import { isSignatureCheck } from './modules/risk/index.ts';
 
+/**
+ * Fastify's router limit on one path parameter (raw, still percent-encoded): three times the
+ * contract's longest path parameter maxLength (ProductKey, 128), so every contract-valid value,
+ * fully percent-encoded, is routed and validated by the route schema rather than answered 414.
+ */
+export const MAX_PARAM_LENGTH = 128 * 3;
+
 export interface BootstrapOverrides {
   /** Process-owned handles; omitted when building isolated HTTP unit tests. */
   readonly dbHandles?: DbHandles;
@@ -97,6 +104,11 @@ export async function createHttpApp(
     const adapter = new PlatformFastifyAdapter({
       loggerInstance: options.logger,
       genReqId: (request: IncomingMessage) => resolveTraceId(request.headers['x-trace-id']),
+      // B1-01zze: the contract's longest path parameter is ProductKey (maxLength 128); × 3 leaves
+      // room for percent-encoding, so a contract-valid key reaches the route instead of Fastify's
+      // default 100 answering 414, and an over-long key is refused by the route schema (20001).
+      // Under routerOptions: the top-level option is deprecated (FSTDEP022 on stderr).
+      routerOptions: { maxParamLength: MAX_PARAM_LENGTH },
       ...(trustedProxies.length === 0 ? {} : { trustProxy: [...trustedProxies] }),
     });
     adapter.getInstance().setValidatorCompiler(createValidatorCompiler());
