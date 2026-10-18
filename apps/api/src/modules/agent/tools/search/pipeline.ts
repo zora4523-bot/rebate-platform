@@ -25,6 +25,13 @@ export interface SearchRequest {
   readonly priceMinFen?: number;
   readonly priceMaxFen?: number;
   readonly pageSize: number;
+  /** B3-04e · BR-AI-05: 1-based page, the same for every platform. */
+  readonly page: number;
+  /**
+   * B3-04e · BR-AI-08: the model's spec word, kept verbatim. It is not part of the upstream q
+   * and filters nothing here; the spec judgement on the card belongs to B3-04d.
+   */
+  readonly spec?: string;
 }
 
 export type PlatformStatus = 'ok' | 'failed' | 'disabled';
@@ -175,7 +182,9 @@ export async function runSearch(
 
   // All platforms start before any answer returns; one failure leaves the others intact.
   const answers = await Promise.allSettled(
-    requested.map((platform) => deps.searchProducts(upstreamQuery(platform, request), ctx)),
+    requested.map((platform) =>
+      deps.searchProducts(upstreamQuery(platform, request), ctx, request.page),
+    ),
   );
   const ranked: Ranked[] = [];
   const seen = new Set<string>();

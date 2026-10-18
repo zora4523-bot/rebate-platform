@@ -9,7 +9,13 @@ import type { ToolCallContext, ToolHandler } from '../registry/index.ts';
 import type { AgentProductCard } from './card.ts';
 import type { SearchProductsDeps } from './types.ts';
 import { runSearch, enabledPlatforms, type Platform, type SearchRequest } from './pipeline.ts';
-import { defaultPageSize, searchProductsDefinition, type SearchSort } from './schema.ts';
+import {
+  defaultPageSize,
+  maxSearchPage,
+  maxSpecLength,
+  searchProductsDefinition,
+  type SearchSort,
+} from './schema.ts';
 
 export type { AgentProductCard } from './card.ts';
 
@@ -83,6 +89,18 @@ function linkTrace(cards: readonly AgentProductCard[]) {
   };
 }
 
+/**
+ * B3-04e: the spec and page this call actually used, for the orchestrator (B3-05g relaxes by
+ * dropping spec and pages "换一批"). Never part of modelView. ToolTraceFragment has no field for
+ * it yet; B3-05g adds it to the port type, until then it rides along as an extra trace member.
+ */
+function searchTrace(cards: readonly AgentProductCard[], request: SearchRequest) {
+  return {
+    ...linkTrace(cards),
+    search_params: { spec: request.spec ?? null, page: request.page },
+  };
+}
+
 function optionalInt(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isSafeInteger(value) ? value : undefined;
 }
@@ -92,6 +110,8 @@ function requestFromArgs(args: Readonly<Record<string, unknown>>): SearchRequest
   const sort = args['sort'];
   const platforms = args['platforms'];
   const limit = optionalInt(args['limit']);
+  const page = optionalInt(args['page']);
+  const spec = args['spec'];
   return {
     q: typeof args['q'] === 'string' ? args['q'] : '',
     ...(Array.isArray(platforms)
@@ -109,6 +129,10 @@ function requestFromArgs(args: Readonly<Record<string, unknown>>): SearchRequest
       : { priceMaxFen: optionalInt(args['price_max_fen'])! }),
     pageSize:
       limit !== undefined && limit >= 1 && limit <= defaultPageSize() ? limit : defaultPageSize(),
+    page: page !== undefined && page >= 1 && page <= maxSearchPage() ? page : 1,
+    ...(typeof spec === 'string' && spec.length >= 1 && spec.length <= maxSpecLength()
+      ? { spec }
+      : {}),
   };
 }
 
@@ -158,11 +182,13 @@ export function createSearchProductsHandler(deps: SearchProductsDeps): ToolHandl
       if (run.allFailed) return { kind: 'failed', modelView: { error: 'tool_failed' } };
       const cards = await outcomeCards(deps, ctx.appId, run.prohibited, run.cards);
       const items = modelItems(deps, run.cards, cards, ctx);
+      // Built apart so the extra search_params member passes ToolTraceFragment (see searchTrace).
+      const trace = searchTrace(run.cards, request);
       return {
         kind: 'ok',
         modelView: run.prohibited ? { items, refused: 'prohibited' } : { items },
         cards,
-        trace: linkTrace(run.cards),
+        trace,
       };
     },
   };
@@ -201,7 +227,13 @@ export function createKeywordSearch(
       const ctx = callContext(toolCtx);
       const run = await runSearch(
         deps,
-        { q: plan.q, platforms: plan.platforms, sort: 'relevance', pageSize: defaultPageSize() },
+        {
+          q: plan.q,
+          platforms: plan.platforms,
+          sort: 'relevance',
+          pageSize: defaultPageSize(),
+          page: 1,
+        },
         ctx,
       );
       const results: PlatformSearchResult[] = plan.platforms.map((platform) => {

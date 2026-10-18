@@ -23,10 +23,16 @@ export interface SearchProductsDeps {
    * Retrieval seam: catalog's query and candidate types, before card/link delivery.
    * The HTTP searchProducts return type already contains registered links and cannot be
    * used as this port's result. Wiring must preserve upstream rank and defer registration.
+   *
+   * B3-04e: page is the 1-based page number (BR-AI-05 "换一批" → page+1), the same value for
+   * every platform of one call. It is a separate argument because the catalog HTTP query has
+   * no page field, only an opaque cursor (search_session_id + page_no): the wiring maps the
+   * page number onto catalog's cursor; this module never builds cursors.
    */
   readonly searchProducts: (
     query: SearchProductsQuery,
     ctx: ToolCallContext,
+    page: number,
   ) => Promise<readonly AgentSearchCandidate[]>;
   readonly cardEntry: (ctx: ToolCallContext) => CatalogCardEntry;
   readonly prohibited: (appId: string, q: string) => Promise<boolean>;
