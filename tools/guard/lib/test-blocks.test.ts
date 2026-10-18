@@ -244,6 +244,21 @@ it('[CT-06p] describe: moving a test into or between suites changes it; a rename
     '});',
   );
   expect(changes(base, across)['two > [AC-2] b']).toBe(true);
+  // Two describes with the same header are different suites (Codex review r1, S2).
+  const twins = (first: string, second: string): string =>
+    src(
+      "describe('same', () => {",
+      'const k = 1;',
+      first,
+      '});',
+      "describe('same', () => {",
+      'const k = 2;',
+      second,
+      '});',
+    );
+  expect(changes(twins(test('[AC-1] a'), ''), twins('', test('[AC-1] a')))).toEqual({
+    'same > [AC-1] a': true,
+  });
   expect(whole(base, base.replace("describe('two'", "describe('three'"))).toContain(
     'code outside the tests changed',
   );

@@ -14,7 +14,8 @@
 //   template and regular-expression literals count byte for byte.
 // - Any difference in the shared rest makes every test of the file changed (a helper, a hook, an
 //   import, a top-level table or a describe title can change what any test means).
-// - A test block is unchanged only when the same block (same text under the same describe titles)
+// - A test block is unchanged only when the same block (same text in the same describes: same
+//   position among the file's describes and same header)
 //   occurs exactly once at the base and exactly once at the head, and the unchanged blocks keep
 //   their relative order (a moved test is changed: the order of a file's tests can matter).
 //   A renamed test is a new block; a row of a parameterised table (`it.each([...])`) that changed
@@ -563,7 +564,7 @@ export type TestBlock = {
   pattern: RegExp;
   /** Readable title (wildcards shown as `*`), for notes. */
   title: string;
-  /** Describe keys and normalised text: equal keys are the same test. */
+  /** Describe keys (position and header) and normalised text: equal keys are the same test. */
   key: string;
 };
 
@@ -617,7 +618,9 @@ export function parseTestFile(source: string): ParsedTestFile {
         c.title,
       ),
       title: [...around.map((s) => show(s.title)), show(c.title)].join(' > '),
-      key: `${around.map((s) => s.head).join('\u0001')}\u0000${joinTokens(tokens, c.start, c.end)}`,
+      // Each describe by its position among the file's describes as well as its text: two
+      // describes with the same header are different suites (Codex review r1, S2).
+      key: `${around.map((s) => `${suites.indexOf(s)}:${s.head}`).join('\u0001')}\u0000${joinTokens(tokens, c.start, c.end)}`,
     };
   });
   return { shared, blocks };
