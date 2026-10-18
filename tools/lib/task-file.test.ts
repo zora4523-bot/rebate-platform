@@ -55,6 +55,7 @@ describe('parseTaskFile', () => {
       impl: 'codex',
       test_paths: [],
       mechanical_paths: [],
+      red_exempt: [],
       tester: 'claude',
       accept: ['pnpm verify', 'test/spec/ledger/**'],
       status: 'todo',
@@ -89,6 +90,71 @@ describe('parseTaskFile', () => {
     expect(
       messageOf(withSections.replace('type: contract', 'type: impl'), 'B2-02a.yaml'),
     ).toContain('contract_sections: only a contract task names 规划/04 sections');
+  });
+
+  it('[CT-06r] red_exempt: a list of file / test / reason mappings, the reason at least 10 characters', () => {
+    const declared = (entries: string): string =>
+      EXAMPLE.replace('tester: claude', `tester: claude\nred_exempt:${entries}`);
+    const two = declared(
+      "\n  - file: test/spec/ledger-rules/ledger-rules.test.ts\n    test: '[AC-B2-01i#1] CSV 固定十一列'\n    reason: 数据驱动、结构断言对旧 csv 亦成立、不可能有效红\n  - file: test/spec/ledger-rules/ledger-rules.test.ts\n    test: 'rules > [AC-B2-01i#4] 借贷成对'\n    reason: 'structural: holds for the old data too'",
+    );
+    expect(parseTaskFile(two, 'B2-02a.yaml').red_exempt).toEqual([
+      {
+        file: 'test/spec/ledger-rules/ledger-rules.test.ts',
+        test: '[AC-B2-01i#1] CSV 固定十一列',
+        reason: '数据驱动、结构断言对旧 csv 亦成立、不可能有效红',
+      },
+      {
+        file: 'test/spec/ledger-rules/ledger-rules.test.ts',
+        test: 'rules > [AC-B2-01i#4] 借贷成对',
+        reason: 'structural: holds for the old data too',
+      },
+    ]);
+    // An older ledger without the field: [].
+    expect(parseTaskFile(EXAMPLE, 'B2-02a.yaml').red_exempt).toEqual([]);
+    // Without a reason, with a short one, with blanks only: refused (the reason is the point).
+    const noReason = declared("\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'");
+    expect(messageOf(noReason, 'B2-02a.yaml')).toContain(
+      'red_exempt[0].reason: must say why the test cannot be shown red (at least 10 characters)',
+    );
+    const short = declared(
+      "\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: too short",
+    );
+    expect(messageOf(short, 'B2-02a.yaml')).toContain('red_exempt[0].reason');
+    const blank = declared(
+      "\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: '              '",
+    );
+    expect(messageOf(blank, 'B2-02a.yaml')).toContain('red_exempt[0].reason');
+    // Missing or empty file / test, a file that is not a repository path, an unknown field.
+    const noTest = declared(
+      '\n  - file: test/spec/a.test.ts\n    reason: a reason of enough length',
+    );
+    expect(messageOf(noTest, 'B2-02a.yaml')).toContain(
+      "red_exempt[0].test: must be the test's full name",
+    );
+    const badFile = declared(
+      "\n  - file: /test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: a reason of enough length",
+    );
+    expect(messageOf(badFile, 'B2-02a.yaml')).toContain(
+      'red_exempt[0].file: "/test/spec/a.test.ts" must be relative',
+    );
+    const extra = declared(
+      "\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: a reason of enough length\n    note: x",
+    );
+    expect(messageOf(extra, 'B2-02a.yaml')).toContain('red_exempt[0].note: unknown field');
+    // Not a list, not mappings, the same test twice.
+    expect(messageOf(declared(' abc'), 'B2-02a.yaml')).toContain(
+      'red_exempt: must be a list of mappings',
+    );
+    expect(messageOf(declared('\n  - abc'), 'B2-02a.yaml')).toContain(
+      'red_exempt[0]: must be a mapping',
+    );
+    const twice = declared(
+      "\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: a reason of enough length\n  - file: test/spec/a.test.ts\n    test: '[AC-1] a'\n    reason: another reason of enough length",
+    );
+    expect(messageOf(twice, 'B2-02a.yaml')).toContain(
+      'red_exempt[1]: "test/spec/a.test.ts > [AC-1] a" is declared twice',
+    );
   });
 
   it('lists every problem in one error', () => {

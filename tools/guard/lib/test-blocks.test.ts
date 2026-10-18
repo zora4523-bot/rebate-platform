@@ -9,6 +9,7 @@ import {
   TestParseError,
   compareTestFile,
   cook,
+  listedDirectories,
   mayReadSupport,
   parseTestFile,
   relativeClosure,
@@ -405,6 +406,14 @@ it('[CT-06p] mayReadSupport: a support file named, loaded, listed or named after
   expect(
     mayReadSupport(file, 'test/spec/l/__screenshots__/rules.test.ts/x.png', [plain]),
   ).toContain('named after it');
+  // CT-06r (B1-12g): a same-named test in another directory is another test, not a snapshot.
+  expect(mayReadSupport(file, 'test/spec/other/rules.test.ts', [plain])).toBeNull();
+  expect(
+    mayReadSupport(file, 'test/spec/other/__snapshots__/rules.test.ts.snap', [plain]),
+  ).toBeNull();
+  expect(mayReadSupport(file, 'test/spec/l/sub/rules.test.ts.snap', [plain])).toContain(
+    'named after it',
+  );
   expect(mayReadSupport(file, 'test/spec/l/rows.csv', [mod(file, "it('open\n")])).toContain(
     'cannot be read as code',
   );
@@ -414,4 +423,255 @@ it('[CT-06p] mayReadSupport: a support file named, loaded, listed or named after
       mod(file, "await import('./other.ts'); 'rowsx';"),
     ]),
   ).toBeNull();
+});
+
+// CT-06r (after B1-12g): directory listings are resolved statically; only a listing of a directory
+// that holds the support file (or one that cannot be resolved) makes the test file read it.
+const FIXTURES = join(import.meta.dirname, 'red-check-fixtures');
+const listed = (path: string, text: string) => listedDirectories(tokenize(text), path);
+
+it('[CT-06r] listedDirectories resolves literals, constants, path.join / resolve / dirname, URLs and function parameters', () => {
+  const file = 'test/spec/platform/queue/contract.test.ts';
+  // The B1-12g shape: constants from import.meta.url, a recursive helper called twice.
+  expect(
+    listed(
+      file,
+      `import path from 'node:path';
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const API_SRC = path.resolve(HERE, '../../../../apps/api/src');
+const QUEUE_DIR = path.join(API_SRC, 'modules/platform/queue');
+function tsFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) return tsFiles(full);
+    return [full];
+  });
+}
+const a = tsFiles(API_SRC);
+const b = tsFiles(QUEUE_DIR);
+`,
+    ),
+  ).toEqual({ dirs: ['apps/api/src', 'apps/api/src/modules/platform/queue'], unresolved: null });
+  // Literals, __dirname, import.meta.dirname, new URL, join / resolve with literal segments, a
+  // parenthesised expression, .pathname of a URL, an arrow function parameter.
+  expect(
+    listed(
+      'test/spec/a/x.test.ts',
+      `const ROOT = new URL('../../', import.meta.url);
+const D1 = join(__dirname, 'data');
+const D2 = resolve(import.meta.dirname, '..', 'shared');
+readdirSync(D1, { withFileTypes: true });
+readdirSync((D2));
+readdirSync(new URL('./seeds/', ROOT).pathname);
+readdirSync(fileURLToPath(new URL('./pages', import.meta.url)));
+const list = (p: string) => { for (const e of readdirSync(new URL(p, ROOT))) use(e); };
+list('./db/migrations');
+`,
+    ),
+  ).toEqual({
+    dirs: [
+      'test/db/migrations',
+      'test/seeds',
+      'test/spec/a/data',
+      'test/spec/a/pages',
+      'test/spec/shared',
+    ],
+    unresolved: null,
+  });
+  // Not resolved: a computed directory, a parameter never called from outside, a bare literal
+  // without ./ (the working directory is unknown), a path above the repository, a listing inside a
+  // template expression, a call without arguments.
+  const cases: [string, string][] = [
+    ['readdirSync(process.cwd());', 'cannot be resolved statically'],
+    // Codex review r1, S2: a file-system path literal is relative to the working directory, which
+    // is not known — not to the module.
+    ["readdirSync('./fixtures');", 'cannot be resolved statically'],
+    ["readdirSync('./test/spec/a/data');", 'cannot be resolved statically'],
+    ["readdirSync(join('./x', 'data'));", 'cannot be resolved statically'],
+    ["function f(d) { return readdirSync(d); }\nf('./data');", 'cannot be resolved statically'],
+    // Codex review r1, S2: a constant whose initialiser goes on past the resolved part is unknown.
+    [
+      "const D = new URL('./unused/', import.meta.url).pathname.replace('unused', 'data');\nreaddirSync(D);",
+      'cannot be resolved statically',
+    ],
+    ["const D = join(__dirname, 'a') + '/b';\nreaddirSync(D);", 'cannot be resolved statically'],
+    ["const D = join(__dirname, 'a').slice(1);\nreaddirSync(D);", 'cannot be resolved statically'],
+    // Codex review r3, S2: a name declared twice (a same-named local elsewhere) is no constant.
+    [
+      "const D = join(__dirname, 'data');\nfunction unused() { const D = join(__dirname, 'other'); }\nreaddirSync(D);",
+      'cannot be resolved statically',
+    ],
+    // Codex review r3, S2: a recursive call that may leave the listed tree is not resolved.
+    [
+      "function scan(d, up) { const rows = readdirSync(d); if (up) scan(dirname(d), false); return rows; }\nscan(join(__dirname, 'data'), true);",
+      'cannot be resolved statically',
+    ],
+    [
+      "function scan(d) { for (const n of readdirSync(d)) scan(join(__dirname, n)); }\nscan(join(__dirname, 'data'));",
+      'cannot be resolved statically',
+    ],
+    // Codex review r2, S2: a reassigned name is no constant.
+    [
+      "let D = join(__dirname, 'a');\nD = somewhere();\nreaddirSync(D);",
+      'cannot be resolved statically',
+    ],
+    [
+      'function f(d) { return readdirSync(d); }',
+      'in f() on a directory that cannot be resolved statically',
+    ],
+    ["readdirSync('db/migrations');", 'cannot be resolved statically'],
+    ["readdirSync(join(__dirname, '../../../../../..'));", 'cannot be resolved statically'],
+    ['const x = `${readdirSync(dir).length}`;', 'inside a template expression'],
+    ['opendirSync();', 'without a directory'],
+    [
+      'function f(d) { return readdirSync(d); }\nf(dirOf(x));',
+      'in f() on a directory that cannot be resolved statically',
+    ],
+  ];
+  for (const [text, reason] of cases) {
+    const r = listed('test/spec/a/x.test.ts', text);
+    expect(r.unresolved, text).toContain(reason);
+  }
+  // A recursive call stays in the tree: the parameter itself, join(param, …), a local const of it.
+  for (const body of [
+    'scan(d)',
+    'scan(join(d, n))',
+    'scan(path.join(d, n))',
+    'const full = path.join(d, n); scan(full)',
+  ]) {
+    expect(
+      listed(
+        'test/spec/a/x.test.ts',
+        `function scan(d) { for (const n of readdirSync(d)) { ${body}; } }\nscan(join(__dirname, 'data'));`,
+      ),
+      body,
+    ).toEqual({ dirs: ['test/spec/a/data'], unresolved: null });
+  }
+  // Codex review r2, S2: a parameter shadows a same-named constant; the call site decides.
+  expect(
+    listed(
+      'test/spec/a/x.test.ts',
+      "const dir = join(__dirname, 'unused');\nfunction load(dir) { return readdirSync(dir); }\nload(join(__dirname, 'data'));",
+    ),
+  ).toEqual({ dirs: ['test/spec/a/data'], unresolved: null });
+  // … and a call site inside another function whose parameter shadows the constant is unresolved.
+  expect(
+    listed(
+      'test/spec/a/x.test.ts',
+      "const dir = join(__dirname, 'unused');\nfunction load(d) { return readdirSync(d); }\nfunction outer(dir) { return load(dir); }",
+    ).unresolved,
+  ).toContain('cannot be resolved statically');
+  // The repository root: `new URL('../../../', import.meta.url)` from test/spec/a resolves to ''.
+  expect(
+    listed(
+      'test/spec/a/x.test.ts',
+      "readdirSync(new URL('../../../', import.meta.url), { recursive: true });",
+    ),
+  ).toEqual({ dirs: [''], unresolved: null });
+  // A resolved call next to an unresolved one: the resolved directory is kept, the reason too.
+  const mixed = listed(
+    'test/spec/a/x.test.ts',
+    "readdirSync(join(__dirname, 'data')); readdirSync(somewhere);",
+  );
+  expect(mixed.dirs).toEqual(['test/spec/a/data']);
+  expect(mixed.unresolved).toContain('cannot be resolved statically');
+  // No listing at all.
+  expect(listed('test/spec/a/x.test.ts', "it('x', () => {});")).toEqual({
+    dirs: [],
+    unresolved: null,
+  });
+});
+
+it('[CT-06r] mayReadSupport: a listed directory counts only for the files it holds; an unresolved listing counts for everything', () => {
+  const file = 'test/spec/l/rules.test.ts';
+  const lists = mod(
+    file,
+    "const D = join(__dirname, 'data');\nfor (const f of readdirSync(D)) load(f);",
+  );
+  expect(lists.lists).toEqual(['test/spec/l/data']);
+  expect(mayReadSupport(file, 'test/spec/l/data/rows.csv', [lists])).toBe(
+    `${file} lists test/spec/l/data, which holds test/spec/l/data/rows.csv`,
+  );
+  expect(mayReadSupport(file, 'test/spec/l/data/deep/rows.csv', [lists])).toContain(
+    'lists test/spec/l/data',
+  );
+  expect(mayReadSupport(file, 'test/spec/l/other.csv', [lists])).toBeNull();
+  expect(mayReadSupport(file, 'test/spec/l/rows.csv', [lists])).toBeNull();
+  // The word rule of CT-06p is untouched: a support file named like a literal still counts.
+  expect(mayReadSupport(file, 'test/spec/l/data.csv', [lists])).toContain('names data');
+  // Codex review r2, S2: a listing of the repository root ('') holds every file.
+  const root = mod(
+    file,
+    "for (const f of readdirSync(new URL('../../../', import.meta.url), { recursive: true })) load(f);",
+  );
+  expect(root.lists).toEqual(['']);
+  expect(mayReadSupport(file, 'test/spec/m/other.csv', [root])).toBe(
+    `${file} lists , which holds test/spec/m/other.csv`,
+  );
+  const vague = mod(file, 'for (const f of readdirSync(here)) load(f);');
+  expect(mayReadSupport(file, 'test/spec/m/other.csv', [vague])).toBe(
+    `${file} may read test/spec/m/other.csv: it uses readdirSync(…) on a directory that cannot be resolved statically`,
+  );
+});
+
+it('[CT-06r] the two B1-12g files: a same-named test elsewhere and a listing of apps/api/src no longer make them whole', () => {
+  const read = (p: string): string => readFileSync(join(FIXTURES, `b112g-${p}.txt`), 'utf8');
+  const files: Record<string, string> = {
+    'test/spec/platform/events/contract.test.ts': read('events-contract.test.ts'),
+    'test/spec/platform/queue/contract.test.ts': read('queue-contract.test.ts'),
+    'test/spec/platform/events/kit.ts': read('events-kit.ts'),
+    'test/spec/platform/queue/kit.ts': read('queue-kit.ts'),
+    'test/spec/platform/db/kit.ts': read('db-kit.ts'),
+  };
+  const closureOf = (file: string) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  // What B1-12g changed inside its test_paths besides each file itself.
+  const supports = [
+    'test/spec/platform/events/contract.test.ts',
+    'test/spec/platform/queue/contract.test.ts',
+    ...[
+      'consumer.int.test.ts',
+      'db-kit.ts',
+      'delivery.int.test.ts',
+      'fixtures.ts',
+      'render.test.ts',
+      'templates.int.test.ts',
+      'wiring.test.ts',
+      'worker-kit.ts',
+    ].map((n) => `test/spec/notification/risk-state-message/${n}`),
+  ];
+  const events = 'test/spec/platform/events/contract.test.ts';
+  const queue = 'test/spec/platform/queue/contract.test.ts';
+  const eventsClosure = closureOf(events);
+  const queueClosure = closureOf(queue);
+  expect(eventsClosure.map((m) => m.path)).toEqual([
+    events,
+    'test/spec/platform/events/kit.ts',
+    'test/spec/platform/queue/kit.ts',
+  ]);
+  expect(queueClosure.map((m) => m.path)).toEqual([
+    queue,
+    'test/spec/platform/db/kit.ts',
+    'test/spec/platform/queue/kit.ts',
+  ]);
+  // ① events/contract.test.ts: queue/contract.test.ts is another test, not its snapshot.
+  for (const s of supports) {
+    if (s !== events) expect(mayReadSupport(events, s, eventsClosure), s).toBeNull();
+  }
+  // ② queue/contract.test.ts lists apps/api/src and its queue module only.
+  expect(queueClosure[0]?.lists).toEqual(['apps/api/src', 'apps/api/src/modules/platform/queue']);
+  expect(queueClosure[0]?.dynamic).toBeNull();
+  for (const s of supports) {
+    if (s !== queue) expect(mayReadSupport(queue, s, queueClosure), s).toBeNull();
+  }
+  // A file under the listed tree would still count.
+  expect(
+    mayReadSupport(queue, 'apps/api/src/modules/platform/queue/zz-added.ts', queueClosure),
+  ).toBe(
+    `${queue} lists apps/api/src, which holds apps/api/src/modules/platform/queue/zz-added.ts`,
+  );
 });

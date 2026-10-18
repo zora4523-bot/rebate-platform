@@ -992,10 +992,15 @@ it('[CT-06p] judged as a whole, as before: shared code changed, a support file i
       { path: 'test/spec/notify/expected.csv', status: 'M' },
     ]),
   );
-  expect(greenOnes(support)).toEqual([`[AC-2] b: ${teeth}`, `[AC-3] c: ${teeth}`]);
+  // CT-06r: without a declaration in the ledger the file is whole, as before.
+  expect(greenOnes(support)).toEqual([
+    `[AC-2] b: ${teeth} (the file may read a test-support file the task changed and the ledger does not declare this test exempt)`,
+    `[AC-3] c: ${teeth} (the file may read a test-support file the task changed and the ledger does not declare this test exempt)`,
+  ]);
   expect(support.notes[0]).toBe(
-    `${BASE_FILE}: existed at the base, judged as a whole (every test must be red): it may read a test-support file the task changed: ${BASE_FILE} names expected.csv`,
+    `${BASE_FILE}: existed at the base, judged as a whole except the tests the ledger declares exempt (every other test must be red): it may read a test-support file the task changed: ${BASE_FILE} names expected.csv`,
   );
+  expect(support.exempt).toEqual([]);
 
   // Vitest's own JSON report (no reporter name): its full names are not `suite > test`.
   const plain = checkRedReports(
@@ -1057,10 +1062,293 @@ it('[CT-06p] ruleTestBaselines: new and renamed files keep the old rule; JSX, un
     ['test/spec/notify/**'],
     reader({ [BASE_FILE]: BASE_SOURCE }, { [BASE_FILE]: naming }),
   );
-  expect(n.get(BASE_FILE)).toEqual({
-    kind: 'whole',
+  // CT-06r: such a file keeps its compared blocks, so a declared exemption can be judged.
+  expect(n.get(BASE_FILE)).toMatchObject({
+    kind: 'support',
     reason: `it may read a test-support file the task changed: ${BASE_FILE} names old.test.ts`,
   });
+  expect((n.get(BASE_FILE) as { blocks: unknown[] }).blocks).toHaveLength(5);
+});
+
+// CT-06r: declared exemptions for the unchanged tests of a file that may read a changed
+// test-support file (the B2-01l shape: a data-driven test file whose structural tests hold for the
+// old data too).
+const SUPPORT_SOURCE = HEAD_SOURCE.replace('[AC-5] e', '[AC-5] e reads ./expected.csv');
+const SUPPORT_CHANGES: Change[] = [
+  { path: BASE_FILE, status: 'M' },
+  { path: 'test/spec/notify/expected.csv', status: 'M' },
+];
+const supportBaselines = () => baselinesOf(SUPPORT_SOURCE, SUPPORT_CHANGES);
+const SUPPORT_TESTS: RedTest[] = [
+  ['[AC-1] a', 'failed', 'AssertionError: x'],
+  ['[AC-2] b', 'passed'],
+  ['[AC-3] c', 'passed'],
+  ['[AC-4] d', 'failed', 'AssertionError: x'],
+  ['[AC-5] e reads ./expected.csv', 'failed', 'Error: NotImplemented: x'],
+];
+const REASON = 'structural: holds for the old csv too, cannot be red';
+const declare = (test: string, reason = REASON, file = BASE_FILE) => ({ file, test, reason });
+const CONFIRM =
+  "needs the rule-test reviewer's confirmation (evidence spec_test_review.red_exempt_confirmed)";
+
+it('[CT-06r] a declared, unchanged test of a file that may read a changed data file may be green; the undeclared ones stay red', () => {
+  const result = checkRedReports(
+    [redReport(BASE_FILE, SUPPORT_TESTS)],
+    [BASE_FILE],
+    ROOT,
+    supportBaselines(),
+    [declare('[AC-2] b')],
+  );
+  // [AC-3] c is unchanged too but not declared: it must be red, as under CT-06p.
+  expect(result.problems).toEqual([
+    {
+      file: BASE_FILE,
+      test: '[AC-3] c',
+      reason:
+        'green on the skeleton: the test has no teeth (the file may read a test-support file the task changed and the ledger does not declare this test exempt)',
+    },
+  ]);
+  expect(result.exempt).toEqual([
+    { file: BASE_FILE, test: '[AC-2] b', status: 'passed', declared: true, reason: REASON },
+  ]);
+  expect(result.red).toEqual([
+    `${BASE_FILE} > [AC-1] a`,
+    `${BASE_FILE} > [AC-4] d`,
+    `${BASE_FILE} > [AC-5] e reads ./expected.csv`,
+  ]);
+  expect(result.notes).toEqual([
+    `${BASE_FILE}: existed at the base, judged as a whole except the tests the ledger declares exempt (every other test must be red): it may read a test-support file the task changed: ${BASE_FILE} names expected.csv`,
+    `${BASE_FILE} > [AC-2] b: unchanged since the base, exempt by the task's declaration (green; reason: ${REASON}); ${CONFIRM}`,
+  ]);
+  // Both unchanged tests declared: the file passes with its three changed tests red.
+  const both = checkRedReports(
+    [redReport(BASE_FILE, SUPPORT_TESTS)],
+    [BASE_FILE],
+    ROOT,
+    supportBaselines(),
+    [declare('[AC-2] b'), declare('[AC-3] c', '[AC-3] 只核对 csv 列数，对旧 csv 同样成立')],
+  );
+  expect(both.ok).toBe(true);
+  expect(both.exempt?.map((e) => e.test)).toEqual(['[AC-2] b', '[AC-3] c']);
+  // A declared test that is red still needs a valid reason; it is listed as exempt (red).
+  const redDeclared = checkRedReports(
+    [
+      redReport(
+        BASE_FILE,
+        SUPPORT_TESTS.map(([n, s, c]) =>
+          n === '[AC-2] b' ? ['[AC-2] b', 'failed', 'Error: NotImplemented: x'] : [n, s, c],
+        ) as RedTest[],
+      ),
+    ],
+    [BASE_FILE],
+    ROOT,
+    supportBaselines(),
+    [declare('[AC-2] b'), declare('[AC-3] c')],
+  );
+  expect(redDeclared.ok).toBe(true);
+  expect(redDeclared.exempt).toEqual([
+    { file: BASE_FILE, test: '[AC-2] b', status: 'failed', declared: true, reason: REASON },
+    { file: BASE_FILE, test: '[AC-3] c', status: 'passed', declared: true, reason: REASON },
+  ]);
+  const wrong = checkRedReports(
+    [
+      redReport(
+        BASE_FILE,
+        SUPPORT_TESTS.map(([n, s, c]) =>
+          n === '[AC-2] b'
+            ? ['[AC-2] b', 'failed', 'TypeError: rows is not a function']
+            : [n, s, c],
+        ) as RedTest[],
+      ),
+    ],
+    [BASE_FILE],
+    ROOT,
+    supportBaselines(),
+    [declare('[AC-2] b'), declare('[AC-3] c')],
+  );
+  expect(wrong.problems.map((p) => `${p.test}: ${p.reason}`)).toEqual([
+    '[AC-2] b: red for the wrong reason (TypeError)',
+  ]);
+});
+
+it('[CT-06r] a declaration does not apply to a new or changed test, nor without a reason of 10 characters', () => {
+  // [AC-1] a changed and [AC-5] e is new: declared or not, they must be red.
+  const changed = checkRedReports(
+    [
+      redReport(BASE_FILE, [
+        ['[AC-1] a', 'passed'],
+        ['[AC-2] b', 'passed'],
+        ['[AC-3] c', 'passed'],
+        ['[AC-4] d', 'failed', 'AssertionError: x'],
+        ['[AC-5] e reads ./expected.csv', 'passed'],
+      ]),
+    ],
+    [BASE_FILE],
+    ROOT,
+    supportBaselines(),
+    [
+      declare('[AC-1] a'),
+      declare('[AC-2] b'),
+      declare('[AC-3] c'),
+      declare('[AC-5] e reads ./expected.csv'),
+    ],
+  );
+  expect(changed.ok).toBe(false);
+  expect(changed.problems.map((p) => p.test)).toEqual([
+    '[AC-1] a',
+    '[AC-5] e reads ./expected.csv',
+  ]);
+  expect(changed.exempt?.map((e) => e.test)).toEqual(['[AC-2] b', '[AC-3] c']);
+  expect(changed.notes).toContain(
+    `${BASE_FILE} > [AC-1] a: declared exempt, but the declaration does not apply: the test is new or changed since the base (only an unchanged test may be declared exempt); the test must be red`,
+  );
+  expect(changed.notes).toContain(
+    `${BASE_FILE} > [AC-5] e reads ./expected.csv: declared exempt, but the declaration does not apply: the test is new or changed since the base (only an unchanged test may be declared exempt); the test must be red`,
+  );
+  // A reason that is missing, blank or too short: the declaration does not apply.
+  for (const reason of ['', '         ', 'too short']) {
+    const short = checkRedReports(
+      [redReport(BASE_FILE, SUPPORT_TESTS)],
+      [BASE_FILE],
+      ROOT,
+      supportBaselines(),
+      [declare('[AC-2] b', reason), declare('[AC-3] c')],
+    );
+    expect(short.ok, JSON.stringify(reason)).toBe(false);
+    expect(short.problems.map((p) => p.test)).toEqual(['[AC-2] b']);
+    expect(short.notes).toContain(
+      `${BASE_FILE} > [AC-2] b: declared exempt, but the declaration does not apply: the reason is shorter than 10 characters; the test must be red`,
+    );
+  }
+  // A declaration must name the test's full name exactly: a title, a prefix, another file do not.
+  const miss = checkRedReports(
+    [redReport(BASE_FILE, SUPPORT_TESTS)],
+    [BASE_FILE],
+    ROOT,
+    supportBaselines(),
+    [
+      declare('[AC-2]'),
+      declare('b'),
+      declare('[AC-2] b', REASON, 'test/spec/notify/other.test.ts'),
+    ],
+  );
+  expect(miss.problems.map((p) => p.test)).toEqual(['[AC-2] b', '[AC-3] c']);
+  expect(miss.exempt).toEqual([]);
+  expect(miss.notes).toContain(
+    `${BASE_FILE}: the declared exemption of "[AC-2]" matches no test of the report (the full name must be exactly the red reporter's)`,
+  );
+  expect(miss.notes).toContain(
+    'declared exemption of test/spec/notify/other.test.ts > [AC-2] b: test/spec/notify/other.test.ts is not an expected rule-test file (ignored)',
+  );
+});
+
+it('[CT-06r] a declaration applies only to a file judged whole because of a changed test-support file; every test declared fails', () => {
+  const declared = [declare('[AC-2] b'), declare('[AC-3] c')];
+  const teeth = 'green on the skeleton: the test has no teeth';
+  // Code outside the tests changed: whole, the declarations do not apply.
+  const helper = HEAD_SOURCE.replace(VITEST, `${VITEST}\nconst helper = () => 2;`);
+  const shared = checkRedReports(
+    [redReport(BASE_FILE, SUPPORT_TESTS.slice(0, 4))],
+    [BASE_FILE],
+    ROOT,
+    baselinesOf(helper, SUPPORT_CHANGES),
+    declared,
+  );
+  expect(shared.problems.map((p) => `${p.test}: ${p.reason}`)).toEqual([
+    `[AC-2] b: ${teeth}`,
+    `[AC-3] c: ${teeth}`,
+  ]);
+  expect(shared.exempt).toEqual([]);
+  expect(shared.notes[1]).toBe(
+    `${BASE_FILE}: 2 declared exemption(s) do not apply: code outside the tests changed (imports, helpers, hooks, top-level tables or describe titles) (a declaration applies only to a file judged as a whole because it may read a changed test-support file)`,
+  );
+  // Not the red reporter: whole, the declarations do not apply.
+  const plain = checkRedReports(
+    [redReport(BASE_FILE, SUPPORT_TESTS, 'vitest-json')],
+    [BASE_FILE],
+    ROOT,
+    supportBaselines(),
+    declared,
+  );
+  expect(plain.problems.map((p) => p.test)).toEqual(['[AC-2] b', '[AC-3] c']);
+  expect(plain.notes[1]).toContain(
+    '2 declared exemption(s) do not apply: the report is not from the red reporter',
+  );
+  // A file judged test by test (no support file changed): the declarations are not needed.
+  const tests = checkRedReports(
+    [redReport(BASE_FILE, SUPPORT_TESTS)],
+    [BASE_FILE],
+    ROOT,
+    baselinesOf(SUPPORT_SOURCE),
+    declared,
+  );
+  expect(tests.ok).toBe(true);
+  expect(tests.exempt).toEqual([
+    { file: BASE_FILE, test: '[AC-2] b', status: 'passed' },
+    { file: BASE_FILE, test: '[AC-3] c', status: 'passed' },
+  ]);
+  expect(tests.notes[0]).toBe(
+    `${BASE_FILE}: 2 declared exemption(s) are not needed: the file is judged test by test (its unchanged tests are exempt by themselves)`,
+  );
+  // A new file: no baseline, the declarations do not apply (every test red).
+  const NEW = 'test/spec/notify/new.test.ts';
+  const fresh = checkRedReports(
+    [redReport(NEW, [['[AC-1] a', 'passed']])],
+    [NEW],
+    ROOT,
+    new Map(),
+    [declare('[AC-1] a', REASON, NEW)],
+  );
+  expect(fresh.problems.map((p) => p.reason)).toEqual([teeth]);
+  expect(fresh.notes).toEqual([
+    `${NEW}: 1 declared exemption(s) do not apply: the file is new, renamed or could not be compared with the base (a declaration applies only to a file judged as a whole because it may read a changed test-support file)`,
+  ]);
+  // Without baselines (no --base) declarations are ignored and the result keeps its old shape.
+  const old = checkRedReports(
+    [redReport(BASE_FILE, SUPPORT_TESTS)],
+    [BASE_FILE],
+    ROOT,
+    undefined,
+    declared,
+  );
+  expect(old.exempt).toBeUndefined();
+  expect(old.problems.map((p) => p.test)).toEqual(['[AC-2] b', '[AC-3] c']);
+  expect(old.notes).toEqual([]);
+  // Every test of the file unchanged and declared: nothing would be shown red.
+  const same = SUPPORT_SOURCE.replace(
+    "expect(await columns()).toEqual(['app_id', 'variant']);",
+    'expect(1).toBe(1);',
+  )
+    .replace(
+      "expect(await primaryKey()).toEqual(['app_id', 'code', 'variant']);",
+      'expect(1).toBe(1);',
+    )
+    .replace(spec('[AC-5] e reads ./expected.csv'), '')
+    .replace(/\n+$/, '\n');
+  const all = checkRedReports(
+    [
+      redReport(BASE_FILE, [
+        ['[AC-1] a', 'passed'],
+        ['[AC-2] b', 'passed'],
+        ['[AC-3] c', 'passed'],
+        ['[AC-4] d', 'passed'],
+      ]),
+    ],
+    [BASE_FILE],
+    ROOT,
+    baselinesOf(`${same.trimEnd()} // reads ./expected.csv\n`, SUPPORT_CHANGES),
+    ['[AC-1] a', '[AC-2] b', '[AC-3] c', '[AC-4] d'].map((t) => declare(t)),
+  );
+  expect(all.ok).toBe(false);
+  expect(all.problems).toEqual([
+    {
+      file: BASE_FILE,
+      test: null,
+      reason:
+        'existed at the base and every test is declared exempt: nothing is shown red (4 test(s); evidence-check wants a red test of every expected file)',
+    },
+  ]);
+  expect(all.exempt).toHaveLength(4);
 });
 
 it('[CT-06p] without baselines the result keeps its old shape (no exempt list)', () => {
