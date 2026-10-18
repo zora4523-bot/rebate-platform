@@ -130,7 +130,9 @@ function requestFromArgs(args: Readonly<Record<string, unknown>>): SearchRequest
     pageSize:
       limit !== undefined && limit >= 1 && limit <= defaultPageSize() ? limit : defaultPageSize(),
     page: page !== undefined && page >= 1 && page <= maxSearchPage() ? page : 1,
-    ...(typeof spec === 'string' && spec.length >= 1 && spec.length <= maxSpecLength()
+    // Counted in code points, as the registry's JSON Schema maxLength does (a supplementary
+    // character is one, not two UTF-16 units).
+    ...(typeof spec === 'string' && spec !== '' && [...spec].length <= maxSpecLength()
       ? { spec }
       : {}),
   };
