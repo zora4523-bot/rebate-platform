@@ -21,6 +21,7 @@ const ANONYMOUS_OPERATIONS: readonly (readonly [method: string, path: string])[]
   ['POST', '/v1/consents'],
   ['GET', '/v1/articles'],
   ['GET', '/v1/articles/{article_id}'],
+  ['GET', '/v1/agreements'],
   ['GET', '/v1/pages/{page_key}'],
   ['GET', '/v1/pages/{page_key}/preview'],
   ['GET', '/v1/products/search'],
