@@ -25,6 +25,7 @@ const SIGNED_OPERATIONS: readonly (readonly [method: string, path: string])[] = 
   ['POST', '/v1/inputs/parse'],
   ['POST', '/v1/links/{link_id}/open'],
   ['POST', '/v1/links/convert'],
+  ['POST', '/v1/orders/claims'],
 ];
 
 const SIGNED = new Set(SIGNED_OPERATIONS.map(([method, path]) => `${method} ${path}`));
