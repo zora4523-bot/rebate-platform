@@ -1,0 +1,31 @@
+id: CT-06p
+repo: rebate-platform
+title: 门禁小修：red-check 对 base 上已存在的规则测试文件只要求新增或测试体有改动的用例为有效红，测试体未变的用例不计入先红要求（可绿；若红仍须有效原因），notes 列出豁免条目；新文件、新用例的先红要求与应跑清单不变
+type: guard-change
+# 2026-10-18 入账（编排会话接手 be-codex 预占的 CT-06p；裁定见 couli-runs/B3-lane/notices.md 10-18 06:01 UTC「门禁缺口」条、14:1x「编排裁定」条、16:2x「编排接手」条）。
+# 起因：B1-12f（#750）为加主键列须改 B1-12e 冻结测试的两处精确断言，red-check 按文件对账要求该文件全部用例在骨架上红，未改的 16 条本应为绿，判「无牙」；B2-01l / B2-01m（A′）同类。
+# 做法：verify-container.sh --red 调 red-check 时另给 base 与快照树；red-check 对 base 上同路径已存在的应跑文件，按测试名 + 规范化后的测试体比对 base 与 head：
+#   测试体未变的用例豁免（绿可、红须有效），notes 与 JSON 的 exempt 列出；新增、测试体改动、改名、移动顺序、换 describe 的用例照旧须有效红；
+#   拿不准一律按「有改动」：测试体外的代码（import、helper、钩子、describe 头、顶层表格）有改动、读不懂源码、报告不是红测报告器的，整文件照旧全红；
+#   参数化表格行变动时该 it.each 的全部用例须红；本任务改了 test_paths 内的夹具 / helper / 数据文件而该文件可能读到它（文件名出现在它或其相对 import 闭包里、闭包里列目录或动态加载、快照类文件名含测试文件名）也整文件全红；
+#   base 已有文件里若一条新增或改动的用例都没有，判失败（与 evidence-check 每文件至少一条红的覆盖一致）。
+# 不变：新文件、新用例的先红要求；red-and-commit / verify-container --red 的应跑清单；evidence-check（含 MONEY_PATHS）；不涉资金测试删改，不涉四类例外。合并后 test-change 路线仍可用，二者择一。
+# tools/ 属保护路径第三类：负责人 10-02 常设授权的流程门禁小修（approvals #16），Claude 实现、Codex 对抗评审，评审通过、检查全绿后按 approvals #24 加标签。tools 自己的单元测试由实现者写，不需要先写规则测试。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/guard/lib/red-check{*,-fixtures/**}'
+  - 'tools/guard/lib/test-blocks*'
+  - 'tools/guard/red-check.ts'
+  - 'tools/guard/guard-cli.test.ts'
+  - 'tools/ops/verify-container.sh'
+  - 'tools/ops/verify-container.test.ts'
+  - 'tools/README.md'
+  - 'tools/ops/README.md'
+  - 'tools/agent/README.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
