@@ -82,7 +82,7 @@ it.each(['UNATTRIBUTED', 'VOID'])(
       appId: f.ctx.app_id,
       platform: 'pdd',
       unionAccountId: f.ctx.union_account_id,
-      pid: before.pid,
+      pid: 'incoming-other-pid',
     });
     expectSourceWrite(f.queries, 'update');
     expect(f.onUpdated.mock.calls[0]?.[1].attributed_now).toBe(true);
