@@ -21,7 +21,7 @@
 //   node tools/guard/red-check.ts --task <id> --cwd <worktree> --base <ref> --print-expected
 //     prints the expected rule-test files, one per line (tools/ops/verify-container.sh --red uses
 //     it to pick what to run, and later checks the report against the same list).
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Change, changedBetweenCommits, changedFiles, tryGit } from '../lib/git.ts';
 import { trustedRoot } from '../lib/paths.ts';
@@ -48,6 +48,25 @@ function readWorkTree(cwd: string, path: string): string | null {
     return readFileSync(join(cwd, path), 'utf8');
   } catch {
     return null;
+  }
+}
+
+/**
+ * Whether `<ref>:<path>` is a regular file (a blob of mode 100644 / 100755: not a directory, not
+ * a symbolic link; CT-06w, Codex review r1 — `git show` of a directory lists it, which is no file).
+ */
+function isFileAt(cwd: string, ref: string, path: string): boolean {
+  const res = tryGit(['ls-tree', ref, '--', path], { cwd });
+  if (res.status !== 0) return false;
+  const line = res.stdout.split('\n')[0] ?? '';
+  return /^(100644|100755) blob /.test(line) && line.endsWith(`\t${path}`);
+}
+
+function isFileInWorkTree(cwd: string, path: string): boolean {
+  try {
+    return lstatSync(join(cwd, path)).isFile();
+  } catch {
+    return false;
   }
 }
 
@@ -120,6 +139,8 @@ runCli(
         baselines = ruleTestBaselines(expected, changes, scope, {
           base: (p) => showAt(cwd, base, p),
           head: (p) => (headTree === undefined ? readWorkTree(cwd, p) : showAt(cwd, headTree, p)),
+          headIsFile: (p) =>
+            headTree === undefined ? isFileInWorkTree(cwd, p) : isFileAt(cwd, headTree, p),
         });
       } catch (err) {
         baselines = undefined;

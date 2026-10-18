@@ -1422,6 +1422,6 @@ it('[CT-06w] ruleTestBaselines: an import of a same-named file in another direct
   const kept = ruleTestBaselines([EVENTS, QUEUE], changes, scope, reader(bare, bare));
   expect(kept.get(QUEUE)).toMatchObject({
     kind: 'support',
-    reason: `it may read a test-support file the task changed: ${QUEUE} names kit.ts in an unresolved import queue-kit/kit.ts (a package (no tsconfig paths map it))`,
+    reason: `it may read a test-support file the task changed: ${QUEUE} names kit.ts in an unresolved import queue-kit/kit.ts (a package (a bare specifier; tsconfig paths are not used by Vitest here))`,
   });
 });
