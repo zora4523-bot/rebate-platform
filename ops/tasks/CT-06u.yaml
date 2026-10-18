@@ -13,7 +13,8 @@ type: guard-change
 # 等当前 head 上所有 github-actions 套件完成、无 cancelled 套件、verify-fast / verify-props / verify-int 最新一次全 success（guard-git /
 # ci-gate / protected-paths / evidence-check 因缺标签红不算；有上限轮询，写 land-progress.log），再 gh pr edit --add-label，之后不再推
 # 提交；新增 scripts/pr-unblock.sh <pr>：按 commits/<sha>/check-suites，对结论 cancelled / failure / 0 条检查的每个套件所属运行整轮
-# gh run rerun（不用 --failed），逐个等完再下一个，有运行中的套件先不动，verify 真红的不重跑；land.sh 合并被拦时调它。本仓库只改
+# gh run rerun（不用 --failed；只重跑本 PR 自己的运行），逐个等完再下一个，有运行中的套件先不动，verify 真红的不重跑，查询失败或
+# 等待超时退出 2，最后重读全部通过才退出 0；land.sh 合并被拦时直接调它（不再以存在失败 check-run 为前提）。本仓库只改
 # tools/README.md 的批准标签段（加标签时机、三层阻塞、脚本名、ci.yml 为何不改）。
 # tools/** 属保护路径第三类：approvals #16 常设授权的门禁流程小修，Claude 实现、Codex 评审脚本逻辑与文案，按 approvals #24 加标签；
 # 按 approvals #12 走非 task 分支（chore/guard-change-CT-06u）、不带证据文件。
