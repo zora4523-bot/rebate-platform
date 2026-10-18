@@ -15,6 +15,7 @@ export function meUser(db: Kysely<DB>, subject: MeSubject) {
       'self_bind_used',
       'phone_hmac',
       'created_at',
+      'status',
     ])
     .where('app_id', '=', subject.appId)
     .where('id', '=', subject.userId)
@@ -28,22 +29,6 @@ export async function hasDirectChildren(db: Kysely<DB>, subject: MeSubject): Pro
     .select('id')
     .where('app_id', '=', subject.appId)
     .where('parent_id', '=', subject.userId)
-    .limit(1)
-    .executeTakeFirst();
-  return row !== undefined;
-}
-
-/** Read-only appeal projection, as permitted by B1-02z §9.3 (D4). */
-export async function hasBannedAccountAppeal(db: Kysely<DB>, subject: MeSubject): Promise<boolean> {
-  const row = await db
-    .withSchema('app')
-    .selectFrom('appeals')
-    .select('id')
-    .where('app_id', '=', subject.appId)
-    .where('user_id', '=', subject.userId)
-    .where('target_type', '=', 'account')
-    .where('status', '=', 'processing')
-    .where('prev_risk_state', '=', 'banned')
     .limit(1)
     .executeTakeFirst();
   return row !== undefined;
