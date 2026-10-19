@@ -331,6 +331,10 @@ export async function history(
 }
 export function privateDataAbsent(kit: Kit, responses: Response[], rows: unknown = []) {
   const text =
-    kit.lines.join('\n') + responses.map((r) => r.body).join('\n') + JSON.stringify(rows);
+    kit.lines.join('\n') +
+    responses.map((r) => r.body).join('\n') +
+    JSON.stringify(rows, (_, value: unknown) =>
+      typeof value === 'bigint' ? value.toString() : value,
+    );
   for (const secret of [NAME, ID, '1949-12-31']) expect(text).not.toContain(secret);
 }
