@@ -100,8 +100,12 @@ export async function fixture(db: Kysely<DB>, redis: RedisHandle) {
       .selectAll()
       .where('app_id', '=', subject.app_id)
       .where('applicant_user_id', '=', subject.user_id)
-      .orderBy('sub_order_id')
-      .execute();
+      .execute()
+      .then((rows) =>
+        rows.sort((a, b) =>
+          a.sub_order_id < b.sub_order_id ? -1 : a.sub_order_id > b.sub_order_id ? 1 : 0,
+        ),
+      );
   async function history(
     row: Awaited<ReturnType<typeof seed>>,
     patch: Partial<Insertable<DB['claims']>> = {},

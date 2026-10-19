@@ -40,7 +40,7 @@ afterAll(async () => {
   }
 }, 30_000);
 
-it('[AC-B1-10b#45] 契约校验→版本门→幂等；低版本不计数、不占幂等键且拦已存重放', async () => {
+it('[AC-B1-10b#45] 契约校验→幂等回放→版本门；提高最低版本后同键回放30201，新键10405且不计数、不占键', async () => {
   const f = await fixture(db, redis);
   const key = randomUUID();
   const payload = { platform: 'jd', order_no: 'missing', paid_date: PAID };
@@ -71,7 +71,7 @@ it('[AC-B1-10b#45] 契约校验→版本门→幂等；低版本不计数、不�
     async (send) => {
       const invalid = await send({ ...payload, order_no: '' });
       expect(invalid.json().code).toBe(20001);
-      await answer(await send(payload, { key }), 10405);
+      await answer(await send(payload, { key }), 30201);
       const fresh = randomUUID();
       await answer(await send(payload, { key: fresh }), 10405);
       expect(
