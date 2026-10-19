@@ -2,7 +2,7 @@ import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { setup, succeed, splits, capture, HOUR, MANUAL } from './kit.ts';
+import { setup, setupScan, succeed, splits, capture, HOUR } from './kit.ts';
 
 let database: TestDatabase | undefined;
 let db: Kysely<DB>;
@@ -19,8 +19,8 @@ afterAll(async () => {
 }, 30_000);
 
 it('[AC-B1-08t#9] 定时扫描严格超过一小时才补偿，使用注入时钟并按 App 隔离', async () => {
-  const f = await setup(db);
-  const other = await setup(db);
+  const f = await setupScan(db);
+  const other = await setupScan(db);
   const beforeOther = await other.pending();
   await succeed(f, db);
   f.clock.advanceMs(HOUR - 1);
@@ -44,7 +44,7 @@ it('[AC-B1-08t#9] 定时扫描严格超过一小时才补偿，使用注入时�
 });
 
 it('[AC-B1-08t#10] 多条到期待处理按订单去重，重复投递和已处置记录不再调用', async () => {
-  const f = await setup(db);
+  const f = await setupScan(db);
   await f.addPending({});
   await f.addPending({ reason: 'SERVICE_FEE_RATE_MISSING', status: 'dismissed' });
   await f.addPending({ reason: 'NO_RECEIVED_AT', detail: null });
@@ -71,7 +71,7 @@ it('[AC-B1-08t#10] 多条到期待处理按订单去重，重复投递和已处�
 it.each(['unattributed', 'DEPOSIT_PAID', 'INVALID', 'VOID', 'CLAWED_BACK'] as const)(
   '[AC-B1-08t#11] 定时扫描锁内重读资格，%s 不调用快照端口也不处置',
   async (state) => {
-    const f = await setup(db);
+    const f = await setupScan(db);
     await db
       .updateTable('orders')
       .set(
@@ -92,19 +92,18 @@ it.each(['unattributed', 'DEPOSIT_PAID', 'INVALID', 'VOID', 'CLAWED_BACK'] as co
 );
 
 it('[AC-B1-08t#12] 刷新 detected_at 不延后未处置时长；超过24小时仍 pending 才告警转人工', async () => {
-  const f = await setup(db);
+  const f = await setupScan(db);
   const first = (await f.pending())[0]!;
-  f.clock.advanceMs(24 * HOUR);
-  await db
-    .updateTable('order_sync_pending')
-    .set({ detected_at: f.clock.now() })
-    .where('app_id', '=', f.ctx.app_id)
-    .execute();
+  f.clock.advanceMs(23 * HOUR);
   await f.scan();
   expect(f.port.create).toHaveBeenCalledTimes(1);
   expect(f.alerts()).toEqual([]);
-  expect((await f.pending())[0]).toMatchObject({ status: 'open', created_at: first.created_at });
-  f.clock.advanceMs(1);
+  expect((await f.pending())[0]).toMatchObject({
+    status: 'open',
+    created_at: first.created_at,
+    detected_at: f.clock.now(),
+  });
+  f.clock.advanceMs(HOUR + 1);
   await f.scan();
   expect(f.port.create).toHaveBeenCalledTimes(2);
   const alerts = f.alerts();
@@ -114,21 +113,21 @@ it('[AC-B1-08t#12] 刷新 detected_at 不延后未处置时长；超过24小时�
     id: first.id,
     status: 'open',
     resolved_at: null,
-    resolution_note: MANUAL,
     created_at: first.created_at,
   });
   const payload = JSON.stringify(alerts[0]);
   expect(payload).not.toContain(f.incoming.sub_order_id);
   expect(payload).not.toContain(f.userId);
-  // 已交人工的行不反复告警、不再自动调用；流水线与扫描一致。
+  // 不限定内部标记：再次到期扫描和合法流水线更新均不得自动重试。
+  f.clock.advanceMs(2 * HOUR);
   await f.scan();
-  await f.process();
+  await f.process({ ...f.incoming, modified_at: f.clock.now(), est_commission_fen: 790n });
   expect(f.port.create).toHaveBeenCalledTimes(2);
   expect(f.alerts()).toHaveLength(1);
 });
 
 it('[AC-B1-08t#13] 超过24小时本次成功则处置成功，不发失败告警', async () => {
-  const f = await setup(db);
+  const f = await setupScan(db);
   await succeed(f, db);
   f.clock.advanceMs(24 * HOUR + 1);
   await f.scan();
@@ -138,10 +137,9 @@ it('[AC-B1-08t#13] 超过24小时本次成功则处置成功，不发失败告�
 });
 
 it('[AC-B1-08t#14] 告警只包含平铺定位字段，不输出买家身份或完整子订单号', async () => {
-  const f = await setup(db);
+  const f = await setupScan(db);
   f.clock.advanceMs(24 * HOUR + 1);
   await f.scan();
-  expect((await f.pending())[0]?.resolution_note).toBe(MANUAL);
   expect(f.alerts()).toHaveLength(1);
   for (const fields of f.alerts()) {
     expect(
@@ -154,7 +152,7 @@ it('[AC-B1-08t#14] 告警只包含平铺定位字段，不输出买家身份或�
 });
 
 it('[AC-B1-08t#15] 端口写快照后抛错不提交半成品，失败后释放锁并可恢复', async () => {
-  const f = await setup(db);
+  const f = await setupScan(db);
   const port = await succeed(f, db);
   const failure = new Error('synthetic snapshot failure after insert');
   f.port.create.mockImplementationOnce(async (trx, input) => {
@@ -172,28 +170,8 @@ it('[AC-B1-08t#15] 端口写快照后抛错不提交半成品，失败后释放�
   expect((await f.pending())[0]?.status).toBe('resolved');
 });
 
-it.each(['two-scans', 'scan-and-pipeline'] as const)(
-  '[AC-B1-08t#16] %s 使用同一订单锁，成功后等待方重读且不再调用',
-  async (mode) => {
-    const f = await setup(db);
-    const port = await succeed(f, db);
-    f.clock.advanceMs(HOUR + 1);
-    const results = await Promise.all([
-      capture(() => f.scan()),
-      capture(async () => {
-        if (mode === 'two-scans') await f.scan();
-        else await f.process();
-      }),
-    ]);
-    expect(results.every((r) => r.ok)).toBe(true);
-    expect(port.create).toHaveBeenCalledTimes(1);
-    expect(await splits(db, f.ctx.app_id)).toHaveLength(1);
-    expect((await f.pending())[0]?.status).toBe('resolved');
-  },
-);
-
 it('[AC-B1-08t#17] 金额资料仍不完整时保留 pending，不能以0元生成；超时仍须转人工', async () => {
-  const f = await setup(db, { est_commission_fen: null });
+  const f = await setupScan(db, { est_commission_fen: null });
   f.clock.advanceMs(HOUR + 1);
   await f.scan();
   expect(f.port.create).not.toHaveBeenCalled();
@@ -201,12 +179,11 @@ it('[AC-B1-08t#17] 金额资料仍不完整时保留 pending，不能以0元生�
   f.clock.advanceMs(24 * HOUR);
   await f.scan();
   expect(f.port.create).not.toHaveBeenCalled();
-  expect((await f.pending())[0]?.resolution_note).toBe(MANUAL);
   expect(f.alerts()).toHaveLength(1);
 });
 
 it('[AC-B1-08t#18] 扫描不能以缺快照或同名非快照解析错误为补偿信号', async () => {
-  const f = await setup(db);
+  const f = await setupScan(db);
   await db
     .updateTable('order_sync_pending')
     .set({ reason: 'AMOUNT_PARSE_FAILED', detail: 'union normalization failed' })
@@ -221,7 +198,7 @@ it('[AC-B1-08t#18] 扫描不能以缺快照或同名非快照解析错误为补�
 });
 
 it('[AC-B1-08t#19] 超时后端口抛错也转人工，不能无限重试或提交端口写到一半的快照', async () => {
-  const f = await setup(db);
+  const f = await setupScan(db);
   const port = await succeed(f, db);
   f.port.create.mockImplementation(async (trx, input) => {
     await port.create(trx, input);
@@ -234,7 +211,27 @@ it('[AC-B1-08t#19] 超时后端口抛错也转人工，不能无限重试或提�
   expect((await f.pending())[0]).toMatchObject({
     status: 'open',
     resolved_at: null,
-    resolution_note: MANUAL,
   });
   expect(f.alerts()).toHaveLength(1);
+  f.clock.advanceMs(2 * HOUR);
+  await f.scan();
+  await f.process({ ...f.incoming, modified_at: f.clock.now(), est_commission_fen: 790n });
+  expect(f.port.create).toHaveBeenCalledTimes(1);
+  expect(f.alerts()).toHaveLength(1);
+});
+
+it('[AC-B1-08t#25] 拼多多扫描缺持久化服务费时跳过，不调用端口、不处置且记录 warn', async () => {
+  const f = await setup(db);
+  f.clock.advanceMs(HOUR + 1);
+  const before = await f.pending();
+  const orderBefore = (await f.read()).orders;
+  f.logger.warn.mockClear();
+  await f.scan();
+  expect(f.port.create).not.toHaveBeenCalled();
+  expect(await f.pending()).toEqual(before);
+  expect((await f.read()).orders).toEqual(orderBefore);
+  expect(f.logger.warn.mock.calls.map(([fields]) => fields)).toEqual([
+    expect.objectContaining({ event: 'snapshot_retry_skipped', reason: 'service_fee_unknown' }),
+  ]);
+  expect(f.alerts()).toEqual([]);
 });

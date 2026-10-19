@@ -22,7 +22,6 @@ export { capture } from '../attribution/kit.ts';
 export { splits } from '../commission-snapshot/real-kit.ts';
 
 export const HOUR = 3_600_000;
-export const MANUAL = 'snapshot_retry_manual';
 export const ALERT = 'order.snapshot_retry_exhausted';
 
 export async function setup(
@@ -75,7 +74,8 @@ export async function setup(
     },
     incoming: {
       modified_at: row.platform_modified_at,
-      service_fee_fen: f.incoming.service_fee_fen ?? null,
+      // 扫描没有本次报文；orders 也没有服务费列，不能从夹具内存补回。
+      service_fee_fen: null,
     },
     pidScene: 'share',
     movedToPaidNow: false,
@@ -119,7 +119,7 @@ export async function setup(
     onUpdated,
     job,
     alerts: () =>
-      [...f.logger.warn.mock.calls, ...f.logger.error.mock.calls]
+      f.logger.error.mock.calls
         .map(([fields]) => fields as Record<string, unknown>)
         .filter((fields) => fields.event === ALERT),
     process: (incoming: UnionOrder = f.incoming) => pipeline().process(incoming, f.ctx),
@@ -154,8 +154,47 @@ export async function setup(
 
 export type Fixture = Awaited<ReturnType<typeof setup>>;
 
+export async function setupScan(
+  db: Kysely<DB>,
+  patch: Partial<UnionOrder> & { platform?: RegisteredPlatform } = {},
+) {
+  return setup(db, {
+    platform: 'jd',
+    attr_params: {
+      relation_id: null,
+      sub_union_id: 'n_abcd1234',
+      custom_parameters: null,
+    },
+    service_fee_fen: null,
+    ...patch,
+  });
+}
+
 export async function succeed(f: Fixture, db: Kysely<DB>) {
   const port = await realPort(db, f);
+  // 共用旧夹具只预置拼多多规则；在本任务内为扫描平台补齐同版本的规则和预留。
+  if (f.incoming.platform !== 'pdd') {
+    await db
+      .withSchema('app')
+      .insertInto('commission_rules')
+      .values({
+        ...port.version.rules[0]!,
+        app_id: f.ctx.app_id,
+        rule_version_id: port.version.rule_version_id,
+        platform: f.incoming.platform,
+      })
+      .execute();
+    await db
+      .withSchema('app')
+      .insertInto('commission_rule_reserves')
+      .values({
+        app_id: f.ctx.app_id,
+        rule_version_id: port.version.rule_version_id,
+        platform: f.incoming.platform,
+        reserve_bp: 1000,
+      })
+      .execute();
+  }
   f.port.create.mockImplementation(port.create);
   return port;
 }

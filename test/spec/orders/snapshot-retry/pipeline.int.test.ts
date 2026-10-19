@@ -3,7 +3,6 @@ import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { setup, succeed, splits, capture, HOUR } from './kit.ts';
-import { MANUAL } from './kit.ts';
 import { at } from '../attribution/kit.ts';
 
 let database: TestDatabase | undefined;
@@ -217,8 +216,11 @@ it('[AC-B1-08t#20] 流水线重入的持续失败也在24小时后转人工', as
   expect((await f.pending())[0]).toMatchObject({
     status: 'open',
     resolved_at: null,
-    resolution_note: MANUAL,
   });
+  expect(f.alerts()).toHaveLength(1);
+  f.clock.advanceMs(2 * HOUR);
+  await f.process({ ...f.incoming, modified_at: f.clock.now(), est_commission_fen: 790n });
+  expect(f.port.create).toHaveBeenCalledTimes(1);
   expect(f.alerts()).toHaveLength(1);
 });
 
