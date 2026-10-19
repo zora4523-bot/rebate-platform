@@ -128,6 +128,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/agreements/:type",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/v1/articles",
     "signed": false
   },
