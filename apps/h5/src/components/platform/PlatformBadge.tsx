@@ -34,6 +34,19 @@ const builtinIcons: Readonly<Record<PlatformKey, string>> = {
 };
 
 /**
+ * Keys whose built-in icon is still a neutral placeholder SVG. Its currentColor resolves to black
+ * inside the image document, so the host stylesheet lightens it in dark mode (see
+ * shared/styles/index.css); official PNGs and delivered replacements are never adjusted.
+ */
+const placeholderKeys: ReadonlySet<PlatformKey> = new Set<PlatformKey>([
+  'tmall',
+  'wechat',
+  'wechat_pay',
+  'alipay',
+  'wecom',
+]);
+
+/**
  * Replacement urls that failed to load in this page session (BR-TEXT-24: no repeated retries
  * within a session). Shared by every instance; never reset.
  */
@@ -51,6 +64,8 @@ interface Loaded {
 const BADGE =
   'inline-flex h-couli-5 shrink-0 items-center gap-couli-1 whitespace-nowrap rounded-couli-pill border border-couli-source-border bg-couli-source-background px-couli-2 align-middle text-couli-caption leading-couli-caption text-couli-source-text';
 const ICON = 'block size-couli-3 shrink-0';
+/** Marker class the host stylesheet uses to keep built-in placeholders readable in dark mode. */
+const PLACEHOLDER_ICON = 'h5-placeholder-icon';
 
 /**
  * Source platform badge (03 §10.2): small icon plus the platform's Chinese name. The built-in
@@ -84,6 +99,8 @@ export function PlatformBadge({ platform, remote }: PlatformBadgeProps): ReactEl
   const showRemote =
     url !== undefined && loaded !== undefined && loaded.platform === platform && loaded.url === url;
   const src = showRemote ? url : builtinIcons[platform];
+  const iconClass =
+    !showRemote && placeholderKeys.has(platform) ? `${ICON} ${PLACEHOLDER_ICON}` : ICON;
 
   function handleError(): void {
     if (!showRemote || url === undefined) return;
@@ -93,7 +110,7 @@ export function PlatformBadge({ platform, remote }: PlatformBadgeProps): ReactEl
 
   return (
     <span className={BADGE}>
-      <img className={ICON} src={src} alt="" aria-hidden="true" onError={handleError} />
+      <img className={iconClass} src={src} alt="" aria-hidden="true" onError={handleError} />
       {getPlatformName(platform)}
     </span>
   );

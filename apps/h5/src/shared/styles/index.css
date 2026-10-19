@@ -15,3 +15,22 @@
     color: var(--color-text-primary);
   }
 }
+
+/*
+ * Built-in placeholder platform icons (components/platform) are external SVGs whose currentColor
+ * resolves to black inside the image, so they vanish on the dark source badge. Lighten only those
+ * in dark mode, following the same two sources as the tokens: the system preference unless the
+ * host forces data-theme="light", and the host's data-theme="dark". Official PNGs and delivered
+ * replacements never carry the marker class and keep their original colours.
+ */
+@layer components {
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .h5-placeholder-icon {
+      filter: invert(1);
+    }
+  }
+
+  :root[data-theme='dark'] .h5-placeholder-icon {
+    filter: invert(1);
+  }
+}
