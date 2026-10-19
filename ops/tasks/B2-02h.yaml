@@ -1,0 +1,23 @@
+id: B2-02h
+repo: rebate-platform
+title: 迁移：为存量 users 回填 ledger_accounts（USER_BALANCE）与 account_balances（初始 0），ON CONFLICT DO NOTHING，可重跑
+type: migration
+# 2026-10-19 资金线（ledger-plan D6 A；迁移号落地时取主干最大号 + 1，先在 notices 登记）。依据 BR-FUND-13。只回填缺失的账户与余额行，不改已有行；按 app_id 分批、带 lock_timeout / statement_timeout。
+# 两段式（db/AGENTS.md）。Codex 写连库规则测试（存量用户各一行、已有不重复、重跑幂等、无用户时无行），Claude 过审，Opus 写迁移，Codex money 评审。
+refs: [BR-FUND-13]
+refs_hash:
+  BR-FUND-13: db3a11ed1712
+deps: [B2-02g]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/ledger/backfill/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/ledger/backfill/**'
+status: todo
+pr: null

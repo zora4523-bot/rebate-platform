@@ -1,0 +1,23 @@
+id: B2-03p
+repo: rebate-platform
+title: 快照受益人解析器真实实现 SnapshotBeneficiaryResolver：按 paid_at 经 growth createGrowthHistory().levelAt / parentAt 取本人与直推 / 间推及其等级，经 identity 注销状态端口判 forfeited
+type: impl
+# 2026-10-19 资金线（编排 16:1x 裁定：只经 identity / growth 已导出的读取端口，不直接查其表；16:5x：W1 的 B1-08w 生产注入依赖本任务）。依据 BR-CALC-12（等级 / 上级取 paid_at 时刻，缺等级日志取 L1 并告警）、
+# BR-CALC-13（受益人不存在或 deletion_status ∈ {processing, done} → forfeited；banned / frozen / appealing 记 active）。注销状态端口由 identity 线补（notices 10-19 请求的 createUserDeletionStatusReader），未合并前本任务不开工。
+# Codex 写规则测试，Claude 过审，Opus 实现，Codex money 评审。
+refs: [BR-CALC-12, BR-CALC-13]
+refs_hash:
+  BR-CALC-12: 9d2db9a9f415
+  BR-CALC-13: 54c06125032c
+deps: [B2-03g]
+paths:
+  - 'apps/api/src/modules/commission/**'
+test_paths:
+  - 'test/spec/commission/resolver/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/commission/resolver/**'
+status: todo
+pr: null
