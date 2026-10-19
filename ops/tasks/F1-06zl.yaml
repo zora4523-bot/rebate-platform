@@ -1,0 +1,23 @@
+id: F1-06zl
+repo: rebate-platform
+title: 后台接深色：antd 主题按系统深色切换（darkAlgorithm + 令牌映射，取值只来自 CT-11b 的深色令牌），外壳与已做页面（登录、账号、平台标识、紧急开关、配置中心、首页配置、用户查询与详情）浅 / 深各一套截图
+type: impl
+# 2026-10-19 入账（前端线 f1-frontend-7；规划/00 D35「后台按令牌支持且优先级最低」，design/tokens/README.md「浅 / 深两套取值与各端消费」）。apps/admin/src/theme.ts 现把 antd 令牌映射到 CSS 变量；深色下 antd 自行派生的 hover / active 等要随主题切换。
+# 只消费 CT-11b 的深色令牌，不自定取值。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+refs: []
+refs_hash: {}
+deps: [CT-11b]
+paths:
+  - 'apps/admin/src/theme.ts'
+  - 'apps/admin/src/App.tsx'
+  - 'apps/admin/src/main.tsx'
+  - 'apps/admin/src/styles/**'
+  - 'apps/admin/src/**/*.css'
+test_paths:
+  - 'test/spec/frontend/admin-dark/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-dark/**'
+status: todo
