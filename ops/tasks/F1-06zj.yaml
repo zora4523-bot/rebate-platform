@@ -1,0 +1,26 @@
+id: F1-06zj
+repo: rebate-platform
+title: F1-06zj：AC-F1-06ze-BROWSER 的 pickDate 点日期格前等下拉面板入场动画结束（#5 偶发选成下一行同列的 2026-10-19）
+type: test-change
+# 2026-10-19 入账（编排子代理）。起因：test/spec/frontend/admin-platform-icons-upload/pages.browser.test.ts 的 [AC-F1-06ze-BROWSER#5]
+# 在 run 39191949762（#860 第一轮，头 5bb5e8e4）的 verify-int 里红一次：pickDate 第 267 行 toHaveValue('2026-10-12') 等 10 秒，
+# Received 2026-10-19。同一头的标签轮 39194517292、主干 3599dbaa 的 39189226514 同日都绿；近 200 次 ci 只红这一次。
+# 根因（couli-runs/CT-06z/f1-06ze-browser5.md）：pickDate 只等日期格可见（toBeVisible 不看动画）就点；弹窗里日期框在视口下部，
+# 面板放在上方、入场动画 ant-slide-up-appear 约 300ms，动画前段格子整体偏下，取到的点击坐标落在面板停稳后下一行同列的格子上
+# （10-12 与 10-19 都是周一，19 在 12 正下方）。本机探针按动画中的坐标点击可复现 Received 2026-10-19。冻结时钟有效（antd「今天」= 10-12），
+# 组件 SourceFields.tsx 不读真实日期，不是实现缺陷。#3 走同一函数，#6 也调用它。
+# 做法：pickDate 里格子可见之后、点击之前加一行 await still()（同文件现成的 still() 已把 .ant-picker-dropdown 列入等动画结束的名单）。
+# 不改断言、不改所选日期、不删用例、不动 apps/。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走
+# 非 task 分支（chore/test-change-F1-06zj）、不带证据文件（先例 CT-06y #860、CT-06s #815）；Claude 实现、Codex 只读对抗评审。
+refs: []
+refs_hash: {}
+deps: [F1-06ze]
+paths:
+  - 'test/spec/frontend/admin-platform-icons-upload/pages.browser.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

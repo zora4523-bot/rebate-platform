@@ -263,6 +263,7 @@ async function pickDate(scope: ReturnType<typeof dialogWith>, label: RegExp, val
   await scope.getByLabelText(label).click();
   const day = page.getByTitle(value, { exact: true });
   await expect.element(day, FIRST).toBeVisible();
+  await still();
   await day.click();
   await expect.element(scope.getByLabelText(label), FIRST).toHaveValue(value);
 }
