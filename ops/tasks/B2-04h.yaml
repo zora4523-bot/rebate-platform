@@ -1,0 +1,22 @@
+id: B2-04h
+repo: rebate-platform
+title: ledger 只读端口：在调用方事务内按 order_key 取各 (受益人, 角色) 净额（BR-FUND-08 口径）、平台已入账净额、该单对 UNION_RECEIVABLE 净额；只读凭证结构化列
+type: impl
+# 2026-10-20 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.1）。分工：Codex / Opus。
+# 状态备注：可先开（ledger 内与 k、w、y 串行）。
+refs: [BR-FUND-08, BR-FUND-19]
+refs_hash:
+  BR-FUND-08: 0f044cf6e3f7
+  BR-FUND-19: 8d592a87d85c
+deps: []
+paths:
+  - 'apps/api/src/modules/ledger/**'
+test_paths:
+  - 'test/spec/ledger/order-nets/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/order-nets/**'
+status: todo
+pr: null

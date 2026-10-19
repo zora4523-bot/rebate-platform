@@ -1,0 +1,23 @@
+id: B2-04i
+repo: rebate-platform
+title: commission 快照读取端口：在调用方事务内取子订单当前版本快照（base_fen、reserve_bp、受益人 / 角色 / 比例、forfeited 事件与原因），只读
+type: impl
+# 2026-10-20 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.1）。分工：Codex / Opus。
+# 状态备注：可先开（与 B2-03p 同模块，按合并先后变基）。
+refs: [BR-CALC-02, BR-CALC-10, BR-CALC-13]
+refs_hash:
+  BR-CALC-02: 0ffe8a4d0b65
+  BR-CALC-10: 1848b1fb0a51
+  BR-CALC-13: 54c06125032c
+deps: []
+paths:
+  - 'apps/api/src/modules/commission/**'
+test_paths:
+  - 'test/spec/commission/snapshot-read/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/commission/snapshot-read/**'
+status: todo
+pr: null
