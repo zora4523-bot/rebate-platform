@@ -13,8 +13,8 @@ type: contract
 # contract_sections 只放 ['5'] 接口约定（04 §6.6、§11.2、§3.2、§7 原文过长，任务书超 24KB 上限）：04 §6.6 与 §7 的 20902 行由实现者按 SPEC_REF 读原文，编排者在任务书第 9 节列出要读的节。
 refs: [BR-ATTR-18, BR-ATTR-20]
 refs_hash:
-  BR-ATTR-18: 7ef1a8bcc484
-  BR-ATTR-20: 65fcdd14d9c1
+  BR-ATTR-18: 84c119d737eb
+  BR-ATTR-20: 74b2dde4c077
 contract_sections: ['5']
 deps: [CT-24d]
 paths:

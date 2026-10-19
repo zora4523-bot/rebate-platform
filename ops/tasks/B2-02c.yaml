@@ -7,8 +7,8 @@ type: migration
 # 授权只给 couli_app（D8）：凭证 / 分录 SELECT、INSERT；余额 SELECT、INSERT、UPDATE；couli_readonly 只 SELECT。须同步 tools/ci/lint-migrations.test.ts 资金表锁定清单。两段式（db/AGENTS.md）。
 refs: [BR-FUND-13, BR-FUND-15, BR-FUND-16]
 refs_hash:
-  BR-FUND-13: db3a11ed1712
-  BR-FUND-15: 79a5dd94f056
+  BR-FUND-13: ad7aad8f8846
+  BR-FUND-15: bd05f14a7d97
   BR-FUND-16: 077f6d412d5a
 deps: [B2-02b]
 paths:
