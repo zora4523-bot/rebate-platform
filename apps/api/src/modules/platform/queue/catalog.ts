@@ -19,6 +19,8 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
     'settle',
     'payout',
     'notify',
+    // Event queue of notification's risk.state_changed consumer (B1-12g); events/types.ts.
+    'evt.notification-risk-state',
     'pool-refresh',
     'poster',
     'agent-trace',
@@ -61,6 +63,7 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
     work('order-rescan', 1),
     work('settle', 1),
     work('notify', 5),
+    work('evt.notification-risk-state', 5),
     work('pool-refresh', 1),
     work('poster', 2, 0.5),
     work('agent-trace', 2),

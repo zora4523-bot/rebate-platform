@@ -37,7 +37,8 @@ it('[AC-B1-01f#1] admin 注入两个句柄，HTTP adapter 先关闭，再关闭�
       await original.close();
     },
   };
-  const app = await createHttpApp('admin', given);
+  // B1-12g：createHttpApp 有库默认起队列；本测试用连不上的库测关停顺序，显式不起
+  const app = await createHttpApp('admin', { ...given, startQueue: false });
   try {
     await app.init();
     expect(app.get(DB)).toBe(original.db);
@@ -76,7 +77,8 @@ it('[AC-B1-01f#3] HTTP 创建失败后释放已创建的数据库句柄', async 
   const given = options('api');
   const failure = new Error('startup failed');
   vi.spyOn(NestFactory, 'create').mockRejectedValue(failure);
-  await expect(createHttpApp('api', given)).rejects.toBe(failure);
+  // B1-12g：createHttpApp 有库默认起队列；本测试用连不上的库测关停顺序，显式不起
+  await expect(createHttpApp('api', { ...given, startQueue: false })).rejects.toBe(failure);
   await expect(sql`SELECT 1`.execute(given.dbHandles.db)).rejects.toMatchObject({ code: 'closed' });
 });
 

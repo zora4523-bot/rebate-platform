@@ -28,7 +28,8 @@ function fixture(entry: EntryName) {
 
 it('[AC-B1-01g#1] HTTP 停机先关服务，等待队列停止后才关闭数据库', async () => {
   const given = fixture('api');
-  const app = await createHttpApp('api', given);
+  // B1-12g：createHttpApp 有库默认起队列；本测试用连不上的库测关停顺序，显式不起
+  const app = await createHttpApp('api', { ...given, startQueue: false });
   await app.init();
   const queue = app.get<QueueRuntime>(JOB_QUEUE);
   const events: string[] = [];
