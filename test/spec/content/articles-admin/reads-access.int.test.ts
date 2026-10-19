@@ -214,12 +214,13 @@ it('[AC-F1-02w#28] 并发新建相同 id 恰一成功一冲突，不把 PG 主�
 
 it.each([
   'NOT-A-UUID',
-  '0199F102-AAAA-7000-8000-000000000001',
+  '0199F102-BBBB-7000-8000-000000000001',
   '0199f102-aaaa-7000-8000-ffffffffffff',
 ])('[AC-F1-02w#29] 非规范或不存在 id 在详情和三个写优先返回 30701：%s', async (id) => {
   const f = await setup(h);
   // 大写用例先种入对应的小写 id，不能仅因查不到行而误通过。
-  if (id.includes('AAAA')) {
+  // Orchestrator mechanical fix: a BBBB id never collides with kit.ts newId() (aaaa-prefixed, shared DB).
+  if (id.includes('BBBB')) {
     await seedArticle(h, f, id.toLowerCase());
     expect((await detail(f, id.toLowerCase())).article_id).toBe(id.toLowerCase());
   }
