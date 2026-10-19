@@ -42,7 +42,7 @@ let database: TestDatabase | undefined;
 let db: Kysely<DB>;
 
 beforeAll(async () => {
-  // Shared integration globalSetup reads TEST_PG_ADMIN_URL and supplies a migrated template.
+  // The shared integration globalSetup supplies the migrated template database.
   database = await createTestDatabase();
   db = createDb({ connectionString: database.urlFor('couli_app') });
 });
