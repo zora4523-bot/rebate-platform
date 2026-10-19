@@ -1,0 +1,27 @@
+id: CT-02u
+repo: rebate-platform
+title: 契约：后台账号 AdminAccount 与 AdminMe 增**可选** display_name（string、1–32 字，为空时不输出）——admins 列表 / 详情与 me 返回；返回操作人名字的字段（审计日志 actor_name 等）优先取 display_name、为空回落账号名（description 写明）；planned
+type: contract
+# 2026-10-19 入账（admin-backend，扩 CT-02f；编排 10-19 05:0x）。依据 04 §3.2 admin_users.display_name（#147）、04 §6.6 admins / auth。
+# **可选、为空不输出**（#870 Claude 评审 S1）：AdminAccount / AdminMe 是封闭 schema；必填会让 test/spec/admin/accounts/kit.ts:46、test/spec/frontend/admin-data/fixtures.ts:41,59、admin-admins/list.test.ts:87 的类型化字面量 tsc 失败，可空必输出（null）会让 kit.ts:184 expectView 与 admin/permissions/me.int.test.ts 的精确 toEqual 变红；可选不输出两者都不受影响。
+#   同改 AdminMe.username 的说明（现写 also shown as the display name，openapi.yaml 约 18328 行）为「display_name 为空时作显示名」。
+# 只加只读字段；设置 display_name 的写接口随后台账号管理补齐（F1-10i）的契约另定。已合并接口里返回操作人名字的字段（CT-24c 的 actor_name 等）只在 description 写明取值口径，不改形状。
+# 实现（读 admin_users.display_name 填入响应）依赖 F1-06zi，由后续 admin 实现任务承接。
+# contract_sections 只放 ['5'] 接口约定（04 §6.6、§11.2、§3.2、§7 原文过长，任务书超 24KB 上限）：04 §6.6 admins / auth 由实现者按 SPEC_REF 读原文，编排者在任务书第 9 节列出要读的节。
+refs: []
+refs_hash: {}
+contract_sections: ['5']
+deps: [F1-06zi]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

@@ -1,0 +1,32 @@
+id: CT-24d
+repo: rebate-platform
+title: 契约：后台找回审核只读——GET /admin/v1/claims（平台 / 证据等级 / 订单号或找回单号 / 用户 / claim_status 筛选，页码分页，各状态计数）与 GET /admin/v1/claims/{claim_id}（子项、证据视图 matches[]）；权限 order.claim（带 user_id 时 user.lookup 亦可读，04 §11.2）、无二次验证；planned
+type: contract
+# 2026-10-19 入账（admin-backend，编排 10-18 19:2x 派工「后台缺口」规划 #137；写操作拆到 CT-24l）。依据 01 F-ADM-06、04 §6.6 claims、§3.2 claims / claim_items、§11.2 order.claim 与 user.lookup、
+#   08 BR-ATTR-18、BR-TEXT-25（claim_status / claim_reject_reason 后台显示名，#147）、design/specs/admin-claims.md（#148 已按 08 改）、docs/changes/20261018-后台第1批定稿.md ③。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：**另建** AdminClaimListItem / AdminClaimDetail / AdminClaimItem，只复用 CT-04f 的枚举 schema（ClaimStatus / ClaimItemDecision / ClaimRejectReason）；**不得扩展或引用用户端 OrderClaimItem / OrderClaim**（封闭投影，CT-04f#6、#7 冻结字段并禁止后台字段，#870 评审 S1）；分页沿用 AdminPage / AdminPageSize；
+#   列表项 {claim_id, claim_no（展示用编号）, order_no, platform, user（uid + 脱敏手机号，BR-ID-33）, paid_date（用户填）, submitted_at, evidence_level, status}，各状态计数随列表返回（counts，与其余筛选条件同口径）；
+#   排序：status = auto_matched 置顶（BR-ATTR-18），其余按 submitted_at 倒序、同刻按服务端内部次序；用户筛选只收 user_id（UID 与手机号走 CT-24b 一框搜，不在本接口查）；claim_no / 订单号精确匹配；未知 claim_id 20001 [claim_id]（#148）；详情含子项 {item_id, sub_order_id, evidence（该子项证据等级，BR-ATTR-18 按子项计）, decision, reject_reason?, decided_at?, decided_by?, decided_by_name?（取 admin_users.display_name、为空回落账号名，04 §3.2）, row_version, matches[]}、
+#   claims.reason（最近一次说明）与子项内 matches[]（逐项对比用户填写与联盟回传：字段、用户值、联盟值、是否一致；命中的 link_log 只给时间与渠道，不出原始报文）。
+#   一键通过、统计卡、导出本期不做。权限按 04 §11.2：order.claim 可读全部；只持 user.lookup 的账号**必须带 user_id 筛选**才能读列表，详情仅限该用户的找回（不符同不存在 20001 [claim_id]），供用户详情「找回」页签（design/specs/admin-user-detail.md）；写操作仍只认 order.claim（CT-24l）。
+# 实现由后续 B1 任务承接（依赖 B1-10b / B1-10c 产出 claim 与证据）。
+# contract_sections 只放 ['5'] 接口约定（04 §6.6、§11.2、§3.2、§7 原文过长，任务书超 24KB 上限）：04 §6.6 等由实现者按 SPEC_REF 读原文，编排者在任务书第 9 节列出要读的节。
+refs: [BR-ATTR-18]
+refs_hash:
+  BR-ATTR-18: 7ef1a8bcc484
+contract_sections: ['5']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
