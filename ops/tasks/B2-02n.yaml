@@ -1,0 +1,22 @@
+id: B2-02n
+repo: rebate-platform
+title: ledger 小修（fail-closed）：日终校验加载到空的不变量集合判 DAILY_CHECK_FAILED；调用方 SAVEPOINT 回滚后锁登记随之失效，post 对未持锁账户报 NOT_LOCKED 而不是重新取锁
+type: impl
+# 2026-10-20 资金线（编排 06:3x 派工 ②）。B2-02j money r2 S2（LedgerInvariantSource.load() 返回 [] 时当成功）与 B2-02f money r1 S2（heldLocks 不随保存点回滚失效，FOR UPDATE NOWAIT 会重新取锁）。
+# 只改 ledger 模块；不改已有规则测试。Codex 写测试（连库），Claude 过审，Opus 实现，Codex money 评审。
+refs: [BR-FUND-16, BR-FUND-19]
+refs_hash:
+  BR-FUND-16: 077f6d412d5a
+  BR-FUND-19: 8d592a87d85c
+deps: [B2-02j, B2-02f]
+paths:
+  - 'apps/api/src/modules/ledger/**'
+test_paths:
+  - 'test/spec/ledger/hardening/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/hardening/**'
+status: todo
+pr: null
