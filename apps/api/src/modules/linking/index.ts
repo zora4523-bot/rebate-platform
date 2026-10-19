@@ -152,3 +152,11 @@ export { LinkingAdminModule } from './linking-admin.module.ts';
 export type { LinkingAdminOptions, LinkingAuditWriterFactory } from './linking-admin.module.ts';
 // B1-08n: orders' relation_id binding reader (every status, raw instants), assembled by app.module.
 export { createOrderBindingReader } from './infra/order-binding-reader.ts';
+// B1-08q: orders' source backfill reader (link_logs of one App, user and platform in a closed
+// created_at range, unfiltered), assembled by app.module.
+export { createOrderSourceReader } from './infra/order-source-reader.ts';
+export type {
+  OrderSourceLog,
+  OrderSourceLogScope,
+  OrderSourceReader,
+} from './infra/order-source-reader.ts';

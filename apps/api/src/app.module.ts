@@ -96,6 +96,7 @@ import {
   LinkingModule,
   createOrderBindingReader,
   createClaimEvidenceReader,
+  createOrderSourceReader,
   blockForBan,
   restoreAfterUnban,
   createOrderLinkReader,
@@ -122,6 +123,8 @@ import {
 import {
   OrdersModule,
   type ClaimEvidenceFactory,
+  createOrderSourcePorts,
+  type OrderSourcePorts,
   type OrdersWorkerOptions,
 } from './modules/orders/index.ts';
 import {
@@ -704,6 +707,7 @@ function governedUnion(
  * linking: identity's attr_code → user reader, linking's relation_id binding reader, and one
  * memory quota bucket per platform for the worker's own governed adapters (the same capacity
  * and shares as the api's governedUnion; each process keeps its own bucket and breakers).
+ * B1-08q: the source backfill ports (orderSourcePorts).
  */
 function orderSyncPorts(union: DynamicModule): OrdersWorkerOptions {
   return {
@@ -715,6 +719,7 @@ function orderSyncPorts(union: DynamicModule): OrdersWorkerOptions {
         { bucketKey: endpoint.quotaKey, ...UNION_QUOTA, shares: quotaShares('mvp') },
         scheduler,
       ),
+    sources: (db, clock, logger) => orderSourcePorts(db, clock, logger),
   };
 }
 
@@ -747,6 +752,35 @@ const claimEvidencePorts: ClaimEvidenceFactory = (trx, clock) => {
     },
   };
 };
+/**
+ * B1-08q: orders' source backfill ports (BR-ATTR-15) over linking's link_logs reader, catalog's
+ * platforms (key_prefix) and content's config_items. Building them reads nothing; every call
+ * reads again (a fresh content reader per call, so a changed config_items row is seen at once;
+ * listPlatforms reads the table on every call). Read failures propagate unchanged.
+ */
+function orderSourcePorts(
+  db: Kysely<Database>,
+  clock: Clock,
+  logger: RootLogger,
+): OrderSourcePorts {
+  const logs = createOrderSourceReader(db);
+  const catalog = createCatalog({
+    db,
+    clock,
+    warn: (event: CatalogWarning) => {
+      logger.warn(
+        { event: `catalog_${event.kind}`, product_key: event.key },
+        'product_key alias chain not resolved',
+      );
+    },
+  });
+  return createOrderSourcePorts({
+    linkLogs: (input) => logs.linkLogs(input),
+    keyPrefix: async (platform) =>
+      (await catalog.listPlatforms()).find((row) => row.code === platform)?.key_prefix ?? null,
+    configValue: (appId, key) => createContentReader({ db, clock }).configValue(appId, key),
+  });
+}
 
 /** The strongest union mode configured: one live endpoint makes the whole process live. */
 function unionModeOf(endpoints: readonly UnionEndpoint[]): UnionMode {

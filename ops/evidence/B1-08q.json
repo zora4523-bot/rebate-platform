@@ -1,0 +1,134 @@
+{
+  "task": "B1-08q",
+  "spec_ref": "fde86795d3a23d92640c388f80a626f86d67cb53",
+  "spec_commit": "04f89f40fd0949bb093b45b16a9558068fb1ed95",
+  "red_tests": [
+    "test/spec/orders/source-wiring/config-routing.test.ts > [AC-B1-08q#2] 新异步配置端口按 App/平台调用并覆盖旧端口，exact 开关=true",
+    "test/spec/orders/source-wiring/config-routing.test.ts > [AC-B1-08q#2] 新异步配置端口按 App/平台调用并覆盖旧端口，exact 开关=false",
+    "test/spec/orders/source-wiring/config-routing.test.ts > [AC-B1-08q#3] 新配置端口的窗口用于候选判定，开关开但缺短码口仍回退 product",
+    "test/spec/orders/source-wiring/config-routing.test.ts > [AC-B1-08q#4] 新配置端口失败原样上抛，不查询候选或写成 none",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#5] 生产配置按 App 和平台隔离，缺省 false/360，同一端口立即读到配置修改",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 480 回退 360h",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 0 回退 360h",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 -1 回退 360h",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 1.5 回退 360h",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 null 回退 360h",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 true 回退 360h",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 9007199254740992 回退 360h",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，\"true\" 不能启用",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，1 不能启用",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，null 不能启用",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，false 不能启用",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，{} 不能启用",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，undefined 不能启用",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#8] 商品键每次从 catalog 读前缀，缺行/空前缀/不可推导返回 null",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#9] 京东端口没有 App 上下文，不能猜测 jdMode 推导商品键",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#10] 生产 config_items 读取失败原样上抛，不转成缺省配置或 null",
+    "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#10] 生产 platforms 读取失败原样上抛，不转成缺省配置或 null",
+    "test/spec/orders/source-wiring/flow.int.test.ts > [AC-B1-08q#12] 真实 worker fresh 回填，窗口外一秒=false",
+    "test/spec/orders/source-wiring/flow.int.test.ts > [AC-B1-08q#12] 真实 worker fresh 回填，窗口外一秒=true",
+    "test/spec/orders/source-wiring/flow.int.test.ts > [AC-B1-08q#12] 真实 worker rerun 回填，窗口外一秒=false",
+    "test/spec/orders/source-wiring/flow.int.test.ts > [AC-B1-08q#12] 真实 worker rerun 回填，窗口外一秒=true",
+    "test/spec/orders/source-wiring/logs.int.test.ts > [AC-B1-08q#11] 真实 linkLogs 按 App/用户/平台隔离且两端闭，不过滤事件、结果、场景",
+    "test/spec/orders/source-wiring/module.test.ts > [AC-B1-08q#1] 真实 worker 向归因和更新注入同一 sources 与 pids，装配无副作用"
+  ],
+  "risk_note": "RV2 (orders/**, linking/**, app.module.ts). Source backfill wiring (BR-ATTR-15): the worker assembly injects one sources object into the attribution pipeline and the update step — a linking order-source reader (link_logs by app, user, platform and a closed time window), catalog product keys read from platforms.key_prefix on every call (missing row / empty prefix / JD → null), and an optional app-scoped sourceConfig (attr.click_code.<platform> default false, attr.backfill_window_hours default 360) that replaces the frozen clickCode / window ports when injected (D10-76); without it the B1-08j path is unchanged. Read errors propagate. Short-code lookup stays TODO until B1-08s. No rebate_status / hold / money writes.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "04f89f40fd0949bb093b45b16a9558068fb1ed95",
+      "tree": "ed068d4624ec0a1a112d641b195a7559265cc56f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T08:55:14Z",
+      "finished_at": "2026-10-19T08:55:32Z",
+      "gate": {
+        "commit": "b15cb83e49ec619ec88302ae88859967021c2c00",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/orders/source-wiring/config-routing.test.ts > [AC-B1-08q#2] 新异步配置端口按 App/平台调用并覆盖旧端口，exact 开关=true",
+        "test/spec/orders/source-wiring/config-routing.test.ts > [AC-B1-08q#2] 新异步配置端口按 App/平台调用并覆盖旧端口，exact 开关=false",
+        "test/spec/orders/source-wiring/config-routing.test.ts > [AC-B1-08q#3] 新配置端口的窗口用于候选判定，开关开但缺短码口仍回退 product",
+        "test/spec/orders/source-wiring/config-routing.test.ts > [AC-B1-08q#4] 新配置端口失败原样上抛，不查询候选或写成 none",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#5] 生产配置按 App 和平台隔离，缺省 false/360，同一端口立即读到配置修改",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 480 回退 360h",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 0 回退 360h",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 -1 回退 360h",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 1.5 回退 360h",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 null 回退 360h",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 true 回退 360h",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#6] 窗口非正安全整数 9007199254740992 回退 360h",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，\"true\" 不能启用",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，1 不能启用",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，null 不能启用",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，false 不能启用",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，{} 不能启用",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#7] 开关只接受 JSON true，undefined 不能启用",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#8] 商品键每次从 catalog 读前缀，缺行/空前缀/不可推导返回 null",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#9] 京东端口没有 App 上下文，不能猜测 jdMode 推导商品键",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#10] 生产 config_items 读取失败原样上抛，不转成缺省配置或 null",
+        "test/spec/orders/source-wiring/config.int.test.ts > [AC-B1-08q#10] 生产 platforms 读取失败原样上抛，不转成缺省配置或 null",
+        "test/spec/orders/source-wiring/flow.int.test.ts > [AC-B1-08q#12] 真实 worker fresh 回填，窗口外一秒=false",
+        "test/spec/orders/source-wiring/flow.int.test.ts > [AC-B1-08q#12] 真实 worker fresh 回填，窗口外一秒=true",
+        "test/spec/orders/source-wiring/flow.int.test.ts > [AC-B1-08q#12] 真实 worker rerun 回填，窗口外一秒=false",
+        "test/spec/orders/source-wiring/flow.int.test.ts > [AC-B1-08q#12] 真实 worker rerun 回填，窗口外一秒=true",
+        "test/spec/orders/source-wiring/logs.int.test.ts > [AC-B1-08q#11] 真实 linkLogs 按 App/用户/平台隔离且两端闭，不过滤事件、结果、场景",
+        "test/spec/orders/source-wiring/module.test.ts > [AC-B1-08q#1] 真实 worker 向归因和更新注入同一 sources 与 pids，装配无副作用"
+      ],
+      "expected": [
+        "test/spec/orders/source-wiring/config-routing.test.ts",
+        "test/spec/orders/source-wiring/config.int.test.ts",
+        "test/spec/orders/source-wiring/flow.int.test.ts",
+        "test/spec/orders/source-wiring/logs.int.test.ts",
+        "test/spec/orders/source-wiring/module.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "1e8e817a4e5bb7674e7e89cd6bb58259e20ff6f2cb7d172588744d92677e9842"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "c401abcae3f8f5ba60039cc6bf9c54968c6f040ba443ca1a2e5370f5dc71e461"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one S2 (an extreme backfill window overflows the date arithmetic) recorded as a follow-up."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (3 runs, test attempts exhausted on fixture errors) plus orchestrator mechanical fixture fixes per rulings D10-77 / D10-79 (reuse the migration 0017 seed rows; #8 rewrites only the pdd row of app.platforms results and counts the queries); round 1 pass with no findings (28 tests)."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "c3e428f7c612453d2348e506f87dce394d614ea0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "17bae1f19f325bf3fe068ff69529444b9cb7be5d",
+    "specs": "c3c361e2d577cc550a501e7feb636fbcb179ff4a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
