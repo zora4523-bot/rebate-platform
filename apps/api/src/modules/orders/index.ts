@@ -43,7 +43,20 @@ export type {
   OrderSourceMatch,
 } from './domain/source-backfill.ts';
 export { backfillOrderSource } from './application/source-backfill.ts';
-export type { BackfillOrderSourceInput, OrderSourcePorts } from './application/source-backfill.ts';
+export type {
+  BackfillOrderSourceInput,
+  OrderSourceConfig,
+  OrderSourcePorts,
+} from './application/source-backfill.ts';
+// B1-08q: the production source ports over other modules' raw reads (assembled by app.module).
+export {
+  BACKFILL_WINDOW_HOURS_KEY,
+  backfillWindowHoursOf,
+  clickCodeEnabledOf,
+  clickCodeKey,
+  createOrderSourcePorts,
+} from './application/source-ports.ts';
+export type { OrderSourceReads, ProductionOrderSourcePorts } from './application/source-ports.ts';
 // Task B1-08h: attribution pipeline main transaction (BR-ATTR-01/02/06/07/08/22/25). The lock,
 // user attribution and buy_type helpers are shared with B1-08i, claim and admin changes.
 export { createOrderPipeline } from './application/pipeline-port.ts';

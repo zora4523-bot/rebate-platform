@@ -2,8 +2,8 @@
 // domain/source-backfill.ts 的纯函数里；端口抛错原样抛出（调用方整事务回滚、本页重试）。
 // 首次入库（pipeline-port 的 fresh）与未归因重跑成功（update-step）在本事务的判定阶段调用；
 // 找回通过、管理员改派（B1-10）复用本函数，旧值审计由调用方负责。
-// 端口在 orders 声明；linking 的真实实现（按 (app_id, user_id, platform, created_at 区间) 取 link_logs、
-// 按 lk 反查 links）、productKey 的 keyPrefix / 京东模式与配置键读取由 B1-08n 装配。
+// 端口在 orders 声明；生产实现见 source-ports.ts（B1-08q：linking 按 (app_id, user_id, platform, created_at
+// 区间) 取 link_logs、catalog 的 key_prefix、content 的 config_items），由 app.module 经 worker 装配注入。
 import type { RegisteredPlatform, UnionOrder, UnionOrderAttrParams } from '../../union/index.ts';
 import { instantAt } from '../domain/sync-window.ts';
 import {
@@ -33,10 +33,24 @@ export interface OrderSourcePorts {
   }): Promise<ExactLink | null>;
   /** 订单的 product_key（@couli/domain deriveProductKey 口径）；推不出 → null（跳过 ②）。 */
   productKey(input: { platform: RegisteredPlatform; order: UnionOrder }): Promise<string | null>;
-  /** 配置 attr.click_code.<platform>（缺省 false）。 */
+  /** 配置 attr.click_code.<platform>（缺省 false）。注入 sourceConfig 时不调用。 */
   clickCode?(platform: RegisteredPlatform): boolean;
-  /** 配置 attr.backfill_window_hours（缺省 360，BR-ATTR-13 ③）。 */
+  /** 配置 attr.backfill_window_hours（缺省 360，BR-ATTR-13 ③）。注入 sourceConfig 时不调用。 */
   windowHours?(): number;
+  /**
+   * D10-76：按 App 取本次回填的两项配置（attr.click_code.<platform> 缺省 false；attr.backfill_window_hours
+   * 缺省 360）。注入时每次回填先调用一次（exact 之前），不再调用 clickCode / windowHours；抛错原样抛出。
+   */
+  sourceConfig?(
+    appId: string,
+    platform: RegisteredPlatform,
+  ): OrderSourceConfig | Promise<OrderSourceConfig>;
+}
+
+/** 一次来源回填用的配置（D10-76）：exact 开关与 W_backfill 小时数。 */
+export interface OrderSourceConfig {
+  readonly clickCodeEnabled: boolean;
+  readonly backfillWindowHours: number;
 }
 
 export interface BackfillOrderSourceInput {
@@ -65,7 +79,8 @@ const HOUR_MS = 3_600_000;
 /**
  * 按当时的 userId 重新匹配来源：开关 attr.click_code.<platform> 打开、订单参数解析出 lk、且注入了
  * linkByCode → 先反查 exact 候选；exact 命中（link 属于订单 user_id）即返回，不再取商品键、窗口配置与
- * link_logs（BR-ATTR-15 命中即停：后续读取的故障不得回滚已命中的 exact）。exact 未命中且推广位场景已知时
+ * link_logs（BR-ATTR-15 命中即停：后续读取的故障不得回滚已命中的 exact）。注入 sourceConfig 时开关与窗口
+ * 由它一次给出（在 exact 之前读）。exact 未命中且推广位场景已知时
  * 再取 product_key、取窗口内 link_logs，交给 matchOrderSource。推广位场景未知（pidScene=null）不跨场景
  * 匹配：不调 productKey / linkLogs，exact 未命中即 none。
  */
@@ -74,15 +89,23 @@ export async function backfillOrderSource(
   input: BackfillOrderSourceInput,
 ): Promise<OrderSourceMatch> {
   const { appId, platform } = input;
+  // D10-76：注入了按 App 的配置端口就只用它（一次读取，exact 之前）；否则照 B1-08j 的两个同步口子。
+  const config =
+    ports.sourceConfig === undefined ? null : await ports.sourceConfig(appId, platform);
+  const clickCodeEnabled =
+    config === null ? (ports.clickCode?.(platform) ?? false) : config.clickCodeEnabled;
   let exactLink: ExactLink | null = null;
   const lookup = ports.linkByCode;
-  if ((ports.clickCode?.(platform) ?? false) && lookup !== undefined) {
+  if (clickCodeEnabled && lookup !== undefined) {
     const lk = parseLinkCode(platform, input.order.attr_params ?? NO_PARAMS);
     if (lk !== null) exactLink = await lookup.call(ports, { appId, platform, lk });
   }
   const exact = matchExactLink(exactLink, input.userId);
   if (exact !== null) return exact;
-  const windowHours = ports.windowHours?.() ?? DEFAULT_BACKFILL_WINDOW_HOURS;
+  const windowHours =
+    config === null
+      ? (ports.windowHours?.() ?? DEFAULT_BACKFILL_WINDOW_HOURS)
+      : config.backfillWindowHours;
   let productKey: string | null = null;
   let candidates: readonly LinkLogCandidate[] = [];
   if (input.pidScene !== null) {

@@ -21,11 +21,19 @@ import type {
   UnionEndpoint,
   UnionRegistry,
 } from '../union/index.ts';
-import { createOrderSyncRuntime, orderSyncToken } from './worker-runtime.ts';
+import * as pipelinePort from './application/pipeline-port.ts';
+import type { OrderSourcePorts } from './application/source-backfill.ts';
+import * as updateStep from './application/update-step.ts';
+import {
+  createOrderSyncRuntime,
+  orderSyncToken,
+  type OrderSyncReadPorts,
+} from './worker-runtime.ts';
 
 const handles: Kysely<DB>[] = [];
 afterEach(async () => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   await Promise.all(handles.splice(0).map((db) => db.destroy()));
 });
 
@@ -54,7 +62,7 @@ function rawAdapter(platform: RegisteredPlatform): UnionAdapter {
   };
 }
 
-function setup() {
+function setup(sources?: OrderSyncReadPorts['sources']) {
   const queries: string[] = [];
   const lines: { msg: string }[] = [];
   const logger = createRootLogger(
@@ -93,11 +101,13 @@ function setup() {
       bucketKey: endpoint.quotaKey,
       tryAcquire: () => true,
     })),
+    ...(sources === undefined ? {} : { sources }),
   };
   const db = compileOnly(queries);
+  const clock = new FixedClock('2026-10-17T17:30:00.000Z');
   const runtime = createOrderSyncRuntime({
     db,
-    clock: new FixedClock('2026-10-17T17:30:00.000Z'),
+    clock,
     logger,
     queue,
     events: { publish: vi.fn() },
@@ -105,7 +115,20 @@ function setup() {
     registry,
     ports,
   });
-  return { runtime, queries, lines, register, send, raws, ports, users, bindings, db };
+  return {
+    runtime,
+    queries,
+    lines,
+    register,
+    send,
+    raws,
+    ports,
+    users,
+    bindings,
+    db,
+    clock,
+    logger,
+  };
 }
 
 it('[AC-B1-08n#u7] 装配只注册一次 order-sync，不查库、不投递；端口工厂各调一次', () => {
@@ -172,4 +195,33 @@ it('[AC-B1-08n#u11] start 只起定时器、不投递；stop 后无残留定时�
   expect(s.queries).toEqual([]);
   await handle.stop();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it('[AC-B1-08q#u8] 注入 sources：工厂在装配时调一次（db、clock、logger），同一对象与 pids 交给归因和更新，装配不查库', () => {
+  const makePipeline = vi.spyOn(pipelinePort, 'createOrderPipeline');
+  const makeUpdate = vi.spyOn(updateStep, 'createOrderUpdateStep');
+  const sources: OrderSourcePorts = {
+    linkLogs: vi.fn(),
+    productKey: vi.fn(),
+  };
+  const factory = vi.fn(() => sources);
+  const s = setup(factory);
+  expect(factory.mock.calls).toEqual([[s.db, s.clock, s.logger]]);
+  expect(s.queries).toEqual([]);
+  expect(s.send).not.toHaveBeenCalled();
+  expect(sources.linkLogs).not.toHaveBeenCalled();
+  expect(sources.productKey).not.toHaveBeenCalled();
+  const deps = makePipeline.mock.calls[0]![0];
+  const updateDeps = makeUpdate.mock.calls[0]![0];
+  expect(deps.sources).toBe(sources);
+  expect(updateDeps.sources).toBe(sources);
+  expect(updateDeps.pids).toBe(deps.pids);
+});
+
+it('[AC-B1-08q#u9] 未注入 sources：归因与更新都不带 sources（来源四列保持 NULL）', () => {
+  const makePipeline = vi.spyOn(pipelinePort, 'createOrderPipeline');
+  const makeUpdate = vi.spyOn(updateStep, 'createOrderUpdateStep');
+  setup();
+  expect('sources' in makePipeline.mock.calls[0]![0]).toBe(false);
+  expect('sources' in makeUpdate.mock.calls[0]![0]).toBe(false);
 });

@@ -10,7 +10,11 @@
 // - start() starts the scheduler's timer loops only (createOrderSyncScheduler); every call starts
 //   one more set (entry.ts calls it once).
 // Other modules' readers come in as ports from app.module (identity users, linking bindings, the
-// quota limiter); union's are read through union/index.ts. orders never imports linking or identity.
+// quota limiter, B1-08q's source backfill ports); union's are read through union/index.ts. orders
+// never imports linking, identity, catalog or content.
+// - B1-08q: when ports.sources is given, one OrderSourcePorts object is built at assembly (no read)
+//   and the same object goes to the pipeline and the update step; the update step also gets the
+//   pipeline's pids reader so its backfill knows the order's pid_scene (D10-60).
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import { readFileSync } from 'node:fs';
 import type { DB } from '@couli/db';
@@ -36,6 +40,7 @@ import {
 } from '../union/index.ts';
 import { createOrderPipeline } from './application/pipeline-port.ts';
 import type { OrderPipelineDeps, OrderPipelinePort } from './application/pipeline-types.ts';
+import type { OrderSourcePorts } from './application/source-backfill.ts';
 import type {
   SyncAccessPort,
   SyncCursorStore,
@@ -71,6 +76,12 @@ export interface OrderSyncReadPorts {
   readonly bindings: (db: Kysely<DB>) => OrderPipelineDeps['bindings'];
   /** The quota bucket of one platform's governed adapter in this process (endpoint.quotaKey). */
   readonly quota: (endpoint: UnionEndpoint, scheduler: Scheduler) => QuotaLimiter;
+  /**
+   * B1-08q: the source backfill ports (BR-ATTR-15; linking's link_logs, catalog's key prefixes,
+   * content's config_items), called once at assembly and reading nothing until used. Absent (a
+   * runtime built without them) → no source backfill: the four source columns stay NULL.
+   */
+  readonly sources?: (db: Kysely<DB>, clock: Clock, logger: RootLogger) => OrderSourcePorts;
 }
 
 export interface OrderSyncRuntimeDeps {
@@ -165,14 +176,18 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
   const readers = createUnionOrderReaders(db);
   const users = deps.ports.users(db);
   const bindings = deps.ports.bindings(db);
+  // B1-08q: one sources object for both steps (built here, read on use).
+  const sources = deps.ports.sources?.(db, clock, logger);
   const updateStep = createOrderUpdateStep({
     clock,
     users,
     bindings,
+    pids: readers.pids,
     statusMaps,
     logger,
     rebate: PENDING_SETTLEMENT_UPDATES,
     events,
+    ...(sources === undefined ? {} : { sources }),
   });
   const pipeline = createOrderPipeline({
     db,
@@ -186,6 +201,7 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
     updateStep,
     events,
     logger,
+    ...(sources === undefined ? {} : { sources }),
   });
 
   const handler = { access, cursors, registry, pipeline, logger };
