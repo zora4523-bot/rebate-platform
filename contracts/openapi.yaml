@@ -10721,7 +10721,6 @@ paths:
         optionally of one `type`; without the text (read one version for its title and body).
         Published versions never change and are never deleted (04 §6.2).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -10817,7 +10816,6 @@ paths:
         Published versions are never changed or deleted. The response is the new version. No
         Idempotency-Key (04 §6.6; the CAS keeps a retry from publishing twice).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -10906,7 +10904,6 @@ paths:
         Permission point `content.agreement` (04 §11.2; read only, no step-up). One published
         version with the title and body of its article. A version the type does not have → 30701.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

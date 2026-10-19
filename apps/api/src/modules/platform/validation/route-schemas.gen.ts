@@ -7002,6 +7002,187 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminListAgreements": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Agreement type (04 §6.2 agreements.type).",
+          "enum": [
+            "privacy",
+            "agreement",
+            "labor_agreement"
+          ]
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminPublishAgreementVersion": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Agreement type (04 §6.2 agreements.type).",
+          "enum": [
+            "privacy",
+            "agreement",
+            "labor_agreement"
+          ]
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "body",
+        "min_version",
+        "requires_resign",
+        "legal_confirmed_by",
+        "legal_confirm_note",
+        "legal_confirmed_on",
+        "expected_version"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200000,
+          "description": "tiptap JSON of the text, as a string; nodes and marks outside the agreement body whitelist are 20001 with data.fields=[body]."
+        },
+        "min_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "description": "Where re-consent or re-signing starts; not below the current version's, not above the new version."
+        },
+        "requires_resign": {
+          "type": "boolean",
+          "description": "Whether the new version requires a new signature; must agree with the publish rules for the type and min_version."
+        },
+        "legal_confirmed_by": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Who confirmed the version for legal (OPS-14)."
+        },
+        "legal_confirm_note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "The legal confirmation note (OPS-14)."
+        },
+        "legal_confirmed_on": {
+          "type": "string",
+          "format": "date",
+          "description": "Date of the legal confirmation, written to the audit record (BR-ID-12)."
+        },
+        "expected_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The type's newest version as the console showed it, 0 when none is published; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminGetAgreementVersion": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Agreement type (04 §6.2 agreements.type).",
+          "enum": [
+            "privacy",
+            "agreement",
+            "labor_agreement"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "type",
+        "version"
+      ],
+      "additionalProperties": false
+    }
+  },
   "adminListKillSwitches": {
     "headers": {
       "type": "object",
