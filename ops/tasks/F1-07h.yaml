@@ -1,0 +1,22 @@
+id: F1-07h
+repo: rebate-platform
+title: 后台顶栏「一框搜」：GET /admin/v1/search（任一登录账号可调，服务端按 order.view / user.lookup / fund.view 裁剪）——输入 1–64 字、命中 1 条直达详情、多条列候选（最多 10 条，truncated 时提示输完整号码）、无命中与无权限同样提示、20001 提示；视觉按 design/specs/admin-search.md
+type: impl
+# 2026-10-20 入账（前端线 f1-frontend-7）。05 F1-07h、01 F-ADM-04、BR-ID-34 细则「一框搜」；契约 CT-24b（adminSearch，planned，后端未做——按契约用假服务端开发）；负责人 21:3x 后台第 1 批定稿 ②（无命中不区分「没有」与「没权限」），视觉闸已解除（design/specs/admin-search.md）。
+# 详情直达：用户详情已上线（F1-07i）；订单 / 提现详情页未上线时，命中这两类只显示候选摘要、不跳转（不留假页面）。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+refs: []
+refs_hash: {}
+deps: [CT-24b, F1-07i]
+paths:
+  - 'apps/admin/src/layout/TopBar.tsx'
+  - 'apps/admin/src/components/search/**'
+  - 'apps/admin/src/texts/search.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-search/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-search/**'
+status: todo
