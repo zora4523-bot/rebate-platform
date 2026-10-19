@@ -1,0 +1,100 @@
+{
+  "task": "B2-02l",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "75af0e3eb67bf42f7d5eb0d6f10e145657b130da",
+  "red_tests": [
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#1] 替代登记可解析、指向现存新编号 SQL，旧 03/04 各保留一份",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#2] 原单与精确 :REVERSE 跨会计日抵消，03/04 都通过且非空检查",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#3] 红冲后以新键重记一次合法，第二次未冲入账必须报出",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#4] 回归旧 03：不同金额、不同幂等键的两张有效 CREDIT 仍是重复入账",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#5] 孤立 :REVERSE 即使没有其他有效入账也报全局差异",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#6] 同组孤立红冲不能按张数抵消两张未冲原单，配对须精确匹配原键",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#7] app_id 不同的红冲不能掩盖原组重复 CREDIT",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#7] order_key 不同的红冲不能掩盖原组重复 CREDIT",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#7] beneficiary_user_id 不同的红冲不能掩盖原组重复 CREDIT",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#7] role 不同的红冲不能掩盖原组重复 CREDIT",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#7] voucher_kind 不同的红冲不能掩盖原组重复 CREDIT",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#8] 独立应用、订单、受益人、角色、类型各一笔不误报，键中间 REVERSE 不是红冲",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#9] 一张凭证的多条分录不算多次入账，多轮更正后只有一笔有效入账",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#10] 回归旧 04：忽略 CREDIT 红冲会漏掉的一分负净额仍必须报出",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#11] 扣回红冲恢复净额，随后部分扣回不误报，超出一分仍报负净额",
+    "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#12] 配对存在不能替代金额复核：非等额红冲后净额负一分须被 04 抓到"
+  ],
+  "risk_note": "RV2 (db/invariants, only additions). Ledger invariants support reversal vouchers (BR-FUND-16 / BR-FUND-19 ③④; orchestrator 2026-10-19 17:0x ruling, decisions 32-34). The merged 03_credit-unique.sql counts CREDIT vouchers per beneficiary key, so an original plus its ':REVERSE' voucher (same voucher_kind) would be reported as a duplicate. db/invariants is append-only, so this adds db/invariants/ledger/09_credit-unique-net.sql (output invariant still '03', checked_rows same as old 03) and superseded.json ([{file, replaced_by, reason}]) for the daily-check runner B2-02j to skip 03_credit-unique.sql. 09 looks at CREDIT only; an original is excluded only when it pairs with its ':REVERSE' voucher by structured columns AND their entries net to zero per (account, sub_account, ledger_type, sub_type) with no extra reversal lines; more than one effective CREDIT per key, orphan reversals and non-offsetting pairs are reported. 04 already counts reversal amounts in the net and is not replaced (rule tests prove it). Files 01-07 unchanged. Integer fen sums only; read-only SELECT.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "75af0e3eb67bf42f7d5eb0d6f10e145657b130da",
+      "tree": "72ffdce91df022fa6c224851f6b994ce718220c5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T14:16:06Z",
+      "finished_at": "2026-10-19T14:16:35Z",
+      "gate": {
+        "commit": "a076de1dbe0eb2a46ba041f1cc5f8a3fd9be03ac",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#1] 替代登记可解析、指向现存新编号 SQL，旧 03/04 各保留一份",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#2] 原单与精确 :REVERSE 跨会计日抵消，03/04 都通过且非空检查",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#3] 红冲后以新键重记一次合法，第二次未冲入账必须报出",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#4] 回归旧 03：不同金额、不同幂等键的两张有效 CREDIT 仍是重复入账",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#5] 孤立 :REVERSE 即使没有其他有效入账也报全局差异",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#6] 同组孤立红冲不能按张数抵消两张未冲原单，配对须精确匹配原键",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#7] app_id 不同的红冲不能掩盖原组重复 CREDIT",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#7] order_key 不同的红冲不能掩盖原组重复 CREDIT",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#7] beneficiary_user_id 不同的红冲不能掩盖原组重复 CREDIT",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#7] role 不同的红冲不能掩盖原组重复 CREDIT",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#7] voucher_kind 不同的红冲不能掩盖原组重复 CREDIT",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#8] 独立应用、订单、受益人、角色、类型各一笔不误报，键中间 REVERSE 不是红冲",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#9] 一张凭证的多条分录不算多次入账，多轮更正后只有一笔有效入账",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#10] 回归旧 04：忽略 CREDIT 红冲会漏掉的一分负净额仍必须报出",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#11] 扣回红冲恢复净额，随后部分扣回不误报，超出一分仍报负净额",
+        "test/spec/db/ledger/invariants-reverse/reverse.int.test.ts > [AC-B2-02l#12] 配对存在不能替代金额复核：非等额红冲后净额负一分须被 04 抓到"
+      ],
+      "expected": ["test/spec/db/ledger/invariants-reverse/reverse.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "288f75d768d0b7cb2e49609e6bd6de75a60cd02ccb0cbd50b273ca8e1314b604"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1: pairing checked keys only, not that the reversal actually offsets the original - under-reversed 99 of 100 then re-credited 50 was not reported), round 2 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 2 runs (16 red each); round 1 fail (3 S1: invariant must equal '03', checked_rows same as old 03, replacement only constrains CREDIT; 1 S2 prefix), round 2 pass with one S2 (#8 does not assert checked_rows = 5); the under-reversal counterexample from money round 1 is a follow-up rule test"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "fadc496dc50fa9ceea16ebf06276a2b4361ee8df",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
