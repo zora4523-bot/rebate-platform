@@ -1429,8 +1429,8 @@ it('[CT-06w] execution, absolute or template loads and mocks keep a module open;
   expect(why("import vm from 'node:vm';\nexport const n = vm;")).toBe(`${prefix}it uses node:vm)`);
   expect(why("export const n = await import('node:fs');")).toBe(`${prefix}it uses node:fs)`);
   // A workspace package is test code the closure does not follow, not a package.
-  expect(why("import { x } from '@couli/db/testing';\nexport const n = x;")).toBe(
-    `${prefix}it imports @couli/db/testing, a workspace package not read here)`,
+  expect(why("import { x } from '@couli/money';\nexport const n = x;")).toBe(
+    `${prefix}it imports @couli/money, a workspace package not read here)`,
   );
   // An absolute specifier (Vite resolves it against the project root) is not a package.
   expect(why("export { n } from '/spec/real/bridge.ts';")).toBe(
