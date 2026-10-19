@@ -1,0 +1,32 @@
+id: F1-09p
+repo: rebate-platform
+title: content：页面定时发布——发布带 publish_at 写待生效槽位、读时按 Clock 判定生效、到点物化（pg-boss 定时任务）与撤销，去掉其 planned
+type: impl
+# 2026-10-19 入账（content-client 第四阶段，计划 couli-runs/CONTENT-client/phase4-plan.md §3；计划按 SPEC_REF 32d7b09 取行号）。
+# 依据：01 l.327 F-HOME-07；05 l.235 F1-02 pages、l.253 F1-09；04 §3.2 pages / page_versions、§6.6 pages 行、§11.2 content.page。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）；原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：到点生效 = 原发布语义（指针切换、版本置 published 经生成的 transition()、publish_at 写计划时刻）；读侧在定时任务没跑之前也按 Clock 判定，避免延迟；
+#   物化任务按至少一次投递写、消费端幂等（重复执行不重复切换）；撤销只清槽位；状态机不加新状态。同事务审计 page_publish_schedule / page_schedule_cancel。
+# app.module.ts 只为注册队列；去掉对应操作的 planned，同 PR 重生成生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 用到的默认：D8。TECH-29 自动回滚不在本任务（R10）。
+refs: []
+refs_hash: {}
+deps: [CT-02y, F1-09n]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/pages-schedule/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/pages-schedule/**'
+status: todo
+pr: null

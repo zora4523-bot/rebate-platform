@@ -1,0 +1,31 @@
+id: F1-02ze
+repo: rebate-platform
+title: content：GET /v1/agreements 按 type 与 version 读（含劳务协议与历史版本，匿名，不存在 30701）实现
+type: impl
+# 2026-10-19 入账（content-client 第四阶段，计划 couli-runs/CONTENT-client/phase4-plan.md §3；计划按 SPEC_REF 32d7b09 取行号）。
+# 依据：本线 decisions-pending L45；04 l.390 agreements、§6.2 GET /v1/agreements；08 BR-ID-12、BR-WDR-31 细则。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）；原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：无 type 时行为不变；带 type（含 labor_agreement）与可选 version（缺省 = 当前版本）→ 该版 {type, version, min_version, article_id, article_version,
+#   text_sha256, published_at}；不存在 30701；只读 app_id 内已发布版本。公共读不改写任何行。
+# 若契约以 planned 形式落地，同 PR 去掉 planned 并重生成 openapi.gen.ts 与路由生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 用到的默认：D9。
+refs: []
+refs_hash: {}
+deps: [CT-02x]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/agreements-read-version/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/agreements-read-version/**'
+status: todo
+pr: null

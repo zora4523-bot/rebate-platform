@@ -1,0 +1,27 @@
+id: F1-09n
+repo: rebate-platform
+title: 迁移：app.pages 加待生效槽位（scheduled_version、scheduled_gray_percent、scheduled_at，成组 CHECK），支撑页面定时发布
+type: migration
+# 2026-10-19 入账（content-client 第四阶段，计划 couli-runs/CONTENT-client/phase4-plan.md §3；计划按 SPEC_REF 32d7b09 取行号）。
+# 依据：01 l.327 F-HOME-07（发布：立即 / 定时）；04 §3.2 pages / page_versions（page_versions.publish_at 只记实际发布时刻，CHECK draft ⇔ publish_at 空，本任务不动）。
+#   原文由编排者摘入任务书，refs 置空。
+# 要点：pages 加三列，全空或全非空的命名 CHECK（先 NOT VALID 再 VALIDATE）；scheduled_gray_percent 取值范围同现有灰度列；授权写在本迁移（couli_app 列级 UPDATE 补三列）。
+# 迁移号：落地时按 couli-runs/B3-lane/notices.md 分配、取主干最大 +1（计划时主干最大 0051，0052 已被 B1-11g / B1-08s 登记）；先在 notices 登记。
+#   两段式：编排者在沙箱外跑 pnpm db:snapshot 提交 schema.sql 与 db.gen.ts（outside_needed）。
+# 用到的默认：D8（槽位模型 = 每页一个待生效槽位）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/content/pages-schedule/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/content/pages-schedule/**'
+status: todo
+pr: null

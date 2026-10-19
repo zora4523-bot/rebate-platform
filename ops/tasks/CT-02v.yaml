@@ -1,0 +1,33 @@
+id: CT-02v
+repo: rebate-platform
+title: 契约：后台版本管理——/admin/v1/app-versions 列表、按端与渠道取、保存（不存在即新建，提高最低支持版本须 step-up），全部 planned；20902 data.resource 加 app_version；content.app_version 权限登记
+type: contract
+# 2026-10-19 入账（content-client 第四阶段，计划 couli-runs/CONTENT-client/phase4-plan.md §3；计划按 SPEC_REF 32d7b09 取行号）。
+# 依据：05 l.235 F1-02（app versions，TECH-19）；04 l.402 app_versions、l.589 §6.6 app-versions 行、§11.2 content.app_version（只有提高最低支持版本要动态码）；
+#   08 BR-ID-01 细则 l.188–193（保存前逐家商店核对）；01 l.555 F-ADM-17。原文由编排者摘入任务书，refs 置空。
+# 要点：GET /admin/v1/app-versions（全部端渠道行）；GET / PUT …/{platform}/{channel}（PUT 不存在即新建：expected_row_version 为 null；
+#   字段 latest / min_supported / recommended_version、update_title、update_notes、store_url、default_store、store_listings[{store, version|null}]、confirmed_stores[]）；
+#   提高 min_supported_version 时 X-Step-Up-Token totp（按请求判档，同 config-items 先例），permissions.yaml:54 已登记 raise_min_supported_version，核对即可。
+#   错误 20001 data.fields、20902 resource=app_version、10003、10403。全部新增，oasdiff 预期非破坏；契约槽序 CT-02v → CT-02w → CT-02x → CT-02y。
+# 用到的默认：D2（商店键未填时只校格式）、D3（只开 ios / android / harmony，h5 / admin 行只读）、D4（版本号只校三段数字，不加大小关系）。规划回写见计划 §5.5。
+refs: []
+refs_hash: {}
+contract_sections: ['6.6']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
