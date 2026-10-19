@@ -35,8 +35,8 @@ const { createUserDeletionStatusReader } = (await import(
   new URL('../../../../apps/api/src/modules/identity/index.ts', import.meta.url).href
 )) as typeof import('../../../../apps/api/src/modules/identity/ports/user-deletion-status.ts');
 
-// Scope: task B1-02ze §9.2, including its interim users.status mapping. No deletion_requests
-// fixture is invented before B1-15; in particular users.status=deleting is NOT processing.
+// Scope: task B1-02ze §9.2 with §10's corrected mapping: users.status=deleting is processing.
+// No deletion_requests fixture is invented before B1-15.
 const clock = new FixedClock('2026-10-20T00:00:00.000Z');
 let database: TestDatabase | undefined;
 let db: Kysely<DB>;
@@ -62,7 +62,7 @@ function appId(): string {
 async function user(
   executor: Kysely<DB> | Transaction<DB>,
   app: string,
-  status: 'normal' | 'deleting' | 'deleted',
+  status: string,
 ): Promise<string> {
   const id = randomUUID();
   await executor
@@ -107,7 +107,8 @@ function observe(executor: Kysely<DB> | Transaction<DB>) {
 it.each([
   { ac: 1, status: 'normal', expected: 'none' },
   { ac: 2, status: 'deleted', expected: 'done' },
-  { ac: 3, status: 'deleting', expected: 'none' },
+  { ac: 3, status: 'deleting', expected: 'processing' },
+  { ac: 15, status: 'synthetic_other_status', expected: 'none' },
 ] as const)(
   '[AC-B1-02ze#$ac] users.status=$status 映射为 $expected',
   async ({ status, expected }) => {
@@ -119,6 +120,31 @@ it.each([
     expect(result).toEqual(new Map([[id, expected]]));
   },
 );
+
+it.each([
+  { ac: 13, state: 'banned' },
+  { ac: 14, state: 'frozen' },
+] as const)('[AC-B1-02ze#$ac] 风控状态 $state 不属于注销，返回 none', async ({ state }) => {
+  const reader = createUserDeletionStatusReader({ db });
+  const app = appId();
+  const id = await user(db, app, 'normal');
+  // Risk writes bans and freezes to user_risk_state, leaving users.status normal.
+  await db
+    .withSchema('app')
+    .insertInto('user_risk_state')
+    .values({
+      user_id: id,
+      app_id: app,
+      state,
+      reason_category: 'other',
+      changed_by: 'synthetic-test',
+      changed_at: clock.now(),
+      created_at: clock.now(),
+      updated_at: clock.now(),
+    })
+    .execute();
+  expect(await reader.read(db, { app_id: app, user_ids: [id] })).toEqual(new Map([[id, 'none']]));
+});
 
 it('[AC-B1-02ze#4] 批量结果只含命中的请求 ID，缺失项不补 none 或 done', async () => {
   const reader = createUserDeletionStatusReader({ db });

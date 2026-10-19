@@ -20,7 +20,7 @@ export interface UserDeletionStatusReaderOptions {
 }
 
 // B1-02ze: read only through the caller's executor, including uncommitted changes.
-// Present users map to none, except users.status = deleted maps to done; absent IDs are omitted.
+// users.status: deleting → processing, deleted → done, otherwise → none; absent IDs are omitted.
 // TODO(规划/11 §4.5): 读注销单 deletion_requests 的 processing / done — blocked on B1-15
 export function createUserDeletionStatusReader(
   options: UserDeletionStatusReaderOptions,
