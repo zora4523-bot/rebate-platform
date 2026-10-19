@@ -6,6 +6,8 @@
 // - verified(): the decrypted name and birth date of a verified record, for growth (age, BR-ID-26)
 //   and the labour agreement; null unless the row is verified. Never an HTTP response: callers
 //   must not log or return the name or the birth date.
+// - verifiedRealnameSigner(): the verified record's id and name for the labor agreement's signer
+//   snapshot (B1-13h), which keeps only the id and the masked name.
 // Both use the caller's handle (a transaction included), uncached, and never write. The FieldCrypto
 // domains (contexts) are the ones the writer uses (REALNAME_CONTEXT).
 //
@@ -98,4 +100,32 @@ export function createRealnameReader(crypto: FieldCrypto): RealnameReader {
       };
     },
   });
+}
+
+/**
+ * The signer of a labor agreement (BR-WDR-31 签约主体快照, task B1-13h): the verified record's id and
+ * decrypted name, or null unless the row is verified. Internal to identity: the caller keeps only
+ * the id and the masked name (BR-ID-33); the full name is never logged, stored or returned. Uses
+ * the caller's handle (a transaction included), uncached, and never writes.
+ */
+export async function verifiedRealnameSigner(
+  handle: Kysely<DB>,
+  crypto: FieldCrypto,
+  subject: { readonly app_id: string; readonly user_id: string },
+): Promise<{ readonly id: string; readonly name: string } | null> {
+  const row = await handle
+    .withSchema('app')
+    .selectFrom('realname')
+    .select(['id', 'name_cipher'])
+    .where('app_id', '=', subject.app_id)
+    .where('user_id', '=', subject.user_id)
+    .where('status', '=', 'verified')
+    .executeTakeFirst();
+  if (row === undefined) return null;
+  // realname_verified_check guarantees the name on a verified row.
+  if (row.name_cipher === null) throw new Error('identity: incomplete verified realname record');
+  return {
+    id: row.id,
+    name: crypto.decrypt(Buffer.from(row.name_cipher).toString('utf8'), REALNAME_CONTEXT.name),
+  };
 }

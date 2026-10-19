@@ -27,6 +27,10 @@ import {
 } from './application/access-tokens.ts';
 import { createConsentService, type ConsentService } from './application/consents.ts';
 import {
+  createLaborAgreementService,
+  type LaborAgreementService,
+} from './application/labor-agreement.ts';
+import {
   createBindPhoneService,
   type BindPhoneService,
   type AccountAssetsPort,
@@ -36,6 +40,10 @@ import { createTipsService, type TipsService } from './application/tips.ts';
 import { createMeService, type MeService, type MeReadPorts } from './application/me.ts';
 import { createRealnameService, type RealnameService } from './application/realname.ts';
 import type { RealnameVerifierPort } from './ports/realname-verifier.ts';
+import {
+  registerLaborAgreementConfigReader,
+  type LaborAgreementConfigReader,
+} from './ports/labor-agreement.ts';
 import { createRealnameVerifier } from './infra/fake-realname-verifier.ts';
 import { createRealnameReader } from './infra/realname-reader.ts';
 import {
@@ -100,6 +108,7 @@ import {
   CONSENTS,
   H5_TOKENS,
   IDENTITY_CONFIG,
+  LABOR_AGREEMENT,
   LOGOUT,
   ME,
   ME_READ_PORTS,
@@ -133,6 +142,7 @@ import { SmsLoginController } from './http/public/sms-login.controller.ts';
 import { TipsController } from './http/public/tips.controller.ts';
 import { MeController } from './http/public/me.controller.ts';
 import { RealnameController } from './http/public/realname.controller.ts';
+import { LaborAgreementController } from './http/public/labor-agreement.controller.ts';
 import { DevicesRepository } from './infra/devices.repository.ts';
 import { deviceHashOf } from './infra/login-accounts.ts';
 import { createSmsSender, smsSenderToken } from './infra/fake-sms.ts';
@@ -210,6 +220,16 @@ export interface IdentityModuleOptions {
    * a landing-bound account). Absent or null: no review (the relation stays).
    */
   readonly firstAppLoginReview?: Omit<FactoryProvider<FirstAppLoginReview | null>, 'provide'>;
+  /**
+   * The labor agreement's configuration reader (BR-WDR-31, B1-13h), assembled by app.module from
+   * content's reader bound to the caller's handle (no second connection, no cache), so identity
+   * never reads config_items. Also registered for the withdrawal port laborAgreementSigned. Absent
+   * or null: GET and signature answer 50001 with a warning, the port rejects.
+   */
+  readonly laborAgreementConfig?: Omit<
+    FactoryProvider<LaborAgreementConfigReader | null>,
+    'provide'
+  >;
 }
 
 /** RegistrationOptions['bindInvite'] as app.module assembles it (IdentityModuleOptions.inviteBinding). */
@@ -299,6 +319,7 @@ const INVITE_BINDING = Symbol('IDENTITY_INVITE_BINDING');
 const FIRST_APP_LOGIN_REVIEW = Symbol('IDENTITY_FIRST_APP_LOGIN_REVIEW');
 const ACCOUNT_ASSETS = Symbol('IDENTITY_ACCOUNT_ASSETS');
 const ACCOUNT_RISK = Symbol('IDENTITY_ACCOUNT_RISK');
+const LABOR_AGREEMENT_CONFIG = Symbol('IDENTITY_LABOR_AGREEMENT_CONFIG');
 
 @Module({})
 export class IdentityModule {
@@ -320,11 +341,15 @@ export class IdentityModule {
         TipsController,
         MeController,
         RealnameController,
+        LaborAgreementController,
       ],
       providers: [
         options.accountAssets === undefined
           ? { provide: ACCOUNT_ASSETS, useValue: null }
           : { ...options.accountAssets, provide: ACCOUNT_ASSETS },
+        options.laborAgreementConfig === undefined
+          ? { provide: LABOR_AGREEMENT_CONFIG, useValue: null }
+          : { ...options.laborAgreementConfig, provide: LABOR_AGREEMENT_CONFIG },
         options.accountRisk === undefined
           ? { provide: ACCOUNT_RISK, useValue: null }
           : { ...options.accountRisk, provide: ACCOUNT_RISK },
@@ -874,6 +899,30 @@ export class IdentityModule {
                   verifier,
                   logger,
                 }),
+        },
+        {
+          // BR-WDR-31 (B1-13h): GET and signature of the labor agreement.
+          provide: LABOR_AGREEMENT,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            LABOR_AGREEMENT_CONFIG,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            config: LaborAgreementConfigReader | null,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+          ): LaborAgreementService | null => {
+            // The withdrawal port reads through the same assembly (ports/labor-agreement.ts).
+            registerLaborAgreementConfigReader(config);
+            return db === undefined || crypto === undefined
+              ? null
+              : createLaborAgreementService({ db, clock, crypto, logger, config });
+          },
         },
         {
           provide: LOGOUT,

@@ -3277,6 +3277,177 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "getLaborAgreement": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id"
+      ]
+    }
+  },
+  "signLaborAgreement": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign",
+        "idempotency-key"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "text_sha256",
+        "agreed"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "description": "The version shown to the user (GET /v1/me/labor-agreement); must be the current one."
+        },
+        "text_sha256": {
+          "type": "string",
+          "description": "sha256 of the text shown; must match that version (20001 data.fields=[text_sha256])."
+        },
+        "agreed": {
+          "type": "boolean",
+          "description": "Must be true; the server returns 20001 data.fields=[agreed] otherwise."
+        }
+      }
+    }
+  },
   "getTips": {
     "headers": {
       "type": "object",
