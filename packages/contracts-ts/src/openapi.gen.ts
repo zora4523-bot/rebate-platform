@@ -1351,7 +1351,8 @@ export interface paths {
          *     within its validity is reused. Resubmitting with the same Idempotency-Key reuses that key's
          *     verification record (in flight or recheck 40901, match saves, mismatch the original 30307,
          *     still unknown at the deadline 50401) without a new verification or charge (BR-WDR-02 细则
-         *     「核验次数上限」). Needs X-Step-Up-Token for action payout_account_change (BR-WDR-02 ③; also
+         *     「核验次数上限」); that record is reused only for the card it verified, so the same key with
+         *     another card number is 20901 even when the key has no stored result yet. Needs X-Step-Up-Token for action payout_account_change (BR-WDR-02 ③; also
          *     on the first binding). An abandoned Idempotency-Key is 20903 at the idempotency check,
          *     without comparing the body or running the business; a business write that finds it
          *     abandoned is rolled back with 20903 (04 §5「幂等」). Not realname → 30304; after a blocking

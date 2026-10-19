@@ -79,6 +79,11 @@ export interface VerifyAttempt {
   readonly verify_date: string;
   readonly status: VerifyAttemptStatus;
   readonly vendor_request_id: string;
+  /**
+   * `${realname record id}:${bank_card_hmac}`: the card and real name this record verified. A
+   * record's answer may only ever bind that card (reuse by key compares it first).
+   */
+  readonly request_fingerprint: string;
   readonly reserved_at: Date;
   readonly unknown_at: Date | null;
   readonly resolved_at: Date | null;
@@ -260,6 +265,7 @@ const COLUMNS = [
   'user_id',
   'status',
   'vendor_request_id',
+  'request_fingerprint',
   'reserved_at',
   'unknown_at',
   'resolved_at',
@@ -391,6 +397,7 @@ export async function insertReservation(
     verify_date: reservation.verifyDate,
     status: 'reserved',
     vendor_request_id: reservation.vendorRequestId,
+    request_fingerprint: reservation.fingerprint,
     reserved_at: reservation.now,
     unknown_at: null,
     resolved_at: null,

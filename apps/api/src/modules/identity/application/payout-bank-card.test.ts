@@ -82,6 +82,7 @@ function attemptRow(status: string, overrides: Record<string, unknown> = {}) {
     verify_date: '2026-10-18',
     status,
     vendor_request_id: '0199a3b4-0000-7000-8000-00000000abcd',
+    request_fingerprint: fingerprintOf(CARD),
     reserved_at: new Date(NOW),
     unknown_at: status === 'unknown' ? new Date(NOW) : null,
     resolved_at: status === 'matched' ? new Date(NOW) : null,
@@ -126,6 +127,21 @@ const crypto = {
   decrypt: (cipher: string) => cipher,
   encrypt: (plain: string) => plain,
 } as unknown as FieldCrypto;
+
+/** The request fingerprint the flow builds: realname record id and the card's blind index. */
+function fingerprintOf(cardNo: string, realnameId = 'rn-1'): string {
+  return `${realnameId}:${crypto.blindIndex(cardNo, 'payout_accounts.bank_card')}`;
+}
+
+/** A Luhn-valid demo card number of the 990001 BIN (serial varies the account digits). */
+function demoCard(serial: number): string {
+  const prefix = `990001${String(serial).padStart(9, '0')}`;
+  const sum = [...prefix].reverse().reduce((total, digit, i) => {
+    const n = Number(digit) * (i % 2 === 0 ? 2 : 1);
+    return total + (n > 9 ? n - 9 : n);
+  }, 0);
+  return prefix + String((10 - (sum % 10)) % 10);
+}
 
 const command: BankCardSubmitCommand = {
   appId: 'app_a',
@@ -221,7 +237,19 @@ async function harness(
         : [],
     );
   const index = (predicate: (event: Event) => boolean) => events.findIndex(predicate);
-  return { events, submit, verify, query, saveBankCard, lookup, check, lines, writes, index };
+  return {
+    events,
+    state,
+    submit,
+    verify,
+    query,
+    saveBankCard,
+    lookup,
+    check,
+    lines,
+    writes,
+    index,
+  };
 }
 
 const isInsert = (event: Event) =>
@@ -561,4 +589,107 @@ it('[AC-B1-13f] a blocklisted card is 44001 inside the lock, before any record r
       (event) => 'query' in event && event.query.sql.includes('payout_account_verify_attempts'),
     ),
   ).toBe(false);
+});
+
+const CARD_B = demoCard(2);
+
+it('[AC-B1-13f] demo card numbers of the tests are Luhn-valid and distinct', () => {
+  expect(demoCard(1)).toBe(CARD);
+  expect(CARD_B).not.toBe(CARD);
+  expect(CARD_B).toHaveLength(16);
+});
+
+it('[AC-B1-13f] S0: after 50401 the key keeps only its record; once that record matched, the key with another card is 20901 and nothing is saved', async () => {
+  // 1) Key K, card A: the vendor hangs → unknown, 50401 (the claim stores nothing for 5xxxx).
+  const f = await harness({}, { verify: () => new Promise<'match'>(() => undefined) });
+  expect(await f.submit()).toEqual({ code: 50401 });
+  const reserved = f.writes('pool').find((q) => q.sql.startsWith('insert'))!;
+  expect(reserved.parameters).toContain('this-key-001');
+  expect(reserved.parameters).toContain(fingerprintOf(CARD));
+  expect(f.saveBankCard).not.toHaveBeenCalled();
+  // 2) Another key's recheck turned K's record into matched (still bound to K, card A).
+  f.state.own = attemptRow('matched', { idempotency_key: 'this-key-001' });
+  const before = f.events.length;
+  // 3) K again, now with card B of somebody else: refused, never saved, no vendor, no quota.
+  expect(await f.submit({ cardNo: CARD_B })).toEqual({ code: 20901 });
+  const after = f.events.slice(before);
+  expect(f.saveBankCard).not.toHaveBeenCalled();
+  expect(after.some((event) => event.on === 'vendor')).toBe(false);
+  expect(after.some(isInsert)).toBe(false);
+  expect(
+    after.some(
+      (event) =>
+        'query' in event && /^update "app"\."payout_account_verify_attempts"/.test(event.query.sql),
+    ),
+  ).toBe(false);
+  expect(f.verify).toHaveBeenCalledTimes(1);
+  // 4) K with card A itself still reuses its own matched record and saves card A.
+  expect(await f.submit()).toEqual(SAVED);
+  expect(f.saveBankCard).toHaveBeenCalledExactlyOnceWith(
+    expect.anything(),
+    expect.objectContaining({ cardNo: CARD }),
+  );
+  expect(f.verify).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ['reserved within its lease', 'reserved', {}],
+  ['reserved past its lease', 'reserved', { reserved_at: new Date('2026-10-18T03:58:00Z') }],
+  ['unknown', 'unknown', {}],
+  ['matched', 'matched', {}],
+  ['mismatched', 'mismatched', {}],
+  ['expired_unresolved', 'expired_unresolved', {}],
+] as const)(
+  "[AC-B1-13f] the key's own %s record of another card answers 20901 before its status",
+  async (_name, status, overrides) => {
+    const own = attemptRow(status, { idempotency_key: 'this-key-001', ...overrides });
+    const f = await harness({ own, occupied: 99 });
+    expect(await f.submit({ cardNo: CARD_B })).toEqual({ code: 20901 });
+    expect(f.verify).not.toHaveBeenCalled();
+    expect(f.query).not.toHaveBeenCalled();
+    expect(f.saveBankCard).not.toHaveBeenCalled();
+    // No takeover, no new record, no quota read for the refused key.
+    expect(f.writes('pool')).toEqual([]);
+    expect(f.writes('claim')).toEqual([]);
+    const quotaRead = (event: (typeof f.events)[number]) =>
+      'query' in event &&
+      event.query.sql.includes('count(*)') &&
+      event.query.sql.includes('"payout_account_verify_attempts"');
+    expect(f.events.some(quotaRead)).toBe(false);
+  },
+);
+
+it("[AC-B1-13f] the key's own matched record under another real-name record is 20901 too", async () => {
+  const own = attemptRow('matched', {
+    idempotency_key: 'this-key-001',
+    request_fingerprint: fingerprintOf(CARD, 'rn-earlier'),
+  });
+  const f = await harness({ own });
+  expect(await f.submit()).toEqual({ code: 20901 });
+  expect(f.saveBankCard).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-13f] reuse by fingerprint saves exactly the card of that fingerprint', async () => {
+  // The fingerprint query is keyed by this request's card, so card B never sees card A's record.
+  const f = await harness({ latest: [attemptRow('matched')] });
+  expect(await f.submit()).toEqual(SAVED);
+  const lookup = f.events.find(
+    (event) => 'query' in event && event.query.sql.includes('"request_fingerprint" ='),
+  );
+  expect(lookup !== undefined && 'query' in lookup && lookup.query.parameters).toContain(
+    fingerprintOf(CARD),
+  );
+  expect(f.saveBankCard).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ cardNo: CARD }),
+  );
+});
+
+it("[AC-B1-13f] a record whose fingerprint is not the request's is never applied (invariant)", async () => {
+  // A fingerprint-path answer carrying a foreign record is a broken invariant: refused loudly.
+  const f = await harness({
+    latest: [attemptRow('matched', { request_fingerprint: fingerprintOf(CARD_B) })],
+  });
+  await expect(f.submit()).rejects.toThrow(/another card or real name/);
+  expect(f.saveBankCard).not.toHaveBeenCalled();
 });

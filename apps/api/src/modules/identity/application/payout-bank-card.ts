@@ -13,9 +13,13 @@
 //     the users row before the vendor call), users row FOR NO KEY UPDATE (the save's lock), then
 //     in order: ⓪ bank_card blocklist 44001, 30304, ① 30307, ② 30308, the same account as the
 //     current one (200 with it, nothing written), ④ 30303 change_limit (payoutAccountChecks); the
-//     record bound to this Idempotency-Key (「同一个键再次提交」: reserved → 40901, a reserved row
-//     whose lease ran out taken over to unknown first; unknown → 40901; matched → save, whatever
-//     its age; mismatched → 30307; expired_unresolved → 50401; never a new record for the key);
+//     record bound to this Idempotency-Key (「同一个键再次提交」): first its request fingerprint must
+//     be this request's — the key resubmitted with another card (or under another real-name
+//     record) is another request: 20901, nothing taken over, queried, reserved or saved (an
+//     earlier 50401 left the key without a stored result, so the claim could not compare bodies);
+//     then reserved → 40901, a reserved row whose lease ran out taken over to unknown first;
+//     unknown → 40901; matched → save, whatever its age; mismatched → 30307;
+//     expired_unresolved → 50401; never a new record for the key;
 //     else the latest record of the request fingerprint (`${realname id}:${bank_card_hmac}`,
 //     「同一账号再次提交」: reserved within its lease → 40901; reserved past it → taken over, then
 //     rechecked; unknown → rechecked; matched within the reuse period → save without a vendor call
@@ -38,6 +42,10 @@
 // Known gap (9.2 #4, 9.3): the claim transaction holds the key for the whole call, so an abandon
 // during the vendor call gets 40901 instead of BR-ID-10's "abandon wins, the request rolls back
 // with 20903"; recorded for the planning sync, not worked around here.
+//
+// Invariant: a record's answer only ever binds the card it verified. saveMatched and mismatched
+// refuse (throw) a record whose fingerprint is not this request's; every path that reaches them
+// has compared it already (the key's record above; the fingerprint's records by construction).
 //
 // Nothing logs or returns the card number, the HMAC, the fingerprint, the name or the ID number;
 // a vendor error is never logged or rethrown.
@@ -107,7 +115,7 @@ export interface BankCardSubmitCommand extends PayoutAccountSubject {
 export type BankCardSubmitResult =
   | SaveBankCardResult
   | { readonly code: 30303; readonly data: { readonly reason: 'payout_account_verify_limit' } }
-  | { readonly code: 40901 | 50301 | 50401 };
+  | { readonly code: 20901 | 40901 | 50301 | 50401 };
 
 export interface BankCardBindingOptions {
   readonly db: Kysely<DB>;
@@ -127,14 +135,15 @@ export interface BankCardBinding {
   submit(trx: Transaction<DB>, command: BankCardSubmitCommand): Promise<BankCardSubmitResult>;
 }
 
-/** What the reservation decided (b). */
+/** What the reservation decided (b); `fingerprint` is this request's (realname id + card). */
 type Step =
   | { readonly kind: 'answer'; readonly result: BankCardSubmitResult }
-  | { readonly kind: 'save'; readonly attempt: VerifyAttempt }
-  | { readonly kind: 'recheck'; readonly attempt: VerifyAttempt }
+  | { readonly kind: 'save'; readonly attempt: VerifyAttempt; readonly fingerprint: string }
+  | { readonly kind: 'recheck'; readonly attempt: VerifyAttempt; readonly fingerprint: string }
   | {
       readonly kind: 'verify';
       readonly attempt: VerifyAttempt;
+      readonly fingerprint: string;
       readonly name: string;
       readonly idNo: string;
     };
@@ -150,6 +159,8 @@ const MAX_PASSES = 3;
 const RESERVE_SAVEPOINT = sql.raw('identity_payout_verify_reserve');
 
 const BUSY = { code: 40901 } as const;
+/** The key's record verified another card or real name: the platform's 20901 (key, other body). */
+const KEY_REUSED = { code: 20901 } as const;
 const UNAVAILABLE = { code: 50301 } as const;
 const OUTCOME_UNKNOWN = { code: 50401 } as const;
 const MISMATCH = { code: 30307 } as const;
@@ -220,9 +231,13 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
         return { kind: 'answer', result: { code: 0, data } };
       }
 
-      // 「同一个键再次提交」: the key's own record, whatever its status; never a second one.
+      // 「同一个键再次提交」: the key's own record, whatever its status; never a second one. It is
+      // reused only for the very card and real-name record it verified: the key sent again with
+      // another card is another request (20901), whatever the record's status.
+      const fingerprint = `${checks.realname.id}:${request.hmac}`;
       const own = await attemptByKey(handle, owner, command.idempotencyKey);
       if (own !== undefined) {
+        if (own.request_fingerprint !== fingerprint) return { kind: 'answer', result: KEY_REUSED };
         switch (own.status) {
           case 'reserved':
             if (leaseExpired(own, now, settings.inflightSeconds)) {
@@ -232,7 +247,7 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
           case 'unknown':
             return { kind: 'answer', result: BUSY };
           case 'matched':
-            return { kind: 'save', attempt: own };
+            return { kind: 'save', attempt: own, fingerprint };
           case 'mismatched':
             return { kind: 'answer', result: MISMATCH };
           default:
@@ -241,8 +256,7 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
         }
       }
 
-      // 「同一账号再次提交」: the fingerprint's latest record.
-      const fingerprint = `${checks.realname.id}:${request.hmac}`;
+      // 「同一账号再次提交」: the fingerprint's latest record (so of this very card).
       const latest = await latestAttempt(handle, owner, fingerprint);
       if (latest?.status === 'reserved') {
         if (!leaseExpired(latest, now, settings.inflightSeconds)) {
@@ -251,11 +265,11 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
         const taken = await transitionAttempt(handle, latest, 'unknown', now);
         return taken === undefined
           ? { kind: 'answer', result: BUSY }
-          : { kind: 'recheck', attempt: taken };
+          : { kind: 'recheck', attempt: taken, fingerprint };
       }
-      if (latest?.status === 'unknown') return { kind: 'recheck', attempt: latest };
+      if (latest?.status === 'unknown') return { kind: 'recheck', attempt: latest, fingerprint };
       if (latest !== undefined && reusable(latest, now, settings.reuseHours)) {
-        return { kind: 'save', attempt: latest };
+        return { kind: 'save', attempt: latest, fingerprint };
       }
 
       // A new paid verification: reserve one of today's quota first.
@@ -281,6 +295,7 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
         return {
           kind: 'verify',
           attempt,
+          fingerprint,
           name: checks.realname.name,
           idNo: checks.realname.id_no,
         };
@@ -306,12 +321,21 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
     }
   }
 
+  /** The invariant of the file header: never apply a record to a card it did not verify. */
+  function assertOwnCard(attempt: VerifyAttempt, fingerprint: string): void {
+    if (attempt.request_fingerprint !== fingerprint) {
+      throw new Error('identity: verification record of another card or real name');
+    }
+  }
+
   /** (d) match: save in trx; the record follows the key's result (or alone when not stored). */
   async function saveMatched(
     trx: Transaction<DB>,
     request: Request,
     attempt: VerifyAttempt,
+    fingerprint: string,
   ): Promise<BankCardSubmitResult> {
+    assertOwnCard(attempt, fingerprint);
     const settle = attempt.status !== 'matched';
     let result: SaveBankCardResult;
     try {
@@ -344,7 +368,9 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
     trx: Transaction<DB>,
     request: Request,
     attempt: VerifyAttempt,
+    fingerprint: string,
   ): Promise<BankCardSubmitResult> {
+    assertOwnCard(attempt, fingerprint);
     const handle = trx.withSchema('app');
     await lockPayoutUser(handle, request.subject);
     return (await settleAttempt(handle, attempt, 'mismatched', clock.now())) ? MISMATCH : BUSY;
@@ -433,7 +459,9 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
         const step = await reserve(request, expiry);
         expiry = undefined;
         if (step.kind === 'answer') return step.result;
-        if (step.kind === 'save') return saveMatched(transaction, request, step.attempt);
+        if (step.kind === 'save') {
+          return saveMatched(transaction, request, step.attempt, step.fingerprint);
+        }
 
         if (step.kind === 'verify') {
           // (c) after the reservation committed; outside every lock.
@@ -442,16 +470,24 @@ export function createBankCardBinding(options: BankCardBindingOptions): BankCard
             idNo: step.idNo,
             cardNo,
           });
-          if (outcome === 'match') return saveMatched(transaction, request, step.attempt);
-          if (outcome === 'mismatch') return mismatched(transaction, request, step.attempt);
+          if (outcome === 'match') {
+            return saveMatched(transaction, request, step.attempt, step.fingerprint);
+          }
+          if (outcome === 'mismatch') {
+            return mismatched(transaction, request, step.attempt, step.fingerprint);
+          }
           await settleAlone(step.attempt, 'unknown');
           return OUTCOME_UNKNOWN;
         }
 
         // step.kind === 'recheck': by the original vendor_request_id, never a new verify.
         const outcome = await queryAttempt(verifier, step.attempt, logger, timeoutMs);
-        if (outcome === 'match') return saveMatched(transaction, request, step.attempt);
-        if (outcome === 'mismatch') return mismatched(transaction, request, step.attempt);
+        if (outcome === 'match') {
+          return saveMatched(transaction, request, step.attempt, step.fingerprint);
+        }
+        if (outcome === 'mismatch') {
+          return mismatched(transaction, request, step.attempt, step.fingerprint);
+        }
         if (outcome === 'not_found') {
           expiry = { attempt: step.attempt, alarm: false };
         } else if (recheckDue(step.attempt, clock.now(), settings.recheckMinutes)) {

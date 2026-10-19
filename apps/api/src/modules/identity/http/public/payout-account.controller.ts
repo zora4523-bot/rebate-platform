@@ -54,6 +54,9 @@ type ChangeResult = SaveAlipayResult | BankCardSubmitResult;
 const ERRORS: Readonly<Record<number, { readonly status: number; readonly msg: string }>> =
   Object.freeze({
     20001: { status: 400, msg: '填写内容有误，请检查' },
+    // The key's verification record is of another card: the idempotency module's own 20901
+    // (status, msg, no data), since the claim found no stored result to compare the body with.
+    20901: { status: 409, msg: 'Idempotency-Key was used with a different request body' },
     30303: { status: 422, msg: '暂不满足提现条件' },
     30304: { status: 422, msg: '请先完成实名认证' },
     30307: { status: 422, msg: '收款账号姓名与实名姓名不一致，请修改收款账号' },
