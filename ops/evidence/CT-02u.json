@@ -1,0 +1,35 @@
+{
+  "task": "CT-02u",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "74200e03ec37291d229a8e427ed79dd449e49dc1",
+  "red_tests": [],
+  "risk_note": "RV2 contract task (contracts/openapi.yaml and the regenerated contracts-ts): AdminAccount and AdminMe get an optional display_name (string, 1–32, not nullable, omitted when empty) per 04 §3.2 (planning #147; column added by F1-06zi migration 0050); AdminMe.username description says it is shown when display_name is empty; descriptions of the operator-name fields (audit log actor_name in list and detail, export created_by_name, audit log search) state 'display_name first, falling back to the login name' without changing their shape. Optional-and-omitted keeps the frozen admin account / me tests (typed literals and exact toEqual) green; tsc -b test has 0 errors. Unit tests added to admin-auth.test.ts. The write operation for display_name follows with F1-10i. tester none; implementation by an Opus 5.5 subagent in one run. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "c243e96a5b179ad0fabee49eaa2d57177f7776a3",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
