@@ -1,0 +1,114 @@
+{
+  "task": "B2-02i",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "0d822b071d8979dd77052e64a8cf00a2b7a7ee11",
+  "red_tests": [
+    "test/spec/ledger/reverse/concurrency.int.test.ts > [AC-B2-02i#14] 两连接并发红冲 user 凭证只记一次；等待者拿同一结果且事务可继续",
+    "test/spec/ledger/reverse/concurrency.int.test.ts > [AC-B2-02i#14] 两连接并发红冲 platform 凭证只记一次；等待者拿同一结果且事务可继续",
+    "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 REBATE_CREDIT 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+    "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 SHARE_CREDIT 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+    "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 REFERRAL_CREDIT 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+    "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 CLAWBACK 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+    "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 SETTLE_ADJUST 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+    "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 ADMIN_ADJUST 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+    "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#11] 多账户红冲有一个余额不足则整单零写入，补足后可首次成功",
+    "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#12] 红冲扣回使负余额回升时放行，保留负起始日，归零后清除",
+    "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#13] 冻结金额已消耗后红冲冻结凭证，frozen 不得变负且拒绝零写入",
+    "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#1] 整张红冲：多账户多类型逐条反号，保留分类和结构化列，原记录不变",
+    "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#2] 冻结凭证红冲恢复 available 和 frozen，版本每张凭证只加一次",
+    "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#3] 重放返回同一红冲 voucherId，余额已不足也不再记账或改变时间",
+    "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#4] 原凭证不存在返回明确 LedgerError，零写入且外层事务仍可提交",
+    "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#5] 不红冲红冲：已有和不存在的 REVERSE 原键都明确拒绝",
+    "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#6] 本事务余额锁 none：拒绝且所有账户零写入",
+    "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#6] 本事务余额锁 partial：拒绝且所有账户零写入",
+    "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#7] 跨 app 同原键各自红冲，另一 app 的凭证不能当作本 app 原单",
+    "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#8] 调用方回滚撤销全部红冲写入，重试仍为 posted",
+    "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#9] 同事务读到未提交原单并红冲，时间沿用该事务的 Clock 快照"
+  ],
+  "risk_note": "RV2 (ledger). Reversal command reverse(trx, { appId, originalUniqKey }) per BR-FUND-16 / BR-FUND-10 / BR-FUND-15 (decision 32): writes one whole-voucher reversal with uniq_key = original || ':REVERSE', keeping voucher_kind, order_key, beneficiary and role; every entry negated with the same account, sub_account, ledger_type and sub_type (subFen on bigint, no rounding). It reuses the posting core (lock registry, sorted balance row locks with version compare, mayGoNegative, SAVEPOINT replay); an ordinary reversal gets no REASSIGN_REV negative-balance exemption. Idempotency ends at the (app_id, uniq_key) unique constraint; replay returns the existing voucher; a voucher can be reversed once. Accounting date from the injected Clock via @couli/domain. The invariant side (replacement 03) lands first in B2-02l.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0d822b071d8979dd77052e64a8cf00a2b7a7ee11",
+      "tree": "7a5d73af49a2f5305961ce21ba7ed576f24ba95a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T15:03:20Z",
+      "finished_at": "2026-10-19T15:03:50Z",
+      "gate": {
+        "commit": "96f4421fd1648242e733a628fae75e19e07ed598",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/reverse/concurrency.int.test.ts > [AC-B2-02i#14] 两连接并发红冲 user 凭证只记一次；等待者拿同一结果且事务可继续",
+        "test/spec/ledger/reverse/concurrency.int.test.ts > [AC-B2-02i#14] 两连接并发红冲 platform 凭证只记一次；等待者拿同一结果且事务可继续",
+        "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 REBATE_CREDIT 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+        "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 SHARE_CREDIT 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+        "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 REFERRAL_CREDIT 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+        "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 CLAWBACK 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+        "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 SETTLE_ADJUST 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+        "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#10] 普通 ADMIN_ADJUST 红冲不得扣成负余额，原类型白名单不绕过 REVERSE 限制",
+        "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#11] 多账户红冲有一个余额不足则整单零写入，补足后可首次成功",
+        "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#12] 红冲扣回使负余额回升时放行，保留负起始日，归零后清除",
+        "test/spec/ledger/reverse/negative.int.test.ts > [AC-B2-02i#13] 冻结金额已消耗后红冲冻结凭证，frozen 不得变负且拒绝零写入",
+        "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#1] 整张红冲：多账户多类型逐条反号，保留分类和结构化列，原记录不变",
+        "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#2] 冻结凭证红冲恢复 available 和 frozen，版本每张凭证只加一次",
+        "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#3] 重放返回同一红冲 voucherId，余额已不足也不再记账或改变时间",
+        "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#4] 原凭证不存在返回明确 LedgerError，零写入且外层事务仍可提交",
+        "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#5] 不红冲红冲：已有和不存在的 REVERSE 原键都明确拒绝",
+        "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#6] 本事务余额锁 none：拒绝且所有账户零写入",
+        "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#6] 本事务余额锁 partial：拒绝且所有账户零写入",
+        "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#7] 跨 app 同原键各自红冲，另一 app 的凭证不能当作本 app 原单",
+        "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#8] 调用方回滚撤销全部红冲写入，重试仍为 posted",
+        "test/spec/ledger/reverse/reverse.int.test.ts > [AC-B2-02i#9] 同事务读到未提交原单并红冲，时间沿用该事务的 Clock 快照"
+      ],
+      "expected": [
+        "test/spec/ledger/reverse/concurrency.int.test.ts",
+        "test/spec/ledger/reverse/negative.int.test.ts",
+        "test/spec/ledger/reverse/reverse.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "7ae6451f043b5c67cbd3db2b59a85644f1f4688c1180bff7c557884d00bdea1e"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail only because the diff base was origin/main (two-dot) and showed later main commits as reverts (templates back to TBD, #882 sources); the reviewer stated the reversal itself had no blocking issue. Round 2 with the merge-base as base: pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 2 runs (21 red each); round 1 fail (2 S1: accounting_date compared as JS Date instead of text), round 2 pass"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "9a1cc63792b3de1944abbd9b00e14bd421ce7f39",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}

@@ -1,6 +1,6 @@
 import type { DynamicModule } from '@nestjs/common';
 import { CLOCK, type Clock } from '../platform/index.ts';
-import { createLedger, type Ledger } from './application/ledger.ts';
+import { createLedger, type Ledger } from './application/reverse.ts';
 
 /** Nest injection token for the process ledger (the Clock-backed posting port). */
 export const LEDGER = Symbol('LEDGER');

@@ -257,6 +257,7 @@ function computeWrite(
   before: BalanceRow,
   entries: readonly PreparedEntry[],
   day: string,
+  reversalKind: ReversalKind,
 ): AccountWrite {
   const own = entries.filter((e) => e.userAccountId === before.account_id);
   let after: LedgerBalance;
@@ -286,7 +287,7 @@ function computeWrite(
       uniq_key: voucher.uniqKey,
       resulting_available_fen: after.available_fen,
       available_delta_fen: delta,
-      ...(voucher.voucherKind === REASSIGN_REV ? { reversal_kind: REASSIGN_REV } : {}),
+      ...(reversalKind === undefined ? {} : { reversal_kind: reversalKind }),
     };
     if (!mayGoNegative(input)) {
       throw new LedgerError(
@@ -304,7 +305,24 @@ function computeWrite(
   return { before, after, version: before.version + 1n, negativeSince };
 }
 
-export function createLedger(input: { readonly clock: Clock }): Ledger {
+/** Trusted R14 context for mayGoNegative, or undefined (no reassignment exemption). */
+type ReversalKind = typeof REASSIGN_REV | undefined;
+
+/**
+ * The posting service plus a module-internal entry for ordinary ':REVERSE' corrections
+ * (application/reverse.ts). Both share one Clock snapshot per transaction and the lock registry.
+ */
+export interface PostingCore {
+  readonly ledger: Ledger;
+  /**
+   * post() for a reversal voucher built inside this module. Same checks, savepoint and 23505
+   * read-back; the copied voucher_kind never grants the R14 REASSIGN_REV exemption (BR-FUND-10:
+   * an ordinary {原 uniq_key}:REVERSE may not leave available below zero).
+   */
+  postReversal(trx: Transaction<DB>, voucher: PostingVoucher): Promise<PostingResult>;
+}
+
+export function createPostingCore(input: { readonly clock: Clock }): PostingCore {
   const { clock } = input;
   /** D2: the Clock is read once per transaction; its vouchers share booked_at and the day. */
   const instants = new WeakMap<Transaction<DB>, Date>();
@@ -322,6 +340,7 @@ export function createLedger(input: { readonly clock: Clock }): Ledger {
     trx: Transaction<DB>,
     voucher: PostingVoucher,
     entries: readonly PreparedEntry[],
+    reversalKind: ReversalKind,
   ): Promise<PostingResult> {
     const appId = voucher.appId;
     const userAccountIds = [
@@ -350,7 +369,7 @@ export function createLedger(input: { readonly clock: Clock }): Ledger {
       throw new LedgerError('UNKNOWN_ACCOUNT', 'a user account has no balance row');
     }
     const writes = new Map(
-      rows.map((row) => [row.account_id, computeWrite(voucher, row, entries, day)]),
+      rows.map((row) => [row.account_id, computeWrite(voucher, row, entries, day, reversalKind)]),
     );
 
     const voucherId = randomUUID();
@@ -417,7 +436,32 @@ export function createLedger(input: { readonly clock: Clock }): Ledger {
     return { kind: 'posted', voucherId };
   }
 
-  return {
+  async function postChecked(
+    trx: Transaction<DB>,
+    voucher: PostingVoucher,
+    reversalKind: (v: PostingVoucher) => ReversalKind,
+  ): Promise<PostingResult> {
+    checkVoucherFields(voucher);
+    const entries = prepareEntries(voucher.entries);
+    const validation = validateVoucher(entries.map((e) => e.domain));
+    if (!validation.ok) {
+      const codes = [...new Set(validation.errors.map((e) => e.code))].join(',');
+      throw new LedgerError('INVALID_VOUCHER', `voucher ${voucher.uniqKey} refused: ${codes}`);
+    }
+    try {
+      return await inSavepoint(trx, () => write(trx, voucher, entries, reversalKind(voucher)));
+    } catch (error) {
+      // A concurrent writer committed the same (app_id, uniq_key) first: the savepoint undid
+      // this attempt, so return the stored voucher and leave the caller's transaction usable.
+      if (isUniqKeyViolation(error)) {
+        const existing = await findVoucherId(trx, voucher.appId, voucher.uniqKey);
+        if (existing !== undefined) return { kind: 'duplicate', voucherId: existing };
+      }
+      throw error;
+    }
+  }
+
+  const ledger: Ledger = {
     async openUserAccount(trx, account) {
       const appId = text(account.appId, 'appId');
       const userId = text(account.userId, 'userId');
@@ -442,24 +486,10 @@ export function createLedger(input: { readonly clock: Clock }): Ledger {
     },
 
     async post(trx, voucher) {
-      checkVoucherFields(voucher);
-      const entries = prepareEntries(voucher.entries);
-      const validation = validateVoucher(entries.map((e) => e.domain));
-      if (!validation.ok) {
-        const codes = [...new Set(validation.errors.map((e) => e.code))].join(',');
-        throw new LedgerError('INVALID_VOUCHER', `voucher ${voucher.uniqKey} refused: ${codes}`);
-      }
-      try {
-        return await inSavepoint(trx, () => write(trx, voucher, entries));
-      } catch (error) {
-        // A concurrent writer committed the same (app_id, uniq_key) first: the savepoint undid
-        // this attempt, so return the stored voucher and leave the caller's transaction usable.
-        if (isUniqKeyViolation(error)) {
-          const existing = await findVoucherId(trx, voucher.appId, voucher.uniqKey);
-          if (existing !== undefined) return { kind: 'duplicate', voucherId: existing };
-        }
-        throw error;
-      }
+      // Trusted caller context only (never inferred from uniqKey); read after the field checks.
+      return postChecked(trx, voucher, (v) =>
+        v.voucherKind === REASSIGN_REV ? REASSIGN_REV : undefined,
+      );
     },
 
     async getBalances(db, selection) {
@@ -467,5 +497,10 @@ export function createLedger(input: { readonly clock: Clock }): Ledger {
       const rows = await readBalancesByUser(db, appId, userIdList(selection));
       return rows.map(toBalance);
     },
+  };
+
+  return {
+    ledger,
+    postReversal: (trx, voucher) => postChecked(trx, voucher, () => undefined),
   };
 }
