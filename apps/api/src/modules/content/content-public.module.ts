@@ -1,7 +1,7 @@
 // content's /v1 client routes (F1-02c, F1-02e, F1-02f, F1-09d, F1-09e, F1-02n, F1-02s): config,
 // app-versions check, articles, pages, agreements, the text dictionary and the draft page preview
 // (token only, no viewer context). Agreement and dictionary reads are cached per app_id like
-// config reads.
+// config reads; one agreement by type and version (F1-02ze) is read afresh on every request.
 // app.module imports this module on
 // the api entry only and passes identity's request viewer as the ConfigViewerContext provider
 // (content never imports identity). Config reads use a process-wide ContentReader; article reads
@@ -32,6 +32,10 @@ import {
   PublicAgreementReader,
   kyselyPublicAgreementSource,
 } from './application/agreement-reader.ts';
+import {
+  AgreementVersionReader,
+  kyselyAgreementVersionSource,
+} from './application/agreement-version-reader.ts';
 import { AgreementsController } from './http/public/agreements.controller.ts';
 import { DictReader } from './application/dict-reader.ts';
 import { DictController } from './http/public/dict.controller.ts';
@@ -132,6 +136,13 @@ export class ContentPublicModule {
               db === undefined ? null : kyselyPublicAgreementSource(db),
               clock,
             ),
+        },
+        {
+          // F1-02ze GET /v1/agreements/{type}: one query per request, never cached.
+          provide: AgreementVersionReader,
+          inject: [{ token: DB, optional: true }],
+          useFactory: (db: Kysely<Database> | undefined): AgreementVersionReader =>
+            new AgreementVersionReader(db === undefined ? null : kyselyAgreementVersionSource(db)),
         },
         {
           // F1-02s GET /v1/dict: cached per app_id for CONTENT_CACHE_TTL_MS (L11).
