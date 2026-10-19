@@ -18,6 +18,7 @@ const ANONYMOUS_OPERATIONS: readonly (readonly [method: string, path: string])[]
   ['POST', '/v1/auth/refresh'],
   ['GET', '/v1/app-versions/check'],
   ['GET', '/v1/config'],
+  ['GET', '/v1/dict'],
   ['POST', '/v1/consents'],
   ['GET', '/v1/articles'],
   ['GET', '/v1/articles/{article_id}'],

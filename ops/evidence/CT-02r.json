@@ -1,0 +1,35 @@
+{
+  "task": "CT-02r",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "3857e10bd904622e73584a22fda2a0c0eba0c185",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only, all new operations planned). getDict (GET /v1/dict, x-auth none, session scopes full / deletion_only) returns {version, items: {dict: {code: text}}}; version is only a cache hint (no 304). Console dictionary editing: adminListDictItems, adminSaveDictItems (PUT, save is publish), adminListDictItemVersions, adminRollbackDictItems (keys + to_version), CAS expected_version -> 20902 data.resource=dict_item, no Idempotency-Key (04 §6.6); the permission point is chosen by the key class of the request (general -> config.general; fund terms -> content.fund_terms with totp; agreement -> content.agreement with totp and legal_confirmed_by); mixed classes -> 20001. 20902 data.resource gains dict_item. The H5 anonymous operation list gains GET /v1/dict in the same PR (ledger #875). Rebased onto CT-02q / CT-02s with both sides kept. Orchestrator defaults L12-L17, L38-L40 are in couli-runs CONTENT-client/decisions-pending.md. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "f22e9277428253ed2651000946b9580d0dea2ce2",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}

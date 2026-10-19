@@ -328,6 +328,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/dict",
+    "auth": "none"
+  },
+  {
+    "method": "GET",
     "path": "/v1/products/search",
     "auth": "optional"
   },
@@ -659,6 +664,26 @@ export const CONTRACT_AUTH_ROUTES = [
   {
     "method": "POST",
     "path": "/admin/v1/articles/:article_id/offline",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/dict-items",
+    "auth": "admin"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/dict-items",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/dict-items/versions",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/dict-items/rollback",
     "auth": "admin"
   },
   {
