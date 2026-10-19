@@ -453,6 +453,16 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/audit-logs",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/audit-logs/:id",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/users",
     "signed": false
   },

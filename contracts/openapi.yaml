@@ -76,6 +76,8 @@ tags:
     description: Admin console login (password, first password change, authenticator binding and code), step-up in two tiers and the signed-in account's permission points (04 §6.6 auth, BR-ID-34).
   - name: admin-accounts
     description: Admin accounts, read-only for now; super admin only (04 §6.6 admins, §11).
+  - name: admin-audit
+    description: Admin audit log search and record detail; own records only without permission point audit.view_all (04 §6.6 audit-logs, §11.1; F-ADM-03).
   - name: admin-users
     description: App users in the admin console — list, lookup, detail, audited reveal, ban / freeze and union binding reset / disable / enable (permission points user.*, pii.*, risk.*, union.binding_*; 04 §6.6, §11; F1-07).
   - name: admin-search
@@ -6875,6 +6877,228 @@ paths:
                   $ref: '#/components/examples/AdminIpNotAllowed'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/audit-logs:
+    get:
+      operationId: adminListAuditLogs
+      tags:
+        - admin-audit
+      summary: Search the audit log (own records, or everyone's with audit.view_all)
+      description: |
+        Any signed-in admin account (no permission point needed, no step-up; 01 F-ADM-03, 04 §6.6
+        audit-logs). Records of the console's app, newest first (`at` descending, then the
+        server's internal order for the same time), page by page (`page`, `page_size` ≤ 200, above that 20001).
+        Visibility (04 §11.1 `audit.view_all`, enforced by the server, not by the console): an
+        account holding `audit.view_all` (a super admin holds every point) sees every account's
+        records and may filter by any `actor_id`; an account without it only sees its own records:
+        the server forces `actor_id` to the caller, so without `actor_id` it gets its own records
+        and with another account's `actor_id` it gets an empty page (`items=[]`, `total=0`), not an
+        error. An `actor_id` that names no account is an empty page as well.
+        Filters combine with AND: `actor_id` (the admin who acted), `target_type` and `target_id`
+        (exact match), `permission` (the permission point the action was done under), `from`
+        (inclusive) and `to` (exclusive), ISO 8601 times with offset (04 §5); `from` later than
+        `to` is 20001 with `data.fields=[from, to]`. `target_type`, `target_id` and `permission`
+        are derived by the server from the stored record (the action and its target); a record
+        they cannot be derived for (older rows, actions without an object) returns them as null
+        and never matches a filter on that field. `target_type` is free text, not an enum.
+        Each row has the actor's current username (`actor_name`, null when the account is gone),
+        never the before / after values (GET /admin/v1/audit-logs/{id}). Searching does not write
+        an audit record itself.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - name: actor_id
+          in: query
+          required: false
+          description: |
+            admin_id of the account that acted. Without audit.view_all the server forces it to the
+            caller (another value → empty page).
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: target_type
+          in: query
+          required: false
+          description: Object type of the record (free text, exact match), such as user.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - name: target_id
+          in: query
+          required: false
+          description: Object id of the record (exact match), such as a user_id.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: permission
+          in: query
+          required: false
+          description: Permission point the action was done under (enum admin_permission).
+          schema:
+            $ref: '#/components/schemas/AdminPermissionKey'
+        - name: from
+          in: query
+          required: false
+          description: Earliest record time, inclusive (ISO 8601 with offset).
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Latest record time, exclusive (ISO 8601 with offset).
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: One page of audit records, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAuditLogPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - id: aud_7Qm2Xv9KpL4sTn8R
+                      actor_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      actor_name: ops01
+                      action: user_pii_reveal
+                      target_type: user
+                      target_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                      permission: pii.reveal_phone
+                      ip: 203.0.113.8
+                      at: '2026-10-18T15:42:10+08:00'
+                    - id: aud_3Hc6Wd1FzY5gBe0J
+                      actor_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      actor_name: ops01
+                      action: login
+                      target_type: null
+                      target_id: null
+                      permission: null
+                      ip: null
+                      at: '2026-10-18T09:00:03+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                fromAfterTo:
+                  $ref: '#/components/examples/AdminAuditTimeRangeInvalid'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/audit-logs/{id}:
+    get:
+      operationId: adminGetAuditLog
+      tags:
+        - admin-audit
+      summary: One audit record with its before and after values
+      description: |
+        Any signed-in admin account (no permission point needed, no step-up; 01 F-ADM-03, 04 §6.6
+        audit-logs). Same fields as a list row plus `before` and `after`: the stored values as
+        written by the action (any JSON, null when the action recorded none; sensitive fields are
+        stored masked, so they are shown masked). Without `audit.view_all` (04 §11.1) only the
+        caller's own records are found: another account's record is 20001 with `data.fields=[id]`,
+        the same as an unknown id or a record of another app (no probing). Reading a record does
+        not write an audit record itself.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - name: id
+          in: path
+          required: true
+          description: |
+            opaque id of the audit record (as listed); unknown, of another app or not visible → 20001
+            with data.fields=[id].
+          schema:
+            $ref: '#/components/schemas/AdminAuditLogId'
+      responses:
+        '200':
+          description: The audit record.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAuditLogResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  id: aud_9Nr4Ut2LxA8kVq6M
+                  actor_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b00
+                  actor_name: owner
+                  action: user_risk_ban
+                  target_type: user
+                  target_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02
+                  permission: risk.ban
+                  ip: 203.0.113.8
+                  at: '2026-10-18T16:05:00+08:00'
+                  before:
+                    state: normal
+                    row_version: 3
+                  after:
+                    state: banned
+                    reason_category: fraud
+                    row_version: 4
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unknownRecord:
+                  $ref: '#/components/examples/AdminUnknownAuditLog'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/users:
     get:
       operationId: adminListUsers
@@ -11553,6 +11777,25 @@ components:
         data:
           fields:
             - admin_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAuditTimeRangeInvalid:
+      summary: 20001 audit-log search with from later than to
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - from
+            - to
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnknownAuditLog:
+      summary: 20001 unknown audit record, or another account's record without audit.view_all
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - id
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminUnknownUser:
       summary: 20001 unknown user_id (or a user of another app)
@@ -20029,6 +20272,196 @@ components:
           type: string
           format: date-time
           description: Registration time.
+    AdminAuditLogId:
+      type: string
+      description: |
+        Opaque identifier of an audit record (04 §5, ids are strings). It is not the database
+        primary key (ADR-0001: internal auto-increment keys are never exposed); clients must not
+        parse it, compare it for order or derive anything from it. Generated by the server and
+        stable for the life of the record; how it is generated is up to the implementation.
+      minLength: 16
+      maxLength: 64
+      pattern: '^[A-Za-z0-9_-]{16,64}$'
+    AdminAuditValue:
+      description: |
+        A before or after value as the action stored it: any JSON, null when the action recorded
+        none. Sensitive fields are stored and shown masked.
+    AdminAuditLogListItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - actor_id
+        - action
+        - target_type
+        - target_id
+        - permission
+        - ip
+        - at
+      properties:
+        id:
+          $ref: '#/components/schemas/AdminAuditLogId'
+        actor_id:
+          $ref: '#/components/schemas/Id'
+        actor_name:
+          type:
+            - string
+            - 'null'
+          description: Current username of the account that acted; null when it cannot be read.
+          maxLength: 64
+        action:
+          type: string
+          description: Action key as the writing module recorded it (such as user_pii_reveal).
+          minLength: 1
+          maxLength: 128
+        target_type:
+          type:
+            - string
+            - 'null'
+          description: Object type derived from the record (free text); null when it cannot be derived.
+          maxLength: 64
+        target_id:
+          type:
+            - string
+            - 'null'
+          description: Object id derived from the record; null when it cannot be derived.
+          maxLength: 128
+        permission:
+          description: Permission point derived from the action; null when it cannot be derived.
+          anyOf:
+            - $ref: '#/components/schemas/AdminPermissionKey'
+            - type: 'null'
+        ip:
+          type:
+            - string
+            - 'null'
+          description: Client IP of the request (IPv4 or IPv6); null when not recorded.
+          maxLength: 45
+        at:
+          type: string
+          format: date-time
+          description: Time of the action.
+    AdminAuditLog:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - actor_id
+        - action
+        - target_type
+        - target_id
+        - permission
+        - ip
+        - at
+        - before
+        - after
+      properties:
+        id:
+          $ref: '#/components/schemas/AdminAuditLogId'
+        actor_id:
+          $ref: '#/components/schemas/Id'
+        actor_name:
+          type:
+            - string
+            - 'null'
+          description: Current username of the account that acted; null when it cannot be read.
+          maxLength: 64
+        action:
+          type: string
+          description: Action key as the writing module recorded it.
+          minLength: 1
+          maxLength: 128
+        target_type:
+          type:
+            - string
+            - 'null'
+          description: Object type derived from the record (free text); null when it cannot be derived.
+          maxLength: 64
+        target_id:
+          type:
+            - string
+            - 'null'
+          description: Object id derived from the record; null when it cannot be derived.
+          maxLength: 128
+        permission:
+          description: Permission point derived from the action; null when it cannot be derived.
+          anyOf:
+            - $ref: '#/components/schemas/AdminPermissionKey'
+            - type: 'null'
+        ip:
+          type:
+            - string
+            - 'null'
+          description: Client IP of the request (IPv4 or IPv6); null when not recorded.
+          maxLength: 45
+        at:
+          type: string
+          format: date-time
+          description: Time of the action.
+        before:
+          $ref: '#/components/schemas/AdminAuditValue'
+        after:
+          $ref: '#/components/schemas/AdminAuditValue'
+    AdminAuditLogPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAuditLogListItem'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminAuditLogPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAuditLogPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAuditLogResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAuditLog'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
     AdminUserPage:
       type: object
       additionalProperties: false
