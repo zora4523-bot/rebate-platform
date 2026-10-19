@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import {
@@ -62,8 +62,12 @@ export async function inDatabase(
 
 export function invariantFiles() {
   const directory = new URL('../../../../db/invariants/ledger/', import.meta.url);
+  const manifest = new URL('superseded.json', directory);
+  const superseded = new Set<string>(
+    existsSync(manifest) ? (JSON.parse(readFileSync(manifest, 'utf8')) as string[]) : [],
+  );
   return readdirSync(directory)
-    .filter((name) => name.endsWith('.sql'))
+    .filter((name) => name.endsWith('.sql') && !superseded.has(name))
     .sort()
     .map((name) => ({ name, sql: readFileSync(new URL(name, directory), 'utf8') }));
 }

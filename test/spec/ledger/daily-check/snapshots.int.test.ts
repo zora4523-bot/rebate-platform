@@ -149,6 +149,7 @@ it(
     const { runner } = setup();
     await inDatabase(createTestDatabase, async (db) => {
       const a = await account(db, { app_id: APP });
+      const inactive = await account(db, { app_id: APP });
       const p = await platform(db, 'UNION_RECEIVABLE:taobao', APP);
       await pair(
         db,
@@ -156,6 +157,14 @@ it(
         p,
         await voucher(db, { app_id: APP, accounting_date: '2032-06-13' }),
         -100n,
+      );
+      // Only older entries: neither the missed day nor the checked day has activity.
+      await pair(
+        db,
+        inactive,
+        p,
+        await voucher(db, { app_id: APP, accounting_date: '2032-06-13' }),
+        -60n,
       );
       await runner.runDailyCheck(db, { accountingDate: '2032-06-13' });
       await pair(
@@ -178,7 +187,7 @@ it(
         account_version: 4n,
       });
       const before = await snapshots(db);
-      expect(before).toHaveLength(2);
+      expect(before).toHaveLength(3);
       expect(before.every((r) => r.day === '2032-06-13')).toBe(true);
       await runner.runDailyCheck(db, { accountingDate: DAY });
       const rows = await snapshots(db);
@@ -196,14 +205,22 @@ it(
           expect.objectContaining({
             account_id: p.id,
             sub_account: 'available',
-            opening_fen: 125n,
+            opening_fen: 185n,
             debit_fen: 20n,
             credit_fen: 0n,
-            closing_fen: 145n,
+            closing_fen: 205n,
+          }),
+          expect.objectContaining({
+            account_id: inactive.id,
+            sub_account: 'available',
+            opening_fen: -60n,
+            debit_fen: 0n,
+            credit_fen: 0n,
+            closing_fen: -60n,
           }),
         ]),
       );
-      expect(rows.filter((r) => r.day === DAY)).toHaveLength(2);
+      expect(rows.filter((r) => r.day === DAY)).toHaveLength(3);
     });
   },
   TIMEOUT,

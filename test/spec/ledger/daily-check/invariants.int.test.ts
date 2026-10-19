@@ -273,7 +273,7 @@ it(
       const files = invariantFiles();
       expect(result.checks.map((c) => c.file)).toEqual(files.map((f) => f.name));
       expect(result.checks.map((c) => c.checkedRows)).toEqual(files.map(() => 0n));
-      expect(result.emptyChecks).toEqual(files.map((f) => f.name.split('_')[0]));
+      expect(result.emptyChecks).toEqual(result.checks.map((c) => c.invariant));
       expect(result.accountDifferences).toEqual([]);
       expect(result.globalDifferences).toEqual([]);
       expect(result.recommendations).toEqual({
