@@ -224,13 +224,34 @@ it('[CT-24l] the examples satisfy the claim detail schema and show the reviewed 
   }
 
   const reject = op('reject');
-  const [rejected] = examples(reject);
+  const [rejected, invalid] = examples(reject);
   expect(ajv.compile(okMedia(reject).schema)(rejected)).toBe(true);
+  expect(ajv.compile(okMedia(reject).schema)(invalid)).toBe(true);
   expect(reviewed(rejected)['reject_reason']).toBe('NO_EVIDENCE');
-  expect((rejected as Detail).data.reason).toBe(
-    (body(reject).example as { reason: string }).reason,
-  );
+  expect(reviewed(rejected)['decided_by']).not.toBeNull();
+  expect(reviewed(invalid)['decision']).toBe('rejected');
+  expect(reviewed(invalid)['reject_reason']).toBe('ORDER_INVALID');
+  expect(reviewed(invalid)['decided_by']).toBeNull();
+  expect(reviewed(invalid)['decided_by_name']).toBeNull();
+  for (const example of [rejected, invalid]) {
+    expect((example as Detail).data.reason).toBe(
+      (body(reject).example as { reason: string }).reason,
+    );
+  }
   const extra = structuredClone(rejected) as Detail & { data: Row };
   extra.data['auto_closed'] = true;
   expect(validate(extra)).toBe(false);
+});
+
+it('[CT-24l] rejecting a VOID order is a system rejection with ORDER_INVALID under BR-ATTR-18', () => {
+  const text = flat(op('reject').description);
+  expect(text).toContain('pg_advisory_xact_lock(hash(platform, sub_order_id))');
+  expect(text).toContain('SELECT … FOR UPDATE');
+  expect(text).toContain("The order's rebate_status is VOID");
+  expect(text).toContain('`reject_reason=ORDER_INVALID`');
+  expect(text).toContain('`decided_by` is null');
+  expect(text).toContain('This is not an error: the answer is 200');
+  expect(text.indexOf('ORDER_INVALID`')).toBeLessThan(text.indexOf('`decided_by` the reviewer'));
+  expect(text).toContain('claims.reason');
+  expect(text).toContain('the reject reason the reviewer chose');
 });

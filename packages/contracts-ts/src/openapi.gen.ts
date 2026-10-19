@@ -3222,10 +3222,21 @@ export interface paths {
          *     NOT_TRACKED, OTHER_TLJ, FRAUD, OTHER. NOT_IN_POOL and ORDER_INVALID are set by the system
          *     only; sending one of them, or any other value → 20001 with `data.fields=[reject_reason]`.
          *
-         *     The child order becomes `rejected` with that `reject_reason`, `decided_by` the reviewer,
-         *     `decided_at` set and `row_version` up by 1; the order itself is not written. `reason` is
-         *     written to claims.reason (the latest note) and to the audit log with the operator, the
-         *     reject reason and the outcome. When every child order is decided the claim's `status` is
+         *     Rejection runs in one transaction: it takes pg_advisory_xact_lock(hash(platform,
+         *     sub_order_id)), the same lock as approval, sync and admin assignment (BR-ATTR-01), re-reads
+         *     the order with SELECT … FOR UPDATE, and then:
+         *     - The order's rebate_status is VOID: the system rejects the child order with
+         *       `reject_reason=ORDER_INVALID` (BR-ATTR-18: an order already void at review is rejected
+         *       by the system, whether the reviewer pressed approve or reject; approval does the same),
+         *       not with the reviewer's `reject_reason`, and `decided_by` is null (a system decision,
+         *       as in approval). This is not an error: the answer is 200 with the claim. Signal (no
+         *       extra field): the reviewed child order comes back with `reject_reason=ORDER_INVALID`.
+         *     - Else the child order becomes `rejected` with that `reject_reason` and `decided_by` the
+         *       reviewer.
+         *     In both outcomes `decided_at` is set and `row_version` goes up by 1; the order itself is
+         *     not written. `reason` is written to claims.reason (the latest note) and to the audit log
+         *     with the operator, the reject reason the reviewer chose and the outcome (including
+         *     ORDER_INVALID). When every child order is decided the claim's `status` is
          *     summarized as BR-ATTR-18 says (any approved → approved; else any rejected → rejected;
          *     else cancelled); while one is pending it stays as it is. The applicant is told the result
          *     by in-app message and push (BR-ATTR-18). The response is the whole claim after the
@@ -16674,98 +16685,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The whole claim after the rejection. */
+            /** @description The whole claim after the rejection (by the reviewer, or by the system with ORDER_INVALID). */
             200: {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "code": 0,
-                     *       "msg": "",
-                     *       "data": {
-                     *         "claim_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5aa0",
-                     *         "order_no": "231005-0987654321",
-                     *         "platform": "pdd",
-                     *         "user": {
-                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
-                     *           "phone_masked": "135****6021"
-                     *         },
-                     *         "paid_date": "2026-10-05",
-                     *         "submitted_at": "2026-10-12T09:15:00+08:00",
-                     *         "evidence_level": "weak",
-                     *         "status": "approved",
-                     *         "reason": "付款前没有该店铺的任何点击记录",
-                     *         "items": [
-                     *           {
-                     *             "item_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5ab1",
-                     *             "sub_order_id": "231005-0987654322",
-                     *             "evidence": "strong",
-                     *             "decision": "approved",
-                     *             "reject_reason": null,
-                     *             "decided_at": "2026-10-12T10:20:00+08:00",
-                     *             "decided_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
-                     *             "decided_by_name": "客服小林",
-                     *             "row_version": 1,
-                     *             "matches": [
-                     *               {
-                     *                 "field": "order_no",
-                     *                 "user_value": "231005-0987654321",
-                     *                 "union_value": "231005-0987654321",
-                     *                 "matched": true
-                     *               },
-                     *               {
-                     *                 "field": "paid_date",
-                     *                 "user_value": "2026-10-05",
-                     *                 "union_value": "2026-10-05",
-                     *                 "matched": true
-                     *               }
-                     *             ],
-                     *             "evidence_links": [
-                     *               {
-                     *                 "at": "2026-10-05T10:58:12+08:00",
-                     *                 "scene": "detail"
-                     *               }
-                     *             ]
-                     *           },
-                     *           {
-                     *             "item_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5ab2",
-                     *             "sub_order_id": "231005-0987654323",
-                     *             "evidence": "weak",
-                     *             "decision": "rejected",
-                     *             "reject_reason": "NO_EVIDENCE",
-                     *             "decided_at": "2026-10-12T10:40:00+08:00",
-                     *             "decided_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
-                     *             "decided_by_name": "客服小林",
-                     *             "row_version": 1,
-                     *             "matches": [
-                     *               {
-                     *                 "field": "order_no",
-                     *                 "user_value": "231005-0987654321",
-                     *                 "union_value": "231005-0987654321",
-                     *                 "matched": true
-                     *               },
-                     *               {
-                     *                 "field": "paid_date",
-                     *                 "user_value": "2026-10-05",
-                     *                 "union_value": "2026-10-04",
-                     *                 "matched": false
-                     *               }
-                     *             ],
-                     *             "evidence_links": [
-                     *               {
-                     *                 "at": "2026-09-28T19:52:10+08:00",
-                     *                 "scene": "home_card"
-                     *               }
-                     *             ]
-                     *           }
-                     *         ]
-                     *       },
-                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
-                     *     }
-                     */
                     "application/json": components["schemas"]["AdminClaimDetailResponse"];
                 };
             };
