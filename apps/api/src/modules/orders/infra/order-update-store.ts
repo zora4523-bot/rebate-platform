@@ -1,5 +1,5 @@
 // B1-08i：已有订单同步更新的 CAS UPDATE（BR-FUND-01；规划/02 §18）。只写 orders 模块拥有的同步列与
-// 未归因时的归属列与来源四列（B1-08j）；返利列（rebate_status、hold*、rights_pending、locked、booked_*、settle_period、reason*）、
+// 未归因时的归属列与来源四列（B1-08j）、paid_at_source（B1-08k）；返利列（rebate_status、hold*、rights_pending、locked、booked_*、settle_period、reason*）、
 // 身份列与 attr_at 不在可写集合里。调用方已在本事务里取得子订单 advisory 锁。
 import type { DB } from '@couli/db';
 import type { Selectable, Transaction, Updateable } from 'kysely';
@@ -22,6 +22,8 @@ export type OrderUpdateSet = OrderSyncColumns &
     readonly link_id?: string | null;
     readonly source_scene?: string | null;
     readonly agent_session_id?: string | null;
+    /** paid_at 来源（B1-08k，BR-CALC-11）：只在本次跨入快照资格、且库内为空时随同写入，已有值不覆盖。 */
+    readonly paid_at_source?: 'platform' | 'platform_modified' | 'observed';
   };
 
 export interface CasGuards {

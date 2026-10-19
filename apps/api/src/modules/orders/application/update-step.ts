@@ -15,6 +15,10 @@
 //   推广位为空、端口未注入或查不到 → 场景未知：② product / ③ shop 不跨场景匹配，① exact 照常，否则 none，
 //   并在写后告警；只有推广位本身是 fallback 才不限场景，D10-60）、current.shop_id 与本次报文匹配，四列并入
 //   同一条 CAS UPDATE（WHERE 另加 source_match IS NULL）；端口抛错整事务回滚。不改 product_key / shop_id。
+// - ⑥ 分佣快照（B1-08k，BR-ATTR-01 ⑥ / BR-CALC-10）：注入 snapshots 时，按本次 ⑦ 迁移与 ② 归属后的取值判定
+//   是否首次跨入资格（P2、R3a 在 PAID+）；跨入时 paid_at_source（库内为空才写）并入同一条 CAS UPDATE，history、
+//   待处理之后、settlement 端口之前同事务调端口（application/commission-snapshot-step.ts），结果经
+//   change.snapshot 交 settlement。未注入时整步跳过，change 不带 snapshot 字段。整条不落 orders 的不判定。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
 //   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
 // 日志只打平铺字段（platform、app_id、reason、outcome、rule、event），不打子订单号与买家参数。
@@ -23,6 +27,14 @@ import type { OrderPlatformState } from '@couli/domain';
 import type { Selectable, Transaction } from 'kysely';
 import type { EventBus } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionOrder, UnionOrderAttrParams } from '../../union/index.ts';
+import {
+  crossesSnapshotEligibility,
+  isPaidOrLater,
+  planCommissionSnapshot,
+  snapshotPaidAtSource,
+  type CommissionSnapshotPlan,
+  type PlanCommissionSnapshotInput,
+} from '../domain/commission-snapshot.ts';
 import { rawPayloadId } from '../domain/order-fields.ts';
 import type { PlatformStatusEvent } from '../domain/status-map.ts';
 import {
@@ -31,7 +43,12 @@ import {
   type OrderUpdatePlan,
 } from '../domain/update-plan.ts';
 import { casUpdateOrder, type OrderUpdateSet } from '../infra/order-update-store.ts';
-import { insertPlatformHistory, readOrder, upsertPending } from '../infra/pipeline-store.ts';
+import {
+  insertPlatformHistory,
+  readFirstPaidAt,
+  readOrder,
+  upsertPending,
+} from '../infra/pipeline-store.ts';
 import {
   publishBindingConflict,
   publishIllegalTransition,
@@ -39,6 +56,11 @@ import {
   type OrderAttrParamColumn,
 } from './alert-events.ts';
 import { attributeOrderUser } from './attribute-user.ts';
+import {
+  runCommissionSnapshot,
+  type CommissionSnapshotPort,
+  type SnapshotOutcome,
+} from './commission-snapshot-step.ts';
 import { backfillOrderSource, sourceColumns } from './source-backfill.ts';
 import type {
   OrderPipelineContext,
@@ -58,6 +80,11 @@ export interface OrderUpdateChange {
   readonly est_after: bigint | null;
   readonly settle_commission_fen: bigint | null;
   readonly attributed_now: boolean;
+  /**
+   * B1-08k 第 ⑥ 步本次的快照结果（P2 / R3a 的预估由 settlement 据此与快照表决定）；只在注入 snapshots 时出现，
+   * 未注入时不带此字段（与 B1-08i 的 change 逐字段一致）。
+   */
+  readonly snapshot?: SnapshotOutcome;
 }
 
 export interface UnmappedOrderInfo {
@@ -103,6 +130,8 @@ export interface OrderUpdateDeps extends Pick<
   /** 领域事件 order.updated 与三个告警事件共用的总线；与本次写库同一事务入队，抛错整事务回滚。 */
   readonly events: Pick<EventBus, 'publish'>;
   readonly regressionHold?: (platform: Parameters<OrderPipelineDeps['statusMaps']>[0]) => boolean;
+  /** 分佣快照端口（B1-08k）；同 OrderPipelineDeps.snapshots，未注入时第 ⑥ 步整步跳过。订单推广位场景经 pids 取。 */
+  readonly snapshots?: CommissionSnapshotPort;
 }
 
 type OrderRow = Selectable<DB['orders']>;
@@ -117,12 +146,17 @@ const NO_PARAMS: UnionOrderAttrParams = {
 const ALERT_SYNC = 'P1';
 const ALERT_PARAM = 'P2';
 
+/** orders.buy_type 由首次入库写定（BR-ATTR-08，self / share）；别的值是数据损坏，不猜。 */
+function orderBuyType(value: string | null): 'self' | 'share' {
+  if (value === 'self' || value === 'share') return value;
+  throw new Error('ORDER_BUY_TYPE_INVALID: orders.buy_type 不是 self / share');
+}
+
 function pendingDetail(plan: OrderUpdatePlan, from: string): string | null {
   if (plan.pending !== 'ILLEGAL_TRANSITION') return null;
   return `order_illegal_transition ${plan.rule ?? 'illegal'} ${from}→${plan.event ?? '-'}`;
 }
 
-// TODO(规划/11 §4.5): 分佣快照 — blocked on B1-08k
 export function createOrderUpdateStep(
   deps: OrderUpdateDeps,
 ): NonNullable<OrderPipelineDeps['updateStep']> {
@@ -242,6 +276,8 @@ export function createOrderUpdateStep(
     let bindingConflict = false;
     let backfilled: string | null = null;
     let pidSceneMissing = false;
+    /** 已为来源回填查过的订单推广位场景（undefined = 本次还没查）。 */
+    let knownPidScene: string | null | undefined;
     if (unattributed) {
       Object.assign(set, {
         pid: slot,
@@ -266,6 +302,7 @@ export function createOrderUpdateStep(
           // 推广位以本次写入后的为准：set 里有 pid（未归因重跑写入本次报文的推广位）就用它，否则是原值。
           const orderPid = set.pid !== undefined ? set.pid : current.pid;
           const pidScene = await orderPidScene(current, orderPid, ctx, platform);
+          knownPidScene = pidScene;
           pidSceneMissing = pidScene === null;
           const source = await backfillOrderSource(deps.sources, {
             appId: current.app_id,
@@ -282,6 +319,69 @@ export function createOrderUpdateStep(
         }
       }
       bindingConflict = user.kind === 'unattributed' && user.conflict;
+    }
+
+    // ⑥ 分佣快照（B1-08k）：判定先于写库。before = 库内现值；after = 本次迁移与归属之后（rebate_status 不由本模块
+    // 写，用库内值：UNATTRIBUTED + 本次写入 user_id 的 R3a 算资格，VOID 的 R3b 不算）；金额取本次将写入的列。
+    const snapshots = deps.snapshots;
+    let snapshotPlan: CommissionSnapshotPlan | null = null;
+    let snapshotSceneMissing = false;
+    const eligibilityBefore = {
+      user_id: current.user_id,
+      platform_status: from,
+      rebate_status: current.rebate_status,
+    };
+    const eligibilityAfter = {
+      user_id: set.user_id ?? current.user_id,
+      platform_status: plan.platform_status,
+      rebate_status_before: current.rebate_status,
+    };
+    if (
+      snapshots !== undefined &&
+      crossesSnapshotEligibility(eligibilityBefore, eligibilityAfter)
+    ) {
+      const orderPid = set.pid !== undefined ? set.pid : current.pid;
+      const pidScene =
+        knownPidScene !== undefined
+          ? knownPidScene
+          : await orderPidScene(current, orderPid, ctx, platform);
+      // 待编排裁定 7：推广位场景查不到 → 按非淘礼金处理，写后告警。
+      snapshotSceneMissing = pidScene === null;
+      // BR-CALC-11 细则 ②③：「迁到 PAID 的那次」以库内尚无已付历史、本次计划里有到 PAID+ 的步为准；
+      // 首条已付时刻取旧历史，没有而本次迁入则为 now。
+      const priorPaidAt = await readFirstPaidAt(trx, current);
+      const steppedToPaid = plan.history.some((step) => isPaidOrLater(step.to_status));
+      const snapshotInput: PlanCommissionSnapshotInput = {
+        before: eligibilityBefore,
+        after: eligibilityAfter,
+        order: {
+          app_id: current.app_id,
+          order_id: current.order_id,
+          platform,
+          buy_type: orderBuyType(current.buy_type),
+          activity_type: current.activity_type,
+          is_presale: current.is_presale,
+          paid_at: columns.paid_at,
+          deposit_paid_at: columns.deposit_paid_at,
+          est_commission_fen: columns.est_commission_fen,
+          settle_commission_fen: columns.settle_commission_fen,
+          subsidy_commission_fen: current.subsidy_commission_fen,
+        },
+        incoming: {
+          modified_at: incoming.modified_at ?? null,
+          service_fee_fen: incoming.service_fee_fen ?? null,
+        },
+        pidScene,
+        movedToPaidNow: priorPaidAt === null && steppedToPaid,
+        firstPaidAt: priorPaidAt ?? (steppedToPaid ? now : null),
+        now,
+      };
+      snapshotPlan = planCommissionSnapshot(snapshotInput);
+      const paidAtSource = snapshotPaidAtSource(snapshotInput, snapshotPlan);
+      // BR-CALC-11：在订单记 paid_at_source；已有值不覆盖。
+      if (paidAtSource !== null && current.paid_at_source === null) {
+        Object.assign(set, { paid_at_source: paidAtSource });
+      }
     }
 
     const updated = await casUpdateOrder(trx, current, set, {
@@ -305,6 +405,28 @@ export function createOrderUpdateStep(
         detected_at: now,
         detail: pendingDetail(plan, from),
       });
+    }
+    // ⑥ 分佣快照：history、待处理之后、settlement 端口之前；端口抛错不吞，整事务回滚。
+    let snapshot: SnapshotOutcome | undefined;
+    if (snapshots !== undefined) {
+      snapshot =
+        snapshotPlan === null
+          ? 'none'
+          : await runCommissionSnapshot(
+              trx,
+              snapshots,
+              snapshotPlan,
+              {
+                app_id: current.app_id,
+                platform,
+                sub_order_id: current.sub_order_id,
+                order_id: current.order_id,
+                raw_status: incoming.raw_status ?? null,
+                raw_payload_id: columns.raw_payload_id,
+                now,
+              },
+              log,
+            );
     }
     const source: OrderStatusSource = {
       event: plan.event ?? null,
@@ -336,6 +458,7 @@ export function createOrderUpdateStep(
         est_after: columns.est_commission_fen,
         settle_commission_fen: columns.settle_commission_fen,
         attributed_now: attributedNow,
+        ...(snapshot === undefined ? {} : { snapshot }),
       },
       source,
     );
@@ -429,6 +552,12 @@ export function createOrderUpdateStep(
       log?.warn(
         { ...base, reason: 'PID_SCENE_NOT_FOUND', outcome: 'source_scene_unknown' },
         'order promotion slot scene unknown; source backfill skipped product / shop matching',
+      );
+    }
+    if (snapshotSceneMissing) {
+      log?.warn(
+        { ...base, reason: 'PID_SCENE_NOT_FOUND', outcome: 'snapshot_scene_unknown' },
+        'order promotion slot scene unknown; commission snapshot treats it as non-taolijin',
       );
     }
     if (backfilled !== null) {

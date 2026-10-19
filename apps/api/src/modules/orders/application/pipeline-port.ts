@@ -9,6 +9,10 @@
 //   未归因计数、无 mtime 计数（开启排序时）→ rebate.onImported（同事务）。①、无付款时间、同步起点之前 → 只记丢弃计数。
 // - ⑤ 来源回填（B1-08j，BR-ATTR-15）：② 成功且注入 sources 时在判定阶段经端口匹配，四列随 orders INSERT 写入；
 //   端口抛错整事务回滚。
+// - ⑥ 分佣快照（B1-08k，BR-ATTR-01 ⑥ / BR-CALC-10）：注入 snapshots 且首次入库即已归因、PAID+ 时，判定阶段定
+//   paid_at_source（随 INSERT 写），history、待处理之后、rebate.onImported 之前同事务调端口
+//   （application/commission-snapshot-step.ts）；结果经 ImportedOrder.snapshot 交 settlement。未注入时整步跳过，
+//   ImportedOrder 不带 snapshot 字段（与 B1-08h 一致，D10-69）。
 // 日志只打平铺字段（platform、app_id、reason、outcome），不打子订单号与买家参数。
 import { accountingDate } from '@couli/domain';
 import type { DB } from '@couli/db';
@@ -16,6 +20,13 @@ import type { Insertable, Transaction } from 'kysely';
 import { newUuidV7 } from '../../platform/index.ts';
 import type { RegisteredPlatform, UnionOrder, UnionOrderAttrParams } from '../../union/index.ts';
 import { classifyBuyType, isKnownPidScene } from '../domain/attribution.ts';
+import {
+  isPaidOrLater,
+  planCommissionSnapshot,
+  snapshotPaidAtSource,
+  type CommissionSnapshotPlan,
+  type PlanCommissionSnapshotInput,
+} from '../domain/commission-snapshot.ts';
 import { orderContentHash } from '../domain/content-hash.ts';
 import { planImportState } from '../domain/import-state.ts';
 import { rawItemId, rawPayloadId } from '../domain/order-fields.ts';
@@ -32,6 +43,7 @@ import {
 } from '../infra/pipeline-store.ts';
 import { publishBindingConflict, publishIllegalTransition } from './alert-events.ts';
 import { attributeOrderUser } from './attribute-user.ts';
+import { runCommissionSnapshot, type SnapshotOutcome } from './commission-snapshot-step.ts';
 import { backfillOrderSource, sourceColumns } from './source-backfill.ts';
 import type {
   OrderPipeline,
@@ -49,6 +61,9 @@ const NO_PARAMS: UnionOrderAttrParams = {
   custom_parameters: null,
   sub_union_id: null,
 };
+
+/** 首次入库不写 rebate_status（settlement 是唯一写者），本次处理前即库默认值。 */
+const IMPORTED_REBATE_STATUS = 'UNATTRIBUTED';
 
 // TODO(规划/11 §4.5): 淘宝 SITE_MISMATCH 判定 — blocked on 淘宝订单映射（无 site_id）。
 export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
@@ -253,9 +268,46 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
           })
         : null;
 
-    // —— 判定完成，开始写库 ——
     const orderId = newUuidV7(now);
     const attributed = user.kind === 'attributed';
+    // ⑥ 分佣快照（B1-08k）：判定先于写库。首次入库 before 为空；金额取将写入的列（结算佣金首次入库不写）；
+    // 本次入库即 PAID+ 时首条已付历史就是本事务写的，时刻为 now。未注入端口整步跳过。
+    const paidNow = isPaidOrLater(plan.platform_status);
+    const snapshotInput: PlanCommissionSnapshotInput = {
+      before: null,
+      after: {
+        user_id: user.user_id,
+        platform_status: plan.platform_status,
+        rebate_status_before: IMPORTED_REBATE_STATUS,
+      },
+      order: {
+        app_id: ctx.app_id,
+        order_id: orderId,
+        platform,
+        buy_type: scene.buy_type,
+        activity_type: null,
+        is_presale: order.deposit_paid_at != null,
+        paid_at: order.paid_at ?? null,
+        deposit_paid_at: order.deposit_paid_at ?? null,
+        est_commission_fen: order.est_commission_fen ?? null,
+        settle_commission_fen: null,
+        subsidy_commission_fen: null,
+      },
+      incoming: {
+        modified_at: order.modified_at ?? null,
+        service_fee_fen: order.service_fee_fen ?? null,
+      },
+      pidScene: pidRow.pid_scene,
+      movedToPaidNow: paidNow,
+      firstPaidAt: paidNow ? now : null,
+      now,
+    };
+    const snapshotPlan: CommissionSnapshotPlan | null =
+      deps.snapshots === undefined ? null : planCommissionSnapshot(snapshotInput);
+    const paidAtSource =
+      snapshotPlan === null ? null : snapshotPaidAtSource(snapshotInput, snapshotPlan);
+
+    // —— 判定完成，开始写库 ——
     const row: Omit<Insertable<DB['orders']>, 'rebate_status'> = {
       order_id: orderId,
       app_id: ctx.app_id,
@@ -284,6 +336,7 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       content_hash: orderContentHash(order),
       raw_payload_id: payloadId,
       ...(source === null ? {} : sourceColumns(source)),
+      ...(paidAtSource === null ? {} : { paid_at_source: paidAtSource }),
     };
     await insertImportedOrder(
       trx,
@@ -322,6 +375,25 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
     // BR-ATTR-01（D10-39）：开启乱序判定而首次入库也没有 platform_modified_at → 照常按 content_hash
     // 入库，同事务计一次 order_sync_no_mtime；丢弃与只进待处理（不建行）的不计。
     if (missingMtime(order, platform)) await countNoMtime(trx, ctx, platform, attrAt);
+    // ⑥ 分佣快照：端口抛错不吞，整事务（含订单、history、待处理）回滚。未注入端口时不带 snapshot 字段。
+    const snapshot: SnapshotOutcome | undefined =
+      deps.snapshots === undefined || snapshotPlan === null
+        ? undefined
+        : await runCommissionSnapshot(
+            trx,
+            deps.snapshots,
+            snapshotPlan,
+            {
+              app_id: ctx.app_id,
+              platform,
+              sub_order_id: order.sub_order_id,
+              order_id: orderId,
+              raw_status: rawStatus,
+              raw_payload_id: payloadId,
+              now,
+            },
+            log,
+          );
     await deps.rebate.onImported(trx, {
       app_id: ctx.app_id,
       order_id: orderId,
@@ -329,6 +401,7 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       attributed,
       platform_status: plan.platform_status,
       received_at: plan.received_at,
+      ...(snapshot === undefined ? {} : { snapshot }),
     });
     // B1-08i（D10-41 第 1 条；02 §11）：注入 events 时，order.created 与首次入库同一事务入队。
     await deps.events?.publish(trx, {
