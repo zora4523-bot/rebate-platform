@@ -1,0 +1,26 @@
+id: CT-06zb
+repo: rebate-platform
+title: CT-06zb：log-redaction-review 第一条访问日志用例的 it 超时与 CI 实际时长对齐（verify-fast 偶发 30 秒超时）
+type: test-change
+# 2026-10-19 入账（编排子代理）。起因：test/spec/platform/masking/log-redaction-review.test.ts 的访问日志用例
+# 「[BR-ID-33] 访问日志（评审补充 F）：Fastify 请求经根 logger 写 method、url…」（第 776 行，B1-01c；#64 给了 30_000）
+# 在 verify-fast 里以 Test timed out in 30000ms 偶发红，重跑后过（CT-04f #756 的 run 39161801119、#889 的 run 39230371843 第 1 轮等）。
+# 统计（verify-fast 作业日志，2026-10-18 07:32–10-19 09:59 UTC，按作业去重 115 个）：这条 p50 26.6 s、p90 29.8 s，
+# 绿的最长 29.9 s，9 次撞 30 s（最近 50 个作业里 6 次）；同文件第二条访问日志用例最长 5.3 s，其余 17 条都在 0.7 s 以内。
+# 它是本文件第一个 import apps/api/src/bootstrap.ts 的用例，一次性加载 api 模块图的耗时都记在它头上；verify-props
+# 只跑 spec 包时同一条只要 4–6 s（冷）/ 2–3 s（热），verify-fast 里 turbo 同时跑各包测试，CPU 争用放大到 17–31 s。
+# 做法：只把这一条 it 的第三参数 30_000 → 70_000（最大观测值 31.8 s × 2，向上取整到 10 秒）并加三行注释。
+# 不改断言、样本、请求清单与循环，不动第二条访问日志用例（30_000 不变）与 test/vitest.config.ts，不动 apps/。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走
+# 非 task 分支（chore/test-change-CT-06zb）、不带证据文件（先例 CT-06y #860、F1-06zj #866）；Claude 实现、Codex 只读对抗评审。
+refs: []
+refs_hash: {}
+deps: [B1-01c]
+paths:
+  - 'test/spec/platform/masking/log-redaction-review.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 894
