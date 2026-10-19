@@ -1,0 +1,20 @@
+id: B1-02ze
+repo: rebate-platform
+title: identity 导出只读端口 createUserDeletionStatusReader({ db }) → read(executor, { app_id, user_ids }) => Promise<ReadonlyMap<string, 'none' | 'processing' | 'done'>>：可在调用方事务内执行，不在 users 表的 user_id 不出现在结果里；供资金线 B2-03p（BR-CALC-13 受益人不存在或已注销 → forfeited）
+type: impl
+# 草稿 2026-10-20（身份与风控线 identity-lane）。编排 2026-10-20 05:0x 派工（资金线 10-19 09:05 UTC 跨线请求，签名照原文）；只读、不改任何 identity 逻辑。
+# 映射（注销单表 deletion_requests 未建，B1-15）：users.status = 'deleted' → 'done'；其余现存用户 → 'none'（冷静期 cooling 与已撤回 cancelled 不算注销，BR-CALC-13 只认 processing / done）；'processing' 在 B1-15 建注销单后接入，代码留 TODO(规划/11 §4.5) — blocked on B1-15，与 identity/application/me.ts 现有推导一致。
+# 查询按 (app_id, id = ANY(user_ids)) 一条 SQL，空数组不查库返回空 Map；结果只含查到的 user_id；不读手机号等任何个人敏感列；不写日志。RV1（identity），Codex 写规则测试、Claude 实现、Codex general 评审。
+refs: []
+refs_hash: {}
+deps: [B1-02a]
+paths:
+  - 'apps/api/src/modules/identity/**'
+test_paths:
+  - 'test/spec/identity/deletion-status/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/deletion-status/**'
+status: todo

@@ -32,4 +32,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/growth/landing-register/**'
-status: todo
+status: done
+pr: 936
