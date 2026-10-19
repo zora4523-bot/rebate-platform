@@ -54,5 +54,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/ledger-rules/**'
   - 'test/spec/domain/ledger-templates/**'
-status: todo
-pr: null
+status: done
+pr: 812
