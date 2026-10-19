@@ -1,0 +1,93 @@
+{
+  "task": "B2-02h",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "ad06fb27a6b45517e7c05917cfb691e18b6dbdcb",
+  "red_tests": [
+    "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#3] 存量正常、注销中、已注销用户各补一个 USER_BALANCE 账户和零余额",
+    "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#4] 已并号用户和目标用户各自获得账户，不因并号被跳过或共用账户",
+    "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#5] 已有账户及非零余额完整保留，包括负余额日期、冻结余额和版本",
+    "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#6] 已有账户缺余额行时补零余额，保留原账户 id 和创建时间",
+    "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#7] 混合存量数据连续重跑两次，与第一次执行后的完整结果一致",
+    "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#8] 无用户的 app 不产生行，平台账户及其已有或缺失余额保持原样",
+    "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#9] 多 app 按 users.app_id 开户，另一 app 的相同 owner_id 不阻挡或接收回填",
+    "test/spec/db/ledger/backfill/migration.test.ts > [AC-B2-02h#1] 回填迁移有 Up 标记并先设置两个非零事务内超时",
+    "test/spec/db/ledger/backfill/migration.test.ts > [AC-B2-02h#2] 回填只用普通 INSERT SELECT ON CONFLICT DO NOTHING，不改结构授权或已有行"
+  ],
+  "risk_note": "RV2 (db/migrations, data only). BR-FUND-13 / ledger-plan D6 A: users registered before B2-02g (#934) have no balance account. One new migration backfills them: INSERT ... SELECT a USER_BALANCE row in app.ledger_accounts per app.users row (app_id and owner_id from the user, id gen_random_uuid() like the ledger's randomUUID, created_at column default) ON CONFLICT (app_id, owner_type, owner_id, subject) DO NOTHING; then a zero row in app.account_balances (available 0, frozen 0, version 0, negative_since NULL) for every user USER_BALANCE account that lacks one, ON CONFLICT (account_id) DO NOTHING. Existing rows, amounts and versions untouched; rerunnable; platform accounts untouched; no UPDATE / DELETE / DDL / DO block / grant change; SET LOCAL lock_timeout 5s and statement_timeout 120s. No schema change (db:check clean). Rule tests run the migration SQL as couli_app (decision 35); production runs it as couli_migrator. The file takes the next free number at landing (decision 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ad06fb27a6b45517e7c05917cfb691e18b6dbdcb",
+      "tree": "459a9d18e94d78e4664ec82dc4e608f334f65f84",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T21:15:02Z",
+      "finished_at": "2026-10-19T21:15:34Z",
+      "gate": {
+        "commit": "72694cb909ea4c21423186b86fc16d1e3dee4e96",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#3] 存量正常、注销中、已注销用户各补一个 USER_BALANCE 账户和零余额",
+        "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#4] 已并号用户和目标用户各自获得账户，不因并号被跳过或共用账户",
+        "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#5] 已有账户及非零余额完整保留，包括负余额日期、冻结余额和版本",
+        "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#6] 已有账户缺余额行时补零余额，保留原账户 id 和创建时间",
+        "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#7] 混合存量数据连续重跑两次，与第一次执行后的完整结果一致",
+        "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#8] 无用户的 app 不产生行，平台账户及其已有或缺失余额保持原样",
+        "test/spec/db/ledger/backfill/backfill.int.test.ts > [AC-B2-02h#9] 多 app 按 users.app_id 开户，另一 app 的相同 owner_id 不阻挡或接收回填",
+        "test/spec/db/ledger/backfill/migration.test.ts > [AC-B2-02h#1] 回填迁移有 Up 标记并先设置两个非零事务内超时",
+        "test/spec/db/ledger/backfill/migration.test.ts > [AC-B2-02h#2] 回填只用普通 INSERT SELECT ON CONFLICT DO NOTHING，不改结构授权或已有行"
+      ],
+      "expected": [
+        "test/spec/db/ledger/backfill/backfill.int.test.ts",
+        "test/spec/db/ledger/backfill/migration.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "1fdee1db48230247599887b65690712b0ceddfa77289d894f37ebe4dbd7ec00e"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "c47515d4b52a22e905733eb5cbe720d26c067826a7f5e9d76bede84ceb2a80da"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 2 runs (run 1 stopped on the missing couli_migrator test role, answered by decision 35; run 2: 9 red); round 1 pass, 3 out-of-scope S2 left for later tasks"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "15eb36fa40f8db0ebf84bfe24c0d9592cc1a9c34",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
