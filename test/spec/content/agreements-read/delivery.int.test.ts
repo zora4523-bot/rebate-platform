@@ -35,16 +35,20 @@ it('[AC-F1-02n#9] 两类未发布时均为 null，即使已有劳务协议或其
   expect(await success(h.app, appId)).toEqual({ privacy: null, agreement: null });
 });
 
-it('[AC-F1-02n#10] 已缓存匿名响应仍拒绝 deletion_only 令牌并返回 10405', async () => {
+// Orchestrator mechanical fix (L31 corrected): getAgreements is x-auth none, and the platform never
+// reads Authorization on x-auth none operations (same as GET /v1/articles), so a deletion_only
+// token gets the same 200 body as an anonymous read.
+it('[AC-F1-02n#10] 匿名读不看令牌：deletion_only 令牌与匿名读得到同一 200 响应', async () => {
   const appId = newAppId();
   await seedAgreement(h.db, appId, 'privacy', 1);
   const restricted = await h.restrictedHeaders(appId);
   const anonymous = await success(h.app, appId);
   expect(anonymous.privacy?.version).toBe(1);
   const response = await read(h.app, appId, restricted);
-  expect(response.statusCode).toBe(403);
-  expect(response.json().code).toBe(10405);
+  expect(response.statusCode).toBe(200);
+  expect(response.json().code).toBe(0);
   await validate(response);
+  expect(response.json<{ data: { privacy: { version: number } } }>().data.privacy.version).toBe(1);
   expect(await success(h.app, appId)).toEqual(anonymous);
 });
 
