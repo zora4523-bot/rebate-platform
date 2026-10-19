@@ -9,7 +9,12 @@ export type {
 } from './domain/claim-evidence.ts';
 export { readClaimEvidenceWindow } from './application/claim-evidence.ts';
 export type { ClaimEvidencePorts, ClaimEvidenceFactory } from './application/claim-evidence.ts';
-export { createOrderClaim, listOrderClaims } from './application/order-claims.ts';
+export {
+  createOrderClaim,
+  createOrderClaimIn,
+  readClaimSettings,
+  listOrderClaims,
+} from './application/order-claims.ts';
 export type {
   OrderClaimDeps,
   ClaimFailure,

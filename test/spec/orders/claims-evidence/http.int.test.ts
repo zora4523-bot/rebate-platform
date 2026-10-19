@@ -106,17 +106,26 @@ it.each([
         const evidenceLogs = logs
           .map((line) => JSON.parse(line) as Record<string, unknown>)
           .filter((line) => line['module'] === 'orders');
-        for (const line of evidenceLogs) {
-          for (const field of [
-            'user_id',
-            'sub_order_id',
-            'order_no',
-            'link_log_id',
-            'link_log_ids',
-          ])
-            expect(line).not.toHaveProperty(field);
-          expect(JSON.stringify(line)).not.toContain(String(hit.id));
+        function checkFields(value: unknown): void {
+          if (Array.isArray(value)) {
+            for (const item of value) checkFields(item);
+          } else if (value !== null && typeof value === 'object') {
+            for (const [field, nested] of Object.entries(value)) {
+              expect([
+                'user_id',
+                'sub_order_id',
+                'order_no',
+                'link_log_id',
+                'link_log_ids',
+                'evidence_link_log_ids',
+              ]).not.toContain(field);
+              checkFields(nested);
+            }
+          } else {
+            expect(String(value)).not.toBe(String(hit.id));
+          }
         }
+        for (const line of evidenceLogs) checkFields(line);
       },
     );
   },

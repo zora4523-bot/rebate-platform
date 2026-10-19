@@ -6,12 +6,11 @@ import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import * as linking from '../../../../apps/api/src/modules/linking/index.ts';
 import {
   createOrderClaim,
-  type ClaimEvidenceFactory,
-} from '../../../../apps/api/src/modules/orders/index.ts';
-import {
   createOrderClaimIn,
   readClaimSettings,
-} from '../../../../apps/api/src/modules/orders/application/order-claims.ts';
+  OrdersModule,
+  type ClaimEvidenceFactory,
+} from '../../../../apps/api/src/modules/orders/index.ts';
 import {
   createRedisHandle,
   type RedisHandle,
@@ -228,19 +227,25 @@ it('[AC-B1-10c#42] HTTP证据读错不存幂等响应；同键恢复后返回终
   const f = await fixture(db, redis);
   const row = await f.seed();
   const hit = await f.log();
-  const original = linking.createClaimEvidenceReader;
+  const original = OrdersModule.forRoot;
   let fail = true;
-  const spy = vi.spyOn(linking, 'createClaimEvidenceReader').mockImplementation((connection) => {
-    const reader = original(connection);
+  const evidence: ClaimEvidenceFactory = (connection) => {
+    const reader = linking.createClaimEvidenceReader(connection);
     return {
-      linkLogs: async (scope) => {
-        if (fail) throw new Error('synthetic evidence outage');
-        return reader.linkLogs(scope);
+      reads: {
+        linkLogs: async (scope) => {
+          if (fail) throw new Error('synthetic evidence outage');
+          return reader.linkLogs(scope);
+        },
+        bindings: (scope) => reader.bindings(scope),
+        conflicts: (scope) => reader.conflicts(scope),
       },
-      bindings: (scope) => reader.bindings(scope),
-      conflicts: (scope) => reader.conflicts(scope),
+      deriveProductKey: async () => null,
     };
-  });
+  };
+  const spy = vi
+    .spyOn(OrdersModule, 'forRoot')
+    .mockImplementation((options) => original({ ...options, evidence }));
   try {
     await withHttp(
       { db, redisUrl: server!.url, subject: f.subject, clock: f.clock },

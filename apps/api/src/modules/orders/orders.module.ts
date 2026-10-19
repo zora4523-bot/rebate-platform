@@ -39,6 +39,7 @@ import {
   type OrderLinkReader,
 } from './application/order-queries.ts';
 import type { OrderClaimDeps } from './application/order-claims.ts';
+import type { ClaimEvidenceFactory } from './application/claim-evidence.ts';
 import { PendingTracks, createPendingTracks } from './application/pending-tracks.ts';
 import { ORDER_SYNC_QUEUE } from './application/sync-scheduler.ts';
 import { ORDER_CLAIM_DEPS, OrderClaimsController } from './http/public/order-claims.controller.ts';
@@ -52,6 +53,7 @@ import {
 } from './worker-runtime.ts';
 
 export interface OrdersModuleOptions {
+  readonly evidence?: ClaimEvidenceFactory;
   /** content's ContentReader over the primary handle (order.user_query_months, credit.enabled.*). */
   readonly config: (db: Kysely<Database>, clock: Clock) => ContentReader;
   /** linking's order-link reader (links.product_key by app_id and link_id). */
