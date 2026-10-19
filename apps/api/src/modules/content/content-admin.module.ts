@@ -4,6 +4,7 @@
 // F1-09e adds POST /admin/v1/pages/{page_key}/preview-tokens (content.page, audited).
 // Page configuration /admin/v1/pages* (F1-09f): drafts, publish, gray, rollback and their reads.
 // Agreement versions /admin/v1/agreements* (F1-02p): list, one version, publish (totp step-up).
+// Dictionary editing /admin/v1/dict-items* (F1-02t): list, save-and-publish, history, rollback.
 // app.module imports this module on the admin entry only; the api and stream entries do not
 // serve /admin/v1. Permission checks go through platform's AdminOperationGuard, which the admin
 // module provides globally on the admin entry (content never imports admin).
@@ -74,6 +75,11 @@ import { createPageSectionsCheck } from './application/page-sections-check.ts';
 import { AdminPagesController } from './http/admin/pages.controller.ts';
 import { homeSectionsSchema } from './infra/home-schema.ts';
 import { createKyselyPageConfigStore } from './infra/kysely-page-config-store.ts';
+import { DictItemAdmin, type DictItemStore } from './application/dict-item-admin.ts';
+import { AdminDictItemsController } from './http/admin/dict-items.controller.ts';
+import { createKyselyDictItemStore } from './infra/kysely-dict-item-store.ts';
+import { defaultTexts } from './infra/texts-default.ts';
+import { getBannedWords, getFundTermKeys } from './specs/text-specs.ts';
 
 /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
 export type ContentAuditWriterFactory = (db: Kysely<Database>, clock: Clock) => AuditPort;
@@ -138,6 +144,16 @@ const NO_DATABASE_AGREEMENTS: AgreementStore = {
   transaction: refuseAgreements,
 };
 
+const refuseDict = (): Promise<never> =>
+  Promise.reject(new Error('content: dictionary editing needs the database'));
+
+const NO_DATABASE_DICT: DictItemStore = {
+  read: refuseDict,
+  history: refuseDict,
+  transaction: refuseDict,
+  appendAudit: refuseDict,
+};
+
 /** Monotonic milliseconds for the SVG conversion budget (not business time). */
 const monotonicMs = (): number => performance.now();
 
@@ -153,6 +169,7 @@ export class ContentAdminModule {
         AdminPagePreviewTokensController,
         AdminPagesController,
         AdminAgreementsController,
+        AdminDictItemsController,
       ],
       providers: [
         {
@@ -216,6 +233,24 @@ export class ContentAdminModule {
                 : createKyselyConfigItemStore(db, (trx) => options.auditWriter(trx, clock)),
               clock,
               logger,
+            ),
+        },
+        {
+          // F1-02t /admin/v1/dict-items*: texts.default.json is read on first use (a broken file
+          // answers 50001); the word and fund term lists are generated snapshots (L28 / L50).
+          provide: DictItemAdmin,
+          inject: [CLOCK, { token: DB, optional: true }],
+          useFactory: (clock: Clock, db?: Kysely<Database>): DictItemAdmin =>
+            new DictItemAdmin(
+              db === undefined
+                ? NO_DATABASE_DICT
+                : createKyselyDictItemStore(db, (trx) => options.auditWriter(trx, clock)),
+              clock,
+              {
+                defaults: defaultTexts,
+                fundTermKeys: getFundTermKeys,
+                rules: () => ({ defaults: defaultTexts(), words: getBannedWords() }),
+              },
             ),
         },
         {
