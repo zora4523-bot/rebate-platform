@@ -2,26 +2,6 @@
 // calls these ports from its SMS code service (deviceQuota, afterAccepted) and its account creation
 // core (afterRegistered); app.module assembles them through ../index.ts.
 //
-// The IP send count is reserved before a send goes out (B1-11g, Codex money r1–r4): one script
-// judges both IP items over the window and, when neither is reached, adds an in-flight record
-// (`p:<reservation>` in the IP's send set, the reservation also in the IP's in-flight set), so
-// concurrent sends from one IP — app route and landing page alike — cannot all read N < L and
-// pass. admitIp() is step ① alone (the landing page: no signature, no device); admitAndReserve()
-// is admit() with ① reserving (the app route; ② unchanged, and a ② refusal releases ①).
-// - recordAccepted({ clientIp, reservation }), on an accepted or unknown send, turns exactly that
-//   in-flight record into a sent record stamped now (the provider's answer); when it is gone a
-//   sent record is added, and no other in-flight record is touched. Without a reservation (callers
-//   that did not reserve) it turns the oldest in-flight record into a sent one, or adds one when
-//   none is in flight.
-// - releaseIp(reservation) drops only that in-flight record (nothing when it is gone); only the
-//   sender calls it, on a definite non-send.
-// - No lease (B1-13d ruling A, «rather count a rare failure once more than over-send»): an
-//   in-flight record never accepted nor released (a lost reply, a crash, a store outage around
-//   the acceptance) counts at its reservation time and leaves with the window like any record.
-// Invariant: under any combination of failures the IP's count is ≥ the sends that really went out
-// (it may over-count, never under-count), and an over-count lasts at most one window.
-// admit() stays the read-only step ① + ② (callers that count with recordAccepted afterwards).
-//
 // admit() is the 42901 step of the send order 签名 → 20001 → 44001 → 42901 (no human
 // verification: 44003 is never answered and sms.captcha_mode is not read):
 //   ① the client IP, one read-only script over two sorted sets of the window [now − 3600 s, now]
@@ -48,6 +28,30 @@
 // Sending never stops on the budget. recordRegistered() records one new account for the IP.
 // Their failures are logged (warn) and swallowed.
 //
+// The per-IP hourly send count of the send path (B1-11g round 7, orchestrator rulings 2026-10-19,
+// couli #150 BR-ID-05 implementation rule) is PG-authoritative: app.sms_send_attempts.
+//   Counted attempts: rows of (app_id, ip_hmac) with status pending / accepted / unknown and
+//   created_at in [now − 3600 s − send bound, now]; failed rows (the provider definitely refused,
+//   or nothing was sent) do not count. Reached → 42901, released when the (N−L+1)-th oldest counted
+//   row leaves the window (created_at + window + 1 ms).
+//   checkAttempts() is step ① of both entries, read only: the IP's new accounts (the Redis read
+//   above, limit 5; a store failure skips this item, never a refusal) and the counted attempts.
+//   admitAttempt() makes it binding once every other check passed (device, phone quota): one
+//   transaction takes the advisory lock of (app_id, ip_hmac), counts again and either refuses or
+//   inserts a pending row (attempt_id UUIDv7 from the Clock) and commits — before the provider is
+//   called. A request refused by any check writes no row. PG failing or missing answers 42901 with
+//   Retry-After 1 (no row, no send).
+//   finishAttempt() writes the outcome on the pending row, retried once; a failed write leaves it
+//   pending, which counts.
+//   admitDevice() is step ② alone (the app route), unchanged from admit().
+// Rows are never deleted or expired by the application; Redis holds no part of this count (no
+// cache: every decision reads PG).
+// Invariant: under any combination of failures, for one IP in one hour, provider calls ≤ counted
+// attempt rows ≤ the limit (a row is committed and counted before its provider call; it stops
+// counting only once it is known that no SMS went out).
+// admit() and recordAccepted()'s IP record stay as B1-03g defined them (their frozen rule tests);
+// the send path no longer reads that Redis send count.
+//
 // Nothing stored or logged carries a phone number or an IP in clear: phones and IPs are keyed
 // blind indexes under their own contexts. Every key lives at most a window (two days for the
 // budget) and carries the app id.
@@ -55,7 +59,15 @@
 // Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
 // for type-only imports, relative imports with `.ts`.
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import type { Clock, FieldCrypto, RedisHandle, RootLogger } from '../../platform/index.ts';
+import type { DB } from '@couli/db';
+import { sql, type Kysely } from 'kysely';
+import {
+  newUuidV7,
+  type Clock,
+  type FieldCrypto,
+  type RedisHandle,
+  type RootLogger,
+} from '../../platform/index.ts';
 import type { RateLimitConfigReader } from './rate-limit.ts';
 
 /** BR-ID-05 / B1-03g: identity resolves device_hash before calling this port. */
@@ -70,45 +82,46 @@ export interface SmsRiskRequest {
    */
   readonly clientIp?: string;
 }
-/** BR-ID-32: the landing page send has no device, only the client IP Fastify reports. */
-export interface SmsRiskIpRequest {
-  readonly appId: string;
-  readonly clientIp: string;
-}
-/** admitIp's answer: a reservation to release when no SMS went out, or 42901. */
-export type SmsRiskIpAdmission =
-  | { readonly code: 0; readonly reservation: string }
-  | { readonly code: 42901; readonly retryAfterSec: number };
 export type SmsRiskAdmission =
   { readonly code: 0 } | { readonly code: 42901; readonly retryAfterSec: number };
-/** admitAndReserve's answer: the IP reservation (absent without a client IP), or 42901. */
-export type SmsRiskReservedAdmission =
-  | { readonly code: 0; readonly reservation?: string }
+/** B1-11g: step ① of a send, both entries; the phone is normalised by identity. */
+export interface SmsAttemptRequest {
+  readonly appId: string;
+  readonly clientIp: string;
+  readonly phone: string;
+}
+export type SmsAttemptAdmission =
+  | { readonly code: 0; readonly attemptId: string }
   | { readonly code: 42901; readonly retryAfterSec: number };
+/**
+ * The outcome written on an admitted attempt: accepted and unknown keep counting; failed (the
+ * provider definitely refused, or nothing was sent) stops counting.
+ */
+export type SmsAttemptOutcome = 'accepted' | 'failed' | 'unknown';
 export interface SmsRisk {
   /** IP checks precede the atomic device admission; admission is never refunded. */
   admit(input: SmsRiskRequest): Promise<SmsRiskAdmission>;
   /**
-   * The landing page send (BR-ID-32): only the IP step ① (both items), no device admission. When
-   * admitted, the send is already counted for the IP (atomic reservation); a store failure
-   * answers 42901 like admit().
+   * Step ① of the send path (B1-11g), read only: the IP's new accounts and its counted PG
+   * attempts. Nothing is written; admitAttempt makes the decision binding later.
    */
-  admitIp(input: SmsRiskIpRequest): Promise<SmsRiskIpAdmission>;
+  checkAttempts(input: Omit<SmsAttemptRequest, 'phone'>): Promise<SmsRiskAdmission>;
   /**
-   * The app route send: admit() with step ① reserving the IP send (as admitIp); a device refusal
-   * or failure releases it. Without a client IP only ② runs and nothing is reserved.
+   * The binding attempt (after the phone quota was reserved): under the (app_id, ip_hmac) lock,
+   * the counted attempts are read again and, below the limit, a pending row is committed.
    */
-  admitAndReserve(input: SmsRiskRequest): Promise<SmsRiskReservedAdmission>;
-  /** Drops a reservation's own in-flight record (no SMS went out, or refused); never throws. */
-  releaseIp(input: SmsRiskIpRequest & { readonly reservation: string }): Promise<void>;
-  /**
-   * Called once after accepted OR unknown delivery, never for explicit rejection. With a client
-   * IP and the send's reservation: exactly that in-flight record becomes a sent record at now (or
-   * one is added when it is gone), no other is touched. With a client IP and no reservation: the
-   * oldest in-flight record becomes a sent one (or one is added). Without a client IP only the
-   * daily budget counts.
-   */
-  recordAccepted(input: { appId: string; clientIp?: string; reservation?: string }): Promise<void>;
+  admitAttempt(input: SmsAttemptRequest): Promise<SmsAttemptAdmission>;
+  /** Step ② alone (the app route after admitAttempt): the device's admission set. */
+  admitDevice(input: Omit<SmsRiskRequest, 'clientIp'>): Promise<SmsRiskAdmission>;
+  /** Writes the send's outcome on its pending attempt (retried once); never throws. */
+  finishAttempt(input: {
+    appId: string;
+    attemptId: string;
+    outcome: SmsAttemptOutcome;
+  }): Promise<void>;
+  /** Called once after accepted OR unknown delivery, never for explicit rejection. */
+  /** Without a client IP only the daily budget counts. */
+  recordAccepted(input: { appId: string; clientIp?: string }): Promise<void>;
   /** All register_method values count; called by identity before commit. */
   recordRegistered(input: { appId: string; clientIp: string; userId: string }): Promise<void>;
 }
@@ -118,7 +131,42 @@ export interface SmsRiskOptions {
   readonly logger: RootLogger;
   readonly config: RateLimitConfigReader;
   readonly crypto: Pick<FieldCrypto, 'blindIndex'>;
+  /** app.sms_send_attempts (B1-11g); absent or null → admitAttempt refuses (42901, 1 s). */
+  readonly db?: Kysely<DB> | null;
 }
+
+/**
+ * The longest wait for the SMS provider (identity's SMS_SEND_TIMEOUT_MS): the attempt window is
+ * the hour plus this bound, so a send accepted up to the bound after its admission still counts a
+ * full hour after the acceptance.
+ */
+export const SMS_ATTEMPT_SEND_BOUND_MS = 10_000;
+/** The attempt count window: [now − this, now], both ends closed. */
+export const SMS_ATTEMPT_WINDOW_MS = 3_600_000 + SMS_ATTEMPT_SEND_BOUND_MS;
+
+/** The attempt table as this module reads and writes it (the generated DB type follows it). */
+interface AttemptTables {
+  'app.sms_send_attempts': {
+    app_id: string;
+    attempt_id: string;
+    ip_hmac: string;
+    phone_hmac: string;
+    status: 'pending' | SmsAttemptOutcome;
+    created_at: Date;
+    updated_at: Date;
+  };
+}
+const ATTEMPTS = 'app.sms_send_attempts';
+/**
+ * Statuses that count towards the IP's limit: everything that may have reached the provider.
+ * failed (the provider definitely refused, or the service stopped before calling it) does not.
+ */
+const COUNTED_STATUSES: readonly ('pending' | SmsAttemptOutcome)[] = [
+  'pending',
+  'accepted',
+  'unknown',
+];
+type SmsRiskRefusal = { readonly code: 42901; readonly retryAfterSec: number };
 
 /** Config keys and defaults (08 BR-ID-05 细则). */
 export const SMS_DEVICE_DISTINCT_PHONES_KEY = 'sms.device_distinct_phones_per_hour';
@@ -173,76 +221,21 @@ return {wait(KEYS[1], tonumber(ARGV[4])), wait(KEYS[2], tonumber(ARGV[5]))}
 `;
 
 /**
- * KEYS[1]: IP sends, KEYS[2]: IP registrations, KEYS[3]: IP in-flight reservations. ARGV[1]: TTL
- * (s), ARGV[2]: now (ms), ARGV[3]: window (ms), ARGV[4]: send limit, ARGV[5]: registration limit,
- * ARGV[6]: reservation. Judges both items as IP_SCRIPT (in-flight records count like sent ones);
- * neither reached → `p:<reservation>` joins the sends and the reservation the in-flight set, both
- * at now (what left the window is dropped from both sets). Returns {send wait ms, registration wait
- * ms}; {0, 0} means reserved.
+ * KEYS[1]: IP registrations. ARGV[2]: now (ms), ARGV[3]: window (ms), ARGV[4]: limit. Read-only.
+ * Returns the wait in ms, 0 when the item is not reached (as IP_SCRIPT's registration item).
  */
-const IP_RESERVE_SCRIPT = `-- sms_risk:ip_reserve
-local ttl = tonumber(ARGV[1])
+const IP_REG_SCRIPT = `
 local now = tonumber(ARGV[2])
 local window = tonumber(ARGV[3])
+local limit = tonumber(ARGV[4])
 local low = string.format('%.0f', now - window)
 local high = string.format('%.0f', now)
-local function wait(key, limit)
-  local count = redis.call('ZCOUNT', key, low, high)
-  if count < limit then return 0 end
-  local entry = redis.call('ZRANGEBYSCORE', key, low, high, 'WITHSCORES', 'LIMIT', count - limit, 1)
-  local ms = tonumber(entry[2]) + window + 1000 - now
-  if ms < 1 then ms = 1 end
-  return ms
-end
-local sendWait = wait(KEYS[1], tonumber(ARGV[4]))
-local regWait = wait(KEYS[2], tonumber(ARGV[5]))
-if sendWait > 0 or regWait > 0 then return {sendWait, regWait} end
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', '(' .. low)
-redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', '(' .. low)
-redis.call('ZADD', KEYS[1], high, 'p:' .. ARGV[6])
-redis.call('ZADD', KEYS[3], high, ARGV[6])
-redis.call('EXPIRE', KEYS[1], ttl)
-redis.call('EXPIRE', KEYS[3], ttl)
-return {0, 0}
-`;
-
-/**
- * KEYS[1]: IP sends, KEYS[2]: IP in-flight reservations. ARGV[1]: TTL (s), ARGV[2]: reservation.
- * Drops that reservation's in-flight record only; nothing when it is gone.
- */
-const IP_RELEASE_SCRIPT = `-- sms_risk:ip_release
-if redis.call('ZREM', KEYS[2], ARGV[2]) == 1 then
-  redis.call('ZREM', KEYS[1], 'p:' .. ARGV[2])
-end
-return 1
-`;
-
-/**
- * KEYS[1]: IP sends, KEYS[2]: IP in-flight reservations. ARGV[1]: TTL (s), ARGV[2]: now (ms),
- * ARGV[3]: window (ms), ARGV[4]: sent record member, ARGV[5]: reservation or ''. With a reservation: that in-flight record (if still there) is removed, and the sent record is
- * added at now; no other in-flight record is touched. Without one: the oldest live in-flight
- * record (removed) becomes the sent record, or the sent record is just added.
- */
-const IP_ACCEPT_SCRIPT = `-- sms_risk:ip_accept
-local ttl = tonumber(ARGV[1])
-local now = tonumber(ARGV[2])
-local low = '(' .. string.format('%.0f', now - tonumber(ARGV[3]))
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', low)
-redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', low)
-local own = ARGV[5]
-if own ~= '' then
-  if redis.call('ZREM', KEYS[2], own) == 1 then redis.call('ZREM', KEYS[1], 'p:' .. own) end
-else
-  local oldest = redis.call('ZRANGE', KEYS[2], 0, 0)
-  if oldest[1] then
-    redis.call('ZREM', KEYS[2], oldest[1])
-    redis.call('ZREM', KEYS[1], 'p:' .. oldest[1])
-  end
-end
-redis.call('ZADD', KEYS[1], string.format('%.0f', now), ARGV[4])
-redis.call('EXPIRE', KEYS[1], ttl)
-redis.call('EXPIRE', KEYS[2], ttl)
-return 1
+local count = redis.call('ZCOUNT', KEYS[1], low, high)
+if count < limit then return 0 end
+local entry = redis.call('ZRANGEBYSCORE', KEYS[1], low, high, 'WITHSCORES', 'LIMIT', count - limit, 1)
+local ms = tonumber(entry[2]) + window + 1000 - now
+if ms < 1 then ms = 1 end
+return ms
 `;
 
 /**
@@ -393,6 +386,9 @@ export function ephemeralSmsRiskIndex(): Pick<FieldCrypto, 'blindIndex'> {
 
 export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
   const { clock, redis, logger, config, crypto } = options;
+  // The generated DB type gains app.sms_send_attempts with the migration; until then this module
+  // reads the table through its own row type.
+  const db = (options.db ?? null) as unknown as Kysely<AttemptTables> | null;
 
   /** Outage state of this process; null while the store answers. */
   let outage: { since: number } | null = null;
@@ -417,7 +413,7 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
       : fallback;
   }
 
-  function storeFailed(error: unknown): { readonly code: 42901; readonly retryAfterSec: number } {
+  function storeFailed(error: unknown): SmsRiskAdmission {
     if (outage === null) {
       outage = { since: clock.now().getTime() };
       logger.error({ stage: STAGE, ...failureFields(error) }, 'sms_risk_store_unavailable');
@@ -443,40 +439,18 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
     kind: 'ip_send' | 'ip_reg',
     appId: string,
     clientIp: string,
-    reservation?: string,
   ): Promise<void> {
-    const ip = ipDigest(clientIp);
-    // A send turns its own in-flight record (or, without a reservation, the oldest one) into a
-    // sent record (IP_ACCEPT_SCRIPT); a registration is a plain record. A send with a reservation
-    // writes the sent record `s:<reservation>`, so the script is idempotent and is retried once
-    // (a transient failure leaves the in-flight record counting at its reservation time: an
-    // over-count until it leaves the window, never an under-count); the others run once.
-    const own = kind === 'ip_send' ? reservation : undefined;
-    const attempts = own === undefined ? 1 : 2;
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        await store
-          .namespace(SMS_RISK_NAMESPACE)
-          .eval(kind === 'ip_send' ? IP_ACCEPT_SCRIPT : RECORD_SCRIPT, {
-            keys:
-              kind === 'ip_send'
-                ? [`ip_send:${appId}:${ip}`, `ip_pend:${appId}:${ip}`]
-                : [`ip_reg:${appId}:${ip}`],
-            args: [
-              String(clock.now().getTime()),
-              String(WINDOW_MS),
-              own === undefined ? randomUUID() : `s:${own}`,
-              ...(kind === 'ip_send' ? [own ?? ''] : []),
-            ],
-            ttlSeconds: WINDOW_TTL_SEC,
-          });
-        return;
-      } catch (error) {
-        logger.warn(
-          { stage: STAGE, app_id: appId, kind, attempt, ...failureFields(error) },
-          'sms_risk_record_failed',
-        );
-      }
+    try {
+      await store.namespace(SMS_RISK_NAMESPACE).eval(RECORD_SCRIPT, {
+        keys: [`${kind}:${appId}:${ipDigest(clientIp)}`],
+        args: [String(clock.now().getTime()), String(WINDOW_MS), randomUUID()],
+        ttlSeconds: WINDOW_TTL_SEC,
+      });
+    } catch (error) {
+      logger.warn(
+        { stage: STAGE, app_id: appId, kind, ...failureFields(error) },
+        'sms_risk_record_failed',
+      );
     }
   }
 
@@ -524,88 +498,16 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
     }
   }
 
-  /** Drops an IP reservation (IP_RELEASE_SCRIPT); failures are logged and swallowed. */
-  async function releaseReservation(
-    store: RedisHandle,
-    appId: string,
-    clientIp: string,
-    reservation: string,
-  ): Promise<void> {
-    try {
-      const ip = ipDigest(clientIp);
-      await store.namespace(SMS_RISK_NAMESPACE).eval(IP_RELEASE_SCRIPT, {
-        keys: [`ip_send:${appId}:${ip}`, `ip_pend:${appId}:${ip}`],
-        args: [reservation],
-        ttlSeconds: WINDOW_TTL_SEC,
-      });
-    } catch (error) {
-      logger.warn(
-        { stage: STAGE, app_id: appId, kind: 'ip_release', ...failureFields(error) },
-        'sms_risk_record_failed',
-      );
-    }
-  }
+  const deviceLimitOf = (appId: string): Promise<number> =>
+    setting(
+      appId,
+      SMS_DEVICE_DISTINCT_PHONES_KEY,
+      DEVICE_DISTINCT_PHONES_DEFAULT,
+      1,
+      MAX_THRESHOLD,
+    );
 
-  /** Step ①: the IP's new accounts and accepted sends, one read-only script; 0 or 42901. */
-  async function judgeIp(
-    store: RedisHandle,
-    appId: string,
-    clientIp: string,
-    sendLimit: number,
-    now: number,
-  ): Promise<SmsRiskAdmission> {
-    let ipWaits: number[];
-    try {
-      const ip = ipDigest(clientIp);
-      const reply = await store.namespace(SMS_RISK_NAMESPACE).eval(IP_SCRIPT, {
-        keys: [`ip_send:${appId}:${ip}`, `ip_reg:${appId}:${ip}`],
-        args: [String(now), String(WINDOW_MS), String(sendLimit), String(IP_REGISTRATIONS_LIMIT)],
-        ttlSeconds: WINDOW_TTL_SEC,
-      });
-      ipWaits = integers(reply, 2);
-    } catch (error) {
-      return storeFailed(error);
-    }
-    storeAnswered();
-    const ipWait = Math.max(...ipWaits);
-    return ipWait > 0 ? { code: 42901, retryAfterSec: seconds(ipWait) } : { code: 0 };
-  }
-
-  /** Step ① reserving: both IP items judged and, when neither is reached, the send reserved. */
-  async function reserveIp(
-    store: RedisHandle,
-    appId: string,
-    clientIp: string,
-    sendLimit: number,
-  ): Promise<SmsRiskIpAdmission> {
-    const reservation = randomUUID();
-    let ipWaits: number[];
-    try {
-      const ip = ipDigest(clientIp);
-      const reply = await store.namespace(SMS_RISK_NAMESPACE).eval(IP_RESERVE_SCRIPT, {
-        keys: [`ip_send:${appId}:${ip}`, `ip_reg:${appId}:${ip}`, `ip_pend:${appId}:${ip}`],
-        args: [
-          String(clock.now().getTime()),
-          String(WINDOW_MS),
-          String(sendLimit),
-          String(IP_REGISTRATIONS_LIMIT),
-          reservation,
-        ],
-        ttlSeconds: WINDOW_TTL_SEC,
-      });
-      ipWaits = integers(reply, 2);
-    } catch (error) {
-      // The script may have run with its reply lost: drop this reservation's record. If this
-      // release fails too, the record counts until it leaves the window (stricter, never looser).
-      await releaseReservation(store, appId, clientIp, reservation);
-      return storeFailed(error);
-    }
-    storeAnswered();
-    const ipWait = Math.max(...ipWaits);
-    return ipWait > 0 ? { code: 42901, retryAfterSec: seconds(ipWait) } : { code: 0, reservation };
-  }
-
-  /** Step ②: the device's admission set, judged, recorded and logged in one atomic step. */
+  /** ②: the device's admission set, judged, recorded and logged in one atomic step. */
   async function judgeDevice(
     store: RedisHandle,
     appId: string,
@@ -642,68 +544,190 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
 
   const sendLimitOf = (appId: string): Promise<number> =>
     setting(appId, SMS_IP_SENDS_KEY, IP_SENDS_DEFAULT, 1, MAX_THRESHOLD);
-  const deviceLimitOf = (appId: string): Promise<number> =>
-    setting(
-      appId,
-      SMS_DEVICE_DISTINCT_PHONES_KEY,
-      DEVICE_DISTINCT_PHONES_DEFAULT,
+
+  /**
+   * The IP's attempt item in ms (0 = not reached): counted rows (pending / accepted / unknown) of
+   * (app_id, ip_hmac) with created_at in [now − window, now]; reached → the (N−L+1)-th oldest
+   * counted row leaves the window (created_at + window + 1 ms).
+   */
+  async function attemptWait(
+    executor: Kysely<AttemptTables>,
+    appId: string,
+    ipHmac: string,
+    limit: number,
+    now: Date,
+  ): Promise<number> {
+    const nowMs = now.getTime();
+    const rows = await executor
+      .selectFrom(ATTEMPTS)
+      .select('created_at')
+      .where('app_id', '=', appId)
+      .where('ip_hmac', '=', ipHmac)
+      .where('status', 'in', COUNTED_STATUSES)
+      .where(
+        'created_at',
+        '>=',
+        sql<Date>`${now}::timestamptz - ${SMS_ATTEMPT_WINDOW_MS}::float8 * interval '1 millisecond'`,
+      )
+      .where('created_at', '<=', now)
+      .orderBy('created_at')
+      .execute();
+    if (rows.length < limit) return 0;
+    return Math.max(
       1,
-      MAX_THRESHOLD,
+      rows[rows.length - limit]!.created_at.getTime() + SMS_ATTEMPT_WINDOW_MS + 1 - nowMs,
     );
+  }
+
+  function attemptStoreMissing(appId: string): SmsRiskRefusal {
+    logger.error({ stage: STAGE, app_id: appId }, 'sms_attempt_store_missing');
+    return { code: 42901, retryAfterSec: STORE_RETRY_AFTER_SEC };
+  }
+
+  /** PG is the authority: when it cannot be read or written the send is refused, never passed. */
+  function attemptStoreFailed(appId: string, error: unknown): SmsRiskRefusal {
+    logger.error({ stage: STAGE, app_id: appId, ...failureFields(error) }, 'sms_attempt_failed');
+    return { code: 42901, retryAfterSec: STORE_RETRY_AFTER_SEC };
+  }
+
+  /**
+   * The IP's new-account item (limit 5) for checkAttempts, in ms (0 = not reached). The registrations
+   * live in Redis only; a missing or failing store skips the item (logged, never a refusal).
+   */
+  async function registrationWait(appId: string, clientIp: string): Promise<number> {
+    if (redis === null) return 0;
+    try {
+      const reply = await redis.namespace(SMS_RISK_NAMESPACE).eval(IP_REG_SCRIPT, {
+        keys: [`ip_reg:${appId}:${ipDigest(clientIp)}`],
+        args: [String(clock.now().getTime()), String(WINDOW_MS), String(IP_REGISTRATIONS_LIMIT)],
+        ttlSeconds: WINDOW_TTL_SEC,
+      });
+      if (typeof reply !== 'number' || !Number.isSafeInteger(reply) || reply < 0) {
+        throw new UnexpectedReply();
+      }
+      return reply;
+    } catch (error) {
+      logger.warn(
+        { stage: STAGE, app_id: appId, kind: 'ip_reg', ...failureFields(error) },
+        'sms_risk_registrations_unreadable',
+      );
+      return 0;
+    }
+  }
 
   return {
-    async admitIp({ appId, clientIp }) {
-      if (redis === null) return storeFailed(new StoreNotConfigured());
-      return reserveIp(redis, appId, clientIp, await sendLimitOf(appId));
-    },
-
-    async releaseIp({ appId, clientIp, reservation }) {
-      if (redis === null) return;
-      await releaseReservation(redis, appId, clientIp, reservation);
-    },
-
-    async admitAndReserve({ appId, deviceHash, phone, clientIp }) {
-      if (redis === null) return storeFailed(new StoreNotConfigured());
-      const sendLimit = await sendLimitOf(appId);
-      const deviceLimit = await deviceLimitOf(appId);
-      // ① reserving; a send with no client IP has no IP to judge and goes on to ②.
-      let reservation: string | undefined;
-      if (clientIp !== undefined) {
-        const ip = await reserveIp(redis, appId, clientIp, sendLimit);
-        if (ip.code !== 0) return ip;
-        reservation = ip.reservation;
-      }
-      const device = await judgeDevice(redis, appId, deviceHash, phone, deviceLimit);
-      if (device.code !== 0) {
-        // No SMS goes out: the IP reservation of ① is released (the device admission is not).
-        if (clientIp !== undefined && reservation !== undefined) {
-          await releaseReservation(redis, appId, clientIp, reservation);
-        }
-        return device;
-      }
-      return reservation === undefined ? { code: 0 } : { code: 0, reservation };
-    },
-
     async admit({ appId, deviceHash, phone, clientIp }) {
       if (redis === null) return storeFailed(new StoreNotConfigured());
-      const sendLimit = await sendLimitOf(appId);
+      const sendLimit = await setting(appId, SMS_IP_SENDS_KEY, IP_SENDS_DEFAULT, 1, MAX_THRESHOLD);
       const deviceLimit = await deviceLimitOf(appId);
       const now = clock.now().getTime();
 
       // ① the IP: both items in one read; either reached ends the decision here. A send with
       // no client IP (no HTTP request behind it) has no IP to judge and goes on to ②.
       if (clientIp !== undefined) {
-        const ipVerdict = await judgeIp(redis, appId, clientIp, sendLimit, now);
-        if (ipVerdict.code !== 0) return ipVerdict;
+        let ipWaits: number[];
+        try {
+          const ip = ipDigest(clientIp);
+          const reply = await redis.namespace(SMS_RISK_NAMESPACE).eval(IP_SCRIPT, {
+            keys: [`ip_send:${appId}:${ip}`, `ip_reg:${appId}:${ip}`],
+            args: [
+              String(now),
+              String(WINDOW_MS),
+              String(sendLimit),
+              String(IP_REGISTRATIONS_LIMIT),
+            ],
+            ttlSeconds: WINDOW_TTL_SEC,
+          });
+          ipWaits = integers(reply, 2);
+        } catch (error) {
+          return storeFailed(error);
+        }
+        storeAnswered();
+        const ipWait = Math.max(...ipWaits);
+        if (ipWait > 0) return { code: 42901, retryAfterSec: seconds(ipWait) };
       }
 
       // ② the device's admission set.
       return judgeDevice(redis, appId, deviceHash, phone, deviceLimit);
     },
 
-    async recordAccepted({ appId, clientIp, reservation }) {
+    async admitDevice({ appId, deviceHash, phone }) {
+      if (redis === null) return storeFailed(new StoreNotConfigured());
+      return judgeDevice(redis, appId, deviceHash, phone, await deviceLimitOf(appId));
+    },
+
+    async checkAttempts({ appId, clientIp }) {
+      const sendLimit = await sendLimitOf(appId);
+      const regWait = await registrationWait(appId, clientIp);
+      if (db === null) return attemptStoreMissing(appId);
+      try {
+        const now = clock.now();
+        const sendWait = await attemptWait(db, appId, ipDigest(clientIp), sendLimit, now);
+        const wait = Math.max(sendWait, regWait);
+        return wait > 0 ? { code: 42901, retryAfterSec: seconds(wait) } : { code: 0 };
+      } catch (error) {
+        return attemptStoreFailed(appId, error);
+      }
+    },
+
+    async admitAttempt({ appId, clientIp, phone }) {
+      const sendLimit = await sendLimitOf(appId);
+      if (db === null) return attemptStoreMissing(appId);
+      const ipHmac = ipDigest(clientIp);
+      const phoneHmac = crypto.blindIndex(phone, SMS_RISK_PHONE_CONTEXT);
+      const lockKey = `risk.sms_send_attempts:${appId}:${ipHmac}`;
+      try {
+        return await db.transaction().execute(async (trx) => {
+          await sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`.execute(trx);
+          // Read after the lock: every attempt committed by an earlier holder is visible.
+          const now = clock.now();
+          const wait = await attemptWait(trx, appId, ipHmac, sendLimit, now);
+          if (wait > 0) return { code: 42901, retryAfterSec: seconds(wait) } as const;
+          const attemptId = newUuidV7(now);
+          await trx
+            .insertInto(ATTEMPTS)
+            .values({
+              app_id: appId,
+              attempt_id: attemptId,
+              ip_hmac: ipHmac,
+              phone_hmac: phoneHmac,
+              status: 'pending',
+              created_at: now,
+              updated_at: now,
+            })
+            .execute();
+          return { code: 0, attemptId } as const;
+        });
+      } catch (error) {
+        return attemptStoreFailed(appId, error);
+      }
+    },
+
+    async finishAttempt({ appId, attemptId, outcome }) {
+      if (db === null) return;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const now = clock.now();
+          await db
+            .updateTable(ATTEMPTS)
+            .set({ status: outcome, updated_at: now })
+            .where('app_id', '=', appId)
+            .where('attempt_id', '=', attemptId)
+            .where('status', '=', 'pending')
+            .execute();
+          return;
+        } catch (error) {
+          logger.warn(
+            { stage: STAGE, app_id: appId, outcome, attempt, ...failureFields(error) },
+            'sms_attempt_finish_failed',
+          );
+        }
+      }
+    },
+
+    async recordAccepted({ appId, clientIp }) {
       if (redis === null) return;
-      if (clientIp !== undefined) await recordIp(redis, 'ip_send', appId, clientIp, reservation);
+      if (clientIp !== undefined) await recordIp(redis, 'ip_send', appId, clientIp);
       await countBudget(redis, appId);
     },
 

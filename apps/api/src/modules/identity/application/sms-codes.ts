@@ -12,11 +12,14 @@
 //      number, the device id and the client IP. A landing page send (channel=landing, B1-11g,
 //      BR-ID-32: purpose=login, no signature, no device, no human verification) runs
 //      phoneBlocklist and then landingQuota (42901: the two per-IP items only) instead of captcha
-//      and deviceQuota; without a landingQuota hook it is refused (42901, Retry-After 5). An
-//      admitted send (landing, or app with a client IP) holds an IP slot (reserved atomically,
-//      already counted; afterAccepted turns it into the send's record): it is
-//      released when no SMS goes out (any later refusal, failure or throw) or the provider
-//      refuses, and kept for an accepted or unknown send (counted as sent, like the phone quota);
+//      and deviceQuota; without a landingQuota hook it is refused (42901, Retry-After 5). Both
+//      judge the per-IP items read-only and, admitted, hand back an attempt gate (B1-11g round 7);
+//   4a. once the phone quota below is reserved, the gate commits the send's PG attempt (the IP's
+//      count read again under its lock): refused → the phone reservation is released, 42901. A
+//      request refused by any check writes no attempt. The committed attempt counts for the IP;
+//      once the send is over the service writes its outcome — accepted, unknown (from the provider
+//      call on, whatever happens), or failed (the provider definitely refused, or the service
+//      stopped before calling it), which stops counting;
 //   4. one atomic call reserves the per-phone quota (60 s / natural hour / natural day / rolling
 //      24 h, uncommitted sends counted over [reservation, reservation + D], D = sendTimeoutMs +
 //      SMS_IN_FLIGHT_MARGIN_MS) and stores the new random code as the reserved candidate of (app,
@@ -124,16 +127,17 @@ export type SmsResult =
   | { readonly code: 44003 }
   | { readonly code: 42901; readonly retryAfterSec: number }
   | { readonly code: 50001 };
-/** An IP send reserved by landingQuota / deviceQuota before the phone quota (B1-11g). */
-export interface SmsIpSlot {
+/** The send's committed attempt (B1-11g): counted for the IP until it is written failed. */
+export interface SmsAttemptSlot {
   readonly code: 0;
-  /**
-   * The reservation's id: on an accepted or unknown send afterAccepted gets it, and exactly this
-   * in-flight record becomes the send's record (stamped at the provider's answer).
-   */
-  readonly reservation: string;
-  /** No SMS went out, or the provider refused it: drops exactly this reservation. */
-  release(): Promise<void>;
+  /** Writes the send's outcome on the attempt (a failed write leaves it pending, counted). */
+  finish(outcome: 'accepted' | 'failed' | 'unknown'): Promise<void>;
+}
+/** The per-IP items passed (landingQuota / deviceQuota, B1-11g); commit makes it binding. */
+export interface SmsAttemptGate {
+  readonly code: 0;
+  /** The IP's attempts read again under its lock: below the limit, the attempt is committed. */
+  commit(): Promise<SmsAttemptSlot | Extract<SmsResult, { code: 42901 }>>;
 }
 /** The identity configuration port (content implements it; app.module assembles it). */
 export interface SmsConfigReader {
@@ -151,22 +155,20 @@ export interface SmsHooks {
   ) => Promise<Extract<SmsResult, { code: 44001 }> | null>;
   readonly captcha?: (request: SmsRequest) => Promise<Extract<SmsResult, { code: 44003 }> | null>;
   /**
-   * B1-03g: the app route's 42901 step. null = admitted with nothing reserved; a slot = admitted
-   * with the IP send already reserved (B1-11g r2), released or kept like landingQuota's.
+   * B1-03g: the app route's 42901 step. null = admitted without an attempt (no client IP, or a
+   * risk port without attempts); a gate = admitted, its attempt committed later (B1-11g).
    */
   readonly deviceQuota?: (
     request: SmsRequest,
-  ) => Promise<Extract<SmsResult, { code: 42901 }> | SmsIpSlot | null>;
+  ) => Promise<Extract<SmsResult, { code: 42901 }> | SmsAttemptGate | null>;
   /**
    * B1-11g: the landing page send's 42901 step before the phone quota (the per-IP items only).
-   * Admitted, it returns a slot already counted for the IP; the service releases it when no SMS
-   * went out or the provider refused it, and keeps it for an accepted or unknown send.
+   * Admitted, it returns the attempt gate.
    */
   readonly landingQuota?: (
     request: SmsRequest,
-  ) => Promise<Extract<SmsResult, { code: 42901 }> | SmsIpSlot>;
-  /** B1-03g counters; `slot` is the send's IP reservation (B1-11g), null when none was made. */
-  readonly afterAccepted?: (request: SmsRequest, slot?: SmsIpSlot | null) => Promise<void>;
+  ) => Promise<Extract<SmsResult, { code: 42901 }> | SmsAttemptGate>;
+  readonly afterAccepted?: (request: SmsRequest) => Promise<void>;
 }
 export interface SmsCodeOptions {
   readonly clock: Clock;
@@ -284,12 +286,16 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
     }
   }
 
-  /** Release of an IP slot; a failure is only logged (the slot then stays: stricter). */
-  async function releaseSlot(slot: SmsIpSlot, fields: object): Promise<void> {
+  /** The outcome of an attempt slot; a failure is only logged (the row stays pending, counted). */
+  async function finishSlot(
+    slot: SmsAttemptSlot,
+    outcome: 'accepted' | 'failed' | 'unknown',
+    fields: object,
+  ): Promise<void> {
     try {
-      await slot.release();
+      await slot.finish(outcome);
     } catch (error) {
-      logger.warn({ ...fields, error_class: errorClass(error) }, 'sms_ip_slot_release_failed');
+      logger.warn({ ...fields, error_class: errorClass(error) }, 'sms_attempt_slot_finish_failed');
     }
   }
 
@@ -322,7 +328,8 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
       }
       const blocked = (await hooks.phoneBlocklist?.(checked)) ?? null;
       if (blocked !== null) return blocked;
-      let slot: SmsIpSlot | null = null;
+      let gate: SmsAttemptGate | null = null;
+      let slot: SmsAttemptSlot | null = null;
       if (request.channel === 'landing') {
         // BR-ID-32: no human verification and no device step; the per-IP items must be judged.
         if (hooks.landingQuota === undefined) {
@@ -331,16 +338,17 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
         }
         const verdict = await hooks.landingQuota(checked);
         if (verdict.code === 42901) return verdict;
-        slot = verdict;
+        gate = verdict;
       } else {
         const captcha = (await hooks.captcha?.(checked)) ?? null;
         if (captcha !== null) return captcha;
         const device = (await hooks.deviceQuota?.(checked)) ?? null;
         if (device !== null && device.code === 42901) return device;
-        slot = device;
+        gate = device;
       }
 
-      let delivered = false;
+      // The attempt's outcome; anything that ends before the provider call is failed (nothing sent).
+      let outcome: 'accepted' | 'failed' | 'unknown' = 'failed';
       const quotaAndSend = async (): Promise<SmsResult> => {
         const keys = keysOf(appId, purpose, phone);
         const token = randomBytes(16).toString('hex');
@@ -373,6 +381,15 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
           );
           return { code: 42901, retryAfterSec };
         }
+        // 4a. The phone quota is held: commit the attempt (counted for the IP from here on).
+        if (gate !== null) {
+          const committed = await gate.commit();
+          if (committed.code === 42901) {
+            await releaseQuietly(keys, token, { app_id: appId, purpose });
+            return committed;
+          }
+          slot = committed;
+        }
 
         // From here the candidate is the current code; without that, no SMS goes out.
         const marked = await retried(() => store.mark(keys, token, nowMs()));
@@ -393,9 +410,10 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
           return { code: 42901, retryAfterSec: SMS_UNAVAILABLE_RETRY_AFTER_SECONDS };
         }
 
+        // From the provider call on, the attempt may have sent: never failed unless refused.
+        outcome = 'unknown';
         const delivery = await deliver({ app_id: appId, phone, purpose, code });
-        // Accepted or unknown: the SMS went out (or may have), so the IP slot stays counted.
-        if (delivery !== 'rejected') delivered = true;
+        outcome = delivery === 'rejected' ? 'failed' : delivery;
         if (delivery === 'rejected') {
           // A failed release leaves the send counted and the candidate current: stricter, not looser.
           await releaseQuietly(keys, token, { app_id: appId, purpose });
@@ -411,11 +429,10 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
           logger.error({ app_id: appId, purpose }, 'sms_commit_failed');
           releaseAt = Math.max(reservation.releaseAtMs, acceptedAt + SMS_RESEND_INTERVAL_MS);
         }
-        // The SMS went out (or may have): the post-acceptance counters see it either way (with
-        // the IP reservation, which becomes this send's record), and their failure does not
-        // change the answer.
+        // The SMS went out (or may have): the post-acceptance counters see it either way, and
+        // their failure does not change the answer.
         try {
-          await hooks.afterAccepted?.(checked, slot);
+          await hooks.afterAccepted?.(checked);
         } catch (error) {
           logger.error(
             { app_id: appId, purpose, error_class: errorClass(error) },
@@ -437,9 +454,8 @@ export function createSmsCodeService(options: SmsCodeOptions): SmsCodeService {
       try {
         return await quotaAndSend();
       } finally {
-        // No SMS went out (phone quota, store failure, collision, a throw) or the provider refused
-        // it: the IP slot reserved before the phone quota is released.
-        if (slot !== null && !delivered) await releaseSlot(slot, { app_id: appId, purpose });
+        // The attempt keeps counting whatever happened; only its status is written.
+        if (slot !== null) await finishSlot(slot, outcome, { app_id: appId, purpose });
       }
     },
 

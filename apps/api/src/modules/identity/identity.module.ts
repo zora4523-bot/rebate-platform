@@ -213,6 +213,11 @@ export interface IdentityModuleOptions {
    */
   readonly smsRisk?: Omit<FactoryProvider<SmsRisk>, 'provide'>;
   /**
+   * Builds the SMS sender port, assembled by app.module through identity's index.ts (as it does
+   * for the admin entry). Absent, identity builds createSmsSender itself.
+   */
+  readonly smsSender?: Omit<FactoryProvider<SmsSender>, 'provide'>;
+  /**
    * Builds the push token port (B1-12b: notification's binding and conditional unbinding
    * commands), assembled by app.module so identity never imports notification. The SMS login
    * binds through it, and logout, the refresh reuse revocation and the assembled revocation by
@@ -281,9 +286,10 @@ const REFUSING_DEVICE_REGISTRATION: DeviceRegistrationPorts = {
 /** The SMS send risk without risk's assembly: refuse like an unavailable store (Retry-After 1). */
 const REFUSING_SMS_RISK: SmsRisk = {
   admit: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
-  admitIp: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
-  admitAndReserve: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
-  releaseIp: () => Promise.resolve(),
+  checkAttempts: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  admitAttempt: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  admitDevice: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  finishAttempt: () => Promise.resolve(),
   recordAccepted: () => Promise.resolve(),
   recordRegistered: () => Promise.resolve(),
 };
@@ -496,12 +502,14 @@ export class IdentityModule {
               },
             }),
         },
-        {
-          provide: smsSenderToken(),
-          inject: [APP_CONFIG, ROOT_LOGGER],
-          useFactory: (config: AppConfig, logger: RootLogger): SmsSender =>
-            createSmsSender(config.appEnv, logger),
-        },
+        options.smsSender === undefined
+          ? {
+              provide: smsSenderToken(),
+              inject: [APP_CONFIG, ROOT_LOGGER],
+              useFactory: (config: AppConfig, logger: RootLogger): SmsSender =>
+                createSmsSender(config.appEnv, logger),
+            }
+          : { ...options.smsSender, provide: smsSenderToken() },
         {
           provide: SMS_CODES,
           inject: [

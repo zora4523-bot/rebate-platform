@@ -1,17 +1,33 @@
-// The ports onto risk's IP reservation (B1-11g): landingQuota (admitIp) and the app route's
-// deviceQuota (admitAndReserve) reserve the IP send atomically and hand back a slot carrying the
-// reservation; release names exactly that reservation, and afterAccepted hands it to
-// recordAccepted so that exactly that in-flight record becomes the send's record. The Lua scripts themselves run against a real Redis only in the rule tests
-// (test/spec/identity/landing-sms, test/spec/risk/sms-risk); here an in-memory model of the same
-// sets (dispatched on each script's `-- sms_risk:<name>` label) checks which records each step
-// touches, including lost replies and failures (never an under-count).
+// identity's SMS risk ports and risk's PG-authoritative attempts (B1-11g round 7). The ports are
+// checked against a recording risk double; the attempt store runs createSmsRisk over a real Kysely
+// (PostgreSQL compiler) whose driver keeps app.sms_send_attempts in memory and serialises the
+// advisory lock, so the count, the lock, the window edges and the failure paths are exercised
+// without a database (the real PG runs in test/spec/identity/landing-sms/attempts.int.test.ts).
+import {
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  type CompiledQuery,
+  type DatabaseConnection,
+  type Driver,
+  type QueryResult,
+} from 'kysely';
+import type { DB } from '@couli/db';
 import { expect, it, vi } from 'vitest';
 import { FixedClock, createRootLogger, type RedisHandle } from '../../platform/index.ts';
-import { createSmsRisk, ephemeralSmsRiskIndex, type SmsRisk } from '../../risk/index.ts';
+import {
+  SMS_ATTEMPT_SEND_BOUND_MS,
+  createSmsRisk,
+  ephemeralSmsRiskIndex,
+  type SmsRisk,
+} from '../../risk/index.ts';
 import { createSmsRiskPorts } from './sms-risk-ports.ts';
-import type { SmsIpSlot, SmsRequest } from './sms-codes.ts';
+import { SMS_SEND_TIMEOUT_MS, type SmsAttemptGate, type SmsRequest } from './sms-codes.ts';
 
 const IP = '203.0.113.7';
+const NOW = '2026-10-18T10:00:00+08:00';
+const START = Date.parse(NOW);
 
 function memoryLogger() {
   const lines: string[] = [];
@@ -22,23 +38,26 @@ function memoryLogger() {
   return { logger, lines };
 }
 
-function ports(risk: Partial<SmsRisk>) {
+// ---------------------------------------------------------------- ports over a risk double
+
+function ports(overrides: Partial<SmsRisk> = {}) {
   const { logger, lines } = memoryLogger();
-  const full: SmsRisk = {
+  const risk: SmsRisk = {
     admit: vi.fn(async () => ({ code: 0 as const })),
-    admitIp: vi.fn(async () => ({ code: 0 as const, reservation: 'r1' })),
-    admitAndReserve: vi.fn(async () => ({ code: 0 as const, reservation: 'r2' })),
-    releaseIp: vi.fn(async () => undefined),
+    checkAttempts: vi.fn(async () => ({ code: 0 as const })),
+    admitAttempt: vi.fn(async () => ({ code: 0 as const, attemptId: 'a1' })),
+    admitDevice: vi.fn(async () => ({ code: 0 as const })),
+    finishAttempt: vi.fn(async () => undefined),
     recordAccepted: vi.fn(async () => undefined),
     recordRegistered: vi.fn(async () => undefined),
-    ...risk,
+    ...overrides,
   };
   const created = createSmsRiskPorts({
-    risk: full,
+    risk,
     logger,
     devices: { deviceHashOf: async () => 'ab'.repeat(32) },
   });
-  return { ...created, risk: full, lines };
+  return { ...created, risk, lines };
 }
 
 const landing: SmsRequest = {
@@ -48,32 +67,56 @@ const landing: SmsRequest = {
   client_ip: IP,
   channel: 'landing',
 };
+const app: SmsRequest = {
+  app_id: 'couli',
+  phone: '13912345678',
+  purpose: 'login',
+  client_ip: IP,
+  device_id: 'd1',
+};
 
-it('[AC-B1-11g#11] landingQuota reserves through admitIp and its release drops that reservation', async () => {
-  const p = ports({});
-  const verdict = await p.smsHooks.landingQuota(landing);
-  expect(verdict.code).toBe(0);
-  expect(p.risk.admitIp).toHaveBeenCalledExactlyOnceWith({ appId: 'couli', clientIp: IP });
-  expect(p.risk.admit).not.toHaveBeenCalled();
-  expect(p.risk.releaseIp).not.toHaveBeenCalled();
-  await (verdict as SmsIpSlot).release();
-  expect(p.risk.releaseIp).toHaveBeenCalledExactlyOnceWith({
-    appId: 'couli',
-    clientIp: IP,
-    reservation: 'r1',
-  });
+it('[AC-B1-11g#1] the identity send bound equals the attempt window bound of risk', () => {
+  expect(SMS_ATTEMPT_SEND_BOUND_MS).toBe(SMS_SEND_TIMEOUT_MS);
 });
 
-it('[AC-B1-11g#8] landingQuota passes admitIp 42901 through; no IP or no admitIp refuses', async () => {
+it('[AC-B1-11g#7] landingQuota checks the IP read-only; the gate commits the attempt and its slot writes the outcome', async () => {
+  const p = ports();
+  const gate = (await p.smsHooks.landingQuota(landing)) as SmsAttemptGate;
+  expect(gate.code).toBe(0);
+  expect(p.risk.checkAttempts).toHaveBeenCalledExactlyOnceWith({ appId: 'couli', clientIp: IP });
+  expect(p.risk.admitAttempt).not.toHaveBeenCalled();
+  const slot = await gate.commit();
+  expect(p.risk.admitAttempt).toHaveBeenCalledExactlyOnceWith({
+    appId: 'couli',
+    clientIp: IP,
+    phone: landing.phone,
+  });
+  if (slot.code !== 0) throw new Error('refused');
+  await slot.finish('accepted');
+  expect(p.risk.finishAttempt).toHaveBeenCalledExactlyOnceWith({
+    appId: 'couli',
+    attemptId: 'a1',
+    outcome: 'accepted',
+  });
+  expect(p.risk.admit).not.toHaveBeenCalled();
+  expect(p.risk.admitDevice).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-11g#8] landingQuota passes the IP 42901 through; the gate passes a commit 42901 through; no IP or no attempt port refuses', async () => {
   const limited = ports({
-    admitIp: vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 601 })),
+    checkAttempts: vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 601 })),
   });
   expect(await limited.smsHooks.landingQuota(landing)).toEqual({ code: 42901, retryAfterSec: 601 });
+  const lost = ports({
+    admitAttempt: vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 3611 })),
+  });
+  const gate = (await lost.smsHooks.landingQuota(landing)) as SmsAttemptGate;
+  expect(await gate.commit()).toEqual({ code: 42901, retryAfterSec: 3611 });
   const { client_ip: clientIp, ...withoutIp } = landing;
   void clientIp;
-  const p = ports({});
+  const p = ports();
   expect(await p.smsHooks.landingQuota(withoutIp)).toEqual({ code: 42901, retryAfterSec: 1 });
-  expect(p.risk.admitIp).not.toHaveBeenCalled();
+  expect(p.risk.checkAttempts).not.toHaveBeenCalled();
   const { logger } = memoryLogger();
   const old = createSmsRiskPorts({
     risk: {
@@ -87,41 +130,42 @@ it('[AC-B1-11g#8] landingQuota passes admitIp 42901 through; no IP or no admitIp
   expect(await old.smsHooks.landingQuota(landing)).toEqual({ code: 42901, retryAfterSec: 1 });
 });
 
-const app: SmsRequest = {
-  app_id: 'couli',
-  phone: '13912345678',
-  purpose: 'login',
-  client_ip: IP,
-  device_id: 'd1',
-};
-
-it('[AC-B1-11g#13] the app route reserves through admitAndReserve and its slot releases that reservation', async () => {
-  const p = ports({});
-  const verdict = await p.smsHooks.deviceQuota(app);
-  expect(p.risk.admitAndReserve).toHaveBeenCalledExactlyOnceWith({
+it('[AC-B1-11g#13] the app route checks the IP, then the device, and hands back a gate; refusals write nothing', async () => {
+  const p = ports();
+  const gate = await p.smsHooks.deviceQuota(app);
+  expect(gate).toMatchObject({ code: 0 });
+  expect(p.risk.checkAttempts).toHaveBeenCalledExactlyOnceWith({ appId: 'couli', clientIp: IP });
+  expect(p.risk.admitDevice).toHaveBeenCalledExactlyOnceWith({
     appId: 'couli',
     deviceHash: 'ab'.repeat(32),
     phone: app.phone,
-    clientIp: IP,
   });
+  expect(p.risk.admitAttempt).not.toHaveBeenCalled();
   expect(p.risk.admit).not.toHaveBeenCalled();
-  expect(verdict).toMatchObject({ code: 0 });
-  await (verdict as SmsIpSlot).release();
-  expect(p.risk.releaseIp).toHaveBeenCalledExactlyOnceWith({
-    appId: 'couli',
-    clientIp: IP,
-    reservation: 'r2',
+
+  const ipLimited = ports({
+    checkAttempts: vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 16 })),
   });
-  expect((verdict as SmsIpSlot).reservation).toBe('r2');
+  expect(await ipLimited.smsHooks.deviceQuota(app)).toEqual({ code: 42901, retryAfterSec: 16 });
+  expect(ipLimited.risk.admitDevice).not.toHaveBeenCalled();
+
+  const deviceLimited = ports({
+    admitDevice: vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 3601 })),
+  });
+  expect(await deviceLimited.smsHooks.deviceQuota(app)).toEqual({
+    code: 42901,
+    retryAfterSec: 3601,
+  });
+  expect(deviceLimited.risk.admitAttempt).not.toHaveBeenCalled();
 });
 
-it('[AC-B1-11g#13] the app route passes 42901 through; nothing reserved (no IP) is null; no reserving port falls back to admit', async () => {
-  const limited = ports({
-    admitAndReserve: vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 17 })),
-  });
-  expect(await limited.smsHooks.deviceQuota(app)).toEqual({ code: 42901, retryAfterSec: 17 });
-  const bare = ports({ admitAndReserve: vi.fn(async () => ({ code: 0 as const })) });
-  expect(await bare.smsHooks.deviceQuota(app)).toBeNull();
+it('[AC-B1-11g#13] without a client IP, or with a risk port built before attempts, the app route uses admit()', async () => {
+  const p = ports();
+  const { client_ip: clientIp, ...inProcess } = app;
+  void clientIp;
+  expect(await p.smsHooks.deviceQuota(inProcess)).toBeNull();
+  expect(p.risk.admit).toHaveBeenCalledOnce();
+  expect(p.risk.checkAttempts).not.toHaveBeenCalled();
   const { logger } = memoryLogger();
   const admit = vi.fn(async () => ({ code: 0 as const }));
   const old = createSmsRiskPorts({
@@ -133,303 +177,305 @@ it('[AC-B1-11g#13] the app route passes 42901 through; nothing reserved (no IP) 
   expect(admit).toHaveBeenCalledOnce();
 });
 
-it("[AC-B1-11g#19] afterAccepted hands recordAccepted the send's reservation; without a slot the two-argument call", async () => {
-  const p = ports({});
-  const slot = { code: 0 as const, reservation: 'r9', release: async () => undefined };
-  await p.smsHooks.afterAccepted(landing, slot);
-  expect(p.risk.recordAccepted).toHaveBeenLastCalledWith({
-    appId: 'couli',
-    clientIp: IP,
-    reservation: 'r9',
-  });
-  await p.smsHooks.afterAccepted(app);
-  expect(p.risk.recordAccepted).toHaveBeenLastCalledWith({ appId: 'couli', clientIp: IP });
-  await p.smsHooks.afterAccepted(app, null);
+it('[AC-B1-11g#19] afterAccepted keeps the two-argument recordAccepted', async () => {
+  const p = ports();
+  await p.smsHooks.afterAccepted(landing);
   expect(p.risk.recordAccepted).toHaveBeenLastCalledWith({ appId: 'couli', clientIp: IP });
 });
 
-/** In-memory model of the IP sets and the other risk keys, one method per script label. */
-function modelRedis(clock: FixedClock) {
-  const zsets = new Map<string, Map<string, number>>();
-  const calls: { label: string; keys: string[] }[] = [];
-  /** Labels whose next call runs and then loses its reply; `during` runs before the throw. */
-  const lost = new Map<string, () => Promise<void>>();
-  /** Labels whose next calls fail before they run (one entry per failing call). */
-  const failing: string[] = [];
-  const set = (key: string) => {
-    let found = zsets.get(key);
-    if (found === undefined) zsets.set(key, (found = new Map()));
-    return found;
-  };
-  const dropBefore = (key: string, low: number) => {
-    for (const [member, score] of set(key)) if (score < low) set(key).delete(member);
-  };
-  const wait = (key: string, limit: number, now: number, window: number) => {
-    const live = [...set(key).values()]
-      .filter((score) => score >= now - window && score <= now)
-      .sort((x, y) => x - y);
-    if (live.length < limit) return 0;
-    return Math.max(1, live[live.length - limit]! + window + 1000 - now);
-  };
-  function run(label: string, keys: string[], argv: string[]): unknown {
-    const num = (i: number) => Number(argv[i - 1]);
-    switch (label) {
-      case 'ip_reserve': {
-        const [send, reg, pend] = keys as [string, string, string];
-        const now = num(2);
-        const waits = [wait(send, num(4), now, num(3)), wait(reg, num(5), now, num(3))];
-        if (waits[0]! > 0 || waits[1]! > 0) return waits;
-        dropBefore(send, now - num(3));
-        dropBefore(pend, now - num(3));
-        set(send).set(`p:${argv[5]}`, now);
-        set(pend).set(argv[5]!, now);
-        return [0, 0];
+// ---------------------------------------------------------------- the attempt store
+
+interface Row {
+  app_id: string;
+  attempt_id: string;
+  ip_hmac: string;
+  phone_hmac: string;
+  status: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/** An in-memory app.sms_send_attempts behind the PostgreSQL compiler, with an advisory lock. */
+function memoryDb() {
+  const rows: Row[] = [];
+  const locks = new Map<string, Promise<void>>();
+  const faults = { insert: 0, update: 0, updates: 0 };
+  class Connection implements DatabaseConnection {
+    private releases: (() => void)[] = [];
+    async executeQuery<R>(query: CompiledQuery): Promise<QueryResult<R>> {
+      const text = query.sql;
+      const p = query.parameters as unknown[];
+      if (text.startsWith('SELECT pg_advisory_xact_lock')) {
+        const key = String(p[0]);
+        const held = locks.get(key) ?? Promise.resolve();
+        let release!: () => void;
+        const next = new Promise<void>((resolve) => (release = resolve));
+        locks.set(
+          key,
+          held.then(() => next),
+        );
+        await held;
+        this.releases.push(release);
+        return { rows: [] };
       }
-      case 'ip_release': {
-        const [send, pend] = keys as [string, string];
-        if (set(pend).delete(argv[1]!)) set(send).delete(`p:${argv[1]}`);
-        return 1;
+      if (text.startsWith('select "created_at" from "app"."sms_send_attempts"')) {
+        const [appId, ipHmac, s1, s2, s3, from, windowMs, high] = p as [
+          string,
+          string,
+          string,
+          string,
+          string,
+          Date,
+          number,
+          Date,
+        ];
+        // created_at >= $6::timestamptz - $7 ms (the window's lower edge, both ends closed).
+        expect(text).toContain(
+          `"created_at" >= $6::timestamptz - $7::float8 * interval '1 millisecond'`,
+        );
+        const low = from.getTime() - windowMs;
+        const found = rows
+          .filter(
+            (row) =>
+              row.app_id === appId &&
+              row.ip_hmac === ipHmac &&
+              [s1, s2, s3].includes(row.status) &&
+              row.created_at.getTime() >= low &&
+              row.created_at <= high,
+          )
+          .sort((x, y) => x.created_at.getTime() - y.created_at.getTime())
+          .map((row) => ({ created_at: row.created_at }));
+        return { rows: found as R[] };
       }
-      case 'ip_accept': {
-        const [send, pend] = keys as [string, string];
-        const now = num(2);
-        dropBefore(send, now - num(3));
-        dropBefore(pend, now - num(3));
-        const own = argv[4]!;
-        if (own !== '') {
-          if (set(pend).delete(own)) set(send).delete(`p:${own}`);
-        } else {
-          const oldest = [...set(pend)].sort((x, y) => x[1] - y[1])[0];
-          if (oldest !== undefined) {
-            set(pend).delete(oldest[0]);
-            set(send).delete(`p:${oldest[0]}`);
+      if (text.startsWith('insert into "app"."sms_send_attempts"')) {
+        if (faults.insert > 0) {
+          faults.insert--;
+          throw Object.assign(new Error('connection lost'), { code: '08006' });
+        }
+        const [app_id, attempt_id, ip_hmac, phone_hmac, status, created_at, updated_at] = p as [
+          string,
+          string,
+          string,
+          string,
+          string,
+          Date,
+          Date,
+        ];
+        rows.push({ app_id, attempt_id, ip_hmac, phone_hmac, status, created_at, updated_at });
+        return { rows: [] };
+      }
+      if (text.startsWith('update "app"."sms_send_attempts"')) {
+        faults.updates++;
+        if (faults.update > 0) {
+          faults.update--;
+          throw Object.assign(new Error('connection lost'), { code: '08006' });
+        }
+        const [status, updated, appId, attemptId, from] = p as [
+          string,
+          Date,
+          string,
+          string,
+          string,
+        ];
+        for (const row of rows) {
+          if (row.app_id === appId && row.attempt_id === attemptId && row.status === from) {
+            row.status = status;
+            row.updated_at = updated;
           }
         }
-        set(send).set(argv[3]!, now);
-        return 1;
+        return { rows: [] };
       }
-      case 'dev':
-        return [1, 0];
-      case 'budget':
-        return [1, 0, 0];
-      default:
-        throw new Error(`unmodelled script ${label}`);
+      throw new Error(`unexpected query: ${text}`);
+    }
+    async *streamQuery(): AsyncIterableIterator<never> {
+      throw new Error('no streaming');
+    }
+    end(): void {
+      for (const release of this.releases.splice(0)) release();
     }
   }
-  const redis = {
+  const driver: Driver = {
+    init: async () => undefined,
+    acquireConnection: async () => new Connection(),
+    beginTransaction: async () => undefined,
+    commitTransaction: async (connection) => (connection as Connection).end(),
+    rollbackTransaction: async (connection) => (connection as Connection).end(),
+    releaseConnection: async (connection) => (connection as Connection).end(),
+    destroy: async () => undefined,
+  };
+  const db = new Kysely<DB>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => driver,
+      createIntrospector: (k) => new PostgresIntrospector(k),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+  });
+  return { db, rows, faults };
+}
+
+/** Redis double for the registration item: a fixed wait in ms, or a failing store. */
+function registrationRedis(answer: number | 'down'): RedisHandle {
+  const fail = () => Promise.reject(new Error('unused'));
+  return {
     namespace: () => ({
-      get: () => Promise.reject(new Error('unused')),
-      set: () => Promise.reject(new Error('unused')),
-      eval: async (
-        script: string,
-        options: { keys: readonly string[]; args: readonly string[]; ttlSeconds: number },
-      ) => {
-        const label = /^-- sms_risk:([a-z_]+)/.exec(script)?.[1] ?? options.keys[0]!.split(':')[0]!;
-        calls.push({ label, keys: [...options.keys] });
-        const failure = failing.indexOf(label);
-        if (failure >= 0) {
-          failing.splice(failure, 1);
-          throw Object.assign(new Error('unavailable'), { reason: 'command_failed' });
-        }
-        const reply = run(label, [...options.keys], [String(options.ttlSeconds), ...options.args]);
-        const during = lost.get(label);
-        if (during !== undefined) {
-          lost.delete(label);
-          await during();
-          throw Object.assign(new Error('reply lost'), { reason: 'command_timeout' });
-        }
-        return reply;
-      },
+      get: fail,
+      set: fail,
+      eval: () =>
+        answer === 'down'
+          ? Promise.reject(Object.assign(new Error(`down ${IP}`), { reason: 'command_failed' }))
+          : Promise.resolve(answer),
     }),
     close: () => Promise.resolve(),
     onApplicationShutdown: () => Promise.resolve(),
   } as unknown as RedisHandle;
-  /** Records in the IP's send set inside the window at the clock's now. */
-  const sendCount = () => {
-    const now = clock.now().getTime();
-    const key = [...zsets.keys()].find((k) => k.startsWith('ip_send:'));
-    return key === undefined
-      ? 0
-      : [...set(key).values()].filter((t) => t >= now - 3_600_000 && t <= now).length;
-  };
-  const pending = () =>
-    [...zsets.entries()]
-      .filter(([key]) => key.startsWith('ip_pend:'))
-      .reduce((total, [, members]) => total + members.size, 0);
-  return { redis, calls, lost, failing, sendCount, pending };
 }
 
-function model(config: Record<string, unknown> = {}) {
-  const clock = new FixedClock('2026-10-18T10:00:00+08:00');
-  const store = modelRedis(clock);
+function store(limit = 3, redis: RedisHandle | null = registrationRedis(0)) {
+  const memory = memoryDb();
+  const clock = new FixedClock(NOW);
   const { logger, lines } = memoryLogger();
   const risk = createSmsRisk({
     clock,
-    redis: store.redis,
     logger,
+    redis,
     config: {
-      configValue: (_appId: string, key: string) =>
-        Promise.resolve(key in config ? { value: config[key], version: 1 } : null),
+      configValue: async (_appId: string, key: string) =>
+        key === 'sms.ip_sends_per_hour' ? { value: limit, version: 1 } : null,
     },
     crypto: ephemeralSmsRiskIndex(),
+    db: memory.db,
   });
-  const ip = { appId: 'couli', clientIp: IP };
-  const reserve = async () => {
-    const admission = await risk.admitIp(ip);
-    if (admission.code !== 0) throw new Error('refused');
-    return admission.reservation;
-  };
-  /** One accepted send as identity runs it: reserve, then recordAccepted with the reservation. */
-  const acceptedSend = async () => {
-    await risk.recordAccepted({ ...ip, reservation: await reserve() });
-  };
-  return { clock, store, risk, ip, lines, reserve, acceptedSend };
+  const input = { appId: 'couli', clientIp: IP, phone: '13912345678' };
+  return { ...memory, clock, risk, input, lines };
 }
 
-it('[AC-B1-11g#11] A reply lost, B reserves and accepts with its own id: B turns only its own record; after A cleans up the count equals the sends', async () => {
-  const m = model();
-  for (let i = 0; i < 18; i++) await m.risk.recordAccepted(m.ip);
-  expect(m.store.sendCount()).toBe(18);
-  // A's reservation runs but its reply is lost; before A's clean-up, B goes all the way.
-  m.store.lost.set('ip_reserve', async () => {
-    expect(m.store.pending()).toBe(1);
-    await m.acceptedSend();
-    // B's acceptance took B's own record: A's is still in flight, 18 + A + B.
-    expect(m.store.pending()).toBe(1);
-    expect(m.store.sendCount()).toBe(20);
+it('[AC-B1-11g#58] admitAttempt commits a pending row (UUIDv7, keyed hex digests, Clock time); checkAttempts writes nothing', async () => {
+  const s = store();
+  expect(await s.risk.checkAttempts(s.input)).toEqual({ code: 0 });
+  expect(s.rows).toEqual([]);
+  const admitted = await s.risk.admitAttempt(s.input);
+  expect(admitted).toMatchObject({ code: 0 });
+  expect(s.rows).toHaveLength(1);
+  const row = s.rows[0]!;
+  expect(row).toMatchObject({ app_id: 'couli', status: 'pending' });
+  expect(row.attempt_id).toBe((admitted as { attemptId: string }).attemptId);
+  expect(row.attempt_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-/);
+  expect(row.ip_hmac).toMatch(/^[a-f0-9]{32,128}$/);
+  expect(row.phone_hmac).toMatch(/^[a-f0-9]{32,128}$/);
+  expect(JSON.stringify(s.rows)).not.toContain(IP);
+  expect(JSON.stringify(s.rows)).not.toContain('13912345678');
+  expect(row.created_at.getTime()).toBe(START);
+});
+
+it('[AC-B1-11g#58] with N−1 counted rows, concurrent commits admit exactly one (the advisory lock)', async () => {
+  const s = store(3);
+  await s.risk.admitAttempt(s.input);
+  await s.risk.admitAttempt(s.input);
+  const results = await Promise.all(Array.from({ length: 4 }, () => s.risk.admitAttempt(s.input)));
+  expect(results.filter((r) => r.code === 0)).toHaveLength(1);
+  expect(results.filter((r) => r.code === 42901)).toEqual(
+    Array.from({ length: 3 }, () => ({ code: 42901, retryAfterSec: 3611 })),
+  );
+  expect(s.rows).toHaveLength(3);
+});
+
+it('[AC-B1-11g#56] pending, accepted and unknown count; failed does not', async () => {
+  const s = store(2);
+  const first = await s.risk.admitAttempt(s.input);
+  await s.risk.finishAttempt({
+    appId: 'couli',
+    attemptId: (first as { attemptId: string }).attemptId,
+    outcome: 'failed',
   });
-  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 1 });
-  // A's clean-up found and dropped A's own record: 19 counted, 19 sent.
-  expect(m.store.pending()).toBe(0);
-  expect(m.store.sendCount()).toBe(19);
-  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
+  expect(s.rows.map((row) => row.status)).toEqual(['failed']);
+  expect(await s.risk.checkAttempts(s.input)).toEqual({ code: 0 });
+  for (const outcome of ['unknown', 'accepted'] as const) {
+    const next = await s.risk.admitAttempt(s.input);
+    await s.risk.finishAttempt({
+      appId: 'couli',
+      attemptId: (next as { attemptId: string }).attemptId,
+      outcome,
+    });
+  }
+  expect(s.rows.map((row) => row.status)).toEqual(['failed', 'unknown', 'accepted']);
+  expect(await s.risk.checkAttempts(s.input)).toEqual({ code: 42901, retryAfterSec: 3611 });
+  expect(await s.risk.admitAttempt(s.input)).toEqual({ code: 42901, retryAfterSec: 3611 });
 });
 
-it('[AC-B1-11g#11] a reservation whose release also fails counts at its reservation time until it leaves the window (stricter)', async () => {
-  const m = model({ 'sms.ip_sends_per_hour': 1 });
-  m.store.lost.set('ip_reserve', async () => {
-    m.store.failing.push('ip_release');
+for (const [advance, admitted] of [
+  [3_609_999, false],
+  [3_610_000, false],
+  [3_610_001, true],
+] as const) {
+  it(`[AC-B1-11g#59] the window is [now − 3600 s − send bound, now]: first row aged ${advance} ms`, async () => {
+    const s = store(1);
+    await s.risk.admitAttempt(s.input);
+    s.clock.advanceMs(advance);
+    expect(await s.risk.checkAttempts(s.input)).toEqual(
+      admitted ? { code: 0 } : { code: 42901, retryAfterSec: 1 },
+    );
+    expect((await s.risk.admitAttempt(s.input)).code).toBe(admitted ? 0 : 42901);
+    expect(s.rows).toHaveLength(admitted ? 2 : 1);
   });
-  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 1 });
-  expect(m.store.pending()).toBe(1);
-  m.clock.advanceMs(61_000);
-  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 3540 });
-  m.clock.set('2026-10-18T11:00:00+08:00');
-  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 1 });
-  m.clock.set('2026-10-18T11:00:01+08:00');
-  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
+}
+
+it('[AC-B1-11g#62] Retry-After is the (N−L+1)-th oldest counted row leaving the window', async () => {
+  const s = store(2);
+  await s.risk.admitAttempt(s.input);
+  s.clock.set(new Date(START + 100_000));
+  await s.risk.admitAttempt(s.input);
+  expect(await s.risk.checkAttempts(s.input)).toEqual({ code: 42901, retryAfterSec: 3511 });
 });
 
-it('[AC-B1-11g#11] r5: the 20th send is accepted but both record attempts fail; the 21st stays 42901 at 61 s and 59 min, passes after the window', async () => {
-  const m = model();
-  for (let i = 0; i < 19; i++) await m.risk.recordAccepted(m.ip);
-  const twentieth = await m.reserve();
-  m.store.failing.push('ip_accept', 'ip_accept');
-  await m.risk.recordAccepted({ ...m.ip, reservation: twentieth });
-  expect(m.store.pending()).toBe(1);
-  expect(m.store.sendCount()).toBe(20);
-  m.clock.advanceMs(61_000);
-  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 42901 });
-  m.clock.set('2026-10-18T10:59:00+08:00');
-  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 42901 });
-  m.clock.set('2026-10-18T11:00:01+08:00');
-  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
-});
-
-it('[AC-B1-11g#12] a slow acceptance stamps the record with the acceptance time: reserved 10:00:00, accepted 10:00:09 → 11:00:01 waits 9 s', async () => {
-  const m = model({ 'sms.ip_sends_per_hour': 1 });
-  const reservation = await m.reserve();
-  m.clock.set('2026-10-18T10:00:09+08:00');
-  await m.risk.recordAccepted({ ...m.ip, reservation });
-  expect(m.store.sendCount()).toBe(1);
-  m.clock.set('2026-10-18T11:00:01+08:00');
-  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 9 });
-  m.clock.set('2026-10-18T11:00:10+08:00');
-  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 0 });
-});
-
-it("[AC-B1-11g#11] r4: A accepted, then a Redis blip fails B's record once; the retry records B: counted = sent", async () => {
-  const m = model();
-  for (let i = 0; i < 18; i++) await m.risk.recordAccepted(m.ip);
-  const a = await m.reserve();
-  const b = await m.reserve();
-  await m.risk.recordAccepted({ ...m.ip, reservation: a });
-  m.store.failing.push('ip_accept');
-  await m.risk.recordAccepted({ ...m.ip, reservation: b });
-  expect(m.store.pending()).toBe(0);
-  expect(m.store.sendCount()).toBe(20);
-  // Later nothing drops: both sends stay counted, the 21st is refused.
-  m.clock.advanceMs(61_000);
-  expect(await m.risk.admitIp(m.ip)).toMatchObject({ code: 42901 });
-  expect(m.store.sendCount()).toBe(20);
-});
-
-it('[AC-B1-11g#11] a lost acceptance reply is retried without counting the send twice', async () => {
-  const m = model();
-  const reservation = await m.reserve();
-  m.store.lost.set('ip_accept', async () => undefined);
-  await m.risk.recordAccepted({ ...m.ip, reservation });
-  expect(m.store.pending()).toBe(0);
-  expect(m.store.sendCount()).toBe(1);
-});
-
-it('[AC-B1-11g#19] with a reservation whose record is gone a sent record is added and no other in-flight record moves', async () => {
-  const m = model();
-  const other = await m.reserve();
-  await m.risk.recordAccepted({ ...m.ip, reservation: 'gone' });
-  expect(m.store.pending()).toBe(1);
-  expect(m.store.sendCount()).toBe(2);
-  await m.risk.releaseIp({ ...m.ip, reservation: other });
-  expect(m.store.sendCount()).toBe(1);
-});
-
-it('[AC-B1-11g#19] a direct two-argument recordAccepted keeps the old path: the oldest in-flight record becomes sent', async () => {
-  const m = model();
-  await m.acceptedSend();
-  const first = await m.reserve();
-  const second = await m.reserve();
-  expect(m.store.sendCount()).toBe(3);
-  await m.risk.recordAccepted(m.ip);
-  expect(m.store.sendCount()).toBe(3);
-  expect(m.store.pending()).toBe(1);
-  // The record turned was the oldest (first); the second's release drops its own.
-  await m.risk.releaseIp({ ...m.ip, reservation: second });
-  expect(m.store.sendCount()).toBe(2);
-  // first's own record is gone: its release does nothing more.
-  await m.risk.releaseIp({ ...m.ip, reservation: first });
-  expect(m.store.sendCount()).toBe(2);
-  await m.risk.recordAccepted({ appId: 'couli' });
-  expect(m.store.sendCount()).toBe(2);
-});
-
-it('[AC-B1-11g#13] admitAndReserve reserves the IP, then judges the device; a device refusal releases exactly that reservation', async () => {
-  const m = model();
-  const request = { appId: 'couli', deviceHash: 'ab'.repeat(32), phone: '13912345678' };
-  expect(await m.risk.admitAndReserve({ ...request, clientIp: IP })).toMatchObject({
-    code: 0,
-    reservation: expect.any(String),
+it('[AC-B1-11g#64] a failing outcome write is retried once, then the row stays pending and counts', async () => {
+  const s = store(1);
+  const admitted = await s.risk.admitAttempt(s.input);
+  s.faults.update = 2;
+  await s.risk.finishAttempt({
+    appId: 'couli',
+    attemptId: (admitted as { attemptId: string }).attemptId,
+    outcome: 'failed',
   });
-  expect(m.store.calls.map((call) => call.label)).toEqual(['ip_reserve', 'dev']);
-  expect(m.store.sendCount()).toBe(1);
-  m.store.calls.length = 0;
-  expect(await m.risk.admitAndReserve(request)).toEqual({ code: 0 });
-  expect(m.store.calls.map((call) => call.label)).toEqual(['dev']);
+  expect(s.faults.updates).toBe(2);
+  expect(s.rows.map((row) => row.status)).toEqual(['pending']);
+  s.clock.advanceMs(60_001);
+  expect(await s.risk.checkAttempts(s.input)).toEqual({ code: 42901, retryAfterSec: 3550 });
+  expect(s.lines.join('')).not.toContain(IP);
 });
 
-it('[AC-B1-11g#10] admitIp answers 42901 with the later IP release; no store refuses; logs carry no IP', async () => {
-  const m = model({ 'sms.ip_sends_per_hour': 1 });
-  await m.acceptedSend();
-  m.clock.advanceMs(1_000);
-  expect(await m.risk.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 3600 });
+it('[AC-B1-11g#28] PG failing or missing refuses (42901, 1 s) and writes nothing', async () => {
+  const s = store();
+  s.faults.insert = 1;
+  expect(await s.risk.admitAttempt(s.input)).toEqual({ code: 42901, retryAfterSec: 1 });
+  expect(s.rows).toEqual([]);
+  expect(await s.risk.admitAttempt(s.input)).toMatchObject({ code: 0 });
+  expect(s.lines.join('')).not.toContain(IP);
   const { logger } = memoryLogger();
-  const bare = createSmsRisk({
-    clock: m.clock,
-    redis: null,
+  const without = createSmsRisk({
+    clock: s.clock,
     logger,
-    config: { configValue: () => Promise.resolve(null) },
+    redis: null,
+    config: { configValue: async () => null },
     crypto: ephemeralSmsRiskIndex(),
   });
-  expect(await bare.admitIp(m.ip)).toEqual({ code: 42901, retryAfterSec: 1 });
-  expect(JSON.stringify(m.store.calls)).not.toContain(IP);
-  expect(m.lines.join('')).not.toContain(IP);
+  expect(await without.checkAttempts(s.input)).toEqual({ code: 42901, retryAfterSec: 1 });
+  expect(await without.admitAttempt(s.input)).toEqual({ code: 42901, retryAfterSec: 1 });
+});
+
+it('[AC-B1-11g#40] the registration item joins checkAttempts (later release wins); its store failing never refuses', async () => {
+  const reached = store(1, registrationRedis(600_500));
+  expect(await reached.risk.checkAttempts(reached.input)).toEqual({
+    code: 42901,
+    retryAfterSec: 601,
+  });
+  await reached.risk.admitAttempt(reached.input);
+  expect(await reached.risk.checkAttempts(reached.input)).toEqual({
+    code: 42901,
+    retryAfterSec: 3611,
+  });
+  const down = store(1, registrationRedis('down'));
+  expect(await down.risk.checkAttempts(down.input)).toEqual({ code: 0 });
+  expect(down.lines.join('')).toContain('sms_risk_registrations_unreadable');
+  expect(down.lines.join('')).not.toContain(IP);
 });

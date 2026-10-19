@@ -20,14 +20,18 @@ export type {
   InviteRelationHitWriter,
   InviteRelationHitWriterOptions,
 } from './application/invite-relation-hits.ts';
-export { createSmsRisk, ephemeralSmsRiskIndex } from './application/sms-risk.ts';
+export {
+  SMS_ATTEMPT_SEND_BOUND_MS,
+  createSmsRisk,
+  ephemeralSmsRiskIndex,
+} from './application/sms-risk.ts';
 export type {
   SmsRisk,
   SmsRiskOptions,
   SmsRiskRequest,
-  SmsRiskIpRequest,
-  SmsRiskIpAdmission,
-  SmsRiskReservedAdmission,
+  SmsAttemptRequest,
+  SmsAttemptAdmission,
+  SmsAttemptOutcome,
   SmsRiskAdmission,
 } from './application/sms-risk.ts';
 export {
