@@ -41,8 +41,14 @@
 //   rules; the name anywhere else (a comment, another literal) still counts.
 // - Closed module (Module.closed): tokenised; no dynamic load (glob / require / computed import);
 //   no directory listing; no file-system API, no code or process execution (child_process, vm,
-//   worker_threads, module, eval, Function, Worker …), no import.meta; no mock call of any
-//   spelling; no template specifier or import inside a template; every relative or `#` import
+//   worker_threads, module, eval, Function, Worker …), no browser or network API (fetch,
+//   XMLHttpRequest, document …: in browser mode Vite serves the work tree), no way to the Function
+//   constructor (`.constructor`, getPrototypeOf, __proto__), no capability object (process,
+//   globalThis, global, window, self) used by a computed key or as a value, no capability named by
+//   a string literal (also one built from literals with `+` or `[…].join(…)`), no import.meta; no
+//   mock call of any spelling (`.` or `?.`, a computed key on vi, a destructured or renamed mock
+//   function, vi passed on as a value); no template specifier or import inside a template; every
+//   relative or `#` import
 //   resolves (certainly, by Vite's rules) to a closed module of the closure or to a module outside
 //   the test code (implementation code never reads test-support files, as since CT-06p); a bare
 //   specifier is a package — except a workspace package (`@couli/*`, test code such as
@@ -1358,6 +1364,9 @@ function literalsOf(tokens: readonly Token[]): Literal[] {
   return out;
 }
 
+/** A member access token (`.` or `?.`). */
+const member = (t: Token | undefined): boolean => t?.text === '.' || t?.text === '?.';
+
 /**
  * Identifiers of file-system reads and path helpers (fileAccess). In a module the rule-test file
  * imports they make it open; the rule-test file's own use of them is judged on its own text by the
@@ -1411,7 +1420,27 @@ const FILE_ACCESS = new Set([
   'binding',
   'mainModule',
   'dlopen',
+  // The Function constructor without its name (Codex review r6: a capability spelled another way).
+  'getPrototypeOf',
+  '__proto__',
+  // Browser and network APIs: in browser mode Vite serves the work tree over HTTP (Codex review r6).
+  'fetch',
+  'XMLHttpRequest',
+  'WebSocket',
+  'EventSource',
+  'importScripts',
+  'SharedWorker',
+  'navigator',
+  'document',
+  'WebAssembly',
 ]);
+/**
+ * Objects whose properties give file access, a loader or code execution (CT-06w, Codex review r6):
+ * any use of one other than reading a property by its plain name — a computed key, `?.[…]`, the
+ * object passed on as a value (`Reflect.get(process, k)`, `const { x } = process`) — is a
+ * capability. (`frames`, `top` and `parent` are left out: common local names, e.g. of stack frames.)
+ */
+const CAPABILITY_OBJECTS = new Set(['process', 'globalThis', 'global', 'window', 'self']);
 const FILE_MODULES = new Set([
   ...READ_MODULES,
   'child_process',
@@ -1426,6 +1455,16 @@ const FILE_MODULES = new Set([
   'node:process',
   'wasi',
   'node:wasi',
+  // Code execution and the browser-mode server commands (Codex review r6).
+  'inspector',
+  'node:inspector',
+  'cluster',
+  'node:cluster',
+  'repl',
+  'node:repl',
+  'vitest/browser',
+  '@vitest/browser',
+  '@vitest/browser/context',
 ]);
 const MOCKING = new Set([
   'mock',
@@ -1440,25 +1479,48 @@ const MOCKING = new Set([
 /**
  * Why a module may read files in a way the rules of mayReadSupport do not see (CT-06w, Codex
  * review r4): a file-system API or a path built from `import.meta` / `__dirname`, a module mock
- * (Vitest redirects it to `__mocks__`), `require` / `glob`. Null when it uses none of them.
+ * (Vitest redirects it to `__mocks__`), `require` / `glob`, code or process execution, a browser
+ * or network API, a way to the Function constructor, a capability object (CAPABILITY_OBJECTS) used
+ * by a computed key or as a value, a capability named by a string literal — also one built from
+ * literals with `+` or `[…].join(…)` (Codex reviews r5, r6). Null when it uses none of them. This
+ * is a list of spellings, not a proof: a name computed some other way is not seen.
  * With `reads` false, the file-system reads, path helpers and `import.meta` (FILE_READS,
  * READ_MODULES) do not count: what is left is what no rule here judges, even on the module's own
  * text (`Module.unjudged`, CT-06w r6).
  */
 function fileAccess(code: readonly Token[], reads = true): string | null {
   const tokens = flatten(code);
+  const listed = (name: string): string | null => {
+    if (FILE_ACCESS.has(name) || name === 'constructor' || name === 'globalThis') {
+      return reads || !FILE_READS.has(name) ? name : null;
+    }
+    if (FILE_MODULES.has(name)) return reads || !READ_MODULES.has(name) ? name : null;
+    return null;
+  };
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i] as Token;
     if (t.kind === 'id' && FILE_ACCESS.has(t.text) && (reads || !FILE_READS.has(t.text))) {
       return `it uses ${t.text}`;
     }
+    // A capability named by a string — a computed key (`process['getBuiltinModule']`, a
+    // destructured 'readFileSync'), a module name — also when it is built from literals with `+`
+    // or `[…].join(…)` (Codex review r6).
+    for (const value of stringValues(tokens, i)) {
+      const name = listed(value);
+      if (name !== null) return `it uses ${name}`;
+    }
+    if (t.kind === 'id' && t.text === 'constructor' && member(tokens[i - 1])) {
+      return 'it uses .constructor';
+    }
     if (
-      t.kind === 'str' &&
-      typeof t.value === 'string' &&
-      FILE_MODULES.has(t.value) &&
-      (reads || !READ_MODULES.has(t.value))
+      t.kind === 'id' &&
+      CAPABILITY_OBJECTS.has(t.text) &&
+      !member(tokens[i - 1]) &&
+      !(tokens[i + 1]?.text === ':' && (tokens[i - 1]?.text === '{' || tokens[i - 1]?.text === ','))
     ) {
-      return `it uses ${t.value}`;
+      const next = tokens[i + 1]?.text;
+      const plain = (next === '.' || next === '?.') && tokens[i + 2]?.kind === 'id';
+      if (!plain) return `it uses ${t.text} by a computed key or as a value`;
     }
     if (
       reads &&
@@ -1483,15 +1545,90 @@ function fileAccess(code: readonly Token[], reads = true): string | null {
   return usesMocking(tokens);
 }
 
+/** The cooked value of a string literal or of a template without expressions; null otherwise. */
+function literalValue(t: Token | undefined): string | null {
+  if (t?.kind === 'str') return typeof t.value === 'string' ? t.value : null;
+  if (t?.kind === 'tpl' && (t.inner ?? []).length === 0 && t.parts?.length === 1) {
+    return t.parts[0] ?? null;
+  }
+  return null;
+}
+
 /**
- * Why a module mocks modules (CT-06w, Codex reviews r4, r5): `vi.<mock…>` / `vitest.<mock…>`, or
- * a call of such a method on anything (`m.mock(…)`); Vitest hoists mocks and redirects imports
- * to `__mocks__` or a factory, which the rules here do not follow. Null when none.
+ * The string values that start at token `i` (CT-06w, Codex review r6): the literal itself, the
+ * literals joined by a chain of `+` that starts there, and `['a', 'b'].join(sep)` of literals when
+ * `i` is that `[`. Folding is only what a capability name built in plain sight looks like; it is
+ * no proof that a module cannot compute a name.
+ */
+function stringValues(tokens: readonly Token[], i: number): string[] {
+  const out: string[] = [];
+  const first = literalValue(tokens[i]);
+  if (first !== null && tokens[i - 1]?.text !== '+') {
+    out.push(first);
+    let folded = first;
+    for (let j = i + 1; tokens[j]?.text === '+'; j += 2) {
+      const next = literalValue(tokens[j + 1]);
+      if (next === null) break;
+      folded += next;
+      out.push(folded);
+    }
+  }
+  if (tokens[i]?.text === '[') {
+    const parts: string[] = [];
+    let j = i + 1;
+    for (; ; j += 2) {
+      const v = literalValue(tokens[j]);
+      if (v === null) break;
+      parts.push(v);
+      if (tokens[j + 1]?.text !== ',') {
+        j += 1;
+        break;
+      }
+    }
+    if (
+      parts.length > 0 &&
+      tokens[j]?.text === ']' &&
+      member(tokens[j + 1]) &&
+      tokens[j + 2]?.text === 'join' &&
+      tokens[j + 3]?.text === '('
+    ) {
+      const sep = tokens[j + 4]?.text === ')' ? ',' : literalValue(tokens[j + 4]);
+      if (sep !== null) out.push(parts.join(sep));
+    }
+  }
+  return out;
+}
+
+/**
+ * Why a module mocks modules (CT-06w, Codex reviews r4, r5, r6): `vi.<mock…>` / `vitest.<mock…>`
+ * (also with `?.`), a call of such a method on anything (`m.mock(…)`), a mock function under its
+ * own name (destructured, imported), a mock name as a string (a computed key, also built from
+ * literals), `vi[…]` or `vi` passed on as a value; Vitest hoists mocks (`doMock` at run time) and
+ * redirects imports to `__mocks__` or a factory, which the rules here do not follow. `x.mock` read
+ * as a property (a spy's `.mock.calls`) is no mock. Null when none.
  */
 function usesMocking(tokens: readonly Token[]): string | null {
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i] as Token;
-    if (t.kind !== 'id' || !MOCKING.has(t.text) || tokens[i - 1]?.text !== '.') continue;
+    // `vi[…]`, `vi?.[…]`, or `vi` passed on as a value (Codex review r6); an import or export
+    // clause (`{ vi }`, `vi as v`) and an object shorthand are no use.
+    if (t.kind === 'id' && (t.text === 'vi' || t.text === 'vitest') && !member(tokens[i - 1])) {
+      const next = tokens[i + 1]?.text;
+      if (next === '[' || (next === '?.' && tokens[i + 2]?.text === '[')) {
+        return `it uses ${t.text}[…]`;
+      }
+      const prev = tokens[i - 1]?.text;
+      const clause =
+        (prev === '{' || prev === ',' || prev === 'import' || prev === 'as') &&
+        (next === '}' || next === ',' || next === 'as' || next === 'from');
+      if (!clause && next !== '.' && next !== '?.') return `it uses ${t.text} as a value`;
+    }
+    for (const value of stringValues(tokens, i)) {
+      if (MOCKING.has(value)) return `it uses '${value}'`;
+    }
+    if (t.kind !== 'id' || !MOCKING.has(t.text)) continue;
+    // Destructured or imported under its own name (`const { doMock } = vi`, `import { mock }`).
+    if (!member(tokens[i - 1])) return `it uses ${t.text}`;
     const ns = tokens[i - 2]?.text;
     if (ns === 'vi' || ns === 'vitest' || tokens[i + 1]?.text === '(')
       return `it uses ${ns}.${t.text}`;
@@ -1500,49 +1637,101 @@ function usesMocking(tokens: readonly Token[]): string | null {
 }
 
 /**
- * The module specifiers of a module (CT-06w): the string after `from` (`import … from`,
- * `export … from`), after `import` (`import 'x'`) and the single literal of `import('x')` — in
- * the module's own token list only (the expressions of a template are lexed into one list, so
- * `${from}${'./x'}` would look like an import there; Codex review r2), the keyword not a member
- * (`reader.import('x')` is a method call; Codex review r1) and, for `from`, preceded by what an
- * import or export clause ends with (`}`, `*` or a name). A template specifier, `vi.mock(…)`,
- * `new URL(…)` and `require` are not imports here: their literals keep the name rules of
- * mayReadSupport.
+ * The module specifiers of a module (CT-06w): the string of an import or export declaration —
+ * read forward from an `import` / `export` keyword at the top level of the module's own token list
+ * (`import 'x'`, `import <clause> from 'x'`, `export * [as n] from 'x'`, `export [type] { … } from
+ * 'x'`; the clause is names, `*`, `,`, `as`, `type` and one `{ … }`, anything else ends it without
+ * a specifier — so a `from` variable followed by a string on the next line is no import, Codex
+ * review r6) — and the single literal of `import('x')`. The keyword is never a member
+ * (`reader.import('x')` is a method call; Codex review r1); the expressions of a template are
+ * lexed into one list and are not looked at (Codex review r2). A template specifier,
+ * `vi.mock(import('x'))`, `new URL(…)` and `require` are not imports here: their literals keep the
+ * name rules of mayReadSupport.
  */
 function importSpecifiers(
   tokens: readonly Token[],
 ): { spec: string; start: number; end: number }[] {
   const out: { spec: string; start: number; end: number }[] = [];
-  const member = (t: Token | undefined): boolean => t?.text === '.' || t?.text === '?.';
+  const str = (t: Token | undefined): t is Token =>
+    t?.kind === 'str' && typeof t.value === 'string' && t.start !== undefined;
+  const push = (t: Token): void => {
+    out.push({
+      spec: t.value as string,
+      start: t.start as number,
+      end: (t.start as number) + t.text.length,
+    });
+  };
+  // The specifier of the declaration whose clause starts at `j`, or null.
+  const declaration = (j: number, exported: boolean): Token | null => {
+    if (!exported && str(tokens[j])) return tokens[j] as Token;
+    if (exported) {
+      if (
+        tokens[j]?.text === 'type' &&
+        (tokens[j + 1]?.text === '{' || tokens[j + 1]?.text === '*')
+      )
+        j += 1;
+      if (tokens[j]?.text !== '*' && tokens[j]?.text !== '{') return null;
+    }
+    let braces = 0;
+    for (; j < tokens.length; j += 1) {
+      const t = tokens[j] as Token;
+      if (t.text === '{') {
+        if (braces > 0) return null;
+        let depth = 0;
+        let k = j;
+        for (; k < tokens.length; k += 1) {
+          const x = (tokens[k] as Token).text;
+          if (x === '{') depth += 1;
+          else if (x === '}') {
+            depth -= 1;
+            if (depth === 0) break;
+          }
+        }
+        if (k >= tokens.length || depth !== 0) return null;
+        braces += 1;
+        j = k;
+        continue;
+      }
+      if (t.kind === 'id') {
+        if (t.text === 'from' && str(tokens[j + 1])) return tokens[j + 1] as Token;
+        continue;
+      }
+      if (t.text === '*' || t.text === ',') continue;
+      if (str(t) && tokens[j - 1]?.text === 'as') continue; // export * as 'name' from …
+      return null;
+    }
+    return null;
+  };
+  let depth = 0;
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i] as Token;
-    if (t.kind !== 'str' || typeof t.value !== 'string' || t.start === undefined) continue;
-    const prev = tokens[i - 1];
-    const before = tokens[i - 2];
-    const next = tokens[i + 1]?.text;
-    let isImport = false;
-    if (prev?.kind === 'id' && prev.text === 'from') {
-      isImport =
-        before !== undefined &&
-        (before.kind === 'id' || before.text === '}' || before.text === '*') &&
-        !member(tokens[i - 3]);
-    } else if (prev?.kind === 'id' && prev.text === 'import') {
-      isImport = !member(before);
-    } else if (prev?.kind === 'punct' && prev.text === '(') {
+    if (t.kind === 'punct') {
+      if (t.text === '(' || t.text === '[' || t.text === '{') depth += 1;
+      else if (t.text === ')' || t.text === ']' || t.text === '}') depth -= 1;
+      continue;
+    }
+    if (t.kind !== 'id' || member(tokens[i - 1])) continue;
+    const next = tokens[i + 1];
+    if (t.text === 'import' && next?.text === '(') {
       // `vi.mock(import('x'))` is a mock, not a load (Vitest redirects it; Codex review r4).
       const mocked =
-        tokens[i - 3]?.text === '(' &&
-        tokens[i - 4]?.kind === 'id' &&
-        MOCKING.has((tokens[i - 4] as Token).text) &&
-        tokens[i - 5]?.text === '.';
-      isImport =
-        before?.kind === 'id' &&
-        before.text === 'import' &&
-        !member(tokens[i - 3]) &&
-        !mocked &&
-        (next === ')' || next === ',');
+        tokens[i - 1]?.text === '(' &&
+        tokens[i - 2]?.kind === 'id' &&
+        MOCKING.has((tokens[i - 2] as Token).text) &&
+        member(tokens[i - 3]);
+      const lit = tokens[i + 2];
+      const after = tokens[i + 3]?.text;
+      if (!mocked && str(lit) && (after === ')' || after === ',')) push(lit);
+      continue;
     }
-    if (isImport) out.push({ spec: t.value, start: t.start, end: t.start + t.text.length });
+    if (depth !== 0) continue;
+    if (t.text === 'import' && next !== undefined && next.text !== '.' && next.text !== ':') {
+      const spec = declaration(i + 1, false);
+      if (spec !== null) push(spec);
+    } else if (t.text === 'export') {
+      const spec = declaration(i + 1, true);
+      if (spec !== null) push(spec);
+    }
   }
   return out;
 }

@@ -1531,6 +1531,39 @@ const OPEN_MODULES: [string, string][] = [
   ],
   ['a .mock( call', "export const n = helper.mock('./x.ts');"],
   ['an import inside a template', "export const n = `${await import('./other.ts')}`;"],
+  // Codex review r6: capabilities spelled another way.
+  [
+    'fetch (browser mode: Vite serves the work tree)',
+    "export const n = async () => (await fetch('/spec/real/' + ['ki', 't.ts'].join(''))).text();",
+  ],
+  ['XMLHttpRequest', 'export const n = new XMLHttpRequest();'],
+  ['WebSocket', 'export const n = WebSocket;'],
+  ['document', "export const n = document.createElement('script');"],
+  ['process by a computed key', "export const n = process['getBuilt' + 'inModule'];"],
+  ['process as a value', "export const n = Reflect.get(process, 'x');"],
+  ['globalThis by a computed key', "export const n = globalThis[['ev', 'al'].join('')];"],
+  [
+    'a capability name as a key',
+    "export const n = (o: Record<string, unknown>) => o['readFileSync'];",
+  ],
+  ['a module name built from pieces', "export const n = 'node:f' + 's';"],
+  ['the Function constructor', 'export const n = (() => 0).constructor;'],
+  ['getPrototypeOf', 'export const n = Object.getPrototypeOf(() => 0);'],
+  ['vi?.doMock', "import { vi } from 'vitest';\nvi?.doMock('./x.ts');\nexport const n = 1;"],
+  [
+    'vi by a computed key',
+    "import { vi } from 'vitest';\nvi['do' + 'Mock']('./x.ts');\nexport const n = 1;",
+  ],
+  [
+    'a destructured mock',
+    "import { vi } from 'vitest';\nconst { doMock } = vi;\ndoMock('./x.ts');\nexport const n = 1;",
+  ],
+  ['vi as a value', "import { vi } from 'vitest';\nexport const n = Reflect.get(vi, 'x');"],
+  [
+    'browser commands',
+    "import { commands } from '@vitest/browser/context';\nexport const n = commands;",
+  ],
+  ['node:inspector', "import { Session } from 'node:inspector';\nexport const n = Session;"],
 ];
 
 it('[CT-06w] fallback: a closure with one module that is not closed judges exactly like the old code (orchestrator ruling 2026-10-19)', () => {
@@ -1681,4 +1714,102 @@ it('[CT-06w] fallback, closure-wide: a module the file loads that is not closed,
     `${root}\n${head}export const t = readFileSync(path.join(HERE, '../identity/step-up-verify/kit.ts'));`,
   );
   expect(mayReadSupport(file, support, named)).toBe(`${file} names kit.ts`);
+});
+
+it('[CT-06w] Codex review r6: a fetch helper, a capability by a string key, an optional mock and a from variable before a string', () => {
+  const support = 'test/spec/real/kit.ts';
+  const judge = (file: string, files: Record<string, string>) =>
+    mayReadSupport(
+      file,
+      support,
+      relativeClosure(
+        file,
+        (p) => files[p] ?? null,
+        (p) => p.startsWith('test/'),
+      ),
+    );
+  // Browser mode: the helper fetches the support file from the Vite server.
+  const browser = 'test/spec/a/rules.browser.test.ts';
+  expect(
+    judge(browser, {
+      [browser]:
+        "import { it, expect } from 'vitest';\nimport { read } from './kit.ts';\nit('[AC-1#1] old', async () => { expect(await read()).toContain('n = 1'); });",
+      'test/spec/a/kit.ts':
+        "export async function read() { return (await fetch('/spec/real/' + ['ki', 't.ts'].join('') + '?raw')).text(); }\n",
+    }),
+  ).toBe(
+    `${browser} names kit.ts in an unresolved import ./kit.ts (test/spec/a/kit.ts is not closed: it uses fetch)`,
+  );
+  // process['getBuiltinModule'] and a string key: the helper is not closed.
+  const file = 'test/spec/a/rules.test.ts';
+  expect(
+    judge(file, {
+      [file]:
+        "import { it, expect } from 'vitest';\nimport { read } from './kit.ts';\nit('[AC-2#1] old', () => { expect(read()).toContain('n = 1'); });",
+      'test/spec/a/kit.ts':
+        "const io = process['getBuiltinModule']('node:f' + 's') as { 'readFileSync': (p: string, e: 'utf8') => string };\nexport const read = () => io['readFileSync']('spec/real/' + ['ki', 't.ts'].join(''), 'utf8');\n",
+    }),
+  ).toMatch(
+    /^test\/spec\/a\/rules\.test\.ts names kit\.ts in an unresolved import \.\/kit\.ts \(test\/spec\/a\/kit\.ts is not closed: it uses /,
+  );
+  // vi?.doMock in the rule-test file: it mocks, nothing is masked.
+  expect(
+    judge(file, {
+      [file]:
+        "import { it, expect, vi } from 'vitest';\nvi?.doMock('./' + ['ki', 't.ts'].join(''));\nconst { n } = await import('./kit.ts');\nit('[AC-3#1] old', () => { expect(n).toBe(1); });",
+      'test/spec/a/kit.ts': 'export const n = 0;\n',
+      'test/spec/a/__mocks__/kit.ts': "export { n } from '../../real/kit.ts';\n",
+    }),
+  ).toBe(
+    `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (it uses vi.doMock))`,
+  );
+  // `void from` and a string on the next line (ASI): no import, the literal is a name.
+  const asi =
+    "import { readFileSync } from 'node:fs';\nimport { it, expect } from 'vitest';\nit('[AC-4#1] old', () => {\n  const from = 0;\n  void from\n  './kit.ts'.split(',').forEach((p) => { expect(readFileSync('spec/real/' + p.slice(2), 'utf8')).toContain('n = 1'); });\n});";
+  const files: Record<string, string> = {
+    [file]: asi,
+    'test/spec/a/kit.ts': 'export const n = 0;\n',
+  };
+  const closure = relativeClosure(
+    file,
+    (p) => files[p] ?? null,
+    (p) => p.startsWith('test/'),
+  );
+  expect((closure[0] as Module).imports.map((i) => i.spec)).toEqual(['node:fs', 'vitest']);
+  expect(mayReadSupport(file, support, closure)).toBe(`${file} names kit.ts`);
+});
+
+it('[CT-06w] import and export declarations are read forward from the keyword (Codex review r6)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const specs = (text: string) =>
+    (
+      relativeClosure(
+        file,
+        (p) => (p === file ? text : p === 'test/spec/a/kit.ts' ? '' : null),
+        (p) => p.startsWith('test/'),
+      )[0] as Module
+    ).imports.map((i) => i.spec);
+  for (const text of [
+    "import from from './kit.ts';",
+    "import type from './kit.ts';",
+    "export type { T } from './kit.ts';",
+    "import { 'a-b' as c } from './kit.ts';",
+    "export * as 'x' from './kit.ts';",
+    "import j from './kit.ts' with { type: 'json' };",
+    "import k, * as ns from './kit.ts';",
+    "import {\n  a,\n  b,\n} from\n'./kit.ts';",
+    "if (x) { await import('./kit.ts'); }",
+  ]) {
+    expect(specs(text), text).toEqual(['./kit.ts']);
+  }
+  for (const text of [
+    "const from = 0;\nvoid from\n'./kit.ts'.split(',');",
+    "export { a }\n'./kit.ts'.split(',');",
+    "declare module 'm' { export * from './kit.ts'; }",
+    "function f() { const from = 1; return from\n'./kit.ts'; }",
+    "import x = require('./kit.ts');",
+    "export default from\n'./kit.ts';",
+  ]) {
+    expect(specs(text), text).toEqual([]);
+  }
 });
