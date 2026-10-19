@@ -1598,6 +1598,14 @@ const OPEN_MODULES: [string, string][] = [
     "import { FileMigrationProvider } from 'kysely';\nexport const n = FileMigrationProvider;",
   ],
   ['kysely/migration', "import { Migrator } from 'kysely/migration';\nexport const n = Migrator;"],
+  // Codex review r10: file APIs of an allowed surface.
+  ['process.loadEnvFile', "export const n = () => process.loadEnvFile('fixtures/x.env');"],
+  ['a process property not listed', 'export const n = process.report;'],
+  [
+    'a test attachment',
+    "import type { TestContext } from 'vitest';\nexport const n = (ctx: TestContext) => ctx.annotate('in', { path: 'fixtures/x.txt' });",
+  ],
+  ['recordArtifact', 'export const n = (ctx: { recordArtifact: unknown }) => ctx.recordArtifact;'],
 ];
 
 it('[CT-06w] fallback: a closure with one module that is not closed judges exactly like the old code (orchestrator ruling 2026-10-19)', () => {
@@ -1975,4 +1983,51 @@ it('[CT-06w] Codex review r9: a file snapshot helper and a migration loader keep
   expect(mayReadSupport(migrations, 'test/spec/r9-migrations/fixtures/seed.mjs', mig)).toMatch(
     /^test\/spec\/r9-migrations\/rules\.test\.ts names seed in an unresolved import \.\/seed\.ts \(test\/spec\/r9-migrations\/seed\.ts is not closed: it /,
   );
+});
+
+it('[CT-06w] Codex review r10: process.loadEnvFile and a test attachment keep the closure open; listed process properties do not', () => {
+  const closureOf = (file: string, files: Record<string, string>) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  const env = 'test/spec/r10-env/config.test.ts';
+  expect(
+    mayReadSupport(
+      env,
+      'test/spec/r10-env/fixtures/config.env',
+      closureOf(env, {
+        [env]:
+          "import { expect, it } from 'vitest';\nimport { loadExpected } from './config.ts';\nit('[AC-r10#1] existing value', () => { expect(loadExpected()).toBe('ready'); });",
+        'test/spec/r10-env/config.ts':
+          "import { basename, dirname, join } from 'node:path';\nimport { expect } from 'vitest';\nexport function loadExpected() {\n  const testPath = expect.getState().testPath!;\n  const name = basename(testPath).replace(/\\.test\\.ts$/, '.env');\n  delete process.env['CT06W_EXPECTED'];\n  process.loadEnvFile(join(dirname(testPath), 'fixtures', name));\n  return process.env['CT06W_EXPECTED'];\n}\n",
+      }),
+    ),
+  ).toBe(
+    `${env} names config in an unresolved import ./config.ts (test/spec/r10-env/config.ts is not closed: it uses process.loadEnvFile)`,
+  );
+  const report = 'test/spec/r10-attachment/report.test.ts';
+  expect(
+    mayReadSupport(
+      report,
+      'test/spec/r10-attachment/fixtures/report.txt',
+      closureOf(report, {
+        [report]:
+          "import { expect, it } from 'vitest';\nimport { attachFixture } from './report.ts';\nit('[AC-r10#3] existing attachment', async (ctx) => { expect((await attachFixture(ctx)).attachment?.contentType).toBe('text/plain'); });",
+        'test/spec/r10-attachment/report.ts':
+          "import { basename, dirname, join } from 'node:path';\nimport { expect, type TestContext } from 'vitest';\nexport async function attachFixture(ctx: TestContext) {\n  const testPath = expect.getState().testPath!;\n  const name = basename(testPath).replace(/\\.test\\.ts$/, '.txt');\n  return ctx.annotate('input fixture', { path: join(dirname(testPath), 'fixtures', name) });\n}\n",
+      }),
+    ),
+  ).toBe(
+    `${report} names report in an unresolved import ./report.ts (test/spec/r10-attachment/report.ts is not closed: it uses annotate)`,
+  );
+  // process.pid / process.env and the like stay closed (the B1-12g queue kit reads process.pid).
+  const plain = closureOf(env, {
+    [env]:
+      "import { it } from 'vitest';\nimport { loadExpected } from './config.ts';\nit('x', () => loadExpected());",
+    'test/spec/r10-env/config.ts':
+      "export const loadExpected = () => [process.pid, process.env['X'], process.platform, process.stdout].length;\n",
+  });
+  expect(plain.map((m) => m.closed)).toEqual([true, true]);
 });

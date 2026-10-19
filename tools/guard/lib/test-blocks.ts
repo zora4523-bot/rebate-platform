@@ -45,7 +45,8 @@
 //   browser or network API (fetch, XMLHttpRequest, document …: in browser mode Vite serves the
 //   work tree); no way to the Function constructor (`constructor` in any spelling but a
 //   constructor definition, getPrototypeOf, __proto__); no capability object (process,
-//   globalThis, global, window, self) used by a computed key or as a value; no capability named
+//   globalThis, global, window, self) used by a computed key or as a value, no `process.<name>`
+//   outside PROCESS_PROPERTIES; no capability named
 //   by a string literal (also one built from literals with `+` or `[…].join(…)`); no import.meta;
 //   no mock call of any spelling (`.` or `?.`, `?.()`, any receiver, a computed key on vi, a
 //   destructured or renamed mock function, vi passed on as a value); no template specifier or
@@ -1451,6 +1452,11 @@ const FILE_ACCESS = new Set([
   // migration loader.
   'toMatchFileSnapshot',
   'FileMigrationProvider',
+  // Vitest's file attachments of a test (`context.annotate(…, { path })`, `recordArtifact`) and
+  // Node's `process.loadEnvFile` (Codex review r10).
+  'annotate',
+  'recordArtifact',
+  'loadEnvFile',
 ]);
 /**
  * Objects whose properties give file access, a loader or code execution (CT-06w, Codex review r6):
@@ -1459,6 +1465,55 @@ const FILE_ACCESS = new Set([
  * capability. (`frames`, `top` and `parent` are left out: common local names, e.g. of stack frames.)
  */
 const CAPABILITY_OBJECTS = new Set(['process', 'globalThis', 'global', 'window', 'self']);
+/**
+ * The properties of `process` a closed module may read (CT-06w, Codex review r10): state, events
+ * and streams; any other property — `loadEnvFile` reads a file, `binding`, `dlopen`,
+ * `getBuiltinModule` load code — is a capability. (`cwd` counts as a path helper, FILE_READS.)
+ */
+const PROCESS_PROPERTIES = new Set([
+  'env',
+  'pid',
+  'ppid',
+  'platform',
+  'arch',
+  'version',
+  'versions',
+  'release',
+  'features',
+  'title',
+  'argv',
+  'argv0',
+  'execArgv',
+  'execPath',
+  'exitCode',
+  'exit',
+  'abort',
+  'kill',
+  'nextTick',
+  'hrtime',
+  'uptime',
+  'memoryUsage',
+  'cpuUsage',
+  'resourceUsage',
+  'umask',
+  'chdir',
+  'on',
+  'once',
+  'off',
+  'addListener',
+  'removeListener',
+  'removeAllListeners',
+  'listeners',
+  'listenerCount',
+  'emitWarning',
+  'stdout',
+  'stderr',
+  'stdin',
+  'send',
+  'channel',
+  'connected',
+  'disconnect',
+]);
 const FILE_MODULES = new Set([
   ...READ_MODULES,
   'child_process',
@@ -1637,6 +1692,19 @@ function fileAccess(code: readonly Token[], reads = true): string | null {
       const next = tokens[i + 1]?.text;
       const plain = (next === '.' || next === '?.') && tokens[i + 2]?.kind === 'id';
       if (!plain) return `it uses ${t.text} by a computed key or as a value`;
+    }
+    // `process.<name>` (also through a global object): only the listed properties; any other
+    // (`process.loadEnvFile`, Codex review r10) is a capability.
+    if (
+      t.kind === 'id' &&
+      t.text === 'process' &&
+      (!member(tokens[i - 1]) || CAPABILITY_OBJECTS.has(tokens[i - 2]?.text ?? '')) &&
+      member(tokens[i + 1]) &&
+      tokens[i + 2]?.kind === 'id' &&
+      !PROCESS_PROPERTIES.has((tokens[i + 2] as Token).text) &&
+      (reads || !FILE_READS.has((tokens[i + 2] as Token).text))
+    ) {
+      return `it uses process.${(tokens[i + 2] as Token).text}`;
     }
     if (
       reads &&
