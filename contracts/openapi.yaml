@@ -3554,7 +3554,6 @@ paths:
       x-signed: false
       x-idempotent: true
       x-min-version-gate: false
-      x-implementation: planned
       x-error-codes:
         - 10004
         - 30408

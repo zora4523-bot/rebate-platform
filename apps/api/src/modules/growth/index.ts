@@ -48,6 +48,16 @@ export type {
   RegistrationInviteBinding,
   RegistrationInviteInput,
 } from './application/invite-binder.ts';
+// B1-11h: the landing channel (precheck before the SMS code, binding in identity's transaction).
+export { createLandingInviteBinder, INVITE_FAIL_IP_CONTEXT } from './application/landing-binder.ts';
+export type {
+  LandingBindInput,
+  LandingBindResult,
+  LandingInviteBinder,
+  LandingInviteBinderDeps,
+  LandingPrecheckInput,
+  LandingPrecheckResult,
+} from './application/landing-binder.ts';
 // B1-11j: the invite page read behind GET /v1/invites/me, assembled by app.module.
 export { createMyInviteReader, firstShareDomain } from './application/my-invite.ts';
 export type {

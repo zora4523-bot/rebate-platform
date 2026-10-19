@@ -89,3 +89,5 @@ export const PAYOUT_ACCOUNT_CHANGE = Symbol('IDENTITY_PAYOUT_ACCOUNT_CHANGE');
 export const CARD_BIN = Symbol('IDENTITY_CARD_BIN');
 /** The bank-card three-element verifier (fake in local / test), or null without a vendor. */
 export const BANK_CARD_VERIFIER = Symbol('IDENTITY_BANK_CARD_VERIFIER');
+/** The landing page's registration (POST /v1/invites/landing-register, B1-11h), or null. */
+export const LANDING_REGISTER = Symbol('IDENTITY_LANDING_REGISTER');

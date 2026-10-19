@@ -157,7 +157,7 @@ export const INVITE_FAIL_NAMESPACE = 'invite_fail';
 /** BR-INV-08 ②: layers walked up from the inviter (the inviter is layer one). */
 export const INVITE_CHAIN_MAX_DEPTH = 1000;
 /** Seconds the count key outlives its +08:00 day, so a late increment never restarts a day. */
-const FAIL_KEY_GRACE_SECONDS = 60;
+export const FAIL_KEY_GRACE_SECONDS = 60;
 /**
  * Blind-index context of login_logs.device_id_hash, identity's LOGIN_LOGS_DEVICE_ID_CONTEXT. A copy:
  * identity's index.ts pulls in Nest, which the erasable-only `test` project cannot compile; the
@@ -167,10 +167,11 @@ export const LOGIN_DEVICE_ID_CONTEXT = 'login_logs.device_id';
 /** BR-INV-19 / BR-ID-26: a verified inviter must have reached this age at the judging instant. */
 const INVITER_MIN_AGE = 18;
 
-const SWITCH_KEY = 'growth.invite_bind.enabled';
-const FAIL_LIMIT_KEY = 'invite.fail_limit_per_day';
+/** Shared with the landing channel (landing-binder.ts, B1-11h): one parse of each key. */
+export const SWITCH_KEY = 'growth.invite_bind.enabled';
+export const FAIL_LIMIT_KEY = 'invite.fail_limit_per_day';
 const BACKFILL_HOURS_KEY = 'invite.backfill_hours';
-const DEFAULT_FAIL_LIMIT = 5;
+export const DEFAULT_FAIL_LIMIT = 5;
 const DEFAULT_BACKFILL_HOURS = 168;
 const INT32_MAX = 2_147_483_647;
 
@@ -196,7 +197,7 @@ function failed(code: FailureCode): InviteBindingResult {
   return { result: 'failed', code };
 }
 
-function errorClass(error: unknown): string {
+export function errorClass(error: unknown): string {
   if (error instanceof Error) return error.constructor.name || error.name;
   return error === null ? 'null' : typeof error;
 }
@@ -216,8 +217,11 @@ function checkOptions(options: InviteBindOptions | undefined): void {
   }
 }
 
-/** The attempt's seen marker: one hash of user and key (the raw key never reaches Redis). */
-function seenKey(countKey: string, userId: string, attemptKey: string): string {
+/**
+ * The attempt's seen marker: one hash of the subject (user id; the landing channel: the phone
+ * blind index) and key (the raw key never reaches Redis).
+ */
+export function seenKey(countKey: string, userId: string, attemptKey: string): string {
   const digest = createHash('sha256')
     .update(JSON.stringify([userId, attemptKey]), 'utf8')
     .digest('hex');
@@ -239,14 +243,14 @@ function checkCommand(command: InviteBindCommand): void {
 }
 
 /** Switch value as in identity's me.ts: missing → on; true / 'on' / false / 'off'; else invalid. */
-function switchOn(item: { readonly value: unknown } | null): boolean | null {
+export function switchOn(item: { readonly value: unknown } | null): boolean | null {
   const value = item?.value ?? true;
   if (value === true || value === 'on') return true;
   if (value === false || value === 'off') return false;
   return null;
 }
 
-function integerConfig(
+export function integerConfig(
   item: { readonly value: unknown } | null,
   fallback: number,
   min: number,
@@ -258,7 +262,7 @@ function integerConfig(
 }
 
 /** The stored count; null when it is not a plain non-negative integer. */
-function storedCount(raw: string | null): number | null {
+export function storedCount(raw: string | null): number | null {
   if (raw === null) return 0;
   if (!/^[0-9]{1,15}$/.test(raw)) return null;
   return Number(raw);
@@ -271,7 +275,7 @@ interface SubjectRow {
   readonly self_bind_used: boolean;
 }
 
-interface InviterRow {
+export interface InviterRow {
   readonly id: string;
   readonly phone_hmac: string | null;
   readonly status: string;
@@ -282,10 +286,49 @@ interface ChainRow {
   readonly truncated: boolean;
 }
 
+/** The inviter of (app_id, normalised code), or undefined (shared with the landing channel). */
+export async function findInviterByCode(
+  trx: Transaction<DB>,
+  appId: string,
+  code: string,
+): Promise<InviterRow | undefined> {
+  const row: InviterRow | undefined = await trx
+    .withSchema('app')
+    .selectFrom('users')
+    .select(['id', 'phone_hmac', 'status'])
+    .where('app_id', '=', appId)
+    .where('invite_code', '=', code)
+    .executeTakeFirst();
+  return row;
+}
+
+/**
+ * BR-INV-02 inviter_unavailable(u) with the facts read on `trx` for the judging instant `at`
+ * (shared by every channel: one definition of the function, BR-INV-02 【邀请人不可用判定】).
+ */
+export async function isInviterUnavailable(
+  deps: Pick<InviteBinderDeps, 'readRisk' | 'verifiedBirthDate'>,
+  trx: Transaction<DB>,
+  appId: string,
+  inviter: InviterRow,
+  at: Date,
+): Promise<boolean> {
+  const subject = { app_id: appId, user_id: inviter.id };
+  const risk = await deps.readRisk(trx, subject);
+  const verifiedBirthDate = deps.verifiedBirthDate;
+  const birthDate = verifiedBirthDate === undefined ? null : await verifiedBirthDate(trx, subject);
+  return inviterUnavailable({
+    risk_state: risk.state,
+    // TODO(规划/11 §2.3): 读注销单 deletion_status（cooling / processing / done）— blocked on B1-15
+    deletion_status: inviter.status === 'deleted' ? 'done' : null,
+    phone_bound: inviter.phone_hmac !== null,
+    verified_minor: birthDate !== null && !isAtLeastAge(birthDate, INVITER_MIN_AGE, at),
+  });
+}
+
 /** B1-11d §9.3: caller-owned transaction, one Clock sample, ordered checks, CAS + audit. */
 export function createInviteBinder(deps: InviteBinderDeps): InviteBinder {
-  const { clock, logger, redis, crypto, config, loginDevices, activity, readRisk } = deps;
-  const verifiedBirthDate = deps.verifiedBirthDate;
+  const { clock, logger, redis, crypto, config, loginDevices, activity } = deps;
 
   async function subjectRow(trx: Transaction<DB>, command: InviteBindCommand) {
     const row = await trx
@@ -311,35 +354,16 @@ export function createInviteBinder(deps: InviteBinderDeps): InviteBinder {
     return row !== undefined;
   }
 
-  async function inviterOf(trx: Transaction<DB>, appId: string, code: string) {
-    const row: InviterRow | undefined = await trx
-      .withSchema('app')
-      .selectFrom('users')
-      .select(['id', 'phone_hmac', 'status'])
-      .where('app_id', '=', appId)
-      .where('invite_code', '=', code)
-      .executeTakeFirst();
-    return row;
-  }
+  const inviterOf = findInviterByCode;
 
   /** BR-INV-02 inviter_unavailable with the facts read at the bind's single instant. */
-  async function unavailable(
+  function unavailable(
     trx: Transaction<DB>,
     appId: string,
     inviter: InviterRow,
     at: Date,
   ): Promise<boolean> {
-    const subject = { app_id: appId, user_id: inviter.id };
-    const risk = await readRisk(trx, subject);
-    const birthDate =
-      verifiedBirthDate === undefined ? null : await verifiedBirthDate(trx, subject);
-    return inviterUnavailable({
-      risk_state: risk.state,
-      // TODO(规划/11 §2.3): 读注销单 deletion_status（cooling / processing / done）— blocked on B1-15
-      deletion_status: inviter.status === 'deleted' ? 'done' : null,
-      phone_bound: inviter.phone_hmac !== null,
-      verified_minor: birthDate !== null && !isAtLeastAge(birthDate, INVITER_MIN_AGE, at),
-    });
+    return isInviterUnavailable(deps, trx, appId, inviter, at);
   }
 
   /** BR-INV-08 ②: walk up from the inviter; true when the invitee is met or the walk is cut. */

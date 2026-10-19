@@ -594,6 +594,13 @@ export interface InboxMessages {
   user_id: string;
 }
 
+export interface LandingRegistrations {
+  app_id: string;
+  created_at: Timestamp;
+  ip_hmac: string;
+  user_id: string;
+}
+
 export interface LedgerAccounts {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1470,6 +1477,7 @@ export interface DB {
   favorites: Favorites;
   idempotency_keys: IdempotencyKeys;
   inbox_messages: InboxMessages;
+  landing_registrations: LandingRegistrations;
   ledger_accounts: LedgerAccounts;
   ledger_entries: LedgerEntries;
   ledger_vouchers: LedgerVouchers;
