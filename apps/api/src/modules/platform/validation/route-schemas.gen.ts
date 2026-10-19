@@ -3092,7 +3092,6 @@ export const CONTRACT_ROUTE_SCHEMAS = {
         },
         "x-step-up-token": {
           "type": "string",
-          "minLength": 1,
           "maxLength": 2048
         }
       },
@@ -3415,6 +3414,162 @@ export const CONTRACT_ROUTE_SCHEMAS = {
         "x-platform",
         "x-app-version",
         "x-device-id"
+      ]
+    }
+  },
+  "savePayoutAccount": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign",
+        "idempotency-key"
+      ]
+    },
+    "body": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "payout_method",
+            "alipay_logon_id",
+            "payee_name"
+          ],
+          "properties": {
+            "payout_method": {
+              "type": "string",
+              "enum": [
+                "alipay"
+              ]
+            },
+            "alipay_logon_id": {
+              "type": "string",
+              "description": "Alipay logon id (phone or e-mail form), normalised by the server (BR-WDR-02 细则).",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "payee_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "payout_method",
+            "card_no",
+            "payee_name"
+          ],
+          "properties": {
+            "payout_method": {
+              "type": "string",
+              "enum": [
+                "bank_card"
+              ]
+            },
+            "card_no": {
+              "type": "string",
+              "description": "Card number as typed; the server removes spaces and hyphens, then checks 12–19 digits and\nLuhn (20001 data.fields=[card_no], BR-WDR-02 ⑥ and 细则).\n",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "bank_name": {
+              "type": "string",
+              "description": "Optional and ignored by the server: the opening bank is taken from the card BIN, the\nuser does not type it (BR-WDR-02 细则「只支持本人名下借记卡」). Accepted so that older\nclients sending it are not refused.\n",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "payee_name": {
+              "type": "string",
+              "description": "Account holder name (BR-WDR-02 ①).",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        }
       ]
     }
   },

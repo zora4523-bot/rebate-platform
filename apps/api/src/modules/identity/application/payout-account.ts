@@ -44,6 +44,20 @@
 // the B1-13e rule tests, which build the service without a config port and still expect
 // withdraw.payout_methods / the monthly limit to be honoured (AC-B1-13e#13, #31).
 //
+// createPayoutAccountService().saveBankCard — the bank-card binding / change of B1-13f (BR-WDR-02 ⑥,
+// 细则「核验结果与保存分开」): called only after the three-element verification matched (or a
+// matched record is reused), in the claim's transaction. The same lock and order as the Alipay
+// save — withdraw.payout_methods without bank_card → 20001 fields=[payout_method]; the card number
+// again normalised and checked (12–19 digits, Luhn) → 20001 fields=[card_no]; the users row lock;
+// ⓪ the bank_card blocklist → 44001; 30304; ① → 30307; ② bank_card_hmac held by another member →
+// 30308; the same account → 0, nothing written; ④ → 30303 — every value reread inside the lock,
+// so what changed while the vendor answered is judged here. bank_name and card_bin come from the
+// card BIN (the caller's lookup), never from the request body. A unique violation of
+// payout_accounts_current_bank_card_key answers 30308 as for Alipay.
+// payoutAccountChecks / lockPayoutUser are the lock-phase checks themselves (⓪ ① ② same ④, no
+// write): the verification reservation (payout-bank-card.ts) runs them in its own short
+// transaction before it reserves the day's quota (BR-WDR-02 细则「顺序」).
+//
 // Cipher AAD and blind-index context of the logon id: payout_accounts.alipay (the card number:
 // payout_accounts.bank_card), the contexts risk's blocklist hashes with (blocklistHmacContexts),
 // so blocklist entries and the partial unique index see the same digest. payee_name stores the
@@ -53,7 +67,13 @@
 // relative imports, no decorators.
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import { chinaMonth, chinaMonthRange, normalizePersonName } from '@couli/domain';
+import {
+  chinaMonth,
+  chinaMonthRange,
+  isValidBankCardNo,
+  normalizeBankCardNo,
+  normalizePersonName,
+} from '@couli/domain';
 import { sql, type Kysely, type Transaction } from 'kysely';
 import { newUuidV7, type Clock, type FieldCrypto, type RootLogger } from '../../platform/index.ts';
 import { blocklistHmacContexts, type BlocklistService } from '../../risk/index.ts';
@@ -87,6 +107,27 @@ export type SaveAlipayResult =
   | { readonly code: 30303; readonly data: { readonly reason: 'payout_account_change_limit' } }
   | { readonly code: 44001; readonly data: { readonly risk_msg_code: string } };
 
+/** B1-13f: a bank card whose three-element verification matched; bank data from its BIN. */
+export interface SaveBankCardCommand extends PayoutAccountSubject {
+  /** As submitted; normalised and checked again here. */
+  readonly cardNo: string;
+  readonly payeeName: string;
+  /** The opening bank of the card BIN (CardBinPort), never the request body's bank_name. */
+  readonly bankName: string;
+  readonly cardBin: string;
+}
+
+/** The refusals of the lock phase, shared by both methods and the verification reservation. */
+export type PayoutAccountRefusal =
+  | { readonly code: 30304 | 30307 | 30308 }
+  | { readonly code: 30303; readonly data: { readonly reason: 'payout_account_change_limit' } }
+  | { readonly code: 44001; readonly data: { readonly risk_msg_code: string } };
+
+export type SaveBankCardResult =
+  | { readonly code: 0; readonly data: components['schemas']['PayoutAccountBankCard'] }
+  | { readonly code: 20001; readonly data: { readonly fields: readonly string[] } }
+  | PayoutAccountRefusal;
+
 /** Business configuration of one app, read on the caller's handle (content's reader). */
 export interface PayoutAccountConfigPort {
   configValue(
@@ -115,6 +156,11 @@ export interface PayoutAccountService {
    * (The row lock is taken FOR NO KEY UPDATE; see the file header.)
    */
   save(trx: Transaction<DB>, command: SaveAlipayCommand): Promise<SaveAlipayResult>;
+  /**
+   * B1-13f: the bank-card save after a matched verification, in the caller's transaction; the
+   * same lock and order as save (see the file header). Never verifies or reserves anything.
+   */
+  saveBankCard(trx: Transaction<DB>, command: SaveBankCardCommand): Promise<SaveBankCardResult>;
 }
 
 /** GET /v1/me/payout-account data: the masked current account, or {} when nothing is bound. */
@@ -133,19 +179,21 @@ export interface PayoutAccountReader {
   read(subject: PayoutAccountSubject): Promise<PayoutAccountView>;
 }
 
-const PAYOUT_METHODS_KEY = 'withdraw.payout_methods';
-const CHANGE_LIMIT_KEY = 'withdraw.payout_account_change_per_month';
+export const PAYOUT_METHODS_KEY = 'withdraw.payout_methods';
+export const CHANGE_LIMIT_KEY = 'withdraw.payout_account_change_per_month';
 /** BR-WDR-02 defaults (D12; ④). */
 const DEFAULT_PAYOUT_METHODS: ReadonlySet<string> = new Set(['alipay', 'bank_card']);
 const DEFAULT_CHANGE_LIMIT = 2;
 const KNOWN_PAYOUT_METHODS: ReadonlySet<string> = new Set(['alipay', 'bank_card', 'wechat']);
 
 const ALIPAY_CONTEXT = blocklistHmacContexts().alipay;
-const BANK_CARD_CONTEXT = blocklistHmacContexts().bank_card;
+/** Cipher AAD and blind-index context of the card number (= risk's bank_card dimension). */
+export const BANK_CARD_CONTEXT = blocklistHmacContexts().bank_card;
 const CURRENT_ALIPAY_KEY = 'payout_accounts_current_alipay_key';
+const CURRENT_BANK_CARD_KEY = 'payout_accounts_current_bank_card_key';
 const SAVEPOINT = sql.raw('identity_payout_account_save');
 
-interface CurrentAccount {
+export interface CurrentAccount {
   readonly id: string;
   readonly payout_method: string;
   readonly alipay_hmac: string | null;
@@ -159,7 +207,8 @@ interface CurrentAccount {
 
 type Config = ReadonlyMap<string, unknown>;
 
-async function readConfig(
+/** The values of `keys` (absent keys are missing from the map), on the caller's handle. */
+export async function readConfig(
   handle: Kysely<DB>,
   appId: string,
   keys: readonly string[],
@@ -184,7 +233,7 @@ async function readConfig(
 }
 
 /** withdraw.payout_methods: a non-empty array of distinct known methods, else the default. */
-function payoutMethods(config: Config, logger: RootLogger): ReadonlySet<string> {
+export function payoutMethods(config: Config, logger: RootLogger): ReadonlySet<string> {
   const value = config.get(PAYOUT_METHODS_KEY);
   if (
     Array.isArray(value) &&
@@ -199,7 +248,7 @@ function payoutMethods(config: Config, logger: RootLogger): ReadonlySet<string> 
 }
 
 /** withdraw.payout_account_change_per_month: a whole number ≥ 0, else the default. */
-function changeLimit(config: Config, logger: RootLogger): number {
+export function changeLimit(config: Config, logger: RootLogger): number {
   const value = config.get(CHANGE_LIMIT_KEY);
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
   logger.warn({ config_key: CHANGE_LIMIT_KEY }, 'payout_account_config_default');
@@ -275,7 +324,7 @@ function projectAlipay(
 }
 
 /** The masked projection of a stored row (GET and the same-account answer). */
-function project(
+export function project(
   row: CurrentAccount,
   crypto: FieldCrypto,
   changeRemaining: number,
@@ -331,11 +380,221 @@ export function createPayoutAccountReader(
   });
 }
 
+/** The users row lock of the payout saves and the reservation (FOR NO KEY UPDATE, file header). */
+export async function lockPayoutUser(
+  handle: Kysely<DB>,
+  subject: PayoutAccountSubject,
+): Promise<{ readonly phone_cipher: Buffer | null }> {
+  const user = await handle
+    .withSchema('app')
+    .selectFrom('users')
+    .select('phone_cipher')
+    .where('app_id', '=', subject.appId)
+    .where('id', '=', subject.userId)
+    .forNoKeyUpdate()
+    .executeTakeFirst();
+  if (user === undefined) throw new Error('identity: payout account save for an unknown user');
+  return user;
+}
+
+/** The account a request asks for: its method, blind index and normalised payee name. */
+export interface PayoutAccountTarget {
+  readonly method: 'alipay' | 'bank_card';
+  readonly hmac: string;
+  readonly payeeName: string;
+}
+
+export interface PayoutAccountCheckDeps {
+  readonly clock: Clock;
+  readonly crypto: FieldCrypto;
+  readonly blocklist: Pick<BlocklistService, 'check'>;
+}
+
+export type PayoutAccountChecks<R> =
+  | { readonly kind: 'refused'; readonly result: PayoutAccountRefusal }
+  | { readonly kind: 'same'; readonly current: CurrentAccount; readonly remaining: number }
+  | {
+      readonly kind: 'open';
+      readonly realname: R;
+      readonly current: CurrentAccount | undefined;
+      readonly used: number;
+      readonly now: Date;
+    };
+
+/**
+ * The lock phase of BR-WDR-02 (⓪ ① ② the same account ④), each value read fresh on `handle`, which
+ * must already hold lockPayoutUser's lock. Writes nothing (a blocklist hit is recorded by risk in
+ * its own short transaction). `readRealname` reads the verified real name (30304 when null).
+ */
+export async function payoutAccountChecks<R extends { readonly name: string }>(
+  handle: Kysely<DB>,
+  deps: PayoutAccountCheckDeps,
+  subject: PayoutAccountSubject,
+  user: { readonly phone_cipher: Buffer | null },
+  target: PayoutAccountTarget,
+  limit: number,
+  readRealname: (handle: Kysely<DB>) => Promise<R | null>,
+): Promise<PayoutAccountChecks<R>> {
+  const { clock, crypto, blocklist } = deps;
+  const app = handle.withSchema('app');
+  // ⓪ BR-ID-31: checked after the lock, so an entry registered while waiting still hits.
+  const hit = await blocklist.check({
+    app_id: subject.appId,
+    dimension: target.method,
+    value_hmac: target.hmac,
+    request_type: 'payout_account',
+    user_id: subject.userId,
+    // The blocked request's related phone (risk stores only its HMAC and masked form).
+    related_phone:
+      user.phone_cipher === null
+        ? ''
+        : crypto.decrypt(Buffer.from(user.phone_cipher).toString('utf8'), PHONE_CIPHER_CONTEXT),
+  });
+  if (hit !== null) {
+    return {
+      kind: 'refused',
+      result: { code: 44001, data: { risk_msg_code: hit.data.risk_msg_code } },
+    };
+  }
+
+  // ① the payee name against the verified real name, both normalised.
+  const realname = await readRealname(app);
+  if (realname === null) return { kind: 'refused', result: { code: 30304 } };
+  if (normalizePersonName(realname.name) !== target.payeeName) {
+    return { kind: 'refused', result: { code: 30307 } };
+  }
+
+  // ② another member's current binding of the same account in this app.
+  const occupied = await app
+    .selectFrom('payout_accounts')
+    .select('id')
+    .where('app_id', '=', subject.appId)
+    .where(target.method === 'alipay' ? 'alipay_hmac' : 'bank_card_hmac', '=', target.hmac)
+    .where('is_current', '=', true)
+    .where('user_id', '<>', subject.userId)
+    .executeTakeFirst();
+  if (occupied !== undefined) return { kind: 'refused', result: { code: 30308 } };
+
+  const now = clock.now();
+  const current = await currentAccount(app, subject);
+  const used = await changesThisMonth(app, subject, now);
+  if (
+    current !== undefined &&
+    current.payout_method === target.method &&
+    accountHmac(current) === target.hmac
+  ) {
+    // The same account: nothing written, not counted, never over the limit.
+    return { kind: 'same', current, remaining: remaining(limit, used) };
+  }
+  // ④ only a change of an existing binding counts; a first binding does not.
+  if (current !== undefined && used >= limit) {
+    return {
+      kind: 'refused',
+      result: { code: 30303, data: { reason: 'payout_account_change_limit' } },
+    };
+  }
+  return { kind: 'open', realname, current, used, now };
+}
+
+/** The new row's method-specific columns (the other method's are null). */
+interface AccountColumns {
+  readonly alipay_logon_id_cipher: Buffer | null;
+  readonly alipay_hmac: string | null;
+  readonly bank_card_no_cipher: Buffer | null;
+  readonly bank_card_hmac: string | null;
+  readonly bank_name: string | null;
+  readonly card_bin: string | null;
+}
+
+/**
+ * The writes of a change or first binding (inside a savepoint): the old current row is set
+ * is_current=false (row_version CAS) with one payout_account_changes row, then the new current row.
+ * 'occupied' when the method's partial unique index saw a concurrent binding (rolled back to the
+ * savepoint, the caller's transaction stays usable).
+ */
+async function writeAccount(
+  trx: Kysely<DB>,
+  subject: PayoutAccountSubject,
+  target: PayoutAccountTarget,
+  open: { readonly current: CurrentAccount | undefined; readonly now: Date },
+  columns: AccountColumns,
+): Promise<'written' | 'occupied'> {
+  const { current, now } = open;
+  await sql`SAVEPOINT ${SAVEPOINT}`.execute(trx);
+  try {
+    if (current !== undefined) {
+      const retired = await trx
+        .updateTable('payout_accounts')
+        .set({ is_current: false, row_version: current.row_version + 1, updated_at: now })
+        .where('app_id', '=', subject.appId)
+        .where('id', '=', current.id)
+        .where('is_current', '=', true)
+        .where('row_version', '=', current.row_version)
+        .executeTakeFirst();
+      // Under the user lock nobody else writes this user's accounts.
+      if (retired.numUpdatedRows !== 1n) {
+        throw new Error('identity: current payout account changed under the user lock');
+      }
+      await trx
+        .insertInto('payout_account_changes')
+        .values({
+          app_id: subject.appId,
+          user_id: subject.userId,
+          old_payout_method: current.payout_method,
+          old_hmac: accountHmac(current),
+          new_payout_method: target.method,
+          new_hmac: target.hmac,
+          operator: `user:${subject.userId}`,
+          changed_at: now,
+          created_at: now,
+        })
+        .execute();
+    }
+    await trx
+      .insertInto('payout_accounts')
+      .values({
+        id: newUuidV7(now),
+        app_id: subject.appId,
+        user_id: subject.userId,
+        payout_method: target.method,
+        ...columns,
+        payee_name: target.payeeName,
+        is_current: true,
+        created_at: now,
+        updated_at: now,
+      })
+      .execute();
+    await sql`RELEASE SAVEPOINT ${SAVEPOINT}`.execute(trx);
+  } catch (error) {
+    const constraint = target.method === 'alipay' ? CURRENT_ALIPAY_KEY : CURRENT_BANK_CARD_KEY;
+    if (!isUniqueViolationOf(error, constraint)) throw error;
+    // A concurrent binding of the same account won the partial unique index after ②.
+    await sql`ROLLBACK TO SAVEPOINT ${SAVEPOINT}`.execute(trx);
+    await sql`RELEASE SAVEPOINT ${SAVEPOINT}`.execute(trx);
+    return 'occupied';
+  }
+  return 'written';
+}
+
+/** The masked projection of a stored bank-card row. */
+function projectBankCard(
+  row: CurrentAccount,
+  crypto: FieldCrypto,
+  changeRemaining: number,
+): components['schemas']['PayoutAccountBankCard'] {
+  const projected = project(row, crypto, changeRemaining);
+  if (projected.payout_method !== 'bank_card') {
+    throw new Error('identity: expected a bank card payout account');
+  }
+  return projected;
+}
+
 export function createPayoutAccountService(
   options: PayoutAccountServiceOptions,
 ): PayoutAccountService {
   const { clock, crypto, logger, blocklist, config: configPort } = options;
   const realname = createRealnameReader(crypto);
+  const deps: PayoutAccountCheckDeps = { clock, crypto, blocklist };
   return Object.freeze({
     async save(
       transaction: Transaction<DB>,
@@ -357,134 +616,99 @@ export function createPayoutAccountService(
       const normalized = normalizeAlipayLogonId(command.alipayLogonId);
       if (normalized.code !== 0) return { code: 20001, data: normalized.data };
       const logon = normalized.logon;
-      const alipayHmac = crypto.blindIndex(logon, ALIPAY_CONTEXT);
-      const payeeName = normalizePersonName(command.payeeName);
+      const target: PayoutAccountTarget = {
+        method: 'alipay',
+        hmac: crypto.blindIndex(logon, ALIPAY_CONTEXT),
+        payeeName: normalizePersonName(command.payeeName),
+      };
 
       // The user lock (see the file header for FOR NO KEY UPDATE); everything after is reread.
-      const user = await trx
-        .selectFrom('users')
-        .select('phone_cipher')
-        .where('app_id', '=', subject.appId)
-        .where('id', '=', subject.userId)
-        .forNoKeyUpdate()
-        .executeTakeFirst();
-      if (user === undefined) throw new Error('identity: payout account save for an unknown user');
+      const user = await lockPayoutUser(trx, subject);
+      const checks = await payoutAccountChecks(trx, deps, subject, user, target, limit, (h) =>
+        realname.verified(h, { app_id: subject.appId, user_id: subject.userId }),
+      );
+      if (checks.kind === 'refused') return checks.result;
+      if (checks.kind === 'same') {
+        return { code: 0, data: projectAlipay(checks.current, crypto, checks.remaining) };
+      }
 
-      // ⓪ BR-ID-31: checked after the lock, so an entry registered while waiting still hits.
-      const hit = await blocklist.check({
-        app_id: subject.appId,
-        dimension: 'alipay',
-        value_hmac: alipayHmac,
-        request_type: 'payout_account',
-        user_id: subject.userId,
-        // The blocked request's related phone (risk stores only its HMAC and masked form).
-        related_phone:
-          user.phone_cipher === null
-            ? ''
-            : crypto.decrypt(Buffer.from(user.phone_cipher).toString('utf8'), PHONE_CIPHER_CONTEXT),
+      const written = await writeAccount(trx, subject, target, checks, {
+        alipay_logon_id_cipher: Buffer.from(crypto.encrypt(logon, ALIPAY_CONTEXT), 'utf8'),
+        alipay_hmac: target.hmac,
+        bank_card_no_cipher: null,
+        bank_card_hmac: null,
+        bank_name: null,
+        card_bin: null,
       });
-      if (hit !== null) return { code: 44001, data: { risk_msg_code: hit.data.risk_msg_code } };
-
-      // ① the payee name against the verified real name, both normalised.
-      const verified = await realname.verified(trx, {
-        app_id: subject.appId,
-        user_id: subject.userId,
-      });
-      if (verified === null) return { code: 30304 };
-      if (normalizePersonName(verified.name) !== payeeName) return { code: 30307 };
-
-      // ② another member's current binding of the same account in this app.
-      const occupied = await trx
-        .selectFrom('payout_accounts')
-        .select('id')
-        .where('app_id', '=', subject.appId)
-        .where('alipay_hmac', '=', alipayHmac)
-        .where('is_current', '=', true)
-        .where('user_id', '<>', subject.userId)
-        .executeTakeFirst();
-      if (occupied !== undefined) return { code: 30308 };
-
-      const now = clock.now();
-      const current = await currentAccount(trx, subject);
-      const used = await changesThisMonth(trx, subject, now);
-      if (
-        current !== undefined &&
-        current.payout_method === 'alipay' &&
-        current.alipay_hmac === alipayHmac
-      ) {
-        // The same account: nothing written, not counted, never over the limit.
-        return { code: 0, data: projectAlipay(current, crypto, remaining(limit, used)) };
-      }
-      // ④ only a change of an existing binding counts; a first binding does not.
-      if (current !== undefined && used >= limit) {
-        return { code: 30303, data: { reason: 'payout_account_change_limit' } };
-      }
-
-      await sql`SAVEPOINT ${SAVEPOINT}`.execute(trx);
-      try {
-        if (current !== undefined) {
-          const retired = await trx
-            .updateTable('payout_accounts')
-            .set({ is_current: false, row_version: current.row_version + 1, updated_at: now })
-            .where('app_id', '=', subject.appId)
-            .where('id', '=', current.id)
-            .where('is_current', '=', true)
-            .where('row_version', '=', current.row_version)
-            .executeTakeFirst();
-          // Under the user lock nobody else writes this user's accounts.
-          if (retired.numUpdatedRows !== 1n) {
-            throw new Error('identity: current payout account changed under the user lock');
-          }
-          await trx
-            .insertInto('payout_account_changes')
-            .values({
-              app_id: subject.appId,
-              user_id: subject.userId,
-              old_payout_method: current.payout_method,
-              old_hmac: accountHmac(current),
-              new_payout_method: 'alipay',
-              new_hmac: alipayHmac,
-              operator: `user:${subject.userId}`,
-              changed_at: now,
-              created_at: now,
-            })
-            .execute();
-        }
-        await trx
-          .insertInto('payout_accounts')
-          .values({
-            id: newUuidV7(now),
-            app_id: subject.appId,
-            user_id: subject.userId,
-            payout_method: 'alipay',
-            alipay_logon_id_cipher: Buffer.from(crypto.encrypt(logon, ALIPAY_CONTEXT), 'utf8'),
-            alipay_hmac: alipayHmac,
-            bank_card_no_cipher: null,
-            bank_card_hmac: null,
-            bank_name: null,
-            card_bin: null,
-            payee_name: payeeName,
-            is_current: true,
-            created_at: now,
-            updated_at: now,
-          })
-          .execute();
-        await sql`RELEASE SAVEPOINT ${SAVEPOINT}`.execute(trx);
-      } catch (error) {
-        if (!isUniqueViolationOf(error, CURRENT_ALIPAY_KEY)) throw error;
-        // A concurrent binding of the same account won the partial unique index after ②.
-        await sql`ROLLBACK TO SAVEPOINT ${SAVEPOINT}`.execute(trx);
-        await sql`RELEASE SAVEPOINT ${SAVEPOINT}`.execute(trx);
-        return { code: 30308 };
-      }
-
+      if (written === 'occupied') return { code: 30308 };
       return {
         code: 0,
         data: {
           payout_method: 'alipay',
           masked_account: maskAlipayLogonId(logon),
-          masked_payee_name: maskPayeeName(payeeName),
-          change_remaining_this_month: remaining(limit, used + (current === undefined ? 0 : 1)),
+          masked_payee_name: maskPayeeName(target.payeeName),
+          change_remaining_this_month: remaining(
+            limit,
+            checks.used + (checks.current === undefined ? 0 : 1),
+          ),
+        },
+      };
+    },
+
+    async saveBankCard(
+      transaction: Transaction<DB>,
+      command: SaveBankCardCommand,
+    ): Promise<SaveBankCardResult> {
+      const trx = transaction.withSchema('app');
+      const subject: PayoutAccountSubject = { appId: command.appId, userId: command.userId };
+
+      // Local checks before the lock: they read no user state and write nothing.
+      const config = await readConfig(
+        trx,
+        subject.appId,
+        [PAYOUT_METHODS_KEY, CHANGE_LIMIT_KEY],
+        configPort,
+      );
+      const methods = payoutMethods(config, logger);
+      const limit = changeLimit(config, logger);
+      if (!methods.has('bank_card')) return { code: 20001, data: { fields: ['payout_method'] } };
+      const cardNo = normalizeBankCardNo(command.cardNo);
+      if (!isValidBankCardNo(cardNo)) return { code: 20001, data: { fields: ['card_no'] } };
+      const target: PayoutAccountTarget = {
+        method: 'bank_card',
+        hmac: crypto.blindIndex(cardNo, BANK_CARD_CONTEXT),
+        payeeName: normalizePersonName(command.payeeName),
+      };
+
+      const user = await lockPayoutUser(trx, subject);
+      const checks = await payoutAccountChecks(trx, deps, subject, user, target, limit, (h) =>
+        realname.verified(h, { app_id: subject.appId, user_id: subject.userId }),
+      );
+      if (checks.kind === 'refused') return checks.result;
+      if (checks.kind === 'same') {
+        return { code: 0, data: projectBankCard(checks.current, crypto, checks.remaining) };
+      }
+
+      const written = await writeAccount(trx, subject, target, checks, {
+        alipay_logon_id_cipher: null,
+        alipay_hmac: null,
+        bank_card_no_cipher: Buffer.from(crypto.encrypt(cardNo, BANK_CARD_CONTEXT), 'utf8'),
+        bank_card_hmac: target.hmac,
+        bank_name: command.bankName,
+        card_bin: command.cardBin,
+      });
+      if (written === 'occupied') return { code: 30308 };
+      return {
+        code: 0,
+        data: {
+          payout_method: 'bank_card',
+          masked_account: maskBankCardTail(cardNo),
+          bank_name: command.bankName,
+          masked_payee_name: maskPayeeName(target.payeeName),
+          change_remaining_this_month: remaining(
+            limit,
+            checks.used + (checks.current === undefined ? 0 : 1),
+          ),
         },
       };
     },

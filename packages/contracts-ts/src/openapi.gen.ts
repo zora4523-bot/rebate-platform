@@ -1333,11 +1333,14 @@ export interface paths {
         get: operations["getPayoutAccount"];
         /**
          * Bind or change my payout account
-         * @description Body by payout_method (withdraw.payout_methods decides which are open): alipay with the
-         *     logon id and payee_name, bank_card with card number, bank name and payee_name. payee_name
-         *     and the real name are both normalised before comparing; different → 30307 (BR-WDR-02 ①).
-         *     A bank card must be a debit card of the user: 12–19 digits with Luhn, else 20001
-         *     data.fields=[card_no]; three-element verification mismatch → 30307 (⑥). An Alipay logon id
+         * @description Body by payout_method (withdraw.payout_methods decides which are open, else 20001
+         *     data.fields=[payout_method]): alipay with the logon id and payee_name, bank_card with card
+         *     number and payee_name (the opening bank comes from the card BIN; a bank_name in the body is
+         *     ignored). payee_name and the real name are both normalised before comparing; different →
+         *     30307 (BR-WDR-02 ①). A bank card must be a debit card of the user: 12–19 digits with Luhn,
+         *     and a card BIN recognised as a debit card, else 20001 data.fields=[card_no];
+         *     three-element verification mismatch → 30307 (⑥); no card BIN source or verification vendor
+         *     available → 50301 without reserving the quota. An Alipay logon id
          *     in phone form that does not normalise is 20001 with data.reason=phone_invalid (BR-WDR-02
          *     细则). Account held by another user → 30308; blacklisted → 44001. Changes per natural
          *     month over the limit → 30303 data.reason=payout_account_change_limit (④); the paid
@@ -5711,8 +5714,12 @@ export interface components {
              *     Luhn (20001 data.fields=[card_no], BR-WDR-02 ⑥ and 细则).
              */
             card_no: string;
-            /** @description Opening bank as chosen by the user (04 §6.1). */
-            bank_name: string;
+            /**
+             * @description Optional and ignored by the server: the opening bank is taken from the card BIN, the
+             *     user does not type it (BR-WDR-02 细则「只支持本人名下借记卡」). Accepted so that older
+             *     clients sending it are not refused.
+             */
+            bank_name?: string;
             /** @description Account holder name (BR-WDR-02 ①). */
             payee_name: string;
         };
@@ -9342,7 +9349,9 @@ export interface components {
         Sign: string;
         /**
          * @description step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
-         *     expired or for another action → 10003 (not 20001; that is why the header is optional).
+         *     empty, expired or for another action → 10003 (not 20001; that is why the header is optional
+         *     and has no minimum length). A replay of a finished Idempotency-Key never looks at it
+         *     (BR-WDR-01 细则, BR-ID-08).
          */
         StepUpToken: string;
         TipKeyPath: components["schemas"]["TipKey"];
@@ -12153,7 +12162,9 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 /**
                  * @description step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
-                 *     expired or for another action → 10003 (not 20001; that is why the header is optional).
+                 *     empty, expired or for another action → 10003 (not 20001; that is why the header is optional
+                 *     and has no minimum length). A replay of a finished Idempotency-Key never looks at it
+                 *     (BR-WDR-01 细则, BR-ID-08).
                  */
                 "X-Step-Up-Token"?: components["parameters"]["StepUpToken"];
             };
@@ -12446,7 +12457,9 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 /**
                  * @description step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
-                 *     expired or for another action → 10003 (not 20001; that is why the header is optional).
+                 *     empty, expired or for another action → 10003 (not 20001; that is why the header is optional
+                 *     and has no minimum length). A replay of a finished Idempotency-Key never looks at it
+                 *     (BR-WDR-01 细则, BR-ID-08).
                  */
                 "X-Step-Up-Token"?: components["parameters"]["StepUpToken"];
             };
@@ -12788,7 +12801,9 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 /**
                  * @description step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
-                 *     expired or for another action → 10003 (not 20001; that is why the header is optional).
+                 *     empty, expired or for another action → 10003 (not 20001; that is why the header is optional
+                 *     and has no minimum length). A replay of a finished Idempotency-Key never looks at it
+                 *     (BR-WDR-01 细则, BR-ID-08).
                  */
                 "X-Step-Up-Token"?: components["parameters"]["StepUpToken"];
             };
@@ -13384,7 +13399,9 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 /**
                  * @description step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
-                 *     expired or for another action → 10003 (not 20001; that is why the header is optional).
+                 *     empty, expired or for another action → 10003 (not 20001; that is why the header is optional
+                 *     and has no minimum length). A replay of a finished Idempotency-Key never looks at it
+                 *     (BR-WDR-01 细则, BR-ID-08).
                  */
                 "X-Step-Up-Token"?: components["parameters"]["StepUpToken"];
             };

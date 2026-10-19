@@ -8,6 +8,9 @@
 //   must not log or return the name or the birth date.
 // - verifiedRealnameSigner(): the verified record's id and name for the labor agreement's signer
 //   snapshot (B1-13h), which keeps only the id and the masked name.
+// - verifiedRealnameIdentity(): the verified record's id, name and ID number for the paid bank-card
+//   three-element verification only (B1-13f): the id goes into the request fingerprint, name and
+//   ID number only to the vendor port, in memory.
 // Both use the caller's handle (a transaction included), uncached, and never write. The FieldCrypto
 // domains (contexts) are the ones the writer uses (REALNAME_CONTEXT).
 //
@@ -127,5 +130,36 @@ export async function verifiedRealnameSigner(
   return {
     id: row.id,
     name: crypto.decrypt(Buffer.from(row.name_cipher).toString('utf8'), REALNAME_CONTEXT.name),
+  };
+}
+
+/**
+ * The paid bank-card three-element verification (BR-WDR-02 ⑥, task B1-13f §9.2 #5): the verified
+ * record's id (part of the request fingerprint) and its decrypted name and ID number, which go
+ * only to the vendor port. Null unless the row is verified. Internal to identity: the name and the
+ * ID number are never logged, stored or returned. Uses the caller's handle, uncached, no writes.
+ */
+export async function verifiedRealnameIdentity(
+  handle: Kysely<DB>,
+  crypto: FieldCrypto,
+  subject: { readonly app_id: string; readonly user_id: string },
+): Promise<{ readonly id: string; readonly name: string; readonly id_no: string } | null> {
+  const row = await handle
+    .withSchema('app')
+    .selectFrom('realname')
+    .select(['id', 'name_cipher', 'id_no_cipher'])
+    .where('app_id', '=', subject.app_id)
+    .where('user_id', '=', subject.user_id)
+    .where('status', '=', 'verified')
+    .executeTakeFirst();
+  if (row === undefined) return null;
+  // realname_verified_check guarantees both ciphers on a verified row.
+  if (row.name_cipher === null || row.id_no_cipher === null) {
+    throw new Error('identity: incomplete verified realname record');
+  }
+  return {
+    id: row.id,
+    name: crypto.decrypt(Buffer.from(row.name_cipher).toString('utf8'), REALNAME_CONTEXT.name),
+    id_no: crypto.decrypt(Buffer.from(row.id_no_cipher).toString('utf8'), REALNAME_CONTEXT.idNo),
   };
 }

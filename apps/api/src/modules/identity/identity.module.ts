@@ -49,13 +49,19 @@ import {
   type PayoutAccountConfigPort,
   type PayoutAccountReader,
 } from './application/payout-account.ts';
+import {
+  createPayoutAccountChange,
+  type PayoutAccountChange,
+} from './application/payout-bank-card.ts';
 import { createRealnameService, type RealnameService } from './application/realname.ts';
 import type { RealnameVerifierPort } from './ports/realname-verifier.ts';
+import type { BankCardVerifierPort, CardBinPort } from './ports/bank-card-verifier.ts';
 import {
   registerLaborAgreementConfigReader,
   type LaborAgreementConfigReader,
 } from './ports/labor-agreement.ts';
 import { createRealnameVerifier } from './infra/fake-realname-verifier.ts';
+import { createBankCardVerifier, createCardBin } from './infra/fake-bank-card-verifier.ts';
 import { createRealnameReader } from './infra/realname-reader.ts';
 import {
   createUpdateNicknameService,
@@ -115,7 +121,9 @@ import { identityRiskPorts, type IdentityRiskPorts } from './application/risk-po
 import { createSmsRiskPorts, type SmsRiskPorts } from './application/sms-risk-ports.ts';
 import type { MinimumVersionReader } from './application/session-scope.ts';
 import {
+  BANK_CARD_VERIFIER,
   BIND_PHONE,
+  CARD_BIN,
   CONSENTS,
   CONSENT_SIGNATURE_CHECK,
   H5_TOKENS,
@@ -129,6 +137,7 @@ import {
   REALNAME_VERIFIER,
   SUBMIT_REALNAME,
   OAUTH_LOGIN,
+  PAYOUT_ACCOUNT_CHANGE,
   PAYOUT_ACCOUNT_READER,
   REFRESH,
   SMS_CODES,
@@ -1006,6 +1015,64 @@ export class IdentityModule {
                   clock,
                   crypto,
                   logger,
+                  ...(config === null ? {} : { config }),
+                }),
+        },
+        {
+          // BR-WDR-02 ⑥ (B1-13f): the demonstration BIN table in local / test; staging / prod
+          // have no BIN source yet (null → 50301 before any reservation), announced once.
+          provide: CARD_BIN,
+          inject: [APP_CONFIG, ROOT_LOGGER],
+          useFactory: (config: AppConfig, logger: RootLogger): CardBinPort | null => {
+            const bin = createCardBin(config.appEnv);
+            if (bin === null) logger.warn({}, 'card_bin_unconfigured');
+            return bin;
+          },
+        },
+        {
+          // BR-WDR-02 ⑦ (B1-13f): the fake three-element verifier in local / test; staging / prod
+          // have no vendor yet (null → 50301 before any reservation), announced once.
+          provide: BANK_CARD_VERIFIER,
+          inject: [APP_CONFIG, ROOT_LOGGER],
+          useFactory: (config: AppConfig, logger: RootLogger): BankCardVerifierPort | null => {
+            const verifier = createBankCardVerifier(config.appEnv);
+            if (verifier === null) logger.warn({}, 'bank_card_verifier_unconfigured');
+            return verifier;
+          },
+        },
+        {
+          // PUT /v1/me/payout-account (B1-13f): B1-13e's Alipay save and the bank-card flow.
+          provide: PAYOUT_ACCOUNT_CHANGE,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            PAYOUT_ACCOUNT_CONFIG,
+            BLOCKLIST_SERVICE,
+            CARD_BIN,
+            BANK_CARD_VERIFIER,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            config: PayoutAccountConfigPort | null,
+            blocklist: BlocklistService | null,
+            cardBin: CardBinPort | null,
+            verifier: BankCardVerifierPort | null,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+          ): PayoutAccountChange | null =>
+            db === undefined || crypto === undefined || blocklist === null
+              ? null
+              : createPayoutAccountChange({
+                  db,
+                  clock,
+                  crypto,
+                  logger,
+                  blocklist,
+                  cardBin,
+                  verifier,
                   ...(config === null ? {} : { config }),
                 }),
         },
