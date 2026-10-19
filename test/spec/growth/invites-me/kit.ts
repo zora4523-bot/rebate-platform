@@ -65,6 +65,21 @@ export async function withHttp(
   const tokens = (await import(
     new URL('apps/api/src/modules/identity/application/tokens.ts', ROOT).href
   )) as Tokens;
+  // Observe database requests without replacing any application reader or guard.
+  const queries: string[] = [];
+  const observedDb = db.withPlugin({
+    transformQuery({ node }) {
+      queries.push(
+        JSON.stringify(node, (_key, value: unknown) =>
+          typeof value === 'bigint' ? value.toString() : value,
+        ),
+      );
+      return node;
+    },
+    transformResult({ result }) {
+      return Promise.resolve(result);
+    },
+  });
   const base = fileURLToPath(new URL('.tmp/', ROOT));
   mkdirSync(base, { recursive: true });
   const dir = mkdtempSync(join(base, 'b1-11j-'));
@@ -97,7 +112,7 @@ export async function withHttp(
       }),
       clock,
       logger,
-      dbHandles: { db, dbRead: null, close: async () => undefined },
+      dbHandles: { db: observedDb, dbRead: null, close: async () => undefined },
       redisUrl: platform.loadConnectionConfig('api', {
         DATABASE_URL: 'postgres://couli_app@127.0.0.1:1/unused',
         REDIS_URL: redisUrl,
@@ -124,6 +139,7 @@ export async function withHttp(
       db: db.withSchema('app'),
       clock,
       lines,
+      queries,
       crypto: app.get(platform.FIELD_CRYPTO),
       tokens: app.get(tokens.TOKEN_SERVICE),
       createSession: sessions.createSession,
@@ -146,6 +162,7 @@ export interface Fixture {
   db: Kysely<DB>;
   clock: InstanceType<Platform['FixedClock']>;
   lines: string[];
+  queries: string[];
   crypto: import('../../../../apps/api/src/modules/platform/crypto/index.ts').FieldCrypto;
   tokens: Parameters<Sessions['createSession']>[2]['tokens'];
   createSession: Sessions['createSession'];
@@ -259,8 +276,36 @@ export async function verified(f: Fixture, user: User, birth: string) {
       ${f.crypto.blindIndex(id, 'realname.id_no')}, ${encrypted(birth, 'realname.birth_date')},
       'test-two-elements', ${f.clock.now()})`.execute(f.db);
 }
+export async function processingAppeal(f: Fixture, user: User, previous: 'banned' | 'frozen') {
+  await f.db
+    .insertInto('appeals')
+    .values({
+      id: randomUUID(),
+      app_id: user.appId,
+      user_id: user.uid,
+      target_type: 'account',
+      target_id: user.uid,
+      prev_risk_state: previous,
+      status: 'processing',
+      content: 'fixture appeal',
+      deadline_at: new Date(f.clock.now().getTime() + 86_400_000),
+    })
+    .execute();
+}
+
+export function riskBlocked(f: Fixture, response: Response, queryStart: number) {
+  // The merged risk gate returns 403/10006 without data (including without reason).
+  expect(answer(f, response, 10006)).not.toHaveProperty('data');
+  const queries = f.queries.slice(queryStart).join('\n');
+  // No invitation-code read, child count, realname read, or share-domain lookup after refusal.
+  expect(queries).not.toMatch(/invite_code|parent_id|realname|share_domains/);
+  expect(queries).not.toMatch(/"func":"count"/);
+}
+
 export function answer(f: Fixture, response: Response, code = 0) {
-  expect(response.statusCode, response.body).toBe(code === 0 ? 200 : code === 10005 ? 403 : 422);
+  expect(response.statusCode, response.body).toBe(
+    code === 0 ? 200 : code === 10005 || code === 10006 ? 403 : 422,
+  );
   const body = response.json<{
     code: number;
     msg: string;

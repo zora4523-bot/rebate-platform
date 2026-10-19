@@ -9,7 +9,9 @@ import {
   PRIVATE_NAME,
   answer,
   client,
+  processingAppeal,
   risk,
+  riskBlocked,
   seed,
   shareDomains,
   success,
@@ -55,15 +57,28 @@ it('[AC-B1-11j#1] 已实名成年人：真实无签名入口返回契约全部�
   });
 });
 
-for (const state of ['banned', 'appealing', 'frozen'] as const) {
-  it(`[AC-B1-11j#2] 本人 ${state}：200 隐藏邀请码、链接、海报，仍返回人数且不透露原因`, async () => {
+// Appealing with no processing account appeal fails closed. A processing appeal only
+// passes stage ⑤ when its previous state was frozen; getMyInvite is not whitelisted.
+const riskCases = [
+  { state: 'banned', previous: null, blocked: true },
+  { state: 'appealing', previous: null, blocked: true },
+  { state: 'appealing', previous: 'banned', blocked: true },
+  { state: 'appealing', previous: 'frozen', blocked: false },
+  { state: 'frozen', previous: null, blocked: false },
+] as const;
+for (const { state, previous, blocked } of riskCases) {
+  it(`[AC-B1-11j#2] 本人 ${state}，处理中账号申诉前态=${previous}：${blocked ? '10006 且不读邀请信息' : '200 隐藏邀请信息但保留人数'}`, async () => {
     await http(async (f) => {
       const user = await seed(f, { code: CODE });
       await risk(f, user, state);
+      if (previous !== null) await processingAppeal(f, user, previous);
       await seed(f, { parent: user.uid });
       await seed(f, { parent: user.uid, status: 'deleted' });
       const c = await client(f, user);
-      unavailable(f, await c.get(), 1);
+      const start = f.queries.length;
+      const response = await c.get();
+      if (blocked) riskBlocked(f, response, start);
+      else unavailable(f, response, 1);
     });
   });
 }
@@ -77,15 +92,21 @@ it('[AC-B1-11j#3] 本人 status=deleted：保留有效会话种子验证 unavail
   });
 });
 
-for (const state of ['normal', 'frozen', 'banned', 'appealing'] as const) {
-  it(`[AC-B1-11j#4] 已实名未满 18 且 ${state}：30413 self_minor 优先于不可邀请的 200`, async () => {
+for (const { state, previous, blocked } of [
+  { state: 'normal', previous: null, blocked: false },
+  ...riskCases,
+] as const) {
+  it(`[AC-B1-11j#4] 已实名未满 18 且 ${state}，处理中账号申诉前态=${previous}：${blocked ? '10006 优先且不读邀请信息' : '30413 self_minor 优先于不可邀请的 200'}`, async () => {
     await http(async (f) => {
       const user = await seed(f, { code: CODE });
       await verified(f, user, '2010-06-01');
       await risk(f, user, state);
+      if (previous !== null) await processingAppeal(f, user, previous);
       const c = await client(f, user);
+      const start = f.queries.length;
       const response = await c.get();
-      expect(answer(f, response, 30413).data).toEqual({ reason: 'self_minor' });
+      if (blocked) riskBlocked(f, response, start);
+      else expect(answer(f, response, 30413).data).toEqual({ reason: 'self_minor' });
       for (const secret of [PRIVATE_NAME, '2010-06-01', `fixture-${user.uid}`]) {
         expect(response.body + f.lines.join('\n')).not.toContain(secret);
       }
@@ -169,7 +190,7 @@ for (const minor of [false, true]) {
   });
 }
 
-it('[AC-B1-11j#9] direct_count 实时统计直属未注销用户：计入封禁冻结，排除孙级与别人的下级', async () => {
+it('[AC-B1-11j#9] direct_count 实时统计直属用户：计入冷静期、封禁冻结，排除已注销、孙级与别人的下级', async () => {
   await http(async (f) => {
     const user = await seed(f, { code: CODE });
     const child = await seed(f, { parent: user.uid });
@@ -177,6 +198,7 @@ it('[AC-B1-11j#9] direct_count 实时统计直属未注销用户：计入封禁�
     const frozen = await seed(f, { parent: user.uid });
     await risk(f, banned, 'banned');
     await risk(f, frozen, 'frozen');
+    await seed(f, { parent: user.uid, status: 'deleting' });
     await seed(f, { parent: user.uid, status: 'deleted' });
     await seed(f, { parent: child.uid });
     const other = await seed(f);
@@ -185,21 +207,21 @@ it('[AC-B1-11j#9] direct_count 实时统计直属未注销用户：计入封禁�
     // Until then, the stipulated representation is status<>'deleted'; do not invent a table.
     const c = await client(f, user);
     const first = await c.get();
-    success(f, first, CODE, 3);
+    success(f, first, CODE, 4);
     expect(first.body).not.toContain(child.uid);
     expect(first.body).not.toContain('私密昵称');
     expect(first.body).not.toContain('private.example.test');
     const added = await seed(f, { parent: user.uid });
-    success(f, await c.get(), CODE, 4);
+    success(f, await c.get(), CODE, 5);
     await f.db
       .updateTable('users')
       .set({ status: 'deleted', row_version: sql`row_version + 1` })
       .where('id', '=', added.uid)
       .where('app_id', '=', f.appId)
       .execute();
-    success(f, await c.get(), CODE, 3);
+    success(f, await c.get(), CODE, 4);
     await risk(f, user, 'frozen');
-    unavailable(f, await c.get(), 3);
+    unavailable(f, await c.get(), 4);
   });
 });
 
@@ -252,16 +274,39 @@ for (const [label, value] of [
         .filter((line) => line.level === 40 && line.config_key === 'share_domains');
       expect(warnings.length).toBeGreaterThan(0);
       for (const warning of warnings) {
-        // Pino's normal metadata is allowed; the only business field is config_key.
-        const keys = Object.keys(warning).filter(
-          (key) =>
-            !['level', 'time', 'pid', 'hostname', 'msg', 'entry', 'env', 'config_key'].includes(
-              key,
-            ),
-        );
-        expect(keys).toEqual([]);
+        // Allow logger metadata (including module); forbid personal fields even if redacted.
+        expect(warning).toMatchObject({ level: 40, config_key: 'share_domains' });
+        const forbiddenKeys = new Set([
+          'uid',
+          'userid',
+          'user',
+          'nickname',
+          'name',
+          'realname',
+          'birthdate',
+          'phone',
+          'phonehmac',
+          'phonenumber',
+          'mobile',
+          'idno',
+          'idnohmac',
+          'avatar',
+          'openid',
+          'unionid',
+          'invitecode',
+        ]);
+        const checkFields = (value: unknown): void => {
+          if (value === null || typeof value !== 'object') return;
+          for (const [key, nested] of Object.entries(value)) {
+            expect(forbiddenKeys.has(key.toLowerCase().replace(/[^a-z0-9]/g, '')), key).toBe(false);
+            checkFields(nested);
+          }
+        };
+        checkFields(warning);
         expect(JSON.stringify(warning)).not.toContain(user.uid);
         expect(JSON.stringify(warning)).not.toContain('私密昵称');
+        expect(JSON.stringify(warning)).not.toContain(PRIVATE_NAME);
+        expect(JSON.stringify(warning)).not.toContain('private.example.test');
       }
     });
   });
