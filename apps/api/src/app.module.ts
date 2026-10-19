@@ -45,11 +45,13 @@ import {
   appendLevelChange,
   createFirstAppLoginReview,
   createInviteBinder,
+  createMyInviteReader,
   createParentRelationReader,
   createRegistrationInviteBinding,
   type ParentRelationReader,
   type InviteBinder,
   type InviteBinderDeps,
+  type MyInviteReader,
 } from './modules/growth/index.ts';
 import {
   IdentityAdminModule,
@@ -58,6 +60,7 @@ import {
   TOKEN_CHECK,
   STEP_UP_CHECK,
   IDENTITY_LEVEL_CHECKS,
+  createRealnameReader,
   createRealnameStatusReader,
   createSmsSender,
   createThirdPartyIdentity,
@@ -504,26 +507,42 @@ function inviteBinderDeps(
   crypto: FieldCrypto,
   events: EventBus,
 ): InviteBinderDeps {
-  // TODO(规划/11 §2.3): 邀请人实名生日端口（verifiedBirthDate）— blocked on B1-13d
   return {
     clock,
     logger,
     redis,
     crypto,
-    // On the caller's transaction: no second pooled connection while it is held (a cold or
-    // expired cache would otherwise borrow one per pending request). A plain read of config_items
-    // each time, so the value is never older than the transaction.
+    loginDevices: createInviteLoginDevicesReader(),
+    activity: (trx) => createInviteBackfillActivityReader(trx),
+    ...growthReadPorts(clock, crypto, events),
+  };
+}
+
+/**
+ * The reads growth's binding core (B1-11d) and invite page (B1-11j) share, each on the caller's
+ * transaction (no second pooled connection while it is held) and uncached: config_items through
+ * content's reader (a fresh reader per call, so the value is never older than the transaction),
+ * risk's fresh state read, and identity's realname reader (B1-13d) for the verified birth date —
+ * the decrypted name is dropped here and the birth date never reaches a log or a response.
+ */
+function growthReadPorts(
+  clock: Clock,
+  crypto: FieldCrypto,
+  events: EventBus,
+): Pick<InviteBinderDeps, 'config' | 'readRisk'> &
+  Required<Pick<InviteBinderDeps, 'verifiedBirthDate'>> {
+  const realname = createRealnameReader(crypto);
+  return {
     config: {
       configValue: (appId, key, trx) =>
         createContentReader({ db: trx, clock }).configValue(appId, key),
     },
-    loginDevices: createInviteLoginDevicesReader(),
-    activity: (trx) => createInviteBackfillActivityReader(trx),
-    // Bind risk's reader to the caller's transaction: no second connection.
     readRisk: (trx, subject) =>
       createRiskStateService({ db: trx, clock, events }).readRiskState(subject, {
         fresh: true,
       }),
+    verifiedBirthDate: async (trx, subject) =>
+      (await realname.verified(trx, subject))?.birth_date ?? null,
   };
 }
 
@@ -570,6 +589,43 @@ function growthModule(): DynamicModule {
           return null;
         }
         return createInviteBinder(inviteBinderDeps(clock, logger, redis, crypto, events));
+      },
+    },
+    // GET /v1/invites/me (B1-11j): no Redis needed; without a database, the field cipher (realname
+    // birth date) or the event bus (risk's reader) there is no read and the route answers 50001.
+    myInvite: {
+      inject: [
+        CLOCK,
+        ROOT_LOGGER,
+        { token: DB, optional: true },
+        { token: FIELD_CRYPTO, optional: true },
+        { token: EVENT_BUS, optional: true },
+      ],
+      useFactory: (
+        clock: Clock,
+        logger: RootLogger,
+        db?: Kysely<Database>,
+        crypto?: FieldCrypto,
+        events?: EventBus,
+      ): MyInviteReader | null => {
+        if (db === undefined || crypto === undefined || events === undefined) {
+          logger.info(
+            {
+              route: '/v1/invites/me',
+              db: db !== undefined,
+              field_crypto: crypto !== undefined,
+              event_bus: events !== undefined,
+            },
+            'my_invite_unassembled',
+          );
+          return null;
+        }
+        return createMyInviteReader({
+          clock,
+          logger,
+          db,
+          ...growthReadPorts(clock, crypto, events),
+        });
       },
     },
   });
