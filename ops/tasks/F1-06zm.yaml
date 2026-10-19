@@ -1,0 +1,21 @@
+id: F1-06zm
+repo: rebate-platform
+title: F1-06e / F1-06h 规则测试只拆结构——admin-shell MENU#3、BROWSER#1 与 admin-auth APP#2 的循环 / 参数表展开为字面标题的独立用例（原循环体逐字移入同文件辅助函数，用例名、断言、期望值、条数不变），admin-shell fixtures 加返回空选项的 shellDataOptions()
+type: test-change
+# 2026-10-20 入账（前端线 f1-frontend-7；编排裁定 D10-92 选 B′）。F1-14a（工作台）要只为超管加「工作台」，原测试把超管与其他账号放在同一循环 / 参数表里，
+# 一改就让 test-blocks 把整文件判为 whole 变化，71 条未改用例被要求先红（red/3）。本 test-change 先在主干拆结构：受影响的循环 / 参数表展开成字面标题的独立用例（门禁按标题模式匹配用例块，动态标题会与拆出的用例同时匹配，本地 Codex 评审 r1 指出），原循环体逐字移入同文件辅助函数；
+# layout 截图用例经 fixtures 的 shellDataOptions() 取数据源选项（主干返回 {}，行为不变），F1-14a 只改该 support 函数与超管用例体。主干保持全绿。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件（approvals 第 12 条），第二家评审为本地 Codex 只读会话（编排 10-19 12:1x 裁定 B），合并需 #24 标签。
+refs: []
+refs_hash: {}
+deps: [F1-06e, F1-06h]
+paths:
+  - 'test/spec/frontend/admin-shell/menu.test.ts'
+  - 'test/spec/frontend/admin-shell/layout.browser.test.ts'
+  - 'test/spec/frontend/admin-shell/fixtures.ts'
+  - 'test/spec/frontend/admin-auth/app.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
