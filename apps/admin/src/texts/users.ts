@@ -3,12 +3,18 @@
 // and states exist always comes from the server (GET /admin/v1/users…), never from this file.
 export const usersTexts = {
   title: '用户查询',
+  listTitle: '用户查询列表',
   dash: '—',
-  loading: '正在加载用户列表…',
-  empty: '暂无用户',
+  loading: '加载中…',
+  empty: '没有符合条件的用户',
+  /** Conditions behind an empty result (only the risk-state filter exists in the contract). */
+  emptyConditions: (risk: string): string => `当前条件：风控状态 ${risk}。`,
+  resetConditions: '重置条件',
+  applied: '已应用',
+  appliedConditions: (risk: string): string => `当前结果对应：风控状态 ${risk}`,
   total: (total: number): string => `共 ${total} 条`,
-  loadFailedTitle: '用户列表加载失败',
-  loadFailedDescription: '网络异常或服务暂不可用，请稍后重试。',
+  loadFailedTitle: '列表加载失败',
+  loadFailedDescription: '网络错误或服务异常；已填条件保留，点【重试】按同样条件重新请求。',
   retry: '重试',
   forbiddenTitle: '无权限查看用户',
   forbiddenDescription:
@@ -17,7 +23,7 @@ export const usersTexts = {
   riskFilterLabel: '风控状态',
   riskFilterAll: '全部',
   lookup: {
-    label: '按 UID 或完整手机号查找用户',
+    label: 'UID 或手机号',
     placeholder: 'UID 或完整 11 位手机号',
     submit: '查找',
     hint: '查找只按 UID 或完整手机号逐个进行，命中后直接进入用户详情。',
@@ -40,6 +46,8 @@ export const usersTexts = {
     actions: '操作',
   },
   detailAction: '详情',
+  /** Screen-reader name of a row's 【详情】 (规格 §6: 「详情 U10023」). */
+  detailActionName: (uid: string): string => `详情 ${uid}`,
   risk: {
     normal: '正常',
     frozen: '已冻结',
@@ -80,7 +88,6 @@ export const usersTexts = {
       boundAt: '授权时间',
       releasedAt: '解除时间',
       cooldownUntil: '冷却到期',
-      reason: '说明',
     },
     bindingStatus: {
       unbound: '未授权',
