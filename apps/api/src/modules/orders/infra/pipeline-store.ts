@@ -135,7 +135,8 @@ export async function upsertPending(trx: Trx, input: PendingInput): Promise<bigi
   const row = await trx
     .withSchema('app')
     .insertInto('order_sync_pending')
-    .values({ ...input, status: 'open' })
+    // B1-08t：新插入行的 created_at 取 Clock（= detected_at），不用库时间；同键冲突只刷新 detected_at。
+    .values({ ...input, status: 'open', created_at: input.detected_at })
     .onConflict((oc) =>
       oc
         .columns(['app_id', 'platform', 'sub_order_id', 'reason'])

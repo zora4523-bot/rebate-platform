@@ -193,7 +193,28 @@ function startLoop(
     if (!stopped) await arm();
   };
 
-  running = arm();
+  // B1-08t: start() leaves this platform's timer armed at once (one per platform, as the worker
+  // assembly counts right after start()): the first timer uses the default interval and is
+  // replaced by the configured one as soon as it is read, unless it already fired or stop() ran.
+  const armFirst = async (): Promise<void> => {
+    const placeholder = setTimeout(
+      () => {
+        timer = undefined;
+        running = round();
+      },
+      intervalSeconds(undefined) * 1000,
+    );
+    timer = placeholder;
+    const seconds = await readInterval();
+    if (stopped || timer !== placeholder) return;
+    clearTimeout(placeholder);
+    timer = setTimeout(() => {
+      timer = undefined;
+      running = round();
+    }, seconds * 1000);
+  };
+
+  running = armFirst();
   return {
     async stop() {
       stopped = true;

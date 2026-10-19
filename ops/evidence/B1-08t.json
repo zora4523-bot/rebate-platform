@@ -1,0 +1,162 @@
+{
+  "task": "B1-08t",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "738083d0a659253554d8b8d6df5b26f048dcc20b",
+  "red_tests": [
+    "test/spec/orders/snapshot-retry/concurrency.int.test.ts > [AC-B1-08t#16] two-scans 先等待标准订单锁，锁内资格改变=false 时重读后决定重试",
+    "test/spec/orders/snapshot-retry/concurrency.int.test.ts > [AC-B1-08t#16] scan-and-pipeline 先等待标准订单锁，锁内资格改变=false 时重读后决定重试",
+    "test/spec/orders/snapshot-retry/concurrency.int.test.ts > [AC-B1-08t#16] two-scans 先等待标准订单锁，锁内资格改变=true 时重读后决定重试",
+    "test/spec/orders/snapshot-retry/concurrency.int.test.ts > [AC-B1-08t#16] scan-and-pipeline 先等待标准订单锁，锁内资格改变=true 时重读后决定重试",
+    "test/spec/orders/snapshot-retry/fault-isolation.int.test.ts > [AC-B1-08t#27] 同 App 扫描首单抛错只回滚该单，后一张到期京东单仍处置成功",
+    "test/spec/orders/snapshot-retry/input.int.test.ts > [AC-B1-08t#28] 扫描恢复佣金基数：结算=901n，预估=789n",
+    "test/spec/orders/snapshot-retry/input.int.test.ts > [AC-B1-08t#28] 扫描恢复佣金基数：结算=0n，预估=789n",
+    "test/spec/orders/snapshot-retry/input.int.test.ts > [AC-B1-08t#28] 扫描恢复佣金基数：结算=null，预估=789n",
+    "test/spec/orders/snapshot-retry/input.int.test.ts > [AC-B1-08t#29] observed 从数据库首条 PAID 历史恢复 paidAt，不取付款列、最新历史或 now",
+    "test/spec/orders/snapshot-retry/input.int.test.ts > [AC-B1-08t#30] platform_modified 的首次迁移时刻不可恢复，扫描跳过并 warn",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#1] 合法内容更新触发重试；成功处置后再次更新不调用快照端口",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#2] 已有资格的 paid 更新仍补偿一次，并以本次迁移后的状态判定",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#2] 已有资格的 received 更新仍补偿一次，并以本次迁移后的状态判定",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#2] 已有资格的 settled 更新仍补偿一次，并以本次迁移后的状态判定",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#3] 多条快照 pending 合并为一次重试，非快照待处理不误处置",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#4] 已有快照且还有 open 行仍调幂等端口，不覆盖快照内容",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#5] pending 结果每次进入只试一次，保留首次时间，恢复后可完成",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#6] 无 open 快照行、已处置行、未归因、定金与作废扣回不能触发补偿",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#7] 下游失败时真实快照、处置记录和订单更新一起回滚",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#8] 两个独立流水线并发提交同一合法更新，锁内重读确保只调一次",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#20] 流水线重入的持续失败也在24小时后转人工",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#21] 本次报文迁入 INVALID 时不得按迁移前 PAID 生成补偿快照",
+    "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#26] unchanged 重放即使还有 open 快照行也不重试，合法更新才触发",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#9] 定时扫描满一小时即补偿，使用注入时钟并按 App 隔离",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#10] 多条到期待处理按订单去重，重复投递和已处置记录不再调用",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#11] 定时扫描锁内重读资格，unattributed 不调用快照端口也不处置",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#11] 定时扫描锁内重读资格，DEPOSIT_PAID 不调用快照端口也不处置",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#11] 定时扫描锁内重读资格，INVALID 不调用快照端口也不处置",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#11] 定时扫描锁内重读资格，VOID 不调用快照端口也不处置",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#11] 定时扫描锁内重读资格，CLAWED_BACK 不调用快照端口也不处置",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#12] 刷新 detected_at 不延后未处置时长；超过24小时仍 pending 才告警转人工",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#13] 超过24小时本次成功则处置成功，不发失败告警",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#14] 告警只包含平铺定位字段，不输出买家身份或完整子订单号",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#15] 端口写快照后抛错不提交半成品，失败后释放锁并可恢复",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#17] 金额资料仍不完整时保留 pending，不能以0元生成；超时仍须转人工",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#18] 扫描按 open 原因识别重试对象，不按 detail 或 order_id 排除",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#19] 超时后端口抛错也转人工，不能无限重试或提交端口写到一半的快照",
+    "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#25] 拼多多扫描缺持久化服务费时跳过，不调用端口、不处置且记录 warn",
+    "test/spec/orders/snapshot-retry/scheduler.test.ts > [AC-B1-08t#22] 定时器通过 JobQueue 按 App 投递补偿扫描，停止后不再投递",
+    "test/spec/orders/snapshot-retry/scheduler.test.ts > [AC-B1-08t#23] 某轮读取失败不会永久停止补偿扫描",
+    "test/spec/orders/snapshot-retry/wiring.test.ts > [AC-B1-08t#24] worker 只有注入 snapshots 才把补偿任务路由到待处理扫描"
+  ],
+  "risk_note": "RV2 (orders/**; money input). Commission snapshot compensation retry (ruling 10-19 12:3x, D10-81, D10-84): an order with an unresolved snapshot pending row retries once when a changed report goes through the pipeline (unchanged replays never retry) and from a 15-minute scan of rows due for 1 h (≤100 sub-orders per round, the pipeline's order lock with a re-read inside, one order's failure rolled back and isolated, inputs rebuilt by readSnapshotRetryInput with the settled / estimated base and the first PAID for observed paid_at; PDD (no service fee column, B1-08v) and platform_modified skipped with a warning). Snapshot and resolution in one transaction. After 24 h one temporary logger.error order.snapshot_retry_exhausted (B1-08u turns it into an alert event) and a resolution_note marker stop further retries. Workers without the snapshot port do not scan; production injection is B1-08w. No rebate_status / hold writes; money in integer fen via @couli/money.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "738083d0a659253554d8b8d6df5b26f048dcc20b",
+      "tree": "2854058adbbdab01a5bbcaa11f7f9f82ad3417fa",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T13:41:13Z",
+      "finished_at": "2026-10-19T13:41:29Z",
+      "gate": {
+        "commit": "f2cee3f51ec56e2213a31f15beddb7d5feab2957",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/orders/snapshot-retry/concurrency.int.test.ts > [AC-B1-08t#16] two-scans 先等待标准订单锁，锁内资格改变=false 时重读后决定重试",
+        "test/spec/orders/snapshot-retry/concurrency.int.test.ts > [AC-B1-08t#16] scan-and-pipeline 先等待标准订单锁，锁内资格改变=false 时重读后决定重试",
+        "test/spec/orders/snapshot-retry/concurrency.int.test.ts > [AC-B1-08t#16] two-scans 先等待标准订单锁，锁内资格改变=true 时重读后决定重试",
+        "test/spec/orders/snapshot-retry/concurrency.int.test.ts > [AC-B1-08t#16] scan-and-pipeline 先等待标准订单锁，锁内资格改变=true 时重读后决定重试",
+        "test/spec/orders/snapshot-retry/fault-isolation.int.test.ts > [AC-B1-08t#27] 同 App 扫描首单抛错只回滚该单，后一张到期京东单仍处置成功",
+        "test/spec/orders/snapshot-retry/input.int.test.ts > [AC-B1-08t#28] 扫描恢复佣金基数：结算=901n，预估=789n",
+        "test/spec/orders/snapshot-retry/input.int.test.ts > [AC-B1-08t#28] 扫描恢复佣金基数：结算=0n，预估=789n",
+        "test/spec/orders/snapshot-retry/input.int.test.ts > [AC-B1-08t#28] 扫描恢复佣金基数：结算=null，预估=789n",
+        "test/spec/orders/snapshot-retry/input.int.test.ts > [AC-B1-08t#29] observed 从数据库首条 PAID 历史恢复 paidAt，不取付款列、最新历史或 now",
+        "test/spec/orders/snapshot-retry/input.int.test.ts > [AC-B1-08t#30] platform_modified 的首次迁移时刻不可恢复，扫描跳过并 warn",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#1] 合法内容更新触发重试；成功处置后再次更新不调用快照端口",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#2] 已有资格的 paid 更新仍补偿一次，并以本次迁移后的状态判定",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#2] 已有资格的 received 更新仍补偿一次，并以本次迁移后的状态判定",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#2] 已有资格的 settled 更新仍补偿一次，并以本次迁移后的状态判定",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#3] 多条快照 pending 合并为一次重试，非快照待处理不误处置",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#4] 已有快照且还有 open 行仍调幂等端口，不覆盖快照内容",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#5] pending 结果每次进入只试一次，保留首次时间，恢复后可完成",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#6] 无 open 快照行、已处置行、未归因、定金与作废扣回不能触发补偿",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#7] 下游失败时真实快照、处置记录和订单更新一起回滚",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#8] 两个独立流水线并发提交同一合法更新，锁内重读确保只调一次",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#20] 流水线重入的持续失败也在24小时后转人工",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#21] 本次报文迁入 INVALID 时不得按迁移前 PAID 生成补偿快照",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts > [AC-B1-08t#26] unchanged 重放即使还有 open 快照行也不重试，合法更新才触发",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#9] 定时扫描满一小时即补偿，使用注入时钟并按 App 隔离",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#10] 多条到期待处理按订单去重，重复投递和已处置记录不再调用",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#11] 定时扫描锁内重读资格，unattributed 不调用快照端口也不处置",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#11] 定时扫描锁内重读资格，DEPOSIT_PAID 不调用快照端口也不处置",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#11] 定时扫描锁内重读资格，INVALID 不调用快照端口也不处置",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#11] 定时扫描锁内重读资格，VOID 不调用快照端口也不处置",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#11] 定时扫描锁内重读资格，CLAWED_BACK 不调用快照端口也不处置",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#12] 刷新 detected_at 不延后未处置时长；超过24小时仍 pending 才告警转人工",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#13] 超过24小时本次成功则处置成功，不发失败告警",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#14] 告警只包含平铺定位字段，不输出买家身份或完整子订单号",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#15] 端口写快照后抛错不提交半成品，失败后释放锁并可恢复",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#17] 金额资料仍不完整时保留 pending，不能以0元生成；超时仍须转人工",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#18] 扫描按 open 原因识别重试对象，不按 detail 或 order_id 排除",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#19] 超时后端口抛错也转人工，不能无限重试或提交端口写到一半的快照",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts > [AC-B1-08t#25] 拼多多扫描缺持久化服务费时跳过，不调用端口、不处置且记录 warn",
+        "test/spec/orders/snapshot-retry/scheduler.test.ts > [AC-B1-08t#22] 定时器通过 JobQueue 按 App 投递补偿扫描，停止后不再投递",
+        "test/spec/orders/snapshot-retry/scheduler.test.ts > [AC-B1-08t#23] 某轮读取失败不会永久停止补偿扫描",
+        "test/spec/orders/snapshot-retry/wiring.test.ts > [AC-B1-08t#24] worker 只有注入 snapshots 才把补偿任务路由到待处理扫描"
+      ],
+      "expected": [
+        "test/spec/orders/snapshot-retry/concurrency.int.test.ts",
+        "test/spec/orders/snapshot-retry/fault-isolation.int.test.ts",
+        "test/spec/orders/snapshot-retry/input.int.test.ts",
+        "test/spec/orders/snapshot-retry/pipeline.int.test.ts",
+        "test/spec/orders/snapshot-retry/scan.int.test.ts",
+        "test/spec/orders/snapshot-retry/scheduler.test.ts",
+        "test/spec/orders/snapshot-retry/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "c3d3f069eb11f3689f91dedff5a9a0f1727eec7093cde13dae02cbbeba6e6aaf"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "3160dae9e03565b1c5daa00751df8fa74b46bf4967ab4cd231993629ba33454c"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one S2 (skipped PDD rows keep the oldest scan slots, so a backlog of 100+ delays later JD rows) recorded as a follow-up for B1-08v, which removes the PDD skip."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (4 runs; run 1 lacked the orchestrator excerpt, D10-82; run 4 approved by ruling D10-84) plus an orchestrator rewrite of #16 from expect.poll to a hand-written poll ending in a plain assertion (D10-83); round 1 fail (scan cases used PDD), round 2 fail (unchanged replays, scan fault isolation, input recovery), round 3 pass with two S2 (41 tests)."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "a475804f73cd26ce4da1f1e9b591d2205cafe936",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
