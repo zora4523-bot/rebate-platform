@@ -11,6 +11,7 @@ import {
   NAME,
   NOW,
   PATH,
+  ROOT,
   account,
   change,
   close,
@@ -51,11 +52,22 @@ it('[AC-B1-13e#20] GET 去 planned、realname 鉴权且真实 AppModule 可达�
   const operation = kit.document.paths[PATH]!;
   expect(operation['get']!['x-implementation']).not.toBe('planned');
   expect(operation['get']!['x-auth']).toBe('realname');
-  expect(operation['put']!['x-implementation']).toBe('planned');
+  // B1-13k: B1-13f implemented savePayoutAccount, so PUT is judged by its implementation state:
+  // while planned it must stay unmounted (404); once implemented it must be mounted on the real
+  // AppModule, where a request without any device header stops at stage ① (10402), not 404.
+  const putPlanned = operation['put']!['x-implementation'] === 'planned';
+  const routes = (await import(
+    new URL('apps/api/src/modules/platform/validation/route-schemas.gen.ts', ROOT).href
+  )) as { CONTRACT_ROUTE_SCHEMAS: Record<string, unknown> };
+  expect(Object.hasOwn(routes.CONTRACT_ROUTE_SCHEMAS, 'savePayoutAccount')).toBe(!putPlanned);
   const f = await fixture(kit);
   expect(envelope(kit, await f.get())).toEqual({});
   const put = await kit.app.inject({ method: 'PUT', url: PATH, headers: {} });
-  expect(put.statusCode).toBe(404);
+  if (putPlanned) expect(put.statusCode).toBe(404);
+  else {
+    expect(put.statusCode, put.body).toBe(401);
+    expect(put.json()).toMatchObject({ code: 10402, trace_id: expect.any(String) });
+  }
 });
 
 it('[AC-B1-13e#21] 无当前行返回空对象，旧历史行和其他用户账号不得被当成当前绑定', async () => {
