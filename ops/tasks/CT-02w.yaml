@@ -10,6 +10,8 @@ type: contract
 #   修改仍走 /admin/v1/dict-items，不另开写口。全部新增，oasdiff 预期非破坏；排在 CT-02v 之后占契约槽。
 # 用到的默认：D5（admin_dict 不进公共 /v1/dict，在 F1-02zd 实现）、D6（任一已登录后台账号可读、不挂权限点；guard 不支持「只要登录」则挂 config.general 只读档，契约作者核实后在输出写明）。
 # D7 默认并入 CT-02x；编排要求单列台账，CT-02x 紧随本任务占槽。
+# 2026-10-20 编排裁定（04:0x）：W5 admin_dict 默认中文名放**单独的** contracts/texts.admin.default.json（本任务新建，contracts/README.md 加一行说明只给后台、不进 App / H5 包）；
+#   texts.default.json **不加**这 114 键（标题里的「texts.default.json 补」以此为准，标题不可改）；fund-term-keys.yaml 归类照旧，fund-term-keys.gen.ts 随之重生成（AC-F1-02t#9）；W1 任一权限点可读；W2–W4、W6、W7 照默认。
 refs: []
 refs_hash: {}
 contract_sections: ['6.6']
@@ -26,6 +28,9 @@ paths:
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
   - 'contracts/texts.default.json'
   - 'specs/fund-term-keys.yaml'
+  - 'contracts/texts.admin.default.json'
+  - 'contracts/README.md'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
 impl: claude
 tester: none
 accept:

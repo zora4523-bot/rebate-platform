@@ -9,6 +9,8 @@ type: impl
 #   公共 GET /v1/dict 过滤 admin_dict. 前缀（D5）。权限按 CT-02w 落定的口径（D6）。
 # 去掉对应操作的 planned，同 PR 重生成 openapi.gen.ts 与路由生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
 # 用到的默认：D5、D6。
+# 2026-10-20 编排裁定（04:0x）：取值 = contracts/texts.admin.default.json 兜底 ← dict_items 覆盖；F1-02t 后台写入口允许的键改为 texts.default.json 与 texts.admin.default.json 的并集（若碰 F1-02t 冻结测试，按 test-change 走）；
+#   读权限为任一权限点（守卫传全部权限点列表，F1-10c 已支持）。
 refs: []
 refs_hash: {}
 deps: [CT-02w]

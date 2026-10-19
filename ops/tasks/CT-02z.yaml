@@ -1,0 +1,30 @@
+id: CT-02z
+repo: rebate-platform
+title: 契约：新操作 GET /v1/agreements/{type}?version=（getAgreementVersion，匿名；按类型与可选版本读协议元数据，含 labor_agreement 与历史版本，不存在 30701），H5 匿名清单同 PR 登记
+type: contract
+# 2026-10-20 入账（content-client 第四阶段；编排 2026-10-20 04:0x 裁定 X1–X3）：取代 CT-02x（原「/v1/agreements 加可选 type / version」）。
+# 原因：冻结测试 AC-F1-02n#20 锁定 getAgreements 的 x-error-codes: []（加 30701 必红），同一操作按查询返两种形状需 oneOf、oasdiff 破坏性不确定；台账标题不可改，故 CT-02x 作废（台账状态只有 todo / done，未开工的 CT-02x.yaml 删除），改由本编号以新操作实现。
+# 要点：响应 {type, version, min_version, article_id, article_version, text_sha256, published_at, url}（X2：带 url，对齐 PublicAgreement，不带 requires_resign）；无 version 取当前版；不存在 30701。X3：劳务协议与历史版本是公开文本、不含个人信息，匿名可读。
+# 新匿名操作同 PR 登记 apps/h5/src/shared/api/anonymous.ts（CT-02q 先例）。全部新增，oasdiff 预期非破坏；契约槽排在 CT-02w 之后。摘录 couli-runs/CT-02x/excerpt.md（按新操作写）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.6']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'apps/h5/src/shared/api/anonymous.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

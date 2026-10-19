@@ -10,6 +10,8 @@ type: contract
 # 匿名操作按 CT-02q / CT-02r 先例同 PR 核对 H5 匿名清单 apps/h5/src/shared/api/anonymous.ts（anonymous.test.ts 要求清单与契约双向相等）。
 # 用到的默认：D9（不等规划回写先做，decisions-pending 标【待规划回写（04 §6.2 /v1/agreements 加 type / version）】）；
 #   D7 默认并入 CT-02w，编排要求单列，紧随 CT-02w 占契约槽。
+# **已作废（2026-10-20，编排 04:0x 裁定 X1）：改由 CT-02z 以新操作 GET /v1/agreements/{type}?version=（getAgreementVersion）实现。不得认领、不得开工。**
+#   台账 status 只有 todo / done、文件不得删除（ledger-overwrite），故保留本文件为 todo 并以本注释标记作废。
 refs: []
 refs_hash: {}
 contract_sections: ['6.6']
