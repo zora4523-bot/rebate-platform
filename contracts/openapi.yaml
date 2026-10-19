@@ -8513,14 +8513,19 @@ paths:
         else 20001 with `data.fields=[q]`; it matches exactly (no prefix or partial match) a
         claim_id (the display number of a claim is its claim_id; there is no separate claim
         number), the order number as submitted, or the number of one of the claim's child
-        orders. A `user_id` that names no user of the app, or a filter nothing matches, is an
-        empty page (`items=[]`, `total=0`) with every count 0, not an error. A value outside an
-        enum is 20001 with `data.fields` naming the parameter.
+        orders. A `user_id` that names no user of the app, or a filter set nothing matches, is an
+        empty page (`items=[]`, `total=0`), not an error; `counts` still follows its own rule
+        below (every filter except `status`), so a `status` nothing matches leaves the other
+        counts as they are (a user with 3 approved claims and none rejected, read with
+        `status=rejected`: `items=[]`, `total=0`, `counts.approved=3`), and every count is 0 only
+        when the filters other than `status` match nothing. A value outside an enum is 20001 with
+        `data.fields` naming the parameter.
 
         Order: claims with status `auto_matched` first (BR-ATTR-18: kept at the top for the
         reviewer), then every other claim; within each group `submitted_at` descending, then the
-        server's internal order for the same time. Pages with `page` and `page_size` ≤ 200 (above
-        that 20001). `counts` has one entry per claim_status value (0 included), counted with
+        server's internal order for the same time. Pages with `page` (any positive integer, as
+        AdminPage; a page past the last one is `items=[]`) and `page_size` ≤ 200 (a `page_size`
+        above 200 is 20001, as AdminPageSize). `counts` has one entry per claim_status value (0 included), counted with
         every filter of the request except `status`, so the console's status tabs show what each
         tab would hold; `total` is the count of the page's own filter set. The applicant is shown
         as user_id and phone number masked 3 + 4 (BR-ID-33), never the full number. Reading does

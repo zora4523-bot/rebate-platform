@@ -120,6 +120,16 @@ it('[CT-24d] the list filters by platform, evidence level, status, user_id and q
   }
   const pageSize = params.find((p) => p.name === 'page_size')!.schema as { maximum: number };
   expect(pageSize.maximum).toBe(200);
+  const page = params.find((p) => p.name === 'page')!.schema as {
+    minimum: number;
+    maximum?: number;
+  };
+  expect(page.minimum).toBe(1);
+  expect(page.maximum).toBeUndefined();
+  const pagingText = flat(list().description);
+  expect(pagingText).toContain('`page` (any positive integer, as AdminPage');
+  expect(pagingText).toContain('a `page_size` above 200 is 20001');
+  expect(pagingText).not.toContain('`page` and `page_size` ≤ 200');
   const byName = (name: string) => ajv.compile(params.find((p) => p.name === name)!.schema);
   for (const v of enums.claim_status) expect(byName('status')(v), v).toBe(true);
   for (const v of enums.claim_evidence_level) expect(byName('evidence_level')(v), v).toBe(true);
@@ -149,6 +159,11 @@ it('[CT-24d] auto_matched claims come first, then newest submitted; counts ignor
   expect(text).toContain('claims with status `auto_matched` first');
   expect(text).toContain('`submitted_at` descending');
   expect(text).toContain('every filter of the request except `status`');
+  expect(text).not.toContain('with every count 0');
+  expect(text).toContain('`status=rejected`: `items=[]`, `total=0`, `counts.approved=3`');
+  expect(text).toContain(
+    'every count is 0 only when the filters other than `status` match nothing',
+  );
   const counts = schema('AdminClaimStatusCounts');
   expect([...counts.required!].sort()).toEqual([...enums.claim_status].sort());
   expect(Object.keys(counts.properties!).sort()).toEqual([...enums.claim_status].sort());
