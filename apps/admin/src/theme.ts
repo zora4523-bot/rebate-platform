@@ -1,7 +1,10 @@
 // Ant Design theme mapped onto the @couli/ui-tokens CSS variables. antd derives hover and active
 // shades in JavaScript, so colour tokens need resolved values: they are read from the variables
 // at runtime and left at antd's defaults when the variables are absent (no stylesheet loaded).
-import type { ThemeConfig } from 'antd';
+// Dark mode follows the CSS that is in effect (the tokens' dark blocks set `color-scheme: dark`):
+// antd then derives its own shades (overlays, fills, splits) with darkAlgorithm, while every colour
+// token still comes from the same variables.
+import { theme as antdTheme, type ThemeConfig } from 'antd';
 
 type ColorToken =
   | 'colorPrimary'
@@ -43,8 +46,25 @@ const COLOR_VARIABLES: readonly (readonly [ColorToken, string])[] = [
   ['colorInfoBorderHover', '--color-background-muted'],
 ];
 
+/** True when the computed `color-scheme` of `root` is dark only (the dark token blocks). */
+export function isDarkScheme(root: Element = document.documentElement): boolean {
+  const words = getComputedStyle(root).getPropertyValue('color-scheme').trim().split(/\s+/);
+  return words.includes('dark') && !words.includes('light');
+}
+
+/** Compares two themes from createAntdTheme: same scheme and same token values. */
+export function sameAntdTheme(a: ThemeConfig, b: ThemeConfig): boolean {
+  return (
+    (a.algorithm === undefined) === (b.algorithm === undefined) &&
+    JSON.stringify(a.token) === JSON.stringify(b.token) &&
+    JSON.stringify(a.components) === JSON.stringify(b.components)
+  );
+}
+
 export function createAntdTheme(root: Element = document.documentElement): ThemeConfig {
   const style = getComputedStyle(root);
+  // Light mode keeps antd's default algorithm (no `algorithm` key), exactly as before.
+  const dark = isDarkScheme(root) ? { algorithm: antdTheme.darkAlgorithm } : {};
   const colors: Partial<Record<ColorToken, string>> = {};
   for (const [token, variable] of COLOR_VARIABLES) {
     const value = style.getPropertyValue(variable).trim();
@@ -53,6 +73,7 @@ export function createAntdTheme(root: Element = document.documentElement): Theme
   const menuSelectedBg = style.getPropertyValue('--color-brand-subtle').trim();
   const menuSelectedColor = style.getPropertyValue('--color-brand-primary').trim();
   return {
+    ...dark,
     token: {
       ...colors,
       fontFamily: 'var(--font-family-system)',

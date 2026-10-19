@@ -20,4 +20,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/admin-dark/**'
-status: todo
+status: done
+pr: 938
