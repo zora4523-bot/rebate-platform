@@ -13,6 +13,9 @@ refs: []
 refs_hash: {}
 deps: [B1-11g, B1-11d, B1-11f, B1-03x, CT-15p]
 paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/modules/growth/**'
   - 'apps/api/src/app.module.ts'
