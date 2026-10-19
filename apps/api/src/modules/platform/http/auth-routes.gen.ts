@@ -433,6 +433,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/dashboard",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/admins",
     "auth": "super"
   },

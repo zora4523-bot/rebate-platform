@@ -433,6 +433,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/dashboard",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/admins",
     "signed": false
   },

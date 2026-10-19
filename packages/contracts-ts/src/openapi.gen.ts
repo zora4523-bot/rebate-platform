@@ -2315,6 +2315,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The console workbench — to-do counts, yesterday's overview and system status
+         * @description Permission point `dashboard.view` (04 §11.1; read only, no step-up); without it the
+         *     operation is 10403 with `data.reason=admin_permission_denied` and the console lands on the
+         *     first menu the account may open (01 F-ADM-26, 04 §6.6 dashboard). A super admin holds every
+         *     point. Read-only aggregate: nothing is written here, every card links to its own page.
+         *
+         *     The server trims the response to the account's permission points; the console renders only
+         *     what comes back (no greyed-out cards):
+         *     - `todo[]`: one entry per to-do card (`key`, enum admin_dashboard_todo_key) the account
+         *       holds the card's point for — withdraw_review_pending `withdraw.review`,
+         *       claim_review_pending `order.claim`, settle_bill_pending `settle.bill`, recon_diff_open
+         *       `fund.recon`, appeal_pending `risk.appeal`, agent_report_overdue `agent.report`,
+         *       beneficiary_held_overdue `risk.freeze`, union_auth_expiring `union.account_auth` (counting
+         *       rules in the BR each enum value names). A card the account may see is returned with
+         *       `count=0` when nothing is waiting (the card still shows). A card whose module has not
+         *       shipped yet is left out exactly like a card without the point: the three fund cards
+         *       (withdraw_review_pending, settle_bill_pending, recon_diff_open) appear once the fund
+         *       line's console tasks ship. `route` is the console route the card opens, with its
+         *       filter; `oldest_at` (optional, nullable) is the earliest waiting item's time;
+         *       `breakdown` (optional) splits the count by a card-specific sub-key (for
+         *       claim_review_pending `auto_matched` and `manual_review`); clients ignore keys they do
+         *       not know.
+         *     - `yesterday`: always returned with `dashboard.view`. Yesterday's whole accounting day
+         *       (`date`), aggregated daily with the report rules, not live (01 F-ADM-26 ②): `links`
+         *       (link_logs created that day), `orders` (sub-orders with paid_at that day, not reduced by
+         *       later invalidation), `est_rebate_fen` (users' share of those sub-orders still
+         *       rebate_status=ESTIMATED and platform_status≠DEPOSIT_PAID at aggregation time, BR-TEXT-21),
+         *       `new_users` (users registered that day); `as_of` is the aggregation time.
+         *     - `status`: only with `fund.view`, otherwise the whole object is absent: payout queue
+         *       paused (`payout.queue_paused`), the payout channels paused one by one
+         *       (`payout.channel_paused.<channel>`), monthly auto settlement (`settle.auto.enabled`) and
+         *       whether the enterprise Alipay balance W is expired (BR-WDR-18; null until W entry ships
+         *       with the fund line).
+         *     No open-alerts count is returned (alert records and closing rules are not defined yet;
+         *     负责人 2026-10-18 后台第 1 批定稿 ①).
+         */
+        get: operations["adminGetDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/admins": {
         parameters: {
             query?: never;
@@ -6167,6 +6220,97 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["AdminMe"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description A to-do card of the workbench (enum admin_dashboard_todo_key; 01 F-ADM-26 ①). Each value
+         *     is shown only to accounts holding its permission point (see the enum).
+         * @enum {string}
+         */
+        AdminDashboardTodoKey: "withdraw_review_pending" | "claim_review_pending" | "settle_bill_pending" | "recon_diff_open" | "appeal_pending" | "agent_report_overdue" | "beneficiary_held_overdue" | "union_auth_expiring";
+        /** @description One sub-count of a card (e.g. claim_review_pending auto_matched / manual_review). */
+        AdminDashboardTodoBreakdown: {
+            /** @description Card-specific sub-key; clients ignore keys they do not know. */
+            key: string;
+            /** Format: int32 */
+            count: number;
+        };
+        /**
+         * @description One to-do card. Present only when the account holds the card's permission point and the
+         *     card's module has shipped; then present with count 0 too.
+         */
+        AdminDashboardTodo: {
+            key: components["schemas"]["AdminDashboardTodoKey"];
+            /**
+             * Format: int32
+             * @description Items waiting, equal to the pending count of the card's list page.
+             */
+            count: number;
+            /** @description Console route the card opens, with its filter query. */
+            route: string;
+            /**
+             * Format: date-time
+             * @description Time of the earliest waiting item; null when count is 0.
+             */
+            oldest_at?: string | null;
+            /** @description Sub-counts of the card; their sum equals count. */
+            breakdown?: components["schemas"]["AdminDashboardTodoBreakdown"][];
+        };
+        /** @description Yesterday's whole day, aggregated daily with the report rules (01 F-ADM-26 ②). */
+        AdminDashboardYesterday: {
+            /**
+             * Format: date
+             * @description The day aggregated (yesterday, Asia/Shanghai).
+             */
+            date: string;
+            /**
+             * Format: int64
+             * @description link_logs created that day.
+             */
+            links: number;
+            /**
+             * Format: int64
+             * @description Sub-orders with paid_at that day, not reduced by later invalidation.
+             */
+            orders: number;
+            est_rebate_fen: components["schemas"]["Fen"];
+            /**
+             * Format: int64
+             * @description Users registered that day.
+             */
+            new_users: number;
+            /**
+             * Format: date-time
+             * @description Aggregation time.
+             */
+            as_of: string;
+        };
+        /**
+         * @description Payout channel (enum payout_method; the <channel> of payout.channel_paused.<channel>).
+         * @enum {string}
+         */
+        AdminPayoutChannelCode: "alipay" | "bank_card" | "wechat";
+        /** @description System status cards; returned only with permission point fund.view. */
+        AdminDashboardStatus: {
+            /** @description payout.queue_paused. */
+            payout_queue_paused: boolean;
+            /** @description Channels whose payout.channel_paused.<channel> is on; empty when none. */
+            payout_channel_paused: components["schemas"]["AdminPayoutChannelCode"][];
+            /** @description settle.auto.enabled. */
+            settle_auto_enabled: boolean;
+            /** @description Whether the enterprise Alipay balance W is expired (BR-WDR-18); null until W entry ships. */
+            balance_w_expired: boolean | null;
+        };
+        AdminDashboard: {
+            /** @description To-do cards the account may see, in enum order. */
+            todo: components["schemas"]["AdminDashboardTodo"][];
+            yesterday: components["schemas"]["AdminDashboardYesterday"];
+            status?: components["schemas"]["AdminDashboardStatus"];
+        };
+        AdminDashboardResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminDashboard"];
             trace_id: components["schemas"]["TraceId"];
         };
         /**
@@ -12929,6 +13073,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminMeResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetDashboard: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The workbench, trimmed to the account's permission points. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

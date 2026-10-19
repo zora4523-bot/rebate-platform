@@ -1,11 +1,12 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
     description: 权限点 key；标 step-up 的权限点每次操作都须二次验证，只有部分操作要的在该项写明（见 04 §11 与 specs/permissions.yaml）
     values:
+      dashboard.view: 工作台：待办与概览（04 §11.1、01 F-ADM-26；每张卡另按其权限点裁剪）
       user.list: 用户列表浏览、筛选（非敏感字段）
       user.lookup: 按 UID、完整手机号或订单号逐个查询
       pii.reveal_phone: 查看完整手机号（step-up）
@@ -87,3 +88,15 @@ enums:
       none: 不需要 admin_token（登录各步，来源 IP 仍须在白名单内）
       admin: 需要 admin_token（Authorization Bearer）
       super: 需要超级管理员的 admin_token（后台账号与权限，只限超管、不可授予）
+  admin_dashboard_todo_key:
+    source: 规划/01 F-ADM-26 ① 待办计数；规划/04 §6.6 dashboard、§11.1 dashboard.view（CT-24a）
+    description: GET /admin/v1/dashboard 的 todo[].key；每张卡只在账号持有括号里的权限点、且对应模块已上线时返回（count 为 0 也返回）；编码独立于权限点，不复用权限点字符串；卡标题与副文案取 BR-TEXT-25 admin_dict
+    values:
+      withdraw_review_pending: 待审提现（withdraw.review；BR-WDR-10 人工审核队列）
+      claim_review_pending: 待审找回（order.claim；BR-ATTR-18）
+      settle_bill_pending: 待确认月结账单（settle.bill；BR-FUND-04）
+      recon_diff_open: 未关闭差错单（fund.recon；BR-FUND-22）
+      appeal_pending: 待处理申诉（risk.appeal；BR-ID-36）
+      agent_report_overdue: AI 举报超 48 小时未处理（agent.report；BR-ID-15）
+      beneficiary_held_overdue: 受益人份额 held 满 30 天（risk.freeze；BR-CALC-13）
+      union_auth_expiring: 站长联盟授权即将到期或探测失效（union.account_auth；BR-ID-24）

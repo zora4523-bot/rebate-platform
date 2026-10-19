@@ -82,6 +82,8 @@ tags:
     description: Admin content operations; platform mark replacement images (permission point content.platform_icon, BR-TEXT-24).
   - name: admin-config
     description: Admin configuration center and emergency switches (permission points config.* and switch.*, 04 §10, §10.2, §11.2; F1-10).
+  - name: admin-dashboard
+    description: Admin console workbench — to-do counts, yesterday's overview and system status, trimmed to the account's permission points (permission point dashboard.view, 01 F-ADM-26, 04 §6.6 dashboard, §11.1).
   - name: agent
     description: Agent sessions, history, the reply stream, stop, feedback and report (04 §6.5, §8).
 paths:
@@ -6503,6 +6505,150 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
               examples:
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/dashboard:
+    get:
+      operationId: adminGetDashboard
+      tags:
+        - admin-dashboard
+      summary: The console workbench — to-do counts, yesterday's overview and system status
+      description: |
+        Permission point `dashboard.view` (04 §11.1; read only, no step-up); without it the
+        operation is 10403 with `data.reason=admin_permission_denied` and the console lands on the
+        first menu the account may open (01 F-ADM-26, 04 §6.6 dashboard). A super admin holds every
+        point. Read-only aggregate: nothing is written here, every card links to its own page.
+
+        The server trims the response to the account's permission points; the console renders only
+        what comes back (no greyed-out cards):
+        - `todo[]`: one entry per to-do card (`key`, enum admin_dashboard_todo_key) the account
+          holds the card's point for — withdraw_review_pending `withdraw.review`,
+          claim_review_pending `order.claim`, settle_bill_pending `settle.bill`, recon_diff_open
+          `fund.recon`, appeal_pending `risk.appeal`, agent_report_overdue `agent.report`,
+          beneficiary_held_overdue `risk.freeze`, union_auth_expiring `union.account_auth` (counting
+          rules in the BR each enum value names). A card the account may see is returned with
+          `count=0` when nothing is waiting (the card still shows). A card whose module has not
+          shipped yet is left out exactly like a card without the point: the three fund cards
+          (withdraw_review_pending, settle_bill_pending, recon_diff_open) appear once the fund
+          line's console tasks ship. `route` is the console route the card opens, with its
+          filter; `oldest_at` (optional, nullable) is the earliest waiting item's time;
+          `breakdown` (optional) splits the count by a card-specific sub-key (for
+          claim_review_pending `auto_matched` and `manual_review`); clients ignore keys they do
+          not know.
+        - `yesterday`: always returned with `dashboard.view`. Yesterday's whole accounting day
+          (`date`), aggregated daily with the report rules, not live (01 F-ADM-26 ②): `links`
+          (link_logs created that day), `orders` (sub-orders with paid_at that day, not reduced by
+          later invalidation), `est_rebate_fen` (users' share of those sub-orders still
+          rebate_status=ESTIMATED and platform_status≠DEPOSIT_PAID at aggregation time, BR-TEXT-21),
+          `new_users` (users registered that day); `as_of` is the aggregation time.
+        - `status`: only with `fund.view`, otherwise the whole object is absent: payout queue
+          paused (`payout.queue_paused`), the payout channels paused one by one
+          (`payout.channel_paused.<channel>`), monthly auto settlement (`settle.auto.enabled`) and
+          whether the enterprise Alipay balance W is expired (BR-WDR-18; null until W entry ships
+          with the fund line).
+        No open-alerts count is returned (alert records and closing rules are not defined yet;
+        负责人 2026-10-18 后台第 1 批定稿 ①).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: The workbench, trimmed to the account's permission points.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboardResponse'
+              examples:
+                superAdmin:
+                  summary: Super admin with the cards whose modules have shipped
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      todo:
+                        - key: claim_review_pending
+                          count: 7
+                          route: /orders/claims?status=pending
+                          oldest_at: '2026-10-17T09:12:00+08:00'
+                          breakdown:
+                            - key: auto_matched
+                              count: 4
+                            - key: manual_review
+                              count: 3
+                        - key: appeal_pending
+                          count: 2
+                          route: /risk/appeals?status=pending
+                          oldest_at: '2026-10-18T15:40:00+08:00'
+                        - key: agent_report_overdue
+                          count: 0
+                          route: /agent/reports?overdue=true
+                          oldest_at: null
+                        - key: beneficiary_held_overdue
+                          count: 1
+                          route: /risk/held-alerts
+                        - key: union_auth_expiring
+                          count: 1
+                          route: /union/accounts?auth=expiring
+                      yesterday:
+                        date: '2026-10-18'
+                        links: 1284
+                        orders: 312
+                        est_rebate_fen: 158600
+                        new_users: 46
+                        as_of: '2026-10-19T00:30:00+08:00'
+                      status:
+                        payout_queue_paused: false
+                        payout_channel_paused:
+                          - bank_card
+                        settle_auto_enabled: true
+                        balance_w_expired: null
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                noFundView:
+                  summary: Account with dashboard.view and order.claim only (no status)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      todo:
+                        - key: claim_review_pending
+                          count: 0
+                          route: /orders/claims?status=pending
+                          oldest_at: null
+                      yesterday:
+                        date: '2026-10-18'
+                        links: 1284
+                        orders: 312
+                        est_rebate_fen: 158600
+                        new_users: 46
+                        as_of: '2026-10-19T00:30:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
                 tokenExpired:
                   $ref: '#/components/examples/AdminTokenExpired'
                 ipNotAllowed:
@@ -17395,6 +17541,176 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminMe'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminDashboardTodoKey:
+      type: string
+      description: |
+        A to-do card of the workbench (enum admin_dashboard_todo_key; 01 F-ADM-26 ①). Each value
+        is shown only to accounts holding its permission point (see the enum).
+      enum:
+        - withdraw_review_pending
+        - claim_review_pending
+        - settle_bill_pending
+        - recon_diff_open
+        - appeal_pending
+        - agent_report_overdue
+        - beneficiary_held_overdue
+        - union_auth_expiring
+    AdminDashboardTodoBreakdown:
+      type: object
+      description: One sub-count of a card (e.g. claim_review_pending auto_matched / manual_review).
+      additionalProperties: false
+      required:
+        - key
+        - count
+      properties:
+        key:
+          type: string
+          description: Card-specific sub-key; clients ignore keys they do not know.
+          minLength: 1
+          maxLength: 64
+          pattern: '^[a-z][a-z0-9_]*$'
+        count:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminDashboardTodo:
+      type: object
+      description: |
+        One to-do card. Present only when the account holds the card's permission point and the
+        card's module has shipped; then present with count 0 too.
+      additionalProperties: false
+      required:
+        - key
+        - count
+        - route
+      properties:
+        key:
+          $ref: '#/components/schemas/AdminDashboardTodoKey'
+        count:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Items waiting, equal to the pending count of the card's list page.
+        route:
+          type: string
+          description: Console route the card opens, with its filter query.
+          minLength: 1
+          maxLength: 512
+          pattern: '^/'
+        oldest_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Time of the earliest waiting item; null when count is 0.
+        breakdown:
+          type: array
+          description: Sub-counts of the card; their sum equals count.
+          items:
+            $ref: '#/components/schemas/AdminDashboardTodoBreakdown'
+    AdminDashboardYesterday:
+      type: object
+      description: Yesterday's whole day, aggregated daily with the report rules (01 F-ADM-26 ②).
+      additionalProperties: false
+      required:
+        - date
+        - links
+        - orders
+        - est_rebate_fen
+        - new_users
+        - as_of
+      properties:
+        date:
+          type: string
+          format: date
+          description: The day aggregated (yesterday, Asia/Shanghai).
+        links:
+          type: integer
+          format: int64
+          minimum: 0
+          description: link_logs created that day.
+        orders:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Sub-orders with paid_at that day, not reduced by later invalidation.
+        est_rebate_fen:
+          $ref: '#/components/schemas/Fen'
+        new_users:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Users registered that day.
+        as_of:
+          type: string
+          format: date-time
+          description: Aggregation time.
+    AdminPayoutChannelCode:
+      type: string
+      description: Payout channel (enum payout_method; the <channel> of payout.channel_paused.<channel>).
+      enum:
+        - alipay
+        - bank_card
+        - wechat
+    AdminDashboardStatus:
+      type: object
+      description: System status cards; returned only with permission point fund.view.
+      additionalProperties: false
+      required:
+        - payout_queue_paused
+        - payout_channel_paused
+        - settle_auto_enabled
+        - balance_w_expired
+      properties:
+        payout_queue_paused:
+          type: boolean
+          description: payout.queue_paused.
+        payout_channel_paused:
+          type: array
+          description: Channels whose payout.channel_paused.<channel> is on; empty when none.
+          items:
+            $ref: '#/components/schemas/AdminPayoutChannelCode'
+        settle_auto_enabled:
+          type: boolean
+          description: settle.auto.enabled.
+        balance_w_expired:
+          type:
+            - boolean
+            - 'null'
+          description: Whether the enterprise Alipay balance W is expired (BR-WDR-18); null until W entry ships.
+    AdminDashboard:
+      type: object
+      additionalProperties: false
+      required:
+        - todo
+        - yesterday
+      properties:
+        todo:
+          type: array
+          description: To-do cards the account may see, in enum order.
+          items:
+            $ref: '#/components/schemas/AdminDashboardTodo'
+        yesterday:
+          $ref: '#/components/schemas/AdminDashboardYesterday'
+        status:
+          $ref: '#/components/schemas/AdminDashboardStatus'
+    AdminDashboardResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminDashboard'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     AdminAccountStatus:
