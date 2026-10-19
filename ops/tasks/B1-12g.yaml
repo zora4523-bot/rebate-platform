@@ -20,6 +20,7 @@ paths:
   - 'apps/api/src/modules/platform/queue/catalog.ts'
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/bootstrap.test.ts'
   - 'apps/api/src/modules/linking/index.ts'
   - 'apps/api/src/modules/linking/application/taobao-reauth-read.ts'
   - 'apps/api/src/modules/linking/application/taobao-reauth-read.test.ts'
