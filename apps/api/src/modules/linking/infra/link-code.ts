@@ -20,19 +20,12 @@ export function generateLinkCode(): string {
   return code;
 }
 
-/**
- * The links table with lk, until db.gen.ts is regenerated from migration 0050 (pnpm db:snapshot,
- * outside_needed); identical to DB once it carries the column.
- */
+/** The links table with lk (migration 0052); identical to DB now that db.gen.ts carries it. */
 export type LinkCodeDB = Omit<DB, 'links'> & {
   links: DB['links'] & { lk: string | null };
 };
 
-/**
- * links.lk as stored on a row read with selectAll (null when absent, NULL or not a valid code).
- * Read structurally so it serves before and after db.gen.ts carries the column (outside_needed:
- * pnpm db:snapshot regenerates the types from migration 0050).
- */
+/** links.lk as stored on a row (null when absent, NULL or not a valid code). */
 export function storedLinkCode(link: object): string | null {
   const value: unknown = (link as { readonly lk?: unknown }).lk;
   return typeof value === 'string' && LINK_CODE.test(value) ? value : null;

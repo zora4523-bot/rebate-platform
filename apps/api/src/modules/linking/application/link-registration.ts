@@ -13,7 +13,7 @@ import type { PidScene, Scene } from '@couli/contracts-ts';
 import { sql, type Kysely, type RawBuilder, type Selectable } from 'kysely';
 import type { LinkRegistrar, RegisterLinkInput, SourceLinkReader } from '../../catalog/index.ts';
 import { newUuidV7, type Clock } from '../../platform/index.ts';
-import { generateLinkCode, type LinkCodeDB } from '../infra/link-code.ts';
+import { generateLinkCode, storedLinkCode, type LinkCodeDB } from '../infra/link-code.ts';
 import {
   isPlatform,
   isPriceAnomaly,
@@ -64,8 +64,17 @@ export interface LinkCodeLogger {
 export interface LinkCodeIssue {
   readonly draw: () => string;
   readonly logger: LinkCodeLogger | undefined;
-  /** Draws tried at insert (default 4: the first plus 3 redraws); 1 for a code already in use. */
-  readonly attempts?: number;
+}
+
+/**
+ * B1-08s: an lk drawn for a link before the link is written (an open's renewed snapshot, whose
+ * conversion runs first). Its draws count toward the link's 4 (the first plus 3 redraws).
+ */
+export interface DrawnLinkCode {
+  /** Free when drawn (read on the open's executor); null after 4 taken codes (alerted then). */
+  readonly code: string | null;
+  /** Draws taken so far (1–4); the insert redraws at most the rest on a collision. */
+  readonly draws: number;
 }
 
 /** Configuration key attr.click_code.<platform> (BR-ATTR-15; default false). */
@@ -336,29 +345,41 @@ export const openRegistrationScope = new AsyncLocalStorage<OpenRegistrationScope
  * Writes a pending open link through the module's single links insert, with the register log of
  * the scenes that log registration, inside the open's transaction. Idempotent per link_id: a
  * link already written by an earlier open of the same flight is left as it is.
+ * B1-08s: answers the lk the link row holds — the one this insert wrote (`drawn.code`, a redraw
+ * after an (app_id, lk) collision, or NULL after 4) or the one an earlier open wrote it with —
+ * so the open's jump is made to carry exactly that code (link-open-requote.ts).
  */
 export async function insertPendingOpenLink(
   executor: Kysely<DB>,
   pending: PendingOpenLink,
   issue: LinkCodeIssue | null = null,
-): Promise<void> {
+  drawn?: DrawnLinkCode,
+): Promise<{ readonly lk: string | null }> {
   const { now, caller, linkId, snapshot, values } = pending;
   // B1-06m: opens sharing the card run in their own transactions. A row another open has written
   // but not yet committed makes this insert wait for that transaction: committed → nothing to do;
   // rolled back → this open writes the link (and its register log) itself.
   const args = { now, caller, linkId, snapshot, values };
-  const inserted = await insertWithCode(
+  // A pre-drawn code is tried first (no new draw); none left (null) → lk NULL, already alerted.
+  const start =
+    drawn === undefined || drawn.code === null
+      ? null
+      : { code: drawn.code, redraws: Math.max(0, LINK_CODE_ATTEMPTS - drawn.draws) };
+  const settled = await insertWithCode(
     executor,
     args,
-    issue,
-    (lk) =>
-      linkInsert(executor, args, lk)
+    drawn !== undefined && drawn.code === null ? null : issue,
+    async (lk) => {
+      const row = await linkInsert(executor, args, lk)
         .onConflict((oc) => oc.column('link_id').doNothing())
         .returningAll()
-        .executeTakeFirst(),
+        .executeTakeFirst();
+      return row === undefined ? existingLink(executor, linkId) : { kind: 'inserted', row };
+    },
     'skip',
+    start,
   );
-  if (inserted === undefined) return;
+  if (settled.kind === 'existing') return { lk: settled.lk };
   if (logsRegistration(values.scene, pidSceneOf(values.scene))) {
     await executor
       .insertInto('link_logs')
@@ -381,6 +402,7 @@ export async function insertPendingOpenLink(
       })
       .execute();
   }
+  return { lk: storedLinkCode(settled.row) };
 }
 
 /**
@@ -497,53 +519,85 @@ export async function insertLinkRow(
   args: LinkRowArgs,
   issue: LinkCodeIssue | null = null,
 ): Promise<Selectable<DB['links']>> {
-  const row = await insertWithCode(
+  const settled = await insertWithCode(
     executor,
     args,
     issue,
-    (lk) => linkInsert(executor, args, lk).returningAll().executeTakeFirstOrThrow(),
+    async (lk) => ({
+      kind: 'inserted',
+      row: await linkInsert(executor, args, lk).returningAll().executeTakeFirstOrThrow(),
+    }),
     'throw',
   );
-  if (row === undefined) throw new Error('linking: link id already registered');
-  return row;
+  if (settled.kind !== 'inserted') throw new Error('linking: link id already registered');
+  return settled.row;
 }
 
 /** BR-ATTR-15: the first draw plus at most 3 redraws on an (app_id, lk) collision. */
 const LINK_CODE_ATTEMPTS = 4;
 
+/** What a links insert settled on: the row it wrote, or the lk of the row already there. */
+type LinkInsertOutcome =
+  | { readonly kind: 'inserted'; readonly row: Selectable<DB['links']> }
+  | { readonly kind: 'existing'; readonly lk: string | null };
+
+/**
+ * The link_id's row as it stands (read committed: a row another transaction committed is seen),
+ * or undefined when there is none.
+ */
+async function readExisting(
+  executor: Kysely<DB>,
+  linkId: string,
+): Promise<LinkInsertOutcome | undefined> {
+  const existing = await executor
+    .selectFrom('links')
+    .select(['link_id', 'lk'])
+    .where('link_id', '=', linkId)
+    .executeTakeFirst();
+  return existing === undefined ? undefined : { kind: 'existing', lk: storedLinkCode(existing) };
+}
+
+/** The row a link_id conflict found; its absence would leave the stored lk unknown. */
+async function existingLink(executor: Kysely<DB>, linkId: string): Promise<LinkInsertOutcome> {
+  const existing = await readExisting(executor, linkId);
+  if (existing === undefined) {
+    throw new Error('linking: link id conflicted but no row is visible');
+  }
+  return existing;
+}
+
 /**
  * B1-08s: a links insert with an lk (BR-ATTR-15). Without an issue the statement is exactly the
- * one given (lk NULL). With one, each draw is inserted with ON CONFLICT DO NOTHING without a
+ * one given (lk NULL). With one, each code is inserted with ON CONFLICT DO NOTHING without a
  * conflict target, so a collision never aborts the caller's transaction (a concurrent insert of
  * the same code is decided by the unique key once it commits or rolls back). An empty result is
- * then told apart: the link_id already exists → `onLinkId` ('skip': undefined, the pending open's
- * idempotency; 'throw': as a duplicate primary key always failed) — otherwise the draw collided on
- * (app_id, lk) and a new code is drawn. After 4 collisions the link is registered with lk NULL and
- * one error is logged (its orders match from ② on); registration never fails for want of a code.
+ * then told apart: the link_id already exists → `onLinkId` ('skip': that row's lk, the pending
+ * open's idempotency; 'throw': as a duplicate primary key always failed) — otherwise the code
+ * collided on (app_id, lk) and a new one is drawn. The codes are `start.code` (drawn earlier) and
+ * then at most `start.redraws` draws, or without `start` 4 draws. When every code collided the
+ * link is registered with lk NULL and one error is logged (its orders match from ② on);
+ * registration never fails for want of a code.
  */
 async function insertWithCode(
   executor: Kysely<DB>,
   args: LinkRowArgs,
   issue: LinkCodeIssue | null,
-  plain: (lk: null) => Promise<Selectable<DB['links']> | undefined>,
+  plain: (lk: null) => Promise<LinkInsertOutcome>,
   onLinkId: 'skip' | 'throw',
-): Promise<Selectable<DB['links']> | undefined> {
+  start: { readonly code: string; readonly redraws: number } | null = null,
+): Promise<LinkInsertOutcome> {
   if (issue === null) return plain(null);
-  const attempts = issue.attempts ?? LINK_CODE_ATTEMPTS;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const lk = issue.draw();
+  const tries = start === null ? LINK_CODE_ATTEMPTS : 1 + start.redraws;
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    const lk = attempt === 0 && start !== null ? start.code : issue.draw();
     const row = await linkInsert(executor, args, lk)
       .onConflict((oc) => oc.doNothing())
       .returningAll()
       .executeTakeFirst();
-    if (row !== undefined) return row;
-    const existing = await executor
-      .selectFrom('links')
-      .select('link_id')
-      .where('link_id', '=', args.linkId)
-      .executeTakeFirst();
+    if (row !== undefined) return { kind: 'inserted', row };
+    const existing = await readExisting(executor, args.linkId);
     if (existing !== undefined) {
-      if (onLinkId === 'skip') return undefined;
+      if (onLinkId === 'skip') return existing;
       throw new Error('linking: link id already registered');
     }
   }
@@ -561,14 +615,16 @@ async function insertWithCode(
 /**
  * B1-08s: an lk for a link the open converts before it is written (an open's renewed snapshot,
  * B1-06k): drawn as at insert — at most 4 draws — but each checked with a read of (app_id, lk) on
- * the open's executor, since the conversion carries the code before the row exists. Null after 4
- * taken codes, with the exhausted alert; the insert then tries this code once (attempts 1).
+ * the open's executor. Only a pre-check: the code is settled when the link is inserted
+ * (insertPendingOpenLink with this result redraws the rest of the 4 on a collision since), and
+ * the open converts again whenever the written code is not the one its jump carries. Null after 4
+ * taken codes, with the exhausted alert.
  */
 export async function drawFreeLinkCode(
   executor: Kysely<DB>,
   args: { readonly appId: string; readonly platform: string },
   issue: LinkCodeIssue,
-): Promise<string | null> {
+): Promise<DrawnLinkCode> {
   for (let attempt = 0; attempt < LINK_CODE_ATTEMPTS; attempt += 1) {
     const lk = issue.draw();
     const taken = await (executor as unknown as Kysely<LinkCodeDB>)
@@ -577,13 +633,13 @@ export async function drawFreeLinkCode(
       .where('app_id', '=', args.appId)
       .where('lk', '=', lk)
       .executeTakeFirst();
-    if (taken === undefined) return lk;
+    if (taken === undefined) return { code: lk, draws: attempt + 1 };
   }
   issue.logger?.error?.(
     { event: 'linking.link_code.exhausted', app_id: args.appId, platform: args.platform },
     'linking: link code collided on every draw; link registered without lk',
   );
-  return null;
+  return { code: null, draws: LINK_CODE_ATTEMPTS };
 }
 
 /** The module's single links insert statement (not yet executed); lk is written here only. */
