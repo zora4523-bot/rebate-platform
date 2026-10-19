@@ -19,10 +19,12 @@ paths:
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/linking/link-code/**'
+  - 'test/spec/orders/source-wiring/link-code{,.int}.test.ts'
 impl: claude
 tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/linking/link-code/**'
+  - 'test/spec/orders/source-wiring/link-code{,.int}.test.ts'
 status: todo
 pr: null
