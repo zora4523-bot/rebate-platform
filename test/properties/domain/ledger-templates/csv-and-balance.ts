@@ -204,10 +204,17 @@ export function checkCsvAndBalance(shard: number): boolean {
   );
 }
 
-// CI (ubuntu-latest): original #20 took 516 s / 100000 runs = 5.16 ms/run.
-// Multiply by locally profiled per-template shard shares, using their upper bounds.
-const MS_PER_RUN = [1.05, 1.05, 1.05, 1.05, 0.95, 0.7] as const;
+// Milliseconds per run of each shard: the slowest value measured or estimated on CI
+// (ubuntu-latest, PR head 11f41194, 2026-10-19), as a mechanical margin fix for longrun.
+// Shards 1-3: the larger of verify-props (PROP_RUNS=100000, two passes: 79.9 / 72.6 / 53.3 s
+// at most) and longrun-run (PROP_RUNS=1000000: 1133 / 1168 / 438 s), per run.
+// Shards 4-6 did not finish within the old 30-minute longrun job; estimated as the larger of
+// (templates in the shard x shard 1's per-template time per run at 1e6, 1.133 / 34 ms) x 2.7
+// and (their slowest verify-props pass, 74.6 / 39.9 / 26.8 s per 100000 runs) x 2.7, where 2.7
+// is the worst slowdown of longrun-run against a linear extrapolation of verify-props observed.
+const MS_PER_RUN = [1.133, 1.168, 0.534, 2.25, 1.078, 0.725] as const;
 
+// Timeout: twice the per-run value above, scaled with PROP_RUNS, never below 120 s.
 export function csvAndBalanceTimeout(shard: number): number {
-  return Math.max(120_000, Math.ceil(propRuns() * MS_PER_RUN[shard]! * 1.5));
+  return Math.max(120_000, Math.ceil(propRuns() * MS_PER_RUN[shard]! * 2));
 }
