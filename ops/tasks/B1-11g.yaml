@@ -12,7 +12,7 @@ type: impl
 # 2026-10-19 编排裁定（notices 12:3x，couli #150 回写 BR-ID-05 实现口径）：同 IP 小时发码计数改为 PG 权威——attempt 行键 (app_id, 幂等键)，带 ip_hmac / phone_hmac / created_at / 状态；计数 = created_at ∈ [now−3600−发送超时上限, now] 的行数，在途与失败在结果确定前计入；同幂等键一行；无 Redis 在途租约，Redis 只缓存。第 7 轮 Opus 高推理重构，Codex 写穷举 / 性质测试（{慢接受, 双失败, Redis 不可用, 崩溃于写行前 / 后 / 调供应商后} × {同键重试, 新键}）。需新迁移（号落地时取主干最大号 + 1）。
 refs: []
 refs_hash: {}
-deps: [CT-15p, B1-03g, B1-11r]
+deps: [CT-15p, B1-03g, B1-11r, B1-11s]
 paths:
   - 'db/migrations/**'
   - 'db/schema.sql'

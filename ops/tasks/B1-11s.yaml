@@ -1,0 +1,20 @@
+id: B1-11s
+repo: rebate-platform
+title: 测试修改：B1-03g 冻结测试 test/spec/risk/sms-risk/http.int.test.ts 中由同 IP 小时额度产生的 Retry-After（3601 / 1741）在 B1-11g 的 PG attempt 窗口 [now−3600−发送超时上限, now] 下多出发送超时补偿（3611 / 1751）；期望值改为「旧值 + 实现导出的窗口补偿秒数」（main 上无补偿常量按 0），其他额度来源的等待秒数不动
+type: test-change
+# 草稿 2026-10-19（身份与风控线 identity-lane）。B1-11g（#919）PR 头 CI verify-int：AC-B1-03g#1、#6#8、#6#10 三条 expected 3611 to be 3601 / 1751 to be 1741。窗口补偿是 B1-11g 第 7 轮模型（编排 2026-10-19 12:3x）的一部分，B1-11g 规则测试已按 3611 断言。按编排 2026-10-18 23:1x 先例；等待更长属收紧，非削弱。
+# 改前（main，旧实现）改后（叠 B1-11g）都要绿；不得写成「接受任一值」。
+# 不属削弱资金测试；保护路径第一类改已有文件，走非 task/ 分支 test-change/B1-11s，Claude 只读复审「不削弱」后按 approvals #24 加标签合并。模型 Opus 5.5。
+refs: []
+refs_hash: {}
+deps: [B1-03g]
+paths:
+  - 'test/spec/risk/sms-risk/http.int.test.ts'
+  - 'test/spec/risk/sms-risk/http-kit.ts'
+  - 'test/spec/risk/sms-risk/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/sms-risk/**'
+status: todo
