@@ -8,16 +8,7 @@ import {
 } from '../../../../apps/api/src/modules/ledger/index.ts';
 import { directoryInvariantSource } from '../../../../apps/api/src/modules/ledger/infra/invariant-files.ts';
 import { DAY, setup, snapshots } from '../daily-check/kit.ts';
-import {
-  TIMEOUT,
-  account,
-  close,
-  context,
-  open,
-  post,
-  snapshot,
-  voucher,
-} from '../posting/kit.ts';
+import { TIMEOUT, account, close, context, open, post, snapshot, voucher } from '../posting/kit.ts';
 
 // Exercise the real writer's inputs: one existing snapshot would be overwritten and
 // the posted platform entry would create another. An empty database could hide either bug.
