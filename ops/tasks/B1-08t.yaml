@@ -5,10 +5,9 @@ type: impl
 # 2026-10-19 入账（编排裁定 12:3x，「B1-08k 快照 pending 后要不要重试」：要重试，另开任务）。08 没写重试，这是实现方案（00 §8 第 ① 类），不改规则；任务书引用 08 BR-ATTR-01 ⑥ 原文。
 # 判断信号用「该订单仍有未处置的快照类待处理行」，不用快照行是否存在（避开冻结 B1-08k #6 / #23）；锁用订单行锁或 advisory lock；告警事件名按点号化规则。
 # 分工：资金类 → impl claude、tester codex、Codex 资金评审（D10-15）。
-refs: [BR-ATTR-01, BR-CALC-10]
-refs_hash:
-  BR-ATTR-01: 6d50f89ba4d3
-  BR-CALC-10: 1848b1fb0a51
+# 2026-10-19 refs 清空：BR-ATTR-01 + BR-CALC-10 全文 18.5KB 使任务书超 24KB 上限（规划/11 §5.3）；所需原文（BR-ATTR-01 ⑥、BR-CALC-10 快照段）由编排者补充逐字摘录，先例 B1-08k。
+refs: []
+refs_hash: {}
 deps: [B1-08k, B1-08n]
 paths:
   - 'apps/api/src/modules/orders/**'
