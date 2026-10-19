@@ -1,0 +1,34 @@
+{
+  "task": "CT-06x",
+  "spec_ref": "b90e712f5255a9600ebf6f0f3b561afd1b4f8d9e",
+  "spec_commit": "56fc163c7d42778578f42d7a18d9da615c24bded",
+  "red_tests": [],
+  "risk_note": "Guard change (tools/, AGENTS.md: protected class 3) under the owner's standing authorization for small process-gate fixes (ops/approvals.yaml id 16); Claude implemented, Codex adversarial review round 2 pass; label per approvals id 24. tester: none (tools' own unit tests by the implementer).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "Codex money reviews: round 1 fail (S1 worktree REVIEW.md could relax the review; S2 previous-round mispairing), round 2 pass (couli-runs/CT-06x/review-codex-r1.json, review-codex.json)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "c3e428f7c612453d2348e506f87dce394d614ea0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "03a6c4431e642fc41dbee9b8e0c3a3a092a8ec36"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
