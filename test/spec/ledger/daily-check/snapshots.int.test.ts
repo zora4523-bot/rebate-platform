@@ -175,14 +175,10 @@ it(
         -40n,
         { account_version: 2n },
       );
-      await pair(
-        db,
-        a,
-        p,
-        await voucher(db, { app_id: APP, accounting_date: '2032-06-14' }),
-        15n,
-        { ledger_type: 'CLAWBACK', account_version: 3n },
-      );
+      await pair(db, a, p, await voucher(db, { app_id: APP, accounting_date: '2032-06-14' }), 15n, {
+        ledger_type: 'CLAWBACK',
+        account_version: 3n,
+      });
       await pair(db, a, p, await voucher(db, { app_id: APP }), -20n, {
         account_version: 4n,
       });
