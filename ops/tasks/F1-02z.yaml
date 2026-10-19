@@ -1,0 +1,26 @@
+id: F1-02z
+repo: rebate-platform
+title: content 收尾：协议发布已有值 ≥ 新版本改回 20902（L44）；协议后台列表与 count 同一只读快照；字典后台列表改用读取解析器 parseDictVersion
+type: impl
+# 2026-10-19 入账（content-client 第四阶段，计划 couli-runs/CONTENT-client/phase4-plan.md §3；计划按 SPEC_REF 32d7b09 取行号）。
+# 依据：本线 decisions-pending L44（编排 10-19 22:2x 改 20902）、needs.md 末两条 S2；04 §6.6 agreements / dict 行。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）；原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：① agreement-admin.ts（约 l.318–335）已有值 ≥ 新版本 → 抛 20902（data.resource=agreement），不写任何行，日志降为 warn（D1）；20902 已在 x-error-codes，不改契约。
+# ② kysely-agreement-admin-store.ts（约 l.80）Promise.all 两查询改为同一 REPEATABLE READ 只读事务（同 F1-02s）或单查询 count(*) over()。
+# ③ dict-item-admin.ts（约 l.200）列表改用 parseDictVersion，dict_version="2147483647" 时与公共读一致。
+# 规则测试（Codex）只写 L44 新码与 int32 边界两例；快照一致性只写单测。冻结测试 [AC-F1-02p#16] 由 F1-02za 先放宽（50001 / 20902 皆可）。
+# 用到的默认：D1（warn）。
+refs: []
+refs_hash: {}
+deps: [F1-02za]
+paths:
+  - 'apps/api/src/modules/content/**'
+test_paths:
+  - 'test/spec/content/content-wrapup/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/content-wrapup/**'
+status: todo
+pr: null
