@@ -1588,6 +1588,16 @@ const OPEN_MODULES: [string, string][] = [
   ['typescript', "import ts from 'typescript';\nexport const n = ts;"],
   ['an unknown package', "import x from 'some-package';\nexport const n = x;"],
   ['vitest/node', "import { createVitest } from 'vitest/node';\nexport const n = createVitest;"],
+  // Codex review r9: file APIs of listed packages, and a subpath that is not listed.
+  [
+    'a file snapshot',
+    "import { expect } from 'vitest';\nexport const n = (v: string) => expect(v).toMatchFileSnapshot('./fixtures/out.txt');",
+  ],
+  [
+    "Kysely's migration loader",
+    "import { FileMigrationProvider } from 'kysely';\nexport const n = FileMigrationProvider;",
+  ],
+  ['kysely/migration', "import { Migrator } from 'kysely/migration';\nexport const n = Migrator;"],
 ];
 
 it('[CT-06w] fallback: a closure with one module that is not closed judges exactly like the old code (orchestrator ruling 2026-10-19)', () => {
@@ -1936,4 +1946,33 @@ it('[CT-06w] Codex review r8: only known pure packages keep a module closed; a p
   });
   expect(pure.map((m) => m.closed)).toEqual([true, true]);
   expect(mayReadSupport(file, 'test/spec/ct06w-format/fixtures/package.json', pure)).toBeNull();
+});
+
+it('[CT-06w] Codex review r9: a file snapshot helper and a migration loader keep the closure open', () => {
+  const closureOf = (file: string, files: Record<string, string>) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  const snapshot = 'test/spec/r9-snapshot/render.test.ts';
+  const snap = closureOf(snapshot, {
+    [snapshot]:
+      "import { it } from 'vitest';\nimport { matchOutput } from './render.ts';\nit('[AC-r9#1] current output', async () => { await matchOutput('ok\\n'); });",
+    'test/spec/r9-snapshot/render.ts':
+      "import { basename } from 'node:path';\nimport { expect } from 'vitest';\nexport async function matchOutput(value: string) {\n  const name = basename(expect.getState().testPath!).replace(/\\.test\\.ts$/, '.txt');\n  await expect(value).toMatchFileSnapshot(`./fixtures/${name}`);\n}\n",
+  });
+  expect(mayReadSupport(snapshot, 'test/spec/r9-snapshot/fixtures/render.txt', snap)).toBe(
+    `${snapshot} names render in an unresolved import ./render.ts (test/spec/r9-snapshot/render.ts is not closed: it uses toMatchFileSnapshot)`,
+  );
+  const migrations = 'test/spec/r9-migrations/rules.test.ts';
+  const mig = closureOf(migrations, {
+    [migrations]:
+      "import { expect, it } from 'vitest';\nimport { promises as fs } from 'node:fs';\nimport path from 'node:path';\nimport { fileURLToPath } from 'node:url';\nimport { load } from './seed.ts';\nconst options = { fs, path, migrationFolder: fileURLToPath(new URL('./fixtures/', import.meta.url)) };\nit('[AC-r9#3] migration exports', async () => { expect(Object.keys(await load(options))).toHaveLength(1); });",
+    'test/spec/r9-migrations/seed.ts':
+      "import { FileMigrationProvider, type FileMigrationProviderProps } from 'kysely/migration';\nexport function load(options: FileMigrationProviderProps) {\n  return new FileMigrationProvider(options).getMigrations();\n}\n",
+  });
+  expect(mayReadSupport(migrations, 'test/spec/r9-migrations/fixtures/seed.mjs', mig)).toMatch(
+    /^test\/spec\/r9-migrations\/rules\.test\.ts names seed in an unresolved import \.\/seed\.ts \(test\/spec\/r9-migrations\/seed\.ts is not closed: it /,
+  );
 });

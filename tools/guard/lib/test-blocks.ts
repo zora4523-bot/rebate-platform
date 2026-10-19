@@ -52,8 +52,10 @@
 //   import inside a template; every relative or `#` import resolves (certainly, by Vite's rules)
 //   to a closed module of the closure or to a module outside the test code (implementation code
 //   never reads test-support files, as since CT-06p); a bare specifier keeps it closed only when
-//   it is a known pure package (KNOWN_BUILTINS / KNOWN_PACKAGES: no file read or code load on the
-//   caller's behalf — prettier's resolveConfig reads files, Codex review r8) or a capability
+//   it is a known pure package (KNOWN_BUILTINS / KNOWN_PACKAGES, exact specifiers: no file read or
+//   code load on the caller's behalf — prettier's resolveConfig, kysely/migration read files,
+//   Codex reviews r8, r9; the listed packages' file APIs such as toMatchFileSnapshot and
+//   FileMigrationProvider are capabilities of the scan above) or a capability
 //   module judged by the scan above; a workspace package (`@couli/*`, test code such as
 //   packages/testing that the closure does not follow) or any other package keeps it open. Computed as a fixpoint over the closure; `opaque` says why not. The capabilities are
 //   a list of the ordinary spellings (Codex reviews r4–r7), not a proof: a name computed some
@@ -1444,6 +1446,11 @@ const FILE_ACCESS = new Set([
   'navigator',
   'document',
   'WebAssembly',
+  // Package APIs that read files on the caller's behalf (Codex review r9): Vitest's file snapshot
+  // (any path, unlike the snapshot files named after the test that CT-06r judges) and Kysely's
+  // migration loader.
+  'toMatchFileSnapshot',
+  'FileMigrationProvider',
 ]);
 /**
  * Objects whose properties give file access, a loader or code execution (CT-06w, Codex review r6):
@@ -1533,17 +1540,24 @@ const KNOWN_BUILTINS = new Set([
   'util/types',
   'zlib',
 ]);
-/** npm packages by name; any subpath of them too (`react-dom/client`), except for vitest. */
+/**
+ * npm specifiers, exactly as written: a subpath of a listed package is another entry (Codex review
+ * r9: `kysely/migration` loads files) and is listed on its own or not at all.
+ */
 const KNOWN_PACKAGES = new Set([
   'vitest',
   'fast-check',
   'kysely',
   'react',
+  'react/jsx-runtime',
+  'react/jsx-dev-runtime',
   'react-dom',
+  'react-dom/client',
   '@testing-library/react',
   '@testing-library/user-event',
   'jose',
   'ajv',
+  'ajv/dist/2020.js',
   'ajv-formats',
   'openapi-types',
   'reflect-metadata',
@@ -1551,11 +1565,7 @@ const KNOWN_PACKAGES = new Set([
 
 function knownPackage(spec: string): boolean {
   if (KNOWN_BUILTINS.has(spec.startsWith('node:') ? spec.slice(5) : spec)) return true;
-  if (spec.startsWith('node:')) return false;
-  const parts = spec.split('/');
-  const name = spec.startsWith('@') ? parts.slice(0, 2).join('/') : (parts[0] ?? spec);
-  if (name === 'vitest') return spec === 'vitest';
-  return KNOWN_PACKAGES.has(name);
+  return !spec.startsWith('node:') && KNOWN_PACKAGES.has(spec);
 }
 
 /**
