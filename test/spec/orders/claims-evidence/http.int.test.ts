@@ -203,7 +203,8 @@ it.each([
       .values({
         app_id: f.subject.app_id,
         key: 'attr.backfill_window_hours',
-        value: setting,
+        // a string setting must reach jsonb as a JSON string, not as the text of a number
+        value: typeof setting === 'string' ? JSON.stringify(setting) : setting,
         updated_by: 'synthetic-evidence',
       })
       .execute();
