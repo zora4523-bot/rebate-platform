@@ -1,0 +1,136 @@
+{
+  "task": "F1-02n",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "139e05ddee28a59013667afab4ba0ac6cd78c6c9",
+  "red_tests": [
+    "test/spec/content/agreements-read/contract.test.ts > [AC-F1-02n#20] getAgreements 去除 planned 并生成路由 schema，保持匿名与不签名契约",
+    "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#6] 无令牌和设备头可读两类当前版本，完整通过响应契约且不泄露劳务协议",
+    "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#7] 只发布 privacy 时 agreement 为 null",
+    "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#8] 只发布 agreement 时 privacy 为 null",
+    "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#9] 两类未发布时均为 null，即使已有劳务协议或其他应用协议",
+    "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#10] 匿名读不看令牌：deletion_only 令牌与匿名读得到同一 200 响应",
+    "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#11] HTTP 缓存 59999ms 内保持旧版，到 60000ms 刷新，命中不续期",
+    "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#12] HTTP 缓存按 app_id 隔离，交替请求不会串应用",
+    "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#13] HTTP 缓存 null 到期后刷新，且不影响端口即时看到首次发布",
+    "test/spec/content/agreements-read/no-database.test.ts > [AC-F1-02n#18] 没有数据库句柄仍注册协议路由，请求返回 50001",
+    "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#1] privacy 按最大 version 取当前行，精确返回六字段",
+    "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#1] agreement 按最大 version 取当前行，精确返回六字段",
+    "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#1] labor_agreement 按最大 version 取当前行，精确返回六字段",
+    "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#2] 无劳务协议、只有其他 app、只有其他 type 时均为 null",
+    "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#3] 同一个端口不推进时钟就能读到刚发布的 v3，重签门槛取 min_version",
+    "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#4] 空结果不缓存，首次发布立即可读",
+    "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#5] 接受调用方事务句柄，能读取同事务未提交的新版本",
+    "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#19] 每次端口读取恰好执行一条查询，包括重复读取与空结果",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#14] privacy 地址参数顺序固定，基址有无尾斜杠结果相同",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#14] agreement 地址参数顺序固定，基址有无尾斜杠结果相同",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#14] labor_agreement 地址参数顺序固定，基址有无尾斜杠结果相同",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#15] 保留基址路径且只去掉末尾一个斜杠",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：http://h5.example.test",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：/mobile",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：//h5.example.test",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：https://",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：https://h5.example.test/?q=1",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：https://h5.example.test/#legal",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：https://h5.example.test/?",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：https://h5.example.test/#",
+    "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#17] 生成地址的路径和参数符合 routes.json 的 Agreement"
+  ],
+  "risk_note": "RV2 (content agreement reads). content/index.ts exports createAgreementReader({db}).currentAgreement(appId, type): one indexed query for the highest version of (app_id, type), uncached, usable with a caller's transaction handle; returns version, min_version, resign_from_version (F1-02m resignFromVersion), text_url (the stored url column), text_sha256, published_at, or null without a row. agreementTextUrl builds the H5 agreement page address from an https base (used by the F1-02p publish). GET /v1/agreements (anonymous, getAgreements leaves planned) returns the current privacy and agreement versions (labor agreement excluded), cached 60 s per app_id on the injected clock; without a database it answers 50001. identity is unchanged (switching B1-13h to the port is a later task). Rule test #10 was mechanically fixed by the orchestrator before the implementation: x-auth none operations never read Authorization, so a deletion_only token gets the anonymous 200 (L31 corrected). No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "139e05ddee28a59013667afab4ba0ac6cd78c6c9",
+      "tree": "a49a6fb086417dd1feae60d92ec05e47f1fab0f0",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T09:23:55Z",
+      "finished_at": "2026-10-19T09:24:17Z",
+      "red_tests": [
+        "test/spec/content/agreements-read/contract.test.ts > [AC-F1-02n#20] getAgreements 去除 planned 并生成路由 schema，保持匿名与不签名契约",
+        "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#6] 无令牌和设备头可读两类当前版本，完整通过响应契约且不泄露劳务协议",
+        "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#7] 只发布 privacy 时 agreement 为 null",
+        "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#8] 只发布 agreement 时 privacy 为 null",
+        "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#9] 两类未发布时均为 null，即使已有劳务协议或其他应用协议",
+        "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#10] 匿名读不看令牌：deletion_only 令牌与匿名读得到同一 200 响应",
+        "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#11] HTTP 缓存 59999ms 内保持旧版，到 60000ms 刷新，命中不续期",
+        "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#12] HTTP 缓存按 app_id 隔离，交替请求不会串应用",
+        "test/spec/content/agreements-read/delivery.int.test.ts > [AC-F1-02n#13] HTTP 缓存 null 到期后刷新，且不影响端口即时看到首次发布",
+        "test/spec/content/agreements-read/no-database.test.ts > [AC-F1-02n#18] 没有数据库句柄仍注册协议路由，请求返回 50001",
+        "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#1] privacy 按最大 version 取当前行，精确返回六字段",
+        "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#1] agreement 按最大 version 取当前行，精确返回六字段",
+        "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#1] labor_agreement 按最大 version 取当前行，精确返回六字段",
+        "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#2] 无劳务协议、只有其他 app、只有其他 type 时均为 null",
+        "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#3] 同一个端口不推进时钟就能读到刚发布的 v3，重签门槛取 min_version",
+        "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#4] 空结果不缓存，首次发布立即可读",
+        "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#5] 接受调用方事务句柄，能读取同事务未提交的新版本",
+        "test/spec/content/agreements-read/reader.int.test.ts > [AC-F1-02n#19] 每次端口读取恰好执行一条查询，包括重复读取与空结果",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#14] privacy 地址参数顺序固定，基址有无尾斜杠结果相同",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#14] agreement 地址参数顺序固定，基址有无尾斜杠结果相同",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#14] labor_agreement 地址参数顺序固定，基址有无尾斜杠结果相同",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#15] 保留基址路径且只去掉末尾一个斜杠",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：http://h5.example.test",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：/mobile",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：//h5.example.test",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：https://",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：https://h5.example.test/?q=1",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：https://h5.example.test/#legal",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：https://h5.example.test/?",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#16] 非 https 绝对地址或带 query/fragment 的基址返回 null：https://h5.example.test/#",
+        "test/spec/content/agreements-read/text-url.test.ts > [AC-F1-02n#17] 生成地址的路径和参数符合 routes.json 的 Agreement"
+      ],
+      "expected": [
+        "test/spec/content/agreements-read/contract.test.ts",
+        "test/spec/content/agreements-read/delivery.int.test.ts",
+        "test/spec/content/agreements-read/no-database.test.ts",
+        "test/spec/content/agreements-read/reader.int.test.ts",
+        "test/spec/content/agreements-read/text-url.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "6196d4d013d72b07325c7c92545d90303f669be23d0686671ea8f7ed57456fac"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "41e6aeac70fdad6cea65d8642d7c96171e64ded18631bef8dc313ecff4fe528f"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass with no findings; #10 later corrected mechanically by the orchestrator (x-auth none ignores tokens)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "7be7f2fb2bd46b6f70f87e13dbd438f9f790c926",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
