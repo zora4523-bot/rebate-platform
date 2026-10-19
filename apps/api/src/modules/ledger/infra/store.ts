@@ -203,6 +203,83 @@ export async function findVoucherId(
   return row?.id;
 }
 
+/** The stored voucher header a reversal copies (BR-FUND-15/16), by (app_id, uniq_key). */
+export interface VoucherRow {
+  readonly id: string;
+  readonly biz_type: string;
+  readonly biz_id: string;
+  readonly uniq_key: string;
+  readonly operator: string;
+  readonly memo: string | null;
+  readonly order_key: string | null;
+  readonly beneficiary_user_id: string | null;
+  readonly role: string | null;
+  readonly voucher_kind: string | null;
+}
+
+export async function findVoucher(
+  db: Kysely<DB>,
+  appId: string,
+  uniqKey: string,
+): Promise<VoucherRow | undefined> {
+  return db
+    .selectFrom('ledger_vouchers')
+    .select([
+      'id',
+      'biz_type',
+      'biz_id',
+      'uniq_key',
+      'operator',
+      'memo',
+      'order_key',
+      'beneficiary_user_id',
+      'role',
+      'voucher_kind',
+    ])
+    .where('app_id', '=', appId)
+    .where('uniq_key', '=', uniqKey)
+    .executeTakeFirst();
+}
+
+/** One stored entry with the owner of its account, so it can be posted again by reference. */
+export interface StoredEntry {
+  readonly account_id: string;
+  readonly owner_type: string;
+  readonly subject: string;
+  readonly sub_account: string;
+  readonly amount_fen: bigint;
+  readonly ledger_type: string;
+  readonly sub_type: string | null;
+  readonly income_type: string | null;
+}
+
+/** All entries of one voucher of this app, in insertion order. */
+export async function voucherEntries(
+  db: Kysely<DB>,
+  appId: string,
+  voucherId: string,
+): Promise<StoredEntry[]> {
+  return db
+    .selectFrom('ledger_entries as le')
+    .innerJoin('ledger_accounts as la', (join) =>
+      join.onRef('la.app_id', '=', 'le.app_id').onRef('la.id', '=', 'le.account_id'),
+    )
+    .select([
+      'le.account_id',
+      'la.owner_type',
+      'la.subject',
+      'le.sub_account',
+      'le.amount_fen',
+      'le.ledger_type',
+      'le.sub_type',
+      'le.income_type',
+    ])
+    .where('le.app_id', '=', appId)
+    .where('le.voucher_id', '=', voucherId)
+    .orderBy('le.id')
+    .execute();
+}
+
 export interface VoucherInsert {
   readonly id: string;
   readonly app_id: string;
