@@ -9,9 +9,10 @@ type: impl
 #   text_sha256, published_at}；不存在 30701；只读 app_id 内已发布版本。公共读不改写任何行。
 # 若契约以 planned 形式落地，同 PR 去掉 planned 并重生成 openapi.gen.ts 与路由生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
 # 用到的默认：D9。
+# 2026-10-20 编排裁定（04:0x）：CT-02x 作废，契约改由 CT-02z 以新操作 GET /v1/agreements/{type}?version=（getAgreementVersion）实现；本任务实现该新操作（标题里的 /v1/agreements 以此为准）。
 refs: []
 refs_hash: {}
-deps: [CT-02x]
+deps: [CT-02z]
 paths:
   - 'apps/api/src/modules/content/**'
   - 'contracts/openapi.yaml'
