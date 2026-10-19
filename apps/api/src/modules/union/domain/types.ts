@@ -225,6 +225,11 @@ export interface UnionOrderNeutralFields {
 }
 
 export interface UnionOrder extends ItemRef, PddOrderFields, Partial<UnionOrderNeutralFields> {
+  /** B1-08p：undefined = 平台无店铺字段；null = 本条缺失 / 非法；字符串 = 店铺标识。
+   * 拼多多来源：pdd.ddk.order.list.increment.get / list.range.get / detail.get 的 mall_id。
+   * 字段资料：docs-mirror/pdd/api/<接口名>.md；不以 mall_name / seller_nick 替代 ID。
+   */
+  readonly shop_id?: string | null;
   readonly order_id: string;
   readonly paid_fen: bigint;
   /** PDD: promotion_amount 含软件服务费，不是可分配基数；基数 = promotion_amount −
