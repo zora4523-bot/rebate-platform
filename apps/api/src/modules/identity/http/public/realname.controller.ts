@@ -93,6 +93,8 @@ export class RealnameController {
         key: typeof key === 'string' ? key : undefined,
         body: request.body,
         traceId: request.id,
+        // Name and id number: keyed request digest, never an unkeyed SHA-256 (BR-WDR-07; B1-01zzf).
+        keyedRequestDigest: true,
       },
       async () => {
         // The idempotency module answered 20001 before the handler when the key is missing.

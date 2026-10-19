@@ -1,0 +1,110 @@
+{
+  "task": "B1-01zzf",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "407ff90cb1a1f4190b10bcb80deb8907684200f6",
+  "red_tests": [
+    "test/spec/platform/idempotency-keyed-hash/controllers.test.ts > [AC-B1-01zzf#8] submitRealname 显式开启 keyedRequestDigest 并传入完整实名请求体",
+    "test/spec/platform/idempotency-keyed-hash/controllers.test.ts > [AC-B1-01zzf#9] bindPhone 显式开启 keyedRequestDigest 并保留事务执行模式",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#1] execute 敏感请求写 hmac1 盲索引，使用独立上下文及规范化 JSON",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#2] execute 递归排序与转义、数组顺序一致，五类敏感字段改变均改变摘要",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#3] execute 仅显式 true 改摘要，省略及 false 与 requestHashOf 保持 SHA-256",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#4] execute 新旧记录同体逐字节重放、异体 20901，带前缀值绝不退回 SHA 比对",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#5] execute 咨询锁被占时仍可重放新旧同体记录，异体保持 40901",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#1] executeInTransaction 敏感请求写 hmac1 盲索引，使用独立上下文及规范化 JSON",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#2] executeInTransaction 递归排序与转义、数组顺序一致，五类敏感字段改变均改变摘要",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#3] executeInTransaction 仅显式 true 改摘要，省略及 false 与 requestHashOf 保持 SHA-256",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#4] executeInTransaction 新旧记录同体逐字节重放、异体 20901，带前缀值绝不退回 SHA 比对",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#5] executeInTransaction 咨询锁被占时仍可重放新旧同体记录，异体保持 40901",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#6] 接管过期 processing 行也只写带前缀 HMAC",
+    "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#7] 同一规范化请求使用不同盲索引密钥时写入不同指纹",
+    "test/spec/platform/idempotency-keyed-hash/unavailable.test.ts > [AC-B1-01zzf#10] execute FieldCrypto missing 返回 HTTP 50001，不写幂等行、不执行用例",
+    "test/spec/platform/idempotency-keyed-hash/unavailable.test.ts > [AC-B1-01zzf#10] execute FieldCrypto throws 返回 HTTP 50001，不写幂等行、不执行用例",
+    "test/spec/platform/idempotency-keyed-hash/unavailable.test.ts > [AC-B1-01zzf#10] executeInTransaction FieldCrypto missing 返回 HTTP 50001，不写幂等行、不执行用例",
+    "test/spec/platform/idempotency-keyed-hash/unavailable.test.ts > [AC-B1-01zzf#10] executeInTransaction FieldCrypto throws 返回 HTTP 50001，不写幂等行、不执行用例",
+    "test/spec/platform/idempotency-keyed-hash/wiring.test.ts > [AC-B1-01zzf#11] PlatformModule 提供的幂等实例实际使用容器内的 FieldCrypto"
+  ],
+  "risk_note": "RV2 (platform/idempotency; identity controllers). Idempotent operations that opt in with keyedRequestDigest store request_hash as hmac1: + the FieldCrypto blind index (context idempotency.request_hash) of the canonical JSON instead of an unkeyed sha256, so the stored digest of a request body holding personal data cannot be brute-forced back (BR-WDR-07 as written back in couli #150; the hmac1: prefix records the blind-index key version, orchestrator decision 1). Rows without the prefix (legacy sha256) still compare against the sha256 of the same body during the retention window (dated TODO). FieldCrypto missing, throwing or returning a malformed value answers 50001 before any lookup and writes nothing, even when a legacy row exists. submitRealname and bindPhone opt in; savePayoutAccount and landingRegister are still planned and will opt in in their own tasks. The general path and requestHashOf are unchanged, so the frozen sha256 assertions still hold; no new error code.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "407ff90cb1a1f4190b10bcb80deb8907684200f6",
+      "tree": "106ead3da81d2affd6fa6c60581fe4d135e0be98",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T11:55:46Z",
+      "finished_at": "2026-10-19T11:55:54Z",
+      "gate": {
+        "commit": "a7c9f1fca1de5b7263f0e0aa1441ec0aab3c81c9",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/platform/idempotency-keyed-hash/controllers.test.ts > [AC-B1-01zzf#8] submitRealname 显式开启 keyedRequestDigest 并传入完整实名请求体",
+        "test/spec/platform/idempotency-keyed-hash/controllers.test.ts > [AC-B1-01zzf#9] bindPhone 显式开启 keyedRequestDigest 并保留事务执行模式",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#1] execute 敏感请求写 hmac1 盲索引，使用独立上下文及规范化 JSON",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#2] execute 递归排序与转义、数组顺序一致，五类敏感字段改变均改变摘要",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#3] execute 仅显式 true 改摘要，省略及 false 与 requestHashOf 保持 SHA-256",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#4] execute 新旧记录同体逐字节重放、异体 20901，带前缀值绝不退回 SHA 比对",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#5] execute 咨询锁被占时仍可重放新旧同体记录，异体保持 40901",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#1] executeInTransaction 敏感请求写 hmac1 盲索引，使用独立上下文及规范化 JSON",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#2] executeInTransaction 递归排序与转义、数组顺序一致，五类敏感字段改变均改变摘要",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#3] executeInTransaction 仅显式 true 改摘要，省略及 false 与 requestHashOf 保持 SHA-256",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#4] executeInTransaction 新旧记录同体逐字节重放、异体 20901，带前缀值绝不退回 SHA 比对",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#5] executeInTransaction 咨询锁被占时仍可重放新旧同体记录，异体保持 40901",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#6] 接管过期 processing 行也只写带前缀 HMAC",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts > [AC-B1-01zzf#7] 同一规范化请求使用不同盲索引密钥时写入不同指纹",
+        "test/spec/platform/idempotency-keyed-hash/unavailable.test.ts > [AC-B1-01zzf#10] execute FieldCrypto missing 返回 HTTP 50001，不写幂等行、不执行用例",
+        "test/spec/platform/idempotency-keyed-hash/unavailable.test.ts > [AC-B1-01zzf#10] execute FieldCrypto throws 返回 HTTP 50001，不写幂等行、不执行用例",
+        "test/spec/platform/idempotency-keyed-hash/unavailable.test.ts > [AC-B1-01zzf#10] executeInTransaction FieldCrypto missing 返回 HTTP 50001，不写幂等行、不执行用例",
+        "test/spec/platform/idempotency-keyed-hash/unavailable.test.ts > [AC-B1-01zzf#10] executeInTransaction FieldCrypto throws 返回 HTTP 50001，不写幂等行、不执行用例",
+        "test/spec/platform/idempotency-keyed-hash/wiring.test.ts > [AC-B1-01zzf#11] PlatformModule 提供的幂等实例实际使用容器内的 FieldCrypto"
+      ],
+      "expected": [
+        "test/spec/platform/idempotency-keyed-hash/controllers.test.ts",
+        "test/spec/platform/idempotency-keyed-hash/digest.test.ts",
+        "test/spec/platform/idempotency-keyed-hash/unavailable.test.ts",
+        "test/spec/platform/idempotency-keyed-hash/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "4079b08704cdb27d59c23211f18d95ed84eb26038d765f37f5a03ff2fbc2637a"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "19 rule tests by Codex (run 1 voided by an orchestrator branch created during the run, run 2 produced them) reviewed by a fresh Claude subagent: round 1 pass with one S2 (FieldCrypto unavailable with a legacy row present), folded into the implementation"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "92bb9d9de2cb010091ee7ef4b96528210c4f6c03",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}

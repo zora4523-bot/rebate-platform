@@ -87,6 +87,8 @@ export class BindPhoneController {
           key: typeof key === 'string' ? key : undefined,
           body: request.body,
           traceId: request.id,
+          // Phone number: keyed request digest, never an unkeyed SHA-256 (BR-WDR-07; B1-01zzf).
+          keyedRequestDigest: true,
         },
         async (trx) =>
           response(
