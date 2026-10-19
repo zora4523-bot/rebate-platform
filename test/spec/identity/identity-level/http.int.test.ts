@@ -81,20 +81,26 @@ for (const method of ['GET', 'PUT'] as const) {
       phone_bound: true,
       realname_status: 'verified',
     });
-    await refusal(
-      await c.send(method, PAYOUT, {
-        token,
-        body: {
-          ...BODY,
-          app_id: 'other',
-          user_id: randomUUID(),
-          phone_hmac: 'claimed-phone',
-          realname_status: 'verified',
-        },
-      }),
-      403,
-      10005,
-    );
+    const forged = await c.send(method, PAYOUT, {
+      token,
+      body: {
+        ...BODY,
+        app_id: 'other',
+        user_id: randomUUID(),
+        phone_hmac: 'claimed-phone',
+        realname_status: 'verified',
+      },
+    });
+    if (method === 'PUT' && f.putMounted) {
+      // B1-13k: B1-13f implemented savePayoutAccount; its contract body has no room for the forged
+      // fields, so the real route refuses them (20001 naming each) before any guard, and the forged
+      // token alone, with a contract-valid body, still gets the database's 10005.
+      await refusal(forged, 400, 20001, false);
+      expect(forged.json()['data']).toMatchObject({
+        fields: expect.arrayContaining(['app_id', 'user_id', 'phone_hmac', 'realname_status']),
+      });
+      await refusal(await c.send(method, PAYOUT, { token }), 403, 10005);
+    } else await refusal(forged, 403, 10005);
     await c.bind(true);
     await refusal(await c.send(method, PAYOUT, { token }), 422, 30304);
     expect(f.handled(c.uid)).toBe(0);
@@ -243,7 +249,11 @@ it('[AC-B1-02za#22] ④冲突键 20901 和作废键 20903 不被 10005 覆盖，
     }),
   );
   await refusal(
-    await c.send('PUT', PAYOUT, { key, body: { fixture: 'different-body' } }),
+    // B1-13k: a different but contract-valid body (B1-13f's real route validates the body first).
+    await c.send('PUT', PAYOUT, {
+      key,
+      body: { ...BODY, alipay_logon_id: 'different-body@example.com' },
+    }),
     409,
     20901,
     false,

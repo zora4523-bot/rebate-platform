@@ -4,6 +4,13 @@
 // planned one still gets the stub handler below; an implemented one keeps its real route (a stub
 // on the same method and path would collide with it) and its real handler is wrapped, before the
 // routes are registered, so `handled` still counts every entry into the business handler.
+// B1-13k: B1-13f implemented savePayoutAccount. Its real route validates the contract body before
+// any guard (so BODY is now a contract-valid Alipay body; the planned stub has no route schema and
+// accepts it too), and judges ⑧ ⑨ ⑫ inside the handler's idempotency call (post-miss checks), so
+// entering the real PUT handler is not "the business ran": for PUT the probe wraps the business
+// service (PAYOUT_ACCOUNT_CHANGE) the controller calls after those checks. openHttp ends with a
+// positive control (selfCheck): a phone-bound, real-name-verified user passes the level checks on
+// GET and PUT and each counts exactly once, so a probe that never fires cannot pass the 0 counts.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,7 +31,15 @@ import { apiRequire, ROOT, sign } from '../../risk/signature/kit.ts';
 import { envelopeValidator } from '../../platform/errors/kit.ts';
 
 export const PAYOUT = '/v1/me/payout-account';
-export const BODY = { fixture: 'identity-level' };
+// B1-13k: contract-valid SavePayoutAccountRequest (alipay shape), so the real route of B1-13f gets
+// past its body schema (20001) to the stages under test. PAYEE is also the verified real name the
+// positive control seeds, so the real business does not stop at a name mismatch.
+export const PAYEE = '测试';
+export const BODY = {
+  payout_method: 'alipay',
+  alipay_logon_id: 'identity-level@example.com',
+  payee_name: PAYEE,
+};
 type Method = 'GET' | 'PUT' | 'POST';
 export interface Response {
   statusCode: number;
@@ -58,14 +73,31 @@ const metadata = Reflect as unknown as {
   defineMetadata(key: unknown, value: unknown, target: object): void;
 };
 type Decorator = (target: object, name: string, descriptor: PropertyDescriptor) => void;
+interface DynamicModuleLike {
+  providers?: unknown[];
+  [field: string]: unknown;
+}
 
-export async function openHttp(db: Kysely<DB>, redisUrl: string) {
+export async function openHttp(db: Kysely<DB>, redisUrl: string): Promise<Fixture> {
+  const f = await build(db, redisUrl);
+  try {
+    await selfCheck(f);
+  } catch (error) {
+    await f.close();
+    throw error;
+  }
+  return f;
+}
+
+async function build(db: Kysely<DB>, redisUrl: string) {
   const platform = (await import(
     new URL('apps/api/src/modules/platform/index.ts', ROOT).href
   )) as typeof Platform;
   const identity = (await import(
     new URL('apps/api/src/modules/identity/index.ts', ROOT).href
-  )) as Pick<typeof StepUp, 'withStepUp'>;
+  )) as Pick<typeof StepUp, 'withStepUp'> & {
+    IdentityModule: { forRoot(options: unknown): DynamicModuleLike };
+  };
   const tokens = (await import(
     new URL('apps/api/src/modules/identity/application/tokens.ts', ROOT).href
   )) as typeof Tokens;
@@ -124,23 +156,19 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
     new URL('apps/api/src/modules/platform/validation/route-schemas.gen.ts', ROOT).href
   )) as { CONTRACT_ROUTE_SCHEMAS: Record<string, unknown> };
   // B1-13j: per operation, not "both planned". GET is judged by the level guard before the
-  // handler, so entering the real handler is the same event the stub counted. PUT is judged inside
-  // the handler's idempotency call (post-miss check) and its contract body is not BODY, so entering
-  // a real PUT handler is not that event: when savePayoutAccount lands (B1-13f) the probe and BODY
-  // need their own test change instead of a weaker count.
+  // handler, so entering the real handler is the same event the stub counted ('handler' probe).
+  // B1-13k: PUT is judged inside the handler's idempotency call (post-miss checks ⑧ ⑨ before ⑫
+  // step-up), so a real PUT is counted where its business starts: every method of the
+  // PAYOUT_ACCOUNT_CHANGE service the controller calls from the idempotency handler ('service').
   const operations = [
-    { operation: 'getPayoutAccount', name: 'get', method: 'GET', probe: true },
-    { operation: 'savePayoutAccount', name: 'put', method: 'PUT', probe: false },
+    { operation: 'getPayoutAccount', name: 'get', method: 'GET', probe: 'handler' },
+    { operation: 'savePayoutAccount', name: 'put', method: 'PUT', probe: 'service' },
   ] as const;
   const implemented = operations.filter(({ operation }) =>
     Object.hasOwn(projection.CONTRACT_ROUTE_SCHEMAS, operation),
   );
-  for (const { operation, probe } of implemented) {
-    expect(
-      probe,
-      `${operation} 已实现：真实路由的业务入口探针与合契约的请求体需另开 test-change（B1-13j 注释）`,
-    ).toBe(true);
-  }
+  const handlerProbes = implemented.filter(({ probe }) => probe === 'handler');
+  const putMounted = implemented.some(({ name }) => name === 'put');
   const planned = operations.filter((entry) => !implemented.includes(entry));
   common.Controller('v1/me/payout-account')(PlannedPayout);
   for (const { name } of planned) {
@@ -163,6 +191,71 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
     const uid = carrier?.principal.uid ?? '*';
     handled.set(uid, (handled.get(uid) ?? 0) + 1);
   };
+  // B1-13k: the same rule for a business-service call, whose command carries the token's userId.
+  const countCommand = (args: unknown[]) => {
+    const command = args.find(
+      (arg): arg is { userId: string } =>
+        typeof arg === 'object' &&
+        arg !== null &&
+        typeof (arg as { userId?: unknown }).userId === 'string',
+    );
+    const uid = command?.userId ?? '*';
+    handled.set(uid, (handled.get(uid) ?? 0) + 1);
+  };
+  // B1-13k: wraps the PUT business service where IdentityModule provides it, before Nest creates
+  // it (the instance is frozen, and the controller keeps the reference it was constructed with).
+  const changeToken = (tokens as unknown as Record<string, unknown>)['PAYOUT_ACCOUNT_CHANGE'];
+  if (putMounted)
+    expect(typeof changeToken, 'savePayoutAccount 已实现，但没有 PAYOUT_ACCOUNT_CHANGE 令牌').toBe(
+      'symbol',
+    );
+  let changeProviders = 0;
+  let changeServices = 0;
+  const probeService = (service: unknown): unknown => {
+    if (typeof service !== 'object' || service === null) return service;
+    const wrapped: Record<string, unknown> = {};
+    let methods = 0;
+    for (const name of Object.keys(service)) {
+      const value = (service as Record<string, unknown>)[name];
+      if (typeof value !== 'function') {
+        wrapped[name] = value;
+        continue;
+      }
+      methods += 1;
+      wrapped[name] = (...args: unknown[]) => {
+        countCommand(args);
+        return (value as Handler).apply(service, args);
+      };
+    }
+    if (methods > 0) changeServices += 1;
+    return Object.freeze(wrapped);
+  };
+  const originalIdentity = identity.IdentityModule.forRoot.bind(identity.IdentityModule);
+  const identitySpy = vi
+    .spyOn(identity.IdentityModule, 'forRoot')
+    .mockImplementation((options: unknown) => {
+      const module = originalIdentity(options);
+      if (!putMounted) return module;
+      return {
+        ...module,
+        providers: (module.providers ?? []).map((provider) => {
+          if (
+            typeof provider !== 'object' ||
+            provider === null ||
+            !('provide' in provider) ||
+            provider.provide !== changeToken ||
+            !('useFactory' in provider)
+          )
+            return provider;
+          changeProviders += 1;
+          const factory = provider.useFactory as (...deps: unknown[]) => unknown;
+          return {
+            ...provider,
+            useFactory: async (...deps: unknown[]) => probeService(await factory(...deps)),
+          };
+        }),
+      };
+    });
   const restore: (() => void)[] = [];
   const segments = (value: unknown) =>
     (Array.isArray(value) ? value : [value ?? ''])
@@ -170,7 +263,7 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
       .filter((path) => path !== '');
   // Before init (Nest registers routes in init and keeps the handler function it finds then).
   const probeRealRoutes = (running: App) => {
-    for (const { operation, method } of implemented) {
+    for (const { operation, method } of handlerProbes) {
       let wrapped = 0;
       const seen = new Set<unknown>();
       for (const module of running
@@ -283,6 +376,11 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
   try {
     app = (await buildApp(db, dir, redisUrl, clock, logger)) as unknown as App;
     probeRealRoutes(app);
+    if (putMounted) {
+      // B1-13k: exactly one business service, created with the app (before init), is probed.
+      expect(changeProviders, `找不到 PAYOUT_ACCOUNT_CHANGE 的提供者`).toBe(1);
+      expect(changeServices, `PAYOUT_ACCOUNT_CHANGE 未装配（null）或没有可包装的方法`).toBe(1);
+    }
     await app.init();
     idem = app.get<Platform.Idempotency>(platform.IDEMPOTENCY);
     const running = app;
@@ -292,6 +390,9 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
       clock,
       idem,
       stepUpCalls,
+      // B1-13k: true once savePayoutAccount has its real route (contract body schema applies).
+      putMounted,
+      crypto: app.get<Platform.FieldCrypto>(platform.FIELD_CRYPTO),
       keys: app.get<Access.TokenKeyProvider>(tokens.TOKEN_KEYS),
       tokens: app.get<Access.TokenService>(tokens.TOKEN_SERVICE),
       redis: app.get<Platform.RedisHandle>(platform.REDIS),
@@ -317,10 +418,11 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
     throw error;
   } finally {
     entrySpy.mockRestore();
+    identitySpy.mockRestore();
     redisSpy.mockRestore();
   }
 }
-export type Fixture = Awaited<ReturnType<typeof openHttp>>;
+export type Fixture = Awaited<ReturnType<typeof build>>;
 
 export async function client(
   f: Fixture,
@@ -407,6 +509,19 @@ export async function client(
           changed_by: 'fixture',
         }),
       );
+    },
+    // B1-13k: a verified app.realname row (synthetic identity, encrypted like identity writes it),
+    // for the positive control only.
+    async verifyRealname(name = PAYEE) {
+      const crypto = f.crypto;
+      await sql`INSERT INTO app.realname (id, app_id, user_id, status, name_cipher, id_no_cipher,
+        id_no_hmac, birth_date_cipher, provider, verified_at)
+        VALUES (${randomUUID()}, ${appId}, ${uid}, 'verified',
+        ${Buffer.from(crypto.encrypt(name, 'realname.name'))},
+        ${Buffer.from(crypto.encrypt(uid, 'realname.id_no'))},
+        ${crypto.blindIndex(uid, 'realname.id_no')},
+        ${Buffer.from(crypto.encrypt('1990-01-01', 'realname.birth_date'))}, 'fixture',
+        ${f.clock.now()})`.execute(f.db);
     },
     async stepUp() {
       const jti = randomUUID();
@@ -504,4 +619,26 @@ export async function refusal(response: Response, status: number, code: number, 
   expect(response.headers['x-trace-id']).toBe(body['trace_id']);
   const validate = await envelopeValidator();
   expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
+}
+
+// B1-13k: positive control of the `handled` probes, run by openHttp before any test (the frozen
+// http.int.test.ts has no AC number for it). A phone-bound, real-name-verified user passes stages
+// ⑧ ⑨ (and ⑫ with a valid step-up token): the real GET handler, and the PUT business (the stub on a
+// planned PUT, the PAYOUT_ACCOUNT_CHANGE service on the real one) each count exactly once. Without
+// it a probe that never fires would pass every "0" assertion of the refusals.
+async function selfCheck(f: Fixture) {
+  const c = await client(f, { phone: true });
+  await c.verifyRealname();
+  const get = await c.send('GET');
+  expect(get.statusCode, get.payload).toBe(200);
+  expect(get.json()['code'], get.payload).toBe(0);
+  expect(f.handled(c.uid), 'GET 放行后真实处理函数应恰好计数 1').toBe(1);
+  const step = await c.stepUp();
+  const put = await c.send('PUT', PAYOUT, { stepUp: step.token });
+  // Not a refusal of a stage before the business (signature … ⑫ step-up). The business itself may
+  // answer anything (a 20001 of its own included): the count below is what proves it was entered.
+  expect([10001, 10002, 10003, 10005, 10006, 10401, 10402, 10403, 10405, 30304]).not.toContain(
+    put.json()['code'],
+  );
+  expect(f.handled(c.uid), `PUT 放行后业务入口应恰好计数 1：${put.payload}`).toBe(2);
 }
