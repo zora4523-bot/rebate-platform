@@ -220,3 +220,9 @@ approvals:
     granted: true
     date: '2026-10-17'
     note: '负责人原话「codex 做完手动的开发任务，接下来的主要开发还是安排其他账号的 Claude 5.5 opus 模型；困难的工作你也可以安排更高级的推理或者模型来执行开发；codex 负责对抗 review」（2026-10-17 17:2x，对话中给编排会话，经编排会话转达）；执行口径 ①–⑤（已派出 / 已开工的 Codex 实现任务做完为止、不中途换人；困难任务的例子与模型档位；清单冻结）由编排会话按原话拟写，登记在 couli-runs/B3-lane/notices.md 2026-10-17 17:3x 条，不是负责人原话；规划依据：规划仓库 PR couli#123，规划/11 §1.1「2026-10-17 起：实现回到 Claude，Codex 只做对抗评审」、§7.3 第 16 项，docs/changes/20261017-实现回到Claude_Codex只评审.md；落在本分支 chore/approvals-34-impl-back-to-claude（ops/approvals.yaml；tools/guard/codex-impl-tasks.json 的说明；tools/lib/codex-impl-tasks.ts 与 tools/lib/codex-impl-tasks.test.ts 的冻结集校验；tools/guard/lib/approvals.test.ts 行号上限随第 16 行同步；tools/ops/task.ts 注释；tools/README.md、tools/agent/README.md）；本条所在的 PR 按第 24 条由编排会话核对头提交后加标签'
+  - id: 35
+    row: 4
+    title: '第 20 条例外扩到 sms_send_attempts.status：状态机生成器（CT-04）合并之前，app.sms_send_attempts.status 以 risk 模块 sms-risk.ts 内的纯迁移判定（transitionSmsAttempt：pending → accepted | failed | unknown，终态不可再迁移）为唯一入口，配合单一写者（risk）与只更新 status=pending 行的条件更新（0 行回读判定）防并发覆盖，代码留 TODO 指向 CT-04；生成器合并后改用生成的 transition()，本条随之作废。只加 sms_send_attempts.status，不适用于订单、提现、账务等资金状态'
+    granted: true
+    date: '2026-10-19'
+    note: '负责人 2026-10-19 在对话里对编排会话选「加进例外（推荐）」（编排会话事先说明了与第 25、26 条同一做法，以及「等状态机生成器做好再接」的取舍）；起因 B1-11g（落地页发码风控）资金评审第 8 轮 Codex 判 S1「finishAttempt 经手写迁移表改 sms_send_attempts.status，未经生成的 transition()，approvals 未登记例外」；本条所在的 PR 由编排会话按负责人同一句授权加标签（先例第 20、25 条）'
