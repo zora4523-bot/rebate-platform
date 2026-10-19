@@ -19,6 +19,11 @@ export interface AppVersionRow {
 const SEMVER = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 const isUri = ajvFormats.default.get('uri') as (value: string) => boolean;
 
+/** The contract's `format: uri` check, shared with the console's version reads (F1-02zc). */
+export function isAppVersionUri(value: unknown): boolean {
+  return typeof value === 'string' && isUri(value);
+}
+
 export class InvalidAppVersionError extends Error {
   readonly column: keyof AppVersionRow;
 

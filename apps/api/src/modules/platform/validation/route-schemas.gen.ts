@@ -7854,6 +7854,233 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminListAppVersions": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    }
+  },
+  "adminGetAppVersion": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        }
+      },
+      "required": [
+        "platform",
+        "channel"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminSaveAppVersion": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Client platforms whose version row the console saves (a subset of ClientPlatformCode; h5 and admin rows are read-only).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony"
+          ]
+        },
+        "channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        }
+      },
+      "required": [
+        "platform",
+        "channel"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "latest_version",
+        "min_supported_version",
+        "recommended_version",
+        "update_title",
+        "update_notes",
+        "store_url",
+        "default_store",
+        "store_listings",
+        "confirmed_stores",
+        "expected_row_version"
+      ],
+      "properties": {
+        "latest_version": {
+          "type": "string",
+          "description": "Semantic version x.y.z.",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "min_supported_version": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Semantic version x.y.z.",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null = no minimum. Saving a higher one than before (none before counts) needs the totp tier."
+        },
+        "recommended_version": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Semantic version x.y.z.",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "update_title": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "update_notes": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "store_url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "default_store": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{1,32}$",
+          "description": "Store key of store_url (specs/app-stores.yaml)."
+        },
+        "store_listings": {
+          "type": "array",
+          "description": "In the order the console shows; a store repeated is 20001 with data.fields=[store_listings].",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "store",
+              "listed_version"
+            ],
+            "properties": {
+              "store": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Store key of specs/app-stores.yaml (that file comes with CT-19b)."
+              },
+              "listed_version": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "description": "Semantic version x.y.z.",
+                    "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "confirmed_stores": {
+          "type": "array",
+          "description": "Stores whose listed_version is below min_supported_version that the operator confirmed one by one (BR-ID-01 细则); may be empty.",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,32}$"
+          }
+        },
+        "expected_row_version": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The row's row_version as the console showed it, null when there is no row yet; a mismatch is 20902."
+        }
+      }
+    }
+  },
   "adminListKillSwitches": {
     "headers": {
       "type": "object",
