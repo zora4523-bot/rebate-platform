@@ -4,6 +4,7 @@ title: 后台「工作台」页：GET /admin/v1/dashboard（dashboard.view）—
 type: impl
 # 2026-10-20 入账（前端线 f1-frontend-7）。05 F1-14a、01 F-ADM-26；契约 CT-24a（adminGetDashboard，x-implementation planned，后端 B1-34 未做——按契约用假服务端开发，编排 2026-10-18 19:2x「契约合并后先做数据接线」）；负责人 21:3x 后台第 1 批定稿，视觉闸已解除（规划 #141 design/specs/admin-dashboard.md）。
 # 新增菜单「工作台」会改变菜单清单与默认落页：规划 #137 新增 F-ADM-26 属「规划更新后同步既有规则测试」，按 CT-06p 口径在本任务分支同步 test/spec/frontend/admin-shell/** 等冻结测试（只改受影响用例、改动用例有效红），合并时 #24 加标签。
+# 2026-10-20 补 test_paths：admin-auth/app.test.ts APP#2 与 admin-auth-qr/permissions.test.ts PERMISSION#1 的超管分支也预期登录后落 users，admin-antd/shell.test.ts SHELL#2 断言超管菜单项数等于原菜单数，随工作台落页同步（CT-06p 口径）。
 # 本期不含「未关闭告警」卡（负责人定稿 ①）。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
 refs: []
 refs_hash: {}
@@ -17,6 +18,9 @@ paths:
 test_paths:
   - 'test/spec/frontend/admin-dashboard/**'
   - 'test/spec/frontend/admin-shell/**'
+  - 'test/spec/frontend/admin-auth/app.test.ts'
+  - 'test/spec/frontend/admin-auth-qr/permissions.test.ts'
+  - 'test/spec/frontend/admin-antd/shell.test.ts'
 impl: claude
 tester: codex
 accept:
