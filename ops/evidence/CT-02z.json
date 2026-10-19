@@ -1,0 +1,35 @@
+{
+  "task": "CT-02z",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "2ce1684c33a0372893c74512dd72404f759ca9e7",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; new operation planned). Anonymous GET /v1/agreements/{type}?version= (getAgreementVersion, x-auth none, not signed, no idempotency) returning PublicAgreementVersion {type, version, min_version, article_id, article_version, text_sha256, url, published_at}; labor_agreement and historical versions are public text without personal data (orchestrator ruling X3); 30701 when the type was never published or the version is absent; no cross-request cache. Replaces the void CT-02x (adding query parameters to getAgreements would break the frozen AC-F1-02n#20 and need a oneOf response). getAgreements unchanged except one description sentence. The H5 anonymous list gains the new path in the same PR (CT-02q precedent). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "15eb36fa40f8db0ebf84bfe24c0d9592cc1a9c34",
+    "specs": "a1b96a3002d99e9b2e9c35fa6b3b4fbdba07cfca"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
