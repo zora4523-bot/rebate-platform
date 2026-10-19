@@ -9,10 +9,14 @@ type: impl
 # 日志不含手机号、验证码、IP（BR-ID-33）。不签发任何令牌；版本门 x-min-version-gate false（BR-ID-01 细则「不判定」）。
 # 契约与生成物（openapi.yaml 去 planned；openapi.gen.ts、route-schemas.gen.ts 与三份路由表按 CT-06n 一并列入，pnpm codegen 重生成，不手改）写进 paths（Claude 实现，先例 B1-11e）。
 # 模型：Opus 5.5。测试标题 AC-B1-11g#n（E14）。与 B1-11h、B1-11k、B1-13e 同改 identity/**，按 deps 或后合并者变基。
+# 2026-10-19 编排裁定（notices 12:3x，couli #150 回写 BR-ID-05 实现口径）：同 IP 小时发码计数改为 PG 权威——attempt 行键 (app_id, 幂等键)，带 ip_hmac / phone_hmac / created_at / 状态；计数 = created_at ∈ [now−3600−发送超时上限, now] 的行数，在途与失败在结果确定前计入；同幂等键一行；无 Redis 在途租约，Redis 只缓存。第 7 轮 Opus 高推理重构，Codex 写穷举 / 性质测试（{慢接受, 双失败, Redis 不可用, 崩溃于写行前 / 后 / 调供应商后} × {同键重试, 新键}）。需新迁移（号落地时取主干最大号 + 1）。
 refs: []
 refs_hash: {}
 deps: [CT-15p, B1-03g, B1-11r]
 paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/modules/risk/application/sms-risk.ts'
   - 'apps/api/src/modules/risk/index.ts'
