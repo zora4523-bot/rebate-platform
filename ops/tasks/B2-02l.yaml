@@ -19,5 +19,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/db/ledger/invariants-reverse/**'
-status: todo
-pr: null
+status: done
+pr: 915
