@@ -115,11 +115,7 @@ it('[AC-B1-11h#6] 不合法手机号在幂等与开关之前 20001，不计 3040
   const body = await f.sms();
   await f.config('growth.invite_bind.enabled', false);
   for (let n = 0; n < 6; n++) {
-    const result = answer(
-      f,
-      await f.post({ ...body, phone: 'invalid', invite_code: '' }),
-      20001,
-    );
+    const result = answer(f, await f.post({ ...body, phone: 'invalid', invite_code: '' }), 20001);
     expect(result['data']).toEqual({ fields: ['phone'], reason: 'phone_invalid' });
   }
   expect(await f.idempotency()).toEqual([]);
@@ -475,6 +471,7 @@ it('[AC-B1-11h#22] app_id 隔离邀请码、短信、幂等主体和 IP 计数',
   answer(b, await b.post(bodyA, { key }), 20003);
   answer(a, await a.post(bodyA, { key }));
   answer(a, await a.post(await a.sms()), 44001);
+  kit.clock.advanceMs(61_000);
   const bodyB = await b.sms(bodyA.phone);
   answer(b, await b.post(bodyB, { key }));
   expect(await a.registrations()).toHaveLength(1);
@@ -483,7 +480,7 @@ it('[AC-B1-11h#22] app_id 隔离邀请码、短信、幂等主体和 IP 计数',
   kit.clock.set(NOW);
 });
 
-for (const birth of ['2008-10-18', '2008-10-19']) {
+for (const birth of ['2008-10-17', '2008-10-18', '2008-10-19']) {
   it(`[AC-B1-11h#28] 实名邀请人按判定时刻满十八岁方可用：${birth}`, async () => {
     const f = await fixture(kit);
     const body = await f.sms();
@@ -510,8 +507,8 @@ for (const birth of ['2008-10-18', '2008-10-19']) {
         updated_at: kit.clock.now(),
       })
       .execute();
-    answer(f, await f.post(body), birth === '2008-10-18' ? 0 : 30401);
-    if (birth !== '2008-10-18') await noAccount(f, body.phone);
+    answer(f, await f.post(body), birth === '2008-10-17' ? 0 : 30401);
+    if (birth !== '2008-10-17') await noAccount(f, body.phone);
   });
 }
 
