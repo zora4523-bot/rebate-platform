@@ -1,0 +1,24 @@
+id: CT-11b
+repo: rebate-platform
+title: 设计令牌升版到 v0.4.0（深色）：contracts/design-tokens.json 换成规划仓库 49bb4ad（#144）的固定版本快照（含每个颜色与 shadow.card / floating 的 dark），packages/ui-tokens 生成器在 tokens.gen.css 输出 prefers-color-scheme 与 data-theme="dark" 两个同值深色块并去掉 color-scheme 的 only light，theme.gen.ts 带深色取值，漂移检查随之更新
+type: impl
+# 2026-10-19 入账（前端线 f1-frontend-7；编排 2026-10-18 22:5x 派工、10-19 01:1x 开工条件已满足）。依据：规划/00 D35（三端与 H5 跟随系统深色，令牌浅 / 深两套取值）、规划 design/tokens/README.md「浅 / 深两套取值与各端消费」
+# （H5 / 后台只加载一份 variables.css 写法：:root 浅色；@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) } 与 :root[data-theme="dark"] 两个同值深色块，只覆盖带 dark 的令牌，color-scheme 设为 dark；读不到 dark 回退 value）、规划/03 §10.1。
+# SPEC_REF（32d7b09）已含 #144。快照逐字取规划 design/tokens/design-tokens.json 于 49bb4ad，不手改；contracts/README 改版本号与来源提交。生成物与快照同 PR（CT-11a 先例）。只消费唯一源的取值，不自定颜色。
+# 改 contracts/ 落地时占契约槽（全局同时 1 个，先在 B3-lane/notices.md 登记）。refs 留空：依据是 00 D35 与 design/tokens/README（非 08 BR），原文由编排者摘入任务书。
+refs: []
+refs_hash: {}
+deps: [CT-11a]
+paths:
+  - 'contracts/design-tokens.json'
+  - 'contracts/README.md'
+  - 'packages/ui-tokens/src/**'
+  - 'packages/ui-tokens/scripts/**'
+test_paths:
+  - 'test/spec/frontend/ui-tokens/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/ui-tokens/**'
+status: todo

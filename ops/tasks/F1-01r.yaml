@@ -1,0 +1,20 @@
+id: F1-01r
+repo: rebate-platform
+title: H5 接深色：已合并页面（规则、帮助、公告、协议、平台标识、重试 / 占位页）跟随系统深色与宿主 data-theme，不写死浅色值；浅 / 深各一套截图
+type: impl
+# 2026-10-19 入账（前端线 f1-frontend-7；规划/00 D35，design/tokens/README.md「浅 / 深两套取值与各端消费」：App 内 H5 由宿主在 <html> 写 data-theme="dark" / "light" 与原生保持同一主题，站外 H5 不写该属性，页面默认跟随系统）。
+# 只消费 CT-11b 生成的 tokens.css 深色块，不自定取值；页面里若有绕过令牌的写死颜色或 only light 一并改掉。深色可读性按规划/10 AC-S1-185。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+refs: []
+refs_hash: {}
+deps: [CT-11b]
+paths:
+  - 'apps/h5/src/**'
+  - 'apps/h5/index.html'
+test_paths:
+  - 'test/spec/frontend/h5-dark/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-dark/**'
+status: todo
