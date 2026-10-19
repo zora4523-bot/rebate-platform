@@ -1,0 +1,18 @@
+id: B1-13i
+repo: rebate-platform
+title: 测试修改：B1-02h 冻结测试 test/spec/identity/token/bootstrap.test.ts 的「真实 api 计划覆盖非签名 login / optional / realname 路由」从契约里挑尚未实现的同档操作注册桩；B1-13e 实现了最后一个 realname 非签名操作 getPayoutAccount，候选耗尽而红。选桩改为不依赖尚有未实现操作（断言不变）
+type: test-change
+# 草稿 2026-10-19（身份与风控线 identity-lane）。B1-13e（#833）PR 头 CI verify-props：bootstrap.test.ts「必须从未实现契约操作中选择桩」expected undefined to be defined。按编排 2026-10-18 23:1x 先例（冻结测试的夹具 / 形状挡住正确实现时开 test-change，不削弱断言）。
+# 改法：仍在真实 api 应用上证明该档请求检查对非签名路由生效且拒绝发生在处理函数前；标题、编号、三个档位与全部断言（状态码、错误码、信封、无 data、处理函数未被调用、login 档 bodyLimit）保留；只改选桩方式。改前（main）改后（叠 B1-13e）都要绿。
+# 不属削弱资金测试；保护路径第一类改已有文件，走非 task/ 分支 test-change/B1-13i，Claude 只读复审「不削弱」后按 approvals #24 加标签合并。模型 Opus 5.5。
+refs: []
+refs_hash: {}
+deps: [B1-02h]
+paths:
+  - 'test/spec/identity/token/bootstrap.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/token/**'
+status: todo
