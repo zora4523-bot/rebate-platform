@@ -1,0 +1,26 @@
+id: CT-06y
+repo: rebate-platform
+title: CT-06y：AC-B3-04b#30 性质测试超时与 CI 实际时长对齐（避免 15 秒默认超时偶发红）
+type: test-change
+# 2026-10-19 入账（编排会话）。起因：test/spec/agent/tools-search/search.test.ts 的 [AC-B3-04b#30] 是 fast-check 性质测试，
+# runs 由 propParams()（PROP_RUNS）决定，verify-props 两轮各 100000 次；B3-04b 为修 OOM 改成整轮共用一个 fixture，
+# 每次 run 仍新建 handler、走完整 search_products 管线（多平台并发、复筛、合并排序、组卡）。
+# CI 上单条 13.6–16.1 秒，撞 test/vitest.config.ts 的 15 秒 testTimeout：
+# 主干 run 39172602202（033a6245，第二轮 SHA 种子 15405ms）、39183919489（f185aa7d，第一轮固定种子 16066ms）的 verify-props
+# 都以 Test timed out in 15000ms 失败，主干与各 PR 的 verify-props 时红时绿。不是业务失败。本机 100000 次约 4 秒。
+# 同文件其余 14 条不是性质测试、CI 上都在 120ms 以内；同目录 cards / keyword 两文件合计 < 250ms，无需改。
+# 做法：只给 #30 的 it 加第三参数 60_000（同文件、同目录没有性质测试超时先例，取 60 秒，约为 CI 实测的 3.7 倍）并加两行注释。
+# 不改断言、生成器、propParams() / PROP_RUNS / 种子，不删用例，不动实现。长跑档 test:longrun 只跑 test/properties，不含本文件。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走
+# 非 task 分支（chore/test-change-CT-06y）、不带证据文件（先例 CT-06s #815、F1-09k #770）；Claude 实现、Codex 只读对抗评审。
+refs: []
+refs_hash: {}
+deps: [B3-04b]
+paths:
+  - 'test/spec/agent/tools-search/search.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 860
