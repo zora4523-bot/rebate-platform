@@ -12,7 +12,8 @@ type: impl
 # 待裁定 L1、L15、L18、L19、L21（JEV-05 语义预检本批不做，留 TODO）用默认。
 refs: []
 refs_hash: {}
-deps: [CT-02s, F1-02u, F1-02v, F1-02q]
+# 2026-10-19 补 deps F1-02t（L50：运行时禁用词表快照在 F1-02t 生成，本任务复用）。
+deps: [CT-02s, F1-02u, F1-02v, F1-02q, F1-02t]
 paths:
   - 'apps/api/src/modules/content/**'
   - 'contracts/openapi.yaml'
