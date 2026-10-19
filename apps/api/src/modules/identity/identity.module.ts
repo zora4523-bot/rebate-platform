@@ -6,11 +6,13 @@ import {
   CLOCK,
   DB,
   FIELD_CRYPTO,
+  IDEMPOTENCY,
   REDIS,
   ROOT_LOGGER,
   type AppConfig,
   type Clock,
   type FieldCrypto,
+  type Idempotency,
   type RedisHandle,
   type RequestCheck,
   type RequestCheckInput,
@@ -115,6 +117,12 @@ import {
   type SensitiveWords,
 } from './application/registration.ts';
 import { createSmsLoginService, type SmsLoginService } from './application/sms-login.ts';
+import {
+  createLandingRegisterService,
+  type LandingRegisterService,
+} from './application/landing-register.ts';
+import type { LandingInvitePort, LandingRegisterConfigReader } from './ports/landing-invite.ts';
+import { LandingRegisterController } from './http/public/landing-register.controller.ts';
 import type { FirstAppLoginReview } from './application/login-completion.ts';
 import { createOauthLoginService, type OauthLoginService } from './application/oauth-login.ts';
 import { identityRiskPorts, type IdentityRiskPorts } from './application/risk-ports.ts';
@@ -129,6 +137,7 @@ import {
   H5_TOKENS,
   IDENTITY_CONFIG,
   LABOR_AGREEMENT,
+  LANDING_REGISTER,
   LOGOUT,
   ME,
   ME_READ_PORTS,
@@ -265,6 +274,18 @@ export interface IdentityModuleOptions {
     FactoryProvider<LaborAgreementConfigReader | null>,
     'provide'
   >;
+  /**
+   * growth's landing channel (B1-11h: the invite precheck before the SMS code and the binding in
+   * the registration transaction), assembled by app.module so identity never imports growth.
+   * Absent or null: POST /v1/invites/landing-register answers 50001.
+   */
+  readonly landingInvite?: Omit<FactoryProvider<LandingInvitePort | null>, 'provide'>;
+  /**
+   * The landing registration's configuration reader (legal versions, landing.ip_register_limit;
+   * B1-11h): content's reader bound to the caller's handle, uncached, assembled by app.module so
+   * identity never reads config_items. Absent or null: the route answers 50001.
+   */
+  readonly landingConfig?: Omit<FactoryProvider<LandingRegisterConfigReader | null>, 'provide'>;
 }
 
 /** RegistrationOptions['bindInvite'] as app.module assembles it (IdentityModuleOptions.inviteBinding). */
@@ -363,6 +384,10 @@ const ACCOUNT_RISK = Symbol('IDENTITY_ACCOUNT_RISK');
 const LABOR_AGREEMENT_CONFIG = Symbol('IDENTITY_LABOR_AGREEMENT_CONFIG');
 /** The payout-account configuration port (IdentityModuleOptions.payoutAccountConfig), or null. */
 const PAYOUT_ACCOUNT_CONFIG = Symbol('IDENTITY_PAYOUT_ACCOUNT_CONFIG');
+/** growth's landing channel (IdentityModuleOptions.landingInvite), or null. */
+const LANDING_INVITE = Symbol('IDENTITY_LANDING_INVITE');
+/** The landing configuration reader (IdentityModuleOptions.landingConfig), or null. */
+const LANDING_CONFIG = Symbol('IDENTITY_LANDING_CONFIG');
 
 @Module({})
 export class IdentityModule {
@@ -374,6 +399,7 @@ export class IdentityModule {
         DevicesController,
         SmsCodesController,
         LandingSmsCodesController,
+        LandingRegisterController,
         SmsLoginController,
         OauthLoginController,
         RefreshController,
@@ -398,6 +424,12 @@ export class IdentityModule {
         options.accountRisk === undefined
           ? { provide: ACCOUNT_RISK, useValue: null }
           : { ...options.accountRisk, provide: ACCOUNT_RISK },
+        options.landingInvite === undefined
+          ? { provide: LANDING_INVITE, useValue: null }
+          : { ...options.landingInvite, provide: LANDING_INVITE },
+        options.landingConfig === undefined
+          ? { provide: LANDING_CONFIG, useValue: null }
+          : { ...options.landingConfig, provide: LANDING_CONFIG },
         {
           provide: BIND_PHONE,
           inject: [
@@ -663,6 +695,76 @@ export class IdentityModule {
                   tokens,
                   ...(pushTokens === null ? {} : { pushTokens }),
                   ...(firstAppLoginReview === null ? {} : { firstAppLoginReview }),
+                }),
+        },
+        {
+          // POST /v1/invites/landing-register (B1-11h): its own registration core instance with the
+          // same ports as the SMS login's, except the invite binding (the landing binding is part
+          // of the landing transaction, growth's landing port, never register's best-effort port).
+          provide: LANDING_REGISTER,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            IDENTITY_CONFIG,
+            SMS_CODES,
+            INVITE_CODE_WORDS,
+            RISK_PORTS,
+            SMS_RISK_PORTS,
+            INITIAL_LEVEL_LOG,
+            BLOCKLIST_SERVICE,
+            LANDING_INVITE,
+            LANDING_CONFIG,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+            { token: IDEMPOTENCY, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            reader: IdentityConfigReader | null,
+            sms: SmsCodeService | null,
+            sensitiveWords: SensitiveWords,
+            risk: IdentityRiskPorts | null,
+            smsRisk: SmsRiskPorts,
+            initialLevelLog: InitialLevelLog | null,
+            blocklist: BlocklistService | null,
+            invite: LandingInvitePort | null,
+            config: LandingRegisterConfigReader | null,
+            db?: Kysely<Database>,
+            fieldCrypto?: FieldCrypto,
+            idempotency?: Idempotency,
+          ): LandingRegisterService | null =>
+            db === undefined ||
+            fieldCrypto === undefined ||
+            idempotency === undefined ||
+            reader === null ||
+            sms === null ||
+            invite === null ||
+            config === null
+              ? null
+              : createLandingRegisterService({
+                  db,
+                  clock,
+                  crypto: fieldCrypto,
+                  logger,
+                  idempotency,
+                  sms,
+                  registration: createRegistrationService({
+                    clock,
+                    config: reader,
+                    crypto: fieldCrypto,
+                    logger,
+                    sensitiveWords,
+                    ...(risk === null ? {} : risk.registration),
+                    ...smsRisk.registration,
+                    ...(initialLevelLog === null
+                      ? {}
+                      : { recordInitialLevel: createRecordInitialLevel(initialLevelLog) }),
+                  }),
+                  registrationConfig: reader,
+                  config,
+                  invite,
+                  blocklist,
                 }),
         },
         {

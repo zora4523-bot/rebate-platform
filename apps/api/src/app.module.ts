@@ -45,6 +45,7 @@ import {
   appendLevelChange,
   createFirstAppLoginReview,
   createInviteBinder,
+  createLandingInviteBinder,
   createMyInviteReader,
   createParentRelationReader,
   createRegistrationInviteBinding,
@@ -81,6 +82,8 @@ import {
   type IdentityConfigReader,
   type IdentityContext,
   type LaborAgreementConfigReader,
+  type LandingInvitePort,
+  type LandingRegisterConfigReader,
   type IdentityRequest,
   type FirstAppLoginReview,
   type InitialLevelLog,
@@ -451,6 +454,53 @@ function identityModule(): DynamicModule {
     // BR-WDR-31 (B1-13h): the labor agreement's configuration on the caller's handle (connection
     // or transaction), as inviteBinderDeps: a fresh reader per read, so no cache and no second
     // pooled connection; identity never reads config_items itself.
+    // B1-11h: the landing registration's keys (legal versions, landing.ip_register_limit) on the
+    // caller's handle, uncached, as laborAgreementConfig below.
+    landingConfig: {
+      inject: [CLOCK],
+      useFactory: (clock: Clock): LandingRegisterConfigReader => ({
+        configValue: (appId, key, handle) =>
+          createContentReader({ db: handle, clock }).configValue(appId, key),
+      }),
+    },
+    // B1-11h: growth's landing channel (precheck, binding) over the binder's read ports, each
+    // bound to the landing transaction; without Redis, the field cipher or the event bus there is
+    // none and the route answers 50001.
+    landingInvite: {
+      inject: [
+        CLOCK,
+        ROOT_LOGGER,
+        { token: REDIS, optional: true },
+        { token: FIELD_CRYPTO, optional: true },
+        { token: EVENT_BUS, optional: true },
+      ],
+      useFactory: (
+        clock: Clock,
+        logger: RootLogger,
+        redis?: RedisHandle,
+        crypto?: FieldCrypto,
+        events?: EventBus,
+      ): LandingInvitePort | null => {
+        if (redis === undefined || crypto === undefined || events === undefined) {
+          logger.info(
+            {
+              redis: redis !== undefined,
+              field_crypto: crypto !== undefined,
+              event_bus: events !== undefined,
+            },
+            'landing_invite_unassembled',
+          );
+          return null;
+        }
+        return createLandingInviteBinder({
+          clock,
+          logger,
+          redis,
+          crypto,
+          ...growthReadPorts(clock, crypto, events),
+        });
+      },
+    },
     laborAgreementConfig: {
       inject: [CLOCK],
       useFactory: (clock: Clock): LaborAgreementConfigReader => ({

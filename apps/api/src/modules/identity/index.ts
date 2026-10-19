@@ -2,6 +2,15 @@
 export { laborAgreementSigned } from './ports/labor-agreement.ts';
 // B1-13h: the labor agreement's configuration port app.module assembles (IdentityModuleOptions).
 export type { LaborAgreementConfigReader } from './ports/labor-agreement.ts';
+// B1-11h: the landing registration's ports app.module assembles (IdentityModuleOptions).
+export type {
+  LandingInviteBind,
+  LandingInviteBindInput,
+  LandingInvitePort,
+  LandingInvitePrecheck,
+  LandingInvitePrecheckInput,
+  LandingRegisterConfigReader,
+} from './ports/landing-invite.ts';
 export { createPayoutAccountService } from './application/payout-account.ts';
 export type {
   PayoutAccountSubject,

@@ -3355,6 +3355,106 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "landingRegister": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "idempotency-key"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phone",
+        "sms_code",
+        "invite_code",
+        "agreed"
+      ],
+      "properties": {
+        "phone": {
+          "type": "string",
+          "description": "Phone number as typed or pasted; it may carry spaces, hyphens and +86 / 0086 / 86. The\nserver normalises it (BR-ID-05 细则「手机号规范化」); a result that is not a mainland mobile\nnumber is 20001 with `data.fields=[phone]` and `data.reason=phone_invalid` (an empty\nstring included). No length bound in the schema: any spacing of a valid number must reach\nthe normaliser, and adding a bound to a request property is a breaking change (oasdiff).\n"
+        },
+        "sms_code": {
+          "type": "string",
+          "description": "The purpose=login code from POST /v1/landing/sms-codes; a wrong or expired code is\n20002 / 20003 (BR-ID-05).\n",
+          "maxLength": 64
+        },
+        "invite_code": {
+          "type": "string",
+          "description": "Invite code of the landing link. Normalised and checked by the server (BR-INV-02); an\nempty or malformed code is 30401 and counts towards the daily limit, so the schema has\nno pattern or minLength.\n",
+          "maxLength": 64
+        },
+        "agreed": {
+          "type": "boolean",
+          "description": "The user agreement and privacy policy box was ticked. false is 10004 with\ndata.consent_type=agreement, not a validation error; on success the agreement and\nprivacy consents are recorded with channel h5_landing (BR-INV-05, BR-ID-32).\n"
+        },
+        "channel": {
+          "type": "string",
+          "description": "Optional channel code of the landing link, kept as the account's registered channel\n(BR-ID-04, BR-INV-05).\n",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    }
+  },
   "getPayoutAccount": {
     "headers": {
       "type": "object",
