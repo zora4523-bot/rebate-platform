@@ -12,6 +12,8 @@ import { expectBuiltin } from './images.ts';
 
 afterEach(cleanup);
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 const root = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../../../apps/h5/src/components/platform/',
@@ -114,40 +116,54 @@ it('[AC-F1-01n-SOURCE#1] 中文文案只在 texts，尺寸和颜色使用令牌�
   expect(violations).toEqual([]);
 });
 
-it('[AC-F1-01n-ASSETS#1] 八个占位 SVG 作为包内 URL 资源使用，单色中性且不内联 DOM', () => {
+it('[AC-F1-01n-ASSETS#1] 八个内置图作为包内 URL 资源使用、不内联 DOM：官方图是边长不小于 96px 的 PNG，其余是单色中性的占位 SVG', () => {
   const view = render(createElement(PlatformBadge, { platform: 'taobao' }));
   const implementation = sources()
     .map((path) => readFileSync(join(root, path), 'utf8'))
     .join('\n');
-  for (const { key, file } of platforms) {
+  for (const { key, file, ext } of platforms) {
     view.rerender(createElement(PlatformBadge, { platform: key }));
     expectBuiltin(view.container, file);
     expect(view.container.querySelector('svg')).toBeNull();
-    const asset = join(root, 'assets', `${file}.svg`);
-    expect(existsSync(asset), `required built-in asset ${file}.svg`).toBe(true);
-    const source = readFileSync(asset, 'utf8');
-    const svg = new DOMParser().parseFromString(source, 'image/svg+xml');
-    expect(svg.querySelector('parsererror')).toBeNull();
-    expect(svg.documentElement.localName).toBe('svg');
-    expect(svg.documentElement.getAttribute('viewBox')).toBeTruthy();
-    expect(svg.querySelector('script, image, foreignObject, a, use, style')).toBeNull();
-    expect(svg.querySelector('path, rect, circle, ellipse, polygon, line, text')).not.toBeNull();
-    const colors = new Set<string>();
-    for (const element of [svg.documentElement, ...svg.querySelectorAll('*')]) {
-      for (const attribute of element.attributes) {
-        expect(attribute.name).not.toMatch(/^(?:on|href|xlink:href|style)/i);
-        if (/^(?:fill|stroke|color)$/.test(attribute.name)) {
-          expect(attribute.value).toMatch(/^(?:none|currentColor|var\(--[\w-]+\))$/);
-          if (attribute.value !== 'none') colors.add(attribute.value);
+    const asset = join(root, 'assets', `${file}.${ext}`);
+    expect(existsSync(asset), `required built-in asset ${file}.${ext}`).toBe(true);
+    // One built-in file per key: a replaced placeholder does not stay behind.
+    const other = ext === 'png' ? 'svg' : 'png';
+    expect(existsSync(join(root, 'assets', `${file}.${other}`)), `stale ${file}.${other}`).toBe(
+      false,
+    );
+    if (ext === 'png') {
+      // The owner's official image as provided (BR-TEXT-24 细则「格式」, couli #152): a PNG whose
+      // shorter edge is at least 96 px, i.e. the largest 32 pt display at 3x.
+      const png = readFileSync(asset);
+      expect(png.subarray(0, 8).equals(PNG_SIGNATURE), `${file}.png signature`).toBe(true);
+      expect(png.toString('latin1', 12, 16), `${file}.png IHDR`).toBe('IHDR');
+      expect(Math.min(png.readUInt32BE(16), png.readUInt32BE(20))).toBeGreaterThanOrEqual(96);
+    } else {
+      const source = readFileSync(asset, 'utf8');
+      const svg = new DOMParser().parseFromString(source, 'image/svg+xml');
+      expect(svg.querySelector('parsererror')).toBeNull();
+      expect(svg.documentElement.localName).toBe('svg');
+      expect(svg.documentElement.getAttribute('viewBox')).toBeTruthy();
+      expect(svg.querySelector('script, image, foreignObject, a, use, style')).toBeNull();
+      expect(svg.querySelector('path, rect, circle, ellipse, polygon, line, text')).not.toBeNull();
+      const colors = new Set<string>();
+      for (const element of [svg.documentElement, ...svg.querySelectorAll('*')]) {
+        for (const attribute of element.attributes) {
+          expect(attribute.name).not.toMatch(/^(?:on|href|xlink:href|style)/i);
+          if (/^(?:fill|stroke|color)$/.test(attribute.name)) {
+            expect(attribute.value).toMatch(/^(?:none|currentColor|var\(--[\w-]+\))$/);
+            if (attribute.value !== 'none') colors.add(attribute.value);
+          }
         }
       }
+      expect(colors.size).toBeLessThanOrEqual(1);
     }
-    expect(colors.size).toBeLessThanOrEqual(1);
     // Vite 8.3.0 inlines small SVGs even with ?url; ?no-inline preserves asset URLs.
     // Allow URL imports only, excluding ?raw, ?react and ?inline.
     expect(implementation).toMatch(
       new RegExp(
-        `(?:from\\s*|import\\s*)['\"]\\./assets/${file}\\.svg(?:\\?url|\\?no-inline)?['\"]`,
+        `(?:from\\s*|import\\s*)['\"]\\./assets/${file}\\.${ext}(?:\\?url|\\?no-inline)?['\"]`,
       ),
     );
   }

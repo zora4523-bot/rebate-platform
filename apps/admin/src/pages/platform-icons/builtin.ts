@@ -1,9 +1,9 @@
 // Bundled platform images and their URL map, kept apart from the page entry to avoid a cycle.
 import type { PlatformIconKey } from '@couli/contracts-ts';
-import taobao from './assets/taobao.svg?no-inline';
+import taobao from './assets/taobao.png?no-inline';
 import tmall from './assets/tmall.svg?no-inline';
-import jd from './assets/jd.svg?no-inline';
-import pdd from './assets/pinduoduo.svg?no-inline';
+import jd from './assets/jd.png?no-inline';
+import pdd from './assets/pinduoduo.png?no-inline';
 import wechat from './assets/wechat.svg?no-inline';
 import wechat_pay from './assets/wechat-pay.svg?no-inline';
 import alipay from './assets/alipay.svg?no-inline';
@@ -11,8 +11,9 @@ import wecom from './assets/wecom.svg?no-inline';
 
 /**
  * BR-TEXT-24 细则「标识键」: key → built-in file name. The built-in images are byte-identical
- * copies of apps/h5/src/components/platform/assets/<file>.svg kept in ./assets/<file>.svg and
- * shown with <img src> (import them with `?no-inline`, Vite would otherwise inline small SVGs).
+ * copies of apps/h5/src/components/platform/assets/<file>.<png|svg> kept in ./assets/ under the
+ * same name (the owner's official PNG where provided, a placeholder SVG otherwise) and shown with
+ * <img src> (import them with `?no-inline`, Vite would otherwise inline small files).
  */
 export interface BuiltinIconFiles {
   readonly taobao: 'taobao';

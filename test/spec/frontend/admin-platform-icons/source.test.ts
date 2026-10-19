@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { expect, it } from 'vitest';
-import { BUILTIN_FILES, KEYS } from './fixtures.ts';
+import { BUILTIN_EXTS, BUILTIN_FILES, KEYS } from './fixtures.ts';
 
 // 03 §9.1 and the F1 frontend lessons: the page is built from antd components (Table, Drawer,
 // Modal) rendered as JSX, never from native controls dressed in antd class names; previews load
@@ -200,13 +200,13 @@ it('[AC-F1-06zd-SOURCE#1] 页面以 JSX 渲染从 antd 导入的 Table、Drawer�
   expect(violations).toEqual([]);
 });
 
-it('[AC-F1-06zd-SOURCE#2] 内置图按 BR-TEXT-24 标识键表各有一个文件，与 H5 内置的同名占位逐字节相同', () => {
+it('[AC-F1-06zd-SOURCE#2] 内置图按 BR-TEXT-24 标识键表各有一个文件，与 H5 内置的同名文件逐字节相同', () => {
   // The console previews the same bundled image the clients fall back to (BR-TEXT-24 「安装包与
   // H5 产物内置一套作兜底」); the admin may not import from apps/h5, so it keeps copies.
   const h5 = resolve(root, '../../../../h5/src/components/platform/assets');
   const problems: string[] = [];
   for (const key of KEYS) {
-    const file = `${BUILTIN_FILES[key]}.svg`;
+    const file = `${BUILTIN_FILES[key]}.${BUILTIN_EXTS[key]}`;
     const own = join(root, 'assets', file);
     if (!existsSync(own)) {
       problems.push(`${key}: missing pages/platform-icons/assets/${file}`);

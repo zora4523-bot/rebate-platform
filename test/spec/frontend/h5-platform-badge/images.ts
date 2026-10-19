@@ -1,4 +1,5 @@
 import { expect, vi } from 'vitest';
+import { builtinExt } from './fixtures.ts';
 
 // Observe both React's <img src> attribute writes and new Image().src assignments.
 // Native jsdom images remain intact, so fireEvent exercises actual DOM event handlers.
@@ -66,7 +67,9 @@ export function displayedImage(container: HTMLElement): HTMLImageElement {
 
 export function expectBuiltin(container: HTMLElement, file: string): HTMLImageElement {
   const image = displayedImage(container);
-  expect(image.getAttribute('src')).toMatch(new RegExp(`/assets/${file}\\.svg(?:\\?.*)?$`));
+  expect(image.getAttribute('src')).toMatch(
+    new RegExp(`/assets/${file}\\.${builtinExt(file)}(?:\\?.*)?$`),
+  );
   expect(image.getAttribute('alt')).toBe('');
   expect(image.getAttribute('aria-hidden')).toBe('true');
   return image;

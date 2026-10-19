@@ -35,9 +35,9 @@ export const NAMES: Readonly<Record<Key, string>> = {
   wecom: '企业微信',
 };
 
-// BR-TEXT-24 细则「标识键」 table: key → built-in file name (the H5 placeholders of the same name
+// BR-TEXT-24 细则「标识键」 table: key → built-in file name (the H5 built-ins of the same name
 // live in apps/h5/src/components/platform/assets/; the admin keeps byte-identical copies in
-// apps/admin/src/pages/platform-icons/assets/<file>.svg).
+// apps/admin/src/pages/platform-icons/assets/<file>.<ext>).
 export const BUILTIN_FILES: Readonly<Record<Key, string>> = {
   taobao: 'taobao',
   tmall: 'tmall',
@@ -47,6 +47,19 @@ export const BUILTIN_FILES: Readonly<Record<Key, string>> = {
   wechat_pay: 'wechat-pay',
   alipay: 'alipay',
   wecom: 'wecom',
+};
+
+// Extension of each built-in file: the owner's official images (couli design/icons/platform/,
+// 2026-10-19) are PNG; the keys still waiting for one keep the placeholder SVG (F1-06zk).
+export const BUILTIN_EXTS: Readonly<Record<Key, 'png' | 'svg'>> = {
+  taobao: 'png',
+  tmall: 'svg',
+  jd: 'png',
+  pdd: 'png',
+  wechat: 'svg',
+  wechat_pay: 'svg',
+  alipay: 'svg',
+  wecom: 'svg',
 };
 
 /** Deterministic lowercase 64-hex digest for synthetic versions (not a real SHA-256). */

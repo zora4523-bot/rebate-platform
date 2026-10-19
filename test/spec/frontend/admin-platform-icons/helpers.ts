@@ -6,6 +6,7 @@ import { createDataProvider } from '../../../../apps/admin/src/providers/data/in
 import { BASE_URL } from '../admin-data/fixtures.ts';
 import {
   ACTOR,
+  BUILTIN_EXTS,
   BUILTIN_FILES,
   createServer,
   KEYS,
@@ -195,7 +196,9 @@ export function keyOfPreview(name: string): Key {
 
 /** The admin's built-in file of `key` as an <img src> (Vite asset URL, query allowed). */
 export function builtinSrc(key: Key): RegExp {
-  return new RegExp(`/platform-icons/assets/${BUILTIN_FILES[key]}\\.svg(?:\\?.*)?$`);
+  return new RegExp(
+    `/platform-icons/assets/${BUILTIN_FILES[key]}\\.${BUILTIN_EXTS[key]}(?:\\?.*)?$`,
+  );
 }
 
 /**
