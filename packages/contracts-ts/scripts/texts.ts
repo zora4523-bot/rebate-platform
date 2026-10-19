@@ -30,9 +30,10 @@ export const SILENT_CODES: readonly number[] = [10002, 10402, 30505, 44003];
  * Their text is admin copy, which stays in apps/admin and not in the app bundle (规划/03 §9,
  * contracts/README「后台文案不进这里」), so they have no error.<code> key here. CT-02f.
  * 30154 and 44004 appear only in the admin user operations (union binding reset / disable /
- * enable, risk-state), CT-02j.
+ * enable, risk-state), CT-02j. 30417 appears only in the admin export tasks (download, retry),
+ * CT-24k.
  */
-export const ADMIN_ONLY_CODES: readonly number[] = [10008, 10009, 30154, 44004];
+export const ADMIN_ONLY_CODES: readonly number[] = [10008, 10009, 30154, 30417, 44004];
 
 type Obj = Record<string, unknown>;
 

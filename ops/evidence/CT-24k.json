@@ -1,0 +1,35 @@
+{
+  "task": "CT-24k",
+  "spec_ref": "1a5a0cfdddc6e7f2e2fb454bc112a2de4b231a23",
+  "spec_commit": "3b7df7dbebec0cae87a407aa4b2559c97d24203f",
+  "red_tests": [],
+  "risk_note": "RV2 contract task (contracts/openapi.yaml, enums/admin.yaml, error-codes.yaml and the regenerated contracts-ts and route tables, plus contracts-ts conformance / texts scripts): adds admin export tasks, all x-implementation planned, per 01 F-ADM-03, 04 §6.6 / §11.1, BR-ID-34 (planning #148) and AC-S2-111: POST /admin/v1/exports (202, export permission, source users or audit_logs as two oneOf branches, masked by default, unmasked only with the matching pii permission, a totp step-up token and a 1–200 character reason, audited), GET /admin/v1/exports (paged; audit.view_all sees all, otherwise own), GET /admin/v1/exports/{id}/download (creator only, re-checks the creator's current source and pii permissions, signs a URL valid min(5 minutes, remaining of the 24 hour window), audited; others' or unknown ids answer 20001 [id]), POST /admin/v1/exports/{id}/retry (creator only, failed only, unmasked retries need a fresh step-up and reason). New enums export_status / export_resource; new admin-only code 30417 (HTTP 422, data.status; registered by planning #149) for download when not done and retry when not failed, in ADMIN_ONLY_CODES. conformance.ts gets ADMIN_ACCEPTED_OPERATIONS for the one 202 operation. New unit test admin-exports.test.ts. tester none; implementation by an Opus 5.5 subagent in one run. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 3,
+      "note": "round 1 fail (S1: the pinned SPEC_REF still had the old BR-ID-34 wording; resolved by advancing SPEC_REF in #853, contract unchanged); round 2 discarded (position assertion); round 3 pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "c3e428f7c612453d2348e506f87dce394d614ea0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "03a6c4431e642fc41dbee9b8e0c3a3a092a8ec36",
+    "specs": "c3c361e2d577cc550a501e7feb636fbcb179ff4a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}

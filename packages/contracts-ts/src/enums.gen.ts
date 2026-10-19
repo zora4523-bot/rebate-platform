@@ -135,6 +135,30 @@ export const admin_search_hit_type = [
 export type AdminSearchHitType = (typeof admin_search_hit_type)[number];
 
 /**
+ * 后台导出任务（/admin/v1/exports）的状态；迁移只有 pending→running→done 或 failed、done→expired（生成后 24 小时）、pending 或 running→cancelled（创建人账号停用）、failed→pending（创建人重试）；没有取消接口；中文名取 BR-TEXT-25 admin_dict
+ * Source: 规划/04 §6.6 exports；规划/08 BR-ID-34 细则「后台导出任务」、BR-ID-30 ⑨；中文名 BR-TEXT-25 admin_dict.export_status（CT-24k） (contracts/enums/admin.yaml).
+ */
+export const export_status = [
+  "pending", // 排队中（已创建或重试后等待生成）
+  "running", // 生成中
+  "done", // 已完成（文件可由创建人下载，直到 expires_at）
+  "failed", // 失败（只有本状态可重试）
+  "expired", // 已过期（文件已由对象存储生命周期规则删除，不可下载、不可重试）
+  "cancelled", // 已取消（创建人账号停用时取消，不可下载、不可重试）
+] as const;
+export type ExportStatus = (typeof export_status)[number];
+
+/**
+ * 后台导出任务的来源列表；创建时须持有该列表本身的权限点（括号内），filters 与该列表的查询参数同形；其他列表随各自的契约追加
+ * Source: 规划/04 §6.6 exports（filters 同该列表的查询参数）；规划/01 F-ADM-03（CT-24k） (contracts/enums/admin.yaml).
+ */
+export const export_resource = [
+  "users", // 用户列表 GET /admin/v1/users（user.list；filters 为 risk_state）
+  "audit_logs", // 审计日志 GET /admin/v1/audit-logs（登录即可，未持 audit.view_all 时只导出本人记录；filters 为 actor_id、target_type、target_id、permission、from、to）
+] as const;
+export type ExportResource = (typeof export_resource)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -1486,6 +1510,8 @@ export const enums = {
   admin_auth_level,
   admin_dashboard_todo_key,
   admin_search_hit_type,
+  export_status,
+  export_resource,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,

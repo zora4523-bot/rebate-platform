@@ -1,6 +1,6 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
@@ -107,3 +107,19 @@ enums:
       order: 订单（order.view；按完整订单号命中）
       user: 用户（user.lookup；按 UID 或完整手机号命中，或作为命中单号的所属用户附带）
       withdrawal: 提现单（fund.view；按完整提现单号命中；提现模块上线前不产生命中）
+  export_status:
+    source: 规划/04 §6.6 exports；规划/08 BR-ID-34 细则「后台导出任务」、BR-ID-30 ⑨；中文名 BR-TEXT-25 admin_dict.export_status（CT-24k）
+    description: 后台导出任务（/admin/v1/exports）的状态；迁移只有 pending→running→done 或 failed、done→expired（生成后 24 小时）、pending 或 running→cancelled（创建人账号停用）、failed→pending（创建人重试）；没有取消接口；中文名取 BR-TEXT-25 admin_dict
+    values:
+      pending: 排队中（已创建或重试后等待生成）
+      running: 生成中
+      done: 已完成（文件可由创建人下载，直到 expires_at）
+      failed: 失败（只有本状态可重试）
+      expired: 已过期（文件已由对象存储生命周期规则删除，不可下载、不可重试）
+      cancelled: 已取消（创建人账号停用时取消，不可下载、不可重试）
+  export_resource:
+    source: 规划/04 §6.6 exports（filters 同该列表的查询参数）；规划/01 F-ADM-03（CT-24k）
+    description: 后台导出任务的来源列表；创建时须持有该列表本身的权限点（括号内），filters 与该列表的查询参数同形；其他列表随各自的契约追加
+    values:
+      users: 用户列表 GET /admin/v1/users（user.list；filters 为 risk_state）
+      audit_logs: 审计日志 GET /admin/v1/audit-logs（登录即可，未持 audit.view_all 时只导出本人记录；filters 为 actor_id、target_type、target_id、permission、from、to）

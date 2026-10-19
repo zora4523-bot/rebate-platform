@@ -622,6 +622,15 @@ codes:
     data:
       amount_fen: ~
     sources: [BR-ID-27, BR-FUND-10]
+  - code: 30417
+    http: 422
+    meaning: 导出任务当前状态不允许该操作（只出现在 /admin/v1 的 exports/{id}/download 与 exports/{id}/retry：下载只接受 done 且未到 expires_at（到期未及置 expired 的也按 expired）；重试只接受 failed；data.status 为任务当前状态（enum export_status）。码值按 08 §13.11 304 段（账号身份，BR-ID-34）顺序取号，CT-24k）
+    action: 后台：刷新导出记录，按任务当前状态提示
+    retry: 否
+    retry_kind: never
+    data:
+      status: [pending, running, done, failed, expired, cancelled]
+    sources: [BR-ID-34, BR-ID-30]
   - code: 30501
     http: 422
     meaning: AI 助手未开放

@@ -20,10 +20,11 @@ const { texts, fallbacks } = file;
 const SILENT = [10002, 10402, 30505, 44003];
 
 /**
- * 13 §13.11: returned only by the admin login (CT-02f) or the admin user operations (30154,
- * 44004, CT-02j); admin copy stays in apps/admin (03 §9).
+ * 13 §13.11: returned only by the admin login (CT-02f), the admin user operations (30154,
+ * 44004, CT-02j) or the admin export tasks (30417, CT-24k); admin copy stays in apps/admin
+ * (03 §9).
  */
-const ADMIN_ONLY = [10008, 10009, 30154, 44004];
+const ADMIN_ONLY = [10008, 10009, 30154, 30417, 44004];
 
 it('[AC-CT-19c#1] withdraw_detail.net.actual 默认文案为实际到账 {net}', () => {
   expect(texts['withdraw_detail.net.actual']).toBe('实际到账 {net}');
