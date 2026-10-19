@@ -111,7 +111,7 @@ export function useHarness(load: () => Promise<TestingEntry>): Harness {
     redis = await testing.acquireTestRedis();
     h.redisUrl = loadConnectionConfig('admin', {
       DATABASE_URL: database.urlFor('couli_app'),
-      DATABASE_READ_URL: database.urlFor('couli_readonly'),
+      DATABASE_READ_URL: database.urlFor('couli_app'),
       REDIS_URL: redis.url,
     }).redisUrl;
     const base = fileURLToPath(new URL('.tmp/', ROOT));

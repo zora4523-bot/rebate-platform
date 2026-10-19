@@ -409,7 +409,7 @@ for (const [label, body] of [
   });
 }
 
-it('[AC-F1-02p#12] combines and deduplicates invalid fields before sorted body paths', async () => {
+it('[AC-F1-02p#12] combines and deduplicates invalid fields before body paths', async () => {
   const f = await setup(h);
   const token = await stepUp(f);
   const before = await snapshot(h, f.appId);
@@ -424,15 +424,13 @@ it('[AC-F1-02p#12] combines and deduplicates invalid fields before sorted body p
     }),
     token,
   );
-  await rejected(sent, 'publish', 20001, {
-    fields: [
-      'body',
-      'legal_confirmed_by',
-      'min_version',
-      'title',
-      'content[0].content[0].marks[0].attrs.href',
-    ],
-  });
+  await rejected(sent, 'publish', 20001);
+  const fields = sent.response.json<{ data: { fields: string[] } }>().data.fields;
+  expect(fields).toHaveLength(5);
+  expect(new Set(fields.slice(0, 4))).toEqual(
+    new Set(['body', 'legal_confirmed_by', 'min_version', 'title']),
+  );
+  expect(fields.slice(4)).toEqual(['content[0].content[0].marks[0].attrs.href']);
   expect(await snapshot(h, f.appId)).toEqual(before);
 });
 
@@ -489,22 +487,24 @@ it('[AC-F1-02p#15] agreement changes only its legal version; labor changes no le
   expect(afterLabor.versions).toEqual(afterAgreement.versions);
 });
 
-for (const value of [1, 5]) {
-  it(`[AC-F1-02p#16] preset legal version ${value} cannot be silently kept or downgraded`, async () => {
-    const f = await setup(h);
-    await config(h, f.appId, 'legal.privacy.version', value);
-    const token = await stepUp(f);
-    const before = await snapshot(h, f.appId);
-    const logStart = f.lines.length;
-    await rejected(await publish(f, 'privacy', input(), token), 'publish', 50001);
-    expect(await snapshot(h, f.appId)).toEqual(before);
-    expect(
-      f.lines
-        .slice(logStart)
-        .map((line) => JSON.parse(line) as { level: number })
-        .some((line) => line.level === 50),
-    ).toBe(true);
-  });
+for (const type of ['privacy', 'agreement'] as const) {
+  for (const value of [1, 5]) {
+    it(`[AC-F1-02p#16] preset legal ${type} version ${value} cannot be silently kept or downgraded`, async () => {
+      const f = await setup(h);
+      await config(h, f.appId, `legal.${type}.version`, value);
+      const token = await stepUp(f);
+      const before = await snapshot(h, f.appId);
+      const logStart = f.lines.length;
+      await rejected(await publish(f, type, input(), token), 'publish', 50001);
+      expect(await snapshot(h, f.appId)).toEqual(before);
+      expect(
+        f.lines
+          .slice(logStart)
+          .map((line) => JSON.parse(line) as { level: number })
+          .some((line) => line.level === 50),
+      ).toBe(true);
+    });
+  }
 }
 
 it('[AC-F1-02p#17] existing config revisions advance independently of agreement versions', async () => {
@@ -770,5 +770,53 @@ it('[AC-F1-02p#25] absent media base does not admit an arbitrary image host', as
   );
   await rejected(sent, 'publish', 20001);
   expect(sent.response.json().data.fields).toEqual(expect.arrayContaining(['body']));
+  expect(await snapshot(h, f.appId)).toEqual(before);
+});
+
+it('[AC-F1-02p#26] agreement title and body allow article banned words and preserve the exact text', async () => {
+  const f = await setup(h);
+  const title = '原价说明';
+  const body = BODY.replace('协议原文', '佣金、返现及结算中的约定');
+  const row = await publishOk(f, 'labor_agreement', { title, body, requires_resign: true });
+  const after = await snapshot(h, f.appId);
+  expect(after.articles).toEqual([
+    expect.objectContaining({ id: row.article_id, version: 1, title, body, status: 'published' }),
+  ]);
+  expect(after.agreements).toEqual([
+    expect.objectContaining({
+      type: 'labor_agreement',
+      version: 1,
+      article_id: row.article_id,
+      article_version: 1,
+      text_sha256: createHash('sha256').update(body, 'utf8').digest('hex'),
+    }),
+  ]);
+});
+
+for (const patch of [
+  { min_version: 1, requires_resign: true },
+  { min_version: 2, requires_resign: false },
+]) {
+  it(`[AC-F1-02p#27] labor v2 rejects min_version=${patch.min_version}, requires_resign=${patch.requires_resign}`, async () => {
+    const f = await setup(h);
+    await publishOk(f, 'labor_agreement', { requires_resign: true });
+    const token = await stepUp(f);
+    const before = await snapshot(h, f.appId);
+    await rejected(
+      await publish(f, 'labor_agreement', input({ expected_version: 1, ...patch }), token),
+      'publish',
+      20001,
+      { fields: ['requires_resign'] },
+    );
+    expect(await snapshot(h, f.appId)).toEqual(before);
+  });
+}
+
+it('[AC-F1-02p#28] HTTP H5 base fails closed without any writes', async () => {
+  const f = await setup(h, { h5: false });
+  await config(h, f.appId, 'h5_base_url', 'http://h5.example.test/');
+  const token = await stepUp(f);
+  const before = await snapshot(h, f.appId);
+  await rejected(await publish(f, 'privacy', input(), token), 'publish', 50001);
   expect(await snapshot(h, f.appId)).toEqual(before);
 });

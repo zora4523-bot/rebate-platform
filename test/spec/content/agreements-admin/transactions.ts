@@ -1,5 +1,12 @@
 // Controlled interleaving follows F1-02p §9.3 without importing another task's frozen kit.
-import type { DatabaseConnection, KyselyPlugin, QueryResult } from 'kysely';
+import { randomUUID } from 'node:crypto';
+import {
+  ValueNode,
+  ValuesNode,
+  type DatabaseConnection,
+  type KyselyPlugin,
+  type QueryResult,
+} from 'kysely';
 import { expect, vi } from 'vitest';
 import {
   factory,
@@ -123,7 +130,30 @@ export async function faultAt(
   const fault: KyselyPlugin = {
     transformQuery({ node, queryId }) {
       if (node.kind === 'InsertQueryNode' && node.into !== undefined) {
-        tables.set(queryId, node.into.table.identifier.name);
+        const table = node.into.table.identifier.name;
+        tables.set(queryId, table);
+        if (table === 'agreements' && target === 'agreements') {
+          reached = true;
+          // Duplicate the version in the INSERT itself, with a distinct primary key.
+          // PG raises a real 23505 and aborts the transaction even if the callback catches it.
+          expect(node.values?.kind, 'agreement INSERT supplies version values').toBe('ValuesNode');
+          const values = node.values as ValuesNode;
+          const idIndex = node.columns?.findIndex((column) => column.column.name === 'id') ?? -1;
+          expect(idIndex, 'agreement INSERT supplies its primary key').toBeGreaterThanOrEqual(0);
+          expect(values.values).toHaveLength(1);
+          const row = values.values[0]!;
+          const duplicate = {
+            ...row,
+            values: row.values.map((value, index) =>
+              index === idIndex
+                ? row.kind === 'PrimitiveValueListNode'
+                  ? randomUUID()
+                  : ValueNode.create(randomUUID())
+                : value,
+            ),
+          } as typeof row;
+          return { ...node, values: ValuesNode.create([row, duplicate]) };
+        }
       }
       return node;
     },
@@ -132,12 +162,6 @@ export async function faultAt(
       if (table !== undefined) completedInserts.push(table);
       if (table === target) {
         reached = true;
-        if (target === 'agreements') {
-          throw Object.assign(new Error('synthetic agreement unique conflict'), {
-            code: '23505',
-            constraint: 'agreements_app_type_version_key',
-          });
-        }
         throw new Error('synthetic publication persistence failure');
       }
       return result;
