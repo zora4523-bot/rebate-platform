@@ -36,5 +36,5 @@ accept:
   - 'test/spec/frontend/h5-platform-badge/**'
   - 'test/spec/frontend/admin-platform-icons/**'
   - 'test/spec/frontend/admin-platform-icons-upload/**'
-status: todo
-pr: null
+status: done
+pr: 874
