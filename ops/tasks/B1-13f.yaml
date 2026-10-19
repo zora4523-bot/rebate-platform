@@ -10,7 +10,7 @@ type: impl
 # 模型：Opus 5.5 effort xhigh（编排定，E44）——最难的一段：付费外调 + 并发临界区 + 幂等交叉。契约与生成物（含 CT-06n 要求的三份路由表）写进 paths（先例 B1-11e）。测试标题 AC-B1-13f#n。
 refs: []
 refs_hash: {}
-deps: [B1-13e]
+deps: [B1-13e, B1-13k]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/app.module.ts'
