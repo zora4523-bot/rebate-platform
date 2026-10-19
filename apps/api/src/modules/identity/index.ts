@@ -53,6 +53,13 @@ export type { AgentCallerReader, AgentCallerReaderOptions } from './ports/agent-
 export { createInviteLoginDevicesReader } from './ports/invite-login-devices.ts';
 export type { InviteLoginDevicesReader } from './ports/invite-login-devices.ts';
 export { createUserLevelReader } from './ports/user-level.ts';
+export { createUserDeletionStatusReader } from './ports/user-deletion-status.ts';
+export type {
+  UserDeletionStatus,
+  UserDeletionStatusInput,
+  UserDeletionStatusReader,
+  UserDeletionStatusReaderOptions,
+} from './ports/user-deletion-status.ts';
 export type {
   UserLevel,
   UserLevelSubject,

@@ -1,0 +1,92 @@
+{
+  "task": "B1-02ze",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "3a88258f53a2100f9a534c10c0e4b40bfffd4bc0",
+  "red_tests": [
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#1] users.status=normal 映射为 none",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#2] users.status=deleted 映射为 done",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#3] users.status=deleting 映射为 processing",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#15] users.status=synthetic_other_status 映射为 none",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#13] 风控状态 banned 不属于注销，返回 none",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#14] 风控状态 frozen 不属于注销，返回 none",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#4] 批量结果只含命中的请求 ID，缺失项不补 none 或 done",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#5] 同一 ID 在其他 app 不可见，交错批量查询不串应用",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#6] 重复 ID 只出现一次，接受只读 ID 数组",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#7] 空数组返回空 Map，构造和读取均不向 db 或 executor 发 SQL",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#8] 普通 Kysely executor 执行一条批量查询，构造参数 db 不执行查询",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#9] 看得见调用方事务未提交的插入，回滚后用户消失",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#10] 同一 reader 看得见事务未提交的状态更新，回滚后重新读到 none",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#11] 只读事务中每次只查一次 app.users 的 id、status，不写表也不加锁",
+    "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#12] 构造和各读取分支均不写应用日志"
+  ],
+  "risk_note": "RV1 (identity, read-only port). createUserDeletionStatusReader({ db }).read(executor, { app_id, user_ids }) exported for funds' B2-03p (BR-CALC-13 forfeits a beneficiary that does not exist or is deleted): one select of id and status on the caller's executor (so it sees the caller's uncommitted writes), users.status deleting → processing (BR-ID-28), deleted → done, otherwise none; ids not in users are absent; duplicates collapse; an empty input never queries; no locks, no logs, no sensitive columns. TODO: align with deletion_requests once B1-15 builds it. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "3a88258f53a2100f9a534c10c0e4b40bfffd4bc0",
+      "tree": "204a7ae5fb2752a58be56facb2a5670c6f2b1ff4",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T22:54:14Z",
+      "finished_at": "2026-10-19T22:54:20Z",
+      "red_tests": [
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#1] users.status=normal 映射为 none",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#2] users.status=deleted 映射为 done",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#3] users.status=deleting 映射为 processing",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#15] users.status=synthetic_other_status 映射为 none",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#13] 风控状态 banned 不属于注销，返回 none",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#14] 风控状态 frozen 不属于注销，返回 none",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#4] 批量结果只含命中的请求 ID，缺失项不补 none 或 done",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#5] 同一 ID 在其他 app 不可见，交错批量查询不串应用",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#6] 重复 ID 只出现一次，接受只读 ID 数组",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#7] 空数组返回空 Map，构造和读取均不向 db 或 executor 发 SQL",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#8] 普通 Kysely executor 执行一条批量查询，构造参数 db 不执行查询",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#9] 看得见调用方事务未提交的插入，回滚后用户消失",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#10] 同一 reader 看得见事务未提交的状态更新，回滚后重新读到 none",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#11] 只读事务中每次只查一次 app.users 的 id、status，不写表也不加锁",
+        "test/spec/identity/deletion-status/reader.int.test.ts > [AC-B1-02ze#12] 构造和各读取分支均不写应用日志"
+      ],
+      "expected": ["test/spec/identity/deletion-status/reader.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "896a88525725e9c7a63627f0189f6f4511696d1a64c866c859cec2bbf020d515"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (15 tests in 1 file, red for the right reason, red/2) reviewed by fresh Claude subagents: r1 S1×1 (no banned / frozen user case) plus an orchestrator correction (deleting → processing per BR-ID-28), r2 pass"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "c748c886d2606aaeb07d3d76bff0bb73af286734",
+    "specs": "a1b96a3002d99e9b2e9c35fa6b3b4fbdba07cfca"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
