@@ -111,15 +111,32 @@ it('[AC-F1-02zb#6] min/recommended 可空，latest 低于 min 也通过格式校
   });
 });
 
-it.each(['https://store.test/a?x=1#detail', 'market://details?id=demo', 'urn:store:demo'])(
-  '[AC-F1-02zb#7] store_url 接受绝对 URI %s（不限 https）',
-  (store_url) => {
-    expect(validateAppVersionSave(row({ store_url }), ['a', 'b'])).toStrictEqual({
-      ok: true,
-      store_table_empty: false,
-    });
-  },
-);
+it.each([
+  'https://store.test/a?x=1#detail',
+  'market://details?id=demo',
+  'appmarket://details?id=demo',
+  'itms-apps://apps.apple.com/app/id1',
+])('[AC-F1-02zb#7] store_url 接受白名单协议的绝对 URI %s', (store_url) => {
+  expect(validateAppVersionSave(row({ store_url }), ['a', 'b'])).toStrictEqual({
+    ok: true,
+    store_table_empty: false,
+  });
+});
+
+// F1-02zb §9.8: validation failures map to 20001 data.fields at the caller.
+it.each([
+  'https:///x',
+  'http://store.test/a',
+  'urn:store:demo',
+  'javascript:alert(1)',
+  'data:text/plain,a',
+  'file:///etc/x',
+])('[AC-F1-02zb#52] store_url 拒绝空主机或白名单外协议 %s', (store_url) => {
+  expect(validateAppVersionSave(row({ store_url }), ['a', 'b'])).toMatchObject({
+    ok: false,
+    fields: ['store_url'],
+  });
+});
 
 it.each([
   '',
