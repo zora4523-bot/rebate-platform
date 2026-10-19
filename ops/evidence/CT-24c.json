@@ -1,0 +1,35 @@
+{
+  "task": "CT-24c",
+  "spec_ref": "b90e712f5255a9600ebf6f0f3b561afd1b4f8d9e",
+  "spec_commit": "dfd17c9fe990b290d40e41d17535d3b0c4fa5eef",
+  "red_tests": [],
+  "risk_note": "RV2 contract task (contracts/openapi.yaml and the regenerated contracts-ts and route tables): adds GET /admin/v1/audit-logs (adminListAuditLogs) and GET /admin/v1/audit-logs/{id} (adminGetAuditLog), both x-implementation planned, signed-in only, no step-up, per 01 F-ADM-03, 04 §6.6 / §11.1 and AC-S2-111: filters actor_id / target_type / target_id / permission / from (inclusive) / to (exclusive, from after to → 20001 [from, to]) with AdminPage / AdminPageSize; without audit.view_all the server forces actor_id to the caller and another actor_id answers an empty page; another admin's record in the detail answers like a missing one (20001 [id]); items carry nullable target_type / target_id / permission / ip derived server-side (rows that cannot be derived do not match those filters); the record id is an opaque string, not the database key (ADR-0001), generated server-side and stable; querying is not audited. New unit test admin-audit-logs.test.ts (no x-implementation assertion). tester none; implementation by an Opus 5.5 subagent in two runs. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 fail (S1: the record id exposed the auto-increment key, ADR-0001), fixed in run 2 as an opaque id; round 2 pass, one S2 (permission filter accepts unregistered values) in follow-ups"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "f23baaafe9fbca9e9476bf83ae6ab895a7243cb3",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "deb36e3e80b642be3e5090d7761d3143433275fe",
+    "specs": "c3c361e2d577cc550a501e7feb636fbcb179ff4a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
