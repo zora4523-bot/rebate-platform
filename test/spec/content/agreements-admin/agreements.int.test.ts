@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import {
   BODY,
   H5,
@@ -24,6 +24,20 @@ import {
   type Version,
 } from './kit.ts';
 import { faultAt, orderedRace } from './transactions.ts';
+
+// 只替换尚无真实资料的联盟域名表（specs/link-patterns.yaml 待 B1-07），用合成表；其余保存、发布、Clock、DB、守卫皆真实。
+vi.mock('../../../../apps/api/src/modules/platform/specs/link-patterns.ts', () => ({
+  getLinkPatterns: () => ({
+    version: 'synthetic',
+    rules: [
+      { platform: 'taobao', category: 'union_host', hosts: ['item.taobao.com'], path_patterns: [] },
+    ],
+  }),
+}));
+
+// 审计行的 bigint id 由驱动读成 BigInt；序列化时转字符串，只为检查内容。
+const json = (value: unknown) =>
+  JSON.stringify(value, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
 
 const h = useHarness(() => import('@couli/db/testing'));
 
@@ -175,8 +189,8 @@ it('[AC-F1-02p#3] first privacy publish atomically stores exact text, version, l
       legal_confirmed_on: body.legal_confirmed_on,
     },
   });
-  expect(JSON.stringify(added)).not.toContain('"body"');
-  expect(JSON.stringify(added)).not.toContain('协议原文');
+  expect(json(added)).not.toContain('"body"');
+  expect(json(added)).not.toContain('协议原文');
 });
 
 it('[AC-F1-02p#4] second version appends to the same article, advances config history and keeps old text readable', async () => {
@@ -228,7 +242,7 @@ it('[AC-F1-02p#4] second version appends to the same article, advances config hi
       legal_confirmed_on: nextBody.legal_confirmed_on,
     },
   });
-  expect(JSON.stringify(audits)).not.toContain('"body"');
+  expect(json(audits)).not.toContain('"body"');
   const api = await (await factory())('api', f.overrides);
   h.apps.push(api);
   await api.init();
