@@ -6,6 +6,8 @@ import { expect, it } from 'vitest';
 import {
   type ComparedBlock,
   type Module,
+  type ModuleImport,
+  type PathKind,
   TestParseError,
   compareTestFile,
   cook,
@@ -674,4 +676,1358 @@ it('[CT-06r] the two B1-12g files: a same-named test elsewhere and a listing of 
   ).toBe(
     `${queue} lists apps/api/src, which holds apps/api/src/modules/platform/queue/zz-added.ts`,
   );
+});
+
+// CT-06w (B1-12g red/4): the two platform contract tests import `./kit.ts` of their own
+// directory; the task changed test/spec/identity/step-up-verify/kit.ts. The name rule matched
+// the basename `kit.ts` and judged 27 unchanged tests whole.
+const B112G_R4_FILES = (): Record<string, string> => {
+  const read = (p: string): string => readFileSync(join(FIXTURES, `b112g-${p}.txt`), 'utf8');
+  return {
+    // The implementation modules the fixtures import (outside the test code: not followed).
+    ...Object.fromEntries(B112G_IMPL.map((p) => [p, ''])),
+    'test/spec/platform/events/contract.test.ts': read('events-contract.test.ts'),
+    'test/spec/platform/queue/contract.test.ts': read('queue-contract.test.ts'),
+    'test/spec/platform/events/kit.ts': read('events-kit.ts'),
+    'test/spec/platform/queue/kit.ts': read('queue-kit.ts'),
+    'test/spec/platform/db/kit.ts': read('db-kit.ts'),
+    'test/spec/identity/step-up-verify/kit.ts': read('identity-step-up-verify-kit.ts'),
+  };
+};
+const B112G_IMPL = [
+  'events/index.ts',
+  'logging/redaction.ts',
+  'logging/logger.ts',
+  'queue/index.ts',
+  'db/index.ts',
+  'config/index.ts',
+].map((p) => `apps/api/src/modules/platform/${p}`);
+/** What B1-12g changed inside its test_paths at red/4 (couli-runs/B1-12g/red/4). */
+const B112G_R4_SUPPORTS = [
+  'test/spec/platform/events/contract.test.ts',
+  'test/spec/platform/queue/contract.test.ts',
+  'test/spec/platform/idempotency/abandon-route/http-kit.ts',
+  'test/spec/identity/identity-level/http-kit.ts',
+  'test/spec/identity/sms-codes/http-kit.ts',
+  'test/spec/identity/step-up-verify/kit.ts',
+  ...[
+    'consumer.int.test.ts',
+    'db-kit.ts',
+    'delivery.int.test.ts',
+    'fixtures.ts',
+    'reauth.int.test.ts',
+    'render.test.ts',
+    'templates.int.test.ts',
+    'wiring.test.ts',
+    'worker-kit.ts',
+  ].map((n) => `test/spec/notification/risk-state-message/${n}`),
+];
+
+it('[CT-06w] the two B1-12g files (red/4): `./kit.ts` of their own directory is not the identity kit the task changed', () => {
+  const files = B112G_R4_FILES();
+  const closureOf = (file: string) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  const events = 'test/spec/platform/events/contract.test.ts';
+  const queue = 'test/spec/platform/queue/contract.test.ts';
+  const eventsClosure = closureOf(events);
+  const queueClosure = closureOf(queue);
+  // The imports resolve to the files of their own directories; a package stays unresolved.
+  const resolved = (c: readonly Module[]) =>
+    Object.fromEntries((c[0] as Module).imports.map((i) => [i.spec, i.resolved]));
+  expect(resolved(eventsClosure)).toMatchObject({
+    './kit.ts': 'test/spec/platform/events/kit.ts',
+    '../queue/kit.ts': 'test/spec/platform/queue/kit.ts',
+    vitest: null,
+  });
+  expect(resolved(queueClosure)).toMatchObject({
+    './kit.ts': 'test/spec/platform/queue/kit.ts',
+    '../db/kit.ts': 'test/spec/platform/db/kit.ts',
+  });
+  expect((eventsClosure[0] as Module).imports.find((i) => i.spec === 'vitest')?.why).toBe(
+    'a package (a bare specifier; tsconfig paths are not used by Vitest here)',
+  );
+  // The identity kit is in neither closure.
+  expect(eventsClosure.map((m) => m.path)).toEqual([
+    events,
+    'test/spec/platform/events/kit.ts',
+    'test/spec/platform/queue/kit.ts',
+  ]);
+  expect(queueClosure.map((m) => m.path)).toEqual([
+    queue,
+    'test/spec/platform/db/kit.ts',
+    'test/spec/platform/queue/kit.ts',
+  ]);
+  // The kits are closed (no file-system access, import.meta, mock, listing or unread import).
+  for (const m of [...eventsClosure.slice(1), ...queueClosure.slice(1)]) {
+    expect([m.path, m.closed, m.opaque]).toEqual([m.path, true, null]);
+  }
+  // The roots (r6): events/contract.test.ts is closed; queue/contract.test.ts reads apps/api/src
+  // itself (readdirSync / readFileSync from import.meta.url) — not closed, but those reads are
+  // judged on its own text by the name and listing rules, so it masks nothing either way
+  // (unjudged null) and the closure-wide fallback does not apply.
+  expect([eventsClosure[0]?.closed, eventsClosure[0]?.unjudged]).toEqual([true, null]);
+  expect([queueClosure[0]?.closed, queueClosure[0]?.unjudged, queueClosure[0]?.lists]).toEqual([
+    false,
+    null,
+    ['apps/api/src', 'apps/api/src/modules/platform/queue'],
+  ]);
+  // The 27 unchanged tests of red/4: neither file may read any changed support file.
+  for (const s of B112G_R4_SUPPORTS) {
+    if (s !== events) expect(mayReadSupport(events, s, eventsClosure), s).toBeNull();
+    if (s !== queue) expect(mayReadSupport(queue, s, queueClosure), s).toBeNull();
+  }
+});
+
+it('[CT-06w] the same `./kit.ts` that the task did change still makes the file whole', () => {
+  const files = B112G_R4_FILES();
+  const events = 'test/spec/platform/events/contract.test.ts';
+  const closure = relativeClosure(
+    events,
+    (p) => files[p] ?? null,
+    (p) => p.startsWith('test/'),
+  );
+  expect(mayReadSupport(events, 'test/spec/platform/events/kit.ts', closure)).toBe(
+    'it loads test/spec/platform/events/kit.ts',
+  );
+  expect(mayReadSupport(events, 'test/spec/platform/queue/kit.ts', closure)).toBe(
+    'it loads test/spec/platform/queue/kit.ts',
+  );
+  // A support file the closure does not follow (data) counts through the resolved import.
+  const file = 'test/spec/l/rules.test.ts';
+  const rows: Record<string, string> = {
+    [file]: "import rows from './rows.json';",
+    'test/spec/l/rows.json': '[]',
+  };
+  const data = relativeClosure(
+    file,
+    (p) => rows[p] ?? null,
+    (p) => p.startsWith('test/'),
+  );
+  expect(mayReadSupport(file, 'test/spec/l/rows.json', data)).toBe(
+    `${file} imports test/spec/l/rows.json (./rows.json)`,
+  );
+  // A code file that `follow` keeps out of the closure counts the same way.
+  const kept = relativeClosure(
+    file,
+    (p) => ({ [file]: "import { k } from './kit.ts';", 'test/spec/l/kit.ts': '' })[p] ?? null,
+    () => false,
+  );
+  expect(kept.map((m) => m.path)).toEqual([file]);
+  expect(mayReadSupport(file, 'test/spec/l/kit.ts', kept)).toBe(
+    `${file} imports test/spec/l/kit.ts (./kit.ts)`,
+  );
+});
+
+it('[CT-06w] an import that cannot be resolved keeps the name rules, and the reason says so', () => {
+  const file = 'test/spec/l/rules.test.ts';
+  const support = 'test/spec/identity/step-up-verify/kit.ts';
+  // A package whose specifier carries the name: not a repository file, so it counts as before.
+  const pkg = mod(file, "import { k } from 'fixtures-pkg/kit.ts';");
+  expect(mayReadSupport(file, support, [pkg])).toBe(
+    `${file} names kit.ts in an unresolved import fixtures-pkg/kit.ts (a package (a bare specifier; tsconfig paths are not used by Vitest here))`,
+  );
+  // A relative import of a file that does not exist at the head.
+  const gone = mod(file, "import { k } from './kit.ts';");
+  expect((gone.imports[0] as ModuleImport).resolved).toBeNull();
+  expect(mayReadSupport(file, support, [gone])).toBe(
+    `${file} names kit.ts in an unresolved import ./kit.ts (no file at test/spec/l/kit.ts)`,
+  );
+  // The word rule the same way (an extension-less specifier).
+  const word = mod(file, "import { k } from 'fixtures-pkg/kit';");
+  expect(mayReadSupport(file, support, [word])).toBe(
+    `${file} names kit in an unresolved import fixtures-pkg/kit (a package (a bare specifier; tsconfig paths are not used by Vitest here))`,
+  );
+  // One that leaves the repository.
+  const out = mod('test/x.test.ts', "import { k } from '../../kit.ts';");
+  expect(mayReadSupport('test/x.test.ts', support, [out])).toBe(
+    `test/x.test.ts names kit.ts in an unresolved import ../../kit.ts (it leaves the repository)`,
+  );
+  // A template specifier, vi.mock and new URL are not imports: the name rules apply unchanged.
+  const files: Record<string, string> = { 'test/spec/l/kit.ts': '' };
+  const other = (text: string) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  expect(mayReadSupport(file, support, other('const m = await import(`./kit.ts`);'))).toBe(
+    `${file} names kit.ts`,
+  );
+  expect(mayReadSupport(file, support, other("vi.mock('./kit.ts', () => ({}));"))).toBe(
+    `${file} names kit.ts`,
+  );
+  expect(mayReadSupport(file, support, other("new URL('./kit.ts', import.meta.url);"))).toBe(
+    `${file} names kit.ts`,
+  );
+  // The name elsewhere in the file (a comment, another literal) still counts even when the
+  // import of the same name resolves to another file.
+  expect(
+    mayReadSupport(file, support, other("import { k } from './kit.ts'; // see kit.ts of identity")),
+  ).toBe(`${file} names kit.ts`);
+  expect(
+    mayReadSupport(file, support, other("import { k } from './kit.ts';\nload('../identity/kit');")),
+  ).toBe(`${file} names kit`);
+  // Resolved to another file, nothing else names it: not this support file.
+  expect(mayReadSupport(file, support, other("import { k } from './kit.ts';"))).toBeNull();
+  expect(mayReadSupport(file, support, other("import { k } from './kit';"))).toBeNull();
+  expect(mayReadSupport(file, support, other("export * from './kit.js';"))).toBeNull();
+  expect(mayReadSupport(file, support, other("const k = await import('./kit.ts');"))).toBeNull();
+  expect(mayReadSupport(file, support, other("import './kit.ts?raw';"))).toBeNull();
+});
+
+it('[CT-06w] `#…` imports resolve through the nearest package.json where one entry is certain; a bare specifier is a package', () => {
+  const file = 'test/spec/l/rules.test.ts';
+  const support = 'test/spec/identity/step-up-verify/kit.ts';
+  const base: Record<string, string> = {
+    'test/kits/kit.ts': '',
+    'test/kits/data/kit.ts': '',
+    'test/other/kit.ts': '',
+    'test/support/kit.ts': '',
+    'test/package.json': JSON.stringify({
+      imports: {
+        '#kits/*': './kits/*.ts',
+        '#one': './kits/kit.ts',
+        '#cond': { default: './kits/kit.ts' },
+        '#pkg': 'some-package',
+        '#up': '../tsconfig.json',
+        // Codex reviews r1, r2: Node and Vite's resolver rank two matching patterns differently
+        // (longest prefix vs longest key): not decided here.
+        '#same/*': './other/kit.ts',
+        '#same/*.ts': './support/kit.ts',
+        '#folder/': './other/',
+        // Codex review r1: only the first `#` belongs to the specifier, the rest is a fragment.
+        '#kit.ts': './support/kit.ts',
+        '#kit.ts#preview': './other/kit.ts',
+      },
+    }),
+    // tsconfig paths are not consulted (Vitest does not enable them here).
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: { baseUrl: '.', paths: { '@kits/*': ['test/kits/*'] } },
+    }),
+  };
+  const closure = (text: string, files = base) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  const imports = (text: string, files = base) =>
+    (closure(text, files)[0] as Module).imports.map((i) => [i.spec, i.resolved, i.why]);
+  expect(
+    imports(
+      [
+        "import { a } from '#kits/kit';",
+        "import { b } from '#one';",
+        "import { c } from '#cond';",
+        "import { d } from '#none';",
+        "import { e } from '#pkg';",
+        "import { f } from '#same/kit.ts';",
+        "import { g } from '#kit.ts#preview';",
+        "import { h } from '#one?raw';",
+        "import { i } from '#folder/kit.ts';",
+        "import { j } from '#up';",
+        "import { k } from '#kits/';",
+      ].join('\n'),
+    ),
+  ).toEqual([
+    ['#kits/kit', 'test/kits/kit.ts', null],
+    ['#one', 'test/kits/kit.ts', null],
+    ['#cond', null, 'test/package.json imports #cond is conditional'],
+    ['#none', null, 'test/package.json maps no imports entry to #none'],
+    ['#pkg', null, 'test/package.json imports #pkg is not a plain ./ path'],
+    ['#same/kit.ts', null, 'test/package.json cannot decide the imports entry for #same/kit.ts'],
+    ['#kit.ts#preview', 'test/support/kit.ts', null],
+    ['#one?raw', 'test/kits/kit.ts', null],
+    [
+      '#folder/kit.ts',
+      null,
+      'test/package.json cannot decide the imports entry for #folder/kit.ts',
+    ],
+    ['#up', null, 'test/package.json imports #up is not a plain ./ path'],
+    ['#kits/', null, 'test/package.json cannot decide the imports entry for #kits/'],
+  ]);
+  // `#same/kit.ts` is undecided and names the support file: whole; `#kit.ts#preview` loads it.
+  expect(
+    mayReadSupport(file, 'test/support/kit.ts', closure("import { f } from '#same/kit.ts';")),
+  ).toBe(
+    `${file} names kit.ts in an unresolved import #same/kit.ts (test/package.json cannot decide the imports entry for #same/kit.ts)`,
+  );
+  expect(
+    mayReadSupport(file, 'test/support/kit.ts', closure("import { g } from '#kit.ts#preview';")),
+  ).toBe('it loads test/support/kit.ts');
+  expect(imports("import { a } from '@kits/kit';\nimport { b } from 'vitest';")).toEqual([
+    ['@kits/kit', null, 'a package (a bare specifier; tsconfig paths are not used by Vitest here)'],
+    ['vitest', null, 'a package (a bare specifier; tsconfig paths are not used by Vitest here)'],
+  ]);
+  expect(mayReadSupport(file, support, closure("import { a } from '@kits/kit';"))).toBe(
+    `${file} names kit in an unresolved import @kits/kit (a package (a bare specifier; tsconfig paths are not used by Vitest here))`,
+  );
+  // Resolved elsewhere: not the identity kit; a resolved `#` import is followed.
+  const c = closure("import { a } from '#kits/kit';\nimport { b } from '#kits/data/kit';");
+  expect(c.map((m) => m.path)).toEqual([file, 'test/kits/kit.ts', 'test/kits/data/kit.ts']);
+  expect(mayReadSupport(file, support, c)).toBeNull();
+  expect(mayReadSupport(file, 'test/kits/kit.ts', c)).toBe('it loads test/kits/kit.ts');
+  // A package.json that cannot be parsed: unresolved, conservative.
+  const broken = { ...base, 'test/package.json': '{ imports: }' };
+  expect(imports("import { a } from '#one';", broken)).toEqual([
+    ['#one', null, 'test/package.json cannot be parsed'],
+  ]);
+  expect(mayReadSupport(file, support, closure("import { a } from '#kit.ts';", broken))).toBe(
+    `${file} names kit.ts in an unresolved import #kit.ts (test/package.json cannot be parsed)`,
+  );
+  // Codex review r2: a nearer package.json that is not a regular file (a symbolic link) stops the
+  // search — the runtime would read it, the gate cannot.
+  const linked: Record<string, string> = {
+    ...base,
+    'test/spec/l/package.json': '../../../config/imports.json',
+  };
+  const kinds = (p: string): PathKind =>
+    p === 'test/spec/l/package.json' ? 'other' : linked[p] === undefined ? 'absent' : 'file';
+  const viaLink = relativeClosure(
+    file,
+    (p) => (p === file ? "import { a } from '#kit.ts';" : (linked[p] ?? null)),
+    (p) => p.startsWith('test/'),
+    kinds,
+  );
+  expect((viaLink[0] as Module).imports[0]?.why).toBe(
+    'test/spec/l/package.json is not a regular file',
+  );
+  expect(mayReadSupport(file, 'test/spec/l/support/kit.ts', viaLink)).toBe(
+    `${file} names kit.ts in an unresolved import #kit.ts (test/spec/l/package.json is not a regular file)`,
+  );
+});
+
+it('[CT-06w] a relative import resolves only where one file is certain (Codex reviews r1, r2)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/identity/step-up-verify/kit.ts';
+  const closure = (text: string, files: Record<string, string>, kindOf?: (p: string) => PathKind) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+      kindOf,
+    );
+  const why = (text: string, files: Record<string, string>, kindOf?: (p: string) => PathKind) =>
+    (closure(text, files, kindOf)[0] as Module).imports.map((i) => i.resolved ?? i.why);
+  /** An in-memory tree with directories and `other` paths (symbolic links) marked. */
+  const tree = (files: Record<string, string>, dirs: string[] = [], others: string[] = []) => {
+    const kindOf = (p: string): PathKind =>
+      others.includes(p)
+        ? 'other'
+        : dirs.includes(p)
+          ? 'dir'
+          : files[p] === undefined
+            ? 'absent'
+            : 'file';
+    return { files, kindOf };
+  };
+  // `./kit` with both kit.js and kit.ts: Vite picks one by its extension order; not certain here.
+  expect(
+    why("import { k } from './kit';", { 'test/spec/a/kit.js': '', 'test/spec/a/kit.ts': '' }),
+  ).toEqual(['test/spec/a/kit is ambiguous (test/spec/a/kit.js, test/spec/a/kit.ts)']);
+  // `./kit` with only kit.ts: that file; a directory with only index.ts: that file; both: ambiguous.
+  expect(why("import { k } from './kit';", { 'test/spec/a/kit.ts': '' })).toEqual([
+    'test/spec/a/kit.ts',
+  ]);
+  const dirIndex = tree({ 'test/spec/a/kit/index.ts': '' }, ['test/spec/a/kit']);
+  expect(why("import { k } from './kit';", dirIndex.files, dirIndex.kindOf)).toEqual([
+    'test/spec/a/kit/index.ts',
+  ]);
+  const both = tree({ 'test/spec/a/kit.ts': '', 'test/spec/a/kit/index.ts': '' }, [
+    'test/spec/a/kit',
+  ]);
+  expect(why("import { k } from './kit';", both.files, both.kindOf)).toEqual([
+    'test/spec/a/kit is ambiguous (test/spec/a/kit.ts, test/spec/a/kit/index.ts)',
+  ]);
+  // Without kinds, a directory is unknown to the in-memory tree: its index is not found.
+  expect(why("import { k } from './kit';", { 'test/spec/a/kit/index.ts': '' })).toEqual([
+    'no file at test/spec/a/kit',
+  ]);
+  // A directory with a package.json: its entry decides, not resolved here.
+  const pkgDir = tree(
+    { 'test/spec/a/kit/package.json': '{"main":"./kit.ts"}', 'test/spec/a/kit/index.ts': '' },
+    ['test/spec/a/kit'],
+  );
+  expect(why("import { k } from './kit';", pkgDir.files, pkgDir.kindOf)).toEqual([
+    'test/spec/a/kit is a package directory (test/spec/a/kit/package.json)',
+  ]);
+  // Codex review r2: `./kit?raw` with a file called `kit` next to kit.ts loads `kit` itself.
+  expect(
+    why("import raw from './kit?raw';", { 'test/spec/a/kit': 'rows', 'test/spec/a/kit.ts': '' }),
+  ).toEqual(['test/spec/a/kit']);
+  expect(
+    mayReadSupport(
+      file,
+      'test/spec/a/kit',
+      closure("import raw from './kit?raw';", {
+        'test/spec/a/kit': 'rows',
+        'test/spec/a/kit.ts': '',
+      }),
+    ),
+  ).toBe(`${file} imports test/spec/a/kit (./kit?raw)`);
+  // `./kit.js`: the .js file when it exists, else the .ts file; `./kit.jsx` is not rewritten.
+  expect(
+    why("import { k } from './kit.js';", { 'test/spec/a/kit.js': '', 'test/spec/a/kit.ts': '' }),
+  ).toEqual(['test/spec/a/kit.js']);
+  expect(why("import { k } from './kit.js';", { 'test/spec/a/kit.ts': '' })).toEqual([
+    'test/spec/a/kit.ts',
+  ]);
+  expect(why("import { k } from './kit.jsx';", { 'test/spec/a/kit.tsx': '' })).toEqual([
+    'no file at test/spec/a/kit.jsx',
+  ]);
+  // In each uncertain case the name rules apply as before.
+  expect(
+    mayReadSupport(
+      file,
+      support,
+      closure("import { k } from './kit';", {
+        'test/spec/a/kit.js': '',
+        'test/spec/a/kit.ts': '',
+      }),
+    ),
+  ).toBe(
+    `${file} names kit in an unresolved import ./kit (test/spec/a/kit is ambiguous (test/spec/a/kit.js, test/spec/a/kit.ts))`,
+  );
+  // Codex reviews r1, r2: a path that is a directory or `other` (a symbolic link, a path whose
+  // spelling is not the tree's) is no file, and a candidate of kind `other` on the way makes the
+  // whole resolution uncertain — a rejected candidate is not an absent one.
+  const links = tree(
+    {
+      'test/spec/a/kit.json/data/kit.json': '{}',
+      'test/spec/a/link.ts': '../real/kit.ts',
+      'test/spec/a/kit.js': '../real/kit.js',
+      'test/spec/a/kit.ts': '',
+      'test/spec/real/kit.ts': '',
+      'test/spec/real/kit.js': '',
+    },
+    ['test/spec/a/kit.json'],
+    ['test/spec/a/link.ts', 'test/spec/a/kit.js', 'test/spec/a/alias/kit.json'],
+  );
+  expect(why("import data from './kit.json';", links.files, links.kindOf)).toEqual([
+    'test/spec/a/kit.json is a directory',
+  ]);
+  expect(
+    mayReadSupport(
+      file,
+      'test/spec/a/kit.json/data/kit.json',
+      closure("import data from './kit.json';", links.files, links.kindOf),
+    ),
+  ).toBe(
+    `${file} names kit.json in an unresolved import ./kit.json (test/spec/a/kit.json is a directory)`,
+  );
+  expect(why("import { k } from './link.ts';", links.files, links.kindOf)).toEqual([
+    'test/spec/a/link.ts is not a regular file',
+  ]);
+  expect(
+    mayReadSupport(
+      file,
+      'test/spec/real/kit.ts',
+      closure("import { k } from './link.ts';", links.files, links.kindOf),
+    ),
+  ).toBe('test/spec/a/link.ts names kit.ts'); // the closure still follows the link's own text
+  // `./kit` where kit.js is a link and kit.ts a file: Vite would follow the link; not decided.
+  expect(why("import { k } from './kit';", links.files, links.kindOf)).toEqual([
+    'test/spec/a/kit.js is not a regular file',
+  ]);
+  expect(
+    mayReadSupport(
+      file,
+      'test/spec/real/kit.js',
+      closure("import { k } from './kit';", links.files, links.kindOf),
+    ),
+  ).toBe(
+    `${file} names kit in an unresolved import ./kit (test/spec/a/kit.js is not a regular file)`,
+  );
+  // A path through a directory link (a work tree spelling that is not the tree's).
+  expect(why("import data from './alias/kit.json';", links.files, links.kindOf)).toEqual([
+    'test/spec/a/alias/kit.json is not a regular file',
+  ]);
+  // Without kinds the in-memory tree is all files (the tests above).
+  expect(why("import data from './kit.json';", links.files)).toEqual([
+    'no file at test/spec/a/kit.json',
+  ]);
+});
+
+it('[CT-06w] only the import and export syntax makes a string an import specifier (Codex reviews r1, r2)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const files: Record<string, string> = {
+    'test/spec/a/data/rows.json': '[]',
+    'test/spec/a/kit.ts': '',
+  };
+  const closure = (text: string) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  const specs = (text: string) => (closure(text)[0] as Module).imports.map((i) => i.spec);
+  // Imports and re-exports in every spelling.
+  expect(
+    specs(
+      [
+        "import './kit.ts';",
+        "import k from './kit.ts';",
+        "import * as ns from './kit.ts';",
+        "import k2, { a } from './kit.ts';",
+        "import type { T } from './kit.ts';",
+        "export * from './kit.ts';",
+        "export * as all from './kit.ts';",
+        "export { a } from './kit.ts';",
+        "const m = await import('./kit.ts');",
+        "import('./data/rows.json', { with: { type: 'json' } });",
+      ].join('\n'),
+    ),
+  ).toEqual([...Array<string>(9).fill('./kit.ts'), './data/rows.json']);
+  // Not imports: member calls, object keys, a string after a `from` variable, template expressions.
+  expect(
+    specs("const reader = { import: (p: string) => p };\nreader.import('./data/rows.json');"),
+  ).toEqual([]);
+  expect(specs("reader?.import('./data/rows.json');")).toEqual([]);
+  expect(specs("x.from('./data/rows.json');")).toEqual([]);
+  expect(specs("const q = { from: './data/rows.json' };")).toEqual([]);
+  expect(specs("const from = '';\nconst u = `${from}${'./data/rows.json'}`;")).toEqual([]);
+  expect(specs("const u = `${a}${from}${'./data/rows.json'}`;")).toEqual([]);
+  expect(specs("const m = `${await import('./kit.ts')}`;")).toEqual([]);
+  expect(specs("import.meta.resolve('./kit.ts');")).toEqual([]);
+  expect(specs("vi.importActual('./kit.ts');")).toEqual([]);
+  // The task changed test/data/rows.json: the member call and the template read it by a computed
+  // path; nothing is masked, the name rule still fires (Codex reviews r1, r2).
+  expect(
+    mayReadSupport(
+      file,
+      'test/data/rows.json',
+      closure(
+        "const reader = { import: (p: string) => readFileSync(new URL(p, new URL('../../', import.meta.url)), 'utf8') };\nreader.import('./data/rows.json');",
+      ),
+    ),
+  ).toBe(`${file} names rows.json`);
+  expect(
+    mayReadSupport(
+      file,
+      'test/data/rows.json',
+      closure(
+        "const from = '';\nreadFileSync(new URL(`${from}${'./data/rows.json'}`, new URL('../../', import.meta.url)), 'utf8');",
+      ),
+    ),
+  ).toBe(`${file} names rows.json`);
+});
+
+it('[CT-06w] `#…` entries the runtime may expand differently stay unresolved (Codex review r3)', () => {
+  const file = 'test/spec/l/rules.test.ts';
+  const files: Record<string, string> = {
+    'test/other/kit.ts': '',
+    'test/other/index.ts': '',
+    'test/support/kit.ts': '',
+    'test/data/kit.json': '{}',
+    'test/package.json': JSON.stringify({
+      imports: {
+        // Vite's resolver builds an unescaped RegExp from a pattern: `#k.t.*` matches `#kit.ts`.
+        '#kit.*': './other/kit.ts',
+        '#k.t.*': './support/kit.ts',
+        // A folder value: the resolver appends the rest; a literal `*` in an exact entry's value.
+        '#kits/*': './other/',
+        '#star': './other/*/kit.ts',
+        // A query the loader strips.
+        '#kit.json': './data/kit.json?raw',
+        // Plain entries resolve.
+        '#plain/*': './support/*.ts',
+        '#exact': './support/kit.ts',
+      },
+    }),
+  };
+  const imports = (text: string) =>
+    (
+      relativeClosure(
+        file,
+        (p) => (p === file ? text : (files[p] ?? null)),
+        (p) => p.startsWith('test/'),
+      )[0] as Module
+    ).imports.map((i) => [i.spec, i.resolved, i.why]);
+  expect(
+    imports(
+      [
+        "import { a } from '#kit.ts';",
+        "import { b } from '#kits/kit.ts';",
+        "import { c } from '#star';",
+        "import { d } from '#kit.json';",
+        "import { e } from '#plain/kit';",
+        "import { f } from '#exact';",
+      ].join('\n'),
+    ),
+  ).toEqual([
+    ['#kit.ts', null, 'test/package.json cannot decide the imports entry for #kit.ts'],
+    ['#kits/kit.ts', null, 'test/package.json cannot decide the imports entry for #kits/kit.ts'],
+    ['#star', null, 'test/package.json imports #star is not a plain ./ path'],
+    ['#kit.json', null, 'test/package.json cannot decide the imports entry for #kit.json'],
+    ['#plain/kit', 'test/support/kit.ts', null],
+    ['#exact', 'test/support/kit.ts', null],
+  ]);
+});
+
+it('[CT-06w] an import resolved to a file the closure does not follow keeps the name rules (Codex review r3)', () => {
+  const file = 'test/spec/a/rules.browser.test.ts';
+  const files: Record<string, string> = {
+    'test/spec/a/theme.css': "@import '../real/theme.css';",
+    'test/spec/a/kit': "export * from '../real/kit.ts';",
+    'test/spec/a/rows.json': '[]',
+    'test/spec/real/theme.css': '',
+    'test/spec/real/kit.ts': '',
+    'apps/api/src/x.ts': '',
+  };
+  const closure = (text: string) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  // A style sheet (its @import is not read here), an extension-less module (not code to the
+  // closure), a data file, a module outside the test code: resolved, not followed, still named.
+  const css = closure("import './theme.css';");
+  expect((css[0] as Module).imports[0]?.resolved).toBe('test/spec/a/theme.css');
+  expect(css.map((m) => m.path)).toEqual([file]);
+  expect(mayReadSupport(file, 'test/spec/real/theme.css', css)).toBe(
+    `${file} names theme.css in an unresolved import ./theme.css (test/spec/a/theme.css is not followed by the closure)`,
+  );
+  expect(mayReadSupport(file, 'test/spec/real/kit.ts', closure("import { k } from './kit';"))).toBe(
+    `${file} names kit in an unresolved import ./kit (test/spec/a/kit is not followed by the closure)`,
+  );
+  expect(
+    mayReadSupport(file, 'test/other/rows.json', closure("import rows from './rows.json';")),
+  ).toBe(
+    `${file} names rows.json in an unresolved import ./rows.json (test/spec/a/rows.json is not followed by the closure)`,
+  );
+  expect(
+    mayReadSupport(
+      file,
+      'test/spec/real/x.ts',
+      closure("import { x } from '../../../apps/api/src/x.ts';"),
+    ),
+  ).toBe(
+    `${file} names x.ts in an unresolved import ../../../apps/api/src/x.ts (apps/api/src/x.ts is not followed by the closure)`,
+  );
+  // The resolved file itself as the support file still counts by its path.
+  expect(mayReadSupport(file, 'test/spec/a/theme.css', css)).toBe(
+    `${file} imports test/spec/a/theme.css (./theme.css)`,
+  );
+});
+
+it('[CT-06w] only an import of a closed module is skipped by the name rules (Codex review r4)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/real/kit.ts';
+  const files: Record<string, string> = {
+    'test/spec/a/bridge': "export { n } from '../real/kit.ts';",
+    'test/spec/a/__mocks__/kit.ts': '',
+    'test/spec/a/payload.txt': 'rows',
+    'apps/api/src/x.ts': '',
+    'test/spec/a/plain.ts': "import { x } from '../../../apps/api/src/x.ts';\nexport const n = x;",
+    'test/spec/a/chain.ts': "export { n } from './plain.ts';",
+    'test/spec/real/kit.ts': '',
+  };
+  const closure = (text: string, kit: string) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : p === 'test/spec/a/kit.ts' ? kit : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  const root = "import { n } from './kit.ts';";
+  const why = (kit: string) => mayReadSupport(file, support, closure(root, kit));
+  const prefix = `${file} names kit.ts in an unresolved import ./kit.ts (test/spec/a/kit.ts is not closed: `;
+  // A helper that reads a file by a path built from import.meta.url, with no name literal.
+  expect(
+    why(
+      "import { readFileSync } from 'node:fs';\nexport const n = readFileSync(new URL(import.meta.url.replace('/a/', '/real/')), 'utf8');",
+    ),
+  ).toBe(`${prefix}it uses readFileSync)`);
+  expect(why('export const n = import.meta.url;')).toBe(`${prefix}it uses import.meta)`);
+  expect(why("import fs from 'fs';\nexport const n = fs;")).toBe(`${prefix}it uses fs)`);
+  expect(why("import { vi } from 'vitest';\nvi.mock('./x.ts');\nexport const n = 1;")).toBe(
+    `${prefix}it uses vi.mock)`,
+  );
+  // A listing (its directory resolved or not) and a dynamic load.
+  expect(
+    why(
+      "import { readdirSync } from 'node:fs';\nexport const n = readdirSync(new URL('../d%61ta/', import.meta.url));",
+    ),
+  ).toBe(`${prefix}it lists test/spec/d%61ta)`);
+  expect(why("export const n = await import(`./${'x'}.ts`);")).toBe(
+    `${prefix}it imports a module by a computed name)`,
+  );
+  // A two-step re-export through an extension-less module the closure does not read.
+  expect(why("export { n } from './bridge';")).toBe(
+    `${prefix}it imports test/spec/a/bridge, which is not read here)`,
+  );
+  expect(why("export { n } from './gone.ts';")).toBe(
+    `${prefix}it imports ./gone.ts, which cannot be resolved)`,
+  );
+  // A raw import of a file not read here.
+  expect(why("import raw from './payload.txt?raw';\nexport const n = raw;")).toBe(
+    `${prefix}it imports test/spec/a/payload.txt, which is not read here)`,
+  );
+  // Closed: a plain module, a chain of plain modules, implementation and package imports.
+  expect(why('export const n = 1;')).toBeNull();
+  expect(why("export { n } from './chain.ts';")).toBeNull();
+  expect(
+    why(
+      "import { it } from 'vitest';\nimport { x } from '../../../apps/api/src/x.ts';\nexport const n = [it, x];",
+    ),
+  ).toBeNull();
+  // The closure records why a module is not closed, transitively.
+  const c = closure(root, "export { n } from './bridge';");
+  expect(c.map((m) => [m.path, m.closed, m.opaque])).toEqual([
+    [file, false, 'it imports test/spec/a/kit.ts, which is not closed'],
+    ['test/spec/a/kit.ts', false, 'it imports test/spec/a/bridge, which is not read here'],
+  ]);
+  // `vi.mock(import('./kit.ts'))` is a mock, not a load: the specifier keeps the name rules.
+  expect(
+    mayReadSupport(
+      file,
+      'test/spec/a/__mocks__/kit.ts',
+      closure(
+        "import { vi } from 'vitest';\nvi.mock(import('./kit.ts'));\nimport { n } from './kit.ts';",
+        'export const n = 1;',
+      ),
+    ),
+  ).toBe(`${file} names kit.ts`);
+});
+
+it('[CT-06w] execution, absolute or template loads and mocks keep a module open; a mocking root masks nothing (Codex review r5)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/real/kit.ts';
+  const files: Record<string, string> = {
+    'test/spec/a/bridge.ts': 'export const n = 1;',
+    'test/spec/a/__mocks__/bridge.ts': "export { n } from '../../real/kit.ts';",
+    'test/spec/a/__mocks__/kit.ts': '',
+    'test/spec/real/bridge.ts': "export { n } from './kit.ts';",
+    'test/spec/real/kit.ts': '',
+    'test/package.json': JSON.stringify({ imports: { '#payload': './spec/real/kit.ts' } }),
+  };
+  const closure = (text: string, kit: string) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : p === 'test/spec/a/kit.ts' ? kit : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  const root = "import { n } from './kit.ts';";
+  const why = (kit: string) => mayReadSupport(file, support, closure(root, kit));
+  const prefix = `${file} names kit.ts in an unresolved import ./kit.ts (test/spec/a/kit.ts is not closed: `;
+  // A helper that runs a process, evaluates code or starts a worker.
+  expect(
+    why(
+      "import { execFileSync } from 'node:child_process';\nexport const n = execFileSync('cat', ['spec/real/' + ['ki', 't.ts'].join('')], { encoding: 'utf8' });",
+    ),
+  ).toBe(`${prefix}it uses execFileSync)`);
+  expect(why('export const n = eval("process.getBuiltinModule(\'fs\')");')).toBe(
+    `${prefix}it uses eval)`,
+  );
+  expect(why("export const n = new Worker(new URL('./w.ts', import.meta.url));")).toBe(
+    `${prefix}it uses Worker)`,
+  );
+  expect(why("import vm from 'node:vm';\nexport const n = vm;")).toBe(`${prefix}it uses node:vm)`);
+  expect(why("export const n = await import('node:fs');")).toBe(`${prefix}it uses node:fs)`);
+  // A workspace package is test code the closure does not follow, not a package.
+  expect(why("import { x } from '@couli/money';\nexport const n = x;")).toBe(
+    `${prefix}it imports @couli/money, a workspace package not read here)`,
+  );
+  // An absolute specifier (Vite resolves it against the project root) is not a package.
+  expect(why("export { n } from '/spec/real/bridge.ts';")).toBe(
+    `${prefix}it imports /spec/real/bridge.ts, which cannot be resolved)`,
+  );
+  // A template specifier and an import inside a template expression are loads not in `imports`.
+  expect(why('export const n = (await import(`#payload`)).n;')).toBe(
+    `${prefix}it imports a module by a template)`,
+  );
+  expect(why("export const n = `${(await import('#payload')).n}`;")).toBe(
+    `${prefix}it imports inside a template)`,
+  );
+  // A helper that mocks through the `vitest` namespace or any `.mock(` call.
+  expect(
+    why(
+      "import { vitest } from 'vitest';\nvitest.mock('./bridge.ts');\nexport { n } from './bridge.ts';",
+    ),
+  ).toBe(`${prefix}it uses vitest.mock)`);
+  expect(
+    why(
+      "import { vi as m } from 'vitest';\nm.mock('./bridge.ts');\nexport { n } from './bridge.ts';",
+    ),
+  ).toBe(`${prefix}it uses m.mock)`);
+  // `spy.mock.calls` is a property, not a mock registration: still closed.
+  expect(
+    why(
+      "import { vi } from 'vitest';\nconst spy = vi.fn();\nexport const n = spy.mock.calls.length;",
+    ),
+  ).toBeNull();
+  // A root that mocks (in any spelling) masks nothing: its imports may be redirected.
+  for (const mocking of [
+    "vi.mock((import('./kit.ts')));",
+    "vi.mock(await import('./kit.ts'));",
+    "vi.mock('./bridge.ts');",
+    "vitest.doMock('./bridge.ts');",
+  ]) {
+    const c = closure(
+      `import { vi, vitest } from 'vitest';\n${mocking}\nimport { n } from './kit.ts';`,
+      "export { n } from './bridge.ts';",
+    );
+    expect(mayReadSupport(file, support, c), mocking).toBe(
+      `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (${c[0]?.mocking}))`,
+    );
+    expect(mayReadSupport(file, 'test/spec/a/__mocks__/kit.ts', c), mocking).toBe(
+      `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (${c[0]?.mocking}))`,
+    );
+  }
+});
+
+// The old rules of CT-06p / CT-06r, as on origin/main before CT-06w: the support file is named
+// anywhere in a module's text, or its stem is a word of a literal.
+const oldNameRule = (closure: readonly Module[], support: string): boolean => {
+  const name = support.slice(support.lastIndexOf('/') + 1);
+  const stem = name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name;
+  const word = new RegExp(
+    `(?<![\\w$.-])${stem.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}(?![\\w$-])`,
+    'u',
+  );
+  return closure.some(
+    (m) => m.text.includes(name) || (m.literals ?? []).some((l) => word.test(l.text)),
+  );
+};
+
+// A module text for each clause of the closed definition that makes a module open (CT-06w).
+const OPEN_MODULES: [string, string][] = [
+  [
+    'a file-system API',
+    "import { readFileSync } from 'node:fs';\nexport const n = readFileSync('x', 'utf8');",
+  ],
+  ['import.meta', 'export const n = import.meta.url;'],
+  ['a mock', "import { vi } from 'vitest';\nvi.mock('./x.ts');\nexport const n = 1;"],
+  [
+    'a process',
+    "import { spawnSync } from 'node:child_process';\nexport const n = spawnSync('cat');",
+  ],
+  ['eval', "export const n = eval('1');"],
+  ['a Worker', "export const n = new Worker('w.js');"],
+  ['a listing', "import { readdirSync } from 'node:fs';\nexport const n = readdirSync('.');"],
+  ['a computed import', 'export const n = await import(`./${"x"}.ts`);'],
+  ['a template specifier', 'export const n = await import(`./x.ts`);'],
+  ['an absolute specifier', "export { n } from '/spec/a/other.ts';"],
+  ['an unresolved import', "export { n } from './missing.ts';"],
+  ['a workspace package', "import { x } from '@couli/testing';\nexport const n = x;"],
+  ['a file not read here', "import raw from './data.txt?raw';\nexport const n = raw;"],
+  ['unreadable code', "it('open"],
+  ['vm', "import vm from 'node:vm';\nexport const n = vm;"],
+  ['worker_threads', "import { Worker as W } from 'node:worker_threads';\nexport const n = W;"],
+  ['module', "import m from 'node:module';\nexport const n = m;"],
+  ['require', "export const n = require('./x.cjs');"],
+  ['glob', "export const n = globSync('*.ts');"],
+  ['Function', "export const n = new Function('return 1')();"],
+  ['getBuiltinModule', "export const n = process.getBuiltinModule('node:fs');"],
+  ['process.binding', "export const n = process.binding('fs');"],
+  ['wasi', "import { WASI } from 'node:wasi';\nexport const n = WASI;"],
+  [
+    'vitest.doMock',
+    "import { vitest } from 'vitest';\nvitest.doMock('./x.ts');\nexport const n = 1;",
+  ],
+  ['a .mock( call', "export const n = helper.mock('./x.ts');"],
+  ['an import inside a template', "export const n = `${await import('./other.ts')}`;"],
+  // Codex review r6: capabilities spelled another way.
+  [
+    'fetch (browser mode: Vite serves the work tree)',
+    "export const n = async () => (await fetch('/spec/real/' + ['ki', 't.ts'].join(''))).text();",
+  ],
+  ['XMLHttpRequest', 'export const n = new XMLHttpRequest();'],
+  ['WebSocket', 'export const n = WebSocket;'],
+  ['document', "export const n = document.createElement('script');"],
+  ['process by a computed key', "export const n = process['getBuilt' + 'inModule'];"],
+  ['process as a value', "export const n = Reflect.get(process, 'x');"],
+  ['globalThis by a computed key', "export const n = globalThis[['ev', 'al'].join('')];"],
+  [
+    'a capability name as a key',
+    "export const n = (o: Record<string, unknown>) => o['readFileSync'];",
+  ],
+  ['a module name built from pieces', "export const n = 'node:f' + 's';"],
+  ['the Function constructor', 'export const n = (() => 0).constructor;'],
+  ['getPrototypeOf', 'export const n = Object.getPrototypeOf(() => 0);'],
+  ['vi?.doMock', "import { vi } from 'vitest';\nvi?.doMock('./x.ts');\nexport const n = 1;"],
+  [
+    'vi by a computed key',
+    "import { vi } from 'vitest';\nvi['do' + 'Mock']('./x.ts');\nexport const n = 1;",
+  ],
+  [
+    'a destructured mock',
+    "import { vi } from 'vitest';\nconst { doMock } = vi;\ndoMock('./x.ts');\nexport const n = 1;",
+  ],
+  ['vi as a value', "import { vi } from 'vitest';\nexport const n = Reflect.get(vi, 'x');"],
+  [
+    'browser commands',
+    "import { commands } from '@vitest/browser/context';\nexport const n = commands;",
+  ],
+  ['node:inspector', "import { Session } from 'node:inspector';\nexport const n = Session;"],
+  // Codex review r7.
+  ['a destructured constructor', 'const { constructor: C } = () => 0;\nexport const n = C;'],
+  ['a constructor shorthand', 'const { constructor } = () => 0;\nexport const n = constructor;'],
+  [
+    'a capability name after +',
+    "const empty = '';\nexport const n = Reflect.get(() => 0, empty + 'constructor');",
+  ],
+  [
+    'node:inspector/promises',
+    "import { Session } from 'node:inspector/promises';\nexport const n = Session;",
+  ],
+  ['node:test', "import t from 'node:test';\nexport const n = t;"],
+  [
+    'an aliased optional mock call',
+    "import { vi as v } from 'vitest';\nv.doMock?.('./x.ts');\nexport const n = 1;",
+  ],
+  // Codex review r8: an ordinary package that reads files, or any package not known not to.
+  [
+    'a package that reads files (prettier)',
+    "import { resolveConfig } from 'prettier';\nexport const n = () => resolveConfig('x.ts');",
+  ],
+  ['typescript', "import ts from 'typescript';\nexport const n = ts;"],
+  ['an unknown package', "import x from 'some-package';\nexport const n = x;"],
+  ['vitest/node', "import { createVitest } from 'vitest/node';\nexport const n = createVitest;"],
+  // Codex review r9: file APIs of listed packages, and a subpath that is not listed.
+  [
+    'a file snapshot',
+    "import { expect } from 'vitest';\nexport const n = (v: string) => expect(v).toMatchFileSnapshot('./fixtures/out.txt');",
+  ],
+  [
+    "Kysely's migration loader",
+    "import { FileMigrationProvider } from 'kysely';\nexport const n = FileMigrationProvider;",
+  ],
+  ['kysely/migration', "import { Migrator } from 'kysely/migration';\nexport const n = Migrator;"],
+  // Codex review r10: file APIs of an allowed surface.
+  ['process.loadEnvFile', "export const n = () => process.loadEnvFile('fixtures/x.env');"],
+  ['a process property not listed', 'export const n = process.report;'],
+  [
+    'a test attachment',
+    "import type { TestContext } from 'vitest';\nexport const n = (ctx: TestContext) => ctx.annotate('in', { path: 'fixtures/x.txt' });",
+  ],
+  ['recordArtifact', 'export const n = (ctx: { recordArtifact: unknown }) => ctx.recordArtifact;'],
+];
+
+it('[CT-06w] fallback: a closure with one module that is not closed judges exactly like the old code (orchestrator ruling 2026-10-19)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/identity/step-up-verify/kit.ts';
+  const base: Record<string, string> = {
+    'test/spec/a/kit.ts': "export { n } from './deep/kit.ts';",
+    'test/spec/a/deep/kit.ts': 'export const n = 1;',
+    'test/spec/a/other.ts': 'export const o = 2;',
+    'apps/api/src/x.ts': '',
+  };
+  const closure = (
+    files: Record<string, string>,
+    text = "import { n } from './kit.ts';\nimport { o } from './other.ts';",
+  ) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  // All closed: the specifier is exempt (the one relaxation); the old rule would have fired.
+  const closed = closure(base);
+  expect(closed.map((m) => m.closed)).toEqual([true, true, true, true]);
+  expect(oldNameRule(closed, support)).toBe(true);
+  expect(mayReadSupport(file, support, closed)).toBeNull();
+  // One module anywhere in the closure not closed (the deepest one here, in every way the
+  // definition names): the judgement falls back to the old rules — whole, as the old code.
+  const open = OPEN_MODULES;
+  for (const [what, deep] of open) {
+    const c = closure({ ...base, 'test/spec/a/deep/kit.ts': deep, 'test/spec/a/data.txt': '' });
+    expect(
+      c.map((m) => m.path),
+      what,
+    ).toEqual([file, 'test/spec/a/kit.ts', 'test/spec/a/other.ts', 'test/spec/a/deep/kit.ts']);
+    expect(
+      c.slice(1, 2).map((m) => m.closed),
+      what,
+    ).toEqual([false]);
+    expect(oldNameRule(c, support), what).toBe(true);
+    const why = mayReadSupport(file, support, c);
+    expect(why, what).toMatch(
+      /^test\/spec\/a\/rules\.test\.ts names kit\.ts in an unresolved import \.\/kit\.ts \(test\/spec\/a\/kit\.ts is not closed: /,
+    );
+  }
+  // A root that mocks: whole, as the old code, whatever its imports resolve to.
+  const mocking = closure(
+    base,
+    "import { vi } from 'vitest';\nvi.mock('./other.ts');\nimport { n } from './kit.ts';",
+  );
+  expect(oldNameRule(mocking, support)).toBe(true);
+  expect(mayReadSupport(file, support, mocking)).toBe(
+    `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (it uses vi.mock))`,
+  );
+  // And where the old rule would not fire, neither does the new one (no new whole judgements
+  // from the exemption itself; a closed closure without the name is free either way).
+  const free = closure(base, "import { o } from './other.ts';");
+  expect(oldNameRule(free, support)).toBe(false);
+  expect(mayReadSupport(file, support, free)).toBeNull();
+});
+
+it('[CT-06w] fallback, closure-wide: a module the file loads that is not closed, or a way of the file itself no rule judges, masks no specifier (orchestrator ruling 2026-10-19, r6)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/identity/step-up-verify/kit.ts';
+  const base: Record<string, string> = {
+    'test/spec/a/kit.ts': 'export const n = 1;',
+    'test/spec/a/other.ts': 'export const o = 2;',
+    'test/spec/a/data.txt': '',
+    'apps/api/src/x.ts': '',
+  };
+  const root = "import { n } from './kit.ts';\nimport { o } from './other.ts';";
+  const closure = (files: Record<string, string>, text = root) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  const at = (c: readonly Module[], p: string) => c.find((m) => m.path === p);
+  // All closed: the specifier is exempt (the one relaxation).
+  expect(mayReadSupport(file, support, closure(base))).toBeNull();
+  // A module the specifier does not name (a sibling) not closed, in every way the definition
+  // names: ./kit.ts itself is closed, yet the specifier counts — whole, as the old code.
+  for (const [what, sibling] of OPEN_MODULES) {
+    const c = closure({ ...base, 'test/spec/a/other.ts': sibling });
+    expect(
+      [at(c, 'test/spec/a/kit.ts')?.closed, at(c, 'test/spec/a/other.ts')?.closed],
+      what,
+    ).toEqual([true, false]);
+    expect(oldNameRule(c, support), what).toBe(true);
+    expect(mayReadSupport(file, support, c), what).toMatch(
+      /^test\/spec\/a\/rules\.test\.ts names kit\.ts in an unresolved import \.\/kit\.ts \(test\/spec\/a\/other\.ts is not closed: /,
+    );
+  }
+  // The rule-test file itself, with a way to files that no rule here judges on its own text:
+  // whole, as the old code (a mock: its own reason, as before).
+  const unjudged: [string, string][] = [
+    ['eval', "export const e = eval('1');"],
+    ['Function', "export const e = new Function('return 1')();"],
+    ['a process', "import { execSync } from 'node:child_process';\nexecSync('cat');"],
+    ['a Worker', "export const w = new Worker('w.js');"],
+    ['vm', "import vm from 'node:vm';\nexport const v = vm;"],
+    ['getBuiltinModule', "export const f = process.getBuiltinModule('node:fs');"],
+    ['require', "export const r = require('./x.cjs');"],
+    ['a computed import', 'export const d = await import(`./${"x"}.ts`);'],
+    ['a template specifier', 'export const d = await import(`./x.ts`);'],
+    ['an absolute specifier', "import '/spec/a/other.ts';"],
+    ['an unresolved import', "import './missing.ts';"],
+    ['a workspace package', "import '@couli/testing';"],
+    ['a file not read here', "import raw from './data.txt?raw';"],
+    ['a mock', "import { vi } from 'vitest';\nvi.mock('./other.ts');"],
+  ];
+  for (const [what, own] of unjudged) {
+    const c = closure(base, `${root}\n${own}`);
+    expect(c[0]?.unjudged, what).not.toBeNull();
+    expect(oldNameRule(c, support), what).toBe(true);
+    expect(mayReadSupport(file, support, c), what).toMatch(
+      /^test\/spec\/a\/rules\.test\.ts names kit\.ts in an unresolved import \.\/kit\.ts \(test\/spec\/a\/rules\.test\.ts (is not closed|mocks modules)/,
+    );
+  }
+  // Its own file-system reads, path helpers, import.meta and listings resolved statically are
+  // judged on its own text by the name and listing rules, as before CT-06w (B1-12g:
+  // queue/contract.test.ts reads apps/api/src this way): they block nothing …
+  const head =
+    "import path from 'node:path';\nimport { fileURLToPath } from 'node:url';\n" +
+    "import { readFileSync, readdirSync, statSync } from 'node:fs';\n" +
+    'const HERE = path.dirname(fileURLToPath(import.meta.url));\n';
+  const reads = closure(
+    base,
+    `${root}\n${head}export const l = readdirSync(path.resolve(HERE, '../../../apps/api/src'));\n` +
+      'export const t = l.map((f) => statSync(f) && readFileSync(f, "utf8"));',
+  );
+  expect([reads[0]?.closed, reads[0]?.unjudged, reads[0]?.lists]).toEqual([
+    false,
+    null,
+    ['apps/api/src'],
+  ]);
+  expect(mayReadSupport(file, support, reads)).toBeNull();
+  // … but a listing of the support file's directory, or its name in another literal, still
+  // makes the file whole.
+  const listing = closure(
+    base,
+    `${root}\n${head}export const l = readdirSync(path.resolve(HERE, '../identity/step-up-verify'));`,
+  );
+  expect(mayReadSupport(file, support, listing)).toBe(
+    `${file} lists test/spec/identity/step-up-verify, which holds ${support}`,
+  );
+  const named = closure(
+    base,
+    `${root}\n${head}export const t = readFileSync(path.join(HERE, '../identity/step-up-verify/kit.ts'));`,
+  );
+  expect(mayReadSupport(file, support, named)).toBe(`${file} names kit.ts`);
+});
+
+it('[CT-06w] Codex review r6: a fetch helper, a capability by a string key, an optional mock and a from variable before a string', () => {
+  const support = 'test/spec/real/kit.ts';
+  const judge = (file: string, files: Record<string, string>) =>
+    mayReadSupport(
+      file,
+      support,
+      relativeClosure(
+        file,
+        (p) => files[p] ?? null,
+        (p) => p.startsWith('test/'),
+      ),
+    );
+  // Browser mode: the helper fetches the support file from the Vite server.
+  const browser = 'test/spec/a/rules.browser.test.ts';
+  expect(
+    judge(browser, {
+      [browser]:
+        "import { it, expect } from 'vitest';\nimport { read } from './kit.ts';\nit('[AC-1#1] old', async () => { expect(await read()).toContain('n = 1'); });",
+      'test/spec/a/kit.ts':
+        "export async function read() { return (await fetch('/spec/real/' + ['ki', 't.ts'].join('') + '?raw')).text(); }\n",
+    }),
+  ).toBe(
+    `${browser} names kit.ts in an unresolved import ./kit.ts (test/spec/a/kit.ts is not closed: it uses fetch)`,
+  );
+  // process['getBuiltinModule'] and a string key: the helper is not closed.
+  const file = 'test/spec/a/rules.test.ts';
+  expect(
+    judge(file, {
+      [file]:
+        "import { it, expect } from 'vitest';\nimport { read } from './kit.ts';\nit('[AC-2#1] old', () => { expect(read()).toContain('n = 1'); });",
+      'test/spec/a/kit.ts':
+        "const io = process['getBuiltinModule']('node:f' + 's') as { 'readFileSync': (p: string, e: 'utf8') => string };\nexport const read = () => io['readFileSync']('spec/real/' + ['ki', 't.ts'].join(''), 'utf8');\n",
+    }),
+  ).toMatch(
+    /^test\/spec\/a\/rules\.test\.ts names kit\.ts in an unresolved import \.\/kit\.ts \(test\/spec\/a\/kit\.ts is not closed: it uses /,
+  );
+  // vi?.doMock in the rule-test file: it mocks, nothing is masked.
+  expect(
+    judge(file, {
+      [file]:
+        "import { it, expect, vi } from 'vitest';\nvi?.doMock('./' + ['ki', 't.ts'].join(''));\nconst { n } = await import('./kit.ts');\nit('[AC-3#1] old', () => { expect(n).toBe(1); });",
+      'test/spec/a/kit.ts': 'export const n = 0;\n',
+      'test/spec/a/__mocks__/kit.ts': "export { n } from '../../real/kit.ts';\n",
+    }),
+  ).toBe(
+    `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (it uses vi.doMock))`,
+  );
+  // `void from` and a string on the next line (ASI): no import, the literal is a name.
+  const asi =
+    "import { readFileSync } from 'node:fs';\nimport { it, expect } from 'vitest';\nit('[AC-4#1] old', () => {\n  const from = 0;\n  void from\n  './kit.ts'.split(',').forEach((p) => { expect(readFileSync('spec/real/' + p.slice(2), 'utf8')).toContain('n = 1'); });\n});";
+  const files: Record<string, string> = {
+    [file]: asi,
+    'test/spec/a/kit.ts': 'export const n = 0;\n',
+  };
+  const closure = relativeClosure(
+    file,
+    (p) => files[p] ?? null,
+    (p) => p.startsWith('test/'),
+  );
+  expect((closure[0] as Module).imports.map((i) => i.spec)).toEqual(['node:fs', 'vitest']);
+  expect(mayReadSupport(file, support, closure)).toBe(`${file} names kit.ts`);
+});
+
+it('[CT-06w] import and export declarations are read forward from the keyword (Codex review r6)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const specs = (text: string) =>
+    (
+      relativeClosure(
+        file,
+        (p) => (p === file ? text : p === 'test/spec/a/kit.ts' ? '' : null),
+        (p) => p.startsWith('test/'),
+      )[0] as Module
+    ).imports.map((i) => i.spec);
+  for (const text of [
+    "import from from './kit.ts';",
+    "import type from './kit.ts';",
+    "export type { T } from './kit.ts';",
+    "import { 'a-b' as c } from './kit.ts';",
+    "export * as 'x' from './kit.ts';",
+    "import j from './kit.ts' with { type: 'json' };",
+    "import k, * as ns from './kit.ts';",
+    "import {\n  a,\n  b,\n} from\n'./kit.ts';",
+    "if (x) { await import('./kit.ts'); }",
+    "import type T from './kit.ts';",
+    "import type, { a } from './kit.ts';",
+    "export type * as T from './kit.ts';",
+  ]) {
+    expect(specs(text), text).toEqual(['./kit.ts']);
+  }
+  for (const text of [
+    "const from = 0;\nvoid from\n'./kit.ts'.split(',');",
+    "export { a }\n'./kit.ts'.split(',');",
+    "declare module 'm' { export * from './kit.ts'; }",
+    "function f() { const from = 1; return from\n'./kit.ts'; }",
+    "import x = require('./kit.ts');",
+    "export default from\n'./kit.ts';",
+    "const anchor = 0, from = 0;\nexport { anchor }\nvoid from\n'./kit.ts'.split(',');",
+    "export type T = typeof from\n'./kit.ts';",
+  ]) {
+    expect(specs(text), text).toEqual([]);
+  }
+});
+
+it('[CT-06w] Codex review r7: constructor in any spelling but a definition, a mock call on any receiver, an export clause ends at its brace', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/real/kit.ts';
+  const closureOf = (files: Record<string, string>) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  const root =
+    "import { it, expect } from 'vitest';\nimport { read } from './kit.ts';\nit('[AC-r7#1] old', async () => { expect(await read()).toContain('export const'); });";
+  // A helper that takes the Function constructor by destructuring.
+  expect(
+    mayReadSupport(
+      file,
+      support,
+      closureOf({
+        [file]: root,
+        'test/spec/a/kit.ts':
+          'const { constructor: C } = () => 0;\nexport const read = () => C(\'return process.getBuiltinModule("fs").readFileSync("spec/real/" + "ki" + "t.ts", "utf8")\')();\n',
+      }),
+    ),
+  ).toBe(
+    `${file} names kit.ts in an unresolved import ./kit.ts (test/spec/a/kit.ts is not closed: it uses constructor)`,
+  );
+  // A class with a constructor definition and a spy's .mock.calls stay closed.
+  const closed = closureOf({
+    [file]: root,
+    'test/spec/a/kit.ts':
+      "import { vi } from 'vitest';\nexport class A {\n  x: number;\n  constructor(x: number) {\n    this.x = x;\n  }\n}\nconst spy = vi.fn();\nexport const read = async () => String(spy.mock.calls.length);\n",
+  });
+  expect(closed.map((m) => [m.path, m.closed, m.opaque])).toEqual([
+    [file, true, null],
+    ['test/spec/a/kit.ts', true, null],
+  ]);
+  expect(mayReadSupport(file, support, closed)).toBeNull();
+  // `vi as v` and `v.doMock?.(…)` in the rule-test file: it mocks.
+  expect(
+    mayReadSupport(
+      file,
+      support,
+      closureOf({
+        [file]:
+          "import { it, expect, vi as v } from 'vitest';\nv.doMock?.('./' + ['ki', 't.ts'].join(''));\nconst { n } = await import('./kit.ts');\nit('[AC-r7#1] old', () => { expect(n).toBeGreaterThanOrEqual(0); });",
+        'test/spec/a/kit.ts': 'export const n = -1;\n',
+      }),
+    ),
+  ).toBe(
+    `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (it uses v.doMock))`,
+  );
+  // `export { anchor }`, then `void from` and a string: the string is a name, not an import.
+  const asi = closureOf({
+    [file]:
+      "import { it, expect } from 'vitest';\nimport { readFileSync } from 'node:fs';\nconst anchor = 0, from = 0;\nexport { anchor }\nvoid from\n'./kit.ts'.split(',').forEach((p) => {\n  it('[AC-r7#1] old', () => {\n    expect(readFileSync('spec/real/' + p, 'utf8')).toContain('export const');\n  });\n});",
+    'test/spec/a/kit.ts': 'export const n = -1;\n',
+  });
+  expect((asi[0] as Module).imports.map((i) => i.spec)).toEqual(['vitest', 'node:fs']);
+  expect(mayReadSupport(file, support, asi)).toBe(`${file} names kit.ts`);
+});
+
+it('[CT-06w] Codex review r8: only known pure packages keep a module closed; a package that reads files does not', () => {
+  const file = 'test/spec/ct06w-format/rules.test.ts';
+  const helper = 'test/spec/ct06w-format/package.ts';
+  const closureOf = (files: Record<string, string>) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  const root =
+    "import { expect, it } from 'vitest';\nimport { style } from './package.ts';\nit('[AC-r8#1] semi setting', async () => { expect((await style())?.semi).toBe(false); });";
+  // prettier's resolveConfig reads fixtures/package.json: the helper is not closed.
+  const read = closureOf({
+    [file]: root,
+    [helper]:
+      "import { resolveConfig } from 'prettier';\nexport const style = () => resolveConfig('spec/ct06w-format/fixtures/input.ts', { useCache: false, editorconfig: false });\n",
+  });
+  expect([read[1]?.path, read[1]?.closed, read[1]?.opaque]).toEqual([
+    helper,
+    false,
+    'it imports prettier, a package not known to read no files',
+  ]);
+  expect(mayReadSupport(file, 'test/spec/ct06w-format/fixtures/package.json', read)).toBe(
+    `${file} names package in an unresolved import ./package.ts (${helper} is not closed: it imports prettier, a package not known to read no files)`,
+  );
+  // Built-ins and known pure packages keep it closed (subpaths too, except vitest's).
+  const pure = closureOf({
+    [file]: root,
+    [helper]:
+      "import fc from 'fast-check';\nimport { createHash } from 'node:crypto';\nimport path from 'path';\nimport { createRoot } from 'react-dom/client';\nimport { sql } from 'kysely';\nexport const style = async () => [fc, createHash, path, createRoot, sql].length;\n",
+  });
+  expect(pure.map((m) => m.closed)).toEqual([true, true]);
+  expect(mayReadSupport(file, 'test/spec/ct06w-format/fixtures/package.json', pure)).toBeNull();
+});
+
+it('[CT-06w] Codex review r9: a file snapshot helper and a migration loader keep the closure open', () => {
+  const closureOf = (file: string, files: Record<string, string>) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  const snapshot = 'test/spec/r9-snapshot/render.test.ts';
+  const snap = closureOf(snapshot, {
+    [snapshot]:
+      "import { it } from 'vitest';\nimport { matchOutput } from './render.ts';\nit('[AC-r9#1] current output', async () => { await matchOutput('ok\\n'); });",
+    'test/spec/r9-snapshot/render.ts':
+      "import { basename } from 'node:path';\nimport { expect } from 'vitest';\nexport async function matchOutput(value: string) {\n  const name = basename(expect.getState().testPath!).replace(/\\.test\\.ts$/, '.txt');\n  await expect(value).toMatchFileSnapshot(`./fixtures/${name}`);\n}\n",
+  });
+  expect(mayReadSupport(snapshot, 'test/spec/r9-snapshot/fixtures/render.txt', snap)).toBe(
+    `${snapshot} names render in an unresolved import ./render.ts (test/spec/r9-snapshot/render.ts is not closed: it uses toMatchFileSnapshot)`,
+  );
+  const migrations = 'test/spec/r9-migrations/rules.test.ts';
+  const mig = closureOf(migrations, {
+    [migrations]:
+      "import { expect, it } from 'vitest';\nimport { promises as fs } from 'node:fs';\nimport path from 'node:path';\nimport { fileURLToPath } from 'node:url';\nimport { load } from './seed.ts';\nconst options = { fs, path, migrationFolder: fileURLToPath(new URL('./fixtures/', import.meta.url)) };\nit('[AC-r9#3] migration exports', async () => { expect(Object.keys(await load(options))).toHaveLength(1); });",
+    'test/spec/r9-migrations/seed.ts':
+      "import { FileMigrationProvider, type FileMigrationProviderProps } from 'kysely/migration';\nexport function load(options: FileMigrationProviderProps) {\n  return new FileMigrationProvider(options).getMigrations();\n}\n",
+  });
+  expect(mayReadSupport(migrations, 'test/spec/r9-migrations/fixtures/seed.mjs', mig)).toMatch(
+    /^test\/spec\/r9-migrations\/rules\.test\.ts names seed in an unresolved import \.\/seed\.ts \(test\/spec\/r9-migrations\/seed\.ts is not closed: it /,
+  );
+});
+
+it('[CT-06w] Codex review r10: process.loadEnvFile and a test attachment keep the closure open; listed process properties do not', () => {
+  const closureOf = (file: string, files: Record<string, string>) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  const env = 'test/spec/r10-env/config.test.ts';
+  expect(
+    mayReadSupport(
+      env,
+      'test/spec/r10-env/fixtures/config.env',
+      closureOf(env, {
+        [env]:
+          "import { expect, it } from 'vitest';\nimport { loadExpected } from './config.ts';\nit('[AC-r10#1] existing value', () => { expect(loadExpected()).toBe('ready'); });",
+        'test/spec/r10-env/config.ts':
+          "import { basename, dirname, join } from 'node:path';\nimport { expect } from 'vitest';\nexport function loadExpected() {\n  const testPath = expect.getState().testPath!;\n  const name = basename(testPath).replace(/\\.test\\.ts$/, '.env');\n  delete process.env['CT06W_EXPECTED'];\n  process.loadEnvFile(join(dirname(testPath), 'fixtures', name));\n  return process.env['CT06W_EXPECTED'];\n}\n",
+      }),
+    ),
+  ).toBe(
+    `${env} names config in an unresolved import ./config.ts (test/spec/r10-env/config.ts is not closed: it uses process.loadEnvFile)`,
+  );
+  const report = 'test/spec/r10-attachment/report.test.ts';
+  expect(
+    mayReadSupport(
+      report,
+      'test/spec/r10-attachment/fixtures/report.txt',
+      closureOf(report, {
+        [report]:
+          "import { expect, it } from 'vitest';\nimport { attachFixture } from './report.ts';\nit('[AC-r10#3] existing attachment', async (ctx) => { expect((await attachFixture(ctx)).attachment?.contentType).toBe('text/plain'); });",
+        'test/spec/r10-attachment/report.ts':
+          "import { basename, dirname, join } from 'node:path';\nimport { expect, type TestContext } from 'vitest';\nexport async function attachFixture(ctx: TestContext) {\n  const testPath = expect.getState().testPath!;\n  const name = basename(testPath).replace(/\\.test\\.ts$/, '.txt');\n  return ctx.annotate('input fixture', { path: join(dirname(testPath), 'fixtures', name) });\n}\n",
+      }),
+    ),
+  ).toBe(
+    `${report} names report in an unresolved import ./report.ts (test/spec/r10-attachment/report.ts is not closed: it uses annotate)`,
+  );
+  // process.pid / process.env and the like stay closed (the B1-12g queue kit reads process.pid).
+  const plain = closureOf(env, {
+    [env]:
+      "import { it } from 'vitest';\nimport { loadExpected } from './config.ts';\nit('x', () => loadExpected());",
+    'test/spec/r10-env/config.ts':
+      "export const loadExpected = () => [process.pid, process.env['X'], process.platform, process.stdout].length;\n",
+  });
+  expect(plain.map((m) => m.closed)).toEqual([true, true]);
 });

@@ -1360,3 +1360,81 @@ it('[CT-06p] without baselines the result keeps its old shape (no exempt list)',
   expect(result.exempt).toBeUndefined();
   expect(result.problems[0]?.reason).toBe('green on the skeleton: the test has no teeth');
 });
+
+// CT-06w (B1-12g red/4): the two platform contract tests, unchanged in their tests, were judged
+// whole because `./kit.ts` of their own directory shares its basename with the identity kit the
+// task changed (test/spec/identity/step-up-verify/kit.ts). Imports are resolved to paths now.
+it('[CT-06w] ruleTestBaselines: an import of a same-named file in another directory is not a read of the changed support file', () => {
+  const fixture = (p: string): string => readFileSync(join(FIXTURES, `b112g-${p}.txt`), 'utf8');
+  const EVENTS = 'test/spec/platform/events/contract.test.ts';
+  const QUEUE = 'test/spec/platform/queue/contract.test.ts';
+  const IDENTITY_KIT = 'test/spec/identity/step-up-verify/kit.ts';
+  const tree: Record<string, string> = {
+    // The implementation modules the fixtures import (outside the test code).
+    ...Object.fromEntries(
+      [
+        'events/index.ts',
+        'logging/redaction.ts',
+        'logging/logger.ts',
+        'queue/index.ts',
+        'db/index.ts',
+        'config/index.ts',
+      ].map((p) => [`apps/api/src/modules/platform/${p}`, '']),
+    ),
+    [EVENTS]: fixture('events-contract.test.ts'),
+    [QUEUE]: fixture('queue-contract.test.ts'),
+    'test/spec/platform/events/kit.ts': fixture('events-kit.ts'),
+    'test/spec/platform/queue/kit.ts': fixture('queue-kit.ts'),
+    'test/spec/platform/db/kit.ts': fixture('db-kit.ts'),
+    [IDENTITY_KIT]: fixture('identity-step-up-verify-kit.ts'),
+  };
+  const scope = [
+    'test/spec/notification/risk-state-message/**',
+    EVENTS,
+    QUEUE,
+    'test/spec/platform/idempotency/abandon-route/http-kit.ts',
+    'test/spec/identity/identity-level/http-kit.ts',
+    'test/spec/identity/bind-phone/http-kit.ts',
+    IDENTITY_KIT,
+    'test/spec/identity/sms-codes/http-kit.ts',
+  ];
+  const changes: Change[] = [
+    { path: EVENTS, status: 'M' },
+    { path: QUEUE, status: 'M' },
+    { path: 'test/spec/platform/idempotency/abandon-route/http-kit.ts', status: 'M' },
+    { path: 'test/spec/identity/identity-level/http-kit.ts', status: 'M' },
+    { path: 'test/spec/identity/sms-codes/http-kit.ts', status: 'M' },
+    { path: IDENTITY_KIT, status: 'M' },
+    { path: 'test/spec/notification/risk-state-message/render.test.ts', status: 'A' },
+    { path: 'test/spec/notification/risk-state-message/db-kit.ts', status: 'A' },
+  ];
+  // The test bodies did not change (the same text at the base), only the kits elsewhere did.
+  const unchanged = ruleTestBaselines([EVENTS, QUEUE], changes, scope, reader(tree, tree));
+  expect(unchanged.get(EVENTS)?.kind).toBe('tests');
+  expect(unchanged.get(QUEUE)?.kind).toBe('tests');
+  // The kit of its own directory changed: whole, through the resolved import.
+  const own = ruleTestBaselines(
+    [EVENTS, QUEUE],
+    [...changes, { path: 'test/spec/platform/events/kit.ts', status: 'M' }],
+    [...scope, 'test/spec/platform/events/kit.ts'],
+    reader(tree, tree),
+  );
+  expect(own.get(EVENTS)).toMatchObject({
+    kind: 'support',
+    reason:
+      'it may read a test-support file the task changed: it loads test/spec/platform/events/kit.ts',
+  });
+  expect(own.get(QUEUE)?.kind).toBe('tests');
+  // An import that cannot be resolved keeps the old judgement, and the notes say so.
+  const bare = {
+    ...tree,
+    [QUEUE]: tree[QUEUE]?.replace("from './kit.ts'", "from 'queue-kit/kit.ts'") ?? '',
+  };
+  const kept = ruleTestBaselines([EVENTS, QUEUE], changes, scope, reader(bare, bare));
+  expect(kept.get(QUEUE)).toMatchObject({
+    kind: 'support',
+    // (r8: a package not known to read no files keeps the rule-test file open, so the first
+    // specifier with the name, ../db/kit.ts, already counts.)
+    reason: `it may read a test-support file the task changed: ${QUEUE} names kit.ts in an unresolved import ../db/kit.ts (${QUEUE} is not closed: it imports queue-kit/kit.ts, a package not known to read no files)`,
+  });
+});

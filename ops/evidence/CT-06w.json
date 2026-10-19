@@ -1,0 +1,35 @@
+{
+  "task": "CT-06w",
+  "spec_ref": "b90e712f5255a9600ebf6f0f3b561afd1b4f8d9e",
+  "spec_commit": "a1e22556cacde9b6759f90d2d4cb58a76e7060f0",
+  "red_tests": [],
+  "risk_note": "RV2 gate change (tools/guard/lib/test-blocks.ts, tools/guard/lib/red-check.ts, tools/guard/red-check.ts, their tests and fixtures, tools/README.md only; orchestrator ruling of 2026-10-19 04:1x under ops/approvals.yaml id 16 after B1-12g red/4: the two platform contract tests import ./kit.ts of their own directory while the task changed test/spec/identity/step-up-verify/kit.ts, and the 'names kit.ts' rule of mayReadSupport matched the basename, judging 27 unchanged tests whole). relativeClosure resolves every import specifier (import … from, export … from, import 'x', a literal import()) to a repository path only where one file is certain — ./ and ../ by Vite's rules, #… through the nearest package.json imports when exactly one entry matches, path identity by git ls-tree (head tree) or lstat + realpath + git ls-files (work tree), tsconfig paths are not used — and computes for every module whether it is closed (tokenised; no dynamic, template or absolute load, no listing, no file-system API, no code or process execution, no browser or network API, no way to the Function constructor, no capability object used by a computed key or as a value, no capability or mock name as a string, no file API of an allowed package or built-in (toMatchFileSnapshot, FileMigrationProvider, annotate, recordArtifact, process.loadEnvFile; process.<name> only for listed properties), no import.meta, no mock call in any ordinary spelling; every relative or # import resolved to a closed module or to code outside the test code; a bare specifier only for a known pure package — Node built-ins and listed exact npm specifiers; a fixpoint). mayReadSupport: an import resolved to the support file counts by path; a specifier literal is exempt from the name rules only when it resolves to another closed module and the whole closure is closed — any module the file loads that is not closed, or a way of the file itself that no rule judges on its own text (unreadable code, dynamic or template load, execution, mock, open import), makes every specifier keep the CT-06p name rules (reason 'unresolved import'), exactly as the old code; the file's own file-system reads and statically resolved listings stay judged on its text by the name and listing rules (the CT-06r judgement). Threat model (orchestrator ruling of 2026-10-19 after Codex r7, in the head comment and tools/README.md): the red check catches wrong tests in test code written the ordinary way; it is no security boundary against obfuscation — reaching Function, process, a built-in or a dynamic import through a computed property name or a string built at run time is out of scope and stopped by the rule-test review. Snapshot naming, directory listings, glob / require / computed imports, untokenizable modules, red_exempt declarations, the expected list, the one-red-per-file rule and MONEY_PATHS are unchanged. The B1-12g red/4 reports re-checked against a snapshot tree of the B1-12g worktree: FAIL 27 problems on the old code (couli-runs/B1-12g/red/4/red-check.json), PASS on the new (90 red, 27 unchanged exempt). Claude implementation (Fable 5.1; the closure-wide fallback before r6 by Opus 5.5); tester none (guard-change), so no red run. Codex adversarial review (gates), ten rounds: r1-r5 fail (7 / 6 / 5 / 4 / 6 S1) - import resolution made certain-only and the closed-module definition built and tightened, each answered only by tightening with regression tests; orchestrator ruling 2026-10-19: closure-wide fallback, review limited to closures of closed modules; r6 fail (4 S1) and r7 fail (5 S1), capability spellings, fixed; orchestrator threat model 2026-10-19: ordinary test code only, obfuscation is out of scope and stopped by the rule-test review; r8 fail (1 S1: an ordinary package reading files -> known-package list), r9 fail (2 S1: toMatchFileSnapshot, kysely/migration -> capabilities, exact specifiers); r10 fail with 2 S1, both of the class 'an allowed package or built-in carries a file-read API' (annotate / recordArtifact, process.loadEnvFile): per the orchestrator ruling of 2026-10-19 the r10 findings were handled by narrowing the list (capabilities, PROCESS_PROPERTIES), monotonically conservative, not re-reviewed; recorded as pass with no open S0/S1. B1-12g red/4 re-checked after every commit: PASS (90 red, 27 exempt). Labelled by the orchestrator under approvals #16 / #24 (orchestrator authorisation of 2026-10-19 for changes limited to tools/guard, fixtures, unit tests, tools/README.md, ledger and evidence; none of the four reserved categories).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 10,
+      "note": "Codex adversarial review (gates), ten rounds: r1-r5 fail (7 / 6 / 5 / 4 / 6 S1) - import resolution made certain-only and the closed-module definition built and tightened, each answered only by tightening with regression tests; orchestrator ruling 2026-10-19: closure-wide fallback, review limited to closures of closed modules; r6 fail (4 S1) and r7 fail (5 S1), capability spellings, fixed; orchestrator threat model 2026-10-19: ordinary test code only, obfuscation is out of scope and stopped by the rule-test review; r8 fail (1 S1: an ordinary package reading files -> known-package list), r9 fail (2 S1: toMatchFileSnapshot, kysely/migration -> capabilities, exact specifiers); r10 fail with 2 S1, both of the class 'an allowed package or built-in carries a file-read API' (annotate / recordArtifact, process.loadEnvFile): per the orchestrator ruling of 2026-10-19 the r10 findings were handled by narrowing the list (capabilities, PROCESS_PROPERTIES), monotonically conservative, not re-reviewed; recorded as pass with no open S0/S1. B1-12g red/4 re-checked after every commit: PASS (90 red, 27 exempt). (couli-runs/CT-06w/review-codex*.json)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "f23baaafe9fbca9e9476bf83ae6ab895a7243cb3",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "3261b40d384c517f673b58e2c51c74e24197c764",
+    "specs": "c3c361e2d577cc550a501e7feb636fbcb179ff4a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}

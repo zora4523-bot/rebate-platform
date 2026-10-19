@@ -32,6 +32,59 @@
 // Test-support files (a helper, fixture or data file the task changed inside its test_paths) are
 // judged by mayReadSupport: a file that may read one is judged as a whole (see there).
 //
+// CT-06w (orchestrator ruling of 2026-10-19, after B1-12g red/4 and five Codex rounds) — a
+// conservative fallback, not a proof about arbitrary code:
+// - Design intent: an import specifier such as `./kit.ts` names a file; when that file resolves
+//   to a different test-code module than the changed support file (test/spec/platform/events/kit.ts
+//   is not test/spec/identity/step-up-verify/kit.ts), the basename in the specifier is no evidence
+//   that the test reads the support file. Only such a specifier literal is exempt from the name
+//   rules; the name anywhere else (a comment, another literal) still counts.
+// - Closed module (Module.closed): tokenised; no dynamic load (glob / require / computed import);
+//   no directory listing; no file-system API; no code or process execution (child_process, vm,
+//   worker_threads, module, inspector, eval, Function, Worker …, built-in subpaths too); no
+//   browser or network API (fetch, XMLHttpRequest, document …: in browser mode Vite serves the
+//   work tree); no way to the Function constructor (`constructor` in any spelling but a
+//   constructor definition, getPrototypeOf, __proto__); no capability object (process,
+//   globalThis, global, window, self) used by a computed key or as a value, no `process.<name>`
+//   outside PROCESS_PROPERTIES; no capability named
+//   by a string literal (also one built from literals with `+` or `[…].join(…)`); no import.meta;
+//   no mock call of any spelling (`.` or `?.`, `?.()`, any receiver, a computed key on vi, a
+//   destructured or renamed mock function, vi passed on as a value); no template specifier or
+//   import inside a template; every relative or `#` import resolves (certainly, by Vite's rules)
+//   to a closed module of the closure or to a module outside the test code (implementation code
+//   never reads test-support files, as since CT-06p); a bare specifier keeps it closed only when
+//   it is a known pure package (KNOWN_BUILTINS / KNOWN_PACKAGES, exact specifiers: no file read or
+//   code load on the caller's behalf — prettier's resolveConfig, kysely/migration read files,
+//   Codex reviews r8, r9; the listed packages' file APIs such as toMatchFileSnapshot and
+//   FileMigrationProvider are capabilities of the scan above) or a capability
+//   module judged by the scan above; a workspace package (`@couli/*`, test code such as
+//   packages/testing that the closure does not follow) or any other package keeps it open. Computed as a fixpoint over the closure; `opaque` says why not. The capabilities are
+//   a list of the ordinary spellings (Codex reviews r4–r7), not a proof: a name computed some
+//   other way is not seen (see the threat model below).
+// - Fallback rule: a specifier is exempt only when it resolves to a closed module and the whole
+//   closure is closed. Whenever the module it names is not closed, not followed or not resolved,
+//   the importing module mocks modules, ANY module the rule-test file loads is not closed (a
+//   sibling the specifier does not name too), or the rule-test file itself has a way to files
+//   that no rule here judges even on its own text (`Module.unjudged`: unreadable code, a dynamic
+//   or template load, code or process execution, a mock, an import that is neither a package
+//   nor resolved to the closure or to code outside the test code), every specifier keeps the
+//   name rules of CT-06p unchanged — the file is judged as a whole exactly as before, the reason
+//   says `unresolved import`. So a closure with one module that is not closed judges like the
+//   old code (test `[CT-06w] fallback …`, clause by clause). The one thing the rule-test file
+//   itself may do and still be exempt is what the name and listing rules already judge on its
+//   own text, as before CT-06w: file-system reads, path helpers, `import.meta` and listings
+//   resolved statically (B1-12g: queue/contract.test.ts lists and reads apps/api/src; a listing
+//   that holds the support file, or the support file's name in another literal, still makes it
+//   whole; this is the CT-06r judgement, not a new gap). The question a review must answer is
+//   whether a closure of closed modules, written in the ordinary way, can still reach a changed
+//   support file.
+// - Threat model (orchestrator ruling of 2026-10-19, after Codex r7): the red check catches tests
+//   that are wrong — not red against the old implementation — in test code written the ordinary
+//   way; it is no security boundary against deliberate obfuscation. The test authors are our own
+//   Codex / Claude and the tests pass the rule-test review. Code that reaches Function, process,
+//   a built-in module or a dynamic import through a computed property name or a string built at
+//   run time is out of scope here; the rule-test review is what stops it.
+//
 // Node built-ins only; pure functions (the caller reads the files).
 
 export class TestParseError extends Error {
@@ -815,16 +868,6 @@ function flatten(tokens: readonly Token[]): Token[] {
   return out;
 }
 
-/** String contents of a module: string literals and the static parts of templates, nested too. */
-function literalTexts(tokens: readonly Token[]): string[] {
-  const out: string[] = [];
-  for (const t of flatten(tokens)) {
-    if (t.kind === 'str' && typeof t.value === 'string') out.push(t.value);
-    if (t.kind === 'tpl') for (const p of t.parts ?? []) if (p !== null) out.push(p);
-  }
-  return out;
-}
-
 /** Calls that load files / modules by a computed name (never resolved: always dynamic). */
 const DYNAMIC_ACCESS = new Set(['glob', 'globSync', 'require', 'createRequire']);
 /** Calls that list a directory: resolved statically when they can be (listedDirectories). */
@@ -1266,37 +1309,884 @@ export function listedDirectories(
   return { dirs: [...dirs].sort(), unresolved };
 }
 
+/** A string literal (or the static parts of a template) with its offsets in the module text. */
+export type Literal = { text: string; start: number; end: number };
+
+/**
+ * An import of a module (CT-06w): the specifier as written, where its string literal sits in the
+ * module text (the quotes included) and the repository file it names once resolved — or null with
+ * `why` when it cannot be resolved (mayReadSupport then judges the literal as before).
+ */
+export type ModuleImport = {
+  spec: string;
+  start: number;
+  end: number;
+  resolved: string | null;
+  why: string | null;
+};
+
 export type Module = {
   path: string;
   text: string;
   /** String contents (literals, static template parts); null when the text cannot be tokenized. */
-  literals: string[] | null;
+  literals: Literal[] | null;
   /** Why the module may load files it does not name (dynamicAccess), or null. */
   dynamic: string | null;
   /** The directories it lists, resolved statically (CT-06r); [] when it lists none. */
   lists: string[];
+  /** Its import specifiers resolved to repository paths (CT-06w); [] when it cannot be tokenized. */
+  imports: ModuleImport[];
+  /**
+   * Why the module may read files in a way the rules here do not see (CT-06w, Codex review r4):
+   * a file-system API, `import.meta`, a module mock, a listing, a dynamic load; null when none.
+   */
+  opaque: string | null;
+  /** Why the module mocks modules (usesMocking): its own imports may be redirected; null when none. */
+  mocking: string | null;
+  /**
+   * The module is closed (CT-06w): it is not opaque and every relative / `#` import of it
+   * resolves to a closed module of the closure or to a file outside the test code. Only an
+   * import of a closed module may be skipped by the name rules of mayReadSupport, and only when
+   * every other module the rule-test file loads is closed too.
+   */
+  closed: boolean;
+  /**
+   * Why the module may reach a file in a way no rule here judges, not even on its own text
+   * (CT-06w r6): it cannot be read as code, loads dynamically, executes code or a process, mocks,
+   * loads by a template, or has an import that is neither a package nor resolved to a module of
+   * the closure or to code outside the test code (or resolved to a module that is not closed).
+   * Null when closed, or when its only openness is its own file-system reads, path helpers,
+   * `import.meta` and listings resolved statically — those the name and listing rules judge on
+   * its text, as before CT-06w. mayReadSupport looks at it for the rule-test file itself only:
+   * any other module of the closure that is not closed disables the exemption outright.
+   */
+  unjudged: string | null;
 };
 
+type Reader = (path: string) => string | null;
+
+/** The string literals of a module with their offsets (nested template parts too). */
+function literalsOf(tokens: readonly Token[]): Literal[] {
+  const out: Literal[] = [];
+  for (const t of flatten(tokens)) {
+    const start = t.start ?? 0;
+    const end = start + t.text.length;
+    if (t.kind === 'str' && typeof t.value === 'string') out.push({ text: t.value, start, end });
+    if (t.kind === 'tpl')
+      for (const p of t.parts ?? []) if (p !== null) out.push({ text: p, start, end });
+  }
+  return out;
+}
+
+/** A member access token (`.` or `?.`). */
+const member = (t: Token | undefined): boolean => t?.text === '.' || t?.text === '?.';
+
 /**
- * The modules a rule-test file loads through relative specifiers (./, ../), itself first, at the
- * head: every string literal of a module that resolves to a code file `read` finds is followed
- * (imports, re-exports, dynamic imports, vi.mock paths, new URL(…) of a module), as long as
- * `follow` accepts its path (the caller keeps the walk to test code: implementation modules do
- * not read test-support files). `read` returns null for a file that does not exist.
+ * Identifiers of file-system reads and path helpers (fileAccess). In a module the rule-test file
+ * imports they make it open; the rule-test file's own use of them is judged on its own text by the
+ * name and listing rules, as before CT-06w (`unjudged` leaves them out; Codex review r5, rule 4).
+ */
+const FILE_READS = new Set([
+  'readFileSync',
+  'readFile',
+  'readdirSync',
+  'readdir',
+  'opendirSync',
+  'opendir',
+  'createReadStream',
+  'openSync',
+  'statSync',
+  'lstatSync',
+  'existsSync',
+  'accessSync',
+  'realpathSync',
+  'readlinkSync',
+  'fileURLToPath',
+  'pathToFileURL',
+  '__dirname',
+  '__filename',
+  'cwd',
+]);
+/** The file-system modules (their own use by the rule-test file: as FILE_READS). */
+const READ_MODULES = new Set(['fs', 'node:fs', 'fs/promises', 'node:fs/promises']);
+/** Identifiers of file-system access, module loading by path and process state (fileAccess). */
+const FILE_ACCESS = new Set([
+  ...FILE_READS,
+  'createRequire',
+  'require',
+  'glob',
+  'globSync',
+  // Code or process execution the rules cannot look into (Codex review r5).
+  'eval',
+  'Function',
+  'execSync',
+  'execFileSync',
+  'spawnSync',
+  'execFile',
+  'spawn',
+  'fork',
+  'Worker',
+  'getBuiltinModule',
+  'runInThisContext',
+  'runInNewContext',
+  'runInContext',
+  'compileFunction',
+  'binding',
+  'mainModule',
+  'dlopen',
+  // The Function constructor without its name (Codex review r6: a capability spelled another way).
+  'getPrototypeOf',
+  '__proto__',
+  // Browser and network APIs: in browser mode Vite serves the work tree over HTTP (Codex review r6).
+  'fetch',
+  'XMLHttpRequest',
+  'WebSocket',
+  'EventSource',
+  'importScripts',
+  'SharedWorker',
+  'navigator',
+  'document',
+  'WebAssembly',
+  // Package APIs that read files on the caller's behalf (Codex review r9): Vitest's file snapshot
+  // (any path, unlike the snapshot files named after the test that CT-06r judges) and Kysely's
+  // migration loader.
+  'toMatchFileSnapshot',
+  'FileMigrationProvider',
+  // Vitest's file attachments of a test (`context.annotate(…, { path })`, `recordArtifact`) and
+  // Node's `process.loadEnvFile` (Codex review r10).
+  'annotate',
+  'recordArtifact',
+  'loadEnvFile',
+]);
+/**
+ * Objects whose properties give file access, a loader or code execution (CT-06w, Codex review r6):
+ * any use of one other than reading a property by its plain name — a computed key, `?.[…]`, the
+ * object passed on as a value (`Reflect.get(process, k)`, `const { x } = process`) — is a
+ * capability. (`frames`, `top` and `parent` are left out: common local names, e.g. of stack frames.)
+ */
+const CAPABILITY_OBJECTS = new Set(['process', 'globalThis', 'global', 'window', 'self']);
+/**
+ * The properties of `process` a closed module may read (CT-06w, Codex review r10): state, events
+ * and streams; any other property — `loadEnvFile` reads a file, `binding`, `dlopen`,
+ * `getBuiltinModule` load code — is a capability. (`cwd` counts as a path helper, FILE_READS.)
+ */
+const PROCESS_PROPERTIES = new Set([
+  'env',
+  'pid',
+  'ppid',
+  'platform',
+  'arch',
+  'version',
+  'versions',
+  'release',
+  'features',
+  'title',
+  'argv',
+  'argv0',
+  'execArgv',
+  'execPath',
+  'exitCode',
+  'exit',
+  'abort',
+  'kill',
+  'nextTick',
+  'hrtime',
+  'uptime',
+  'memoryUsage',
+  'cpuUsage',
+  'resourceUsage',
+  'umask',
+  'chdir',
+  'on',
+  'once',
+  'off',
+  'addListener',
+  'removeListener',
+  'removeAllListeners',
+  'listeners',
+  'listenerCount',
+  'emitWarning',
+  'stdout',
+  'stderr',
+  'stdin',
+  'send',
+  'channel',
+  'connected',
+  'disconnect',
+]);
+const FILE_MODULES = new Set([
+  ...READ_MODULES,
+  'child_process',
+  'node:child_process',
+  'vm',
+  'node:vm',
+  'worker_threads',
+  'node:worker_threads',
+  'module',
+  'node:module',
+  'process',
+  'node:process',
+  'wasi',
+  'node:wasi',
+  // Code execution and the browser-mode server commands (Codex review r6).
+  'inspector',
+  'node:inspector',
+  'cluster',
+  'node:cluster',
+  'repl',
+  'node:repl',
+  'vitest/browser',
+  '@vitest/browser',
+  '@vitest/browser/context',
+]);
+const MOCKING = new Set([
+  'mock',
+  'doMock',
+  'unmock',
+  'doUnmock',
+  'importActual',
+  'importMock',
+  'hoisted',
+]);
+
+/**
+ * Packages a closed module may import (CT-06w, Codex review r8): Node built-ins and npm packages
+ * of this workspace that read no repository file and load no code on the caller's behalf (an
+ * ordinary package API such as prettier's resolveConfig, typescript's program or an OpenAPI
+ * parser's $ref resolution does — those, and every package not listed, keep a module open). The
+ * capability built-ins (fs, child_process, vm …) are judged by fileAccess instead.
+ */
+const KNOWN_BUILTINS = new Set([
+  'assert',
+  'assert/strict',
+  'async_hooks',
+  'buffer',
+  'constants',
+  'crypto',
+  'dgram',
+  'diagnostics_channel',
+  'dns',
+  'dns/promises',
+  'events',
+  'http',
+  'http2',
+  'https',
+  'net',
+  'os',
+  'path',
+  'path/posix',
+  'path/win32',
+  'perf_hooks',
+  'punycode',
+  'querystring',
+  'readline',
+  'readline/promises',
+  'stream',
+  'stream/consumers',
+  'stream/promises',
+  'stream/web',
+  'string_decoder',
+  'timers',
+  'timers/promises',
+  'tls',
+  'tty',
+  'url',
+  'util',
+  'util/types',
+  'zlib',
+]);
+/**
+ * npm specifiers, exactly as written: a subpath of a listed package is another entry (Codex review
+ * r9: `kysely/migration` loads files) and is listed on its own or not at all.
+ */
+const KNOWN_PACKAGES = new Set([
+  'vitest',
+  'fast-check',
+  'kysely',
+  'react',
+  'react/jsx-runtime',
+  'react/jsx-dev-runtime',
+  'react-dom',
+  'react-dom/client',
+  '@testing-library/react',
+  '@testing-library/user-event',
+  'jose',
+  'ajv',
+  'ajv/dist/2020.js',
+  'ajv-formats',
+  'openapi-types',
+  'reflect-metadata',
+]);
+
+function knownPackage(spec: string): boolean {
+  if (KNOWN_BUILTINS.has(spec.startsWith('node:') ? spec.slice(5) : spec)) return true;
+  return !spec.startsWith('node:') && KNOWN_PACKAGES.has(spec);
+}
+
+/**
+ * The capability a module name names (CT-06w): one of FILE_MODULES, a subpath of one of their
+ * built-ins (`node:inspector/promises`, `fs/promises`; Codex review r7), the Vitest browser
+ * commands (`@vitest/browser…`, `vitest/browser…`) or `node:test` (its `mock.module`); `reads`
+ * when it is the file system. Null for any other name.
+ */
+function capabilityModule(name: string): { reads: boolean } | null {
+  const bare = name.startsWith('node:') ? name.slice(5) : name;
+  const head = bare.split('/')[0] ?? bare;
+  if (FILE_MODULES.has(name) || FILE_MODULES.has(head)) {
+    return { reads: READ_MODULES.has(name) || head === 'fs' };
+  }
+  if (/^(@vitest\/browser|vitest\/browser)(\/|$)/.test(name)) return { reads: false };
+  if (name === 'node:test' || name.startsWith('node:test/')) return { reads: false };
+  return null;
+}
+
+/**
+ * Why a module may read files in a way the rules of mayReadSupport do not see (CT-06w, Codex
+ * review r4): a file-system API or a path built from `import.meta` / `__dirname`, a module mock
+ * (Vitest redirects it to `__mocks__`), `require` / `glob`, code or process execution, a browser
+ * or network API, a way to the Function constructor, a capability object (CAPABILITY_OBJECTS) used
+ * by a computed key or as a value, a capability named by a string literal — also one built from
+ * literals with `+` or `[…].join(…)` (Codex reviews r5, r6). Null when it uses none of them. This
+ * is a list of spellings, not a proof: a name computed some other way is not seen.
+ * With `reads` false, the file-system reads, path helpers and `import.meta` (FILE_READS,
+ * READ_MODULES) do not count: what is left is what no rule here judges, even on the module's own
+ * text (`Module.unjudged`, CT-06w r6).
+ */
+function fileAccess(code: readonly Token[], reads = true): string | null {
+  const tokens = flatten(code);
+  const listed = (name: string): string | null => {
+    if (FILE_ACCESS.has(name) || name === 'constructor' || name === 'globalThis') {
+      return reads || !FILE_READS.has(name) ? name : null;
+    }
+    const mod = capabilityModule(name);
+    if (mod !== null) return reads || !mod.reads ? name : null;
+    return null;
+  };
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i] as Token;
+    if (t.kind === 'id' && FILE_ACCESS.has(t.text) && (reads || !FILE_READS.has(t.text))) {
+      return `it uses ${t.text}`;
+    }
+    // A capability named by a string — a computed key (`process['getBuiltinModule']`, a
+    // destructured 'readFileSync'), a module name — also when it is built from literals with `+`
+    // or `[…].join(…)` (Codex review r6).
+    for (const value of stringValues(tokens, i)) {
+      const name = listed(value);
+      if (name !== null) return `it uses ${name}`;
+    }
+    // The Function constructor in any spelling but a constructor definition (`constructor(…) {`):
+    // `.constructor`, `{ constructor: C } = f`, `{ constructor }` (Codex reviews r6, r7).
+    if (t.kind === 'id' && t.text === 'constructor') {
+      const definition =
+        !member(tokens[i - 1]) &&
+        tokens[i + 1]?.text === '(' &&
+        tokens[closeOf(tokens, i + 1) + 1]?.text === '{';
+      if (!definition) return 'it uses constructor';
+    }
+    if (
+      t.kind === 'id' &&
+      CAPABILITY_OBJECTS.has(t.text) &&
+      !member(tokens[i - 1]) &&
+      !(tokens[i + 1]?.text === ':' && (tokens[i - 1]?.text === '{' || tokens[i - 1]?.text === ','))
+    ) {
+      const next = tokens[i + 1]?.text;
+      const plain = (next === '.' || next === '?.') && tokens[i + 2]?.kind === 'id';
+      if (!plain) return `it uses ${t.text} by a computed key or as a value`;
+    }
+    // `process.<name>` (also through a global object): only the listed properties; any other
+    // (`process.loadEnvFile`, Codex review r10) is a capability.
+    if (
+      t.kind === 'id' &&
+      t.text === 'process' &&
+      (!member(tokens[i - 1]) || CAPABILITY_OBJECTS.has(tokens[i - 2]?.text ?? '')) &&
+      member(tokens[i + 1]) &&
+      tokens[i + 2]?.kind === 'id' &&
+      !PROCESS_PROPERTIES.has((tokens[i + 2] as Token).text) &&
+      (reads || !FILE_READS.has((tokens[i + 2] as Token).text))
+    ) {
+      return `it uses process.${(tokens[i + 2] as Token).text}`;
+    }
+    if (
+      reads &&
+      t.kind === 'id' &&
+      t.text === 'meta' &&
+      tokens[i - 1]?.text === '.' &&
+      tokens[i - 2]?.text === 'import'
+    ) {
+      return 'it uses import.meta';
+    }
+    // A template specifier, or an import inside a template's expressions, is not in `imports`.
+    if (t.kind === 'id' && t.text === 'import' && tokens[i + 1]?.text === '(') {
+      if (tokens[i + 2]?.kind === 'tpl') return 'it imports a module by a template';
+    }
+    if (
+      t.kind === 'tpl' &&
+      flatten(t.inner ?? []).some((x) => x.kind === 'id' && x.text === 'import')
+    ) {
+      return 'it imports inside a template';
+    }
+  }
+  return usesMocking(tokens);
+}
+
+/** The cooked value of a string literal or of a template without expressions; null otherwise. */
+function literalValue(t: Token | undefined): string | null {
+  if (t?.kind === 'str') return typeof t.value === 'string' ? t.value : null;
+  if (t?.kind === 'tpl' && (t.inner ?? []).length === 0 && t.parts?.length === 1) {
+    return t.parts[0] ?? null;
+  }
+  return null;
+}
+
+/**
+ * The string values that start at token `i` (CT-06w, Codex review r6): the literal itself, the
+ * literals joined by a chain of `+` that starts there, and `['a', 'b'].join(sep)` of literals when
+ * `i` is that `[`. Folding is only what a capability name built in plain sight looks like; it is
+ * no proof that a module cannot compute a name.
+ */
+function stringValues(tokens: readonly Token[], i: number): string[] {
+  const out: string[] = [];
+  const first = literalValue(tokens[i]);
+  if (first !== null) {
+    // Every literal counts on its own, also after a `+` (`empty + 'constructor'`; Codex review
+    // r7), and so does every chain of literals that starts with it.
+    out.push(first);
+    let folded = first;
+    for (let j = i + 1; tokens[j]?.text === '+'; j += 2) {
+      const next = literalValue(tokens[j + 1]);
+      if (next === null) break;
+      folded += next;
+      out.push(folded);
+    }
+  }
+  if (tokens[i]?.text === '[') {
+    const parts: string[] = [];
+    let j = i + 1;
+    for (; ; j += 2) {
+      const v = literalValue(tokens[j]);
+      if (v === null) break;
+      parts.push(v);
+      if (tokens[j + 1]?.text !== ',') {
+        j += 1;
+        break;
+      }
+    }
+    if (
+      parts.length > 0 &&
+      tokens[j]?.text === ']' &&
+      member(tokens[j + 1]) &&
+      tokens[j + 2]?.text === 'join' &&
+      tokens[j + 3]?.text === '('
+    ) {
+      const sep = tokens[j + 4]?.text === ')' ? ',' : literalValue(tokens[j + 4]);
+      if (sep !== null) out.push(parts.join(sep));
+    }
+  }
+  return out;
+}
+
+/**
+ * Why a module mocks modules (CT-06w, Codex reviews r4, r5, r6): `vi.<mock…>` / `vitest.<mock…>`
+ * (also with `?.`), a call of such a method on anything (`m.mock(…)`), a mock function under its
+ * own name (destructured, imported), a mock name as a string (a computed key, also built from
+ * literals), `vi[…]` or `vi` passed on as a value; Vitest hoists mocks (`doMock` at run time) and
+ * redirects imports to `__mocks__` or a factory, which the rules here do not follow. `x.mock` read
+ * as a property (a spy's `.mock.calls`) is no mock. Null when none.
+ */
+function usesMocking(tokens: readonly Token[]): string | null {
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i] as Token;
+    // `vi[…]`, `vi?.[…]`, or `vi` passed on as a value (Codex review r6); an import or export
+    // clause (`{ vi }`, `vi as v`) and an object shorthand are no use.
+    if (t.kind === 'id' && (t.text === 'vi' || t.text === 'vitest') && !member(tokens[i - 1])) {
+      const next = tokens[i + 1]?.text;
+      if (next === '[' || (next === '?.' && tokens[i + 2]?.text === '[')) {
+        return `it uses ${t.text}[…]`;
+      }
+      const prev = tokens[i - 1]?.text;
+      const clause =
+        (prev === '{' || prev === ',' || prev === 'import' || prev === 'as') &&
+        (next === '}' || next === ',' || next === 'as' || next === 'from');
+      if (!clause && next !== '.' && next !== '?.') return `it uses ${t.text} as a value`;
+    }
+    for (const value of stringValues(tokens, i)) {
+      if (MOCKING.has(value)) return `it uses '${value}'`;
+    }
+    if (t.kind !== 'id' || !MOCKING.has(t.text)) continue;
+    // Destructured or imported under its own name (`const { doMock } = vi`, `import { mock }`).
+    if (!member(tokens[i - 1])) return `it uses ${t.text}`;
+    // A member of any receiver (`v.doMock?.(…)` with `vi as v`; Codex review r7) — except a
+    // property chain through `.mock` (a spy's `.mock.calls`), which is no mock call.
+    const ns = tokens[i - 2]?.text;
+    const next = tokens[i + 1]?.text;
+    const called = next === '(' || (next === '?.' && tokens[i + 2]?.text === '(');
+    const chain = (next === '.' || next === '?.') && tokens[i + 2]?.kind === 'id';
+    if (t.text !== 'mock' || ns === 'vi' || ns === 'vitest' || called || !chain)
+      return `it uses ${ns}.${t.text}`;
+  }
+  return null;
+}
+
+/**
+ * The module specifiers of a module (CT-06w): the string of an import or export declaration —
+ * read forward from an `import` / `export` keyword at the top level of the module's own token list
+ * (`import 'x'`, `import <clause> from 'x'`, `export * [as n] from 'x'`, `export [type] { … } from
+ * 'x'`; the clause is names, `*`, `,`, `as`, `type` and one `{ … }`, anything else ends it without
+ * a specifier — so a `from` variable followed by a string on the next line is no import, Codex
+ * review r6) — and the single literal of `import('x')`. The keyword is never a member
+ * (`reader.import('x')` is a method call; Codex review r1); the expressions of a template are
+ * lexed into one list and are not looked at (Codex review r2). A template specifier,
+ * `vi.mock(import('x'))`, `new URL(…)` and `require` are not imports here: their literals keep the
+ * name rules of mayReadSupport.
+ */
+function importSpecifiers(
+  tokens: readonly Token[],
+): { spec: string; start: number; end: number }[] {
+  const out: { spec: string; start: number; end: number }[] = [];
+  const str = (t: Token | undefined): t is Token =>
+    t?.kind === 'str' && typeof t.value === 'string' && t.start !== undefined;
+  const push = (t: Token): void => {
+    out.push({
+      spec: t.value as string,
+      start: t.start as number,
+      end: (t.start as number) + t.text.length,
+    });
+  };
+  // The specifier of the declaration whose clause starts at `j`, or null — by the grammar of
+  // import and export declarations only (Codex reviews r6, r7: `export { a }` followed by
+  // `void from` and a string on later lines is no import):
+  //   import [type] 'x' | import [type] <binding> from 'x'
+  //     binding = name | name , * as name | name , { … } | * as name | { … }
+  //   export [type] * [as name|'name'] from 'x' | export [type] { … } from 'x'
+  const id = (t: Token | undefined): boolean => t?.kind === 'id';
+  const braces = (k: number): number => {
+    if (tokens[k]?.text !== '{') return -1;
+    const close = closeOf(tokens, k);
+    return close < 0 ? -1 : close + 1;
+  };
+  const fromAt = (k: number): Token | null =>
+    tokens[k]?.text === 'from' && id(tokens[k]) && str(tokens[k + 1])
+      ? (tokens[k + 1] as Token)
+      : null;
+  const declaration = (j: number, exported: boolean): Token | null => {
+    // `type` is a modifier unless it is the default binding itself (`import type from 'x'`).
+    if (tokens[j]?.text === 'type' && fromAt(j + 1) === null) {
+      const next = tokens[j + 1];
+      if (id(next) || next?.text === '{' || next?.text === '*') j += 1;
+    }
+    const namespace = (k: number): number =>
+      tokens[k]?.text === '*' && tokens[k + 1]?.text === 'as' && id(tokens[k + 2]) ? k + 3 : -1;
+    if (exported) {
+      if (tokens[j]?.text === '*') {
+        let k = j + 1;
+        if (tokens[k]?.text === 'as' && (id(tokens[k + 1]) || str(tokens[k + 1]))) k += 2;
+        return fromAt(k);
+      }
+      const k = braces(j);
+      return k < 0 ? null : fromAt(k);
+    }
+    if (str(tokens[j])) return tokens[j] as Token;
+    let k = j;
+    if (id(tokens[k]) && tokens[k]?.text !== 'from') {
+      k += 1;
+    } else if (id(tokens[k]) && fromAt(k + 1) !== null) {
+      k += 1; // import from from 'x'
+    } else if (tokens[k]?.text !== '*' && tokens[k]?.text !== '{') {
+      return null;
+    }
+    if (k > j && tokens[k]?.text === ',') k += 1;
+    else if (k > j) return fromAt(k);
+    const after = tokens[k]?.text === '*' ? namespace(k) : braces(k);
+    return after < 0 ? null : fromAt(after);
+  };
+  let depth = 0;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const t = tokens[i] as Token;
+    if (t.kind === 'punct') {
+      if (t.text === '(' || t.text === '[' || t.text === '{') depth += 1;
+      else if (t.text === ')' || t.text === ']' || t.text === '}') depth -= 1;
+      continue;
+    }
+    if (t.kind !== 'id' || member(tokens[i - 1])) continue;
+    const next = tokens[i + 1];
+    if (t.text === 'import' && next?.text === '(') {
+      // `vi.mock(import('x'))` is a mock, not a load (Vitest redirects it; Codex review r4).
+      const mocked =
+        tokens[i - 1]?.text === '(' &&
+        tokens[i - 2]?.kind === 'id' &&
+        MOCKING.has((tokens[i - 2] as Token).text) &&
+        member(tokens[i - 3]);
+      const lit = tokens[i + 2];
+      const after = tokens[i + 3]?.text;
+      if (!mocked && str(lit) && (after === ')' || after === ',')) push(lit);
+      continue;
+    }
+    if (depth !== 0) continue;
+    if (t.text === 'import' && next !== undefined && next.text !== '.' && next.text !== ':') {
+      const spec = declaration(i + 1, false);
+      if (spec !== null) push(spec);
+    } else if (t.text === 'export') {
+      const spec = declaration(i + 1, true);
+      if (spec !== null) push(spec);
+    }
+  }
+  return out;
+}
+
+/** The files the closure follows for a relative literal (conservative: every spelling). */
+function candidatesOf(target: string): string[] {
+  return [target, target.replace(/\.js$/, '.ts'), `${target}.ts`, `${target}/index.ts`];
+}
+
+/**
+ * What a repository path is (CT-06w): a regular file, a directory, absent, or `other` — a
+ * symbolic link, a submodule, a path whose spelling is not the tree's (a directory link or a
+ * case alias in a work tree), anything whose identity is not certain (Codex reviews r1, r2). An
+ * import never resolves through `other`.
+ */
+export type PathKind = 'file' | 'dir' | 'absent' | 'other';
+
+/** How the closure sees files: `read` the text of a path (null: none) and the kind of a path. */
+type Files = { read: Reader; kind: (path: string) => PathKind };
+
+/**
+ * The nearest file called `name` at or above `dir`: its directory and text — or the reason it
+ * cannot be told: a `name` on the way that is not a regular file (a symbolic link; Codex review
+ * r2) stops the search, since the runtime would read it.
+ */
+function nearestFile(
+  dir: string,
+  name: string,
+  files: Files,
+): { dir: string; text: string } | { why: string } | null {
+  for (let d = dir; ; d = dirOf(d)) {
+    const path = d === '' ? name : `${d}/${name}`;
+    const kind = files.kind(path);
+    if (kind === 'file') {
+      const text = files.read(path);
+      if (text !== null) return { dir: d, text };
+    }
+    if (kind === 'other' || kind === 'dir') return { why: `${path} is not a regular file` };
+    if (d === '') return null;
+  }
+}
+
+function parseJson(text: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The key of `keys` that matches `spec`: the key itself, or the single key with one `*` whose
+ * prefix and suffix enclose a non-empty rest — and that rest. Undecided (`ambiguous`): two
+ * matching patterns (Node and Vite's resolver rank them differently; Codex review r2), a folder
+ * key (`#x/`) that covers the specifier, a pattern with a regular-expression character (Vite's
+ * resolver builds an unescaped RegExp from the key, so `#k.t.*` also matches `#kit.ts`; Codex
+ * review r3), or a pattern that such a RegExp matches although its prefix and suffix do not.
+ */
+function matchKey(
+  keys: readonly string[],
+  spec: string,
+): { key: string; star: string } | 'ambiguous' | null {
+  const hits: { key: string; star: string }[] = [];
+  let loose = 0;
+  for (const key of keys) {
+    const star = key.indexOf('*');
+    if (star < 0) {
+      if (key === spec) return { key, star: '' };
+      if (key.endsWith('/') && spec.startsWith(key)) return 'ambiguous';
+      continue;
+    }
+    if (key.indexOf('*', star + 1) >= 0) return 'ambiguous';
+    try {
+      if (new RegExp(`^${key.replace('*', '(.*)')}$`).test(spec)) loose += 1;
+    } catch {
+      return 'ambiguous';
+    }
+    const pre = key.slice(0, star);
+    const post = key.slice(star + 1);
+    if (spec.length <= pre.length + post.length || !spec.startsWith(pre) || !spec.endsWith(post)) {
+      continue;
+    }
+    if (/[.+?^${}()|[\]\\]/.test(key)) return 'ambiguous';
+    hits.push({ key, star: spec.slice(pre.length, spec.length - post.length) });
+  }
+  if (hits.length > 1 || loose > hits.length) return 'ambiguous';
+  return hits[0] ?? null;
+}
+
+type Resolution = { resolved: string | null; why: string | null };
+
+const unresolved = (why: string): Resolution => ({ resolved: null, why });
+const resolvedAs = (path: string): Resolution => ({ resolved: path, why: null });
+
+/** Vite's `resolve.extensions`, in its order. */
+const RESOLVE_EXTENSIONS = ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json'];
+
+/**
+ * The file a repository path stands for as a module (CT-06w; the rules Vite applies, and only
+ * where one file is certain, Codex reviews r1 and r2): the path itself when it is a regular
+ * file; else, for a `.js` path, the `.ts` file (TypeScript lets `./x.js` name it) when the `.js`
+ * path is absent; else, for a path without an extension, the single file among path + Vite's
+ * extensions, else the single `path/index` + extension when the path is a directory without a
+ * package.json. A candidate of kind `other` on the way (a symbolic link the runtime may follow),
+ * two candidates, a package directory or nothing at all are unresolved.
+ */
+function resolveModuleFile(target: string, files: Files): Resolution {
+  const kind = files.kind(target);
+  if (kind === 'file') return resolvedAs(target);
+  if (kind === 'other') return unresolved(`${target} is not a regular file`);
+  if (/\.[A-Za-z0-9]+$/.test(baseName(target))) {
+    if (kind === 'dir') return unresolved(`${target} is a directory`);
+    if (target.endsWith('.js')) {
+      const ts = target.replace(/\.js$/, '.ts');
+      const tsKind = files.kind(ts);
+      if (tsKind === 'file') return resolvedAs(ts);
+      if (tsKind !== 'absent') return unresolved(`${ts} is not a regular file`);
+    }
+    return unresolved(`no file at ${target}`);
+  }
+  const certain = (paths: string[]): string[] | string => {
+    const found: string[] = [];
+    for (const p of paths) {
+      const k = files.kind(p);
+      if (k === 'file') found.push(p);
+      else if (k !== 'absent') return `${p} is not a regular file`;
+    }
+    return found;
+  };
+  const own = certain(RESOLVE_EXTENSIONS.map((e) => `${target}${e}`));
+  if (typeof own === 'string') return unresolved(own);
+  if (own.length > 1) return unresolved(`${target} is ambiguous (${own.join(', ')})`);
+  if (kind === 'absent') {
+    return own.length === 1 ? resolvedAs(own[0] as string) : unresolved(`no file at ${target}`);
+  }
+  // A directory: its package.json decides, else its index file — unless a file competes.
+  const pkg = files.kind(`${target}/package.json`);
+  if (pkg !== 'absent')
+    return unresolved(`${target} is a package directory (${target}/package.json)`);
+  const index = certain(RESOLVE_EXTENSIONS.map((e) => `${target}/index${e}`));
+  if (typeof index === 'string') return unresolved(index);
+  const all = [...own, ...index];
+  if (all.length === 1) return resolvedAs(all[0] as string);
+  if (all.length === 0) return unresolved(`no file at ${target}`);
+  return unresolved(`${target} is ambiguous (${all.join(', ')})`);
+}
+
+/**
+ * A `#…` specifier through the `imports` of the nearest package.json: a string entry that is a
+ * plain `./` path — one `*` for a pattern key and none for an exact key, no trailing `/` (Vite's
+ * resolver appends the rest to a folder value), no `?` / `#` (a query the loader would strip;
+ * Codex review r3) — kept inside the package directory.
+ */
+function resolveSubpathImport(from: string, spec: string, files: Files): Resolution {
+  const pkg = nearestFile(dirOf(from), 'package.json', files);
+  if (pkg === null) return unresolved('no package.json above the module');
+  if ('why' in pkg) return unresolved(pkg.why);
+  const file = pkg.dir === '' ? 'package.json' : `${pkg.dir}/package.json`;
+  const json = parseJson(pkg.text);
+  if (json === null) return unresolved(`${file} cannot be parsed`);
+  const imports = json['imports'];
+  if (typeof imports !== 'object' || imports === null || Array.isArray(imports)) {
+    return unresolved(`${file} has no imports map`);
+  }
+  const hit = matchKey(Object.keys(imports), spec);
+  if (hit === null) return unresolved(`${file} maps no imports entry to ${spec}`);
+  if (hit === 'ambiguous') return unresolved(`${file} cannot decide the imports entry for ${spec}`);
+  const value = (imports as Record<string, unknown>)[hit.key];
+  if (typeof value !== 'string') return unresolved(`${file} imports ${hit.key} is conditional`);
+  const stars = value.split('*').length - 1;
+  if (
+    !value.startsWith('./') ||
+    value.endsWith('/') ||
+    /[?#]/.test(value) ||
+    stars !== (hit.key.includes('*') ? 1 : 0)
+  ) {
+    return unresolved(`${file} imports ${hit.key} is not a plain ./ path`);
+  }
+  const target = joinPath(pkg.dir, value.replace('*', hit.star));
+  if (target === null || (pkg.dir !== '' && !target.startsWith(`${pkg.dir}/`))) {
+    return unresolved(`${file} imports ${hit.key} leaves the package`);
+  }
+  return resolveModuleFile(target, files);
+}
+
+/**
+ * The repository file an import specifier names, seen from the module at `from` (CT-06w): `./`
+ * and `../` against the module's directory (resolveModuleFile); `#…` through the nearest
+ * package.json `imports` (a string entry, one `*`; the query and fragment after the first `#`
+ * dropped). A bare specifier is a package: Vitest resolves it through node_modules, not through
+ * tsconfig `paths` (`resolve.tsconfigPaths` is off here), so it stays unresolved — as does a
+ * conditional entry, a config that cannot be parsed, a directory, a symbolic link, an ambiguous
+ * or missing file.
+ */
+export function resolveImport(from: string, spec: string, files: Files): Resolution {
+  const clean = spec.startsWith('#')
+    ? `#${spec.slice(1).replace(/[?#].*$/, '')}`
+    : spec.replace(/[?#].*$/, '');
+  if (clean === '.' || clean === '..' || clean.startsWith('./') || clean.startsWith('../')) {
+    const target = resolveRelative(from, clean);
+    return target === null
+      ? unresolved('it leaves the repository')
+      : resolveModuleFile(target, files);
+  }
+  if (clean.startsWith('#')) return resolveSubpathImport(from, clean, files);
+  return unresolved('a package (a bare specifier; tsconfig paths are not used by Vitest here)');
+}
+
+/**
+ * The modules a rule-test file loads, itself first, at the head: every string literal of a module
+ * that resolves through a relative specifier (./, ../) to a code file `read` finds is followed
+ * (imports, re-exports, dynamic imports, vi.mock paths, new URL(…) of a module), and so is every
+ * import that resolves through `#…` (CT-06w), as long as `follow` accepts its path (the caller
+ * keeps the walk to test code: implementation modules do not read test-support files). `read`
+ * returns null for a file that does not exist; `kindOf` says what a path is (PathKind; without
+ * it, a path `read` finds is a file and any other is absent).
  */
 export function relativeClosure(
   file: string,
-  read: (path: string) => string | null,
+  read: Reader,
   follow: (path: string) => boolean,
+  kindOf?: (path: string) => PathKind,
 ): Module[] {
+  const cache = new Map<string, string | null>();
+  const cached: Reader = (p) => {
+    let text = cache.get(p);
+    if (text === undefined) {
+      text = read(p);
+      cache.set(p, text);
+    }
+    return text;
+  };
+  const kinds = new Map<string, PathKind>();
+  const files: Files = {
+    read: cached,
+    kind: (p) => {
+      let k = kinds.get(p);
+      if (k === undefined) {
+        k = kindOf === undefined ? (cached(p) !== null ? 'file' : 'absent') : kindOf(p);
+        kinds.set(p, k);
+      }
+      return k;
+    },
+  };
   const out: Module[] = [];
   const seen = new Set<string>();
   const queue = [file];
+  const enqueue = (c: string): void => {
+    if (CODE_FILE.test(c) && !seen.has(c) && follow(c) && cached(c) !== null) queue.push(c);
+  };
   while (queue.length > 0) {
     const path = queue.shift() as string;
     if (seen.has(path)) continue;
     seen.add(path);
-    const text = read(path);
+    const text = cached(path);
     if (text === null) continue;
     let tokens: Token[] | null;
     try {
@@ -1304,30 +2194,106 @@ export function relativeClosure(
     } catch {
       tokens = null; // mayReadSupport: a module that cannot be read may read anything
     }
-    const literals = tokens === null ? null : literalTexts(tokens);
+    const literals = tokens === null ? null : literalsOf(tokens);
     const listed =
       tokens === null ? { dirs: [], unresolved: null } : listedDirectories(tokens, path);
+    const imports: ModuleImport[] =
+      tokens === null
+        ? []
+        : importSpecifiers(tokens).map((s) => ({ ...s, ...resolveImport(path, s.spec, files) }));
+    const dynamic = tokens === null ? null : (dynamicAccess(tokens) ?? listed.unresolved);
     out.push({
       path,
       text,
       literals,
-      dynamic: tokens === null ? null : (dynamicAccess(tokens) ?? listed.unresolved),
+      dynamic,
       lists: listed.dirs,
+      imports,
+      opaque:
+        tokens === null
+          ? 'it cannot be read as code'
+          : (dynamic ??
+            (listed.dirs.length > 0 ? `it lists ${listed.dirs.join(', ')}` : fileAccess(tokens))),
+      mocking: tokens === null ? 'it cannot be read as code' : usesMocking(flatten(tokens)),
+      closed: false,
+      unjudged:
+        tokens === null ? 'it cannot be read as code' : (dynamic ?? fileAccess(tokens, false)),
     });
-    for (const s of literals ?? []) {
+    for (const { text: s } of literals ?? []) {
       if (!s.startsWith('./') && !s.startsWith('../')) continue;
       const target = resolveRelative(path, s.replace(/[?#].*$/, ''));
       if (target === null) continue;
-      const candidates = [
-        target,
-        target.replace(/\.js$/, '.ts'),
-        `${target}.ts`,
-        `${target}/index.ts`,
-      ];
-      for (const c of candidates) {
-        if (CODE_FILE.test(c) && !seen.has(c) && follow(c) && read(c) !== null) queue.push(c);
+      for (const c of candidatesOf(target)) enqueue(c);
+    }
+    for (const i of imports) if (i.resolved !== null) enqueue(i.resolved);
+  }
+  // Closed modules (a fixpoint: a module importing a module that is not closed is not closed).
+  const byPath = new Map(out.map((m) => [m.path, m]));
+  // A package that keeps a module closed (Codex reviews r5, r8): a bare name that is a known pure
+  // package (KNOWN_PACKAGES: no file read or code load on the caller's behalf — a package such as
+  // prettier's resolveConfig reads files, so an unknown package keeps the module open) or a
+  // capability module whose use fileAccess judges (`node:fs` …). A workspace package of this
+  // repository (`@couli/*` — test code the closure does not follow, e.g. packages/testing), an
+  // absolute path, a URL or anything else is a load the rules here do not follow.
+  const bare = (spec: string): boolean => {
+    const clean = spec.replace(/[?#].*$/, '');
+    if (clean.startsWith('@couli/')) return false;
+    if (!/^(node:)?(@[\w-][\w.-]*\/)?[\w-][\w.-]*(\/[\w.-]+)*$/.test(clean)) return false;
+    return knownPackage(clean) || capabilityModule(clean) !== null;
+  };
+  // An import that is neither a package nor resolved to a module of the closure or to code outside
+  // the test code, and why (null when there is none).
+  const openImport = (m: Module): string | null => {
+    const open = m.imports.find((i) =>
+      i.resolved === null ? !bare(i.spec) : !byPath.has(i.resolved) && follow(i.resolved),
+    );
+    if (open === undefined) return null;
+    if (open.resolved !== null) return `it imports ${open.resolved}, which is not read here`;
+    return open.spec.startsWith('@couli/')
+      ? `it imports ${open.spec}, a workspace package not read here`
+      : /^(node:)?(@[\w-][\w.-]*\/)?[\w-][\w.-]*(\/[\w.-]+)*$/.test(
+            open.spec.replace(/[?#].*$/, ''),
+          )
+        ? `it imports ${open.spec}, a package not known to read no files`
+        : `it imports ${open.spec}, which cannot be resolved`;
+  };
+  for (const m of out) {
+    if (m.opaque !== null) continue;
+    const open = openImport(m);
+    if (open === null) m.closed = true;
+    else m.opaque = open;
+  }
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const m of out) {
+      if (!m.closed) continue;
+      const open = m.imports.find((i) => {
+        const dep = i.resolved === null ? undefined : byPath.get(i.resolved);
+        return dep !== undefined && !dep.closed;
+      });
+      if (open !== undefined) {
+        m.closed = false;
+        m.opaque = `it imports ${open.resolved}, which is not closed`;
+        changed = true;
       }
     }
+  }
+  // What no rule here judges, not even on a module's own text (CT-06w r6; mayReadSupport looks at
+  // it for the rule-test file only): none for a closed module; otherwise its own ways (set by the
+  // walk), else an open import, else an import of a module that is not closed.
+  for (const m of out) {
+    if (m.closed) {
+      m.unjudged = null;
+      continue;
+    }
+    if (m.unjudged !== null) continue;
+    const dep = m.imports.find((i) => {
+      const d = i.resolved === null ? undefined : byPath.get(i.resolved);
+      return d !== undefined && !d.closed;
+    });
+    m.unjudged =
+      openImport(m) ??
+      (dep === undefined ? null : `it imports ${dep.resolved}, which is not closed`);
   }
   return out;
 }
@@ -1336,8 +2302,16 @@ export function relativeClosure(
  * Why a rule-test file may read a test-support file the task changed (a helper, fixture or data
  * file inside its test_paths), or null when it cannot (CT-06p; conservative: the file is then
  * judged as a whole). `closure` is the file and the modules it loads (relativeClosure). It may
- * when: the support file is one of those modules; its file name occurs anywhere in their text;
- * its name without the extension occurs as a word in their string literals; one of them lists a
+ * when: the support file is one of those modules; one of them imports it (CT-06w: an import
+ * specifier resolved to the support file's repository path); its file name occurs anywhere in
+ * their text; its name without the extension occurs as a word in their string literals — except
+ * inside an import specifier that resolves to another, closed module of the closure while every
+ * module the file loads is closed and the file itself has no `unjudged` way to files (CT-06w,
+ * after B1-12g: `./kit.ts` of test/spec/platform/events is not
+ * test/spec/identity/step-up-verify/kit.ts; a specifier that cannot be resolved, or resolved to a
+ * file the closure does not follow or to a module that is not closed, and every specifier of a
+ * closure with a module that is not closed, still counts, the reason says `unresolved import`);
+ * one of them lists a
  * directory that holds the support file (CT-06r: readdir & co. resolved statically; a listing
  * whose directory cannot be resolved counts as reading anything, the reason says so) or loads by
  * a computed name (glob, require, a dynamic import of a computed specifier) or cannot be
@@ -1361,11 +2335,56 @@ export function mayReadSupport(
   const dot = name.lastIndexOf('.');
   const stem = dot > 0 ? name.slice(0, dot) : name;
   const word = new RegExp(`(?<![\\w$.-])${escapeRegex(stem)}(?![\\w$-])`, 'u');
+  const byPath = new Map(closure.map((m) => [m.path, m]));
+  if (byPath.has(support)) return `it loads ${support}`;
+  // CT-06w r6 (orchestrator ruling of 2026-10-19): the exemption holds only for a closure of closed
+  // modules. Any module the rule-test file loads that is not closed — or a way of the rule-test
+  // file itself to reach files that no rule here judges, not even on its own text (`unjudged`:
+  // execution, a mock, a dynamic or template load, an open import) — disables it for every
+  // specifier of the closure: the name rules then apply exactly as before CT-06w.
+  const loaded = closure.find((m) => m.path !== file && !m.closed);
+  const self = closure.find((m) => m.path === file && m.unjudged !== null);
+  const blocked =
+    loaded !== undefined
+      ? `${loaded.path} is not closed: ${loaded.opaque}`
+      : self !== undefined
+        ? `${file} is not closed: ${self.unjudged}`
+        : null;
   for (const m of closure) {
-    if (m.path === support) return `it loads ${support}`;
-    if (m.text.includes(name)) return `${m.path} names ${name}`;
+    const imported = m.imports.find((i) => i.resolved === support);
+    if (imported !== undefined) return `${m.path} imports ${support} (${imported.spec})`;
+    // CT-06w: the name rules skip an import specifier that resolves to another, closed module of
+    // the closure (read here, every read of it and of what it imports seen by these rules); a
+    // specifier that cannot be resolved, that resolves to a file the closure does not follow
+    // (data, a style sheet, a module outside the test code) or to a module that is not closed
+    // (it uses a file-system API, import.meta, a mock, a listing, an import not read here — it
+    // may reach the support file in a way not seen; Codex reviews r3, r4) counts as before
+    // (`unresolved import`), and so does every specifier while the closure is blocked (above).
+    const within = (start: number, end: number): ModuleImport | undefined =>
+      m.imports.find((i) => i.start <= start && end <= i.end);
+    const uncertain = (i: ModuleImport): string | null => {
+      if (m.mocking !== null) return `${m.path} mocks modules (${m.mocking})`;
+      if (i.resolved === null) return i.why;
+      const dep = byPath.get(i.resolved);
+      if (dep === undefined) return `${i.resolved} is not followed by the closure`;
+      return dep.closed ? blocked : `${i.resolved} is not closed: ${dep.opaque}`;
+    };
+    const note = (what: string, i: ModuleImport, why: string): string =>
+      `${m.path} names ${what} in an unresolved import ${i.spec} (${why})`;
+    for (let at = m.text.indexOf(name); at >= 0; at = m.text.indexOf(name, at + 1)) {
+      const i = within(at, at + name.length);
+      if (i === undefined) return `${m.path} names ${name}`;
+      const why = uncertain(i);
+      if (why !== null) return note(name, i, why);
+    }
     if (m.literals === null) return `${m.path} cannot be read as code, so it may read ${support}`;
-    if (m.literals.some((s) => word.test(s))) return `${m.path} names ${stem}`;
+    for (const l of m.literals) {
+      if (!word.test(l.text)) continue;
+      const i = within(l.start, l.end);
+      if (i === undefined) return `${m.path} names ${stem}`;
+      const why = uncertain(i);
+      if (why !== null) return note(stem, i, why);
+    }
     // The repository root is '' and holds every path (Codex review r2, S2).
     const listed = m.lists.find((d) => d === '' || support === d || support.startsWith(`${d}/`));
     if (listed !== undefined) return `${m.path} lists ${listed}, which holds ${support}`;
