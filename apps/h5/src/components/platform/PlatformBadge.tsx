@@ -2,9 +2,9 @@ import { useEffect, useState, type ReactElement } from 'react';
 import type { Schema } from '@couli/contracts-ts';
 import { getPlatformName } from '../../texts/platform.ts';
 import alipayIcon from './assets/alipay.svg?no-inline';
-import jdIcon from './assets/jd.svg?no-inline';
-import pinduoduoIcon from './assets/pinduoduo.svg?no-inline';
-import taobaoIcon from './assets/taobao.svg?no-inline';
+import jdIcon from './assets/jd.png?no-inline';
+import pinduoduoIcon from './assets/pinduoduo.png?no-inline';
+import taobaoIcon from './assets/taobao.png?no-inline';
 import tmallIcon from './assets/tmall.svg?no-inline';
 import wechatPayIcon from './assets/wechat-pay.svg?no-inline';
 import wechatIcon from './assets/wechat.svg?no-inline';
@@ -18,7 +18,10 @@ export interface PlatformBadgeProps {
   remote?: Schema<'ConfigPlatformIcon'> | undefined;
 }
 
-/** Built-in icons bundled with the app, named after the BR-TEXT-24 built-in file names. */
+/**
+ * Built-in icons bundled with the app, named after the BR-TEXT-24 built-in file names: the owner's
+ * official images where provided (PNG), neutral placeholder SVGs for the keys still waiting.
+ */
 const builtinIcons: Readonly<Record<PlatformKey, string>> = {
   taobao: taobaoIcon,
   tmall: tmallIcon,

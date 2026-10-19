@@ -1,0 +1,40 @@
+id: F1-06zk
+repo: rebate-platform
+title: F1-06zk：H5 PlatformBadge 与后台「平台标识」页的内置图换成负责人提供的官方原图（淘宝、京东、拼多多 PNG；其余 5 个键仍用占位 SVG），锁定占位 SVG 的断言同步改
+type: test-change
+# 2026-10-19 入账（编排子代理）。负责人要求把素材库「APP设计素材/电商平台LOGO」的平台 Logo 用进界面。规划 couli #152（5baa49cb）已把官方图入库
+# design/icons/platform/，并把 BR-TEXT-24 细则「格式」改为：内置兜底图用负责人提供的原图，SVG 或边长 ≥ 96px 的 PNG（00 §8 第 ① 类；后台上传要求不变）。
+# 素材库只有 taobao、jd、pdd 三个键的官方图（224×224 PNG），逐字节复制到 H5 与后台两处 assets（仍逐字节相同）并删同名占位 SVG；其余 5 个键无官方图、保留占位 SVG。import 由 .svg?no-inline 改 .png?no-inline，读屏名不变。
+# 测试改动（规划/11 §4.4 第一类，理由：骨架期占位断言、官方图落地后必然失效；也与 08 BR-TEXT-24「只用平台官方原图」不符），所在行按主干 ac48b4c7：
+#   h5-platform-badge/source.test.ts:117–154 [AC-F1-01n-ASSETS#1] 要求八个内置图都是单色中性 SVG；h5-platform-badge/images.ts:69 expectBuiltin 与
+#   admin-platform-icons/helpers.ts:198 builtinSrc 把内置图 src 锁成 .svg；admin-platform-icons/source.test.ts:209 [AC-F1-06zd-SOURCE#2] 按 <file>.svg 比对两处。
+#   改法：两份 fixtures 各自按标识键登记扩展名（png / svg，独立于实现）；PNG 查文件签名、IHDR 与短边 ≥ 96px，SVG 照旧查单色中性与元素白名单；
+#   新增「同名旧占位不留」断言。<img> 加载、不内联 DOM、两处逐字节相同、读屏名等断言不变，不删用例；behavior.test.ts 只改 MAPPING#1 标题里的扩展名。
+# 按 approvals 第 12 条走非 task 分支 chore/test-change-F1-06zk、不带证据文件（先例 F1-06zj #866、CT-06y #860；测试与实现同 PR 先例 B1-03p #394）；
+# 合并要负责人标签（approvals #24，负责人 2026-10-19 授权编排子代理加）；Claude 实现、Codex 只读对抗评审。refs_hash 按当前 SPEC_REF（1a5a0cfd）计，
+# SPEC_REF 推进到含 couli #152 时 BR-TEXT-24 的哈希会变，F1-06zd、F1-06ze 与本台账一并更新。
+refs: [BR-TEXT-24]
+refs_hash:
+  BR-TEXT-24: 0cda692fd39e
+deps: [F1-01n, F1-06zd]
+paths:
+  - 'apps/h5/src/components/platform/assets/**'
+  - 'apps/admin/src/pages/platform-icons/assets/**'
+  - 'apps/h5/src/components/platform/PlatformBadge.tsx'
+  - 'apps/admin/src/pages/platform-icons/builtin.ts'
+  - 'test/spec/frontend/h5-platform-badge/fixtures.ts'
+  - 'test/spec/frontend/h5-platform-badge/images.ts'
+  - 'test/spec/frontend/h5-platform-badge/source.test.ts'
+  - 'test/spec/frontend/h5-platform-badge/behavior.test.ts'
+  - 'test/spec/frontend/admin-platform-icons/fixtures.ts'
+  - 'test/spec/frontend/admin-platform-icons/helpers.ts'
+  - 'test/spec/frontend/admin-platform-icons/source.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-platform-badge/**'
+  - 'test/spec/frontend/admin-platform-icons/**'
+  - 'test/spec/frontend/admin-platform-icons-upload/**'
+status: todo
+pr: null

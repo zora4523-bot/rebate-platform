@@ -51,8 +51,8 @@ function expectName(container: HTMLElement, name: string): void {
   expect(alertSpy).not.toHaveBeenCalled();
 }
 
-for (const { key, name, file } of platforms) {
-  it(`[AC-F1-01n-MAPPING#1] ${key} 无下发项时只显示 ${file}.svg 和 ${name}`, () => {
+for (const { key, name, file, ext } of platforms) {
+  it(`[AC-F1-01n-MAPPING#1] ${key} 无下发项时只显示 ${file}.${ext} 和 ${name}`, () => {
     const config: Schema<'ConfigPlatformIcons'> = {};
     const view = render(badge({ platform: key, remote: config[key] }));
     expectTypeOf<ComponentProps<typeof PlatformBadge>['platform']>().toEqualTypeOf<
