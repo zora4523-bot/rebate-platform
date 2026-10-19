@@ -374,3 +374,20 @@ export function defaults(): Record<string, string> {
     }
   ).texts;
 }
+/**
+ * F1-02zg (test-change): the console-only default names (CT-02w contracts/texts.admin.default.json).
+ * The orchestrator ruled (2026-10-20 04:0x) that dict-items accepts keys of both default files;
+ * a key present in both files is a fixture error.
+ */
+export function defaultsWithAdmin(): Record<string, string> {
+  const base = defaults();
+  const admin = (
+    JSON.parse(readFileSync(new URL('contracts/texts.admin.default.json', ROOT), 'utf8')) as {
+      texts: Record<string, string>;
+    }
+  ).texts;
+  for (const key of Object.keys(admin)) {
+    if (key in base) throw new Error(`key in both default files: ${key}`);
+  }
+  return { ...base, ...admin };
+}
