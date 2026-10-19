@@ -1,0 +1,35 @@
+{
+  "task": "CT-24l",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "7865638ff45528ee4f50fc40db5b833bc9ded014",
+  "red_tests": [],
+  "risk_note": "RV2 contract task touching attribution (contracts/openapi.yaml, error-codes.yaml, contracts-ts conformance / catalog test and the regenerated contracts-ts and route tables): adds POST /admin/v1/claims/{claim_id}/items/{item_id}/approve (adminApproveClaimItem) and /reject (adminRejectClaimItem), both x-implementation planned, order.claim, no step-up, no Idempotency-Key, one item per call, 200 with the whole claim (CT-24d AdminClaimDetail). Transcribes 08 BR-ATTR-18 / BR-ATTR-20 without changing attribution: both take the pipeline's advisory lock and re-read the order; an order already attributed closes the item automatically (cancelled for the same applicant, otherwise rejected NOT_IN_POOL) with 200, not an error; a VOID order is rejected by the system as ORDER_INVALID with decided_by empty on approve and on reject; other pending items on the same sub-order become NOT_IN_POOL. Body: expected_row_version and a 5–200 character reason (both operations, planning #148), reject also reject_reason limited to the six agent-selectable codes via the conformance subset mechanism; a decided item or stale row_version answers 20902 with the new resource claim_item (error-codes.yaml, catalog.test.ts). New unit test admin-claim-review.test.ts. tester none; implementation by an Opus 5.5 subagent in two runs. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 fail (S1: a reject on a VOID order must be the system's ORDER_INVALID per BR-ATTR-18), fixed in run 2; round 2 pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "643edfb2617816d6190fd7b17c23771c5a4a8f46",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
