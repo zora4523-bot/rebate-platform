@@ -70,8 +70,14 @@ it(
       beneficiary_user_id: a.user_id,
       role: 'indirect',
       voucher_kind: 'CREDIT',
-      accounting_date: '2032-06-16',
     });
+    const dates = await h.db
+      .selectFrom('ledger_vouchers')
+      .select((eb) => eb.cast<string>('accounting_date', 'text').as('day'))
+      .where('app_id', '=', appId)
+      .where('id', '=', result.voucherId)
+      .execute();
+    expect(dates).toEqual([{ day: '2032-06-16' }]);
     const lines = after.entries.filter((row) => row.voucher_id === result.voucherId);
     expect(tuples(lines)).toEqual(
       tuples(
@@ -330,10 +336,12 @@ it(
         voucherId: result.voucherId,
       });
       const state = await snapshot(trx, appId);
-      expect(state.vouchers.map((row) => row.accounting_date)).toEqual([
-        '2032-06-15',
-        '2032-06-15',
-      ]);
+      const dates = await trx
+        .selectFrom('ledger_vouchers')
+        .select((eb) => eb.cast<string>('accounting_date', 'text').as('day'))
+        .where('app_id', '=', appId)
+        .execute();
+      expect(dates).toEqual([{ day: '2032-06-15' }, { day: '2032-06-15' }]);
       expect(state.entries.map((row) => row.booked_at.toISOString())).toEqual(
         Array(4).fill('2032-06-15T15:59:59.999Z'),
       );
