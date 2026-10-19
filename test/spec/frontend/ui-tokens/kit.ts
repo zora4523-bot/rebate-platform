@@ -2,15 +2,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import type { DesignTokens } from '@couli/ui-tokens';
 import { expect } from 'vitest';
 
-export const SOURCE_COMMIT = 'b9f54fe21a32ec3b7d6c95be6c073c7acf359d14';
-export const ROOT = new URL('../../../../', import.meta.url);
+const moduleUrl = import.meta.url;
+export const SOURCE_COMMIT = '49bb4ad30d031e3aca1ec7881b90d9628f34d79b';
+export const ROOT = new URL('../../../../', moduleUrl);
 
 // Source fixtures are copied from this commit, not from the implementation snapshot.
-// JSON SHA-256 before formatting: cae7499e21496fbeaddc190c7d6170dbf03161436e0e85062d8d4373670f42f1.
-// CSS fixture contains only :root; optional foundations are deliberately excluded.
+// Both fixtures preserve the complete planning blobs byte for byte, including foundations.
 export function baseline(): DesignTokens {
   return JSON.parse(
-    readFileSync(new URL('./fixtures/design-tokens.b9f54fe.json', import.meta.url), 'utf8'),
+    readFileSync(new URL('./fixtures/design-tokens.49bb4ad.json', moduleUrl), 'utf8'),
   ) as DesignTokens;
 }
 
@@ -83,6 +83,6 @@ export function rootDeclarations(css: string): Map<string, string> {
 
 export function baselineDeclarations(): Map<string, string> {
   return rootDeclarations(
-    readFileSync(new URL('./fixtures/variables.b9f54fe.css', import.meta.url), 'utf8'),
+    readFileSync(new URL('./fixtures/variables.49bb4ad.css', moduleUrl), 'utf8'),
   );
 }
