@@ -26,6 +26,8 @@ export {
 export type { AdminAuthConfig } from './admin-auth.ts';
 // Media public base URL (F1-06z): https base of content-addressed media files.
 export { MEDIA_DEFAULT_LOCAL_BASE_URL, MEDIA_ENV_NAME, readMediaConfig } from './media.ts';
+export { readExportStoreConfig } from './export-store.ts';
+export type { ExportStoreConfig } from './export-store.ts';
 // Pinduoduo live adapter credentials (B1-04t): staging reads the secret file once at startup.
 export { readPddConfig } from './pdd.ts';
 export type { PddClientConfig } from './pdd.ts';
