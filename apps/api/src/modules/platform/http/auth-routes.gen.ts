@@ -698,6 +698,21 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/app-versions",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/app-versions/:platform/:channel",
+    "auth": "admin"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/app-versions/:platform/:channel",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "auth": "admin"
   },
