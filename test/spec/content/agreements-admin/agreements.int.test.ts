@@ -509,23 +509,18 @@ for (const type of ['privacy', 'agreement'] as const) {
       const token = await stepUp(f);
       const before = await snapshot(h, f.appId);
       const logStart = f.lines.length;
-      // F1-02za (test-change): the orchestrator ruled (L44, 2026-10-19 22:2x) that a preset version
-      // at or above the new one is a business conflict answering 20902 data.resource=agreement
-      // instead of 50001; either code is accepted so the test holds before and after F1-02z.
+      // F1-02zf (test-change): the orchestrator ruled (L44, 2026-10-19 22:2x) that a preset version
+      // at or above the new one is a business conflict answering 20902 data.resource=agreement with a
+      // warn log; F1-02za's transitional 50001 branch is removed now that F1-02z (#931) has landed.
       const sent = await publish(f, type, input(), token);
-      const code = (sent.response.json() as { code: number }).code;
-      expect([50001, 20902]).toContain(code);
-      if (code === 20902) await rejected(sent, 'publish', 20902, { resource: 'agreement' });
-      else await rejected(sent, 'publish', 50001);
+      await rejected(sent, 'publish', 20902, { resource: 'agreement' });
       expect(await snapshot(h, f.appId)).toEqual(before);
-      if (code === 50001) {
-        expect(
-          f.lines
-            .slice(logStart)
-            .map((line) => JSON.parse(line) as { level: number })
-            .some((line) => line.level === 50),
-        ).toBe(true);
-      }
+      expect(
+        f.lines
+          .slice(logStart)
+          .map((line) => JSON.parse(line) as { level: number })
+          .some((line) => line.level >= 50),
+      ).toBe(false);
     });
   }
 }
