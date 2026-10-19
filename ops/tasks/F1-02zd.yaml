@@ -29,5 +29,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/content/admin-dict/**'
-status: todo
-pr: null
+status: done
+pr: 953
