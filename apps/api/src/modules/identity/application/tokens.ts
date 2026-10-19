@@ -78,3 +78,5 @@ export const REALNAME_VERIFIER = Symbol('IDENTITY_REALNAME_VERIFIER');
 export const SUBMIT_REALNAME = Symbol('IDENTITY_SUBMIT_REALNAME');
 /** The labor agreement service (labor-agreement.ts), or null without the database or field cipher. */
 export const LABOR_AGREEMENT = Symbol('IDENTITY_LABOR_AGREEMENT');
+/** GET /v1/me/payout-account (payout-account.ts), or null without the database or field cipher. */
+export const PAYOUT_ACCOUNT_READER = Symbol('IDENTITY_PAYOUT_ACCOUNT_READER');

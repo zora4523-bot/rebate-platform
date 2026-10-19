@@ -44,6 +44,11 @@ import {
 } from './application/bind-phone.ts';
 import { createTipsService, type TipsService } from './application/tips.ts';
 import { createMeService, type MeService, type MeReadPorts } from './application/me.ts';
+import {
+  createPayoutAccountReader,
+  type PayoutAccountConfigPort,
+  type PayoutAccountReader,
+} from './application/payout-account.ts';
 import { createRealnameService, type RealnameService } from './application/realname.ts';
 import type { RealnameVerifierPort } from './ports/realname-verifier.ts';
 import {
@@ -124,6 +129,7 @@ import {
   REALNAME_VERIFIER,
   SUBMIT_REALNAME,
   OAUTH_LOGIN,
+  PAYOUT_ACCOUNT_READER,
   REFRESH,
   SMS_CODES,
   SMS_LOGIN,
@@ -148,6 +154,7 @@ import { SmsCodesController } from './http/public/sms-codes.controller.ts';
 import { SmsLoginController } from './http/public/sms-login.controller.ts';
 import { TipsController } from './http/public/tips.controller.ts';
 import { MeController } from './http/public/me.controller.ts';
+import { PayoutAccountController } from './http/public/payout-account.controller.ts';
 import { RealnameController } from './http/public/realname.controller.ts';
 import { LaborAgreementController } from './http/public/labor-agreement.controller.ts';
 import { DevicesRepository } from './infra/devices.repository.ts';
@@ -180,6 +187,12 @@ export interface IdentityModuleOptions {
    * blocklist, no release).
    */
   readonly blocklist?: Omit<FactoryProvider<BlocklistService | null>, 'provide'>;
+  /**
+   * Builds the payout-account configuration port (withdraw.payout_methods, the monthly change
+   * limit; B1-13e): content's reader bound to the caller's handle, assembled by app.module.
+   * Absent, the GET answer reads its limit from config_items directly (payout-account.ts).
+   */
+  readonly payoutAccountConfig?: Omit<FactoryProvider<PayoutAccountConfigPort>, 'provide'>;
   /**
    * Builds the third-party identity exchange of the step-up by re-authorization (CT-15i performs
    * the exchange and verification, BR-ID-04 细则). Absent (or null), the third-party step-up
@@ -329,6 +342,8 @@ const FIRST_APP_LOGIN_REVIEW = Symbol('IDENTITY_FIRST_APP_LOGIN_REVIEW');
 const ACCOUNT_ASSETS = Symbol('IDENTITY_ACCOUNT_ASSETS');
 const ACCOUNT_RISK = Symbol('IDENTITY_ACCOUNT_RISK');
 const LABOR_AGREEMENT_CONFIG = Symbol('IDENTITY_LABOR_AGREEMENT_CONFIG');
+/** The payout-account configuration port (IdentityModuleOptions.payoutAccountConfig), or null. */
+const PAYOUT_ACCOUNT_CONFIG = Symbol('IDENTITY_PAYOUT_ACCOUNT_CONFIG');
 
 @Module({})
 export class IdentityModule {
@@ -351,6 +366,7 @@ export class IdentityModule {
         MeController,
         RealnameController,
         LaborAgreementController,
+        PayoutAccountController,
       ],
       providers: [
         options.accountAssets === undefined
@@ -403,6 +419,9 @@ export class IdentityModule {
         options.blocklist === undefined
           ? { provide: BLOCKLIST_SERVICE, useValue: null }
           : { ...options.blocklist, provide: BLOCKLIST_SERVICE },
+        options.payoutAccountConfig === undefined
+          ? { provide: PAYOUT_ACCOUNT_CONFIG, useValue: null }
+          : { ...options.payoutAccountConfig, provide: PAYOUT_ACCOUNT_CONFIG },
         options.pushTokens === undefined
           ? { provide: PUSH_TOKENS, useValue: null }
           : { ...options.pushTokens, provide: PUSH_TOKENS },
@@ -950,6 +969,32 @@ export class IdentityModule {
               ? null
               : createLaborAgreementService({ db, clock, crypto, logger, config });
           },
+        },
+        {
+          provide: PAYOUT_ACCOUNT_READER,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            PAYOUT_ACCOUNT_CONFIG,
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            config: PayoutAccountConfigPort | null,
+            db?: Kysely<Database>,
+            crypto?: FieldCrypto,
+          ): PayoutAccountReader | null =>
+            db === undefined || crypto === undefined
+              ? null
+              : createPayoutAccountReader({
+                  db,
+                  clock,
+                  crypto,
+                  logger,
+                  ...(config === null ? {} : { config }),
+                }),
         },
         {
           provide: LOGOUT,
