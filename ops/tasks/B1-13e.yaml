@@ -12,7 +12,7 @@ type: impl
 # 2026-10-19 补 paths：收款方式与月上限配置照 B1-11d 先例由 app.module 注入 content 读取器（调用方事务上读），identity 不直接读 content 的表；用户锁用 FOR NO KEY UPDATE（与 B1-11f 统一顺序一致，FOR UPDATE 会与黑名单命中写 risk_hits 的外键检查互锁）。
 refs: []
 refs_hash: {}
-deps: [B1-13d, B1-13c, B1-13a, B1-02y, B1-02za, B1-13i]
+deps: [B1-13d, B1-13c, B1-13a, B1-02y, B1-02za, B1-13i, B1-13j]
 paths:
   - 'apps/api/src/modules/identity/**'
   - 'apps/api/src/app.module.ts'
