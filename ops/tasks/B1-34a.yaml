@@ -1,0 +1,32 @@
+id: B1-34a
+repo: rebate-platform
+title: admin：后台审计日志查询实现——GET /admin/v1/audit-logs 与 /{id}（读侧按 action / target 映射推出 target_type / target_id / permission，推不出为 null；不持 audit.view_all 强制本人；不透明 id 用派生密钥确定性可逆编码；actor_name 取 display_name 回落登录名）；去掉两接口 planned
+type: impl
+# 2026-10-19 入账（admin-backend，编排 10-19 20:4x 派工 ②）。依据：已合并契约 CT-24c（#852）原文与台账注释、08 BR-ID-34、BR-ID-30（留存）、04 §3.2 audit_logs、ADR-0001（主键不对外）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：**不加迁移**；只读 reader 与写入端口 AuditPort 分开（冻结测试 test/spec/admin/audit/writer.int.test.ts 要求写者只有 append）；放 admin 模块（登录即可的预检已在 admin-check）；audit.view_all 经 AdminProfiles.permissionKeys 判断（超管视为全有），不给 AdminActor 加字段（guard-mount 冻结测试）；
+#   映射为纯函数表（按 action 为主、target 前缀为辅；kill_switch 多点开关、commission.rule.*、union.account.* 的 permission 推不出 → null，不命中 permission 筛选）；permission 筛选落为 action 集合（必要时加 after 的 jsonb 条件），target 筛选落为 action 集合 + 精确 target；
+#   不透明 id：用 FieldCrypto.blindIndex(固定 context 'audit-log-id') 派生全局密钥（catalog search-cursor 先例；盲索引密钥不随数据密钥轮换，故 id 终身稳定）对 bigint 做确定性块加密（如 AES-128 单块）编 base64url，前缀 aud_，满足 ^[A-Za-z0-9_-]{16,64}$；解码失败或不可见一律 20001 [id]；不得用随机 IV 加密或「bigint + MAC」（会露序号）。
+#   映射表同时预登记 B1-10k 将写入的 claim_item_approve / claim_item_reject（target claim_items:<item_id>，permission order.claim）与 B1-34f / B1-34e 将写入的 export_create / export_unmasked / export_download / export_retry / export_cancel（target export_tasks:<public_id>，permission export；export_unmasked 另记 pii.reveal_phone 由 after 推出），避免各任务漏补（#907 S2-7、r3 Claude 后续提醒）。
+#   契约 example 里的 action 名（user_risk_ban、login 且 ip 为 null）与实际写入方不符（实际 user_risk_state_change、admin.login）：本任务把 openapi.yaml 中这两个接口的 example 改成真实 action 名，使 05 B1-34 的「example 可回放」成立。
+# refs 置空（#907 r3 Claude S2）：BR-ID-34 拆出 BR-ID-42 后剩余正文全是登录 / TOTP / 首次改密，与审计查询无关，引入会把评审范围带偏，且带上后任务书超 24KB；08 无 BR 规定审计查询可见范围（契约 CT-24c 已定）。本任务不涉资金 / 归属，与 B1-34b / d / g 同类，由编排者把契约 CT-24c 原文与 04 §11.1 audit.view_all 行摘入任务书。
+refs: []
+refs_hash: {}
+deps: [CT-24c]
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/admin/audit-query/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/audit-query/**'
+status: todo
+pr: null

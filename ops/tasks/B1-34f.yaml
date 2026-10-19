@@ -1,0 +1,29 @@
+id: B1-34f
+repo: rebate-platform
+title: admin：后台导出四个接口实现——POST /admin/v1/exports（export + 来源权限点，明文用 pii.reveal_phone 守卫做 totp + 理由、审计）、GET 列表（audit.view_all 放宽）、GET /{id}/download（只创建人、复核当前权限、现签 min(5 分钟, 剩余) 链接、审计、no-store）、POST /{id}/retry（只 failed、CAS、明文重验）；30417 与 20001 防探测；去掉四接口 planned
+type: impl
+# 2026-10-19 入账（admin-backend，B1-34 导出部分）。依据：契约 CT-24k 原文与台账注释（安全口径经 #850 两家多轮评审）、08 BR-ID-34 细则（#148）、§13.11 30417（#149）、10 AC-S2-111。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：export 权限点档位为 null（冻结测试 test/spec/admin/permissions/expected.ts 钉死）——明文导出另用 pii.reveal_phone 跑一次 AdminOperationGuard（totp 档、令牌在 2xx 消耗，202 算 2xx）；来源权限点（users 要 user.list）与 audit.view_all 经 AdminProfiles 判断；入队在创建事务内。
+# refs 只引 BR-ID-42（导出链接口径已由 #148 / #157 写入 BR-ID-42；BR-ID-30 只剩留存期限，本任务不涉及，且带上任务书 26KB 超限）。
+refs: [BR-ID-42]
+refs_hash:
+  BR-ID-42: c0c9ee5e6809
+deps: [B1-34e]
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/admin/exports/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/exports/**'
+status: todo
+pr: null

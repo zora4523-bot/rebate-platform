@@ -1,0 +1,28 @@
+id: B1-10k
+repo: rebate-platform
+title: orders：后台找回审核写入实现——子项 approve / reject（锁内重读、自动结案、VOID 系统驳回 ORDER_INVALID、同子订单他人待审 NOT_IN_POOL、CAS 20902 claim_item、claim 汇总、审计、claim.resolved 入队）；按 J-1 通过接口不挂载、保持 planned
+type: impl
+# 2026-10-19 入账（admin-backend，编排 10-19 20:4x 派工 ①；承接 W1 方案 B1-10d 写入部分）。依据：已合并契约 CT-24l（#897）的 adminApproveClaimItem / adminRejectClaimItem 原文、08 BR-ATTR-30（规划 #157 从 BR-ATTR-18 拆出的后台审核细则，含 #156：客服驳回时订单已作废记 ORDER_INVALID）、BR-ATTR-20、§13.11 20902、specs/state-machines/claim.yaml、claim-item.yaml。资金 / 归属类：Codex 写规则测试、Codex money 评审。
+# **只转写 08，不改归属规则**。编排裁定 J-1（D10-70）：审核通过在 settlement 端口有真实实现前保持 planned、不挂载——本任务实现通过与驳回的应用服务与控制器，**通过路由不挂载、契约 planned 不动**；驳回**不**单独先挂载、与通过成对上线（编排裁定 notices「找回审核后台，12:54 UTC」②）；**挂载（去 planned、重生成契约文件）另开任务**，不在本任务内。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：同一事务内首句 lockOrderKey（orders/infra/order-lock.ts），FOR UPDATE 重读订单；再**按 claim id 升序一次性 FOR UPDATE 锁住所有受影响的 claims 行**（本 claim 与同子订单他人待审子项所属 claim），防同单两子项并发汇总竞态与跨 claim 互等死锁（#907 S2-5）；子项 transitionClaimItem、汇总 summarizeClaimDecisions + transitionClaim（生成的 transition()，claims / claim_items 状态字段唯一写者为 orders claim-store）；
+#   通过时 orders 只写 user_id / user_basis=claim 与 order_status_history(source=claim)；**locked=true 与 rebate_status R3 同属 settlement（order-rebate.yaml R3 守卫 locked=false、同迁移置 locked=true；order-update-store 不让 orders 写 locked）**——orders 声明端口 rebate.onClaimApproved，在同一事务内、锁内重读之后调用，入参为写前快照，由端口一侧按 R3 CAS 写 rebate_status 与 locked（#907 r3 Claude S2-4）；本任务只给假实现与注入点，生产未注入时通过不可挂载即 J-1；分佣快照经 B1-08k 的 runCommissionSnapshot 端口（生产未注入时跳过，同 B1-08k）；来源回填 backfillOrderSource；
+#   claim.resolved 在业务事务内经 platform events 入队（02 §11，不另建发件表）（载荷 {claim_id, app_id, user_id, status}，规划未定，description 注明）；他人被系统 NOT_IN_POOL 的 claim 各自汇总、各发事件；审计 action：claim_item_approve / claim_item_reject，target claim_items:<item_id>（含 reason、原选码与实际结果；读侧映射由 B1-34a 登记），审计写入器绑事务（risk-admin 先例）。不加迁移。
+#   审核结果通知申请人（BR-ATTR-30：站内消息 + 推送，CLAIM_RESULT 模板）不在本任务：claim.resolved 的消费端由后续通知任务接，**是挂载任务的前置**（挂载任务入账时写进 deps，#907 r3 Claude S2-5）。
+# **派工待 BR-ATTR-20 拆分**：两条 refs 都必需（BR-ATTR-30 写「审核通过按 BR-ATTR-20 加锁执行」，自动结案 / 加锁复查只在 BR-ATTR-20），合计任务书 28.6KB 超 24KB；已请编排安排规划把 BR-ATTR-20 的「指派」与「找回」部分拆成独立编号（notices 10-21），拆后改 refs 再派工。按 J-1 本任务不挂载，等待不影响上线。
+refs: [BR-ATTR-30, BR-ATTR-20]
+refs_hash:
+  BR-ATTR-30: e43dbf178aa8
+  BR-ATTR-20: 74b2dde4c077
+deps: [CT-24l, B1-10j, B1-08k, B1-08q]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/orders/claims-review/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/claims-review/**'
+status: todo
+pr: null

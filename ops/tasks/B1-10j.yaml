@@ -1,0 +1,38 @@
+id: B1-10j
+repo: rebate-platform
+title: orders：后台找回审核只读实现——GET /admin/v1/claims（筛选、auto_matched 置顶、各状态计数、q 精确匹配）与 GET /admin/v1/claims/{claim_id}（子项证据、逐项比对、命中记录、处理人名字）；order.claim 看全部、只持 user.lookup 须带 user_id；去掉两接口 planned
+type: impl
+# 2026-10-19 入账（admin-backend，编排 10-19 20:4x 派工 ①；承接 W1 方案中未入账的 B1-10d 只读部分，notices 已对齐）。依据：已合并契约 CT-24d（#879）的 adminListClaims / adminGetClaim 原文、08 BR-ATTR-18、BR-ID-33（手机号 3+4）、04 §3.2 claims / claim_items、§11.1 user.lookup / §11.2 order.claim。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：后台路由放 orders/http/admin/claims.controller.ts，新建 OrdersAdminModule.forAdmin 并在 app.module.ts 的 admin 段装配（参照 risk / identity 的 forAdmin 先例）；权限经 AdminOperationGuard.run（带 user_id 时传 ['order.claim','user.lookup']、否则 'order.claim'，readOnly、no-store）；
+#   submitted_at 取 claims.created_at（表无 submitted_at 列）；脱敏手机号经 identity 新导出的只读端口按 user_id 批量取（identity 内解密并 3+4，orders 不读 identity 表）；处理人名字经 admin 模块新导出的只读端口（display_name 为空回落 login_name），由 app.module 注入，不跨模块读表；
+#   命中记录经 linking 新增「按 link_log id 列表读取（at + scene）」端口；link_logs.scene 可空而契约 scene 必填——本任务把 AdminClaimEvidenceLink.scene 属性改为 `oneOf: [$ref AdminClaimEvidenceScene, {type: 'null'}]`（scene 仍留在 required，AdminClaimEvidenceScene.enum 不加 null——packages/contracts-ts/src/admin-claims.test.ts:238-242 钉住二者；只放宽响应，description 写明「历史记录可能无渠道」），计入证据的记录一律列出（#907 两家评审 S2）；后台页面 apps/admin/src/pages/claims 的 sceneLabel 等随之接受 null，空 scene 显示「渠道未知」（scene 可空后 tsc 否则报 TS2345，#907 r3 Claude S1；冻结前端测试 test/spec/frontend/admin-claims 只用非空 scene，不需 test-change）；q 无索引可扫表（量小，接受；如需索引另开迁移任务）。读取不写审计。
+# 不改状态机、不改受理 / 证据路径；冻结测试 test/spec/orders/claims-*、test/spec/contracts/order-claims 不受影响。
+refs: [BR-ATTR-30, BR-ID-33]
+refs_hash:
+  BR-ATTR-30: e43dbf178aa8
+  BR-ID-33: 01b25f773b29
+deps: [CT-24d, B1-10c]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/linking/**'
+  - 'apps/api/src/modules/admin/index.ts'
+  - 'apps/api/src/modules/admin/application/**'
+  - 'apps/api/src/modules/admin/infra/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/admin/src/pages/claims/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/orders/claims-admin-read/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/claims-admin-read/**'
+status: todo
+pr: null
