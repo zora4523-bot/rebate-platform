@@ -47,7 +47,10 @@ export interface BackfillOrderSourceInput {
   /** 订单推广位的 pid_scene；null = 推广位场景未知 → 只做 ① exact，不取商品键与外跳日志（② / ③ 不匹配）。 */
   readonly pidScene: string | null;
   readonly order: UnionOrder;
-  // TODO(规划/11 §4.5): 首次入库的 shopId 映射 — blocked on 联盟订单映射 shop_id
+  /**
+   * ③ shop 用的店铺；null → 跳过 ③。首次入库取本次报文（UnionOrder.shop_id，B1-08p），重跑取库内值，
+   * 库内为空再取本次报文。是否把 none 留作待补由调用方判定（domain/source-shop.ts），本函数语义不变。
+   */
   readonly shopId: string | null;
 }
 

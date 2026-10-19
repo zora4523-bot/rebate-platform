@@ -14,7 +14,12 @@
 //   （本次 UPDATE 将写入的 pid——未归因重跑写入本次报文的推广位，未改时即原值——经 pids 端口取首行 pid_scene；
 //   推广位为空、端口未注入或查不到 → 场景未知：② product / ③ shop 不跨场景匹配，① exact 照常，否则 none，
 //   并在写后告警；只有推广位本身是 fallback 才不限场景，D10-60）、current.shop_id 与本次报文匹配，四列并入
-//   同一条 CAS UPDATE（WHERE 另加 source_match IS NULL）；端口抛错整事务回滚。不改 product_key / shop_id。
+//   同一条 CAS UPDATE（WHERE 另加 source_match IS NULL）；端口抛错整事务回滚。不改 product_key。
+// - 店铺（B1-08p，domain/source-shop.ts）：orders.shop_id 只在库内为空、本次报文非空时写（并入同一条 CAS UPDATE）。
+//   未归因重跑成功的回填店铺取 current.shop_id ?? 本次报文店铺；结果 none 而店铺字段显式为空、场景已知 →
+//   四列保持 NULL 待补。已归属、source_match 仍为空、库内无店铺而本次报文带来店铺 → 按 current.user_id /
+//   attr_at / 推广位与本次店铺重跑一次回填，四列与 shop_id 同一条 CAS UPDATE（WHERE source_match IS NULL）。
+//   08 无重试次数与放弃条件：不计数，店铺不来就保持 NULL。
 // - ⑥ 分佣快照（B1-08k，BR-ATTR-01 ⑥ / BR-CALC-10）：注入 snapshots 时，按本次 ⑦ 迁移与 ② 归属后的取值判定
 //   是否首次跨入资格（P2、R3a 在 PAID+）；跨入时 paid_at_source（库内为空才写）并入同一条 CAS UPDATE，history、
 //   待处理之后、settlement 端口之前同事务调端口（application/commission-snapshot-step.ts），结果经
@@ -36,6 +41,12 @@ import {
   type PlanCommissionSnapshotInput,
 } from '../domain/commission-snapshot.ts';
 import { rawPayloadId } from '../domain/order-fields.ts';
+import {
+  incomingShopId,
+  shopIdToWrite,
+  shouldDeferOrderSource,
+  shouldRetryOrderSource,
+} from '../domain/source-shop.ts';
 import type { PlatformStatusEvent } from '../domain/status-map.ts';
 import {
   planOrderSyncColumns,
@@ -275,9 +286,14 @@ export function createOrderUpdateStep(
     let attributedNow = false;
     let bindingConflict = false;
     let backfilled: string | null = null;
+    let sourcePending = false;
     let pidSceneMissing = false;
     /** 已为来源回填查过的订单推广位场景（undefined = 本次还没查）。 */
     let knownPidScene: string | null | undefined;
+    // B1-08p 店铺：只空 → 非空（口径 2）。
+    const shop = incomingShopId(incoming);
+    const shopWrite = shopIdToWrite(current.shop_id, shop);
+    if (shopWrite !== null) Object.assign(set, { shop_id: shopWrite });
     if (unattributed) {
       Object.assign(set, {
         pid: slot,
@@ -312,13 +328,48 @@ export function createOrderUpdateStep(
             // 场景未知传 null：不当作 fallback（BR-ATTR-15 ② 只对 fallback 推广位不限，D10-60）。
             pidScene,
             order: incoming,
-            shopId: current.shop_id,
+            // B1-08p：库内已有店铺优先，否则用本次报文带来的店铺。
+            shopId: current.shop_id ?? shop ?? null,
           });
-          Object.assign(set, sourceColumns(source));
-          backfilled = source.source_match;
+          sourcePending = shouldDeferOrderSource({
+            source,
+            incomingShopId: shop,
+            currentShopId: current.shop_id,
+            pidScene,
+          });
+          if (!sourcePending) {
+            Object.assign(set, sourceColumns(source));
+            backfilled = source.source_match;
+          }
         }
       }
       bindingConflict = user.kind === 'unattributed' && user.conflict;
+    } else if (
+      current.user_id !== null &&
+      deps.sources !== undefined &&
+      shouldRetryOrderSource({
+        userId: current.user_id,
+        sourceMatch: current.source_match,
+        currentShopId: current.shop_id,
+        incomingShopId: shop,
+      })
+    ) {
+      // B1-08p 口径 5：已归属订单此前待补，本次同步带来店铺 → 按库内 user_id / attr_at / 推广位重跑一次。
+      // 已归属订单不改推广位（参数变化只告警），所以推广位即库内值；exact 读本次报文的订单参数。
+      const pidScene = await orderPidScene(current, current.pid, ctx, platform);
+      knownPidScene = pidScene;
+      pidSceneMissing = pidScene === null;
+      const source = await backfillOrderSource(deps.sources, {
+        appId: current.app_id,
+        platform,
+        userId: current.user_id,
+        attrAt: current.attr_at,
+        pidScene,
+        order: incoming,
+        shopId: shopWrite,
+      });
+      Object.assign(set, sourceColumns(source));
+      backfilled = source.source_match;
     }
 
     // ⑥ 分佣快照（B1-08k）：判定先于写库。before = 库内现值；after = 本次迁移与归属之后（rebate_status 不由本模块
@@ -564,6 +615,11 @@ export function createOrderUpdateStep(
       log?.info(
         { ...base, source_match: backfilled, outcome: 'backfilled' },
         'order source backfilled',
+      );
+    } else if (sourcePending) {
+      log?.info(
+        { ...base, outcome: 'source_pending' },
+        'order source left blank until the shop is known',
       );
     }
     log?.info(

@@ -34,6 +34,11 @@ const BEIJING_OFFSET_SECONDS = 8 * 3_600;
 const MAX_GOODS_ID = 2n ** 53n;
 /** 无损商品号只接受十进制非负整数字面量：无符号、无小数点、无指数、无前导零。 */
 const GOODS_ID_TEXT = /^(?:0|[1-9][0-9]*)$/;
+/** B1-08p：店铺 ID 只接受十进制正整数字面量（无符号、无小数点、无指数、无前导零），且 ≤ 2^53 − 1。 */
+const SHOP_ID_TEXT = /^[1-9][0-9]*$/;
+const MAX_SHOP_ID = BigInt(Number.MAX_SAFE_INTEGER);
+/** parsePddOrderEnvelope 按原始文本保留的数值字段（B1-04w goods_id；B1-08p mall_id）。 */
+const RAW_INTEGER_FIELDS: ReadonlySet<string> = new Set(['goods_id', 'mall_id']);
 
 export type PddOrderSource = 'increment' | 'range' | 'detail';
 
@@ -62,6 +67,9 @@ const COMMON_FIELDS = [
   'subsidy_duo_amount_ten_million',
   'subsidy_type',
   'subsidy_list',
+  // B1-08p：店铺 ID（LONG）。出处：三个订单接口的文档（docs-mirror/pdd/api/<接口名>.md）都列有 mall_id；
+  // 只读这个 ID，不以 mall_name 等名称代替。映射见 shopId()。
+  'mall_id',
 ] as const;
 const FIELDS: Readonly<Record<PddOrderSource, ReadonlySet<string>>> = {
   increment: new Set([
@@ -278,7 +286,7 @@ function nonNegativeFen(value: unknown, name: string): bigint {
   return fen;
 }
 
-/** 订单报文里数值型 goods_id 的原始 JSON 文本（B1-04w；只由 parsePddOrderEnvelope 产生）。 */
+/** 订单报文里数值型 goods_id / mall_id 的原始 JSON 文本（B1-04w、B1-08p；只由 parsePddOrderEnvelope 产生）。 */
 export class PddRawInteger {
   readonly text: string;
 
@@ -293,16 +301,16 @@ interface ReviverContext {
 }
 
 /**
- * B1-04w：订单接口专用的二次解析。与 JSON.parse 相同，只是名为 goods_id 的数值换成它的原始
- * 文本（PddRawInteger），从而能无损区分 2^53 与 2^53+1。字段名按 JSON 解码后比较（转义写法
- * 同样命中）；嵌套对象里的同名数值也会被换掉，但映射只读订单本层登记过的字段，不读它们。
+ * B1-04w：订单接口专用的二次解析。与 JSON.parse 相同，只是名为 goods_id（B1-08p 起另加 mall_id）的
+ * 数值换成它的原始文本（PddRawInteger），从而能无损区分 2^53 与 2^53+1。字段名按 JSON 解码后比较
+ * （转义写法同样命中）；嵌套对象里的同名数值也会被换掉，但映射只读订单本层登记过的字段，不读它们。
  * 网关错误、外层键缺失仍由 unwrapPddResponse 先判；全局解包（request）不受影响。
  */
 export function parsePddOrderEnvelope(body: string, key: string): unknown {
   const parsed: unknown = JSON.parse(
     body,
     (name: string, value: unknown, context?: ReviverContext): unknown =>
-      name === 'goods_id' && typeof value === 'number'
+      RAW_INTEGER_FIELDS.has(name) && typeof value === 'number'
         ? new PddRawInteger(typeof context?.source === 'string' ? context.source : '')
         : value,
   );
@@ -328,6 +336,23 @@ function goodsId(value: unknown): string | null {
     throw invalid('goods_id must be a non-negative integer within 2^53');
   }
   return String(value);
+}
+
+/**
+ * B1-08p：店铺 ID（mall_id）→ 十进制字符串，不经浮点运算；只是来源回填（BR-ATTR-15 ③）的辅助，
+ * 所以缺失或不合格一律 null（不抛错、不丢单——与 goods_id 非法即拒不同）：
+ * - 适配器给的原始文本（PddRawInteger）：须是十进制正整数字面量且 ≤ 2^53 − 1，原样返回；
+ * - 直接调用传入的普通数值：只接受正的安全整数（更大的值无法判断是否已被舍入）；
+ * - 字符串：同原始文本的口径（空串即空）；
+ * - 其余（0、负数、小数、超界、其他类型）→ null。
+ */
+function shopId(value: unknown): string | null {
+  if (value instanceof PddRawInteger || typeof value === 'string') {
+    const text = value instanceof PddRawInteger ? value.text : value;
+    return SHOP_ID_TEXT.test(text) && BigInt(text) <= MAX_SHOP_ID ? text : null;
+  }
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return String(value);
+  return null;
 }
 
 /**
@@ -357,12 +382,13 @@ export interface PddOrderPage {
  * B1-08e：另填平台无关字段（sub_order_id = order_sn，promotion_slot = pid，attr_params 只填原样的
  * custom_parameters，raw_status = String(order_status)，五个时刻由秒转 Date，est = commission_fen，
  * settle = null）；raw_payload_id 由调用方给出该页报文的归档行 id，没有为 null。
+ * B1-08p：shop_id = mall_id 的十进制字符串（缺失或不合格为 null，见 shopId）。
  */
 export function mapPddOrder(
   input: unknown,
   source: PddOrderSource,
   page: PddOrderPage,
-): UnionOrder & UnionOrderNeutralFields {
+): UnionOrder & UnionOrderNeutralFields & { readonly shop_id: string | null } {
   if (!isRecord(input)) throw invalid('order row is not an object');
   const f = new Fields(input, source);
   const orderSn = f.raw('order_sn');
@@ -434,6 +460,8 @@ export function mapPddOrder(
     // TODO(规划/11 §4.5): 拼多多结算佣金 — blocked on CAP-PDD-07（现有映射没有单独字段，不臆造）
     settle_commission_fen: null,
     raw_payload_id: page.rawPayloadId,
+    // B1-08p：拼多多订单总带店铺键（缺失 / 不合格为 null）；淘宝、京东映射不加此键（见 UnionOrder.shop_id）。
+    shop_id: shopId(f.raw('mall_id')),
   });
 }
 

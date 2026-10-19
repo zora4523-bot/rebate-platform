@@ -228,6 +228,7 @@ export interface UnionOrder extends ItemRef, PddOrderFields, Partial<UnionOrderN
   /** B1-08p：undefined = 平台无店铺字段；null = 本条缺失 / 非法；字符串 = 店铺标识。
    * 拼多多来源：pdd.ddk.order.list.increment.get / list.range.get / detail.get 的 mall_id。
    * 字段资料：docs-mirror/pdd/api/<接口名>.md；不以 mall_name / seller_nick 替代 ID。
+   * 淘宝订单接口没有与商品侧同口径的店铺 ID，映射做出来时也不加此键；京东订单映射未做（字段待定）。
    */
   readonly shop_id?: string | null;
   readonly order_id: string;
