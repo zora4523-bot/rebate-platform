@@ -7,6 +7,7 @@
  * Source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05） (contracts/enums/admin.yaml).
  */
 export const admin_permission = [
+  "dashboard.view", // 工作台：待办与概览（04 §11.1、01 F-ADM-26；每张卡另按其权限点裁剪）
   "user.list", // 用户列表浏览、筛选（非敏感字段）
   "user.lookup", // 按 UID、完整手机号或订单号逐个查询
   "pii.reveal_phone", // 查看完整手机号（step-up）
@@ -105,6 +106,22 @@ export const admin_auth_level = [
   "super", // 需要超级管理员的 admin_token（后台账号与权限，只限超管、不可授予）
 ] as const;
 export type AdminAuthLevel = (typeof admin_auth_level)[number];
+
+/**
+ * GET /admin/v1/dashboard 的 todo[].key；每张卡只在账号持有括号里的权限点、且对应模块已上线时返回（count 为 0 也返回）；编码独立于权限点，不复用权限点字符串；卡标题与副文案取 BR-TEXT-25 admin_dict
+ * Source: 规划/01 F-ADM-26 ① 待办计数；规划/04 §6.6 dashboard、§11.1 dashboard.view（CT-24a） (contracts/enums/admin.yaml).
+ */
+export const admin_dashboard_todo_key = [
+  "withdraw_review_pending", // 待审提现（withdraw.review；BR-WDR-10 人工审核队列）
+  "claim_review_pending", // 待审找回（order.claim；BR-ATTR-18）
+  "settle_bill_pending", // 待确认月结账单（settle.bill；BR-FUND-04）
+  "recon_diff_open", // 未关闭差错单（fund.recon；BR-FUND-22）
+  "appeal_pending", // 待处理申诉（risk.appeal；BR-ID-36）
+  "agent_report_overdue", // AI 举报超 48 小时未处理（agent.report；BR-ID-15）
+  "beneficiary_held_overdue", // 受益人份额 held 满 30 天（risk.freeze；BR-CALC-13）
+  "union_auth_expiring", // 站长联盟授权即将到期或探测失效（union.account_auth；BR-ID-24）
+] as const;
+export type AdminDashboardTodoKey = (typeof admin_dashboard_todo_key)[number];
 
 /**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
@@ -1456,6 +1473,7 @@ export const enums = {
   admin_login_step,
   admin_account_status,
   admin_auth_level,
+  admin_dashboard_todo_key,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,

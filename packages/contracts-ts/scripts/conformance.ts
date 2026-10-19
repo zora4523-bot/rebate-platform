@@ -68,6 +68,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   ClaimStatus: 'claim_status',
   ClaimItemDecision: 'claim_item_decision',
   ClaimRejectReason: 'claim_reject_reason',
+  AdminDashboardTodoKey: 'admin_dashboard_todo_key',
+  AdminPayoutChannelCode: 'payout_method',
 };
 
 /**

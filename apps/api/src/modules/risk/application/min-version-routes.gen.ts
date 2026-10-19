@@ -882,6 +882,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminGetDashboard",
+    "method": "GET",
+    "path": "/admin/v1/dashboard",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListAdmins",
     "method": "GET",
     "path": "/admin/v1/admins",

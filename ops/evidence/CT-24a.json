@@ -1,0 +1,35 @@
+{
+  "task": "CT-24a",
+  "spec_ref": "b90e712f5255a9600ebf6f0f3b561afd1b4f8d9e",
+  "spec_commit": "bb71d740adef6ecfb76776640b05c96de5d2fa29",
+  "red_tests": [],
+  "risk_note": "RV2 contract task (contracts/openapi.yaml, contracts/enums/admin.yaml, specs/permissions.yaml and the regenerated permissions.gen.ts, contracts-ts and route tables): adds GET /admin/v1/dashboard (adminGetDashboard, x-implementation planned, dashboard.view, no step-up) per 01 F-ADM-26, 04 §6.6 / §11.1 and the admin batch 1 sign-off: todo[] with eight independently coded keys (admin_dashboard_todo_key, each bound to its card's permission point), count ≥ 0 returned even when zero for a permitted and live card, optional oldest_at and breakdown; cards without permission or whose module is not live are absent (the three funds cards follow the funds lane's admin tasks); yesterday {date, links, orders, est_rebate_fen, new_users, as_of}; status {payout_queue_paused, payout_channel_paused[], settle_auto_enabled, balance_w_expired nullable} only with fund.view; no open_alerts this period. New permission point dashboard.view in the enum and specs/permissions.yaml (version 2); the frozen permission oracle was opened for it by CT-24i (#828). contracts-ts conformance registers the new enums; catalog unit test count 54 → 55; new unit test admin-dashboard.test.ts (no x-implementation assertion). tester none; implementation by an Opus 5.5 subagent in one run. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 pass, 0 findings; at landing CI gitleaks (generic-api-key) false-positived the example key beneficiary_held_30d, renamed to beneficiary_held_overdue without relaxing the scan; round 2 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "f23baaafe9fbca9e9476bf83ae6ab895a7243cb3",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "deb36e3e80b642be3e5090d7761d3143433275fe",
+    "specs": "c3c361e2d577cc550a501e7feb636fbcb179ff4a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
