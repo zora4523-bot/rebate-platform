@@ -1,0 +1,120 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#1] 标题行展示 UID 与 normal 风控 Tag，保留返回入口",
+    "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#1] 标题行展示 UID 与 frozen 风控 Tag，保留返回入口",
+    "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#1] 标题行展示 UID 与 banned 风控 Tag，保留返回入口",
+    "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#2] 基本信息为四列竖排 Descriptions，标签和契约值位于上下两行",
+    "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#3] 联盟授权表具名、状态含 Tag 和原始编码，时间列只读无行操作",
+    "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#4] 等宽上级入口可点击，切换详情后标题 UID 和风控 Tag 同步更新",
+    "test/spec/frontend/admin-users-visual/list.test.ts > [AC-F1-07j-LIST#1] 筛选卡的 UID 或手机号、风控状态标签关联控件并在上方",
+    "test/spec/frontend/admin-users-visual/list.test.ts > [AC-F1-07j-LIST#2] 未筛选无已应用条，筛选后在卡下方播报条件和服务端总数，清除后消失",
+    "test/spec/frontend/admin-users-visual/list.test.ts > [AC-F1-07j-LIST#3] 列表卡标题、横向滚动与等宽 UID；每行详情读屏名包含本行 UID",
+    "test/spec/frontend/admin-users-visual/pages.browser.test.ts > [AC-F1-07j-BROWSER#1] 1440 定稿用户查询：上方标签、具名行操作、已应用条",
+    "test/spec/frontend/admin-users-visual/pages.browser.test.ts > [AC-F1-07j-BROWSER#2] 1440 空态：当前条件、重置入口和空态图",
+    "test/spec/frontend/admin-users-visual/pages.browser.test.ts > [AC-F1-07j-BROWSER#3] 1440 出错态：保留输入、错误说明、重试入口",
+    "test/spec/frontend/admin-users-visual/pages.browser.test.ts > [AC-F1-07j-BROWSER#4] 1440 定稿详情：标题 UID 和状态、竖排信息、具名只读联盟表",
+    "test/spec/frontend/admin-users-visual/scope.test.ts > [AC-F1-07j-NOPE#1] 超管定稿列表与详情也只展示已接入契约，不生成画板中的额外列或模块",
+    "test/spec/frontend/admin-users-visual/scope.test.ts > [AC-F1-07j-NOPE#2] 只有 lookup 权限的详情仍有定稿标题和具名授权表，不出现操作或占位卡",
+    "test/spec/frontend/admin-users-visual/source.test.ts > [AC-F1-07j-SOURCE#1] 定稿新文案集中于 users 字典，页面不硬编码颜色、ant 类名或注入 HTML",
+    "test/spec/frontend/admin-users-visual/states.test.ts > [AC-F1-07j-STATES#1] 无匹配结果展示图标和当前条件；重置只请求一次且清除 risk_state",
+    "test/spec/frontend/admin-users-visual/states.test.ts > [AC-F1-07j-STATES#2] Result 出错态保留已填条件；重试只请求一次且参数完全相同",
+    "test/spec/frontend/admin-users-visual/states.test.ts > [AC-F1-07j-STATES#3] 首次请求在途时列表卡有可感知的加载中提示",
+    "test/spec/frontend/admin-users-visual/states.test.ts > [AC-F1-07j-STATES#4] 更换筛选后请求在途仍有可感知提示，不能只留下旧表格"
+  ],
+  "risk_note": "Admin console users pages to the finalized visual spec (apps/admin; no money logic; codex-run classed it RV2, so the Codex review ran on the money track). List: labels above the filter fields, an applied-filter bar with conditions and count in a polite live region, row actions named 详情 <UID>, monospace UIDs, horizontal scroll, empty / loading / error states as on AdmUsersStates. Detail: title row with UID and risk tag, bordered vertical basic information (the frozen admin-users tests accept only that structure), labelled read-only union table. Logic and requests unchanged; only contract fields. Prerequisite test-change F1-07k (#799). Rule tests by Codex in three calls plus one mechanical orchestrator fix (BROWSER#1 text check from exact to contains; counted as the one exception), Claude spec-test review pass, red on the test machine (red/3, 20 tests). Implementation by Opus 5.5 (one run cut off by a session restart without output, not counted); test machine verify-fast/3 and browser/4 (59/59) green. Review: Codex (approvals id 27 / 34). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent: pass with two S2 (title-row ancestor lookup, applied bar must not contain the table) fixed in Codex round 2; round 3 and the orchestrator fix only touched BROWSER#3 / BROWSER#1 locating, not what is asserted"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  },
+  "task": "F1-07j",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "75911e6db4eac1360c7896a511ed9025eac21404",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "75911e6db4eac1360c7896a511ed9025eac21404",
+      "tree": "a49ac5b87f9f1b8f16201ca4bb2d6c3d3b9115d8",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T10:44:52Z",
+      "finished_at": "2026-10-19T10:45:57Z",
+      "gate": {
+        "commit": "f7159e27705c8e47334173726b1683ab74ed77e4",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#1] 标题行展示 UID 与 normal 风控 Tag，保留返回入口",
+        "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#1] 标题行展示 UID 与 frozen 风控 Tag，保留返回入口",
+        "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#1] 标题行展示 UID 与 banned 风控 Tag，保留返回入口",
+        "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#2] 基本信息为四列竖排 Descriptions，标签和契约值位于上下两行",
+        "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#3] 联盟授权表具名、状态含 Tag 和原始编码，时间列只读无行操作",
+        "test/spec/frontend/admin-users-visual/detail.test.ts > [AC-F1-07j-DETAIL#4] 等宽上级入口可点击，切换详情后标题 UID 和风控 Tag 同步更新",
+        "test/spec/frontend/admin-users-visual/list.test.ts > [AC-F1-07j-LIST#1] 筛选卡的 UID 或手机号、风控状态标签关联控件并在上方",
+        "test/spec/frontend/admin-users-visual/list.test.ts > [AC-F1-07j-LIST#2] 未筛选无已应用条，筛选后在卡下方播报条件和服务端总数，清除后消失",
+        "test/spec/frontend/admin-users-visual/list.test.ts > [AC-F1-07j-LIST#3] 列表卡标题、横向滚动与等宽 UID；每行详情读屏名包含本行 UID",
+        "test/spec/frontend/admin-users-visual/pages.browser.test.ts > [AC-F1-07j-BROWSER#1] 1440 定稿用户查询：上方标签、具名行操作、已应用条",
+        "test/spec/frontend/admin-users-visual/pages.browser.test.ts > [AC-F1-07j-BROWSER#2] 1440 空态：当前条件、重置入口和空态图",
+        "test/spec/frontend/admin-users-visual/pages.browser.test.ts > [AC-F1-07j-BROWSER#3] 1440 出错态：保留输入、错误说明、重试入口",
+        "test/spec/frontend/admin-users-visual/pages.browser.test.ts > [AC-F1-07j-BROWSER#4] 1440 定稿详情：标题 UID 和状态、竖排信息、具名只读联盟表",
+        "test/spec/frontend/admin-users-visual/scope.test.ts > [AC-F1-07j-NOPE#1] 超管定稿列表与详情也只展示已接入契约，不生成画板中的额外列或模块",
+        "test/spec/frontend/admin-users-visual/scope.test.ts > [AC-F1-07j-NOPE#2] 只有 lookup 权限的详情仍有定稿标题和具名授权表，不出现操作或占位卡",
+        "test/spec/frontend/admin-users-visual/source.test.ts > [AC-F1-07j-SOURCE#1] 定稿新文案集中于 users 字典，页面不硬编码颜色、ant 类名或注入 HTML",
+        "test/spec/frontend/admin-users-visual/states.test.ts > [AC-F1-07j-STATES#1] 无匹配结果展示图标和当前条件；重置只请求一次且清除 risk_state",
+        "test/spec/frontend/admin-users-visual/states.test.ts > [AC-F1-07j-STATES#2] Result 出错态保留已填条件；重试只请求一次且参数完全相同",
+        "test/spec/frontend/admin-users-visual/states.test.ts > [AC-F1-07j-STATES#3] 首次请求在途时列表卡有可感知的加载中提示",
+        "test/spec/frontend/admin-users-visual/states.test.ts > [AC-F1-07j-STATES#4] 更换筛选后请求在途仍有可感知提示，不能只留下旧表格"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-users-visual/detail.test.ts",
+        "test/spec/frontend/admin-users-visual/list.test.ts",
+        "test/spec/frontend/admin-users-visual/pages.browser.test.ts",
+        "test/spec/frontend/admin-users-visual/scope.test.ts",
+        "test/spec/frontend/admin-users-visual/source.test.ts",
+        "test/spec/frontend/admin-users-visual/states.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "fb05d02bcffdff73fc23f40d62316bc637806268a90794f9ceb9f30cc29a44b1"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "430668cbff0d8dcdb5ba135e84b6ecdaf6a67cb390817809b87d56077495cb2b"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "40237c75b8d382cab467837a79a62669ffcf7a7d",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  }
+}

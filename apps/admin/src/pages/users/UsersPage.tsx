@@ -5,23 +5,35 @@
 // reads the list; without both it shows no permission and sends nothing. The list query and the
 // page read last stay in this component, so 【返回】 from a detail shows the same page and filter.
 import type { Schema } from '@couli/contracts-ts';
-import { SearchOutlined } from '@ant-design/icons';
+import {
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  InboxOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+  WarningOutlined,
+} from '@ant-design/icons';
 import { useDataProvider } from '@refinedev/core';
 import {
   Button,
   Card,
+  ConfigProvider,
   Empty,
   Flex,
+  Form,
   Input,
   Result,
   Select,
+  Skeleton,
   Table,
   Tag,
   Typography,
+  theme,
   type TableColumnsType,
   type TablePaginationConfig,
+  type ThemeConfig,
 } from 'antd';
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactElement } from 'react';
 import type { AccessControl } from '../../providers/access-control/index.ts';
 import { AdminApiError } from '../../providers/data/index.ts';
 import { usersTexts as t } from '../../texts/users.ts';
@@ -32,11 +44,11 @@ import {
   lookupErrorText,
   lookupQuery,
   riskLabel,
-  riskTagColor,
   type RiskState,
   type UserDetail,
   type UserRow,
 } from './model.ts';
+import { RiskTag } from './RiskTag.tsx';
 import { UserDetailView } from './UserDetailView.tsx';
 
 export interface UsersPageProps {
@@ -70,6 +82,15 @@ type View =
 const USERS_URL = '/admin/v1/users';
 const LOOKUP_URL = `${USERS_URL}/lookup`;
 
+// Filter card (AdmUsers): 36 high controls, small labels above them.
+const FILTER_THEME: ThemeConfig = {
+  components: {
+    Input: { controlHeight: 36 },
+    Select: { controlHeight: 36 },
+    Form: { labelFontSize: 12, verticalLabelPadding: '0 0 4px' },
+  },
+};
+
 export function UsersPage({ access }: UsersPageProps): ReactElement {
   const canList = access.can('user.list');
   const canLookup = access.can('user.lookup');
@@ -97,6 +118,9 @@ interface UsersContentProps {
 
 function UsersContent({ canList, canLookup, canReveal }: UsersContentProps): ReactElement {
   const getProvider = useDataProvider();
+  const { token } = theme.useToken();
+  const lookupId = useId();
+  const riskId = useId();
   const [query, setQuery] = useState<ListQuery>({ page: 1, risk: 'all' });
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<ListStatus>('loading');
@@ -213,44 +237,52 @@ function UsersContent({ canList, canLookup, canReveal }: UsersContentProps): Rea
     );
   }
 
+  const reset = () => {
+    // Clears the risk filter and reads page 1 once (a fresh query object even when unchanged).
+    setStatus('loading');
+    setQuery({ page: 1, risk: 'all' });
+  };
+
+  const code = { fontFamily: token.fontFamilyCode } as const;
+  const riskText = query.risk === 'all' ? t.riskFilterAll : riskLabel(query.risk);
+
   const columns: TableColumnsType<UserRow> = [
     {
       key: 'uid',
       title: t.columns.uid,
-      render: (_, row) => (
-        <span style={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{row.user_id}</span>
-      ),
+      render: (_, row) => <span style={{ ...code, whiteSpace: 'nowrap' }}>{row.user_id}</span>,
     },
     { key: 'nickname', title: t.columns.nickname, dataIndex: 'nickname', ellipsis: true },
     {
       key: 'phone',
       title: t.columns.phone,
       width: 140,
-      render: (_, row) => row.phone_masked ?? t.dash,
+      render: (_, row) => <span style={code}>{row.phone_masked ?? t.dash}</span>,
     },
     { key: 'level', title: t.columns.level, dataIndex: 'level', width: 80 },
     {
       key: 'risk',
       title: t.columns.risk,
-      width: 120,
-      render: (_, row) => (
-        <Tag color={riskTagColor(row.risk_state)}>{riskLabel(row.risk_state)}</Tag>
-      ),
+      width: 140,
+      render: (_, row) => <RiskTag state={row.risk_state} />,
     },
     {
       key: 'createdAt',
       title: t.columns.createdAt,
       width: 170,
-      render: (_, row) => beijingTime(row.created_at),
+      render: (_, row) => (
+        <span style={{ whiteSpace: 'nowrap' }}>{beijingTime(row.created_at)}</span>
+      ),
     },
     {
       key: 'actions',
       title: t.columns.actions,
-      width: 90,
+      width: 80,
       render: (_, row) => (
         <Button
           type="link"
           size="small"
+          aria-label={t.detailActionName(row.user_id)}
           style={{ paddingInline: 0 }}
           onClick={() => open(row.user_id)}
         >
@@ -260,88 +292,214 @@ function UsersContent({ canList, canLookup, canReveal }: UsersContentProps): Rea
     },
   ];
 
-  const lookupBox = canLookup ? (
-    <Flex vertical gap={6}>
-      <Flex align="center" gap={8} wrap>
+  const lookupField = canLookup ? (
+    <Form.Item
+      label={t.lookup.label}
+      htmlFor={lookupId}
+      style={{ marginBottom: 0 }}
+      extra={
+        lookupError === undefined ? (
+          <Typography.Text type="secondary">{t.lookup.hint}</Typography.Text>
+        ) : (
+          <Typography.Text type="danger" role="status">
+            {lookupError}
+          </Typography.Text>
+        )
+      }
+    >
+      <Flex align="center" gap={8}>
         <Input
+          id={lookupId}
           allowClear
           prefix={<SearchOutlined aria-hidden />}
-          aria-label={t.lookup.label}
           placeholder={t.lookup.placeholder}
           value={search}
           status={lookupError === undefined ? '' : 'error'}
           onChange={(event) => setSearch(event.target.value)}
           onPressEnter={() => void submitLookup()}
-          style={{ width: 360 }}
+          style={{ width: 320 }}
         />
-        <Button type="primary" loading={searching} onClick={() => void submitLookup()}>
+        <Button
+          type="primary"
+          icon={<SearchOutlined aria-hidden />}
+          loading={searching}
+          onClick={() => void submitLookup()}
+        >
           {t.lookup.submit}
         </Button>
       </Flex>
-      {lookupError === undefined ? (
-        <Typography.Text type="secondary">{t.lookup.hint}</Typography.Text>
-      ) : (
-        <Typography.Text type="danger" role="status">
-          {lookupError}
-        </Typography.Text>
-      )}
-    </Flex>
+    </Form.Item>
   ) : null;
 
-  const filter = canList ? (
-    <Select<RiskFilter>
-      aria-label={t.riskFilterLabel}
-      prefix={t.riskFilterLabel}
-      value={query.risk}
-      onChange={changeRisk}
-      style={{ width: 200 }}
-      options={[
-        { value: 'all', label: t.riskFilterAll },
-        ...RISK_STATES.map((state) => ({ value: state, label: riskLabel(state) })),
-      ]}
-    />
+  const filterField = canList ? (
+    <Form.Item label={t.riskFilterLabel} htmlFor={riskId} style={{ marginBottom: 0 }}>
+      <Select<RiskFilter | undefined>
+        id={riskId}
+        // 「全部」 shows as the placeholder (in normal text colour): antd's placeholder lets
+        // pointer events through to the combobox input, a selected item would cover it.
+        value={query.risk === 'all' ? undefined : query.risk}
+        placeholder={<Typography.Text>{t.riskFilterAll}</Typography.Text>}
+        onChange={(risk) => changeRisk(risk ?? 'all')}
+        style={{ width: 200 }}
+        options={[
+          { value: 'all', label: t.riskFilterAll },
+          ...RISK_STATES.map((state) => ({ value: state, label: riskLabel(state) })),
+        ]}
+      />
+    </Form.Item>
   ) : null;
+
+  // Shown with a settled answer for an applied risk filter; announces the condition and the
+  // server's total, and never wraps the table or the pagination.
+  const applied =
+    query.risk !== 'all' && status === 'ready' && data !== undefined ? (
+      <Flex
+        align="center"
+        gap={12}
+        wrap
+        aria-live="polite"
+        style={{
+          padding: '10px 16px',
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        <Tag icon={<CheckCircleOutlined aria-hidden />} style={{ marginInlineEnd: 0 }}>
+          {t.applied}
+        </Tag>
+        <Typography.Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
+          {t.appliedConditions(riskText)}
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
+          {t.total(data.total)}
+        </Typography.Text>
+      </Flex>
+    ) : null;
+
+  const loadingLine =
+    status === 'loading' ? (
+      <Flex
+        align="center"
+        gap={8}
+        style={{
+          padding: '12px 16px',
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        <ClockCircleOutlined aria-hidden style={{ color: token.colorTextSecondary }} />
+        <Typography.Text type="secondary" role="status">
+          {t.loading}
+        </Typography.Text>
+      </Flex>
+    ) : null;
+
+  const empty = (
+    <Empty
+      image={<InboxOutlined aria-hidden style={{ fontSize: 28, color: token.colorTextTertiary }} />}
+      styles={{
+        image: {
+          height: 56,
+          width: 56,
+          marginInline: 'auto',
+          marginBottom: 16,
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: token.colorFillTertiary,
+        },
+      }}
+      description={
+        <Flex vertical align="center" gap={8}>
+          <Typography.Text strong>{t.empty}</Typography.Text>
+          <Typography.Text type="secondary">{t.emptyConditions(riskText)}</Typography.Text>
+        </Flex>
+      }
+    >
+      <Button onClick={reset}>{t.resetConditions}</Button>
+    </Empty>
+  );
+
+  const inner = {
+    border: `1px solid ${token.colorBorderSecondary}`,
+    borderRadius: token.borderRadiusLG,
+    overflow: 'hidden',
+  } as const;
 
   let body: ReactElement | null = null;
   if (!canList) {
     body = null;
   } else if (status === 'forbidden') {
     body = (
-      <Card>
+      <Card title={t.listTitle}>
         <Result status="403" title={t.forbiddenTitle} subTitle={t.listForbiddenDescription} />
       </Card>
     );
   } else if (status === 'failed') {
     body = (
-      <Card>
-        <Result
-          status="error"
-          title={t.loadFailedTitle}
-          subTitle={t.loadFailedDescription}
-          extra={<Button onClick={retry}>{t.retry}</Button>}
-        />
+      <Card title={t.listTitle}>
+        <div style={inner}>
+          <Result
+            status="warning"
+            icon={
+              <Flex
+                align="center"
+                justify="center"
+                style={{
+                  width: 56,
+                  height: 56,
+                  marginInline: 'auto',
+                  borderRadius: '50%',
+                  background: token.colorErrorBg,
+                }}
+              >
+                <WarningOutlined aria-hidden style={{ fontSize: 24, color: token.colorError }} />
+              </Flex>
+            }
+            title={
+              <Typography.Text type="danger" strong style={{ fontSize: token.fontSize }}>
+                {t.loadFailedTitle}
+              </Typography.Text>
+            }
+            subTitle={t.loadFailedDescription}
+            extra={
+              <Button type="primary" icon={<ReloadOutlined aria-hidden />} onClick={retry}>
+                {t.retry}
+              </Button>
+            }
+          />
+        </div>
       </Card>
     );
   } else if (data === undefined) {
     body = (
-      <Card>
-        <Typography.Text type="secondary" role="status">
-          {t.loading}
-        </Typography.Text>
+      <Card title={t.listTitle}>
+        <div style={inner}>
+          {loadingLine}
+          <div style={{ padding: 16 }}>
+            <Skeleton active title={false} paragraph={{ rows: 4 }} />
+          </div>
+        </div>
+      </Card>
+    );
+  } else if (status === 'ready' && data.total === 0) {
+    body = (
+      <Card title={t.listTitle} styles={{ body: { padding: 0 } }}>
+        {applied}
+        <div style={{ padding: '40px 24px' }}>{empty}</div>
       </Card>
     );
   } else {
     body = (
-      <Card styles={{ body: { padding: 0 } }}>
+      <Card title={t.listTitle} styles={{ body: { padding: 0 } }}>
+        {applied}
+        {loadingLine}
         <Table<UserRow>
           rowKey="user_id"
           columns={columns}
           dataSource={data.items as UserRow[]}
           loading={status === 'loading'}
           scroll={{ x: 'max-content' }}
-          locale={{
-            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t.empty} />,
-          }}
+          locale={{ emptyText: empty }}
           pagination={{
             current: query.page,
             pageSize: PAGE_SIZE,
@@ -362,10 +520,14 @@ function UsersContent({ canList, canLookup, canReveal }: UsersContentProps): Rea
         {t.title}
       </Typography.Title>
       <Card>
-        <Flex align="flex-start" gap={16} wrap>
-          {lookupBox}
-          {filter}
-        </Flex>
+        <ConfigProvider theme={FILTER_THEME}>
+          <Form layout="vertical" component="div">
+            <Flex align="flex-start" gap={24} wrap>
+              {lookupField}
+              {filterField}
+            </Flex>
+          </Form>
+        </ConfigProvider>
       </Card>
       {body}
     </Flex>

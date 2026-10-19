@@ -17,6 +17,7 @@ import {
   Table,
   Tag,
   Typography,
+  theme,
   type DescriptionsProps,
   type TableColumnsType,
 } from 'antd';
@@ -33,12 +34,11 @@ import {
   readFailure,
   registerMethodLabel,
   revealErrorText,
-  riskLabel,
-  riskTagColor,
   type UnionBinding,
   type UserDetail,
 } from './model.ts';
 import { ReasonModal } from './ReasonModal.tsx';
+import { RiskTag } from './RiskTag.tsx';
 
 const t = usersTexts.detail;
 const STEP_UP_URL = '/admin/v1/auth/step-up';
@@ -74,6 +74,7 @@ export function UserDetailView({
   onOpenUser,
 }: UserDetailViewProps): ReactElement {
   const getProvider = useDataProvider();
+  const { token } = theme.useToken();
   const [user, setUser] = useState<UserDetail | undefined>(initial);
   const [status, setStatus] = useState<LoadStatus>(initial === undefined ? 'loading' : 'ready');
   const [attempt, setAttempt] = useState(0);
@@ -191,12 +192,17 @@ export function UserDetailView({
     void send(sending, stepUpToken);
   };
 
+  const shownUser = status === 'ready' ? user : undefined;
   const header = (
     <Flex justify="space-between" align="center" wrap gap={8}>
-      <Flex align="baseline" gap={12} wrap>
+      <Flex align="center" gap={12} wrap>
         <Typography.Title level={4} style={{ margin: 0 }}>
           {t.title}
         </Typography.Title>
+        <Typography.Text type="secondary" style={{ fontFamily: token.fontFamilyCode }}>
+          {shownUser?.user_id ?? userId}
+        </Typography.Text>
+        {shownUser === undefined ? null : <RiskTag state={shownUser.risk.state} />}
       </Flex>
       <Button icon={<ArrowLeftOutlined aria-hidden />} onClick={onBack}>
         {t.back}
@@ -303,6 +309,8 @@ function DetailBody({
   onOpenUser,
 }: DetailBodyProps): ReactElement {
   const f = t.fields;
+  const { token } = theme.useToken();
+  const code = { fontFamily: token.fontFamilyCode } as const;
   const inviter = user.inviter_user_id;
   const phoneValue =
     phone !== undefined ? (
@@ -331,11 +339,15 @@ function DetailBody({
     {
       key: 'uid',
       label: f.uid,
-      children: <span style={{ fontFamily: 'monospace' }}>{user.user_id}</span>,
+      children: <span style={code}>{user.user_id}</span>,
     },
     { key: 'nickname', label: f.nickname, children: user.nickname },
     { key: 'phone', label: f.phone, children: phoneValue },
-    { key: 'inviteCode', label: f.inviteCode, children: user.invite_code },
+    {
+      key: 'inviteCode',
+      label: f.inviteCode,
+      children: <span style={code}>{user.invite_code}</span>,
+    },
     {
       key: 'inviter',
       label: f.inviter,
@@ -352,7 +364,8 @@ function DetailBody({
               whiteSpace: 'normal',
               wordBreak: 'break-all',
               textAlign: 'start',
-              fontFamily: 'monospace',
+              textDecoration: 'underline',
+              ...code,
             }}
             onClick={() => onOpenUser(inviter)}
           >
@@ -364,7 +377,7 @@ function DetailBody({
     {
       key: 'risk',
       label: f.risk,
-      children: <Tag color={riskTagColor(user.risk.state)}>{riskLabel(user.risk.state)}</Tag>,
+      children: <RiskTag state={user.risk.state} />,
     },
     {
       key: 'registerMethod',
@@ -389,15 +402,25 @@ function DetailBody({
     {
       key: 'status',
       title: t.bindingColumns.status,
-      width: 220,
+      width: 260,
       render: (_, binding) => (
-        <Flex align="center" gap={8} wrap>
-          <Tag color={bindingTagColor(binding.status)} style={{ marginInlineEnd: 0 }}>
-            {bindingStatusLabel(binding.status)}
-          </Tag>
-          {binding.blocked_reason === null ? null : (
-            <Typography.Text type="secondary">
-              {blockedReasonLabel(binding.blocked_reason)}
+        <Flex vertical gap={4}>
+          <Flex align="center" gap={8} wrap>
+            <Tag color={bindingTagColor(binding.status)} style={{ marginInlineEnd: 0 }}>
+              {bindingStatusLabel(binding.status)}
+            </Tag>
+            <Typography.Text type="secondary" style={{ ...code, fontSize: token.fontSizeSM }}>
+              {binding.status}
+            </Typography.Text>
+            {binding.blocked_reason === null ? null : (
+              <Typography.Text type="secondary">
+                {blockedReasonLabel(binding.blocked_reason)}
+              </Typography.Text>
+            )}
+          </Flex>
+          {binding.reason === null ? null : (
+            <Typography.Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
+              {binding.reason}
             </Typography.Text>
           )}
         </Flex>
@@ -406,25 +429,19 @@ function DetailBody({
     {
       key: 'boundAt',
       title: t.bindingColumns.boundAt,
-      width: 160,
+      width: 170,
       render: (_, binding) => beijingTime(binding.bound_at),
     },
     {
       key: 'releasedAt',
       title: t.bindingColumns.releasedAt,
-      width: 160,
+      width: 170,
       render: (_, binding) => beijingTime(binding.released_at),
     },
     {
       key: 'cooldownUntil',
       title: t.bindingColumns.cooldownUntil,
-      width: 160,
       render: (_, binding) => beijingTime(binding.cooldown_until),
-    },
-    {
-      key: 'reason',
-      title: t.bindingColumns.reason,
-      render: (_, binding) => binding.reason ?? usersTexts.dash,
     },
   ];
 
@@ -435,11 +452,12 @@ function DetailBody({
           {revealError === undefined ? null : (
             <Alert type="error" showIcon closable message={revealError} onClose={onCloseError} />
           )}
-          <Descriptions column={4} items={items} />
+          <Descriptions layout="vertical" bordered column={4} items={items} />
         </Flex>
       </Card>
       <Card title={t.bindingsTitle} styles={{ body: { paddingTop: 0 } }}>
         <Table<UnionBinding>
+          aria-label={t.bindingsTitle}
           rowKey="platform"
           columns={columns}
           dataSource={user.union_bindings}
