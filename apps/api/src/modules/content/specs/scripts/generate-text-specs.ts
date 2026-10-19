@@ -7,13 +7,16 @@
 // checked by packages/contracts-ts/scripts; here only the shape the runtime types promise is
 // checked. Runtime code reads the generated constants and never loads YAML. Rerun after changing
 // either specification; --verify exits 1 when a generated file is stale.
+// F1-02zc (Y5) adds ../app-stores.gen.ts (APP_STORES) from specs/app-stores.yaml, the store table
+// whose non-null keys the console's app-version save checks per platform and channel; the two
+// text kinds above are rendered exactly as before.
 // Deliberately independent of platform/specs/scripts (no cross-module build-time imports).
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from '@readme/openapi-parser';
 
-export type TextSpecKind = 'banned-words' | 'fund-term-keys';
+export type TextSpecKind = 'banned-words' | 'fund-term-keys' | 'app-stores';
 
 const SPEC_ROOT = new URL('../../../../../../../specs/', import.meta.url);
 const GEN_ROOT = new URL('../', import.meta.url);
@@ -21,6 +24,7 @@ const GEN_ROOT = new URL('../', import.meta.url);
 const EXPORT_NAMES: Readonly<Record<TextSpecKind, string>> = {
   'banned-words': 'BANNED_WORDS',
   'fund-term-keys': 'FUND_TERM_KEYS',
+  'app-stores': 'APP_STORES',
 };
 
 const SCOPES = new Set(['user_visible', 'admin_report']);
@@ -108,15 +112,32 @@ function checkFundTermKeys(file: URL, spec: Record<string, unknown>): void {
   }
 }
 
+function checkAppStores(file: URL, spec: Record<string, unknown>): void {
+  if (typeof spec['version'] !== 'string') fail(file, 'version must be a string');
+  const stores = spec['stores'];
+  if (!Array.isArray(stores)) fail(file, 'stores must be a list');
+  stores.forEach((store: unknown, index) => {
+    if (
+      !isRecord(store) ||
+      !(store['key'] === null || typeof store['key'] === 'string') ||
+      typeof store['platform'] !== 'string' ||
+      !isStringList(store['channels'])
+    ) {
+      fail(file, `stores[${String(index)}] must be {key: string | null, platform, channels}`);
+    }
+  });
+}
+
 /**
  * Build-time renderer: read the supplied YAML file and emit the generated module source, which
- * exports BANNED_WORDS or FUND_TERM_KEYS as plain data with no imports. An explicit input lets
+ * exports BANNED_WORDS, FUND_TERM_KEYS or APP_STORES as plain data with no imports. An explicit input lets
  * rule tests use synthetic specifications.
  */
 export async function textSpecsSource(inputFile: URL, kind: TextSpecKind): Promise<string> {
   const value: unknown = await parse(fileURLToPath(inputFile));
   if (!isRecord(value)) fail(inputFile, 'top level must be a mapping');
   if (kind === 'banned-words') checkBannedWords(inputFile, value);
+  else if (kind === 'app-stores') checkAppStores(inputFile, value);
   else checkFundTermKeys(inputFile, value);
   return (
     `// Generated from specs/${kind}.yaml by content/specs/scripts/generate-text-specs.ts.\n` +

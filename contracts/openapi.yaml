@@ -11904,7 +11904,6 @@ paths:
         rows). Rows of h5 and admin are listed read-only; only ios, android and harmony are saved
         through PUT /admin/v1/app-versions/{platform}/{channel}.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -11972,7 +11971,6 @@ paths:
         listed by GET /admin/v1/app-versions, with the `row_version` a save sends back as
         `expected_row_version`. No row for this platform and channel → 30701.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -12066,7 +12064,6 @@ paths:
         record with the values before and after and the stores confirmed. The response is the row
         as saved. No Idempotency-Key (04 §6.6; the CAS keeps a retry from saving twice).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003

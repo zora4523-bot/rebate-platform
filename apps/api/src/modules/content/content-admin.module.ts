@@ -6,6 +6,9 @@
 // Agreement versions /admin/v1/agreements* (F1-02p): list, one version, publish (totp step-up).
 // Dictionary editing /admin/v1/dict-items* (F1-02t): list, save-and-publish, history, rollback.
 // Article CMS /admin/v1/articles* (F1-02w): list, detail, create, save draft, publish, offline.
+// Version settings /admin/v1/app-versions* (F1-02zc): list, one platform and channel, save (the
+// totp tier only when the save raises min_supported_version). Saves take effect in the api
+// entry's version gate and /v1/app-versions/check as its cache refreshes (≤ CONTENT_CACHE_TTL_MS).
 // app.module imports this module on the admin entry only; the api and stream entries do not
 // serve /admin/v1. Permission checks go through platform's AdminOperationGuard, which the admin
 // module provides globally on the admin entry (content never imports admin).
@@ -87,6 +90,9 @@ import {
   createKyselyArticleAdminStore,
   isArticleVersionTaken,
 } from './infra/kysely-article-admin-store.ts';
+import { AppVersionAdmin, type AppVersionAdminStore } from './application/app-version-admin.ts';
+import { AdminAppVersionsController } from './http/admin/app-versions.controller.ts';
+import { createKyselyAppVersionAdminStore } from './infra/kysely-app-version-admin-store.ts';
 
 /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
 export type ContentAuditWriterFactory = (db: Kysely<Database>, clock: Clock) => AuditPort;
@@ -170,6 +176,15 @@ const NO_DATABASE_ARTICLES: ArticleAdminStore = {
   transaction: refuseArticles,
 };
 
+const refuseAppVersions = (): Promise<never> =>
+  Promise.reject(new Error('content: version settings need the database'));
+
+const NO_DATABASE_APP_VERSIONS: AppVersionAdminStore = {
+  rows: refuseAppVersions,
+  row: refuseAppVersions,
+  transaction: refuseAppVersions,
+};
+
 /** Monotonic milliseconds for the SVG conversion budget (not business time). */
 const monotonicMs = (): number => performance.now();
 
@@ -187,6 +202,7 @@ export class ContentAdminModule {
         AdminAgreementsController,
         AdminDictItemsController,
         AdminArticlesController,
+        AdminAppVersionsController,
       ],
       providers: [
         {
@@ -342,6 +358,21 @@ export class ContentAdminModule {
               mediaPublicBaseUrl: config.mediaPublicBaseUrl,
               newId: randomUUID,
               monotonicMs,
+            }),
+        },
+        {
+          // F1-02zc /admin/v1/app-versions*: store keys come from the generated APP_STORES table.
+          provide: AppVersionAdmin,
+          inject: [CLOCK, ROOT_LOGGER, { token: DB, optional: true }],
+          useFactory: (clock: Clock, logger: Logger, db?: Kysely<Database>): AppVersionAdmin =>
+            new AppVersionAdmin({
+              store:
+                db === undefined
+                  ? NO_DATABASE_APP_VERSIONS
+                  : createKyselyAppVersionAdminStore(db, (trx) => options.auditWriter(trx, clock)),
+              clock,
+              logger,
+              newId: newUuidV7,
             }),
         },
       ],
