@@ -1,0 +1,88 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-dark/pages.browser.test.ts > [AC-F1-06zl-RUNTIME#1] [AC-F1-06zl-BROWSER#1] 1440 外壳与用户查询浅深截图；属性切换更新 Card/Table/Input 且保留输入",
+    "test/spec/frontend/admin-dark/pages.browser.test.ts > [AC-F1-06zl-RUNTIME#2] 系统媒体事件在无属性变动时更新主题，强制浅色覆盖系统深色",
+    "test/spec/frontend/admin-dark/pages.browser.test.ts > [AC-F1-06zl-RUNTIME#3] 已打开配置抽屉随主题更新派生浮层底色和正文，切回后恢复且不丢修改原因",
+    "test/spec/frontend/admin-dark/theme.test.ts > [AC-F1-06zl-THEME#1] 显式深色使用 darkAlgorithm 与完整深色映射，切回浅色恢复原映射",
+    "test/spec/frontend/admin-dark/theme.test.ts > [AC-F1-06zl-THEME#2] 无 data-theme 时跟随系统 CSS，强制浅色优先，移除强制后回深色",
+    "test/spec/frontend/admin-dark/theme.test.ts > [AC-F1-06zl-THEME#3] 以传入 root 的生效 CSS 为准，深色颜色仍从变量读取而非硬编码表"
+  ],
+  "risk_note": "Admin console dark (apps/admin; no money logic; codex-run classed it RV2, so the Codex review ran on the money track). Planning 00 D35 (admin follows the tokens, lowest priority); CT-11b #914 gives tokens.css the two dark blocks. createAntdTheme uses antd darkAlgorithm when the dark tokens are in effect and still reads every colour from the CSS variables (same mapping); light behaviour unchanged. App rebuilds the antd theme once when the system scheme or <html> data-theme changes, without remounting (typed input and an open drawer survive). The login page is out of scope (reads once on mount); the admin writes no data-theme. Rule tests by Codex in two calls plus one orchestrator mechanical fix (a precondition text check from exact to contains; the one exception), Claude spec-test review 2 rounds pass, red on the test machine (red/3, 6 tests). Implementation by Opus 5.5 (cut off by a session restart before writing output, not counted); the orchestrator ran the test machine on the final code: verify-fast/2 and browser/2 green; light / dark screenshots admin-shell-light / dark. Review: Codex (approvals id 27 / 34). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (S1: jsdom token stylesheet empty so a precondition failed; S1: lookup field located by an exact accessible name with a trailing colon), Codex round 2 fixed both and the matchMedia S2; round 2 pass with one S2 (rebuild only on a real theme change), carried into the implementation"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  },
+  "task": "F1-06zl",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "0b0c4aa2f80d9c837c28182c69f1f354dcebfcd4",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0b0c4aa2f80d9c837c28182c69f1f354dcebfcd4",
+      "tree": "2cdbc4110403440e57ea708f32890973608da75e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T19:02:20Z",
+      "finished_at": "2026-10-19T19:03:02Z",
+      "gate": {
+        "commit": "67b2d03d01588d9ce6424c155799707b3e9cc9f8",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-dark/pages.browser.test.ts > [AC-F1-06zl-RUNTIME#1] [AC-F1-06zl-BROWSER#1] 1440 外壳与用户查询浅深截图；属性切换更新 Card/Table/Input 且保留输入",
+        "test/spec/frontend/admin-dark/pages.browser.test.ts > [AC-F1-06zl-RUNTIME#2] 系统媒体事件在无属性变动时更新主题，强制浅色覆盖系统深色",
+        "test/spec/frontend/admin-dark/pages.browser.test.ts > [AC-F1-06zl-RUNTIME#3] 已打开配置抽屉随主题更新派生浮层底色和正文，切回后恢复且不丢修改原因",
+        "test/spec/frontend/admin-dark/theme.test.ts > [AC-F1-06zl-THEME#1] 显式深色使用 darkAlgorithm 与完整深色映射，切回浅色恢复原映射",
+        "test/spec/frontend/admin-dark/theme.test.ts > [AC-F1-06zl-THEME#2] 无 data-theme 时跟随系统 CSS，强制浅色优先，移除强制后回深色",
+        "test/spec/frontend/admin-dark/theme.test.ts > [AC-F1-06zl-THEME#3] 以传入 root 的生效 CSS 为准，深色颜色仍从变量读取而非硬编码表"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-dark/pages.browser.test.ts",
+        "test/spec/frontend/admin-dark/theme.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "3bac88ffe29fe494e0f6e33ac1167e28f39c0466549acfd17b18c2e62f2d6fb4"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "3f3f0f0a860d4d04cb23c259c18c1812dcab3197541a651be404f3697d42ef28"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "d5baad9ef02ae4e1aae272dbc867c34c5b18f897",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  }
+}
