@@ -69,6 +69,12 @@ const CN_MULTIPLIERS: Readonly<Record<string, number>> = { 十: 10, 百: 100, �
 /** 小数点：阿拉伯「.」与中文「点」（「二点五」「2点5」）。 */
 const DECIMAL_POINTS = new Set(['.', '点']);
 
+/**
+ * 省略整数位的小数点：前面没有数字的「.5」「。5」读作 0.5。中文「点」不在此列——
+ * 前面没有数字的「点五」不当小数，避免「8点发货」一类文字被读成规格。
+ */
+const LEADING_POINTS = new Set(['.', '。']);
+
 const WHITESPACE = /\s/u;
 const LATIN_LETTER = /[A-Za-z]/;
 
@@ -203,8 +209,14 @@ function decimalTailEnd(text: string, at: number): number {
  * 整数部分之后的小数部分（「.5」「点五」）。返回 null 表示没有小数部分；
  * 返回 { digits: null } 表示有小数点和数字，但写法不受支持（如「二点五十」「2.5.1」）。
  */
-function readFraction(text: string, at: number): { digits: string | null; end: number } | null {
-  if (!DECIMAL_POINTS.has(text[at] ?? '') || !isNumeralAt(text, at + 1)) return null;
+function readFraction(
+  text: string,
+  at: number,
+  leading = false,
+): { digits: string | null; end: number } | null {
+  const point = text[at] ?? '';
+  const isPoint = leading ? LEADING_POINTS.has(point) : DECIMAL_POINTS.has(point);
+  if (!isPoint || !isNumeralAt(text, at + 1)) return null;
   const runEnd = numeralRunEnd(text, at + 1);
   let digits = '';
   for (let k = at + 1; k < runEnd; k += 1) {
@@ -231,7 +243,17 @@ function tokenize(prepared: Prepared): Token[] {
     const ch = text[i];
     let intEnd: number;
     let intValue: string;
-    if (isAsciiDigit(ch)) {
+    let leading = false;
+    if (
+      LEADING_POINTS.has(ch ?? '') &&
+      isAsciiDigit(text[i + 1]) &&
+      (i === 0 || !isNumeralAt(text, i - 1))
+    ) {
+      // 前面没有数字：「.5kg」是 0.5kg，不能跳过小数点读成 5kg。
+      intEnd = i;
+      intValue = '0';
+      leading = true;
+    } else if (isAsciiDigit(ch)) {
       intEnd = i;
       while (isAsciiDigit(text[intEnd])) intEnd += 1;
       intValue = text.slice(i, intEnd);
@@ -254,7 +276,7 @@ function tokenize(prepared: Prepared): Token[] {
 
     let numberEnd = intEnd;
     let value: string | null = canonicalDecimal(intValue);
-    const fraction = readFraction(text, intEnd);
+    const fraction = readFraction(text, intEnd, leading);
     if (fraction !== null) {
       numberEnd = fraction.end;
       value = fraction.digits === null ? null : canonicalDecimal(`${intValue}.${fraction.digits}`);
@@ -292,31 +314,27 @@ export function normalizeSpec(text: string): NormalizedSpec | null {
   return specs;
 }
 
-/** 返回标题 NFKC、去空白后的匹配片段；所有规格均命中才返回。 */
+/** BR-AI-24：卡片片段的码点上限；多规格跨度超过上限时不给片段。 */
+const MAX_FRAGMENT_CODE_POINTS = 20;
+
+/**
+ * 返回标题 NFKC、去空白后的匹配片段；所有规格均命中才返回。片段总是标题（NFKC、去空白后）
+ * 的连续子串：多规格取从第一个命中起、到最后一个命中止的原文（如「24瓶每瓶500ml」），
+ * 不拼接、不插入分隔符。跨度超过 20 个码点时返回 null。
+ */
 export function findSpecInTitle(spec: string, title: string): string | null {
   const wanted = normalizeSpec(spec);
   if (wanted === null) return null;
   const prepared = prepare(title);
-  const { text } = prepared;
   const tokens = tokenize(prepared).filter((token) => token.unit !== null);
-  const chosen = new Set<Token>();
+  let start = Number.POSITIVE_INFINITY;
+  let end = Number.NEGATIVE_INFINITY;
   for (const item of wanted) {
     const hit = tokens.find((token) => token.value === item.value && token.unit === item.unit);
     if (hit === undefined) return null;
-    chosen.add(hit);
+    start = Math.min(start, hit.start);
+    end = Math.max(end, hit.end);
   }
-  const spans = [...chosen].sort((a, b) => a.start - b.start);
-  let fragment = '';
-  let previousEnd: number | null = null;
-  for (const span of spans) {
-    if (previousEnd !== null) {
-      // 相邻规格之间只有符号（如「500ml×24瓶」）时保留原文；隔着别的字则用「、」分开，
-      // 不把品类或其他标题文字带进片段。
-      const gap = text.slice(previousEnd, span.start);
-      fragment += /[\p{L}\p{N}]/u.test(gap) ? '、' : gap;
-    }
-    fragment += text.slice(span.start, span.end);
-    previousEnd = span.end;
-  }
-  return fragment;
+  const fragment = prepared.text.slice(start, end);
+  return [...fragment].length > MAX_FRAGMENT_CODE_POINTS ? null : fragment;
 }

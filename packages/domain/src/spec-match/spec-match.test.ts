@@ -94,3 +94,48 @@ it('「点」后没有数字时不当小数点', () => {
   expect(findSpecInTitle('24盒', '合成牛奶一点点24盒')).toBe('24盒');
   expect(findSpecInTitle('2升', '合成饮品8点2升')).toBeNull();
 });
+
+it.each([
+  ['.5kg', '合成谷物5kg'],
+  ['5kg', '合成谷物.5kg'],
+  ['。5kg', '合成谷物5kg'],
+  ['5kg', '合成谷物。5kg'],
+  ['5kg', '合成谷物. 5kg'],
+  ['.5kg', '合成谷物2.5kg'],
+])('省略整数位的小数按 0.x 读：规格 %s 不匹配标题 %s', (spec, title) => {
+  expect(findSpecInTitle(spec, title)).toBeNull();
+});
+
+it.each([
+  ['.5kg', '合成谷物0.5kg', '0.5kg'],
+  ['0.5kg', '合成谷物.5kg', '.5kg'],
+  ['0.5kg', '合成谷物。5kg', '。5kg'],
+  ['.5kg', '合成谷物零点五千克', '零点五千克'],
+])('省略整数位的小数与完整写法一致：规格 %s 与标题 %s → %s', (spec, title, fragment) => {
+  expect(findSpecInTitle(spec, title)).toBe(fragment);
+});
+
+it('省略整数位的小数归一为 0.x；前面没有数字的「点五」仍不当小数', () => {
+  expect(normalizeSpec('.5kg')).toEqual([{ value: '0.5', unit: 'kg' }]);
+  expect(normalizeSpec('。50 kg')).toEqual([{ value: '0.5', unit: 'kg' }]);
+  expect(normalizeSpec('.5.1kg')).toBeNull();
+  expect(findSpecInTitle('5升', '合成饮品点5升')).toBe('5升');
+  expect(findSpecInTitle('24盒', '合成牛奶8点发货24盒')).toBe('24盒');
+});
+
+it('多规格片段是标题去空白后的连续原文，不拼接', () => {
+  const title = '合成饮品24瓶每瓶500ml';
+  const fragment = findSpecInTitle('500ml 24瓶', title);
+  expect(fragment).toBe('24瓶每瓶500ml');
+  expect(title.normalize('NFKC').replace(/\s/gu, '')).toContain(fragment);
+  expect(findSpecInTitle('500ml 24瓶', '合成饮品24瓶 每瓶 500ml')).toBe('24瓶每瓶500ml');
+  expect(findSpecInTitle('500ml×24瓶', '合成饮品500ml×24瓶装')).toBe('500ml×24瓶');
+});
+
+it('多规格跨度不超过 20 个码点时给片段，超过时为 null', () => {
+  // 「24瓶」3 码点 + 中间文字 +「500ml」5 码点：中间 12 字共 20 码点，13 字共 21 码点。
+  expect(findSpecInTitle('500ml 24瓶', '合成24瓶甲乙丙丁戊己庚辛壬癸子丑寅500ml')).toBeNull();
+  expect(findSpecInTitle('500ml 24瓶', '合成24瓶甲乙丙丁戊己庚辛壬癸子丑500ml')).toBe(
+    '24瓶甲乙丙丁戊己庚辛壬癸子丑500ml',
+  );
+});
