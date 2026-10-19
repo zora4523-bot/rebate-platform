@@ -11892,6 +11892,266 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/app-versions:
+    get:
+      operationId: adminListAppVersions
+      tags:
+        - admin-content
+      summary: Version settings of every platform and channel
+      description: |
+        Permission point `content.app_version` (04 §11.2; read only, no step-up). Every
+        app_versions row (TECH-19), ordered by platform, then channel; not paged (a handful of
+        rows). Rows of h5 and admin are listed read-only; only ios, android and harmony are saved
+        through PUT /admin/v1/app-versions/{platform}/{channel}.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: Every row, by platform and channel.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAppVersionListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - platform: ios
+                      channel: appstore
+                      latest_version: 1.2.0
+                      min_supported_version: 1.0.0
+                      recommended_version: 1.1.0
+                      update_title: 新版本
+                      update_notes: 修复已知问题
+                      store_url: https://apps.example.test/app/0001
+                      default_store: appstore
+                      store_listings:
+                        - store: appstore
+                          listed_version: 1.2.0
+                      row_version: 1
+                      updated_at: '2026-10-17T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/app-versions/{platform}/{channel}:
+    get:
+      operationId: adminGetAppVersion
+      tags:
+        - admin-content
+      summary: Version settings of one platform and channel
+      description: |
+        Permission point `content.app_version` (04 §11.2; read only, no step-up). The row as
+        listed by GET /admin/v1/app-versions, with the `row_version` a save sends back as
+        `expected_row_version`. No row for this platform and channel → 30701.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AppVersionPlatformPath'
+        - $ref: '#/components/parameters/AppVersionChannelPath'
+      responses:
+        '200':
+          description: The row.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAppVersionResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  platform: ios
+                  channel: appstore
+                  latest_version: 1.2.0
+                  min_supported_version: 1.0.0
+                  recommended_version: 1.1.0
+                  update_title: 新版本
+                  update_notes: 修复已知问题
+                  store_url: https://apps.example.test/app/0001
+                  default_store: appstore
+                  store_listings:
+                    - store: appstore
+                      listed_version: 1.2.0
+                  row_version: 1
+                  updated_at: '2026-10-17T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notFound:
+                  $ref: '#/components/examples/AdminAppVersionNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    put:
+      operationId: adminSaveAppVersion
+      tags:
+        - admin-content
+      summary: Save the version settings of one platform and channel (created when absent)
+      description: |
+        Permission point `content.app_version` (04 §11.2); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Step-up by request (04 §11.2, BR-ID-34): when the
+        saved `min_supported_version` is higher than before (none before — no row yet, or null —
+        counts as higher), a totp-tier `X-Step-Up-Token` is required (without one → 10003 with
+        `data.tier=totp`; operation `content.app_version.raise_min_supported_version`); any other
+        save needs no step-up. Only ios, android and harmony are saved here (h5 and admin rows are
+        read-only). The request replaces the whole row. CAS: `expected_row_version` is the
+        row's `row_version` as the console showed it, null when this platform and channel has no
+        row yet (the save creates it); a mismatch — including null while a row exists, or a
+        number while none exists — → 20902 with `data.resource=app_version`, refresh and retry
+        (04 §6.6). A save adds 1 to `row_version` (a new row starts at 0). A failed check is
+        20001 with `data.fields` naming the field: a malformed value; a channel that does not go
+        with the platform (`[channel]`); a store key (`default_store`, `store_listings[].store`,
+        `confirmed_stores[]`) not among the keys specs/app-stores.yaml has filled in for this
+        platform and channel (while none is filled in, only the format is checked); a store
+        repeated in `store_listings`; and the check before saving of BR-ID-01 细则
+        「【去更新】打开哪家商店与保存前的核对」, run when this save raises
+        `min_supported_version`, changes a store's `listed_version` or changes `default_store`
+        (reordering `store_listings` alone does not run it): the default store not meeting it →
+        the fields of this save that changed among `min_supported_version`, `default_store` and
+        `store_listings`; another store whose `listed_version` is below `min_supported_version`
+        and not listed in `confirmed_stores` → `[confirmed_stores]` (stores listed there without
+        need are ignored). The server never lowers anything on the operator's behalf, and does
+        not check the order of the three version numbers against each other. Writes an audit
+        record with the values before and after and the stores confirmed. The response is the row
+        as saved. No Idempotency-Key (04 §6.6; the CAS keeps a retry from saving twice).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AppVersionEditablePlatformPath'
+        - $ref: '#/components/parameters/AppVersionChannelPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAppVersionSaveRequest'
+            example:
+              latest_version: 1.3.0
+              min_supported_version: 1.1.0
+              recommended_version: 1.2.0
+              update_title: 新版本
+              update_notes: 修复已知问题
+              store_url: https://apps.example.test/app/0001
+              default_store: appstore
+              store_listings:
+                - store: appstore
+                  listed_version: 1.3.0
+              confirmed_stores: []
+              expected_row_version: 1
+      responses:
+        '200':
+          description: The row as saved.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAppVersionResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  platform: ios
+                  channel: appstore
+                  latest_version: 1.3.0
+                  min_supported_version: 1.1.0
+                  recommended_version: 1.2.0
+                  update_title: 新版本
+                  update_notes: 修复已知问题
+                  store_url: https://apps.example.test/app/0001
+                  default_store: appstore
+                  store_listings:
+                    - store: appstore
+                      listed_version: 1.3.0
+                  row_version: 2
+                  updated_at: '2026-10-17T10:05:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not saved (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                storesNotConfirmed:
+                  $ref: '#/components/examples/AdminAppVersionStoresNotConfirmed'
+                conflict:
+                  $ref: '#/components/examples/AdminAppVersionConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/kill-switches:
     get:
       operationId: adminListKillSwitches
@@ -13600,6 +13860,27 @@ components:
         type: integer
         format: int32
         minimum: 1
+    AppVersionPlatformPath:
+      name: platform
+      in: path
+      required: true
+      description: Client platform of the row; another value → 20001 with data.fields=[platform].
+      schema:
+        $ref: '#/components/schemas/ClientPlatformCode'
+    AppVersionEditablePlatformPath:
+      name: platform
+      in: path
+      required: true
+      description: Client platform of the row, one the console may save (ios, android or harmony); another value → 20001 with data.fields=[platform].
+      schema:
+        $ref: '#/components/schemas/AppVersionEditablePlatform'
+    AppVersionChannelPath:
+      name: channel
+      in: path
+      required: true
+      description: Install channel of the row; another value → 20001 with data.fields=[channel].
+      schema:
+        $ref: '#/components/schemas/InstallChannelCode'
     PageKeyPath:
       name: page_key
       in: path
@@ -14381,6 +14662,29 @@ components:
         msg: 状态已变化，请刷新后重试
         data:
           resource: agreement
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAppVersionNotFound:
+      summary: 30701 this platform and channel has no version row
+      value:
+        code: 30701
+        msg: 内容不存在
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAppVersionStoresNotConfirmed:
+      summary: 20001 another store lists a version below the minimum and was not confirmed
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - confirmed_stores
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAppVersionConflict:
+      summary: 20902 the row was saved by someone else meanwhile (row_version moved on)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: app_version
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminPageConfigNotFound:
       summary: 30701 the page (or the version read) does not exist
@@ -22165,6 +22469,172 @@ components:
           $ref: '#/components/schemas/AdminPageConfigVersion'
         trace_id:
           $ref: '#/components/schemas/TraceId'
+    AppVersionEditablePlatform:
+      type: string
+      description: Client platforms whose version row the console saves (a subset of ClientPlatformCode; h5 and admin rows are read-only).
+      enum:
+        - ios
+        - android
+        - harmony
+    AdminAppVersion:
+      type: object
+      additionalProperties: false
+      required:
+        - platform
+        - channel
+        - latest_version
+        - min_supported_version
+        - recommended_version
+        - update_title
+        - update_notes
+        - store_url
+        - default_store
+        - store_listings
+        - row_version
+        - updated_at
+      properties:
+        platform:
+          $ref: '#/components/schemas/ClientPlatformCode'
+        channel:
+          $ref: '#/components/schemas/InstallChannelCode'
+        latest_version:
+          $ref: '#/components/schemas/SemVer'
+        min_supported_version:
+          anyOf:
+            - $ref: '#/components/schemas/SemVer'
+            - type: 'null'
+          description: Null when no minimum is set (no interception).
+        recommended_version:
+          anyOf:
+            - $ref: '#/components/schemas/SemVer'
+            - type: 'null'
+        update_title:
+          type: string
+        update_notes:
+          type: string
+        store_url:
+          type: string
+          format: uri
+          description: Default address of this platform and channel; no download address of any kind (TECH-19).
+        default_store:
+          type: string
+          minLength: 1
+          description: Store key of store_url.
+        store_listings:
+          type: array
+          description: In the order filled in; each store at most once.
+          items:
+            $ref: '#/components/schemas/StoreListing'
+        row_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: CAS value of the row; a save sends it back as expected_row_version.
+        updated_at:
+          type: string
+          format: date-time
+    AdminAppVersionList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          description: Every row, by platform, then channel; not paged.
+          items:
+            $ref: '#/components/schemas/AdminAppVersion'
+    AdminAppVersionListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAppVersionList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAppVersionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminAppVersion'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminAppVersionSaveRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - latest_version
+        - min_supported_version
+        - recommended_version
+        - update_title
+        - update_notes
+        - store_url
+        - default_store
+        - store_listings
+        - confirmed_stores
+        - expected_row_version
+      properties:
+        latest_version:
+          $ref: '#/components/schemas/SemVer'
+        min_supported_version:
+          anyOf:
+            - $ref: '#/components/schemas/SemVer'
+            - type: 'null'
+          description: Null = no minimum. Saving a higher one than before (none before counts) needs the totp tier.
+        recommended_version:
+          anyOf:
+            - $ref: '#/components/schemas/SemVer'
+            - type: 'null'
+        update_title:
+          type: string
+          maxLength: 100
+        update_notes:
+          type: string
+          maxLength: 2000
+        store_url:
+          type: string
+          format: uri
+        default_store:
+          type: string
+          pattern: '^[a-z0-9_]{1,32}$'
+          description: Store key of store_url (specs/app-stores.yaml).
+        store_listings:
+          type: array
+          description: In the order the console shows; a store repeated is 20001 with data.fields=[store_listings].
+          items:
+            $ref: '#/components/schemas/StoreListing'
+        confirmed_stores:
+          type: array
+          description: Stores whose listed_version is below min_supported_version that the operator confirmed one by one (BR-ID-01 细则); may be empty.
+          items:
+            type: string
+            pattern: '^[a-z0-9_]{1,32}$'
+        expected_row_version:
+          anyOf:
+            - type: integer
+              format: int32
+              minimum: 0
+            - type: 'null'
+          description: The row's row_version as the console showed it, null when there is no row yet; a mismatch is 20902.
     AdminAgreementVersion:
       type: object
       description: One published agreement version (04 §6.2 agreements); never changed after publishing.

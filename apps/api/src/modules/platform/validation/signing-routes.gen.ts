@@ -698,6 +698,21 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/app-versions",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/app-versions/:platform/:channel",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/app-versions/:platform/:channel",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "signed": false
   },

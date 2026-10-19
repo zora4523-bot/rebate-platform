@@ -217,6 +217,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'dict_item',
     // CT-24l: admin claim child order approve / reject CAS (04 §6.6 claims, BR-ATTR-18, BR-ATTR-20).
     'claim_item',
+    // CT-02v: admin app version save CAS (04 §6.6 app-versions, BR-ID-01).
+    'app_version',
   ]);
 });
 

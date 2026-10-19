@@ -4038,6 +4038,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/app-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Version settings of every platform and channel
+         * @description Permission point `content.app_version` (04 §11.2; read only, no step-up). Every
+         *     app_versions row (TECH-19), ordered by platform, then channel; not paged (a handful of
+         *     rows). Rows of h5 and admin are listed read-only; only ios, android and harmony are saved
+         *     through PUT /admin/v1/app-versions/{platform}/{channel}.
+         */
+        get: operations["adminListAppVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/app-versions/{platform}/{channel}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Version settings of one platform and channel
+         * @description Permission point `content.app_version` (04 §11.2; read only, no step-up). The row as
+         *     listed by GET /admin/v1/app-versions, with the `row_version` a save sends back as
+         *     `expected_row_version`. No row for this platform and channel → 30701.
+         */
+        get: operations["adminGetAppVersion"];
+        /**
+         * Save the version settings of one platform and channel (created when absent)
+         * @description Permission point `content.app_version` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up by request (04 §11.2, BR-ID-34): when the
+         *     saved `min_supported_version` is higher than before (none before — no row yet, or null —
+         *     counts as higher), a totp-tier `X-Step-Up-Token` is required (without one → 10003 with
+         *     `data.tier=totp`; operation `content.app_version.raise_min_supported_version`); any other
+         *     save needs no step-up. Only ios, android and harmony are saved here (h5 and admin rows are
+         *     read-only). The request replaces the whole row. CAS: `expected_row_version` is the
+         *     row's `row_version` as the console showed it, null when this platform and channel has no
+         *     row yet (the save creates it); a mismatch — including null while a row exists, or a
+         *     number while none exists — → 20902 with `data.resource=app_version`, refresh and retry
+         *     (04 §6.6). A save adds 1 to `row_version` (a new row starts at 0). A failed check is
+         *     20001 with `data.fields` naming the field: a malformed value; a channel that does not go
+         *     with the platform (`[channel]`); a store key (`default_store`, `store_listings[].store`,
+         *     `confirmed_stores[]`) not among the keys specs/app-stores.yaml has filled in for this
+         *     platform and channel (while none is filled in, only the format is checked); a store
+         *     repeated in `store_listings`; and the check before saving of BR-ID-01 细则
+         *     「【去更新】打开哪家商店与保存前的核对」, run when this save raises
+         *     `min_supported_version`, changes a store's `listed_version` or changes `default_store`
+         *     (reordering `store_listings` alone does not run it): the default store not meeting it →
+         *     the fields of this save that changed among `min_supported_version`, `default_store` and
+         *     `store_listings`; another store whose `listed_version` is below `min_supported_version`
+         *     and not listed in `confirmed_stores` → `[confirmed_stores]` (stores listed there without
+         *     need are ignored). The server never lowers anything on the operator's behalf, and does
+         *     not check the order of the three version numbers against each other. Writes an audit
+         *     record with the values before and after and the stores confirmed. The response is the row
+         *     as saved. No Idempotency-Key (04 §6.6; the CAS keeps a retry from saving twice).
+         */
+        put: operations["adminSaveAppVersion"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -7848,6 +7922,71 @@ export interface components {
             data: components["schemas"]["AdminPageConfigVersion"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description Client platforms whose version row the console saves (a subset of ClientPlatformCode; h5 and admin rows are read-only).
+         * @enum {string}
+         */
+        AppVersionEditablePlatform: "ios" | "android" | "harmony";
+        AdminAppVersion: {
+            platform: components["schemas"]["ClientPlatformCode"];
+            channel: components["schemas"]["InstallChannelCode"];
+            latest_version: components["schemas"]["SemVer"];
+            /** @description Null when no minimum is set (no interception). */
+            min_supported_version: components["schemas"]["SemVer"] | null;
+            recommended_version: components["schemas"]["SemVer"] | null;
+            update_title: string;
+            update_notes: string;
+            /**
+             * Format: uri
+             * @description Default address of this platform and channel; no download address of any kind (TECH-19).
+             */
+            store_url: string;
+            /** @description Store key of store_url. */
+            default_store: string;
+            /** @description In the order filled in; each store at most once. */
+            store_listings: components["schemas"]["StoreListing"][];
+            /**
+             * Format: int32
+             * @description CAS value of the row; a save sends it back as expected_row_version.
+             */
+            row_version: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AdminAppVersionList: {
+            /** @description Every row, by platform, then channel; not paged. */
+            items: components["schemas"]["AdminAppVersion"][];
+        };
+        AdminAppVersionListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAppVersionList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminAppVersionResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAppVersion"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminAppVersionSaveRequest: {
+            latest_version: components["schemas"]["SemVer"];
+            /** @description Null = no minimum. Saving a higher one than before (none before counts) needs the totp tier. */
+            min_supported_version: components["schemas"]["SemVer"] | null;
+            recommended_version: components["schemas"]["SemVer"] | null;
+            update_title: string;
+            update_notes: string;
+            /** Format: uri */
+            store_url: string;
+            /** @description Store key of store_url (specs/app-stores.yaml). */
+            default_store: string;
+            /** @description In the order the console shows; a store repeated is 20001 with data.fields=[store_listings]. */
+            store_listings: components["schemas"]["StoreListing"][];
+            /** @description Stores whose listed_version is below min_supported_version that the operator confirmed one by one (BR-ID-01 细则); may be empty. */
+            confirmed_stores: string[];
+            /** @description The row's row_version as the console showed it, null when there is no row yet; a mismatch is 20902. */
+            expected_row_version: number | null;
+        };
         /** @description One published agreement version (04 §6.2 agreements); never changed after publishing. */
         AdminAgreementVersion: {
             type: components["schemas"]["AgreementType"];
@@ -9301,6 +9440,12 @@ export interface components {
         AgreementTypePath: components["schemas"]["AgreementType"];
         /** @description Version of the agreement, counted per type from 1. */
         AgreementVersionPath: number;
+        /** @description Client platform of the row; another value → 20001 with data.fields=[platform]. */
+        AppVersionPlatformPath: components["schemas"]["ClientPlatformCode"];
+        /** @description Client platform of the row, one the console may save (ios, android or harmony); another value → 20001 with data.fields=[platform]. */
+        AppVersionEditablePlatformPath: components["schemas"]["AppVersionEditablePlatform"];
+        /** @description Install channel of the row; another value → 20001 with data.fields=[channel]. */
+        AppVersionChannelPath: components["schemas"]["InstallChannelCode"];
         /**
          * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
          *     another shape → 20001 with data.fields=[page_key].
@@ -18811,6 +18956,236 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Nothing rolled back (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListAppVersions: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every row, by platform and channel. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "platform": "ios",
+                     *             "channel": "appstore",
+                     *             "latest_version": "1.2.0",
+                     *             "min_supported_version": "1.0.0",
+                     *             "recommended_version": "1.1.0",
+                     *             "update_title": "新版本",
+                     *             "update_notes": "修复已知问题",
+                     *             "store_url": "https://apps.example.test/app/0001",
+                     *             "default_store": "appstore",
+                     *             "store_listings": [
+                     *               {
+                     *                 "store": "appstore",
+                     *                 "listed_version": "1.2.0"
+                     *               }
+                     *             ],
+                     *             "row_version": 1,
+                     *             "updated_at": "2026-10-17T10:00:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAppVersionListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetAppVersion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Client platform of the row; another value → 20001 with data.fields=[platform]. */
+                platform: components["parameters"]["AppVersionPlatformPath"];
+                /** @description Install channel of the row; another value → 20001 with data.fields=[channel]. */
+                channel: components["parameters"]["AppVersionChannelPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The row. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "platform": "ios",
+                     *         "channel": "appstore",
+                     *         "latest_version": "1.2.0",
+                     *         "min_supported_version": "1.0.0",
+                     *         "recommended_version": "1.1.0",
+                     *         "update_title": "新版本",
+                     *         "update_notes": "修复已知问题",
+                     *         "store_url": "https://apps.example.test/app/0001",
+                     *         "default_store": "appstore",
+                     *         "store_listings": [
+                     *           {
+                     *             "store": "appstore",
+                     *             "listed_version": "1.2.0"
+                     *           }
+                     *         ],
+                     *         "row_version": 1,
+                     *         "updated_at": "2026-10-17T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAppVersionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminSaveAppVersion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description Client platform of the row, one the console may save (ios, android or harmony); another value → 20001 with data.fields=[platform]. */
+                platform: components["parameters"]["AppVersionEditablePlatformPath"];
+                /** @description Install channel of the row; another value → 20001 with data.fields=[channel]. */
+                channel: components["parameters"]["AppVersionChannelPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "latest_version": "1.3.0",
+                 *       "min_supported_version": "1.1.0",
+                 *       "recommended_version": "1.2.0",
+                 *       "update_title": "新版本",
+                 *       "update_notes": "修复已知问题",
+                 *       "store_url": "https://apps.example.test/app/0001",
+                 *       "default_store": "appstore",
+                 *       "store_listings": [
+                 *         {
+                 *           "store": "appstore",
+                 *           "listed_version": "1.3.0"
+                 *         }
+                 *       ],
+                 *       "confirmed_stores": [],
+                 *       "expected_row_version": 1
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminAppVersionSaveRequest"];
+            };
+        };
+        responses: {
+            /** @description The row as saved. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "platform": "ios",
+                     *         "channel": "appstore",
+                     *         "latest_version": "1.3.0",
+                     *         "min_supported_version": "1.1.0",
+                     *         "recommended_version": "1.2.0",
+                     *         "update_title": "新版本",
+                     *         "update_notes": "修复已知问题",
+                     *         "store_url": "https://apps.example.test/app/0001",
+                     *         "default_store": "appstore",
+                     *         "store_listings": [
+                     *           {
+                     *             "store": "appstore",
+                     *             "listed_version": "1.3.0"
+                     *           }
+                     *         ],
+                     *         "row_version": 2,
+                     *         "updated_at": "2026-10-17T10:05:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAppVersionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not saved (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

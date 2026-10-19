@@ -1413,6 +1413,36 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListAppVersions",
+    "method": "GET",
+    "path": "/admin/v1/app-versions",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetAppVersion",
+    "method": "GET",
+    "path": "/admin/v1/app-versions/:platform/:channel",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminSaveAppVersion",
+    "method": "PUT",
+    "path": "/admin/v1/app-versions/:platform/:channel",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListKillSwitches",
     "method": "GET",
     "path": "/admin/v1/kill-switches",
