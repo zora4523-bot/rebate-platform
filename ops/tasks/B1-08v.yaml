@@ -1,0 +1,24 @@
+id: B1-08v
+repo: rebate-platform
+title: orders.service_fee_fen：迁移加列（整数分、可空）、入库 / 更新时写入联盟报文的服务费，B1-08t 的定时扫描据此为拼多多订单恢复分佣基数（不再跳过）
+type: impl
+# 2026-10-19 入账（编排确认 D10-81 的条件 ③）。起因：orders 无服务费列，B1-08t 扫描路径组不出拼多多 nBaseFen（N = 佣金 − 服务费，BR-CALC-03），只能跳过并 warn。
+# 迁移号落地时取主干最大号 + 1；分区表按 db 规则处理；金额整数分、只用 @couli/money。存量订单不回填（下次同步写入），待裁定写进任务书。
+# 分工：资金类 → impl claude、tester codex、Codex 资金评审。
+refs: []
+refs_hash: {}
+deps: [B1-08t]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/orders/service-fee-column/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/service-fee-column/**'
+status: todo
+pr: null

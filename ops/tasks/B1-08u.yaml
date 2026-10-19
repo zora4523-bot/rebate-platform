@@ -1,0 +1,22 @@
+id: B1-08u
+repo: rebate-platform
+title: 快照重试耗尽告警事件：order.snapshot_retry_exhausted 登记进 platform/events 并经 orders alert-events 同事务入队（载荷只放 id / 枚举 / 平台名），替换 B1-08t 的临时 logger.error
+type: impl
+# 2026-10-19 入账（编排确认 D10-81 的条件 ①：与 B1-08t 同批入账，排在 B1-08t 合并后的下一个）。照 orders/application/alert-events.ts 现有 order.illegal_transition 等的做法。
+# 事件清单变更需同步规划 02 §11（23 → 24 个事件）：由编排开规划同步；platform/events 冻结契约测试若逐字列事件名，走 test-change。
+# 分工：资金归属相关 → impl claude、tester codex。
+refs: []
+refs_hash: {}
+deps: [B1-08t]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/modules/platform/events/**'
+test_paths:
+  - 'test/spec/orders/snapshot-retry-alert/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/snapshot-retry-alert/**'
+status: todo
+pr: null

@@ -1,0 +1,23 @@
+id: B1-08w
+repo: rebate-platform
+title: worker 生产注入分佣快照端口：OrdersModule.forWorker 的流水线 / 更新步骤 / B1-08t 补偿重试接上 commission createCommissionSnapshot 与真实受益人解析器，使生产上第 ⑥ 步与补偿重试真正生效
+type: impl
+# 2026-10-19 入账（编排确认 D10-81 的条件 ③）。现状：worker-runtime 未注入快照端口（受益人解析器只有内存实现），B1-08k / B1-08t 在生产上整步跳过。
+# 若真实受益人解析器尚不存在，任务书写明 blocked 原因并由编排在资金线另立；本任务只做接线与生产装配断言（B1-08l 教训：不能全用假端口）。
+# 分工：资金类 → impl claude、tester codex、Codex 资金评审。
+refs: []
+refs_hash: {}
+deps: [B1-08t]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/orders/snapshot-wiring/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/snapshot-wiring/**'
+status: todo
+pr: null
