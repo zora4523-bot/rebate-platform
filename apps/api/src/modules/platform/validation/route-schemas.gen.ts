@@ -7183,6 +7183,324 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminListArticles": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "description": "Article category (04 §6.2：帮助、规则、公告、协议; codes defined here, no enums/ entry yet).",
+          "enum": [
+            "help",
+            "rule",
+            "notice",
+            "agreement"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "description": "Status of one article version row (04 §6.2): draft = saved, never published; published =\npublished (counts only once published_at is not later than now); offline = taken offline.\n",
+          "enum": [
+            "draft",
+            "published",
+            "offline"
+          ]
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminCreateArticle": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "article_id",
+        "category",
+        "title",
+        "body"
+      ],
+      "properties": {
+        "article_id": {
+          "description": "Client-generated UUIDv7 (lowercase canonical form), generated once per new article and\nreused on every retry of the same create. An id that already exists → 20902\n`data.resource=article` (no second article); read it back with GET\n/admin/v1/articles/{article_id}.\n",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "category": {
+          "type": "string",
+          "description": "Article category (04 §6.2：帮助、规则、公告、协议; codes defined here, no enums/ entry yet).",
+          "enum": [
+            "help",
+            "rule",
+            "notice",
+            "agreement"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200000,
+          "description": "tiptap JSON document as a string."
+        },
+        "notice_closable": {
+          "type": "boolean",
+          "description": "Notices only (default true); ignored for other categories."
+        },
+        "notice_end_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Notices only; required when notice_closable is false. Ignored for other categories."
+        }
+      }
+    }
+  },
+  "adminGetArticle": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "article_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "article_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminSaveArticleDraft": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "article_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "article_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "body",
+        "expected_row_version"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200000,
+          "description": "tiptap JSON document as a string."
+        },
+        "notice_closable": {
+          "type": "boolean",
+          "description": "Notices only (default true); ignored for other categories."
+        },
+        "notice_end_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Notices only; required when notice_closable is false. Ignored for other categories."
+        },
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The article's `row_version` as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminPublishArticle": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "article_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "article_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "expected_row_version"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "description": "The newest version, in status draft."
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the version takes effect; default now, earlier than now is 20001."
+        },
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The article's `row_version` as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
+  "adminOfflineArticle": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "article_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "article_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_row_version"
+      ],
+      "properties": {
+        "expected_row_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The article's `row_version` as the console showed it; a mismatch is 20902."
+        }
+      }
+    }
+  },
   "adminListDictItems": {
     "headers": {
       "type": "object",
