@@ -1,0 +1,26 @@
+id: B1-01zzf
+repo: rebate-platform
+title: 幂等请求指纹改带密钥：请求体含个人敏感信息（姓名、证件号、手机号、银行卡号、支付宝登录号）的幂等操作，idempotency_keys.request_hash 改存带密钥的 HMAC（字段加密模块的盲索引，独立上下文），不再存可穷举还原的无密钥 SHA-256；其余操作与 requestHashOf 不变
+type: impl
+# 2026-10-19 入账（be-codex；编排 12:4x 派工，身份线额度暂停；草稿由身份线写于 10-18，来源 couli-runs/B1-13d/followups.md：submitRealname 请求体 = 姓名 + 证件号，无密钥 SHA-256 可被穷举还原）。
+# 依据：08 BR-WDR-07 细则幂等段（couli #150 已回写方案乙：含个人敏感信息的幂等操作用 HMAC-SHA256，其余仍 sha256；编排 10-19 12:3x 裁定）、BR-ID-33、BR-ID-10 细则「敏感操作的幂等键」。refs 置空（BR-WDR-07 单条超 24KB，先例 B1-01i），原文由编排者摘入任务书。
+# 方案乙（调用方显式选择，admin-backend 10-19 06:19 提示、本地 Codex 台账评审 GT-23bev S1）：幂等服务 execute / executeInTransaction 的选项加可选 keyedRequestDigest（默认 false，requestHashOf 与通用路径完全不变，冻结测试 request-hash.test.ts、standard / transactional / completion-failure.int.test.ts 未传该选项、断言 sha256 照旧成立）；为 true 时指纹 = FieldCrypto.blindIndex(canonicalJson(body), 'idempotency.request_hash')（64 位小写十六进制，与现列格式一致，不需迁移）。本任务显式打开的调用方：submitRealname（identity/http/public/realname.controller.ts）、bindPhone（identity/http/public/bind-phone.controller.ts）；savePayoutAccount、landingRegister 仍 planned，由其实现任务打开（platform/idempotency 文件头列出应打开的操作清单作文档）。
+# 已有记录（编排 12:4x 要求写清）：清单内 submitRealname、bindPhone 主干已实现（未上线、无真实用户），savePayoutAccount、landingRegister 仍 planned。写入只写 HMAC；比对时先比 HMAC，存值等于同一请求体的旧 sha256 也视为同一请求（过渡期同键重放不误判 20901），不再写新的 sha256；该过渡比对在幂等记录最长留存期后删除（代码留 TODO 带日期）。FieldCrypto 不可用时这些操作 50001（不降级为无密钥哈希）。
+# 模型：Opus 5.5 高推理（effort high）——安全 + 平台公共模块（platform 不在 risk-map 白名单，RV2）。测试标题 AC-B1-01zzf#n。
+refs: []
+refs_hash: {}
+deps: [B1-01i]
+paths:
+  - 'apps/api/src/modules/platform/idempotency/**'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/modules/identity/http/public/realname.controller.ts'
+  - 'apps/api/src/modules/identity/http/public/bind-phone.controller.ts'
+test_paths:
+  - 'test/spec/platform/idempotency-keyed-hash/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/idempotency-keyed-hash/**'
+status: todo
