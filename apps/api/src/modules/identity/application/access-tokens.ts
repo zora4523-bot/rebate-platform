@@ -90,7 +90,8 @@ export type H5Scope = 'standard' | 'read_only';
 const H5_SCOPES: ReadonlySet<unknown> = new Set<H5Scope>(['standard', 'read_only']);
 /**
  * Paths an h5_token never reaches (BR-ID-32: withdrawal, payout account, phone change, deletion,
- * and every /v1/auth/** route including the h5-token exchange itself). The four x-step-up
+ * the labor agreement (BR-WDR-31), and every /v1/auth/** route including the h5-token exchange
+ * itself). The four x-step-up
  * operations sit under these prefixes; x-signed routes are refused through the signing table.
  */
 const H5_EXCLUDED_PREFIXES: readonly string[] = Object.freeze([
@@ -98,6 +99,8 @@ const H5_EXCLUDED_PREFIXES: readonly string[] = Object.freeze([
   '/v1/me/payout-account',
   '/v1/me/phone',
   '/v1/me/deletion',
+  // BR-WDR-31 (B1-13h): native App only, the GET included (contract getLaborAgreement).
+  '/v1/me/labor-agreement',
 ]);
 const H5_EXCLUDED_AUTH_PREFIX = '/v1/auth/';
 /** Fallback text of 10403 data.reason=h5_read_only (contracts/texts.default.json). */

@@ -75,6 +75,7 @@ import {
   type IdentityAttrCodeReader,
   type IdentityConfigReader,
   type IdentityContext,
+  type LaborAgreementConfigReader,
   type IdentityRequest,
   type FirstAppLoginReview,
   type InitialLevelLog,
@@ -414,6 +415,16 @@ function identityModule(): DynamicModule {
     // Stage ⑨'s real-name status port (B1-02za), also GET /v1/me's realname_status: app.realname
     // read on the caller's handle, uncached (B1-13d).
     realnameStatus: { useFactory: createRealnameStatusReader },
+    // BR-WDR-31 (B1-13h): the labor agreement's configuration on the caller's handle (connection
+    // or transaction), as inviteBinderDeps: a fresh reader per read, so no cache and no second
+    // pooled connection; identity never reads config_items itself.
+    laborAgreementConfig: {
+      inject: [CLOCK],
+      useFactory: (clock: Clock): LaborAgreementConfigReader => ({
+        configValue: (appId, key, handle) =>
+          createContentReader({ db: handle, clock }).configValue(appId, key),
+      }),
+    },
     initialLevelLog: {
       inject: [],
       useFactory: (): InitialLevelLog => ({

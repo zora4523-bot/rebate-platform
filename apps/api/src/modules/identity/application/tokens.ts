@@ -73,3 +73,5 @@ export const UPDATE_NICKNAME = Symbol('IDENTITY_UPDATE_NICKNAME');
 export const REALNAME_VERIFIER = Symbol('IDENTITY_REALNAME_VERIFIER');
 /** The real-name submission service, or null without the database or field cipher. */
 export const SUBMIT_REALNAME = Symbol('IDENTITY_SUBMIT_REALNAME');
+/** The labor agreement service (labor-agreement.ts), or null without the database or field cipher. */
+export const LABOR_AGREEMENT = Symbol('IDENTITY_LABOR_AGREEMENT');

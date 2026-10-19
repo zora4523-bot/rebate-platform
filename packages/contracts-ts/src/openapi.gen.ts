@@ -1413,9 +1413,12 @@ export interface paths {
          * Current labor agreement and whether I must sign it
          * @description The currently effective labor agreement version, the address of its full text, its sha256
          *     and whether the user must sign (BR-WDR-31; 04 §6.1). need_sign is true when the user has
-         *     not signed the current version, or when the current version is marked as requiring a new
-         *     signature and the signed version is older. signed_version / signed_at are the latest
-         *     signature, null when never signed. The version comes from server configuration; the
+         *     never signed, or when the latest signature's version is below the re-sign threshold
+         *     (resign_from_version, the first version that requires a new signature); a higher current
+         *     version that has not reached the threshold leaves a signed user with need_sign=false
+         *     (08 BR-WDR-31: one signature stays valid until a version marked as requiring a new
+         *     signature is published). signed_version / signed_at are the latest signature, null when
+         *     never signed. The version comes from server configuration; the
          *     contract does not promise how it is managed in the admin console. Native App only, the
          *     same as signing (04 §6.1): an h5_token gets 10403 even though this is a read. Not
          *     realname → 30304.
@@ -5553,13 +5556,15 @@ export interface components {
             /** @description Lower-case hex sha256 of that version's text. */
             text_sha256: string;
             /**
-             * @description True when the current version is not signed, or it is marked as requiring a new signature
-             *     and the signed version is older.
+             * @description True when the user has never signed, or the latest signature's version is below the
+             *     re-sign threshold (resign_from_version); a higher current version below the threshold
+             *     does not require signing again (08 BR-WDR-31).
              */
             need_sign: boolean;
             /**
              * Format: int32
-             * @description Version of the latest signature; null when never signed.
+             * @description Version of the latest signature (may be below the current version when no re-signing
+             *     is required); null when never signed.
              */
             signed_version: number | null;
             /**

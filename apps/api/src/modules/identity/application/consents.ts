@@ -115,8 +115,13 @@ async function revokeDevice(
 /**
  * The user's users row lock, taken before the consent lock (lock order above). FOR NO KEY UPDATE:
  * the personalization update changes no key column, and the lock does not block foreign-key checks.
+ * Also taken by the labor agreement signature (labor-agreement.ts), in the same order.
  */
-async function lockUserRow(trx: Transaction<DB>, appId: string, userId: string): Promise<void> {
+export async function lockUserRow(
+  trx: Transaction<DB>,
+  appId: string,
+  userId: string,
+): Promise<void> {
   await trx
     .selectFrom('users')
     .select('id')
