@@ -1,0 +1,25 @@
+id: B1-08s
+repo: rebate-platform
+title: 订单来源短码 lk：links 加 lk 列（base36 默认 6 位、唯一 (app_id, lk)、可空）与发号（随机、冲突重试最多 3 次、仍冲突告警），只在 attr.click_code.<platform>=true 时于登记 link 时生成并注入联盟参数；按 (app_id, platform, lk) 反查链接的只读端口
+type: impl
+# 草稿 2026-10-19（W1 线，订单线）。来源：B1-08q 起草时发现 links 表无 lk 列、无发号任务（W1 decision D10-73）；B1-08q 先不含短码反查，开关默认 false 时生产行为与 BR-ATTR-15「未打开的平台直接从 ② 开始匹配」一致。
+# 依据 BR-ATTR-15 lk 定义段（按 SPEC_REF 逐字摘进任务书）；no_rebate 购买不下发 lk；CAP-JD-05 / CAP-PDD-05 验证前开关不打开。迁移号落地时取主干最大号 + 1。
+# 分工：linking / 订单归属 → impl claude、tester codex（D10-15）。
+refs: [BR-ATTR-15]
+refs_hash:
+  BR-ATTR-15: fa1574dfc628
+deps: [B1-08j]
+paths:
+  - 'apps/api/src/modules/linking/**'
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/linking/link-code/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/linking/link-code/**'
+status: todo
+pr: null
