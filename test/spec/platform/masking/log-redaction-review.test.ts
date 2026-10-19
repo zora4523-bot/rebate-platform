@@ -770,12 +770,15 @@ function expectAccessLines(
   });
 }
 
+// CT-06zb: the first test to import bootstrap.ts pays the one-off load of the api module graph;
+// in CI verify-fast it took 16.8–29.9 s when green and hit 30 s in 9 of 115 jobs (2026-10-18/19).
+// 70 s is the longest observed (31.8 s) × 2, rounded up to a multiple of 10 s.
 it('[BR-ID-33] 访问日志（评审补充 F）：Fastify 请求经根 logger 写 method、url、hostname、remoteAddress 与 statusCode，不丢字段；查询串与请求头不写', async () => {
   const query = new URLSearchParams({ phone: SAMPLES.phone, alipay_logon_id: SAMPLES.alipayEmail });
   const { lines, statusCodes } = await accessLog([`/healthz?${query.toString()}`]);
   expect({ lines: lines.length, statusCodes }).toEqual({ lines: 2, statusCodes: [200] });
   expectAccessLines(lines, 0, '/healthz', 200);
-}, 30_000);
+}, 70_000);
 
 it('[BR-ID-33] 访问日志（评审补充 F）：url 写匹配到的路由模板（/v1/users/:id），没匹配到路由写 [unmatched]；路径里的手机号、邮箱不写（含 404）', async () => {
   const urls = [
