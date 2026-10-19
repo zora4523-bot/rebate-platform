@@ -1,0 +1,25 @@
+id: CT-06w
+repo: rebate-platform
+title: CT-06w：red-check 测试支撑文件关联按解析后的完整路径匹配（不再按 basename）
+type: guard-change
+# 2026-10-19 入账（编排裁定 B3-lane/notices.md 04:1x「B1-12g red/4 27 条误判：① 修 red-check，派 CT-06w；不放宽 20 条上限」）。
+# 起因：B1-12g 第 4 次先红（couli-runs/B1-12g/red/4/）里 test/spec/platform/events/contract.test.ts 与 test/spec/platform/queue/contract.test.ts 各自 import 同目录 ./kit.ts，而任务改的是 test/spec/identity/step-up-verify/kit.ts；mayReadSupport 的「names kit.ts」按 basename 在闭包文本里找，27 条未改用例被整文件判红。
+# 做法（tools/guard/lib/test-blocks.ts；red-check.ts 只传 headKind）：relativeClosure 把每个模块的 import 说明符（import … from、export … from、import 'x'、字面量 import()，成员调用 reader.import() 不算）解析成仓库完整路径，且只在唯一确定时解析：./ ../ 相对模块按 Vite 规则（带扩展名取该文件，.js 缺失时取 .ts；无扩展名取 Vite 扩展名序列中唯一存在的文件，否则唯一的 index.*；两个候选、带 package.json 的目录、目录、符号链接或拼写不是树里的（git ls-tree / lstat + realpath 判定）、不存在都解不出；只认模块自己 token 列表里的 import 语法，模板插值里的不算）；#… 按最近 package.json 的 imports（./ 开头的字符串值、单个 *、恰好一条匹配——两条模式同时匹配或文件夹键不判，Node 与 Vite 的排序不同；首个 # 之后的 ?/# 截掉；途中的 package.json 是符号链接也不判）；裸说明符是包（Vitest 未启用 tsconfig paths，不按 tsconfig 解析）。mayReadSupport：解析到的路径等于支撑文件即整份判（解析到的 # import 也进闭包）；只有解析到闭包里**封闭**的别的模块（test 代码、读得懂、无文件系统 API / 进程与代码执行 / import.meta / 任何 mock 调用 / 列目录 / 动态、模板或绝对说明符加载，且其相对与 # import 都解析到封闭模块或测试代码之外，逐层传递；根文件自己有 mock 调用则一概不剔除）、且闭包全封闭时（闭包里根文件之外任一模块不封闭，或根文件自己有读不懂 / 动态或模板加载 / 进程与代码执行 / mock / 解不出或没跟随的 import，所有说明符一概不剔除，与旧代码一致；根文件自己的文件系统读取、import.meta 与静态解出的列目录照旧由名字与列目录规则判，编排 10-19 裁定后 r6 前收紧）的说明符才不参与「names <file>」/「names <词>」匹配（按字面量位置剔除，注释与其他字面量照旧）；解析到样式表、数据、无扩展名模块或不封闭模块的说明符照旧按名字判；解不出的说明符保持原判并在 notes 写「unresolved import」。模板说明符、vi.mock、new URL 不算 import、照旧按名字判。快照命名、目录列举、glob / require / 计算名 import、读不懂整份判、声明制豁免、每文件至少一条红都不变，不放宽其他判定。
+# 单测：B1-12g red/4 两份平台契约测试 + 改动的 identity/step-up-verify/kit.ts 作夹具（red-check-fixtures/b112g-*）复现误判并验证修复后两份都按用例判；同目录 ./kit.ts 确实被改仍整份判；解不出的 import（裸包名含该名、不存在的相对文件、越出仓库、候选歧义、目录 / 符号链接）仍整份判并带 unresolved import；# imports 的匹配、fragment 与读不懂配置时的保守判定；成员调用不算 import。
+# tools/ 属保护路径第三类：负责人 10-02 常设授权的流程门禁小修（approvals #16），Claude 实现、Codex 对抗评审一轮，评审通过、检查全绿后按 approvals #24 加标签（编排 10-19 授权：改动限于 tools/guard、fixtures、单测、台账 / 证据）。tools 自己的单元测试由实现者写，不需要先写规则测试。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/guard/lib/red-check{*,-fixtures/**}'
+  - 'tools/guard/red-check.ts'
+  - 'tools/guard/lib/test-blocks*'
+  - 'tools/README.md'
+  - 'tools/ops/README.md'
+  - 'tools/agent/README.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
