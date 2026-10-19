@@ -528,6 +528,16 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/claims",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/claims/:claim_id",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/platform-icons",
     "auth": "admin"
   },

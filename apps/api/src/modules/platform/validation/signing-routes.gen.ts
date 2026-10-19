@@ -528,6 +528,16 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/claims",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/claims/:claim_id",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/platform-icons",
     "signed": false
   },
