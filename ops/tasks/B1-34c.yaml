@@ -1,0 +1,17 @@
+id: B1-34c
+repo: rebate-platform
+title: 测试修改：平台队列冻结测试（test/spec/platform/queue/contract.test.ts）钉死全目录与 worker 计划的断言容许 B1-34e 的 export 队列：目录中 'export' 紧接 'risk-scan' 之后、'dead-letter' 之前，policy 'standard'、其余取 defaults；worker 计划中 work('export', 1) 紧接 work('agent-trace', 2) 之后、work('risk-scan', 1) 之前（risk-scan 仍为最后一项）；只在 worker 入口消费。存在时必须恰为上述取值，其余断言一字不改
+type: test-change
+# 2026-10-19 入账（admin-backend，B1-34 导出部分）。目录位置取在 risk-scan 之后（保留 contract.test.ts:120 「risk-scan 前一项是 agent-trace」）、worker 计划取在 risk-scan 之前（保留 :169「risk-scan 为最后一项」）（#907 两家评审 r2）；B1-34e 照此取值。先例 B1-03s（#428，为 risk-scan 放行）。改既有规则测试属第一类保护路径，合并要负责人标签（approvals #24），走非 task 分支。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/platform/queue/contract.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/queue/**'
+status: todo
+pr: null

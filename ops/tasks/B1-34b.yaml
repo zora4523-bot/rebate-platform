@@ -1,0 +1,23 @@
+id: B1-34b
+repo: rebate-platform
+title: 迁移：app.export_tasks（后台导出任务表：不透明对外 id、resource、filters jsonb、masked、created_by、status 六值 CHECK、进度 / 失败原因 / 文件名 / 对象键 / 行数 / generated_at / expires_at、row_version；调度、停用取消、到期清扫索引；couli_app SELECT / INSERT / 列级 UPDATE，couli_readonly SELECT）
+type: migration
+# 2026-10-19 入账（admin-backend，编排 10-19 20:4x 派工 ②，B1-34 导出部分第 1 段）。依据：已合并契约 CT-24k（#871）的 AdminExport 字段与状态迁移、08 BR-ID-34 细则「后台导出任务」（24 小时可下载期）、BR-ID-30 ⑨。**规划 04 §3.2 无此表**——表形状由本线定，已在 notices 请规划回写 04 §3.2 与 02 §4.1（admin 模块所有表）。原文由编排者摘入任务书，refs 置空。
+# 要点：主键 id uuid（应用生成 UUIDv7，db/AGENTS.md 第 6 条）；对外 id 列 public_id text UNIQUE（应用生成不透明值，契约「不是数据库主键」）；外键 (app_id, created_by) → admin_users；status CHECK 六值；filters jsonb 非空；row_version 应用自增；不给 DELETE（导出记录保留，文件由存储生命周期删）。
+#   索引：(app_id, created_at)、(app_id, created_by, created_at)、部分索引 status IN ('pending','running')、部分索引 status = 'done' 的 (expires_at)。授权写在本迁移；迁移号落地时取主干最大号 + 1（连续编号）。两段式：编排者在测试机跑 db:snapshot 提交 schema.sql 与 db.gen.ts。
+refs: []
+refs_hash: {}
+deps: [CT-24k]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/admin/export-tasks/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/admin/export-tasks/**'
+status: todo
+pr: null
