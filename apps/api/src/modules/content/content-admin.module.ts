@@ -5,6 +5,7 @@
 // Page configuration /admin/v1/pages* (F1-09f): drafts, publish, gray, rollback and their reads.
 // Agreement versions /admin/v1/agreements* (F1-02p): list, one version, publish (totp step-up).
 // Dictionary editing /admin/v1/dict-items* (F1-02t): list, save-and-publish, history, rollback.
+// Article CMS /admin/v1/articles* (F1-02w): list, detail, create, save draft, publish, offline.
 // app.module imports this module on the admin entry only; the api and stream entries do not
 // serve /admin/v1. Permission checks go through platform's AdminOperationGuard, which the admin
 // module provides globally on the admin entry (content never imports admin).
@@ -80,6 +81,12 @@ import { AdminDictItemsController } from './http/admin/dict-items.controller.ts'
 import { createKyselyDictItemStore } from './infra/kysely-dict-item-store.ts';
 import { defaultTexts } from './infra/texts-default.ts';
 import { getBannedWords, getFundTermKeys } from './specs/text-specs.ts';
+import { ArticleAdmin, type ArticleAdminStore } from './application/article-admin.ts';
+import { AdminArticlesController } from './http/admin/articles.controller.ts';
+import {
+  createKyselyArticleAdminStore,
+  isArticleVersionTaken,
+} from './infra/kysely-article-admin-store.ts';
 
 /** Binds the audit port to a transaction handle (app.module: admin's createAuditWriter). */
 export type ContentAuditWriterFactory = (db: Kysely<Database>, clock: Clock) => AuditPort;
@@ -154,6 +161,15 @@ const NO_DATABASE_DICT: DictItemStore = {
   appendAudit: refuseDict,
 };
 
+const refuseArticles = (): Promise<never> =>
+  Promise.reject(new Error('content: the article CMS needs the database'));
+
+const NO_DATABASE_ARTICLES: ArticleAdminStore = {
+  list: refuseArticles,
+  rows: refuseArticles,
+  transaction: refuseArticles,
+};
+
 /** Monotonic milliseconds for the SVG conversion budget (not business time). */
 const monotonicMs = (): number => performance.now();
 
@@ -170,8 +186,27 @@ export class ContentAdminModule {
         AdminPagesController,
         AdminAgreementsController,
         AdminDictItemsController,
+        AdminArticlesController,
       ],
       providers: [
+        {
+          // F1-02w /admin/v1/articles*: banned words are F1-02t's generated snapshot (L50), link
+          // patterns are read per call, image hosts come from MEDIA_PUBLIC_BASE_URL (L27).
+          provide: ArticleAdmin,
+          inject: [APP_CONFIG, CLOCK, { token: DB, optional: true }],
+          useFactory: (config: AppConfig, clock: Clock, db?: Kysely<Database>): ArticleAdmin =>
+            new ArticleAdmin({
+              store:
+                db === undefined
+                  ? NO_DATABASE_ARTICLES
+                  : createKyselyArticleAdminStore(db, (trx) => options.auditWriter(trx, clock)),
+              clock,
+              mediaPublicBaseUrl: config.mediaPublicBaseUrl,
+              linkPatterns: getLinkPatterns,
+              bannedWords: getBannedWords,
+              isVersionTaken: isArticleVersionTaken,
+            }),
+        },
         {
           provide: AgreementAdmin,
           inject: [APP_CONFIG, CLOCK, ROOT_LOGGER, { token: DB, optional: true }],

@@ -10980,7 +10980,6 @@ paths:
         the newest version row (编排者默认). Articles of category agreement are listed read-only;
         they are written through /admin/v1/agreements.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -11082,7 +11081,6 @@ paths:
         the console (BR-TEXT-13 细则「首页公告条的关闭与内容版本」). Written to the audit log in the
         same transaction.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -11173,7 +11171,6 @@ paths:
         version not yet due does not count), null when there is none (04 §6.2). An article_id
         that is not a lowercase canonical UUID, or that does not exist → 30701.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -11259,7 +11256,6 @@ paths:
         `data.resource=article` (编排者默认). An article_id that is not a lowercase canonical UUID,
         or that does not exist → 30701. Written to the audit log in the same transaction.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -11358,7 +11354,6 @@ paths:
         An article_id that is not a lowercase canonical UUID, or that does not exist → 30701.
         Written to the audit log in the same transaction.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -11466,7 +11461,6 @@ paths:
         lowercase canonical UUID, or that does not exist → 30701. Written to the audit log in the
         same transaction.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
