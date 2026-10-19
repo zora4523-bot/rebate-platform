@@ -54,6 +54,7 @@ export interface AdminPermissions {
 export interface AdminUsers {
   app_id: string;
   created_at: Generated<Timestamp>;
+  display_name: string | null;
   failed_login_count: Generated<number>;
   id: string;
   is_super: boolean;
