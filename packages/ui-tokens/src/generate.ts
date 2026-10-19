@@ -4,6 +4,15 @@
 // Canonical CSS variable of a token = "--" + its path joined with "-"
 // (color.background.canvas -> --color-background-canvas). Value spelling follows the planning
 // repository's scripts/sync-brand.py so that tokens.gen.css matches design/tokens/variables.css.
+//
+// Light / dark (v0.4.0, 规划/00 D35): `value` is the light value; color and shadow tokens may carry
+// `dark`. tokens.gen.css puts every token on `:root` (color-scheme: light), then two dark blocks
+// with identical declarations, in this order: `@media (prefers-color-scheme: dark)` on
+// `:root:not([data-theme="light"])` (follow the system unless the page forces light) and
+// `:root[data-theme="dark"]` (explicit dark). Both set color-scheme: dark and override exactly the
+// tokens that have a `dark` field (even when it equals `value`), spelled with the same cssValue
+// rules; a token without `dark` is not overridden, i.e. it falls back to `value`. Only color and
+// shadow tokens may have `dark`.
 
 /** Input is the complete contracts/design-tokens.json document, including metadata. */
 export interface DesignTokens {
@@ -25,12 +34,17 @@ interface TokenLeaf {
   path: string[];
   type: string;
   value: unknown;
+  /** Present only when the source token has a `dark` field (color and shadow only). */
+  dark?: { value: unknown };
   unit: unknown;
   variable: string;
 }
 
+export type TokenMode = 'light' | 'dark';
+
 const SEGMENT = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const HEX_COLOR = /^#[0-9A-F]{6}$/;
+const HEX_COLOR_ALPHA = /^#[0-9A-F]{6}(?:[0-9A-F]{2})?$/;
 const BARE_FONT_FAMILY = /^-?[A-Za-z_][A-Za-z0-9_-]*$/;
 const SHADOW_KEYS = ['blur', 'color', 'opacity', 'spread', 'x', 'y'];
 /** Path segments that name prototype-chain members; rejected so no object's prototype is written. */
@@ -68,7 +82,20 @@ function leaves(doc: DesignTokens): TokenLeaf[] {
       const variable = `--${path.join('-')}`;
       if (variables.has(variable)) fail(`duplicate CSS variable ${variable}`);
       variables.add(variable);
-      result.push({ path, type: node.type, value: node.value, unit: node.unit, variable });
+      const leaf: TokenLeaf = {
+        path,
+        type: node.type,
+        value: node.value,
+        unit: node.unit,
+        variable,
+      };
+      if ('dark' in node) {
+        if (node.type !== 'color' && node.type !== 'shadow') {
+          fail(`${label}: only color and shadow tokens take a dark value`);
+        }
+        leaf.dark = { value: node.dark };
+      }
+      result.push(leaf);
       return;
     }
     const entries = Object.entries(node);
@@ -120,12 +147,35 @@ function color(value: unknown, label: string): string {
   return value;
 }
 
-function cssValue(leaf: TokenLeaf, fontBase: number): string {
-  const label = leaf.path.join('.');
-  const { type, value } = leaf;
+function rgbText(hex: string): string {
+  return [1, 3, 5].map((i) => String(parseInt(hex.slice(i, i + 2), 16))).join(', ');
+}
+
+/** #RRGGBB stays hex; #RRGGBBAA becomes rgba() with the alpha rounded to two decimals. */
+function cssColor(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !HEX_COLOR_ALPHA.test(value)) {
+    fail(`${label}: expected an uppercase #RRGGBB or #RRGGBBAA color`);
+  }
+  if (value.length === 7) return value;
+  // round(alpha / 255, 2) in integers; alpha * 100 / 255 is never exactly halfway.
+  const hundredths = Math.floor((parseInt(value.slice(7, 9), 16) * 200 + 255) / 510);
+  return `rgba(${rgbText(value)}, ${numericText(hundredths / 100)})`;
+}
+
+/** The token's value for a mode: `dark` when present, otherwise `value`. */
+function modeValue(leaf: TokenLeaf, mode: TokenMode): unknown {
+  return mode === 'dark' && leaf.dark ? leaf.dark.value : leaf.value;
+}
+
+function cssValue(leaf: TokenLeaf, fontBase: number, mode: TokenMode = 'light'): string {
+  const value = modeValue(leaf, mode);
+  const label = leaf.path.join('.') + (mode === 'dark' && leaf.dark ? ' (dark)' : '');
+  const { type } = leaf;
   switch (type) {
     case 'color':
-      return color(value, label);
+      return cssColor(value, label);
+    case 'number':
+      return numericText(finite(value, label));
     case 'dimension':
     case 'fontSize': {
       if (leaf.unit !== 'logical') fail(`${label}: expected unit "logical"`);
@@ -170,7 +220,7 @@ function cssValue(leaf: TokenLeaf, fontBase: number): string {
             return `${numericText(length)}px`;
           });
           const hex = color(layer.color, `${at}.color`);
-          const rgb = [1, 3, 5].map((i) => String(parseInt(hex.slice(i, i + 2), 16))).join(', ');
+          const rgb = rgbText(hex);
           const opacity = finite(layer.opacity, `${at}.opacity`);
           if (opacity < 0 || opacity > 1) fail(`${at}.opacity: must be within 0..1`);
           return `${lengths.join(' ')} rgba(${rgb}, ${numericText(opacity)})`;
@@ -190,20 +240,38 @@ function fontBase(doc: DesignTokens): number {
 }
 
 /**
- * `:root` with every leaf token, MVP light only (TECH-22: forced light even when the system is
- * dark). The rule is prettier-ignored so colors keep their canonical uppercase spelling and font
+ * Light `:root` with every leaf token, then the two identical dark blocks (system dark unless
+ * data-theme="light", and explicit data-theme="dark") that override only tokens with `dark`.
+ * Each rule is prettier-ignored so colors keep their canonical uppercase spelling and font
  * family names keep double quotes, exactly as in the planning variables.css.
  */
 export function generateTokensCss(tokens: DesignTokens): string {
   const base = fontBase(tokens);
-  const lines = leaves(tokens).map((leaf) => `  ${leaf.variable}: ${cssValue(leaf, base)};`);
+  const all = leaves(tokens);
+  const light = all.map((leaf) => `${leaf.variable}: ${cssValue(leaf, base)};`);
+  const dark = all
+    .filter((leaf) => leaf.dark)
+    .map((leaf) => `${leaf.variable}: ${cssValue(leaf, base, 'dark')};`);
+  const body = (mode: TokenMode, declarations: string[], indent: string): string[] =>
+    [`color-scheme: ${mode};`, ...declarations].map((line) => indent + line);
   return [
     `/* ${HEADER} */`,
     `/* ${REGENERATE} */`,
     '/* prettier-ignore */',
     ':root {',
-    '  color-scheme: only light;',
-    ...lines,
+    ...body('light', light, '  '),
+    '}',
+    '',
+    '/* prettier-ignore */',
+    '@media (prefers-color-scheme: dark) {',
+    '  :root:not([data-theme="light"]) {',
+    ...body('dark', dark, '    '),
+    '  }',
+    '}',
+    '',
+    '/* prettier-ignore */',
+    ':root[data-theme="dark"] {',
+    ...body('dark', dark, '  '),
     '}',
     '',
   ].join('\n');
@@ -224,6 +292,9 @@ function tailwindNamespace(leaf: TokenLeaf): { namespace: string; implied: strin
       return { namespace: 'font-weight', implied: ['font', 'weight'] };
     case 'shadow':
       return { namespace: 'shadow', implied: ['shadow'] };
+    case 'number':
+      // Tailwind 4 has no namespace for plain numbers; the alias is only a theme variable.
+      return { namespace: 'number', implied: [] };
     case 'dimension':
       return leaf.path[0] === 'radius'
         ? { namespace: 'radius', implied: ['radius'] }
@@ -269,8 +340,8 @@ export function generateTailwindCss(tokens: DesignTokens): string {
   ].join('\n');
 }
 
-/** Every theme leaf references a canonical CSS variable, without literal values. */
-export function themeFromTokens(tokens: DesignTokens): TokenTheme {
+/** Nested theme object keyed by token path, one string per leaf. */
+function buildTheme(tokens: DesignTokens, leafText: (leaf: TokenLeaf) => string): TokenTheme {
   const theme: TokenTheme = {};
   for (const leaf of leaves(tokens)) {
     let node = theme;
@@ -281,19 +352,45 @@ export function themeFromTokens(tokens: DesignTokens): TokenTheme {
       if (typeof child === 'string') fail(`${leaf.path.join('.')}: token nested under a token`);
       node = child ?? (node[segment] = {});
     }
-    node[leaf.path.at(-1)!] = `var(${leaf.variable})`;
+    node[leaf.path.at(-1)!] = leafText(leaf);
   }
   return theme;
 }
 
+/** Every theme leaf references a canonical CSS variable, without literal values. */
+export function themeFromTokens(tokens: DesignTokens): TokenTheme {
+  return buildTheme(tokens, (leaf) => `var(${leaf.variable})`);
+}
+
+/**
+ * Resolved CSS values of one mode, same spelling as tokens.gen.css: in dark, a token with `dark`
+ * takes it and every other token falls back to `value`. For consumers that cannot read CSS
+ * variables (canvas, charts, inline SVG); pages should keep using the var() theme.
+ */
+export function themeValuesFromTokens(tokens: DesignTokens, mode: TokenMode): TokenTheme {
+  const base = fontBase(tokens);
+  return buildTheme(tokens, (leaf) => cssValue(leaf, base, mode));
+}
+
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/** Same width as the repository prettier config. */
+const PRINT_WIDTH = 100;
+
+function quote(text: string): string {
+  return `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
 
 function serialize(theme: TokenTheme, indent: string): string[] {
   const lines: string[] = [];
   for (const [key, value] of Object.entries(theme)) {
     const name = IDENTIFIER.test(key) ? key : `'${key}'`;
     if (typeof value === 'string') {
-      lines.push(`${indent}${name}: '${value}',`);
+      const line = `${indent}${name}: ${quote(value)},`;
+      // Prettier breaks a too-long string property after the colon.
+      lines.push(
+        line.length <= PRINT_WIDTH ? line : `${indent}${name}:\n${indent}  ${quote(value)},`,
+      );
     } else {
       lines.push(`${indent}${name}: {`, ...serialize(value, `${indent}  `), `${indent}},`);
     }
@@ -306,9 +403,20 @@ export function generateThemeTs(tokens: DesignTokens): string {
   return [
     `// ${HEADER}`,
     `// ${REGENERATE}`,
-    '// Each leaf is a var() reference to the canonical variable in tokens.css.',
+    '// tokenTheme: each leaf is a var() reference to the canonical variable in tokens.css.',
     'export const tokenTheme = {',
     ...serialize(themeFromTokens(tokens), '  '),
+    '} as const;',
+    '',
+    '// tokenValues: resolved CSS values per mode; dark falls back to the light value when a token',
+    '// has no dark value. Pages use tokenTheme; this is for non-CSS consumers.',
+    'export const tokenValues = {',
+    '  light: {',
+    ...serialize(themeValuesFromTokens(tokens, 'light'), '    '),
+    '  },',
+    '  dark: {',
+    ...serialize(themeValuesFromTokens(tokens, 'dark'), '    '),
+    '  },',
     '} as const;',
     '',
   ].join('\n');

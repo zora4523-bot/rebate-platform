@@ -30,6 +30,7 @@
   --color-couli-status-error-background: var(--color-status-error-background);
   --color-couli-border-subtle: var(--color-border-subtle);
   --color-couli-border-control: var(--color-border-control);
+  --color-couli-border-active: var(--color-border-active);
   --color-couli-focus-ring: var(--color-focus-ring);
   --color-couli-source-text: var(--color-source-text);
   --color-couli-source-background: var(--color-source-background);
@@ -40,6 +41,11 @@
   --color-couli-button-primary-pressed-text: var(--color-button-primary-pressed-text);
   --color-couli-button-primary-disabled-background: var(--color-button-primary-disabled-background);
   --color-couli-button-primary-disabled-text: var(--color-button-primary-disabled-text);
+  --color-couli-button-inverse-background: var(--color-button-inverse-background);
+  --color-couli-button-inverse-text: var(--color-button-inverse-text);
+  --color-couli-overlay-scrim: var(--color-overlay-scrim);
+  --color-couli-control-checked: var(--color-control-checked);
+  --color-couli-badge-background: var(--color-badge-background);
   --font-couli-system: var(--font-family-system);
   --text-couli-caption: var(--font-size-caption);
   --text-couli-footnote: var(--font-size-footnote);
@@ -89,4 +95,20 @@
   --spacing-couli-component-control-min-height: var(--component-control-min-height);
   --spacing-couli-component-control-border-width: var(--component-control-border-width);
   --spacing-couli-component-icon-default: var(--component-icon-default);
+  --spacing-couli-component-icon-small: var(--component-icon-small);
+  --spacing-couli-component-icon-inline: var(--component-icon-inline);
+  --spacing-couli-component-icon-medium: var(--component-icon-medium);
+  --spacing-couli-component-field-min-height: var(--component-field-min-height);
+  --spacing-couli-component-code-cell-height: var(--component-code-cell-height);
+  --spacing-couli-component-checkbox-size: var(--component-checkbox-size);
+  --number-couli-component-checkbox-max-scale: var(--component-checkbox-max-scale);
+  --spacing-couli-component-chip-height: var(--component-chip-height);
+  --spacing-couli-component-tab-indicator-height: var(--component-tab-indicator-height);
+  --spacing-couli-component-tag-min-height: var(--component-tag-min-height);
+  --spacing-couli-component-platform-badge-min-height: var(--component-platform-badge-min-height);
+  --spacing-couli-component-count-badge-size: var(--component-count-badge-size);
+  --spacing-couli-component-image-list: var(--component-image-list);
+  --spacing-couli-component-grid-cell-min-height: var(--component-grid-cell-min-height);
+  --spacing-couli-component-oauth-size: var(--component-oauth-size);
+  --spacing-couli-component-oauth-gap: var(--component-oauth-gap);
 }

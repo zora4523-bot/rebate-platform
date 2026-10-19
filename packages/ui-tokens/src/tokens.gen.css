@@ -2,7 +2,7 @@
 /* Regenerate: node packages/ui-tokens/scripts/generate.ts */
 /* prettier-ignore */
 :root {
-  color-scheme: only light;
+  color-scheme: light;
   --color-brand-primary: #C44820;
   --color-brand-emphasis: #A83B1F;
   --color-brand-secondary: #26735B;
@@ -31,6 +31,7 @@
   --color-status-error-background: #FDECF0;
   --color-border-subtle: #E4DED5;
   --color-border-control: #8A8177;
+  --color-border-active: #28251F;
   --color-focus-ring: #26735B;
   --color-source-text: #655E57;
   --color-source-background: #FFFFFF;
@@ -41,6 +42,11 @@
   --color-button-primary-pressed-text: #FFFFFF;
   --color-button-primary-disabled-background: #E9E2D9;
   --color-button-primary-disabled-text: #655E57;
+  --color-button-inverse-background: #FFFFFF;
+  --color-button-inverse-text: #A83B1F;
+  --color-overlay-scrim: rgba(40, 37, 31, 0.4);
+  --color-control-checked: #C44820;
+  --color-badge-background: #C44820;
   --font-family-system: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   --font-size-caption: 0.75rem;
   --font-size-footnote: 0.875rem;
@@ -90,4 +96,124 @@
   --component-control-min-height: 44px;
   --component-control-border-width: 1px;
   --component-icon-default: 24px;
+  --component-icon-small: 14px;
+  --component-icon-inline: 16px;
+  --component-icon-medium: 20px;
+  --component-field-min-height: 52px;
+  --component-code-cell-height: 56px;
+  --component-checkbox-size: 18px;
+  --component-checkbox-max-scale: 1.5;
+  --component-chip-height: 32px;
+  --component-tab-indicator-height: 2px;
+  --component-tag-min-height: 22px;
+  --component-platform-badge-min-height: 20px;
+  --component-count-badge-size: 18px;
+  --component-image-list: 96px;
+  --component-grid-cell-min-height: 72px;
+  --component-oauth-size: 48px;
+  --component-oauth-gap: 32px;
+}
+
+/* prettier-ignore */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-brand-primary: #C44820;
+    --color-brand-emphasis: #F0956B;
+    --color-brand-secondary: #6CC49F;
+    --color-brand-subtle: #3A2219;
+    --color-background-canvas: #171513;
+    --color-background-admin-canvas: #171513;
+    --color-background-surface: #24211E;
+    --color-background-muted: #2F2B27;
+    --color-background-placeholder: #36312C;
+    --color-text-primary: #F2EEE6;
+    --color-text-secondary: #B5ACA2;
+    --color-text-inverse: #FFFFFF;
+    --color-text-link: #F0956B;
+    --color-price-text: #F2EEE6;
+    --color-rebate-text: #F29A6E;
+    --color-rebate-background: #3A2219;
+    --color-rebate-solid-background: #C44820;
+    --color-rebate-solid-text: #FFFFFF;
+    --color-status-pending-text: #B5ACA2;
+    --color-status-pending-background: #2F2B27;
+    --color-status-success-text: #6CC49F;
+    --color-status-success-background: #16302A;
+    --color-status-warning-text: #E3B65C;
+    --color-status-warning-background: #33290F;
+    --color-status-error-text: #F28DA4;
+    --color-status-error-background: #3B1A22;
+    --color-border-subtle: #3A3530;
+    --color-border-control: #8C8278;
+    --color-border-active: #F2EEE6;
+    --color-focus-ring: #5DBB97;
+    --color-source-text: #B5ACA2;
+    --color-source-background: #24211E;
+    --color-source-border: #3A3530;
+    --color-button-primary-default-background: #C44820;
+    --color-button-primary-default-text: #FFFFFF;
+    --color-button-primary-pressed-background: #A83B1F;
+    --color-button-primary-pressed-text: #FFFFFF;
+    --color-button-primary-disabled-background: #36312C;
+    --color-button-primary-disabled-text: #A39A90;
+    --color-button-inverse-background: #FFFFFF;
+    --color-button-inverse-text: #A83B1F;
+    --color-overlay-scrim: rgba(0, 0, 0, 0.55);
+    --color-control-checked: #C44820;
+    --color-badge-background: #C44820;
+    --shadow-card: 0px 2px 8px 0px rgba(0, 0, 0, 0.3);
+    --shadow-floating: 0px 8px 24px 0px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* prettier-ignore */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-brand-primary: #C44820;
+  --color-brand-emphasis: #F0956B;
+  --color-brand-secondary: #6CC49F;
+  --color-brand-subtle: #3A2219;
+  --color-background-canvas: #171513;
+  --color-background-admin-canvas: #171513;
+  --color-background-surface: #24211E;
+  --color-background-muted: #2F2B27;
+  --color-background-placeholder: #36312C;
+  --color-text-primary: #F2EEE6;
+  --color-text-secondary: #B5ACA2;
+  --color-text-inverse: #FFFFFF;
+  --color-text-link: #F0956B;
+  --color-price-text: #F2EEE6;
+  --color-rebate-text: #F29A6E;
+  --color-rebate-background: #3A2219;
+  --color-rebate-solid-background: #C44820;
+  --color-rebate-solid-text: #FFFFFF;
+  --color-status-pending-text: #B5ACA2;
+  --color-status-pending-background: #2F2B27;
+  --color-status-success-text: #6CC49F;
+  --color-status-success-background: #16302A;
+  --color-status-warning-text: #E3B65C;
+  --color-status-warning-background: #33290F;
+  --color-status-error-text: #F28DA4;
+  --color-status-error-background: #3B1A22;
+  --color-border-subtle: #3A3530;
+  --color-border-control: #8C8278;
+  --color-border-active: #F2EEE6;
+  --color-focus-ring: #5DBB97;
+  --color-source-text: #B5ACA2;
+  --color-source-background: #24211E;
+  --color-source-border: #3A3530;
+  --color-button-primary-default-background: #C44820;
+  --color-button-primary-default-text: #FFFFFF;
+  --color-button-primary-pressed-background: #A83B1F;
+  --color-button-primary-pressed-text: #FFFFFF;
+  --color-button-primary-disabled-background: #36312C;
+  --color-button-primary-disabled-text: #A39A90;
+  --color-button-inverse-background: #FFFFFF;
+  --color-button-inverse-text: #A83B1F;
+  --color-overlay-scrim: rgba(0, 0, 0, 0.55);
+  --color-control-checked: #C44820;
+  --color-badge-background: #C44820;
+  --shadow-card: 0px 2px 8px 0px rgba(0, 0, 0, 0.3);
+  --shadow-floating: 0px 8px 24px 0px rgba(0, 0, 0, 0.45);
 }
