@@ -1143,6 +1143,8 @@ CREATE TABLE app.admin_users (
     password_must_change boolean DEFAULT false NOT NULL,
     failed_login_count integer DEFAULT 0 NOT NULL,
     locked_until timestamp with time zone,
+    display_name text,
+    CONSTRAINT admin_users_display_name_len_check CHECK (((display_name IS NULL) OR ((char_length(display_name) >= 1) AND (char_length(display_name) <= 32)))),
     CONSTRAINT admin_users_failed_login_count_check CHECK ((failed_login_count >= 0))
 );
 
@@ -7904,6 +7906,14 @@ GRANT UPDATE(failed_login_count) ON TABLE app.admin_users TO couli_app;
 --
 
 GRANT UPDATE(locked_until) ON TABLE app.admin_users TO couli_app;
+
+
+--
+-- Name: COLUMN admin_users.display_name; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(display_name) ON TABLE app.admin_users TO couli_app;
+GRANT SELECT(display_name) ON TABLE app.admin_users TO couli_readonly;
 
 
 --
