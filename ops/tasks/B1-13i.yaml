@@ -15,4 +15,5 @@ tester: none
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/token/**'
-status: todo
+status: done
+pr: 905

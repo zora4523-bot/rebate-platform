@@ -25,4 +25,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/growth/invites-me/**'
-status: todo
+status: done
+pr: 883

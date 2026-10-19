@@ -21,4 +21,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/me-invite/**'
-status: todo
+status: done
+pr: 834
