@@ -13,7 +13,7 @@ type: contract
 # contract_sections 只放 ['5'] 接口约定（04 §6.6、§11.2、§3.2、§7 原文过长，任务书超 24KB 上限）：04 §6.6 等由实现者按 SPEC_REF 读原文，编排者在任务书第 9 节列出要读的节。
 refs: [BR-ATTR-18]
 refs_hash:
-  BR-ATTR-18: 7ef1a8bcc484
+  BR-ATTR-18: 84c119d737eb
 contract_sections: ['5']
 deps: []
 paths:

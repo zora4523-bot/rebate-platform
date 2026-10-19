@@ -6,7 +6,7 @@ type: migration
 # 两段式（db/AGENTS.md）。Codex 写连库规则测试（存量用户各一行、已有不重复、重跑幂等、无用户时无行），Claude 过审，Opus 写迁移，Codex money 评审。
 refs: [BR-FUND-13]
 refs_hash:
-  BR-FUND-13: db3a11ed1712
+  BR-FUND-13: ad7aad8f8846
 deps: [B2-02g]
 paths:
   - 'db/migrations/**'

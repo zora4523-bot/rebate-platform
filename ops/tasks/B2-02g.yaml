@@ -7,7 +7,7 @@ type: impl
 # Codex 写规则测试，Claude 过审，Opus 实现，Codex money 评审。
 refs: [BR-FUND-13]
 refs_hash:
-  BR-FUND-13: db3a11ed1712
+  BR-FUND-13: ad7aad8f8846
 deps: [B2-02f]
 paths:
   - 'apps/api/src/modules/identity/infra/registration-store.ts'
