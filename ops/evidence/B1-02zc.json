@@ -1,0 +1,120 @@
+{
+  "task": "B1-02zc",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "39feb5f54d22e39f7d40bbc540f5137eaa0ffb9d",
+  "red_tests": [
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#1] 设备同意 loggedIn=false accepted=true version=1 原样保存字符串",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#1] 设备同意 loggedIn=false accepted=false version=2026-10-17 原样保存字符串",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#1] 设备同意 loggedIn=true accepted=true version=release_2026-10-17 原样保存字符串",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#1] 设备同意 loggedIn=true accepted=false version=vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv 原样保存字符串",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#2] 同一用户两台设备互不覆盖，追加撤回并按 server_at 取当前状态",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#3] 剪贴板整数版本 1 拒绝，改为字符串后可以记录",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#3] 剪贴板整数版本 2147483647 拒绝，改为字符串后可以记录",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#4] 原类型 privacy 仍用整数、无需签名且 version_label 为空，字符串返回 version 错误",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#4] 原类型 agreement 仍用整数、无需签名且 version_label 为空，字符串返回 version 错误",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#4] 原类型 ai_third_party 仍用整数、无需签名且 version_label 为空，字符串返回 version 错误",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#4] 原类型 id_verification 仍用整数、无需签名且 version_label 为空，字符串返回 version 错误",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#4] 原类型 personalization 仍用整数、无需签名且 version_label 为空，字符串返回 version 错误",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#5] 剪贴板缺少签名返回 10401，带令牌=false 不能绕过",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#5] 剪贴板缺少签名返回 10401，带令牌=true 不能绕过",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#6] 剪贴板无效签名材料 {\"x-sign\":\"0000000000000000000000000000000000000000000000000000000000000000\"} 返回 10401 且不写记录",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#6] 剪贴板无效签名材料 {\"x-timestamp\":\"1000000000\"} 返回 10401 且不写记录",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#6] 剪贴板无效签名材料 {\"x-nonce\":\"invalid\"} 返回 10401 且不写记录",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#7] 剪贴板签名 nonce 只能使用一次，重放不追加记录",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#8] 剪贴板设备 unknown 返回 10402 且不写记录",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#8] 剪贴板设备 revoked 返回 10402 且不写记录",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#9] 真实短信登录不把剪贴板记录并入用户，但仍合并普通设备同意",
+    "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#10] 低版本不能新增剪贴板同意，仍可签名撤回",
+    "test/spec/identity/consents-clipboard/login-merge.test.ts > [AC-B1-02zc#30] login_merge 排除剪贴板 accepted=true，保留普通同意合并与已有排除项",
+    "test/spec/identity/consents-clipboard/login-merge.test.ts > [AC-B1-02zc#30] login_merge 排除剪贴板 accepted=false，保留普通同意合并与已有排除项",
+    "test/spec/identity/consents-clipboard/schema.int.test.ts > [AC-B1-02zc#20] version_label 为可空 text；设备剪贴板与其他类型的配对约束拒绝所有非法组合"
+  ],
+  "risk_note": "RV2 (identity consents + db migration + risk signature export). clipboard_auto_import consent (08 BR-ID-12 / BR-ID-16, ruling E33): migration 0051 adds consent_records.version_label with the pairing check (this type ⇒ device subject, version_label set, version 0; other types ⇒ version_label null); string version only for this type, integer only for the others (20001 fields [version]); the subject is the device that passed signature verification, never the token's device (user_id only associated); the signature is verified on the raw body before the token check through risk's createRequestSignatureVerifier (the existing guard reuses it unchanged; nonce store shared), with raw-body buffering added for recordConsent only; excluded from login merge; the CT-15s transition guard is removed. Schema snapshots regenerated on the test machine. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "39feb5f54d22e39f7d40bbc540f5137eaa0ffb9d",
+      "tree": "63f15368db9864fe0f6058ac3c5a4fa92b53e5b5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T12:31:57Z",
+      "finished_at": "2026-10-19T12:32:21Z",
+      "red_tests": [
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#1] 设备同意 loggedIn=false accepted=true version=1 原样保存字符串",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#1] 设备同意 loggedIn=false accepted=false version=2026-10-17 原样保存字符串",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#1] 设备同意 loggedIn=true accepted=true version=release_2026-10-17 原样保存字符串",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#1] 设备同意 loggedIn=true accepted=false version=vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv 原样保存字符串",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#2] 同一用户两台设备互不覆盖，追加撤回并按 server_at 取当前状态",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#3] 剪贴板整数版本 1 拒绝，改为字符串后可以记录",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#3] 剪贴板整数版本 2147483647 拒绝，改为字符串后可以记录",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#4] 原类型 privacy 仍用整数、无需签名且 version_label 为空，字符串返回 version 错误",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#4] 原类型 agreement 仍用整数、无需签名且 version_label 为空，字符串返回 version 错误",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#4] 原类型 ai_third_party 仍用整数、无需签名且 version_label 为空，字符串返回 version 错误",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#4] 原类型 id_verification 仍用整数、无需签名且 version_label 为空，字符串返回 version 错误",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#4] 原类型 personalization 仍用整数、无需签名且 version_label 为空，字符串返回 version 错误",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#5] 剪贴板缺少签名返回 10401，带令牌=false 不能绕过",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#5] 剪贴板缺少签名返回 10401，带令牌=true 不能绕过",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#6] 剪贴板无效签名材料 {\"x-sign\":\"0000000000000000000000000000000000000000000000000000000000000000\"} 返回 10401 且不写记录",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#6] 剪贴板无效签名材料 {\"x-timestamp\":\"1000000000\"} 返回 10401 且不写记录",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#6] 剪贴板无效签名材料 {\"x-nonce\":\"invalid\"} 返回 10401 且不写记录",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#7] 剪贴板签名 nonce 只能使用一次，重放不追加记录",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#8] 剪贴板设备 unknown 返回 10402 且不写记录",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#8] 剪贴板设备 revoked 返回 10402 且不写记录",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#9] 真实短信登录不把剪贴板记录并入用户，但仍合并普通设备同意",
+        "test/spec/identity/consents-clipboard/http.int.test.ts > [AC-B1-02zc#10] 低版本不能新增剪贴板同意，仍可签名撤回",
+        "test/spec/identity/consents-clipboard/login-merge.test.ts > [AC-B1-02zc#30] login_merge 排除剪贴板 accepted=true，保留普通同意合并与已有排除项",
+        "test/spec/identity/consents-clipboard/login-merge.test.ts > [AC-B1-02zc#30] login_merge 排除剪贴板 accepted=false，保留普通同意合并与已有排除项",
+        "test/spec/identity/consents-clipboard/schema.int.test.ts > [AC-B1-02zc#20] version_label 为可空 text；设备剪贴板与其他类型的配对约束拒绝所有非法组合"
+      ],
+      "expected": [
+        "test/spec/identity/consents-clipboard/http.int.test.ts",
+        "test/spec/identity/consents-clipboard/login-merge.test.ts",
+        "test/spec/identity/consents-clipboard/schema.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "8d97482bb745b1d70360bf40a53b52849b1aec86549c3cabdbe37a277229efbd"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d0406240283022d213ebc85c371accfc615b51264dcfbd2ccc68679a264fe76c"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (round 3 made #7 a real HTTP nonce-replay check; 25 tests red for the right reason, red/3) reviewed by a fresh Claude subagent: round 1 pass (one S2 taken into the implementation: the subject is the signing device)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "2f277d709c5360873160c1ef6d4f90788d5eeb91",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
