@@ -2,6 +2,7 @@ import { type DynamicModule, Module } from '@nestjs/common';
 import { CLOCK, type Clock } from './clock/index.ts';
 import type { AppConfig } from './config/index.ts';
 import { openConfiguredFieldCrypto } from './config/keyring-startup.ts';
+import type { FieldCrypto } from './crypto/index.ts';
 import type { ConnectionConfig, DbHandles } from './db/index.ts';
 import type { EntryName } from './entries.ts';
 import { createEventBus } from './events/index.ts';
@@ -74,11 +75,15 @@ export class PlatformModule {
             { provide: DB, useValue: handles.db },
             {
               provide: IDEMPOTENCY,
-              useFactory: () =>
+              // FIELD_CRYPTO (absent without a keyring) serves the keyed request digest of
+              // requests with keyedRequestDigest (B1-01zzf); those fail closed without it.
+              inject: [{ token: FIELD_CRYPTO, optional: true }],
+              useFactory: (fieldCrypto?: FieldCrypto) =>
                 createIdempotency({
                   db: handles.db,
                   clock: options.clock,
                   logger: options.logger,
+                  fieldCrypto: fieldCrypto ?? null,
                 }),
             },
             { provide: JOB_QUEUE, useValue: queue },

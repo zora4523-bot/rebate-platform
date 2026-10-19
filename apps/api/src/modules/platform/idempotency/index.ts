@@ -51,6 +51,23 @@
 //        properties.
 //    Only the body is hashed: method, path, app and subject are part of the unique key instead.
 //
+//    Keyed request digest (task B1-01zzf; 08 BR-WDR-07: 请求体含个人敏感信息的幂等操作改用带密钥摘要
+//    HMAC-SHA256, 密钥同 FieldCrypto 盲索引, 按密钥版本记录). A request with
+//    `keyedRequestDigest: true` (the caller's explicit choice; omitted or false keeps the SHA-256
+//    above unchanged, requestHashOf included) stores request_hash =
+//    KEYED_REQUEST_DIGEST_PREFIX ('hmac1:', 1 = version 1 of the blind-index key; a new blind-index
+//    key would become 'hmac2:') + options.fieldCrypto.blindIndex(canonicalJson(body),
+//    KEYED_REQUEST_DIGEST_CONTEXT) — the same canonical JSON as the SHA-256 path, 64 lowercase hex
+//    characters. No unkeyed SHA-256 is written for such a request (new rows and lease takeovers
+//    alike). Comparison with a stored request_hash for such a request: a value with the 'hmac1:'
+//    prefix is compared with the keyed digest; an unprefixed value (a row written before this task)
+//    with the SHA-256 of the same body; equal → the same request, anything else → 20901 (or 40901
+//    under contention, as below); a prefixed value never falls back to the SHA-256 comparison.
+//    FieldCrypto not injected, throwing, or returning anything but 64 lowercase hex characters →
+//    the call rejects with RequestDigestUnavailable (the HTTP layer answers 50001) before the
+//    database is touched: no lookup, so no replay of an older SHA-256 row either, no write, no
+//    handler, and never a fallback to SHA-256. Requests without the option never call FieldCrypto.
+//
 // 4. One request — `idempotency.execute(request, handler)` (standard operations) and
 //    `idempotency.executeInTransaction(request, handler)` (the four sensitive operations).
 //    request = { appId, actor, method, path, key, body, traceId }:
@@ -62,6 +79,7 @@
 //      key      the Idempotency-Key header value or undefined
 //      body     the parsed JSON body (undefined when none)
 //      traceId  the request's trace id; goes into every envelope this module builds
+//      keyedRequestDigest  optional, true only for a body with personal data (section 3)
 //    Bad appId / method / path / body → IdempotencyError('invalid_request') before anything else
 //    (a programming error, not a client error); bad actor → 'invalid_subject'.
 //    Scope of a record: (app_id, subject, method, path, key) — exactly the unique constraint.
@@ -232,7 +250,9 @@
 //      - Banned or deleting accounts are not this primitive's concern (10006 / 10007 whitelists
 //        are the route's, BR-ID-31, BR-ID-27); it grants no right to run the original operation.
 //
-// 9. Factory — `createIdempotency({ db, clock, logger, processingLeaseMs? })`
+// 9. Factory — `createIdempotency({ db, clock, logger, processingLeaseMs?, fieldCrypto? })`
+//    fieldCrypto: the FieldCrypto of platform/crypto (only blindIndex is used, section 3); may be
+//    absent, then only requests with keyedRequestDigest fail.
 //    db: Kysely<DB> bound to schema app (platform/db `db` handle, role couli_app); clock: Clock —
 //    the only source of time (no Date.now(), no new Date() without argument, no SQL now() for
 //    values written or compared); logger: anything with pino's warn(fields, msg) and, optionally,
@@ -248,7 +268,8 @@
 //
 // 11. Wiring (implementation of this task; outside what the rule tests import): PlatformModule
 //     provides token IDEMPOTENCY = createIdempotency({ db: DB handle, clock: CLOCK, logger:
-//     ROOT_LOGGER }) when database handles exist, exported from platform/index.ts. No global HTTP
+//     ROOT_LOGGER, fieldCrypto: FIELD_CRYPTO when provided }) when database handles exist, exported
+//     from platform/index.ts. No global HTTP
 //     hook or interceptor: controllers / use cases of the operations marked I call execute or
 //     executeInTransaction (the transactional handler needs `trx`), after signature and token
 //     checks (BR-ID-01 ①–③) and before everything else. The abandon route is B1-02.
@@ -272,12 +293,13 @@
 //     namespace, decorators), no NestJS, `import type` for type-only imports, relative imports
 //     with `.ts`. Runtime imports only: `node:crypto`, `node:async_hooks`, `kysely`, and files of
 //     this directory;
-//     `@couli/db` and `../clock/index.ts` type-only. No process.env.
+//     `@couli/db`, `../clock/index.ts` and `../crypto/index.ts` type-only. No process.env.
 import type { DB } from '@couli/db';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import type { Clock } from '../clock/index.ts';
+import type { FieldCrypto } from '../crypto/index.ts';
 import { StoredRejection } from './stored-rejection.ts';
 
 export { StoredRejection } from './stored-rejection.ts';
@@ -338,6 +360,11 @@ export interface IdempotentRequest {
   readonly key: string | undefined;
   readonly body: unknown;
   readonly traceId: string;
+  /**
+   * Section 3, keyed request digest: true for an operation whose body carries personal data
+   * (BR-WDR-07). Omitted or false: the unkeyed SHA-256 request hash.
+   */
+  readonly keyedRequestDigest?: boolean;
 }
 
 export interface ResponseEnvelope {
@@ -379,6 +406,8 @@ export interface IdempotencyOptions {
   readonly clock: Clock;
   readonly logger: IdempotencyLogger;
   readonly processingLeaseMs?: number;
+  /** Section 3: the blind index of platform/crypto, needed only by keyedRequestDigest requests. */
+  readonly fieldCrypto?: Pick<FieldCrypto, 'blindIndex'> | null;
 }
 
 export interface Idempotency {
@@ -489,7 +518,49 @@ export function isNestingTooDeep(error: unknown): boolean {
 
 /** Section 3. */
 export function requestHashOf(body: unknown): string {
-  return createHash('sha256').update(canonicalJson(body), 'utf8').digest('hex');
+  return sha256Hex(canonicalJson(body));
+}
+
+/** Section 3: the blind-index context of the keyed request digest (its own, no other column's). */
+export const KEYED_REQUEST_DIGEST_CONTEXT = 'idempotency.request_hash';
+
+/** Section 3: version 1 of the blind-index key; stored before the 64 hex characters. */
+export const KEYED_REQUEST_DIGEST_PREFIX = 'hmac1:';
+
+/**
+ * Section 3: a keyedRequestDigest request while FieldCrypto is missing or failing. Thrown before
+ * the database is touched; the HTTP layer answers it as 50001. Fixed message, no cause (the
+ * FieldCrypto error is not passed on).
+ */
+export class RequestDigestUnavailable extends Error {
+  constructor() {
+    super('the keyed request digest is unavailable');
+    this.name = 'RequestDigestUnavailable';
+  }
+}
+
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+const HEX64 = /^[0-9a-f]{64}$/;
+
+/** Section 3: 'hmac1:' + blind index of the canonical body; RequestDigestUnavailable otherwise. */
+function keyedDigestOf(
+  canonical: string,
+  fieldCrypto: Pick<FieldCrypto, 'blindIndex'> | null | undefined,
+): string {
+  if (fieldCrypto == null || typeof fieldCrypto.blindIndex !== 'function') {
+    throw new RequestDigestUnavailable();
+  }
+  let index: unknown;
+  try {
+    index = fieldCrypto.blindIndex(canonical, KEYED_REQUEST_DIGEST_CONTEXT);
+  } catch {
+    throw new RequestDigestUnavailable();
+  }
+  if (typeof index !== 'string' || !HEX64.test(index)) throw new RequestDigestUnavailable();
+  return `${KEYED_REQUEST_DIGEST_PREFIX}${index}`;
 }
 
 /** Section 9. */
@@ -502,6 +573,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
     throw new IdempotencyError('invalid_option');
   }
   const { db, clock, logger } = options;
+  const fieldCrypto = options.fieldCrypto;
   // Stage ④a registration points (./post-miss.ts registers into them), read per request.
   const hooks: IdempotencyHooks = { postMiss: [], entry: [] };
   const postMissChecks = hooks.postMiss;
@@ -599,7 +671,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
   const instance: Idempotency = {
     async execute(request, handler) {
       entered(request);
-      const prepared = prepare(request);
+      const prepared = prepare(request, fieldCrypto);
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
       if (sensitiveOperation(request)) throw new IdempotencyError('transactional_required');
       // Set when a post-miss check threw a StoredRejection: its result replaces the handler's.
@@ -613,7 +685,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
             let now = clock.now();
             if (row !== undefined) {
               if (row.status !== 'processing' || now.getTime() - row.created_at.getTime() < lease) {
-                return existingResponse(row, prepared.hash, request.traceId);
+                return existingResponse(row, prepared, request.traceId);
               }
               // An expired lease is taken over like a missing key: ④a runs before the takeover.
               if (!checked) {
@@ -672,7 +744,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
 
     async executeInTransaction(request, handler) {
       entered(request);
-      const prepared = prepare(request);
+      const prepared = prepare(request, fieldCrypto);
       if (!validKey(request.key)) return errorResponse(20001, request.traceId);
       return transaction(db, request, report, async (trx) => {
         if (!(await lockScope(trx, prepared.scope))) return busyResponse(trx, prepared, request);
@@ -681,7 +753,7 @@ export function createIdempotency(options: IdempotencyOptions): Idempotency {
           let checked = false;
           for (;;) {
             const row = await findRow(trx, prepared.scope);
-            if (row !== undefined) return existingResponse(row, prepared.hash, request.traceId);
+            if (row !== undefined) return existingResponse(row, prepared, request.traceId);
             if (!checked) {
               rejected = await afterMiss(request, trx);
               checked = true;
@@ -849,7 +921,17 @@ function sensitiveOperation(request: { method: string; path: string }) {
   );
 }
 
-function prepare(request: IdempotentRequest) {
+/** The scope, the request_hash to write, and the comparison with a stored one (section 3). */
+interface Prepared {
+  readonly scope: Scope;
+  readonly hash: string;
+  readonly matches: (stored: string | null) => boolean;
+}
+
+function prepare(
+  request: IdempotentRequest,
+  fieldCrypto: Pick<FieldCrypto, 'blindIndex'> | null | undefined,
+): Prepared {
   if (
     typeof request.appId !== 'string' ||
     request.appId.length === 0 ||
@@ -860,7 +942,8 @@ function prepare(request: IdempotentRequest) {
   ) {
     throw new IdempotencyError('invalid_request');
   }
-  const hash = requestHashOf(request.body);
+  const canonical = canonicalJson(request.body);
+  const plain = sha256Hex(canonical);
   const subject = subjectOf(request.actor);
   const scope: Scope = {
     app_id: request.appId,
@@ -869,7 +952,23 @@ function prepare(request: IdempotentRequest) {
     path: request.path,
     key: request.key ?? '',
   };
-  return { scope, hash };
+  if (request.keyedRequestDigest !== true) {
+    return { scope, hash: plain, matches: (stored) => stored === plain };
+  }
+  // Before anything reads the database: without FieldCrypto nothing is looked up or replayed.
+  const keyed = keyedDigestOf(canonical, fieldCrypto);
+  return {
+    scope,
+    hash: keyed,
+    matches: (stored) => {
+      if (stored === null) return false;
+      if (stored.startsWith(KEYED_REQUEST_DIGEST_PREFIX)) return stored === keyed;
+      // TODO(规划/11 §2.3): 删除旧 sha256 比对 — blocked on 幂等记录最长留存期（IDEMPOTENCY_RETENTION_MS）过后
+      // （2026-10-19 起 keyed 指纹写入；实名提交、绑定手机号的行 30 天保留，2026-11-18 之后不再有
+      // 无前缀旧值。提现 / 收款账号行 expire_at = infinity（第 7 节），那两类若改 keyed，删除前须另议）。
+      return HEX64.test(stored) && stored === plain;
+    },
+  };
 }
 
 function timestamps(request: { method: string; path: string }, now: Date) {
@@ -931,10 +1030,10 @@ function storedResponse(row: Row): { status: number; body: string } {
   return { status: response.status, body: response.body };
 }
 
-function existingResponse(row: Row, hash: string, traceId: string): IdempotentResponse {
+function existingResponse(row: Row, prepared: Prepared, traceId: string): IdempotentResponse {
   if (row.status === 'abandoned') return errorResponse(20903, traceId);
   if (row.status === 'processing') return errorResponse(40901, traceId);
-  if (row.request_hash !== hash) return errorResponse(20901, traceId);
+  if (!prepared.matches(row.request_hash)) return errorResponse(20901, traceId);
   return { ...storedResponse(row), source: 'replay' };
 }
 
@@ -1035,11 +1134,11 @@ async function lockScope(trx: Transaction<DB>, scope: Scope): Promise<boolean> {
  */
 async function busyResponse(
   trx: Transaction<DB>,
-  prepared: { scope: Scope; hash: string },
+  prepared: Prepared,
   request: { traceId: string },
 ): Promise<IdempotentResponse> {
   const row = await findRow(trx, prepared.scope);
-  if (row?.status === 'completed' && row.request_hash === prepared.hash) {
+  if (row?.status === 'completed' && prepared.matches(row.request_hash)) {
     return { ...storedResponse(row), source: 'replay' };
   }
   return errorResponse(40901, request.traceId);
