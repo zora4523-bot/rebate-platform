@@ -73,3 +73,19 @@ describe('needsSign / resignFromVersion', () => {
     expect(resignFromVersion(current)).toBe(2);
   });
 });
+
+describe('validateAgreementPublish date (F1-02p §9.12)', () => {
+  it('[AC-F1-02p] a confirmation date with a trailing newline or space is not a calendar day', () => {
+    // Without the m flag `$` matches only at the very end, so "YYYY-MM-DD\n" is refused.
+    const first = { ...labor, version: 1, min_version: 1, requires_resign: true };
+    for (const day of ['2026-10-18\n', '2026-10-18\r\n', '2026-10-18 ', '\n2026-10-18']) {
+      expect(validateAgreementPublish({ ...first, legal_confirmed_on: day }, null)).toEqual({
+        ok: false,
+        fields: ['legal_confirmed_on'],
+      });
+    }
+    expect(validateAgreementPublish({ ...first, legal_confirmed_on: '2026-10-18' }, null)).toEqual({
+      ok: true,
+    });
+  });
+});

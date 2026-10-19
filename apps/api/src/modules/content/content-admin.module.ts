@@ -3,6 +3,7 @@
 // (F1-06x), whose cleaned files go to platform's MEDIA_STORE (provided globally by PlatformModule).
 // F1-09e adds POST /admin/v1/pages/{page_key}/preview-tokens (content.page, audited).
 // Page configuration /admin/v1/pages* (F1-09f): drafts, publish, gray, rollback and their reads.
+// Agreement versions /admin/v1/agreements* (F1-02p): list, one version, publish (totp step-up).
 // app.module imports this module on the admin entry only; the api and stream entries do not
 // serve /admin/v1. Permission checks go through platform's AdminOperationGuard, which the admin
 // module provides globally on the admin entry (content never imports admin).
@@ -28,10 +29,18 @@ import {
   MEDIA_STORE,
   ROOT_LOGGER,
   type AppConfig,
+  getLinkPatterns,
+  newUuidV7,
   type AuditPort,
   type Clock,
   type MediaStore,
 } from '../platform/index.ts';
+import { AgreementAdmin, type AgreementStore } from './application/agreement-admin.ts';
+import { AdminAgreementsController } from './http/admin/agreements.controller.ts';
+import {
+  createKyselyAgreementAdminStore,
+  isAgreementVersionTaken,
+} from './infra/kysely-agreement-admin-store.ts';
 import {
   PlatformIconUploader,
   type PlatformIconUploadStore,
@@ -120,6 +129,15 @@ const NO_DATABASE_PAGES: PageConfigStore = {
   transaction: refusePages,
 };
 
+const refuseAgreements = (): Promise<never> =>
+  Promise.reject(new Error('content: agreement versions need the database'));
+
+const NO_DATABASE_AGREEMENTS: AgreementStore = {
+  list: refuseAgreements,
+  detail: refuseAgreements,
+  transaction: refuseAgreements,
+};
+
 /** Monotonic milliseconds for the SVG conversion budget (not business time). */
 const monotonicMs = (): number => performance.now();
 
@@ -134,8 +152,31 @@ export class ContentAdminModule {
         AdminConfigItemsController,
         AdminPagePreviewTokensController,
         AdminPagesController,
+        AdminAgreementsController,
       ],
       providers: [
+        {
+          provide: AgreementAdmin,
+          inject: [APP_CONFIG, CLOCK, ROOT_LOGGER, { token: DB, optional: true }],
+          useFactory: (
+            config: AppConfig,
+            clock: Clock,
+            logger: Logger,
+            db?: Kysely<Database>,
+          ): AgreementAdmin =>
+            new AgreementAdmin({
+              store:
+                db === undefined
+                  ? NO_DATABASE_AGREEMENTS
+                  : createKyselyAgreementAdminStore(db, (trx) => options.auditWriter(trx, clock)),
+              clock,
+              logger,
+              mediaPublicBaseUrl: config.mediaPublicBaseUrl,
+              linkPatterns: getLinkPatterns,
+              newId: newUuidV7,
+              isVersionTaken: isAgreementVersionTaken,
+            }),
+        },
         {
           provide: PagePreviewService,
           inject: [CLOCK, { token: DB, optional: true }],
