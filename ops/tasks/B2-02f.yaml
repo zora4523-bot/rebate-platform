@@ -22,5 +22,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/ledger/posting/**'
   - 'test/properties/ledger/posting/**'
-status: todo
-pr: null
+status: done
+pr: 699
