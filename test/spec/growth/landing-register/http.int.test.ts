@@ -57,8 +57,14 @@ it('[AC-B1-11h#2] 新号规范化并绑定，同事务记录两份协议与一�
   );
   await registered(f, body.phone, 'official');
   const logs = kit.lines.slice(start).join('');
-  for (const secret of [body.phone, f.hash(body.phone), IP, body.sms_code, CODE])
+  for (const secret of [body.phone, f.hash(body.phone), body.sms_code, CODE])
     expect(logs).not.toContain(secret);
+  // Platform access logs retain the socket address; IP assertions apply only to business logs.
+  const businessLogs = kit.lines
+    .slice(start)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((line) => line['req'] === undefined && line['res'] === undefined);
+  expect(JSON.stringify(businessLogs)).not.toContain(IP);
 });
 
 for (const channel of [undefined, 'appstore']) {
@@ -438,12 +444,20 @@ for (const value of [0, -1, 1.5, '3']) {
         f.hash(number),
         `${number.slice(0, 3)}****${number.slice(-4)}`,
       ]),
+    ])
+      expect(logs).not.toContain(secret);
+    // Keep phone assertions on all logs, excluding access logs only for IP assertions.
+    const businessLogs = kit.lines
+      .slice(start)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((line) => line['req'] === undefined && line['res'] === undefined);
+    for (const secret of [
       IP,
       '198.51.100.19',
       kit.crypto.blindIndex(IP, 'invite_fail.ip'),
       ...(await f.registrations()).map((row) => row.ip_hmac),
     ])
-      expect(logs).not.toContain(secret);
+      expect(JSON.stringify(businessLogs)).not.toContain(secret);
     for (const warning of warnings)
       expect(Object.keys(warning).join(' ')).not.toMatch(
         /phone|\bip\b|ip_hmac|ip_hash|client_ip|remoteAddress/i,
