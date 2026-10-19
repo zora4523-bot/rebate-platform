@@ -542,6 +542,16 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "admin"
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/claims/:claim_id/items/:item_id/approve",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/claims/:claim_id/items/:item_id/reject",
+    "auth": "admin"
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/platform-icons",
     "auth": "admin"

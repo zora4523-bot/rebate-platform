@@ -3127,6 +3127,131 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/claims/{claim_id}/items/{item_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve one child order of a claim (returns the whole claim after the review)
+         * @description Approves one child order (claim_items) of a claim (01 F-ADM-06; 04 §6.6 claims; BR-ATTR-18,
+         *     BR-ATTR-20). Permission point `order.claim` (04 §11.2) only: an account holding only
+         *     `user.lookup`, or neither, gets 10403 with `data.reason=admin_permission_denied` (a super
+         *     admin holds every point). No step-up. No Idempotency-Key: the console's writes rely on the
+         *     CAS below (04 §6.6). One child order per call; there is no batch approval.
+         *
+         *     Request: `expected_row_version` is the child order's `row_version` from
+         *     GET /admin/v1/claims/{claim_id}. `reason` is required for approval and rejection alike,
+         *     5–200 characters (the console may prefill 「证据核实一致」); after trimming surrounding
+         *     whitespace it must still have at least 5 characters, else 20001 with
+         *     `data.fields=[reason]`; it is stored trimmed. An unknown claim_id or a claim of another
+         *     app → 20001 with `data.fields=[claim_id]`; an unknown item_id, or one that belongs to
+         *     another claim → 20001 with `data.fields=[item_id]`. A child order that is already decided
+         *     (approved, rejected or cancelled, by a reviewer or by the system, such as sync
+         *     attribution closing it under BR-ATTR-16), or whose `row_version` is no longer
+         *     `expected_row_version` → 20902 with `data.resource=claim_item`, nothing changed; the
+         *     console refreshes and shows the result.
+         *
+         *     Approval runs in one transaction under BR-ATTR-20: it takes
+         *     pg_advisory_xact_lock(hash(platform, sub_order_id)), the same lock as sync and admin
+         *     assignment (BR-ATTR-01), re-reads the order with SELECT … FOR UPDATE, and then checks in
+         *     this order (BR-ATTR-20 ② before ③):
+         *     - The order's user_id is no longer empty (attributed by sync, by another claim or by an
+         *       admin assignment): the order is not written and no commission snapshot is made; the
+         *       child order is closed as BR-ATTR-16 says, `cancelled` when that user_id is the
+         *       applicant, else `rejected` with `reject_reason=NOT_IN_POOL`. This is not an error: the
+         *       answer is 200 with the claim as it is after closing. Signal (no extra field): the
+         *       reviewed child order's `decision` in the response. A request to approve whose child
+         *       order comes back `cancelled`, or `rejected` with NOT_IN_POOL, was closed this way, and
+         *       the console tells the reviewer 「订单已被自动归属」.
+         *     - Else the order's rebate_status is VOID: the system rejects the child order with
+         *       `reject_reason=ORDER_INVALID` (BR-ATTR-18; a claim never takes a VOID order,
+         *       BR-ATTR-17 ④c, BR-ATTR-20 ③), again 200 with the claim; the order is not written.
+         *     - Else the child order becomes `approved` and the order is attributed to the applicant
+         *       as BR-ATTR-20 ③ says: user_id, user_basis=claim, locked=true, platform_status
+         *       unchanged, rebate_status out of UNATTRIBUTED by BR-FUND-01 R3, the commission snapshot
+         *       under the conditions of BR-ATTR-01 ⑥, order_status_history with source=claim, the
+         *       domain event claim.resolved queued in the same transaction, and source backfill
+         *       (BR-ATTR-15). Every other pending child order of the same sub order (in claims of other
+         *       applicants) is rejected with NOT_IN_POOL in the same transaction (BR-ATTR-18: the first
+         *       approval wins).
+         *     A child order closed by the system (`cancelled`, NOT_IN_POOL, ORDER_INVALID) has
+         *     `decided_by` null, as GET /admin/v1/claims/{claim_id} describes; an approval has the
+         *     reviewer.
+         *
+         *     In every outcome the child order's `row_version` goes up by 1 and `decided_at` is set,
+         *     `reason` is written to claims.reason (the latest note, shown as the claim's `reason`) and
+         *     to the audit log together with the operator and the outcome; child orders have no note
+         *     of their own. When every child order of the claim is decided, the claim's `status` is
+         *     summarized (BR-ATTR-18: any approved → approved; else any rejected → rejected; else
+         *     cancelled); while one is pending it stays as it is. The applicant is told the result by
+         *     in-app message and push (BR-ATTR-18). The response is the whole claim after the review,
+         *     the same shape as GET /admin/v1/claims/{claim_id}.
+         */
+        post: operations["adminApproveClaimItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/claims/{claim_id}/items/{item_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject one child order of a claim with a reviewer reject reason (returns the whole claim)
+         * @description Rejects one child order (claim_items) of a claim (01 F-ADM-06; 04 §6.6 claims;
+         *     BR-ATTR-18). Permission point `order.claim` (04 §11.2) only: an account holding only
+         *     `user.lookup`, or neither, gets 10403 with `data.reason=admin_permission_denied`. No
+         *     step-up and no Idempotency-Key (CAS, 04 §6.6). One child order per call; there is no
+         *     batch rejection.
+         *
+         *     Request: `expected_row_version`, `reason` and the errors for them, for an unknown
+         *     claim_id or item_id and for a decided or changed child order are the same as
+         *     POST /admin/v1/claims/{claim_id}/items/{item_id}/approve (`reason` 5–200 characters,
+         *     else 20001 with `data.fields=[reason]`; 20902 with `data.resource=claim_item`).
+         *     `reject_reason` takes only the six codes a reviewer may choose (BR-ATTR-18): NO_EVIDENCE,
+         *     EXPIRED_CLICK (the applicant only has records of the same product older than 360 hours),
+         *     NOT_TRACKED, OTHER_TLJ, FRAUD, OTHER. NOT_IN_POOL and ORDER_INVALID are set by the system
+         *     only; sending one of them, or any other value → 20001 with `data.fields=[reject_reason]`.
+         *
+         *     Rejection runs in one transaction: it takes pg_advisory_xact_lock(hash(platform,
+         *     sub_order_id)), the same lock as approval, sync and admin assignment (BR-ATTR-01), re-reads
+         *     the order with SELECT … FOR UPDATE, and then:
+         *     - The order's rebate_status is VOID: the system rejects the child order with
+         *       `reject_reason=ORDER_INVALID` (BR-ATTR-18: an order already void at review is rejected
+         *       by the system, whether the reviewer pressed approve or reject; approval does the same),
+         *       not with the reviewer's `reject_reason`, and `decided_by` is null (a system decision,
+         *       as in approval). This is not an error: the answer is 200 with the claim. Signal (no
+         *       extra field): the reviewed child order comes back with `reject_reason=ORDER_INVALID`.
+         *     - Else the child order becomes `rejected` with that `reject_reason` and `decided_by` the
+         *       reviewer.
+         *     In both outcomes `decided_at` is set and `row_version` goes up by 1; the order itself is
+         *     not written. `reason` is written to claims.reason (the latest note) and to the audit log
+         *     with the operator, the reject reason the reviewer chose and the outcome (including
+         *     ORDER_INVALID). When every child order is decided the claim's `status` is
+         *     summarized as BR-ATTR-18 says (any approved → approved; else any rejected → rejected;
+         *     else cancelled); while one is pending it stays as it is. The applicant is told the result
+         *     by in-app message and push (BR-ATTR-18). The response is the whole claim after the
+         *     review, the same shape as GET /admin/v1/claims/{claim_id}.
+         */
+        post: operations["adminRejectClaimItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/platform-icons": {
         parameters: {
             query?: never;
@@ -8742,6 +8867,29 @@ export interface components {
             trace_id: components["schemas"]["TraceId"];
         };
         /**
+         * @description The review note, required for approval and rejection (BR-ATTR-20: at least 5
+         *     characters); at least 5 characters also after trimming surrounding whitespace, stored
+         *     trimmed in claims.reason and the audit log.
+         */
+        AdminClaimReviewReason: string;
+        /**
+         * @description The reject reasons a reviewer may choose (enum claim_reject_reason, its first six codes;
+         *     BR-ATTR-18). NOT_IN_POOL and ORDER_INVALID are set by the system only.
+         * @enum {string}
+         */
+        AdminClaimStaffRejectReason: "NO_EVIDENCE" | "EXPIRED_CLICK" | "NOT_TRACKED" | "OTHER_TLJ" | "FRAUD" | "OTHER";
+        AdminApproveClaimItemRequest: {
+            /** @description The child order's row_version as the console showed it; a mismatch is 20902 (claim_item). */
+            expected_row_version: components["schemas"]["AdminRowVersion"];
+            reason: components["schemas"]["AdminClaimReviewReason"];
+        };
+        AdminRejectClaimItemRequest: {
+            /** @description The child order's row_version as the console showed it; a mismatch is 20902 (claim_item). */
+            expected_row_version: components["schemas"]["AdminRowVersion"];
+            reason: components["schemas"]["AdminClaimReviewReason"];
+            reject_reason: components["schemas"]["AdminClaimStaffRejectReason"];
+        };
+        /**
          * @description Type of a search hit (enum admin_search_hit_type); each is returned only to accounts holding
          *     its permission point: order order.view, user user.lookup, withdrawal fund.view.
          * @enum {string}
@@ -9135,6 +9283,11 @@ export interface components {
          *     the bound is checked after trimming, so the schema carries none.
          */
         AdminClaimQuery: string;
+        /**
+         * @description item_id of one child order of the claim (claim_items); unknown, or of another claim →
+         *     20001 with data.fields=[item_id].
+         */
+        AdminClaimItemIdPath: components["schemas"]["Id"];
         /** @description Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key]. */
         PlatformIconKeyPath: components["schemas"]["PlatformIconKey"];
         /** @description Version of the mark, counted per mark from 1; unknown → 20001 with data.fields=[version]. */
@@ -16434,6 +16587,121 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminApproveClaimItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description claim_id of the claim (also its display number); unknown, of another app, or (with
+                 *     user_id) of another applicant → 20001 with data.fields=[claim_id].
+                 */
+                claim_id: components["parameters"]["AdminClaimIdPath"];
+                /**
+                 * @description item_id of one child order of the claim (claim_items); unknown, or of another claim →
+                 *     20001 with data.fields=[item_id].
+                 */
+                item_id: components["parameters"]["AdminClaimItemIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_row_version": 0,
+                 *       "reason": "证据核实一致"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminApproveClaimItemRequest"];
+            };
+        };
+        responses: {
+            /** @description The whole claim after the review (approved, or closed by the system). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminClaimDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRejectClaimItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description claim_id of the claim (also its display number); unknown, of another app, or (with
+                 *     user_id) of another applicant → 20001 with data.fields=[claim_id].
+                 */
+                claim_id: components["parameters"]["AdminClaimIdPath"];
+                /**
+                 * @description item_id of one child order of the claim (claim_items); unknown, or of another claim →
+                 *     20001 with data.fields=[item_id].
+                 */
+                item_id: components["parameters"]["AdminClaimItemIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_row_version": 0,
+                 *       "reason": "付款前没有该店铺的任何点击记录",
+                 *       "reject_reason": "NO_EVIDENCE"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminRejectClaimItemRequest"];
+            };
+        };
+        responses: {
+            /** @description The whole claim after the rejection (by the reviewer, or by the system with ORDER_INVALID). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminClaimDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
