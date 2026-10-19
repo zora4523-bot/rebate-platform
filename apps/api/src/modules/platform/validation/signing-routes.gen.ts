@@ -542,6 +542,16 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/claims/:claim_id/items/:item_id/approve",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/claims/:claim_id/items/:item_id/reject",
+    "signed": false
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/platform-icons",
     "signed": false

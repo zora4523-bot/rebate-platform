@@ -226,6 +226,7 @@ codes:
         - agreement
         - article
         - dict_item
+        - claim_item
     sources:
       - BR-FUND-01
       - BR-FUND-04

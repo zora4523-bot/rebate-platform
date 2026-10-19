@@ -189,6 +189,9 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   // One request branch per export source (CT-24k): each fixes its own resource.
   'AdminExportCreateUsersRequest/properties/resource': 'export_resource',
   'AdminExportCreateAuditLogsRequest/properties/resource': 'export_resource',
+  // A reviewer rejects with the first six codes only; NOT_IN_POOL and ORDER_INVALID are system
+  // only (BR-ATTR-18, CT-24l). A subset, not a binding: ENUM_BINDINGS keeps the full enum.
+  AdminClaimStaffRejectReason: 'claim_reject_reason',
 };
 
 function isObj(v: unknown): v is Obj {

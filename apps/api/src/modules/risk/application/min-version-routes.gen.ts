@@ -1103,6 +1103,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminApproveClaimItem",
+    "method": "POST",
+    "path": "/admin/v1/claims/:claim_id/items/:item_id/approve",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRejectClaimItem",
+    "method": "POST",
+    "path": "/admin/v1/claims/:claim_id/items/:item_id/reject",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListPlatformIcons",
     "method": "GET",
     "path": "/admin/v1/platform-icons",

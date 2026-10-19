@@ -215,6 +215,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'article',
     // CT-02r: admin dictionary save / rollback CAS (04 §6.6, BR-TEXT-12).
     'dict_item',
+    // CT-24l: admin claim child order approve / reject CAS (04 §6.6 claims, BR-ATTR-18, BR-ATTR-20).
+    'claim_item',
   ]);
 });
 
