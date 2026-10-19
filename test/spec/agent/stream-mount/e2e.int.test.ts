@@ -119,3 +119,36 @@ it('[AC-B3-03f#2][BR-AI-14][BR-AI-23] 降级（测试缝放行输入检查）：
   expect(await runsOf(pg.db, sessionId)).toHaveLength(1);
   expect(input.texts).toHaveLength(1);
 }, 60_000);
+
+it('[AC-B3-03f#32][BR-AI-13] 正常消息的首帧 meta.ai_label 等于 texts.default.json 的 ai_label：生产默认装配（done(safety)）与降级路径（done(fallback)）各一次', async () => {
+  const caller = await newMember(pg.db);
+  await openAgent(pg.db);
+  await consent(pg.db, caller);
+  const expected = fileText('ai_label');
+
+  const production = await rig(pg.db);
+  const first = await send(
+    production,
+    caller,
+    await openSession(production, caller),
+    message('帮我找个保温杯'),
+  );
+  expect(first.jsons, 'accepted: answered with a stream').toEqual([]);
+  const firstFrames = framesOf(first.chunks);
+  expect(firstFrames[0]!.event).toBe('meta');
+  expect(firstFrames[firstFrames.length - 1]!.data['finish_reason']).toBe('safety');
+  expect(firstFrames[0]!.data['ai_label']).toBe(expected);
+
+  const degraded = await rig(pg.db, { inputCheck: new PassInputCheck() });
+  const second = await send(
+    degraded,
+    caller,
+    await openSession(degraded, caller),
+    message('帮我找个保温杯'),
+  );
+  expect(second.jsons, 'accepted: answered with a stream').toEqual([]);
+  const secondFrames = framesOf(second.chunks);
+  expect(secondFrames.map((f) => f.event)).toEqual(['meta', 'card', 'done']);
+  expect(secondFrames[2]!.data['finish_reason']).toBe('fallback');
+  expect(secondFrames[0]!.data['ai_label']).toBe(expected);
+}, 60_000);

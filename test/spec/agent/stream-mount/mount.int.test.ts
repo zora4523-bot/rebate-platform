@@ -553,3 +553,94 @@ it('[AC-B3-03f#28][BR-AI-23][BR-AI-15][BR-ID-03] 真实 stream 入口 + PG：游
     await app.close();
   }
 }, 120_000);
+
+it('[AC-B3-03f#29][BR-AI-23] 真实 stream 入口 + PG：已同意用户向自己的有效会话发 501 个码点 → 20001（data.fields=[text]），不建 run、不写消息、不计配额；500 个码点照常受理', async () => {
+  const clock = new FixedClock('2026-10-06T10:00:00+08:00');
+  const caller = await newMember(pg.db);
+  await openAgent(pg.db);
+  await consent(pg.db, caller);
+  const app = await streamApp(clock);
+  try {
+    const call = await memberClient(app, clock, caller);
+    const created = await call('POST', '/v1/agent/sessions');
+    expect(json(created)['code'], created.body).toBe(0);
+    const sessionId = (json(created)['data'] as Record<string, unknown>)['session_id'] as string;
+    // One astral character (two UTF-16 units): the limit counts code points (BR-AI-23 ⑤).
+    const tooLong = `${'找'.repeat(500)}𠀀`;
+    const atLimit = `${'找'.repeat(499)}𠀀`;
+    expect([...tooLong]).toHaveLength(501);
+    expect([...atLimit]).toHaveLength(500);
+
+    const before = await agentSnapshot(pg.db);
+    const refused = await call('POST', `/v1/agent/sessions/${sessionId}/messages`, {
+      client_msg_id: randomUUID(),
+      text: tooLong,
+    });
+    const refusedBody = json(refused);
+    expect(refusedBody['code'], refused.body).toBe(20001);
+    expect(refusedBody['data']).toEqual({ fields: ['text'] });
+    expect(await agentSnapshot(pg.db), 'no run, no message, no quota').toBe(before);
+
+    const accepted = await call('POST', `/v1/agent/sessions/${sessionId}/messages`, {
+      client_msg_id: randomUUID(),
+      text: atLimit,
+    });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    expect(String(accepted.headers['content-type'])).toContain('text/event-stream');
+    const frames = framesOf([accepted.body]);
+    expect(frames[0]!.event).toBe('meta');
+    expect(frames[frames.length - 1]!.event).toBe('done');
+    const runs = await runsOf(pg.db, sessionId);
+    expect(runs.map((r) => r['id'])).toEqual([frames[0]!.data['run_id']]);
+  } finally {
+    await app.close();
+  }
+}, 120_000);
+
+it('[AC-B3-03f#30][BR-AI-23][BR-AI-12][BR-AI-13] 真实 stream 入口 + PG：GET 当前会话先过 ①——whitelist_only=true 时名单外且未同意 → 30501（不是 10004）；名单内未同意 → 10004；均无副作用', async () => {
+  const clock = new FixedClock('2026-10-06T10:00:00+08:00');
+  await openAgent(pg.db);
+  const listed = await newMember(pg.db);
+  const unlisted = await newMember(pg.db);
+  await setConfig(pg.db, APP, 'agent.whitelist_only', true);
+  await setConfig(pg.db, APP, 'agent.whitelist_user_ids', [listed.userId]);
+  const app = await streamApp(clock);
+  try {
+    const before = await agentSnapshot(pg.db);
+    for (const [caller, code, what] of [
+      [unlisted, 30501, 'unlisted without consent'],
+      [listed, 10004, 'listed without consent'],
+    ] as const) {
+      const call = await memberClient(app, clock, caller);
+      const current = await call('GET', '/v1/agent/sessions/current');
+      expect(json(current)['code'], `${what}: ${current.body}`).toBe(code);
+    }
+    expect(await agentSnapshot(pg.db)).toBe(before);
+  } finally {
+    await app.close();
+  }
+}, 120_000);
+
+it('[AC-B3-03f#31][BR-AI-23][BR-AI-11][BR-ID-03][BR-AI-13] 真实 stream 入口 + PG：GET 当前会话先过 ②——agent.require_phone=true 时未绑手机且未同意 → 10005、游客未同意 → 10001（都不是 10004）；已绑手机未同意 → 10004；均无副作用', async () => {
+  const clock = new FixedClock('2026-10-06T10:00:00+08:00');
+  await openAgent(pg.db);
+  await setConfig(pg.db, APP, 'agent.require_phone', true);
+  const guest = await newGuest(pg.db);
+  const unbound = await newMember(pg.db, { phoneBound: false });
+  const bound = await newMember(pg.db);
+  const app = await streamApp(clock);
+  try {
+    const before = await agentSnapshot(pg.db);
+    for (const [call, code, what] of [
+      [await memberClient(app, clock, unbound), 10005, 'no bound phone, no consent'],
+      [guestClient(app, guest), 10001, 'guest, no consent'],
+      [await memberClient(app, clock, bound), 10004, 'bound phone, no consent'],
+    ] as const) {
+      const current = await call('GET', '/v1/agent/sessions/current');
+      expect(json(current)['code'], `${what}: ${current.body}`).toBe(code);
+    }
+    expect(await agentSnapshot(pg.db)).toBe(before);
+  } finally {
+    await app.close();
+  }
+}, 120_000);
