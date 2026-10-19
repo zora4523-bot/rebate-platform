@@ -1,0 +1,23 @@
+id: B2-02l
+repo: rebate-platform
+title: 账务不变量支持红冲：新增替代 03（按（订单、凭证类型）计净额，原凭证与其 :REVERSE 成对抵消后同一订单同一类型有效入账至多一笔）与 04 红冲配对版，superseded.json 登记被替代的旧文件
+type: impl
+# 2026-10-19 资金线（编排 17:0x 裁定；decision 32：红冲沿用 voucher_kind、以 uniq_key 原键:REVERSE 配对；decision 33：superseded.json 由日终运行器 B2-02j 跳过）。依据 BR-FUND-19 ③④、BR-FUND-16。
+# db/invariants 只增不改：旧 03 / 04 保留，新文件替代。须先于 B2-02i 合并或同 PR；B2-02j 在其后。同 PR 回归用例证明旧不变量能抓的重复入账、漏冲回新文件一样抓到（各至少一例），红冲成对时不报。
+# 资金测试改动：Codex 写测试 + Codex money 评审，评审提示词写明「只为支持红冲而改判定、不放宽」。
+refs: [BR-FUND-16, BR-FUND-19]
+refs_hash:
+  BR-FUND-16: 077f6d412d5a
+  BR-FUND-19: 8d592a87d85c
+deps: [B2-02e]
+paths:
+  - 'db/invariants/ledger/**'
+test_paths:
+  - 'test/spec/db/ledger/invariants-reverse/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/ledger/invariants-reverse/**'
+status: todo
+pr: null
