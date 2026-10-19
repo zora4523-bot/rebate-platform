@@ -1,9 +1,21 @@
 import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import * as smsRiskImpl from '../../../../apps/api/src/modules/risk/application/sms-risk.ts';
 import { seedBlock, phoneHmac } from '../blocklist/kit.ts';
 import { validate as validateLogin } from '../../identity/sms-login/http-kit.ts';
 import { alerts, hash, IP, OTHER_IP, phone } from './kit.ts';
 import { closeSuite, openSuite, result, withHttp } from './http-kit.ts';
+
+// B1-11s: B1-11g makes the per-IP hourly send count of the HTTP send path PG-authoritative over
+// [now − (3600 s + the send-timeout bound), now] (SMS_ATTEMPT_WINDOW_MS), so every Retry-After
+// that comes from that item is longer by the bound. Read from the implementation; absent (before
+// B1-11g) → 0. Only waits from the per-IP hourly send item use it; device / registration waits
+// keep their values. Not exported from risk/index.ts, hence the module file itself.
+const rawWindowMs: unknown = Reflect.get(smsRiskImpl, 'SMS_ATTEMPT_WINDOW_MS');
+const IP_WINDOW_EXTRA_MS = typeof rawWindowMs === 'number' ? rawWindowMs - 3_600_000 : 0;
+const IP_WINDOW_EXTRA_SEC = Math.ceil(IP_WINDOW_EXTRA_MS / 1000);
+/** A wait of the per-IP hourly send item: the B1-03g value plus the window extension. */
+const ipSendWait = (seconds: number): number => seconds + IP_WINDOW_EXTRA_SEC;
 
 let suite: Awaited<ReturnType<typeof openSuite>>;
 beforeAll(async () => {
@@ -28,7 +40,8 @@ it('[AC-B1-03g#1] 真签名 AppModule：签名、20001、44001 在频控前且�
     // Both caps are now full: earlier errors still win and must not send.
     await result(await client.send('12812345678'), 20001);
     await result(await client.send(blocked), 44001);
-    await result(await client.send(phone()), 42901, 3601);
+    // The per-IP hourly item (limit 3) is judged before the device: its wait.
+    await result(await client.send(phone()), 42901, ipSendWait(3601));
     expect(f.sender.outbox()).toHaveLength(3);
   });
 });
@@ -115,18 +128,20 @@ it('[AC-B1-03g#6][AC-B1-03g#8] 20 条后同 IP 等 1741 秒，captcha 无效，I
     f.clock.set('2031-05-06T09:31:00Z');
     const blocked = await f.client();
     const rejectedPhone = phone();
-    await result(await blocked.send(rejectedPhone), 42901, 1741);
+    await result(await blocked.send(rejectedPhone), 42901, ipSendWait(1741));
     await result(
       await blocked.send(rejectedPhone, IP, { captcha_token: 'x'.repeat(2048) }),
       42901,
-      1741,
+      ipSendWait(1741),
     );
     expect(f.sender.outbox()).toHaveLength(20);
     for (let i = 0; i < 3; i++) await result(await blocked.send(phone(), OTHER_IP), 0);
     await result(await blocked.send(rejectedPhone, OTHER_IP), 42901, 3601);
     expect(f.sender.outbox()).toHaveLength(23);
     const clean = await f.client();
-    f.clock.set('2031-05-06T10:00:00Z');
+    // The instant 09:00:00's send is exactly one IP window old (still counted, closed end): the
+    // window extension moves that instant by the same amount (B1-11s).
+    f.clock.set(new Date(Date.parse('2031-05-06T10:00:00Z') + IP_WINDOW_EXTRA_MS));
     await result(await clean.send(phone()), 42901, 1);
     f.clock.advanceMs(1000);
     await result(await clean.send(phone()), 0);
@@ -143,7 +158,8 @@ it('[AC-B1-03g#6][AC-B1-03g#10] 明确拒绝不计，未知算受理；IP 和预
     await result(await client.send(phone()), 0);
     await result(await client.send(phone()), 0);
     const fresh = await f.client();
-    await result(await fresh.send(phone()), 42901, 3601);
+    // A fresh device: the per-IP hourly item (limit 2, the unknown and the accepted send) refuses.
+    await result(await fresh.send(phone()), 42901, ipSendWait(3601));
     expect(f.sender.outbox()).toHaveLength(2);
     expect(alerts(f.lines, f.id).map((line) => line['count'])).toEqual([2, 2]);
   });
