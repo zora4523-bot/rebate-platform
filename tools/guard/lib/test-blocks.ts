@@ -40,20 +40,22 @@
 //   that the test reads the support file. Only such a specifier literal is exempt from the name
 //   rules; the name anywhere else (a comment, another literal) still counts.
 // - Closed module (Module.closed): tokenised; no dynamic load (glob / require / computed import);
-//   no directory listing; no file-system API, no code or process execution (child_process, vm,
-//   worker_threads, module, eval, Function, Worker …), no browser or network API (fetch,
-//   XMLHttpRequest, document …: in browser mode Vite serves the work tree), no way to the Function
-//   constructor (`.constructor`, getPrototypeOf, __proto__), no capability object (process,
-//   globalThis, global, window, self) used by a computed key or as a value, no capability named by
-//   a string literal (also one built from literals with `+` or `[…].join(…)`), no import.meta; no
-//   mock call of any spelling (`.` or `?.`, a computed key on vi, a destructured or renamed mock
-//   function, vi passed on as a value); no template specifier or import inside a template; every
-//   relative or `#` import
-//   resolves (certainly, by Vite's rules) to a closed module of the closure or to a module outside
-//   the test code (implementation code never reads test-support files, as since CT-06p); a bare
-//   specifier is a package — except a workspace package (`@couli/*`, test code such as
-//   packages/testing that the closure does not follow). Computed as a fixpoint over the closure;
-//   `opaque` says why not.
+//   no directory listing; no file-system API; no code or process execution (child_process, vm,
+//   worker_threads, module, inspector, eval, Function, Worker …, built-in subpaths too); no
+//   browser or network API (fetch, XMLHttpRequest, document …: in browser mode Vite serves the
+//   work tree); no way to the Function constructor (`constructor` in any spelling but a
+//   constructor definition, getPrototypeOf, __proto__); no capability object (process,
+//   globalThis, global, window, self) used by a computed key or as a value; no capability named
+//   by a string literal (also one built from literals with `+` or `[…].join(…)`); no import.meta;
+//   no mock call of any spelling (`.` or `?.`, `?.()`, any receiver, a computed key on vi, a
+//   destructured or renamed mock function, vi passed on as a value); no template specifier or
+//   import inside a template; every relative or `#` import resolves (certainly, by Vite's rules)
+//   to a closed module of the closure or to a module outside the test code (implementation code
+//   never reads test-support files, as since CT-06p); a bare specifier is a package — except a
+//   workspace package (`@couli/*`, test code such as packages/testing that the closure does not
+//   follow). Computed as a fixpoint over the closure; `opaque` says why not. The capabilities are
+//   a list of spellings (Codex reviews r4–r7), not a proof: a name computed some other way is not
+//   seen.
 // - Fallback rule: a specifier is exempt only when it resolves to a closed module and the whole
 //   closure is closed. Whenever the module it names is not closed, not followed or not resolved,
 //   the importing module mocks modules, ANY module the rule-test file loads is not closed (a
@@ -1477,6 +1479,23 @@ const MOCKING = new Set([
 ]);
 
 /**
+ * The capability a module name names (CT-06w): one of FILE_MODULES, a subpath of one of their
+ * built-ins (`node:inspector/promises`, `fs/promises`; Codex review r7), the Vitest browser
+ * commands (`@vitest/browser…`, `vitest/browser…`) or `node:test` (its `mock.module`); `reads`
+ * when it is the file system. Null for any other name.
+ */
+function capabilityModule(name: string): { reads: boolean } | null {
+  const bare = name.startsWith('node:') ? name.slice(5) : name;
+  const head = bare.split('/')[0] ?? bare;
+  if (FILE_MODULES.has(name) || FILE_MODULES.has(head)) {
+    return { reads: READ_MODULES.has(name) || head === 'fs' };
+  }
+  if (/^(@vitest\/browser|vitest\/browser)(\/|$)/.test(name)) return { reads: false };
+  if (name === 'node:test' || name.startsWith('node:test/')) return { reads: false };
+  return null;
+}
+
+/**
  * Why a module may read files in a way the rules of mayReadSupport do not see (CT-06w, Codex
  * review r4): a file-system API or a path built from `import.meta` / `__dirname`, a module mock
  * (Vitest redirects it to `__mocks__`), `require` / `glob`, code or process execution, a browser
@@ -1494,7 +1513,8 @@ function fileAccess(code: readonly Token[], reads = true): string | null {
     if (FILE_ACCESS.has(name) || name === 'constructor' || name === 'globalThis') {
       return reads || !FILE_READS.has(name) ? name : null;
     }
-    if (FILE_MODULES.has(name)) return reads || !READ_MODULES.has(name) ? name : null;
+    const mod = capabilityModule(name);
+    if (mod !== null) return reads || !mod.reads ? name : null;
     return null;
   };
   for (let i = 0; i < tokens.length; i += 1) {
@@ -1509,8 +1529,14 @@ function fileAccess(code: readonly Token[], reads = true): string | null {
       const name = listed(value);
       if (name !== null) return `it uses ${name}`;
     }
-    if (t.kind === 'id' && t.text === 'constructor' && member(tokens[i - 1])) {
-      return 'it uses .constructor';
+    // The Function constructor in any spelling but a constructor definition (`constructor(…) {`):
+    // `.constructor`, `{ constructor: C } = f`, `{ constructor }` (Codex reviews r6, r7).
+    if (t.kind === 'id' && t.text === 'constructor') {
+      const definition =
+        !member(tokens[i - 1]) &&
+        tokens[i + 1]?.text === '(' &&
+        tokens[closeOf(tokens, i + 1) + 1]?.text === '{';
+      if (!definition) return 'it uses constructor';
     }
     if (
       t.kind === 'id' &&
@@ -1563,7 +1589,9 @@ function literalValue(t: Token | undefined): string | null {
 function stringValues(tokens: readonly Token[], i: number): string[] {
   const out: string[] = [];
   const first = literalValue(tokens[i]);
-  if (first !== null && tokens[i - 1]?.text !== '+') {
+  if (first !== null) {
+    // Every literal counts on its own, also after a `+` (`empty + 'constructor'`; Codex review
+    // r7), and so does every chain of literals that starts with it.
     out.push(first);
     let folded = first;
     for (let j = i + 1; tokens[j]?.text === '+'; j += 2) {
@@ -1629,8 +1657,13 @@ function usesMocking(tokens: readonly Token[]): string | null {
     if (t.kind !== 'id' || !MOCKING.has(t.text)) continue;
     // Destructured or imported under its own name (`const { doMock } = vi`, `import { mock }`).
     if (!member(tokens[i - 1])) return `it uses ${t.text}`;
+    // A member of any receiver (`v.doMock?.(…)` with `vi as v`; Codex review r7) — except a
+    // property chain through `.mock` (a spy's `.mock.calls`), which is no mock call.
     const ns = tokens[i - 2]?.text;
-    if (ns === 'vi' || ns === 'vitest' || tokens[i + 1]?.text === '(')
+    const next = tokens[i + 1]?.text;
+    const called = next === '(' || (next === '?.' && tokens[i + 2]?.text === '(');
+    const chain = (next === '.' || next === '?.') && tokens[i + 2]?.kind === 'id';
+    if (t.text !== 'mock' || ns === 'vi' || ns === 'vitest' || called || !chain)
       return `it uses ${ns}.${t.text}`;
   }
   return null;
@@ -1661,46 +1694,52 @@ function importSpecifiers(
       end: (t.start as number) + t.text.length,
     });
   };
-  // The specifier of the declaration whose clause starts at `j`, or null.
+  // The specifier of the declaration whose clause starts at `j`, or null — by the grammar of
+  // import and export declarations only (Codex reviews r6, r7: `export { a }` followed by
+  // `void from` and a string on later lines is no import):
+  //   import [type] 'x' | import [type] <binding> from 'x'
+  //     binding = name | name , * as name | name , { … } | * as name | { … }
+  //   export [type] * [as name|'name'] from 'x' | export [type] { … } from 'x'
+  const id = (t: Token | undefined): boolean => t?.kind === 'id';
+  const braces = (k: number): number => {
+    if (tokens[k]?.text !== '{') return -1;
+    const close = closeOf(tokens, k);
+    return close < 0 ? -1 : close + 1;
+  };
+  const fromAt = (k: number): Token | null =>
+    tokens[k]?.text === 'from' && id(tokens[k]) && str(tokens[k + 1])
+      ? (tokens[k + 1] as Token)
+      : null;
   const declaration = (j: number, exported: boolean): Token | null => {
-    if (!exported && str(tokens[j])) return tokens[j] as Token;
-    if (exported) {
-      if (
-        tokens[j]?.text === 'type' &&
-        (tokens[j + 1]?.text === '{' || tokens[j + 1]?.text === '*')
-      )
-        j += 1;
-      if (tokens[j]?.text !== '*' && tokens[j]?.text !== '{') return null;
+    // `type` is a modifier unless it is the default binding itself (`import type from 'x'`).
+    if (tokens[j]?.text === 'type' && fromAt(j + 1) === null) {
+      const next = tokens[j + 1];
+      if (id(next) || next?.text === '{' || next?.text === '*') j += 1;
     }
-    let braces = 0;
-    for (; j < tokens.length; j += 1) {
-      const t = tokens[j] as Token;
-      if (t.text === '{') {
-        if (braces > 0) return null;
-        let depth = 0;
-        let k = j;
-        for (; k < tokens.length; k += 1) {
-          const x = (tokens[k] as Token).text;
-          if (x === '{') depth += 1;
-          else if (x === '}') {
-            depth -= 1;
-            if (depth === 0) break;
-          }
-        }
-        if (k >= tokens.length || depth !== 0) return null;
-        braces += 1;
-        j = k;
-        continue;
+    const namespace = (k: number): number =>
+      tokens[k]?.text === '*' && tokens[k + 1]?.text === 'as' && id(tokens[k + 2]) ? k + 3 : -1;
+    if (exported) {
+      if (tokens[j]?.text === '*') {
+        let k = j + 1;
+        if (tokens[k]?.text === 'as' && (id(tokens[k + 1]) || str(tokens[k + 1]))) k += 2;
+        return fromAt(k);
       }
-      if (t.kind === 'id') {
-        if (t.text === 'from' && str(tokens[j + 1])) return tokens[j + 1] as Token;
-        continue;
-      }
-      if (t.text === '*' || t.text === ',') continue;
-      if (str(t) && tokens[j - 1]?.text === 'as') continue; // export * as 'name' from …
+      const k = braces(j);
+      return k < 0 ? null : fromAt(k);
+    }
+    if (str(tokens[j])) return tokens[j] as Token;
+    let k = j;
+    if (id(tokens[k]) && tokens[k]?.text !== 'from') {
+      k += 1;
+    } else if (id(tokens[k]) && fromAt(k + 1) !== null) {
+      k += 1; // import from from 'x'
+    } else if (tokens[k]?.text !== '*' && tokens[k]?.text !== '{') {
       return null;
     }
-    return null;
+    if (k > j && tokens[k]?.text === ',') k += 1;
+    else if (k > j) return fromAt(k);
+    const after = tokens[k]?.text === '*' ? namespace(k) : braces(k);
+    return after < 0 ? null : fromAt(after);
   };
   let depth = 0;
   for (let i = 0; i < tokens.length; i += 1) {

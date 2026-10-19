@@ -1564,6 +1564,22 @@ const OPEN_MODULES: [string, string][] = [
     "import { commands } from '@vitest/browser/context';\nexport const n = commands;",
   ],
   ['node:inspector', "import { Session } from 'node:inspector';\nexport const n = Session;"],
+  // Codex review r7.
+  ['a destructured constructor', 'const { constructor: C } = () => 0;\nexport const n = C;'],
+  ['a constructor shorthand', 'const { constructor } = () => 0;\nexport const n = constructor;'],
+  [
+    'a capability name after +',
+    "const empty = '';\nexport const n = Reflect.get(() => 0, empty + 'constructor');",
+  ],
+  [
+    'node:inspector/promises',
+    "import { Session } from 'node:inspector/promises';\nexport const n = Session;",
+  ],
+  ['node:test', "import t from 'node:test';\nexport const n = t;"],
+  [
+    'an aliased optional mock call',
+    "import { vi as v } from 'vitest';\nv.doMock?.('./x.ts');\nexport const n = 1;",
+  ],
 ];
 
 it('[CT-06w] fallback: a closure with one module that is not closed judges exactly like the old code (orchestrator ruling 2026-10-19)', () => {
@@ -1799,6 +1815,9 @@ it('[CT-06w] import and export declarations are read forward from the keyword (C
     "import k, * as ns from './kit.ts';",
     "import {\n  a,\n  b,\n} from\n'./kit.ts';",
     "if (x) { await import('./kit.ts'); }",
+    "import type T from './kit.ts';",
+    "import type, { a } from './kit.ts';",
+    "export type * as T from './kit.ts';",
   ]) {
     expect(specs(text), text).toEqual(['./kit.ts']);
   }
@@ -1809,7 +1828,69 @@ it('[CT-06w] import and export declarations are read forward from the keyword (C
     "function f() { const from = 1; return from\n'./kit.ts'; }",
     "import x = require('./kit.ts');",
     "export default from\n'./kit.ts';",
+    "const anchor = 0, from = 0;\nexport { anchor }\nvoid from\n'./kit.ts'.split(',');",
+    "export type T = typeof from\n'./kit.ts';",
   ]) {
     expect(specs(text), text).toEqual([]);
   }
+});
+
+it('[CT-06w] Codex review r7: constructor in any spelling but a definition, a mock call on any receiver, an export clause ends at its brace', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/real/kit.ts';
+  const closureOf = (files: Record<string, string>) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  const root =
+    "import { it, expect } from 'vitest';\nimport { read } from './kit.ts';\nit('[AC-r7#1] old', async () => { expect(await read()).toContain('export const'); });";
+  // A helper that takes the Function constructor by destructuring.
+  expect(
+    mayReadSupport(
+      file,
+      support,
+      closureOf({
+        [file]: root,
+        'test/spec/a/kit.ts':
+          'const { constructor: C } = () => 0;\nexport const read = () => C(\'return process.getBuiltinModule("fs").readFileSync("spec/real/" + "ki" + "t.ts", "utf8")\')();\n',
+      }),
+    ),
+  ).toBe(
+    `${file} names kit.ts in an unresolved import ./kit.ts (test/spec/a/kit.ts is not closed: it uses constructor)`,
+  );
+  // A class with a constructor definition and a spy's .mock.calls stay closed.
+  const closed = closureOf({
+    [file]: root,
+    'test/spec/a/kit.ts':
+      "import { vi } from 'vitest';\nexport class A {\n  x: number;\n  constructor(x: number) {\n    this.x = x;\n  }\n}\nconst spy = vi.fn();\nexport const read = async () => String(spy.mock.calls.length);\n",
+  });
+  expect(closed.map((m) => [m.path, m.closed, m.opaque])).toEqual([
+    [file, true, null],
+    ['test/spec/a/kit.ts', true, null],
+  ]);
+  expect(mayReadSupport(file, support, closed)).toBeNull();
+  // `vi as v` and `v.doMock?.(…)` in the rule-test file: it mocks.
+  expect(
+    mayReadSupport(
+      file,
+      support,
+      closureOf({
+        [file]:
+          "import { it, expect, vi as v } from 'vitest';\nv.doMock?.('./' + ['ki', 't.ts'].join(''));\nconst { n } = await import('./kit.ts');\nit('[AC-r7#1] old', () => { expect(n).toBeGreaterThanOrEqual(0); });",
+        'test/spec/a/kit.ts': 'export const n = -1;\n',
+      }),
+    ),
+  ).toBe(
+    `${file} names kit.ts in an unresolved import ./kit.ts (${file} mocks modules (it uses v.doMock))`,
+  );
+  // `export { anchor }`, then `void from` and a string: the string is a name, not an import.
+  const asi = closureOf({
+    [file]:
+      "import { it, expect } from 'vitest';\nimport { readFileSync } from 'node:fs';\nconst anchor = 0, from = 0;\nexport { anchor }\nvoid from\n'./kit.ts'.split(',').forEach((p) => {\n  it('[AC-r7#1] old', () => {\n    expect(readFileSync('spec/real/' + p, 'utf8')).toContain('export const');\n  });\n});",
+    'test/spec/a/kit.ts': 'export const n = -1;\n',
+  });
+  expect((asi[0] as Module).imports.map((i) => i.spec)).toEqual(['vitest', 'node:fs']);
+  expect(mayReadSupport(file, support, asi)).toBe(`${file} names kit.ts`);
 });
