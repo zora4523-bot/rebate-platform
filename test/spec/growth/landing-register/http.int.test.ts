@@ -50,18 +50,18 @@ it('[AC-B1-11h#2] 新号规范化并绑定，同事务记录两份协议与一�
         ...body,
         phone: `＋８６\u3000${body.phone}\u200b`,
         invite_code: ' ｋ７\u200bｑ２\u200cｍｚ\u200d\ufeff ',
-        channel: 'body_channel',
+        channel: 'official',
       },
-      { headers: { 'x-channel': 'header_channel' } },
+      { headers: { 'x-channel': 'appstore' } },
     ),
   );
-  await registered(f, body.phone, 'body_channel');
+  await registered(f, body.phone, 'official');
   const logs = kit.lines.slice(start).join('');
   for (const secret of [body.phone, f.hash(body.phone), IP, body.sms_code, CODE])
     expect(logs).not.toContain(secret);
 });
 
-for (const channel of [undefined, 'header_channel']) {
+for (const channel of [undefined, 'appstore']) {
   it(`[AC-B1-11h#3] 未给 body channel 时使用头或 NULL：${String(channel)}`, async () => {
     const f = await fixture(kit);
     const body = await f.sms();
@@ -93,7 +93,7 @@ it('[AC-B1-11h#5] 10004 先于手机号、幂等与开关；1xxxx 不落库、�
   for (let n = 0; n < 6; n++) {
     const result = answer(
       f,
-      await f.post({ ...body, agreed: false, phone: 'invalid', invite_code: '' }, { key: null }),
+      await f.post({ ...body, agreed: false, phone: 'invalid', invite_code: '' }),
       10004,
     );
     expect(result['data']).toEqual({ consent_type: 'agreement' });
@@ -111,7 +111,7 @@ it('[AC-B1-11h#6] 不合法手机号在幂等与开关之前 20001，不计 3040
   for (let n = 0; n < 6; n++) {
     const result = answer(
       f,
-      await f.post({ ...body, phone: 'invalid', invite_code: '' }, { key: null }),
+      await f.post({ ...body, phone: 'invalid', invite_code: '' }),
       20001,
     );
     expect(result['data']).toEqual({ fields: ['phone'], reason: 'phone_invalid' });
@@ -416,14 +416,38 @@ for (const value of [0, -1, 1.5, '3']) {
     const f = await fixture(kit);
     await f.config('landing.ip_register_limit', value);
     const start = kit.lines.length;
-    for (let n = 0; n < 3; n++) answer(f, await f.post(await f.sms()));
-    answer(f, await f.post(await f.sms()), 44001);
+    const numbers: string[] = [];
+    for (let n = 0; n < 3; n++) {
+      const body = await f.sms();
+      numbers.push(body.phone);
+      answer(f, await f.post(body));
+    }
+    const blocked = await f.sms();
+    numbers.push(blocked.phone);
+    answer(f, await f.post(blocked), 44001);
     const warnings = kit.lines
       .slice(start)
       .map((line) => JSON.parse(line) as Record<string, unknown>)
       .filter((line) => line['level'] === 40 && line['config_key'] === 'landing.ip_register_limit');
     expect(warnings.length).toBeGreaterThan(0);
     expect(await f.registrations()).toHaveLength(3);
+    const logs = kit.lines.slice(start).join('');
+    for (const secret of [
+      ...numbers.flatMap((number) => [
+        number,
+        f.hash(number),
+        `${number.slice(0, 3)}****${number.slice(-4)}`,
+      ]),
+      IP,
+      '198.51.100.19',
+      kit.crypto.blindIndex(IP, 'invite_fail.ip'),
+      ...(await f.registrations()).map((row) => row.ip_hmac),
+    ])
+      expect(logs).not.toContain(secret);
+    for (const warning of warnings)
+      expect(Object.keys(warning).join(' ')).not.toMatch(
+        /phone|\bip\b|ip_hmac|ip_hash|client_ip|remoteAddress/i,
+      );
   });
 }
 
@@ -431,6 +455,7 @@ it('[AC-B1-11h#22] app_id 隔离邀请码、短信、幂等主体和 IP 计数',
   const a = await fixture(kit);
   const b = await fixture(kit);
   await a.config('landing.ip_register_limit', 1);
+  await b.config('landing.ip_register_limit', 1);
   const bodyA = await a.sms();
   const key = randomUUID();
   answer(b, await b.post(bodyA, { key }), 20003);
