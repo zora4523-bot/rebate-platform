@@ -27,4 +27,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/payout-bank-card/**'
-status: todo
+status: done
+pr: 942
