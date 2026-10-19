@@ -51,9 +51,11 @@
 //   destructured or renamed mock function, vi passed on as a value); no template specifier or
 //   import inside a template; every relative or `#` import resolves (certainly, by Vite's rules)
 //   to a closed module of the closure or to a module outside the test code (implementation code
-//   never reads test-support files, as since CT-06p); a bare specifier is a package — except a
-//   workspace package (`@couli/*`, test code such as packages/testing that the closure does not
-//   follow). Computed as a fixpoint over the closure; `opaque` says why not. The capabilities are
+//   never reads test-support files, as since CT-06p); a bare specifier keeps it closed only when
+//   it is a known pure package (KNOWN_BUILTINS / KNOWN_PACKAGES: no file read or code load on the
+//   caller's behalf — prettier's resolveConfig reads files, Codex review r8) or a capability
+//   module judged by the scan above; a workspace package (`@couli/*`, test code such as
+//   packages/testing that the closure does not follow) or any other package keeps it open. Computed as a fixpoint over the closure; `opaque` says why not. The capabilities are
 //   a list of the ordinary spellings (Codex reviews r4–r7), not a proof: a name computed some
 //   other way is not seen (see the threat model below).
 // - Fallback rule: a specifier is exempt only when it resolves to a closed module and the whole
@@ -1486,6 +1488,77 @@ const MOCKING = new Set([
 ]);
 
 /**
+ * Packages a closed module may import (CT-06w, Codex review r8): Node built-ins and npm packages
+ * of this workspace that read no repository file and load no code on the caller's behalf (an
+ * ordinary package API such as prettier's resolveConfig, typescript's program or an OpenAPI
+ * parser's $ref resolution does — those, and every package not listed, keep a module open). The
+ * capability built-ins (fs, child_process, vm …) are judged by fileAccess instead.
+ */
+const KNOWN_BUILTINS = new Set([
+  'assert',
+  'assert/strict',
+  'async_hooks',
+  'buffer',
+  'constants',
+  'crypto',
+  'dgram',
+  'diagnostics_channel',
+  'dns',
+  'dns/promises',
+  'events',
+  'http',
+  'http2',
+  'https',
+  'net',
+  'os',
+  'path',
+  'path/posix',
+  'path/win32',
+  'perf_hooks',
+  'punycode',
+  'querystring',
+  'readline',
+  'readline/promises',
+  'stream',
+  'stream/consumers',
+  'stream/promises',
+  'stream/web',
+  'string_decoder',
+  'timers',
+  'timers/promises',
+  'tls',
+  'tty',
+  'url',
+  'util',
+  'util/types',
+  'zlib',
+]);
+/** npm packages by name; any subpath of them too (`react-dom/client`), except for vitest. */
+const KNOWN_PACKAGES = new Set([
+  'vitest',
+  'fast-check',
+  'kysely',
+  'react',
+  'react-dom',
+  '@testing-library/react',
+  '@testing-library/user-event',
+  'jose',
+  'ajv',
+  'ajv-formats',
+  'openapi-types',
+  'reflect-metadata',
+]);
+
+function knownPackage(spec: string): boolean {
+  if (KNOWN_BUILTINS.has(spec.startsWith('node:') ? spec.slice(5) : spec)) return true;
+  if (spec.startsWith('node:')) return false;
+  const parts = spec.split('/');
+  const name = spec.startsWith('@') ? parts.slice(0, 2).join('/') : (parts[0] ?? spec);
+  if (name === 'vitest') return spec === 'vitest';
+  return KNOWN_PACKAGES.has(name);
+}
+
+/**
  * The capability a module name names (CT-06w): one of FILE_MODULES, a subpath of one of their
  * built-ins (`node:inspector/promises`, `fs/promises`; Codex review r7), the Vitest browser
  * commands (`@vitest/browser…`, `vitest/browser…`) or `node:test` (its `mock.module`); `reads`
@@ -2078,16 +2151,17 @@ export function relativeClosure(
   }
   // Closed modules (a fixpoint: a module importing a module that is not closed is not closed).
   const byPath = new Map(out.map((m) => [m.path, m]));
-  // A package: a bare name (`vitest`, `node:fs`, `@scope/pkg/sub`) that is not a workspace package
-  // of this repository (`@couli/*` — test code the closure does not follow, e.g. packages/testing);
-  // an absolute path, a URL or anything else is a load the rules here do not follow (Codex
-  // review r5).
+  // A package that keeps a module closed (Codex reviews r5, r8): a bare name that is a known pure
+  // package (KNOWN_PACKAGES: no file read or code load on the caller's behalf — a package such as
+  // prettier's resolveConfig reads files, so an unknown package keeps the module open) or a
+  // capability module whose use fileAccess judges (`node:fs` …). A workspace package of this
+  // repository (`@couli/*` — test code the closure does not follow, e.g. packages/testing), an
+  // absolute path, a URL or anything else is a load the rules here do not follow.
   const bare = (spec: string): boolean => {
     const clean = spec.replace(/[?#].*$/, '');
-    return (
-      !clean.startsWith('@couli/') &&
-      /^(node:)?(@[\w-][\w.-]*\/)?[\w-][\w.-]*(\/[\w.-]+)*$/.test(clean)
-    );
+    if (clean.startsWith('@couli/')) return false;
+    if (!/^(node:)?(@[\w-][\w.-]*\/)?[\w-][\w.-]*(\/[\w.-]+)*$/.test(clean)) return false;
+    return knownPackage(clean) || capabilityModule(clean) !== null;
   };
   // An import that is neither a package nor resolved to a module of the closure or to code outside
   // the test code, and why (null when there is none).
@@ -2099,7 +2173,11 @@ export function relativeClosure(
     if (open.resolved !== null) return `it imports ${open.resolved}, which is not read here`;
     return open.spec.startsWith('@couli/')
       ? `it imports ${open.spec}, a workspace package not read here`
-      : `it imports ${open.spec}, which cannot be resolved`;
+      : /^(node:)?(@[\w-][\w.-]*\/)?[\w-][\w.-]*(\/[\w.-]+)*$/.test(
+            open.spec.replace(/[?#].*$/, ''),
+          )
+        ? `it imports ${open.spec}, a package not known to read no files`
+        : `it imports ${open.spec}, which cannot be resolved`;
   };
   for (const m of out) {
     if (m.opaque !== null) continue;

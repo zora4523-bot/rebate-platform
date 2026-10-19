@@ -1580,6 +1580,14 @@ const OPEN_MODULES: [string, string][] = [
     'an aliased optional mock call',
     "import { vi as v } from 'vitest';\nv.doMock?.('./x.ts');\nexport const n = 1;",
   ],
+  // Codex review r8: an ordinary package that reads files, or any package not known not to.
+  [
+    'a package that reads files (prettier)',
+    "import { resolveConfig } from 'prettier';\nexport const n = () => resolveConfig('x.ts');",
+  ],
+  ['typescript', "import ts from 'typescript';\nexport const n = ts;"],
+  ['an unknown package', "import x from 'some-package';\nexport const n = x;"],
+  ['vitest/node', "import { createVitest } from 'vitest/node';\nexport const n = createVitest;"],
 ];
 
 it('[CT-06w] fallback: a closure with one module that is not closed judges exactly like the old code (orchestrator ruling 2026-10-19)', () => {
@@ -1893,4 +1901,39 @@ it('[CT-06w] Codex review r7: constructor in any spelling but a definition, a mo
   });
   expect((asi[0] as Module).imports.map((i) => i.spec)).toEqual(['vitest', 'node:fs']);
   expect(mayReadSupport(file, support, asi)).toBe(`${file} names kit.ts`);
+});
+
+it('[CT-06w] Codex review r8: only known pure packages keep a module closed; a package that reads files does not', () => {
+  const file = 'test/spec/ct06w-format/rules.test.ts';
+  const helper = 'test/spec/ct06w-format/package.ts';
+  const closureOf = (files: Record<string, string>) =>
+    relativeClosure(
+      file,
+      (p) => files[p] ?? null,
+      (p) => p.startsWith('test/'),
+    );
+  const root =
+    "import { expect, it } from 'vitest';\nimport { style } from './package.ts';\nit('[AC-r8#1] semi setting', async () => { expect((await style())?.semi).toBe(false); });";
+  // prettier's resolveConfig reads fixtures/package.json: the helper is not closed.
+  const read = closureOf({
+    [file]: root,
+    [helper]:
+      "import { resolveConfig } from 'prettier';\nexport const style = () => resolveConfig('spec/ct06w-format/fixtures/input.ts', { useCache: false, editorconfig: false });\n",
+  });
+  expect([read[1]?.path, read[1]?.closed, read[1]?.opaque]).toEqual([
+    helper,
+    false,
+    'it imports prettier, a package not known to read no files',
+  ]);
+  expect(mayReadSupport(file, 'test/spec/ct06w-format/fixtures/package.json', read)).toBe(
+    `${file} names package in an unresolved import ./package.ts (${helper} is not closed: it imports prettier, a package not known to read no files)`,
+  );
+  // Built-ins and known pure packages keep it closed (subpaths too, except vitest's).
+  const pure = closureOf({
+    [file]: root,
+    [helper]:
+      "import fc from 'fast-check';\nimport { createHash } from 'node:crypto';\nimport path from 'path';\nimport { createRoot } from 'react-dom/client';\nimport { sql } from 'kysely';\nexport const style = async () => [fc, createHash, path, createRoot, sql].length;\n",
+  });
+  expect(pure.map((m) => m.closed)).toEqual([true, true]);
+  expect(mayReadSupport(file, 'test/spec/ct06w-format/fixtures/package.json', pure)).toBeNull();
 });
