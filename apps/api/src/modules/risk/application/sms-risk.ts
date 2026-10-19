@@ -35,14 +35,21 @@
 //   or nothing was sent) do not count. Reached → 42901, released when the (N−L+1)-th oldest counted
 //   row leaves the window (created_at + window + 1 ms).
 //   checkAttempts() is step ① of both entries, read only: the IP's new accounts (the Redis read
-//   above, limit 5; a store failure skips this item, never a refusal) and the counted attempts.
+//   above, limit 5) and the counted attempts. The registrations live in Redis only, so no Redis
+//   or a failing read cannot confirm the item: 42901 with Retry-After 1 like every other store
+//   failure here (orchestrator ruling ① 2026-10-19 19:3x, fail-closed), never a pass.
 //   admitAttempt() makes it binding once every other check passed (device, phone quota): one
 //   transaction takes the advisory lock of (app_id, ip_hmac), counts again and either refuses or
 //   inserts a pending row (attempt_id UUIDv7 from the Clock) and commits — before the provider is
 //   called. A request refused by any check writes no row. PG failing or missing answers 42901 with
 //   Retry-After 1 (no row, no send).
 //   finishAttempt() writes the outcome on the pending row, retried once; a failed write leaves it
-//   pending, which counts.
+//   pending, which counts. The status changes only through transitionSmsAttempt() (the table
+//   below: pending → accepted | failed | unknown; the three are final): an outcome not reachable
+//   from pending throws SmsAttemptTransitionError before anything is written; the UPDATE carries
+//   app_id and the source status (WHERE status = 'pending'); no row updated means the row was
+//   already decided (a concurrent or lost-reply completion): the same outcome again is a no-op,
+//   any other is an illegal transition and throws (nothing written).
 //   admitDevice() is step ② alone (the app route), unchanged from admit().
 // Rows are never deleted or expired by the application; Redis holds no part of this count (no
 // cache: every decision reads PG).
@@ -113,7 +120,11 @@ export interface SmsRisk {
   admitAttempt(input: SmsAttemptRequest): Promise<SmsAttemptAdmission>;
   /** Step ② alone (the app route after admitAttempt): the device's admission set. */
   admitDevice(input: Omit<SmsRiskRequest, 'clientIp'>): Promise<SmsRiskAdmission>;
-  /** Writes the send's outcome on its pending attempt (retried once); never throws. */
+  /**
+   * Writes the send's outcome on its pending attempt (retried once; a store failure is logged,
+   * never thrown). An illegal transition (an outcome other than accepted / failed / unknown, or a
+   * different outcome on a row already decided) throws SmsAttemptTransitionError, nothing written.
+   */
   finishAttempt(input: {
     appId: string;
     attemptId: string;
@@ -167,6 +178,55 @@ const COUNTED_STATUSES: readonly ('pending' | SmsAttemptOutcome)[] = [
   'unknown',
 ];
 type SmsRiskRefusal = { readonly code: 42901; readonly retryAfterSec: number };
+
+/** app.sms_send_attempts.status (0052's check constraint). */
+export type SmsAttemptStatus = 'pending' | SmsAttemptOutcome;
+
+// TODO(规划/11 §4.5): 换用生成的 transition() — blocked on CT-04 状态机生成器
+// Until then this table and transitionSmsAttempt() are the single place that says which attempt
+// status changes are legal; finishAttempt applies it before its conditional UPDATE.
+//   pending → accepted | failed | unknown (the send's outcome, written once)
+//   accepted, failed, unknown → nothing (final: a late or repeated completion changes nothing;
+//   an unknown outcome is never decided later, it keeps counting until it leaves the window)
+/** The legal next statuses of each attempt status. */
+export const SMS_ATTEMPT_TRANSITIONS: Readonly<
+  Record<SmsAttemptStatus, readonly SmsAttemptStatus[]>
+> = Object.freeze({
+  pending: Object.freeze(['accepted', 'failed', 'unknown'] as const),
+  accepted: Object.freeze([] as const),
+  failed: Object.freeze([] as const),
+  unknown: Object.freeze([] as const),
+});
+
+function isSmsAttemptStatus(value: unknown): value is SmsAttemptStatus {
+  return typeof value === 'string' && Object.hasOwn(SMS_ATTEMPT_TRANSITIONS, value);
+}
+
+/** True for a legal change of an attempt's status (the same status again is not a change). */
+export function canTransitionSmsAttempt(from: unknown, to: unknown): boolean {
+  if (!isSmsAttemptStatus(from) || !isSmsAttemptStatus(to)) return false;
+  return SMS_ATTEMPT_TRANSITIONS[from].includes(to);
+}
+
+/** The requested attempt status change is not in SMS_ATTEMPT_TRANSITIONS; nothing was written. */
+export class SmsAttemptTransitionError extends Error {
+  readonly reason = 'illegal_transition';
+  /** The source status (null: no such attempt row) and the requested one, as given. */
+  readonly from: string | null;
+  readonly to: string;
+  constructor(from: unknown, to: unknown) {
+    super('sms risk: illegal attempt status transition');
+    this.name = 'SmsAttemptTransitionError';
+    this.from = from === null ? null : String(from);
+    this.to = String(to);
+  }
+}
+
+/** The status `to` when `from` → `to` is legal; otherwise SmsAttemptTransitionError. */
+export function transitionSmsAttempt(from: unknown, to: unknown): SmsAttemptOutcome {
+  if (!canTransitionSmsAttempt(from, to)) throw new SmsAttemptTransitionError(from, to);
+  return to as SmsAttemptOutcome;
+}
 
 /** Config keys and defaults (08 BR-ID-05 细则). */
 export const SMS_DEVICE_DISTINCT_PHONES_KEY = 'sms.device_distinct_phones_per_hour';
@@ -413,7 +473,7 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
       : fallback;
   }
 
-  function storeFailed(error: unknown): SmsRiskAdmission {
+  function storeFailed(error: unknown): SmsRiskRefusal {
     if (outage === null) {
       outage = { since: clock.now().getTime() };
       logger.error({ stage: STAGE, ...failureFields(error) }, 'sms_risk_store_unavailable');
@@ -592,12 +652,17 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
 
   /**
    * The IP's new-account item (limit 5) for checkAttempts, in ms (0 = not reached). The registrations
-   * live in Redis only; a missing or failing store skips the item (logged, never a refusal).
+   * live in Redis only: a missing or failing store cannot confirm the item, so it refuses (42901,
+   * Retry-After 1, the store-failure answer of admit) — never read as 0 (ruling ① 19:3x).
    */
-  async function registrationWait(appId: string, clientIp: string): Promise<number> {
-    if (redis === null) return 0;
+  async function registrationWait(
+    appId: string,
+    clientIp: string,
+  ): Promise<{ readonly waitMs: number } | SmsRiskRefusal> {
+    if (redis === null) return storeFailed(new StoreNotConfigured());
+    let reply: unknown;
     try {
-      const reply = await redis.namespace(SMS_RISK_NAMESPACE).eval(IP_REG_SCRIPT, {
+      reply = await redis.namespace(SMS_RISK_NAMESPACE).eval(IP_REG_SCRIPT, {
         keys: [`ip_reg:${appId}:${ipDigest(clientIp)}`],
         args: [String(clock.now().getTime()), String(WINDOW_MS), String(IP_REGISTRATIONS_LIMIT)],
         ttlSeconds: WINDOW_TTL_SEC,
@@ -605,14 +670,15 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
       if (typeof reply !== 'number' || !Number.isSafeInteger(reply) || reply < 0) {
         throw new UnexpectedReply();
       }
-      return reply;
     } catch (error) {
       logger.warn(
         { stage: STAGE, app_id: appId, kind: 'ip_reg', ...failureFields(error) },
         'sms_risk_registrations_unreadable',
       );
-      return 0;
+      return storeFailed(error);
     }
+    storeAnswered();
+    return { waitMs: reply };
   }
 
   return {
@@ -658,12 +724,14 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
 
     async checkAttempts({ appId, clientIp }) {
       const sendLimit = await sendLimitOf(appId);
-      const regWait = await registrationWait(appId, clientIp);
+      const registrations = await registrationWait(appId, clientIp);
+      // Unconfirmed registrations refuse here: no attempt row, no provider call follows.
+      if ('code' in registrations) return registrations;
       if (db === null) return attemptStoreMissing(appId);
       try {
         const now = clock.now();
         const sendWait = await attemptWait(db, appId, ipDigest(clientIp), sendLimit, now);
-        const wait = Math.max(sendWait, regWait);
+        const wait = Math.max(sendWait, registrations.waitMs);
         return wait > 0 ? { code: 42901, retryAfterSec: seconds(wait) } : { code: 0 };
       } catch (error) {
         return attemptStoreFailed(appId, error);
@@ -704,24 +772,47 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
     },
 
     async finishAttempt({ appId, attemptId, outcome }) {
+      // The outcome is written on a pending row only: checked against the table before any write.
+      const from: SmsAttemptStatus = 'pending';
+      const to = transitionSmsAttempt(from, outcome);
       if (db === null) return;
       for (let attempt = 1; attempt <= 2; attempt++) {
+        let current: SmsAttemptStatus | null;
         try {
           const now = clock.now();
-          await db
+          const updated = await db
             .updateTable(ATTEMPTS)
-            .set({ status: outcome, updated_at: now })
+            .set({ status: to, updated_at: now })
             .where('app_id', '=', appId)
             .where('attempt_id', '=', attemptId)
-            .where('status', '=', 'pending')
-            .execute();
-          return;
+            .where('status', '=', from)
+            .executeTakeFirst();
+          if (updated.numUpdatedRows > 0n) return;
+          // Nothing updated: the row was already decided (a concurrent or lost-reply completion)
+          // or does not exist. Its status now decides, by the same table.
+          const row = await db
+            .selectFrom(ATTEMPTS)
+            .select('status')
+            .where('app_id', '=', appId)
+            .where('attempt_id', '=', attemptId)
+            .executeTakeFirst();
+          current = row === undefined ? null : row.status;
         } catch (error) {
           logger.warn(
-            { stage: STAGE, app_id: appId, outcome, attempt, ...failureFields(error) },
+            { stage: STAGE, app_id: appId, outcome: to, attempt, ...failureFields(error) },
             'sms_attempt_finish_failed',
           );
+          continue;
         }
+        // The same outcome again (this call's earlier write whose reply was lost, or a repeated
+        // completion) is already in place; anything else is not a legal change of a decided row.
+        if (current === to) return;
+        if (current !== null && canTransitionSmsAttempt(current, to)) continue;
+        logger.warn(
+          { stage: STAGE, app_id: appId, from: current, outcome: to },
+          'sms_attempt_transition_refused',
+        );
+        throw new SmsAttemptTransitionError(current, to);
       }
     },
 

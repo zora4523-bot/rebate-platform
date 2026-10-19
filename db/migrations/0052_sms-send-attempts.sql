@@ -13,13 +13,16 @@
 --   ip_hmac / phone_hmac: keyed blind indexes (lowercase hex) of the client IP and the normalised
 --     phone; never the clear values.
 --   status: pending when admitted (committed before the provider is called), then accepted /
---     failed / unknown from the send's outcome. Every status counts towards the IP's limit; the
+--     failed / unknown from the send's outcome, written once through risk's transition table
+--     (pending → accepted | failed | unknown; the three are final, never rewritten) by an UPDATE
+--     conditioned on app_id and status = 'pending'. pending, accepted and unknown count towards
+--     the IP's limit; failed (the provider definitely refused, or nothing was sent) does not. The
 --     result update may fail and the row then stays pending (still counted).
 --   created_at: the injected Clock at admission (no database default: the count window is measured
 --     on it); updated_at: the Clock at the last status write.
--- Count: rows of (app_id, ip_hmac) with created_at in [now − 3600 s − send bound, now]; the row is
--- inserted under a transaction-level advisory lock on (app_id, ip_hmac) after counting, so the
--- count never exceeds the limit. Rows are never deleted or rolled back by the application.
+-- Count: counted rows of (app_id, ip_hmac) with created_at in [now − 3600 s − send bound, now];
+-- the row is inserted under a transaction-level advisory lock on (app_id, ip_hmac) after
+-- counting, so the count never exceeds the limit. Rows are never deleted or rolled back by the application.
 -- Retention: TODO(规划/11 §7.1): no purge job yet — blocked on a BR-ID-30 retention period for this
 -- table (rows are kept; only the last hour is ever read).
 --

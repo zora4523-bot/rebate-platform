@@ -18,8 +18,12 @@ import { expect, it, vi } from 'vitest';
 import { FixedClock, createRootLogger, type RedisHandle } from '../../platform/index.ts';
 import {
   SMS_ATTEMPT_SEND_BOUND_MS,
+  SMS_ATTEMPT_TRANSITIONS,
+  SmsAttemptTransitionError,
+  canTransitionSmsAttempt,
   createSmsRisk,
   ephemeralSmsRiskIndex,
+  transitionSmsAttempt,
   type SmsRisk,
 } from '../../risk/index.ts';
 import { createSmsRiskPorts } from './sms-risk-ports.ts';
@@ -199,7 +203,7 @@ interface Row {
 function memoryDb() {
   const rows: Row[] = [];
   const locks = new Map<string, Promise<void>>();
-  const faults = { insert: 0, update: 0, updates: 0 };
+  const faults = { insert: 0, update: 0, updates: 0, lostReply: 0, reads: 0 };
   class Connection implements DatabaseConnection {
     private releases: (() => void)[] = [];
     async executeQuery<R>(query: CompiledQuery): Promise<QueryResult<R>> {
@@ -277,13 +281,29 @@ function memoryDb() {
           string,
           string,
         ];
+        // The UPDATE keeps app_id and the source status in its WHERE clause.
+        expect(text).toContain(`where "app_id" = $3 and "attempt_id" = $4 and "status" = $5`);
+        let changed = 0n;
         for (const row of rows) {
           if (row.app_id === appId && row.attempt_id === attemptId && row.status === from) {
             row.status = status;
             row.updated_at = updated;
+            changed++;
           }
         }
-        return { rows: [] };
+        if (faults.lostReply > 0) {
+          faults.lostReply--;
+          throw Object.assign(new Error('connection lost after commit'), { code: '08006' });
+        }
+        return { rows: [], numAffectedRows: changed };
+      }
+      if (text.startsWith('select "status" from "app"."sms_send_attempts"')) {
+        faults.reads++;
+        const [appId, attemptId] = p as [string, string];
+        const found = rows
+          .filter((row) => row.app_id === appId && row.attempt_id === attemptId)
+          .map((row) => ({ status: row.status }));
+        return { rows: found as R[] };
       }
       throw new Error(`unexpected query: ${text}`);
     }
@@ -463,7 +483,7 @@ it('[AC-B1-11g#28] PG failing or missing refuses (42901, 1 s) and writes nothing
   expect(await without.admitAttempt(s.input)).toEqual({ code: 42901, retryAfterSec: 1 });
 });
 
-it('[AC-B1-11g#40] the registration item joins checkAttempts (later release wins); its store failing never refuses', async () => {
+it('[AC-B1-11g#40] the registration item joins checkAttempts (later release wins)', async () => {
   const reached = store(1, registrationRedis(600_500));
   expect(await reached.risk.checkAttempts(reached.input)).toEqual({
     code: 42901,
@@ -474,8 +494,139 @@ it('[AC-B1-11g#40] the registration item joins checkAttempts (later release wins
     code: 42901,
     retryAfterSec: 3611,
   });
-  const down = store(1, registrationRedis('down'));
-  expect(await down.risk.checkAttempts(down.input)).toEqual({ code: 0 });
-  expect(down.lines.join('')).toContain('sms_risk_registrations_unreadable');
-  expect(down.lines.join('')).not.toContain(IP);
+});
+
+it('[AC-B1-11g#72] the registration item failing or missing refuses (42901, 1 s), never read as 0; nothing is written', async () => {
+  const down = store(3, registrationRedis('down'));
+  expect(await down.risk.checkAttempts(down.input)).toEqual({ code: 42901, retryAfterSec: 1 });
+  expect(await down.risk.checkAttempts(down.input)).toEqual({ code: 42901, retryAfterSec: 1 });
+  expect(down.rows).toEqual([]);
+  const text = down.lines.join('');
+  expect(text).toContain('sms_risk_registrations_unreadable');
+  // One error per outage, as admit's store failures.
+  expect(down.lines.filter((line) => line.includes('sms_risk_store_unavailable'))).toHaveLength(1);
+  expect(text).not.toContain(IP);
+  expect(text).not.toContain('13912345678');
+
+  const malformed = store(3, registrationRedis(-1));
+  expect(await malformed.risk.checkAttempts(malformed.input)).toEqual({
+    code: 42901,
+    retryAfterSec: 1,
+  });
+  const noRedis = store(3, null);
+  expect(await noRedis.risk.checkAttempts(noRedis.input)).toEqual({
+    code: 42901,
+    retryAfterSec: 1,
+  });
+  expect(noRedis.rows).toEqual([]);
+});
+
+it('[AC-B1-11g#72] the landing and app ports pass the registration refusal through and never commit an attempt', async () => {
+  const down = store(3, registrationRedis('down'));
+  const { logger } = memoryLogger();
+  const built = createSmsRiskPorts({
+    risk: down.risk,
+    devices: { deviceHashOf: async () => 'ab'.repeat(32) },
+    logger,
+  });
+  expect(await built.smsHooks.landingQuota(landing)).toEqual({ code: 42901, retryAfterSec: 1 });
+  expect(await built.smsHooks.deviceQuota(app)).toEqual({ code: 42901, retryAfterSec: 1 });
+  expect(down.rows).toEqual([]);
+});
+
+it('[AC-B1-11g#69] the attempt transition table: pending → accepted | failed | unknown; the three are final', () => {
+  expect(SMS_ATTEMPT_TRANSITIONS).toEqual({
+    pending: ['accepted', 'failed', 'unknown'],
+    accepted: [],
+    failed: [],
+    unknown: [],
+  });
+  const statuses = ['pending', 'accepted', 'failed', 'unknown'] as const;
+  for (const from of statuses) {
+    for (const to of statuses) {
+      const legal = from === 'pending' && to !== 'pending';
+      expect(canTransitionSmsAttempt(from, to), `${from} → ${to}`).toBe(legal);
+      if (legal) expect(transitionSmsAttempt(from, to)).toBe(to);
+      else expect(() => transitionSmsAttempt(from, to)).toThrow(SmsAttemptTransitionError);
+    }
+  }
+  for (const bad of [null, undefined, 'failed_rejected', 'toString', '__proto__', 1]) {
+    expect(canTransitionSmsAttempt('pending', bad)).toBe(false);
+    expect(canTransitionSmsAttempt(bad, 'accepted')).toBe(false);
+  }
+});
+
+it('[AC-B1-11g#69] finishAttempt refuses an outcome not reachable from pending before any write', async () => {
+  const s = store(2);
+  const admitted = (await s.risk.admitAttempt(s.input)) as { attemptId: string };
+  for (const outcome of ['pending', 'failed_rejected', 'toString']) {
+    await expect(
+      Reflect.apply(s.risk.finishAttempt, s.risk, [
+        { appId: 'couli', attemptId: admitted.attemptId, outcome },
+      ]),
+    ).rejects.toBeInstanceOf(SmsAttemptTransitionError);
+  }
+  expect(s.faults.updates).toBe(0);
+  expect(s.rows.map((row) => row.status)).toEqual(['pending']);
+});
+
+for (const [index, final] of (['accepted', 'failed', 'unknown'] as const).entries()) {
+  it(`[AC-B1-11g#${69 + index}] a ${final} attempt is final: a repeated completion is a no-op, another outcome throws, nothing changes`, async () => {
+    const s = store(2);
+    const admitted = (await s.risk.admitAttempt(s.input)) as { attemptId: string };
+    const finish = (outcome: 'accepted' | 'failed' | 'unknown') =>
+      s.risk.finishAttempt({ appId: 'couli', attemptId: admitted.attemptId, outcome });
+    await finish(final);
+    const decided = structuredClone(s.rows);
+    expect(decided.map((row) => row.status)).toEqual([final]);
+    s.clock.advanceMs(1_000);
+    await expect(finish(final)).resolves.toBeUndefined();
+    for (const other of (['accepted', 'failed', 'unknown'] as const).filter((o) => o !== final)) {
+      await expect(finish(other)).rejects.toMatchObject({
+        name: 'SmsAttemptTransitionError',
+        from: final,
+        to: other,
+      });
+    }
+    expect(s.rows).toEqual(decided);
+    expect(s.lines.join('')).toContain('sms_attempt_transition_refused');
+    // Concurrent completions of one pending attempt: exactly one outcome lands.
+    const t = store(2);
+    const next = (await t.risk.admitAttempt(t.input)) as { attemptId: string };
+    const settled = await Promise.allSettled(
+      (['accepted', 'failed', 'unknown'] as const).map((outcome) =>
+        t.risk.finishAttempt({ appId: 'couli', attemptId: next.attemptId, outcome }),
+      ),
+    );
+    expect(settled.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(settled.filter((r) => r.status === 'rejected')).toHaveLength(2);
+    expect(t.rows).toHaveLength(1);
+    expect(t.rows[0]!.status).not.toBe('pending');
+  });
+}
+
+it('[AC-B1-11g#64] a lost reply of a committed outcome write is retried: the row is decided, the retry is a no-op', async () => {
+  const s = store(2);
+  const admitted = (await s.risk.admitAttempt(s.input)) as { attemptId: string };
+  s.faults.lostReply = 1;
+  await s.risk.finishAttempt({
+    appId: 'couli',
+    attemptId: admitted.attemptId,
+    outcome: 'accepted',
+  });
+  expect(s.faults.updates).toBe(2);
+  expect(s.faults.reads).toBe(1);
+  expect(s.rows.map((row) => row.status)).toEqual(['accepted']);
+});
+
+it('[AC-B1-11g#69] finishAttempt on a missing attempt throws and writes nothing', async () => {
+  const s = store(2);
+  await expect(
+    s.risk.finishAttempt({
+      appId: 'couli',
+      attemptId: '0192f3b0-0000-7000-8000-000000000000',
+      outcome: 'accepted',
+    }),
+  ).rejects.toMatchObject({ name: 'SmsAttemptTransitionError', from: null, to: 'accepted' });
+  expect(s.rows).toEqual([]);
 });
