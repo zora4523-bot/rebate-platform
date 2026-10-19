@@ -8,13 +8,24 @@ import {
 } from '../../../../apps/api/src/modules/platform/http/request-checks.ts';
 import { CONTRACT_ROUTE_SCHEMAS } from '../../../../apps/api/src/modules/platform/validation/route-schemas.gen.ts';
 import { HEADERS, INSTANT, routes } from './kit.ts';
-import { ROOT, type RequestCheckServer, type Response } from '../../risk/signature/kit.ts';
+import { ROOT, type Response } from '../../risk/signature/kit.ts';
 import { envelopeValidator } from '../../platform/errors/kit.ts';
 
+/** The Fastify route options the stub below uses (constraints / onRequest: B1-13i). */
+interface StubRouter {
+  route(options: {
+    method: string;
+    url: string;
+    bodyLimit?: number;
+    constraints: { host: string };
+    onRequest: (request: unknown, reply: unknown, done: () => void) => void;
+    handler: () => unknown;
+  }): unknown;
+}
 interface App {
   init(): Promise<unknown>;
   close(): Promise<unknown>;
-  getHttpAdapter(): { getInstance(): RequestCheckServer };
+  getHttpAdapter(): { getInstance(): StubRouter };
   inject(input: {
     method: string;
     url: string;
@@ -36,18 +47,31 @@ async function bootstrap() {
   };
 }
 
+// B1-13i: B1-13e implemented the last realname non-signed operation (getPayoutAccount), so the
+// stub can no longer rely on the contract still holding an unimplemented operation of each level.
+// An unimplemented operation is still preferred; otherwise an implemented one of the same level is
+// used. Either way the stub is registered under a Fastify host constraint (find-my-way prefers a
+// matching constrained route), so it never replaces or collides with a route Nest registers, while
+// Fastify's matched route template (`routeOptions.url`, what stages ② ③ look the level up by in
+// the contract table) stays the contract path. The stub's route-level onRequest hook proves that
+// the request was routed to the stub (it runs before preParsing, where the request checks run);
+// the uncalled handler proves the rejection happened before any handler.
+const STUB_HOST = 'b113i-stub.invalid';
+
 for (const auth of ['login', 'optional', 'realname'] as const) {
   it(`[BR-ID-01][04 §5] 真实api计划覆盖非签名${auth}路由，拒绝发生在处理函数前`, async () => {
-    const candidate = (await routes()).find(
+    const eligible = (await routes()).filter(
       (route) =>
-        route.auth === auth &&
-        !route.signed &&
-        (auth !== 'login' || route.method === 'POST') &&
-        !Object.hasOwn(CONTRACT_ROUTE_SCHEMAS, route.operation.operationId ?? ''),
+        route.auth === auth && !route.signed && (auth !== 'login' || route.method === 'POST'),
     );
-    expect(candidate, '必须从未实现契约操作中选择桩，不能覆盖已实现路由').toBeDefined();
+    const candidate =
+      eligible.find(
+        (route) => !Object.hasOwn(CONTRACT_ROUTE_SCHEMAS, route.operation.operationId ?? ''),
+      ) ?? eligible[0];
+    expect(candidate, `契约必须存在非签名${auth}操作用来挂桩`).toBeDefined();
     const { createHttpApp } = await bootstrap();
     const app = await createHttpApp('api', overrides());
+    const matched = vi.fn();
     const handler = vi.fn(() => ({ reached: true }));
     try {
       app
@@ -57,6 +81,11 @@ for (const auth of ['login', 'optional', 'realname'] as const) {
           method: candidate!.method,
           url: candidate!.path,
           ...(auth === 'login' ? { bodyLimit: 8 } : {}),
+          constraints: { host: STUB_HOST },
+          onRequest: (_request, _reply, done) => {
+            matched();
+            done();
+          },
           handler,
         });
       await app.init();
@@ -65,12 +94,14 @@ for (const auth of ['login', 'optional', 'realname'] as const) {
         url: candidate!.path.replace(/:[^/]+/g, 'test-id'),
         headers: {
           ...HEADERS,
+          host: STUB_HOST,
           ...(auth === 'optional' ? { authorization: 'Bearer invalid-token' } : {}),
           ...(auth === 'login' ? { 'content-type': 'application/json' } : {}),
         },
         // Valid JSON larger than bodyLimit: stage ② must reject before any body is read.
         ...(auth === 'login' ? { payload: JSON.stringify('x'.repeat(62)) } : {}),
       });
+      expect(matched, '请求必须路由到桩（而不是已实现的处理函数）').toHaveBeenCalledTimes(1);
       expect(response.statusCode).toBe(401);
       const body = response.json();
       expect(body['code']).toBe(auth === 'optional' ? 10002 : 10001);
