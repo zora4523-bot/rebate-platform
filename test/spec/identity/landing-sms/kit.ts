@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import { expect } from 'vitest';
+import { seedAccepted } from './attempt-store.ts';
 
 export const ROOT = new URL('../../../../', import.meta.url);
 export const PATH = '/v1/landing/sms-codes';
@@ -233,10 +234,13 @@ export function fixture(kit: Kit) {
       }
     },
     async accepted(instants: string[], ip = IP) {
-      for (const instant of instants) {
-        kit.clock.set(instant);
-        await kit.risk.recordAccepted({ appId, clientIp: ip });
-      }
+      await seedAccepted(
+        kit.db,
+        appId,
+        kit.crypto.blindIndex(ip, 'risk.sms.ip').slice(0, 32),
+        kit.crypto.blindIndex(phone(), 'risk.sms.phone'),
+        instants,
+      );
     },
     async appSender() {
       const created = await kit.app.inject({

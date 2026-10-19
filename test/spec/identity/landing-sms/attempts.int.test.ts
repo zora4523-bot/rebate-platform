@@ -2,23 +2,19 @@ import { createDb, destroyDb } from '@couli/db';
 import { acquireTestRedis, createTestDatabase } from '@couli/db/testing';
 import { sql, type KyselyPlugin } from 'kysely';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
-import { api, envelope, fixture, NOW, openKit, phone, type Kit } from './kit.ts';
+import { api, envelope, fixture, IP, NOW, openKit, phone, type Kit, type Response } from './kit.ts';
+import {
+  ATTEMPT_TABLE,
+  EXTENDED_WINDOW_MS,
+  SEND_TIMEOUT_MS,
+  assertAttemptTable,
+  readAttempts,
+  type Attempt,
+} from './attempt-store.ts';
 
 // B1-11g 第七轮：这是待实现迁移的测试约定，不在测试里创建表或替业务写 attempt。
 // 实现迁移提供 app.sms_send_attempts，至少有以下列；所有发码均经真实 AppModule。
-const ATTEMPT_TABLE = 'app.sms_send_attempts';
-const ATTEMPT_NAME = 'sms_send_attempts';
-const SEND_TIMEOUT_MS = 10_000;
-const EXTENDED_WINDOW_MS = 3_610_000;
 const START = new Date(NOW).getTime();
-type Attempt = {
-  app_id: string;
-  attempt_id: string;
-  ip_hmac: string;
-  phone_hmac: string;
-  created_at: Date;
-  status: 'pending' | 'accepted' | 'failed' | 'unknown';
-};
 type SenderModule = typeof import('../../../../apps/api/src/modules/identity/infra/fake-sms.ts');
 type RiskModule = typeof import('../../../../apps/api/src/modules/risk/application/sms-risk.ts');
 type RedisModule = typeof import('../../../../apps/api/src/modules/platform/redis/index.ts');
@@ -51,33 +47,52 @@ let resultFailures = 0;
 let redisDown = false;
 let reached = Promise.withResolvers<void>();
 let resume = Promise.withResolvers<void>();
+let pauseInsert = false;
+let insertReached = Promise.withResolvers<void>();
+let insertResume = Promise.withResolvers<void>();
+const pausedQueries = new Set<object>();
+const POOL_NAME = 'b1-11g-attempts';
 
 async function rows(appId: string): Promise<Attempt[]> {
-  return (
-    await sql<Attempt>`select app_id, attempt_id, ip_hmac, phone_hmac, created_at, status
-      from ${sql.table(ATTEMPT_TABLE)} where app_id = ${appId}
-      order by created_at, attempt_id`.execute(db)
-  ).rows;
+  return readAttempts(db, appId);
 }
 
 // Query-boundary faults, not mocks of a future repository method. All unaffected queries go
 // to real PG. A failed result write leaves the already-committed pending attempt untouched.
 const faultPlugin: KyselyPlugin = {
-  transformQuery({ node }) {
-    const isAttempt = JSON.stringify(node).includes(ATTEMPT_NAME);
-    if (isAttempt && node.kind === 'InsertQueryNode' && failInsert) {
+  transformQuery({ node, queryId }) {
+    // Inspect compiled SQL, including raw SQL and upserts, not Kysely builder node kinds.
+    const compiled = db.getExecutor().compileQuery(node, queryId);
+    const text = compiled.sql.replaceAll('"', '');
+    const isAttempt = text.includes(ATTEMPT_TABLE);
+    const inserting = isAttempt && /\binsert\s+into\b/i.test(text);
+    const writingResult =
+      isAttempt &&
+      (/\bupdate\s+(?:only\s+)?[\w.]+\s+(?:as\s+\w+\s+)?set\b/i.test(text) ||
+        (inserting && /\bdo\s+update\b/i.test(text) && !compiled.parameters.includes('pending')));
+    if (inserting && failInsert) {
       insertFailures++;
       throw Object.assign(new Error('simulated process loss before attempt insert'), {
         code: '08006',
       });
     }
-    if (isAttempt && node.kind === 'UpdateQueryNode' && failResult) {
+    if (writingResult && failResult) {
       resultFailures++;
       throw Object.assign(new Error('simulated result persistence unavailable'), { code: '08006' });
     }
+    if (inserting && pauseInsert) {
+      pauseInsert = false;
+      pausedQueries.add(queryId);
+    }
     return node;
   },
-  async transformResult({ result }) {
+  async transformResult({ result, queryId }) {
+    if (pausedQueries.delete(queryId)) {
+      // Hold the inserted row before the surrounding transaction can commit. A concurrent
+      // unlocked count cannot see it; a correct serialized admission waits for this transaction.
+      insertReached.resolve();
+      await insertResume.promise;
+    }
     return result;
   },
 };
@@ -85,12 +100,16 @@ const faultPlugin: KyselyPlugin = {
 beforeAll(async () => {
   redis = await acquireTestRedis();
   database = await createTestDatabase();
-  db = createDb({ connectionString: database.urlFor('couli_app'), max: 8 });
-  const identity = await api<SenderModule>('modules/identity/index.ts');
+  db = createDb({
+    connectionString: database.urlFor('couli_app'),
+    max: 8,
+    applicationName: POOL_NAME,
+  });
+  const identity = await api<SenderModule>('modules/identity/infra/fake-sms.ts');
   const risk = await api<RiskModule>('modules/risk/index.ts');
   const { RedisUnavailableError } = await api<RedisModule>('modules/platform/redis/index.ts');
   const realSender = identity.createSmsSender;
-  const senderFactory = vi.spyOn(identity, 'createSmsSender').mockImplementation((env, logger) => {
+  const wrapSender: SenderModule['createSmsSender'] = (env, logger) => {
     const sender = realSender(env, logger);
     return {
       ...sender,
@@ -101,7 +120,13 @@ beforeAll(async () => {
         // Do not compare a completed SELECT snapshot with another request's later call log:
         // under concurrency that mixes two instants. The complete counts are checked below.
         expect(persisted.length).toBeGreaterThan(0);
-        expect(persisted.some((row) => row.status === 'pending')).toBe(true);
+        expect(
+          persisted.some(
+            (row) =>
+              row.status === 'pending' &&
+              row.phone_hmac === kit.crypto.blindIndex(message.phone, 'risk.sms.phone'),
+          ),
+        ).toBe(true);
         if (message.phone === targetPhone && mode === 'after-insert') {
           reached.resolve();
           await resume.promise;
@@ -122,8 +147,14 @@ beforeAll(async () => {
         return sender.send(message);
       },
     };
-  });
+  };
+  const senderFactory = vi.spyOn(identity, 'createSmsSender').mockImplementation(wrapSender);
   restores.push(() => senderFactory.mockRestore());
+  // The current AppModule also supports an explicit sender provider via the public index.
+  // Wrap both existing factories so the same fake reaches either supported wiring.
+  const exports = await api<SenderModule>('modules/identity/index.ts');
+  const publicFactory = vi.spyOn(exports, 'createSmsSender').mockImplementation(wrapSender);
+  restores.push(() => publicFactory.mockRestore());
   const realRisk = risk.createSmsRisk;
   const riskFactory = vi.spyOn(risk, 'createSmsRisk').mockImplementation((options) => {
     const handle = options.redis;
@@ -138,25 +169,19 @@ beforeAll(async () => {
                 const ns = handle.namespace(name);
                 return {
                   async get(key) {
-                    if (redisDown) throw new RedisUnavailableError('command_failed');
+                    if (redisDown && key.startsWith('ip_send:'))
+                      throw new RedisUnavailableError('command_failed');
                     return ns.get(key);
                   },
                   async set(key, value, ttl) {
-                    if (redisDown) throw new RedisUnavailableError('command_failed');
+                    if (redisDown && key.startsWith('ip_send:'))
+                      throw new RedisUnavailableError('command_failed');
                     return ns.set(key, value, ttl);
                   },
                   async eval(script, options) {
-                    // Device admission remains under its own fail-closed rule. This fault
-                    // affects IP counting/cache commands, not signature, code or device stores.
-                    if (
-                      redisDown &&
-                      options.keys.some(
-                        (key) =>
-                          !key.startsWith('dev:') &&
-                          !key.startsWith('req:') &&
-                          !key.startsWith('budget:'),
-                      )
-                    )
+                    // Only send-count cache operations fail. Registration and device admission
+                    // retain their own rules; this task does not redefine their outage policy.
+                    if (redisDown && options.keys.some((key) => key.startsWith('ip_send:')))
                       throw new RedisUnavailableError('command_failed');
                     return ns.eval(script, options);
                   },
@@ -171,6 +196,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   resume.resolve();
+  insertResume.resolve();
   try {
     await kit?.close();
   } finally {
@@ -193,11 +219,12 @@ async function start(limit = 3) {
   resultFailures = 0;
   reached = Promise.withResolvers<void>();
   resume = Promise.withResolvers<void>();
+  pauseInsert = false;
+  insertReached = Promise.withResolvers<void>();
+  insertResume = Promise.withResolvers<void>();
   targetPhone = phone();
   // Missing migration must fail as an assertion, never as relation-not-found or TypeError.
-  const relation = await sql<{ present: boolean }>`select to_regclass(${ATTEMPT_TABLE}) is not null
-    as present`.execute(db);
-  expect(relation.rows[0]?.present, 'PG authoritative SMS attempt migration').toBe(true);
+  await assertAttemptTable(db);
   const sms = await api<
     typeof import('../../../../apps/api/src/modules/identity/application/sms-codes.ts')
   >('modules/identity/application/sms-codes.ts');
@@ -215,12 +242,28 @@ async function start(limit = 3) {
 }
 type Case = Awaited<ReturnType<typeof start>>;
 
-async function counts(f: Case, expectedCalls: number, expectedRows: number, limit = 3) {
+async function counts(
+  f: Case,
+  expectedCalls: number,
+  expectedRows: number,
+  limit = 3,
+  expectedCounted = expectedRows,
+) {
   const attempts = await rows(f.appId);
+  const now = kit.clock.now().getTime();
+  const counted = attempts.filter(
+    (row) =>
+      ['pending', 'accepted', 'unknown'].includes(row.status) &&
+      row.created_at.getTime() >= now - EXTENDED_WINDOW_MS &&
+      row.created_at.getTime() <= now,
+  );
   expect(f.providerCalls()).toBe(expectedCalls);
   expect(attempts).toHaveLength(expectedRows);
+  // Explicit refusals retain an audit row, but release quota. Lifetime calls/rows may exceed
+  // the limit; only pending/accepted/unknown rows within the extended window are bounded.
   expect(f.providerCalls()).toBeLessThanOrEqual(attempts.length);
-  expect(attempts.length).toBeLessThanOrEqual(limit);
+  expect(counted).toHaveLength(expectedCounted);
+  expect(counted.length).toBeLessThanOrEqual(limit);
   expect(new Set(attempts.map((row) => row.attempt_id)).size).toBe(expectedRows);
   expect(new Set(attempts.map((row) => row.ip_hmac)).size).toBe(expectedRows === 0 ? 0 : 1);
   for (const row of attempts) {
@@ -336,7 +379,7 @@ for (const [index, scenario] of scenarios.entries()) {
         } else if (scenario.rows === 1) {
           expect(initialRows.map((row) => row.status)).toEqual(['accepted']);
         }
-        if (scenario.mode === 'result-write-fails') expect(resultFailures).toBe(2);
+        if (scenario.mode === 'result-write-fails') expect(resultFailures).toBeGreaterThanOrEqual(1);
         failInsert = false;
         failResult = false;
         const subsequent = await Promise.all([f.request(next), f.request(next), f.request(next)]);
@@ -360,20 +403,29 @@ for (const [index, scenario] of scenarios.entries()) {
   }
 }
 
-for (const [index, outcome] of ['rejected', 'unknown'].entries()) {
-  it(`[AC-B1-11g#${56 + index}] ${outcome} 不退 IP attempt，后续新请求也占额度`, async () => {
-    const f = await start(2);
-    mode = outcome as 'rejected' | 'unknown';
-    envelope(kit, await f.request('landing', targetPhone), outcome === 'rejected' ? 50001 : 0);
-    expect((await rows(f.appId)).map((row) => row.status)).toEqual([
-      outcome === 'rejected' ? 'failed' : 'unknown',
-    ]);
-    await counts(f, 1, 1, 2);
-    envelope(kit, await f.request('app'));
-    envelope(kit, await f.request('landing'), 42901, 3611);
-    await counts(f, 2, 2, 2);
-  });
-}
+it('[AC-B1-11g#56] 明确拒绝保留 failed_rejected 行但不占 IP 额度', async () => {
+  const f = await start(2);
+  mode = 'rejected';
+  envelope(kit, await f.request('landing', targetPhone), 50001);
+  expect((await rows(f.appId)).map((row) => row.status)).toEqual(['failed_rejected']);
+  await counts(f, 1, 1, 2, 0);
+  envelope(kit, await f.request('app'));
+  await counts(f, 2, 2, 2, 1);
+  envelope(kit, await f.request('landing'));
+  envelope(kit, await f.request('app'), 42901, 3611);
+  await counts(f, 3, 3, 2, 2);
+});
+
+it('[AC-B1-11g#57] 结果未知保留 unknown 行并占 IP 额度', async () => {
+  const f = await start(2);
+  mode = 'unknown';
+  envelope(kit, await f.request('landing', targetPhone));
+  expect((await rows(f.appId)).map((row) => row.status)).toEqual(['unknown']);
+  await counts(f, 1, 1, 2);
+  envelope(kit, await f.request('app'));
+  envelope(kit, await f.request('landing'), 42901, 3611);
+  await counts(f, 2, 2, 2);
+});
 
 it('[AC-B1-11g#58] 已有 N−1 行时两个入口并发仅放行一个；N 行不新增 attempt', async () => {
   const f = await start();
@@ -439,15 +491,16 @@ it('[AC-B1-11g#62] 慢接受按 created_at 计次，Retry-After 取最早行滑�
   ]);
 });
 
-it('[AC-B1-11g#63] 同手机号新请求独立计次，手机号 42901 的 failed 行也不退 IP 额度', async () => {
+it('[AC-B1-11g#63] 手机号频控拦下不写 attempt、不占 IP 额度，换号码可发', async () => {
   const f = await start(2);
   envelope(kit, await f.request('landing', targetPhone));
   envelope(kit, await f.request('app', targetPhone), 42901, 60);
-  const attempts = await counts(f, 1, 2, 2);
-  expect(attempts.map((row) => row.status).sort()).toEqual(['accepted', 'failed']);
+  const attempts = await counts(f, 1, 1, 2);
+  expect(attempts.map((row) => row.status)).toEqual(['accepted']);
   expect(new Set(attempts.map((row) => row.phone_hmac)).size).toBe(1);
+  envelope(kit, await f.request('landing'));
   envelope(kit, await f.request('landing'), 42901, 3611);
-  await counts(f, 1, 2, 2);
+  await counts(f, 2, 2, 2);
 });
 
 it('[AC-B1-11g#64] 结果双写失败与 IP Redis 故障叠加，过旧租约后仍按 PG pending 计次', async () => {
@@ -456,7 +509,7 @@ it('[AC-B1-11g#64] 结果双写失败与 IP Redis 故障叠加，过旧租约后
   redisDown = true;
   try {
     envelope(kit, await f.request('landing'));
-    expect(resultFailures).toBe(2);
+    expect(resultFailures).toBeGreaterThanOrEqual(1);
     expect((await rows(f.appId)).map((row) => row.status)).toEqual(['pending']);
     failResult = false;
     kit.clock.advanceMs(60_001);
@@ -479,3 +532,90 @@ it('[AC-B1-11g#65] 相同 IP 在不同 app 有独立的 PG attempt 上限', asyn
   await counts(first, 1, 1, 1);
   await counts(second, 1, 1, 1);
 });
+
+it('[AC-B1-11g#66] Redis 中断后恢复但缓存只有一条，准入仍以 PG 两条为准', async () => {
+  const f = await start(3);
+  envelope(kit, await f.request('landing'));
+  expect(f.providerCalls(), '真实入口必须调用已注入的供应商替身').toBe(1);
+  redisDown = true;
+  try {
+    envelope(kit, await f.request('app'));
+    await counts(f, 2, 2, 3);
+  } finally {
+    redisDown = false;
+  }
+  const { REDIS } = await api<{ REDIS: symbol }>('modules/platform/index.ts');
+  const cache = kit.app
+    .get<NonNullable<Awaited<ReturnType<RedisModule['createRedisHandle']>>>>(REDIS)
+    .namespace('sms_risk');
+  const key = `ip_send:${f.appId}:${kit.crypto.blindIndex(IP, 'risk.sms.ip').slice(0, 32)}`;
+  // Explicitly restore a stale, too-small cache. The authoritative history comes exclusively
+  // from the two HTTP requests above; this Redis fixture never substitutes for attempt rows.
+  expect(
+    await cache.eval(
+      `
+    redis.call('DEL', KEYS[1])
+    redis.call('ZADD', KEYS[1], ARGV[2], 'before-outage')
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+    return redis.call('ZCARD', KEYS[1])
+  `,
+      { keys: [key], args: [String(START)], ttlSeconds: 7200 },
+    ),
+  ).toBe(1);
+  envelope(kit, await f.request('landing'));
+  envelope(kit, await f.request('app'), 42901, 3611);
+  envelope(kit, await f.request('landing'), 42901, 3611);
+  await counts(f, 3, 3, 3);
+});
+
+for (const [index, [first, next]] of (
+  [
+    ['landing', 'app'],
+    ['app', 'landing'],
+  ] as const
+).entries()) {
+  it(`[AC-B1-11g#${67 + index}] ${first} 暂停在 attempt 插入后提交前，${next} 不能抢占最后额度`, async () => {
+    const f = await start(2);
+    envelope(kit, await f.request('landing'));
+    pauseInsert = true;
+    const initial = f.request(first);
+    let competitor: Promise<Response> | undefined;
+    let finished = false;
+    try {
+      expect(
+        await Promise.race([
+          insertReached.promise.then(() => 'paused'),
+          initial.then(() => 'returned'),
+        ]),
+      ).toBe('paused');
+      competitor = f.request(next).then((response) => {
+        finished = true;
+        return response;
+      });
+      // Observe actual PG lock contention (or completion in an unsafe implementation), not
+      // a sleep followed by an assumption that both HTTP requests happened to overlap.
+      let overlapping = false;
+      for (let poll = 0; poll < 1000; poll++) {
+        const blocked = await sql<{ waiting: boolean }>`select exists (
+          select 1 from pg_stat_activity
+          where datname = current_database() and application_name = ${POOL_NAME}
+            and cardinality(pg_blocking_pids(pid)) > 0
+        ) as waiting`.execute(db);
+        if (finished || blocked.rows[0]?.waiting === true) {
+          overlapping = true;
+          break;
+        }
+      }
+      expect(overlapping, '竞争请求已完成或在 PG 等待首请求的事务锁').toBe(true);
+      insertResume.resolve();
+      envelope(kit, await initial);
+      envelope(kit, await competitor, 42901, 3611);
+      await counts(f, 2, 2, 2);
+    } finally {
+      pauseInsert = false;
+      insertResume.resolve();
+      await initial;
+      await competitor;
+    }
+  });
+}

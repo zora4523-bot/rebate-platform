@@ -3,6 +3,7 @@ import { createDb, destroyDb } from '@couli/db';
 import { acquireTestRedis, createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { IP, NOW, envelope, fixture, openKit, phone, type Kit } from './kit.ts';
+import { assertAttemptTable, readAttempts } from './attempt-store.ts';
 
 // Real AppModule, real isolated stores, fake SMS provider; no route or business-service mocks.
 let server: Awaited<ReturnType<typeof acquireTestRedis>> | undefined;
@@ -121,10 +122,14 @@ it('[AC-B1-11g#5] 手机号 HMAC 黑名单按规范化后的号码匹配且先�
 
 it('[AC-B1-11g#6] 20001 与 44001 均不占发码额度，之后同 IP 的有效号码仍能发码', async () => {
   const f = fixture(kit);
+  await assertAttemptTable(kit.db);
   await f.config('sms.ip_sends_per_hour', 1);
   envelope(kit, await f.send('bad-phone'), 20001);
+  expect(await readAttempts(kit.db, f.appId)).toEqual([]);
   envelope(kit, await f.send(phone('170')), 44001);
+  expect(await readAttempts(kit.db, f.appId)).toEqual([]);
   envelope(kit, await f.send(phone()));
+  expect(await readAttempts(kit.db, f.appId)).toHaveLength(1);
   expect(f.messages()).toHaveLength(1);
 });
 
@@ -182,8 +187,8 @@ it('[AC-B1-11g#10] 同 IP 两项同时超限取较晚解除时刻，先于更晚
   await f.registrations(Array.from({ length: 5 }, () => '2026-10-18T10:00:00+08:00'));
   await f.accepted(Array.from({ length: 19 }, () => '2026-10-18T10:00:10+08:00'));
   kit.clock.set('2026-10-18T10:59:55+08:00');
-  // IP registrations release in 6s, sends in 16s; phone releases in 55s, but is not reached.
-  envelope(kit, await f.send(number), 42901, 16);
+  // IP registrations release in 6s, sends in 26s; phone releases in 55s, but is not reached.
+  envelope(kit, await f.send(number), 42901, 26);
   expect(f.messages()).toHaveLength(1);
 });
 
@@ -194,7 +199,7 @@ it('[AC-B1-11g#11] 发码默认上限二十条：换号码与伪造转发 IP 均
     kit,
     await f.send(phone(), { headers: { 'x-forwarded-for': '198.51.100.88' } }),
     42901,
-    3601,
+    3611,
   );
   envelope(kit, await f.send(phone(), { ip: '203.0.113.72' }));
   expect(f.messages()).toHaveLength(21);
@@ -205,8 +210,8 @@ it('[AC-B1-11g#12] IP 阈值取配置，已有条数超过阈值时等第 N−L+
   await f.config('sms.ip_sends_per_hour', 2);
   await f.accepted(['09:00:00', '09:10:00', '09:20:00'].map((t) => `2026-10-18T${t}+08:00`));
   kit.clock.set('2026-10-18T09:50:00+08:00');
-  envelope(kit, await f.send(phone()), 42901, 1201);
-  kit.clock.set('2026-10-18T10:10:00+08:00');
+  envelope(kit, await f.send(phone()), 42901, 1211);
+  kit.clock.set('2026-10-18T10:10:10+08:00');
   envelope(kit, await f.send(phone()), 42901, 1);
   kit.clock.advanceMs(1000);
   envelope(kit, await f.send(phone()));
@@ -219,7 +224,7 @@ for (const appFirst of [true, false]) {
     await f.config('sms.ip_sends_per_hour', 1);
     const appSend = await f.appSender();
     envelope(kit, await (appFirst ? appSend(phone()) : f.send(phone())));
-    envelope(kit, await (appFirst ? f.send(phone()) : appSend(phone())), 42901, 3601);
+    envelope(kit, await (appFirst ? f.send(phone()) : appSend(phone())), 42901, 3611);
     expect(f.messages()).toHaveLength(1);
   });
 }
@@ -319,7 +324,7 @@ it('[AC-B1-11g#19] 结果未知同样计入 IP 发码额度', async () => {
   await f.config('sms.ip_sends_per_hour', 1);
   kit.sender.enqueueResult('unknown');
   envelope(kit, await f.send(phone()));
-  envelope(kit, await f.send(phone()), 42901, 3601);
+  envelope(kit, await f.send(phone()), 42901, 3611);
   expect(f.messages()).toHaveLength(1);
 });
 
@@ -385,7 +390,7 @@ it('[AC-B1-11g#24] IP 额度与验证码按 app_id 隔离，另一个 app 的 IP
   const first = fixture(kit);
   const second = fixture(kit);
   await first.accepted(Array.from({ length: 20 }, () => NOW));
-  envelope(kit, await first.send(phone()), 42901, 3601);
+  envelope(kit, await first.send(phone()), 42901, 3611);
   const number = phone();
   envelope(kit, await second.send(number));
   const code = second.messages()[0]!.code;
@@ -410,6 +415,6 @@ it('[AC-B1-11g#27] 手机号频控的 42901 不计入同 IP 发码条数，换�
   expect(f.messages()).toHaveLength(1);
   envelope(kit, await f.send(phone()));
   expect(f.messages()).toHaveLength(2);
-  envelope(kit, await f.send(phone()), 42901, 3601);
+  envelope(kit, await f.send(phone()), 42901, 3611);
   expect(f.messages()).toHaveLength(2);
 });
