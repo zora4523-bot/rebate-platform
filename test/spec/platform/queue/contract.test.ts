@@ -131,8 +131,20 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     });
     expect(QUEUE_CATALOG[orderSync + 1]?.name).toBe('order-rescan');
   }
+  // B1-34c: export (admin data exports), when present, is exactly this standard entry with the
+  // defaults, right after risk-scan and right before dead-letter. Everything else stays exact.
+  const exportAt = QUEUE_CATALOG.findIndex((queue) => queue.name === 'export');
+  if (exportAt !== -1) {
+    expect(QUEUE_CATALOG.filter((queue) => queue.name === 'export')).toHaveLength(1);
+    expect(QUEUE_CATALOG[exportAt]).toStrictEqual({ name: 'export', ...DEFAULT });
+    expect(QUEUE_CATALOG[exportAt - 1]?.name).toBe('risk-scan');
+    expect(QUEUE_CATALOG[exportAt + 1]?.name).toBe('dead-letter');
+  }
   expect(
-    QUEUE_CATALOG.filter((queue) => queue.name !== 'risk-scan' && queue.name !== 'order-sync'),
+    QUEUE_CATALOG.filter(
+      (queue) =>
+        queue.name !== 'risk-scan' && queue.name !== 'order-sync' && queue.name !== 'export',
+    ),
   ).toStrictEqual([
     { name: 'order-rescan', ...DEFAULT },
     { name: 'settle', ...DEFAULT, policy: 'exclusive' },
@@ -174,10 +186,25 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
     expect(syncs).toStrictEqual([w('order-sync', 1)]);
     expect(ENTRY_PLAN.worker[0]).toStrictEqual(w('order-sync', 1));
   }
+  // B1-34c: export, when planned, is worker-only with concurrency 1, right after agent-trace and
+  // right before risk-scan (risk-scan stays last); no other entry consumes it.
+  const exports = ENTRY_PLAN.worker.filter((work) => work.queue === 'export');
+  if (exports.length > 0) {
+    expect(exports).toStrictEqual([w('export', 1)]);
+    const at = ENTRY_PLAN.worker.findIndex((work) => work.queue === 'export');
+    expect(ENTRY_PLAN.worker[at - 1]).toStrictEqual(w('agent-trace', 2));
+    expect(ENTRY_PLAN.worker[at + 1]).toStrictEqual(w('risk-scan', 1));
+  }
+  expect(
+    (['api', 'stream', 'admin', 'payout'] as const).flatMap((entry) =>
+      ENTRY_PLAN[entry].filter((work) => work.queue === 'export').map(() => entry),
+    ),
+  ).toStrictEqual([]);
   expect({
     ...ENTRY_PLAN,
     worker: ENTRY_PLAN.worker.filter(
-      (work) => work.queue !== 'risk-scan' && work.queue !== 'order-sync',
+      (work) =>
+        work.queue !== 'risk-scan' && work.queue !== 'order-sync' && work.queue !== 'export',
     ),
   }).toStrictEqual({
     api: [],
