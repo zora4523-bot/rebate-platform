@@ -1,0 +1,35 @@
+{
+  "task": "CT-02v",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "38bbbea6b7074487eb0e21c3a8d159ea63a204a9",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only, all new operations planned). Console app-version management behind permission point content.app_version: adminListAppVersions (no paging, sorted by platform / channel; h5 / admin rows read only), adminGetAppVersion (30701 without a row), adminSaveAppVersion (PUT, no Idempotency-Key per 04 §6.6; AdminStepUpToken with totp only when the minimum supported version is raised, including from none; expected_row_version CAS, null creates, conflicts 20902 data.resource=app_version; BR-ID-01 pre-save checks answer 20001, unconfirmed other stores fields=[confirmed_stores]). Editable platforms are a subset enum ios / android / harmony; update_title <= 100, update_notes <= 2000. 20902 data.resource gains app_version. permissions.yaml checked, unchanged. These operations gate the 10405 force-update, implemented later by F1-02zc. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "47d476529ad8f71edfaf0575a7059e3c033f5f8d",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
