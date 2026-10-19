@@ -3,7 +3,13 @@ import { FixedClock } from '../../../platform/index.ts';
 import { UnionError, type UnionEndpoint } from '../../domain/types.ts';
 import type { UnionTransport } from '../replay.ts';
 import { PddUnionAdapter } from './pdd-adapter.ts';
-import { incrementWindow, mapPddOrder, parseIncrementCursor, rangeWindow } from './orders.ts';
+import {
+  incrementWindow,
+  mapPddOrder,
+  parseIncrementCursor,
+  parsePddOrderEnvelope,
+  rangeWindow,
+} from './orders.ts';
 
 const endpoint: UnionEndpoint = {
   platform: 'pdd',
@@ -154,4 +160,30 @@ it('[AC-B1-08e-UNIT#3] 平台无关字段：子单号、推广位、原样归因
     raw_payload_id: '42',
   });
   expect(meta.like.toISOString()).toBe('2026-10-14T00:00:00.000Z');
+});
+
+it('[AC-B1-08p#U1] 店铺 ID：mall_id 原始文本与数值按十进制正整数取，缺失或不合格为 null 且照常映射', () => {
+  const raw = (text: string) =>
+    mapPddOrder(
+      parsePddOrderEnvelope(
+        `{"r":{"order_sn":"unit-sn","order_amount":100,"promotion_amount":10,"mall_id":${text}}}`,
+        'r',
+      ),
+      'increment',
+      meta,
+    ).shop_id;
+  expect(raw('73129')).toBe('73129');
+  expect(raw('9007199254740991')).toBe('9007199254740991');
+  // 超出安全整数、小数字面量（JSON.parse 会舍成整数）、指数写法都不当作店铺。
+  for (const text of ['9007199254740992', '9007199254740993', '73129.0', '7.3129e4', '0', '-5']) {
+    expect(raw(text)).toBeNull();
+  }
+  for (const mall_id of ['73129', 73129]) {
+    expect(mapPddOrder({ ...base, mall_id }, 'detail', meta).shop_id).toBe('73129');
+  }
+  for (const mall_id of ['', ' 73129', '073129', 'abc', 2 ** 53, Number.NaN, true, {}, undefined]) {
+    const dto = mapPddOrder({ ...base, mall_id }, 'range', meta);
+    expect(dto.shop_id).toBeNull();
+    expect(dto.order_id).toBe('unit-sn');
+  }
 });

@@ -8,7 +8,8 @@
 //   pending，不建行）→ ② 用户归属 → ④ buy_type → 写 order_keys、orders、history（+ NO_RECEIVED_AT）、
 //   未归因计数、无 mtime 计数（开启排序时）→ rebate.onImported（同事务）。①、无付款时间、同步起点之前 → 只记丢弃计数。
 // - ⑤ 来源回填（B1-08j，BR-ATTR-15）：② 成功且注入 sources 时在判定阶段经端口匹配，四列随 orders INSERT 写入；
-//   端口抛错整事务回滚。
+//   端口抛错整事务回滚。B1-08p：orders.shop_id 写报文店铺（未归因也写），店铺一并交给回填；店铺字段存在但
+//   本条为空、场景已知且无 exact / product 命中 → 四列保持 NULL 待补（不写 none，domain/source-shop.ts）。
 // - ⑥ 分佣快照（B1-08k，BR-ATTR-01 ⑥ / BR-CALC-10）：注入 snapshots 且首次入库即已归因、PAID+ 时，判定阶段定
 //   paid_at_source（随 INSERT 写），history、待处理之后、rebate.onImported 之前同事务调端口
 //   （application/commission-snapshot-step.ts）；结果经 ImportedOrder.snapshot 交 settlement。未注入时整步跳过，
@@ -30,6 +31,7 @@ import {
 import { orderContentHash } from '../domain/content-hash.ts';
 import { planImportState } from '../domain/import-state.ts';
 import { rawItemId, rawPayloadId } from '../domain/order-fields.ts';
+import { incomingShopId, shouldDeferOrderSource } from '../domain/source-shop.ts';
 import { mapPlatformStatus } from '../domain/status-map.ts';
 import { lockOrderKey } from '../infra/order-lock.ts';
 import {
@@ -254,8 +256,9 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
     }
     // ⑤ 来源回填（BR-ATTR-15；B1-08j）：只在本次把 user_id 由空写为非空（② 成功）且注入 sources 时，
     // 按订单推广位的 pid_scene 匹配；四列随 orders INSERT 一起写。未归因 / 未注入 → 四列 NULL，不调端口。
-    // 首次入库 shopId 恒为 null（UnionOrder 无 shop_id，待编排裁定 4）。
-    const source =
+    // B1-08p：店铺取本次报文（UnionOrder.shop_id）；none 且店铺显式为空、场景已知 → 四列保持 NULL 待补。
+    const shop = incomingShopId(order);
+    const matched =
       user.kind === 'attributed' && deps.sources !== undefined
         ? await backfillOrderSource(deps.sources, {
             appId: ctx.app_id,
@@ -264,9 +267,18 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
             attrAt,
             pidScene: pidRow.pid_scene,
             order,
-            shopId: null,
+            shopId: shop ?? null,
           })
         : null;
+    const sourcePending =
+      matched !== null &&
+      shouldDeferOrderSource({
+        source: matched,
+        incomingShopId: shop,
+        currentShopId: null,
+        pidScene: pidRow.pid_scene,
+      });
+    const source = sourcePending ? null : matched;
 
     const orderId = newUuidV7(now);
     const attributed = user.kind === 'attributed';
@@ -315,6 +327,8 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       sub_order_id: order.sub_order_id,
       parent_order_id: order.parent_order_id ?? null,
       raw_item_id: itemId,
+      // B1-08p：店铺只取联盟订单报文（拼多多 mall_id）；未归因订单也写，缺失为 NULL。
+      shop_id: shop ?? null,
       pay_amount_fen: order.paid_fen,
       est_commission_fen: order.est_commission_fen ?? null,
       pid: slot,
@@ -421,6 +435,11 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       log?.info(
         { platform, app_id: ctx.app_id, source_match: source.source_match, outcome: 'backfilled' },
         'order source backfilled',
+      );
+    } else if (sourcePending) {
+      log?.info(
+        { platform, app_id: ctx.app_id, outcome: 'source_pending' },
+        'order source left blank until the shop is known',
       );
     }
     log?.info({ platform, app_id: ctx.app_id, outcome: 'inserted', attributed }, 'order imported');
