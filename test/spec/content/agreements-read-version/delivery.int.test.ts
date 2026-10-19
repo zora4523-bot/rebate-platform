@@ -191,8 +191,12 @@ it('[AC-F1-02ze#9] 公共读不改协议、不写同意记录或审计，含不�
   const before = await snapshot();
   h.queries.length = 0;
   for (const type of ['privacy', 'agreement', 'labor_agreement'] as const) {
-    expect((await success(await read(h.app, appId, type))).version).toBe(2);
-    expect((await success(await read(h.app, appId, type, 1))).version).toBe(1);
+    expect(await success(await read(h.app, appId, type))).toEqual(
+      await storedAgreement(h.db, appId, type, 2),
+    );
+    expect(await success(await read(h.app, appId, type, 1))).toEqual(
+      await storedAgreement(h.db, appId, type, 1),
+    );
     await missing(await read(h.app, appId, type, 3));
   }
   expect((await read(h.app, appId, 'foo')).json().code).toBe(20001);
