@@ -765,6 +765,16 @@ it('[CT-06w] the two B1-12g files (red/4): `./kit.ts` of their own directory is 
   for (const m of [...eventsClosure.slice(1), ...queueClosure.slice(1)]) {
     expect([m.path, m.closed, m.opaque]).toEqual([m.path, true, null]);
   }
+  // The roots (r6): events/contract.test.ts is closed; queue/contract.test.ts reads apps/api/src
+  // itself (readdirSync / readFileSync from import.meta.url) — not closed, but those reads are
+  // judged on its own text by the name and listing rules, so it masks nothing either way
+  // (unjudged null) and the closure-wide fallback does not apply.
+  expect([eventsClosure[0]?.closed, eventsClosure[0]?.unjudged]).toEqual([true, null]);
+  expect([queueClosure[0]?.closed, queueClosure[0]?.unjudged, queueClosure[0]?.lists]).toEqual([
+    false,
+    null,
+    ['apps/api/src', 'apps/api/src/modules/platform/queue'],
+  ]);
   // The 27 unchanged tests of red/4: neither file may read any changed support file.
   for (const s of B112G_R4_SUPPORTS) {
     if (s !== events) expect(mayReadSupport(events, s, eventsClosure), s).toBeNull();
@@ -1484,6 +1494,45 @@ const oldNameRule = (closure: readonly Module[], support: string): boolean => {
   );
 };
 
+// A module text for each clause of the closed definition that makes a module open (CT-06w).
+const OPEN_MODULES: [string, string][] = [
+  [
+    'a file-system API',
+    "import { readFileSync } from 'node:fs';\nexport const n = readFileSync('x', 'utf8');",
+  ],
+  ['import.meta', 'export const n = import.meta.url;'],
+  ['a mock', "import { vi } from 'vitest';\nvi.mock('./x.ts');\nexport const n = 1;"],
+  [
+    'a process',
+    "import { spawnSync } from 'node:child_process';\nexport const n = spawnSync('cat');",
+  ],
+  ['eval', "export const n = eval('1');"],
+  ['a Worker', "export const n = new Worker('w.js');"],
+  ['a listing', "import { readdirSync } from 'node:fs';\nexport const n = readdirSync('.');"],
+  ['a computed import', 'export const n = await import(`./${"x"}.ts`);'],
+  ['a template specifier', 'export const n = await import(`./x.ts`);'],
+  ['an absolute specifier', "export { n } from '/spec/a/other.ts';"],
+  ['an unresolved import', "export { n } from './missing.ts';"],
+  ['a workspace package', "import { x } from '@couli/testing';\nexport const n = x;"],
+  ['a file not read here', "import raw from './data.txt?raw';\nexport const n = raw;"],
+  ['unreadable code', "it('open"],
+  ['vm', "import vm from 'node:vm';\nexport const n = vm;"],
+  ['worker_threads', "import { Worker as W } from 'node:worker_threads';\nexport const n = W;"],
+  ['module', "import m from 'node:module';\nexport const n = m;"],
+  ['require', "export const n = require('./x.cjs');"],
+  ['glob', "export const n = globSync('*.ts');"],
+  ['Function', "export const n = new Function('return 1')();"],
+  ['getBuiltinModule', "export const n = process.getBuiltinModule('node:fs');"],
+  ['process.binding', "export const n = process.binding('fs');"],
+  ['wasi', "import { WASI } from 'node:wasi';\nexport const n = WASI;"],
+  [
+    'vitest.doMock',
+    "import { vitest } from 'vitest';\nvitest.doMock('./x.ts');\nexport const n = 1;",
+  ],
+  ['a .mock( call', "export const n = helper.mock('./x.ts');"],
+  ['an import inside a template', "export const n = `${await import('./other.ts')}`;"],
+];
+
 it('[CT-06w] fallback: a closure with one module that is not closed judges exactly like the old code (orchestrator ruling 2026-10-19)', () => {
   const file = 'test/spec/a/rules.test.ts';
   const support = 'test/spec/identity/step-up-verify/kit.ts';
@@ -1509,28 +1558,7 @@ it('[CT-06w] fallback: a closure with one module that is not closed judges exact
   expect(mayReadSupport(file, support, closed)).toBeNull();
   // One module anywhere in the closure not closed (the deepest one here, in every way the
   // definition names): the judgement falls back to the old rules — whole, as the old code.
-  const open: [string, string][] = [
-    [
-      'a file-system API',
-      "import { readFileSync } from 'node:fs';\nexport const n = readFileSync('x', 'utf8');",
-    ],
-    ['import.meta', 'export const n = import.meta.url;'],
-    ['a mock', "import { vi } from 'vitest';\nvi.mock('./x.ts');\nexport const n = 1;"],
-    [
-      'a process',
-      "import { spawnSync } from 'node:child_process';\nexport const n = spawnSync('cat');",
-    ],
-    ['eval', "export const n = eval('1');"],
-    ['a Worker', "export const n = new Worker('w.js');"],
-    ['a listing', "import { readdirSync } from 'node:fs';\nexport const n = readdirSync('.');"],
-    ['a computed import', 'export const n = await import(`./${"x"}.ts`);'],
-    ['a template specifier', 'export const n = await import(`./x.ts`);'],
-    ['an absolute specifier', "export { n } from '/spec/a/other.ts';"],
-    ['an unresolved import', "export { n } from './missing.ts';"],
-    ['a workspace package', "import { x } from '@couli/testing';\nexport const n = x;"],
-    ['a file not read here', "import raw from './data.txt?raw';\nexport const n = raw;"],
-    ['unreadable code', "it('open"],
-  ];
+  const open = OPEN_MODULES;
   for (const [what, deep] of open) {
     const c = closure({ ...base, 'test/spec/a/deep/kit.ts': deep, 'test/spec/a/data.txt': '' });
     expect(
@@ -1561,4 +1589,96 @@ it('[CT-06w] fallback: a closure with one module that is not closed judges exact
   const free = closure(base, "import { o } from './other.ts';");
   expect(oldNameRule(free, support)).toBe(false);
   expect(mayReadSupport(file, support, free)).toBeNull();
+});
+
+it('[CT-06w] fallback, closure-wide: a module the file loads that is not closed, or a way of the file itself no rule judges, masks no specifier (orchestrator ruling 2026-10-19, r6)', () => {
+  const file = 'test/spec/a/rules.test.ts';
+  const support = 'test/spec/identity/step-up-verify/kit.ts';
+  const base: Record<string, string> = {
+    'test/spec/a/kit.ts': 'export const n = 1;',
+    'test/spec/a/other.ts': 'export const o = 2;',
+    'test/spec/a/data.txt': '',
+    'apps/api/src/x.ts': '',
+  };
+  const root = "import { n } from './kit.ts';\nimport { o } from './other.ts';";
+  const closure = (files: Record<string, string>, text = root) =>
+    relativeClosure(
+      file,
+      (p) => (p === file ? text : (files[p] ?? null)),
+      (p) => p.startsWith('test/'),
+    );
+  const at = (c: readonly Module[], p: string) => c.find((m) => m.path === p);
+  // All closed: the specifier is exempt (the one relaxation).
+  expect(mayReadSupport(file, support, closure(base))).toBeNull();
+  // A module the specifier does not name (a sibling) not closed, in every way the definition
+  // names: ./kit.ts itself is closed, yet the specifier counts — whole, as the old code.
+  for (const [what, sibling] of OPEN_MODULES) {
+    const c = closure({ ...base, 'test/spec/a/other.ts': sibling });
+    expect(
+      [at(c, 'test/spec/a/kit.ts')?.closed, at(c, 'test/spec/a/other.ts')?.closed],
+      what,
+    ).toEqual([true, false]);
+    expect(oldNameRule(c, support), what).toBe(true);
+    expect(mayReadSupport(file, support, c), what).toMatch(
+      /^test\/spec\/a\/rules\.test\.ts names kit\.ts in an unresolved import \.\/kit\.ts \(test\/spec\/a\/other\.ts is not closed: /,
+    );
+  }
+  // The rule-test file itself, with a way to files that no rule here judges on its own text:
+  // whole, as the old code (a mock: its own reason, as before).
+  const unjudged: [string, string][] = [
+    ['eval', "export const e = eval('1');"],
+    ['Function', "export const e = new Function('return 1')();"],
+    ['a process', "import { execSync } from 'node:child_process';\nexecSync('cat');"],
+    ['a Worker', "export const w = new Worker('w.js');"],
+    ['vm', "import vm from 'node:vm';\nexport const v = vm;"],
+    ['getBuiltinModule', "export const f = process.getBuiltinModule('node:fs');"],
+    ['require', "export const r = require('./x.cjs');"],
+    ['a computed import', 'export const d = await import(`./${"x"}.ts`);'],
+    ['a template specifier', 'export const d = await import(`./x.ts`);'],
+    ['an absolute specifier', "import '/spec/a/other.ts';"],
+    ['an unresolved import', "import './missing.ts';"],
+    ['a workspace package', "import '@couli/testing';"],
+    ['a file not read here', "import raw from './data.txt?raw';"],
+    ['a mock', "import { vi } from 'vitest';\nvi.mock('./other.ts');"],
+  ];
+  for (const [what, own] of unjudged) {
+    const c = closure(base, `${root}\n${own}`);
+    expect(c[0]?.unjudged, what).not.toBeNull();
+    expect(oldNameRule(c, support), what).toBe(true);
+    expect(mayReadSupport(file, support, c), what).toMatch(
+      /^test\/spec\/a\/rules\.test\.ts names kit\.ts in an unresolved import \.\/kit\.ts \(test\/spec\/a\/rules\.test\.ts (is not closed|mocks modules)/,
+    );
+  }
+  // Its own file-system reads, path helpers, import.meta and listings resolved statically are
+  // judged on its own text by the name and listing rules, as before CT-06w (B1-12g:
+  // queue/contract.test.ts reads apps/api/src this way): they block nothing …
+  const head =
+    "import path from 'node:path';\nimport { fileURLToPath } from 'node:url';\n" +
+    "import { readFileSync, readdirSync, statSync } from 'node:fs';\n" +
+    'const HERE = path.dirname(fileURLToPath(import.meta.url));\n';
+  const reads = closure(
+    base,
+    `${root}\n${head}export const l = readdirSync(path.resolve(HERE, '../../../apps/api/src'));\n` +
+      'export const t = l.map((f) => statSync(f) && readFileSync(f, "utf8"));',
+  );
+  expect([reads[0]?.closed, reads[0]?.unjudged, reads[0]?.lists]).toEqual([
+    false,
+    null,
+    ['apps/api/src'],
+  ]);
+  expect(mayReadSupport(file, support, reads)).toBeNull();
+  // … but a listing of the support file's directory, or its name in another literal, still
+  // makes the file whole.
+  const listing = closure(
+    base,
+    `${root}\n${head}export const l = readdirSync(path.resolve(HERE, '../identity/step-up-verify'));`,
+  );
+  expect(mayReadSupport(file, support, listing)).toBe(
+    `${file} lists test/spec/identity/step-up-verify, which holds ${support}`,
+  );
+  const named = closure(
+    base,
+    `${root}\n${head}export const t = readFileSync(path.join(HERE, '../identity/step-up-verify/kit.ts'));`,
+  );
+  expect(mayReadSupport(file, support, named)).toBe(`${file} names kit.ts`);
 });

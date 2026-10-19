@@ -48,12 +48,22 @@
 //   specifier is a package — except a workspace package (`@couli/*`, test code such as
 //   packages/testing that the closure does not follow). Computed as a fixpoint over the closure;
 //   `opaque` says why not.
-// - Fallback rule: a specifier is exempt only when it resolves to a closed module; whenever the
-//   module it names is not closed, not followed, not resolved, or the importing module itself
-//   mocks modules, the specifier keeps the name rules of CT-06p unchanged — the file is judged as
-//   a whole exactly as before, the reason says `unresolved import`. So a closure with one module
-//   that is not closed judges like the old code; the question a review must answer is whether a
-//   closure of closed modules can still reach a changed support file.
+// - Fallback rule: a specifier is exempt only when it resolves to a closed module and the whole
+//   closure is closed. Whenever the module it names is not closed, not followed or not resolved,
+//   the importing module mocks modules, ANY module the rule-test file loads is not closed (a
+//   sibling the specifier does not name too), or the rule-test file itself has a way to files
+//   that no rule here judges even on its own text (`Module.unjudged`: unreadable code, a dynamic
+//   or template load, code or process execution, a mock, an import that is neither a package
+//   nor resolved to the closure or to code outside the test code), every specifier keeps the
+//   name rules of CT-06p unchanged — the file is judged as a whole exactly as before, the reason
+//   says `unresolved import`. So a closure with one module that is not closed judges like the
+//   old code (test `[CT-06w] fallback …`, clause by clause). The one thing the rule-test file
+//   itself may do and still be exempt is what the name and listing rules already judge on its
+//   own text, as before CT-06w: file-system reads, path helpers, `import.meta` and listings
+//   resolved statically (B1-12g: queue/contract.test.ts lists and reads apps/api/src; a listing
+//   that holds the support file, or the support file's name in another literal, still makes it
+//   whole). The question a review must answer is whether a closure of closed modules can still
+//   reach a changed support file.
 //
 // Node built-ins only; pure functions (the caller reads the files).
 
@@ -1316,9 +1326,21 @@ export type Module = {
   /**
    * The module is closed (CT-06w): it is not opaque and every relative / `#` import of it
    * resolves to a closed module of the closure or to a file outside the test code. Only an
-   * import of a closed module may be skipped by the name rules of mayReadSupport.
+   * import of a closed module may be skipped by the name rules of mayReadSupport, and only when
+   * every other module the rule-test file loads is closed too.
    */
   closed: boolean;
+  /**
+   * Why the module may reach a file in a way no rule here judges, not even on its own text
+   * (CT-06w r6): it cannot be read as code, loads dynamically, executes code or a process, mocks,
+   * loads by a template, or has an import that is neither a package nor resolved to a module of
+   * the closure or to code outside the test code (or resolved to a module that is not closed).
+   * Null when closed, or when its only openness is its own file-system reads, path helpers,
+   * `import.meta` and listings resolved statically — those the name and listing rules judge on
+   * its text, as before CT-06w. mayReadSupport looks at it for the rule-test file itself only:
+   * any other module of the closure that is not closed disables the exemption outright.
+   */
+  unjudged: string | null;
 };
 
 type Reader = (path: string) => string | null;
@@ -1336,8 +1358,12 @@ function literalsOf(tokens: readonly Token[]): Literal[] {
   return out;
 }
 
-/** Identifiers of file-system access, module loading by path and process state (fileAccess). */
-const FILE_ACCESS = new Set([
+/**
+ * Identifiers of file-system reads and path helpers (fileAccess). In a module the rule-test file
+ * imports they make it open; the rule-test file's own use of them is judged on its own text by the
+ * name and listing rules, as before CT-06w (`unjudged` leaves them out; Codex review r5, rule 4).
+ */
+const FILE_READS = new Set([
   'readFileSync',
   'readFile',
   'readdirSync',
@@ -1356,11 +1382,17 @@ const FILE_ACCESS = new Set([
   'pathToFileURL',
   '__dirname',
   '__filename',
+  'cwd',
+]);
+/** The file-system modules (their own use by the rule-test file: as FILE_READS). */
+const READ_MODULES = new Set(['fs', 'node:fs', 'fs/promises', 'node:fs/promises']);
+/** Identifiers of file-system access, module loading by path and process state (fileAccess). */
+const FILE_ACCESS = new Set([
+  ...FILE_READS,
   'createRequire',
   'require',
   'glob',
   'globSync',
-  'cwd',
   // Code or process execution the rules cannot look into (Codex review r5).
   'eval',
   'Function',
@@ -1381,10 +1413,7 @@ const FILE_ACCESS = new Set([
   'dlopen',
 ]);
 const FILE_MODULES = new Set([
-  'fs',
-  'node:fs',
-  'fs/promises',
-  'node:fs/promises',
+  ...READ_MODULES,
   'child_process',
   'node:child_process',
   'vm',
@@ -1412,16 +1441,27 @@ const MOCKING = new Set([
  * Why a module may read files in a way the rules of mayReadSupport do not see (CT-06w, Codex
  * review r4): a file-system API or a path built from `import.meta` / `__dirname`, a module mock
  * (Vitest redirects it to `__mocks__`), `require` / `glob`. Null when it uses none of them.
+ * With `reads` false, the file-system reads, path helpers and `import.meta` (FILE_READS,
+ * READ_MODULES) do not count: what is left is what no rule here judges, even on the module's own
+ * text (`Module.unjudged`, CT-06w r6).
  */
-function fileAccess(code: readonly Token[]): string | null {
+function fileAccess(code: readonly Token[], reads = true): string | null {
   const tokens = flatten(code);
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i] as Token;
-    if (t.kind === 'id' && FILE_ACCESS.has(t.text)) return `it uses ${t.text}`;
-    if (t.kind === 'str' && typeof t.value === 'string' && FILE_MODULES.has(t.value)) {
+    if (t.kind === 'id' && FILE_ACCESS.has(t.text) && (reads || !FILE_READS.has(t.text))) {
+      return `it uses ${t.text}`;
+    }
+    if (
+      t.kind === 'str' &&
+      typeof t.value === 'string' &&
+      FILE_MODULES.has(t.value) &&
+      (reads || !READ_MODULES.has(t.value))
+    ) {
       return `it uses ${t.value}`;
     }
     if (
+      reads &&
       t.kind === 'id' &&
       t.text === 'meta' &&
       tokens[i - 1]?.text === '.' &&
@@ -1790,6 +1830,8 @@ export function relativeClosure(
             (listed.dirs.length > 0 ? `it lists ${listed.dirs.join(', ')}` : fileAccess(tokens))),
       mocking: tokens === null ? 'it cannot be read as code' : usesMocking(flatten(tokens)),
       closed: false,
+      unjudged:
+        tokens === null ? 'it cannot be read as code' : (dynamic ?? fileAccess(tokens, false)),
     });
     for (const { text: s } of literals ?? []) {
       if (!s.startsWith('./') && !s.startsWith('../')) continue;
@@ -1812,17 +1854,23 @@ export function relativeClosure(
       /^(node:)?(@[\w-][\w.-]*\/)?[\w-][\w.-]*(\/[\w.-]+)*$/.test(clean)
     );
   };
-  for (const m of out) {
-    if (m.opaque !== null) continue;
+  // An import that is neither a package nor resolved to a module of the closure or to code outside
+  // the test code, and why (null when there is none).
+  const openImport = (m: Module): string | null => {
     const open = m.imports.find((i) =>
       i.resolved === null ? !bare(i.spec) : !byPath.has(i.resolved) && follow(i.resolved),
     );
-    if (open === undefined) m.closed = true;
-    else if (open.resolved === null) {
-      m.opaque = open.spec.startsWith('@couli/')
-        ? `it imports ${open.spec}, a workspace package not read here`
-        : `it imports ${open.spec}, which cannot be resolved`;
-    } else m.opaque = `it imports ${open.resolved}, which is not read here`;
+    if (open === undefined) return null;
+    if (open.resolved !== null) return `it imports ${open.resolved}, which is not read here`;
+    return open.spec.startsWith('@couli/')
+      ? `it imports ${open.spec}, a workspace package not read here`
+      : `it imports ${open.spec}, which cannot be resolved`;
+  };
+  for (const m of out) {
+    if (m.opaque !== null) continue;
+    const open = openImport(m);
+    if (open === null) m.closed = true;
+    else m.opaque = open;
   }
   for (let changed = true; changed;) {
     changed = false;
@@ -1839,6 +1887,23 @@ export function relativeClosure(
       }
     }
   }
+  // What no rule here judges, not even on a module's own text (CT-06w r6; mayReadSupport looks at
+  // it for the rule-test file only): none for a closed module; otherwise its own ways (set by the
+  // walk), else an open import, else an import of a module that is not closed.
+  for (const m of out) {
+    if (m.closed) {
+      m.unjudged = null;
+      continue;
+    }
+    if (m.unjudged !== null) continue;
+    const dep = m.imports.find((i) => {
+      const d = i.resolved === null ? undefined : byPath.get(i.resolved);
+      return d !== undefined && !d.closed;
+    });
+    m.unjudged =
+      openImport(m) ??
+      (dep === undefined ? null : `it imports ${dep.resolved}, which is not closed`);
+  }
   return out;
 }
 
@@ -1849,11 +1914,13 @@ export function relativeClosure(
  * when: the support file is one of those modules; one of them imports it (CT-06w: an import
  * specifier resolved to the support file's repository path); its file name occurs anywhere in
  * their text; its name without the extension occurs as a word in their string literals — except
- * inside an import specifier that resolves to another, closed module of the closure (CT-06w,
+ * inside an import specifier that resolves to another, closed module of the closure while every
+ * module the file loads is closed and the file itself has no `unjudged` way to files (CT-06w,
  * after B1-12g: `./kit.ts` of test/spec/platform/events is not
  * test/spec/identity/step-up-verify/kit.ts; a specifier that cannot be resolved, or resolved to a
- * file the closure does not follow or to a module that is not closed, still counts, the reason
- * says `unresolved import`); one of them lists a
+ * file the closure does not follow or to a module that is not closed, and every specifier of a
+ * closure with a module that is not closed, still counts, the reason says `unresolved import`);
+ * one of them lists a
  * directory that holds the support file (CT-06r: readdir & co. resolved statically; a listing
  * whose directory cannot be resolved counts as reading anything, the reason says so) or loads by
  * a computed name (glob, require, a dynamic import of a computed specifier) or cannot be
@@ -1879,6 +1946,19 @@ export function mayReadSupport(
   const word = new RegExp(`(?<![\\w$.-])${escapeRegex(stem)}(?![\\w$-])`, 'u');
   const byPath = new Map(closure.map((m) => [m.path, m]));
   if (byPath.has(support)) return `it loads ${support}`;
+  // CT-06w r6 (orchestrator ruling of 2026-10-19): the exemption holds only for a closure of closed
+  // modules. Any module the rule-test file loads that is not closed — or a way of the rule-test
+  // file itself to reach files that no rule here judges, not even on its own text (`unjudged`:
+  // execution, a mock, a dynamic or template load, an open import) — disables it for every
+  // specifier of the closure: the name rules then apply exactly as before CT-06w.
+  const loaded = closure.find((m) => m.path !== file && !m.closed);
+  const self = closure.find((m) => m.path === file && m.unjudged !== null);
+  const blocked =
+    loaded !== undefined
+      ? `${loaded.path} is not closed: ${loaded.opaque}`
+      : self !== undefined
+        ? `${file} is not closed: ${self.unjudged}`
+        : null;
   for (const m of closure) {
     const imported = m.imports.find((i) => i.resolved === support);
     if (imported !== undefined) return `${m.path} imports ${support} (${imported.spec})`;
@@ -1888,7 +1968,7 @@ export function mayReadSupport(
     // (data, a style sheet, a module outside the test code) or to a module that is not closed
     // (it uses a file-system API, import.meta, a mock, a listing, an import not read here — it
     // may reach the support file in a way not seen; Codex reviews r3, r4) counts as before
-    // (`unresolved import`).
+    // (`unresolved import`), and so does every specifier while the closure is blocked (above).
     const within = (start: number, end: number): ModuleImport | undefined =>
       m.imports.find((i) => i.start <= start && end <= i.end);
     const uncertain = (i: ModuleImport): string | null => {
@@ -1896,7 +1976,7 @@ export function mayReadSupport(
       if (i.resolved === null) return i.why;
       const dep = byPath.get(i.resolved);
       if (dep === undefined) return `${i.resolved} is not followed by the closure`;
-      return dep.closed ? null : `${i.resolved} is not closed: ${dep.opaque}`;
+      return dep.closed ? blocked : `${i.resolved} is not closed: ${dep.opaque}`;
     };
     const note = (what: string, i: ModuleImport, why: string): string =>
       `${m.path} names ${what} in an unresolved import ${i.spec} (${why})`;
