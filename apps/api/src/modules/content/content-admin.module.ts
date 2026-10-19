@@ -4,7 +4,9 @@
 // F1-09e adds POST /admin/v1/pages/{page_key}/preview-tokens (content.page, audited).
 // Page configuration /admin/v1/pages* (F1-09f): drafts, publish, gray, rollback and their reads.
 // Agreement versions /admin/v1/agreements* (F1-02p): list, one version, publish (totp step-up).
-// Dictionary editing /admin/v1/dict-items* (F1-02t): list, save-and-publish, history, rollback.
+// Dictionary editing /admin/v1/dict-items* (F1-02t): list, save-and-publish, history, rollback;
+// its keys are the union of contracts/texts.default.json and texts.admin.default.json (F1-02zd).
+// Console dictionary GET /admin/v1/dict (F1-02zd): any permission point, uncached, primary handle.
 // Article CMS /admin/v1/articles* (F1-02w): list, detail, create, save draft, publish, offline.
 // Version settings /admin/v1/app-versions* (F1-02zc): list, one platform and channel, save (the
 // totp tier only when the save raises min_supported_version). Saves take effect in the api
@@ -83,6 +85,11 @@ import { DictItemAdmin, type DictItemStore } from './application/dict-item-admin
 import { AdminDictItemsController } from './http/admin/dict-items.controller.ts';
 import { createKyselyDictItemStore } from './infra/kysely-dict-item-store.ts';
 import { defaultTexts } from './infra/texts-default.ts';
+import { adminDefaultTexts, dictDefaultTexts } from './infra/admin-texts-default.ts';
+import { AdminDictReader } from './application/admin-dict-reader.ts';
+import { AdminDictController } from './http/admin/dict.controller.ts';
+import { createKyselyDictStore } from './infra/kysely-dict-store.ts';
+import { ADMIN_DICT } from './domain/dict/index.ts';
 import { getBannedWords, getFundTermKeys } from './specs/text-specs.ts';
 import { ArticleAdmin, type ArticleAdminStore } from './application/article-admin.ts';
 import { AdminArticlesController } from './http/admin/articles.controller.ts';
@@ -201,6 +208,7 @@ export class ContentAdminModule {
         AdminPagesController,
         AdminAgreementsController,
         AdminDictItemsController,
+        AdminDictController,
         AdminArticlesController,
         AdminAppVersionsController,
       ],
@@ -287,21 +295,38 @@ export class ContentAdminModule {
             ),
         },
         {
-          // F1-02t /admin/v1/dict-items*: texts.default.json is read on first use (a broken file
-          // answers 50001); the word and fund term lists are generated snapshots (L28 / L50).
+          // F1-02t /admin/v1/dict-items*: the keys are both default files together (F1-02zd W5),
+          // read on first use and re-checked on every call (a broken file answers 50001); the word
+          // and fund term lists are generated snapshots (L28 / L50). admin_dict.* keys check the
+          // admin_report words (dictTextScope, G5).
           provide: DictItemAdmin,
           inject: [CLOCK, { token: DB, optional: true }],
-          useFactory: (clock: Clock, db?: Kysely<Database>): DictItemAdmin =>
-            new DictItemAdmin(
+          useFactory: (clock: Clock, db?: Kysely<Database>): DictItemAdmin => {
+            const defaults = (): Readonly<Record<string, string>> =>
+              dictDefaultTexts(defaultTexts, adminDefaultTexts);
+            return new DictItemAdmin(
               db === undefined
                 ? NO_DATABASE_DICT
                 : createKyselyDictItemStore(db, (trx) => options.auditWriter(trx, clock)),
               clock,
               {
-                defaults: defaultTexts,
+                defaults,
                 fundTermKeys: getFundTermKeys,
-                rules: () => ({ defaults: defaultTexts(), words: getBannedWords() }),
+                rules: () => ({ defaults: defaults(), words: getBannedWords() }),
               },
+            );
+          },
+        },
+        {
+          // F1-02zd GET /admin/v1/dict: texts.admin.default.json on first use, no cache (G3);
+          // version and admin_dict rows from one snapshot of the primary handle.
+          provide: AdminDictReader,
+          inject: [ROOT_LOGGER, { token: DB, optional: true }],
+          useFactory: (logger: Logger, db?: Kysely<Database>): AdminDictReader =>
+            new AdminDictReader(
+              db === undefined ? null : createKyselyDictStore(db, { only: ADMIN_DICT }),
+              adminDefaultTexts,
+              logger.child({ module: 'content' }),
             ),
         },
         {

@@ -36,6 +36,7 @@ import { AgreementsController } from './http/public/agreements.controller.ts';
 import { DictReader } from './application/dict-reader.ts';
 import { DictController } from './http/public/dict.controller.ts';
 import { createKyselyDictStore } from './infra/kysely-dict-store.ts';
+import { ADMIN_DICT } from './domain/dict/index.ts';
 import { AppVersionCheckService } from './application/app-version-check.ts';
 import { CachedContentReader, type ContentReader } from './application/content-reader.ts';
 import { publishedPlatformIcons } from './application/published-platform-icons.ts';
@@ -143,7 +144,7 @@ export class ContentPublicModule {
             logger: RootLogger,
           ): DictReader =>
             new DictReader(
-              db === undefined ? null : createKyselyDictStore(db),
+              db === undefined ? null : createKyselyDictStore(db, { except: ADMIN_DICT }),
               clock,
               logger.child({ module: 'content' }),
             ),

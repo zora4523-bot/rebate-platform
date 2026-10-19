@@ -63,3 +63,16 @@ it('[AC-F1-02s#18] 无库句柄时拒绝，不回成功的空字典', async () =
   const reader = new DictReader(null, new FixedClock(AT), { warn: vi.fn() });
   await expect(reader.read('a')).rejects.toThrow('need the database');
 });
+
+it('[AC-F1-02zd#u11] 公共字典即使快照带回 admin_dict 行也不下发，其余行照常', async () => {
+  const f = fixture({
+    a: {
+      value: '2',
+      rows: [
+        { dict: 'admin_dict', code: 'status.OK', text: '后台' },
+        { dict: 'about', code: 'copy', text: '公开' },
+      ],
+    },
+  });
+  expect(await f.reader.read('a')).toEqual({ version: '2', items: { about: { copy: '公开' } } });
+});

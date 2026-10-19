@@ -2,7 +2,9 @@ import { expect, it } from 'vitest';
 import { getBannedWords, getFundTermKeys } from '../../specs/text-specs.ts';
 import type { BannedWord, FundTermKeys } from '../text-guard/index.ts';
 import {
+  ADMIN_DICT,
   DICT_READ_PERMISSIONS,
+  adminDictItems,
   checkDictRollback,
   checkDictSave,
   dictItems,
@@ -13,6 +15,7 @@ import {
   joinDictKey,
   parseDictVersion,
   parseWritableDictVersion,
+  splitAdminDictKey,
   splitDictKey,
   type DictTextRules,
 } from './index.ts';
@@ -215,4 +218,57 @@ it('[AC-F1-02t#u6] 运行时快照：资金术语清单可分类真实键', () =
   expect(dictRequestClass(['about.copy_diagnostics'], spec)).toBe('general');
   expect(dictRequestClass(['privacy.btn.agree', 'perm.btn.continue'], spec)).toBe('agreement');
   expect(dictRequestClass(['unclassified.test_key'], spec)).toBe('fund_terms');
+});
+
+it('[AC-F1-02zd#u1] 后台键去前缀后按最后一个点切；缺枚举或编码、非 admin_dict 前缀为 null', () => {
+  expect(splitAdminDictKey('admin_dict.status.OK')).toEqual({ enumName: 'status', code: 'OK' });
+  expect(splitAdminDictKey('admin_dict.a.b.c.UP')).toEqual({ enumName: 'a.b.c', code: 'UP' });
+  for (const bad of [
+    'admin_dict.only',
+    'admin_dict..OK',
+    'admin_dict.status.',
+    'admin_dictx.status.OK',
+    'about.a.b',
+    'admin_dict',
+  ]) {
+    expect(splitAdminDictKey(bad), bad).toBeNull();
+  }
+});
+
+it('[AC-F1-02zd#u2] 后台字典：每个默认键都返回，覆盖非 null 才替换，别的字典与未知行忽略', () => {
+  const defaults = {
+    'admin_dict.status.OK': '默认正常',
+    'admin_dict.status.BAD': '默认异常',
+    'admin_dict.t.c.true': '默认真',
+  };
+  const items = adminDictItems(defaults, [
+    { dict: ADMIN_DICT, code: 'status.OK', text: '覆盖正常' },
+    { dict: ADMIN_DICT, code: 'status.BAD', text: null },
+    { dict: ADMIN_DICT, code: 'unknown.X', text: '未知' },
+    { dict: 'status', code: 'BAD', text: '别的字典' },
+  ]);
+  expect(items).toEqual({
+    status: { OK: '覆盖正常', BAD: '默认异常' },
+    't.c': { true: '默认真' },
+  });
+  expect(adminDictItems({}, [])).toEqual({});
+  expect(() => adminDictItems({ 'about.a': '用户键' }, [])).toThrow();
+});
+
+it('[AC-F1-02zd#u3] admin_dict 键按 admin_report 校词：佣金、高佣放行，全网最低仍拒；用户键仍按 user_visible', () => {
+  expect(dictTextScope('admin_dict.risk_action.void_commission')).toBe('admin_report');
+  expect(dictTextScope('admin_dictx.a.b')).toBe('user_visible');
+  expect(dictTextScope('about.copy_diagnostics')).toBe('user_visible');
+  const rules: DictTextRules = {
+    defaults: { 'admin_dict.risk_action.void_commission': '作废佣金', 'about.a': '复制' },
+    words: getBannedWords(),
+  };
+  expect(
+    dictTextProblems('admin_dict.risk_action.void_commission', '作废佣金（人工）', rules),
+  ).toBeNull();
+  expect(dictTextProblems('admin_dict.risk_action.void_commission', '高佣预警', rules)).toBeNull();
+  expect(dictTextProblems('admin_dict.risk_action.void_commission', '全网最低', rules)).toEqual([
+    '全网最低',
+  ]);
+  expect(dictTextProblems('about.a', '佣金', rules)).toEqual(['佣金']);
 });

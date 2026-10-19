@@ -10,7 +10,7 @@ import {
   type TransactionSettings,
 } from 'kysely';
 import { afterEach, expect, it } from 'vitest';
-import { createKyselyDictStore } from './kysely-dict-store.ts';
+import { createKyselyDictStore, type DictFilter } from './kysely-dict-store.ts';
 
 const handles: Kysely<DB>[] = [];
 afterEach(async () => {
@@ -23,7 +23,7 @@ type Event =
   | { readonly kind: 'commit' };
 
 // Real SQL compiler, no database or socket: records statements and transaction boundaries.
-async function fixture(configRows: readonly object[]) {
+async function fixture(configRows: readonly object[], dicts?: DictFilter) {
   const driver = new DummyDriver();
   const connection = await driver.acquireConnection();
   const events: Event[] = [];
@@ -50,7 +50,7 @@ async function fixture(configRows: readonly object[]) {
     },
   });
   handles.push(db);
-  return { store: createKyselyDictStore(db), events };
+  return { store: createKyselyDictStore(db, dicts), events };
 }
 
 it('[AC-F1-02s#8] dict_version 与 dict_items 在同一只读 REPEATABLE READ 事务里读', async () => {
@@ -76,4 +76,28 @@ it('[AC-F1-02s#5] 缺 dict_version 或上限为 null 时不查 dict_items', asyn
   const f = await fixture([]);
   expect(await f.store.snapshot('app_b', () => null)).toEqual({ value: undefined, rows: [] });
   expect(f.events.filter((event) => event.kind === 'query')).toHaveLength(1);
+});
+
+it('[AC-F1-02zd#u10] 后台只读 admin_dict、公共排除 admin_dict；先读版本再读行，同一只读 REPEATABLE READ 事务', async () => {
+  for (const [dicts, clause, value] of [
+    [{ only: 'admin_dict' }, '"dict" = $3', 'admin_dict'],
+    [{ except: 'admin_dict' }, '"dict" <> $3', 'admin_dict'],
+  ] as const) {
+    const f = await fixture([{ value: '5' }], dicts);
+    await f.store.snapshot('app_z', () => 5);
+    expect(f.events.map((event) => event.kind)).toEqual(['begin', 'query', 'query', 'commit']);
+    expect(f.events[0]).toEqual({
+      kind: 'begin',
+      settings: { isolationLevel: 'repeatable read', accessMode: 'read only' },
+    });
+    const [config, rows] = f.events.flatMap((event) =>
+      event.kind === 'query' ? [event.query] : [],
+    );
+    expect(config!.sql).toContain('"app"."config_items"');
+    expect(rows!.sql).toBe(
+      'select distinct on ("dict", "code") "dict", "code", "text" from "app"."dict_items" ' +
+        `where "app_id" = $1 and "version" <= $2 and ${clause} order by "dict", "code", "version" desc`,
+    );
+    expect(rows!.parameters).toEqual(['app_z', 5, value]);
+  }
 });
