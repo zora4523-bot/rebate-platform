@@ -1,0 +1,19 @@
+id: F1-02za
+repo: rebate-platform
+title: F1-02p 规则测试 [AC-F1-02p#16] 放宽为 50001 / 20902 两者皆可——编排裁定 L44（预置 legal.<type>.version ≥ 新版本是业务冲突）改回 20902 data.resource=agreement，F1-02z 改码后原断言必红
+type: test-change
+# 2026-10-19 入账（content-client 第四阶段收尾；编排 22:2x 复核 L44：规则同意，返回码改 20902，冻结测试锁 50001 的按 test-change 走）。
+# 做法：#16 四例接受 50001 或 20902；20902 时断言 data.resource=agreement；不写入的快照断言不变；level 50 日志只在 50001 时要求。主干现在（50001）与 F1-02z 合并后（20902）都成立。
+# 在 F1-02z 的规则测试提交里改会被 path-guard-author 拒，放在实现之后会被 evidence-check 拒（先例 F1-02g #588、F1-09i #717、F1-02x #769、F1-02y #774）。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-02p]
+paths:
+  - 'test/spec/content/agreements-admin/agreements.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null
