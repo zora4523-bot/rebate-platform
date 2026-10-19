@@ -29,6 +29,14 @@ export type {
 // F1-02c: GET /v1/config, loaded by app.module on the api entry only with identity's viewer.
 export { ContentPublicModule } from './content-public.module.ts';
 export type { ContentPublicPorts } from './content-public.module.ts';
+export { createAgreementReader } from './application/agreement-reader.ts';
+export type {
+  AgreementReader,
+  AgreementReaderOptions,
+  CurrentAgreement,
+} from './application/agreement-reader.ts';
+export { agreementTextUrl } from './domain/agreements/text-url.ts';
+export type { AgreementType } from './domain/agreements/index.ts';
 // F1-09g: the cross-module reads app.module assembles for the page audience facts.
 export type { AudienceUnionPlatform, PageAudienceReads } from './application/page-audience.ts';
 

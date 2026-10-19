@@ -1,5 +1,6 @@
-// content's /v1 client routes (F1-02c, F1-02e, F1-02f, F1-09d, F1-09e): config, app-versions
-// check, articles, pages and the draft page preview (token only, no viewer context).
+// content's /v1 client routes (F1-02c, F1-02e, F1-02f, F1-09d, F1-09e, F1-02n): config,
+// app-versions check, articles, pages, agreements and the draft page preview (token only, no
+// viewer context). Agreement reads are cached per app_id like config reads.
 // app.module imports this module on
 // the api entry only and passes identity's request viewer as the ConfigViewerContext provider
 // (content never imports identity). Config reads use a process-wide ContentReader; article reads
@@ -26,6 +27,11 @@ import {
 } from '../platform/index.ts';
 import { ClientConfigService, ConfigViewerContext } from './application/client-config.ts';
 import { ArticleReader } from './application/article-reader.ts';
+import {
+  PublicAgreementReader,
+  kyselyPublicAgreementSource,
+} from './application/agreement-reader.ts';
+import { AgreementsController } from './http/public/agreements.controller.ts';
 import { AppVersionCheckService } from './application/app-version-check.ts';
 import { CachedContentReader, type ContentReader } from './application/content-reader.ts';
 import { publishedPlatformIcons } from './application/published-platform-icons.ts';
@@ -92,6 +98,7 @@ export class ContentPublicModule {
         AppVersionsController,
         PagesController,
         PagePreviewController,
+        AgreementsController,
       ],
       providers: [
         {
@@ -110,6 +117,16 @@ export class ContentPublicModule {
           inject: [{ token: DB, optional: true }, CLOCK],
           useFactory: (db: Kysely<Database> | undefined, clock: Clock): ArticleReader =>
             new ArticleReader(db === undefined ? null : createKyselyArticleStore(db), clock),
+        },
+        {
+          // F1-02n GET /v1/agreements: cached per app_id for CONTENT_CACHE_TTL_MS (L11).
+          provide: PublicAgreementReader,
+          inject: [{ token: DB, optional: true }, CLOCK],
+          useFactory: (db: Kysely<Database> | undefined, clock: Clock): PublicAgreementReader =>
+            new PublicAgreementReader(
+              db === undefined ? null : kyselyPublicAgreementSource(db),
+              clock,
+            ),
         },
         {
           provide: AUDIENCE_READS,
