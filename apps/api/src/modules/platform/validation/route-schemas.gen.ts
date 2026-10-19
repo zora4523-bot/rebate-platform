@@ -7183,6 +7183,229 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminListDictItems": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string",
+          "description": "Which permission point writes a dictionary key (BR-TEXT-12 细则, 04 §11.2): general →\nconfig.general, fund_terms → content.fund_terms, agreement (table D, `privacy.` and\n`perm.`) → content.agreement.\n",
+          "enum": [
+            "general",
+            "fund_terms",
+            "agreement"
+          ]
+        },
+        "key_prefix": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminSaveDictItems": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changes",
+        "expected_version"
+      ],
+      "properties": {
+        "changes": {
+          "type": "array",
+          "description": "Keys of one class, each at most once.",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "text"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "description": "A key of contracts/texts.default.json.",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The override text; null = back to the bundled default.",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            }
+          }
+        },
+        "expected_version": {
+          "type": "string",
+          "description": "A dictionary version (dict_version, an integer as a string; \"0\" before the first publish).",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "legal_confirmed_by": {
+          "type": "string",
+          "description": "Who in legal confirmed the change; required when the keys are of class agreement (04 §11.2 content.agreement).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    }
+  },
+  "adminListDictItemVersions": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminRollbackDictItems": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keys",
+        "to_version",
+        "expected_version"
+      ],
+      "properties": {
+        "keys": {
+          "type": "array",
+          "description": "Keys of one class, each at most once.",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": {
+            "type": "string",
+            "description": "A key of contracts/texts.default.json.",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "to_version": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "description": "The dictionary version to restore the keys to; lower than the current one, 0 = the bundled default."
+        },
+        "expected_version": {
+          "type": "string",
+          "description": "A dictionary version (dict_version, an integer as a string; \"0\" before the first publish).",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "legal_confirmed_by": {
+          "type": "string",
+          "description": "Who in legal confirmed the change; required when the keys are of class agreement (04 §11.2 content.agreement).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    }
+  },
   "adminListKillSwitches": {
     "headers": {
       "type": "object",

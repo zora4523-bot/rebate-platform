@@ -11560,7 +11560,6 @@ paths:
         dictionary's current version ("0" before the first publish), the `expected_version` of
         the writes.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -11664,7 +11663,6 @@ paths:
         confirmer. Clients see the change when their GET /v1/dict cache refreshes. No
         Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -11748,7 +11746,6 @@ paths:
         wrote it and when. Rows are never changed; a rollback adds new rows (POST
         /admin/v1/dict-items/rollback).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -11839,7 +11836,6 @@ paths:
         found. Then CAS: `expected_version` is the current dictionary version, and a mismatch is
         20902 with `data.resource=dict_item`. Audited like a save. No Idempotency-Key (04 §6.6).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
