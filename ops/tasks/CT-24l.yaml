@@ -1,0 +1,34 @@
+id: CT-24l
+repo: rebate-platform
+title: 契约：后台找回审核写操作——POST /admin/v1/claims/{claim_id}/items/{item_id}/approve 与 /reject（expected_row_version CAS、说明必填 5–200 字、驳回只收客服可选 6 码），返回审核后整单；20902 data.resource 增 claim_item；planned
+type: contract
+# 2026-10-19 入账（admin-backend，从 CT-24d 拆出；规划 #137，#148 回复后可开）。依据 08 BR-ATTR-18、BR-ATTR-20（找回与指派共用的加锁复查、审计说明必填 ≥5 字）、04 §7 20902（#148 增 claim_item）、
+#   08 §13.11、specs/state-machines/claim.yaml 与 claim-item.yaml、design/specs/admin-claims.md（#148 已同步）。
+# 契约只转写 08 已定口径，不改归属规则（改了就是四类停下事项）：通过时订单已被归属——子项自动结案（同申请人 cancelled，否则 rejected NOT_IN_POOL），**不报错**，返回 200 + 结案后的整单，
+#   description 写明客服侧提示「订单已被自动归属」；订单已 VOID——系统驳回 ORDER_INVALID；同子订单他人待审子项一并 rejected NOT_IN_POOL；子项已决或 row_version 不符——20902 resource=claim_item。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：请求体 {expected_row_version, reason（5–200 字，通过与驳回都必填，#148；前端通过时可一键填「证据核实一致」）}，驳回另带 reject_reason（ClaimRejectReason 前 6 个——用 packages/contracts-ts/scripts/conformance.ts 的 subset 机制登记，**不进 ENUM_BINDINGS**，否则 CT-04f#10 冻结测试变红；
+#   NOT_IN_POOL / ORDER_INVALID 只由系统设置，客服传入 20001 [reject_reason]）；说明写 claims.reason（最近一次）并随每次操作入审计，子项不加列（#148）；后台写不带 Idempotency-Key、只用 CAS（后台先例）；
+#   权限 order.claim、无二次验证（04 §11.2）；一次只审一个子项，不做批量。20902 新增 claim_item 须同步 packages/contracts-ts/src/catalog.test.ts 的完整列表断言（[AC-CT-01c#3]，在 paths 内、非保护路径）；test/spec 无 20902 resource 穷举断言（#870 两家评审核对），无需 test-change。
+# 实现由后续 B1 任务承接（依赖 B1-10c 证据、B1-08k 快照调用；通过时写归属 / 锁定 / R3 迁移经订单线端口完成）。
+# contract_sections 只放 ['5'] 接口约定（04 §6.6、§11.2、§3.2、§7 原文过长，任务书超 24KB 上限）：04 §6.6 与 §7 的 20902 行由实现者按 SPEC_REF 读原文，编排者在任务书第 9 节列出要读的节。
+refs: [BR-ATTR-18, BR-ATTR-20]
+refs_hash:
+  BR-ATTR-18: 7ef1a8bcc484
+  BR-ATTR-20: 65fcdd14d9c1
+contract_sections: ['5']
+deps: [CT-24d]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

@@ -1,0 +1,24 @@
+id: F1-06zi
+repo: rebate-platform
+title: 迁移 0051：app.admin_users 增 display_name（text 可空，命名 CHECK char_length 1–32，不存空串），授权与现有列一致
+type: migration
+# 2026-10-19 入账（admin-backend，编排 10-19 05:0x「display_name 由你开迁移并扩 CT-02f」）。依据 04 §3.2 admin_users（#147：display_name text 可空、≤ 32 字）。原文由编排者摘入任务书，refs 置空。
+# 要点：ALTER TABLE 加可空列不重写表；CHECK 命名（新列全空，按 squawk 规则选直接加或 NOT VALID + VALIDATE）；授权：couli_readonly 照现有非敏感列授 SELECT；couli_app 若为列级 UPDATE，本迁移一并补授 display_name（写接口随 F1-10i，但列级授权与建列同迁移，属先例做法，不另开迁移）；授权写在本迁移。
+# 迁移号必须连续（packages/db/src/migrations.test.ts:27）：落地时取主干最大号 + 1。0050 已预留给 identity B1-02zc（身份线暂停到 10-23）：若本任务先于它落地，先在 notices 与身份线协调由本任务用 0050、B1-02zc 顺延，不得留空号（#870 Codex 评审 S2）。两段式：编排者在沙箱外跑 pnpm db:snapshot 提交 schema.sql 与 db.gen.ts（outside_needed）。
+# 读写 display_name 的接口由 CT-02u（契约）与后续实现任务承接；现有冻结测试对 admin_users 只做插入 / 快照、不穷举列（#853 Claude 评审核对），加可空列不会变红。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/admin/display-name/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/admin/display-name/**'
+status: todo
+pr: null
