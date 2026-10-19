@@ -1,6 +1,7 @@
 import { type DynamicModule, type Provider, HttpException, Module, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
+import { ProductKeyUnderivable, deriveProductKey, type UnionProductPayload } from '@couli/domain';
 import type { Kysely } from 'kysely';
 import {
   ADMIN_CHECK,
@@ -94,6 +95,7 @@ import {
   LinkingAdminModule,
   LinkingModule,
   createOrderBindingReader,
+  createClaimEvidenceReader,
   blockForBan,
   restoreAfterUnban,
   createOrderLinkReader,
@@ -117,7 +119,11 @@ import {
   bindPushTokensForSession,
   unbindPushTokensForSession,
 } from './modules/notification/index.ts';
-import { OrdersModule, type OrdersWorkerOptions } from './modules/orders/index.ts';
+import {
+  OrdersModule,
+  type ClaimEvidenceFactory,
+  type OrdersWorkerOptions,
+} from './modules/orders/index.ts';
 import {
   ParsingLinkRegistrars,
   ParsingModule,
@@ -711,6 +717,36 @@ function orderSyncPorts(union: DynamicModule): OrdersWorkerOptions {
       ),
   };
 }
+
+/**
+ * B1-10c: the claim evidence ports over the acceptance transaction — linking's raw reads, and the
+ * BR-PROD-03 product key of an order whose product_key column is empty: catalog's platforms row
+ * gives key_prefix, raw_item_id is the taobao item_id or the pdd goods_id (待裁定 2); other
+ * platforms, a missing prefix or an underivable id give null (that item is weak at best). A read
+ * error of either rejects (the acceptance rolls back, 50001).
+ */
+const claimEvidencePorts: ClaimEvidenceFactory = (trx, clock) => {
+  const catalog = createCatalog({ db: trx, clock, warn: () => undefined });
+  return {
+    reads: createClaimEvidenceReader(trx),
+    deriveProductKey: async ({ platform, raw_item_id }) => {
+      const payload: UnionProductPayload | null =
+        platform === 'taobao'
+          ? { item_id: raw_item_id }
+          : platform === 'pdd'
+            ? { goods_id: raw_item_id }
+            : null;
+      if (payload === null) return null;
+      const row = (await catalog.listPlatforms()).find((entry) => entry.code === platform);
+      try {
+        return deriveProductKey({ platform, keyPrefix: row?.key_prefix ?? null }, payload);
+      } catch (error) {
+        if (error instanceof ProductKeyUnderivable) return null;
+        throw error;
+      }
+    },
+  };
+};
 
 /** The strongest union mode configured: one live endpoint makes the whole process live. */
 function unionModeOf(endpoints: readonly UnionEndpoint[]): UnionMode {
@@ -1333,11 +1369,13 @@ export class AppModule {
               // GET /v1/orders and /v1/orders/{order_id} over the shared OrderQueries (B1-08l):
               // content's configuration reader and linking's order-link reader as its ports.
               // GET /v1/orders/pending-tracks and its dismiss (B1-08m) over linking's open
-              // attempts port.
+              // attempts port. POST /v1/orders/claims settles claim evidence (B1-10c) over
+              // linking's raw reads and catalog's platforms on its acceptance transaction.
               OrdersModule.forRoot({
                 config: (db, clock) => createContentReader({ db, clock }),
                 links: (db) => createOrderLinkReader(db),
                 attempts: (db) => createPendingAttemptStore(db),
+                evidence: claimEvidencePorts,
               }),
             ]
           : []),

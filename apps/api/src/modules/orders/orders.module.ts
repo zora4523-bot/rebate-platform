@@ -9,6 +9,8 @@
 // controller, over linking's open-attempt port (factory from app.module, like the link reader).
 // B1-10b: the /v1/orders/claims controller over the claim ports (ORDER_CLAIM_DEPS: the database,
 // REDIS when the entry has it, content's reader); null without a database (both routes 50001).
+// B1-10c: the claim evidence ports (options.evidence, a factory over the acceptance transaction)
+// join the claim ports, so a submission settles its evidence in the same transaction.
 import { Module, type DynamicModule } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -39,6 +41,7 @@ import {
   type OrderLinkReader,
 } from './application/order-queries.ts';
 import type { OrderClaimDeps } from './application/order-claims.ts';
+import type { ClaimEvidenceFactory } from './application/claim-evidence.ts';
 import { PendingTracks, createPendingTracks } from './application/pending-tracks.ts';
 import { ORDER_SYNC_QUEUE } from './application/sync-scheduler.ts';
 import { ORDER_CLAIM_DEPS, OrderClaimsController } from './http/public/order-claims.controller.ts';
@@ -52,6 +55,12 @@ import {
 } from './worker-runtime.ts';
 
 export interface OrdersModuleOptions {
+  /**
+   * B1-10c: the claim evidence ports over the acceptance transaction (linking's raw reads, the
+   * product-key derivation over catalog's platforms). app.module always gives it; optional only
+   * so that a module built without it keeps B1-10b's submitted claims.
+   */
+  readonly evidence?: ClaimEvidenceFactory;
   /** content's ContentReader over the primary handle (order.user_query_months, credit.enabled.*). */
   readonly config: (db: Kysely<Database>, clock: Clock) => ContentReader;
   /** linking's order-link reader (links.product_key by app_id and link_id). */
@@ -97,6 +106,7 @@ export class OrdersModule {
                   logger,
                   config: options.config(db, clock),
                   ...(redis === undefined ? {} : { redis }),
+                  ...(options.evidence === undefined ? {} : { evidence: options.evidence }),
                 },
         },
         {

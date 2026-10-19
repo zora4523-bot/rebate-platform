@@ -29,7 +29,13 @@
 // violation leaves the caller's transaction usable; orders are never written.
 // The configuration (⓪ and the window) is read before the transaction holds a pooled connection
 // (readClaimSettings; content's reader may need a connection of its own).
-// Logs: flat fields only, never an order number, sub_order_id, paid_date or (but for
+// B1-10c (J-5): with the evidence ports (deps.evidence; app.module always assembles them), the
+// same transaction then judges each item (application/claim-evidence.ts) and moves the claim from
+// submitted to auto_matched / manual_review, so a successful submission answers the final status
+// and no committed claim stays submitted; an evidence read error rolls everything back (50001,
+// nothing counted). attr.backfill_window_hours is read with the other settings, before the
+// transaction. Without the ports (direct calls only) the claim stays submitted as in B1-10b.
+// Logs: flat fields only, never an order number, sub_order_id, paid_date, link_log id or (but for
 // claim_fail_burst, 待裁定 3) a user id.
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
@@ -49,6 +55,7 @@ import {
   stripClaimSpaces,
   type ClaimChildFailure,
 } from '../domain/claim-rules.ts';
+import { DEFAULT_BACKFILL_WINDOW_HOURS } from '../domain/claim-evidence.ts';
 import {
   claimRequestId,
   createClaimFailureCounter,
@@ -61,12 +68,20 @@ import {
   insertClaim,
   listClaimItems,
   listClaimRecords,
+  underClaimSavepoint,
   type ClaimOrderRow,
 } from '../infra/claim-store.ts';
 import { lockClaimUser } from '../infra/order-lock.ts';
 import type { OrderSubject } from './order-queries.ts';
+import {
+  readClaimEvidenceWindow,
+  settleClaimEvidence,
+  type ClaimEvidenceFactory,
+  type ClaimEvidenceOutcome,
+} from './claim-evidence.ts';
 
 export interface OrderClaimDeps {
+  readonly evidence?: ClaimEvidenceFactory;
   readonly db?: Kysely<DB>;
   readonly redis?: RedisHandle;
   readonly clock: Clock;
@@ -90,6 +105,8 @@ export interface ClaimSettings {
   readonly enabled: boolean;
   /** BR-ATTR-13 ④: claim.window_hours when it is a positive integer, else the default. */
   readonly windowHours: number;
+  /** B1-10c: attr.backfill_window_hours (W_backfill; absent reads as the default 360). */
+  readonly backfillWindowHours?: number;
 }
 export interface ClaimListInput {
   readonly cursor?: string;
@@ -103,7 +120,7 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** UTC instant as the cursor carries it: milliseconds or microseconds. */
-const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.(\d{3}|\d{6})Z$/;
+const INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3}|\d{6})Z$/;
 
 const UNAVAILABLE: ClaimFailure = Object.freeze({ code: 50001 });
 
@@ -161,11 +178,11 @@ export async function readClaimSettings(
 ): Promise<ClaimSettings> {
   // ⓪ Only an explicit false switches submission off (registered default true).
   const enabled = (await configValue(config, appId, ENABLED_KEY)) !== false;
+  if (!enabled) return { enabled, windowHours: claimWindowHours(undefined) };
   return {
     enabled,
-    windowHours: claimWindowHours(
-      enabled ? await configValue(config, appId, WINDOW_KEY) : undefined,
-    ),
+    windowHours: claimWindowHours(await configValue(config, appId, WINDOW_KEY)),
+    backfillWindowHours: await readClaimEvidenceWindow(config, appId),
   };
 }
 
@@ -235,6 +252,7 @@ async function submitClaim(
   const failed = (now: Date, failure: ClaimFailure) =>
     fail(counter, log, subject, now, failure, requestId);
   let matched: Matched | undefined;
+  let evidence: ClaimEvidenceOutcome | undefined;
   const result: ClaimResult<Schema<'OrderClaim'>> = await inTransaction(async (trx) => {
     await lockClaimUser(trx, appId, subject.user_id);
     const now = deps.clock.now();
@@ -271,7 +289,8 @@ async function submitClaim(
     const submitted = transitionClaim(null, 'SUBMIT');
     if (!submitted.ok) throw new Error('orders: claim state machine refuses SUBMIT');
     const claimId = newUuidV7(now);
-    const status = await insertClaim(trx, {
+    const itemIds = judgement.passed.map(() => newUuidV7(now));
+    const claim = {
       id: claimId,
       subject,
       platform: input.platform,
@@ -280,12 +299,46 @@ async function submitClaim(
       paid_date: input.paid_date,
       status: submitted.to,
       now,
-      items: judgement.passed.map((row) => ({
-        id: newUuidV7(now),
+      items: judgement.passed.map((row, index) => ({
+        id: itemIds[index]!,
         sub_order_id: row.sub_order_id,
         order_id: row.order_id,
       })),
-    });
+    };
+    const ports = deps.evidence;
+    let status: string | null;
+    if (ports === undefined) {
+      status = await insertClaim(trx, claim);
+    } else {
+      // J-5: the evidence is settled under the same lock in the same transaction. Any error of
+      // it (a port read, the product-key derivation, the write) undoes the claim rows to the
+      // savepoint, so the transaction keeps nothing of this acceptance, and answers 50001 (fail
+      // closed, not counted; HTTP stores no idempotency result for it).
+      const settled = await underClaimSavepoint(trx, async () => {
+        const inserted = await insertClaim(trx, claim);
+        if (inserted === null) return null;
+        return settleClaimEvidence(trx, ports(trx, deps.clock), {
+          claimId,
+          subject,
+          platform: input.platform,
+          windowHours: settings.backfillWindowHours ?? DEFAULT_BACKFILL_WINDOW_HOURS,
+          now,
+          items: judgement.passed.map((row, index) => ({
+            id: itemIds[index]!,
+            attr_at: row.attr_at,
+            product_key: row.product_key,
+            shop_id: row.shop_id,
+            raw_item_id: row.raw_item_id,
+          })),
+        });
+      });
+      if (!settled.ok) {
+        log.warn({ app_id: appId, outcome: 'evidence_unavailable' }, 'orders.claim_evidence');
+        return UNAVAILABLE;
+      }
+      evidence = settled.value ?? undefined;
+      status = settled.value === null ? null : settled.value.status;
+    }
     // claim_items' unique key is the last line (not expected under the user lock): its insert is
     // undone to the savepoint and the answer is ④d's, counted while the lock is still held.
     if (status === null) return failed(now, { code: 30205 });
@@ -305,6 +358,7 @@ async function submitClaim(
     return { code: 0 as const, data };
   });
   const match = matched as Matched | undefined;
+  const settled = evidence as ClaimEvidenceOutcome | undefined;
   log.info(
     {
       app_id: appId,
@@ -317,6 +371,13 @@ async function submitClaim(
             share_removed: match.removed,
             ...(result.code === 0 ? { items: result.data.items.length } : {}),
           }),
+      ...(result.code === 0 && settled !== undefined
+        ? {
+            evidence_strong: settled.counts.strong,
+            evidence_weak: settled.counts.weak,
+            evidence_none: settled.counts.none,
+          }
+        : {}),
     },
     'orders.claim_submit',
   );
@@ -365,6 +426,27 @@ function cursorInstant(key: string): string {
   return /\.\d{3}000Z$/.test(key) ? `${key.slice(0, -4)}Z` : key;
 }
 
+/**
+ * A cursor instant with a real calendar date and time (B1-10b r3 S2): parsed field by field, so
+ * a date such as 02-30 that Date.parse would roll over to 03-02 is refused.
+ */
+function isCursorInstant(text: string): boolean {
+  const match = INSTANT.exec(text);
+  if (match === null) return false;
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]!;
+  return day <= days && hour <= 23 && minute <= 59 && second <= 59;
+}
+
 function decodeCursor(cursor: string): Cursor | null {
   let parsed: unknown;
   try {
@@ -377,8 +459,7 @@ function decodeCursor(cursor: string): Cursor | null {
     parsed.length !== 2 ||
     typeof parsed[0] !== 'string' ||
     typeof parsed[1] !== 'string' ||
-    !INSTANT.test(parsed[0]) ||
-    Number.isNaN(Date.parse(parsed[0])) ||
+    !isCursorInstant(parsed[0]) ||
     !UUID.test(parsed[1])
   ) {
     return null;

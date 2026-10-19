@@ -19,7 +19,12 @@ import {
   type RedisHandle,
   type RootLogger,
 } from '../../platform/index.ts';
-import { createOrderClaim, type ClaimRequest, type OrderClaimDeps } from './order-claims.ts';
+import {
+  createOrderClaim,
+  listOrderClaims,
+  type ClaimRequest,
+  type OrderClaimDeps,
+} from './order-claims.ts';
 
 const subject = { app_id: 'claims_unit', user_id: '019c0000-0000-7000-8000-000000000001' };
 const COUNTER = `claim:${subject.app_id}:${subject.user_id}:20280115`;
@@ -143,3 +148,27 @@ it('[AC-B1-10b#38] 同一幂等键换了请求体是另一请求，照计；直�
   expect(await s.submit()).toEqual({ code: 30201 });
   expect(s.values.get(COUNTER)).toBe('4');
 });
+
+it.each(['2028-02-30T00:00:00.000Z', '2027-02-29T00:00:00.000Z', '2028-01-15T24:00:00.000Z'])(
+  '[AC-B1-10b#34] 游标里不存在的时刻%s按20001拒绝（严格解析，不靠Date.parse归一化）',
+  async (instant) => {
+    const cursor = Buffer.from(
+      JSON.stringify([instant, '019c0000-0000-7000-8000-000000000002']),
+      'utf8',
+    ).toString('base64url');
+    // No database: a refused cursor answers before any read (a valid one would be 50001).
+    const deps: OrderClaimDeps = {
+      clock: new FixedClock('2028-01-15T04:00:00.000Z'),
+      config: {
+        appVersion: async () => null,
+        minSupportedVersion: async () => null,
+        configValue: async () => null,
+      },
+      logger: { child: () => ({}) } as unknown as RootLogger,
+    };
+    expect(await listOrderClaims(deps, subject, { cursor })).toEqual({
+      code: 20001,
+      data: { fields: ['cursor'] },
+    });
+  },
+);

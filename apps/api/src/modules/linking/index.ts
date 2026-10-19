@@ -1,4 +1,12 @@
 // Public surface of the linking module (规划/02 §4.1); other modules import only from this file.
+export { createClaimEvidenceReader } from './application/claim-evidence-reader.ts';
+export type {
+  ClaimEvidenceScope,
+  ClaimEvidenceLog,
+  ClaimEvidenceBinding,
+  ClaimEvidenceConflict,
+  ClaimEvidenceReader,
+} from './application/claim-evidence-reader.ts';
 // Task B1-06c: card-time link registration with its quote snapshot and frozen identity_snapshot
 // (BR-PRICE-12, BR-ATTR-05/06/08/14, D33), implementing catalog's LinkRegistrar and
 // SourceLinkReader; the CallerContext, attr_code and configuration ports. Rule tests:
