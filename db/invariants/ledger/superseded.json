@@ -1,0 +1,7 @@
+[
+  {
+    "file": "03_credit-unique.sql",
+    "replaced_by": "09_credit-unique-net.sql",
+    "reason": "BR-FUND-16 的更正写红冲凭证（沿用原 voucher_kind，uniq_key = 原键 + ':REVERSE'），旧 03 按 CREDIT 张数计会把原单与其红冲数成两张而报假差异；09 让原凭证与其红冲成对抵消后再判同键有效入账至多一张，并报孤立红冲，输出编号仍为 03。"
+  }
+]
