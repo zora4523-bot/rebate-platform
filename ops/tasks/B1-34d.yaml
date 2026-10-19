@@ -1,0 +1,23 @@
+id: B1-34d
+repo: rebate-platform
+title: platform：私有导出存储端口 ExportStore（put(key, bytes, contentType)、signedUrl(key, expiresAt) 返回限时链接、delete）与 local / test 内存替身（签名可校验、过期失效）；staging / prod 未接 OSS 适配器时按请求失败 50001
+type: impl
+# 2026-10-19 入账（admin-backend，B1-34 导出部分）。依据：02 §4（exports bucket 私有、签名 URL）、08 BR-ID-34 细则（每次下载现签 min(5 分钟, 剩余可下载期)）。先例 F1-06z MediaStore（#420）；**不改 MediaStore**（公开、按内容寻址）。真实 OSS 适配器（ali-oss 依赖、生命周期规则）随 B1-30 依赖任务另入账。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/export-store/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/modules/platform/platform.module.ts'
+  - '.env.example'
+test_paths:
+  - 'test/spec/platform/export-store/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/export-store/**'
+status: todo
+pr: null

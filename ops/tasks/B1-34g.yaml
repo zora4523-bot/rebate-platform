@@ -1,0 +1,22 @@
+id: B1-34g
+repo: rebate-platform
+title: 状态机（导出任务）：specs/state-machines/export-task.yaml（export_status：pending → running → done / failed，done → expired，pending / running → cancelled，failed → pending 重试）与生成的 transitionExportTask()
+type: contract
+# 2026-10-19 入账（admin-backend，B1-34 导出部分；#907 本地 Codex 评审 S1：worker 改状态须经生成的 transition()，硬规则第 2 条）。依据：已合并契约 CT-24k（#871）的状态迁移说明与 export_status 六值（contracts/enums/admin.yaml）。先例 CT-04e（找回两份状态机，#752）、F1-02u（文章版本）。
+# 事件名建议：START（pending→running）、COMPLETE（running→done）、FAIL（running→failed）、EXPIRE（done→expired）、CANCEL（pending / running→cancelled）、RETRY（failed→pending）；状态值与 export_status 枚举逐值一致（冻结测试先例 test/spec/state-machines/claim）。
+refs: []
+refs_hash: {}
+contract_sections: ['4']
+deps: [CT-24k]
+paths:
+  - 'specs/state-machines/**'
+  - 'packages/domain/**'
+test_paths:
+  - 'test/spec/state-machines/export-task/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/state-machines/export-task/**'
+status: todo
+pr: null
