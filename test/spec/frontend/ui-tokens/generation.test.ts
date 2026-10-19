@@ -1,4 +1,4 @@
-import { generateTailwindCss, generateTokensCss, themeFromTokens } from '@couli/ui-tokens';
+import { generateTailwindCss, generateThemeTs, themeFromTokens } from '@couli/ui-tokens';
 import { format } from 'prettier';
 import { expect, it } from 'vitest';
 import {
@@ -12,6 +12,13 @@ import {
   tokenLeaves,
   withoutComments,
 } from './kit.ts';
+import {
+  darkBlocks,
+  expectValueTheme,
+  generatedCss as generateTokensCss,
+  serializedExports,
+  succeeds,
+} from './dark-kit.ts';
 
 it('[AC-CT-11a#3] CSS 的每个叶子令牌与规划 :root 的变量名、值逐项一致', () => {
   const input = baseline();
@@ -53,16 +60,18 @@ it('[AC-CT-11a#4] 代表值覆盖新背景、语义颜色、字号、字体、�
   }
 });
 
-it('[AC-CT-11a#5] MVP 强制浅色且不输出深色覆盖规则', () => {
+it('[AC-CT-11a#5] 浅色基准不再强制 only light，并提供系统与显式深色覆盖', () => {
   const css = withoutComments(generateTokensCss(baseline()));
-  expect(rootDeclarations(css).get('color-scheme')).toBe('only light');
-  expect(css).not.toMatch(/prefers-color-scheme|\bdark\b/i);
-  expect(css.replace(/:root\s*\{[^{}]*\}/g, '').trim()).toBe('');
+  expect(rootDeclarations(css).get('color-scheme')).toBe('light');
+  expect(css).not.toContain('only light');
+  const [system, explicit] = darkBlocks(css);
+  expect(system).toEqual(explicit);
+  expect(system.get('color-scheme')).toBe('dark');
 });
 
 it('[AC-CT-11a#6] Tailwind 4 主题使用有效命名空间并引用全部令牌，不能自引用', () => {
   const input = baseline();
-  const css = generateTailwindCss(input);
+  const css = succeeds(() => generateTailwindCss(input));
   const aliases = declarations(block(css, /@theme(?:\s+(?:inline|static))*\s*\{([^{}]*)\}/g));
   const leaves = tokenLeaves(input.tokens);
   expect([...aliases.values()].sort()).toEqual(leaves.map(([name]) => `var(${name})`).sort());
@@ -82,7 +91,7 @@ it('[AC-CT-11a#6] Tailwind 4 主题使用有效命名空间并引用全部令牌
       dimension: source.startsWith('--radius-') ? '--radius-' : '--spacing-',
     };
     expect(type).toBeDefined();
-    expect(alias.startsWith(namespace[type!]!), alias).toBe(true);
+    if (type !== 'number') expect(alias.startsWith(namespace[type!]!), alias).toBe(true);
   }
 });
 
@@ -93,6 +102,10 @@ it('[AC-CT-11a#7] TS 主题每个叶子只引用一个 CSS 令牌，覆盖全部
       .map(([name]) => `var(${name})`)
       .sort(),
   );
+  // Preserve the CSS-reference theme and additionally expose resolved dark values.
+  const css = generateTokensCss(input);
+  const dark = new Map([...rootDeclarations(css), ...darkBlocks(css)[0]]);
+  expectValueTheme(serializedExports(generateThemeTs(input)), input, 'dark', dark);
 });
 
 it('[AC-CT-11a#8] 生成器使用入参中的值和新增令牌，不能硬编码固定快照', () => {

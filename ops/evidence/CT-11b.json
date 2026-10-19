@@ -1,0 +1,114 @@
+{
+  "red_tests": [
+    "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-CSS-DARK#1] 两个深色块完整匹配规划值，仅覆盖含 dark 的叶子",
+    "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-CSS-DARK#2] 深色值遵循浅色的转换规则，含透明色和两层阴影",
+    "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-CSS-DARK#3] 按 dark 字段存在性覆盖，同值仍覆盖、缺省不覆盖、空阴影覆盖为 none",
+    "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-THEME#1] 入库深色主题覆盖全部令牌，无 dark 的尺寸字体与空阴影回退 value",
+    "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-THEME#2] 主题序列化读取输入 dark，不把深色值写死在模板中",
+    "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-SOURCE#1] 生成器无 I/O 和硬编码颜色，深色变化只来自入参且不污染后续调用",
+    "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#10] tokens.gen.css 与契约重新生成的文本逐字一致",
+    "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#11] tailwind.gen.css 与契约重新生成的文本逐字一致",
+    "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#12] theme.gen.ts 与契约重新生成的文本逐字一致且已定型",
+    "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#13] 包主入口暴露生成主题且两个 CSS 子路径可消费",
+    "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#14] TS 序列化使用入参，重复生成稳定且不改写输入",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#3] CSS 的每个叶子令牌与规划 :root 的变量名、值逐项一致",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#4] 代表值覆盖新背景、语义颜色、字号、字体、单位、阴影和焦点",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#5] 浅色基准不再强制 only light，并提供系统与显式深色覆盖",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#6] Tailwind 4 主题使用有效命名空间并引用全部令牌，不能自引用",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#7] TS 主题每个叶子只引用一个 CSS 令牌，覆盖全部令牌",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#8] 生成器使用入参中的值和新增令牌，不能硬编码固定快照",
+    "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#9] 两份 CSS 生成结果已经过仓库 Prettier 定型",
+    "test/spec/frontend/ui-tokens/snapshot.test.ts > [AC-CT-11a#1] 契约完整保留固定规划版本的令牌、metadata 与 schemaVersion",
+    "test/spec/frontend/ui-tokens/snapshot.test.ts > [AC-CT-11a#2] README 已交付清单同一行记录令牌版本与完整来源提交"
+  ],
+  "risk_note": "RV1 by path (contracts/design-tokens.json, packages/ui-tokens; no money logic). Design tokens v0.4.0 with dark values (planning 00 D35, planning #144 at 49bb4ad): the contract snapshot equals the planning JSON when parsed (stored prettier-formatted, CT-11a precedent); @couli/ui-tokens emits the light :root with color-scheme light and two identical dark blocks (prefers-color-scheme with :root:not([data-theme=light]), and :root[data-theme=dark]) covering exactly the tokens with a dark value; only light is gone; the theme carries dark values and falls back to value. Light values unchanged. Rule tests by Codex in one call (the planning files did not fit prettier: JSON fixture formatted, CSS fixture kept verbatim behind prettier-ignore per top-level block); CT-11a frozen tests synced to the new planning version under CT-06p (changed cases red, owner-approved label per #24); Claude spec-test review pass; red on the test machine (red/1, 20 tests). Implementation by Opus 5.5 (two runs wrote it and were cut off by session restarts without output, not counted); the orchestrator ran the test machine on that code: verify-fast/1 and browser/1 green. Review: Codex (approvals id 27 / 34). Contract slot taken for the landing. Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent: pass with two S2 (missing dark falls back to value instead of failing; accepted theme shapes) handled in the implementation; also confirmed the synced CT-11a cases only follow the planning upgrade and the fixtures match 49bb4ad"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  },
+  "task": "CT-11b",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "506727f235498166bfcefdfc965f96d12d8db48a",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "506727f235498166bfcefdfc965f96d12d8db48a",
+      "tree": "b037f0558641be097a5b0ba94dcb3b75a1c84fa3",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T14:05:11Z",
+      "finished_at": "2026-10-19T14:05:15Z",
+      "gate": {
+        "commit": "9c91817845f499f078db99c614d9dd855e43b197",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-CSS-DARK#1] 两个深色块完整匹配规划值，仅覆盖含 dark 的叶子",
+        "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-CSS-DARK#2] 深色值遵循浅色的转换规则，含透明色和两层阴影",
+        "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-CSS-DARK#3] 按 dark 字段存在性覆盖，同值仍覆盖、缺省不覆盖、空阴影覆盖为 none",
+        "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-THEME#1] 入库深色主题覆盖全部令牌，无 dark 的尺寸字体与空阴影回退 value",
+        "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-THEME#2] 主题序列化读取输入 dark，不把深色值写死在模板中",
+        "test/spec/frontend/ui-tokens/dark.test.ts > [AC-CT-11b-SOURCE#1] 生成器无 I/O 和硬编码颜色，深色变化只来自入参且不污染后续调用",
+        "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#10] tokens.gen.css 与契约重新生成的文本逐字一致",
+        "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#11] tailwind.gen.css 与契约重新生成的文本逐字一致",
+        "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#12] theme.gen.ts 与契约重新生成的文本逐字一致且已定型",
+        "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#13] 包主入口暴露生成主题且两个 CSS 子路径可消费",
+        "test/spec/frontend/ui-tokens/drift.test.ts > [AC-CT-11a#14] TS 序列化使用入参，重复生成稳定且不改写输入",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#3] CSS 的每个叶子令牌与规划 :root 的变量名、值逐项一致",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#4] 代表值覆盖新背景、语义颜色、字号、字体、单位、阴影和焦点",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#5] 浅色基准不再强制 only light，并提供系统与显式深色覆盖",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#6] Tailwind 4 主题使用有效命名空间并引用全部令牌，不能自引用",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#7] TS 主题每个叶子只引用一个 CSS 令牌，覆盖全部令牌",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#8] 生成器使用入参中的值和新增令牌，不能硬编码固定快照",
+        "test/spec/frontend/ui-tokens/generation.test.ts > [AC-CT-11a#9] 两份 CSS 生成结果已经过仓库 Prettier 定型",
+        "test/spec/frontend/ui-tokens/snapshot.test.ts > [AC-CT-11a#1] 契约完整保留固定规划版本的令牌、metadata 与 schemaVersion",
+        "test/spec/frontend/ui-tokens/snapshot.test.ts > [AC-CT-11a#2] README 已交付清单同一行记录令牌版本与完整来源提交"
+      ],
+      "expected": [
+        "test/spec/frontend/ui-tokens/dark.test.ts",
+        "test/spec/frontend/ui-tokens/drift.test.ts",
+        "test/spec/frontend/ui-tokens/generation.test.ts",
+        "test/spec/frontend/ui-tokens/snapshot.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "6e3fb21e475be5c719899dfa9c8e839f4362585c1c65998f6365a243dc61261c"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "789c00a5ae4746665186e98325566f8bb8f9ba7f",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  }
+}

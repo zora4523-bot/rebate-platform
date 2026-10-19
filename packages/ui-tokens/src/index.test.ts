@@ -6,7 +6,9 @@ import {
   generateThemeTs,
   generateTokensCss,
   themeFromTokens,
+  themeValuesFromTokens,
   tokenTheme,
+  tokenValues,
 } from './index.ts';
 
 function doc(tokens: Record<string, unknown>, cssFontBase = 16): DesignTokens {
@@ -100,4 +102,71 @@ it('serializes the theme with quoted keys only where needed', () => {
   expect(generateThemeTs(tokens)).toContain(
     "  space: {\n    '0': 'var(--space-0)',\n    'x-y': 'var(--space-x-y)',\n    z: 'var(--space-z)',\n  },\n",
   );
+});
+
+it('converts #RRGGBBAA colors to rgba() with two-decimal alpha', () => {
+  const css = generateTokensCss(
+    doc({
+      color: {
+        a: { type: 'color', value: '#28251F66', dark: '#0000008C' },
+        b: { type: 'color', value: '#000000FF' },
+        c: { type: 'color', value: '#00000000' },
+        d: { type: 'color', value: '#00000001' },
+      },
+    }),
+  );
+  expect(css).toContain('  --color-a: rgba(40, 37, 31, 0.4);');
+  expect(css).toContain('    --color-a: rgba(0, 0, 0, 0.55);');
+  expect(css).toContain('--color-b: rgba(0, 0, 0, 1);');
+  expect(css).toContain('--color-c: rgba(0, 0, 0, 0);');
+  expect(css).toContain('--color-d: rgba(0, 0, 0, 0);');
+});
+
+it('writes number tokens and keeps dark blocks to tokens with dark', () => {
+  const tokens = doc({
+    scale: { type: 'number', value: 1.5 },
+    color: {
+      a: { type: 'color', value: '#111111', dark: '#222222' },
+      b: { type: 'color', value: '#333333' },
+    },
+  });
+  const css = generateTokensCss(tokens);
+  expect(css).toContain('  --scale: 1.5;');
+  expect(css.match(/--color-a: #222222;/g)).toHaveLength(2);
+  expect(css.match(/--color-b:/g)).toHaveLength(1);
+  expect(themeValuesFromTokens(tokens, 'dark')).toEqual({
+    scale: '1.5',
+    color: { a: '#222222', b: '#333333' },
+  });
+  expect(themeValuesFromTokens(tokens, 'light')).toEqual({
+    scale: '1.5',
+    color: { a: '#111111', b: '#333333' },
+  });
+  expect(generateTailwindCss(tokens)).toContain('  --number-couli-scale: var(--scale);');
+});
+
+it('rejects dark on other token types and invalid dark values', () => {
+  const bad: Record<string, unknown>[] = [
+    { space: { a: { ...dimension(1), dark: 2 } } },
+    { color: { a: { type: 'color', value: '#111111', dark: '#abcdef' } } },
+    { shadow: { a: { type: 'shadow', value: [], dark: {} } } },
+    {
+      shadow: {
+        a: {
+          type: 'shadow',
+          value: [],
+          dark: [{ x: 0, y: 0, blur: 0, spread: 0, color: '#00000080', opacity: 1 }],
+        },
+      },
+    },
+  ];
+  for (const tokens of bad) {
+    expect(() => generateTokensCss(doc(tokens)), JSON.stringify(tokens)).toThrow(/design tokens/);
+  }
+});
+
+it('exports resolved light and dark values from the committed theme', () => {
+  expect(tokenValues.light.color.background.canvas).toBe('#F2EEE6');
+  expect(tokenValues.dark.color.background.canvas).toBe('#171513');
+  expect(tokenValues.dark.space['4']).toBe(tokenValues.light.space['4']);
 });

@@ -10,16 +10,19 @@ import { expect, it } from 'vitest';
 import { baseline, record, requiredText, snapshot } from './kit.ts';
 
 it('[AC-CT-11a#10] tokens.gen.css 与契约重新生成的文本逐字一致', () => {
+  expect(snapshot()).toEqual(baseline());
   expect(requiredText('packages/ui-tokens/src/tokens.gen.css')).toBe(generateTokensCss(snapshot()));
 });
 
 it('[AC-CT-11a#11] tailwind.gen.css 与契约重新生成的文本逐字一致', () => {
+  expect(snapshot()).toEqual(baseline());
   expect(requiredText('packages/ui-tokens/src/tailwind.gen.css')).toBe(
     generateTailwindCss(snapshot()),
   );
 });
 
 it('[AC-CT-11a#12] theme.gen.ts 与契约重新生成的文本逐字一致且已定型', async () => {
+  expect(snapshot()).toEqual(baseline());
   const actual = requiredText('packages/ui-tokens/src/theme.gen.ts');
   expect(actual).toBe(generateThemeTs(snapshot()));
   expect(actual).toBe(
@@ -54,5 +57,8 @@ it('[AC-CT-11a#14] TS 序列化使用入参，重复生成稳定且不改写输�
   const changed = generateThemeTs(input);
   expect(changed).not.toBe(original);
   expect(changed).toContain('var(--color-brand-probe)');
-  expect(changed).not.toContain('#ABCDEF');
+  // The reference theme remains; v0.4.0 additionally serializes concrete appearance values.
+  // A dark-only source edit must also affect serialization; CSS references alone cannot do so.
+  record(record(record(input.tokens.color).brand).primary).dark = '#13579B';
+  expect(generateThemeTs(input)).not.toBe(changed);
 });
