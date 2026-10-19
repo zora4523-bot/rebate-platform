@@ -17,16 +17,29 @@
 //   不同；换设备同 IP：设备键不同、IP 键相同；未绑手机账号也只有设备与 IP 两个键。guest_daily_quota 与
 //   guest_ip_daily_quota 设为 1 后，把一条 run 记为已计入（生产默认装配每条都退还，夹具改 settle_result 模拟
 //   消耗），同设备换 IP → 30502、换设备同 IP → 30502，均不建 run；换设备且换 IP 照常受理。
+// - 取消进行中的 run（BR-AI-23 细则「取消」、BR-AI-15 退还；契约 cancelAgentRun）：入口照常装配，只给运行体的
+//   provider 加测试缝（放行输入检查、挂起关键词搜索、手动调度）；截止前取消 → 200 EmptyResponse，run 在截止前
+//   停止，末帧 done(cancelled)、end_reason cancelled、照常计数；再次取消仍 200、不再写入。
 import { randomUUID } from 'node:crypto';
 
+import type { DB } from '@couli/db';
 import { createTestDatabase } from '@couli/db/testing';
-import { sql } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
+import type { Clock, RootLogger } from '../../../../apps/api/src/modules/platform/index.ts';
+import {
+  agentStreamToken,
+  createAgentStreamRuntime,
+  type AgentStreamModuleOptions,
+} from '../../../../apps/api/src/modules/agent/stream/mount/index.ts';
 import {
   APP,
   Logs,
+  ManualTime,
+  PassInputCheck,
+  RecordingTools,
   agentSnapshot,
   anotherDevice,
   consent,
@@ -35,10 +48,14 @@ import {
   newGuest,
   newMember,
   openAgent,
+  runRow,
   runsOf,
   sessionRow,
   setConfig,
+  settleWork,
+  until,
   usePgEach,
+  usedOf,
 } from './kit.ts';
 import type { AgentCaller } from '../../../../apps/api/src/modules/agent/http/index.ts';
 
@@ -641,6 +658,154 @@ it('[AC-B3-03f#31][BR-AI-23][BR-AI-11][BR-ID-03][BR-AI-13] 真实 stream 入口 
     }
     expect(await agentSnapshot(pg.db)).toBe(before);
   } finally {
+    await app.close();
+  }
+}, 120_000);
+
+/**
+ * The stream entry as streamApp builds it, except that the agent runtime provider passes test
+ * seams to createAgentStreamRuntime: the input check lets the message through, the keyword search
+ * is held until its run's signal aborts (a run kept in progress) and the RunManager sleeps on
+ * `time`'s scheduler. Everything else is the provider's production assembly (the same inject list
+ * and deps, identity's consent reader from app.module's options), with the real controller and
+ * the runtime's own HTTP layer and cancel port.
+ */
+async function heldStreamApp(
+  clock: FixedClock,
+  time: ManualTime,
+  tools: RecordingTools,
+): Promise<App> {
+  const { AgentModule } = (await import(src('modules/agent/index.ts'))) as {
+    AgentModule: {
+      forStream(options: AgentStreamModuleOptions): { providers?: unknown[] };
+    };
+  };
+  const original = AgentModule.forStream.bind(AgentModule);
+  vi.spyOn(AgentModule, 'forStream').mockImplementation((options) => {
+    const module = original(options);
+    let replaced = 0;
+    const providers = (module.providers ?? []).map((provider) => {
+      if (
+        typeof provider !== 'object' ||
+        provider === null ||
+        !('provide' in provider) ||
+        provider.provide !== agentStreamToken()
+      ) {
+        return provider;
+      }
+      replaced += 1;
+      return {
+        provide: agentStreamToken(),
+        inject: (provider as { inject?: unknown[] }).inject,
+        useFactory: (c: Clock, logger: RootLogger, db?: Kysely<DB>) => {
+          expect(db, 'the stream entry has a database handle').toBeDefined();
+          return createAgentStreamRuntime(
+            { db: db!, clock: c, logger, consentReader: options.consentReader },
+            { inputCheck: new PassInputCheck(), tools, schedule: time.scheduler },
+          );
+        },
+      };
+    });
+    expect(replaced, 'forStream provides agentStreamToken()').toBe(1);
+    return { ...module, providers };
+  });
+  return streamApp(clock);
+}
+
+it('[AC-B3-03f#33][BR-AI-23][BR-AI-15] 真实 stream 入口 + PG：截止前取消进行中的 run → 200 EmptyResponse；run 在截止前停止，SSE 末帧 done(cancelled)，end_reason cancelled、照常计数（未下发卡片也不退）；再次取消仍 200 且不再写入', async () => {
+  const clock = new FixedClock('2026-10-06T10:00:00+08:00');
+  const time = new ManualTime();
+  const caller = await newMember(pg.db);
+  await openAgent(pg.db);
+  await consent(pg.db, caller);
+  const tools = new RecordingTools().hold();
+  const app = await heldStreamApp(clock, time, tools);
+  let settled = false;
+  /** Moves the app clock and the run's scheduler together until `done()` or `limitMs` elapse. */
+  const advance = async (done: () => boolean, limitMs: number): Promise<void> => {
+    await settleWork(pg.db);
+    while (!done() && time.t < limitMs) {
+      const step = Math.min(250, limitMs - time.t);
+      clock.advanceMs(step);
+      await time.to(time.t + step);
+      await settleWork(pg.db);
+    }
+  };
+  try {
+    const call = client(app, await accessToken(app, clock, caller));
+    const created = await call('POST', '/v1/agent/sessions');
+    expect(json(created)['code'], created.body).toBe(0);
+    const sessionId = (json(created)['data'] as Record<string, unknown>)['session_id'] as string;
+
+    const sending = call('POST', `/v1/agent/sessions/${sessionId}/messages`, {
+      client_msg_id: randomUUID(),
+      text: '帮我找个保温杯',
+    });
+    void sending.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await until('the held keyword search started', () => tools.plans.length > 0);
+    expect(settled, 'the run is in progress').toBe(false);
+    const [live] = await runsOf(pg.db, sessionId);
+    expect(live, 'the accepted run').toBeDefined();
+    expect(live).toMatchObject({ end_reason: null, cancel_requested_at: null, final_event: null });
+    const runId = String(live!['id']);
+    const acceptedMs = new Date(live!['accepted_at'] as string | Date).getTime();
+    const deadlineMs = new Date(live!['deadline_at'] as string | Date).getTime();
+    expect(clock.now().getTime(), 'the cancel comes before the deadline').toBeLessThan(deadlineMs);
+
+    // BR-AI-23 细则「取消」: before the deadline and with no end reason the cancel is accepted,
+    // written on the run row and answered with success (contract cancelAgentRun: 200
+    // EmptyResponse, code 0, data {}).
+    const cancelled = await call('POST', `/v1/agent/runs/${runId}/cancel`);
+    const cancelledBody = json(cancelled);
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(Object.keys(cancelledBody).sort()).toEqual(['code', 'data', 'msg', 'trace_id']);
+    expect(cancelledBody).toMatchObject({ code: 0, data: {} });
+    expect((await runRow(pg.db, runId))['cancel_requested_at'], 'cancel recorded').not.toBeNull();
+
+    // The held search only ends when the run's signal aborts: settling before the deadline
+    // means the cancellation stopped the run, not its time limit.
+    await advance(() => settled, deadlineMs - acceptedMs - 1);
+    expect(settled, 'the run stopped before its deadline').toBe(true);
+    const sent = await sending;
+    expect(sent.statusCode, sent.body).toBe(200);
+    const frames = framesOf([sent.body]);
+    expect(frames[0]!.event).toBe('meta');
+    expect(frames[0]!.data['run_id']).toBe(runId);
+    expect(
+      frames.filter((f) => f.event === 'card'),
+      'no card delivered',
+    ).toEqual([]);
+    // Contract cancelAgentRun: a 200 guarantees the run ends with finish_reason=cancelled.
+    const last = frames[frames.length - 1]!;
+    expect(last.event).toBe('done');
+    expect(last.data['finish_reason']).toBe('cancelled');
+
+    // end_reason 'cancelled': B3-03g's decision write (stream/pg/index.ts header, to which BR-AI-23
+    // 细则 points). BR-AI-15 细则「退还」: a user cancellation is counted whether or not a card
+    // was delivered; this fixture delivers none (held search) and the run is still counted.
+    const ended = await runRow(pg.db, runId);
+    expect(ended).toMatchObject({
+      end_reason: 'cancelled',
+      finish_reason: 'cancelled',
+      card_delivered: false,
+      settle_result: 'counted',
+    });
+    expect(ended['final_event']).not.toBeNull();
+    expect(await usedOf(pg.db, caller.userId!)).toBe(1);
+
+    // BR-AI-23 细则「取消」 and contract cancelAgentRun: a repeated call for a run already
+    // cancelled by this endpoint (here ended as cancelled) returns 200 again and writes nothing.
+    const before = await agentSnapshot(pg.db);
+    const again = await call('POST', `/v1/agent/runs/${runId}/cancel`);
+    expect(again.statusCode, again.body).toBe(200);
+    expect(json(again)).toMatchObject({ code: 0, data: {} });
+    expect(await agentSnapshot(pg.db), 'the repeated cancel writes nothing').toBe(before);
+  } finally {
+    // A failed assertion must not leave the held run keeping close() waiting.
+    await advance(() => settled, time.t + 120_000);
     await app.close();
   }
 }, 120_000);
