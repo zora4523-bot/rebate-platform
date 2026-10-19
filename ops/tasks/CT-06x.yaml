@@ -1,0 +1,23 @@
+id: CT-06x
+repo: rebate-platform
+title: 门禁小修：评审指引 REVIEW.md 与增量评审——Codex 与 Claude 评审都先读 REVIEW.md（高风险区、严重度标准、免查文件、发现必须给文件与行号）；第 2 轮起只审上一轮以来的增量提交与上轮发现是否关闭，不重复提已裁定或已关闭的问题，未改动代码上的新覆盖面不判 fail（记 S2 或后续）；同一任务评审三轮仍不过则停下重新考虑实现方案（换家、拆小或请负责人定）
+type: guard-change
+# 2026-10-19 入账（staging-b3-term）。起因：负责人 10-19 对话中要求——审查达到三轮后重新考虑实现方案；后续审查优先检查新增变化、避免重复提交相同问题；维护 CLAUDE.md（技术栈、规范、开发约束、测试要求）并增加 REVIEW.md 告诉审查 Agent 重点查什么（高风险模块、什么算严重 Bug、哪些文件无需检查、发现须给具体文件和代码行）。直接诱因：B3-03f 规则测试评审第 3、4 轮各在未改动代码上提出新的覆盖缺口，任务书写明「只审这 3 处」仍判 fail，Codex 调用超每任务上限。
+# 做法：新增根目录 REVIEW.md（高风险区按 risk-map / MONEY_PATHS 指针列出，严重度定义 S1/S2，免查：生成物、锁文件、快照、dist、ops/evidence；发现格式：文件 + 行号 + 可复现场景）；四个 review-*.md 提示词开头指向 REVIEW.md 并写入增量规则；codex-run.sh review 在第 2 轮起把上一轮评审 JSON 与上一轮评审时的头提交作为上下文块传入（增量基线），不改调用参数与安全约束；AGENTS.md（CLAUDE.md 经它引入）补技术栈、开发约束、测试要求的指针段与 REVIEW.md 指针，不复述 ADR / 规划。
+# tools/ 与 AGENTS.md 属保护路径：负责人 10-02 常设授权的流程门禁小修（approvals #16），Claude 实现、Codex 对抗评审一轮，评审通过、检查全绿后按 approvals #24 加标签。tools 自己的单测由实现者写，不需要先写规则测试。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'REVIEW.md'
+  - 'AGENTS.md'
+  - 'tools/agent/prompts/review-*.md'
+  - 'tools/agent/codex-run.sh'
+  - 'tools/agent/codex-run.test.ts'
+  - 'tools/agent/README.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
