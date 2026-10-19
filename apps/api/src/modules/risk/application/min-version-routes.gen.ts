@@ -1413,6 +1413,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminGetDict",
+    "method": "GET",
+    "path": "/admin/v1/dict",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListAppVersions",
     "method": "GET",
     "path": "/admin/v1/app-versions",

@@ -698,6 +698,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/dict",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/app-versions",
     "auth": "admin"
   },

@@ -1755,9 +1755,10 @@ export interface paths {
          *     `<dict>.<code>` is split at its first dot: `dict` is the first segment and `code` the
          *     rest (a key without a dot has the empty string as code). Keys whose current text is null
          *     (set back to the bundled default) are left out. Before the first publish `version` is
-         *     "0" and `items` is empty. Readable anonymously, without a device id. Session scopes:
-         *     accepts deletion_only (BR-ID-01 细则「受限会话」: the forced-update and deletion pages
-         *     read it).
+         *     "0" and `items` is empty. Console dictionary keys (`admin_dict.*`, BR-TEXT-25) are never
+         *     returned here; the console reads them through GET /admin/v1/dict. Readable anonymously,
+         *     without a device id. Session scopes: accepts deletion_only (BR-ID-01 细则「受限会话」: the
+         *     forced-update and deletion pages read it).
          */
         get: operations["getDict"];
         put?: never;
@@ -4036,6 +4037,39 @@ export interface paths {
          *     20902 with `data.resource=dict_item`. Audited like a save. No Idempotency-Key (04 §6.6).
          */
         post: operations["adminRollbackDictItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/dict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Console status and reason names (admin_dict)
+         * @description Permission: any permission point (04 §6.6 `dict`; any signed-in console account holding at
+         *     least one permission point; read only, no step-up; no new permission point). The console
+         *     dictionary of BR-TEXT-25: the Chinese names the console shows for statuses and reasons,
+         *     every `admin_dict.*` key, whose bundled defaults are contracts/texts.admin.default.json
+         *     (console only, not bundled in the App or H5). Unlike GET /v1/dict, every key is returned:
+         *     its current override, or its bundled default when not overridden. A key
+         *     `admin_dict.<enum>.<code>` is items[enum][code]: the `admin_dict.` prefix is dropped and
+         *     the rest split at its last dot (`enum` is the 04 enum name or `table.column` and may hold
+         *     dots, e.g. `admin_adjustments.status`; `code` is the 04 value with its case). The console
+         *     shows the code itself when a key is missing (BR-TEXT-25). `version` is the dictionary's
+         *     current version, as GET /v1/dict ("0" before the first publish). Not paged. Read only;
+         *     texts are changed on the dictionary page through PUT /admin/v1/dict-items, by key class
+         *     (fund term keys → `content.fund_terms`, other keys → `config.general`, as classified in
+         *     specs/fund-term-keys.yaml).
+         */
+        get: operations["adminGetDict"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -8468,6 +8502,23 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["AdminDictItemVersionPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description The console dictionary (BR-TEXT-25); a key `admin_dict.<enum>.<code>` is items[enum][code], split at the last dot. */
+        AdminDict: {
+            /** @description Dictionary version, equal to `version` of GET /v1/dict; "0" before the first publish. */
+            version: string;
+            /** @description Texts by enum (the key without `admin_dict.` up to its last dot), then by code (after the last dot); every key, overridden or default. */
+            items: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
+        };
+        AdminDictResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminDict"];
             trace_id: components["schemas"]["TraceId"];
         };
         AdminConfigItemRollbackRequest: {
@@ -18974,6 +19025,68 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Nothing rolled back (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetDict: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every console dictionary key, by enum and code. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "version": "3",
+                     *         "items": {
+                     *           "admin_adjustments.status": {
+                     *             "PENDING": "待批准",
+                     *             "APPROVED": "已生效",
+                     *             "REJECTED": "已驳回",
+                     *             "CANCELLED": "已撤回"
+                     *           },
+                     *           "settle_mode": {
+                     *             "IMMEDIATE": "立即执行",
+                     *             "SCHEDULED": "定时执行"
+                     *           },
+                     *           "union_accounts.last_probe_ok": {
+                     *             "true": "探测正常",
+                     *             "false": "探测失效"
+                     *           }
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminDictResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
