@@ -63,9 +63,25 @@ export async function inDatabase(
 export function invariantFiles() {
   const directory = new URL('../../../../db/invariants/ledger/', import.meta.url);
   const manifest = new URL('superseded.json', directory);
-  const superseded = new Set<string>(
-    existsSync(manifest) ? (JSON.parse(readFileSync(manifest, 'utf8')) as string[]) : [],
-  );
+  const superseded = new Set<string>();
+  if (existsSync(manifest)) {
+    const entries: unknown = JSON.parse(readFileSync(manifest, 'utf8'));
+    if (!Array.isArray(entries)) {
+      throw new Error('superseded.json must be an array of objects');
+    }
+    for (const entry of entries as unknown[]) {
+      if (
+        typeof entry !== 'object' ||
+        entry === null ||
+        Array.isArray(entry) ||
+        !('file' in entry) ||
+        typeof entry.file !== 'string'
+      ) {
+        throw new Error('superseded.json entries must be objects with a string file field');
+      }
+      superseded.add(entry.file);
+    }
+  }
   return readdirSync(directory)
     .filter((name) => name.endsWith('.sql') && !superseded.has(name))
     .sort()
