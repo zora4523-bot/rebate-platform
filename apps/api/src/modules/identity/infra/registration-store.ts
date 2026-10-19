@@ -9,6 +9,7 @@
 // relative imports, no decorators.
 import type { DB } from '@couli/db';
 import { sql, type Transaction } from 'kysely';
+import { openUserAccount } from '../../ledger/index.ts';
 import type { DeviceRegistrationRecord } from '../domain/registration.ts';
 
 /** The inserted account's Clock instant, read in the creation transaction for BR-INV-14. */
@@ -165,6 +166,11 @@ function uniqueConstraint(error: unknown): string | undefined {
  * Inserts the users row in its own savepoint. A violation of the invite-code, attr-code or phone
  * uniqueness rolls back to that savepoint and is answered as such, leaving the transaction usable;
  * any other error rejects as it is (the caller rolls back further).
+ *
+ * After the row is in (savepoint released), the user's single balance account is opened by the
+ * ledger in the same transaction (BR-FUND-13). It runs outside the unique-violation handling: a
+ * failure of the ledger rejects as it is and the whole creation rolls back. A conflict answer
+ * opens no account.
  */
 export async function insertUser(trx: Transaction<DB>, user: NewUser): Promise<InsertUserOutcome> {
   await savepoint(trx, 'identity_registration_user');
@@ -195,6 +201,7 @@ export async function insertUser(trx: Transaction<DB>, user: NewUser): Promise<I
     return outcome;
   }
   await releaseSavepoint(trx, 'identity_registration_user');
+  await openUserAccount(trx, { appId: user.appId, userId: user.id });
   return 'inserted';
 }
 
