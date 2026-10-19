@@ -13,10 +13,12 @@ type: contract
 refs: []
 refs_hash: {}
 # 2026-10-19 改：contract_sections 只留 6.6（两节原文让任务书超 24KB，brief.ts 拒写）；§6.2 公共读 GET /v1/dict 由编排者摘入任务书（同 CT-02q #763）。
+# 2026-10-19 补：getDict（GET /v1/dict）是匿名操作，须同 PR 更新 H5 匿名清单 apps/h5/src/shared/api/anonymous.ts（anonymous.test.ts 要求清单与契约双向相等；先例 CT-02q #831）。
 contract_sections: ['6.6']
 deps: []
 paths:
   - 'contracts/openapi.yaml'
+  - 'apps/h5/src/shared/api/anonymous.ts'
   - 'contracts/error-codes.yaml'
   - 'specs/permissions.yaml'
   - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
