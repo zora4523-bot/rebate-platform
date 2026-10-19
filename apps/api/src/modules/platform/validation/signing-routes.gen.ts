@@ -123,6 +123,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/agreements",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/v1/articles",
     "signed": false
   },
@@ -564,6 +569,21 @@ export const CONTRACT_SIGNING_ROUTES = [
   {
     "method": "POST",
     "path": "/admin/v1/pages/:page_key/preview-tokens",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/agreements",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/agreements/:type/versions",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/agreements/:type/versions/:version",
     "signed": false
   },
   {

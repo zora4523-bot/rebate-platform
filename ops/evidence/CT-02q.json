@@ -1,0 +1,35 @@
+{
+  "task": "CT-02q",
+  "spec_ref": "b90e712f5255a9600ebf6f0f3b561afd1b4f8d9e",
+  "spec_commit": "3599dbaa70e727f779ea2975e10cf7ceefa11217",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only, all new operations planned). getAgreements (GET /v1/agreements, x-auth none) returns the current privacy and agreement versions (version, min_version, article_id, article_version, text_sha256, url, published_at; null when never published). Console operations behind permission point content.agreement: adminListAgreements, adminGetAgreementVersion (30701 for an unknown version) and adminPublishAgreementVersion (totp step-up, expected_version CAS -> 20902 data.resource=agreement, legal confirmer / note / date required). 20902 data.resource gains agreement (catalog test synced). routes.json Agreement accepts type labor_agreement and an optional version. getLaborAgreement / signLaborAgreement are not touched (the 10004 change waits for identity, L5 / L22). Orchestrator defaults L1-L4, L23, L31 are in couli-runs CONTENT-client/decisions-pending.md. The H5 anonymous-operation list (apps/h5/src/shared/api/anonymous.ts, ledger path added by #844) gains GET /v1/agreements in this PR because anonymous.test.ts requires list == contract (CT-04f #814 precedent). No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "f23baaafe9fbca9e9476bf83ae6ab895a7243cb3",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "deb36e3e80b642be3e5090d7761d3143433275fe",
+    "specs": "c3c361e2d577cc550a501e7feb636fbcb179ff4a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}

@@ -358,7 +358,8 @@ export interface components {
         };
         RouteAgreementParams: {
             /** @enum {string} */
-            type?: "agreement" | "privacy" | "sdk_list";
+            type?: "agreement" | "privacy" | "sdk_list" | "labor_agreement";
+            version?: number;
         };
         RouteWebPageParams: {
             /** @description 只接受 bridge_origins 白名单内的 https 地址，不接受外部传入 */

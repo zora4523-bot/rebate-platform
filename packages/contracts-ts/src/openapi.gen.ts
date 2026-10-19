@@ -683,6 +683,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agreements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Current privacy policy and user agreement
+         * @description The currently effective version of the privacy policy and of the user agreement (04 §6.2
+         *     agreements; the versions match legal.privacy.version and legal.agreement.version of GET
+         *     /v1/config). Each carries `min_version` (re-consent starts below it, BR-ID-12), the
+         *     article holding its text (`article_id`, `article_version`, readable with GET
+         *     /v1/articles/{article_id}?version=), the lower-case hex sha256 of that text, the address of
+         *     the full text and when it was published. A type never published is null. The labor
+         *     agreement is not listed here; it is read with GET /v1/me/labor-agreement (BR-WDR-31).
+         *     Readable anonymously in basic mode, without a device id (BR-ID-11 细则).
+         */
+        get: operations["getAgreements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/articles": {
         parameters: {
             query?: never;
@@ -3130,6 +3157,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/agreements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Published versions of the privacy policy, user agreement and labor agreement
+         * @description Permission point `content.agreement` (04 §11.2; read only, no step-up). Every published
+         *     version, newest first (by published_at), page by page (`page`, `page_size` ≤ 200),
+         *     optionally of one `type`; without the text (read one version for its title and body).
+         *     Published versions never change and are never deleted (04 §6.2).
+         */
+        get: operations["adminListAgreements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/agreements/{type}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a new version of an agreement
+         * @description Permission point `content.agreement` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier for every publish (without a
+         *     valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`; 04 §11.2 动态码, OPS-14).
+         *     The version number is the type's current newest version + 1 (1 for the first), set by the
+         *     server. `title` and `body` (tiptap JSON as a string, nodes and marks within the agreement
+         *     body whitelist) are the text; `min_version` is where re-consent (privacy, agreement,
+         *     BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts; `legal_confirmed_by`,
+         *     `legal_confirm_note` and `legal_confirmed_on` record the legal confirmation (OPS-14,
+         *     BR-ID-12). A failed check is 20001 with `data.fields` naming the field: min_version below
+         *     the current version's min_version or above the new version, requires_resign not as the
+         *     publish rules require for the type and min_version, a legal confirmation field missing or
+         *     blank, or a body outside the whitelist. CAS: `expected_version` is the type's newest
+         *     version as the console showed it (0 when none is published yet); a mismatch → 20902 with
+         *     `data.resource=agreement`, refresh and retry (04 §6.6). In one transaction the server
+         *     inserts the agreement article (category agreement) and the agreements row, and for
+         *     privacy and agreement also writes legal.<type>.version (privacy also
+         *     legal.privacy.min_version, 04 §10.1). Writes an audit record with the legal confirmer,
+         *     the confirmation date and min_version and requires_resign before and after (BR-ID-12).
+         *     Published versions are never changed or deleted. The response is the new version. No
+         *     Idempotency-Key (04 §6.6; the CAS keeps a retry from publishing twice).
+         */
+        post: operations["adminPublishAgreementVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/agreements/{type}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One published version of an agreement with its text
+         * @description Permission point `content.agreement` (04 §11.2; read only, no step-up). One published
+         *     version with the title and body of its article. A version the type does not have → 30701.
+         */
+        get: operations["adminGetAgreementVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -4805,6 +4915,53 @@ export interface components {
             text_sha256: string;
             /** @description Must be true; the server returns 20001 data.fields=[agreed] otherwise. */
             agreed: boolean;
+        };
+        /**
+         * @description Agreement type (04 §6.2 agreements.type).
+         * @enum {string}
+         */
+        AgreementType: "privacy" | "agreement" | "labor_agreement";
+        /** @description The currently effective version of the privacy policy or the user agreement (04 §6.2). */
+        PublicAgreement: {
+            /** @enum {string} */
+            type: "privacy" | "agreement";
+            /**
+             * Format: int32
+             * @description Currently effective version.
+             */
+            version: number;
+            /**
+             * Format: int32
+             * @description Consent to a version below this one must be given again (BR-ID-12).
+             */
+            min_version: number;
+            article_id: components["schemas"]["Id"];
+            /**
+             * Format: int32
+             * @description Version of the article holding the text (GET /v1/articles/{article_id}?version=).
+             */
+            article_version: number;
+            /** @description Lower-case hex sha256 of the text. */
+            text_sha256: string;
+            /**
+             * Format: uri
+             * @description Address of the full text of this version.
+             */
+            url: string;
+            /** Format: date-time */
+            published_at: string;
+        };
+        AgreementsData: {
+            /** @description The current privacy policy; null when never published. */
+            privacy: components["schemas"]["PublicAgreement"] | null;
+            /** @description The current user agreement; null when never published. */
+            agreement: components["schemas"]["PublicAgreement"] | null;
+        };
+        AgreementsResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AgreementsData"];
+            trace_id: components["schemas"]["TraceId"];
         };
         /**
          * @description Article category (04 §6.2：帮助、规则、公告、协议; codes defined here, no enums/ entry yet).
@@ -6702,6 +6859,129 @@ export interface components {
             data: components["schemas"]["AdminPageConfigVersion"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /** @description One published agreement version (04 §6.2 agreements); never changed after publishing. */
+        AdminAgreementVersion: {
+            type: components["schemas"]["AgreementType"];
+            /** Format: int32 */
+            version: number;
+            /**
+             * Format: int32
+             * @description Where re-consent (privacy, agreement, BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts.
+             */
+            min_version: number;
+            /** @description Whether this version is marked as requiring a new signature (04 §6.2). */
+            requires_resign: boolean;
+            article_id: components["schemas"]["Id"];
+            /**
+             * Format: int32
+             * @description Version of the agreement article holding the text.
+             */
+            article_version: number;
+            /** @description Lower-case hex sha256 of the text. */
+            text_sha256: string;
+            /**
+             * Format: uri
+             * @description Address of the full text of this version.
+             */
+            url: string;
+            /** @description Who confirmed the version for legal (OPS-14). */
+            legal_confirmed_by: string;
+            /** @description The legal confirmation note (OPS-14). */
+            legal_confirm_note: string;
+            /** Format: date-time */
+            published_at: string;
+            published_by: components["schemas"]["Id"];
+        };
+        /** @description One published agreement version with the title and body of its article. */
+        AdminAgreementVersionDetail: {
+            type: components["schemas"]["AgreementType"];
+            /** Format: int32 */
+            version: number;
+            /**
+             * Format: int32
+             * @description Where re-consent (privacy, agreement, BR-ID-12) or re-signing (labor_agreement, BR-WDR-31) starts.
+             */
+            min_version: number;
+            /** @description Whether this version is marked as requiring a new signature (04 §6.2). */
+            requires_resign: boolean;
+            article_id: components["schemas"]["Id"];
+            /**
+             * Format: int32
+             * @description Version of the agreement article holding the text.
+             */
+            article_version: number;
+            /** @description Lower-case hex sha256 of the text. */
+            text_sha256: string;
+            /**
+             * Format: uri
+             * @description Address of the full text of this version.
+             */
+            url: string;
+            /** @description Who confirmed the version for legal (OPS-14). */
+            legal_confirmed_by: string;
+            /** @description The legal confirmation note (OPS-14). */
+            legal_confirm_note: string;
+            /** Format: date-time */
+            published_at: string;
+            published_by: components["schemas"]["Id"];
+            title: string;
+            /** @description tiptap JSON of the text, as a string. */
+            body: string;
+        };
+        AdminAgreementVersionList: {
+            /** @description Newest version first. */
+            items: components["schemas"]["AdminAgreementVersion"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminAgreementVersionListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAgreementVersionList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminAgreementVersionResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAgreementVersion"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminAgreementVersionDetailResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminAgreementVersionDetail"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminAgreementPublishRequest: {
+            title: string;
+            /** @description tiptap JSON of the text, as a string; nodes and marks outside the agreement body whitelist are 20001 with data.fields=[body]. */
+            body: string;
+            /**
+             * Format: int32
+             * @description Where re-consent or re-signing starts; not below the current version's, not above the new version.
+             */
+            min_version: number;
+            /** @description Whether the new version requires a new signature; must agree with the publish rules for the type and min_version. */
+            requires_resign: boolean;
+            /** @description Who confirmed the version for legal (OPS-14). */
+            legal_confirmed_by: string;
+            /** @description The legal confirmation note (OPS-14). */
+            legal_confirm_note: string;
+            /**
+             * Format: date
+             * @description Date of the legal confirmation, written to the audit record (BR-ID-12).
+             */
+            legal_confirmed_on: string;
+            /**
+             * Format: int32
+             * @description The type's newest version as the console showed it, 0 when none is published; a mismatch is 20902.
+             */
+            expected_version: number;
+        };
         AdminPageConfigDraftRequest: {
             /** @description The whole page; section shape contracts/home-schema.json `$defs/section`. */
             sections: {
@@ -7450,6 +7730,10 @@ export interface components {
         PlatformIconKeyPath: components["schemas"]["PlatformIconKey"];
         /** @description Version of the mark, counted per mark from 1; unknown → 20001 with data.fields=[version]. */
         PlatformIconVersionPath: number;
+        /** @description Agreement type (privacy, agreement or labor_agreement); another value → 20001 with data.fields=[type]. */
+        AgreementTypePath: components["schemas"]["AgreementType"];
+        /** @description Version of the agreement, counted per type from 1. */
+        AgreementVersionPath: number;
         /**
          * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
          *     another shape → 20001 with data.fields=[page_key].
@@ -9111,6 +9395,72 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["OrderDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getAgreements: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current privacy policy and user agreement. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "privacy": {
+                     *           "type": "privacy",
+                     *           "version": 3,
+                     *           "min_version": 2,
+                     *           "article_id": "0199a3b4-0000-7000-8000-000000000001",
+                     *           "article_version": 3,
+                     *           "text_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                     *           "url": "https://cdn.example.test/legal/privacy-v3.html",
+                     *           "published_at": "2026-10-01T09:00:00+08:00"
+                     *         },
+                     *         "agreement": {
+                     *           "type": "agreement",
+                     *           "version": 2,
+                     *           "min_version": 2,
+                     *           "article_id": "0199a3b4-0000-7000-8000-000000000002",
+                     *           "article_version": 2,
+                     *           "text_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                     *           "url": "https://cdn.example.test/legal/agreement-v2.html",
+                     *           "published_at": "2026-10-01T09:00:00+08:00"
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AgreementsResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
@@ -14990,6 +15340,224 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not issued (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListAgreements: {
+        parameters: {
+            query?: {
+                /** @description Only versions of this type; absent = all three types. */
+                type?: components["schemas"]["AgreementType"];
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of published versions, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "type": "labor_agreement",
+                     *             "version": 2,
+                     *             "min_version": 2,
+                     *             "requires_resign": true,
+                     *             "article_id": "0199a3b4-0000-7000-8000-000000000003",
+                     *             "article_version": 2,
+                     *             "text_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                     *             "url": "https://cdn.example.test/legal/labor-agreement-v2.html",
+                     *             "legal_confirmed_by": "legal-zhang",
+                     *             "legal_confirm_note": "劳务协议第 2 版需重签",
+                     *             "published_at": "2026-10-02T09:00:00+08:00",
+                     *             "published_by": "0199a3b4-0000-7000-8000-00000000000a"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 1
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAgreementVersionListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminPublishAgreementVersion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description Agreement type (privacy, agreement or labor_agreement); another value → 20001 with data.fields=[type]. */
+                type: components["parameters"]["AgreementTypePath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "title": "劳务协议",
+                 *       "body": "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"协议正文\"}]}]}",
+                 *       "min_version": 3,
+                 *       "requires_resign": true,
+                 *       "legal_confirmed_by": "legal-zhang",
+                 *       "legal_confirm_note": "劳务协议第 3 版需重签",
+                 *       "legal_confirmed_on": "2026-10-17",
+                 *       "expected_version": 2
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminAgreementPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description The new version. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "type": "labor_agreement",
+                     *         "version": 3,
+                     *         "min_version": 3,
+                     *         "requires_resign": true,
+                     *         "article_id": "0199a3b4-0000-7000-8000-000000000004",
+                     *         "article_version": 3,
+                     *         "text_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                     *         "url": "https://cdn.example.test/legal/labor-agreement-v3.html",
+                     *         "legal_confirmed_by": "legal-zhang",
+                     *         "legal_confirm_note": "劳务协议第 3 版需重签",
+                     *         "published_at": "2026-10-17T10:00:00+08:00",
+                     *         "published_by": "0199a3b4-0000-7000-8000-00000000000a"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAgreementVersionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not published (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetAgreementVersion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Agreement type (privacy, agreement or labor_agreement); another value → 20001 with data.fields=[type]. */
+                type: components["parameters"]["AgreementTypePath"];
+                /** @description Version of the agreement, counted per type from 1. */
+                version: components["parameters"]["AgreementVersionPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The version with its text. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "type": "privacy",
+                     *         "version": 3,
+                     *         "min_version": 2,
+                     *         "requires_resign": false,
+                     *         "article_id": "0199a3b4-0000-7000-8000-000000000001",
+                     *         "article_version": 3,
+                     *         "text_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                     *         "url": "https://cdn.example.test/legal/privacy-v3.html",
+                     *         "legal_confirmed_by": "legal-zhang",
+                     *         "legal_confirm_note": "隐私政策第 3 版，第 2 版起需重新同意",
+                     *         "published_at": "2026-10-01T09:00:00+08:00",
+                     *         "published_by": "0199a3b4-0000-7000-8000-00000000000a",
+                     *         "title": "隐私政策",
+                     *         "body": "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"政策正文\"}]}]}"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAgreementVersionDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

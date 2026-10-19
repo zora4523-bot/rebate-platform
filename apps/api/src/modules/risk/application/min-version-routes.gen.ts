@@ -253,6 +253,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "getAgreements",
+    "method": "GET",
+    "path": "/v1/agreements",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "listArticles",
     "method": "GET",
     "path": "/v1/articles",
@@ -1145,6 +1155,36 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "operationId": "adminCreatePagePreviewToken",
     "method": "POST",
     "path": "/admin/v1/pages/:page_key/preview-tokens",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListAgreements",
+    "method": "GET",
+    "path": "/admin/v1/agreements",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminPublishAgreementVersion",
+    "method": "POST",
+    "path": "/admin/v1/agreements/:type/versions",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetAgreementVersion",
+    "method": "GET",
+    "path": "/admin/v1/agreements/:type/versions/:version",
     "gate": null,
     "sessionScopes": [
       "full"
