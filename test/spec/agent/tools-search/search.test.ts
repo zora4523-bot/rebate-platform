@@ -46,6 +46,8 @@ it('[AC-B3-04b#29][BR-AI-09] 复筛剔除商品后保留其余商品的原始上
   ]);
 });
 
+// CT-06y: with PROP_RUNS=100000 (verify-props) this property takes 13.6–16.1 s on CI, over the
+// 15 s testTimeout of test/vitest.config.ts. Only the per-test timeout is raised to 60 s.
 it('[AC-B3-04b#30][BR-AI-09] 固定上游名次，随机佣金比例变化不影响 relevance', async () => {
   // Reach the skeleton outside fast-check too: first-red is its original NotImplemented.
   createSearchProductsHandler(fixture().deps);
@@ -85,7 +87,7 @@ it('[AC-B3-04b#30][BR-AI-09] 固定上游名次，随机佣金比例变化不影
     ),
     propParams(),
   );
-});
+}, 60_000);
 
 it('[AC-B3-04b#2][BR-PROD-10] 未传 platforms 查开启集合；指定平台不扩展，缺配置默认关闭且每轮重读', async () => {
   const h = fixture([candidate('tb:synthetic-a')]);
