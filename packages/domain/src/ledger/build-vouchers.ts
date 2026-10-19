@@ -133,6 +133,16 @@ function resolveParams(rows: readonly LedgerTemplateRow[], params: unknown): Res
     if (!Object.hasOwn(record, name)) throw new RangeError(`missing parameter: ${name}`);
     keys.set(name, keyParam(record[name], name));
   }
+  // The order's platform and the UNION_RECEIVABLE:{platform} suffix must name the same union.
+  const orderKeyValue = keys.get('order_key');
+  const platformValue = keys.get('platform');
+  if (
+    orderKeyValue !== undefined &&
+    platformValue !== undefined &&
+    orderKeyValue.split(':')[0] !== platformValue
+  ) {
+    throw new RangeError('order_key platform does not match platform');
+  }
   const amounts = new Map<string, bigint>();
   for (const name of amountNames) {
     if (!Object.hasOwn(record, name)) throw new RangeError(`missing parameter: ${name}`);
@@ -216,9 +226,16 @@ function owner(row: LedgerTemplateRow): 'user' | 'platform' {
   throw new Error(`template ${row.template_id} line ${row.line}: bad account_owner`);
 }
 
+/**
+ * Decision 29 (BR-FUND-16 细则): the CSV writes platform rows as 'available' (the DB column
+ * value), while domain entries carry null for every non-USER_BALANCE account (validateVoucher).
+ */
 function subAccount(row: LedgerTemplateRow): 'available' | 'frozen' | null {
-  if (row.sub_account === '') return null;
-  if (row.sub_account === 'available' || row.sub_account === 'frozen') return row.sub_account;
+  if (row.account_owner === 'platform') {
+    if (row.sub_account === 'available') return null;
+  } else if (row.sub_account === 'available' || row.sub_account === 'frozen') {
+    return row.sub_account;
+  }
   throw new Error(`template ${row.template_id} line ${row.line}: bad sub_account`);
 }
 
@@ -235,7 +252,9 @@ function signed(row: LedgerTemplateRow, amount: bigint): bigint {
  *
  * Rejects unknown IDs, any TBD cell in the entire template, missing/extra parameters,
  * malformed key components and invalid amounts with RangeError. Never infers TBDs.
- * Reuses orderKey/uniqKey for their supported key formats. Empty CSV sub_type is null.
+ * Reuses orderKey/uniqKey for their supported key formats. Empty CSV sub_type is null;
+ * platform rows ('available' in the CSV) carry sub_account null. order_key's platform must
+ * equal the platform parameter when a template uses both.
  * Omits zero pairs; when no entries remain returns []. Rows sharing a filled uniq_key
  * form one voucher; every emitted voucher passes validateVoucher.
  */

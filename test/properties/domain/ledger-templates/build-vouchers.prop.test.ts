@@ -49,36 +49,18 @@ function recordAmount(stats: PropStats, amount: bigint): void {
   if (amount === 9223372036854775807n) stats.hit('int64_max');
 }
 
-it('[AC-B2-01j#20] 任意非负金额按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变', () => {
+it('[AC-B2-01j#20] 任意非负金额按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变', async () => {
   const templates = executableTemplates();
-  expect(
-    checkProperty(
-      'csv-and-balance',
-      fc.tuple(fen, fc.uuid(), fc.uuid()),
-      ([amount, userId, withdrawalId], stats) => {
-        recordAmount(stats, amount);
-        return (
-          templates.length > 0 &&
-          templates.every(([id, rows]) => {
-            stats.hit(id);
-            const params = Object.freeze({
-              ...parameters(rows, amount),
-              user_id: userId,
-              withdrawal_id: withdrawalId,
-            });
-            const before = structuredClone(params);
-            const vouchers = buildVouchers(id, params);
-            return (
-              vouchers.length === (amount === 0n ? 0 : 1) &&
-              isDeepStrictEqual(voucherGroups(vouchers), csvGroups(rows, params)) &&
-              validVouchers(vouchers) &&
-              isDeepStrictEqual(params, before)
-            );
-          })
-        );
-      },
-    ),
-  ).toBe(true);
+  expect(templates.map(([id]) => id)).toEqual(
+    expect.arrayContaining(['CREDIT:SELF', 'CREDIT:PLATFORM', 'WITHDRAW:SUCCESS:CASH_WECHAT']),
+  );
+  const { CSV_AND_BALANCE_SHARDS } = await import('./csv-and-balance.ts');
+  expect(CSV_AND_BALANCE_SHARDS).toHaveLength(6);
+  for (const shard of CSV_AND_BALANCE_SHARDS) expect(shard.length).toBeGreaterThan(0);
+  const ids = CSV_AND_BALANCE_SHARDS.flat();
+  expect(ids).toHaveLength(107);
+  expect(new Set(ids).size).toBe(ids.length);
+  expect([...ids].sort()).toEqual(templates.map(([id]) => id).sort());
 }, 120_000);
 
 it('[AC-B2-01j#21] 任意非负金额：红冲与原单逐科目抵消；未定红冲及原模板必须拒绝', () => {

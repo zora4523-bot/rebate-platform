@@ -207,7 +207,7 @@ it('[AC-B2-01i#2] 按类型、子类型及原文幂等键分组，分录无序�
   }
 });
 
-it('[AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖全部十三类', () => {
+it('[AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖除 P1 REWARD 外全部类型', () => {
   const rows = readRows(actualUrl);
   const types = contractValues('ledger_type');
   expect(types).toHaveLength(13);
@@ -228,17 +228,33 @@ it('[AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖全部
   }
   expect(
     [...new Set(rows.map((row) => row.ledger_type).filter((type) => type !== tbd))].sort(),
-  ).toEqual([...types].sort());
+  ).toEqual(types.filter((type) => type !== 'REWARD').sort());
+  expect(rows.some((row) => row.ledger_type === 'REWARD')).toBe(false);
 });
 
 it('[AC-B2-01i#4] 每模板每种金额符号均借贷成对，分录借正贷负且不使用数值金额', () => {
   const rows = readRows(actualUrl);
+  // The independent oracle is the closed vocabulary, never the implementation CSV.
+  const expectedAmountRefs = [...new Set(readRows(expectedUrl).map((row) => row.amount_ref))];
+  const usedAmountRefs = [...new Set(rows.map((row) => row.amount_ref))];
+  expect(usedAmountRefs, '补齐模板必须实际使用新增金额名').toEqual(
+    expect.arrayContaining([
+      'platform_credit_fen',
+      'pending_credit_fen',
+      'receipt_fen',
+      'net_fen',
+      'tax_fen',
+    ]),
+  );
+  for (const name of amountRefs.filter((name) => usedAmountRefs.includes(name))) {
+    expect(expectedAmountRefs, `仍在使用的基线金额名 ${name}`).toContain(name);
+  }
   for (const [id, group] of grouped(rows)) {
     expect(group.length, id).toBeGreaterThanOrEqual(2);
     const counts = new Map<string, { debit: number; credit: number }>();
     for (const row of group) {
       expect(['debit', 'credit'], id).toContain(row.sign);
-      expect([...amountRefs, tbd], id).toContain(row.amount_ref);
+      expect([...expectedAmountRefs, tbd], id).toContain(row.amount_ref);
       const count = counts.get(row.amount_ref) ?? { debit: 0, credit: 0 };
       if (row.sign === 'debit') count.debit += 1;
       else count.credit += 1;
@@ -317,6 +333,16 @@ it('[AC-B2-01i#7] 人读规格可索引每个模板、科目与已定幂等键',
 it('[AC-B2-01i#8] 文档显式列出待定格、财务确认白名单与银行通道限制', () => {
   const markdown = requiredText(markdownUrl);
   const pending = pendingSection(markdown);
+  for (const term of [tbd, 'REASSIGN']) {
+    expect(pending, `仍未定的事项 ${term}`).toContain(term);
+  }
+  expect(pending).not.toContain('WITHDRAW:SUCCESS');
+  expect(pending).not.toContain('提现成功');
+  const keysSection = markdown.match(/^## 3\. [^\n]*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m);
+  expect(keysSection, '第 3 节须说明提现凭证级单键').not.toBeNull();
+  expect(keysSection![1]).toContain('wd:{withdrawal_id}:PAID');
+  expect(keysSection![1]).not.toContain('wd:{withdrawal_id}:FEE');
+  expect(keysSection![1]).not.toContain('wd:{withdrawal_id}:TAX');
   for (const term of [
     tbd,
     'ledger_type',
@@ -328,7 +354,8 @@ it('[AC-B2-01i#8] 文档显式列出待定格、财务确认白名单与银行�
     '回款',
     '白名单',
   ]) {
-    expect(pending, `待定节解释 ${term}`).toContain(term);
+    // Resolved fields still need documentation, but no longer belong in the pending section.
+    expect(markdown, `规格解释 ${term}`).toContain(term);
   }
   expect(markdown).toContain('待财务确认');
   expect(markdown).toContain('银行卡通道开通前不使用');

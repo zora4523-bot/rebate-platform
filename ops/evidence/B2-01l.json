@@ -1,0 +1,162 @@
+{
+  "risk_note": "RV2 (ledger). Ledger template table completed (B2-01l merging the former B2-01m; BR-FUND-04/05/15/16/20, BR-WDR-07/09; orchestrator rulings of 2026-10-18 16:2x A′, 17:49 and planning #134 / #142): specs/ledger-templates.csv filled from TBD to 107 executable templates (platform-specific vouchers under REBATE_CREDIT, union receipt RECEIPT:{platform}:{receipt_id}, deferred adjustments keeping the opening transaction, REWARD moved out as a P1 placeholder, platform sub-account available, REASSIGN_REV per corrected (ledger_type, sub_type) group, RECON_FIX / OTHER whitelist split, withdrawal success as one voucher-level key wd:{withdrawal_id}:PAID), specs/ledger-rules.md section 代理起草、待财务确认, packages/domain/src/ledger/templates.gen.ts regenerated (--verify); buildVouchers itself unchanged. Rule tests by Codex in 5 runs inside test_paths (the 5th, an orchestrator exception, only restructures property #20 into six parallel shard files without sampling or fewer runs, after #20 timed out in CI): expected.csv blind-written from 08, frozen B2-01i / B2-01j assertions that pinned the old state tightened or derived from the csv (case numbers unchanged, none deleted; every change listed in the PR and confirmed non-weakening by Claude spec-test reviews r2-r4 and Codex money reviews r1-r2). Red run under CT-06r: the 7 tests whose bodies are unchanged since the base and that only entered the list because their files read the changed expected.csv / fixtures (structural csv assertions, documentation assertions) are declared in the ledger's red_exempt with reasons and confirmed one by one by the Claude spec-test review r4 (spec_test_review.red_exempt_confirmed); every new or changed test is red for a valid reason. Owner label on the implementation head per approvals #24 (orchestrator 2026-10-18 23:5x: frozen-assertion changes are tightenings, none of the four reserved categories); the rebased head re-labelled by the orchestrator subagent with the funds code patch verified identical by patch-id.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 1 pass (reviewed to a411ada6, no finding), round 2 pass (reviewed to 2f17c126 after the withdrawal single-key change of planning #142, no finding), round 3 pass (the 5th rule-test run only: #20 split into six shard files; checked that every template keeps the same arbitrary, runs and seed, the per-template assertions are unchanged and the shards cover the 107 executable templates exactly once; funds code patch-id fdfd56f5 unchanged; no finding); read-only quick re-check (orchestrator ruling 2026-10-19, not a counted round) of the mechanical commit \"test(spec): B2-01l mechanical timeout constants, longrun 1e6 margin\": only the shard timeout constants, the factor 1.5 -> 2 and their comments changed, pass (review-codex-mech-timeout.json); couli-runs/B2-01l/review-money-r1.log, review-money-r2.log, review-money-r3.log, review-codex-money-r3.json"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 5,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "rule tests by Codex in 5 runs (frozen assertions tightened, no deletion); round 1 fail (7 S1: assertions pinning the old state), round 2 pass, round 3 pass (planning #142 single key), round 4 pass: the 4th run and decision 30 are no weakening, and the 7 red_exempt declarations (build-vouchers.prop #21, build-vouchers #7 / #9, ledger-rules #1 / #6 / #9 / #10: bodies unchanged since the base, structural or documentation assertions that hold for the old csv too) are confirmed one by one as no weakening; round 5 pass (5th run, orchestrator exception of 2026-10-19 after the CI timeout of #20 at PROP_RUNS=100000: execution structure only — #20 now asserts that six shards cover the 107 executable templates exactly once, csv-and-balance-1..6.prop.test.ts run the verbatim property per shard with the same arbitrary, runs and seed, input-independent preparation hoisted with identical params; code outside the #20 block unchanged, so the #21 declaration still holds); afterwards a mechanical commit raised only the shard timeout constants for the 1e6 longrun margin (orchestrator ruling, not a rule-test run; Codex read-only re-check pass) — couli-runs/B2-01l/review-claude-spec-test.json (r5; r4 in .r4) and red-exempt.json"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "f22e9277428253ed2651000946b9580d0dea2ce2",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "packages/domain and test/properties change; the required longrun-run / longrun-props checks run on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  },
+  "task": "B2-01l",
+  "spec_commit": "965d34bbafa11e6e90ad2a0a9661dc375ac0a056",
+  "spec_ref": "1a5a0cfdddc6e7f2e2fb454bc112a2de4b231a23",
+  "red_tests": [
+    "test/properties/domain/ledger-templates/build-vouchers.prop.test.ts > [AC-B2-01j#20] 任意非负金额按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变",
+    "test/properties/domain/ledger-templates/csv-and-balance-1.prop.test.ts > [AC-B2-01j#20] 第 1/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+    "test/properties/domain/ledger-templates/csv-and-balance-2.prop.test.ts > [AC-B2-01j#20] 第 2/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+    "test/properties/domain/ledger-templates/csv-and-balance-3.prop.test.ts > [AC-B2-01j#20] 第 3/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+    "test/properties/domain/ledger-templates/csv-and-balance-4.prop.test.ts > [AC-B2-01j#20] 第 4/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+    "test/properties/domain/ledger-templates/csv-and-balance-5.prop.test.ts > [AC-B2-01j#20] 第 5/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+    "test/properties/domain/ledger-templates/csv-and-balance-6.prop.test.ts > [AC-B2-01j#20] 第 6/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+    "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#1] 每个完整模板逐业务组匹配 CSV，分录无序但不得丢失或重复",
+    "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#2] 已定模板出正确分录，任一格 TBD 仍整张拒绝，P1 奖励 id 不登记且拒绝",
+    "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#3] 缺金额、键占位值或用户归属参数均拒绝",
+    "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#4] 多余金额、别名或无关上下文不能被默默忽略",
+    "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#5] 金额只接受非负 int64 bigint，拒绝负数、溢出与隐式转换",
+    "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#6] 零金额不产生零分录或空凭证，参数校验仍执行",
+    "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#8] 相同输入结果相同且不修改冻结的参数或先前结果",
+    "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#10] 已定的每对红冲实际执行，保持原类型与子类型、原键加 REVERSE、原金额反号",
+    "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#11] 键组件拒绝空值、冒号和非字符串，不接受能碰撞的插值",
+    "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#1] 四角色入账及含预留的平台入账按独立期望出分录，平台输出子户为 null",
+    "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#2] 扣回与补差的平台差额共十四种沿用本次类型与子类型，两种方向均正确",
+    "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#3] 三类没收均用平台占位类型，延后没收只用待补记额与义务键",
+    "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#4] 延后补记四模板保留开立类型，义务 id 隔离且零金额不写",
+    "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#5] 提现成功三通道只写一张 PAID 凭证，净额手续费税逐分录匹配且零金额省略",
+    "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#11] 订单平台与应收科目平台必须一致，不得把京东订单记入淘宝应收",
+    "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#6] 联盟回款用实际到账额与平台加回款 id 的键，不能混用佣金金额参数",
+    "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#7] RECON_FIX 与 OTHER 共三十二种白名单调账及红冲只影响 available",
+    "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#8] 改派重记按四角色加平台拆分，带改派 id 且平台金额含预留",
+    "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#9] 改派红冲按原类型分组，净额零仍写非零组，全部组零才不写且无注销坏账模板",
+    "test/spec/ledger-rules/completed-rules.test.ts > [AC-B2-01l#10] 人读规格集中标注代理起草待财务确认、逐项依据及注销改派未决边界",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#2] 按类型、子类型及原文幂等键分组，分录无序多重集合完全相等",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖除 P1 REWARD 外全部类型",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#4] 每模板每种金额符号均借贷成对，分录借正贷负且不使用数值金额",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#5] 单一用户科目及子户合法，待定格不得扩大到已定字段",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#7] 人读规格可索引每个模板、科目与已定幂等键",
+    "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#8] 文档显式列出待定格、财务确认白名单与银行通道限制"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "965d34bbafa11e6e90ad2a0a9661dc375ac0a056",
+      "tree": "af167ade1705d9a8762dec1eb5da57cb918a9431",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T07:21:40Z",
+      "finished_at": "2026-10-19T07:21:48Z",
+      "red_tests": [
+        "test/properties/domain/ledger-templates/build-vouchers.prop.test.ts > [AC-B2-01j#20] 任意非负金额按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变",
+        "test/properties/domain/ledger-templates/csv-and-balance-1.prop.test.ts > [AC-B2-01j#20] 第 1/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+        "test/properties/domain/ledger-templates/csv-and-balance-2.prop.test.ts > [AC-B2-01j#20] 第 2/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+        "test/properties/domain/ledger-templates/csv-and-balance-3.prop.test.ts > [AC-B2-01j#20] 第 3/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+        "test/properties/domain/ledger-templates/csv-and-balance-4.prop.test.ts > [AC-B2-01j#20] 第 4/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+        "test/properties/domain/ledger-templates/csv-and-balance-5.prop.test.ts > [AC-B2-01j#20] 第 5/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+        "test/properties/domain/ledger-templates/csv-and-balance-6.prop.test.ts > [AC-B2-01j#20] 第 6/6 片：片内每个模板按 CSV 精确出分录且 Σ=0，零不出凭证，输入不变（每个模板跑满 PROP_RUNS）",
+        "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#1] 每个完整模板逐业务组匹配 CSV，分录无序但不得丢失或重复",
+        "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#2] 已定模板出正确分录，任一格 TBD 仍整张拒绝，P1 奖励 id 不登记且拒绝",
+        "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#3] 缺金额、键占位值或用户归属参数均拒绝",
+        "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#4] 多余金额、别名或无关上下文不能被默默忽略",
+        "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#5] 金额只接受非负 int64 bigint，拒绝负数、溢出与隐式转换",
+        "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#6] 零金额不产生零分录或空凭证，参数校验仍执行",
+        "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#8] 相同输入结果相同且不修改冻结的参数或先前结果",
+        "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#10] 已定的每对红冲实际执行，保持原类型与子类型、原键加 REVERSE、原金额反号",
+        "test/spec/domain/ledger-templates/build-vouchers.test.ts > [AC-B2-01j#11] 键组件拒绝空值、冒号和非字符串，不接受能碰撞的插值",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#1] 四角色入账及含预留的平台入账按独立期望出分录，平台输出子户为 null",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#2] 扣回与补差的平台差额共十四种沿用本次类型与子类型，两种方向均正确",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#3] 三类没收均用平台占位类型，延后没收只用待补记额与义务键",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#4] 延后补记四模板保留开立类型，义务 id 隔离且零金额不写",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#5] 提现成功三通道只写一张 PAID 凭证，净额手续费税逐分录匹配且零金额省略",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#11] 订单平台与应收科目平台必须一致，不得把京东订单记入淘宝应收",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#6] 联盟回款用实际到账额与平台加回款 id 的键，不能混用佣金金额参数",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#7] RECON_FIX 与 OTHER 共三十二种白名单调账及红冲只影响 available",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#8] 改派重记按四角色加平台拆分，带改派 id 且平台金额含预留",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts > [AC-B2-01l#9] 改派红冲按原类型分组，净额零仍写非零组，全部组零才不写且无注销坏账模板",
+        "test/spec/ledger-rules/completed-rules.test.ts > [AC-B2-01l#10] 人读规格集中标注代理起草待财务确认、逐项依据及注销改派未决边界",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#2] 按类型、子类型及原文幂等键分组，分录无序多重集合完全相等",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖除 P1 REWARD 外全部类型",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#4] 每模板每种金额符号均借贷成对，分录借正贷负且不使用数值金额",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#5] 单一用户科目及子户合法，待定格不得扩大到已定字段",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#7] 人读规格可索引每个模板、科目与已定幂等键",
+        "test/spec/ledger-rules/ledger-rules.test.ts > [AC-B2-01i#8] 文档显式列出待定格、财务确认白名单与银行通道限制"
+      ],
+      "expected": [
+        "test/properties/domain/ledger-templates/build-vouchers.prop.test.ts",
+        "test/properties/domain/ledger-templates/csv-and-balance-1.prop.test.ts",
+        "test/properties/domain/ledger-templates/csv-and-balance-2.prop.test.ts",
+        "test/properties/domain/ledger-templates/csv-and-balance-3.prop.test.ts",
+        "test/properties/domain/ledger-templates/csv-and-balance-4.prop.test.ts",
+        "test/properties/domain/ledger-templates/csv-and-balance-5.prop.test.ts",
+        "test/properties/domain/ledger-templates/csv-and-balance-6.prop.test.ts",
+        "test/spec/domain/ledger-templates/build-vouchers.test.ts",
+        "test/spec/domain/ledger-templates/completed-templates.test.ts",
+        "test/spec/ledger-rules/completed-rules.test.ts",
+        "test/spec/ledger-rules/ledger-rules.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "f4efc9186aa5b939b966ff9e5b3cdd2c5303dfbe1b71b2f9c1a9ba359443d294"
+        }
+      ],
+      "gate": {
+        "commit": "acb077af8a1220509ee1b868618327993a84a5b5",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    },
+    {
+      "mode": "container",
+      "script": "verify",
+      "exit_code": 0,
+      "commit": "0477ec15c9c38a6fad5747f421fb2253d97fc470",
+      "tree": "0add4ddebdaa6f542b91701a1edbd0074e3bbdd8",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T07:22:34Z",
+      "finished_at": "2026-10-19T07:42:19Z",
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "acb077af8a1220509ee1b868618327993a84a5b5",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ]
+}
