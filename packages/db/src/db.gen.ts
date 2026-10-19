@@ -484,6 +484,7 @@ export interface ConsentRecords {
   type: string;
   user_id: string | null;
   version: number;
+  version_label: string | null;
 }
 
 export interface DailyBalances {
