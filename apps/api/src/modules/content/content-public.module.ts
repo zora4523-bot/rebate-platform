@@ -1,6 +1,7 @@
-// content's /v1 client routes (F1-02c, F1-02e, F1-02f, F1-09d, F1-09e, F1-02n): config,
-// app-versions check, articles, pages, agreements and the draft page preview (token only, no
-// viewer context). Agreement reads are cached per app_id like config reads.
+// content's /v1 client routes (F1-02c, F1-02e, F1-02f, F1-09d, F1-09e, F1-02n, F1-02s): config,
+// app-versions check, articles, pages, agreements, the text dictionary and the draft page preview
+// (token only, no viewer context). Agreement and dictionary reads are cached per app_id like
+// config reads.
 // app.module imports this module on
 // the api entry only and passes identity's request viewer as the ConfigViewerContext provider
 // (content never imports identity). Config reads use a process-wide ContentReader; article reads
@@ -32,6 +33,9 @@ import {
   kyselyPublicAgreementSource,
 } from './application/agreement-reader.ts';
 import { AgreementsController } from './http/public/agreements.controller.ts';
+import { DictReader } from './application/dict-reader.ts';
+import { DictController } from './http/public/dict.controller.ts';
+import { createKyselyDictStore } from './infra/kysely-dict-store.ts';
 import { AppVersionCheckService } from './application/app-version-check.ts';
 import { CachedContentReader, type ContentReader } from './application/content-reader.ts';
 import { publishedPlatformIcons } from './application/published-platform-icons.ts';
@@ -99,6 +103,7 @@ export class ContentPublicModule {
         PagesController,
         PagePreviewController,
         AgreementsController,
+        DictController,
       ],
       providers: [
         {
@@ -126,6 +131,21 @@ export class ContentPublicModule {
             new PublicAgreementReader(
               db === undefined ? null : kyselyPublicAgreementSource(db),
               clock,
+            ),
+        },
+        {
+          // F1-02s GET /v1/dict: cached per app_id for CONTENT_CACHE_TTL_MS (L11).
+          provide: DictReader,
+          inject: [{ token: DB, optional: true }, CLOCK, ROOT_LOGGER],
+          useFactory: (
+            db: Kysely<Database> | undefined,
+            clock: Clock,
+            logger: RootLogger,
+          ): DictReader =>
+            new DictReader(
+              db === undefined ? null : createKyselyDictStore(db),
+              clock,
+              logger.child({ module: 'content' }),
             ),
         },
         {
