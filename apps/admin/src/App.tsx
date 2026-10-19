@@ -11,7 +11,7 @@ import {
   type ResourceProps,
 } from '@refinedev/core';
 import routerProvider from '@refinedev/react-router';
-import { ConfigProvider, Layout, Typography } from 'antd';
+import { ConfigProvider, Layout, Typography, type ThemeConfig } from 'antd';
 import {
   useCallback,
   useEffect,
@@ -19,8 +19,10 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type Dispatch,
   type ReactElement,
   type ReactNode,
+  type SetStateAction,
 } from 'react';
 import {
   BrowserRouter,
@@ -57,7 +59,7 @@ import {
 } from './resources/index.ts';
 import type { AdminShellOptions } from './shell-options.ts';
 import { shellTexts } from './texts/shell.ts';
-import { createAntdTheme } from './theme.ts';
+import { createAntdTheme, sameAntdTheme } from './theme.ts';
 
 type PermissionState =
   | { readonly status: 'loading' }
@@ -165,8 +167,37 @@ function ShellRouter({ kind, initialRoute, children }: ShellRouterProps) {
   return <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>;
 }
 
+// The antd theme follows the CSS in effect: rebuilt when the system scheme changes or <html>
+// data-theme changes, and only when the resulting theme differs. The tree is never remounted.
+function useFollowColorScheme(setTheme: Dispatch<SetStateAction<ThemeConfig>>): void {
+  useEffect(() => {
+    const refresh = (): void =>
+      setTheme((previous) => {
+        const next = createAntdTheme();
+        return sameAntdTheme(previous, next) ? previous : next;
+      });
+    const media =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-color-scheme: dark)')
+        : undefined;
+    media?.addEventListener('change', refresh);
+    const observer = new MutationObserver(refresh);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    // The scheme may have changed between the first render and this effect.
+    refresh();
+    return () => {
+      media?.removeEventListener('change', refresh);
+      observer.disconnect();
+    };
+  }, [setTheme]);
+}
+
 function AdminApp({ options }: { readonly options: AdminAppOptions }) {
-  const [theme] = useState(() => createAntdTheme());
+  const [theme, setTheme] = useState(() => createAntdTheme());
+  useFollowColorScheme(setTheme);
   // The own guard is built without timers; only the instance React keeps starts them (effect) and
   // stops them on unmount, so a render React throws away (StrictMode) never clears the session.
   const [ownApi] = useState(() =>
