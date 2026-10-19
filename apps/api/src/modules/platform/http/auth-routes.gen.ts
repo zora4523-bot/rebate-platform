@@ -128,6 +128,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/agreements/:type",
+    "auth": "none"
+  },
+  {
+    "method": "GET",
     "path": "/v1/articles",
     "auth": "none"
   },

@@ -1909,7 +1909,8 @@ paths:
         article holding its text (`article_id`, `article_version`, readable with GET
         /v1/articles/{article_id}?version=), the lower-case hex sha256 of that text, the address of
         the full text and when it was published. A type never published is null. The labor
-        agreement is not listed here; it is read with GET /v1/me/labor-agreement (BR-WDR-31).
+        agreement is not listed here; it is read with GET /v1/me/labor-agreement (BR-WDR-31) or,
+        anonymously and by version, with GET /v1/agreements/{type}.
         Readable anonymously in basic mode, without a device id (BR-ID-11 细则).
       x-auth: none
       x-signed: false
@@ -1956,6 +1957,94 @@ paths:
                     url: https://cdn.example.test/legal/agreement-v2.html
                     published_at: '2026-10-01T09:00:00+08:00'
                 trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          $ref: '#/components/responses/ClientError'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /v1/agreements/{type}:
+    get:
+      operationId: getAgreementVersion
+      tags:
+        - content
+      summary: One version of an agreement
+      description: |
+        Metadata of one version of the privacy policy, the user agreement or the labor agreement
+        (04 §6.2 agreements): without version the current version of that type (the same "current"
+        as GET /v1/agreements: the highest published version of the type for the app), with version
+        that version. A type never published, or a version that does not exist → 30701. The text is
+        read with GET /v1/articles/{article_id}?version={article_version}. All three types,
+        including the labor agreement and earlier versions, are public text and readable
+        anonymously, without a device id (BR-ID-11 细则); signing the labor agreement stays in the
+        native app and need_sign stays on GET /v1/me/labor-agreement (BR-WDR-31). Re-consent is not
+        decided here (no requires_resign). Not cached across requests.
+      x-auth: none
+      x-signed: false
+      x-idempotent: false
+      x-implementation: planned
+      x-error-codes:
+        - 30701
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/Build'
+        - $ref: '#/components/parameters/Channel'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AgreementTypePath'
+        - name: version
+          in: query
+          required: false
+          description: |
+            Version of the agreement to read, counted per type from 1; without it the current
+            version. An unknown version → 30701.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      responses:
+        '200':
+          description: The agreement version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicAgreementVersionResponse'
+              examples:
+                laborAgreementCurrent:
+                  summary: Current labor agreement (no version)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      type: labor_agreement
+                      version: 2
+                      min_version: 2
+                      article_id: 0199a3b4-0000-7000-8000-000000000003
+                      article_version: 2
+                      text_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+                      url: https://cdn.example.test/legal/labor-agreement-v2.html
+                      published_at: '2026-10-01T09:00:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                privacyEarlierVersion:
+                  summary: An earlier privacy policy (version=1)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      type: privacy
+                      version: 1
+                      min_version: 1
+                      article_id: 0199a3b4-0000-7000-8000-000000000001
+                      article_version: 1
+                      text_sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+                      url: https://cdn.example.test/legal/privacy-v1.html
+                      published_at: '2026-09-01T09:00:00+08:00'
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
         '429':
           $ref: '#/components/responses/TooManyRequests'
         4XX:
@@ -18070,6 +18159,67 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AgreementsData'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    PublicAgreementVersion:
+      type: object
+      description: One version of the privacy policy, the user agreement or the labor agreement (04 §6.2).
+      additionalProperties: false
+      required:
+        - type
+        - version
+        - min_version
+        - article_id
+        - article_version
+        - text_sha256
+        - url
+        - published_at
+      properties:
+        type:
+          $ref: '#/components/schemas/AgreementType'
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Version of the agreement, counted per type from 1.
+        min_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Consent to a version below this one must be given again (BR-ID-12), as recorded on this version.
+        article_id:
+          $ref: '#/components/schemas/Id'
+        article_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Version of the article holding the text (GET /v1/articles/{article_id}?version=).
+        text_sha256:
+          type: string
+          description: Lower-case hex sha256 of the text.
+          pattern: '^[0-9a-f]{64}$'
+        url:
+          type: string
+          format: uri
+          description: Address of the full text of this version.
+        published_at:
+          type: string
+          format: date-time
+    PublicAgreementVersionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/PublicAgreementVersion'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     ArticleCategory:

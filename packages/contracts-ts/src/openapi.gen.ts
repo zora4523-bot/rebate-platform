@@ -698,10 +698,39 @@ export interface paths {
          *     article holding its text (`article_id`, `article_version`, readable with GET
          *     /v1/articles/{article_id}?version=), the lower-case hex sha256 of that text, the address of
          *     the full text and when it was published. A type never published is null. The labor
-         *     agreement is not listed here; it is read with GET /v1/me/labor-agreement (BR-WDR-31).
+         *     agreement is not listed here; it is read with GET /v1/me/labor-agreement (BR-WDR-31) or,
+         *     anonymously and by version, with GET /v1/agreements/{type}.
          *     Readable anonymously in basic mode, without a device id (BR-ID-11 细则).
          */
         get: operations["getAgreements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agreements/{type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One version of an agreement
+         * @description Metadata of one version of the privacy policy, the user agreement or the labor agreement
+         *     (04 §6.2 agreements): without version the current version of that type (the same "current"
+         *     as GET /v1/agreements: the highest published version of the type for the app), with version
+         *     that version. A type never published, or a version that does not exist → 30701. The text is
+         *     read with GET /v1/articles/{article_id}?version={article_version}. All three types,
+         *     including the labor agreement and earlier versions, are public text and readable
+         *     anonymously, without a device id (BR-ID-11 细则); signing the labor agreement stays in the
+         *     native app and need_sign stays on GET /v1/me/labor-agreement (BR-WDR-31). Re-consent is not
+         *     decided here (no requires_resign). Not cached across requests.
+         */
+        get: operations["getAgreementVersion"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5883,6 +5912,41 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["AgreementsData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description One version of the privacy policy, the user agreement or the labor agreement (04 §6.2). */
+        PublicAgreementVersion: {
+            type: components["schemas"]["AgreementType"];
+            /**
+             * Format: int32
+             * @description Version of the agreement, counted per type from 1.
+             */
+            version: number;
+            /**
+             * Format: int32
+             * @description Consent to a version below this one must be given again (BR-ID-12), as recorded on this version.
+             */
+            min_version: number;
+            article_id: components["schemas"]["Id"];
+            /**
+             * Format: int32
+             * @description Version of the article holding the text (GET /v1/articles/{article_id}?version=).
+             */
+            article_version: number;
+            /** @description Lower-case hex sha256 of the text. */
+            text_sha256: string;
+            /**
+             * Format: uri
+             * @description Address of the full text of this version.
+             */
+            url: string;
+            /** Format: date-time */
+            published_at: string;
+        };
+        PublicAgreementVersionResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["PublicAgreementVersion"];
             trace_id: components["schemas"]["TraceId"];
         };
         /**
@@ -11245,6 +11309,52 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["AgreementsResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getAgreementVersion: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Version of the agreement to read, counted per type from 1; without it the current
+                 *     version. An unknown version → 30701.
+                 */
+                version?: number;
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Agreement type (privacy, agreement or labor_agreement); another value → 20001 with data.fields=[type]. */
+                type: components["parameters"]["AgreementTypePath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The agreement version. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicAgreementVersionResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

@@ -263,6 +263,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "getAgreementVersion",
+    "method": "GET",
+    "path": "/v1/agreements/:type",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "listArticles",
     "method": "GET",
     "path": "/v1/articles",
