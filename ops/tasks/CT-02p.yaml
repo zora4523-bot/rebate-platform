@@ -12,7 +12,7 @@ refs: [BR-ID-20, BR-ID-31, BR-TEXT-23]
 refs_hash:
   BR-ID-20: 1ffd995f311a
   BR-ID-31: ac2c03e8d41c
-  BR-TEXT-23: 9fbb1b3ed5ec
+  BR-TEXT-23: 44fab0c50841
 contract_sections: ['6.6']
 deps: []
 paths:
