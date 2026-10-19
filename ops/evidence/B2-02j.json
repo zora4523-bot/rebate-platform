@@ -1,0 +1,104 @@
+{
+  "task": "B2-02j",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "1be21aee12f2cb4c99390558d6649f4bbe73dca1",
+  "red_tests": [
+    "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#15] 外应用的全局差异不能使指定 appId 收到关闭月结建议或差异告警",
+    "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#6] 默认加载全部 SQL；干净数据零差异，逐不变量报告检查行数",
+    "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#7] 账户两个子户的差异完整保留、结构化告警，不升级为全局处置",
+    "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#8] 全局 ②③④ 差异逐行保留、检查数不按差异倍增，只返回关闭月结和冻结建议",
+    "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#9] 全空数据库逐文件记空检告警，不能当作全局差异或冻结理由",
+    "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#10] ⑦ 非法负余额下降归账户级，appId 过滤差异与告警但检查数保留 SQL 原值",
+    "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#14] 只有前日快照而无任何分录的账户子户也必须结转",
+    "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#1] 日余额按分录借正贷负，缺前日快照按历史分录求期初，当日发生额排除前后会计日",
+    "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#16] 中间漏跑一天时，期初取截至前日的全部分录合计，不沿用隔日快照或归零",
+    "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#2] 连续多日承接上日期末，无新分录仍结转，未活动子户不臆造快照",
+    "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#3] 同日重跑覆盖坏快照和迟到分录，不重复累计；computed_at 使用本次 Clock",
+    "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#4] 超过 JS 安全整数的一分钱差额仍精确保存",
+    "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#5] appId 限定快照写入范围，未指定时处理所有应用",
+    "test/spec/ledger/daily-check/transactions.int.test.ts > [AC-B2-02j#11] 文件按名称逐个执行，每个在独立只读事务中取得指定 check_date",
+    "test/spec/ledger/daily-check/transactions.int.test.ts > [AC-B2-02j#12] 不变量误带 UPDATE 被 PG 只读事务拒绝，不能悄悄改余额或返回校验成功",
+    "test/spec/ledger/daily-check/transactions.int.test.ts > [AC-B2-02j#13] SQL 执行失败不能伪装零差异，回滚后 check_date 不泄漏"
+  ],
+  "risk_note": "RV2 (ledger). Daily check runner runDailyCheck per BR-FUND-19 (decisions 20, 31, 33, 34). Writes daily_balances for the check date in entry sign: set = every account x sub_account with entries up to D or snapshots before D (plus rows already present for D so stale rows are recomputed); opening = D-1 closing if present else the sum of entries before D; debit / credit = that day's totals; closing = opening + debit - credit; ON CONFLICT DO UPDATE so reruns overwrite; computed_at from the injected Clock. Writes take a transaction-level advisory lock first and read entries in later statements, so a whole-app run and a single-app rerun cannot overwrite a newer snapshot with stale reads (money round 1 S0). Then runs db/invariants/ledger/*.sql in file order, skipping files listed in superseded.json, each in its own read-only transaction after SET LOCAL couli.check_date; multi-statement files are refused; PG errors become DAILY_CHECK_FAILED keeping SQLSTATE in cause.code; malformed output fails the run. Differences are summed per account / global with pino alerts; checked_rows 0 is an empty-check alert, not a global difference. Withdrawal freeze, auto-settle switch and error tickets are suggestions only (TODO blocked on B2-04 / B2-05). Integer fen sums only.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "1be21aee12f2cb4c99390558d6649f4bbe73dca1",
+      "tree": "d10cbd62d4046c2dfb90e013596060bb9eddab54",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T16:15:53Z",
+      "finished_at": "2026-10-19T16:16:24Z",
+      "gate": {
+        "commit": "c0638ef000a0a096b779538937fee13a22fd6386",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#15] 外应用的全局差异不能使指定 appId 收到关闭月结建议或差异告警",
+        "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#6] 默认加载全部 SQL；干净数据零差异，逐不变量报告检查行数",
+        "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#7] 账户两个子户的差异完整保留、结构化告警，不升级为全局处置",
+        "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#8] 全局 ②③④ 差异逐行保留、检查数不按差异倍增，只返回关闭月结和冻结建议",
+        "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#9] 全空数据库逐文件记空检告警，不能当作全局差异或冻结理由",
+        "test/spec/ledger/daily-check/invariants.int.test.ts > [AC-B2-02j#10] ⑦ 非法负余额下降归账户级，appId 过滤差异与告警但检查数保留 SQL 原值",
+        "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#14] 只有前日快照而无任何分录的账户子户也必须结转",
+        "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#1] 日余额按分录借正贷负，缺前日快照按历史分录求期初，当日发生额排除前后会计日",
+        "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#16] 中间漏跑一天时，期初取截至前日的全部分录合计，不沿用隔日快照或归零",
+        "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#2] 连续多日承接上日期末，无新分录仍结转，未活动子户不臆造快照",
+        "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#3] 同日重跑覆盖坏快照和迟到分录，不重复累计；computed_at 使用本次 Clock",
+        "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#4] 超过 JS 安全整数的一分钱差额仍精确保存",
+        "test/spec/ledger/daily-check/snapshots.int.test.ts > [AC-B2-02j#5] appId 限定快照写入范围，未指定时处理所有应用",
+        "test/spec/ledger/daily-check/transactions.int.test.ts > [AC-B2-02j#11] 文件按名称逐个执行，每个在独立只读事务中取得指定 check_date",
+        "test/spec/ledger/daily-check/transactions.int.test.ts > [AC-B2-02j#12] 不变量误带 UPDATE 被 PG 只读事务拒绝，不能悄悄改余额或返回校验成功",
+        "test/spec/ledger/daily-check/transactions.int.test.ts > [AC-B2-02j#13] SQL 执行失败不能伪装零差异，回滚后 check_date 不泄漏"
+      ],
+      "expected": [
+        "test/spec/ledger/daily-check/invariants.int.test.ts",
+        "test/spec/ledger/daily-check/snapshots.int.test.ts",
+        "test/spec/ledger/daily-check/transactions.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b17982ce02f7b4f07f4922e8c03c5e0d21400b0056a4caa6aeb5b4ad5f7be12e"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S0: a concurrent rerun could overwrite a newer snapshot with stale reads), round 2 pass with one S2 (an injected empty invariant set is treated as success; follow-up)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 4,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 4 runs (15 then 16 red); all four rounds pass, S2 items fixed while not frozen (opening rule, missing-day set, superseded.json format); the orchestrator then committed a prettier-only reformat of one rule test file (content unchanged)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "646b42826e079a3ce192f3e4765be9c540be6ef7",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}

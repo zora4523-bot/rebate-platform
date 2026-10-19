@@ -17,7 +17,13 @@ export type LedgerErrorCode =
   /** mayGoNegative refused the resulting available balance (BR-FUND-10). */
   | 'NEGATIVE_BALANCE'
   /** The balance cache changed under a held lock: a caller or concurrency bug. */
-  | 'BALANCE_CONFLICT';
+  | 'BALANCE_CONFLICT'
+  /**
+   * The daily check (BR-FUND-19) did not complete: a snapshot or invariant statement failed
+   * (the PostgreSQL error is the `cause`, SQLSTATE in cause.code) or an invariant file broke
+   * the output contract. Never a zero-difference result.
+   */
+  | 'DAILY_CHECK_FAILED';
 
 export class LedgerError extends Error {
   readonly code: LedgerErrorCode;
