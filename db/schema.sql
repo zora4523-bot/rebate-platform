@@ -3533,6 +3533,25 @@ CREATE TABLE app.sessions (
 
 
 --
+-- Name: sms_send_attempts; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.sms_send_attempts (
+    app_id text NOT NULL,
+    attempt_id uuid NOT NULL,
+    ip_hmac text NOT NULL,
+    phone_hmac text NOT NULL,
+    status text NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    CONSTRAINT sms_send_attempts_ip_hmac_check CHECK ((ip_hmac ~ '^[0-9a-f]{32,128}$'::text)),
+    CONSTRAINT sms_send_attempts_phone_hmac_check CHECK ((phone_hmac ~ '^[0-9a-f]{32,128}$'::text)),
+    CONSTRAINT sms_send_attempts_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'accepted'::text, 'failed'::text, 'unknown'::text]))),
+    CONSTRAINT sms_send_attempts_updated_check CHECK ((updated_at >= created_at))
+);
+
+
+--
 -- Name: sync_cursors; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -5194,6 +5213,14 @@ ALTER TABLE ONLY app.sessions
 
 
 --
+-- Name: sms_send_attempts sms_send_attempts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.sms_send_attempts
+    ADD CONSTRAINT sms_send_attempts_pkey PRIMARY KEY (app_id, attempt_id);
+
+
+--
 -- Name: sync_cursors sync_cursors_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -6127,6 +6154,13 @@ CREATE INDEX sessions_device_idx ON app.sessions USING btree (app_id, device_id)
 --
 
 CREATE INDEX sessions_user_idx ON app.sessions USING btree (app_id, user_id);
+
+
+--
+-- Name: sms_send_attempts_ip_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX sms_send_attempts_ip_created_idx ON app.sms_send_attempts USING btree (app_id, ip_hmac, created_at);
 
 
 --
@@ -10303,6 +10337,28 @@ GRANT UPDATE(revoke_reason) ON TABLE app.sessions TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.sessions TO couli_app;
+
+
+--
+-- Name: TABLE sms_send_attempts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.sms_send_attempts TO couli_app;
+GRANT SELECT ON TABLE app.sms_send_attempts TO couli_readonly;
+
+
+--
+-- Name: COLUMN sms_send_attempts.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.sms_send_attempts TO couli_app;
+
+
+--
+-- Name: COLUMN sms_send_attempts.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.sms_send_attempts TO couli_app;
 
 
 --

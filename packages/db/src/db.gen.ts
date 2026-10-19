@@ -1235,6 +1235,16 @@ export interface Sessions {
   user_id: string;
 }
 
+export interface SmsSendAttempts {
+  app_id: string;
+  attempt_id: string;
+  created_at: Timestamp;
+  ip_hmac: string;
+  phone_hmac: string;
+  status: string;
+  updated_at: Timestamp;
+}
+
 export interface SyncCursors {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1501,6 +1511,7 @@ export interface DB {
   risk_judgements: RiskJudgements;
   risk_rules: RiskRules;
   sessions: Sessions;
+  sms_send_attempts: SmsSendAttempts;
   sync_cursors: SyncCursors;
   union_accounts: UnionAccounts;
   union_auth_sessions: UnionAuthSessions;
