@@ -2,8 +2,9 @@ import { createDb, destroyDb } from '@couli/db';
 import { acquireTestRedis, createTestDatabase } from '@couli/db/testing';
 import { sql, type KyselyPlugin } from 'kysely';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
-import { api, envelope, fixture, IP, NOW, openKit, phone, type Kit, type Response } from './kit.ts';
+import { api, envelope, fixture, NOW, openKit, phone, type Kit, type Response } from './kit.ts';
 import {
+  ATTEMPT_STATUSES,
   ATTEMPT_TABLE,
   EXTENDED_WINDOW_MS,
   SEND_TIMEOUT_MS,
@@ -45,6 +46,12 @@ let insertFailures = 0;
 let failResult = false;
 let resultFailures = 0;
 let redisDown = false;
+let registrationDown = false;
+let registrationFailures = 0;
+let sendRisk: ReturnType<RiskModule['createSmsRisk']> | undefined;
+// These stores have independent outage rules. Every other sms_risk key fails, regardless of
+// how the implementation names its optional send-count cache. No cache contents are fabricated.
+const REDIS_OUTAGE_EXEMPT_PREFIXES = ['ip_reg:', 'dev:', 'req:', 'budget:'] as const;
 let reached = Promise.withResolvers<void>();
 let resume = Promise.withResolvers<void>();
 let pauseInsert = false;
@@ -158,7 +165,7 @@ beforeAll(async () => {
   const realRisk = risk.createSmsRisk;
   const riskFactory = vi.spyOn(risk, 'createSmsRisk').mockImplementation((options) => {
     const handle = options.redis;
-    return realRisk({
+    const instance = realRisk({
       ...options,
       redis:
         handle === null
@@ -167,28 +174,42 @@ beforeAll(async () => {
               ...handle,
               namespace(name) {
                 const ns = handle.namespace(name);
+                function checkOutage(keys: readonly string[]) {
+                  if (name !== 'sms_risk') return;
+                  if (registrationDown && keys.some((key) => key.startsWith('ip_reg:'))) {
+                    registrationFailures++;
+                    throw new RedisUnavailableError('command_failed');
+                  }
+                  if (
+                    redisDown &&
+                    (keys.length === 0 ||
+                      keys.some(
+                        (key) =>
+                          !REDIS_OUTAGE_EXEMPT_PREFIXES.some((prefix) => key.startsWith(prefix)),
+                      ))
+                  )
+                    throw new RedisUnavailableError('command_failed');
+                }
                 return {
                   async get(key) {
-                    if (redisDown && key.startsWith('ip_send:'))
-                      throw new RedisUnavailableError('command_failed');
+                    checkOutage([key]);
                     return ns.get(key);
                   },
                   async set(key, value, ttl) {
-                    if (redisDown && key.startsWith('ip_send:'))
-                      throw new RedisUnavailableError('command_failed');
+                    checkOutage([key]);
                     return ns.set(key, value, ttl);
                   },
                   async eval(script, options) {
-                    // Only send-count cache operations fail. Registration and device admission
-                    // retain their own rules; this task does not redefine their outage policy.
-                    if (redisDown && options.keys.some((key) => key.startsWith('ip_send:')))
-                      throw new RedisUnavailableError('command_failed');
+                    checkOutage(options.keys);
                     return ns.eval(script, options);
                   },
                 };
               },
             },
     });
+    // Retain the real PG-backed port wired into AppModule, not kit's registration-only helper.
+    if (options.db != null) sendRisk = instance;
+    return instance;
   });
   restores.push(() => riskFactory.mockRestore());
   kit = await openKit(db.withPlugin(faultPlugin), database.urlFor('couli_app'), redis.url);
@@ -215,6 +236,8 @@ async function start(limit = 3) {
   failInsert = false;
   failResult = false;
   redisDown = false;
+  registrationDown = false;
+  registrationFailures = 0;
   insertFailures = 0;
   resultFailures = 0;
   reached = Promise.withResolvers<void>();
@@ -379,7 +402,8 @@ for (const [index, scenario] of scenarios.entries()) {
         } else if (scenario.rows === 1) {
           expect(initialRows.map((row) => row.status)).toEqual(['accepted']);
         }
-        if (scenario.mode === 'result-write-fails') expect(resultFailures).toBeGreaterThanOrEqual(1);
+        if (scenario.mode === 'result-write-fails')
+          expect(resultFailures).toBeGreaterThanOrEqual(1);
         failInsert = false;
         failResult = false;
         const subsequent = await Promise.all([f.request(next), f.request(next), f.request(next)]);
@@ -403,11 +427,11 @@ for (const [index, scenario] of scenarios.entries()) {
   }
 }
 
-it('[AC-B1-11g#56] 明确拒绝保留 failed_rejected 行但不占 IP 额度', async () => {
+it('[AC-B1-11g#56] 明确拒绝保留审计行但不占 IP 额度', async () => {
   const f = await start(2);
   mode = 'rejected';
   envelope(kit, await f.request('landing', targetPhone), 50001);
-  expect((await rows(f.appId)).map((row) => row.status)).toEqual(['failed_rejected']);
+  expect((await rows(f.appId)).map((row) => row.status)).toEqual([ATTEMPT_STATUSES.rejected]);
   await counts(f, 1, 1, 2, 0);
   envelope(kit, await f.request('app'));
   await counts(f, 2, 2, 2, 1);
@@ -544,24 +568,8 @@ it('[AC-B1-11g#66] Redis 中断后恢复但缓存只有一条，准入仍以 PG 
   } finally {
     redisDown = false;
   }
-  const { REDIS } = await api<{ REDIS: symbol }>('modules/platform/index.ts');
-  const cache = kit.app
-    .get<NonNullable<Awaited<ReturnType<RedisModule['createRedisHandle']>>>>(REDIS)
-    .namespace('sms_risk');
-  const key = `ip_send:${f.appId}:${kit.crypto.blindIndex(IP, 'risk.sms.ip').slice(0, 32)}`;
-  // Explicitly restore a stale, too-small cache. The authoritative history comes exclusively
-  // from the two HTTP requests above; this Redis fixture never substitutes for attempt rows.
-  expect(
-    await cache.eval(
-      `
-    redis.call('DEL', KEYS[1])
-    redis.call('ZADD', KEYS[1], ARGV[2], 'before-outage')
-    redis.call('EXPIRE', KEYS[1], ARGV[1])
-    return redis.call('ZCARD', KEYS[1])
-  `,
-      { keys: [key], args: [String(START)], ttlSeconds: 7200 },
-    ),
-  ).toBe(1);
+  // Resume with whatever stale cache the outage naturally left. Do not delete or rewrite keys:
+  // a cache-authoritative implementation must not escape detection through a type error.
   envelope(kit, await f.request('landing'));
   envelope(kit, await f.request('app'), 42901, 3611);
   envelope(kit, await f.request('landing'), 42901, 3611);
@@ -617,5 +625,68 @@ for (const [index, [first, next]] of (
       await initial;
       await competitor;
     }
+  });
+}
+
+for (const [index, terminal] of (
+  [
+    { mode: 'normal', status: ATTEMPT_STATUSES.accepted, code: 0, counted: 1, calls: 2, rows: 2 },
+    {
+      mode: 'rejected',
+      status: ATTEMPT_STATUSES.rejected,
+      code: 50001,
+      counted: 0,
+      calls: 3,
+      rows: 3,
+    },
+    { mode: 'unknown', status: ATTEMPT_STATUSES.unknown, code: 0, counted: 1, calls: 2, rows: 2 },
+  ] as const
+).entries()) {
+  it(`[AC-B1-11g#${69 + index}] ${terminal.mode} 终态收到重复或非法结果回写时状态与额度不变`, async () => {
+    const f = await start(2);
+    mode = terminal.mode;
+    envelope(kit, await f.request('landing', targetPhone), terminal.code);
+    const original = await counts(f, 1, 1, 2, terminal.counted);
+    expect(original.map((row) => row.status)).toEqual([terminal.status]);
+    expect(sendRisk, '使用真实 AppModule 内已有的 PG 结果回写端口').toBeDefined();
+
+    // The first completion above came through HTTP and the real provider adapter. Replay late
+    // completions through that same existing port; never write status in SQL from the test.
+    // Reflect.apply deliberately includes the runtime-invalid terminal → pending input, which
+    // TypeScript excludes. Rejecting it or ignoring it is fine; persisting it is not.
+    for (const outcome of Object.values(ATTEMPT_STATUSES)) {
+      await Promise.allSettled([
+        Promise.resolve().then(() =>
+          Reflect.apply(sendRisk!.finishAttempt, sendRisk, [
+            { appId: f.appId, attemptId: original[0]!.attempt_id, outcome },
+          ]),
+        ),
+      ]);
+      expect(await rows(f.appId), `终态不可转为 ${outcome}`).toEqual(original);
+      await counts(f, 1, 1, 2, terminal.counted);
+    }
+
+    // Verify the observable admission result too, rather than only recounting statuses in JS.
+    envelope(kit, await f.request('app'));
+    if (terminal.mode === 'rejected') envelope(kit, await f.request('landing'));
+    envelope(kit, await f.request('landing'), 42901, 3611);
+    await counts(f, terminal.calls, terminal.rows, 2, 2);
+  });
+}
+
+for (const [index, entry] of (['landing', 'app'] as const).entries()) {
+  it(`[AC-B1-11g#${72 + index}] ${entry} 注册计数读取失败时拒绝，不写 attempt、不调用供应商`, async () => {
+    const f = await start(2);
+    registrationDown = true;
+    try {
+      envelope(kit, await f.request(entry, targetPhone), 42901, 1);
+      expect(registrationFailures).toBeGreaterThanOrEqual(1);
+      await counts(f, 0, 0, 2, 0);
+    } finally {
+      registrationDown = false;
+    }
+    // The rejected request consumed neither phone nor IP quota; recovery can use the same phone.
+    envelope(kit, await f.request(entry, targetPhone));
+    await counts(f, 1, 1, 2, 1);
   });
 }
