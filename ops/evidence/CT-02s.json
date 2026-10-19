@@ -1,0 +1,35 @@
+{
+  "task": "CT-02s",
+  "spec_ref": "fde86795d3a23d92640c388f80a626f86d67cb53",
+  "spec_commit": "cc2e9d6790daa660b6e07b4570e28572efe70a61",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only, all new operations planned). Console CMS for articles behind permission point content.article (no step-up): adminListArticles (AdminPage paging, category / status filters), adminCreateArticle (client-generated article_id UUIDv7; a repeated id answers 20902 data.resource=article and writes nothing, since console writes carry no Idempotency-Key, 04 §6.6), adminGetArticle (all versions), adminSaveArticleDraft / adminPublishArticle (optional schedule, not earlier than now) / adminOfflineArticle with expected_row_version CAS -> 20902 resource=article. Category agreement is refused (agreements are published through /admin/v1/agreements). New ArticleVersionStatus enum (draft / published / offline, matching 0049). 20902 data.resource gains article (catalog test synced). Rebased onto CT-02q with both sides kept. Orchestrator defaults L1, L18, L34-L41 are in couli-runs CONTENT-client/decisions-pending.md. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "r1 fail (S1 create not protected against retried requests), r2 pass after the client-generated article_id"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "c3e428f7c612453d2348e506f87dce394d614ea0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "4e03b024912dcff7d12ee0d1f4de4eec51b5f68d",
+    "specs": "c3c361e2d577cc550a501e7feb636fbcb179ff4a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
