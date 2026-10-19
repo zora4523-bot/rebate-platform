@@ -57,7 +57,11 @@ jobs:
     needs: longrun-detect
     if: needs.longrun-detect.outputs.changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 → 65 (2026-10-19, CT-06za): 177 green runs since 2026-10-18 11:42 UTC took 4m30s–11m07s,
+    # but B2-01l (#812) splits [AC-B2-01j#20] into six files: at 1,000,000 runs shards 1–3 took
+    # 1133 / 1168 / 438 s and the job hit the cap with shards 4–6 still running (run 39203666019);
+    # extrapolated about 42 minutes, × 1.5 rounded up to a multiple of 5 is 65.
+    timeout-minutes: 65
     steps:
       # The PR head itself (not the merge ref): the tested tree is the hashed tree.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -1,0 +1,25 @@
+id: CT-06za
+repo: rebate-platform
+title: CT-06za：longrun-props.yml 的 longrun-run 时限 30→65 分钟（B2-01l 把 [AC-B2-01j#20] 分六片后 1e6 runs 整轮约 42 分钟）
+type: guard-change
+# 2026-10-19 入账（编排派工，CT-06z 同类）。起因：B2-01l（#812，头 11f41194）把 [AC-B2-01j#20] 分成六个文件；run 39203666019 的 longrun-run
+# （PROP_RUNS=1000000）05:16:24 起、30 分钟处被取消：其他属性文件 05:31 前跑完（最长 commission-publish 860 s），第 1 / 2 / 3 片
+# 1133 / 1168 / 438 s 跑完，第 4–6 片 05:38–05:43 才开跑；B2-01l 此前 4 次 longrun-run 也都在 30 分钟处取消或失败。
+# 统计：最近 300 次 longrun-props 运行（2026-10-18 11:42～10-19 05:29 UTC）里 longrun-run 成功 177 次，4m30s～11m07s、p90 10m34s。
+# 外推 B2-01l 整轮约 42 分钟（第 4–6 片按 MS_PER_RUN 1.05 / 0.95 / 0.7 比照第 1、2 片实测），取 max(11m07s, 42m) × 1.5 = 63 → 65。
+# 上界：各片自带 it 超时（csvAndBalanceTimeout，1e6 下 1575 / 1425 / 1050 s），同一排程下最晚 53 分钟内要么跑完要么按用例超时红，65 不会抢先取消。
+# 只改 longrun-run 的 timeout-minutes 数值并在其上方加注释；longrun-detect 5、汇总 longrun-props 5 不动（汇总只读 needs 结果）；工作流无 step 级
+# timeout、无 concurrency；vitest.shared.ts longrunConfig 的 testTimeout 600 s 是单条用例上限（B2-01l 各片自带更长的 it 超时），不是作业上限，不改。
+# .github/workflows/** 属保护路径：approvals #16 常设授权的 CI 流程小修，Claude 实现、Codex 只读对抗评审一轮，按 approvals #24 加标签；
+# 按 approvals #12 走非 task 分支（chore/guard-change-CT-06za）、不带证据文件，台账随同一 PR（先例 CT-06z #862、CT-06u #824）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/longrun-props.yml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null
