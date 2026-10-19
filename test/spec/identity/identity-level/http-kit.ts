@@ -1,5 +1,9 @@
 // Real AppModule, PG and Redis; only planned payout handlers are replaced. No level check is
 // installed by this fixture: app.module must supply both production paths itself.
+// B1-13j: B1-13e implemented getPayoutAccount, so each payout operation is judged on its own. A
+// planned one still gets the stub handler below; an implemented one keeps its real route (a stub
+// on the same method and path would collide with it) and its real handler is wrapped, before the
+// routes are registered, so `handled` still counts every entry into the business handler.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -31,7 +35,7 @@ export interface Response {
 interface App {
   init(): Promise<unknown>;
   close(): Promise<unknown>;
-  get<T>(token: symbol): T;
+  get<T>(token: symbol | Constructor): T;
   inject(options: {
     method: Method;
     url: string;
@@ -45,6 +49,14 @@ interface Request extends StepUp.StepUpHttpRequest {
   readonly headers: Record<string, string | undefined>;
 }
 type Constructor = abstract new (...args: never[]) => unknown;
+type Handler = (this: unknown, ...args: unknown[]) => unknown;
+// reflect-metadata (loaded by @nestjs/common): the route metadata lives on the handler function.
+const metadata = Reflect as unknown as {
+  getMetadata(key: unknown, target: object): unknown;
+  getOwnMetadataKeys(target: object): unknown[];
+  getOwnMetadata(key: unknown, target: object): unknown;
+  defineMetadata(key: unknown, value: unknown, target: object): void;
+};
 type Decorator = (target: object, name: string, descriptor: PropertyDescriptor) => void;
 
 export async function openHttp(db: Kysely<DB>, redisUrl: string) {
@@ -69,6 +81,13 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
     Put(path: string): Decorator;
     Req(): (target: object, name: string, index: number) => void;
     HttpException: new (body: unknown, status: number) => Error;
+    RequestMethod: { GET: number; PUT: number };
+  };
+  const constants = (await import(
+    pathToFileURL(apiRequire.resolve('@nestjs/common/constants.js')).href
+  )) as { PATH_METADATA: string; METHOD_METADATA: string };
+  const core = (await import(pathToFileURL(apiRequire.resolve('@nestjs/core')).href)) as {
+    ModulesContainer: new () => Map<string, { controllers: Map<unknown, { metatype: unknown }> }>;
   };
   const clock = new platform.FixedClock('2026-10-17T02:00:00.000Z');
   const handled = new Map<string, number>();
@@ -101,27 +120,109 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
       return JSON.parse(response.body) as unknown;
     }
   }
+  const projection = (await import(
+    new URL('apps/api/src/modules/platform/validation/route-schemas.gen.ts', ROOT).href
+  )) as { CONTRACT_ROUTE_SCHEMAS: Record<string, unknown> };
+  // B1-13j: per operation, not "both planned". GET is judged by the level guard before the
+  // handler, so entering the real handler is the same event the stub counted. PUT is judged inside
+  // the handler's idempotency call (post-miss check) and its contract body is not BODY, so entering
+  // a real PUT handler is not that event: when savePayoutAccount lands (B1-13f) the probe and BODY
+  // need their own test change instead of a weaker count.
+  const operations = [
+    { operation: 'getPayoutAccount', name: 'get', method: 'GET', probe: true },
+    { operation: 'savePayoutAccount', name: 'put', method: 'PUT', probe: false },
+  ] as const;
+  const implemented = operations.filter(({ operation }) =>
+    Object.hasOwn(projection.CONTRACT_ROUTE_SCHEMAS, operation),
+  );
+  for (const { operation, probe } of implemented) {
+    expect(
+      probe,
+      `${operation} 已实现：真实路由的业务入口探针与合契约的请求体需另开 test-change（B1-13j 注释）`,
+    ).toBe(true);
+  }
+  const planned = operations.filter((entry) => !implemented.includes(entry));
   common.Controller('v1/me/payout-account')(PlannedPayout);
-  for (const [name, decorate] of [
-    ['get', common.Get('')],
-    ['put', common.Put('')],
-  ] as const) {
+  for (const { name } of planned) {
     common.Req()(PlannedPayout.prototype, name, 0);
-    decorate(
+    (name === 'get' ? common.Get('') : common.Put(''))(
       PlannedPayout.prototype,
       name,
       Object.getOwnPropertyDescriptor(PlannedPayout.prototype, name)!,
     );
   }
-  const projection = (await import(
-    new URL('apps/api/src/modules/platform/validation/route-schemas.gen.ts', ROOT).href
-  )) as { CONTRACT_ROUTE_SCHEMAS: Record<string, unknown> };
-  for (const operation of ['getPayoutAccount', 'savePayoutAccount']) {
-    expect(
-      Object.hasOwn(projection.CONTRACT_ROUTE_SCHEMAS, operation),
-      'planned 路由已实现，需换成真实路由替换夹具',
-    ).toBe(false);
-  }
+  // Counts an entry into a real handler under the token principal it was called for; an entry
+  // whose arguments carry no principal counts against every user (never silently dropped).
+  const count = (args: unknown[]) => {
+    const carrier = args.find(
+      (arg): arg is { principal: { uid: string } } =>
+        typeof arg === 'object' &&
+        arg !== null &&
+        typeof (arg as { principal?: { uid?: unknown } }).principal?.uid === 'string',
+    );
+    const uid = carrier?.principal.uid ?? '*';
+    handled.set(uid, (handled.get(uid) ?? 0) + 1);
+  };
+  const restore: (() => void)[] = [];
+  const segments = (value: unknown) =>
+    (Array.isArray(value) ? value : [value ?? ''])
+      .map((path) => String(path).replace(/^\/+|\/+$/g, ''))
+      .filter((path) => path !== '');
+  // Before init (Nest registers routes in init and keeps the handler function it finds then).
+  const probeRealRoutes = (running: App) => {
+    for (const { operation, method } of implemented) {
+      let wrapped = 0;
+      const seen = new Set<unknown>();
+      for (const module of running
+        .get<Map<string, { controllers: Map<unknown, { metatype: unknown }> }>>(
+          core.ModulesContainer,
+        )
+        .values()) {
+        for (const { metatype } of module.controllers.values()) {
+          if (typeof metatype !== 'function' || seen.has(metatype)) continue;
+          seen.add(metatype);
+          const prefixes = segments(metadata.getMetadata(constants.PATH_METADATA, metatype));
+          for (
+            let proto = metatype.prototype as object | null;
+            proto !== null && proto !== Object.prototype;
+            proto = Object.getPrototypeOf(proto) as object | null
+          ) {
+            for (const name of Object.getOwnPropertyNames(proto)) {
+              const descriptor = Object.getOwnPropertyDescriptor(proto, name)!;
+              if (name === 'constructor' || typeof descriptor.value !== 'function') continue;
+              const original = descriptor.value as Handler;
+              if (
+                metadata.getMetadata(constants.METHOD_METADATA, original) !==
+                common.RequestMethod[method]
+              )
+                continue;
+              const paths = segments(metadata.getMetadata(constants.PATH_METADATA, original));
+              const full = (prefixes.length === 0 ? [''] : prefixes).flatMap((prefix) =>
+                (paths.length === 0 ? [''] : paths).map((path) =>
+                  [prefix, path].filter((part) => part !== '').join('/'),
+                ),
+              );
+              if (!full.includes(PAYOUT.slice(1))) continue;
+              const probe: Handler = function (this: unknown, ...args: unknown[]) {
+                count(args);
+                return original.apply(this, args);
+              };
+              for (const key of metadata.getOwnMetadataKeys(original))
+                metadata.defineMetadata(key, metadata.getOwnMetadata(key, original), probe);
+              Object.defineProperty(proto, name, { ...descriptor, value: probe });
+              const owner = proto;
+              restore.push(() => Object.defineProperty(owner, name, descriptor));
+              wrapped += 1;
+            }
+          }
+        }
+      }
+      expect(wrapped, `${operation} 已实现，但找不到 ${method} ${PAYOUT} 的真实处理函数`).toBe(1);
+    }
+  };
+  const unprobe = () => {
+    for (const undo of restore.splice(0).reverse()) undo();
+  };
   // Observe actual Redis commands as well as the final key: a reserve-then-release must fail.
   const originalPlatform = platform.PlatformModule.forRoot.bind(platform.PlatformModule);
   const redisSpy = vi.spyOn(platform.PlatformModule, 'forRoot').mockImplementation((options) => {
@@ -168,7 +269,10 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
     const module = original(options);
     return {
       ...module,
-      controllers: [...((module['controllers'] ?? []) as unknown[]), PlannedPayout],
+      controllers: [
+        ...((module['controllers'] ?? []) as unknown[]),
+        ...(planned.length === 0 ? [] : [PlannedPayout]),
+      ],
     };
   });
   const base = fileURLToPath(new URL('.tmp/', ROOT));
@@ -178,6 +282,7 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
   let app: App | undefined;
   try {
     app = (await buildApp(db, dir, redisUrl, clock, logger)) as unknown as App;
+    probeRealRoutes(app);
     await app.init();
     idem = app.get<Platform.Idempotency>(platform.IDEMPOTENCY);
     const running = app;
@@ -191,18 +296,24 @@ export async function openHttp(db: Kysely<DB>, redisUrl: string) {
       tokens: app.get<Access.TokenService>(tokens.TOKEN_SERVICE),
       redis: app.get<Platform.RedisHandle>(platform.REDIS),
       risk: app.get<Risk.RiskStateService>(risk.riskStateServiceToken()),
-      handled: (uid: string) => handled.get(uid) ?? 0,
+      // '*': a real-handler entry without a principal counts against every user (B1-13j).
+      handled: (uid: string) => (handled.get(uid) ?? 0) + (handled.get('*') ?? 0),
       async close() {
         try {
           await running.close();
         } finally {
+          unprobe();
           rmSync(dir, { recursive: true, force: true });
         }
       },
     };
   } catch (error) {
-    await app?.close();
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      await app?.close();
+    } finally {
+      unprobe();
+      rmSync(dir, { recursive: true, force: true });
+    }
     throw error;
   } finally {
     entrySpy.mockRestore();
