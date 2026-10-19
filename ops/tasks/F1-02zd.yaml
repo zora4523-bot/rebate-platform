@@ -1,0 +1,31 @@
+id: F1-02zd
+repo: rebate-platform
+title: content：GET /admin/v1/dict 实现（包内默认 ← dict_items 覆盖，同一快照读），去掉其 planned；公共 GET /v1/dict 不下发 admin_dict 键
+type: impl
+# 2026-10-19 入账（content-client 第四阶段，计划 couli-runs/CONTENT-client/phase4-plan.md §3；计划按 SPEC_REF 32d7b09 取行号）。
+# 依据：04 l.589 §6.6 dict 行；08 BR-TEXT-25（12_TEXT l.1475 起）、BR-TEXT-12 细则（F1-02s / F1-02t 已实现的字典读写）。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）；原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：取值 = 包内默认 ← dict_items 覆盖（同 F1-02s 快照读，version 用 parseDictVersion）；修改仍走 /admin/v1/dict-items（F1-02t 按键类选权限点，不另开写口）；
+#   公共 GET /v1/dict 过滤 admin_dict. 前缀（D5）。权限按 CT-02w 落定的口径（D6）。
+# 去掉对应操作的 planned，同 PR 重生成 openapi.gen.ts 与路由生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 用到的默认：D5、D6。
+refs: []
+refs_hash: {}
+deps: [CT-02w]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/admin-dict/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/admin-dict/**'
+status: todo
+pr: null

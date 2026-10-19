@@ -1,0 +1,26 @@
+id: F1-02zb
+repo: rebate-platform
+title: content 纯函数：版本行保存校验与 BR-ID-01 保存前商店核对（checkAppVersionSave）
+type: impl
+# 2026-10-19 入账（content-client 第四阶段，计划 couli-runs/CONTENT-client/phase4-plan.md §3；计划按 SPEC_REF 32d7b09 取行号）。
+# 依据：08 BR-ID-01 细则 l.188–193（尤其 l.191 三种保存按保存后 min_supported_version 逐家核对）；04 l.402 app_versions、l.589 §6.6 app-versions 行。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）；原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：checkAppVersionSave(before|null, after, storeTable) → ok / 20001 data.fields / 需确认的商店列表；只在三种保存（提高最低支持版本、修改商店已上架版本、
+#   更换默认商店）且设了 min 时核对：默认商店未登记或低于 min → 20001（fields 指改动字段）；他家低于 min 且不在 confirmed_stores → 20001 fields=[confirmed_stores]；
+#   下调 min、提高 recommended 不核对；不替运营同时下调。版本比较复用 F1-02e 的函数；商店表作参数传入。只用 Node 内置，不读库、不读时钟。
+# 本任务直接控制 10405 强更闸门的保存前核对，规则测试须按细则逐条测全。
+# 用到的默认：D2（商店键全为 null 时只校 ^[a-z0-9_]{1,32}$ 并 warn）、D4（三段数字格式，不加大小关系）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/content/domain/app-versions/**'
+test_paths:
+  - 'test/spec/content/app-versions-rules/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/app-versions-rules/**'
+status: todo
+pr: null

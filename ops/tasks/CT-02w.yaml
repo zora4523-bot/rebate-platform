@@ -1,0 +1,35 @@
+id: CT-02w
+repo: rebate-platform
+title: 契约：后台字典只读 GET /admin/v1/dict（planned）；texts.default.json 补 BR-TEXT-25 的 admin_dict 键，fund-term-keys.yaml 逐键归类
+type: contract
+# 2026-10-19 入账（content-client 第四阶段，计划 couli-runs/CONTENT-client/phase4-plan.md §3；计划按 SPEC_REF 32d7b09 取行号）。
+# 依据：04 l.589 §6.6 dict 行（GET /admin/v1/dict 返回 admin_dict 全部键，取值只在 BR-TEXT-25）；08 12_TEXT l.103、l.1475 起 BR-TEXT-25（admin_dict.<enum>.<code>）。
+#   原文由编排者摘入任务书，refs 置空。
+# 要点：GET /admin/v1/dict 返回 {version, items:{<enum>:{<code>:text}}}（形状同 /v1/dict）；texts.default.json 按 BR-TEXT-25 取值表逐行补 admin_dict.<enum>.<code>
+#   （只收表里已有中文名的行，「契约线补」的不加）；fund-term-keys.yaml 把提现、打款、调账、核销、差错单、月结类状态名归 fund_terms，其余 ordinary（contracts:check 要求每键有归类）。
+#   修改仍走 /admin/v1/dict-items，不另开写口。全部新增，oasdiff 预期非破坏；排在 CT-02v 之后占契约槽。
+# 用到的默认：D5（admin_dict 不进公共 /v1/dict，在 F1-02zd 实现）、D6（任一已登录后台账号可读、不挂权限点；guard 不支持「只要登录」则挂 config.general 只读档，契约作者核实后在输出写明）。
+# D7 默认并入 CT-02x；编排要求单列台账，CT-02x 紧随本任务占槽。
+refs: []
+refs_hash: {}
+contract_sections: ['6.6']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

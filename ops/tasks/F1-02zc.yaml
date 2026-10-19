@@ -1,0 +1,33 @@
+id: F1-02zc
+repo: rebate-platform
+title: content：/admin/v1/app-versions* 列表、按端渠道取与保存实现（保存前商店核对、提高最低支持版本走动态码、同事务 CAS 与审计），去掉其 planned
+type: impl
+# 2026-10-19 入账（content-client 第四阶段，计划 couli-runs/CONTENT-client/phase4-plan.md §3；计划按 SPEC_REF 32d7b09 取行号）。
+# 依据：04 l.402、l.589 §6.6 app-versions 行、§11.2 content.app_version；08 BR-ID-01 细则 l.188–193；01 l.555 F-ADM-17。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（ops/approvals.yaml 第 34 条）；原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：AdminOperationGuard 权限点 content.app_version，提高 min_supported_version 时 step-up（totp）；一个事务：CAS（不符 → 20902 resource=app_version）→
+#   F1-02zb 核对（商店表读 specs/app-stores.yaml）→ 写行 → 审计（前后值 + 被确认的商店）。只开 ios / android / harmony（D3）。时间只读 Clock。
+# 顺手修 F1-02e 的 S2：risk 最低版本闸门与 /v1/app-versions/check 共用同一 ContentReader 实例（只动 app.module.ts 装配，不改 risk 代码；计划 §5.4）。
+# 去掉对应操作的 planned，同 PR 重生成 openapi.gen.ts 与路由生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 用到的默认：D2、D3、D4。
+refs: []
+refs_hash: {}
+deps: [CT-02v, F1-02zb]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/content/app-versions-admin/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/app-versions-admin/**'
+status: todo
+pr: null

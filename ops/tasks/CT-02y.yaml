@@ -1,0 +1,31 @@
+id: CT-02y
+repo: rebate-platform
+title: 契约：页面定时发布——adminPublishPage 加可选 publish_at，新增 DELETE /admin/v1/pages/{page_key}/schedule（撤销定时，planned）
+type: contract
+# 2026-10-19 入账（content-client 第四阶段，计划 couli-runs/CONTENT-client/phase4-plan.md §3；计划按 SPEC_REF 32d7b09 取行号）。
+# 依据：05 l.235 F1-02 pages（发布 / 灰度 / 回滚）；01 l.327 F-HOME-07「发布（立即 / 定时）」；04 §6.6 pages 行、§11.2 content.page。原文由编排者摘入任务书，refs 置空。
+# 要点：adminPublishPage 请求体加可选 publish_at（RFC 3339，须晚于当前时刻，否则 20001 fields=[publish_at]；缺省 = 立即发布，行为不变）；
+#   DELETE /admin/v1/pages/{page_key}/schedule 撤销待生效槽位（无槽位 → 30701 或 20902，契约作者按现有 pages 口径定并写明）；权限与 adminPublishPage 同点。
+#   状态机不加新状态（未生效版本仍 draft）。新增字段与操作，oasdiff 预期非破坏；排在 CT-02w / CT-02x 之后占契约槽。
+# 用到的默认：D8（本阶段做，排最后；一个待生效槽位为本线技术取舍，计划 §5.5 回写 04 §3.2）。TECH-29 自动回滚不在本任务（R10）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.6']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
