@@ -325,7 +325,7 @@ it('[AC-B1-11j#12] 域名取当前首项，切换后立即生效，链接只有�
 it('[AC-B1-11j#13] 同码跨 app：本人、实名、风险、域名与直属人数均不串租户', async () => {
   await http(async (f) => {
     const user = await seed(f, { code: CODE });
-    const other = await seed(f, { code: CODE, appId: `${f.appId}_other` });
+    const other = await seed(f, { code: CODE, appId: 'couli_other' });
     await shareDomains(f, ['other.example.test'], other.appId);
     await verified(f, other, '2010-06-01');
     await risk(f, other, 'frozen');
