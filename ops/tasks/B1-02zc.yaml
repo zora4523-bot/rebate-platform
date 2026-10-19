@@ -24,4 +24,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/consents-clipboard/**'
-status: todo
+status: done
+pr: 819
