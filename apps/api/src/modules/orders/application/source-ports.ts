@@ -5,7 +5,8 @@
 // - sourceConfig(appId, platform)：attr.click_code.<platform> 只有 JSON true 才打开（缺省 false）；
 //   attr.backfill_window_hours 只认正的安全整数，其余（缺失、字符串、小数、≤0、超安全整数）按 360。
 // - productKey：按平台读 key_prefix，交 @couli/domain deriveProductKey；无行 / 空前缀 / 推不出 → null（跳过 ②）。
-// - linkByCode 不注入：links 还没有 lk 列，按 backfillOrderSource 的口径开关打开也从 ② 开始。
+// - linkByCode（B1-08s）：linking 按 (app_id, platform, lk) 反查 link 的原始读口，原样透传（入参、结果、异常
+//   都不改）；归属由 matchExactLink 判，这里不判。
 import { ProductKeyUnderivable, deriveProductKey } from '@couli/domain';
 import type { RegisteredPlatform } from '../../union/index.ts';
 import { DEFAULT_BACKFILL_WINDOW_HOURS } from '../domain/source-backfill.ts';
@@ -23,6 +24,11 @@ export function clickCodeKey(platform: RegisteredPlatform): string {
 export interface OrderSourceReads {
   /** linking：link_logs 中 app_id、user_id、platform 相同、created_at ∈ [from, to] 的原始行。 */
   readonly linkLogs: OrderSourcePorts['linkLogs'];
+  /**
+   * linking：app_id、platform、lk 相同的 link（不判归属）；没有 → null。生产装配（app.module）必传；
+   * 不传时端口上也没有 linkByCode（开关打开也从 ② 开始）。
+   */
+  readonly linkByCode?: NonNullable<OrderSourcePorts['linkByCode']>;
   /** catalog：platforms 表该平台行的 key_prefix；没有该行 → null。 */
   keyPrefix(platform: RegisteredPlatform): Promise<string | null>;
   /** content：config_items (appId, key) 的原值；没有该行 → null。 */
@@ -47,9 +53,10 @@ export function backfillWindowHoursOf(value: unknown): number {
 }
 
 export function createOrderSourcePorts(reads: OrderSourceReads): ProductionOrderSourcePorts {
-  // TODO(规划/11 §4.5): links.lk 短码反查 — blocked on B1-08s
+  const linkByCode = reads.linkByCode;
   return {
     linkLogs: (input) => reads.linkLogs(input),
+    ...(linkByCode === undefined ? {} : { linkByCode: (input) => linkByCode(input) }),
     async productKey({ platform, order }) {
       // TODO(规划/11 §4.5): 京东订单商品键的 jdMode — blocked on 京东订单映射
       // 端口入参没有 App，读不到 App 级 product_key.jd.mode，不猜模式：京东不推商品键（跳过 ②）。

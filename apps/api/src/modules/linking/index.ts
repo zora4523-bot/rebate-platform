@@ -159,6 +159,8 @@ export { createOrderBindingReader } from './infra/order-binding-reader.ts';
 // created_at range, unfiltered), assembled by app.module.
 export { createOrderSourceReader } from './infra/order-source-reader.ts';
 export type {
+  OrderSourceLinkCode,
+  OrderSourceLinkCodeScope,
   OrderSourceLog,
   OrderSourceLogScope,
   OrderSourceReader,

@@ -13,6 +13,7 @@ import type { PidScene, Scene } from '@couli/contracts-ts';
 import { sql, type Kysely, type RawBuilder, type Selectable } from 'kysely';
 import type { LinkRegistrar, RegisterLinkInput, SourceLinkReader } from '../../catalog/index.ts';
 import { newUuidV7, type Clock } from '../../platform/index.ts';
+import { generateLinkCode, type LinkCodeDB } from '../infra/link-code.ts';
 import {
   isPlatform,
   isPriceAnomaly,
@@ -48,6 +49,63 @@ export interface LinkingOptions {
   readonly config: LinkingConfigReader;
   readonly pids: Pick<UnionPidService, 'getActivePid'>;
   readonly context: RegistrationContext;
+  /** B1-08s test seam: the lk source (default generateLinkCode, crypto.randomInt); production omits it. */
+  readonly linkCode?: () => string;
+  /** B1-08s: where an exhausted lk issuance is alerted (linking.link_code.exhausted). */
+  readonly logger?: { error(fields: Readonly<Record<string, unknown>>, message?: string): void };
+}
+
+/** The alert sink of lk issuance; flat fields only (no lk, user_id, link_id or attr_code). */
+export interface LinkCodeLogger {
+  error?(fields: Readonly<Record<string, unknown>>, message?: string): void;
+}
+
+/** B1-08s: how a new link draws its lk; null when it gets none (lk NULL, no draw). */
+export interface LinkCodeIssue {
+  readonly draw: () => string;
+  readonly logger: LinkCodeLogger | undefined;
+  /** Draws tried at insert (default 4: the first plus 3 redraws); 1 for a code already in use. */
+  readonly attempts?: number;
+}
+
+/** Configuration key attr.click_code.<platform> (BR-ATTR-15; default false). */
+export function clickCodeKey(platform: 'jd' | 'pdd'): string {
+  return `attr.click_code.${platform}`;
+}
+
+/** attr.click_code.<platform> is on only for the JSON value true ('on', 'true', 1 are off). */
+export function clickCodeOn(value: unknown): boolean {
+  return value === true;
+}
+
+/**
+ * B1-08s (BR-ATTR-15): whether a link registered now gets an lk. Only jd / pdd, only a link with a
+ * user (a guest link gets none; a later claim is an UPDATE and never issues one), and only while
+ * attr.click_code.<platform> is JSON true. The switch is read through the given reader (inside an
+ * open: its pre-read); a failed read throws as it is, never read as off.
+ */
+export async function linkCodeIssue(
+  config: LinkingConfigReader,
+  args: { readonly appId: string; readonly platform: string; readonly userId: string | null },
+  options: { readonly linkCode?: () => string },
+): Promise<LinkCodeIssue | null> {
+  const { appId, platform, userId } = args;
+  if ((platform !== 'jd' && platform !== 'pdd') || userId === null) return null;
+  const value = await config.configValue(appId, clickCodeKey(platform));
+  if (!clickCodeOn(value?.value)) return null;
+  return { draw: options.linkCode ?? generateLinkCode, logger: alertLoggerOf(options) };
+}
+
+/**
+ * The options' logger when it can alert errors. Open and convert options carry a logger typed for
+ * warnings only (their composition passes the root logger), so it is checked, not assumed.
+ */
+function alertLoggerOf(options: object): LinkCodeLogger | undefined {
+  const logger: unknown = (options as { readonly logger?: unknown }).logger;
+  if (typeof logger !== 'object' || logger === null) return undefined;
+  return typeof (logger as LinkCodeLogger).error === 'function'
+    ? (logger as LinkCodeLogger)
+    : undefined;
 }
 
 /** Implements both catalog ports without making catalog depend on linking. */
@@ -135,30 +193,35 @@ export function createLinkRegistration(options: LinkingOptions): LinkRegistratio
       scene,
       agentSessionId: context.agentSessionId ?? null,
     });
+    const issue = await linkCodeIssue(config, { appId, platform, userId: caller.userId }, options);
     const now = clock.now();
     const linkId = newUuidV7(now);
     await db.transaction().execute(async (trx) => {
-      await insertLinkRow(trx, {
-        now,
-        caller,
-        linkId,
-        snapshot,
-        values: {
-          platform,
-          productKey: ref.productKey,
-          rawItemId: ref.rawItemId,
-          rawFetchedAt,
-          scene,
-          subScene: context.subScene ?? null,
-          entrySource: input.entrySource,
-          quotedFinalPriceFen: item.final_price_fen,
-          quotedCouponFen: item.coupon_fen,
-          quotedCouponId:
-            item.coupon_ids === undefined || item.coupon_ids === '' ? null : item.coupon_ids,
-          quotedAt,
-          agentCardId: context.agentCardId ?? null,
+      await insertLinkRow(
+        trx,
+        {
+          now,
+          caller,
+          linkId,
+          snapshot,
+          values: {
+            platform,
+            productKey: ref.productKey,
+            rawItemId: ref.rawItemId,
+            rawFetchedAt,
+            scene,
+            subScene: context.subScene ?? null,
+            entrySource: input.entrySource,
+            quotedFinalPriceFen: item.final_price_fen,
+            quotedCouponFen: item.coupon_fen,
+            quotedCouponId:
+              item.coupon_ids === undefined || item.coupon_ids === '' ? null : item.coupon_ids,
+            quotedAt,
+            agentCardId: context.agentCardId ?? null,
+          },
         },
-      });
+        issue,
+      );
       if (logsRegistration(scene, pidScene)) {
         await trx
           .insertInto('link_logs')
@@ -277,15 +340,24 @@ export const openRegistrationScope = new AsyncLocalStorage<OpenRegistrationScope
 export async function insertPendingOpenLink(
   executor: Kysely<DB>,
   pending: PendingOpenLink,
+  issue: LinkCodeIssue | null = null,
 ): Promise<void> {
   const { now, caller, linkId, snapshot, values } = pending;
   // B1-06m: opens sharing the card run in their own transactions. A row another open has written
   // but not yet committed makes this insert wait for that transaction: committed → nothing to do;
   // rolled back → this open writes the link (and its register log) itself.
-  const inserted = await linkInsert(executor, { now, caller, linkId, snapshot, values })
-    .onConflict((oc) => oc.column('link_id').doNothing())
-    .returning('link_id')
-    .executeTakeFirst();
+  const args = { now, caller, linkId, snapshot, values };
+  const inserted = await insertWithCode(
+    executor,
+    args,
+    issue,
+    (lk) =>
+      linkInsert(executor, args, lk)
+        .onConflict((oc) => oc.column('link_id').doNothing())
+        .returningAll()
+        .executeTakeFirst(),
+    'skip',
+  );
   if (inserted === undefined) return;
   if (logsRegistration(values.scene, pidSceneOf(values.scene))) {
     await executor
@@ -319,9 +391,10 @@ export async function insertPendingOpenLink(
 export async function insertConvertLink(
   executor: Kysely<DB>,
   pending: PendingOpenLink,
+  issue: LinkCodeIssue | null = null,
 ): Promise<Selectable<DB['links']>> {
   const { now, caller, linkId, snapshot, values } = pending;
-  const row = await insertLinkRow(executor, { now, caller, linkId, snapshot, values });
+  const row = await insertLinkRow(executor, { now, caller, linkId, snapshot, values }, issue);
   if (logsRegistration(values.scene, pidSceneOf(values.scene))) {
     await executor
       .insertInto('link_logs')
@@ -422,12 +495,99 @@ interface LinkRowArgs {
 export async function insertLinkRow(
   executor: Kysely<DB>,
   args: LinkRowArgs,
+  issue: LinkCodeIssue | null = null,
 ): Promise<Selectable<DB['links']>> {
-  return linkInsert(executor, args).returningAll().executeTakeFirstOrThrow();
+  const row = await insertWithCode(
+    executor,
+    args,
+    issue,
+    (lk) => linkInsert(executor, args, lk).returningAll().executeTakeFirstOrThrow(),
+    'throw',
+  );
+  if (row === undefined) throw new Error('linking: link id already registered');
+  return row;
 }
 
-/** The module's single links insert statement (not yet executed). */
-function linkInsert(executor: Kysely<DB>, args: LinkRowArgs) {
+/** BR-ATTR-15: the first draw plus at most 3 redraws on an (app_id, lk) collision. */
+const LINK_CODE_ATTEMPTS = 4;
+
+/**
+ * B1-08s: a links insert with an lk (BR-ATTR-15). Without an issue the statement is exactly the
+ * one given (lk NULL). With one, each draw is inserted with ON CONFLICT DO NOTHING without a
+ * conflict target, so a collision never aborts the caller's transaction (a concurrent insert of
+ * the same code is decided by the unique key once it commits or rolls back). An empty result is
+ * then told apart: the link_id already exists → `onLinkId` ('skip': undefined, the pending open's
+ * idempotency; 'throw': as a duplicate primary key always failed) — otherwise the draw collided on
+ * (app_id, lk) and a new code is drawn. After 4 collisions the link is registered with lk NULL and
+ * one error is logged (its orders match from ② on); registration never fails for want of a code.
+ */
+async function insertWithCode(
+  executor: Kysely<DB>,
+  args: LinkRowArgs,
+  issue: LinkCodeIssue | null,
+  plain: (lk: null) => Promise<Selectable<DB['links']> | undefined>,
+  onLinkId: 'skip' | 'throw',
+): Promise<Selectable<DB['links']> | undefined> {
+  if (issue === null) return plain(null);
+  const attempts = issue.attempts ?? LINK_CODE_ATTEMPTS;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const lk = issue.draw();
+    const row = await linkInsert(executor, args, lk)
+      .onConflict((oc) => oc.doNothing())
+      .returningAll()
+      .executeTakeFirst();
+    if (row !== undefined) return row;
+    const existing = await executor
+      .selectFrom('links')
+      .select('link_id')
+      .where('link_id', '=', args.linkId)
+      .executeTakeFirst();
+    if (existing !== undefined) {
+      if (onLinkId === 'skip') return undefined;
+      throw new Error('linking: link id already registered');
+    }
+  }
+  issue.logger?.error?.(
+    {
+      event: 'linking.link_code.exhausted',
+      app_id: args.caller.appId,
+      platform: args.values.platform,
+    },
+    'linking: link code collided on every draw; link registered without lk',
+  );
+  return plain(null);
+}
+
+/**
+ * B1-08s: an lk for a link the open converts before it is written (an open's renewed snapshot,
+ * B1-06k): drawn as at insert — at most 4 draws — but each checked with a read of (app_id, lk) on
+ * the open's executor, since the conversion carries the code before the row exists. Null after 4
+ * taken codes, with the exhausted alert; the insert then tries this code once (attempts 1).
+ */
+export async function drawFreeLinkCode(
+  executor: Kysely<DB>,
+  args: { readonly appId: string; readonly platform: string },
+  issue: LinkCodeIssue,
+): Promise<string | null> {
+  for (let attempt = 0; attempt < LINK_CODE_ATTEMPTS; attempt += 1) {
+    const lk = issue.draw();
+    const taken = await (executor as unknown as Kysely<LinkCodeDB>)
+      .selectFrom('links')
+      .select('link_id')
+      .where('app_id', '=', args.appId)
+      .where('lk', '=', lk)
+      .executeTakeFirst();
+    if (taken === undefined) return lk;
+  }
+  issue.logger?.error?.(
+    { event: 'linking.link_code.exhausted', app_id: args.appId, platform: args.platform },
+    'linking: link code collided on every draw; link registered without lk',
+  );
+  return null;
+}
+
+/** The module's single links insert statement (not yet executed); lk is written here only. */
+function linkInsert(executor: Kysely<DB>, args: LinkRowArgs, lk: string | null) {
   const { now, caller, linkId, snapshot, values } = args;
   const pidScene = pidSceneOf(values.scene);
   if (
@@ -437,7 +597,7 @@ function linkInsert(executor: Kysely<DB>, args: LinkRowArgs) {
   ) {
     throw new TypeError('linking: identity snapshot does not match the row being registered');
   }
-  return executor.insertInto('links').values({
+  return (executor as unknown as Kysely<LinkCodeDB>).insertInto('links').values({
     link_id: linkId,
     app_id: caller.appId,
     user_id: caller.userId,
@@ -459,6 +619,7 @@ function linkInsert(executor: Kysely<DB>, args: LinkRowArgs) {
     expire_at: sql<Date>`${now.toISOString()}::timestamptz + ${urlLifetimeMs(pidScene)} * interval '1 millisecond'`,
     agent_session_id: snapshot.agent_session_id,
     agent_card_id: values.agentCardId,
+    lk,
     row_version: 0,
     created_at: now,
     updated_at: now,

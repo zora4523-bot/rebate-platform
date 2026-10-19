@@ -4,8 +4,13 @@
 // pid_scene and no_rebate are not filtered (orders' matchOrderSource decides what counts). One
 // SELECT per call on the handle given, no cache, no write; a user id that is not a UUID owns no
 // row (link_logs.user_id is uuid) and reads as [] without a query. Assembled by app.module.
+// B1-08s: linkByCode — the link of one App, one platform and one lk (BR-ATTR-15 ① exact), as
+// stored: user_id is returned whoever it names (orders' matchExactLink judges ownership). An lk
+// outside [0-9a-z]{1,16} names no link and reads as null without a query; otherwise one SELECT
+// per call, no cache, no write.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
+import { LINK_CODE, type LinkCodeDB } from './link-code.ts';
 
 export interface OrderSourceLogScope {
   readonly appId: string;
@@ -33,8 +38,24 @@ export interface OrderSourceLog {
   readonly created_at: Date;
 }
 
+/** The scope of an lk lookup: App, platform and the code parsed from the order. */
+export interface OrderSourceLinkCodeScope {
+  readonly appId: string;
+  readonly platform: string;
+  readonly lk: string;
+}
+
+/** The link an lk names, as orders' exact match reads it. */
+export interface OrderSourceLinkCode {
+  readonly link_id: string;
+  readonly user_id: string | null;
+  readonly scene: string;
+  readonly agent_session_id: string | null;
+}
+
 export interface OrderSourceReader {
   linkLogs(input: OrderSourceLogScope): Promise<readonly OrderSourceLog[]>;
+  linkByCode(input: OrderSourceLinkCodeScope): Promise<OrderSourceLinkCode | null>;
 }
 
 const LOG_COLUMNS = [
@@ -72,6 +93,18 @@ export function createOrderSourceReader(db: Kysely<DB>): OrderSourceReader {
         .orderBy('created_at', 'desc')
         .orderBy('id', 'desc')
         .execute();
+    },
+    async linkByCode(input) {
+      if (typeof input.lk !== 'string' || !LINK_CODE.test(input.lk)) return null;
+      const row = await (db as unknown as Kysely<LinkCodeDB>)
+        .withSchema('app')
+        .selectFrom('links')
+        .select(['link_id', 'user_id', 'scene', 'agent_session_id'])
+        .where('app_id', '=', input.appId)
+        .where('platform', '=', input.platform)
+        .where('lk', '=', input.lk)
+        .executeTakeFirst();
+      return row ?? null;
     },
   };
 }

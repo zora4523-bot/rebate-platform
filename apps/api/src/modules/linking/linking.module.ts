@@ -294,6 +294,7 @@ function openOptions(parts: LinkOpenParts): TaobaoLinkOpenOptions {
     config,
     pids,
     context: { scene: 'search' },
+    logger,
   });
   return {
     db,
@@ -646,6 +647,7 @@ export class LinkingModule {
             AttrCodeReader,
             LinkingConfigReader,
             LINKING_PIDS,
+            ROOT_LOGGER,
           ],
           useFactory: (
             db: Kysely<Database> | undefined,
@@ -654,6 +656,7 @@ export class LinkingModule {
             attrCodes: AttrCodeReader,
             config: LinkingConfigReader,
             pids: PidReader,
+            logger: RootLogger,
           ): LinkRegistrations => ({
             forContext(context: RegistrationContext): LinkRegistration {
               if (db === undefined) return { register: unavailable, entrySource: unavailable };
@@ -665,6 +668,8 @@ export class LinkingModule {
                 config,
                 pids,
                 context,
+                // B1-08s: an exhausted lk issuance is alerted here (linking.link_code.exhausted).
+                logger,
               });
             },
           }),

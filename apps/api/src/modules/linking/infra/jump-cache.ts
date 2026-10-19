@@ -46,6 +46,9 @@ function redisKey(key: LinkOpenCacheKey, generation: string | null): string {
     key.pidScene,
     key.noRebate,
     key.variant ?? null,
+    // B1-08s: a jump carrying an lk is cached per lk, tagged so it never reads as a generation;
+    // a key without one hashes exactly as before.
+    ...(key.linkCode === undefined ? [] : [{ lk: key.linkCode }]),
     ...(generation === null ? [] : [generation]),
   ]);
   return `${key.appId}:${createHash('sha256').update(identity).digest('hex')}`;

@@ -978,6 +978,7 @@ function orderSourcePorts(
   });
   return createOrderSourcePorts({
     linkLogs: (input) => logs.linkLogs(input),
+    linkByCode: (input) => logs.linkByCode(input),
     keyPrefix: async (platform) =>
       (await catalog.listPlatforms()).find((row) => row.code === platform)?.key_prefix ?? null,
     configValue: (appId, key) => createContentReader({ db, clock }).configValue(appId, key),
