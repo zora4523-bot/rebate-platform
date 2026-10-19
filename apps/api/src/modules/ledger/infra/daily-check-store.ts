@@ -1,7 +1,7 @@
 // SQL of the daily check (BR-FUND-19): the daily_balances snapshot write and the read-only
 // execution of one invariant file. Tables are schema-qualified (app.*), as in the invariant SQL.
 import type { DB } from '@couli/db';
-import { sql, type Kysely } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 
 export interface DailyBalancesWrite {
   /** Validated YYYY-MM-DD accounting date D. */
@@ -13,8 +13,19 @@ export interface DailyBalancesWrite {
 }
 
 /**
- * One INSERT … SELECT … ON CONFLICT DO UPDATE (a single statement: one consistent read of the
- * entries, and a re-run of the same day overwrites instead of accumulating).
+ * Text of the transaction-level advisory lock every daily_balances write takes first (key
+ * hashtextextended(text, 0), the repository's namespaced-key convention). One fixed key for all
+ * apps and dates: an all-app run and a single-app re-run of any day exclude each other.
+ */
+export const DAILY_BALANCES_LOCK = 'ledger.daily_balances.write';
+
+/**
+ * One READ COMMITTED transaction: pg_advisory_xact_lock(DAILY_BALANCES_LOCK), then, as a later
+ * statement (so its snapshot is taken after the lock is granted and sees every commit made while
+ * waiting, including a concurrent run's snapshot rows and late entries), one INSERT … SELECT …
+ * ON CONFLICT DO UPDATE. Without the lock a run that read the entries earlier could commit after
+ * a newer run and overwrite its rows with stale amounts (review r1 S0). A re-run of the same day
+ * overwrites instead of accumulating.
  *
  * Entry convention (decision 20): amounts are debit-positive / credit-negative; a voucher's
  * accounting_date is the entry's accounting date.
@@ -28,9 +39,26 @@ export interface DailyBalancesWrite {
  */
 export async function writeDailyBalances(db: Kysely<DB>, input: DailyBalancesWrite): Promise<void> {
   const appId = input.appId ?? null;
+  await db
+    .transaction()
+    .setIsolationLevel('read committed')
+    .execute(async (trx) => {
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${DAILY_BALANCES_LOCK}, 0))`.execute(
+        trx,
+      );
+      await upsertDailyBalances(trx, input.accountingDate, appId, input.computedAt);
+    });
+}
+
+async function upsertDailyBalances(
+  trx: Transaction<DB>,
+  accountingDate: string,
+  appId: string | null,
+  computedAt: Date,
+): Promise<void> {
   await sql`
     WITH params AS (
-      SELECT ${input.accountingDate}::date AS check_date, ${appId}::text AS app_id
+      SELECT ${accountingDate}::date AS check_date, ${appId}::text AS app_id
     ),
     movements AS (
       SELECT
@@ -99,7 +127,7 @@ export async function writeDailyBalances(db: Kysely<DB>, input: DailyBalancesWri
       c.debit_fen::bigint,
       c.credit_fen::bigint,
       (c.opening_fen + c.debit_fen - c.credit_fen)::bigint,
-      ${input.computedAt}::timestamptz
+      ${computedAt}::timestamptz
     FROM computed c
     ON CONFLICT (app_id, account_id, sub_account, accounting_date) DO UPDATE SET
       opening_fen = EXCLUDED.opening_fen,
@@ -107,7 +135,7 @@ export async function writeDailyBalances(db: Kysely<DB>, input: DailyBalancesWri
       credit_fen = EXCLUDED.credit_fen,
       closing_fen = EXCLUDED.closing_fen,
       computed_at = EXCLUDED.computed_at
-  `.execute(db);
+  `.execute(trx);
 }
 
 /**
