@@ -1,6 +1,6 @@
-export { createLedger } from './application/ledger.ts';
+export { createLedger } from './application/reverse.ts';
+export type { Ledger, ReverseInput } from './application/reverse.ts';
 export type {
-  Ledger,
   LedgerAccountRef,
   PostingEntry,
   PostingVoucher,

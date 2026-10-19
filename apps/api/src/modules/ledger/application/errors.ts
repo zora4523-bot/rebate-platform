@@ -2,6 +2,10 @@
 export type LedgerErrorCode =
   /** Malformed input (ids, keys, enum-like strings) before any SQL runs. */
   | 'INVALID_INPUT'
+  /** No original voucher exists in the requested app. */
+  | 'ORIGINAL_NOT_FOUND'
+  /** A key ending in :REVERSE cannot itself be reversed. */
+  | 'CANNOT_REVERSE_REVERSAL'
   /** validateVoucher refused the entries (BR-FUND-16: >=2 entries, nonzero, sum zero). */
   | 'INVALID_VOUCHER'
   /** A user account id that is not a USER_BALANCE account of this app_id. */
