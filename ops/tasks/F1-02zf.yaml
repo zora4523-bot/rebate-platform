@@ -1,0 +1,18 @@
+id: F1-02zf
+repo: rebate-platform
+title: F1-02p 规则测试 [AC-F1-02p#16] 收紧回只认 20902 data.resource=agreement——F1-02za 的过渡放宽到期（F1-02z #931 已改码），并断言无 error 级日志
+type: test-change
+# 2026-10-20 入账（content-client 第四阶段第一波收尾；编排 2026-10-20 00:0x：F1-02za 放宽只是过渡，F1-02z 合并后另开 test-change 收紧回只认 20902）。
+# 做法：#16 四例只认 409 / 20902 data.resource=agreement；不写入的快照断言不变；本请求日志无 level 50（L44 改为 warn）。主干（F1-02z #931 合并后）成立。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-02za, F1-02z]
+paths:
+  - 'test/spec/content/agreements-admin/agreements.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null
