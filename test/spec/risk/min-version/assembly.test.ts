@@ -24,6 +24,9 @@ import { envelopeValidator } from '../../platform/errors/kit.ts';
 import { HEADERS, PRINCIPAL, ROOT, TRACE, apiRequire } from './kit.ts';
 import { RESULT, STORED, idemFixture, idemRequest } from './idempotency-kit.ts';
 
+// B1-12i：只关队列的装配参数（B1-12g 起生效），不是断言
+const QUEUE_OFF = { startQueue: false };
+
 type Constructor = abstract new (...args: never[]) => unknown;
 interface HttpApp {
   get(token: symbol): Idempotency;
@@ -132,6 +135,8 @@ it('[AC-B1-03c#21] markTipRead：真实 AppModule 自动装配 content 读取器
     }
     app = await createHttpApp('api', {
       dbHandles: { db: f.db, dbRead: null, close: async () => undefined },
+      // B1-12i：B1-12g 起 createHttpApp 有库默认起队列；本测试的脚本化驱动没有 pg-boss，显式不起（经变量展开传入，主干在 B1-12g 合并前忽略此键）
+      ...QUEUE_OFF,
       config: loadConfig({ APP_ENV: 'test' }),
       clock: new FixedClock('2031-01-01T00:00:00Z'),
       logger: createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' }),
@@ -276,6 +281,8 @@ for (const transactional of [false, true]) {
         try {
           app = await createHttpApp('api', {
             dbHandles: { db: f.db, dbRead: null, close: async () => undefined },
+            // B1-12i：B1-12g 起 createHttpApp 有库默认起队列；本测试的脚本化驱动没有 pg-boss，显式不起（经变量展开传入，主干在 B1-12g 合并前忽略此键）
+            ...QUEUE_OFF,
             config: loadConfig({ APP_ENV: 'test' }),
             clock: deps.clock,
             logger: createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' }),

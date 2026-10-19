@@ -1,0 +1,16 @@
+id: B1-12i
+repo: rebate-platform
+title: 测试装配同步：冻结 min-version/assembly.test.ts 两处 createHttpApp 经变量展开传 startQueue false（B1-12g 起 createHttpApp 有库默认起队列，本测试的脚本化驱动无 pg-boss）；断言、用例不动，主干上该键被忽略
+type: test-change
+# 2026-10-19 入账（be-codex；编排 20:4x 裁定 ②：把 B1-12g 里这 5 条用例的装配改动拆成 test-change 先合，不放宽 red-check）。
+# 经变量 QUEUE_OFF 展开传入（只对对象字面量做多余属性检查），主干上 createHttpApp 尚无 startQueue 选项时编译通过、行为不变，B1-12g 合并后生效；不用 @ts-expect-error。按 approvals #24 由编排会话加标签。
+refs: []
+refs_hash: {}
+deps: [B1-03c]
+paths:
+  - 'test/spec/risk/min-version/assembly.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
