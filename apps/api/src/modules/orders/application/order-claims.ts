@@ -17,8 +17,11 @@
 //      the first child's error.
 // A request ending with a ③ or ④ code adds one failure (INCR + EXPIRE to the next 00:00 +08:00)
 // while the lock is held; the add that reaches exactly 10 logs claim_fail_burst once. A request
-// that creates a claim adds nothing, even when some children failed. Any Redis failure → 50001
-// (fail closed: no claim, no count). Passing children go into one claim (status from
+// that creates a claim adds nothing, even when some children failed. One request counts once: a
+// submission with an Idempotency-Key (its key and body) adds in the same script only when it has
+// not been counted that day, so a retry after a lost Redis reply (50001, no idempotency record)
+// adds nothing again (Codex 资金评审 r1 S1 ①). Any Redis failure → 50001 (fail closed: no claim,
+// no count of its own). Passing children go into one claim (status from
 // transitionClaim(null, 'SUBMIT')) with one claim_items row each; orders are never written.
 // Logs: flat fields only, never an order number, sub_order_id, paid_date or (but for
 // claim_fail_burst, 待裁定 3) a user id.
@@ -40,7 +43,11 @@ import {
   stripClaimSpaces,
   type ClaimChildFailure,
 } from '../domain/claim-rules.ts';
-import { createClaimFailureCounter, type ClaimFailureCounter } from '../infra/claim-counter.ts';
+import {
+  claimRequestId,
+  createClaimFailureCounter,
+  type ClaimFailureCounter,
+} from '../infra/claim-counter.ts';
 import {
   claimedSubOrders,
   countClaimsOn,
@@ -66,6 +73,11 @@ export type ClaimFailure = {
   readonly data?: { readonly reason: string } | { readonly fields: readonly string[] };
 };
 export type ClaimResult<T> = { readonly code: 0; readonly data: T } | ClaimFailure;
+/** The HTTP request behind a submission (absent for a direct call: each call is its own request). */
+export interface ClaimRequest {
+  /** Its Idempotency-Key, already validated by the idempotency module. */
+  readonly idempotencyKey: string;
+}
 export interface ClaimListInput {
   readonly cursor?: string;
   readonly limit?: number;
@@ -145,6 +157,7 @@ export async function createOrderClaim(
   deps: OrderClaimDeps,
   subject: OrderSubject,
   input: Schema<'CreateOrderClaimRequest'>,
+  request?: ClaimRequest,
 ): Promise<ClaimResult<Schema<'OrderClaim'>>> {
   const log = deps.logger.child({ module: 'orders' });
   const appId = subject.app_id;
@@ -163,6 +176,10 @@ export async function createOrderClaim(
   // Read before the transaction holds a pooled connection (the reader may need one of its own).
   const windowHours = claimWindowHours(await configValue(deps.config, appId, WINDOW_KEY));
   const counter = createClaimFailureCounter(redis, subject);
+  const requestId =
+    request === undefined ? undefined : claimRequestId(request.idempotencyKey, input);
+  const failed = (now: Date, failure: ClaimFailure) =>
+    fail(counter, log, subject, now, failure, requestId);
   let matched: Matched | undefined;
   let result: ClaimResult<Schema<'OrderClaim'>>;
   try {
@@ -182,8 +199,7 @@ export async function createOrderClaim(
         return { code: 30203 };
       }
       matched = await matchClaimOrders(trx, appId, input.platform, orderNo);
-      if (matched.kind === null)
-        return fail(counter, log, subject, now, failureOf({ code: 30201 }));
+      if (matched.kind === null) return failed(now, failureOf({ code: 30201 }));
       const children = matched.children;
       const judgement = judgeClaimChildren(children, {
         applicant: subject.user_id,
@@ -198,7 +214,7 @@ export async function createOrderClaim(
         ),
       });
       if (judgement.failure !== null) {
-        return fail(counter, log, subject, now, failureOf(judgement.failure));
+        return failed(now, failureOf(judgement.failure));
       }
       const submitted = transitionClaim(null, 'SUBMIT');
       if (!submitted.ok) throw new Error('orders: claim state machine refuses SUBMIT');
@@ -224,7 +240,7 @@ export async function createOrderClaim(
         // claim_items' unique key is the last line (not expected under the user lock): the same
         // answer as ④d, counted while the lock is still held, then everything rolls back.
         if (!isUniqueViolation(error)) throw error;
-        throw new ClaimRollback(await fail(counter, log, subject, now, { code: 30205 }));
+        throw new ClaimRollback(await failed(now, { code: 30205 }));
       }
       const data: Schema<'OrderClaim'> = {
         claim_id: claimId,
@@ -264,20 +280,26 @@ export async function createOrderClaim(
   return result;
 }
 
-/** A ③ / ④ failure: one more failure of the day, under the caller's lock; 50001 when Redis fails. */
+/**
+ * A ③ / ④ failure: one more failure of the day, under the caller's lock, unless this request
+ * (`requestId`) was already counted that day; 50001 when Redis fails.
+ */
 async function fail(
   counter: ClaimFailureCounter,
   log: RootLogger,
   subject: OrderSubject,
   now: Date,
   failure: ClaimFailure,
+  requestId: string | undefined,
 ): Promise<ClaimFailure> {
-  let count: number;
+  let count: number | null;
   try {
-    count = await counter.increment(claimCounterDay(now), secondsUntilNextChinaDay(now));
+    count = await counter.increment(claimCounterDay(now), secondsUntilNextChinaDay(now), requestId);
   } catch {
     return UNAVAILABLE;
   }
+  // null: an earlier attempt of this request already added its failure. That add was below 10:
+  // counts only grow within the day, so at 10 ① would have refused this retry before ③.
   if (count === CLAIM_FAIL_LIMIT) {
     // J-3: the risk event of BR-ATTR-19 (risk_hits belong to the risk line). The only line with
     // the user id (待裁定 3): a risk event without its subject cannot be followed up.

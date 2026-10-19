@@ -7,7 +7,8 @@
 //   idempotency post-miss hooks' (version gate 10405 writes no record); the acceptance commits its
 //   own transaction. Stored results are the idempotency module's rule (0 and 3xxxx: a replay
 //   answers them byte for byte without judging or counting again); 20001 and 50001 are not stored,
-//   so the same key may be sent again.
+//   so the same key may be sent again. The key goes to the use case as well: a retry of the same
+//   key and body after a 50001 whose failure count had reached Redis does not count again.
 // - Codes and HTTP status as contracts/error-codes.yaml; msg the BR-TEXT-14 fallback text
 //   (contracts/texts.default.json error.<code>[.<reason>]); 30201 / 30204 / 30205 / 30206 and the
 //   daily-limit 30203 carry no data, 30202 and the risk 30203 only {reason}.
@@ -128,7 +129,8 @@ export class OrderClaimsController {
       throw new Error('orders: claim submission needs the database and a verified token');
     }
     const body = request.body!;
-    const key = request.headers['idempotency-key'];
+    const header = request.headers['idempotency-key'];
+    const key = typeof header === 'string' ? header : undefined;
     const traceId = request.id;
     const subject = subjectOf(principal);
     const result = await idempotency.execute(
@@ -137,12 +139,18 @@ export class OrderClaimsController {
         actor: { userId: principal.uid, deviceId: principal.device_id, phoneHmac: null },
         method: 'POST',
         path: PATH,
-        key: typeof key === 'string' ? key : undefined,
+        key,
         body,
         traceId,
       },
       async (): Promise<HandlerResult> => {
-        const outcome = await createOrderClaim(deps, subject, body);
+        // The handler runs only for a valid key (idempotency answers 20001 otherwise).
+        const outcome = await createOrderClaim(
+          deps,
+          subject,
+          body,
+          key === undefined ? undefined : { idempotencyKey: key },
+        );
         if (outcome.code !== 0) return refusal(outcome, traceId);
         const envelope: Schema<'OrderClaimResponse'> = {
           code: 0,

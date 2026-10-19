@@ -7,6 +7,7 @@ export type {
   ClaimFailure,
   ClaimResult,
   ClaimListInput,
+  ClaimRequest,
 } from './application/order-claims.ts';
 // B1-08k：第 ⑥ 步分佣快照的纯判定（找回 / 指派 B1-10 复用）与注入的 commission 快照端口类型（B1-08n 接线）。
 export { planCommissionSnapshot, snapshotPaidAtSource } from './domain/commission-snapshot.ts';
