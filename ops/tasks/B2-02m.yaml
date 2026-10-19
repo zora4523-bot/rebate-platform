@@ -1,0 +1,25 @@
+id: B2-02m
+repo: rebate-platform
+title: 资金测试加固（只增用例）：替代 03 在 B2-02l #8 同形数据上 checked_rows=5、少冲一分后重记必须报差异；日终校验全品牌运行与单品牌重跑交错时快照不被旧读数覆盖
+type: test-change
+# 2026-10-20 资金线（编排 06:3x 派工 ①）。B2-02l 规则测试过审 r2 S2（#8 未断言 checked_rows）与 money r1 S1（红冲配对须验实际抵消）的回归；B2-02j money r1 S0（并发重跑旧读数覆盖新快照）的回归。
+# 只新增测试文件，已有规则测试一字不改、不削弱；实现已在 #915 / #917 修好，新用例应直接通过（不做先红）。Codex 写，Claude 快速核「只增不削弱」。
+refs: [BR-FUND-16, BR-FUND-19]
+refs_hash:
+  BR-FUND-16: 077f6d412d5a
+  BR-FUND-19: 8d592a87d85c
+deps: [B2-02l, B2-02j]
+paths:
+  - 'test/spec/db/ledger/invariants-reverse/**'
+  - 'test/spec/ledger/daily-check/**'
+test_paths:
+  - 'test/spec/db/ledger/invariants-reverse/**'
+  - 'test/spec/ledger/daily-check/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/ledger/invariants-reverse/**'
+  - 'test/spec/ledger/daily-check/**'
+status: todo
+pr: null
