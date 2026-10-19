@@ -1,0 +1,22 @@
+id: B1-13k
+repo: rebate-platform
+title: 测试修改：B1-13f 挂载 PUT /v1/me/payout-account 后，B1-13e 冻结测试 [AC-B1-13e#20]「PUT 保持 planned / 404」与 B1-02za identity-level 夹具（http-kit.ts 对已实现的 savePayoutAccount 启动即失败）改为按实现状态判断：已实现时走真实路由、请求体合契约、「执行业务」计数挪到业务入口，并补放行计数为 1 的正向用例（断言不变）
+type: test-change
+# 草稿 2026-10-20（身份与风控线 identity-lane）。B1-13f 实现回报列出的冻结测试冲突；B1-13j 复审 S2（缺放行计数为 1 的正向用例）一并补。按编排 2026-10-18 23:1x 先例（冻结测试的夹具 / 形状挡住正确实现时开 test-change，不削弱断言）。
+# 改前（main，PUT planned）改后（叠 B1-13f）都要绿。
+# 不属削弱资金测试；保护路径第一类改已有文件，走非 task/ 分支 test-change/B1-13k，Claude 只读复审「不削弱」后按 approvals #24 加标签合并。模型 Opus 5.5。
+refs: []
+refs_hash: {}
+deps: [B1-02za, B1-13e, B1-13j]
+paths:
+  - 'test/spec/identity/identity-level/http-kit.ts'
+  - 'test/spec/identity/identity-level/http.int.test.ts'
+  - 'test/spec/identity/payout-account/get.int.test.ts'
+  - 'test/spec/identity/payout-account/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/identity-level/**'
+  - 'test/spec/identity/payout-account/**'
+status: todo
