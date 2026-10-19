@@ -78,6 +78,8 @@ tags:
     description: Admin accounts, read-only for now; super admin only (04 §6.6 admins, §11).
   - name: admin-users
     description: App users in the admin console — list, lookup, detail, audited reveal, ban / freeze and union binding reset / disable / enable (permission points user.*, pii.*, risk.*, union.binding_*; 04 §6.6, §11; F1-07).
+  - name: admin-search
+    description: Admin console top-bar search — one box for an order number, withdrawal number, full phone number or UID, trimmed to the account's permission points (order.view, user.lookup, fund.view; 01 F-ADM-04, 04 §6.6 search, BR-ID-34).
   - name: admin-content
     description: Admin content operations; platform mark replacement images (permission point content.platform_icon, BR-TEXT-24).
   - name: admin-config
@@ -6951,6 +6953,108 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/search:
+    get:
+      operationId: adminSearch
+      tags:
+        - admin-search
+      summary: Top-bar search by a full order number, withdrawal number, phone number or UID
+      description: |
+        The console's top-bar search (01 F-ADM-04; 04 §6.6 search; BR-ID-34 细则「一框搜」). Any
+        signed-in admin may call it (read only, no step-up); what comes back is trimmed by the
+        server to three permission points, one per hit type (enum admin_search_hit_type): order
+        `order.view`, user `user.lookup`, withdrawal `fund.view`. A super admin holds every point.
+
+        `q` is trimmed of surrounding whitespace and must then be 1–64 characters, else 20001 with
+        `data.fields=[q]`. The server tells from its shape what `q` is and matches the full value
+        only (no prefix or partial match): an order number (the order's full number), a withdrawal
+        number (its full number; no hit until the withdrawal module ships), a full phone number
+        (normalised as in BR-ID-05 细则「手机号规范化」) or a UID (the user_id, a UUID). Only
+        objects of the console's app are found. Input of no recognised shape is not an error: 200
+        with an empty list.
+
+        Anti-probing (BR-ID-34 细则「一框搜」): no hit and no permission look the same. A hit of a
+        type the account has no point for is dropped silently; when nothing is left the response is
+        200 with `items=[]` and `truncated=false`. The operation never answers 10403
+        `admin_permission_denied` (10403 only for `admin_ip_not_allowed`, common to every admin
+        operation) and never 20001 for an unknown number, unlike GET /admin/v1/users/lookup.
+
+        `items[]` lists the hits (`type`, `id` for the detail route, `summary` a masked one-line
+        summary: phone numbers masked 3 + 4 as BR-ID-33, no full phone, identity or payout account
+        number). An order or withdrawal hit is followed by its owner as a `user` item, trimmed by
+        `user.lookup` like any user hit. At most 10 items; when there are more, the first 10 come
+        back with `truncated=true` (the console asks for a more complete number). The console
+        opens the detail page directly when exactly one item comes back and lists candidates
+        otherwise.
+
+        Audit: a search by full phone number that returns a user writes an audit entry, as a
+        lookup by phone through `user.lookup` does (04 §6.6 search). Other searches are not
+        audited.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminSearchQuery'
+      responses:
+        '200':
+          description: The hits the account may see; empty for no hit and for no permission alike.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSearchResponse'
+              examples:
+                orderWithOwner:
+                  summary: An order number hit, followed by its owner (order.view and user.lookup)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      items:
+                        - type: order
+                          id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01
+                          summary: 淘宝 订单 3876512094471023 · 已付款
+                        - type: user
+                          id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                          summary: 凑狸用户5678 · 138****5678
+                      truncated: false
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                empty:
+                  summary: No hit, or hits only of types the account has no permission point for
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      items: []
+                      truncated: false
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Invalid query or not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                queryInvalid:
+                  $ref: '#/components/examples/AdminSearchQueryInvalid'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/users/lookup:
     get:
       operationId: adminLookupUser
@@ -10963,6 +11067,16 @@ components:
       description: The user_id to look up; give exactly one of uid and phone (else 20001 with data.fields=[uid, phone]).
       schema:
         $ref: '#/components/schemas/Id'
+    AdminSearchQuery:
+      name: q
+      in: query
+      required: true
+      description: |
+        A full order number, withdrawal number, phone number or UID. Trimmed of surrounding
+        whitespace, then 1–64 characters, else 20001 with data.fields=[q]; the bound is checked
+        after trimming, so the schema carries none.
+      schema:
+        type: string
     AdminUserLookupPhone:
       name: phone
       in: query
@@ -11458,6 +11572,15 @@ components:
           fields:
             - uid
             - phone
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminSearchQueryInvalid:
+      summary: 20001 q missing, or empty or over 64 characters after trimming
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - q
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminUserLookupPhoneInvalid:
       summary: 20001 the phone does not normalise to a mainland mobile number
@@ -20155,6 +20278,68 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminUserDetail'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminSearchHitType:
+      type: string
+      description: |
+        Type of a search hit (enum admin_search_hit_type); each is returned only to accounts holding
+        its permission point: order order.view, user user.lookup, withdrawal fund.view.
+      enum:
+        - order
+        - user
+        - withdrawal
+    AdminSearchItem:
+      type: object
+      description: One hit of the top-bar search.
+      additionalProperties: false
+      required:
+        - type
+        - id
+        - summary
+      properties:
+        type:
+          $ref: '#/components/schemas/AdminSearchHitType'
+        id:
+          $ref: '#/components/schemas/Id'
+        summary:
+          type: string
+          description: |
+            Masked one-line summary for the candidate list (phone masked 3 + 4, BR-ID-33); never a
+            full phone, identity or payout account number. Display only, not parsed by clients.
+          minLength: 1
+          maxLength: 200
+    AdminSearch:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - truncated
+      properties:
+        items:
+          type: array
+          description: Hits the account may see, at most 10; an order or withdrawal is followed by its owner.
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/AdminSearchItem'
+        truncated:
+          type: boolean
+          description: True when there were more than 10 hits and only the first 10 are returned.
+    AdminSearchResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminSearch'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     AdminUserRevealField:

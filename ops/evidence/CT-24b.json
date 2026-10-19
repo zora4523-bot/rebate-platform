@@ -1,0 +1,35 @@
+{
+  "task": "CT-24b",
+  "spec_ref": "b90e712f5255a9600ebf6f0f3b561afd1b4f8d9e",
+  "spec_commit": "30cf954037d94f0257a2d04654e78bd1fa806709",
+  "red_tests": [],
+  "risk_note": "RV2 contract task (contracts/openapi.yaml, contracts/enums/admin.yaml and the regenerated contracts-ts and route tables): adds GET /admin/v1/search?q= (adminSearch, x-implementation planned, no step-up) per 01 F-ADM-04, 04 §6.6 and 08 BR-ID-34 detail 「一框搜」 and the admin batch 1 sign-off: q trimmed 1–64 characters else 20001 [q]; exact match only on order number, withdrawal number, full phone number and UID (uuid), an unrecognised format answers 200 with an empty list; items[] {type (admin_search_hit_type: order / user / withdrawal), id, summary masked} at most 10 with truncated; a number hit adds its owner user (cut by user.lookup); results cut server-side by order.view / user.lookup / fund.view, no hit and no permission both answer 200 with an empty list (no 10403, anti-probing); a full phone hit returning a user is audited. withdrawal hits appear only once the withdrawal module is live. contracts-ts conformance registers the new enum; new unit test admin-search.test.ts (no x-implementation assertion). tester none; implementation by an Opus 5.5 subagent in one run. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "f23baaafe9fbca9e9476bf83ae6ab895a7243cb3",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "deb36e3e80b642be3e5090d7761d3143433275fe",
+    "specs": "c3c361e2d577cc550a501e7feb636fbcb179ff4a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}

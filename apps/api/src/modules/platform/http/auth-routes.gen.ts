@@ -458,6 +458,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/search",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/users/lookup",
     "auth": "admin"
   },

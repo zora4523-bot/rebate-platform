@@ -124,6 +124,17 @@ export const admin_dashboard_todo_key = [
 export type AdminDashboardTodoKey = (typeof admin_dashboard_todo_key)[number];
 
 /**
+ * GET /admin/v1/search 的 items[].type；每类只返回给持有括号里权限点的账号，无权限与无命中同样不出现；类型名取 BR-TEXT-25 admin_dict
+ * Source: 规划/01 F-ADM-04 顶栏「一框搜」；规划/04 §6.6 search、§11.1；规划/08 BR-ID-34 细则「一框搜」（CT-24b） (contracts/enums/admin.yaml).
+ */
+export const admin_search_hit_type = [
+  "order", // 订单（order.view；按完整订单号命中）
+  "user", // 用户（user.lookup；按 UID 或完整手机号命中，或作为命中单号的所属用户附带）
+  "withdrawal", // 提现单（fund.view；按完整提现单号命中；提现模块上线前不产生命中）
+] as const;
+export type AdminSearchHitType = (typeof admin_search_hit_type)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -1474,6 +1485,7 @@ export const enums = {
   admin_account_status,
   admin_auth_level,
   admin_dashboard_todo_key,
+  admin_search_hit_type,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,

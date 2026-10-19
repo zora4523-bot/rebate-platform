@@ -1,6 +1,6 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
@@ -100,3 +100,10 @@ enums:
       agent_report_overdue: AI 举报超 48 小时未处理（agent.report；BR-ID-15）
       beneficiary_held_overdue: 受益人份额 held 满 30 天（risk.freeze；BR-CALC-13）
       union_auth_expiring: 站长联盟授权即将到期或探测失效（union.account_auth；BR-ID-24）
+  admin_search_hit_type:
+    source: 规划/01 F-ADM-04 顶栏「一框搜」；规划/04 §6.6 search、§11.1；规划/08 BR-ID-34 细则「一框搜」（CT-24b）
+    description: GET /admin/v1/search 的 items[].type；每类只返回给持有括号里权限点的账号，无权限与无命中同样不出现；类型名取 BR-TEXT-25 admin_dict
+    values:
+      order: 订单（order.view；按完整订单号命中）
+      user: 用户（user.lookup；按 UID 或完整手机号命中，或作为命中单号的所属用户附带）
+      withdrawal: 提现单（fund.view；按完整提现单号命中；提现模块上线前不产生命中）
