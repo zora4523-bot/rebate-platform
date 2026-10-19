@@ -33,7 +33,9 @@ jobs:
     # 35 → 20 (2026-10-17): the two 100k-run property passes moved to verify-props (#658, #664
     # and #665 hit the 35-minute cap on them). What is left here took 8–13 minutes in the last
     # seven green runs of 2026-10-17; 20 is that with a 1.5× margin.
-    timeout-minutes: 20
+    # 20 → 30 (2026-10-19, CT-06z): green in the 30 latest ci runs 11m21s–19m10s, p90 19m00s
+    # (95% of the cap); 30 is the maximum with a 1.5× margin, rounded up to a multiple of 5.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -66,7 +68,10 @@ jobs:
     # tests resolve workspace packages from source (vitest.shared.ts `couli-src`) and read no
     # planning text, so neither `pnpm build` nor the planning repository is needed here.
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    # 35 → 60 (2026-10-19, CT-06z): green in the 30 latest ci runs 16m40s–32m13s, p90 31m30s
+    # (90% of the cap); the maximum with a 1.5× margin, rounded up to a multiple of 5, is 50,
+    # plus 10 for the [AC-B2-01j#20] property test of B2-01l (#812), which makes this job longer.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -96,7 +101,9 @@ jobs:
     # The one-shot Redis of the integration tests (TEST_REDIS_URL) is a service container with
     # the image of infra/local/compose.yaml and tools/ops/verify-container.sh, data on tmpfs only.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 → 45 (2026-10-19, CT-06z): green in the 30 latest ci runs 17m05s–29m16s, p90 29m05s
+    # (97% of the cap); 45 is the maximum with a 1.5× margin, rounded up to a multiple of 5.
+    timeout-minutes: 45
     services:
       redis:
         image: redis:7.4.11-alpine
