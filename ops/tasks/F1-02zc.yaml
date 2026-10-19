@@ -29,5 +29,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/content/app-versions-admin/**'
-status: todo
-pr: null
+status: done
+pr: 939
