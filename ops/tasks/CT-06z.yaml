@@ -1,0 +1,26 @@
+id: CT-06z
+repo: rebate-platform
+title: CT-06z：ci.yml 三个 verify 作业的 timeout-minutes 跟上实际时长（verify-fast 20→30、verify-props 35→60、verify-int 30→45）
+type: guard-change
+# 2026-10-19 入账（编排会话派工）。起因：verify-props 上限 35 分钟，最近成功运行常用 31～32 分钟（CT-06y #860 标签轮 31m27s），
+# 超时会被取消，取消的必需检查拦合并。统计最近 30 次 ci 运行（39189287439～39196590787，2026-10-19 02:17～03:50 UTC）里成功作业的
+# startedAt / completedAt：verify-fast 14 次 11m21s～19m10s、p90 19m00s（上限 20 的 95%）；verify-props 11 次 16m40s～32m13s、
+# p90 31m30s（35 的 90%）；verify-int 14 次 17m05s～29m16s、p90 29m05s（30 的 97%）。三者 p90 都超过上限的 80%。
+# 规则（编排给定）：p90 超过上限 80% 的作业，上限 = 最大观测值 × 1.5、向上取 5 的倍数：verify-fast 28.75→30、verify-int 43.9→45、
+# verify-props 48.3→50；编排补充：B2-01l（#812）的 [AC-B2-01j#20] 性质测试分片后 verify-props 会更长，在统计值外再留 +10 分钟 → 60
+# （B2-01l 实测时长写进 B3-lane/notices.md 后以它为准，不够再另开任务）。
+# 只改三个 timeout-minutes 数值并在其上方加注释说明取值；不改 concurrency、作业内容、作业 id（必需检查名）与 ci-gate 逻辑，
+# guard-git 15、ci-gate 5 不动。tools/ci/check-workflows.ts 不校验时限，无需同步。
+# .github/workflows/** 属保护路径：approvals #16 常设授权的 CI 流程小修，Claude 实现、Codex 只读对抗评审一轮，按 approvals #24 加标签；
+# 按 approvals #12 走非 task 分支（chore/guard-change-CT-06z）、不带证据文件，台账随同一 PR（先例 CT-06u #824）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 862
