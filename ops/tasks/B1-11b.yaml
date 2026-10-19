@@ -19,4 +19,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/growth/change-logs/**'
-status: todo
+status: done
+pr: 692
