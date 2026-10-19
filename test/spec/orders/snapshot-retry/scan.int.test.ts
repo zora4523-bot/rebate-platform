@@ -18,7 +18,7 @@ afterAll(async () => {
   }
 }, 30_000);
 
-it('[AC-B1-08t#9] 定时扫描严格超过一小时才补偿，使用注入时钟并按 App 隔离', async () => {
+it('[AC-B1-08t#9] 定时扫描满一小时即补偿，使用注入时钟并按 App 隔离', async () => {
   const f = await setupScan(db);
   const other = await setupScan(db);
   const beforeOther = await other.pending();
@@ -28,14 +28,10 @@ it('[AC-B1-08t#9] 定时扫描严格超过一小时才补偿，使用注入时�
   expect(f.port.create).not.toHaveBeenCalled();
   f.clock.advanceMs(1);
   await f.scan();
-  expect(f.port.create).not.toHaveBeenCalled();
-  f.clock.advanceMs(1);
-  await f.scan();
   expect(f.port.create).toHaveBeenCalledTimes(1);
   expect((await f.pending())[0]).toMatchObject({ status: 'resolved', resolved_at: f.clock.now() });
   expect(await other.pending()).toEqual(beforeOther);
   expect(await splits(db, other.ctx.app_id)).toEqual([]);
-  expect(f.readInput.mock.calls[0]?.[0]).toBe(f.port.create.mock.calls[0]?.[0]);
   expect(f.port.create.mock.calls[0]?.[1]).toMatchObject({
     paidAt: f.current.paid_at,
     ownerUserId: f.userId,
@@ -182,19 +178,28 @@ it('[AC-B1-08t#17] 金额资料仍不完整时保留 pending，不能以0元生�
   expect(f.alerts()).toHaveLength(1);
 });
 
-it('[AC-B1-08t#18] 扫描不能以缺快照或同名非快照解析错误为补偿信号', async () => {
+it('[AC-B1-08t#18] 扫描按 open 原因识别重试对象，不按 detail 或 order_id 排除', async () => {
   const f = await setupScan(db);
   await db
     .updateTable('order_sync_pending')
-    .set({ reason: 'AMOUNT_PARSE_FAILED', detail: 'union normalization failed' })
+    .set({ reason: 'AMOUNT_PARSE_FAILED', detail: 'union normalization failed', order_id: null })
     .where('app_id', '=', f.ctx.app_id)
     .execute();
   f.clock.advanceMs(HOUR + 1);
   const before = await f.pending();
+  await succeed(f, db);
   await f.scan();
-  expect(f.port.create).not.toHaveBeenCalled();
-  expect(await f.pending()).toEqual(before);
-  expect(await splits(db, f.ctx.app_id)).toEqual([]);
+  expect(f.port.create).toHaveBeenCalledTimes(1);
+  expect(await f.pending()).toEqual([
+    expect.objectContaining({
+      id: before[0]!.id,
+      order_id: null,
+      detail: 'union normalization failed',
+      status: 'resolved',
+      resolved_at: f.clock.now(),
+    }),
+  ]);
+  expect(await splits(db, f.ctx.app_id)).toHaveLength(1);
 });
 
 it('[AC-B1-08t#19] 超时后端口抛错也转人工，不能无限重试或提交端口写到一半的快照', async () => {

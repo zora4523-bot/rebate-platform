@@ -1,4 +1,5 @@
 // Public surface of the orders module (规划/02 §4.1); other modules import only from this file.
+export { readSnapshotRetryInput } from './infra/snapshot-retry-input.ts';
 export { shouldDeferOrderSource } from './domain/source-shop.ts';
 export type { DeferOrderSourceInput } from './domain/source-shop.ts';
 export { judgeClaimEvidence } from './domain/claim-evidence.ts';

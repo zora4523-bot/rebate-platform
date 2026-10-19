@@ -1,7 +1,6 @@
 import type { DB } from '@couli/db';
-import type { Kysely, Selectable, Transaction } from 'kysely';
+import type { Kysely } from 'kysely';
 import type { Clock, JobQueue, ReceivedJob } from '../../platform/index.ts';
-import type { PlanCommissionSnapshotInput } from '../domain/commission-snapshot.ts';
 import type { CommissionSnapshotPort } from '../application/commission-snapshot-step.ts';
 import type { OrderSyncScheduler } from '../application/sync-scheduler.ts';
 import type { SyncLogger } from '../application/sync-ports.ts';
@@ -16,11 +15,6 @@ export interface SnapshotRetryDeps {
   readonly clock: Clock;
   readonly snapshots: CommissionSnapshotPort;
   readonly logger: SyncLogger;
-  /** 从持久化订单及归档资料恢复快照输入；不得用当前时间替换付款时刻。 */
-  readonly readInput: (
-    trx: Transaction<DB>,
-    order: Selectable<DB['orders']>,
-  ) => Promise<PlanCommissionSnapshotInput>;
 }
 
 export async function handleSnapshotRetry(

@@ -20,11 +20,11 @@ afterAll(async () => {
 }, 30_000);
 
 // B1-08t 的补偿信号是 open pending，不是快照不存在，也不是再次跨入资格。
-it('[AC-B1-08t#1] 相同 content_hash 也重试；成功处置后再次同步不调用快照端口', async () => {
+it('[AC-B1-08t#1] 合法内容更新触发重试；成功处置后再次更新不调用快照端口', async () => {
   const f = await setup(db);
   const port = await succeed(f, db);
   const pending = (await f.pending())[0]!;
-  await f.process();
+  await f.process(f.next());
   expect(port.create).toHaveBeenCalledTimes(1);
   expect(await splits(db, f.ctx.app_id)).toHaveLength(1);
   expect(await f.pending()).toEqual([
@@ -37,7 +37,7 @@ it('[AC-B1-08t#1] 相同 content_hash 也重试；成功处置后再次同步不
     paidAt: f.current.paid_at,
     nBaseFen: 758n,
   });
-  await f.process();
+  await f.process(f.next());
   expect(port.create).toHaveBeenCalledTimes(1);
 });
 
@@ -67,7 +67,7 @@ it('[AC-B1-08t#3] 多条快照 pending 合并为一次重试，非快照待处�
   await f.addPending({ reason: 'SERVICE_FEE_RATE_MISSING' });
   await f.addPending({ reason: 'NO_RECEIVED_AT', detail: null });
   await succeed(f, db);
-  await f.process();
+  await f.process(f.next());
   expect(f.port.create).toHaveBeenCalledTimes(1);
   const rows = await f.pending();
   expect(rows.filter((p) => p.reason !== 'NO_RECEIVED_AT').map((p) => p.status)).toEqual([
@@ -84,14 +84,13 @@ it('[AC-B1-08t#3] 多条快照 pending 合并为一次重试，非快照待处�
 it('[AC-B1-08t#4] 已有快照且还有 open 行仍调幂等端口，不覆盖快照内容', async () => {
   const f = await setup(db);
   const port = await succeed(f, db);
-  const input = await db.transaction().execute(async (trx) => f.readInput(trx, f.current));
   // 经真实端口预建快照，模拟历史任务留下的 open 行；不以是否存在快照作为触发信号。
   await db.transaction().execute((trx) =>
     port.create(trx, {
       appId: f.ctx.app_id,
       orderId: f.current.order_id,
       platform: 'pdd',
-      paidAt: input.order.paid_at!,
+      paidAt: f.current.paid_at!,
       paidAtSource: 'platform',
       orderType: 'share',
       activityType: null,
@@ -105,7 +104,7 @@ it('[AC-B1-08t#4] 已有快照且还有 open 行仍调幂等端口，不覆盖�
   );
   const before = await splits(db, f.ctx.app_id);
   port.create.mockClear();
-  await f.process();
+  await f.process(f.next());
   expect(port.create).toHaveBeenCalledTimes(1);
   expect(await splits(db, f.ctx.app_id)).toEqual(before);
   expect((await f.pending())[0]?.status).toBe('resolved');
@@ -116,7 +115,7 @@ it('[AC-B1-08t#5] pending 结果每次进入只试一次，保留首次时间，
   const first = (await f.pending())[0]!;
   for (let i = 1; i <= 3; i++) {
     f.clock.advanceMs(HOUR);
-    await f.process();
+    await f.process(f.next());
     expect(f.port.create).toHaveBeenCalledTimes(i);
     expect(await f.pending()).toEqual([
       expect.objectContaining({
@@ -128,7 +127,7 @@ it('[AC-B1-08t#5] pending 结果每次进入只试一次，保留首次时间，
     ]);
   }
   await succeed(f, db);
-  await f.process();
+  await f.process(f.next());
   expect((await f.pending())[0]?.status).toBe('resolved');
 });
 
@@ -173,7 +172,7 @@ it('[AC-B1-08t#6] 无 open 快照行、已处置行、未归因、定金与作�
   // 正向对照保证完全禁用补偿的实现不能让这一组守卫测试通过。
   const eligible = await setup(db);
   await succeed(eligible, db);
-  await eligible.process();
+  await eligible.process(eligible.next());
   expect(eligible.port.create).toHaveBeenCalledTimes(1);
 });
 
@@ -188,7 +187,7 @@ it('[AC-B1-08t#7] 下游失败时真实快照、处置记录和订单更新一�
     throw failure;
   });
   f.clock.advanceMs(30_000);
-  const incoming = { ...f.incoming, modified_at: f.clock.now() };
+  const incoming = f.next();
   expect(await capture(() => f.process(incoming))).toEqual({ ok: false, error: failure });
   expect(seen).toEqual([1]);
   expect(await splits(db, f.ctx.app_id)).toEqual([]);
@@ -199,10 +198,11 @@ it('[AC-B1-08t#7] 下游失败时真实快照、处置记录和订单更新一�
   expect((await f.pending())[0]?.status).toBe('resolved');
 });
 
-it('[AC-B1-08t#8] 两个独立流水线并发重放同单，锁内重读确保只调一次', async () => {
+it('[AC-B1-08t#8] 两个独立流水线并发提交同一合法更新，锁内重读确保只调一次', async () => {
   const f = await setup(db);
   const port = await succeed(f, db);
-  await Promise.all([f.process(), f.process()]);
+  const incoming = f.next();
+  await Promise.all([f.process(incoming), f.process(incoming)]);
   expect(port.create).toHaveBeenCalledTimes(1);
   expect(await splits(db, f.ctx.app_id)).toHaveLength(1);
   expect((await f.pending())[0]?.status).toBe('resolved');
@@ -211,7 +211,7 @@ it('[AC-B1-08t#8] 两个独立流水线并发重放同单，锁内重读确保�
 it('[AC-B1-08t#20] 流水线重入的持续失败也在24小时后转人工', async () => {
   const f = await setup(db);
   f.clock.advanceMs(24 * HOUR + 1);
-  await f.process();
+  await f.process(f.next());
   expect(f.port.create).toHaveBeenCalledTimes(1);
   expect((await f.pending())[0]).toMatchObject({
     status: 'open',
@@ -235,6 +235,21 @@ it('[AC-B1-08t#21] 本次报文迁入 INVALID 时不得按迁移前 PAID 生成�
   expect(await splits(db, f.ctx.app_id)).toEqual([]);
   const eligible = await setup(db);
   await succeed(eligible, db);
-  await eligible.process();
+  await eligible.process(eligible.next());
   expect(eligible.port.create).toHaveBeenCalledTimes(1);
+});
+
+it('[AC-B1-08t#26] unchanged 重放即使还有 open 快照行也不重试，合法更新才触发', async () => {
+  const f = await setup(db);
+  await succeed(f, db);
+  const before = await f.read();
+  const result = await capture(() => f.process());
+  expect(result).toMatchObject({ ok: true, value: { kind: 'unchanged' } });
+  expect(f.port.create).not.toHaveBeenCalled();
+  expect(await f.read()).toEqual(before);
+  expect(await splits(db, f.ctx.app_id)).toEqual([]);
+  // 正向对照使尚未接入重试的骨架不能靠现有 unchanged 分支通过本例。
+  expect(await capture(() => f.process(f.next()))).toMatchObject({ ok: true });
+  expect(f.port.create).toHaveBeenCalledTimes(1);
+  expect((await f.pending())[0]?.status).toBe('resolved');
 });
