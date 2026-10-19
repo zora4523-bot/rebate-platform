@@ -9,6 +9,7 @@ import {
   ROUTES,
   contract,
   defaults,
+  defaultsWithAdmin,
   harness,
   member,
   rejected,
@@ -478,7 +479,16 @@ it('[AC-F1-02t#8] 列表按默认全集/类别/前缀分页且只取已发布值
   await seedItem(h, f, KEYS.general, 3, '未发布');
   await seedVersion(h, other.appId, '8', 8);
   await seedItem(h, other, KEYS.general, 8, '其他应用');
-  const texts = defaults();
+  // F1-02zg (test-change, transitional): F1-02zd widens the key set to the union of
+  // texts.default.json and texts.admin.default.json; until it lands either set is accepted,
+  // chosen by the reported total. F1-02zh tightens this to the union only.
+  const base = defaults();
+  const union = defaultsWithAdmin();
+  const probe = success<ItemPage>(
+    await send(f, 'list', undefined, { query: '?page=1&page_size=1' }),
+  );
+  expect([Object.keys(base).length, Object.keys(union).length]).toContain(probe.total);
+  const texts = probe.total === Object.keys(union).length ? union : base;
   const keys = Object.keys(texts).sort();
   const spec = parseYamlLite(readFileSync(new URL('specs/fund-term-keys.yaml', ROOT), 'utf8')) as {
     fund_terms: { prefixes: string[]; keys: string[] };

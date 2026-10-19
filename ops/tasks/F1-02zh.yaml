@@ -1,0 +1,17 @@
+id: F1-02zh
+repo: rebate-platform
+title: F1-02t 规则测试 [AC-F1-02t#8] 收紧回只认 texts.default.json 与 texts.admin.default.json 的并集——F1-02zg 的过渡放宽到期（F1-02zd 合并后）
+type: test-change
+# 2026-10-20 入账（content-client 第四阶段；编排 06:0x：F1-02zg（过渡）→ F1-02zd → F1-02zh（收紧），收紧别漏）。
+# 做法：#8 去掉探 total 选键集的分支，期望键集固定为 defaultsWithAdmin()；其余断言不变。第一类保护路径，合并要负责人标签（approvals #24），非 task 分支、不带证据文件。
+refs: []
+refs_hash: {}
+deps: [F1-02zg, F1-02zd]
+paths:
+  - 'test/spec/content/dict-admin/dict-items.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

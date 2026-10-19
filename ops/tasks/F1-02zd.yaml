@@ -13,7 +13,7 @@ type: impl
 #   读权限为任一权限点（守卫传全部权限点列表，F1-10c 已支持）。
 refs: []
 refs_hash: {}
-deps: [CT-02w]
+deps: [CT-02w, F1-02zg]
 paths:
   - 'apps/api/src/modules/content/**'
   - 'contracts/openapi.yaml'
