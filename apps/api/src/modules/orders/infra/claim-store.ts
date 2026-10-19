@@ -106,8 +106,39 @@ export interface NewClaim {
   }[];
 }
 
-/** Inserts the claim and its items; resolves with the status as stored. */
-export async function insertClaim(trx: Transaction<DB>, claim: NewClaim): Promise<string> {
+/** The savepoint of insertClaim (never nested: one insert per acceptance). */
+const INSERT_SAVEPOINT = sql.raw('orders_claim_insert');
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { readonly code?: unknown }).code === '23505'
+  );
+}
+
+/**
+ * Inserts the claim and its items under a savepoint of `trx`; resolves with the status as stored,
+ * or null when a unique key refused a row: the inserts are then rolled back to the savepoint and
+ * `trx` stays usable (it may be the caller's, e.g. platform idempotency's, which still commits its
+ * record). Any other error rejects unchanged and leaves the transaction to roll back.
+ */
+export async function insertClaim(trx: Transaction<DB>, claim: NewClaim): Promise<string | null> {
+  await sql`SAVEPOINT ${INSERT_SAVEPOINT}`.execute(trx);
+  let status: string;
+  try {
+    status = await insertClaimRows(trx, claim);
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    await sql`ROLLBACK TO SAVEPOINT ${INSERT_SAVEPOINT}`.execute(trx);
+    await sql`RELEASE SAVEPOINT ${INSERT_SAVEPOINT}`.execute(trx);
+    return null;
+  }
+  await sql`RELEASE SAVEPOINT ${INSERT_SAVEPOINT}`.execute(trx);
+  return status;
+}
+
+async function insertClaimRows(trx: Transaction<DB>, claim: NewClaim): Promise<string> {
   const { subject, now } = claim;
   const saved = await trx
     .withSchema('app')

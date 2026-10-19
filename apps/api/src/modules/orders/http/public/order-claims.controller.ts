@@ -3,12 +3,19 @@
 // over application/order-claims.ts: the subject is the token principal only (app_id, uid →
 // user_id; BR-AI-03), never a header, query or body field (the contract schema refuses any extra
 // body field with 20001 before the handler runs).
-// - Submission runs in platform idempotency's standard mode (execute): stages ④a and after are the
-//   idempotency post-miss hooks' (version gate 10405 writes no record); the acceptance commits its
-//   own transaction. Stored results are the idempotency module's rule (0 and 3xxxx: a replay
-//   answers them byte for byte without judging or counting again); 20001 and 50001 are not stored,
-//   so the same key may be sent again. The key goes to the use case as well: a retry of the same
-//   key and body after a 50001 whose failure count had reached Redis does not count again.
+// - Submission runs in platform idempotency's transactional mode (executeInTransaction; Codex 资金
+//   评审 r2 S1): the acceptance (user lock, the day's claim count, claims / claim_items) runs on the
+//   idempotency transaction, so the claim rows and the stored response commit together or not at
+//   all. A process gone after the acceptance and before COMMIT leaves neither, and a retry of the
+//   key is judged afresh (it cannot meet its own claim_items as 30205). Stage ④a is the idempotency
+//   post-miss hooks' (version gate 10405 writes no record). Stored results are the idempotency
+//   module's rule (0 and 3xxxx: a replay answers them byte for byte without judging or counting
+//   again); 20001 and 50001 are not stored and roll back, so the same key may be sent again. The
+//   key goes to the use case as well: the Redis failure count is outside the transaction, so a
+//   retry of the same key and body after a count that reached Redis (a lost reply, or a rollback
+//   after the count) does not count again.
+// - claims.enabled and claim.window_hours are read before the idempotency transaction (content's
+//   reader may need a pooled connection of its own; the transaction must never wait for one).
 // - Codes and HTTP status as contracts/error-codes.yaml; msg the BR-TEXT-14 fallback text
 //   (contracts/texts.default.json error.<code>[.<reason>]); 30201 / 30204 / 30205 / 30206 and the
 //   daily-limit 30203 carry no data, 30202 and the risk 30203 only {reason}.
@@ -40,8 +47,9 @@ import {
   type TokenPrincipal,
 } from '../../../platform/index.ts';
 import {
-  createOrderClaim,
+  createOrderClaimIn,
   listOrderClaims,
+  readClaimSettings,
   type ClaimFailure,
   type OrderClaimDeps,
 } from '../../application/order-claims.ts';
@@ -133,7 +141,8 @@ export class OrderClaimsController {
     const key = typeof header === 'string' ? header : undefined;
     const traceId = request.id;
     const subject = subjectOf(principal);
-    const result = await idempotency.execute(
+    const settings = await readClaimSettings(deps.config, principal.app_id);
+    const result = await idempotency.executeInTransaction(
       {
         appId: principal.app_id,
         actor: { userId: principal.uid, deviceId: principal.device_id, phoneHmac: null },
@@ -143,12 +152,14 @@ export class OrderClaimsController {
         body,
         traceId,
       },
-      async (): Promise<HandlerResult> => {
+      async (trx): Promise<HandlerResult> => {
         // The handler runs only for a valid key (idempotency answers 20001 otherwise).
-        const outcome = await createOrderClaim(
+        const outcome = await createOrderClaimIn(
+          trx,
           deps,
           subject,
           body,
+          settings,
           key === undefined ? undefined : { idempotencyKey: key },
         );
         if (outcome.code !== 0) return refusal(outcome, traceId);

@@ -7,7 +7,9 @@
 //   order_no with every U+0020 removed is empty → 20001 data.fields=[order_no] (nothing read);
 //   ⓪ claims.enabled = false (content's reader; missing or unreadable reads as the registered
 //      default true) → 30206, before any lock, Redis or order read, not counted;
-//   then, in one transaction holding the (app_id, user_id) advisory lock before any count is read:
+//   then, in one transaction holding the (app_id, user_id) advisory lock before any count is read
+//   (a direct call opens its own; HTTP passes platform idempotency's, createOrderClaimIn, so the
+//   claim rows and the stored response commit or roll back together: Codex 资金评审 r2 S1):
 //   ① the day's failure count (Redis) ≥ 10 → 30203 data.reason=RISK_BLOCKED, not counted;
 //   ② claims created today (PG, +08:00 day, any status) ≥ 5 → 30203 without data, not counted;
 //   ③ match in the token's app and the request platform: child number first, then parent number
@@ -20,15 +22,19 @@
 // that creates a claim adds nothing, even when some children failed. One request counts once: a
 // submission with an Idempotency-Key (its key and body) adds in the same script only when it has
 // not been counted that day, so a retry after a lost Redis reply (50001, no idempotency record)
-// adds nothing again (Codex 资金评审 r1 S1 ①). Any Redis failure → 50001 (fail closed: no claim,
-// no count of its own). Passing children go into one claim (status from
-// transitionClaim(null, 'SUBMIT')) with one claim_items row each; orders are never written.
+// adds nothing again (Codex 资金评审 r1 S1 ①); the same holds for a retry after a transaction that
+// counted and then rolled back (process gone before COMMIT). Any Redis failure → 50001 (fail
+// closed: no claim, no count of its own). Passing children go into one claim (status from
+// transitionClaim(null, 'SUBMIT')) with one claim_items row each, under a savepoint so a unique
+// violation leaves the caller's transaction usable; orders are never written.
+// The configuration (⓪ and the window) is read before the transaction holds a pooled connection
+// (readClaimSettings; content's reader may need a connection of its own).
 // Logs: flat fields only, never an order number, sub_order_id, paid_date or (but for
 // claim_fail_burst, 待裁定 3) a user id.
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { accountingDate, transitionClaim } from '@couli/domain';
-import type { Kysely } from 'kysely';
+import type { Kysely, Transaction } from 'kysely';
 import type { ContentReader } from '../../content/index.ts';
 import { newUuidV7, type Clock, type RedisHandle, type RootLogger } from '../../platform/index.ts';
 import {
@@ -78,6 +84,13 @@ export interface ClaimRequest {
   /** Its Idempotency-Key, already validated by the idempotency module. */
   readonly idempotencyKey: string;
 }
+/** What acceptance reads of configuration, before its transaction (readClaimSettings). */
+export interface ClaimSettings {
+  /** ⓪: false only for an explicit false of claims.enabled (registered default true). */
+  readonly enabled: boolean;
+  /** BR-ATTR-13 ④: claim.window_hours when it is a positive integer, else the default. */
+  readonly windowHours: number;
+}
 export interface ClaimListInput {
   readonly cursor?: string;
   readonly limit?: number;
@@ -94,15 +107,8 @@ const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.(\d{3}|\d{6})Z$/;
 
 const UNAVAILABLE: ClaimFailure = Object.freeze({ code: 50001 });
 
-/** Thrown inside the acceptance transaction to roll it back and answer `result`. */
-class ClaimRollback extends Error {
-  readonly result: ClaimFailure;
-  constructor(result: ClaimFailure) {
-    super('orders: claim acceptance rolled back');
-    this.name = 'ClaimRollback';
-    this.result = result;
-  }
-}
+/** Runs the acceptance's work in its transaction (its own, or the caller's). */
+type InTransaction = <T>(work: (trx: Transaction<DB>) => Promise<T>) => Promise<T>;
 
 function failureOf(failure: ClaimChildFailure | { readonly code: 30201 }): ClaimFailure {
   return failure.code === 30202
@@ -117,14 +123,6 @@ async function configValue(config: ContentReader, appId: string, key: string): P
   } catch {
     return undefined;
   }
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { readonly code?: unknown }).code === '23505'
-  );
 }
 
 interface Matched {
@@ -152,115 +150,160 @@ async function matchClaimOrders(
   return { kind: null, children: [], removed };
 }
 
-/** POST /v1/orders/claims after the HTTP stages; shared by HTTP and the rule tests. */
+/**
+ * ⓪ and the claim window of `appId`, read outside any transaction: the transaction must never
+ * wait for a second pooled connection (the reader's) while it holds one. The window is not read
+ * when ⓪ is off.
+ */
+export async function readClaimSettings(
+  config: ContentReader,
+  appId: string,
+): Promise<ClaimSettings> {
+  // ⓪ Only an explicit false switches submission off (registered default true).
+  const enabled = (await configValue(config, appId, ENABLED_KEY)) !== false;
+  return {
+    enabled,
+    windowHours: claimWindowHours(
+      enabled ? await configValue(config, appId, WINDOW_KEY) : undefined,
+    ),
+  };
+}
+
+/** POST /v1/orders/claims after the HTTP stages, in a transaction of its own (the rule tests). */
 export async function createOrderClaim(
   deps: OrderClaimDeps,
   subject: OrderSubject,
   input: Schema<'CreateOrderClaimRequest'>,
   request?: ClaimRequest,
 ): Promise<ClaimResult<Schema<'OrderClaim'>>> {
+  // 20001 before anything is read.
+  if (stripClaimSpaces(input.order_no) === '')
+    return { code: 20001, data: { fields: ['order_no'] } };
+  const settings = await readClaimSettings(deps.config, subject.app_id);
+  const { db } = deps;
+  return submitClaim(
+    deps,
+    subject,
+    input,
+    settings,
+    request,
+    db === undefined ? undefined : (work) => db.transaction().execute(work),
+  );
+}
+
+/**
+ * The same acceptance inside the caller's transaction `trx` (HTTP: platform idempotency's
+ * transactional mode), with `settings` read before that transaction began. Everything it writes
+ * goes through `trx`; a refusal writes nothing there, so the caller may commit it.
+ */
+export async function createOrderClaimIn(
+  trx: Transaction<DB>,
+  deps: OrderClaimDeps,
+  subject: OrderSubject,
+  input: Schema<'CreateOrderClaimRequest'>,
+  settings: ClaimSettings,
+  request?: ClaimRequest,
+): Promise<ClaimResult<Schema<'OrderClaim'>>> {
+  return submitClaim(deps, subject, input, settings, request, (work) => work(trx));
+}
+
+async function submitClaim(
+  deps: OrderClaimDeps,
+  subject: OrderSubject,
+  input: Schema<'CreateOrderClaimRequest'>,
+  settings: ClaimSettings,
+  request: ClaimRequest | undefined,
+  inTransaction: InTransaction | undefined,
+): Promise<ClaimResult<Schema<'OrderClaim'>>> {
   const log = deps.logger.child({ module: 'orders' });
   const appId = subject.app_id;
   const orderNo = stripClaimSpaces(input.order_no);
   if (orderNo === '') return { code: 20001, data: { fields: ['order_no'] } };
-  // ⓪ Only an explicit false switches submission off (registered default true).
-  if ((await configValue(deps.config, appId, ENABLED_KEY)) === false) {
+  if (!settings.enabled) {
     log.info({ app_id: appId, outcome: 'disabled', code: 30206 }, 'orders.claim_submit');
     return { code: 30206 };
   }
-  const { db, redis } = deps;
-  if (db === undefined || redis === undefined) {
+  const { redis } = deps;
+  if (inTransaction === undefined || redis === undefined) {
     log.warn({ app_id: appId, outcome: 'unavailable' }, 'orders.claim_submit');
     return UNAVAILABLE;
   }
-  // Read before the transaction holds a pooled connection (the reader may need one of its own).
-  const windowHours = claimWindowHours(await configValue(deps.config, appId, WINDOW_KEY));
+  const windowHours = settings.windowHours;
   const counter = createClaimFailureCounter(redis, subject);
   const requestId =
     request === undefined ? undefined : claimRequestId(request.idempotencyKey, input);
   const failed = (now: Date, failure: ClaimFailure) =>
     fail(counter, log, subject, now, failure, requestId);
   let matched: Matched | undefined;
-  let result: ClaimResult<Schema<'OrderClaim'>>;
-  try {
-    result = await db.transaction().execute(async (trx) => {
-      await lockClaimUser(trx, appId, subject.user_id);
-      const now = deps.clock.now();
-      const day = claimCounterDay(now);
-      let failures: number;
-      try {
-        failures = await counter.read(day);
-      } catch {
-        return UNAVAILABLE;
-      }
-      // ① and ② are not counted as failures.
-      if (failures >= CLAIM_FAIL_LIMIT) return { code: 30203, data: { reason: 'RISK_BLOCKED' } };
-      if ((await countClaimsOn(trx, subject, accountingDate(now))) >= CLAIM_DAILY_LIMIT) {
-        return { code: 30203 };
-      }
-      matched = await matchClaimOrders(trx, appId, input.platform, orderNo);
-      if (matched.kind === null) return failed(now, failureOf({ code: 30201 }));
-      const children = matched.children;
-      const judgement = judgeClaimChildren(children, {
-        applicant: subject.user_id,
-        paid_date: input.paid_date,
-        now,
-        windowHours,
-        alreadyClaimed: await claimedSubOrders(
-          trx,
-          subject,
-          input.platform,
-          children.map((row) => row.sub_order_id),
-        ),
-      });
-      if (judgement.failure !== null) {
-        return failed(now, failureOf(judgement.failure));
-      }
-      const submitted = transitionClaim(null, 'SUBMIT');
-      if (!submitted.ok) throw new Error('orders: claim state machine refuses SUBMIT');
-      const claimId = newUuidV7(now);
-      let status: string;
-      try {
-        status = await insertClaim(trx, {
-          id: claimId,
-          subject,
-          platform: input.platform,
-          order_no: orderNo,
-          order_no_type: matched.kind,
-          paid_date: input.paid_date,
-          status: submitted.to,
-          now,
-          items: judgement.passed.map((row) => ({
-            id: newUuidV7(now),
-            sub_order_id: row.sub_order_id,
-            order_id: row.order_id,
-          })),
-        });
-      } catch (error) {
-        // claim_items' unique key is the last line (not expected under the user lock): the same
-        // answer as ④d, counted while the lock is still held, then everything rolls back.
-        if (!isUniqueViolation(error)) throw error;
-        throw new ClaimRollback(await failed(now, { code: 30205 }));
-      }
-      const data: Schema<'OrderClaim'> = {
-        claim_id: claimId,
-        platform: input.platform,
-        order_no: orderNo,
-        paid_date: input.paid_date,
-        status: status as Schema<'ClaimStatus'>,
-        created_at: now.toISOString(),
-        items: judgement.passed.map((row) => ({
-          sub_order_id: row.sub_order_id,
-          decision: null,
-          reject_reason: null,
-        })),
-      };
-      return { code: 0 as const, data };
+  const result: ClaimResult<Schema<'OrderClaim'>> = await inTransaction(async (trx) => {
+    await lockClaimUser(trx, appId, subject.user_id);
+    const now = deps.clock.now();
+    const day = claimCounterDay(now);
+    let failures: number;
+    try {
+      failures = await counter.read(day);
+    } catch {
+      return UNAVAILABLE;
+    }
+    // ① and ② are not counted as failures.
+    if (failures >= CLAIM_FAIL_LIMIT) return { code: 30203, data: { reason: 'RISK_BLOCKED' } };
+    if ((await countClaimsOn(trx, subject, accountingDate(now))) >= CLAIM_DAILY_LIMIT) {
+      return { code: 30203 };
+    }
+    matched = await matchClaimOrders(trx, appId, input.platform, orderNo);
+    if (matched.kind === null) return failed(now, failureOf({ code: 30201 }));
+    const children = matched.children;
+    const judgement = judgeClaimChildren(children, {
+      applicant: subject.user_id,
+      paid_date: input.paid_date,
+      now,
+      windowHours,
+      alreadyClaimed: await claimedSubOrders(
+        trx,
+        subject,
+        input.platform,
+        children.map((row) => row.sub_order_id),
+      ),
     });
-  } catch (error) {
-    if (!(error instanceof ClaimRollback)) throw error;
-    result = error.result;
-  }
+    if (judgement.failure !== null) {
+      return failed(now, failureOf(judgement.failure));
+    }
+    const submitted = transitionClaim(null, 'SUBMIT');
+    if (!submitted.ok) throw new Error('orders: claim state machine refuses SUBMIT');
+    const claimId = newUuidV7(now);
+    const status = await insertClaim(trx, {
+      id: claimId,
+      subject,
+      platform: input.platform,
+      order_no: orderNo,
+      order_no_type: matched.kind,
+      paid_date: input.paid_date,
+      status: submitted.to,
+      now,
+      items: judgement.passed.map((row) => ({
+        id: newUuidV7(now),
+        sub_order_id: row.sub_order_id,
+        order_id: row.order_id,
+      })),
+    });
+    // claim_items' unique key is the last line (not expected under the user lock): its insert is
+    // undone to the savepoint and the answer is ④d's, counted while the lock is still held.
+    if (status === null) return failed(now, { code: 30205 });
+    const data: Schema<'OrderClaim'> = {
+      claim_id: claimId,
+      platform: input.platform,
+      order_no: orderNo,
+      paid_date: input.paid_date,
+      status: status as Schema<'ClaimStatus'>,
+      created_at: now.toISOString(),
+      items: judgement.passed.map((row) => ({
+        sub_order_id: row.sub_order_id,
+        decision: null,
+        reject_reason: null,
+      })),
+    };
+    return { code: 0 as const, data };
+  });
   const match = matched as Matched | undefined;
   log.info(
     {
