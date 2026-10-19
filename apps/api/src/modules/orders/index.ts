@@ -1,6 +1,14 @@
 // Public surface of the orders module (规划/02 §4.1); other modules import only from this file.
 export { shouldDeferOrderSource } from './domain/source-shop.ts';
 export type { DeferOrderSourceInput } from './domain/source-shop.ts';
+export { judgeClaimEvidence } from './domain/claim-evidence.ts';
+export type {
+  ClaimEvidenceInput,
+  ClaimItemEvidence,
+  ClaimEvidenceLevel,
+} from './domain/claim-evidence.ts';
+export { readClaimEvidenceWindow } from './application/claim-evidence.ts';
+export type { ClaimEvidencePorts, ClaimEvidenceFactory } from './application/claim-evidence.ts';
 export { createOrderClaim, listOrderClaims } from './application/order-claims.ts';
 export type {
   OrderClaimDeps,

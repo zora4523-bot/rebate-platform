@@ -65,8 +65,10 @@ import {
 } from '../infra/claim-store.ts';
 import { lockClaimUser } from '../infra/order-lock.ts';
 import type { OrderSubject } from './order-queries.ts';
+import type { ClaimEvidenceFactory } from './claim-evidence.ts';
 
 export interface OrderClaimDeps {
+  readonly evidence?: ClaimEvidenceFactory;
   readonly db?: Kysely<DB>;
   readonly redis?: RedisHandle;
   readonly clock: Clock;
