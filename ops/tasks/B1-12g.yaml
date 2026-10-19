@@ -3,8 +3,7 @@ repo: rebate-platform
 title: notification：订阅 risk.state_changed，按 BR-TEXT-23 发站内信 RISK_STATE_CHANGED（frozen / frozen_until / unfrozen / banned / unbanned 五个变体，category=service、只站内、不推送不短信）；同一事务写 inbox_messages 与 notify_logs，按事件编号去重落在 notify_logs 唯一 (app_id, dedupe_key)；文案取包内默认（BR-TEXT-23 原文）并应用 notify_templates 覆盖
 type: impl
 # 2026-10-18 入账（be-codex；编排 09:4x 派工「发送风控状态变更站内信」归本线，admin-backend 10-18 01:20 跨线请求：F1-07d 不加发送调用、只写 TODO 指向本任务）。
-# 依据：BR-TEXT-23 细则模板与原因类别字典（{reason_category} 取 risk_reason.<category> 用户文案；{frozen_until} 按 BR-TEXT-11）；risk.state_changed 由 risk 的 setRiskState 在同一事务发出（载荷 app_id、user_id、from、to、reason_category），
-# 事件至少一次投递、消费端去重（AGENTS 硬规则 4）。frozen_until 由 risk 在同一事务写进载荷（快照，ISO 8601 UTC 字符串，非冻结为 null；台账评审 GT-23bep S1：消费者不得读 user_risk_state 当前行代替事件当时的值），发布改动与测试同步在 B1-03y，本任务只消费。
+# 依据：BR-TEXT-23 细则模板与原因类别字典（{reason_category} 取 risk_reason.<category> 用户文案；{frozen_until} 按 BR-TEXT-11）；risk.state_changed 由 risk 的 setRiskState 在同一事务发出（载荷 app_id、user_id、from、to、reason_category）， 事件至少一次投递、消费端去重（AGENTS 硬规则 4）。frozen_until 由 risk 在同一事务写进载荷（快照，ISO 8601 UTC 字符串，非冻结为 null；台账评审 GT-23bep S1：消费者不得读 user_risk_state 当前行代替事件当时的值），发布改动与测试同步在 B1-03y，本任务只消费。
 # 变体判定：to=frozen 且 frozen_until 空 → frozen；to=frozen 且有到期 → frozen_until；from=frozen、to=normal → unfrozen；to=banned → banned；from=banned、to=normal → unbanned；
 # 接线：events/types.ts 的 EVENT_SUBSCRIPTIONS 登记订阅，platform/queue/catalog.ts 加对应 evt.<consumer> 队列与 ENTRY_PLAN 条目（台账评审 r3 S1）。 平台冻结测试 test/spec/platform/events/contract.test.ts（约第 134 行，subscriptions 精确为 []）与 test/spec/platform/queue/contract.test.ts（约第 139、178 行，队列与 worker 精确比较）：测试阶段由测试作者在同一 PR 只加本任务的订阅 / 队列 / worker 条目，其余不动（第一类保护路径，#24 标签；台账评审 r5 S1）。
 # 编排 10-19 01:4x 裁定（选 A ②）：订阅生效后 setRiskState 同事务入队，经 createHttpApp 建 api 入口的冻结集成测试从不启动 JOB_QUEUE（72 条红）。bootstrap.ts 的 createHttpApp 加 startQueue?: boolean（默认 false，entry.ts 不变仍显式 start），init 后启动真实 pg-boss、close 时停；上列四份 kit 只加 startQueue: true（B1-12h 记录，同 PR），不改测试体、不用假队列、不改 runtime 的 not_running 拒绝。
@@ -20,6 +19,7 @@ paths:
   - 'apps/api/src/modules/platform/queue/catalog.ts'
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/bootstrap.test.ts'
   - 'apps/api/src/modules/linking/index.ts'
   - 'apps/api/src/modules/linking/application/taobao-reauth-read.ts'
   - 'apps/api/src/modules/linking/application/taobao-reauth-read.test.ts'
