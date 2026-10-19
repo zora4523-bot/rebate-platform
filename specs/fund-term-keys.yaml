@@ -45,6 +45,19 @@ fund_terms:
     - auth_tips.
     - order_status_group.
     - jump_tip.
+    # BR-TEXT-25 后台字典（admin_dict.*，默认文案在 contracts/texts.admin.default.json）：提现、打款、调账、核销、
+    # 差错单、月结类枚举整组归资金术语；其余枚举的键逐键列在 ordinary.keys。
+    - admin_dict.admin_adjustments.status.
+    - admin_dict.bad_debt_writeoff.status.
+    - admin_dict.recon_diff_status.
+    - admin_dict.recon_diff_type.
+    - admin_dict.recon_diffs.source.
+    - admin_dict.settle_batch.status.
+    - admin_dict.settle_mode.
+    - admin_dict.withdrawal_status.
+    - admin_dict.withdrawals.auto_decision.failed_conditions.
+    - admin_dict.withdrawals.review_mode.
+    - admin_dict.withdrawals.risk_flags.
   keys:
     - btn.buy.no_rebate
     - btn.buy.rebate_suffix
@@ -103,6 +116,52 @@ ordinary:
   keys:
     - about.copy_diagnostics
     - about.copy_diagnostics.done
+    # BR-TEXT-25 后台字典的普通键（默认文案在 contracts/texts.admin.default.json，不在 texts.default.json）。
+    # 下面两键的默认文案命中关键词核对，但 exempt 现只核对 texts.default.json 的键，故理由记在这里：
+    # admin_dict.risk_state.frozen「冻结」说的是账号风控状态，不是资金或余额；
+    # admin_dict.claim_reject_reason.ORDER_INVALID「订单已失效（系统专用）」说的是订单不可找回，不说金额或有没有返利。
+    - admin_dict.appeal_status.processing
+    - admin_dict.appeal_status.revoked
+    - admin_dict.appeal_status.upheld
+    - admin_dict.claim_reject_reason.EXPIRED_CLICK
+    - admin_dict.claim_reject_reason.FRAUD
+    - admin_dict.claim_reject_reason.NOT_IN_POOL
+    - admin_dict.claim_reject_reason.NOT_TRACKED
+    - admin_dict.claim_reject_reason.NO_EVIDENCE
+    - admin_dict.claim_reject_reason.ORDER_INVALID
+    - admin_dict.claim_reject_reason.OTHER
+    - admin_dict.claim_reject_reason.OTHER_TLJ
+    - admin_dict.claim_status.approved
+    - admin_dict.claim_status.auto_matched
+    - admin_dict.claim_status.cancelled
+    - admin_dict.claim_status.manual_review
+    - admin_dict.claim_status.rejected
+    - admin_dict.claim_status.submitted
+    - admin_dict.commission_rules.status.draft
+    - admin_dict.commission_rules.status.published
+    - admin_dict.commission_rules.status.revoked
+    - admin_dict.export_status.cancelled
+    - admin_dict.export_status.done
+    - admin_dict.export_status.expired
+    - admin_dict.export_status.failed
+    - admin_dict.export_status.pending
+    - admin_dict.export_status.running
+    - admin_dict.risk_action.block
+    - admin_dict.risk_action.manual_review
+    - admin_dict.risk_action.pass
+    - admin_dict.risk_action.void_commission
+    - admin_dict.risk_state.appealing
+    - admin_dict.risk_state.banned
+    - admin_dict.risk_state.frozen
+    - admin_dict.risk_state.normal
+    - admin_dict.union_accounts.auth_status.active
+    - admin_dict.union_accounts.auth_status.expired
+    - admin_dict.union_accounts.auth_status.expiring
+    - admin_dict.union_accounts.last_probe_ok.false
+    - admin_dict.union_accounts.last_probe_ok.true
+    - admin_dict.union_pids.status.active
+    - admin_dict.union_pids.status.pending
+    - admin_dict.union_pids.status.retired
     - agent.degraded
     - agent.degraded.empty
     - agent.disclaimer.commission

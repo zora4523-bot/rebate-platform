@@ -698,6 +698,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/dict",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/app-versions",
     "signed": false
   },

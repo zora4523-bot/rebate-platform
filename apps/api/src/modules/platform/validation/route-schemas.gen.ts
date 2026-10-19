@@ -7977,7 +7977,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
             "properties": {
               "key": {
                 "type": "string",
-                "description": "A key of contracts/texts.default.json.",
+                "description": "A key of contracts/texts.default.json or contracts/texts.admin.default.json.",
                 "minLength": 1,
                 "maxLength": 128
               },
@@ -8083,7 +8083,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "maxItems": 200,
           "items": {
             "type": "string",
-            "description": "A key of contracts/texts.default.json.",
+            "description": "A key of contracts/texts.default.json or contracts/texts.admin.default.json.",
             "minLength": 1,
             "maxLength": 128
           }

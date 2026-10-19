@@ -1,0 +1,35 @@
+{
+  "task": "CT-02w",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "326127ff140cf9a5af99725aaf15e3fa93059131",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; new operation planned). Console dictionary read GET /admin/v1/dict (adminGetDict, any permission point, no step-up) returning AdminDict items[<enum>][<code>] for every admin_dict key, defaults from a new contracts/texts.admin.default.json (114 keys from BR-TEXT-25, not shipped to App / H5; texts.default.json unchanged) overlaid by dict_items. dict-items list / save / rollback descriptions now accept keys from either default file (orchestrator ruling; implementation in F1-02zd), admin_dict keys classified by specs/fund-term-keys.yaml like the others (no new permission point). fund-term-keys.yaml classification extended and fund-term-keys.gen.ts regenerated. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 fail (S1 dict-items save still limited to texts.default.json keys), fixed in descriptions; round 2 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "d32b54bec440837a225652fb2e02da59bcdeb4e6",
+    "specs": "a1b96a3002d99e9b2e9c35fa6b3b4fbdba07cfca"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
