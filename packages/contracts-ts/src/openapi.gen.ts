@@ -2994,6 +2994,105 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Order claims to review (filters, page by page, a count per claim status)
+         * @description The claim review list (01 F-ADM-06; 04 §6.6 claims; BR-ATTR-18). Read only, no step-up.
+         *     Permission point `order.claim` (04 §11.2) reads every claim of the console's app. An
+         *     account holding only `user.lookup` (04 §11.1: it may see the claims of a user it looks up)
+         *     may read the list only together with `user_id`, the user detail page's claims tab
+         *     (design/specs/admin-user-detail.md); without `user_id` that account gets 10403 with
+         *     `data.reason=admin_permission_denied`, the same as an account holding neither point. A
+         *     super admin holds every point. Approving and rejecting stay with `order.claim` alone
+         *     (CT-24l).
+         *
+         *     Filters combine with AND: `platform`, `evidence_level` (enum claim_evidence_level, the
+         *     claim's level, that is its weakest child order), `status` (enum claim_status), `user_id`
+         *     (the applicant; the user filter takes the user_id only: UID and phone number go through
+         *     the top-bar search GET /admin/v1/search, not this list) and `q`. `q` is trimmed of
+         *     surrounding whitespace and spaces inside are removed, then it must be 1–64 characters,
+         *     else 20001 with `data.fields=[q]`; it matches exactly (no prefix or partial match) a
+         *     claim_id (the display number of a claim is its claim_id; there is no separate claim
+         *     number), the order number as submitted, or the number of one of the claim's child
+         *     orders. A `user_id` that names no user of the app, or a filter set nothing matches, is an
+         *     empty page (`items=[]`, `total=0`), not an error; `counts` still follows its own rule
+         *     below (every filter except `status`), so a `status` nothing matches leaves the other
+         *     counts as they are (a user with 3 approved claims and none rejected, read with
+         *     `status=rejected`: `items=[]`, `total=0`, `counts.approved=3`), and every count is 0 only
+         *     when the filters other than `status` match nothing. A value outside an enum is 20001 with
+         *     `data.fields` naming the parameter.
+         *
+         *     Order: claims with status `auto_matched` first (BR-ATTR-18: kept at the top for the
+         *     reviewer), then every other claim; within each group `submitted_at` descending, then the
+         *     server's internal order for the same time. Pages with `page` (any positive integer, as
+         *     AdminPage; a page past the last one is `items=[]`) and `page_size` ≤ 200 (a `page_size`
+         *     above 200 is 20001, as AdminPageSize). `counts` has one entry per claim_status value (0 included), counted with
+         *     every filter of the request except `status`, so the console's status tabs show what each
+         *     tab would hold; `total` is the count of the page's own filter set. The applicant is shown
+         *     as user_id and phone number masked 3 + 4 (BR-ID-33), never the full number. Reading does
+         *     not write an audit record.
+         */
+        get: operations["adminListClaims"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/claims/{claim_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One claim with its child orders and the evidence view
+         * @description The claim review page (01 F-ADM-06; 04 §6.6 claims; BR-ATTR-18). Read only, no step-up.
+         *     Permission point `order.claim` (04 §11.2) reads any claim of the console's app. An account
+         *     holding only `user.lookup` (04 §11.1) must pass `user_id` (the user it is looking at);
+         *     without it the account gets 10403 with `data.reason=admin_permission_denied`, the same as
+         *     an account holding neither point. When `user_id` is given (by any account) and the claim's
+         *     applicant is another user, the answer is 20001 with `data.fields=[claim_id]`, the same as
+         *     an unknown claim_id or a claim of another app (no probing). The display number of a claim
+         *     is its claim_id.
+         *
+         *     Same fields as a list row plus `reason` (the note of the latest approval or rejection,
+         *     claims.reason, null before any; every note is kept in the audit log) and `items`, one per child order (claim_items): its own evidence level (BR-ATTR-18 counts per
+         *     child order, for the applicant only), the decision (null while pending), the reject reason
+         *     (enum claim_reject_reason, set with a rejection only), when and by whom it was decided
+         *     (`decided_by` null for a decision made by the system: a NOT_IN_POOL or ORDER_INVALID
+         *     rejection or a cancellation after attribution by sync), the reviewer's display name
+         *     (`decided_by_name`: admin_users.display_name, the username when that is empty, null when
+         *     `decided_by` is null or the account is gone), the `row_version` that the approve and
+         *     reject operations take as `expected_row_version` (CT-24l), `matches` and `evidence_links`.
+         *     `matches` compares, field by field, what the user submitted with what the union reported
+         *     for that child order (enum admin_claim_match_field: order number, payment date; for a
+         *     pre-sale order the union side is the date the deposit was paid), values as strings in the
+         *     contract's formats, with the server's verdict in `matched`. `evidence_links` lists the
+         *     link records that count as the child order's evidence (BR-ATTR-18: the applicant's own
+         *     convert and open records with result_code 0 inside the window before the child order's
+         *     attribution time, newest first), each with its time and scene only: no product, shop,
+         *     promotion or raw union data. It is empty for evidence `none`. Reading does not write an
+         *     audit record.
+         */
+        get: operations["adminGetClaim"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/platform-icons": {
         parameters: {
             query?: never;
@@ -8227,6 +8326,153 @@ export interface components {
             trace_id: components["schemas"]["TraceId"];
         };
         /**
+         * @description Evidence level of a claim or of one child order (contracts/enums/order.yaml claim_evidence_level; BR-ATTR-18).
+         * @enum {string}
+         */
+        AdminClaimEvidenceLevel: "strong" | "weak" | "none";
+        /**
+         * @description Field compared between what the user submitted and what the union reported (enum admin_claim_match_field).
+         * @enum {string}
+         */
+        AdminClaimMatchField: "order_no" | "paid_date";
+        /**
+         * @description Scene of a link record counted as evidence (contracts/enums/trade.yaml scene).
+         * @enum {string}
+         */
+        AdminClaimEvidenceScene: "search" | "detail" | "home_card" | "feed" | "clipboard" | "agent" | "share" | "h5" | "push" | "taolijin" | "watch_alert" | "share_ext" | "wechat_bot" | "mcp";
+        /** @description The applicant of a claim as the console shows it; the phone number only masked (BR-ID-33). */
+        AdminClaimApplicant: {
+            user_id: components["schemas"]["Id"];
+            phone_masked: components["schemas"]["AdminMaskedPhone"];
+        };
+        /**
+         * @description A claim row of the review list (04 §3.2 claims). Not the user-side OrderClaim. The display
+         *     number of a claim is its claim_id (展示编号即 claim_id); there is no separate claim number.
+         */
+        AdminClaimListItem: {
+            claim_id: components["schemas"]["Id"];
+            /** @description The order number as the user submitted it, spaces removed. */
+            order_no: string;
+            platform: components["schemas"]["PlatformCode"];
+            user: components["schemas"]["AdminClaimApplicant"];
+            /**
+             * Format: date
+             * @description Payment date as the user submitted it, YYYY-MM-DD in +08:00.
+             */
+            paid_date: string;
+            /**
+             * Format: date-time
+             * @description When the claim was submitted.
+             */
+            submitted_at: string;
+            evidence_level: components["schemas"]["AdminClaimEvidenceLevel"];
+            status: components["schemas"]["ClaimStatus"];
+        };
+        /**
+         * @description Number of claims per claim_status value, counted with every filter of the request except
+         *     status (0 included).
+         */
+        AdminClaimStatusCounts: {
+            /** Format: int32 */
+            submitted: number;
+            /** Format: int32 */
+            auto_matched: number;
+            /** Format: int32 */
+            manual_review: number;
+            /** Format: int32 */
+            approved: number;
+            /** Format: int32 */
+            rejected: number;
+            /** Format: int32 */
+            cancelled: number;
+        };
+        AdminClaimPage: {
+            items: components["schemas"]["AdminClaimListItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+            counts: components["schemas"]["AdminClaimStatusCounts"];
+        };
+        AdminClaimPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminClaimPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description One field of the evidence view, the user's value against the union's. */
+        AdminClaimMatch: {
+            field: components["schemas"]["AdminClaimMatchField"];
+            /** @description What the user submitted, in the contract's format (a date as YYYY-MM-DD). */
+            user_value: string | null;
+            /** @description What the union reported for this child order, same format; null when the union gave none. */
+            union_value: string | null;
+            /** @description The server's verdict whether the two agree (for order_no after the same normalisation as BR-ATTR-17). */
+            matched: boolean;
+        };
+        /** @description A link record counted as evidence; its time and scene only, no product, shop, promotion or raw union data. */
+        AdminClaimEvidenceLink: {
+            /** Format: date-time */
+            at: string;
+            scene: components["schemas"]["AdminClaimEvidenceScene"];
+        };
+        /** @description One child order of a claim (04 §3.2 claim_items). Not the user-side OrderClaimItem. */
+        AdminClaimItem: {
+            item_id: components["schemas"]["Id"];
+            /** @description The child order number. */
+            sub_order_id: string;
+            evidence: components["schemas"]["AdminClaimEvidenceLevel"];
+            /** @description null while pending. */
+            decision: components["schemas"]["ClaimItemDecision"] | null;
+            /** @description Set with a rejection only, else null. */
+            reject_reason: components["schemas"]["ClaimRejectReason"] | null;
+            /**
+             * Format: date-time
+             * @description When the decision was made; null while pending.
+             */
+            decided_at: string | null;
+            /** @description admin_id of the reviewer; null while pending or when the system decided. */
+            decided_by: components["schemas"]["Id"] | null;
+            /** @description The reviewer's display name (admin_users.display_name, else the username); null when decided_by is null or the account is gone. */
+            decided_by_name: string | null;
+            /**
+             * Format: int32
+             * @description CAS value; the expected_row_version of the approve and reject operations.
+             */
+            row_version: number;
+            matches: components["schemas"]["AdminClaimMatch"][];
+            /** @description Newest first; empty for evidence none. */
+            evidence_links: components["schemas"]["AdminClaimEvidenceLink"][];
+        };
+        /**
+         * @description A claim as the review page sees it: the list row's fields plus the latest note and the
+         *     child orders. The display number is the claim_id. Not the user-side OrderClaim.
+         */
+        AdminClaimDetail: {
+            claim_id: components["schemas"]["Id"];
+            /** @description The order number as the user submitted it, spaces removed. */
+            order_no: string;
+            platform: components["schemas"]["PlatformCode"];
+            user: components["schemas"]["AdminClaimApplicant"];
+            /** Format: date */
+            paid_date: string;
+            /** Format: date-time */
+            submitted_at: string;
+            evidence_level: components["schemas"]["AdminClaimEvidenceLevel"];
+            status: components["schemas"]["ClaimStatus"];
+            /** @description Note of the latest approval or rejection (claims.reason); null before any. */
+            reason: string | null;
+            items: components["schemas"]["AdminClaimItem"][];
+        };
+        AdminClaimDetailResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminClaimDetail"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
          * @description Type of a search hit (enum admin_search_hit_type); each is returned only to accounts holding
          *     its permission point: order order.view, user user.lookup, withdrawal fund.view.
          * @enum {string}
@@ -8597,6 +8843,29 @@ export interface components {
          *     give exactly one of uid and phone.
          */
         AdminUserLookupPhone: components["schemas"]["Phone"];
+        /**
+         * @description claim_id of the claim (also its display number); unknown, of another app, or (with
+         *     user_id) of another applicant → 20001 with data.fields=[claim_id].
+         */
+        AdminClaimIdPath: components["schemas"]["Id"];
+        /** @description Only claims of this platform (enum platform); absent = all. */
+        AdminClaimPlatformFilter: components["schemas"]["PlatformCode"];
+        /** @description Only claims of this evidence level (enum claim_evidence_level; the claim's weakest child order); absent = all. */
+        AdminClaimEvidenceLevelFilter: components["schemas"]["AdminClaimEvidenceLevel"];
+        /** @description Only claims in this status (enum claim_status); absent = all. The counts ignore it. */
+        AdminClaimStatusFilter: components["schemas"]["ClaimStatus"];
+        /**
+         * @description Only claims of this applicant (the user_id; UID and phone lookups go through the top-bar
+         *     search). Required for an account holding user.lookup but not order.claim (else 10403
+         *     with data.reason=admin_permission_denied).
+         */
+        AdminClaimUserFilter: components["schemas"]["Id"];
+        /**
+         * @description A claim_id, the order number as submitted, or a child order number, matched exactly.
+         *     Trimmed and with spaces removed, then 1–64 characters, else 20001 with data.fields=[q];
+         *     the bound is checked after trimming, so the schema carries none.
+         */
+        AdminClaimQuery: string;
         /** @description Platform mark key (enum platform_icon_key); another value → 20001 with data.fields=[key]. */
         PlatformIconKeyPath: components["schemas"]["PlatformIconKey"];
         /** @description Version of the mark, counted per mark from 1; unknown → 20001 with data.fields=[version]. */
@@ -15591,6 +15860,251 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListClaims: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only claims of this platform (enum platform); absent = all. */
+                platform?: components["parameters"]["AdminClaimPlatformFilter"];
+                /** @description Only claims of this evidence level (enum claim_evidence_level; the claim's weakest child order); absent = all. */
+                evidence_level?: components["parameters"]["AdminClaimEvidenceLevelFilter"];
+                /** @description Only claims in this status (enum claim_status); absent = all. The counts ignore it. */
+                status?: components["parameters"]["AdminClaimStatusFilter"];
+                /**
+                 * @description Only claims of this applicant (the user_id; UID and phone lookups go through the top-bar
+                 *     search). Required for an account holding user.lookup but not order.claim (else 10403
+                 *     with data.reason=admin_permission_denied).
+                 */
+                user_id?: components["parameters"]["AdminClaimUserFilter"];
+                /**
+                 * @description A claim_id, the order number as submitted, or a child order number, matched exactly.
+                 *     Trimmed and with spaces removed, then 1–64 characters, else 20001 with data.fields=[q];
+                 *     the bound is checked after trimming, so the schema carries none.
+                 */
+                q?: components["parameters"]["AdminClaimQuery"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of claims, auto_matched first, then newest submitted first, with a count per status. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "claim_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5aa1",
+                     *             "order_no": "231006-1234567890",
+                     *             "platform": "pdd",
+                     *             "user": {
+                     *               "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *               "phone_masked": "138****5678"
+                     *             },
+                     *             "paid_date": "2026-10-06",
+                     *             "submitted_at": "2026-10-12T08:02:31+08:00",
+                     *             "evidence_level": "strong",
+                     *             "status": "auto_matched"
+                     *           },
+                     *           {
+                     *             "claim_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5aa0",
+                     *             "order_no": "231005-0987654321",
+                     *             "platform": "pdd",
+                     *             "user": {
+                     *               "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *               "phone_masked": null
+                     *             },
+                     *             "paid_date": "2026-10-05",
+                     *             "submitted_at": "2026-10-12T09:15:00+08:00",
+                     *             "evidence_level": "weak",
+                     *             "status": "manual_review"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2,
+                     *         "counts": {
+                     *           "submitted": 0,
+                     *           "auto_matched": 1,
+                     *           "manual_review": 1,
+                     *           "approved": 3,
+                     *           "rejected": 1,
+                     *           "cancelled": 0
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminClaimPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetClaim: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Only claims of this applicant (the user_id; UID and phone lookups go through the top-bar
+                 *     search). Required for an account holding user.lookup but not order.claim (else 10403
+                 *     with data.reason=admin_permission_denied).
+                 */
+                user_id?: components["parameters"]["AdminClaimUserFilter"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description claim_id of the claim (also its display number); unknown, of another app, or (with
+                 *     user_id) of another applicant → 20001 with data.fields=[claim_id].
+                 */
+                claim_id: components["parameters"]["AdminClaimIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The claim with its child orders. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "claim_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5aa0",
+                     *         "order_no": "231005-0987654321",
+                     *         "platform": "pdd",
+                     *         "user": {
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *           "phone_masked": "135****6021"
+                     *         },
+                     *         "paid_date": "2026-10-05",
+                     *         "submitted_at": "2026-10-12T09:15:00+08:00",
+                     *         "evidence_level": "weak",
+                     *         "status": "manual_review",
+                     *         "reason": null,
+                     *         "items": [
+                     *           {
+                     *             "item_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5ab1",
+                     *             "sub_order_id": "231005-0987654322",
+                     *             "evidence": "strong",
+                     *             "decision": "approved",
+                     *             "reject_reason": null,
+                     *             "decided_at": "2026-10-12T10:20:00+08:00",
+                     *             "decided_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "decided_by_name": "客服小林",
+                     *             "row_version": 1,
+                     *             "matches": [
+                     *               {
+                     *                 "field": "order_no",
+                     *                 "user_value": "231005-0987654321",
+                     *                 "union_value": "231005-0987654321",
+                     *                 "matched": true
+                     *               },
+                     *               {
+                     *                 "field": "paid_date",
+                     *                 "user_value": "2026-10-05",
+                     *                 "union_value": "2026-10-05",
+                     *                 "matched": true
+                     *               }
+                     *             ],
+                     *             "evidence_links": [
+                     *               {
+                     *                 "at": "2026-10-05T10:58:12+08:00",
+                     *                 "scene": "detail"
+                     *               },
+                     *               {
+                     *                 "at": "2026-10-05T10:51:40+08:00",
+                     *                 "scene": "search"
+                     *               }
+                     *             ]
+                     *           },
+                     *           {
+                     *             "item_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5ab2",
+                     *             "sub_order_id": "231005-0987654323",
+                     *             "evidence": "weak",
+                     *             "decision": null,
+                     *             "reject_reason": null,
+                     *             "decided_at": null,
+                     *             "decided_by": null,
+                     *             "decided_by_name": null,
+                     *             "row_version": 0,
+                     *             "matches": [
+                     *               {
+                     *                 "field": "order_no",
+                     *                 "user_value": "231005-0987654321",
+                     *                 "union_value": "231005-0987654321",
+                     *                 "matched": true
+                     *               },
+                     *               {
+                     *                 "field": "paid_date",
+                     *                 "user_value": "2026-10-05",
+                     *                 "union_value": "2026-10-04",
+                     *                 "matched": false
+                     *               }
+                     *             ],
+                     *             "evidence_links": [
+                     *               {
+                     *                 "at": "2026-09-28T19:52:10+08:00",
+                     *                 "scene": "home_card"
+                     *               }
+                     *             ]
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminClaimDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

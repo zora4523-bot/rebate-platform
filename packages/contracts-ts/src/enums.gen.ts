@@ -159,6 +159,16 @@ export const export_resource = [
 export type ExportResource = (typeof export_resource)[number];
 
 /**
+ * GET /admin/v1/claims/{claim_id} 的 items[].matches[].field，证据视图逐项比对用户填写与联盟回传的字段；预售单的联盟侧付款日期取定金支付日
+ * Source: 规划/01 F-ADM-06；规划/04 §6.6 claims；规划/08 BR-ATTR-17、BR-ATTR-18；design/specs/admin-claims.md 证据视图（CT-24d） (contracts/enums/admin.yaml).
+ */
+export const admin_claim_match_field = [
+  "order_no", // 订单号（用户填写的单号与该子订单的子单号或主单号）
+  "paid_date", // 付款日期（+08:00 自然日）
+] as const;
+export type AdminClaimMatchField = (typeof admin_claim_match_field)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -1512,6 +1522,7 @@ export const enums = {
   admin_search_hit_type,
   export_status,
   export_resource,
+  admin_claim_match_field,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,

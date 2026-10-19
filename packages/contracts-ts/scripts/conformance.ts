@@ -73,6 +73,9 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminSearchHitType: 'admin_search_hit_type',
   AdminExportStatus: 'export_status',
   AdminExportResource: 'export_resource',
+  AdminClaimEvidenceLevel: 'claim_evidence_level',
+  AdminClaimMatchField: 'admin_claim_match_field',
+  AdminClaimEvidenceScene: 'scene',
 };
 
 /**

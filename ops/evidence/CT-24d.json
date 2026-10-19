@@ -1,0 +1,35 @@
+{
+  "task": "CT-24d",
+  "spec_ref": "fde86795d3a23d92640c388f80a626f86d67cb53",
+  "spec_commit": "cb89fd1aded770760b4faf0898349589feaab5b8",
+  "red_tests": [],
+  "risk_note": "RV2 contract task (contracts/openapi.yaml, enums/admin.yaml, contracts-ts conformance and the regenerated contracts-ts and route tables): adds GET /admin/v1/claims (adminListClaims) and GET /admin/v1/claims/{claim_id} (adminGetClaim), both x-implementation planned, per 01 F-ADM-06, 04 §6.6 / §3.2 / §11.1 user.lookup / §11.2 order.claim and BR-ATTR-18: filters platform / evidence_level / status / user_id / q (claim id or order number, exact), AdminPage / AdminPageSize; auto_matched first, then submitted_at descending; counts per claim_status over the other filters; order.claim sees all, a user.lookup-only account must pass user_id (10403 otherwise) and another user's claim answers like a missing one (20001 [claim_id]); user shown as uid + masked phone (BR-ID-33); detail carries the latest reason and per item sub_order_id, evidence, decision, reject_reason, decided_at / decided_by / decided_by_name, row_version, matches[] (order_no, paid_date) and evidence links (time and scene only). New Admin-prefixed schemas, none referencing the user-side OrderClaim*; new enum admin_claim_match_field. New unit test admin-claims.test.ts. tester none; implementation by an Opus 5.5 subagent in two runs. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 fail (S1 x2: counts wording contradicted itself for an empty status tab; page wrongly capped at 200), fixed in run 2; round 2 pass, one S2 (a response example's counts) in follow-ups"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "c3e428f7c612453d2348e506f87dce394d614ea0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69",
+    "test/spec": "4e03b024912dcff7d12ee0d1f4de4eec51b5f68d",
+    "specs": "c3c361e2d577cc550a501e7feb636fbcb179ff4a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "af9fd00ae2b492628811b8c5fb1eea5be1ba8e69"
+  }
+}
