@@ -1,0 +1,84 @@
+{
+  "red_tests": [
+    "test/spec/frontend/h5-dark/badge.browser.test.ts > [AC-F1-01r-BADGE#1] [AC-F1-01r-BADGE#2] 浅深占位图对比度至少 3:1，官方 PNG 保持原色",
+    "test/spec/frontend/h5-dark/meta.test.ts > [AC-F1-01r-META#1] apps/h5/src/entries/app/index.html 在 head 中声明支持浅色和深色",
+    "test/spec/frontend/h5-dark/meta.test.ts > [AC-F1-01r-META#2] apps/h5/src/entries/landing/index.html 在 head 中声明支持浅色和深色",
+    "test/spec/frontend/h5-dark/meta.test.ts > [AC-F1-01r-META#3] apps/h5/src/entries/conformance/index.html 在 head 中声明支持浅色和深色"
+  ],
+  "risk_note": "RV1 by path (apps/h5; no money logic). H5 dark (planning 00 D35; CT-11b #914 already gives tokens.css the two identical dark blocks): the three entry HTML files declare color-scheme light dark; the built-in placeholder platform badge SVGs (tmall, wechat, wechat_pay, alipay, wecom), which draw with currentColor inside an image document, get a host-CSS adjustment under system dark without data-theme=light and under data-theme=dark (frozen AC-F1-01n-ASSETS#1 forbids inline svg and colours in the SVGs); official PNGs and delivered replacements are never adjusted; H5 writes no data-theme. Rule tests by Codex in three calls plus one orchestrator mechanical fix (dropped a non-existent root index.html from the META list; the one exception), Claude spec-test review 3 rounds pass, red on the test machine (red/4). Implementation by Opus 5.5 (cut off by a session restart without output, not counted); the orchestrator ran the test machine on that code: verify-fast/1 and browser/1 green; light / dark evidence screenshots from a temporary uncommitted test. Review: Codex (approvals id 27 / 34). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (placeholder SVGs unreadable in dark, not tested), round 2 fail (system dark path and delivered replacements not tested), round 3 pass with one S2 (system dark emulated through CSS rules only; implementation uses CSS)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  },
+  "task": "F1-01r",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "eb4808ed40319185c0a98a12b504176e1bcb3a29",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "eb4808ed40319185c0a98a12b504176e1bcb3a29",
+      "tree": "a1d2cba8cd66144c912e40d77c37cb500673b637",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T17:54:41Z",
+      "finished_at": "2026-10-19T17:55:19Z",
+      "gate": {
+        "commit": "d4aa6d8deb8ed1116c82486f3c717c3958f4e1a4",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/h5-dark/badge.browser.test.ts > [AC-F1-01r-BADGE#1] [AC-F1-01r-BADGE#2] 浅深占位图对比度至少 3:1，官方 PNG 保持原色",
+        "test/spec/frontend/h5-dark/meta.test.ts > [AC-F1-01r-META#1] apps/h5/src/entries/app/index.html 在 head 中声明支持浅色和深色",
+        "test/spec/frontend/h5-dark/meta.test.ts > [AC-F1-01r-META#2] apps/h5/src/entries/landing/index.html 在 head 中声明支持浅色和深色",
+        "test/spec/frontend/h5-dark/meta.test.ts > [AC-F1-01r-META#3] apps/h5/src/entries/conformance/index.html 在 head 中声明支持浅色和深色"
+      ],
+      "expected": [
+        "test/spec/frontend/h5-dark/badge.browser.test.ts",
+        "test/spec/frontend/h5-dark/meta.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "36219a7a049c12eec6503b928c5210294444e3005516c0eec952f2bccf9a9ec6"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "6de9ccf76533fdf46d3a276bf4086edcc1ae32e71da3017779a88b195a896af4"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "f52e58fb64510d2050c82356e1d1ef3b4bb2a2c0",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  }
+}
