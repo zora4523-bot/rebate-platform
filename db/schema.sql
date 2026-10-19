@@ -1914,11 +1914,13 @@ CREATE TABLE app.consent_records (
     text_sha256 text,
     signer_snapshot jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    version_label text,
     CONSTRAINT consent_records_channel_check CHECK ((channel = ANY (ARRAY['first_launch'::text, 'login_page'::text, 'h5_landing'::text, 'agent_sheet'::text, 'realname_sheet'::text, 'privacy_center'::text, 'login_merge'::text, 'withdraw_flow'::text]))),
     CONSTRAINT consent_records_labor_agreement_check CHECK (((type <> 'labor_agreement'::text) OR ((subject_type = 'user'::text) AND (text_sha256 IS NOT NULL) AND (signer_snapshot IS NOT NULL) AND (device_id IS NOT NULL)))),
     CONSTRAINT consent_records_subject_check CHECK ((((subject_type = 'user'::text) AND (user_id IS NOT NULL)) OR ((subject_type = 'device'::text) AND (device_id IS NOT NULL)))),
     CONSTRAINT consent_records_subject_type_check CHECK ((subject_type = ANY (ARRAY['user'::text, 'device'::text]))),
-    CONSTRAINT consent_records_type_check CHECK ((type = ANY (ARRAY['privacy'::text, 'agreement'::text, 'ai_third_party'::text, 'id_verification'::text, 'personalization'::text, 'labor_agreement'::text, 'clipboard_auto_import'::text])))
+    CONSTRAINT consent_records_type_check CHECK ((type = ANY (ARRAY['privacy'::text, 'agreement'::text, 'ai_third_party'::text, 'id_verification'::text, 'personalization'::text, 'labor_agreement'::text, 'clipboard_auto_import'::text]))),
+    CONSTRAINT consent_records_version_label_check CHECK ((((type = 'clipboard_auto_import'::text) AND (subject_type = 'device'::text) AND (version_label IS NOT NULL) AND (version = 0)) OR ((type <> 'clipboard_auto_import'::text) AND (version_label IS NULL))))
 );
 
 

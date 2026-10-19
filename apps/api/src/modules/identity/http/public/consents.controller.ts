@@ -6,7 +6,8 @@ import {
   tokenPrincipal,
   type CheckedRequest,
 } from '../../../platform/index.ts';
-import type { ConsentService } from '../../application/consents.ts';
+import { SignatureError } from '../../../risk/index.ts';
+import { CLIPBOARD_CONSENT_TYPE, type ConsentService } from '../../application/consents.ts';
 import { CONSENTS } from '../../application/tokens.ts';
 import { identityFailure } from './error-envelopes.ts';
 
@@ -28,7 +29,8 @@ export class ConsentsController {
   constructor(@Inject(CONSENTS) private readonly consents: ConsentService | null) {}
 
   /**
-   * Contract operation `recordConsent` (BR-ID-12, BR-ID-13): x-auth optional, not signed. With a
+   * Contract operation `recordConsent` (BR-ID-12, BR-ID-13): x-auth optional, x-signed false (a
+   * clipboard_auto_import request is signed and checked here, B1-02zc). With a
    * token the subject comes from it; without one from X-Device-Id, checked against the devices of
    * X-App-Id (application/consents.ts). The version gate and the session scopes belong to B1-03c.
    */
@@ -44,13 +46,26 @@ export class ConsentsController {
     const appId = principal?.app_id ?? header(request, 'x-app-id');
     const deviceId = header(request, 'x-device-id');
     if (appId === undefined) throw new Error('identity: a consent needs X-App-Id');
+    // clipboard_auto_import must carry the device signature (04 §6.1): verified over the raw bytes
+    // before parsing by identity's consent signature check (application/consent-signature.ts,
+    // risk's verifier), which publishes verifiedDevice; 10401 / 10402 are thrown there. Without it
+    // the request is refused here (fail closed). The subject is that device, never the token's.
+    const verified = request.verifiedDevice;
+    if (request.body.type === CLIPBOARD_CONSENT_TYPE && verified === undefined) {
+      throw new SignatureError(10401);
+    }
     const result = await this.consents.record({
       app_id: appId,
       body: request.body,
       ...(principal === undefined ? {} : { principal }),
       ...(deviceId === undefined ? {} : { device_id: deviceId }),
+      ...(verified === undefined || request.body.type !== CLIPBOARD_CONSENT_TYPE
+        ? {}
+        : { verified_device: verified }),
     });
     if (result.code === 0) return { code: 0, msg: '', data: result.data, trace_id: request.id };
+    // The signed device was revoked after the check (re-read under its row lock): the guard's code.
+    if (result.code === 10402) throw new SignatureError(10402);
     throw identityFailure(result, request.id);
   }
 }

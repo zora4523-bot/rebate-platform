@@ -80,7 +80,8 @@ export type { AccountAssetsPort, AccountRiskPort } from './application/bind-phon
 export { STEP_UP_CHECK, createStepUpCheck, withStepUp } from './application/step-up-verify.ts';
 export type { StepUpCheckOptions, StepUpHttpRequest } from './application/step-up-verify.ts';
 // The token stages ② ③ (BR-ID-01) for the api entry's request check plan (app.module).
-export { TOKEN_CHECK } from './application/tokens.ts';
+export { CONSENT_SIGNATURE_CHECK, TOKEN_CHECK } from './application/tokens.ts';
+export { isRecordConsentRoute } from './application/consent-signature.ts';
 // Bootstrap's route guard: is a plan's check identity's token check (BR-ID-01 ②)?
 export { isTokenCheck } from './application/access-tokens.ts';
 // BR-ID-05 细则「手机号规范化」: every module normalises a phone number with this function first.

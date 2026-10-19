@@ -35,6 +35,7 @@ import {
   type RedisHandle,
   type RequestCheck,
   type RequestCheckInput,
+  type VerifiedDevice,
 } from '../../platform/index.ts';
 import {
   NONCE_TTL_SECONDS,
@@ -110,27 +111,35 @@ export function isSignatureCheck(check: unknown): boolean {
   return typeof check === 'function' && SIGNATURE_CHECKS.has(check as RequestCheck);
 }
 
-function headerValue(request: SignatureRequest, name: string): string | undefined {
+function headerValue(request: Pick<SignatureRequest, 'headers'>, name: string): string | undefined {
   const value = request.headers[name];
   return typeof value === 'string' ? value : undefined;
 }
 
+/** What one signature verification reads: the request as stage ① sees it, minus the route. */
+export type SignedRequest = Pick<SignatureRequest, 'method' | 'url' | 'headers' | 'rawBody'>;
+
+/** Verifies one request's signature; resolves to the verified device or throws SignatureError. */
+export type RequestSignatureVerifier = (request: SignedRequest) => Promise<VerifiedDevice>;
+
 /**
- * Only contract x-signed:true routes (including planned operations) enter stage ①.
- * Device => timestamp/nonce format and skew => timing-safe HMAC => atomic nonce reservation.
- * The key is risk:nonce:<device app_id>:<device_id>:<nonce>, with a 600-second TTL.
- * Lua returns SET ... NX EX ARGV[1] unchanged: 'OK' on reservation, nil on replay.
- * Bad HMAC never reserves a nonce. On success publish only deviceId/appId to the context.
+ * The checks of stage ① for one request, with no route gate (B1-02zc: recordConsent is x-signed
+ * false, but its clipboard_auto_import requests must be signed and are verified with exactly these
+ * rules, codes and nonce store): device => timestamp/nonce format and skew => timing-safe HMAC =>
+ * atomic nonce reservation. The key is risk:nonce:<device app_id>:<device_id>:<nonce>, with a
+ * 600-second TTL. Lua returns SET ... NX EX ARGV[1] unchanged: 'OK' on reservation, nil on replay.
+ * Bad HMAC never reserves a nonce. X-App-Id is not compared here (stage ③, 10403, belongs to the
+ * caller); the device's own app is returned.
  */
-export function createSignatureCheck(dependencies: SignatureDependencies): RequestCheck {
+export function createRequestSignatureVerifier(
+  dependencies: SignatureDependencies,
+): RequestSignatureVerifier {
   const { devices, clock } = dependencies;
   if (typeof devices?.findActive !== 'function' || typeof clock?.now !== 'function') {
     throw new TypeError('createSignatureCheck needs the device port and the clock');
   }
   const nonces = dependencies.redis?.namespace(NAMESPACE);
-  const check: RequestCheck = async (request: SignatureRequest) => {
-    if (!isContractSignedRoute(request.method, request.routeTemplate)) return;
-
+  return async (request: SignedRequest): Promise<VerifiedDevice> => {
     const deviceId = headerValue(request, 'x-device-id');
     if (deviceId === undefined || deviceId === '') throw new SignatureError(10402);
     const device = await devices.findActive(deviceId);
@@ -166,7 +175,19 @@ export function createSignatureCheck(dependencies: SignatureDependencies): Reque
     });
     if (reply === null) throw new SignatureError(10401);
     if (reply !== 'OK') throw new RedisUnavailableError('unexpected_reply');
-    request.verifiedDevice = Object.freeze({ deviceId: device.deviceId, appId: device.appId });
+    return Object.freeze({ deviceId: device.deviceId, appId: device.appId });
+  };
+}
+
+/**
+ * Only contract x-signed:true routes (including planned operations) enter stage ①, which runs
+ * createRequestSignatureVerifier's checks; on success only deviceId/appId go to the context.
+ */
+export function createSignatureCheck(dependencies: SignatureDependencies): RequestCheck {
+  const verify = createRequestSignatureVerifier(dependencies);
+  const check: RequestCheck = async (request: SignatureRequest) => {
+    if (!isContractSignedRoute(request.method, request.routeTemplate)) return;
+    request.verifiedDevice = await verify(request);
   };
   SIGNATURE_CHECKS.add(check);
   return check;

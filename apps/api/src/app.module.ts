@@ -57,6 +57,7 @@ import {
   IdentityAdminModule,
   IdentityModule,
   ME_READ_PORTS,
+  CONSENT_SIGNATURE_CHECK,
   TOKEN_CHECK,
   STEP_UP_CHECK,
   IDENTITY_LEVEL_CHECKS,
@@ -66,6 +67,7 @@ import {
   createThirdPartyIdentity,
   smsSenderToken,
   createIdentityAttrCodeReader,
+  isRecordConsentRoute,
   createIdentityCallerContext,
   createIdentityViewerContext,
   createSameDeviceLoginReader,
@@ -202,9 +204,11 @@ import {
 /**
  * The request check plan bootstrap installs before Fastify parses a body (规划/08 BR-ID-01):
  * on the `api` entry, which serves every x-signed operation, ① the request signature first
- * (bootstrap refuses a plan where it is not), then identity's token stages ② ③. Both run on every
- * matched route; only the contract x-signed routes have their body buffered before the checks
- * (the signature covers it), so ② ③ answer an unsigned route from its headers alone, before its
+ * (bootstrap refuses a plan where it is not), then identity's consent signature check (B1-02zc:
+ * recordConsent's clipboard_auto_import requests, signed over the raw body although the operation
+ * is x-signed false), then identity's token stages ② ③. They run on every matched route; only the
+ * contract x-signed routes and recordConsent have their body buffered before the checks (the
+ * signature covers it), so ② ③ answer any other unsigned route from its headers alone, before its
  * body is read or validated, and its body keeps Fastify's own handling. ① skips unsigned routes;
  * ② ③ act by the route's contract x-auth and leave routes outside the contract alone.
  * The factory stays synchronous (its async dependencies are providers of their own).
@@ -219,10 +223,19 @@ function requestChecks(options: PlatformOptions): Provider {
   if (options.entry === 'api') {
     return {
       provide: REQUEST_CHECKS,
-      inject: [SIGNATURE_CHECK, TOKEN_CHECK],
-      useFactory: (signature: RequestCheck, token: RequestCheck): RequestCheckPlan => ({
-        checks: [signature, token],
-        bufferWhen: isContractSignedRoute,
+      inject: [SIGNATURE_CHECK, CONSENT_SIGNATURE_CHECK, TOKEN_CHECK],
+      useFactory: (
+        signature: RequestCheck,
+        consentSignature: RequestCheck,
+        token: RequestCheck,
+      ): RequestCheckPlan => ({
+        // ① signature; then recordConsent's clipboard_auto_import signature (B1-02zc: the same
+        // checks over the raw bytes on that one unsigned route), still before ② ③.
+        checks: [signature, consentSignature, token],
+        // The x-signed routes, plus recordConsent alone among the unsigned ones (its
+        // clipboard_auto_import requests are signed over the raw body, B1-02zc).
+        bufferWhen: (method, template) =>
+          isContractSignedRoute(method, template) || isRecordConsentRoute(method, template),
       }),
     };
   }

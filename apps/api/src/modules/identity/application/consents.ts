@@ -24,12 +24,31 @@
 // withdrawal locks the device row first, the order createSession uses (device row, then sessions),
 // so a concurrent login on the device cannot leave a session unrevoked.
 //
+// clipboard_auto_import (B1-02zc; BR-ID-12 细则, BR-ID-16; orchestrator ruling E33): the purpose
+// consent for clipboard auto-recognition is always device level, with or without a token and for
+// accepted true or false: subject_type=device, device_id = the device whose signature the
+// controller verified (the request must be signed even though the operation is x-signed false;
+// 10401 / 10402 come from that check), user_id = the token's uid only as an association. Its
+// version is a string (config.clipboard.consent_version), stored in version_label with version=0
+// (the CHECK consent_records_version_label_check); every other type takes an integer version and
+// leaves version_label empty. A version form that does not pair with the type → 20001
+// fields=[version], before any read or write. It touches no other device and no users row, never
+// revokes anything (unlike the privacy withdrawal) and never takes part in login_merge
+// (domain/login.ts). The subject is the signed device even when the token was issued on another
+// device (B1-02zc rule-test review r1 S2); the app (the token's, else X-App-Id) must be the signed
+// device's app, else 10403, as stage ③ does on signed routes. Its current state is the row
+// of (device_id, type) with the latest server_at.
+// Locks: it locks only the device row (FOR UPDATE, re-checking it is still unrevoked: 10402), never
+// the users row nor the user's consent lock, so it is outside the users row → consent lock → growth
+// order and cannot form a cycle with it: no other path takes a users row or the consent lock while
+// waiting on a device row after a consent write of this kind, and this path holds nothing else.
+//
 // Also compiled by the `test` project: erasable syntax only, `import type` for types, `.ts`
 // relative imports, no decorators.
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Kysely, Transaction } from 'kysely';
-import type { Clock, TokenPrincipal } from '../../platform/index.ts';
+import type { Clock, TokenPrincipal, VerifiedDevice } from '../../platform/index.ts';
 import {
   insertConsentRecords,
   lockUserConsents,
@@ -43,7 +62,15 @@ export interface ConsentCommand {
   readonly device_id?: string;
   readonly principal?: TokenPrincipal;
   readonly body: Schema<'RecordConsentRequest'>;
+  /**
+   * The device whose request signature the controller verified (BR-ID-09 rules, checked inside the
+   * handler for type=clipboard_auto_import only); required for that type, ignored for the others.
+   */
+  readonly verified_device?: VerifiedDevice;
 }
+
+/** The type recorded only at device level, with a string version (BR-ID-12 细则, BR-ID-16). */
+export const CLIPBOARD_CONSENT_TYPE = 'clipboard_auto_import';
 
 export interface ConsentService {
   record(
@@ -51,6 +78,8 @@ export interface ConsentService {
   ): Promise<
     | { readonly code: 0; readonly data: Schema<'EmptyResponse'>['data'] }
     | { readonly code: 20001; readonly data: { readonly fields: readonly string[] } }
+    | { readonly code: 10402 }
+    | { readonly code: 10403 }
   >;
 }
 
@@ -170,18 +199,58 @@ export function createConsentService(options: ConsentOptions): ConsentService {
   const invalidDevice = { code: 20001, data: { fields: [DEVICE_HEADER_FIELD] } } as const;
   const invalidVersion = { code: 20001, data: { fields: ['version'] } } as const;
 
+  /**
+   * clipboard_auto_import: one device-level row for the verified device (header comment). The
+   * device row is locked and re-read, so a revocation committed after the signature check is
+   * still answered 10402 and no row is written for a revoked device.
+   */
+  async function recordClipboard(command: ConsentCommand, versionLabel: string) {
+    const { principal, verified_device: device } = command;
+    if (device === undefined) {
+      throw new Error('identity: a clipboard_auto_import consent needs the verified device');
+    }
+    // The subject is always the signed device, never the token's device: a token issued on
+    // another installation of the same app only rides along as user_id. Another app is 10403
+    // (the token's app is X-App-Id after stage ③; its user cannot be associated across apps).
+    if ((principal?.app_id ?? command.app_id) !== device.appId) return { code: 10403 } as const;
+    const body = command.body;
+    return db.transaction().execute(async (trx) => {
+      const row = await findDevice(trx, device.appId, device.deviceId, true);
+      if (row === undefined || row.revoked_at !== null) return { code: 10402 } as const;
+      const now = clock.now();
+      const clientAt = instantPlus(now, Date.parse(body.client_at) - now.getTime());
+      await insertConsentRecords(trx, [
+        {
+          app_id: device.appId,
+          subject_type: 'device',
+          user_id: principal?.uid ?? null,
+          device_id: device.deviceId,
+          type: CLIPBOARD_CONSENT_TYPE,
+          version: 0,
+          version_label: versionLabel,
+          channel: body.channel,
+          accepted: body.accepted,
+          client_at: clientAt,
+          server_at: now,
+          created_at: now,
+        },
+      ]);
+      return { code: 0 as const, data: {} };
+    });
+  }
+
   return Object.freeze({
     async record(command: ConsentCommand) {
       const { principal } = command;
-      // TODO(规划/11 §2.3): clipboard_auto_import 设备级同意与字符串版本 — blocked on B1-02zc
-      // Transition after CT-15s widened the contract (type clipboard_auto_import, version integer
-      // or string): until B1-02zc ships, the new type and any string version are 20001
-      // fields=[version] (the pairing rule sits on version), before any read or write, so a
-      // string such as '1' is never cast to the integer column.
       const raw = command.body;
-      if (raw.type === 'clipboard_auto_import' || typeof raw.version !== 'number') {
-        return invalidVersion;
+      // The type and the version form pair (BR-ID-12 细则): a string only for clipboard_auto_import,
+      // a (positive, per the contract) integer for every other type. Checked before any read or
+      // write, so a string such as '1' is never cast to the integer column.
+      if (raw.type === CLIPBOARD_CONSENT_TYPE) {
+        if (typeof raw.version !== 'string') return invalidVersion;
+        return recordClipboard(command, raw.version);
       }
+      if (typeof raw.version !== 'number') return invalidVersion;
       const body = { ...raw, type: raw.type, version: raw.version };
       const appId = principal?.app_id ?? command.app_id;
       const withdrawsPrivacy = body.type === 'privacy' && !body.accepted;

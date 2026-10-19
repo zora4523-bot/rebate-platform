@@ -18,11 +18,13 @@ export const LOGIN_MERGE_CHANNEL = 'login_merge';
 export const LOGIN_PAGE_TYPES = Object.freeze(['privacy', 'agreement'] as const);
 /**
  * Types that never take part in login_merge (BR-ID-12): ai_third_party is consented again by
- * user_id (BR-AI-13, C-23); labor_agreement only has user-level records (BR-WDR-31).
+ * user_id (BR-AI-13, C-23); labor_agreement only has user-level records (BR-WDR-31);
+ * clipboard_auto_import only has device-level records (BR-ID-12 细则, B1-02zc).
  */
 export const LOGIN_MERGE_EXCLUDED_TYPES: ReadonlySet<string> = new Set([
   'ai_third_party',
   'labor_agreement',
+  'clipboard_auto_import',
 ]);
 
 const INVITE_REMOVED = /[\s\u200B-\u200D\uFEFF]/gu;

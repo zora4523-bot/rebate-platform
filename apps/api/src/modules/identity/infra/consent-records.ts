@@ -12,7 +12,14 @@ import type { ConsentState } from '../domain/login.ts';
  * created_at is required: it is written from the same Clock instant as server_at, never left to
  * the column's DEFAULT now() (database time; apps/api reads time only from the injected Clock).
  */
-export type NewConsentRecord = Insertable<DB['consent_records']> & { readonly created_at: Date };
+export type NewConsentRecord = Insertable<DB['consent_records']> & {
+  readonly created_at: Date;
+  /**
+   * The string version of a clipboard_auto_import record (version=0 then; migration 0050, B1-02zc),
+   * null or absent for every other type. Spelled here until the regenerated db.gen.ts carries it.
+   */
+  readonly version_label?: string | null;
+};
 
 /** Inserts the records in the given order (ids follow it); nothing is ever updated. */
 export async function insertConsentRecords(
