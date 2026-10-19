@@ -23,6 +23,7 @@ import {
   port,
   privateDataAbsent,
   signed,
+  versionMismatchIs10004,
   type Kit,
 } from './kit.ts';
 
@@ -222,7 +223,15 @@ it.each([
     await history(kit, f, 1, '2026-10-17T00:00:00Z');
     const before = await f.rows();
     const response = await f.sign(body);
-    expect(signed(kit, response, 20001).data?.['fields']).toEqual(expect.arrayContaining(fields));
+    // B1-13m: the frozen title still says 20001. Once the contract lists 10004 for
+    // signLaborAgreement (B1-13l, couli #158), a version mismatch — alone or together with the
+    // other fields, version is checked first — is 10004 with data.consent_type=labor_agreement and
+    // no fields; without it the original assertion holds. text_sha256 / agreed alone stay 20001.
+    if (fields.includes('version') && versionMismatchIs10004(kit)) {
+      expect(signed(kit, response, 10004).data).toEqual({ consent_type: 'labor_agreement' });
+    } else {
+      expect(signed(kit, response, 20001).data?.['fields']).toEqual(expect.arrayContaining(fields));
+    }
     expect(await f.rows()).toEqual(before);
     privateDataAbsent(kit, [response]);
   },
@@ -237,7 +246,15 @@ it('[AC-B1-13h#9] 拉取全文后发布新版本，旧版本签署被拒绝，�
   });
   kit.clock.advanceMs(61_000);
   const key = randomUUID();
-  expect(signed(kit, await f.sign(BODY, key), 20001).data?.['fields']).toContain('version');
+  // B1-13m: with 10004 in the contract (B1-13l, couli #158) the stale version is 10004
+  // labor_agreement; 10004 is not replayed, so the same key still carries the corrected request.
+  if (versionMismatchIs10004(kit)) {
+    expect(signed(kit, await f.sign(BODY, key), 10004).data).toEqual({
+      consent_type: 'labor_agreement',
+    });
+  } else {
+    expect(signed(kit, await f.sign(BODY, key), 20001).data?.['fields']).toContain('version');
+  }
   expect(await f.rows()).toEqual([]);
   signed(kit, await f.sign({ ...BODY, version: 2 }, key));
   expect(await f.rows()).toHaveLength(1);

@@ -43,6 +43,7 @@ type Contract = {
       string,
       {
         'x-implementation'?: string;
+        'x-error-codes'?: number[];
         responses: Record<string, { content: Record<string, { schema: Record<string, unknown> }> }>;
       }
     >
@@ -286,6 +287,7 @@ export function envelope(kit: Kit, response: Response, code: number, path = PATH
   const statuses: Record<number, number> = {
     0: 200,
     10001: 401,
+    10004: 403,
     10403: 403,
     20001: 400,
     30304: 422,
@@ -310,6 +312,12 @@ export function envelope(kit: Kit, response: Response, code: number, path = PATH
 }
 export function signed(kit: Kit, response: Response, code = 0) {
   return envelope(kit, response, code, SIGN, 'post');
+}
+// B1-13m: couli #158 moves a version mismatch on signLaborAgreement from 20001 to 10004
+// (BR-WDR-31, data.consent_type=labor_agreement); the implementation lands with B1-13l, which adds
+// 10004 to the operation's x-error-codes. The contract decides which outcome is expected.
+export function versionMismatchIs10004(kit: Kit) {
+  return kit.document.paths[SIGN]!['post']!['x-error-codes']?.includes(10004) === true;
 }
 export async function port() {
   return (await import(new URL('apps/api/src/modules/identity/index.ts', ROOT).href)) as Pick<
