@@ -100,7 +100,12 @@ export async function userAccountsOfApp(
   return new Set(rows.map((row) => row.id));
 }
 
-/** Creates the user's account and zero balance row if absent (ON CONFLICT DO NOTHING). */
+/**
+ * Creates the user's account and zero balance row if absent (ON CONFLICT DO NOTHING); existing
+ * rows are left as they are. Two statements: under READ COMMITTED the second takes a fresh
+ * snapshot after the first has waited out a concurrent opener, so it finds the account whichever
+ * transaction inserted it, and the balance row is keyed to that account id in SQL.
+ */
 export async function ensureUserAccount(
   trx: Transaction<DB>,
   appId: string,
@@ -117,24 +122,25 @@ export async function ensureUserAccount(
     })
     .onConflict((oc) => oc.columns(['app_id', 'owner_type', 'owner_id', 'subject']).doNothing())
     .execute();
-  const account = await trx
-    .selectFrom('ledger_accounts')
-    .select('id')
-    .where('app_id', '=', appId)
-    .where('owner_type', '=', 'user')
-    .where('owner_id', '=', userId)
-    .where('subject', '=', USER_SUBJECT)
-    .executeTakeFirstOrThrow();
   await trx
     .insertInto('account_balances')
-    .values({
-      account_id: account.id,
-      app_id: appId,
-      available_fen: 0n,
-      frozen_fen: 0n,
-      version: 0n,
-      negative_since: null,
-    })
+    .columns(['account_id', 'app_id', 'available_fen', 'frozen_fen', 'version', 'negative_since'])
+    .expression((eb) =>
+      eb
+        .selectFrom('ledger_accounts')
+        .select([
+          'id',
+          'app_id',
+          sql<bigint>`0`.as('available_fen'),
+          sql<bigint>`0`.as('frozen_fen'),
+          sql<bigint>`0`.as('version'),
+          sql<string | null>`NULL::date`.as('negative_since'),
+        ])
+        .where('app_id', '=', appId)
+        .where('owner_type', '=', 'user')
+        .where('owner_id', '=', userId)
+        .where('subject', '=', USER_SUBJECT),
+    )
     .onConflict((oc) => oc.column('account_id').doNothing())
     .execute();
 }

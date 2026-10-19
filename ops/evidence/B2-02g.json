@@ -1,0 +1,98 @@
+{
+  "task": "B2-02g",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "385c0b07547b63b264013d67dc9a3afc39da5068",
+  "red_tests": [
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#1] 新开户在调用方事务内创建唯一 USER_BALANCE 和全零余额，提交后持久化",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#2] 同一事务重复开户不增加账户或余额，账户 id 和所有字段不变",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#3] 分两个事务重复开户仍各一行，复用原账户 id 和原始行",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#4] 已记账和冻结后重复开户不重置余额、version 或负余额起始日，负余额=false",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#4] 已记账和冻结后重复开户不重置余额、version 或负余额起始日，负余额=true",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#5] 同一 userId 在两个品牌各有独立账户，一方记账和重复开户不影响另一方",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#6] 两个真正重叠的开户事务均成功，唯一约束竞争后只有一套账户",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#7] appId 为空串抛 LedgerError INVALID_INPUT，事务仍可读且没有部分写入",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#7] userId 为空串抛 LedgerError INVALID_INPUT，事务仍可读且没有部分写入",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#8] insertUser 成功时用原事务和服务端身份调用一次公开开户函数",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#9] 注册后调用方回滚，users、ledger_accounts 和 account_balances 一起消失",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#10] 注册 phoneHmac 冲突返回 phone_taken，不为失败的新 id 开户，原事务可以继续",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#10] 注册 inviteCode 冲突返回 invite_code_taken，不为失败的新 id 开户，原事务可以继续",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#10] 注册 attrCode 冲突返回 attr_code_taken，不为失败的新 id 开户，原事务可以继续",
+    "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#11] 开户写入后失败原样上抛，不能按 users 唯一冲突吞错，注册整体回滚"
+  ],
+  "risk_note": "RV2 (ledger, plus the one identity wiring line authorised by the orchestrator 2026-10-19 16:1x; ledger-plan D6 A). BR-FUND-13: every user has one balance account created at registration. ledger exports openUserAccount(trx, { appId, userId }): in the caller's transaction and inside a savepoint it creates the USER_BALANCE row in app.ledger_accounts and the zero row in app.account_balances (available 0, frozen 0, version 0, negative_since NULL); idempotent through ON CONFLICT DO NOTHING on the existing unique constraints, existing rows and balances untouched; empty appId / userId -> LedgerError INVALID_INPUT before any SQL. The shared ensureUserAccount now builds the balance row with INSERT ... SELECT from ledger_accounts in a second statement (fresh READ COMMITTED snapshot after a concurrent opener). identity/infra/registration-store.ts insertUser calls it once after the users row is in (savepoint released); a uniqueness conflict opens no account; a ledger failure rejects and the registration transaction rolls back. No other identity logic changed. Existing users are backfilled by B2-02h.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "385c0b07547b63b264013d67dc9a3afc39da5068",
+      "tree": "cc685c4015206d5ab8335880d1e1d5e5fed44066",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T18:08:19Z",
+      "finished_at": "2026-10-19T18:08:27Z",
+      "gate": {
+        "commit": "139841bb26f2506530fe185765b5a83c110cab13",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#1] 新开户在调用方事务内创建唯一 USER_BALANCE 和全零余额，提交后持久化",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#2] 同一事务重复开户不增加账户或余额，账户 id 和所有字段不变",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#3] 分两个事务重复开户仍各一行，复用原账户 id 和原始行",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#4] 已记账和冻结后重复开户不重置余额、version 或负余额起始日，负余额=false",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#4] 已记账和冻结后重复开户不重置余额、version 或负余额起始日，负余额=true",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#5] 同一 userId 在两个品牌各有独立账户，一方记账和重复开户不影响另一方",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#6] 两个真正重叠的开户事务均成功，唯一约束竞争后只有一套账户",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#7] appId 为空串抛 LedgerError INVALID_INPUT，事务仍可读且没有部分写入",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#7] userId 为空串抛 LedgerError INVALID_INPUT，事务仍可读且没有部分写入",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#8] insertUser 成功时用原事务和服务端身份调用一次公开开户函数",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#9] 注册后调用方回滚，users、ledger_accounts 和 account_balances 一起消失",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#10] 注册 phoneHmac 冲突返回 phone_taken，不为失败的新 id 开户，原事务可以继续",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#10] 注册 inviteCode 冲突返回 invite_code_taken，不为失败的新 id 开户，原事务可以继续",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#10] 注册 attrCode 冲突返回 attr_code_taken，不为失败的新 id 开户，原事务可以继续",
+        "test/spec/ledger/accounts/open-user-account.int.test.ts > [AC-B2-02g#11] 开户写入后失败原样上抛，不能按 users 唯一冲突吞错，注册整体回滚"
+      ],
+      "expected": ["test/spec/ledger/accounts/open-user-account.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "1a95effdec7b6f167e79c54ac000f43e15c4a907c489d430515c087542932ecd"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 1 run (15 red); round 1 pass, one out-of-scope S2 (no top-up / transfer / balance-spend API) left for a later task"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "cc408a9051aee0f9bfaf7a4d2274d2da0771ab30",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}

@@ -1,4 +1,5 @@
 export { createLedger } from './application/reverse.ts';
+export { openUserAccount } from './application/accounts.ts';
 export type { Ledger, ReverseInput } from './application/reverse.ts';
 export type {
   LedgerAccountRef,
