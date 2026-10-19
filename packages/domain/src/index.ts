@@ -1,4 +1,10 @@
 export { accountingDate, chinaMonth, chinaDayRange, chinaMonthRange } from './calendar/index.ts';
+export {
+  normalizeSpec,
+  findSpecInTitle,
+  type NormalizedSpec,
+  type SpecUnit,
+} from './spec-match/index.ts';
 export { summarizeClaimDecisions, evidenceEvent } from './claims/summarize.ts';
 export type {
   ClaimEvidenceEvent,
