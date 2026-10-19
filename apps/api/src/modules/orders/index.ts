@@ -1,5 +1,26 @@
 // Public surface of the orders module (规划/02 §4.1); other modules import only from this file.
 export { readSnapshotRetryInput } from './infra/snapshot-retry-input.ts';
+// B1-08t：分佣快照补偿重试的纯判定与定时扫描（worker 经 worker-runtime 装配）。
+export {
+  SNAPSHOT_RETRY_REASONS,
+  isSnapshotRetryDue,
+  isSnapshotRetryExhausted,
+  isSnapshotRetryReason,
+  planSnapshotRetry,
+  resolveRetryPaidAt,
+} from './domain/snapshot-retry.ts';
+export type {
+  PlanSnapshotRetryInput,
+  SnapshotRetryPlan,
+  SnapshotRetryReason,
+  SnapshotRetrySkipReason,
+} from './domain/snapshot-retry.ts';
+export {
+  SNAPSHOT_RETRY_JOB,
+  createSnapshotRetryScheduler,
+  handleSnapshotRetry,
+} from './jobs/snapshot-retry.ts';
+export type { SnapshotRetryDeps, SnapshotRetrySchedulerDeps } from './jobs/snapshot-retry.ts';
 export { shouldDeferOrderSource } from './domain/source-shop.ts';
 export type { DeferOrderSourceInput } from './domain/source-shop.ts';
 export { judgeClaimEvidence } from './domain/claim-evidence.ts';

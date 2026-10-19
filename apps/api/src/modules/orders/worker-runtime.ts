@@ -9,6 +9,11 @@
 //   the order-sync handler. The scheduler and the handler share the same access instance.
 // - start() starts the scheduler's timer loops only (createOrderSyncScheduler); every call starts
 //   one more set (entry.ts calls it once).
+// - B1-08t: with the optional commission snapshot port injected, the update step and the pipeline
+//   get it, the order-sync handler routes 'snapshot-retry' jobs to the compensation scan
+//   (jobs/snapshot-retry.ts), and start() also arms the scan's dispatch timer (every 15 minutes);
+//   stop() stops both and waits for the round in flight. Without it nothing of B1-08t runs: no
+//   routing, no query, no timer. Production does not inject it yet (B1-08w).
 // Other modules' readers come in as ports from app.module (identity users, linking bindings, the
 // quota limiter, B1-08q's source backfill ports); union's are read through union/index.ts. orders
 // never imports linking, identity, catalog or content.
@@ -53,6 +58,14 @@ import {
   type SyncIntervalConfig,
 } from './application/sync-scheduler.ts';
 import { createOrderUpdateStep, type OrderUpdateDeps } from './application/update-step.ts';
+import type { CommissionSnapshotPort } from './application/commission-snapshot-step.ts';
+import { SNAPSHOT_RETRY_SCAN_INTERVAL_MS } from './domain/snapshot-retry.ts';
+import { listSnapshotRetryAppIds } from './infra/snapshot-retry-store.ts';
+import {
+  SNAPSHOT_RETRY_JOB,
+  createSnapshotRetryScheduler,
+  handleSnapshotRetry,
+} from './jobs/snapshot-retry.ts';
 import { loadStatusMap, type StatusMap } from './domain/status-map.ts';
 import { scheduledPlatforms } from './domain/sync-window.ts';
 import { createSyncCursorStore } from './infra/sync-cursors.ts';
@@ -93,6 +106,8 @@ export interface OrderSyncRuntimeDeps {
   readonly endpoints: readonly UnionEndpoint[];
   readonly registry: UnionRegistry;
   readonly ports: OrderSyncReadPorts;
+  /** B1-08k / B1-08t: commission's snapshot port; absent → step ⑥ and the compensation retry are off. */
+  readonly snapshots?: CommissionSnapshotPort;
 }
 
 const ORDER_SYNC = Symbol('ORDER_SYNC');
@@ -178,6 +193,7 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
   const bindings = deps.ports.bindings(db);
   // B1-08q: one sources object for both steps (built here, read on use).
   const sources = deps.ports.sources?.(db, clock, logger);
+  const snapshots = deps.snapshots;
   const updateStep = createOrderUpdateStep({
     clock,
     users,
@@ -188,6 +204,7 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
     rebate: PENDING_SETTLEMENT_UPDATES,
     events,
     ...(sources === undefined ? {} : { sources }),
+    ...(snapshots === undefined ? {} : { snapshots }),
   });
   const pipeline = createOrderPipeline({
     db,
@@ -202,14 +219,38 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
     events,
     logger,
     ...(sources === undefined ? {} : { sources }),
+    ...(snapshots === undefined ? {} : { snapshots }),
   });
 
   const handler = { access, cursors, registry, pipeline, logger };
-  queue.register(ORDER_SYNC_QUEUE, (job) => handleOrderSyncWindow(job, handler));
   const sync = createOrderSyncScheduler(
     { clock, queue, cursors, access, logger },
     DEFAULT_INTERVAL,
   );
+  if (snapshots === undefined) {
+    queue.register(ORDER_SYNC_QUEUE, (job) => handleOrderSyncWindow(job, handler));
+    return {
+      access,
+      cursors,
+      registry,
+      pipeline,
+      statusMaps,
+      logger,
+      start: () => sync.start(),
+    };
+  }
+  const retryDeps = { db, clock, snapshots, logger };
+  queue.register(ORDER_SYNC_QUEUE, (job) =>
+    job.name === SNAPSHOT_RETRY_JOB
+      ? handleSnapshotRetry(job, retryDeps)
+      : handleOrderSyncWindow(job, handler),
+  );
+  const retryScheduler = createSnapshotRetryScheduler({
+    queue,
+    listAppIds: () => listSnapshotRetryAppIds(db),
+    intervalMs: SNAPSHOT_RETRY_SCAN_INTERVAL_MS,
+    logger,
+  });
   return {
     access,
     cursors,
@@ -217,6 +258,14 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
     pipeline,
     statusMaps,
     logger,
-    start: () => sync.start(),
+    start: () => {
+      const syncRunning = sync.start();
+      const retryRunning = retryScheduler.start();
+      return {
+        async stop() {
+          await Promise.all([syncRunning.stop(), retryRunning.stop()]);
+        },
+      };
+    },
   };
 }

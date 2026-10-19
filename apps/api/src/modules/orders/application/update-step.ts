@@ -24,6 +24,9 @@
 //   是否首次跨入资格（P2、R3a 在 PAID+）；跨入时 paid_at_source（库内为空才写）并入同一条 CAS UPDATE，history、
 //   待处理之后、settlement 端口之前同事务调端口（application/commission-snapshot-step.ts），结果经
 //   change.snapshot 交 settlement。未注入时整步跳过，change 不带 snapshot 字段。整条不落 orders 的不判定。
+// - 快照补偿重试（B1-08t，application/snapshot-retry-step.ts）：注入 snapshots、本次写库成功、没有跨入资格但仍满足
+//   ⑥ 条件、库内有未转人工的 open 快照类待处理行 → 在同一位置重试一次；成功与处置待处理同事务，结果经
+//   change.snapshot 交 settlement；满 24 小时仍失败记转人工标记并打一次告警日志。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
 //   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
 // 日志只打平铺字段（platform、app_id、reason、outcome、rule、event），不打子订单号与买家参数。
@@ -35,12 +38,14 @@ import type { RegisteredPlatform, UnionOrder, UnionOrderAttrParams } from '../..
 import {
   crossesSnapshotEligibility,
   isPaidOrLater,
+  isSnapshotEligible,
   planCommissionSnapshot,
   snapshotPaidAtSource,
   type CommissionSnapshotPlan,
   type PlanCommissionSnapshotInput,
 } from '../domain/commission-snapshot.ts';
 import { rawPayloadId } from '../domain/order-fields.ts';
+import { planSnapshotRetry, resolveRetryPaidAt } from '../domain/snapshot-retry.ts';
 import {
   incomingShopId,
   shopIdToWrite,
@@ -61,6 +66,11 @@ import {
   upsertPending,
 } from '../infra/pipeline-store.ts';
 import {
+  isHandedOff,
+  readOpenSnapshotRows,
+  writePaidAtSource,
+} from '../infra/snapshot-retry-store.ts';
+import {
   publishBindingConflict,
   publishIllegalTransition,
   publishParamChanged,
@@ -72,6 +82,11 @@ import {
   type CommissionSnapshotPort,
   type SnapshotOutcome,
 } from './commission-snapshot-step.ts';
+import {
+  logSnapshotRetryExhausted,
+  runSnapshotRetry,
+  type SnapshotRetryAlert,
+} from './snapshot-retry-step.ts';
 import { backfillOrderSource, sourceColumns } from './source-backfill.ts';
 import type {
   OrderPipelineContext,
@@ -459,25 +474,83 @@ export function createOrderUpdateStep(
     }
     // ⑥ 分佣快照：history、待处理之后、settlement 端口之前；端口抛错不吞，整事务回滚。
     let snapshot: SnapshotOutcome | undefined;
+    let retryAlert: SnapshotRetryAlert | null = null;
     if (snapshots !== undefined) {
-      snapshot =
-        snapshotPlan === null
-          ? 'none'
-          : await runCommissionSnapshot(
-              trx,
-              snapshots,
-              snapshotPlan,
-              {
-                app_id: current.app_id,
-                platform,
-                sub_order_id: current.sub_order_id,
-                order_id: current.order_id,
-                raw_status: incoming.raw_status ?? null,
-                raw_payload_id: columns.raw_payload_id,
-                now,
-              },
-              log,
-            );
+      const stepContext = {
+        app_id: current.app_id,
+        platform,
+        sub_order_id: current.sub_order_id,
+        order_id: current.order_id,
+        raw_status: incoming.raw_status ?? null,
+        raw_payload_id: columns.raw_payload_id,
+        now,
+      };
+      if (snapshotPlan !== null) {
+        snapshot = await runCommissionSnapshot(trx, snapshots, snapshotPlan, stepContext, log);
+      } else if (
+        eligibilityAfter.user_id !== null &&
+        isSnapshotEligible({
+          user_id: eligibilityAfter.user_id,
+          platform_status: eligibilityAfter.platform_status,
+          rebate_status: current.rebate_status,
+        })
+      ) {
+        // B1-08t 补偿重试：本次没有跨入资格、仍满足 ⑥ 条件、库内还有 open 的快照类待处理行 → 重试一次。
+        // 信号只看待处理行（不看快照是否存在）；端口幂等，已有快照回 existing。已转人工的不再自动重试。
+        const rows = await readOpenSnapshotRows(trx, {
+          app_id: current.app_id,
+          platform,
+          sub_order_id: current.sub_order_id,
+        });
+        if (rows.length === 0) {
+          snapshot = 'none';
+        } else if (isHandedOff(rows)) {
+          snapshot = 'pending';
+        } else {
+          const ownerUserId = eligibilityAfter.user_id;
+          const orderPid = set.pid !== undefined ? set.pid : current.pid;
+          const pidScene =
+            knownPidScene !== undefined
+              ? knownPidScene
+              : await orderPidScene(current, orderPid, ctx, platform);
+          snapshotSceneMissing = pidScene === null;
+          const source = current.paid_at_source;
+          const firstPaidAt =
+            source === 'observed' || source === null ? await readFirstPaidAt(trx, current) : null;
+          const paid = resolveRetryPaidAt({
+            paidAtSource: source,
+            paidAt: columns.paid_at,
+            depositPaidAt: columns.deposit_paid_at,
+            firstPaidAt,
+            now,
+          });
+          const retryPlan = planSnapshotRetry({
+            order: {
+              app_id: current.app_id,
+              order_id: current.order_id,
+              platform,
+              buy_type: orderBuyType(current.buy_type),
+              activity_type: current.activity_type,
+              est_commission_fen: columns.est_commission_fen,
+              settle_commission_fen: columns.settle_commission_fen,
+              subsidy_commission_fen: current.subsidy_commission_fen,
+            },
+            ownerUserId,
+            paid,
+            serviceFeeFen: incoming.service_fee_fen ?? null,
+            pidScene,
+          });
+          // BR-CALC-11：库内 paid_at_source 为空时照 B1-08k 写入（已有值不覆盖）。
+          if (retryPlan.kind === 'call' && paid !== null && paid.writeSource) {
+            await writePaidAtSource(trx, current, retryPlan.input.paidAtSource, now);
+          }
+          const retried = await runSnapshotRetry(trx, snapshots, retryPlan, stepContext, rows, log);
+          snapshot = retried.outcome;
+          retryAlert = retried.alert;
+        }
+      } else {
+        snapshot = 'none';
+      }
     }
     const source: OrderStatusSource = {
       event: plan.event ?? null,
@@ -605,6 +678,7 @@ export function createOrderUpdateStep(
         'order promotion slot scene unknown; source backfill skipped product / shop matching',
       );
     }
+    if (retryAlert !== null) logSnapshotRetryExhausted(log, retryAlert);
     if (snapshotSceneMissing) {
       log?.warn(
         { ...base, reason: 'PID_SCENE_NOT_FOUND', outcome: 'snapshot_scene_unknown' },
