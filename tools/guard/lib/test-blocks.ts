@@ -54,8 +54,8 @@
 //   never reads test-support files, as since CT-06p); a bare specifier is a package — except a
 //   workspace package (`@couli/*`, test code such as packages/testing that the closure does not
 //   follow). Computed as a fixpoint over the closure; `opaque` says why not. The capabilities are
-//   a list of spellings (Codex reviews r4–r7), not a proof: a name computed some other way is not
-//   seen.
+//   a list of the ordinary spellings (Codex reviews r4–r7), not a proof: a name computed some
+//   other way is not seen (see the threat model below).
 // - Fallback rule: a specifier is exempt only when it resolves to a closed module and the whole
 //   closure is closed. Whenever the module it names is not closed, not followed or not resolved,
 //   the importing module mocks modules, ANY module the rule-test file loads is not closed (a
@@ -70,8 +70,15 @@
 //   own text, as before CT-06w: file-system reads, path helpers, `import.meta` and listings
 //   resolved statically (B1-12g: queue/contract.test.ts lists and reads apps/api/src; a listing
 //   that holds the support file, or the support file's name in another literal, still makes it
-//   whole). The question a review must answer is whether a closure of closed modules can still
-//   reach a changed support file.
+//   whole; this is the CT-06r judgement, not a new gap). The question a review must answer is
+//   whether a closure of closed modules, written in the ordinary way, can still reach a changed
+//   support file.
+// - Threat model (orchestrator ruling of 2026-10-19, after Codex r7): the red check catches tests
+//   that are wrong — not red against the old implementation — in test code written the ordinary
+//   way; it is no security boundary against deliberate obfuscation. The test authors are our own
+//   Codex / Claude and the tests pass the rule-test review. Code that reaches Function, process,
+//   a built-in module or a dynamic import through a computed property name or a string built at
+//   run time is out of scope here; the rule-test review is what stops it.
 //
 // Node built-ins only; pure functions (the caller reads the files).
 
