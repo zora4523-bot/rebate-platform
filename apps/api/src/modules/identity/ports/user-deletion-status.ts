@@ -1,5 +1,14 @@
+// Identity's read-only deletion-status port (task B1-02ze §9.2 / §10), requested by the funds lane
+// for BR-CALC-13 (beneficiary missing or deleted → forfeited). One SELECT of app.users (id, status
+// only) on the executor the caller passes, so the caller's uncommitted writes are visible; the
+// `db` option is kept for the agreed signature and never runs a query. No writes, no row locks,
+// no logging. BR-ID-28: users.status = deleting → processing, deleted → done, anything else
+// (normal, any other value) → none; IDs not in app.users for this app_id are omitted.
+//
+// Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
+// for type-only imports, relative imports with `.ts`.
 import type { DB } from '@couli/db';
-import type { Kysely, Transaction } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 
 export type UserDeletionStatus = 'none' | 'processing' | 'done';
 
@@ -19,12 +28,32 @@ export interface UserDeletionStatusReaderOptions {
   db: Kysely<DB>;
 }
 
-// B1-02ze: read only through the caller's executor, including uncommitted changes.
-// users.status: deleting → processing, deleted → done, otherwise → none; absent IDs are omitted.
-// TODO(规划/11 §4.5): 读注销单 deletion_requests 的 processing / done — blocked on B1-15
+// TODO(规划/11 §4.5): 与注销单 deletion_requests 对齐 — blocked on B1-15
+function toDeletionStatus(status: string): UserDeletionStatus {
+  if (status === 'deleting') return 'processing';
+  if (status === 'deleted') return 'done';
+  return 'none';
+}
+
 export function createUserDeletionStatusReader(
   options: UserDeletionStatusReaderOptions,
 ): UserDeletionStatusReader {
+  // Kept for the agreed signature only: queries always run on the caller's executor.
   void options;
-  throw new Error('NotImplemented: createUserDeletionStatusReader');
+  return {
+    async read(executor, input) {
+      const ids = [...new Set(input.user_ids)];
+      const result = new Map<string, UserDeletionStatus>();
+      if (ids.length === 0) return result;
+      const rows = await executor
+        .withSchema('app')
+        .selectFrom('users')
+        .select(['id', 'status'])
+        .where('app_id', '=', input.app_id)
+        .where('id', '=', sql<string>`ANY(${ids})`)
+        .execute();
+      for (const row of rows) result.set(row.id, toDeletionStatus(row.status));
+      return result;
+    },
+  };
 }
