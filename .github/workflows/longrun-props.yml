@@ -57,7 +57,11 @@ jobs:
     needs: longrun-detect
     if: needs.longrun-detect.outputs.changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 → 95 (2026-10-19, CT-06za): 177 green runs since 2026-10-18 11:42 UTC took 4m30s–11m07s,
+    # but B2-01l (#812) splits [AC-B2-01j#20] into six files. Vitest runs three files at a time
+    # here (run 39203666019): the worker that gets shard 4 (about 2250 s at 1,000,000 runs) after
+    # commission-publish (860 s) and shard 3 needs about 61 minutes; × 1.5 rounded up to 5 is 95.
+    timeout-minutes: 95
     steps:
       # The PR head itself (not the merge ref): the tested tree is the hashed tree.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
