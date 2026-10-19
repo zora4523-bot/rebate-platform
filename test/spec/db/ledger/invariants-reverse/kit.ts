@@ -50,7 +50,7 @@ export function replacements(): Replacement[] {
   expect(rows.filter((row) => row.file === ORIGINALS['03'])).toHaveLength(1);
   for (const code of ['03', '04'] as const) {
     const replacement = rows.find((row) => row.file === ORIGINALS[code]);
-    if (replacement) expect(replacement.replaced_by).not.toMatch(/^(?:03|04)_/);
+    if (replacement) expect(replacement.replaced_by).not.toMatch(/^0[3-8]_/);
     expect(readdirSync(DIRECTORY).filter((name) => name.startsWith(`${code}_`))).toEqual([
       ORIGINALS[code],
     ]);
@@ -117,7 +117,8 @@ export async function scenario(
                 'invariant',
                 'scope',
               ]);
-              expect([code, filename.split('_')[0]]).toContain(row.invariant);
+              if (code === '03') expect(row.invariant).toBe('03');
+              else expect([code, filename.split('_')[0]]).toContain(row.invariant);
               expect(row.invariant).toBe(rows[0]!.invariant);
               expect(typeof row.checked_rows).toBe('bigint');
               expect(row.checked_rows, 'D18: zero checked rows is not success').toBeGreaterThan(0n);

@@ -48,9 +48,15 @@ it(
         100n,
       );
       // Demonstrate the old false positive, then exercise the replacement over all history.
-      differences(await check('03', true), 'global');
+      const legacyRows = await check('03', true);
+      differences(legacyRows, 'global');
+      expect(legacyRows[0]!.checked_rows).toBe(1n);
       for (const date of ['2031-01-01', '2032-06-15', '2033-01-01']) {
-        clean(await check('03', false, date));
+        const rows = await check('03', false, date);
+        clean(rows);
+        // Two vouchers form one beneficiary key, even after they cancel each other.
+        expect(rows[0]!.checked_rows).toBe(1n);
+        expect(rows[0]!.checked_rows).toBe(legacyRows[0]!.checked_rows);
         clean(await check('04', false, date));
       }
     });
@@ -313,6 +319,8 @@ it(
       await pair(db, a, p, await voucher(db, { ...key, voucher_kind: 'CLAWBACK' }), 61n, {
         ledger_type: 'CLAWBACK',
       });
+      // Multiple effective CLAWBACK vouchers do not violate CREDIT uniqueness.
+      clean(await check('03'));
       const rows = await check('04');
       differences(rows, 'global');
       expect(rows).toHaveLength(1);
