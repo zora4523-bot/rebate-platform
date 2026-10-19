@@ -4987,19 +4987,19 @@ ALTER TABLE ONLY app.link_open_attempts
 
 
 --
--- Name: links links_app_id_lk_key; Type: CONSTRAINT; Schema: app; Owner: -
---
-
-ALTER TABLE ONLY app.links
-    ADD CONSTRAINT links_app_id_lk_key UNIQUE (app_id, lk);
-
-
---
 -- Name: links links_app_id_link_id_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
 ALTER TABLE ONLY app.links
     ADD CONSTRAINT links_app_id_link_id_key UNIQUE (app_id, link_id);
+
+
+--
+-- Name: links links_app_id_lk_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.links
+    ADD CONSTRAINT links_app_id_lk_key UNIQUE (app_id, lk);
 
 
 --
