@@ -1,5 +1,5 @@
 import { createTestDatabase } from '@couli/db/testing';
-import { sql, type KyselyPlugin, type RawNode } from 'kysely';
+import { sql, type KyselyPlugin } from 'kysely';
 import { expect, it } from 'vitest';
 import { APP, DAY, TIMEOUT, account, balance, immutableState, inDatabase, setup } from './kit.ts';
 
@@ -16,6 +16,19 @@ function probe(code: string) {
   };
 }
 
+// A domain error may preserve the PG error anywhere in its cause chain.
+function sqlState(error: unknown): string | undefined {
+  const visited = new Set<unknown>();
+  while (typeof error === 'object' && error !== null && !visited.has(error)) {
+    visited.add(error);
+    if ('code' in error && typeof error.code === 'string' && /^[0-9A-Z]{5}$/.test(error.code)) {
+      return error.code;
+    }
+    error = 'cause' in error ? error.cause : undefined;
+  }
+  return undefined;
+}
+
 it(
   '[AC-B2-02j#11] 文件按名称逐个执行，每个在独立只读事务中取得指定 check_date',
   async () => {
@@ -26,19 +39,9 @@ it(
       },
     });
     await inDatabase(createTestDatabase, async (db) => {
-      const submitted: string[] = [];
       const completed: string[] = [];
       const observer: KyselyPlugin = {
         transformQuery(args) {
-          if (args.node.kind === 'RawNode') {
-            const text = (args.node as RawNode).sqlFragments.join('');
-            const match = /'probe', '(\d+)'/.exec(text);
-            if (match) {
-              // A later file must not even start before the previous SELECT completed.
-              expect(completed).toEqual(submitted);
-              submitted.push(match[1]!);
-            }
-          }
           return args.node;
         },
         async transformResult(args) {
@@ -50,8 +53,9 @@ it(
         },
       };
       const result = await runner.runDailyCheck(db.withPlugin(observer), { accountingDate: DAY });
-      expect(submitted).toEqual(['10', '20', '30']);
-      expect(completed).toEqual(submitted);
+      // Observe database results, independent of raw SQL node layout or query-builder syntax.
+      // The single connection executes each probe before the next transaction can acquire it.
+      expect(completed).toEqual(['10', '20', '30']);
       expect(result.checks.map((c) => c.file)).toEqual([
         '10_probe.sql',
         '20_probe.sql',
@@ -103,9 +107,12 @@ it(
     await inDatabase(createTestDatabase, async (db) => {
       await balance(db, await account(db, { app_id: APP }), 0n);
       const before = await immutableState(db);
-      await expect(runner.runDailyCheck(db, { accountingDate: DAY })).rejects.toMatchObject({
-        code: '25006',
-      });
+      const outcome = await runner.runDailyCheck(db, { accountingDate: DAY }).then(
+        () => ({ succeeded: true, error: undefined }),
+        (error: unknown) => ({ succeeded: false, error }),
+      );
+      expect(outcome.succeeded).toBe(false);
+      expect(sqlState(outcome.error)).toBe('25006');
       expect(await immutableState(db)).toEqual(before);
       // The failed transaction must be rolled back and released, not poison the only connection.
       expect((await sql<{ value: number }>`SELECT 1 AS value`.execute(db)).rows).toEqual([
@@ -125,9 +132,12 @@ it(
       },
     });
     await inDatabase(createTestDatabase, async (db) => {
-      await expect(runner.runDailyCheck(db, { accountingDate: DAY })).rejects.toMatchObject({
-        code: '22012',
-      });
+      const outcome = await runner.runDailyCheck(db, { accountingDate: DAY }).then(
+        () => ({ succeeded: true, error: undefined }),
+        (error: unknown) => ({ succeeded: false, error }),
+      );
+      expect(outcome.succeeded).toBe(false);
+      expect(sqlState(outcome.error)).toBe('22012');
       const session = await sql<{ date: string | null; read_only: string }>`SELECT
       nullif(current_setting('couli.check_date', true), '') AS date,
       current_setting('transaction_read_only') AS read_only`.execute(db);

@@ -66,7 +66,7 @@ it(
 );
 
 it(
-  '[AC-B2-02j#1] 日余额按分录借正贷负，分子户计算，排除前后会计日且不读缓存金额',
+  '[AC-B2-02j#1] 日余额按分录借正贷负，缺前日快照按历史分录求期初，当日发生额排除前后会计日',
   async () => {
     const { runner } = setup();
     await inDatabase(createTestDatabase, async (db) => {
@@ -129,15 +129,81 @@ it(
           expect.objectContaining({
             account_id: p.id,
             sub_account: 'available',
-            opening_fen: 0n,
+            opening_fen: 1000n,
             debit_fen: 230n,
             credit_fen: 80n,
-            closing_fen: 150n,
+            closing_fen: 1150n,
           }),
         ]),
       );
       expect(rows.map((r) => r.computed_at.toISOString())).toEqual([NOW, NOW, NOW]);
       expect(await immutableState(db)).toEqual(before);
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-02j#16] 中间漏跑一天时，期初取截至前日的全部分录合计，不沿用隔日快照或归零',
+  async () => {
+    const { runner } = setup();
+    await inDatabase(createTestDatabase, async (db) => {
+      const a = await account(db, { app_id: APP });
+      const p = await platform(db, 'UNION_RECEIVABLE:taobao', APP);
+      await pair(
+        db,
+        a,
+        p,
+        await voucher(db, { app_id: APP, accounting_date: '2032-06-13' }),
+        -100n,
+      );
+      await runner.runDailyCheck(db, { accountingDate: '2032-06-13' });
+      await pair(
+        db,
+        a,
+        p,
+        await voucher(db, { app_id: APP, accounting_date: '2032-06-14' }),
+        -40n,
+        { account_version: 2n },
+      );
+      await pair(
+        db,
+        a,
+        p,
+        await voucher(db, { app_id: APP, accounting_date: '2032-06-14' }),
+        15n,
+        { ledger_type: 'CLAWBACK', account_version: 3n },
+      );
+      await pair(db, a, p, await voucher(db, { app_id: APP }), -20n, {
+        account_version: 4n,
+      });
+      const before = await snapshots(db);
+      expect(before).toHaveLength(2);
+      expect(before.every((r) => r.day === '2032-06-13')).toBe(true);
+      await runner.runDailyCheck(db, { accountingDate: DAY });
+      const rows = await snapshots(db);
+      expect(rows.filter((r) => r.day === '2032-06-13')).toEqual(before);
+      expect(rows.filter((r) => r.day === DAY)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            account_id: a.id,
+            sub_account: 'available',
+            opening_fen: -125n,
+            debit_fen: 0n,
+            credit_fen: 20n,
+            closing_fen: -145n,
+          }),
+          expect.objectContaining({
+            account_id: p.id,
+            sub_account: 'available',
+            opening_fen: 125n,
+            debit_fen: 20n,
+            credit_fen: 0n,
+            closing_fen: 145n,
+          }),
+        ]),
+      );
+      expect(rows.filter((r) => r.day === DAY)).toHaveLength(2);
     });
   },
   TIMEOUT,

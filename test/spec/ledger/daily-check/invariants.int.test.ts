@@ -66,22 +66,35 @@ it(
       const before = await immutableState(db);
       const result = await runner.runDailyCheck(db, { accountingDate: DAY });
       expect(result.checks.map((c) => c.file)).toEqual(invariantFiles().map((f) => f.name));
-      expect(result.checks).toEqual([
-        { file: '01_user-balances.sql', invariant: '01', checkedRows: 3n },
-        { file: '02_voucher-balanced.sql', invariant: '02', checkedRows: 1n },
-        { file: '03_credit-unique.sql', invariant: '03', checkedRows: 1n },
-        { file: '04_beneficiary-net.sql', invariant: '04', checkedRows: 1n },
-        { file: '07_negative-balance-drops.sql', invariant: '07', checkedRows: 1n },
-      ]);
+      expect(result.checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ invariant: '01', checkedRows: 3n }),
+          expect.objectContaining({ invariant: '02', checkedRows: 1n }),
+          expect.objectContaining({ invariant: '03', checkedRows: 1n }),
+          expect.objectContaining({ invariant: '04', checkedRows: 1n }),
+          expect.objectContaining({ invariant: '07', checkedRows: 1n }),
+        ]),
+      );
       expect(result.accountDifferences).toEqual([]);
       expect(result.globalDifferences).toEqual([]);
-      expect(result.emptyChecks).toEqual([]);
+      // Future SQL may inspect populations absent from this clean fixture (e.g. orders).
+      const emptyChecks = result.checks.filter((c) => c.checkedRows === 0n);
+      expect(result.emptyChecks).toEqual(emptyChecks.map((c) => c.invariant));
       expect(result.recommendations).toEqual({
         createDiscrepancies: false,
         freezeWithdrawals: false,
         disableAutoSettlement: false,
       });
-      expect(logs).toEqual([]);
+      expect(logs.map((l) => l.fields)).toEqual(
+        emptyChecks.map((c) =>
+          expect.objectContaining({
+            event: 'ledger_daily_check_empty',
+            invariant: c.invariant,
+            checked_rows: '0',
+            accounting_date: DAY,
+          }),
+        ),
+      );
       expect(await immutableState(db)).toEqual(before);
     });
   },
@@ -218,13 +231,16 @@ it(
           }),
         ]),
       );
-      expect(result.checks.map((c) => [c.invariant, c.checkedRows])).toEqual([
-        ['01', 3n],
-        ['02', 3n],
-        ['03', 1n],
-        ['04', 1n],
-        ['07', 3n],
-      ]);
+      expect(result.checks.map((c) => c.file)).toEqual(invariantFiles().map((f) => f.name));
+      expect(result.checks.map((c) => [c.invariant, c.checkedRows])).toEqual(
+        expect.arrayContaining([
+          ['01', 3n],
+          ['02', 3n],
+          ['03', 1n],
+          ['04', 1n],
+          ['07', 3n],
+        ]),
+      );
       expect(result.recommendations).toEqual({
         createDiscrepancies: true,
         freezeWithdrawals: true,
@@ -254,8 +270,10 @@ it(
     const { runner, logs } = setup();
     await inDatabase(createTestDatabase, async (db) => {
       const result = await runner.runDailyCheck(db, { accountingDate: DAY });
-      expect(result.checks.map((c) => c.checkedRows)).toEqual([0n, 0n, 0n, 0n, 0n]);
-      expect(result.emptyChecks).toEqual(['01', '02', '03', '04', '07']);
+      const files = invariantFiles();
+      expect(result.checks.map((c) => c.file)).toEqual(files.map((f) => f.name));
+      expect(result.checks.map((c) => c.checkedRows)).toEqual(files.map(() => 0n));
+      expect(result.emptyChecks).toEqual(files.map((f) => f.name.split('_')[0]));
       expect(result.accountDifferences).toEqual([]);
       expect(result.globalDifferences).toEqual([]);
       expect(result.recommendations).toEqual({
