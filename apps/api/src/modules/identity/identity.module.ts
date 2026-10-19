@@ -150,6 +150,7 @@ import { OauthLoginController } from './http/public/oauth-login.controller.ts';
 import { StepUpController } from './http/public/step-up.controller.ts';
 import { LogoutController } from './http/public/logout.controller.ts';
 import { RefreshController } from './http/public/refresh.controller.ts';
+import { LandingSmsCodesController } from './http/public/landing-sms-codes.controller.ts';
 import { SmsCodesController } from './http/public/sms-codes.controller.ts';
 import { SmsLoginController } from './http/public/sms-login.controller.ts';
 import { TipsController } from './http/public/tips.controller.ts';
@@ -211,6 +212,11 @@ export interface IdentityModuleOptions {
    * is refused with 42901 (never a send without the checks).
    */
   readonly smsRisk?: Omit<FactoryProvider<SmsRisk>, 'provide'>;
+  /**
+   * Builds the SMS sender port, assembled by app.module through identity's index.ts (as it does
+   * for the admin entry). Absent, identity builds createSmsSender itself.
+   */
+  readonly smsSender?: Omit<FactoryProvider<SmsSender>, 'provide'>;
   /**
    * Builds the push token port (B1-12b: notification's binding and conditional unbinding
    * commands), assembled by app.module so identity never imports notification. The SMS login
@@ -280,6 +286,10 @@ const REFUSING_DEVICE_REGISTRATION: DeviceRegistrationPorts = {
 /** The SMS send risk without risk's assembly: refuse like an unavailable store (Retry-After 1). */
 const REFUSING_SMS_RISK: SmsRisk = {
   admit: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  checkAttempts: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  admitAttempt: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  admitDevice: () => Promise.resolve({ code: 42901, retryAfterSec: 1 }),
+  finishAttempt: () => Promise.resolve(),
   recordAccepted: () => Promise.resolve(),
   recordRegistered: () => Promise.resolve(),
 };
@@ -354,6 +364,7 @@ export class IdentityModule {
         BindPhoneController,
         DevicesController,
         SmsCodesController,
+        LandingSmsCodesController,
         SmsLoginController,
         OauthLoginController,
         RefreshController,
@@ -491,12 +502,14 @@ export class IdentityModule {
               },
             }),
         },
-        {
-          provide: smsSenderToken(),
-          inject: [APP_CONFIG, ROOT_LOGGER],
-          useFactory: (config: AppConfig, logger: RootLogger): SmsSender =>
-            createSmsSender(config.appEnv, logger),
-        },
+        options.smsSender === undefined
+          ? {
+              provide: smsSenderToken(),
+              inject: [APP_CONFIG, ROOT_LOGGER],
+              useFactory: (config: AppConfig, logger: RootLogger): SmsSender =>
+                createSmsSender(config.appEnv, logger),
+            }
+          : { ...options.smsSender, provide: smsSenderToken() },
         {
           provide: SMS_CODES,
           inject: [

@@ -20,11 +20,23 @@ export type {
   InviteRelationHitWriter,
   InviteRelationHitWriterOptions,
 } from './application/invite-relation-hits.ts';
-export { createSmsRisk, ephemeralSmsRiskIndex } from './application/sms-risk.ts';
+export {
+  SMS_ATTEMPT_SEND_BOUND_MS,
+  SMS_ATTEMPT_TRANSITIONS,
+  SmsAttemptTransitionError,
+  canTransitionSmsAttempt,
+  createSmsRisk,
+  ephemeralSmsRiskIndex,
+  transitionSmsAttempt,
+} from './application/sms-risk.ts';
 export type {
   SmsRisk,
   SmsRiskOptions,
   SmsRiskRequest,
+  SmsAttemptRequest,
+  SmsAttemptAdmission,
+  SmsAttemptOutcome,
+  SmsAttemptStatus,
   SmsRiskAdmission,
 } from './application/sms-risk.ts';
 export {

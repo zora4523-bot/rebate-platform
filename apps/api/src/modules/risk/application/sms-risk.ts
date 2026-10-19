@@ -28,6 +28,37 @@
 // Sending never stops on the budget. recordRegistered() records one new account for the IP.
 // Their failures are logged (warn) and swallowed.
 //
+// The per-IP hourly send count of the send path (B1-11g round 7, orchestrator rulings 2026-10-19,
+// couli #150 BR-ID-05 implementation rule) is PG-authoritative: app.sms_send_attempts.
+//   Counted attempts: rows of (app_id, ip_hmac) with status pending / accepted / unknown and
+//   created_at in [now − 3600 s − send bound, now]; failed rows (the provider definitely refused,
+//   or nothing was sent) do not count. Reached → 42901, released when the (N−L+1)-th oldest counted
+//   row leaves the window (created_at + window + 1 ms).
+//   checkAttempts() is step ① of both entries, read only: the IP's new accounts (the Redis read
+//   above, limit 5) and the counted attempts. The registrations live in Redis only, so no Redis
+//   or a failing read cannot confirm the item: 42901 with Retry-After 1 like every other store
+//   failure here (orchestrator ruling ① 2026-10-19 19:3x, fail-closed), never a pass.
+//   admitAttempt() makes it binding once every other check passed (device, phone quota): one
+//   transaction takes the advisory lock of (app_id, ip_hmac), counts again and either refuses or
+//   inserts a pending row (attempt_id UUIDv7 from the Clock) and commits — before the provider is
+//   called. A request refused by any check writes no row. PG failing or missing answers 42901 with
+//   Retry-After 1 (no row, no send).
+//   finishAttempt() writes the outcome on the pending row, retried once; a failed write leaves it
+//   pending, which counts. The status changes only through transitionSmsAttempt() (the table
+//   below: pending → accepted | failed | unknown; the three are final): an outcome not reachable
+//   from pending throws SmsAttemptTransitionError before anything is written; the UPDATE carries
+//   app_id and the source status (WHERE status = 'pending'); no row updated means the row was
+//   already decided (a concurrent or lost-reply completion): the same outcome again is a no-op,
+//   any other is an illegal transition and throws (nothing written).
+//   admitDevice() is step ② alone (the app route), unchanged from admit().
+// Rows are never deleted or expired by the application; Redis holds no part of this count (no
+// cache: every decision reads PG).
+// Invariant: under any combination of failures, for one IP in one hour, provider calls ≤ counted
+// attempt rows ≤ the limit (a row is committed and counted before its provider call; it stops
+// counting only once it is known that no SMS went out).
+// admit() and recordAccepted()'s IP record stay as B1-03g defined them (their frozen rule tests);
+// the send path no longer reads that Redis send count.
+//
 // Nothing stored or logged carries a phone number or an IP in clear: phones and IPs are keyed
 // blind indexes under their own contexts. Every key lives at most a window (two days for the
 // budget) and carries the app id.
@@ -35,7 +66,15 @@
 // Also compiled by the `test` project (through ../index.ts): erasable syntax only, `import type`
 // for type-only imports, relative imports with `.ts`.
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import type { Clock, FieldCrypto, RedisHandle, RootLogger } from '../../platform/index.ts';
+import type { DB } from '@couli/db';
+import { sql, type Kysely } from 'kysely';
+import {
+  newUuidV7,
+  type Clock,
+  type FieldCrypto,
+  type RedisHandle,
+  type RootLogger,
+} from '../../platform/index.ts';
 import type { RateLimitConfigReader } from './rate-limit.ts';
 
 /** BR-ID-05 / B1-03g: identity resolves device_hash before calling this port. */
@@ -52,9 +91,45 @@ export interface SmsRiskRequest {
 }
 export type SmsRiskAdmission =
   { readonly code: 0 } | { readonly code: 42901; readonly retryAfterSec: number };
+/** B1-11g: step ① of a send, both entries; the phone is normalised by identity. */
+export interface SmsAttemptRequest {
+  readonly appId: string;
+  readonly clientIp: string;
+  readonly phone: string;
+}
+export type SmsAttemptAdmission =
+  | { readonly code: 0; readonly attemptId: string }
+  | { readonly code: 42901; readonly retryAfterSec: number };
+/**
+ * The outcome written on an admitted attempt: accepted and unknown keep counting; failed (the
+ * provider definitely refused, or nothing was sent) stops counting.
+ */
+export type SmsAttemptOutcome = 'accepted' | 'failed' | 'unknown';
 export interface SmsRisk {
   /** IP checks precede the atomic device admission; admission is never refunded. */
   admit(input: SmsRiskRequest): Promise<SmsRiskAdmission>;
+  /**
+   * Step ① of the send path (B1-11g), read only: the IP's new accounts and its counted PG
+   * attempts. Nothing is written; admitAttempt makes the decision binding later.
+   */
+  checkAttempts(input: Omit<SmsAttemptRequest, 'phone'>): Promise<SmsRiskAdmission>;
+  /**
+   * The binding attempt (after the phone quota was reserved): under the (app_id, ip_hmac) lock,
+   * the counted attempts are read again and, below the limit, a pending row is committed.
+   */
+  admitAttempt(input: SmsAttemptRequest): Promise<SmsAttemptAdmission>;
+  /** Step ② alone (the app route after admitAttempt): the device's admission set. */
+  admitDevice(input: Omit<SmsRiskRequest, 'clientIp'>): Promise<SmsRiskAdmission>;
+  /**
+   * Writes the send's outcome on its pending attempt (retried once; a store failure is logged,
+   * never thrown). An illegal transition (an outcome other than accepted / failed / unknown, or a
+   * different outcome on a row already decided) throws SmsAttemptTransitionError, nothing written.
+   */
+  finishAttempt(input: {
+    appId: string;
+    attemptId: string;
+    outcome: SmsAttemptOutcome;
+  }): Promise<void>;
   /** Called once after accepted OR unknown delivery, never for explicit rejection. */
   /** Without a client IP only the daily budget counts. */
   recordAccepted(input: { appId: string; clientIp?: string }): Promise<void>;
@@ -67,6 +142,90 @@ export interface SmsRiskOptions {
   readonly logger: RootLogger;
   readonly config: RateLimitConfigReader;
   readonly crypto: Pick<FieldCrypto, 'blindIndex'>;
+  /** app.sms_send_attempts (B1-11g); absent or null → admitAttempt refuses (42901, 1 s). */
+  readonly db?: Kysely<DB> | null;
+}
+
+/**
+ * The longest wait for the SMS provider (identity's SMS_SEND_TIMEOUT_MS): the attempt window is
+ * the hour plus this bound, so a send accepted up to the bound after its admission still counts a
+ * full hour after the acceptance.
+ */
+export const SMS_ATTEMPT_SEND_BOUND_MS = 10_000;
+/** The attempt count window: [now − this, now], both ends closed. */
+export const SMS_ATTEMPT_WINDOW_MS = 3_600_000 + SMS_ATTEMPT_SEND_BOUND_MS;
+
+/** The attempt table as this module reads and writes it (the generated DB type follows it). */
+interface AttemptTables {
+  'app.sms_send_attempts': {
+    app_id: string;
+    attempt_id: string;
+    ip_hmac: string;
+    phone_hmac: string;
+    status: 'pending' | SmsAttemptOutcome;
+    created_at: Date;
+    updated_at: Date;
+  };
+}
+const ATTEMPTS = 'app.sms_send_attempts';
+/**
+ * Statuses that count towards the IP's limit: everything that may have reached the provider.
+ * failed (the provider definitely refused, or the service stopped before calling it) does not.
+ */
+const COUNTED_STATUSES: readonly ('pending' | SmsAttemptOutcome)[] = [
+  'pending',
+  'accepted',
+  'unknown',
+];
+type SmsRiskRefusal = { readonly code: 42901; readonly retryAfterSec: number };
+
+/** app.sms_send_attempts.status (0052's check constraint). */
+export type SmsAttemptStatus = 'pending' | SmsAttemptOutcome;
+
+// TODO(规划/11 §4.5): 换用生成的 transition() — blocked on CT-04 状态机生成器
+// Until then this table and transitionSmsAttempt() are the single place that says which attempt
+// status changes are legal; finishAttempt applies it before its conditional UPDATE.
+//   pending → accepted | failed | unknown (the send's outcome, written once)
+//   accepted, failed, unknown → nothing (final: a late or repeated completion changes nothing;
+//   an unknown outcome is never decided later, it keeps counting until it leaves the window)
+/** The legal next statuses of each attempt status. */
+export const SMS_ATTEMPT_TRANSITIONS: Readonly<
+  Record<SmsAttemptStatus, readonly SmsAttemptStatus[]>
+> = Object.freeze({
+  pending: Object.freeze(['accepted', 'failed', 'unknown'] as const),
+  accepted: Object.freeze([] as const),
+  failed: Object.freeze([] as const),
+  unknown: Object.freeze([] as const),
+});
+
+function isSmsAttemptStatus(value: unknown): value is SmsAttemptStatus {
+  return typeof value === 'string' && Object.hasOwn(SMS_ATTEMPT_TRANSITIONS, value);
+}
+
+/** True for a legal change of an attempt's status (the same status again is not a change). */
+export function canTransitionSmsAttempt(from: unknown, to: unknown): boolean {
+  if (!isSmsAttemptStatus(from) || !isSmsAttemptStatus(to)) return false;
+  return SMS_ATTEMPT_TRANSITIONS[from].includes(to);
+}
+
+/** The requested attempt status change is not in SMS_ATTEMPT_TRANSITIONS; nothing was written. */
+export class SmsAttemptTransitionError extends Error {
+  readonly reason = 'illegal_transition';
+  /** The source status (null: no such attempt row) and the requested one, as given. */
+  readonly from: string | null;
+  readonly to: string;
+  constructor(from: unknown, to: unknown) {
+    super('sms risk: illegal attempt status transition');
+    this.name = 'SmsAttemptTransitionError';
+    this.from = from === null ? null : String(from);
+    this.to = String(to);
+  }
+}
+
+/** The status `to` when `from` → `to` is legal; otherwise SmsAttemptTransitionError. */
+export function transitionSmsAttempt(from: unknown, to: unknown): SmsAttemptOutcome {
+  if (!canTransitionSmsAttempt(from, to)) throw new SmsAttemptTransitionError(from, to);
+  return to as SmsAttemptOutcome;
 }
 
 /** Config keys and defaults (08 BR-ID-05 细则). */
@@ -119,6 +278,24 @@ local function wait(key, limit)
   return ms
 end
 return {wait(KEYS[1], tonumber(ARGV[4])), wait(KEYS[2], tonumber(ARGV[5]))}
+`;
+
+/**
+ * KEYS[1]: IP registrations. ARGV[2]: now (ms), ARGV[3]: window (ms), ARGV[4]: limit. Read-only.
+ * Returns the wait in ms, 0 when the item is not reached (as IP_SCRIPT's registration item).
+ */
+const IP_REG_SCRIPT = `
+local now = tonumber(ARGV[2])
+local window = tonumber(ARGV[3])
+local limit = tonumber(ARGV[4])
+local low = string.format('%.0f', now - window)
+local high = string.format('%.0f', now)
+local count = redis.call('ZCOUNT', KEYS[1], low, high)
+if count < limit then return 0 end
+local entry = redis.call('ZRANGEBYSCORE', KEYS[1], low, high, 'WITHSCORES', 'LIMIT', count - limit, 1)
+local ms = tonumber(entry[2]) + window + 1000 - now
+if ms < 1 then ms = 1 end
+return ms
 `;
 
 /**
@@ -269,6 +446,9 @@ export function ephemeralSmsRiskIndex(): Pick<FieldCrypto, 'blindIndex'> {
 
 export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
   const { clock, redis, logger, config, crypto } = options;
+  // The generated DB type gains app.sms_send_attempts with the migration; until then this module
+  // reads the table through its own row type.
+  const db = (options.db ?? null) as unknown as Kysely<AttemptTables> | null;
 
   /** Outage state of this process; null while the store answers. */
   let outage: { since: number } | null = null;
@@ -293,7 +473,7 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
       : fallback;
   }
 
-  function storeFailed(error: unknown): SmsRiskAdmission {
+  function storeFailed(error: unknown): SmsRiskRefusal {
     if (outage === null) {
       outage = { since: clock.now().getTime() };
       logger.error({ stage: STAGE, ...failureFields(error) }, 'sms_risk_store_unavailable');
@@ -378,17 +558,134 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
     }
   }
 
+  const deviceLimitOf = (appId: string): Promise<number> =>
+    setting(
+      appId,
+      SMS_DEVICE_DISTINCT_PHONES_KEY,
+      DEVICE_DISTINCT_PHONES_DEFAULT,
+      1,
+      MAX_THRESHOLD,
+    );
+
+  /** ②: the device's admission set, judged, recorded and logged in one atomic step. */
+  async function judgeDevice(
+    store: RedisHandle,
+    appId: string,
+    deviceHash: string,
+    phone: string,
+    deviceLimit: number,
+  ): Promise<SmsRiskAdmission> {
+    // Its time is read after ①, so the IP round trip does not make it older than a concurrent
+    // request's.
+    const deviceNow = clock.now().getTime();
+    let verdict: number[];
+    try {
+      const member = crypto.blindIndex(phone, SMS_RISK_PHONE_CONTEXT);
+      const reply = await store.namespace(SMS_RISK_NAMESPACE).eval(DEVICE_SCRIPT, {
+        keys: [`dev:${appId}:${deviceHash}`, `req:${appId}:${deviceHash}`],
+        args: [
+          String(deviceNow),
+          String(WINDOW_MS),
+          String(deviceLimit),
+          member,
+          String(RECORD_CAP),
+        ],
+        ttlSeconds: WINDOW_TTL_SEC,
+      });
+      verdict = integers(reply, 2);
+      if (verdict[0]! > 1) throw new UnexpectedReply();
+    } catch (error) {
+      return storeFailed(error);
+    }
+    storeAnswered();
+    if (verdict[0] === 1) return { code: 0 };
+    return { code: 42901, retryAfterSec: seconds(verdict[1]!) };
+  }
+
+  const sendLimitOf = (appId: string): Promise<number> =>
+    setting(appId, SMS_IP_SENDS_KEY, IP_SENDS_DEFAULT, 1, MAX_THRESHOLD);
+
+  /**
+   * The IP's attempt item in ms (0 = not reached): counted rows (pending / accepted / unknown) of
+   * (app_id, ip_hmac) with created_at in [now − window, now]; reached → the (N−L+1)-th oldest
+   * counted row leaves the window (created_at + window + 1 ms).
+   */
+  async function attemptWait(
+    executor: Kysely<AttemptTables>,
+    appId: string,
+    ipHmac: string,
+    limit: number,
+    now: Date,
+  ): Promise<number> {
+    const nowMs = now.getTime();
+    const rows = await executor
+      .selectFrom(ATTEMPTS)
+      .select('created_at')
+      .where('app_id', '=', appId)
+      .where('ip_hmac', '=', ipHmac)
+      .where('status', 'in', COUNTED_STATUSES)
+      .where(
+        'created_at',
+        '>=',
+        sql<Date>`${now}::timestamptz - ${SMS_ATTEMPT_WINDOW_MS}::float8 * interval '1 millisecond'`,
+      )
+      .where('created_at', '<=', now)
+      .orderBy('created_at')
+      .execute();
+    if (rows.length < limit) return 0;
+    return Math.max(
+      1,
+      rows[rows.length - limit]!.created_at.getTime() + SMS_ATTEMPT_WINDOW_MS + 1 - nowMs,
+    );
+  }
+
+  function attemptStoreMissing(appId: string): SmsRiskRefusal {
+    logger.error({ stage: STAGE, app_id: appId }, 'sms_attempt_store_missing');
+    return { code: 42901, retryAfterSec: STORE_RETRY_AFTER_SEC };
+  }
+
+  /** PG is the authority: when it cannot be read or written the send is refused, never passed. */
+  function attemptStoreFailed(appId: string, error: unknown): SmsRiskRefusal {
+    logger.error({ stage: STAGE, app_id: appId, ...failureFields(error) }, 'sms_attempt_failed');
+    return { code: 42901, retryAfterSec: STORE_RETRY_AFTER_SEC };
+  }
+
+  /**
+   * The IP's new-account item (limit 5) for checkAttempts, in ms (0 = not reached). The registrations
+   * live in Redis only: a missing or failing store cannot confirm the item, so it refuses (42901,
+   * Retry-After 1, the store-failure answer of admit) — never read as 0 (ruling ① 19:3x).
+   */
+  async function registrationWait(
+    appId: string,
+    clientIp: string,
+  ): Promise<{ readonly waitMs: number } | SmsRiskRefusal> {
+    if (redis === null) return storeFailed(new StoreNotConfigured());
+    let reply: unknown;
+    try {
+      reply = await redis.namespace(SMS_RISK_NAMESPACE).eval(IP_REG_SCRIPT, {
+        keys: [`ip_reg:${appId}:${ipDigest(clientIp)}`],
+        args: [String(clock.now().getTime()), String(WINDOW_MS), String(IP_REGISTRATIONS_LIMIT)],
+        ttlSeconds: WINDOW_TTL_SEC,
+      });
+      if (typeof reply !== 'number' || !Number.isSafeInteger(reply) || reply < 0) {
+        throw new UnexpectedReply();
+      }
+    } catch (error) {
+      logger.warn(
+        { stage: STAGE, app_id: appId, kind: 'ip_reg', ...failureFields(error) },
+        'sms_risk_registrations_unreadable',
+      );
+      return storeFailed(error);
+    }
+    storeAnswered();
+    return { waitMs: reply };
+  }
+
   return {
     async admit({ appId, deviceHash, phone, clientIp }) {
       if (redis === null) return storeFailed(new StoreNotConfigured());
       const sendLimit = await setting(appId, SMS_IP_SENDS_KEY, IP_SENDS_DEFAULT, 1, MAX_THRESHOLD);
-      const deviceLimit = await setting(
-        appId,
-        SMS_DEVICE_DISTINCT_PHONES_KEY,
-        DEVICE_DISTINCT_PHONES_DEFAULT,
-        1,
-        MAX_THRESHOLD,
-      );
+      const deviceLimit = await deviceLimitOf(appId);
       const now = clock.now().getTime();
 
       // ① the IP: both items in one read; either reached ends the decision here. A send with
@@ -416,31 +713,107 @@ export function createSmsRisk(options: SmsRiskOptions): SmsRisk {
         if (ipWait > 0) return { code: 42901, retryAfterSec: seconds(ipWait) };
       }
 
-      // ② the device's admission set, judged, recorded and logged in one atomic step. Its time is
-      // read after ①, so the IP round trip does not make it older than a concurrent request's.
-      const deviceNow = clock.now().getTime();
-      let verdict: number[];
+      // ② the device's admission set.
+      return judgeDevice(redis, appId, deviceHash, phone, deviceLimit);
+    },
+
+    async admitDevice({ appId, deviceHash, phone }) {
+      if (redis === null) return storeFailed(new StoreNotConfigured());
+      return judgeDevice(redis, appId, deviceHash, phone, await deviceLimitOf(appId));
+    },
+
+    async checkAttempts({ appId, clientIp }) {
+      const sendLimit = await sendLimitOf(appId);
+      const registrations = await registrationWait(appId, clientIp);
+      // Unconfirmed registrations refuse here: no attempt row, no provider call follows.
+      if ('code' in registrations) return registrations;
+      if (db === null) return attemptStoreMissing(appId);
       try {
-        const member = crypto.blindIndex(phone, SMS_RISK_PHONE_CONTEXT);
-        const reply = await redis.namespace(SMS_RISK_NAMESPACE).eval(DEVICE_SCRIPT, {
-          keys: [`dev:${appId}:${deviceHash}`, `req:${appId}:${deviceHash}`],
-          args: [
-            String(deviceNow),
-            String(WINDOW_MS),
-            String(deviceLimit),
-            member,
-            String(RECORD_CAP),
-          ],
-          ttlSeconds: WINDOW_TTL_SEC,
-        });
-        verdict = integers(reply, 2);
-        if (verdict[0]! > 1) throw new UnexpectedReply();
+        const now = clock.now();
+        const sendWait = await attemptWait(db, appId, ipDigest(clientIp), sendLimit, now);
+        const wait = Math.max(sendWait, registrations.waitMs);
+        return wait > 0 ? { code: 42901, retryAfterSec: seconds(wait) } : { code: 0 };
       } catch (error) {
-        return storeFailed(error);
+        return attemptStoreFailed(appId, error);
       }
-      storeAnswered();
-      if (verdict[0] === 1) return { code: 0 };
-      return { code: 42901, retryAfterSec: seconds(verdict[1]!) };
+    },
+
+    async admitAttempt({ appId, clientIp, phone }) {
+      const sendLimit = await sendLimitOf(appId);
+      if (db === null) return attemptStoreMissing(appId);
+      const ipHmac = ipDigest(clientIp);
+      const phoneHmac = crypto.blindIndex(phone, SMS_RISK_PHONE_CONTEXT);
+      const lockKey = `risk.sms_send_attempts:${appId}:${ipHmac}`;
+      try {
+        return await db.transaction().execute(async (trx) => {
+          await sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`.execute(trx);
+          // Read after the lock: every attempt committed by an earlier holder is visible.
+          const now = clock.now();
+          const wait = await attemptWait(trx, appId, ipHmac, sendLimit, now);
+          if (wait > 0) return { code: 42901, retryAfterSec: seconds(wait) } as const;
+          const attemptId = newUuidV7(now);
+          await trx
+            .insertInto(ATTEMPTS)
+            .values({
+              app_id: appId,
+              attempt_id: attemptId,
+              ip_hmac: ipHmac,
+              phone_hmac: phoneHmac,
+              status: 'pending',
+              created_at: now,
+              updated_at: now,
+            })
+            .execute();
+          return { code: 0, attemptId } as const;
+        });
+      } catch (error) {
+        return attemptStoreFailed(appId, error);
+      }
+    },
+
+    async finishAttempt({ appId, attemptId, outcome }) {
+      // The outcome is written on a pending row only: checked against the table before any write.
+      const from: SmsAttemptStatus = 'pending';
+      const to = transitionSmsAttempt(from, outcome);
+      if (db === null) return;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        let current: SmsAttemptStatus | null;
+        try {
+          const now = clock.now();
+          const updated = await db
+            .updateTable(ATTEMPTS)
+            .set({ status: to, updated_at: now })
+            .where('app_id', '=', appId)
+            .where('attempt_id', '=', attemptId)
+            .where('status', '=', from)
+            .executeTakeFirst();
+          if (updated.numUpdatedRows > 0n) return;
+          // Nothing updated: the row was already decided (a concurrent or lost-reply completion)
+          // or does not exist. Its status now decides, by the same table.
+          const row = await db
+            .selectFrom(ATTEMPTS)
+            .select('status')
+            .where('app_id', '=', appId)
+            .where('attempt_id', '=', attemptId)
+            .executeTakeFirst();
+          current = row === undefined ? null : row.status;
+        } catch (error) {
+          logger.warn(
+            { stage: STAGE, app_id: appId, outcome: to, attempt, ...failureFields(error) },
+            'sms_attempt_finish_failed',
+          );
+          continue;
+        }
+        // The same outcome again (this call's earlier write whose reply was lost, or a repeated
+        // completion) is already in place; anything else is not a legal change of a decided row.
+        if (current === to) return;
+        if (current !== null && canTransitionSmsAttempt(current, to)) continue;
+        logger.warn(
+          { stage: STAGE, app_id: appId, from: current, outcome: to },
+          'sms_attempt_transition_refused',
+        );
+        throw new SmsAttemptTransitionError(current, to);
+      }
     },
 
     async recordAccepted({ appId, clientIp }) {

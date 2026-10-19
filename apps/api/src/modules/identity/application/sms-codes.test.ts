@@ -594,3 +594,173 @@ it('[BR-ID-05] every ZADD and HSET of the send scripts is followed directly by a
     });
   }
 });
+
+/** A landing send's hooks: a gate whose commit / finish are recorded in order. */
+function landing(
+  overrides: Parameters<typeof setup>[0] = {},
+  commitResult: 'slot' | 'limited' = 'slot',
+) {
+  const order: string[] = [];
+  const finish = vi.fn(async (outcome: string) => void order.push(`finish:${outcome}`));
+  const commit = vi.fn(async () => {
+    order.push('commit');
+    return commitResult === 'slot'
+      ? { code: 0 as const, finish }
+      : { code: 42901 as const, retryAfterSec: 3611 };
+  });
+  const landingQuota = vi.fn(async () => {
+    order.push('check');
+    return { code: 0 as const, commit };
+  });
+  const afterAccepted = vi.fn(async () => void order.push('afterAccepted'));
+  const f = setup({ ...overrides, hooks: { landingQuota, afterAccepted, ...overrides.hooks } });
+  const send = (phone = NUMBER) =>
+    f.service.send({
+      app_id: 'couli',
+      phone,
+      purpose: 'login',
+      client_ip: '203.0.113.7',
+      channel: 'landing',
+    });
+  return { ...f, order, finish, commit, landingQuota, afterAccepted, send };
+}
+
+it('[AC-B1-11g#7] a landing send runs phoneBlocklist then landingQuota, never captcha or deviceQuota; the attempt is committed after the phone quota', async () => {
+  const phoneBlocklist = vi.fn(async () => null);
+  const captcha = vi.fn(async () => ({ code: 44003 as const }));
+  const deviceQuota = vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 9 }));
+  const f = landing({ hooks: { phoneBlocklist, captcha, deviceQuota } });
+  expect(await f.send(`+86 ${NUMBER}`)).toMatchObject({ code: 0 });
+  expect(phoneBlocklist).toHaveBeenCalledOnce();
+  expect(f.landingQuota).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ phone: NUMBER, channel: 'landing', client_ip: '203.0.113.7' }),
+  );
+  expect(captcha).not.toHaveBeenCalled();
+  expect(deviceQuota).not.toHaveBeenCalled();
+  expect(f.calls.map((call) => call.kind).slice(0, 2)).toEqual(['reserve', 'mark']);
+  expect(f.order).toEqual(['check', 'commit', 'afterAccepted', 'finish:accepted']);
+  expect(f.messages).toHaveLength(1);
+});
+
+it('[AC-B1-11g#10] a landing 42901 from landingQuota short-circuits the phone quota', async () => {
+  const landingQuota = vi.fn(async () => ({ code: 42901 as const, retryAfterSec: 16 }));
+  const f = setup({ hooks: { landingQuota } });
+  const result = await f.service.send({
+    app_id: 'couli',
+    phone: NUMBER,
+    purpose: 'login',
+    client_ip: '203.0.113.7',
+    channel: 'landing',
+  });
+  expect(result).toEqual({ code: 42901, retryAfterSec: 16 });
+  expect(f.calls).toEqual([]);
+  expect(f.messages).toEqual([]);
+});
+
+it('[AC-B1-11g#11] a landing send without a landingQuota hook is refused, never sent unjudged', async () => {
+  const f = setup();
+  const result = await f.service.send({
+    app_id: 'couli',
+    phone: NUMBER,
+    purpose: 'login',
+    client_ip: '203.0.113.7',
+    channel: 'landing',
+  });
+  expect(result).toMatchObject({ code: 42901 });
+  expect(f.calls).toEqual([]);
+  expect(f.messages).toEqual([]);
+});
+
+it('[AC-B1-11g#27] a phone-limited landing send commits no attempt (nothing counts for the IP)', async () => {
+  const f = landing({
+    reply: (kind) => (kind === 'reserve' ? [0, Date.parse(START) + 60_000] : 1),
+  });
+  expect(await f.send()).toEqual({ code: 42901, retryAfterSec: 60 });
+  expect(f.order).toEqual(['check']);
+  expect(f.messages).toEqual([]);
+});
+
+it('[AC-B1-11g#58] a commit refused under the IP lock releases the phone reservation and sends nothing', async () => {
+  const f = landing({}, 'limited');
+  expect(await f.send()).toEqual({ code: 42901, retryAfterSec: 3611 });
+  expect(f.order).toEqual(['check', 'commit']);
+  expect(f.calls.map((call) => call.kind)).toEqual(['reserve', 'release']);
+  expect(f.messages).toEqual([]);
+});
+
+it('[AC-B1-11g#20] a landing send the provider refuses writes its attempt failed (stops counting)', async () => {
+  const f = landing({ sender: { send: async () => 'rejected' } });
+  expect(await f.send()).toEqual({ code: 50001 });
+  expect(f.order).toEqual(['check', 'commit', 'finish:failed']);
+  expect(f.afterAccepted).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-11g#19] an unknown landing send (timeout or thrown adapter error) writes its attempt unknown', async () => {
+  for (const sender of [
+    { send: async () => 'unknown' as const },
+    {
+      send: async () => {
+        throw new Error('adapter down');
+      },
+    },
+  ]) {
+    const f = landing({ sender });
+    expect(await f.send()).toMatchObject({ code: 0 });
+    expect(f.order).toEqual(['check', 'commit', 'afterAccepted', 'finish:unknown']);
+  }
+});
+
+it('[AC-B1-11g#6] a landing send whose phone quota store is unavailable commits no attempt', async () => {
+  const f = landing({
+    reply: (kind) => {
+      if (kind === 'reserve') throw new RedisUnavailableError('command_failed');
+      return 1;
+    },
+  });
+  expect(await f.send()).toMatchObject({ code: 42901 });
+  expect(f.order).toEqual(['check']);
+  expect(f.messages).toEqual([]);
+});
+
+it('[AC-B1-11g#6] a committed attempt whose mark fails is written failed (nothing was sent)', async () => {
+  const f = landing({ mark: () => 0 });
+  expect(await f.send()).toMatchObject({ code: 42901 });
+  expect(f.order).toEqual(['check', 'commit', 'finish:failed']);
+  expect(f.messages).toEqual([]);
+});
+
+it('[AC-B1-11g#64] a failing outcome write is only logged; the answer stays 0', async () => {
+  const f = landing();
+  f.finish.mockRejectedValueOnce(new Error('down 203.0.113.7'));
+  expect(await f.send()).toMatchObject({ code: 0 });
+  expect(f.lines.join('')).toContain('sms_attempt_slot_finish_failed');
+  expect(f.lines.join('')).not.toContain('203.0.113.7');
+});
+
+it('[AC-B1-11g#13] an app send with an attempt gate commits after the phone quota and writes each outcome', async () => {
+  for (const [delivery, outcome] of [
+    ['rejected', 'failed'],
+    ['accepted', 'accepted'],
+    ['unknown', 'unknown'],
+  ] as const) {
+    const finish = vi.fn(async () => undefined);
+    const commit = vi.fn(async () => ({ code: 0 as const, finish }));
+    const f = setup({
+      hooks: { deviceQuota: async () => ({ code: 0 as const, commit }) },
+      sender: { send: async () => delivery },
+    });
+    expect((await f.send()).code).toBe(delivery === 'rejected' ? 50001 : 0);
+    expect(commit).toHaveBeenCalledOnce();
+    expect(finish).toHaveBeenCalledExactlyOnceWith(outcome);
+  }
+});
+
+it('[AC-B1-11g#13] a phone-limited app send never commits its attempt', async () => {
+  const commit = vi.fn();
+  const f = setup({
+    hooks: { deviceQuota: async () => ({ code: 0 as const, commit }) },
+    reply: (kind) => (kind === 'reserve' ? [0, Date.parse(START) + 60_000] : 1),
+  });
+  expect(await f.send()).toEqual({ code: 42901, retryAfterSec: 60 });
+  expect(commit).not.toHaveBeenCalled();
+});

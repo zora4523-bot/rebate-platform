@@ -432,7 +432,14 @@ function identityModule(): DynamicModule {
               ? { configValue: () => Promise.resolve(null) }
               : createContentReader({ db, clock }),
           crypto: crypto ?? ephemeralSmsRiskIndex(),
+          // B1-11g: the PG-authoritative per-IP attempts (no database → every send refused).
+          db: db ?? null,
         }),
+    },
+    // Through identity's index.ts, as for the admin entry (one sender factory for both entries).
+    smsSender: {
+      inject: [APP_CONFIG, ROOT_LOGGER],
+      useFactory: (config: AppConfig, logger: RootLogger) => createSmsSender(config.appEnv, logger),
     },
     pushTokens: {
       inject: [CLOCK],
