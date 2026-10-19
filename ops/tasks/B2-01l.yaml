@@ -15,7 +15,7 @@ refs_hash:
   BR-FUND-15: 79a5dd94f056
   BR-FUND-16: 077f6d412d5a
   BR-FUND-20: 01dc2440638f
-  BR-WDR-07: ed50b515f130
+  BR-WDR-07: 3cf70e92c151
   BR-WDR-09: 68225c9af85f
 deps: [B2-01i, B2-01j]
 paths:
