@@ -9,6 +9,19 @@ id 19; tools/agent/README.md §11). Its output follows `tools/agent/schemas/revi
 and is validated with `validate-output.ts` like any review. The function skeletons in the change
 only throw `NotImplemented`; do not review them as an implementation.
 
+## Read REVIEW.md first (incremental review, CT-06x)
+
+Before anything else read the review guide `REVIEW.md` at the repository root as it is at the
+base ref (`git show <base ref>:REVIEW.md`; the working-tree copy only when the base ref has none):
+high-risk areas, severity, files not to review, finding format, and the incremental rules. Apply
+the incremental rules whenever the review context (or, for a review not started through
+`codex-run.sh`, the brief) names a previous review round: review only the increment since the
+head commit of that round and check each previous finding for closure; do not report again what
+an earlier round raised and that is closed or ruled on; a new gap in code the increment does not
+touch is `S2` or `out_of_scope` unless REVIEW.md says it may fail the review; from round 3 on, a
+`fail` verdict says 「三轮未过，建议重新考虑实现方案」 in `summary`. REVIEW.md never changes the
+output schema; where it and the rules below disagree, the rules below win.
+
 ## Ground rules
 
 1. **Read-only.** Do not create, modify or delete any file. Do not run git commands that write

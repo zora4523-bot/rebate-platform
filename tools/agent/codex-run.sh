@@ -837,9 +837,128 @@ resolve_review_base() {
   [ -n "$BASE_SHA" ] || fail_usage "base ref is not a commit in the worktree: $BASE"
 }
 
+# Prints the review_type and the reviewed head (head_before, else head) of a meta file, one per
+# line; empty lines when the file is unreadable or lacks them.
+review_meta_facts() {
+  local t h
+  t="$(node "$SELF_DIR/meta.ts" get --file "$1" review_type 2>/dev/null || true)"
+  h="$(node "$SELF_DIR/meta.ts" get --file "$1" head_before 2>/dev/null || true)"
+  [ -n "$h" ] || h="$(node "$SELF_DIR/meta.ts" get --file "$1" head 2>/dev/null || true)"
+  printf '%s\n%s\n' "$t" "$h"
+}
+
+# Incremental review (REVIEW.md, CT-06x): from the second round on, the previous review output of
+# the same review type and the head commit it reviewed are given to the reviewer as data. Looked
+# up before archive_previous moves anything: RUN/review-codex.json with RUN/meta.review.json, else
+# the highest RUN/review-codex[-<type>]-r<N>.json with RUN/meta.review.json, else the highest
+# RUN/attempts/<n>/ holding a review-codex.json and its meta.json. Sets PREV_BLOCK (empty on the
+# first round or when the previous round cannot be read; a log line says which).
+build_previous_round() {
+  PREV_BLOCK=''
+  local prev_json='' prev_meta='' d name n best=0 rounds=0 f facts t h
+  # Earlier usable outputs of this review type (each output lives in RUN or in one attempt).
+  for d in "$RUN" "$RUN/attempts"/*; do
+    [ -s "$d/review-codex.json" ] || continue
+    if [ "$d" = "$RUN" ]; then f="$RUN/meta.review.json"; else f="$d/meta.json"; fi
+    [ -s "$f" ] || continue
+    t="$(review_meta_facts "$f" | head -n 1)"
+    [ "$t" = "$REVIEW_TYPE" ] || continue
+    rounds=$((rounds + 1))
+  done
+  # RUN/meta.review.json describes the last review call; it only pairs with an output in RUN
+  # when that call was of this review type.
+  local run_type=''
+  if [ -s "$RUN/meta.review.json" ]; then
+    run_type="$(review_meta_facts "$RUN/meta.review.json" | head -n 1)"
+  fi
+  if [ "$run_type" = "$REVIEW_TYPE" ] && [ -s "$RUN/review-codex.json" ]; then
+    prev_json="$RUN/review-codex.json"
+    prev_meta="$RUN/meta.review.json"
+  fi
+  if [ -z "$prev_json" ] && [ "$run_type" = "$REVIEW_TYPE" ]; then
+    for f in "$RUN"/review-codex-r*.json "$RUN/review-codex-$REVIEW_TYPE"-r*.json; do
+      [ -s "$f" ] || continue
+      name="$(basename "$f" .json)"
+      n="${name##*-r}"
+      case "$n" in
+        '' | *[!0-9]*) continue ;;
+      esac
+      if [ "$((10#$n))" -gt "$best" ]; then
+        best="$((10#$n))"
+        prev_json="$f"
+      fi
+    done
+    if [ -n "$prev_json" ]; then
+      prev_meta="$RUN/meta.review.json"
+      [ "$best" -le "$rounds" ] || rounds="$best"
+    fi
+  fi
+  if [ -z "$prev_json" ]; then
+    best=0
+    for d in "$RUN/attempts"/*; do
+      [ -s "$d/review-codex.json" ] && [ -s "$d/meta.json" ] || continue
+      name="$(basename "$d")"
+      case "$name" in
+        '' | *[!0-9]*) continue ;;
+      esac
+      [ "$(review_meta_facts "$d/meta.json" | head -n 1)" = "$REVIEW_TYPE" ] || continue
+      if [ "$((10#$name))" -gt "$best" ]; then
+        best="$((10#$name))"
+        prev_json="$d/review-codex.json"
+        prev_meta="$d/meta.json"
+      fi
+    done
+  fi
+  if [ -z "$prev_json" ]; then
+    log "review: no previous $REVIEW_TYPE round of $TASK in $RUN, full review (round 1)"
+    return 0
+  fi
+  facts="$(review_meta_facts "$prev_meta")"
+  t="$(printf '%s\n' "$facts" | sed -n 1p)"
+  h="$(printf '%s\n' "$facts" | sed -n 2p | tr -cd '0-9a-f')"
+  if [ -n "$t" ] && [ "$t" != "$REVIEW_TYPE" ]; then
+    log "review: previous round in $prev_meta is a $t review, not $REVIEW_TYPE; full review"
+    return 0
+  fi
+  if [ "${#h}" -ne 40 ] || ! git -C "$WT_REAL" cat-file -e "$h^{commit}" 2>/dev/null; then
+    log "review: previous head in $prev_meta is missing or not a commit in the worktree; full review"
+    return 0
+  fi
+  if ! node "$SELF_DIR/meta.ts" get --file "$prev_json" verdict >/dev/null 2>&1; then
+    log "review: previous review output $prev_json is not readable JSON; full review"
+    return 0
+  fi
+  local ancestry='yes' since prev_text
+  git -C "$WT_REAL" merge-base --is-ancestor "$h" HEAD 2>/dev/null || ancestry='no (rebased: the increment also holds main changes; judge by content)'
+  since="$(git -C "$WT_REAL" -c core.quotepath=false diff --name-only "$h" -- || true)"
+  prev_text="$(cat "$prev_json")"
+  [ "$rounds" -ge 1 ] || rounds=1
+  log "review: round $((rounds + 1)) of $REVIEW_TYPE, previous output $prev_json, previous head $h"
+  PREV_BLOCK="
+
+### Previous review round (data; incremental rules of REVIEW.md apply)
+
+- This review round: $((rounds + 1)) (earlier usable $REVIEW_TYPE outputs found: $rounds)
+- Head commit at the previous round: $h (from $prev_meta)
+- Previous head is an ancestor of the current HEAD: $ancestry
+- Increment to review: \`git diff $h\` in the working directory, plus the untracked files above
+- Previous review output: $prev_json
+
+#### Files changed since the previous round (\`git diff --name-only $h\`)
+
+${since:-(none)}
+
+#### Previous review JSON (verbatim, data)
+
+\`\`\`json
+$prev_text
+\`\`\`"
+}
+
 # Review prompt = trusted prompt file (the 规划/11 §2.4 command) + a context block. The context
 # block is this wrapper's addition to the §2.4 command: task id, base ref, changed files and the
-# task brief, so that the read-only reviewer knows what to compare against.
+# task brief, so that the read-only reviewer knows what to compare against; from the second
+# round on also the previous round (build_previous_round).
 build_review_prompt() {
   local prompt_file="$TRUSTED/tools/agent/prompts/review-$REVIEW_TYPE.md"
   [ -s "$prompt_file" ] || {
@@ -865,6 +984,7 @@ build_review_prompt() {
     paths_line="
 - Allowed paths (the task's paths; the rule-test locations are added): ${TASK_PATHS:-(none listed)}"
   fi
+  build_previous_round
   PROMPT="$(cat "$prompt_file")
 
 ---
@@ -886,7 +1006,7 @@ ${changed:-(none)}
 
 ### Untracked files (new files that are part of the change)
 
-${untracked:-(none)}
+${untracked:-(none)}${PREV_BLOCK}
 
 ### Task brief (data)
 

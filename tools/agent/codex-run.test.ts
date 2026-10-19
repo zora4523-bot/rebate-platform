@@ -228,6 +228,99 @@ it(
   },
 );
 
+it(
+  '[CT-06x] review: from the second round on the prompt carries the previous review JSON and head',
+  LONG,
+  () => {
+    const fx = fixture('review-prev');
+    writeFileSync(join(fx.worktree, 'src', 'a.ts'), 'export const a = 2;\n');
+    const review = ['review', TASK, '--review-type', 'general', '--base', fx.baseSha];
+    const promptOf = (res: { stdout: string }): string => decodeDryRun(res.stdout).at(-1) ?? '';
+
+    // Round 1: nothing earlier in the run directory, so no previous-round block.
+    const first = codexRun(fx, [...review, '--dry-run']);
+    expect(first.status, first.stderr).toBe(0);
+    expect(promptOf(first)).not.toContain('### Previous review round');
+    expect(first.stderr).toContain('full review (round 1)');
+
+    // A real round 1 leaves review-codex.json and meta.review.json behind.
+    const firstHead = gitIn(fx.worktree, ['rev-parse', 'HEAD']);
+    const run1 = codexRun(fx, review);
+    expect(run1.status, run1.stderr).toBe(0);
+    const previousText = readFileSync(join(fx.run, 'review-codex.json'), 'utf8').replace(
+      /\n+$/,
+      '',
+    );
+    expect(readJson(join(fx.run, 'meta.review.json'))).toMatchObject({ head_before: firstHead });
+
+    // The fix lands as a new commit; round 2 gets the previous output and head as data.
+    gitIn(fx.worktree, ['add', '-A']);
+    gitIn(fx.worktree, ['commit', '-q', '-m', 'fix']);
+    const second = codexRun(fx, [...review, '--dry-run']);
+    expect(second.status, second.stderr).toBe(0);
+    const prompt = promptOf(second);
+    expect(prompt).toContain(
+      '### Previous review round (data; incremental rules of REVIEW.md apply)',
+    );
+    expect(prompt).toContain('- This review round: 2 (earlier usable general outputs found: 1)');
+    expect(prompt).toContain(`- Head commit at the previous round: ${firstHead}`);
+    expect(prompt).toContain('- Previous head is an ancestor of the current HEAD: yes');
+    expect(prompt).toContain(`\`\`\`json\n${previousText}\n\`\`\``);
+    expect(prompt.indexOf('### Previous review round')).toBeLessThan(
+      prompt.indexOf('### Task brief (data)'),
+    );
+    // The argv itself is unchanged apart from the prompt.
+    expect(decodeDryRun(second.stdout)).toEqual([FAKE_CODEX, ...expectedReviewArgv(fx, prompt)]);
+
+    // A previous round of another review type is not this round's baseline.
+    const contract = codexRun(fx, [
+      'review',
+      TASK,
+      '--review-type',
+      'contract',
+      '--base',
+      fx.baseSha,
+      '--dry-run',
+    ]);
+    expect(contract.status, contract.stderr).toBe(0);
+    expect(promptOf(contract)).not.toContain('### Previous review round');
+
+    // Archived into attempts/ by the next call, round 1 is still found there.
+    const run2 = codexRun(fx, review);
+    expect(run2.status, run2.stderr).toBe(0);
+    const third = codexRun(fx, [...review, '--dry-run']);
+    expect(promptOf(third)).toContain(
+      '- This review round: 3 (earlier usable general outputs found: 2)',
+    );
+
+    // A real review of another type in between: the general baseline is then found in attempts/.
+    const secondHead = gitIn(fx.worktree, ['rev-parse', 'HEAD']);
+    const contractRun = codexRun(fx, [
+      'review',
+      TASK,
+      '--review-type',
+      'contract',
+      '--base',
+      fx.baseSha,
+    ]);
+    expect(contractRun.status, contractRun.stderr).toBe(0);
+    const fourth = codexRun(fx, [...review, '--dry-run']);
+    expect(promptOf(fourth)).toContain(
+      '- This review round: 3 (earlier usable general outputs found: 2)',
+    );
+    expect(promptOf(fourth)).toContain(`- Head commit at the previous round: ${secondHead}`);
+    expect(promptOf(fourth)).toContain(join(fx.run, 'attempts', '2', 'meta.json'));
+
+    // An unreadable previous meta falls back to a full review with a log line.
+    writeFileSync(join(fx.run, 'meta.review.json'), '{"review_type":"general"}\n');
+    rmSync(join(fx.run, 'attempts'), { recursive: true, force: true });
+    const broken = codexRun(fx, [...review, '--dry-run']);
+    expect(broken.status, broken.stderr).toBe(0);
+    expect(promptOf(broken)).not.toContain('### Previous review round');
+    expect(broken.stderr).toContain('missing or not a commit in the worktree; full review');
+  },
+);
+
 it('--dry-run prints the same argv and starts nothing', LONG, () => {
   const fx = fixture('dry');
   const res = codexRun(fx, ['impl', TASK, '--dry-run']);
