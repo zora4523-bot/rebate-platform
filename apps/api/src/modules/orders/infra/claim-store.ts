@@ -15,6 +15,10 @@ export interface ClaimOrderRow {
   readonly rebate_status: string;
   readonly locked: boolean;
   readonly attr_at: Date;
+  /** B1-10c: the order's product key, shop and platform item id (claim evidence). */
+  readonly product_key: string | null;
+  readonly shop_id: string | null;
+  readonly raw_item_id: string;
 }
 
 /**
@@ -43,6 +47,9 @@ export async function findClaimOrders(
       'rebate_status',
       'locked',
       'attr_at',
+      'product_key',
+      'shop_id',
+      'raw_item_id',
     ])
     .where('app_id', '=', appId)
     .where('platform', '=', platform)
@@ -175,6 +182,92 @@ async function insertClaimRows(trx: Transaction<DB>, claim: NewClaim): Promise<s
       })),
     )
     .execute();
+  return saved.status;
+}
+
+/** The savepoint of underClaimSavepoint (around insertClaim's own, never nested in itself). */
+const SETTLE_SAVEPOINT = sql.raw('orders_claim_settle');
+
+/**
+ * B1-10c: runs `work` under a savepoint of `trx`. A rejection of `work` rolls `trx` back to the
+ * savepoint (undoing whatever `work` wrote; `trx` stays usable) and resolves { ok: false }.
+ */
+export async function underClaimSavepoint<T>(
+  trx: Transaction<DB>,
+  work: () => Promise<T>,
+): Promise<{ readonly ok: true; readonly value: T } | { readonly ok: false }> {
+  await sql`SAVEPOINT ${SETTLE_SAVEPOINT}`.execute(trx);
+  let value: T;
+  try {
+    value = await work();
+  } catch {
+    await sql`ROLLBACK TO SAVEPOINT ${SETTLE_SAVEPOINT}`.execute(trx);
+    await sql`RELEASE SAVEPOINT ${SETTLE_SAVEPOINT}`.execute(trx);
+    return { ok: false };
+  }
+  await sql`RELEASE SAVEPOINT ${SETTLE_SAVEPOINT}`.execute(trx);
+  return { ok: true, value };
+}
+
+export interface ClaimEvidenceWrite {
+  readonly claimId: string;
+  readonly subject: OrderSubject;
+  /** The status transitionClaim() gave for the evidence event (from submitted). */
+  readonly status: string;
+  readonly evidenceLevel: string;
+  readonly now: Date;
+  readonly items: readonly {
+    readonly id: string;
+    readonly evidence: string;
+    readonly linkLogIds: readonly bigint[];
+  }[];
+}
+
+/**
+ * B1-10c: writes the evidence of each item and moves the claim from submitted (compare-and-set on
+ * the status) to `status` with its evidence_level; updated_at = now and row_version + 1 on every
+ * row. Resolves with the status as stored; a claim no longer submitted (not expected: the rows
+ * were written by this transaction) rejects, rolling the acceptance back.
+ */
+export async function writeClaimEvidence(
+  trx: Transaction<DB>,
+  write: ClaimEvidenceWrite,
+): Promise<string> {
+  const { subject, now } = write;
+  for (const item of write.items) {
+    const ids = item.linkLogIds.map(String);
+    const updated = await trx
+      .withSchema('app')
+      .updateTable('claim_items')
+      .set({
+        evidence: item.evidence,
+        evidence_link_log_ids: sql<bigint[]>`${ids}::bigint[]`,
+        updated_at: now,
+        row_version: sql<number>`${sql.ref('row_version')} + 1`,
+      })
+      .where('id', '=', item.id)
+      .where('app_id', '=', subject.app_id)
+      .where('claim_id', '=', write.claimId)
+      .where('evidence', 'is', null)
+      .executeTakeFirst();
+    if (updated.numUpdatedRows !== 1n) throw new Error('orders: claim item evidence not written');
+  }
+  const saved = await trx
+    .withSchema('app')
+    .updateTable('claims')
+    .set({
+      status: write.status,
+      evidence_level: write.evidenceLevel,
+      updated_at: now,
+      row_version: sql<number>`${sql.ref('row_version')} + 1`,
+    })
+    .where('id', '=', write.claimId)
+    .where('app_id', '=', subject.app_id)
+    .where('user_id', '=', subject.user_id)
+    .where('status', '=', 'submitted')
+    .returning('status')
+    .executeTakeFirst();
+  if (saved === undefined) throw new Error('orders: claim not in submitted for its evidence');
   return saved.status;
 }
 
