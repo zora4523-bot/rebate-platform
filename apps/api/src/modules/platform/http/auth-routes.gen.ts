@@ -623,6 +623,36 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/articles",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/articles",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/articles/:article_id",
+    "auth": "admin"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/articles/:article_id/draft",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/articles/:article_id/publish",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/articles/:article_id/offline",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "auth": "admin"
   },

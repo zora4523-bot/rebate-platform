@@ -10166,6 +10166,584 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/articles:
+    get:
+      operationId: adminListArticles
+      tags:
+        - admin-content
+      summary: Articles of the CMS (help, rules, notices, agreements)
+      description: |
+        Permission point `content.article` (04 §11.2; step-up 「–」). One row per article, newest
+        `updated_at` first, page by page (`page`, `page_size` ≤ 200): category, the title, number
+        and status of the newest version row, the current version (the largest version whose status
+        is exactly published and whose published_at is not later than now, 04 §6.2; null when
+        there is none) with its published_at, and the article's `row_version`, the CAS value of
+        every article write. `category` filters by category; `status` filters by the status of
+        the newest version row (编排者默认). Articles of category agreement are listed read-only;
+        they are written through /admin/v1/agreements.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - name: category
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ArticleCategory'
+        - name: status
+          in: query
+          required: false
+          description: Status of the newest version row.
+          schema:
+            $ref: '#/components/schemas/ArticleVersionStatus'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of articles, newest updated_at first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminArticleListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - article_id: 00000000-0000-4000-8000-000000000001
+                      category: help
+                      title: 什么是比价订单
+                      latest_version: 3
+                      latest_status: draft
+                      current_version: 2
+                      published_at: '2026-10-01T09:00:00+08:00'
+                      row_version: 5
+                      updated_at: '2026-10-17T10:00:00+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 1
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    post:
+      operationId: adminCreateArticle
+      tags:
+        - admin-content
+      summary: Create an article as a first draft
+      description: |
+        Permission point `content.article`. Creates an article with the client-generated
+        `article_id` (a UUIDv7 the console generates once per new article and reuses on every retry
+        of that create; lowercase canonical form) and version 1 in status draft; nothing is
+        published. Admin writes carry no Idempotency-Key (04 §6.6), so the id is what makes a retry
+        safe: retrying the same article_id never creates a second article — when an article with
+        that id already exists → 20902 with `data.resource=article` and nothing is written; the
+        console then reads it back with GET /admin/v1/articles/{article_id} (编排者默认). An
+        article_id that is not a lowercase canonical UUIDv7 → 20001 `data.fields=[article_id]`,
+        checked before the save checks. Category
+        agreement is refused with 20001 `data.fields=[category]` (agreements are written through
+        /admin/v1/agreements). Save checks (04 §6.6 articles, shared by create, draft and
+        publish): an empty title or a title hitting the forbidden-word list (BR-TEXT-12 细则); a
+        body that is not a tiptap JSON document within the allowed node and mark list; a link
+        href that is not an https external link (App-internal links are not supported in this
+        batch, 编排者默认), whose host is in the `union_host` category of the platform
+        link-pattern table while switch `external_page.union_host_block` is on (BR-ATTR-29 ①), or
+        that carries a personal-data placeholder (BR-ID-33 细则「外链不带个人数据」); a notice
+        that cannot be closed without notice_end_at (BR-TEXT-13 细则「生效区间」) → 20001.
+        `data.fields` lists, in this order, the offending field names (title, body,
+        notice_end_at), the forbidden words hit and the JSON paths inside the body written as
+        `body.content[i]…` (编排者默认); no other data key. For categories other than notice the
+        notice fields are ignored and stored as notice_closable=true, notice_end_at=null
+        (编排者默认). notice_content_version is maintained by the server on save, never sent by
+        the console (BR-TEXT-13 细则「首页公告条的关闭与内容版本」). Written to the audit log in the
+        same transaction.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminArticleCreateRequest'
+            example:
+              article_id: 00000000-0000-7000-8000-000000000001
+              category: notice
+              title: 国庆期间到账说明
+              body: '{"type":"doc","content":[]}'
+              notice_closable: true
+              notice_end_at: '2026-10-08T00:00:00+08:00'
+      responses:
+        '200':
+          description: The new article with its first draft version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminArticleResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  article_id: 00000000-0000-7000-8000-000000000001
+                  category: notice
+                  row_version: 0
+                  current_version: null
+                  versions:
+                    - version: 1
+                      status: draft
+                      title: 国庆期间到账说明
+                      body: '{"type":"doc","content":[]}'
+                      notice_closable: true
+                      notice_content_version: 1
+                      notice_end_at: '2026-10-08T00:00:00+08:00'
+                      published_at: null
+                      created_at: '2026-10-17T10:00:00+08:00'
+                      updated_at: '2026-10-17T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not created (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                fieldInvalid:
+                  $ref: '#/components/examples/AdminArticleFieldInvalid'
+                categoryReadOnly:
+                  $ref: '#/components/examples/AdminArticleCategoryReadOnly'
+                alreadyExists:
+                  $ref: '#/components/examples/AdminArticleAlreadyExists'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/articles/{article_id}:
+    get:
+      operationId: adminGetArticle
+      tags:
+        - admin-content
+      summary: One article with all its versions
+      description: |
+        Permission point `content.article`. The article with every version row, newest first,
+        drafts and offline versions included, each with its body, and the article's `row_version`
+        (the CAS value of every article write). current_version is the largest version whose
+        status is exactly published and whose published_at is not later than now (a scheduled
+        version not yet due does not count), null when there is none (04 §6.2). An article_id
+        that is not a lowercase canonical UUID, or that does not exist → 30701.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminArticleIdPath'
+      responses:
+        '200':
+          description: The article.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminArticleResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  article_id: 00000000-0000-4000-8000-000000000001
+                  category: help
+                  row_version: 5
+                  current_version: 2
+                  versions:
+                    - version: 3
+                      status: draft
+                      title: 什么是比价订单
+                      body: '{"type":"doc","content":[]}'
+                      notice_closable: true
+                      notice_content_version: 1
+                      notice_end_at: null
+                      published_at: null
+                      created_at: '2026-10-17T10:00:00+08:00'
+                      updated_at: '2026-10-17T10:00:00+08:00'
+                    - version: 2
+                      status: published
+                      title: 什么是比价订单
+                      body: '{"type":"doc","content":[]}'
+                      notice_closable: true
+                      notice_content_version: 1
+                      notice_end_at: null
+                      published_at: '2026-10-01T09:00:00+08:00'
+                      created_at: '2026-09-30T10:00:00+08:00'
+                      updated_at: '2026-10-01T09:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notFound:
+                  $ref: '#/components/examples/AdminArticleNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/articles/{article_id}/draft:
+    put:
+      operationId: adminSaveArticleDraft
+      tags:
+        - admin-content
+      summary: Save a new draft version of an article
+      description: |
+        Permission point `content.article`. Inserts a new version row (newest version + 1) in
+        status draft with the given title, body and notice fields; a saved version's body is never
+        changed in place (编排者默认). Same save checks and `data.fields` as POST
+        /admin/v1/articles. An article of category agreement → 20001 `data.fields=[category]`.
+        CAS: `expected_row_version` is the article's `row_version` the console showed; the new
+        row takes the previous newest row's row_version + 1, and a mismatch → 20902 with
+        `data.resource=article` (编排者默认). An article_id that is not a lowercase canonical UUID,
+        or that does not exist → 30701. Written to the audit log in the same transaction.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminArticleIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminArticleDraftRequest'
+            example:
+              title: 什么是比价订单
+              body: '{"type":"doc","content":[]}'
+              expected_row_version: 5
+      responses:
+        '200':
+          description: The article with its new draft version.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminArticleResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  article_id: 00000000-0000-4000-8000-000000000001
+                  category: help
+                  row_version: 6
+                  current_version: 2
+                  versions:
+                    - version: 4
+                      status: draft
+                      title: 什么是比价订单
+                      body: '{"type":"doc","content":[]}'
+                      notice_closable: true
+                      notice_content_version: 1
+                      notice_end_at: null
+                      published_at: null
+                      created_at: '2026-10-17T11:00:00+08:00'
+                      updated_at: '2026-10-17T11:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not saved (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                fieldInvalid:
+                  $ref: '#/components/examples/AdminArticleFieldInvalid'
+                categoryReadOnly:
+                  $ref: '#/components/examples/AdminArticleCategoryReadOnly'
+                conflict:
+                  $ref: '#/components/examples/AdminArticleConflict'
+                notFound:
+                  $ref: '#/components/examples/AdminArticleNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/articles/{article_id}/publish:
+    post:
+      operationId: adminPublishArticle
+      tags:
+        - admin-content
+      summary: Publish the newest draft version of an article, now or at a set time
+      description: |
+        Permission point `content.article`. Publishes `version`, which must be the article's
+        newest version and in status draft, otherwise 20001 `data.fields=[version]` (older drafts
+        stay draft, 编排者默认). `published_at` defaults to the server's current time; a time
+        earlier than now → 20001 `data.fields=[published_at]` (编排者默认); a later time schedules
+        the version, which counts as unpublished until then (04 §6.2). The save checks of POST
+        /admin/v1/articles run again with the same `data.fields`. Older published versions stay
+        published; the current version is the largest published version already due. An article
+        of category agreement → 20001 `data.fields=[category]`. CAS: `expected_row_version` is the
+        article's `row_version` the console showed; publishing adds 1 to the newest row's
+        row_version in the same transaction, so a stale request, including a retry of one that
+        already took effect, never matches again: a mismatch → 20902 with `data.resource=article`.
+        An article_id that is not a lowercase canonical UUID, or that does not exist → 30701.
+        Written to the audit log in the same transaction.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminArticleIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminArticlePublishRequest'
+            examples:
+              now:
+                summary: Publish version 3 now
+                value:
+                  version: 3
+                  expected_row_version: 5
+              scheduled:
+                summary: Publish version 3 at a set time
+                value:
+                  version: 3
+                  published_at: '2026-10-20T09:00:00+08:00'
+                  expected_row_version: 5
+      responses:
+        '200':
+          description: The article after publishing.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminArticleResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  article_id: 00000000-0000-4000-8000-000000000001
+                  category: help
+                  row_version: 6
+                  current_version: 3
+                  versions:
+                    - version: 3
+                      status: published
+                      title: 什么是比价订单
+                      body: '{"type":"doc","content":[]}'
+                      notice_closable: true
+                      notice_content_version: 1
+                      notice_end_at: null
+                      published_at: '2026-10-17T12:00:00+08:00'
+                      created_at: '2026-10-17T10:00:00+08:00'
+                      updated_at: '2026-10-17T12:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not published (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                versionInvalid:
+                  $ref: '#/components/examples/AdminArticleVersionInvalid'
+                publishedAtInvalid:
+                  $ref: '#/components/examples/AdminArticlePublishedAtInvalid'
+                fieldInvalid:
+                  $ref: '#/components/examples/AdminArticleFieldInvalid'
+                categoryReadOnly:
+                  $ref: '#/components/examples/AdminArticleCategoryReadOnly'
+                conflict:
+                  $ref: '#/components/examples/AdminArticleConflict'
+                notFound:
+                  $ref: '#/components/examples/AdminArticleNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/articles/{article_id}/offline:
+    post:
+      operationId: adminOfflineArticle
+      tags:
+        - admin-content
+      summary: Take a whole article offline
+      description: |
+        Permission point `content.article`. Sets every published version of the article,
+        scheduled ones not yet due included, to offline; drafts are not touched (04 §6.2「整篇下线」;
+        编排者默认 for drafts). An article with no published version → 20001
+        `data.fields=[article_id]`. For a notice, the time it was taken offline is recorded as
+        notice_end_at (BR-TEXT-13). An article of category agreement → 20001
+        `data.fields=[category]`. CAS: `expected_row_version` is the article's `row_version` the
+        console showed; going offline adds 1 to the newest row's row_version in the same
+        transaction; a mismatch → 20902 with `data.resource=article`. An article_id that is not a
+        lowercase canonical UUID, or that does not exist → 30701. Written to the audit log in the
+        same transaction.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminArticleIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminArticleOfflineRequest'
+            example:
+              expected_row_version: 6
+      responses:
+        '200':
+          description: The article after going offline.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminArticleResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  article_id: 00000000-0000-4000-8000-000000000001
+                  category: help
+                  row_version: 7
+                  current_version: null
+                  versions:
+                    - version: 3
+                      status: offline
+                      title: 什么是比价订单
+                      body: '{"type":"doc","content":[]}'
+                      notice_closable: true
+                      notice_content_version: 1
+                      notice_end_at: null
+                      published_at: '2026-10-17T12:00:00+08:00'
+                      created_at: '2026-10-17T10:00:00+08:00'
+                      updated_at: '2026-10-17T13:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not taken offline (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notPublished:
+                  $ref: '#/components/examples/AdminArticleNotPublished'
+                categoryReadOnly:
+                  $ref: '#/components/examples/AdminArticleCategoryReadOnly'
+                conflict:
+                  $ref: '#/components/examples/AdminArticleConflict'
+                notFound:
+                  $ref: '#/components/examples/AdminArticleNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/kill-switches:
     get:
       operationId: adminListKillSwitches
@@ -11836,6 +12414,17 @@ components:
         type: integer
         format: int32
         minimum: 1
+    AdminArticleIdPath:
+      name: article_id
+      in: path
+      required: true
+      description: |
+        Article id, a lowercase canonical UUID (04 §6.2 articles); any other spelling, or an id that
+        does not exist → 30701.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
     ConfigKeyPath:
       name: key
       in: path
@@ -12573,6 +13162,74 @@ components:
         msg: 状态已变化，请刷新后重试
         data:
           resource: page
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminArticleNotFound:
+      summary: 30701 the article does not exist (or its id is not a lowercase canonical UUID)
+      value:
+        code: 30701
+        msg: 文章不存在
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminArticleFieldInvalid:
+      summary: 20001 the save checks failed (field names, forbidden words hit, body paths)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - body
+            - body.content[0].content[0].marks[0].attrs.href
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminArticleCategoryReadOnly:
+      summary: 20001 agreement articles are written through /admin/v1/agreements
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - category
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminArticleVersionInvalid:
+      summary: 20001 the version is not the newest version or not a draft
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - version
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminArticlePublishedAtInvalid:
+      summary: 20001 published_at is earlier than now
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - published_at
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminArticleNotPublished:
+      summary: 20001 the article has no published version to take offline
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - article_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminArticleConflict:
+      summary: 20902 the article was changed by someone else (row_version moved on)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: article
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminArticleAlreadyExists:
+      summary: 20902 an article with this article_id already exists (a retried create); read it back
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: article
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminStepUpRequiredTotp:
       summary: 10003 the operation needs a totp-tier step-up token
@@ -15941,6 +16598,317 @@ components:
           $ref: '#/components/schemas/Article'
         trace_id:
           $ref: '#/components/schemas/TraceId'
+    ArticleVersionStatus:
+      type: string
+      description: |
+        Status of one article version row (04 §6.2): draft = saved, never published; published =
+        published (counts only once published_at is not later than now); offline = taken offline.
+      enum:
+        - draft
+        - published
+        - offline
+    AdminArticleSummary:
+      type: object
+      description: One article in the admin list.
+      additionalProperties: false
+      required:
+        - article_id
+        - category
+        - title
+        - latest_version
+        - latest_status
+        - current_version
+        - published_at
+        - row_version
+        - updated_at
+      properties:
+        article_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        category:
+          $ref: '#/components/schemas/ArticleCategory'
+        title:
+          type: string
+          description: Title of the newest version row.
+        latest_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Newest version, drafts included.
+        latest_status:
+          $ref: '#/components/schemas/ArticleVersionStatus'
+        current_version:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: Largest published version already due; null = none.
+        published_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: published_at of the current version; null when there is none.
+        row_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The article's CAS value (row_version of the newest version row).
+        updated_at:
+          type: string
+          format: date-time
+    AdminArticleList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          description: Newest updated_at first.
+          items:
+            $ref: '#/components/schemas/AdminArticleSummary'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminArticleListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminArticleList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminArticleVersion:
+      type: object
+      description: One version row of an article.
+      additionalProperties: false
+      required:
+        - version
+        - status
+        - title
+        - body
+        - notice_closable
+        - notice_content_version
+        - notice_end_at
+        - published_at
+        - created_at
+        - updated_at
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/ArticleVersionStatus'
+        title:
+          type: string
+        body:
+          type: string
+          description: tiptap JSON document as a string.
+        notice_closable:
+          type: boolean
+          description: Notices only; true for other categories.
+        notice_content_version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Maintained by the server on save (BR-TEXT-13 细则「首页公告条的关闭与内容版本」).
+        notice_end_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: End of the notice's effective window; null for other categories.
+        published_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Publish time (a later time = scheduled); null for a version never published.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AdminArticle:
+      type: object
+      description: An article with every version row.
+      additionalProperties: false
+      required:
+        - article_id
+        - category
+        - row_version
+        - current_version
+        - versions
+      properties:
+        article_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        category:
+          $ref: '#/components/schemas/ArticleCategory'
+        row_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: |
+            The article's CAS value (row_version of the newest version row): a draft save gives the
+            new row the previous newest row's value + 1, publish and offline add 1 to the newest
+            row, never going back.
+        current_version:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 1
+          description: Largest published version already due; null = none.
+        versions:
+          type: array
+          description: Every version row, newest first, drafts and offline versions included.
+          items:
+            $ref: '#/components/schemas/AdminArticleVersion'
+    AdminArticleResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminArticle'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminArticleCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - article_id
+        - category
+        - title
+        - body
+      properties:
+        article_id:
+          $ref: '#/components/schemas/Id'
+          description: |
+            Client-generated UUIDv7 (lowercase canonical form), generated once per new article and
+            reused on every retry of the same create. An id that already exists → 20902
+            `data.resource=article` (no second article); read it back with GET
+            /admin/v1/articles/{article_id}.
+        category:
+          $ref: '#/components/schemas/ArticleCategory'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        body:
+          type: string
+          minLength: 1
+          maxLength: 200000
+          description: tiptap JSON document as a string.
+        notice_closable:
+          type: boolean
+          description: Notices only (default true); ignored for other categories.
+        notice_end_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Notices only; required when notice_closable is false. Ignored for other categories.
+    AdminArticleDraftRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - body
+        - expected_row_version
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        body:
+          type: string
+          minLength: 1
+          maxLength: 200000
+          description: tiptap JSON document as a string.
+        notice_closable:
+          type: boolean
+          description: Notices only (default true); ignored for other categories.
+        notice_end_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Notices only; required when notice_closable is false. Ignored for other categories.
+        expected_row_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The article's `row_version` as the console showed it; a mismatch is 20902.
+    AdminArticlePublishRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - expected_row_version
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: The newest version, in status draft.
+        published_at:
+          type: string
+          format: date-time
+          description: When the version takes effect; default now, earlier than now is 20001.
+        expected_row_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The article's `row_version` as the console showed it; a mismatch is 20902.
+    AdminArticleOfflineRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_row_version
+      properties:
+        expected_row_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The article's `row_version` as the console showed it; a mismatch is 20902.
     SemVer:
       type: string
       description: Semantic version x.y.z.

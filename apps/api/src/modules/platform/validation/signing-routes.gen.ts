@@ -623,6 +623,36 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/articles",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/articles",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/articles/:article_id",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/articles/:article_id/draft",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/articles/:article_id/publish",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/articles/:article_id/offline",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "signed": false
   },

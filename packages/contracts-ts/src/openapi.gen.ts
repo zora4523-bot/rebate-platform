@@ -3498,6 +3498,174 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Articles of the CMS (help, rules, notices, agreements)
+         * @description Permission point `content.article` (04 §11.2; step-up 「–」). One row per article, newest
+         *     `updated_at` first, page by page (`page`, `page_size` ≤ 200): category, the title, number
+         *     and status of the newest version row, the current version (the largest version whose status
+         *     is exactly published and whose published_at is not later than now, 04 §6.2; null when
+         *     there is none) with its published_at, and the article's `row_version`, the CAS value of
+         *     every article write. `category` filters by category; `status` filters by the status of
+         *     the newest version row (编排者默认). Articles of category agreement are listed read-only;
+         *     they are written through /admin/v1/agreements.
+         */
+        get: operations["adminListArticles"];
+        put?: never;
+        /**
+         * Create an article as a first draft
+         * @description Permission point `content.article`. Creates an article with the client-generated
+         *     `article_id` (a UUIDv7 the console generates once per new article and reuses on every retry
+         *     of that create; lowercase canonical form) and version 1 in status draft; nothing is
+         *     published. Admin writes carry no Idempotency-Key (04 §6.6), so the id is what makes a retry
+         *     safe: retrying the same article_id never creates a second article — when an article with
+         *     that id already exists → 20902 with `data.resource=article` and nothing is written; the
+         *     console then reads it back with GET /admin/v1/articles/{article_id} (编排者默认). An
+         *     article_id that is not a lowercase canonical UUIDv7 → 20001 `data.fields=[article_id]`,
+         *     checked before the save checks. Category
+         *     agreement is refused with 20001 `data.fields=[category]` (agreements are written through
+         *     /admin/v1/agreements). Save checks (04 §6.6 articles, shared by create, draft and
+         *     publish): an empty title or a title hitting the forbidden-word list (BR-TEXT-12 细则); a
+         *     body that is not a tiptap JSON document within the allowed node and mark list; a link
+         *     href that is not an https external link (App-internal links are not supported in this
+         *     batch, 编排者默认), whose host is in the `union_host` category of the platform
+         *     link-pattern table while switch `external_page.union_host_block` is on (BR-ATTR-29 ①), or
+         *     that carries a personal-data placeholder (BR-ID-33 细则「外链不带个人数据」); a notice
+         *     that cannot be closed without notice_end_at (BR-TEXT-13 细则「生效区间」) → 20001.
+         *     `data.fields` lists, in this order, the offending field names (title, body,
+         *     notice_end_at), the forbidden words hit and the JSON paths inside the body written as
+         *     `body.content[i]…` (编排者默认); no other data key. For categories other than notice the
+         *     notice fields are ignored and stored as notice_closable=true, notice_end_at=null
+         *     (编排者默认). notice_content_version is maintained by the server on save, never sent by
+         *     the console (BR-TEXT-13 细则「首页公告条的关闭与内容版本」). Written to the audit log in the
+         *     same transaction.
+         */
+        post: operations["adminCreateArticle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/articles/{article_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One article with all its versions
+         * @description Permission point `content.article`. The article with every version row, newest first,
+         *     drafts and offline versions included, each with its body, and the article's `row_version`
+         *     (the CAS value of every article write). current_version is the largest version whose
+         *     status is exactly published and whose published_at is not later than now (a scheduled
+         *     version not yet due does not count), null when there is none (04 §6.2). An article_id
+         *     that is not a lowercase canonical UUID, or that does not exist → 30701.
+         */
+        get: operations["adminGetArticle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/articles/{article_id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save a new draft version of an article
+         * @description Permission point `content.article`. Inserts a new version row (newest version + 1) in
+         *     status draft with the given title, body and notice fields; a saved version's body is never
+         *     changed in place (编排者默认). Same save checks and `data.fields` as POST
+         *     /admin/v1/articles. An article of category agreement → 20001 `data.fields=[category]`.
+         *     CAS: `expected_row_version` is the article's `row_version` the console showed; the new
+         *     row takes the previous newest row's row_version + 1, and a mismatch → 20902 with
+         *     `data.resource=article` (编排者默认). An article_id that is not a lowercase canonical UUID,
+         *     or that does not exist → 30701. Written to the audit log in the same transaction.
+         */
+        put: operations["adminSaveArticleDraft"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/articles/{article_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish the newest draft version of an article, now or at a set time
+         * @description Permission point `content.article`. Publishes `version`, which must be the article's
+         *     newest version and in status draft, otherwise 20001 `data.fields=[version]` (older drafts
+         *     stay draft, 编排者默认). `published_at` defaults to the server's current time; a time
+         *     earlier than now → 20001 `data.fields=[published_at]` (编排者默认); a later time schedules
+         *     the version, which counts as unpublished until then (04 §6.2). The save checks of POST
+         *     /admin/v1/articles run again with the same `data.fields`. Older published versions stay
+         *     published; the current version is the largest published version already due. An article
+         *     of category agreement → 20001 `data.fields=[category]`. CAS: `expected_row_version` is the
+         *     article's `row_version` the console showed; publishing adds 1 to the newest row's
+         *     row_version in the same transaction, so a stale request, including a retry of one that
+         *     already took effect, never matches again: a mismatch → 20902 with `data.resource=article`.
+         *     An article_id that is not a lowercase canonical UUID, or that does not exist → 30701.
+         *     Written to the audit log in the same transaction.
+         */
+        post: operations["adminPublishArticle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/articles/{article_id}/offline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take a whole article offline
+         * @description Permission point `content.article`. Sets every published version of the article,
+         *     scheduled ones not yet due included, to offline; drafts are not touched (04 §6.2「整篇下线」;
+         *     编排者默认 for drafts). An article with no published version → 20001
+         *     `data.fields=[article_id]`. For a notice, the time it was taken offline is recorded as
+         *     notice_end_at (BR-TEXT-13). An article of category agreement → 20001
+         *     `data.fields=[category]`. CAS: `expected_row_version` is the article's `row_version` the
+         *     console showed; going offline adds 1 to the newest row's row_version in the same
+         *     transaction; a mismatch → 20902 with `data.resource=article`. An article_id that is not a
+         *     lowercase canonical UUID, or that does not exist → 30701. Written to the audit log in the
+         *     same transaction.
+         */
+        post: operations["adminOfflineArticle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -5305,6 +5473,174 @@ export interface components {
             msg: string;
             data: components["schemas"]["Article"];
             trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Status of one article version row (04 §6.2): draft = saved, never published; published =
+         *     published (counts only once published_at is not later than now); offline = taken offline.
+         * @enum {string}
+         */
+        ArticleVersionStatus: "draft" | "published" | "offline";
+        /** @description One article in the admin list. */
+        AdminArticleSummary: {
+            article_id: string;
+            category: components["schemas"]["ArticleCategory"];
+            /** @description Title of the newest version row. */
+            title: string;
+            /**
+             * Format: int32
+             * @description Newest version, drafts included.
+             */
+            latest_version: number;
+            latest_status: components["schemas"]["ArticleVersionStatus"];
+            /**
+             * Format: int32
+             * @description Largest published version already due; null = none.
+             */
+            current_version: number | null;
+            /**
+             * Format: date-time
+             * @description published_at of the current version; null when there is none.
+             */
+            published_at: string | null;
+            /**
+             * Format: int32
+             * @description The article's CAS value (row_version of the newest version row).
+             */
+            row_version: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AdminArticleList: {
+            /** @description Newest updated_at first. */
+            items: components["schemas"]["AdminArticleSummary"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminArticleListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminArticleList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description One version row of an article. */
+        AdminArticleVersion: {
+            /** Format: int32 */
+            version: number;
+            status: components["schemas"]["ArticleVersionStatus"];
+            title: string;
+            /** @description tiptap JSON document as a string. */
+            body: string;
+            /** @description Notices only; true for other categories. */
+            notice_closable: boolean;
+            /**
+             * Format: int32
+             * @description Maintained by the server on save (BR-TEXT-13 细则「首页公告条的关闭与内容版本」).
+             */
+            notice_content_version: number;
+            /**
+             * Format: date-time
+             * @description End of the notice's effective window; null for other categories.
+             */
+            notice_end_at: string | null;
+            /**
+             * Format: date-time
+             * @description Publish time (a later time = scheduled); null for a version never published.
+             */
+            published_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /** @description An article with every version row. */
+        AdminArticle: {
+            article_id: string;
+            category: components["schemas"]["ArticleCategory"];
+            /**
+             * Format: int32
+             * @description The article's CAS value (row_version of the newest version row): a draft save gives the
+             *     new row the previous newest row's value + 1, publish and offline add 1 to the newest
+             *     row, never going back.
+             */
+            row_version: number;
+            /**
+             * Format: int32
+             * @description Largest published version already due; null = none.
+             */
+            current_version: number | null;
+            /** @description Every version row, newest first, drafts and offline versions included. */
+            versions: components["schemas"]["AdminArticleVersion"][];
+        };
+        AdminArticleResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminArticle"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminArticleCreateRequest: {
+            /**
+             * @description Client-generated UUIDv7 (lowercase canonical form), generated once per new article and
+             *     reused on every retry of the same create. An id that already exists → 20902
+             *     `data.resource=article` (no second article); read it back with GET
+             *     /admin/v1/articles/{article_id}.
+             */
+            article_id: components["schemas"]["Id"];
+            category: components["schemas"]["ArticleCategory"];
+            title: string;
+            /** @description tiptap JSON document as a string. */
+            body: string;
+            /** @description Notices only (default true); ignored for other categories. */
+            notice_closable?: boolean;
+            /**
+             * Format: date-time
+             * @description Notices only; required when notice_closable is false. Ignored for other categories.
+             */
+            notice_end_at?: string | null;
+        };
+        AdminArticleDraftRequest: {
+            title: string;
+            /** @description tiptap JSON document as a string. */
+            body: string;
+            /** @description Notices only (default true); ignored for other categories. */
+            notice_closable?: boolean;
+            /**
+             * Format: date-time
+             * @description Notices only; required when notice_closable is false. Ignored for other categories.
+             */
+            notice_end_at?: string | null;
+            /**
+             * Format: int32
+             * @description The article's `row_version` as the console showed it; a mismatch is 20902.
+             */
+            expected_row_version: number;
+        };
+        AdminArticlePublishRequest: {
+            /**
+             * Format: int32
+             * @description The newest version, in status draft.
+             */
+            version: number;
+            /**
+             * Format: date-time
+             * @description When the version takes effect; default now, earlier than now is 20001.
+             */
+            published_at?: string;
+            /**
+             * Format: int32
+             * @description The article's `row_version` as the console showed it; a mismatch is 20902.
+             */
+            expected_row_version: number;
+        };
+        AdminArticleOfflineRequest: {
+            /**
+             * Format: int32
+             * @description The article's `row_version` as the console showed it; a mismatch is 20902.
+             */
+            expected_row_version: number;
         };
         /** @description Semantic version x.y.z. */
         SemVer: string;
@@ -8276,6 +8612,11 @@ export interface components {
         PageKeyPath: string;
         /** @description Version of the page, counted per page from 1. */
         PageVersionPath: number;
+        /**
+         * @description Article id, a lowercase canonical UUID (04 §6.2 articles); any other spelling, or an id that
+         *     does not exist → 30701.
+         */
+        AdminArticleIdPath: string;
         /**
          * @description A configuration or emergency-switch key as registered by the server (04 §10, §10.2), dotted
          *     and concrete (`convert.enabled.taobao`, not `convert.enabled.<platform>`); an unregistered
@@ -16606,6 +16947,464 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListArticles: {
+        parameters: {
+            query?: {
+                category?: components["schemas"]["ArticleCategory"];
+                /** @description Status of the newest version row. */
+                status?: components["schemas"]["ArticleVersionStatus"];
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of articles, newest updated_at first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "article_id": "00000000-0000-4000-8000-000000000001",
+                     *             "category": "help",
+                     *             "title": "什么是比价订单",
+                     *             "latest_version": 3,
+                     *             "latest_status": "draft",
+                     *             "current_version": 2,
+                     *             "published_at": "2026-10-01T09:00:00+08:00",
+                     *             "row_version": 5,
+                     *             "updated_at": "2026-10-17T10:00:00+08:00"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 1
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminArticleListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCreateArticle: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "article_id": "00000000-0000-7000-8000-000000000001",
+                 *       "category": "notice",
+                 *       "title": "国庆期间到账说明",
+                 *       "body": "{\"type\":\"doc\",\"content\":[]}",
+                 *       "notice_closable": true,
+                 *       "notice_end_at": "2026-10-08T00:00:00+08:00"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminArticleCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The new article with its first draft version. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "article_id": "00000000-0000-7000-8000-000000000001",
+                     *         "category": "notice",
+                     *         "row_version": 0,
+                     *         "current_version": null,
+                     *         "versions": [
+                     *           {
+                     *             "version": 1,
+                     *             "status": "draft",
+                     *             "title": "国庆期间到账说明",
+                     *             "body": "{\"type\":\"doc\",\"content\":[]}",
+                     *             "notice_closable": true,
+                     *             "notice_content_version": 1,
+                     *             "notice_end_at": "2026-10-08T00:00:00+08:00",
+                     *             "published_at": null,
+                     *             "created_at": "2026-10-17T10:00:00+08:00",
+                     *             "updated_at": "2026-10-17T10:00:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminArticleResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not created (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetArticle: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Article id, a lowercase canonical UUID (04 §6.2 articles); any other spelling, or an id that
+                 *     does not exist → 30701.
+                 */
+                article_id: components["parameters"]["AdminArticleIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The article. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "article_id": "00000000-0000-4000-8000-000000000001",
+                     *         "category": "help",
+                     *         "row_version": 5,
+                     *         "current_version": 2,
+                     *         "versions": [
+                     *           {
+                     *             "version": 3,
+                     *             "status": "draft",
+                     *             "title": "什么是比价订单",
+                     *             "body": "{\"type\":\"doc\",\"content\":[]}",
+                     *             "notice_closable": true,
+                     *             "notice_content_version": 1,
+                     *             "notice_end_at": null,
+                     *             "published_at": null,
+                     *             "created_at": "2026-10-17T10:00:00+08:00",
+                     *             "updated_at": "2026-10-17T10:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "version": 2,
+                     *             "status": "published",
+                     *             "title": "什么是比价订单",
+                     *             "body": "{\"type\":\"doc\",\"content\":[]}",
+                     *             "notice_closable": true,
+                     *             "notice_content_version": 1,
+                     *             "notice_end_at": null,
+                     *             "published_at": "2026-10-01T09:00:00+08:00",
+                     *             "created_at": "2026-09-30T10:00:00+08:00",
+                     *             "updated_at": "2026-10-01T09:00:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminArticleResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminSaveArticleDraft: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Article id, a lowercase canonical UUID (04 §6.2 articles); any other spelling, or an id that
+                 *     does not exist → 30701.
+                 */
+                article_id: components["parameters"]["AdminArticleIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "title": "什么是比价订单",
+                 *       "body": "{\"type\":\"doc\",\"content\":[]}",
+                 *       "expected_row_version": 5
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminArticleDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description The article with its new draft version. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "article_id": "00000000-0000-4000-8000-000000000001",
+                     *         "category": "help",
+                     *         "row_version": 6,
+                     *         "current_version": 2,
+                     *         "versions": [
+                     *           {
+                     *             "version": 4,
+                     *             "status": "draft",
+                     *             "title": "什么是比价订单",
+                     *             "body": "{\"type\":\"doc\",\"content\":[]}",
+                     *             "notice_closable": true,
+                     *             "notice_content_version": 1,
+                     *             "notice_end_at": null,
+                     *             "published_at": null,
+                     *             "created_at": "2026-10-17T11:00:00+08:00",
+                     *             "updated_at": "2026-10-17T11:00:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminArticleResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not saved (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminPublishArticle: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Article id, a lowercase canonical UUID (04 §6.2 articles); any other spelling, or an id that
+                 *     does not exist → 30701.
+                 */
+                article_id: components["parameters"]["AdminArticleIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminArticlePublishRequest"];
+            };
+        };
+        responses: {
+            /** @description The article after publishing. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "article_id": "00000000-0000-4000-8000-000000000001",
+                     *         "category": "help",
+                     *         "row_version": 6,
+                     *         "current_version": 3,
+                     *         "versions": [
+                     *           {
+                     *             "version": 3,
+                     *             "status": "published",
+                     *             "title": "什么是比价订单",
+                     *             "body": "{\"type\":\"doc\",\"content\":[]}",
+                     *             "notice_closable": true,
+                     *             "notice_content_version": 1,
+                     *             "notice_end_at": null,
+                     *             "published_at": "2026-10-17T12:00:00+08:00",
+                     *             "created_at": "2026-10-17T10:00:00+08:00",
+                     *             "updated_at": "2026-10-17T12:00:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminArticleResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not published (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminOfflineArticle: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Article id, a lowercase canonical UUID (04 §6.2 articles); any other spelling, or an id that
+                 *     does not exist → 30701.
+                 */
+                article_id: components["parameters"]["AdminArticleIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_row_version": 6
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminArticleOfflineRequest"];
+            };
+        };
+        responses: {
+            /** @description The article after going offline. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "article_id": "00000000-0000-4000-8000-000000000001",
+                     *         "category": "help",
+                     *         "row_version": 7,
+                     *         "current_version": null,
+                     *         "versions": [
+                     *           {
+                     *             "version": 3,
+                     *             "status": "offline",
+                     *             "title": "什么是比价订单",
+                     *             "body": "{\"type\":\"doc\",\"content\":[]}",
+                     *             "notice_closable": true,
+                     *             "notice_content_version": 1,
+                     *             "notice_end_at": null,
+                     *             "published_at": "2026-10-17T12:00:00+08:00",
+                     *             "created_at": "2026-10-17T10:00:00+08:00",
+                     *             "updated_at": "2026-10-17T13:00:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminArticleResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not taken offline (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
