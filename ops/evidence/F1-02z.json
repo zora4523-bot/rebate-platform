@@ -1,0 +1,78 @@
+{
+  "task": "F1-02z",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "d862ca357e9a62bdc45a0bb24e6c9c967a0d8eed",
+  "red_tests": [
+    "test/spec/content/content-wrapup/agreement-conflicts.int.test.ts > [AC-F1-02z#1] privacy 已有版本 1：20902、五表不变、仅 warn；非整数与零仍可首发",
+    "test/spec/content/content-wrapup/agreement-conflicts.int.test.ts > [AC-F1-02z#1] privacy 已有版本 5：20902、五表不变、仅 warn；非整数与零仍可首发",
+    "test/spec/content/content-wrapup/agreement-conflicts.int.test.ts > [AC-F1-02z#1] agreement 已有版本 1：20902、五表不变、仅 warn；非整数与零仍可首发",
+    "test/spec/content/content-wrapup/agreement-conflicts.int.test.ts > [AC-F1-02z#1] agreement 已有版本 5：20902、五表不变、仅 warn；非整数与零仍可首发",
+    "test/spec/content/content-wrapup/agreement-list.int.test.ts > [AC-F1-02z#2] 协议列表两次读共享只读 RR 快照，第二次读前并发首发不混页，总数不丢失",
+    "test/spec/content/content-wrapup/dictionary-boundary.int.test.ts > [AC-F1-02z#3] int32 最大版本后台与公共读取一致，保存和回滚仍拒绝；非法版本均无覆盖"
+  ],
+  "risk_note": "RV2 (content close-out, no funds). Three fixes from the phase-3 review: (1) L44 a publish that would collide with an existing agreement version answers 20902 data.resource=agreement (AgreementConflictError, whole transaction rolled back) with a warn log instead of 50001 with an error log; a missing h5_base_url still answers 50001; the frozen [AC-F1-02p#16] already accepts 20902 (F1-02za). (2) The console agreement list reads the page and the total in one read-only REPEATABLE READ transaction, like the dictionary store. (3) The console dictionary list reads versions with the read parser parseDictVersion; save and rollback keep the writable parser. Rule test #3 serialized Kysely nodes without a bigint replacer and was fixed mechanically by the orchestrator before the implementation. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d862ca357e9a62bdc45a0bb24e6c9c967a0d8eed",
+      "tree": "6be5b577b140ac04a24ebd51aa155ea37bc9783e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T17:42:12Z",
+      "finished_at": "2026-10-19T17:42:37Z",
+      "red_tests": [
+        "test/spec/content/content-wrapup/agreement-conflicts.int.test.ts > [AC-F1-02z#1] privacy 已有版本 1：20902、五表不变、仅 warn；非整数与零仍可首发",
+        "test/spec/content/content-wrapup/agreement-conflicts.int.test.ts > [AC-F1-02z#1] privacy 已有版本 5：20902、五表不变、仅 warn；非整数与零仍可首发",
+        "test/spec/content/content-wrapup/agreement-conflicts.int.test.ts > [AC-F1-02z#1] agreement 已有版本 1：20902、五表不变、仅 warn；非整数与零仍可首发",
+        "test/spec/content/content-wrapup/agreement-conflicts.int.test.ts > [AC-F1-02z#1] agreement 已有版本 5：20902、五表不变、仅 warn；非整数与零仍可首发",
+        "test/spec/content/content-wrapup/agreement-list.int.test.ts > [AC-F1-02z#2] 协议列表两次读共享只读 RR 快照，第二次读前并发首发不混页，总数不丢失",
+        "test/spec/content/content-wrapup/dictionary-boundary.int.test.ts > [AC-F1-02z#3] int32 最大版本后台与公共读取一致，保存和回滚仍拒绝；非法版本均无覆盖"
+      ],
+      "expected": [
+        "test/spec/content/content-wrapup/agreement-conflicts.int.test.ts",
+        "test/spec/content/content-wrapup/agreement-list.int.test.ts",
+        "test/spec/content/content-wrapup/dictionary-boundary.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ac8dc4d14186f2e166e338ee639db87d97492bf0192be52a1c18d1ef31fe6aeb"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "fail",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 fail with one S1 (test #3 JSON.stringify threw on a bigint during the admin login, so it went red for the wrong reason); fixed mechanically by the orchestrator (bigint replacer) and re-checked on the test machine: #3 now goes red on the dictionary assertion"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "c0c0a8a6adb4d8f16a515aeec47587beae3a1af5",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}

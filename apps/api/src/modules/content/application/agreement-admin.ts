@@ -327,11 +327,12 @@ export class AgreementAdmin {
         Number.isInteger(row.value) &&
         row.value >= version
       ) {
-        this.#options.logger.error(
+        // A conflict (20902, resource agreement), not a fault: warn only; the transaction rolls back.
+        this.#options.logger.warn(
           { app_id: appId, agreement_type: type, key, config_value: row.value, version },
           'agreement_publish_legal_version_ahead',
         );
-        throw new Error(`agreement: ${key} is already ${String(row.value)}`);
+        throw new AgreementConflictError();
       }
     }
 
