@@ -2501,7 +2501,8 @@ export interface paths {
          *     are derived by the server from the stored record (the action and its target); a record
          *     they cannot be derived for (older rows, actions without an object) returns them as null
          *     and never matches a filter on that field. `target_type` is free text, not an enum.
-         *     Each row has the actor's current username (`actor_name`, null when the account is gone),
+         *     Each row has the actor's current name (`actor_name`: admin_users.display_name, the username
+         *     when that is empty, null when the account is gone),
          *     never the before / after values (GET /admin/v1/audit-logs/{id}). Searching does not write
          *     an audit record itself.
          */
@@ -7349,8 +7350,10 @@ export interface components {
         };
         AdminMe: {
             admin_id: components["schemas"]["Id"];
-            /** @description Account name, also shown as the display name. */
+            /** @description Account name (the login name); shown as the display name when display_name is empty. */
             username: string;
+            /** @description Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). The operation that sets it comes with admin account management (F1-10i). */
+            display_name?: string;
             is_super: boolean;
             /** @description Masked verify phone (BR-ID-33); null = none registered, sms tier unavailable. */
             verify_phone_masked: string | null;
@@ -7463,6 +7466,8 @@ export interface components {
         AdminAccount: {
             admin_id: components["schemas"]["Id"];
             username: string;
+            /** @description Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). The operation that sets it comes with admin account management (F1-10i). */
+            display_name?: string;
             is_super: boolean;
             status: components["schemas"]["AdminAccountStatus"];
             /** @description false = the next login goes through the first binding. */
@@ -8395,7 +8400,7 @@ export interface components {
         AdminAuditLogListItem: {
             id: components["schemas"]["AdminAuditLogId"];
             actor_id: components["schemas"]["Id"];
-            /** @description Current username of the account that acted; null when it cannot be read. */
+            /** @description Current name of the account that acted (admin_users.display_name, else the username); null when it cannot be read. */
             actor_name?: string | null;
             /** @description Action key as the writing module recorded it (such as user_pii_reveal). */
             action: string;
@@ -8416,7 +8421,7 @@ export interface components {
         AdminAuditLog: {
             id: components["schemas"]["AdminAuditLogId"];
             actor_id: components["schemas"]["Id"];
-            /** @description Current username of the account that acted; null when it cannot be read. */
+            /** @description Current name of the account that acted (admin_users.display_name, else the username); null when it cannot be read. */
             actor_name?: string | null;
             /** @description Action key as the writing module recorded it. */
             action: string;
@@ -8549,7 +8554,7 @@ export interface components {
             /** @description true = the file holds masked values (the default); false = full values (pii step-up at creation). */
             masked: boolean;
             created_by: components["schemas"]["Id"];
-            /** @description Current username of the creator; null when it cannot be read. */
+            /** @description Current name of the creator (admin_users.display_name, else the username); null when it cannot be read. */
             created_by_name?: string | null;
             /**
              * Format: date-time

@@ -6971,7 +6971,8 @@ paths:
         are derived by the server from the stored record (the action and its target); a record
         they cannot be derived for (older rows, actions without an object) returns them as null
         and never matches a filter on that field. `target_type` is free text, not an enum.
-        Each row has the actor's current username (`actor_name`, null when the account is gone),
+        Each row has the actor's current name (`actor_name`: admin_users.display_name, the username
+        when that is empty, null when the account is gone),
         never the before / after values (GET /admin/v1/audit-logs/{id}). Searching does not write
         an audit record itself.
       x-auth: admin
@@ -21153,9 +21154,14 @@ components:
           $ref: '#/components/schemas/Id'
         username:
           type: string
-          description: Account name, also shown as the display name.
+          description: Account name (the login name); shown as the display name when display_name is empty.
           minLength: 1
           maxLength: 64
+        display_name:
+          type: string
+          description: Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). The operation that sets it comes with admin account management (F1-10i).
+          minLength: 1
+          maxLength: 32
         is_super:
           type: boolean
         verify_phone_masked:
@@ -21383,6 +21389,11 @@ components:
           type: string
           minLength: 1
           maxLength: 64
+        display_name:
+          type: string
+          description: Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). The operation that sets it comes with admin account management (F1-10i).
+          minLength: 1
+          maxLength: 32
         is_super:
           type: boolean
         status:
@@ -23390,7 +23401,7 @@ components:
           type:
             - string
             - 'null'
-          description: Current username of the account that acted; null when it cannot be read.
+          description: Current name of the account that acted (admin_users.display_name, else the username); null when it cannot be read.
           maxLength: 64
         action:
           type: string
@@ -23447,7 +23458,7 @@ components:
           type:
             - string
             - 'null'
-          description: Current username of the account that acted; null when it cannot be read.
+          description: Current name of the account that acted (admin_users.display_name, else the username); null when it cannot be read.
           maxLength: 64
         action:
           type: string
@@ -23702,7 +23713,7 @@ components:
           type:
             - string
             - 'null'
-          description: Current username of the creator; null when it cannot be read.
+          description: Current name of the creator (admin_users.display_name, else the username); null when it cannot be read.
           maxLength: 64
         created_at:
           type: string
