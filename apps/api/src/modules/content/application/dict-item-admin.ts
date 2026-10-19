@@ -10,6 +10,7 @@ import {
   checkDictRollback,
   checkDictSave,
   dictRequestClass,
+  parseDictVersion,
   parseWritableDictVersion,
   type DictTextRules,
 } from '../domain/dict/index.ts';
@@ -196,8 +197,9 @@ export class DictItemAdmin {
     const slice = keys.slice((page - 1) * pageSize, page * pageSize);
     const { value, effective } = await this.#store.read(async (tx) => {
       const current = versionValue(await tx.dictVersion(appId));
-      // A corrupt dict_version publishes nothing (as GET /v1/dict); the value is shown as stored.
-      const at = parseWritableDictVersion(current) ?? 0;
+      // The read parser of GET /v1/dict: a corrupt dict_version publishes nothing, the value is
+      // shown as stored; writes keep parseWritableDictVersion.
+      const at = parseDictVersion(current).limit ?? 0;
       return {
         value: current,
         effective:

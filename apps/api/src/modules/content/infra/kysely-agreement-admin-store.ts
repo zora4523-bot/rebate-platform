@@ -72,27 +72,34 @@ function view(row: ViewRow): AgreementView {
 
 function reads(db: Kysely<DB>): AgreementReads {
   const app = db.withSchema('app');
-  const scoped = (appId: string, type: AgreementType | undefined) => {
-    const base = app.selectFrom('agreements as g').where('g.app_id', '=', appId);
-    return type === undefined ? base : base.where('g.type', '=', type);
-  };
   return {
-    async list(appId, type, offset, limit) {
-      const [rows, total] = await Promise.all([
-        scoped(appId, type)
-          .select(VIEW_COLUMNS)
-          .orderBy('g.published_at', 'desc')
-          .orderBy('g.version', 'desc')
-          .orderBy('g.type')
-          .limit(limit)
-          .offset(offset)
-          .execute(),
-        scoped(appId, type)
-          .select((eb) => eb.fn.countAll<string>().as('n'))
-          .executeTakeFirstOrThrow(),
-      ]);
-      return { items: rows.map(view), total: Number(total.n) };
-    },
+    list: (appId, type, offset, limit) =>
+      // One read-only REPEATABLE READ snapshot: the page and its total see the same committed rows.
+      db
+        .transaction()
+        .setIsolationLevel('repeatable read')
+        .setAccessMode('read only')
+        .execute(async (trx) => {
+          const scoped = () => {
+            const base = trx
+              .withSchema('app')
+              .selectFrom('agreements as g')
+              .where('g.app_id', '=', appId);
+            return type === undefined ? base : base.where('g.type', '=', type);
+          };
+          const rows = await scoped()
+            .select(VIEW_COLUMNS)
+            .orderBy('g.published_at', 'desc')
+            .orderBy('g.version', 'desc')
+            .orderBy('g.type')
+            .limit(limit)
+            .offset(offset)
+            .execute();
+          const total = await scoped()
+            .select((eb) => eb.fn.countAll<string>().as('n'))
+            .executeTakeFirstOrThrow();
+          return { items: rows.map(view), total: Number(total.n) };
+        }),
 
     async detail(appId, type, version) {
       const row = await app

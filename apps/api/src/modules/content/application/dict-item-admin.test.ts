@@ -233,6 +233,30 @@ it('[AC-F1-02t#u10] 当前 dict_version 不是整数串 → 50001 类错误，�
   expect(page.items.every((x) => x.text === null && x.version === null)).toBe(true);
 });
 
+it('[AC-F1-02z] 列表用读取解析器：dict_version "2147483647" 显示覆盖（同 GET /v1/dict），写仍拒', async () => {
+  const f = fixture();
+  const top = 2147483647;
+  const row = { appId: APP, key: 'about.a', text: '甲顶', createdBy: 'admin-1', at: new Date(AT) };
+  f.state.version = { value: String(top), version: 1 };
+  f.state.items.push({ ...row, version: top });
+  const page = await f.admin.list(APP, {});
+  expect(page.dict_version).toBe('2147483647');
+  expect(page.items.find((x) => x.key === 'about.a')).toMatchObject({ text: '甲顶', version: top });
+  await expect(
+    f.admin.save(actor, {
+      changes: [{ key: 'about.b', text: '乙新{name}' }],
+      expected_version: '2147483647',
+    }),
+  ).rejects.toBeInstanceOf(DictVersionCorruptError);
+  expect(f.state.items).toHaveLength(1);
+  for (const value of ['2147483648', '01', 'dict-42']) {
+    f.state.version = { value, version: 1 };
+    const other = await f.admin.list(APP, {});
+    expect(other.dict_version).toBe(value);
+    expect(other.items.every((x) => x.text === null && x.version === null)).toBe(true);
+  }
+});
+
 it('[AC-F1-02t#u11] 回滚以旧值写新版本，历史行不改；0 恢复 null；审计带 to_version', async () => {
   const f = fixture();
   await f.admin.save(actor, { changes: [{ key: 'about.a', text: 'A' }], expected_version: '0' });

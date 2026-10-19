@@ -127,12 +127,16 @@ function memory(seed: Partial<Memory> = {}): { store: AgreementStore; m: Memory 
   return { store, m };
 }
 
-function admin(store: AgreementStore, media: string | null = 'https://media.example.test/a/') {
+function admin(
+  store: AgreementStore,
+  media: string | null = 'https://media.example.test/a/',
+  logger: pino.Logger = pino({ enabled: false }),
+) {
   let id = 0;
   return new AgreementAdmin({
     store,
     clock,
-    logger: pino({ enabled: false }),
+    logger,
     mediaPublicBaseUrl: media ?? undefined,
     linkPatterns: () => PATTERNS,
     newId: () => `00000000-0000-7000-8000-00000000000${String(++id)}`,
@@ -257,10 +261,28 @@ for (const type of ['privacy', 'agreement'] as const) {
   it(`[AC-F1-02p] legal.${type}.version at or past the new version is never overwritten (L44)`, async () => {
     const { store, m } = memory();
     m.config.set(`legal.${type}.version`, { value: 1, version: 3 });
-    await expect(admin(store).publish(actor, type, body())).rejects.toThrow(
-      `legal.${type}.version`,
+    const lines: { level: number; msg: string; key?: string }[] = [];
+    const logger = pino(
+      { level: 'info' },
+      { write: (line: string) => lines.push(JSON.parse(line)) },
     );
+    // A conflict (20902, resource agreement), logged at warn and never at error.
+    await expect(
+      admin(store, undefined, logger).publish(actor, type, body()),
+    ).rejects.toBeInstanceOf(AgreementConflictError);
+    expect(lines.map((line) => [line.level, line.msg, line.key])).toEqual([
+      [40, 'agreement_publish_legal_version_ahead', `legal.${type}.version`],
+    ]);
     expect(m.calls).not.toContain('article');
+    expect(m.writes).toEqual([]);
+    m.config.set(`legal.${type}.version`, { value: 5, version: 3 });
+    await expect(admin(store).publish(actor, type, body())).rejects.toBeInstanceOf(
+      AgreementConflictError,
+    );
+    m.config.set(`legal.${type}.version`, { value: 0, version: 3 });
+    await expect(admin(store).publish(actor, type, body())).resolves.toMatchObject({
+      version: 1,
+    });
     m.config.set(`legal.${type}.version`, { value: 'manual', version: 3 });
     await expect(admin(store).publish(actor, type, body())).resolves.toMatchObject({
       version: 1,
