@@ -1,0 +1,87 @@
+{
+  "task": "F1-02t",
+  "spec_ref": "32d7b096b09ae675a1fa642462ed51ab601f35d4",
+  "spec_commit": "e745706bc62c8096409f1c2f86d582cdfdc42859",
+  "red_tests": [
+    "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#1] general 首存即发布：整数串版本、拆键、历史、时钟和审计一致，四路由解除 planned",
+    "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#2] 混类和空集合在选权限点前整批拒绝，保存与回滚均无业务行和审计",
+    "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#3] 资金与未知键选资金权限：拒绝留键级审计，totp 每次必需且成功记录前后值",
+    "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#4] privacy/perm 使用 agreement 权限和 totp，保存与回滚都要求法务确认人",
+    "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#5] 每项校验一次全报：同值/null、重复、未知、变量及禁用词带准确索引，无部分保存",
+    "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#6] 先校验再 CAS，字符串全等；首发与已有行并发恰一成功，非整数当前版本拒绝",
+    "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#7] 回滚追加新版本不改历史，0/无历史恢复 null，旧文案重过校验并先于 CAS",
+    "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#8] 列表按默认全集/类别/前缀分页且只取已发布值；历史降序精确键过滤，读任一权限无 step-up",
+    "test/spec/content/dict-admin/specs.test.ts > [AC-F1-02t#9] 两份文本规格快照可重现且包含 YAML 全部字段，运行时不读 YAML"
+  ],
+  "risk_note": "RV2 (console dictionary editing; fund-term keys). Keys are classified before the guard (unknown keys count as fund terms); a request may carry one class only (mixed / empty -> 20001); the permission point follows the class: general -> config.general, fund terms -> content.fund_terms with totp, agreement -> content.agreement with totp and legal_confirmed_by; reads accept any of the three without step-up. A fund-term request refused by the guard (10403 / 10003) writes a dict_items_denied audit row before the error is rethrown (L46). Save is publish in one transaction: FOR UPDATE on the dict_version row (non-canonical value -> 50001, L47), every change checked (variables against texts.default.json, banned words) with all errors in one 20001, expected_version CAS (20902 resource=dict_item; concurrent first publishes fall back on the primary key), new dict_items version rows, dict_version + 1 with its history, audit with before / after values, fund-term flag and legal confirmer; an audit failure rolls back. Rollback writes old values as a new version and re-checks them. Banned-word and fund-term key lists are generated snapshots (content/specs, with --verify); texts.default.json is read once at runtime. No funds. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e745706bc62c8096409f1c2f86d582cdfdc42859",
+      "tree": "a0b7a845cb2adec083c191f03c2d52b3b2007c9d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T12:37:02Z",
+      "finished_at": "2026-10-19T12:37:13Z",
+      "red_tests": [
+        "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#1] general 首存即发布：整数串版本、拆键、历史、时钟和审计一致，四路由解除 planned",
+        "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#2] 混类和空集合在选权限点前整批拒绝，保存与回滚均无业务行和审计",
+        "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#3] 资金与未知键选资金权限：拒绝留键级审计，totp 每次必需且成功记录前后值",
+        "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#4] privacy/perm 使用 agreement 权限和 totp，保存与回滚都要求法务确认人",
+        "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#5] 每项校验一次全报：同值/null、重复、未知、变量及禁用词带准确索引，无部分保存",
+        "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#6] 先校验再 CAS，字符串全等；首发与已有行并发恰一成功，非整数当前版本拒绝",
+        "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#7] 回滚追加新版本不改历史，0/无历史恢复 null，旧文案重过校验并先于 CAS",
+        "test/spec/content/dict-admin/dict-items.int.test.ts > [AC-F1-02t#8] 列表按默认全集/类别/前缀分页且只取已发布值；历史降序精确键过滤，读任一权限无 step-up",
+        "test/spec/content/dict-admin/specs.test.ts > [AC-F1-02t#9] 两份文本规格快照可重现且包含 YAML 全部字段，运行时不读 YAML"
+      ],
+      "expected": [
+        "test/spec/content/dict-admin/dict-items.int.test.ts",
+        "test/spec/content/dict-admin/specs.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "f9d666dfb605902ec5414dc43f4161c5636c560920021cd9c6d23c70a9ca25f6"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "259e233a4105e9ef6b3ca3e3cc5fb7833fad4c2fb6594703330b97224c12d416"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "r1 pass; r2 pass after merging with F1-02s (writer-side version parser renamed parseWritableDictVersion); one S2 at the int32 edge tracked as a follow-up"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (second run after a timed-out first run) reviewed by a fresh Claude subagent: r1 pass (two S2, row lock and banned-word scopes, implemented with unit tests)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "a2ac7c7e4fb252bd5c6a1f2adfc9550f8a1c4a94",
+    "specs": "ca6a54ee924e5e70811000d96f53fe75bae04770"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
