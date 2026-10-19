@@ -76,7 +76,10 @@ it('[AC-F1-02z#3] int32 最大版本后台与公共读取一致，保存和回�
     const db = h.db.withPlugin({
       transformQuery({ node }) {
         if (node.kind === 'InsertQueryNode' || node.kind === 'UpdateQueryNode') {
-          const text = JSON.stringify(node);
+          // Orchestrator mechanical fix: the admin login's UPDATE carries a bigint (totp_last_step).
+          const text = JSON.stringify(node, (_k, v: unknown) =>
+            typeof v === 'bigint' ? v.toString() : v,
+          );
           for (const table of [
             'dict_items',
             'config_items',
