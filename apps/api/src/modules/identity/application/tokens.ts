@@ -80,3 +80,12 @@ export const SUBMIT_REALNAME = Symbol('IDENTITY_SUBMIT_REALNAME');
 export const LABOR_AGREEMENT = Symbol('IDENTITY_LABOR_AGREEMENT');
 /** GET /v1/me/payout-account (payout-account.ts), or null without the database or field cipher. */
 export const PAYOUT_ACCOUNT_READER = Symbol('IDENTITY_PAYOUT_ACCOUNT_READER');
+/**
+ * PUT /v1/me/payout-account (payout-bank-card.ts createPayoutAccountChange), or null without the
+ * database, field cipher or blocklist.
+ */
+export const PAYOUT_ACCOUNT_CHANGE = Symbol('IDENTITY_PAYOUT_ACCOUNT_CHANGE');
+/** The card BIN port (demo table in local / test), or null when no source is assembled. */
+export const CARD_BIN = Symbol('IDENTITY_CARD_BIN');
+/** The bank-card three-element verifier (fake in local / test), or null without a vendor. */
+export const BANK_CARD_VERIFIER = Symbol('IDENTITY_BANK_CARD_VERIFIER');

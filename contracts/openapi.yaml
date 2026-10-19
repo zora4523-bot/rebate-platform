@@ -3686,11 +3686,14 @@ paths:
         - fund
       summary: Bind or change my payout account
       description: |
-        Body by payout_method (withdraw.payout_methods decides which are open): alipay with the
-        logon id and payee_name, bank_card with card number, bank name and payee_name. payee_name
-        and the real name are both normalised before comparing; different → 30307 (BR-WDR-02 ①).
-        A bank card must be a debit card of the user: 12–19 digits with Luhn, else 20001
-        data.fields=[card_no]; three-element verification mismatch → 30307 (⑥). An Alipay logon id
+        Body by payout_method (withdraw.payout_methods decides which are open, else 20001
+        data.fields=[payout_method]): alipay with the logon id and payee_name, bank_card with card
+        number and payee_name (the opening bank comes from the card BIN; a bank_name in the body is
+        ignored). payee_name and the real name are both normalised before comparing; different →
+        30307 (BR-WDR-02 ①). A bank card must be a debit card of the user: 12–19 digits with Luhn,
+        and a card BIN recognised as a debit card, else 20001 data.fields=[card_no];
+        three-element verification mismatch → 30307 (⑥); no card BIN source or verification vendor
+        available → 50301 without reserving the quota. An Alipay logon id
         in phone form that does not normalise is 20001 with data.reason=phone_invalid (BR-WDR-02
         细则). Account held by another user → 30308; blacklisted → 44001. Changes per natural
         month over the limit → 30303 data.reason=payout_account_change_limit (④); the paid
@@ -3701,7 +3704,8 @@ paths:
         within its validity is reused. Resubmitting with the same Idempotency-Key reuses that key's
         verification record (in flight or recheck 40901, match saves, mismatch the original 30307,
         still unknown at the deadline 50401) without a new verification or charge (BR-WDR-02 细则
-        「核验次数上限」). Needs X-Step-Up-Token for action payout_account_change (BR-WDR-02 ③; also
+        「核验次数上限」); that record is reused only for the card it verified, so the same key with
+        another card number is 20901 even when the key has no stored result yet. Needs X-Step-Up-Token for action payout_account_change (BR-WDR-02 ③; also
         on the first binding). An abandoned Idempotency-Key is 20903 at the idempotency check,
         without comparing the body or running the business; a business write that finds it
         abandoned is rolled back with 20903 (04 §5「幂等」). Not realname → 30304; after a blocking
@@ -3712,7 +3716,6 @@ paths:
       x-idempotent: true
       x-step-up: payout_account_change
       x-min-version-gate: true
-      x-implementation: planned
       x-error-codes:
         - 30303
         - 30304
@@ -3721,6 +3724,11 @@ paths:
         - 10003
         - 20903
         - 10405
+        - 20001
+        - 44001
+        - 40901
+        - 50401
+        - 50301
       security:
         - bearerAuth: []
       parameters:
@@ -3754,7 +3762,6 @@ paths:
                 value:
                   payout_method: bank_card
                   card_no: '6222 0000 0000 0009'
-                  bank_name: 示例银行
                   payee_name: 张三
       responses:
         '200':
@@ -13606,10 +13613,11 @@ components:
       required: false
       description: |
         step_up_token from POST /v1/auth/step-up for the operation's x-step-up action (04 §5). Missing,
-        expired or for another action → 10003 (not 20001; that is why the header is optional).
+        empty, expired or for another action → 10003 (not 20001; that is why the header is optional
+        and has no minimum length). A replay of a finished Idempotency-Key never looks at it
+        (BR-WDR-01 细则, BR-ID-08).
       schema:
         type: string
-        minLength: 1
         maxLength: 2048
     TipKeyPath:
       name: tip_key
@@ -17733,7 +17741,6 @@ components:
       required:
         - payout_method
         - card_no
-        - bank_name
         - payee_name
       properties:
         payout_method:
@@ -17749,7 +17756,10 @@ components:
           maxLength: 32
         bank_name:
           type: string
-          description: Opening bank as chosen by the user (04 §6.1).
+          description: |
+            Optional and ignored by the server: the opening bank is taken from the card BIN, the
+            user does not type it (BR-WDR-02 细则「只支持本人名下借记卡」). Accepted so that older
+            clients sending it are not refused.
           minLength: 1
           maxLength: 64
         payee_name:

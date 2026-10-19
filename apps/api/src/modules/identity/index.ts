@@ -10,7 +10,19 @@ export type {
   PayoutAccountServiceOptions,
   PayoutAccountService,
   PayoutAccountConfigPort,
+  SaveBankCardCommand,
+  SaveBankCardResult,
 } from './application/payout-account.ts';
+// B1-13f: the takeover / recheck seam of the paid bank-card verification records, for B1-13g's
+// scheduled task (it only updates the records: no account save, no refund).
+export { createPayoutAccountVerifyAttempts } from './application/payout-account-verify-attempts.ts';
+export type {
+  PayoutAccountVerifyAttempts,
+  PayoutAccountVerifyAttemptsOptions,
+  PayoutVerifyAttemptSubject,
+} from './application/payout-account-verify-attempts.ts';
+export { createBankCardVerifier, createCardBin } from './infra/fake-bank-card-verifier.ts';
+export type { BankCardVerifierPort, CardBinPort } from './ports/bank-card-verifier.ts';
 // Stages ⑧ ⑨ (BR-ID-01 identity level, B1-02za): app.module hands IDENTITY_LEVEL_CHECKS' guard and
 // post-miss check to RiskModule, and assembles the real-name status port.
 export {
