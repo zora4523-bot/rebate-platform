@@ -357,3 +357,89 @@ describe('step-up tiers and permissions (BR-ID-34, 04 §11)', () => {
     expect(page({ items: [], page: 1, page_size: 200, total: 0 })).toBe(true);
   });
 });
+
+describe('admin display name (CT-02u, 04 §3.2 admin_users.display_name)', () => {
+  type Props = {
+    properties: Record<
+      string,
+      { minLength?: number; maxLength?: number; type?: unknown; description?: string }
+    >;
+    required: string[];
+  };
+
+  it.each(['AdminMe', 'AdminAccount'])(
+    '%s has an optional display_name of 1–32 characters, never null',
+    (name) => {
+      const s = schema(name) as Props;
+      expect(s.required).not.toContain('display_name');
+      expect(s.properties.display_name).toMatchObject({
+        type: 'string',
+        minLength: 1,
+        maxLength: 32,
+      });
+      expect(s.properties.display_name!.description).toMatch(/username/);
+    },
+  );
+
+  it('AdminMe validates with display_name omitted or 1–32 characters, not empty, null or 33', () => {
+    const validate = ajv.compile(schema('AdminMe'));
+    const me = {
+      admin_id: 'a',
+      username: 'ops-yi',
+      is_super: false,
+      verify_phone_masked: null,
+      permissions: [],
+    };
+    expect(validate(me)).toBe(true);
+    expect(validate({ ...me, display_name: '客服小林' })).toBe(true);
+    expect(validate({ ...me, display_name: 'x'.repeat(32) })).toBe(true);
+    expect(validate({ ...me, display_name: 'x'.repeat(33) })).toBe(false);
+    expect(validate({ ...me, display_name: '' })).toBe(false);
+    expect(validate({ ...me, display_name: null })).toBe(false);
+    expect((schema('AdminMe') as Props).properties.username!.description).toMatch(
+      /display_name is empty/,
+    );
+  });
+
+  it('AdminAccount validates with display_name omitted or set', () => {
+    const validate = ajv.compile(schema('AdminAccount'));
+    const account = {
+      admin_id: 'a',
+      username: 'ops-yi',
+      is_super: false,
+      status: 'active',
+      totp_bound: true,
+      verify_phone_masked: null,
+      locked_until: null,
+      permissions: [],
+      created_at: '2026-10-19T09:00:00+08:00',
+    };
+    expect(validate(account)).toBe(true);
+    expect(validate({ ...account, display_name: '运营小乙' })).toBe(true);
+    expect(validate({ ...account, display_name: null })).toBe(false);
+  });
+
+  it('the generated types make display_name optional', () => {
+    expectTypeOf<Schema<'AdminMe'>['display_name']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<Schema<'AdminAccount'>['display_name']>().toEqualTypeOf<string | undefined>();
+    // A typed literal without display_name still compiles (the frozen fixtures rely on it).
+    const me: Schema<'AdminMe'> = {
+      admin_id: 'a',
+      username: 'ops-yi',
+      is_super: false,
+      verify_phone_masked: null,
+      permissions: [],
+    };
+    expect('display_name' in me).toBe(false);
+  });
+
+  it.each([
+    ['AdminAuditLogListItem', 'actor_name'],
+    ['AdminAuditLog', 'actor_name'],
+    ['AdminExport', 'created_by_name'],
+  ])('%s.%s says it prefers display_name over the username', (name, field) => {
+    const s = contract.components.schemas[name] as Props | undefined;
+    expect(s, `${name} exists`).toBeDefined();
+    expect(s!.properties[field]!.description).toMatch(/display_name, else the username/);
+  });
+});
