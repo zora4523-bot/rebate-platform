@@ -5,6 +5,7 @@ type: impl
 # 草稿 2026-10-19（W1 线，订单线）。来源：B1-08q 起草时发现 links 表无 lk 列、无发号任务（W1 decision D10-73）；B1-08q 先不含短码反查，开关默认 false 时生产行为与 BR-ATTR-15「未打开的平台直接从 ② 开始匹配」一致。
 # 依据 BR-ATTR-15 lk 定义段（按 SPEC_REF 逐字摘进任务书）；no_rebate 购买不下发 lk；CAP-JD-05 / CAP-PDD-05 验证前开关不打开。迁移号落地时取主干最大号 + 1。
 # 分工：linking / 订单归属 → impl claude、tester codex（D10-15）。
+# 2026-10-19 补 paths（D10-86）：linkByCode 接入 orders 生产装配需改 source-ports.ts 与 app.module.ts（去掉 B1-08q 的 TODO）。
 refs: [BR-ATTR-15]
 refs_hash:
   BR-ATTR-15: fa1574dfc628
@@ -14,6 +15,8 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'apps/api/src/modules/orders/application/source-ports.ts'
+  - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/linking/link-code/**'
 impl: claude
