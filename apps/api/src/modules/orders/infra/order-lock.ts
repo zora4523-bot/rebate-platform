@@ -18,3 +18,18 @@ export async function lockOrderKey(
   const text = orderLockKeyText(platform, subOrderId);
   await sql`select pg_advisory_xact_lock(hashtextextended(${text}, 0))`.execute(trx);
 }
+
+/** B1-10b（BR-ATTR-17、BR-ATTR-19）：同一用户的找回受理串行执行，键文本按 (app_id, user_id)。 */
+export function claimUserLockKeyText(appId: string, userId: string): string {
+  return `orders.claim_user:${appId}:${userId}`;
+}
+
+/** Taken before any count of the claim acceptance is read; released with the transaction. */
+export async function lockClaimUser(
+  trx: Transaction<DB>,
+  appId: string,
+  userId: string,
+): Promise<void> {
+  const text = claimUserLockKeyText(appId, userId);
+  await sql`select pg_advisory_xact_lock(hashtextextended(${text}, 0))`.execute(trx);
+}

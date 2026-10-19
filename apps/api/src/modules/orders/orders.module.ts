@@ -7,6 +7,8 @@
 // orderSyncToken(); identity's and linking's readers come in as factories from app.module.
 // B1-08m: the shared PendingTracks provider (class token) and the /v1/orders/pending-tracks
 // controller, over linking's open-attempt port (factory from app.module, like the link reader).
+// B1-10b: the /v1/orders/claims controller over the claim ports (ORDER_CLAIM_DEPS: the database,
+// REDIS when the entry has it, content's reader); null without a database (both routes 50001).
 import { Module, type DynamicModule } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -17,10 +19,12 @@ import {
   DB,
   EVENT_BUS,
   JOB_QUEUE,
+  REDIS,
   ROOT_LOGGER,
   type Clock,
   type EventBus,
   type QueueRuntime,
+  type RedisHandle,
   type RootLogger,
 } from '../platform/index.ts';
 import {
@@ -34,8 +38,10 @@ import {
   createOrderQueries,
   type OrderLinkReader,
 } from './application/order-queries.ts';
+import type { OrderClaimDeps } from './application/order-claims.ts';
 import { PendingTracks, createPendingTracks } from './application/pending-tracks.ts';
 import { ORDER_SYNC_QUEUE } from './application/sync-scheduler.ts';
+import { ORDER_CLAIM_DEPS, OrderClaimsController } from './http/public/order-claims.controller.ts';
 import { OrdersController } from './http/public/orders.controller.ts';
 import { PendingTracksController } from './http/public/pending-tracks.controller.ts';
 import {
@@ -64,10 +70,35 @@ export class OrdersModule {
   static forRoot(options: OrdersModuleOptions): DynamicModule {
     return {
       module: OrdersModule,
-      // The static /v1/orders/pending-tracks routes are matched before /v1/orders/:order_id by
-      // Fastify's router whatever the order; listing them first keeps that obvious.
-      controllers: [PendingTracksController, OrdersController],
+      // The static /v1/orders/pending-tracks and /v1/orders/claims routes are matched before
+      // /v1/orders/:order_id by Fastify's router whatever the order; listing them first keeps
+      // that obvious.
+      controllers: [PendingTracksController, OrderClaimsController, OrdersController],
       providers: [
+        {
+          provide: ORDER_CLAIM_DEPS,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB, optional: true },
+            { token: REDIS, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<Database>,
+            redis?: RedisHandle,
+          ): OrderClaimDeps | null =>
+            db === undefined
+              ? null
+              : {
+                  db,
+                  clock,
+                  logger,
+                  config: options.config(db, clock),
+                  ...(redis === undefined ? {} : { redis }),
+                },
+        },
         {
           provide: OrderQueries,
           inject: [CLOCK, { token: DB, optional: true }],
