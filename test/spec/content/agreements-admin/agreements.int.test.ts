@@ -509,14 +509,23 @@ for (const type of ['privacy', 'agreement'] as const) {
       const token = await stepUp(f);
       const before = await snapshot(h, f.appId);
       const logStart = f.lines.length;
-      await rejected(await publish(f, type, input(), token), 'publish', 50001);
+      // F1-02za (test-change): the orchestrator ruled (L44, 2026-10-19 22:2x) that a preset version
+      // at or above the new one is a business conflict answering 20902 data.resource=agreement
+      // instead of 50001; either code is accepted so the test holds before and after F1-02z.
+      const sent = await publish(f, type, input(), token);
+      const code = (sent.response.json() as { code: number }).code;
+      expect([50001, 20902]).toContain(code);
+      if (code === 20902) await rejected(sent, 'publish', 20902, { resource: 'agreement' });
+      else await rejected(sent, 'publish', 50001);
       expect(await snapshot(h, f.appId)).toEqual(before);
-      expect(
-        f.lines
-          .slice(logStart)
-          .map((line) => JSON.parse(line) as { level: number })
-          .some((line) => line.level === 50),
-      ).toBe(true);
+      if (code === 50001) {
+        expect(
+          f.lines
+            .slice(logStart)
+            .map((line) => JSON.parse(line) as { level: number })
+            .some((line) => line.level === 50),
+        ).toBe(true);
+      }
     });
   }
 }
