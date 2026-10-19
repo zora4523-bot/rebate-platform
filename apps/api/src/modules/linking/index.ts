@@ -160,3 +160,5 @@ export type {
   OrderSourceLogScope,
   OrderSourceReader,
 } from './infra/order-source-reader.ts';
+export { needsTaobaoReauth } from './application/taobao-reauth-read.ts';
+export type { TaobaoReauthReader, TaobaoReauthScope } from './application/taobao-reauth-read.ts';

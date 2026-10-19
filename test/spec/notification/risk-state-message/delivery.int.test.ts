@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { createTestDatabase } from '@couli/db/testing';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createRiskStateMessageHandler } from '../../../../apps/api/src/modules/notification/application/risk-state-message.ts';
+import { needsTaobaoReauth } from '../../../../apps/api/src/modules/linking/index.ts';
 import { failInsert, fixture, openSuite, type Suite } from './db-kit.ts';
 import { NOW, variants } from './fixtures.ts';
 
@@ -70,7 +71,10 @@ it('[AC-B1-12g#9] 同事件顺序重复投递不加信、不改原文案与时�
 it('[AC-B1-12g#10] 并发事务投递同事件，PG 唯一约束最终只留一信一日志，所有投递成功', async () => {
   const f = await fixture(suite);
   const received = f.event();
-  const handler = createRiskStateMessageHandler({ clock: f.clock });
+  const handler = createRiskStateMessageHandler({
+    clock: f.clock,
+    taobaoReauthReader: needsTaobaoReauth,
+  });
   // Bypass processed_events on purpose: notify_logs must be a second, independent boundary.
   const outcomes = await Promise.allSettled(
     Array.from({ length: 6 }, () => f.db.transaction().execute((trx) => handler(received, trx))),
@@ -88,7 +92,10 @@ it('[AC-B1-12g#11] 已存在 notify_logs 去重键时不新增站内信，不依
   const received = f.event();
   await f.log(received);
   const before = await f.rows();
-  const handler = createRiskStateMessageHandler({ clock: f.clock });
+  const handler = createRiskStateMessageHandler({
+    clock: f.clock,
+    taobaoReauthReader: needsTaobaoReauth,
+  });
   await f.db.transaction().execute(async (trx) => {
     await handler(received, trx);
     // A swallowed 23505 must not leave an aborted transaction that silently rolls back.
@@ -127,7 +134,10 @@ it('[AC-B1-12g#13] 相同事件编号在不同 app_id 各自去重与投递', as
 it('[AC-B1-12g#14] 两表使用调用方事务：提交前对外不可见，外层失败后两表皆空，可重投', async () => {
   const f = await fixture(suite);
   const received = f.event();
-  const handler = createRiskStateMessageHandler({ clock: f.clock });
+  const handler = createRiskStateMessageHandler({
+    clock: f.clock,
+    taobaoReauthReader: needsTaobaoReauth,
+  });
   const abort = new Error('fixture-rollback');
   await expect(
     f.db.transaction().execute(async (trx) => {
@@ -151,7 +161,10 @@ it.each(['inbox_messages', 'notify_logs'] as const)(
   async (table) => {
     const f = await fixture(suite);
     const received = f.event();
-    const handler = createRiskStateMessageHandler({ clock: f.clock });
+    const handler = createRiskStateMessageHandler({
+      clock: f.clock,
+      taobaoReauthReader: needsTaobaoReauth,
+    });
     const fault = failInsert(table);
     await expect(
       f.db.transaction().execute((trx) => handler(received, trx.withPlugin(fault.plugin))),

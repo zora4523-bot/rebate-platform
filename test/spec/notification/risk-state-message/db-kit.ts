@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { PostgresQueryCompiler, type Insertable, type Kysely } from 'kysely';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
+import { needsTaobaoReauth } from '../../../../apps/api/src/modules/linking/index.ts';
 import {
   createRiskStateMessageHandler,
   type RiskStateMessagePayload,
@@ -71,7 +72,10 @@ export async function fixture(suite: Suite) {
     },
     // Create the SUT in the test body, not a setup hook: every case fails on the skeleton.
     async deliver(received: ReceivedEvent) {
-      const handler = createRiskStateMessageHandler({ clock });
+      const handler = createRiskStateMessageHandler({
+        clock,
+        taobaoReauthReader: needsTaobaoReauth,
+      });
       await suite.db.transaction().execute((trx) => handler(received, trx));
     },
     async rows(db: Kysely<DB> = suite.db) {

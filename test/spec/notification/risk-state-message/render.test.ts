@@ -3,6 +3,51 @@ import { renderRiskStateMessage } from '../../../../apps/api/src/modules/notific
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import { NOW, payload, variants } from './fixtures.ts';
 
+it.each([
+  [true, '你的账号限制已解除。购物前需重新完成淘宝授权。'],
+  [false, '你的账号限制已解除。'],
+] as const)(
+  '[AC-B1-12g#30] 解封时淘宝待授权为 %s，正文逐字匹配且无多余字符',
+  (needsReauth, body) => {
+    expect(
+      renderRiskStateMessage(
+        payload({ from: 'banned', to: 'normal', reason_category: null }),
+        null,
+        new FixedClock(NOW),
+        needsReauth,
+      ),
+    ).toStrictEqual({
+      code: 'RISK_STATE_CHANGED',
+      variant: 'unbanned',
+      category: 'service',
+      channels: ['inbox'],
+      title: '账户通知',
+      body,
+      route: null,
+    });
+  },
+);
+
+it.each([
+  [true, '解封通知：购物前需重新完成淘宝授权。再次提醒：购物前需重新完成淘宝授权。'],
+  [false, '解封通知：再次提醒：'],
+] as const)(
+  '[AC-B1-12g#31] 解封覆盖正文的重复 need_reauth 均替换，待授权为 %s',
+  (needsReauth, body) => {
+    expect(
+      renderRiskStateMessage(
+        payload({ from: 'banned', to: 'normal', reason_category: null }),
+        {
+          title_override: '解封通知',
+          body_override: '解封通知：{need_reauth}再次提醒：{need_reauth}',
+        },
+        new FixedClock(NOW),
+        needsReauth,
+      ),
+    ).toMatchObject({ title: '解封通知', body });
+  },
+);
+
 it.each(variants)(
   '[AC-B1-12g#1] $variant 使用 BR-TEXT-23 逐字文案、服务类别、仅站内信和空路由',
   (row) => {

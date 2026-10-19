@@ -41,7 +41,7 @@ export const variants = [
     from: 'banned',
     to: 'normal',
     frozen_until: null,
-    body: '你的账号限制已解除，购物前需重新完成平台授权。',
+    body: '你的账号限制已解除。',
   },
 ] as const;
 

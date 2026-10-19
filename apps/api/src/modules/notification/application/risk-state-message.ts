@@ -1,4 +1,5 @@
 import type { RiskReasonCategory, RiskState } from '@couli/contracts-ts';
+import type { TaobaoReauthReader } from '../../linking/index.ts';
 import type { Clock, EventHandler, JobPayload } from '../../platform/index.ts';
 
 /** B1-03y event snapshot; never read user_risk_state to reconstruct this payload. */
@@ -28,15 +29,21 @@ export interface RiskStateMessage {
   readonly route: null;
 }
 
-/** BR-TEXT-23 defaults; format expiry against clock in Asia/Shanghai; unmatched transitions return null. */
+/**
+ * BR-TEXT-23 defaults; format expiry against clock in Asia/Shanghai; unmatched transitions return null.
+ * unbanned: 你的账号限制已解除。{need_reauth}
+ * need_reauth is 购物前需重新完成淘宝授权。 when needsTaobaoReauth is true, otherwise empty.
+ */
 export function renderRiskStateMessage(
   payload: RiskStateMessagePayload,
   override: RiskMessageOverride | null,
   clock: Clock,
+  needsTaobaoReauth?: boolean,
 ): RiskStateMessage | null {
   void payload;
   void override;
   void clock;
+  void needsTaobaoReauth;
   throw new Error('NotImplemented: renderRiskStateMessage');
 }
 
@@ -46,7 +53,11 @@ export function renderRiskStateMessage(
  * resolves successfully without a new inbox row and leaves the transaction usable.
  * All delivery timestamps come from clock, never occurredAt or database time.
  */
-export function createRiskStateMessageHandler(options: { readonly clock: Clock }): EventHandler {
+export function createRiskStateMessageHandler(options: {
+  readonly clock: Clock;
+  /** Read current Taobao binding on the consumer transaction through linking, for unbanned. */
+  readonly taobaoReauthReader: TaobaoReauthReader;
+}): EventHandler {
   void options;
   throw new Error('NotImplemented: createRiskStateMessageHandler');
 }
