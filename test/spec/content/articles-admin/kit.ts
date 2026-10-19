@@ -18,18 +18,6 @@ import {
   type Response,
 } from './harness.ts';
 
-// 只记录调用，仍执行生成的状态表，防止状态更新绕过 transition()。
-vi.mock(
-  '../../../../packages/domain/src/state-machines/article-version.gen.ts',
-  async (original) => {
-    const actual =
-      await original<
-        typeof import('../../../../packages/domain/src/state-machines/article-version.gen.ts')
-      >();
-    return { ...actual, transitionArticleVersion: vi.fn(actual.transitionArticleVersion) };
-  },
-);
-
 // specs/link-patterns.yaml 当前为空：仅替换只读数据来源为明确的演示表，业务校验保持真实。
 vi.mock('../../../../apps/api/src/modules/platform/specs/link-patterns.ts', () => ({
   getLinkPatterns: () => ({

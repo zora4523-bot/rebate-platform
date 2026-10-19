@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { useHarness } from './harness.ts';
 import {
   body,
@@ -16,6 +16,8 @@ import {
   snapshot,
   success,
 } from './kit.ts';
+
+vi.mock('../../../../packages/domain/src/state-machines/article-version.gen.ts', { spy: true });
 
 const h = useHarness(() => import('@couli/db/testing'));
 const HREF = 'body.content[0].content[0].marks[0].attrs.href';
@@ -226,6 +228,61 @@ it('[AC-F1-02w#21] 媒体图只允许配置的主机，外站图片拒绝且路�
   );
   expect(await snapshot(h, f.appId)).toEqual(before);
 });
+
+it('[AC-F1-02w#35] 未配置媒体地址时图片按空主机清单拒绝，纯文字仍可保存', async () => {
+  const env = { ...h.env };
+  delete env.MEDIA_PUBLIC_BASE_URL;
+  const f = await setup({ ...h, env });
+  const text = body('使用说明');
+  expect((await create(f, newId(), { body: text })).versions[0]!.body).toBe(text);
+  const before = await snapshot(h, f.appId);
+  const id = newId();
+  f.clock.advanceMs(1000);
+  await fields(
+    await send(f, 'create', id, {
+      article_id: id,
+      category: 'help',
+      ...draft({
+        body: JSON.stringify({
+          type: 'doc',
+          content: [
+            { type: 'image', attrs: { src: 'https://media.example.test/assets/image.png' } },
+          ],
+        }),
+      }),
+    }),
+    ['body', 'body.content[0].attrs.src'],
+  );
+  expect(await snapshot(h, f.appId)).toEqual(before);
+});
+
+it.each(['draft', 'offline'] as const)(
+  '[AC-F1-02w#36] 发布 %s 旧草稿或已下线版本时，状态错误先于正文校验',
+  async (status) => {
+    const f = await setup(h);
+    const id = newId();
+    await seedArticle(h, f, id, {
+      status,
+      body: body('详情', 'https://union.example.test/item'),
+      published_at: status === 'offline' ? f.clock.now() : null,
+    });
+    // 旧草稿正文非法，最新草稿合法；已下线分支则以 v1 为最新行。
+    if (status === 'draft') {
+      f.clock.advanceMs(1000);
+      await seedArticle(h, f, id, { version: 2, row_version: 1 });
+    }
+    const before = await snapshot(h, f.appId);
+    f.clock.advanceMs(1000);
+    await fields(
+      await send(f, 'publish', id, {
+        version: 1,
+        expected_row_version: status === 'draft' ? 1 : 0,
+      }),
+      ['version'],
+    );
+    expect(await snapshot(h, f.appId)).toEqual(before);
+  },
+);
 
 it('[AC-F1-02w#22] help_links 豁免只随本 app 当前配置指向本文生效，变更后发布重校验', async () => {
   const f = await setup(h);

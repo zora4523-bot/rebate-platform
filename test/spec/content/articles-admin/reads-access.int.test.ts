@@ -22,6 +22,8 @@ import {
   success,
 } from './kit.ts';
 
+vi.mock('../../../../packages/domain/src/state-machines/article-version.gen.ts', { spy: true });
+
 const h = useHarness(() => import('@couli/db/testing'));
 
 it('[AC-F1-02w#34] 两个 GET 用 content.article 和 readOnly 守卫', async () => {

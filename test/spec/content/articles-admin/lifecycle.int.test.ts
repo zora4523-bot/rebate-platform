@@ -23,6 +23,9 @@ import {
   success,
 } from './kit.ts';
 
+// 在本文件提升注册，静态导入和应用拿到同一个 spy；仍执行真实状态迁移。
+vi.mock('../../../../packages/domain/src/state-machines/article-version.gen.ts', { spy: true });
+
 const h = useHarness(() => import('@couli/db/testing'));
 
 it('[AC-F1-02w#33] 新建与存稿走 A1、发布走 A2、整篇下线每个 published 都走 A3', async () => {
