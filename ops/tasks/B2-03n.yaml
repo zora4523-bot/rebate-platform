@@ -18,5 +18,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/commission/quoter/live-only/**'
-status: todo
-pr: null
+status: done
+pr: 727

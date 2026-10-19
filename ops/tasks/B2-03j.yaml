@@ -23,5 +23,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/domain/state-machines/commission-rule-version/**'
-status: todo
-pr: null
+status: done
+pr: 697

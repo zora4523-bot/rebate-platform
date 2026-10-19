@@ -1,0 +1,24 @@
+id: B2-02i
+repo: rebate-platform
+title: ledger 红冲命令 reverse(trx, { appId, originalUniqKey })：整张红冲写 {原键}:REVERSE，分录逐条取反、沿用原 ledger_type / sub_type，经 post 记账；重放返回同一结果；只能红冲一次
+type: impl
+# 2026-10-19 资金线（ledger-plan §2.2 第二段；前置 B2-02f 记账服务已合并 #699）。依据 BR-FUND-16（红冲键 {原 uniq_key}:REVERSE、整张、只能一次）、BR-FUND-15（沿用原类型）、
+# BR-FUND-10（红冲导致的负余额只放行其所列情形，经 mayGoNegative）。只在调用方事务内，先 lockBalances 再 post；原凭证不存在 / 本身是红冲 / 已红冲过 → 明确错误或返回已有结果。
+# Codex 写规则测试（连库），Claude 过审，Opus 实现，Codex money 评审。
+refs: [BR-FUND-10, BR-FUND-15, BR-FUND-16]
+refs_hash:
+  BR-FUND-10: dc95dab8ed60
+  BR-FUND-15: 79a5dd94f056
+  BR-FUND-16: 077f6d412d5a
+deps: [B2-02f]
+paths:
+  - 'apps/api/src/modules/ledger/**'
+test_paths:
+  - 'test/spec/ledger/reverse/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/reverse/**'
+status: todo
+pr: null

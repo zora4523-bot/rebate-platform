@@ -1,0 +1,22 @@
+id: B2-02j
+repo: rebate-platform
+title: ledger 日终校验运行器：对会计日 D−1 写 daily_balances（分录口径，可重跑覆盖），逐个执行 db/invariants/ledger/*.sql（SET LOCAL couli.check_date），汇总差异（账户级 / 全局）与检查行数并告警
+type: impl
+# 2026-10-19 资金线（ledger-plan §2.2；D9 A、D18 A、decision 20：daily_balances 存分录口径，期末 = 期初 + 借 − 贷；前置 B2-02d / B2-02e / B2-02f 已合并）。依据 BR-FUND-19。
+# 只产出结果与告警：0 行记「空检」告警但不触发全局处理（D18）；冻结提现、关 settle.auto.enabled、差错单写 TODO(规划/11 §4.2) … blocked on B2-04 / B2-05 表。时间只读注入 Clock，会计日用 @couli/domain accountingDate。
+# 定时触发（01:00 +08:00）的 worker 接线若需改 worker 装配，在输出 outside / followups 说明；本任务交付运行器端口与单次运行。Codex 写测试（连库），Claude 过审，Opus 实现，Codex money 评审。
+refs: [BR-FUND-19]
+refs_hash:
+  BR-FUND-19: 8d592a87d85c
+deps: [B2-02d, B2-02e, B2-02f]
+paths:
+  - 'apps/api/src/modules/ledger/**'
+test_paths:
+  - 'test/spec/ledger/daily-check/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/daily-check/**'
+status: todo
+pr: null

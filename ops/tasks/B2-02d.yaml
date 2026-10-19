@@ -21,5 +21,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/db/ledger/daily/**'
-status: todo
-pr: null
+status: done
+pr: 650
