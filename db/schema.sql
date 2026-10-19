@@ -2165,6 +2165,19 @@ CREATE TABLE app.inbox_messages (
 
 
 --
+-- Name: landing_registrations; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.landing_registrations (
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    ip_hmac text NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    CONSTRAINT landing_registrations_ip_hmac_check CHECK ((ip_hmac ~ '^[0-9a-f]{64}$'::text))
+);
+
+
+--
 -- Name: ledger_accounts; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4653,6 +4666,14 @@ ALTER TABLE ONLY app.inbox_messages
 
 
 --
+-- Name: landing_registrations landing_registrations_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.landing_registrations
+    ADD CONSTRAINT landing_registrations_pkey PRIMARY KEY (app_id, user_id);
+
+
+--
 -- Name: ledger_accounts ledger_accounts_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -5825,6 +5846,13 @@ CREATE INDEX favorites_app_id_user_id_created_at_id_idx ON app.favorites USING b
 --
 
 CREATE INDEX inbox_messages_user_created_idx ON app.inbox_messages USING btree (app_id, user_id, created_at, message_id);
+
+
+--
+-- Name: landing_registrations_ip_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX landing_registrations_ip_created_idx ON app.landing_registrations USING btree (app_id, ip_hmac, created_at);
 
 
 --
@@ -7063,6 +7091,14 @@ ALTER TABLE ONLY app.dict_items
 
 ALTER TABLE ONLY app.inbox_messages
     ADD CONSTRAINT inbox_messages_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: landing_registrations landing_registrations_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.landing_registrations
+    ADD CONSTRAINT landing_registrations_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -9283,6 +9319,14 @@ GRANT UPDATE(row_version) ON TABLE app.inbox_messages TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.inbox_messages TO couli_app;
+
+
+--
+-- Name: TABLE landing_registrations; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.landing_registrations TO couli_app;
+GRANT SELECT ON TABLE app.landing_registrations TO couli_readonly;
 
 
 --
