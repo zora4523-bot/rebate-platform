@@ -2506,6 +2506,151 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List export tasks (own tasks, or everyone's with audit.view_all)
+         * @description Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Tasks of the console's app, newest first
+         *     (`created_at` descending, then the server's internal order for the same time), page by page
+         *     (`page`, `page_size` ≤ 200, above that 20001).
+         *     Visibility (enforced by the server, BR-ID-34 细则「后台导出任务」): an account holding
+         *     `audit.view_all` (a super admin holds every point) sees every account's tasks, their
+         *     filters summary and status; an account without it only sees the tasks it created.
+         *     `audit.view_all` only widens this list: downloading and retrying stay limited to the
+         *     creator (GET /admin/v1/exports/{id}/download, POST /admin/v1/exports/{id}/retry).
+         *     Filters combine with AND: `status` (enum export_status), `resource` (enum
+         *     export_resource), `from` (inclusive) and `to` (exclusive) on `created_at`, ISO 8601 times
+         *     with offset (04 §5); `from` later than `to` is 20001 with `data.fields=[from, to]`.
+         *     Rows never carry the download link; status names come from BR-TEXT-25
+         *     admin_dict.export_status. Listing does not write an audit record.
+         */
+        get: operations["adminListExports"];
+        put?: never;
+        /**
+         * Create an export task from a list's filters (asynchronous CSV, masked by default)
+         * @description Permission point `export` (04 §11.1) and, in addition, the permission of the source list
+         *     itself (enum export_resource: `users` needs `user.list`; `audit_logs` needs no more than
+         *     being signed in); lacking either is 10403 with `data.reason=admin_permission_denied`. The
+         *     task is generated asynchronously as one CSV file in a private object-storage bucket
+         *     (BR-ID-34 细则「后台导出任务」); the response is 202 with the new task in status pending.
+         *     Each call creates a new task (no Idempotency-Key, 04 §6.6).
+         *     `filters` has the same shape as the query parameters of the source list (paging excluded)
+         *     and is judged like them: `users` takes `risk_state` (GET /admin/v1/users); `audit_logs`
+         *     takes `actor_id`, `target_type`, `target_id`, `permission`, `from`, `to` (GET
+         *     /admin/v1/audit-logs; `from` later than `to` is 20001 with `data.fields=[from, to]`, as on
+         *     the list). The file holds the rows the source list would
+         *     show for these filters to the creator, with the list's columns. An `audit_logs` export
+         *     applies the same own-records rule as the list (04 §11.1 `audit.view_all`): without
+         *     `audit.view_all` the server forces `actor_id` to the creator, and another account's
+         *     `actor_id` gives an empty file (status done, `row_count=0`), not an error.
+         *     Masking: by default every export is masked like its source list (the phone number 3 + 4,
+         *     BR-ID-33) and the task has `masked=true`. Only a `users` export may ask for the full values
+         *     with `unmasked: true`; then the creator must hold `pii.reveal_phone` (the users list's only
+         *     sensitive column; otherwise 10403), send a valid totp-tier `X-Step-Up-Token` (the tier of
+         *     `pii.reveal_phone`; missing, expired or lower → 10003 with `data.tier=totp`) and give
+         *     `reason` (1–200 characters; missing → 20001 with `data.fields=[reason]`). `reason` without
+         *     `unmasked: true` is 20001 with `data.fields=[reason]`; an `audit_logs` request takes
+         *     neither field (audit values are stored masked) and either one is 20001. Without
+         *     `unmasked: true` no step-up token is needed and none is checked.
+         *     Audit (BR-ID-34): creating writes an audit record (action export_create: task id, resource,
+         *     filters, masked). An unmasked task writes its own audit record as well (action
+         *     export_unmasked: task id, resource, reason and, once generated, the row count; never a
+         *     value).
+         *     Limits are configuration keys whose default values the implementation sets:
+         *     `admin.export.max_rows` (rows per file; a task with more rows fails with a failure_reason
+         *     saying so, narrow the filters) and `admin.export.max_running_per_admin` (tasks of one
+         *     creator generated at the same time; the rest stay pending until a slot frees up).
+         *     Lifecycle (enum export_status): pending → running → done or failed; done → expired 24
+         *     hours after the file was generated (BR-ID-30 ⑨, the object-storage lifecycle rule deletes
+         *     the file); pending or running → cancelled when the creator's account is disabled (with an
+         *     audit record); failed → pending by POST /admin/v1/exports/{id}/retry. There is no cancel
+         *     operation.
+         */
+        post: operations["adminCreateExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/exports/{id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a short-lived signed link to the file of one's own finished export (audited)
+         * @description Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Only the creator of the task can download it, even
+         *     with `audit.view_all` (BR-ID-34 细则「后台导出任务」). Every call is authorized again and
+         *     signs a new link; no long-lived link is issued. The server also checks that the creator
+         *     still holds the permission of the source list (`users` → `user.list`) and, for an unmasked
+         *     file (`masked=false`), still holds the pii point it was made under (`pii.reveal_phone`).
+         *     Another account's task, an unknown id, a task of another app, and a creator who no longer
+         *     holds those points are all 20001 with `data.fields=[id]` (no probing).
+         *     Only a task in status done whose `expires_at` has not passed can be downloaded; any other
+         *     status is 30417 with `data.status` (pending, running, failed, expired, cancelled; a done
+         *     task past `expires_at` answers expired even before the server has set the status).
+         *     The link `url` is valid until `url_expires_at` = min(5 minutes from now, the task's
+         *     `expires_at`), so a disabled or demoted creator loses access within minutes.
+         *     Every call that returns a link writes its own audit record (action export_download: task
+         *     id, resource, masked; never the link) before the response is sent. The response carries
+         *     `Cache-Control: no-store`.
+         */
+        get: operations["adminDownloadExport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/exports/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry one's own failed export task
+         * @description Permission point `export` (04 §11.1); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Only the creator of the task can retry it, even with
+         *     `audit.view_all`: another account's task, an unknown id or a task of another app is 20001
+         *     with `data.fields=[id]` (no probing; BR-ID-34 细则「后台导出任务」).
+         *     Only a failed task can be retried; any other status is 30417 with `data.status` (pending,
+         *     running, done, expired, cancelled; the same code as a download in the wrong status).
+         *     The checks of creating are made again on the caller's current points: the permission of
+         *     the source list (`users` → `user.list`) and, for an unmasked task (`masked=false`),
+         *     `pii.reveal_phone`, both 10403 when lacking. An unmasked task also needs a new totp-tier
+         *     `X-Step-Up-Token` (missing, expired or lower → 10003 with `data.tier=totp`) and a new
+         *     `reason` (1–200 characters; missing → 20001 with `data.fields=[reason]`): every
+         *     generation of a file with full values is verified anew. A masked task takes an empty body;
+         *     `reason` there is 20001 with `data.fields=[reason]` and no step-up token is checked.
+         *     The task keeps its id, resource, filters and masked flag and goes back to pending
+         *     (`progress`, `failure_reason` cleared); the response is the task as it is now. Retrying
+         *     writes an audit record (action export_retry: task id, resource, masked), and an unmasked
+         *     task its own record with the new reason (action export_unmasked). No Idempotency-Key
+         *     (04 §6.6): a second call while the task is pending again is 30417.
+         */
+        post: operations["adminRetryExport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/users": {
         parameters: {
             query?: never;
@@ -7483,6 +7628,166 @@ export interface components {
             data: components["schemas"]["AdminAuditLog"];
             trace_id: components["schemas"]["TraceId"];
         };
+        /**
+         * @description Opaque identifier of an export task (04 §5, ids are strings). It is not the database
+         *     primary key (ADR-0001: internal auto-increment keys are never exposed); clients must not
+         *     parse it, compare it for order or derive anything from it. Generated by the server and
+         *     stable for the life of the task, retries included; how it is generated is up to the
+         *     implementation.
+         */
+        AdminExportId: string;
+        /**
+         * @description Status of an export task (enum export_status; BR-ID-34 细则「后台导出任务」; names from
+         *     BR-TEXT-25 admin_dict.export_status). pending → running → done or failed; done → expired
+         *     24 hours after the file was generated; pending or running → cancelled when the creator's
+         *     account is disabled; failed → pending by a retry.
+         * @enum {string}
+         */
+        AdminExportStatus: "pending" | "running" | "done" | "failed" | "expired" | "cancelled";
+        /**
+         * @description Source list of an export task (enum export_resource): users = GET /admin/v1/users
+         *     (needs user.list), audit_logs = GET /admin/v1/audit-logs (signed in is enough; own
+         *     records only without audit.view_all).
+         * @enum {string}
+         */
+        AdminExportResource: "users" | "audit_logs";
+        /** @description Filters of a users export, the query parameters of GET /admin/v1/users without paging. */
+        AdminExportUserFilters: {
+            risk_state?: components["schemas"]["AdminUserRiskStateCode"];
+        };
+        /**
+         * @description Filters of an audit_logs export, the query parameters of GET /admin/v1/audit-logs without
+         *     paging, judged the same way (without audit.view_all actor_id is forced to the creator).
+         */
+        AdminExportAuditLogFilters: {
+            actor_id?: components["schemas"]["Id"];
+            target_type?: string;
+            target_id?: string;
+            permission?: components["schemas"]["AdminPermissionKey"];
+            /**
+             * Format: date-time
+             * @description Earliest record time, inclusive.
+             */
+            from?: string;
+            /**
+             * Format: date-time
+             * @description Latest record time, exclusive.
+             */
+            to?: string;
+        };
+        /**
+         * @description Export of the users list. unmasked true asks for the full phone numbers (pii.reveal_phone,
+         *     totp step-up and reason required); reason is only accepted together with unmasked true.
+         */
+        AdminExportCreateUsersRequest: {
+            /** @enum {string} */
+            resource: "users";
+            filters: components["schemas"]["AdminExportUserFilters"];
+            /**
+             * @description true = full values instead of the masked ones; absent or false = masked.
+             * @default false
+             */
+            unmasked?: boolean;
+            reason?: components["schemas"]["AdminUserReason"];
+        };
+        /** @description Export of the audit log; always masked (audit values are stored masked), no reason. */
+        AdminExportCreateAuditLogsRequest: {
+            /** @enum {string} */
+            resource: "audit_logs";
+            filters: components["schemas"]["AdminExportAuditLogFilters"];
+        };
+        /**
+         * @description One branch per source list (enum export_resource), told apart by `resource`; `filters`
+         *     follows that list's query parameters.
+         */
+        AdminExportCreateRequest: components["schemas"]["AdminExportCreateUsersRequest"] | components["schemas"]["AdminExportCreateAuditLogsRequest"];
+        /**
+         * @description Empty for a masked task. For an unmasked task (masked false) reason is required, with a
+         *     new totp-tier X-Step-Up-Token; for a masked task reason is 20001.
+         */
+        AdminExportRetryRequest: {
+            reason?: components["schemas"]["AdminUserReason"];
+        };
+        /**
+         * @description An export task (04 §6.6 exports; design/specs/admin-ledger.md 导出记录). Fields that only
+         *     apply to some statuses are null otherwise.
+         */
+        AdminExport: {
+            id: components["schemas"]["AdminExportId"];
+            resource: components["schemas"]["AdminExportResource"];
+            /** @description Readable summary of the filters, written by the server (Chinese, for display only). */
+            filters_summary: string;
+            /** @description true = the file holds masked values (the default); false = full values (pii step-up at creation). */
+            masked: boolean;
+            created_by: components["schemas"]["Id"];
+            /** @description Current username of the creator; null when it cannot be read. */
+            created_by_name?: string | null;
+            /**
+             * Format: date-time
+             * @description Time the task was created.
+             */
+            created_at: string;
+            status: components["schemas"]["AdminExportStatus"];
+            /**
+             * Format: int32
+             * @description Percentage generated while running; null in every other status.
+             */
+            progress: number | null;
+            /** @description Short reason written by the server when failed (such as the row limit); null otherwise. */
+            failure_reason: string | null;
+            /** @description Name of the CSV file when done or expired; null otherwise. */
+            file_name: string | null;
+            /**
+             * Format: int32
+             * @description Data rows in the file when done or expired; null otherwise.
+             */
+            row_count: number | null;
+            /**
+             * Format: date-time
+             * @description End of the download period (24 hours after the file was generated, BR-ID-30 ⑨) when
+             *     done or expired; null otherwise.
+             */
+            expires_at: string | null;
+        };
+        AdminExportResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminExport"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminExportPage: {
+            items: components["schemas"]["AdminExport"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminExportPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminExportPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminExportDownload: {
+            /**
+             * Format: uri
+             * @description Signed link to the CSV file in the private bucket; valid until url_expires_at.
+             */
+            url: string;
+            /**
+             * Format: date-time
+             * @description min(5 minutes after signing, the task's expires_at).
+             */
+            url_expires_at: string;
+        };
+        AdminExportDownloadResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminExportDownload"];
+            trace_id: components["schemas"]["TraceId"];
+        };
         AdminUserPage: {
             items: components["schemas"]["AdminUserListItem"][];
             /** Format: int32 */
@@ -7928,6 +8233,12 @@ export interface components {
         AdminIdPath: components["schemas"]["Id"];
         /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
         AdminUserIdPath: components["schemas"]["Id"];
+        /**
+         * @description opaque id of an export task (as listed); unknown, of another app, created by another
+         *     account, or (for a download) whose creator no longer holds the needed points → 20001 with
+         *     data.fields=[id].
+         */
+        AdminExportIdPath: components["schemas"]["AdminExportId"];
         /**
          * @description Platform of the user's union binding (enum platform). Only platforms with user
          *     authorization have bindings (BR-ID-17); another platform, such as jd, → 20001 with
@@ -13985,6 +14296,315 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListExports: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only tasks in this status (enum export_status). */
+                status?: components["schemas"]["AdminExportStatus"];
+                /** @description Only tasks of this source list (enum export_resource). */
+                resource?: components["schemas"]["AdminExportResource"];
+                /** @description Earliest creation time, inclusive (ISO 8601 with offset). */
+                from?: string;
+                /** @description Latest creation time, exclusive (ISO 8601 with offset). */
+                to?: string;
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of export tasks, newest first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "id": "exp_Wb6Hn2Lc9Pq4Sv8T",
+                     *             "resource": "users",
+                     *             "filters_summary": "风控状态：全部",
+                     *             "masked": true,
+                     *             "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "created_by_name": "ops01",
+                     *             "created_at": "2026-10-19T09:40:00+08:00",
+                     *             "status": "running",
+                     *             "progress": 45,
+                     *             "failure_reason": null,
+                     *             "file_name": null,
+                     *             "row_count": null,
+                     *             "expires_at": null
+                     *           },
+                     *           {
+                     *             "id": "exp_Gt5Mj8Dr1Vk7Yp3E",
+                     *             "resource": "users",
+                     *             "filters_summary": "风控状态：冻结",
+                     *             "masked": true,
+                     *             "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "created_by_name": "ops01",
+                     *             "created_at": "2026-10-19T09:20:00+08:00",
+                     *             "status": "done",
+                     *             "progress": null,
+                     *             "failure_reason": null,
+                     *             "file_name": "users-20261019-0920.csv",
+                     *             "row_count": 1000,
+                     *             "expires_at": "2026-10-20T09:21:30+08:00"
+                     *           },
+                     *           {
+                     *             "id": "exp_Ra4Fz9Ux2Nh6Qc1B",
+                     *             "resource": "audit_logs",
+                     *             "filters_summary": "时间：2026-10-18 00:00 至 2026-10-19 00:00",
+                     *             "masked": true,
+                     *             "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b02",
+                     *             "created_by_name": null,
+                     *             "created_at": "2026-10-19T08:00:00+08:00",
+                     *             "status": "failed",
+                     *             "progress": null,
+                     *             "failure_reason": "生成超时，请重试",
+                     *             "file_name": null,
+                     *             "row_count": null,
+                     *             "expires_at": null
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 3
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminExportPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCreateExport: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminExportCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The task was created and waits to be generated (status pending). */
+            202: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "id": "exp_Kd3Qw8Rt5Ym1Zx7N",
+                     *         "resource": "users",
+                     *         "filters_summary": "风控状态：冻结",
+                     *         "masked": true,
+                     *         "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "created_by_name": "ops01",
+                     *         "created_at": "2026-10-19T10:00:00+08:00",
+                     *         "status": "pending",
+                     *         "progress": null,
+                     *         "failure_reason": null,
+                     *         "file_name": null,
+                     *         "row_count": null,
+                     *         "expires_at": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminExportResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description No task created (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminDownloadExport: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description opaque id of an export task (as listed); unknown, of another app, created by another
+                 *     account, or (for a download) whose creator no longer holds the needed points → 20001 with
+                 *     data.fields=[id].
+                 */
+                id: components["parameters"]["AdminExportIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A freshly signed link to the CSV file. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    /** @description Always no-store; the signed link is not cached by any proxy or the browser. */
+                    "Cache-Control": "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "url": "https://exports.example.com/users-20261019-0920.csv?expires=1760840700&sig=demo",
+                     *         "url_expires_at": "2026-10-19T10:25:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminExportDownloadResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description No link (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRetryExport: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /**
+                 * @description opaque id of an export task (as listed); unknown, of another app, created by another
+                 *     account, or (for a download) whose creator no longer holds the needed points → 20001 with
+                 *     data.fields=[id].
+                 */
+                id: components["parameters"]["AdminExportIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminExportRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description The task, back in status pending. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "id": "exp_Ra4Fz9Ux2Nh6Qc1B",
+                     *         "resource": "audit_logs",
+                     *         "filters_summary": "时间：2026-10-18 00:00 至 2026-10-19 00:00",
+                     *         "masked": true,
+                     *         "created_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b02",
+                     *         "created_by_name": "ops02",
+                     *         "created_at": "2026-10-19T08:00:00+08:00",
+                     *         "status": "pending",
+                     *         "progress": null,
+                     *         "failure_reason": null,
+                     *         "file_name": null,
+                     *         "row_count": null,
+                     *         "expires_at": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminExportResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not retried (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

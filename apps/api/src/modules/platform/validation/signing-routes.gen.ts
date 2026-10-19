@@ -463,6 +463,26 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/exports",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/exports",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/exports/:id/download",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/exports/:id/retry",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/users",
     "signed": false
   },

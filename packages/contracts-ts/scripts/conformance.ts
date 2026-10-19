@@ -71,6 +71,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminDashboardTodoKey: 'admin_dashboard_todo_key',
   AdminPayoutChannelCode: 'payout_method',
   AdminSearchHitType: 'admin_search_hit_type',
+  AdminExportStatus: 'export_status',
+  AdminExportResource: 'export_resource',
 };
 
 /**
@@ -181,6 +183,9 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   'RecordConsentRequest/properties/channel': 'consent_channel',
   // blocked_request is registered in the admin console only (04 §3.2 appeals, §6.1).
   AppealTargetType: 'appeal_target_type',
+  // One request branch per export source (CT-24k): each fixes its own resource.
+  'AdminExportCreateUsersRequest/properties/resource': 'export_resource',
+  'AdminExportCreateAuditLogsRequest/properties/resource': 'export_resource',
 };
 
 function isObj(v: unknown): v is Obj {
@@ -455,8 +460,15 @@ const APP_ONLY_PARAMETERS = [
 ];
 
 /**
+ * /admin/v1 operations that answer 202 instead of 200: they accept an asynchronous job and
+ * return it (CT-24k export tasks). Every other admin operation answers 200.
+ */
+export const ADMIN_ACCEPTED_OPERATIONS: readonly string[] = ['POST /admin/v1/exports'];
+
+/**
  * /admin/v1 operations (CT-02f): no app headers, signature, version gate or session scopes;
- * 429 → TooManyRequests; x-error-codes are live codes; the 200 response has an example.
+ * 429 → TooManyRequests; x-error-codes are live codes; the success response (200, or 202 for
+ * ADMIN_ACCEPTED_OPERATIONS) has an example.
  */
 function checkAdminOperation(
   doc: Obj,
@@ -489,10 +501,16 @@ function checkAdminOperation(
       }
     }
   }
-  const media = responseContent(doc, at(op, 'responses/200'));
+  const accepted = ADMIN_ACCEPTED_OPERATIONS.includes(where);
+  const success = accepted ? '202' : '200';
+  const other = accepted ? '200' : '202';
+  if (at(op, `responses/${other}`) !== undefined) {
+    problems.push(`${where}: an admin operation answers ${success}, not ${other}`);
+  }
+  const media = responseContent(doc, at(op, `responses/${success}`));
   const json = media?.['application/json'];
   if (!isObj(json) || (json['example'] === undefined && !isObj(json['examples']))) {
-    problems.push(`${where}: the 200 response needs at least one example`);
+    problems.push(`${where}: the ${success} response needs at least one example`);
   }
 }
 

@@ -78,6 +78,8 @@ tags:
     description: Admin accounts, read-only for now; super admin only (04 §6.6 admins, §11).
   - name: admin-audit
     description: Admin audit log search and record detail; own records only without permission point audit.view_all (04 §6.6 audit-logs, §11.1; F-ADM-03).
+  - name: admin-exports
+    description: Admin export tasks — create from a list's filters (asynchronous CSV, masked by default), list (own tasks, or everyone's with audit.view_all), creator-only short-lived download link and retry of a failed task (permission point export; 01 F-ADM-03, 04 §6.6 exports, §11.1, BR-ID-34).
   - name: admin-users
     description: App users in the admin console — list, lookup, detail, audited reveal, ban / freeze and union binding reset / disable / enable (permission points user.*, pii.*, risk.*, union.binding_*; 04 §6.6, §11; F1-07).
   - name: admin-search
@@ -7097,6 +7099,468 @@ paths:
                   $ref: '#/components/examples/AdminIpNotAllowed'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/exports:
+    post:
+      operationId: adminCreateExport
+      tags:
+        - admin-exports
+      summary: Create an export task from a list's filters (asynchronous CSV, masked by default)
+      description: |
+        Permission point `export` (04 §11.1) and, in addition, the permission of the source list
+        itself (enum export_resource: `users` needs `user.list`; `audit_logs` needs no more than
+        being signed in); lacking either is 10403 with `data.reason=admin_permission_denied`. The
+        task is generated asynchronously as one CSV file in a private object-storage bucket
+        (BR-ID-34 细则「后台导出任务」); the response is 202 with the new task in status pending.
+        Each call creates a new task (no Idempotency-Key, 04 §6.6).
+        `filters` has the same shape as the query parameters of the source list (paging excluded)
+        and is judged like them: `users` takes `risk_state` (GET /admin/v1/users); `audit_logs`
+        takes `actor_id`, `target_type`, `target_id`, `permission`, `from`, `to` (GET
+        /admin/v1/audit-logs; `from` later than `to` is 20001 with `data.fields=[from, to]`, as on
+        the list). The file holds the rows the source list would
+        show for these filters to the creator, with the list's columns. An `audit_logs` export
+        applies the same own-records rule as the list (04 §11.1 `audit.view_all`): without
+        `audit.view_all` the server forces `actor_id` to the creator, and another account's
+        `actor_id` gives an empty file (status done, `row_count=0`), not an error.
+        Masking: by default every export is masked like its source list (the phone number 3 + 4,
+        BR-ID-33) and the task has `masked=true`. Only a `users` export may ask for the full values
+        with `unmasked: true`; then the creator must hold `pii.reveal_phone` (the users list's only
+        sensitive column; otherwise 10403), send a valid totp-tier `X-Step-Up-Token` (the tier of
+        `pii.reveal_phone`; missing, expired or lower → 10003 with `data.tier=totp`) and give
+        `reason` (1–200 characters; missing → 20001 with `data.fields=[reason]`). `reason` without
+        `unmasked: true` is 20001 with `data.fields=[reason]`; an `audit_logs` request takes
+        neither field (audit values are stored masked) and either one is 20001. Without
+        `unmasked: true` no step-up token is needed and none is checked.
+        Audit (BR-ID-34): creating writes an audit record (action export_create: task id, resource,
+        filters, masked). An unmasked task writes its own audit record as well (action
+        export_unmasked: task id, resource, reason and, once generated, the row count; never a
+        value).
+        Limits are configuration keys whose default values the implementation sets:
+        `admin.export.max_rows` (rows per file; a task with more rows fails with a failure_reason
+        saying so, narrow the filters) and `admin.export.max_running_per_admin` (tasks of one
+        creator generated at the same time; the rest stay pending until a slot frees up).
+        Lifecycle (enum export_status): pending → running → done or failed; done → expired 24
+        hours after the file was generated (BR-ID-30 ⑨, the object-storage lifecycle rule deletes
+        the file); pending or running → cancelled when the creator's account is disabled (with an
+        audit record); failed → pending by POST /admin/v1/exports/{id}/retry. There is no cancel
+        operation.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminExportCreateRequest'
+            examples:
+              users:
+                summary: Export the frozen users, masked
+                value:
+                  resource: users
+                  filters:
+                    risk_state: frozen
+              usersUnmasked:
+                summary: Export users with full phone numbers (pii.reveal_phone and step-up)
+                value:
+                  resource: users
+                  filters:
+                    risk_state: banned
+                  unmasked: true
+                  reason: 配合公安机关调取封禁账号的注册手机号
+              auditLogs:
+                summary: Export the audit records of one day
+                value:
+                  resource: audit_logs
+                  filters:
+                    from: '2026-10-18T00:00:00+08:00'
+                    to: '2026-10-19T00:00:00+08:00'
+      responses:
+        '202':
+          description: The task was created and waits to be generated (status pending).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminExportResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  id: exp_Kd3Qw8Rt5Ym1Zx7N
+                  resource: users
+                  filters_summary: 风控状态：冻结
+                  masked: true
+                  created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                  created_by_name: ops01
+                  created_at: '2026-10-19T10:00:00+08:00'
+                  status: pending
+                  progress: null
+                  failure_reason: null
+                  file_name: null
+                  row_count: null
+                  expires_at: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: No task created (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                reasonMissing:
+                  $ref: '#/components/examples/AdminExportReasonInvalid'
+                fromAfterTo:
+                  $ref: '#/components/examples/AdminExportTimeRangeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    get:
+      operationId: adminListExports
+      tags:
+        - admin-exports
+      summary: List export tasks (own tasks, or everyone's with audit.view_all)
+      description: |
+        Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Tasks of the console's app, newest first
+        (`created_at` descending, then the server's internal order for the same time), page by page
+        (`page`, `page_size` ≤ 200, above that 20001).
+        Visibility (enforced by the server, BR-ID-34 细则「后台导出任务」): an account holding
+        `audit.view_all` (a super admin holds every point) sees every account's tasks, their
+        filters summary and status; an account without it only sees the tasks it created.
+        `audit.view_all` only widens this list: downloading and retrying stay limited to the
+        creator (GET /admin/v1/exports/{id}/download, POST /admin/v1/exports/{id}/retry).
+        Filters combine with AND: `status` (enum export_status), `resource` (enum
+        export_resource), `from` (inclusive) and `to` (exclusive) on `created_at`, ISO 8601 times
+        with offset (04 §5); `from` later than `to` is 20001 with `data.fields=[from, to]`.
+        Rows never carry the download link; status names come from BR-TEXT-25
+        admin_dict.export_status. Listing does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - name: status
+          in: query
+          required: false
+          description: Only tasks in this status (enum export_status).
+          schema:
+            $ref: '#/components/schemas/AdminExportStatus'
+        - name: resource
+          in: query
+          required: false
+          description: Only tasks of this source list (enum export_resource).
+          schema:
+            $ref: '#/components/schemas/AdminExportResource'
+        - name: from
+          in: query
+          required: false
+          description: Earliest creation time, inclusive (ISO 8601 with offset).
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Latest creation time, exclusive (ISO 8601 with offset).
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: One page of export tasks, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminExportPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - id: exp_Wb6Hn2Lc9Pq4Sv8T
+                      resource: users
+                      filters_summary: 风控状态：全部
+                      masked: true
+                      created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      created_by_name: ops01
+                      created_at: '2026-10-19T09:40:00+08:00'
+                      status: running
+                      progress: 45
+                      failure_reason: null
+                      file_name: null
+                      row_count: null
+                      expires_at: null
+                    - id: exp_Gt5Mj8Dr1Vk7Yp3E
+                      resource: users
+                      filters_summary: 风控状态：冻结
+                      masked: true
+                      created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      created_by_name: ops01
+                      created_at: '2026-10-19T09:20:00+08:00'
+                      status: done
+                      progress: null
+                      failure_reason: null
+                      file_name: users-20261019-0920.csv
+                      row_count: 1000
+                      expires_at: '2026-10-20T09:21:30+08:00'
+                    - id: exp_Ra4Fz9Ux2Nh6Qc1B
+                      resource: audit_logs
+                      filters_summary: 时间：2026-10-18 00:00 至 2026-10-19 00:00
+                      masked: true
+                      created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b02
+                      created_by_name: null
+                      created_at: '2026-10-19T08:00:00+08:00'
+                      status: failed
+                      progress: null
+                      failure_reason: 生成超时，请重试
+                      file_name: null
+                      row_count: null
+                      expires_at: null
+                  page: 1
+                  page_size: 20
+                  total: 3
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                fromAfterTo:
+                  $ref: '#/components/examples/AdminExportTimeRangeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/exports/{id}/download:
+    get:
+      operationId: adminDownloadExport
+      tags:
+        - admin-exports
+      summary: Get a short-lived signed link to the file of one's own finished export (audited)
+      description: |
+        Permission point `export` (04 §11.1; no step-up); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Only the creator of the task can download it, even
+        with `audit.view_all` (BR-ID-34 细则「后台导出任务」). Every call is authorized again and
+        signs a new link; no long-lived link is issued. The server also checks that the creator
+        still holds the permission of the source list (`users` → `user.list`) and, for an unmasked
+        file (`masked=false`), still holds the pii point it was made under (`pii.reveal_phone`).
+        Another account's task, an unknown id, a task of another app, and a creator who no longer
+        holds those points are all 20001 with `data.fields=[id]` (no probing).
+        Only a task in status done whose `expires_at` has not passed can be downloaded; any other
+        status is 30417 with `data.status` (pending, running, failed, expired, cancelled; a done
+        task past `expires_at` answers expired even before the server has set the status).
+        The link `url` is valid until `url_expires_at` = min(5 minutes from now, the task's
+        `expires_at`), so a disabled or demoted creator loses access within minutes.
+        Every call that returns a link writes its own audit record (action export_download: task
+        id, resource, masked; never the link) before the response is sent. The response carries
+        `Cache-Control: no-store`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 30417
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminExportIdPath'
+      responses:
+        '200':
+          description: A freshly signed link to the CSV file.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+            Cache-Control:
+              required: true
+              description: Always no-store; the signed link is not cached by any proxy or the browser.
+              schema:
+                type: string
+                enum:
+                  - no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminExportDownloadResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  url: https://exports.example.com/users-20261019-0920.csv?expires=1760840700&sig=demo
+                  url_expires_at: '2026-10-19T10:25:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: No link (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unknownTask:
+                  $ref: '#/components/examples/AdminUnknownExport'
+                expired:
+                  $ref: '#/components/examples/AdminExportNotAllowed'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/exports/{id}/retry:
+    post:
+      operationId: adminRetryExport
+      tags:
+        - admin-exports
+      summary: Retry one's own failed export task
+      description: |
+        Permission point `export` (04 §11.1); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Only the creator of the task can retry it, even with
+        `audit.view_all`: another account's task, an unknown id or a task of another app is 20001
+        with `data.fields=[id]` (no probing; BR-ID-34 细则「后台导出任务」).
+        Only a failed task can be retried; any other status is 30417 with `data.status` (pending,
+        running, done, expired, cancelled; the same code as a download in the wrong status).
+        The checks of creating are made again on the caller's current points: the permission of
+        the source list (`users` → `user.list`) and, for an unmasked task (`masked=false`),
+        `pii.reveal_phone`, both 10403 when lacking. An unmasked task also needs a new totp-tier
+        `X-Step-Up-Token` (missing, expired or lower → 10003 with `data.tier=totp`) and a new
+        `reason` (1–200 characters; missing → 20001 with `data.fields=[reason]`): every
+        generation of a file with full values is verified anew. A masked task takes an empty body;
+        `reason` there is 20001 with `data.fields=[reason]` and no step-up token is checked.
+        The task keeps its id, resource, filters and masked flag and goes back to pending
+        (`progress`, `failure_reason` cleared); the response is the task as it is now. Retrying
+        writes an audit record (action export_retry: task id, resource, masked), and an unmasked
+        task its own record with the new reason (action export_unmasked). No Idempotency-Key
+        (04 §6.6): a second call while the task is pending again is 30417.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 30417
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminExportIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminExportRetryRequest'
+            examples:
+              masked:
+                summary: Retry a masked task
+                value: {}
+              unmasked:
+                summary: Retry an unmasked task (step-up and a new reason)
+                value:
+                  reason: 上次生成失败，重新导出封禁账号的注册手机号
+      responses:
+        '200':
+          description: The task, back in status pending.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminExportResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  id: exp_Ra4Fz9Ux2Nh6Qc1B
+                  resource: audit_logs
+                  filters_summary: 时间：2026-10-18 00:00 至 2026-10-19 00:00
+                  masked: true
+                  created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b02
+                  created_by_name: ops02
+                  created_at: '2026-10-19T08:00:00+08:00'
+                  status: pending
+                  progress: null
+                  failure_reason: null
+                  file_name: null
+                  row_count: null
+                  expires_at: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not retried (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unknownTask:
+                  $ref: '#/components/examples/AdminUnknownExport'
+                notFailed:
+                  $ref: '#/components/examples/AdminExportNotAllowed'
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                reasonMissing:
+                  $ref: '#/components/examples/AdminExportReasonInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/users:
     get:
       operationId: adminListUsers
@@ -11265,6 +11729,16 @@ components:
       description: user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id].
       schema:
         $ref: '#/components/schemas/Id'
+    AdminExportIdPath:
+      name: id
+      in: path
+      required: true
+      description: |
+        opaque id of an export task (as listed); unknown, of another app, created by another
+        account, or (for a download) whose creator no longer holds the needed points → 20001 with
+        data.fields=[id].
+      schema:
+        $ref: '#/components/schemas/AdminExportId'
     AdminUserUnionPlatformPath:
       name: platform
       in: path
@@ -11794,6 +12268,42 @@ components:
         data:
           fields:
             - id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminExportTimeRangeInvalid:
+      summary: 20001 export filters or task list with from later than to
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - from
+            - to
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminExportReasonInvalid:
+      summary: 20001 reason missing for an unmasked export, or given for a masked one
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - reason
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnknownExport:
+      summary: 20001 unknown export task, another account's task, or a creator without the points
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminExportNotAllowed:
+      summary: 30417 the task's status does not allow the action (here a download of an expired task)
+      value:
+        code: 30417
+        msg: 导出任务当前的状态不允许这项操作，请刷新后查看
+        data:
+          status: expired
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminUnknownUser:
       summary: 20001 unknown user_id (or a user of another app)
@@ -20458,6 +20968,299 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminAuditLog'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminExportId:
+      type: string
+      description: |
+        Opaque identifier of an export task (04 §5, ids are strings). It is not the database
+        primary key (ADR-0001: internal auto-increment keys are never exposed); clients must not
+        parse it, compare it for order or derive anything from it. Generated by the server and
+        stable for the life of the task, retries included; how it is generated is up to the
+        implementation.
+      minLength: 16
+      maxLength: 64
+      pattern: '^[A-Za-z0-9_-]{16,64}$'
+    AdminExportStatus:
+      type: string
+      description: |
+        Status of an export task (enum export_status; BR-ID-34 细则「后台导出任务」; names from
+        BR-TEXT-25 admin_dict.export_status). pending → running → done or failed; done → expired
+        24 hours after the file was generated; pending or running → cancelled when the creator's
+        account is disabled; failed → pending by a retry.
+      enum:
+        - pending
+        - running
+        - done
+        - failed
+        - expired
+        - cancelled
+    AdminExportResource:
+      type: string
+      description: |
+        Source list of an export task (enum export_resource): users = GET /admin/v1/users
+        (needs user.list), audit_logs = GET /admin/v1/audit-logs (signed in is enough; own
+        records only without audit.view_all).
+      enum:
+        - users
+        - audit_logs
+    AdminExportUserFilters:
+      type: object
+      description: Filters of a users export, the query parameters of GET /admin/v1/users without paging.
+      additionalProperties: false
+      properties:
+        risk_state:
+          $ref: '#/components/schemas/AdminUserRiskStateCode'
+    AdminExportAuditLogFilters:
+      type: object
+      description: |
+        Filters of an audit_logs export, the query parameters of GET /admin/v1/audit-logs without
+        paging, judged the same way (without audit.view_all actor_id is forced to the creator).
+      additionalProperties: false
+      properties:
+        actor_id:
+          $ref: '#/components/schemas/Id'
+        target_type:
+          type: string
+          minLength: 1
+          maxLength: 64
+        target_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        permission:
+          $ref: '#/components/schemas/AdminPermissionKey'
+        from:
+          type: string
+          format: date-time
+          description: Earliest record time, inclusive.
+        to:
+          type: string
+          format: date-time
+          description: Latest record time, exclusive.
+    AdminExportCreateUsersRequest:
+      type: object
+      description: |
+        Export of the users list. unmasked true asks for the full phone numbers (pii.reveal_phone,
+        totp step-up and reason required); reason is only accepted together with unmasked true.
+      additionalProperties: false
+      required:
+        - resource
+        - filters
+      properties:
+        resource:
+          type: string
+          enum:
+            - users
+        filters:
+          $ref: '#/components/schemas/AdminExportUserFilters'
+        unmasked:
+          type: boolean
+          default: false
+          description: true = full values instead of the masked ones; absent or false = masked.
+        reason:
+          $ref: '#/components/schemas/AdminUserReason'
+    AdminExportCreateAuditLogsRequest:
+      type: object
+      description: Export of the audit log; always masked (audit values are stored masked), no reason.
+      additionalProperties: false
+      required:
+        - resource
+        - filters
+      properties:
+        resource:
+          type: string
+          enum:
+            - audit_logs
+        filters:
+          $ref: '#/components/schemas/AdminExportAuditLogFilters'
+    AdminExportCreateRequest:
+      description: |
+        One branch per source list (enum export_resource), told apart by `resource`; `filters`
+        follows that list's query parameters.
+      oneOf:
+        - $ref: '#/components/schemas/AdminExportCreateUsersRequest'
+        - $ref: '#/components/schemas/AdminExportCreateAuditLogsRequest'
+    AdminExportRetryRequest:
+      type: object
+      description: |
+        Empty for a masked task. For an unmasked task (masked false) reason is required, with a
+        new totp-tier X-Step-Up-Token; for a masked task reason is 20001.
+      additionalProperties: false
+      properties:
+        reason:
+          $ref: '#/components/schemas/AdminUserReason'
+    AdminExport:
+      type: object
+      description: |
+        An export task (04 §6.6 exports; design/specs/admin-ledger.md 导出记录). Fields that only
+        apply to some statuses are null otherwise.
+      additionalProperties: false
+      required:
+        - id
+        - resource
+        - filters_summary
+        - masked
+        - created_by
+        - created_at
+        - status
+        - progress
+        - failure_reason
+        - file_name
+        - row_count
+        - expires_at
+      properties:
+        id:
+          $ref: '#/components/schemas/AdminExportId'
+        resource:
+          $ref: '#/components/schemas/AdminExportResource'
+        filters_summary:
+          type: string
+          description: Readable summary of the filters, written by the server (Chinese, for display only).
+          maxLength: 500
+        masked:
+          type: boolean
+          description: true = the file holds masked values (the default); false = full values (pii step-up at creation).
+        created_by:
+          $ref: '#/components/schemas/Id'
+        created_by_name:
+          type:
+            - string
+            - 'null'
+          description: Current username of the creator; null when it cannot be read.
+          maxLength: 64
+        created_at:
+          type: string
+          format: date-time
+          description: Time the task was created.
+        status:
+          $ref: '#/components/schemas/AdminExportStatus'
+        progress:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 0
+          maximum: 100
+          description: Percentage generated while running; null in every other status.
+        failure_reason:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+          description: Short reason written by the server when failed (such as the row limit); null otherwise.
+        file_name:
+          type:
+            - string
+            - 'null'
+          maxLength: 128
+          description: Name of the CSV file when done or expired; null otherwise.
+        row_count:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 0
+          description: Data rows in the file when done or expired; null otherwise.
+        expires_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: |
+            End of the download period (24 hours after the file was generated, BR-ID-30 ⑨) when
+            done or expired; null otherwise.
+    AdminExportResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminExport'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminExportPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminExport'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminExportPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminExportPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminExportDownload:
+      type: object
+      additionalProperties: false
+      required:
+        - url
+        - url_expires_at
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: Signed link to the CSV file in the private bucket; valid until url_expires_at.
+        url_expires_at:
+          type: string
+          format: date-time
+          description: min(5 minutes after signing, the task's expires_at).
+    AdminExportDownloadResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminExportDownload'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     AdminUserPage:

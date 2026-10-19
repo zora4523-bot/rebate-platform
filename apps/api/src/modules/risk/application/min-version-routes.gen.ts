@@ -942,6 +942,46 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListExports",
+    "method": "GET",
+    "path": "/admin/v1/exports",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreateExport",
+    "method": "POST",
+    "path": "/admin/v1/exports",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminDownloadExport",
+    "method": "GET",
+    "path": "/admin/v1/exports/:id/download",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRetryExport",
+    "method": "POST",
+    "path": "/admin/v1/exports/:id/retry",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListUsers",
     "method": "GET",
     "path": "/admin/v1/users",
