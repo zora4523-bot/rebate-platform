@@ -1,0 +1,22 @@
+id: F1-07f
+repo: rebate-platform
+title: 后台找回审核：列表（平台 / 证据等级 / 订单号或找回单号 / 用户筛选，claim_status 页签，分页）与审核页（证据逐项比对、子订单逐个通过 / 驳回，驳回原因取 admin_dict.claim_reject_reason，说明必填 ≥5 字，20902 已被他人处理、自动结案提示）；空 / 加载 / 出错三态；视觉按 design/specs/admin-claims.md
+type: impl
+# 2026-10-20 入账（前端线 f1-frontend-7，编排 16:2x 派工）。05 F1-07f、01 F-ADM-06；契约 CT-24d（adminListClaims / adminGetClaim）、CT-24l（adminApproveClaimItem / adminRejectClaimItem），均 planned，后端 B1-10j / B1-10k 在后台线暂停中——按契约用假服务端开发。
+# 负责人 2026-10-18 后台第 1 批定稿（统计卡与【一键通过】本期不做）；规则只按 BR-ATTR-18 / 20 / 30 的契约结果显示，不在前端判定归属。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+refs: []
+refs_hash: {}
+deps: [CT-24d, CT-24l, F1-06zb]
+paths:
+  - 'apps/admin/src/pages/claims/**'
+  - 'apps/admin/src/texts/claims.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-claims/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-claims/**'
+status: todo
+pr: null
