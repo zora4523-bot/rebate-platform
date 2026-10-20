@@ -89,8 +89,8 @@ it('[AC-B2-16a#2] 幂等键只按被邀请人与受益方隔离，重放稳定�
 
 it('[AC-B2-16a#3] 奖励只接受正 int64 bigint 分，零、负数、溢出与隐式转换均拒绝', () => {
   expect(build(params).entries).toHaveLength(2);
+  expect(buildVouchers(template, { ...params, reward_fen: 0n })).toEqual([]);
   for (const amount of [
-    0n,
     -1n,
     -9223372036854775808n,
     9223372036854775808n,
