@@ -28,6 +28,7 @@ export {
   selectClawbackCommission,
   planCommissionAdjustment,
   checkAdjustmentReceivable,
+  AdjustmentReceivableMismatch,
 } from './settlement/adjust/adjust.ts';
 export type {
   ClawbackCommissionInput,

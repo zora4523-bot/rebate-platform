@@ -1,3 +1,5 @@
+import { addFen, applyReserve, splitByBp, subFen } from '@couli/money';
+
 /** BR-FUND-08：这里接收联盟原值；Adapter 按件估算不能作为扣回依据。 */
 export interface ClawbackCommissionInput {
   readonly full_invalid: boolean;
@@ -99,10 +101,170 @@ export interface AdjustmentReceivableInput {
   readonly actual_delta_fen: bigint;
 }
 
+/**
+ * 自检失败：输入的平台净额、受益人净额与待补记额不满足 BR-FUND-19 ⑤ 的等式，
+ * 拟写凭证对 UNION_RECEIVABLE 的净影响不等于 BR-FUND-08 的期望值。调用方不得落账。
+ */
+export class AdjustmentReceivableMismatch extends Error {
+  readonly expected_delta_fen: bigint;
+  readonly actual_delta_fen: bigint;
+  constructor(expected_delta_fen: bigint, actual_delta_fen: bigint) {
+    super(
+      `AdjustmentReceivableMismatch: expected ${expected_delta_fen.toString()}, actual ${actual_delta_fen.toString()}`,
+    );
+    this.name = 'AdjustmentReceivableMismatch';
+    this.expected_delta_fen = expected_delta_fen;
+    this.actual_delta_fen = actual_delta_fen;
+  }
+}
+
+function positivePart(fen: bigint): bigint {
+  return fen > 0n ? fen : 0n;
+}
+
 /** 缺佣金只返回判定，不做 S12 的待处理表写入或告警 I/O。 */
 export function selectClawbackCommission(input: ClawbackCommissionInput): ClawbackCommissionResult {
-  void input;
-  throw new Error('NotImplemented: selectClawbackCommission');
+  // 整单失效：N_new = 0，优先于其他来源。
+  if (input.full_invalid) return { kind: 'available', n_new_fen: 0n, source: 'full_invalid' };
+  // ① 本次事件带来的联盟新佣金（有效联盟佣金，BR-CALC-02）：
+  //    结算佣金非空时只认新的结算记录（seq 变化），单独变化的预估佣金不算；
+  //    结算佣金为空时是预估佣金的新值。保留负原值，正数部分由调用方 / 规划函数截取。
+  if (input.settle_commission_fen !== null) {
+    if (input.settlement_seq_changed) {
+      return { kind: 'available', n_new_fen: input.settle_commission_fen, source: 'settlement' };
+    }
+  } else if (input.estimate_changed && input.est_commission_fen !== null) {
+    return { kind: 'available', n_new_fen: input.est_commission_fen, source: 'estimate' };
+  }
+  // ② 联盟维权记录给出的应扣佣金：N_new = booked_n_fen − 应扣佣金，小于 0 按 0。
+  if (input.rights_deduct_fen !== null) {
+    const rest = subFen(input.booked_n_fen, input.rights_deduct_fen);
+    return { kind: 'available', n_new_fen: positivePart(rest), source: 'rights' };
+  }
+  // ③ 都没有：不写扣回，等联盟数据；Adapter 按件估算（adapter_estimate_fen）不作依据。
+  return { kind: 'wait_commission' };
+}
+
+type StateClass =
+  | { readonly kind: 'forfeited' }
+  | { readonly kind: 'forfeit'; readonly reason: 'banned' | 'deleted' | 'minor' }
+  | { readonly kind: 'defer' }
+  | { readonly kind: 'normal' };
+
+function isDeleted(person: AdjustmentBeneficiary): boolean {
+  return person.deletion_status === 'processing' || person.deletion_status === 'done';
+}
+
+/** BR-CALC-09 受益人状态规则的分类；永久性状态优先于可解除的冻结 / 申诉 / hold。 */
+function classify(person: AdjustmentBeneficiary): StateClass {
+  if (person.status === 'forfeited') return { kind: 'forfeited' };
+  if (isDeleted(person)) return { kind: 'forfeit', reason: 'deleted' };
+  if (person.risk_state === 'banned') return { kind: 'forfeit', reason: 'banned' };
+  if (person.is_minor && person.role !== 'self') return { kind: 'forfeit', reason: 'minor' };
+  if (
+    person.status === 'held' ||
+    person.risk_state === 'frozen' ||
+    person.risk_state === 'appealing'
+  ) {
+    return { kind: 'defer' };
+  }
+  return { kind: 'normal' };
+}
+
+interface Row {
+  entitlement_fen: bigint;
+  delta_fen: bigint;
+  forfeit_fen: bigint;
+  forfeit_reason: AdjustmentBeneficiaryResult['forfeit_reason'];
+  pending_after_fen: bigint;
+  obligation_action: AdjustmentBeneficiaryResult['obligation_action'];
+}
+
+function planRow(
+  person: AdjustmentBeneficiary,
+  state: StateClass,
+  share_fen: bigint,
+  pending_before_fen: bigint,
+  route: AdjustmentPlan['route'],
+  clawedBack: boolean,
+): Row {
+  const hasObligation = person.obligation !== null;
+  const keepOrNull = hasObligation ? 'keep' : null;
+  const none: Row = {
+    entitlement_fen: 0n,
+    delta_fen: 0n,
+    forfeit_fen: 0n,
+    forfeit_reason: null,
+    pending_after_fen: 0n,
+    obligation_action: keepOrNull,
+  };
+
+  if (state.kind === 'forfeited') {
+    // 新应得恒为 0，不生成任何调整；R8 时一并作废残留义务。
+    return { ...none, obligation_action: clawedBack && hasObligation ? 'voided' : keepOrNull };
+  }
+
+  if (route === 'none') {
+    // 两值均相等：无动作，待补记额不变。
+    const entitlement_fen =
+      state.kind === 'forfeit' && share_fen > person.net_fen ? person.net_fen : share_fen;
+    return { ...none, entitlement_fen, pending_after_fen: pending_before_fen };
+  }
+
+  if (clawedBack) {
+    // R8：新应得为 0，已入账净额全扣（注销者改记坏账由 posting 决定）；作废未完成义务。
+    return {
+      ...none,
+      delta_fen: subFen(0n, person.net_fen),
+      obligation_action: hasObligation ? 'voided' : null,
+    };
+  }
+
+  const diff = subFen(share_fen, person.net_fen);
+
+  if (state.kind === 'forfeit') {
+    // 新应得取重拆份额与已有净额的较小值；多出的部分归平台。负差照扣（注销者记坏账）。
+    const entitlement_fen = diff > 0n ? person.net_fen : share_fen;
+    const forfeit_fen = diff > 0n ? diff : 0n;
+    const forfeited = hasObligation;
+    return {
+      entitlement_fen,
+      delta_fen: diff > 0n ? 0n : diff,
+      forfeit_fen,
+      forfeit_reason: forfeit_fen > 0n || forfeited ? state.reason : null,
+      pending_after_fen: 0n,
+      obligation_action: forfeited ? 'forfeited' : null,
+    };
+  }
+
+  if (diff <= 0n) {
+    // 负差（或零差）照常扣回 available；义务保持，正差一路里正常受益人的义务视为完成。
+    const done = state.kind === 'normal' && route === 'approval' && hasObligation;
+    return {
+      ...none,
+      entitlement_fen: share_fen,
+      delta_fen: diff,
+      obligation_action: done ? 'done' : keepOrNull,
+    };
+  }
+
+  if (state.kind === 'normal' && route === 'approval') {
+    // 正差获批时状态正常：整笔补给受益人，有未完成义务的记为完成。
+    return {
+      ...none,
+      entitlement_fen: share_fen,
+      delta_fen: diff,
+      obligation_action: hasObligation ? 'done' : null,
+    };
+  }
+
+  // 冻结 / 申诉 / hold 的正差，或负差一路里正常受益人的正差：留作待补记额。
+  return {
+    ...none,
+    entitlement_fen: share_fen,
+    pending_after_fen: diff,
+    obligation_action: hasObligation ? 'keep' : 'open',
+  };
 }
 
 /**
@@ -112,10 +274,146 @@ export function selectClawbackCommission(input: ClawbackCommissionInput): Clawba
  * approval 表示候选预览，不能直接落账；审批/seq/时序校验由调用方负责，批准时重新调用。
  * 义务关闭由调用方同事务关联实际凭证；平台零凭证时关联 seq / rights_event_id。
  * 不按 available 余额限扣，不触碰 frozen；幂等、锁与 app_id 隔离由调用方负责。
+ * 输入不满足 BR-FUND-19 ⑤（平台净额 + Σ净额 + Σ待补记 = booked_n）时抛
+ * AdjustmentReceivableMismatch；比例或金额非法时抛 InvalidRatio / InvalidAmount。
  */
 export function planCommissionAdjustment(input: AdjustmentInput): AdjustmentPlan {
-  void input;
-  throw new Error('NotImplemented: planCommissionAdjustment');
+  const n_positive_fen = positivePart(input.n_new_fen);
+  // BR-CALC-02：用快照 reserve_bp 换算新基数，预留含取整尾差。
+  const { after_reserve_fen: base_new_fen, reserve_fen } = applyReserve(
+    input.n_new_fen,
+    input.reserve_bp,
+  );
+  const ratios = input.beneficiaries.map((person) => person.ratio_bp);
+  const sharesNew = splitByBp(base_new_fen, ratios).shares;
+  const sharesOld = splitByBp(input.booked_base_fen, ratios).shares;
+
+  // 先判两值均相等即无动作，再按 BR-FUND-08 判 R8，最后按整单比较分两路。
+  let route: AdjustmentPlan['route'];
+  if (base_new_fen === input.booked_base_fen && n_positive_fen === input.booked_n_fen) {
+    route = 'none';
+  } else if (
+    base_new_fen < input.booked_base_fen ||
+    (base_new_fen === input.booked_base_fen && n_positive_fen < input.booked_n_fen)
+  ) {
+    route = 'immediate';
+  } else {
+    route = 'approval';
+  }
+  const clawedBack =
+    route !== 'none' &&
+    (n_positive_fen === 0n || (input.booked_base_fen > 0n && base_new_fen === 0n));
+  if (clawedBack) route = 'immediate';
+
+  let transition: AdjustmentPlan['transition'] = null;
+  if (route !== 'none') transition = clawedBack ? 'R8' : input.event === 'clawback' ? 'R9' : 'R10';
+  const ledger_type: AdjustmentPlan['ledger_type'] =
+    transition === null ? null : transition === 'R10' ? 'SETTLE_ADJUST' : 'CLAWBACK';
+
+  let held_after_fen = 0n;
+  let user_delta_fen = 0n;
+  let pending_before_total_fen = 0n;
+  let pending_after_total_fen = 0n;
+  const beneficiaries = input.beneficiaries.map((person, i): AdjustmentBeneficiaryResult => {
+    const state = classify(person);
+    const share_new_fen = sharesNew[i] ?? 0n;
+    const share_old_fen = sharesOld[i] ?? 0n;
+    // 待补记额（BR-FUND-04 ⑫ / BR-FUND-19 ⑤）：只有未完成义务才有，按 booked_base 重拆减净额。
+    const pending_before_fen =
+      person.obligation !== null && state.kind !== 'forfeited'
+        ? positivePart(subFen(share_old_fen, person.net_fen))
+        : 0n;
+    const row = planRow(person, state, share_new_fen, pending_before_fen, route, clawedBack);
+    const net_after_fen = addFen(person.net_fen, row.delta_fen);
+    let posting: AdjustmentBeneficiaryResult['posting'] = null;
+    if (row.delta_fen !== 0n) {
+      posting = row.delta_fen < 0n && isDeleted(person) ? 'bad_debt' : 'user_available';
+    }
+    const obligation_action = row.obligation_action;
+    held_after_fen = addFen(held_after_fen, addFen(net_after_fen, row.pending_after_fen));
+    user_delta_fen = addFen(user_delta_fen, row.delta_fen);
+    pending_before_total_fen = addFen(pending_before_total_fen, pending_before_fen);
+    pending_after_total_fen = addFen(pending_after_total_fen, row.pending_after_fen);
+    return {
+      user_id: person.user_id,
+      role: person.role,
+      entitlement_fen: row.entitlement_fen,
+      delta_fen: row.delta_fen,
+      net_after_fen,
+      posting,
+      forfeit_fen: row.forfeit_fen,
+      forfeit_reason: row.forfeit_reason,
+      pending_before_fen,
+      pending_after_fen: row.pending_after_fen,
+      obligation_action,
+      beneficiary_credit_id: person.obligation?.beneficiary_credit_id ?? null,
+      append_forfeited_event:
+        obligation_action === 'forfeited' &&
+        person.obligation !== null &&
+        person.obligation.kind !== 'deferred',
+    };
+  });
+
+  if (route === 'none') {
+    return {
+      route,
+      transition: null,
+      rebate_status: 'CREDITED',
+      ledger_type: null,
+      reserve_fen,
+      booked_after: { booked_base_fen: input.booked_base_fen, booked_n_fen: input.booked_n_fen },
+      beneficiaries,
+      platform_after_fen: input.platform_net_fen,
+      platform_delta_fen: 0n,
+      platform_posting: null,
+      union_receivable_delta_fen: 0n,
+      void_pending_candidates: false,
+    };
+  }
+
+  // 新平台应得 = 新留存 + 预留 + 归平台的部分 = N_new 正数部分 − Σ(受益人新净额 + 待补记额)。
+  const platform_after_fen = subFen(n_positive_fen, held_after_fen);
+  const platform_delta_fen = subFen(platform_after_fen, input.platform_net_fen);
+  let platform_posting: AdjustmentPlatformPosting | null = null;
+  if (platform_delta_fen > 0n) {
+    platform_posting = {
+      amount_fen: platform_delta_fen,
+      debit: 'UNION_RECEIVABLE',
+      credit: 'COMMISSION_REVENUE',
+    };
+  } else if (platform_delta_fen < 0n) {
+    platform_posting = {
+      amount_fen: subFen(0n, platform_delta_fen),
+      debit: 'COMMISSION_REVENUE',
+      credit: 'UNION_RECEIVABLE',
+    };
+  }
+  const union_receivable_delta_fen = addFen(user_delta_fen, platform_delta_fen);
+  const check = checkAdjustmentReceivable({
+    booked_n_before_fen: input.booked_n_fen,
+    n_new_fen: input.n_new_fen,
+    pending_before_fen: pending_before_total_fen,
+    pending_after_fen: pending_after_total_fen,
+    actual_delta_fen: union_receivable_delta_fen,
+  });
+  if (!check.valid) {
+    throw new AdjustmentReceivableMismatch(check.expected_delta_fen, union_receivable_delta_fen);
+  }
+
+  return {
+    route,
+    transition,
+    rebate_status: clawedBack ? 'CLAWED_BACK' : 'CREDITED',
+    ledger_type,
+    reserve_fen,
+    booked_after: { booked_base_fen: base_new_fen, booked_n_fen: n_positive_fen },
+    beneficiaries,
+    platform_after_fen,
+    platform_delta_fen,
+    platform_posting,
+    union_receivable_delta_fen,
+    void_pending_candidates: transition === 'R8' || transition === 'R9',
+  };
 }
 
 /** BR-FUND-08：期望净影响 = max(N_new,0) - booked_n - (待补记后 - 待补记前)。 */
@@ -123,6 +421,10 @@ export function checkAdjustmentReceivable(input: AdjustmentReceivableInput): {
   readonly valid: boolean;
   readonly expected_delta_fen: bigint;
 } {
-  void input;
-  throw new Error('NotImplemented: checkAdjustmentReceivable');
+  const pendingChange = subFen(input.pending_after_fen, input.pending_before_fen);
+  const expected_delta_fen = subFen(
+    subFen(positivePart(input.n_new_fen), input.booked_n_before_fen),
+    pendingChange,
+  );
+  return { valid: input.actual_delta_fen === expected_delta_fen, expected_delta_fen };
 }
