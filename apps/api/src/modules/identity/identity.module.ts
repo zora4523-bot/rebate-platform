@@ -80,6 +80,11 @@ import {
   type RealnameStatusReader,
 } from './application/identity-level.ts';
 import {
+  PRIVACY_CONSENT_CHECKS,
+  createPrivacyConsentChecks,
+  type PrivacyConsentOptions,
+} from './application/privacy-consent.ts';
+import {
   createOauthAttemptService,
   type OauthAttemptService,
 } from './application/oauth-attempts.ts';
@@ -249,6 +254,13 @@ export interface IdentityModuleOptions {
    * always none) is used.
    */
   readonly realnameStatus?: Omit<FactoryProvider<RealnameStatusReader>, 'provide'>;
+  /**
+   * The configuration readers of stage ⑦ (legal.privacy.min_version; B1-02zh): content's pooled
+   * reader for the guard and a fresh reader over the claim's transaction for the post-miss check,
+   * assembled by app.module. Absent or null (no database): stage ⑦ is not judged, as when
+   * legal.privacy.min_version is missing.
+   */
+  readonly privacyConsentConfig?: Omit<FactoryProvider<PrivacyConsentOptions['config']>, 'provide'>;
   /** Register-time level log, assembled by app.module so identity never imports growth. */
   readonly initialLevelLog?: Omit<FactoryProvider<InitialLevelLog | null>, 'provide'>;
   /**
@@ -292,6 +304,7 @@ export interface IdentityModuleOptions {
 export type RegistrationInviteBindingPort = NonNullable<RegistrationOptions['bindInvite']>;
 
 const REALNAME_STATUS_READER = Symbol('REALNAME_STATUS_READER');
+const PRIVACY_CONSENT_CONFIG = Symbol('PRIVACY_CONSENT_CONFIG');
 
 /** Revocation by user as assembled (Nest token: the function revokeSessionsByUser itself). */
 export type AssembledRevokeByUser = (
@@ -610,6 +623,19 @@ export class IdentityModule {
           inject: [REALNAME_STATUS_READER, { token: DB, optional: true }],
           useFactory: (realname: RealnameStatusReader, db?: Kysely<Database>) =>
             createIdentityLevelChecks({ db: db ?? null, realname }),
+        },
+        options.privacyConsentConfig === undefined
+          ? { provide: PRIVACY_CONSENT_CONFIG, useFactory: () => null }
+          : { ...options.privacyConsentConfig, provide: PRIVACY_CONSENT_CONFIG },
+        {
+          // Stage ⑦: the guard and the post-miss check app.module hands to RiskModule before ⑧ ⑨.
+          provide: PRIVACY_CONSENT_CHECKS,
+          inject: [PRIVACY_CONSENT_CONFIG, ROOT_LOGGER, { token: DB, optional: true }],
+          useFactory: (
+            config: PrivacyConsentOptions['config'],
+            logger: RootLogger,
+            db?: Kysely<Database>,
+          ) => createPrivacyConsentChecks({ db: db ?? null, config, logger }),
         },
         {
           provide: STEP_UP_CHECK,
@@ -1194,6 +1220,7 @@ export class IdentityModule {
         CONSENT_SIGNATURE_CHECK,
         STEP_UP_CHECK,
         IDENTITY_LEVEL_CHECKS,
+        PRIVACY_CONSENT_CHECKS,
       ],
     };
   }
