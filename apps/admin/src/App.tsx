@@ -36,6 +36,7 @@ import { LoadFailedPage, NoPermissionPage, PagePending, WelcomePage } from './la
 import { Sidebar } from './layout/Sidebar.tsx';
 import { TopBar } from './layout/TopBar.tsx';
 import { AdminsPage } from './pages/admins/index.ts';
+import { ClaimReviewPage, ClaimsPage } from './pages/claims/index.ts';
 import { ConfigCenterPage } from './pages/config-center/index.ts';
 import { DashboardPage, dashboardTargetOf } from './pages/dashboard/index.ts';
 import { HomeConfigPage } from './pages/home-config/index.ts';
@@ -61,6 +62,7 @@ import {
   type AdminMenuGroup,
 } from './resources/index.ts';
 import type { AdminShellOptions } from './shell-options.ts';
+import { claimsTexts } from './texts/claims.ts';
 import { shellTexts } from './texts/shell.ts';
 import { createAntdTheme, sameAntdTheme } from './theme.ts';
 
@@ -71,6 +73,18 @@ type PermissionState =
 
 const NO_GROUPS: readonly AdminMenuGroup[] = [];
 const USERS_MENU_ID = 'users';
+const CLAIMS_MENU_ID = 'claims';
+
+/** The claim id of a review page address (/claims/<claim_id>), else undefined. */
+function claimIdOf(path: string): string | undefined {
+  const found = /^claims\/([^/]+)$/.exec(path);
+  if (found === null) return undefined;
+  try {
+    return decodeURIComponent(found[1]!);
+  } catch {
+    return undefined;
+  }
+}
 
 // Refine resources: one per menu, nested under its group (for later Refine menus and hooks).
 const RESOURCES: ResourceProps[] = getAdminMenuGroups().flatMap((group) => [
@@ -404,8 +418,11 @@ function ShellFrame({
 
   const menuId = location.pathname.replace(/^\/+/, '');
   const searchUser = menuId === USERS_MENU_ID ? searchUserOf(location.state) : undefined;
-  const match = findMenuItem(groups, menuId);
-  const subpage = match === undefined ? undefined : subpageOf(location.state);
+  // A claim's review page (/claims/<claim_id>) belongs to the claims menu (sidebar, crumbs).
+  const claimId = claimIdOf(menuId);
+  const match = findMenuItem(groups, claimId === undefined ? menuId : CLAIMS_MENU_ID);
+  let subpage = match === undefined ? undefined : subpageOf(location.state);
+  if (match !== undefined && claimId !== undefined) subpage = claimsTexts.review.crumb;
   // A workbench card opened a route whose page is not in the catalogue yet (e.g. /risk/appeals):
   // the placeholder shows under the card's page name instead of falling back home.
   const cardTarget =
@@ -438,7 +455,9 @@ function ShellFrame({
     // Keep the loading line until the landing page is chosen (no flash of the old address).
   } else if (state.status === 'ready' && access !== undefined) {
     const { snapshot } = state;
-    if (match !== undefined && options.renderPage !== undefined) {
+    if (match !== undefined && claimId !== undefined) {
+      content = <ClaimReviewPage key={claimId} access={access} claimId={claimId} />;
+    } else if (match !== undefined && options.renderPage !== undefined) {
       content = options.renderPage(match.item.id, access);
     } else if (searchUser !== undefined && (snapshot.isSuper || snapshot.permissions.length > 0)) {
       // Opened from the top-bar search; 【返回】 goes to the users list.
@@ -464,6 +483,10 @@ function ShellFrame({
       content = <ConfigCenterPage access={access} />;
     } else if (match !== undefined && match.item.id === 'pages') {
       content = <HomeConfigPage access={access} />;
+    } else if (match !== undefined && match.item.id === CLAIMS_MENU_ID) {
+      // Keyed by the history entry: a new address (sidebar, 【返回】, ?status= link) reads its
+      // conditions afresh.
+      content = <ClaimsPage key={location.key} access={access} />;
     } else if (match !== undefined && match.item.id === 'users') {
       content = <UsersPage access={access} />;
     } else if (match !== undefined) {
