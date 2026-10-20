@@ -38,5 +38,22 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'order_sync.regression_hold.enabled', 'true'::jsonb, 'seed'), -- BR-FUND-01 P10
   ('couli', 'order_sync.unmapped_status_hold.enabled', 'true'::jsonb, 'seed'), -- BR-FUND-02
   ('couli', 'ledger.bad_debt_require_no_frozen.enabled', 'true'::jsonb, 'seed'), -- BR-FUND-12
-  ('couli', 'payout.proven_success_writeoff.enabled', 'true'::jsonb, 'seed') -- BR-WDR-08、BR-WDR-17
+  ('couli', 'payout.proven_success_writeoff.enabled', 'true'::jsonb, 'seed'), -- BR-WDR-08、BR-WDR-17
+  -- 第 5 批：BR-FUND-04 细则默认值表（SPEC_REF 5ecafb3）
+  ('couli', 'settle.bill_day', '24'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.period_basis.taobao', '"received_at"'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.period_basis.jd', '"received_at"'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.period_basis.pdd', '"received_at"'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.period_basis.meituan', '"received_at"'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.statement_source.taobao', '"api"'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.statement_source.jd', '"api"'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.statement_source.pdd', '"api"'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.statement_source.meituan', '"api"'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.batch.match_tolerance_fen', '0'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.batch.max_orders', '5000'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.period_offset_months.taobao', '1'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.period_offset_months.jd', '1'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.period_offset_months.pdd', '1'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.period_offset_months.meituan', '1'::jsonb, 'seed'), -- BR-FUND-04 细则
+  ('couli', 'settle.statement.grace_days', '10'::jsonb, 'seed') -- BR-FUND-04 细则
 ON CONFLICT (app_id, key) DO NOTHING;
