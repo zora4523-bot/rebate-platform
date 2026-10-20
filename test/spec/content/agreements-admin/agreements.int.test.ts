@@ -487,14 +487,40 @@ it('[AC-F1-02p#15] agreement changes only its legal version; labor changes no le
   const before = await snapshot(h, f.appId);
   await publishOk(f, 'agreement');
   const afterAgreement = await snapshot(h, f.appId);
-  expect(afterAgreement.items.filter((r) => r.key !== 'legal.agreement.version')).toEqual(
-    before.items,
-  );
-  expect(afterAgreement.items.find((r) => r.key === 'legal.agreement.version')).toMatchObject({
-    value: 1,
-    version: 1,
-  });
-  expect(afterAgreement.versions.map((r) => r.key)).toEqual(['legal.agreement.version']);
+  // F1-02zzc (test-change, transitional; F1-02zt tightens): publishing the user agreement may also
+  // write legal.agreement.min_version in the same transaction (docs/changes/20261020 §1.12). The
+  // branch is chosen by whether that row exists after publishing; each branch is asserted strictly.
+  const minRow = afterAgreement.items.find((r) => r.key === 'legal.agreement.min_version');
+  if (minRow === undefined) {
+    expect(afterAgreement.items.filter((r) => r.key !== 'legal.agreement.version')).toEqual(
+      before.items,
+    );
+    expect(afterAgreement.items.find((r) => r.key === 'legal.agreement.version')).toMatchObject({
+      value: 1,
+      version: 1,
+    });
+    expect(afterAgreement.versions.map((r) => r.key)).toEqual(['legal.agreement.version']);
+  } else {
+    expect(
+      afterAgreement.items.filter(
+        (r) => r.key !== 'legal.agreement.version' && r.key !== 'legal.agreement.min_version',
+      ),
+    ).toEqual(before.items);
+    expect(afterAgreement.items.find((r) => r.key === 'legal.agreement.version')).toMatchObject({
+      value: 1,
+      version: 1,
+    });
+    // input() requests min_version 1.
+    expect(minRow).toMatchObject({ value: 1, version: 1 });
+    expect(afterAgreement.versions.map((r) => r.key)).toEqual([
+      'legal.agreement.min_version',
+      'legal.agreement.version',
+    ]);
+    expect(afterAgreement.versions.map((r) => [r.key, r.version, r.value])).toEqual([
+      ['legal.agreement.min_version', 1, 1],
+      ['legal.agreement.version', 1, 1],
+    ]);
+  }
   await publishOk(f, 'labor_agreement', { requires_resign: true });
   const afterLabor = await snapshot(h, f.appId);
   expect(afterLabor.items).toEqual(afterAgreement.items);
