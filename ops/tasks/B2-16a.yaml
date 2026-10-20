@@ -73,6 +73,9 @@ red_exempt:
   - file: test/spec/ledger-rules/ledger-rules.test.ts
     test: '[AC-B2-01i#10] 红冲与提现说明保留整笔限制、单张成功凭证和无分录迁移'
     reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/properties/domain/ledger-templates/build-vouchers.prop.test.ts
+    test: '[AC-B2-01j#21] 任意非负金额：红冲与原单逐科目抵消；未定红冲及原模板必须拒绝'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
 impl: claude
 tester: codex
 accept:
