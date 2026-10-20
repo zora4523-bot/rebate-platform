@@ -1,0 +1,36 @@
+{
+  "legacy_no_red": true,
+  "red_tests": [],
+  "risk_note": "Contract task (contracts/openapi.yaml, enums/admin.yaml, contracts-ts conformance and the regenerated contracts-ts and route tables): adds GET /admin/v1/orders (adminListOrders) and GET /admin/v1/orders/{order_id} (adminGetOrder), both x-implementation planned, per 01 F-ADM-05, 04 §6.6 / §3.2 / §11 and the finalized specs design/specs/admin-orders.md / admin-order-detail.md: filters platform / platform_status / rebate_status / order flag / user_id / order number (sub or parent, exact) / paid_at range, AdminPage / AdminPageSize, paid_at descending; rows carry order_id, product, user (uid + masked phone, BR-ID-33; null when unattributed), amounts in integer fen, statuses and flags; detail adds status history, commission snapshot (fen, basis points), link records (time, event, scene; at most 50). order.view sees all; a user.lookup-only account must pass user_id (10403 otherwise); unknown, other-app and not-visible orders answer alike with 20001 [order_id] (back-office precedent CT-24d). Not exposed this time: raw platform payload (no permission point in 04 §11), lock time / reason (no 04 fields), snapshot fields without contract enums. Also fixes the dashboard example route of the pending-claims card to /claims?status=manual_review. New Admin-prefixed schemas and enums admin_order_flag / admin_order_history_field / admin_order_history_source; new unit test admin-orders.test.ts. tester none; implementation by an Opus 5.5 subagent (one run plus the orchestrator's path-key ruling). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "70d231ce7ae620b0e3264b30830f77043407ffc4"
+  },
+  "task": "CT-24m",
+  "spec_ref": "76f61aaa455a67f5b1d9212c6da710711cd255a1",
+  "spec_commit": "90bbd433034238c42c35241c5ba3196d841bfa82",
+  "runs": [],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "dec84006fc9f61cef5fa6a9da9c9b65d4e046092",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "70d231ce7ae620b0e3264b30830f77043407ffc4",
+    "test/spec": "cbef8fa5b04eaa1e453f788f86909de8bf756474",
+    "specs": "a6a8f5fd85ce48d56f75ce7b44e798701dcbf0bb"
+  }
+}
