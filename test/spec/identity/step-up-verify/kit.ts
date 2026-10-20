@@ -9,6 +9,12 @@
 // Step-up tokens are signed exactly as POST /v1/auth/step-up issues them (signScopedToken with the
 // application's TOKEN_KEYS, aud=step_up). Only the orchestrator runs these fixtures, inside the
 // isolated integration-test container.
+// B1-15j: each operation is judged on its own (its operationId in CONTRACT_ROUTE_SCHEMAS). A
+// planned one still gets the stub route below. An implemented one keeps its real route (a stub on
+// the same method and path would collide with it): before the routes are registered, the real
+// controller method found by its route metadata (exactly one) is replaced by the same stub handler
+// carrying the real method's metadata (precedent test/spec/risk/rate-limit/http-kit.ts), so the
+// real route, guards and request schema run while the handler body stays the fixture's.
 // Identity level (BR-ID-01 ⑧ ⑨, judged before ⑫; createWithdrawal is x-auth realname): every
 // fixture user has a bound phone (a unique phone_hmac) and IdentityModule's real-name status
 // reader is swapped for one that always answers 'verified', so ⑫ is what these tests reach. Where
@@ -67,7 +73,7 @@ export interface WireResponse {
 interface App {
   init(): Promise<unknown>;
   close(): Promise<unknown>;
-  get<T>(token: symbol): T;
+  get<T>(token: symbol | Constructor): T;
   inject(request: {
     method: 'POST';
     url: string;
@@ -82,6 +88,14 @@ interface StubRequest extends StepUpHttpRequest {
   readonly principal?: TokenPrincipal;
 }
 type Constructor = abstract new (...args: never[]) => unknown;
+type Handler = (this: unknown, ...args: unknown[]) => unknown;
+// reflect-metadata (loaded by @nestjs/common): the route metadata lives on the handler function.
+const metadata = Reflect as unknown as {
+  getMetadata(key: unknown, target: object): unknown;
+  getOwnMetadataKeys(target: object): unknown[];
+  getOwnMetadata(key: unknown, target: object): unknown;
+  defineMetadata(key: unknown, value: unknown, target: object): void;
+};
 
 /** What the stub business handler does on its next call for a user (default: success). */
 export type Outcome =
@@ -149,6 +163,13 @@ export async function openFixture(): Promise<Fixture> {
     Req(): (target: object, name: string, index: number) => void;
     HttpCode(code: number): (target: object, name: string, descriptor: PropertyDescriptor) => void;
     HttpException: new (body: unknown, status: number) => Error;
+    RequestMethod: { POST: number };
+  };
+  const constants = (await import(
+    pathToFileURL(apiRequire.resolve('@nestjs/common/constants.js')).href
+  )) as { PATH_METADATA: string; METHOD_METADATA: string };
+  const core = (await import(pathToFileURL(apiRequire.resolve('@nestjs/core')).href)) as {
+    ModulesContainer: new () => Map<string, { controllers: Map<unknown, { metatype: unknown }> }>;
   };
   const clock = new platform.FixedClock(INSTANT);
   let idempotency: Idempotency | undefined;
@@ -208,11 +229,32 @@ export async function openFixture(): Promise<Fixture> {
       return business(request, 'withdraw');
     }
   }
+  const routes = (await import(
+    new URL('apps/api/src/modules/platform/validation/route-schemas.gen.ts', ROOT).href
+  )) as { CONTRACT_ROUTE_SCHEMAS: Record<string, unknown> };
+  // B1-15j: per operation. requestDeletion's real handler takes only @Req() (B1-15d convention)
+  // and has no contract request body, so swapping its body for the stub keeps every signal the
+  // tests read. createWithdrawal has a contract request body the fixture body does not satisfy:
+  // when it lands, this fixture needs its own test change instead of a silent swap.
+  const swappable: Record<OperationName, boolean> = { deletion: true, withdraw: false };
+  const names = Object.keys(OPERATIONS) as OperationName[];
+  const implemented = names.filter((name) =>
+    Object.hasOwn(routes.CONTRACT_ROUTE_SCHEMAS, OPERATIONS[name].operationId),
+  );
+  for (const name of implemented) {
+    expect(
+      swappable[name],
+      `${OPERATIONS[name].operationId} 已实现：合契约的请求体与真实处理函数的参数需另开 test-change（B1-15j 注释）`,
+    ).toBe(true);
+  }
+  const planned = names.filter((name) => !implemented.includes(name));
+  const stubPaths: Record<OperationName, string> = {
+    deletion: 'me/deletion',
+    withdraw: 'withdrawals',
+  };
   common.Controller('v1')(PlannedStepUpEndpoints);
-  for (const [name, path] of [
-    ['deletion', 'me/deletion'],
-    ['withdraw', 'withdrawals'],
-  ] as const) {
+  for (const name of planned) {
+    const path = stubPaths[name];
     const descriptor = Object.getOwnPropertyDescriptor(PlannedStepUpEndpoints.prototype, name)!;
     common.Req()(PlannedStepUpEndpoints.prototype, name, 0);
     common.Post(path)(PlannedStepUpEndpoints.prototype, name, descriptor);
@@ -252,17 +294,77 @@ export async function openFixture(): Promise<Fixture> {
       }),
     };
   });
-  // Planned operations only: once their real controllers exist, these stubs would collide with
-  // them and the fixture has to switch to the method swap of test/spec/risk/rate-limit/http-kit.ts.
-  const routes = (await import(
-    new URL('apps/api/src/modules/platform/validation/route-schemas.gen.ts', ROOT).href
-  )) as { CONTRACT_ROUTE_SCHEMAS: Record<string, unknown> };
-  for (const operation of Object.values(OPERATIONS)) {
-    expect(
-      Object.hasOwn(routes.CONTRACT_ROUTE_SCHEMAS, operation.operationId),
-      `${operation.operationId} 已实现，改用真实路由的替换办法`,
-    ).toBe(false);
-  }
+  const restore: (() => void)[] = [];
+  const segments = (value: unknown) =>
+    (Array.isArray(value) ? value : [value ?? ''])
+      .map((path) => String(path).replace(/^\/+|\/+$/g, ''))
+      .filter((path) => path !== '');
+  // Before init (Nest registers routes in init and keeps the handler function it finds then).
+  const swapRealRoutes = (running: App) => {
+    for (const name of implemented) {
+      const { path: route, operationId } = OPERATIONS[name];
+      let swapped = 0;
+      const seen = new Set<unknown>([PlannedStepUpEndpoints]);
+      for (const module of running
+        .get<Map<string, { controllers: Map<unknown, { metatype: unknown }> }>>(
+          core.ModulesContainer,
+        )
+        .values()) {
+        for (const { metatype } of module.controllers.values()) {
+          if (typeof metatype !== 'function' || seen.has(metatype)) continue;
+          seen.add(metatype);
+          const prefixes = segments(metadata.getMetadata(constants.PATH_METADATA, metatype));
+          for (
+            let proto = metatype.prototype as object | null;
+            proto !== null && proto !== Object.prototype;
+            proto = Object.getPrototypeOf(proto) as object | null
+          ) {
+            for (const method of Object.getOwnPropertyNames(proto)) {
+              const descriptor = Object.getOwnPropertyDescriptor(proto, method)!;
+              if (method === 'constructor' || typeof descriptor.value !== 'function') continue;
+              const original = descriptor.value as Handler;
+              if (
+                metadata.getMetadata(constants.METHOD_METADATA, original) !==
+                common.RequestMethod.POST
+              )
+                continue;
+              const paths = segments(metadata.getMetadata(constants.PATH_METADATA, original));
+              const full = (prefixes.length === 0 ? [''] : prefixes).flatMap((prefix) =>
+                (paths.length === 0 ? [''] : paths).map((path) =>
+                  [prefix, path].filter((part) => part !== '').join('/'),
+                ),
+              );
+              if (!full.includes(route.slice(1))) continue;
+              // The real method takes only @Req(); anything else fails the request (500), never
+              // runs the stub on a guessed argument.
+              const stub: Handler = function (...args: unknown[]) {
+                const request = args[0];
+                if (
+                  args.length !== 1 ||
+                  typeof request !== 'object' ||
+                  request === null ||
+                  !('headers' in request)
+                )
+                  throw new Error(`${operationId} 的真实处理函数不是只取 @Req()（B1-15j 约定）`);
+                return business(request as StubRequest, name);
+              };
+              for (const key of metadata.getOwnMetadataKeys(original))
+                metadata.defineMetadata(key, metadata.getOwnMetadata(key, original), stub);
+              Object.defineProperty(proto, method, { ...descriptor, value: stub });
+              const owner = proto;
+              restore.push(() => Object.defineProperty(owner, method, descriptor));
+              swapped += 1;
+            }
+          }
+        }
+      }
+      const message = `${operationId} 已实现，但 POST ${route} 的真实处理函数不是恰好 1 个`;
+      expect(swapped, message).toBe(1);
+    }
+  };
+  const unswap = () => {
+    for (const undo of restore.splice(0).reverse()) undo();
+  };
   // Stage ⑨: the real-name status port always answers 'verified' (option realnameStatus).
   const originalIdentity = identity.IdentityModule.forRoot.bind(identity.IdentityModule);
   const identitySpy = vi.spyOn(identity.IdentityModule, 'forRoot').mockImplementation((options) =>
@@ -276,12 +378,16 @@ export async function openFixture(): Promise<Fixture> {
     const module = original(options);
     return {
       ...module,
-      controllers: [...((module['controllers'] ?? []) as unknown[]), PlannedStepUpEndpoints],
+      controllers: [
+        ...((module['controllers'] ?? []) as unknown[]),
+        ...(planned.length === 0 ? [] : [PlannedStepUpEndpoints]),
+      ],
     };
   });
   let app: App | undefined;
   try {
     app = (await buildApp(kit.db, dir, server!.url, clock, logger)) as unknown as App;
+    swapRealRoutes(app);
     await app.init();
     idempotency = app.get<Idempotency>(platform.IDEMPOTENCY);
     const running = app;
@@ -301,6 +407,7 @@ export async function openFixture(): Promise<Fixture> {
         try {
           await running.close();
         } finally {
+          unswap();
           try {
             await server!.stop();
           } finally {
@@ -311,7 +418,11 @@ export async function openFixture(): Promise<Fixture> {
       },
     };
   } catch (error) {
-    await app?.close();
+    try {
+      await app?.close();
+    } finally {
+      unswap();
+    }
     await server!.stop();
     await closeKit(kit);
     rmSync(dir, { recursive: true, force: true });
