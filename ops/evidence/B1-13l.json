@@ -1,0 +1,83 @@
+{
+  "task": "B1-13l",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "a49a351b8393f3f5ffcb0a8057cc856689ad784a",
+  "red_tests": [
+    "test/spec/identity/labor-agreement-version/contract.test.ts > [AC-B1-13l#1] signLaborAgreement 契约声明 10004 并保留字段校验错误 20001",
+    "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#2] 发布新版本后旧请求返回 10004、不新增记录；同键更正成功且成功结果可重放",
+    "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#3] 当前版本为 3，提交版本 2 返回 10004 且既有记录逐列不变",
+    "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#4] 当前版本为 3，提交版本 4 返回 10004 且既有记录逐列不变",
+    "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#5] 版本与 [ 'text_sha256' ] 同时不符优先 10004；只更正版本后 20001 仅列剩余不符项",
+    "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#6] 版本与 [ 'agreed' ] 同时不符优先 10004；只更正版本后 20001 仅列剩余不符项",
+    "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#7] 版本与 [ 'text_sha256', 'agreed' ] 同时不符优先 10004；只更正版本后 20001 仅列剩余不符项"
+  ],
+  "risk_note": "RV1 (identity; the labor agreement gates withdrawals, so the review ran at the money level). signLaborAgreement: a version that differs from the current labor agreement returns 10004 with data {consent_type: labor_agreement} (HTTP 403, no record written, not stored by idempotency so the same key can carry the corrected request) per BR-WDR-31 (couli #158); text_sha256 / agreed mismatches stay 20001 with data.fields listing only those; a version mismatch together with others is 10004. Contract: signLaborAgreement x-error-codes lists 10004. The B1-13h frozen tests switch on the contract state (B1-13m, #956). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a49a351b8393f3f5ffcb0a8057cc856689ad784a",
+      "tree": "15acbaea124a44d3bf1c2f82040b256ef6c1839b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T00:23:24Z",
+      "finished_at": "2026-10-20T00:23:36Z",
+      "red_tests": [
+        "test/spec/identity/labor-agreement-version/contract.test.ts > [AC-B1-13l#1] signLaborAgreement 契约声明 10004 并保留字段校验错误 20001",
+        "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#2] 发布新版本后旧请求返回 10004、不新增记录；同键更正成功且成功结果可重放",
+        "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#3] 当前版本为 3，提交版本 2 返回 10004 且既有记录逐列不变",
+        "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#4] 当前版本为 3，提交版本 4 返回 10004 且既有记录逐列不变",
+        "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#5] 版本与 [ 'text_sha256' ] 同时不符优先 10004；只更正版本后 20001 仅列剩余不符项",
+        "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#6] 版本与 [ 'agreed' ] 同时不符优先 10004；只更正版本后 20001 仅列剩余不符项",
+        "test/spec/identity/labor-agreement-version/sign.int.test.ts > [AC-B1-13l#7] 版本与 [ 'text_sha256', 'agreed' ] 同时不符优先 10004；只更正版本后 20001 仅列剩余不符项"
+      ],
+      "expected": [
+        "test/spec/identity/labor-agreement-version/contract.test.ts",
+        "test/spec/identity/labor-agreement-version/sign.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a8891621102c9d2d5c69346487a9968d75d2456b5d416fee3af3fbae18158e87"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "82cd4721ab390c22a47d15205e6ee9381f19388ef83eec28054a1891703e3776"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (7 tests in 2 files, red for the right reason, red/1) reviewed by a fresh Claude subagent: r1 pass, 0 findings"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "00c4d2b425fc280be5448032354dc0d12784e9bf",
+    "specs": "a1b96a3002d99e9b2e9c35fa6b3b4fbdba07cfca"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
