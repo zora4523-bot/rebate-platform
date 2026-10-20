@@ -1,0 +1,21 @@
+id: B1-02zh
+repo: rebate-platform
+title: 全局守卫 ⑦ 隐私最低版本：用户级 privacy 最新同意版本低于 legal.privacy.min_version 时，x-auth ≥ login 的接口返回 10004（data.consent_type=privacy）；挂在 ⑤ 之后、⑧ 之前，api 与 stream 两个入口都装；同意 / 退出 / 刷新等放行接口按 08 定白名单
+type: impl
+# 草稿 2026-10-20（身份与风控线 identity-lane，第三波候选；notices 10-18 07:xx 已报 ⑦ 缺）。依据 BR-ID-01 ⑦、BR-ID-12（SPEC_REF ac4d993）。逐请求查库（同 B1-02za 的 E19）；配置经 app.module 注入的 content reader 读。不改契约。RV1（identity / risk 请求检查），评审 Codex general。
+# 白名单起草时按 08 定：至少 POST /v1/consents、退出、刷新令牌放行，否则用户无法重新同意。与后续 ⑥ 注销守卫（B1-15e）改同一检查列表，二者先后合并、不并行。
+refs: []
+refs_hash: {}
+deps: [B1-02za, B1-02k]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/privacy-min-version/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/privacy-min-version/**'
+status: todo

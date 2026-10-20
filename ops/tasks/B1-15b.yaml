@@ -1,0 +1,19 @@
+id: B1-15b
+repo: rebate-platform
+title: 状态机（注销单）：specs/state-machines/deletion-request.yaml（deletion_requests.status：cooling → processing → done，cooling → cancelled，原因 user / negative_balance 不进状态机），复用生成器生成 deletion-request.gen.ts 与一致性测试
+type: contract
+# 草稿 2026-10-20（身份与风控线 identity-lane，第三波候选）。照编排 D10-95 ② 与 B1-35a / CT-04e 先例：状态字段只经生成的 transition()，不需 approvals 例外；不改 openapi、不占契约槽。依据 BR-ID-27（SPEC_REF ac4d993）与契约枚举 deletion_status。
+refs: []
+refs_hash: {}
+deps: [B1-15a]
+paths:
+  - 'specs/state-machines/**'
+  - 'packages/domain/**'
+test_paths:
+  - 'test/spec/state-machines/deletion-request/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/state-machines/deletion-request/**'
+status: todo

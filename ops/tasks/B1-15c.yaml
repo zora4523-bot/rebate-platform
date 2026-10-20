@@ -1,0 +1,20 @@
+id: B1-15c
+repo: rebate-platform
+title: 注销阶段读口：identity 导出按用户批量读注销阶段（none / cooling / processing / done，读 deletion_requests 与 users.status，调用方事务内执行），接进 inviterUnavailable 的三处调用方（growth 绑定、我的邀请页、GET /v1/me）替换 blocked on B1-15 的 TODO，并把 users.status=deleting 当 processing（BR-ID-28）
+type: impl
+# 草稿 2026-10-20（身份与风控线 identity-lane，第三波候选）。解开 B1-35 的 BR-INV-24 ③ 注销冷静期判定；followups：me.ts 注销推导只认 deleted。资金线在用的 createUserDeletionStatusReader（B1-02ze）签名与口径不动（只认 processing / done）。依据 BR-ID-27 / BR-ID-28 / BR-INV-02（SPEC_REF ac4d993）。RV2（growth 归属判定），评审 Codex money。
+refs: []
+refs_hash: {}
+deps: [B1-15a, B1-15b, B1-02ze]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/growth/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/deletion-stage/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/deletion-stage/**'
+status: todo

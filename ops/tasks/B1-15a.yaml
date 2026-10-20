@@ -1,0 +1,21 @@
+id: B1-15a
+repo: rebate-platform
+title: 注销单表迁移：app.deletion_requests（04 §3.2：user_id、status、apply_at、cooling_until、cancelled_at、cancel_reason、processed_at、balance_snapshot），status / cancel_reason 取契约枚举 CHECK，每用户最多一张未结束的单（部分唯一 WHERE status IN cooling / processing），定时任务索引 (status, cooling_until)
+type: impl
+# 草稿 2026-10-20（身份与风控线 identity-lane，第三波候选 couli-runs/IDENTITY-tips/wave3-candidates.md；编排 14:4x 派工「排下一批不受阻挡的身份任务，看 B1-15 能否先开」）。依据 BR-ID-27、BR-ID-28（SPEC_REF ac4d993）、04 §3.2、enums deletion_status / deletion_cancel_reason。
+# 迁移号落地时取主干最大号 + 1 并在 notices 登记；授权写在建表迁移里（写者 identity）；schema.sql / db.gen.ts 由编排在测试机快照。不改契约。
+refs: []
+refs_hash: {}
+deps: [B1-02a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/deletion-requests/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/deletion-requests/**'
+status: todo
