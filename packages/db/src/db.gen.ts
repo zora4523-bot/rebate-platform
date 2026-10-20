@@ -608,6 +608,7 @@ export interface InviteRewards {
   app_id: string;
   bind_ip_hmac: string;
   bind_source: string;
+  eligibility_days: number;
   granted_at: Timestamp | null;
   invitee_id: string;
   invitee_result: string | null;
