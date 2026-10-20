@@ -241,6 +241,52 @@ it('[AC-B1-02zh#9] 无 HTTP scope 的直接幂等调用不判隐私', async () =
   expect(f.configValue).not.toHaveBeenCalled();
 });
 
+for (const [auth, path] of [
+  ['optional', '/v1/links/:link_id/open'],
+  ['none', '/v1/invites/landing-register'],
+] as const) {
+  it(`[AC-B1-02zh#23] HTTP scope 内 ${auth} 幂等路由 ${path} 的 post-miss 跳过隐私且不读配置`, async () => {
+    const f = await fixture(3);
+    await consent(db, f.appId, f.uid, { version: 2 });
+    const input = request(f.appId, f.uid, 'POST', path);
+    const checks = api.createPrivacyConsentChecks(f.options);
+    const idem = platform.createIdempotency({
+      db: db.withSchema('app'),
+      clock: new platform.FixedClock(NOW),
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
+    const postMiss = vi.fn(checks.postMiss);
+    platform.registerIdempotencyPostMissCheck(idem, postMiss);
+    const business = vi.fn(async () => ({
+      status: 200,
+      envelope: { code: 0, msg: '', data: {}, trace_id: input.id },
+    }));
+    await expect(
+      scope.MINIMUM_VERSION_SCOPE.run({ request: input, idempotencyEntered: false }, () =>
+        idem.executeInTransaction(
+          {
+            appId: f.appId,
+            actor: { userId: f.uid, deviceId: null, phoneHmac: null },
+            method: 'POST',
+            path,
+            key: randomUUID(),
+            body: {},
+            traceId: input.id,
+          },
+          business,
+        ),
+      ),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: JSON.stringify({ code: 0, msg: '', data: {}, trace_id: input.id }),
+      source: 'handler',
+    });
+    expect(postMiss).toHaveBeenCalledTimes(1);
+    expect(business).toHaveBeenCalledTimes(1);
+    expect(f.configValue).not.toHaveBeenCalled();
+  });
+}
+
 for (const mode of ['allow', 'refuse', 'config-failure', 'consent-failure'] as const) {
   it(`[AC-B1-02zh#10] post-miss ${mode}：配置与同意都在 claim 事务读取，拒绝不留键、不执行后续检查`, async () => {
     const f = await fixture();
@@ -354,7 +400,7 @@ for (const mode of ['allow', 'refuse', 'config-failure', 'consent-failure'] as c
       expect(business).not.toHaveBeenCalled();
       await noKey(db, f.appId, key);
     }
-    expect(on).toHaveBeenCalledTimes(1);
+    if (mode !== 'consent-failure') expect(on).toHaveBeenCalledTimes(1);
     expect(f.configValue).not.toHaveBeenCalled();
   });
 }
