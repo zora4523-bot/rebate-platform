@@ -1,0 +1,91 @@
+{
+  "task": "B1-35b",
+  "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
+  "spec_commit": "e0aa7503e6da232c9adc000e688cf95cdc9ad1b9",
+  "red_tests": [
+    "test/spec/risk/invite-reward-ref/port.test.ts > [AC-B1-35b#1] risk 公共出口接受提现及双方奖励引用，奖励必须指定合法 party",
+    "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#2] risk_judgements 接受邀请奖励及原三值，拒绝未知值并保留结果 CHECK",
+    "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#3] risk_hits 接受邀请奖励及原四值，拒绝未知值且不放宽 risk_action",
+    "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#4] 邀请奖励判定第 1 位账号，只标记第三位并按奖励及一方记录",
+    "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#4] 邀请奖励判定第 2 位账号，只标记第三位并按奖励及一方记录",
+    "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#4] 邀请奖励判定第 3 位账号，只标记第三位并按奖励及一方记录",
+    "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#5] 邀请奖励并发与重试只判定一次，数据库唯一约束兜底两表去重",
+    "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#6] 相同对象 id 的奖励与提现独立，提现命中及未命中行为保持不变",
+    "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#7] 相同奖励 ref 在不同 app_id 分别持久化判定与命中",
+    "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#8] 同一奖励先判 inviter 排名一，再判 invitee 排名三，双方分别记录和回放",
+    "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#8] 同一奖励先判 invitee 排名一，再判 inviter 排名三，双方分别记录和回放"
+  ],
+  "risk_note": "RV2 (db / risk). Migration 0056 widens risk_judgements_ref_type_check and risk_hits_ref_type_check with invite_reward (0044 pattern: widening only, no new column, no grant change). The same-device check accepts refs { type: 'invite_reward', id, party: 'inviter' | 'invitee' } and stores ref_id <reward id>:<party> (lock key, lookup, judgement and hit rows), so both parties of one reward are judged and replayed independently (Codex money r1 S0 fixed); withdrawal refs unchanged; a ref without a valid party is refused before any write. Whether to grant stays with B1-35 (BR-ID-37: judged at reward grant; only the marked party is not paid). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e0aa7503e6da232c9adc000e688cf95cdc9ad1b9",
+      "tree": "0fa37bf4c9d3f8fc97a027397594baab4ee615e9",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T06:01:32Z",
+      "finished_at": "2026-10-20T06:01:52Z",
+      "red_tests": [
+        "test/spec/risk/invite-reward-ref/port.test.ts > [AC-B1-35b#1] risk 公共出口接受提现及双方奖励引用，奖励必须指定合法 party",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#2] risk_judgements 接受邀请奖励及原三值，拒绝未知值并保留结果 CHECK",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#3] risk_hits 接受邀请奖励及原四值，拒绝未知值且不放宽 risk_action",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#4] 邀请奖励判定第 1 位账号，只标记第三位并按奖励及一方记录",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#4] 邀请奖励判定第 2 位账号，只标记第三位并按奖励及一方记录",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#4] 邀请奖励判定第 3 位账号，只标记第三位并按奖励及一方记录",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#5] 邀请奖励并发与重试只判定一次，数据库唯一约束兜底两表去重",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#6] 相同对象 id 的奖励与提现独立，提现命中及未命中行为保持不变",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#7] 相同奖励 ref 在不同 app_id 分别持久化判定与命中",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#8] 同一奖励先判 inviter 排名一，再判 invitee 排名三，双方分别记录和回放",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts > [AC-B1-35b#8] 同一奖励先判 invitee 排名一，再判 inviter 排名三，双方分别记录和回放"
+      ],
+      "expected": [
+        "test/spec/risk/invite-reward-ref/port.test.ts",
+        "test/spec/risk/invite-reward-ref/rules.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "d7ae67140c29d337f595354aed1196926af38da05206c68f5767a76a1aba0f58"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8a13d90cc1bbe71b1dc5ee4a92c11d18804516747f0c6c936011e0105ed27d3a"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 S0 (one judgement shared by both parties of a reward) fixed in round 2 by party-scoped refs; round 2 pass on the committed head"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex in 3 rounds (red/1 failed on raw CHECK errors, red/2 PASS with 9 tests; round 3 adds party-scoped refs and the S0 reproduction #8), reviewed by fresh Claude subagents: r1 pass, r2 pass"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "9e11d0d482842f901881b9a3de3752b9749a5fbd",
+    "specs": "c150895f9c4c3249d17ebd0894736c9169aad3f5"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
