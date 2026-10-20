@@ -1113,6 +1113,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListOrders",
+    "method": "GET",
+    "path": "/admin/v1/orders",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetOrder",
+    "method": "GET",
+    "path": "/admin/v1/orders/:order_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListClaims",
     "method": "GET",
     "path": "/admin/v1/claims",
