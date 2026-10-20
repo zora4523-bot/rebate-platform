@@ -76,6 +76,11 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminClaimEvidenceLevel: 'claim_evidence_level',
   AdminClaimMatchField: 'admin_claim_match_field',
   AdminClaimEvidenceScene: 'scene',
+  AdminInviteRewardStatus: 'invite_reward_status',
+  AdminInviteRewardPartyResult: 'invite_reward_party_result',
+  AdminInviteRewardSkipReason: 'invite_reward_skip_reason',
+  AdminInviteRewardVoidReason: 'invite_reward_void_reason',
+  AdminInviteRewardBindSource: 'invite_reward_bind_source',
 };
 
 /**

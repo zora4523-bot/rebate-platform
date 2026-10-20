@@ -121,6 +121,8 @@ it('classifies the keys 08 and contract row b5-28 name', () => {
     'order_list.deposit_amount',
     'pending_confirm.withdraw.desc',
     'invite.notice_inviter',
+    'invite.reward.tip',
+    'invite.reward.tip_inviter',
   ];
   for (const k of asFund) expect(segmentsOf(k), k).toEqual(['fund_terms']);
   const asOrdinary = [
@@ -133,6 +135,7 @@ it('classifies the keys 08 and contract row b5-28 name', () => {
     'app_update.unavailable',
     'order_timeline.deposit_paid',
     'agent.notice.search_disabled',
+    'invite.post_login.optional_hint',
   ];
   for (const k of asOrdinary) expect(segmentsOf(k), k).toEqual(['ordinary']);
   expect(ordinary.prefixes).not.toContain('external_page.');

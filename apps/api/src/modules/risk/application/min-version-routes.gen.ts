@@ -1013,6 +1013,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListInviteRewards",
+    "method": "GET",
+    "path": "/admin/v1/invite-rewards",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetInviteReward",
+    "method": "GET",
+    "path": "/admin/v1/invite-rewards/:invitee_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminSearch",
     "method": "GET",
     "path": "/admin/v1/search",

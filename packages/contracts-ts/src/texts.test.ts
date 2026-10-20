@@ -38,6 +38,16 @@ it('[AC-CT-19c#3] btn.buy.rebate_suffix 不在本任务的默认文案中', () =
   expect(Object.hasOwn(texts, 'btn.buy.rebate_suffix')).toBe(false);
 });
 
+it('[CT-25a] invite reward and optional-hint texts are 08 BR-TEXT-14 table C verbatim', () => {
+  expect(texts['invite.reward.tip']).toBe('首单结算后，你和好友各得 {amount}');
+  expect(texts['invite.reward.tip_inviter']).toBe('好友首单结算后，你们各得 {amount}');
+  expect(texts['invite.post_login.optional_hint']).toBe(
+    '选填，注册 7 天内、首次下单前可到「我的」补填',
+  );
+  // Deprecated 2026-10-19 but kept (key never reused).
+  expect(texts['invite.before_buy_tip']).toBeTypeOf('string');
+});
+
 it('has the expected shape, sorted keys and non-empty texts', () => {
   expect(Object.keys(file).sort()).toEqual(['fallbacks', 'texts', 'version']);
   expect(file.version).toBe(1);

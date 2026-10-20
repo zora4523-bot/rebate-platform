@@ -4124,7 +4124,9 @@ paths:
         jump_tip is read per platform (a platform without a record is absent or null);
         inviter_before_buy is not per platform (BR-INV-03 细则). Fetched with /v1/config after
         login; after a login on another device a tip already read on the same platform is not
-        shown again (BR-ATTR-21, AC-S1-17).
+        shown again (BR-ATTR-21, AC-S1-17). inviter_before_buy is deprecated since 2026-10-19
+        (the first-purchase inviter tip is cancelled, BR-INV-03 细则, 04 §6.1): clients no longer
+        read it; kept in the contract and returned as before until removed, never reused.
       x-auth: login
       x-signed: false
       x-idempotent: false
@@ -4172,8 +4174,9 @@ paths:
       summary: Mark a tip as read
       description: |
         tip_key=jump_tip needs a body {platform}; without it → 20001 with data.fields=[platform].
-        tip_key=inviter_before_buy sends no body. Repeating the call is harmless:
-        an existing record keeps its read_at. Version gate: applied.
+        tip_key=inviter_before_buy sends no body (deprecated since 2026-10-19, BR-INV-03 细则:
+        clients no longer call it; still accepted as before until removed). Repeating the call is
+        harmless: an existing record keeps its read_at. Version gate: applied.
       x-auth: login
       x-signed: false
       x-idempotent: false
@@ -4918,6 +4921,8 @@ paths:
                     backfill_hours: 168
                     bind_phone_guide: true
                     before_buy_tip: true
+                    reward_enabled: false
+                    reward_amount_fen: 1000
                   agent:
                     enabled: true
                     whitelist_only: true
@@ -7802,6 +7807,232 @@ paths:
               examples:
                 pageSizeTooLarge:
                   $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/invite-rewards:
+    get:
+      operationId: adminListInviteRewards
+      tags:
+        - admin-users
+      summary: Invite reward records with today's and total used budget (read only)
+      description: |
+        Permission point `fund.view` (04 §6.6 invite-rewards, 01 F-ADM-27; read only, no step-up);
+        without it → 10403 with `data.reason=admin_permission_denied`. The qualification and
+        payout records of the invite reward campaign (BR-INV-24 细则「资格记录与状态」, one per
+        invitee) of the console's app, latest `qualified_at` first, page by page (`page`,
+        `page_size` ≤ 200), optionally filtered by `invitee_id`, `inviter_id`, `status` and the
+        +08:00 calendar days of `qualified_at` (`qualified_from` to `qualified_to`, both
+        inclusive; `qualified_from` later than `qualified_to` → 20001 with
+        `data.fields=[qualified_from, qualified_to]`). Each row carries both parties' results and,
+        for a party not paid or a voided record, the reason code (enums invite_reward_skip_reason,
+        invite_reward_void_reason; meanings only in BR-INV-24; the console shows them, the app
+        never does). Phone numbers are masked 3 + 4 (`138****5678`, BR-ID-33); the full number is
+        only shown through POST /admin/v1/users/{user_id}/reveal (`pii.reveal_phone`). No client
+        IP or its HMAC and no voucher ids. `budget` holds the amounts used, whatever the filters:
+        granted on the current +08:00 day, and reserved and granted in total (BR-INV-24 ④); the
+        limits themselves are config items (`growth.invite_reward.*`, GET /admin/v1/config-items).
+        There is no write operation: no re-issue and no change of a result (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - name: invitee_id
+          in: query
+          required: false
+          description: Only the record of this invitee (user_id); absent = all.
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: inviter_id
+          in: query
+          required: false
+          description: Only records of this inviter (user_id); absent = all.
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: status
+          in: query
+          required: false
+          description: Only records in this status (enum invite_reward_status); absent = all.
+          schema:
+            $ref: '#/components/schemas/AdminInviteRewardStatus'
+        - name: qualified_from
+          in: query
+          required: false
+          description: First +08:00 calendar day of `qualified_at`, inclusive.
+          schema:
+            type: string
+            format: date
+        - name: qualified_to
+          in: query
+          required: false
+          description: Last +08:00 calendar day of `qualified_at`, inclusive.
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: One page of invite reward records, latest qualification first, with the used budget.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminInviteRewardPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - invitee_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02
+                      inviter_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                      invitee_phone_masked: '139****0000'
+                      inviter_phone_masked: '138****5678'
+                      amount_fen: 1000
+                      bind_source: landing
+                      qualified_at: '2026-10-20T10:00:00+08:00'
+                      trigger_order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01
+                      triggered_at: '2026-11-25T09:00:00+08:00'
+                      status: processed
+                      inviter_result: skipped
+                      invitee_result: granted
+                      inviter_skip_reason: risk_restricted
+                      invitee_skip_reason: null
+                      void_reason: null
+                      granted_at: '2026-11-25T09:00:05+08:00'
+                    - invitee_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03
+                      inviter_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                      invitee_phone_masked: '137****1111'
+                      inviter_phone_masked: '138****5678'
+                      amount_fen: 1000
+                      bind_source: register
+                      qualified_at: '2026-10-19T20:30:00+08:00'
+                      trigger_order_id: null
+                      triggered_at: null
+                      status: qualified
+                      inviter_result: null
+                      invitee_result: null
+                      inviter_skip_reason: null
+                      invitee_skip_reason: null
+                      void_reason: null
+                      granted_at: null
+                  page: 1
+                  page_size: 20
+                  total: 2
+                  budget:
+                    today:
+                      date: '2026-11-25'
+                      granted_fen: 1000
+                    total:
+                      reserved_fen: 2000
+                      granted_fen: 1000
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Invalid query or not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/invite-rewards/{invitee_id}:
+    get:
+      operationId: adminGetInviteReward
+      tags:
+        - admin-users
+      summary: One invite reward record, by invitee (read only)
+      description: |
+        Permission point `fund.view` (04 §6.6 invite-rewards; read only, no step-up); without it →
+        10403 with `data.reason=admin_permission_denied`. The invite reward record of one invitee
+        (BR-INV-24, at most one per invitee) of the console's app, with the same fields and masking
+        as a row of GET /admin/v1/invite-rewards; the full phone numbers only through POST
+        /admin/v1/users/{user_id}/reveal (`pii.reveal_phone`). An invitee without a record
+        (unknown, of another app, or never qualified) → 30701. No write operation (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - name: invitee_id
+          in: path
+          required: true
+          description: user_id of the invitee; no record for it → 30701.
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '200':
+          description: The invite reward record.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminInviteRewardResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  invitee_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c04
+                  inviter_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                  invitee_phone_masked: '136****2222'
+                  inviter_phone_masked: '138****5678'
+                  amount_fen: 1000
+                  bind_source: backfill
+                  qualified_at: '2026-10-21T08:15:00+08:00'
+                  trigger_order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a02
+                  triggered_at: '2026-11-25T09:00:00+08:00'
+                  status: voided
+                  inviter_result: null
+                  invitee_result: null
+                  inviter_skip_reason: null
+                  invitee_skip_reason: null
+                  void_reason: order_clawed_back
+                  granted_at: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: No record or not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                notFound:
+                  $ref: '#/components/examples/AdminInviteRewardNotFound'
                 noPermission:
                   $ref: '#/components/examples/AdminPermissionDenied'
                 tokenExpired:
@@ -14870,6 +15101,12 @@ components:
         code: 30701
         msg: 页面不存在
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminInviteRewardNotFound:
+      summary: 30701 the invitee has no invite reward record
+      value:
+        code: 30701
+        msg: 内容不存在或已下线
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminPageConfigVersionInvalid:
       summary: 20001 the version does not exist or its status does not allow the operation
       value:
@@ -17550,7 +17787,10 @@ components:
           $ref: '#/components/schemas/TraceId'
     TipKey:
       type: string
-      description: One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则).
+      description: |
+        One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则). inviter_before_buy is deprecated
+        since 2026-10-19 (first-purchase inviter tip cancelled): kept and accepted as before, not
+        used by clients, never reused.
       enum:
         - jump_tip
         - inviter_before_buy
@@ -17561,7 +17801,7 @@ components:
         - jump_tip
     MarkTipReadRequest:
       type: object
-      description: Body of tip_key=jump_tip; tip_key=inviter_before_buy sends no body.
+      description: Body of tip_key=jump_tip; tip_key=inviter_before_buy (deprecated 2026-10-19) sends no body.
       additionalProperties: false
       required:
         - platform
@@ -17575,6 +17815,10 @@ components:
       format: date-time
     TipsData:
       type: object
+      description: |
+        Read states of the one-time tips. inviter_before_buy is deprecated since 2026-10-19
+        (first-purchase inviter tip cancelled, BR-INV-03 细则): clients no longer read it; still
+        returned as before until removed from the contract.
       additionalProperties: false
       required:
         - jump_tip
@@ -19849,7 +20093,31 @@ components:
             the schema like every key added after v0.9; the server always sends it.
         before_buy_tip:
           type: boolean
-          description: Show the inviter tip before the first purchase (BR-INV-21).
+          deprecated: true
+          description: |
+            Deprecated 2026-10-19: the first-purchase inviter tip is cancelled (BR-INV-03 细则,
+            BR-INV-21); clients no longer read it. Kept in the schema and never reused; the server
+            may still send it until it is removed.
+        reward_enabled:
+          type: boolean
+          description: |
+            Whether the invite reward campaign is live (BR-INV-24 ① ⑨): the switch is on and the
+            total budget left (total − reserved − granted) covers both parties' amounts. When true
+            the client shows invite.reward.tip (invitee side) or invite.reward.tip_inviter (invite
+            page). Server-derived, never read from config_items of the same name (04 §10.1,
+            BR-INV-24 ⑨); a missing switch counts as off. Optional in the schema like every key
+            added after v0.9; the server always sends it.
+        reward_amount_fen:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+          description: |
+            Amount each party gets, in fen (BR-INV-24 ①; the {amount} of invite.reward.tip and
+            invite.reward.tip_inviter, formatted by BR-TEXT-10). Server-derived, never read from
+            config_items of the same name (04 §10.1, BR-INV-24 ⑨); a missing amount takes the
+            BR-INV-24 default. Optional in the schema like every key added after v0.9; the server
+            always sends it.
     ConfigAgent:
       type: object
       description: Agent availability and guest quota (04 §10.1; BR-AI-11, BR-AI-12).
@@ -24623,6 +24891,246 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminUserPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminInviteRewardStatus:
+      type: string
+      description: |
+        Status of an invite reward record (enum invite_reward_status; meanings only in BR-INV-24
+        细则「资格记录与状态」): qualified → deferred → processed, with the end states voided and
+        budget_exhausted.
+      enum:
+        - qualified
+        - deferred
+        - processed
+        - voided
+        - budget_exhausted
+    AdminInviteRewardPartyResult:
+      type: string
+      description: One party's result (enum invite_reward_party_result; BR-INV-24).
+      enum:
+        - granted
+        - skipped
+    AdminInviteRewardSkipReason:
+      type: string
+      description: |
+        Why a party is not paid (enum invite_reward_skip_reason; BR-INV-24 ③): same_device,
+        same_ip and deleted_phone_retained skip both parties, the others only the party hit.
+      enum:
+        - same_device
+        - same_ip
+        - deleted_phone_retained
+        - multi_account
+        - risk_restricted
+        - deleting
+        - minor
+    AdminInviteRewardVoidReason:
+      type: string
+      description: Why a record is voided (enum invite_reward_void_reason; BR-INV-24 ③ ⑥).
+      enum:
+        - relation_changed
+        - order_clawed_back
+        - order_rights
+    AdminInviteRewardBindSource:
+      type: string
+      description: Bind channel the invitee qualified through (enum invite_reward_bind_source; BR-INV-24 ①; admin changes never qualify).
+      enum:
+        - landing
+        - register
+        - backfill
+    AdminInviteReward:
+      type: object
+      description: |
+        An invite reward record (04 §3.2 invite_rewards, BR-INV-24), one per invitee. Phone
+        numbers masked; no client IP or its HMAC and no voucher ids.
+      additionalProperties: false
+      required:
+        - invitee_id
+        - inviter_id
+        - invitee_phone_masked
+        - inviter_phone_masked
+        - amount_fen
+        - bind_source
+        - qualified_at
+        - trigger_order_id
+        - triggered_at
+        - status
+        - inviter_result
+        - invitee_result
+        - inviter_skip_reason
+        - invitee_skip_reason
+        - void_reason
+        - granted_at
+      properties:
+        invitee_id:
+          $ref: '#/components/schemas/Id'
+        inviter_id:
+          $ref: '#/components/schemas/Id'
+        invitee_phone_masked:
+          $ref: '#/components/schemas/AdminMaskedPhone'
+        inviter_phone_masked:
+          $ref: '#/components/schemas/AdminMaskedPhone'
+        amount_fen:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Amount each party gets, locked when the invitee qualified (BR-INV-24 ①).
+        bind_source:
+          $ref: '#/components/schemas/AdminInviteRewardBindSource'
+        qualified_at:
+          type: string
+          format: date-time
+          description: When the invitee qualified (in the bind transaction).
+        trigger_order_id:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 64
+          description: Id of the order that triggered the reward (the invitee's first own purchase credited, BR-INV-24 ②); null before the trigger.
+        triggered_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the trigger happened; null before it.
+        status:
+          $ref: '#/components/schemas/AdminInviteRewardStatus'
+        inviter_result:
+          description: The inviter's result; null until processed (and for a voided or budget_exhausted record).
+          anyOf:
+            - $ref: '#/components/schemas/AdminInviteRewardPartyResult'
+            - type: 'null'
+        invitee_result:
+          description: The invitee's result; null until processed (and for a voided or budget_exhausted record).
+          anyOf:
+            - $ref: '#/components/schemas/AdminInviteRewardPartyResult'
+            - type: 'null'
+        inviter_skip_reason:
+          description: Why the inviter is not paid; null unless inviter_result is skipped.
+          anyOf:
+            - $ref: '#/components/schemas/AdminInviteRewardSkipReason'
+            - type: 'null'
+        invitee_skip_reason:
+          description: Why the invitee is not paid; null unless invitee_result is skipped.
+          anyOf:
+            - $ref: '#/components/schemas/AdminInviteRewardSkipReason'
+            - type: 'null'
+        void_reason:
+          description: Why the record is voided; null unless status is voided.
+          anyOf:
+            - $ref: '#/components/schemas/AdminInviteRewardVoidReason'
+            - type: 'null'
+        granted_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the granted amounts were posted; null when no party was paid.
+    AdminInviteRewardBudget:
+      type: object
+      description: |
+        Invite reward budget used (BR-INV-24 ④), independent of the list's filters; the limits are
+        the config items growth.invite_reward.daily_budget_fen and total_budget_fen.
+      additionalProperties: false
+      required:
+        - today
+        - total
+      properties:
+        today:
+          type: object
+          additionalProperties: false
+          required:
+            - date
+            - granted_fen
+          properties:
+            date:
+              type: string
+              format: date
+              description: The current +08:00 calendar day.
+            granted_fen:
+              type: integer
+              format: int64
+              minimum: 0
+              description: Amount granted on that day (what the daily budget counts).
+        total:
+          type: object
+          additionalProperties: false
+          required:
+            - reserved_fen
+            - granted_fen
+          properties:
+            reserved_fen:
+              type: integer
+              format: int64
+              minimum: 0
+              description: Amount reserved by qualified records not yet paid (both parties' amounts each).
+            granted_fen:
+              type: integer
+              format: int64
+              minimum: 0
+              description: Amount granted since the campaign started.
+    AdminInviteRewardPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+        - budget
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminInviteReward'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+        budget:
+          $ref: '#/components/schemas/AdminInviteRewardBudget'
+    AdminInviteRewardPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminInviteRewardPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminInviteRewardResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminInviteReward'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     AdminUserRiskState:
