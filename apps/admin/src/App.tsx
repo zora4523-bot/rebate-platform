@@ -42,6 +42,7 @@ import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
 import { UsersPage } from './pages/users/index.ts';
+import { UserDetailView } from './pages/users/UserDetailView.tsx';
 import { LoginPage } from './pages/login/index.ts';
 import {
   createAccessControl,
@@ -69,6 +70,7 @@ type PermissionState =
   | { readonly status: 'failed' };
 
 const NO_GROUPS: readonly AdminMenuGroup[] = [];
+const USERS_MENU_ID = 'users';
 
 // Refine resources: one per menu, nested under its group (for later Refine menus and hooks).
 const RESOURCES: ResourceProps[] = getAdminMenuGroups().flatMap((group) => [
@@ -83,6 +85,16 @@ const RESOURCES: ResourceProps[] = getAdminMenuGroups().flatMap((group) => [
 function initialEntry(route: AdminShellOptions['initialRoute']): InitialEntry {
   if (route === undefined) return '/';
   return { pathname: `/${route.menuId}`, state: { subpage: route.subpage } };
+}
+
+/** Router state of /users opened from the top-bar search: that user's detail, not the list. */
+interface SearchUserState {
+  readonly searchUser: string;
+}
+
+function searchUserOf(state: unknown): string | undefined {
+  if (typeof state !== 'object' || state === null || !('searchUser' in state)) return undefined;
+  return typeof state.searchUser === 'string' ? state.searchUser : undefined;
 }
 
 function subpageOf(state: unknown): string | undefined {
@@ -381,7 +393,17 @@ function ShellFrame({
     if (state.status === 'ready') onLanded();
   }, [landing, state, groups, navigate, onLanded, location.pathname]);
 
+  // A user hit of the top-bar search: each opening is a new history entry (its own detail view).
+  const openUser = useCallback(
+    (userId: string) => {
+      const target: SearchUserState = { searchUser: userId };
+      void navigate(`/${USERS_MENU_ID}`, { state: target });
+    },
+    [navigate],
+  );
+
   const menuId = location.pathname.replace(/^\/+/, '');
+  const searchUser = menuId === USERS_MENU_ID ? searchUserOf(location.state) : undefined;
   const match = findMenuItem(groups, menuId);
   const subpage = match === undefined ? undefined : subpageOf(location.state);
   // A workbench card opened a route whose page is not in the catalogue yet (e.g. /risk/appeals):
@@ -398,6 +420,8 @@ function ShellFrame({
   const noPermission =
     state.status === 'ready' && !state.snapshot.isSuper && state.snapshot.permissions.length === 0;
   const fallback = noPermission || firstOther === undefined ? '/' : `/${firstOther.id}`;
+  // The top-bar search is on every page of an account with permission keys (not 暂无权限).
+  const showSearch = state.status === 'ready' && !noPermission && !landing;
   let crumbs: string[];
   if (match === undefined) crumbs = [cardTarget ?? shellTexts.welcomeCrumb];
   else if (match.group.key === DASHBOARD_MENU_ID) crumbs = [match.item.label];
@@ -416,6 +440,17 @@ function ShellFrame({
     const { snapshot } = state;
     if (match !== undefined && options.renderPage !== undefined) {
       content = options.renderPage(match.item.id, access);
+    } else if (searchUser !== undefined && (snapshot.isSuper || snapshot.permissions.length > 0)) {
+      // Opened from the top-bar search; 【返回】 goes to the users list.
+      content = (
+        <UserDetailView
+          key={location.key}
+          userId={searchUser}
+          canReveal={access.can('pii.reveal_phone')}
+          onBack={() => void navigate(`/${USERS_MENU_ID}`)}
+          onOpenUser={openUser}
+        />
+      );
     } else if (match !== undefined && match.item.id === DASHBOARD_MENU_ID) {
       content = <DashboardPage access={access} fallback={fallback} />;
     } else if (match !== undefined && match.item.id === 'admins') {
@@ -468,6 +503,7 @@ function ShellFrame({
           environment={options.environment}
           displayName={account.displayName}
           onLogout={onLogout}
+          onOpenUser={showSearch ? openUser : undefined}
         />
         <Layout.Content className="admin-content" aria-busy={state.status === 'loading'}>
           {content}
