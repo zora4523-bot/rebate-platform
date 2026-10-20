@@ -1,0 +1,29 @@
+id: CT-25f
+repo: rebate-platform
+title: 契约（BR-INV-18 细则规则摘要天数）：ConfigInvite 加可选整数 eligibility_days（≥ 1，派生自 growth.invite_reward.eligibility_days，缺行或非法按 BR-INV-24 默认），/v1/config 响应示例补该键
+type: contract
+# 2026-10-20 入账（content-client 第五阶段；编排 2026-10-20 18:0x 契约缺口：邀请页活动规则摘要要写「好友须在绑定后 N 天内下单」，/v1/config.invite 只有 reward_enabled / reward_amount_fen）。
+# 依据（SPEC_REF ac4d993）：08 11_INV BR-INV-18 细则 l.470（天数取 growth.invite_reward.eligibility_days，数值由配置变量渲染 BR-TEXT-13）；
+#   BR-INV-24 细则 l.560 默认值、l.571「有效期」；04 l.878 / l.908 §10.1 invite（尚无此项）、l.928 服务端业务配置键。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：字段可选、服务端总会下发（同 bind_phone_guide、reward_* 写法；必填会让冻结的 config-etag/domain.int.test.ts:23 类型字面量与 CT-25a 单测 required 断言失效）；
+#   新增可选响应字段，oasdiff 预期非破坏（报 breaking 即停）；没有新增错误码、枚举与文案键。
+# 【待规划回写】04 §10.1 l.878 invite 行与 l.908 派生表加 invite.eligibility_days（派生、不读同名键）；l.928「不下发客户端」指配置键本身。
+# 占契约槽；合并即放槽并在 notices 告知 F1-02zze 与客户端线（H5 InviteShare 规则摘要）。
+refs: []
+refs_hash: {}
+contract_sections: ['10.1']
+deps: [CT-25a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

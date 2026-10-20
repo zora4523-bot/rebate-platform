@@ -1,0 +1,25 @@
+id: F1-02zza
+repo: rebate-platform
+title: content：邀请奖励开关的打开校验里，每方金额 growth.invite_reward.amount_fen 缺行按 08 默认 1000 分判（不写入该行），两个预算缺行仍按 0；与 /v1/config 下发的 reward_amount_fen 口径一致
+type: impl
+# 2026-10-20 入账（content-client 第五阶段；编排裁定 D10-98 ④，编号 notices 07:50 UTC 预占）。
+# 依据（SPEC_REF ac4d993）：04 l.908 §10.1 invite 行「开关缺失按 off，金额缺失按 BR-INV-24 默认」；08 11_INV l.560 细则默认值（每方 1000 分；两个预算 0 即未填、不能打开开关；开关 on 时每方金额须 ≥ 1 分）。
+#   原文由编排者摘入任务书第 9 节，refs 置空。
+# 只改打开开关这一条路的「缺行」判定：金额无行 → 视为 1000 参与校验；金额有行但不是 ≥1 的整数（0、负数、小数、字符串、null、布尔）仍拒绝（D-A1 默认）。
+#   预算缺行仍按 0；开关 on 时把金额或预算改成 0 的三条写路径、锁与顺序都不变；不隐式补写金额行、不改种子。
+# 默认值取 domain/client-config.ts 已有的 INVITE_REWARD_DEFAULT_AMOUNT_FEN，不另写一份常量。
+# 依赖：F1-02zzb（过渡测试先合并）。合并后 F1-02zt 收紧时把 [AC-F1-02zn#8] 金额缺行例固定为成功。
+refs: []
+refs_hash: {}
+deps: [F1-02zn, F1-02zp, F1-02zzb]
+paths:
+  - 'apps/api/src/modules/content/**'
+test_paths:
+  - 'test/spec/content/invite-reward-default-amount/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/invite-reward-default-amount/**'
+status: todo
+pr: null

@@ -1,0 +1,29 @@
+id: F1-02zq
+repo: rebate-platform
+title: 迁移（L30）：app.articles 加 help_section（text 可空、无缺省），取值 CHECK 限六个码值、另一 CHECK 要求 help_section IS NULL OR category = 'help'；授权不变（不进列级 UPDATE 清单）
+type: migration
+# 2026-10-20 入账（content-client 第五阶段第三波；计划 phase5-plan.md §3 序 10）。
+# 依据（SPEC_REF ac4d993）：04 l.406 §3.2 articles「帮助分类另有 help_section（可空，只在分类为帮助时可非空…编码由契约线定）」；docs/changes/20261020-内容线默认回写.md §1.6。
+#   码值以 CT-02za 合并后的 ArticleHelpSection 为准。原文由编排者摘入任务书第 9 节，refs 置空。
+# 形状：每个版本行各存一份（存草稿插入新行）；两个具名 CHECK（articles_help_section_check、articles_help_section_category_check）。
+#   articles 不是资金表：照 0049 先例直接 ADD CONSTRAINT（squawk-ignore constraint-missing-not-valid，注释写明理由），以 lint-migrations 与 squawk 实跑为准。
+#   授权：表级 INSERT / SELECT 覆盖新列；couli_app 的列级 UPDATE 清单（0049）不加它，版本行内容不可改。
+# 冻结测试：[AC-F1-02q#17]–[#21] 由 F1-02zzc 先过渡；content-tables [AC-F1-02a#5 / #46] 只核对列出的列，不受影响。
+# 迁移号：落地时取主干最大 +1（现主干 0058，identity B1-15a 已预占 0059，预计 0060），先在 notices 登记。
+# 两段式：只写迁移 SQL；schema.sql 与 db.gen.ts 由编排者沙箱外 pnpm db:snapshot 生成（outside_needed）。
+refs: []
+refs_hash: {}
+deps: [CT-02za, F1-02zzc]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/content/articles-help-section/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/content/articles-help-section/**'
+status: todo
+pr: null

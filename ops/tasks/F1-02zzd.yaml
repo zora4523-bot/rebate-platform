@@ -1,0 +1,25 @@
+id: F1-02zzd
+repo: rebate-platform
+title: 过渡测试改动（F1-02zze 前置）：F1-02c、F1-02zp 对 /v1/config invite 的精确比较接受「无 eligibility_days」或「eligibility_days = 30」；[AC-F1-02zx#5] 接受「不读不下发」或「读取该键且下发 eligibility_days = 配置值或 30」二选一，半态失败
+type: test-change
+# 2026-10-20 入账（content-client 第五阶段；编排 2026-10-20 18:0x 契约缺口跟进，F1-02zze 合并后下列断言必红）。
+# 现状：config/delivery.int.test.ts #1（:86–106 toEqual）与 #2 it.each（:187 toEqual）经 F1-02zm 的 inviteOf 只剥 reward 两键；
+#   config-invite-reward/delivery.int.test.ts #13（:208 invite toEqual 六键）；invite-reward-eligibility/registry.test.ts #5（:83 CLIENT_CONFIG_KEYS 不含该键、:114 invite toStrictEqual 六键）。
+#   不红：F1-02c #2 首例（:164 toMatchObject）、F1-02zp #6–#12 / #14（toMatchObject；#12 两次响应对称比较）、F1-02zp domain.test.ts（deriveInviteReward 返回形状不变时）。
+# 做法：照 F1-02zm inviteOf——delivery 两文件的第三键可无，有则须为 30（这些用例不写该键）；#5 按 CLIENT_CONFIG_KEYS 是否含该键选分支，
+#   含则 invite.eligibility_days 须 = 写入值（45）或缺行时 30，不含则原断言不变；只读不下发或下发不读即失败。原有 it 不删、原期望不改，不加 skip / only / retry。
+# 依据（SPEC_REF ac4d993）：08 BR-INV-18 细则 l.470、BR-INV-24 细则 l.560 / l.571。原文由编排者摘入任务书第 9 节。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR，按 approvals #24 由编排加 owner-approved 标签（F1-02zm 先例）。F1-02zze 合并后由 F1-02zt 收紧。
+refs: []
+refs_hash: {}
+deps: [F1-02zm, F1-02zp, F1-02zx]
+paths:
+  - 'test/spec/content/config/delivery.int.test.ts'
+  - 'test/spec/content/config-invite-reward/delivery.int.test.ts'
+  - 'test/spec/content/invite-reward-eligibility/registry.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

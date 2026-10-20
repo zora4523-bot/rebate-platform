@@ -1,0 +1,24 @@
+id: F1-02zzb
+repo: rebate-platform
+title: 过渡测试改动（F1-02zza 前置）：[AC-F1-02zn#8] 金额缺行的那一例改为按同一 app 的实际结果二选一严格断言——拒绝且无任何写入（缺行按 0），或开启成功且不隐式写金额行（缺行按 08 默认 1000）；其余用例一字不动
+type: test-change
+# 2026-10-20 入账（content-client 第五阶段；编排裁定 D10-98 ④，编号 notices 07:50 UTC 预占）。
+# 依据（SPEC_REF ac4d993）：04 l.908 §10.1「金额缺失按 BR-INV-24 默认」；08 11_INV l.560 细则默认值「每方 1000 分」。原文由编排者摘入任务书第 9 节。
+# 现状：writes.int.test.ts:62 invalidPrerequisites 对 amount_fen 的 value=undefined（缺行）期望 20001，F1-02zza 落地后必红；其余 20 例（0、-1、1.5、'100'、null、true 与两个预算的 14 例）不受影响。
+# 做法：只拆出 {AMOUNT, undefined} 这一例另写 it（同一 AC 编号），发请求后按状态码选分支，两支都严格：
+#   400 支：沿用 unchanged()（[value]、快照不变、无告警）；200 支：checkSuccess、开关 value=true/version 1、金额无行且无历史、历史与审计各只多一条。
+#   其余用例、kit 既有导出、#7 / #12 / #14 / #17 一字不改。主干现在与 F1-02zza 合并后都成立；F1-02zt 收紧为只认 200 支。
+# 核对过不受影响：kill-switches update.int [AC-F1-10d#9]（F1-02zz 已显式写金额 1000）、invite-reward-eligibility #5 / #13 / #14、config-invite-reward 全部。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR，按 approvals #24 由编排加 owner-approved 标签（F1-02zz 先例）。
+refs: []
+refs_hash: {}
+deps: [F1-02zn]
+paths:
+  - 'test/spec/content/invite-reward-config/writes.int.test.ts'
+  - 'test/spec/content/invite-reward-config/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
