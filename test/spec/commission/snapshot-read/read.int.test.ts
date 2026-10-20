@@ -46,23 +46,30 @@ it('[AC-B2-04i#1] BR-CALC-02/10 经公开出口读 v1 的整数分、预留与�
   expect(result?.beneficiaries).toHaveLength(3);
 });
 
-it('[AC-B2-04i#2] BR-CALC-02/10 取调用方当前版本，不取初始 B、最大版本或最新时间', async () => {
+it('[AC-B2-04i#2] BR-CALC-02/10 取最大版本，调用方期望版本不一致时报错', async () => {
   const f = fixture();
   await seed(db, f);
-  // 版本号、写入顺序、created_at 故意不一致；均为手算的完整版本。
-  await appendVersion(db, f, 3, 2550n, 3000n, [1275n, 255n, 127n], 1657n, AT);
-  await appendVersion(db, f, 2, 1700n, 2000n, [850n, 170n, 85n], 1105n, EARLIER);
+  // BR-CALC-10 细则：读取时取最大版本；期望版本必须与其一致（decision 39）。
+  // 最大版本先写且时间更早，不能用写入顺序或 created_at 代替版本号。
+  await appendVersion(db, f, 3, 2550n, 3000n, [1275n, 255n, 127n], 1657n, EARLIER);
+  await appendVersion(db, f, 2, 1700n, 2000n, [850n, 170n, 85n], 1105n, AT);
   const result = await db
     .transaction()
-    .execute((trx) => commission.readCommissionSnapshot(trx, { ...f.input, commissionVersion: 2 }));
+    .execute((trx) => commission.readCommissionSnapshot(trx, { ...f.input, commissionVersion: 3 }));
   expect(result).toMatchObject({
-    commissionVersion: 2,
-    baseFen: 1700n,
+    commissionVersion: 3,
+    baseFen: 2550n,
     reserveBp: 1500,
     ruleVersionId: f.ruleVersionId,
   });
   expect(result?.beneficiaries).toEqual(expect.arrayContaining(f.people));
   expect(result?.beneficiaries).toHaveLength(3);
+  await db.transaction().execute(async (trx) => {
+    // 即使旧版本存在也必须拒绝，不能按调用方传值返回旧金额。
+    await expect(
+      commission.readCommissionSnapshot(trx, { ...f.input, commissionVersion: 2 }),
+    ).rejects.toThrow();
+  });
 });
 
 it('[AC-B2-04i#3] BR-CALC-10 无快照返回 null，重复读取不补建快照', async () => {
@@ -104,16 +111,46 @@ it('[AC-B2-04i#5] BR-CALC-10/13 按 app 与子订单隔离快照、版本和同�
   const f = fixture();
   const sibling = fixture();
   sibling.input = { ...sibling.input, appId: f.input.appId };
-  sibling.people = f.people;
+  sibling.people[0] = { ...sibling.people[0]!, role: 'share', ratioBp: 4000 };
+  sibling.people[1] = { ...f.people[1]!, ratioBp: 1200 };
+  sibling.people[2] = { ...sibling.people[2]!, ratioBp: 600 };
   const otherApp = fixture();
-  otherApp.people = f.people;
-  for (const item of [f, sibling, otherApp]) await seed(db, item);
-  await appendVersion(db, sibling, 2, 1700n, 2000n, [850n, 170n, 85n], 1105n, AT);
+  otherApp.people[0] = { ...otherApp.people[0]!, role: 'share', ratioBp: 3000 };
+  otherApp.people[1] = { ...otherApp.people[1]!, ratioBp: 1500 };
+  otherApp.people[2] = { ...f.people[2]!, ratioBp: 700 };
+  await seed(db, f);
+  // 对照订单的 B、预留、受益人/角色/比例、ruleVersionId 均不同；
+  // 保留各一个相同 userId + role，仍能识别跨订单、跨 app 混入的事件。
+  // sibling: N=2000、预留 2000bp → B=1600；份额 640+192+96=928。
+  await seed(db, sibling, [640n, 192n, 96n], 928n, 672n, {
+    rawNFen: 2000n,
+    baseFen: 1600n,
+    reserveBp: 2000,
+    reserveFen: 400n,
+  });
+  // otherApp: N=3000、预留 3000bp → B=2100；份额 630+315+147=1092。
+  await seed(db, otherApp, [630n, 315n, 147n], 1092n, 1008n, {
+    rawNFen: 3000n,
+    baseFen: 2100n,
+    reserveBp: 3000,
+    reserveFen: 900n,
+  });
+  await appendVersion(db, sibling, 2, 2400n, 3000n, [960n, 288n, 144n], 1392n, AT);
   await event(db, sibling, sibling.people[1]!, 'forfeited', 'banned', AT);
   await event(db, otherApp, otherApp.people[2]!, 'forfeited', 'minor', AT);
   await db.transaction().execute(async (trx) => {
     const result = await commission.readCommissionSnapshot(trx, f.input);
-    expect(result).toMatchObject({ baseFen: 850n, forfeitedEvents: [] });
+    expect(result).toEqual({
+      appId: f.input.appId,
+      orderId: f.input.orderId,
+      ruleVersionId: f.ruleVersionId,
+      commissionVersion: 1,
+      baseFen: 850n,
+      reserveBp: 1500,
+      beneficiaries: expect.arrayContaining(f.people),
+      forfeitedEvents: [],
+    });
+    expect(result?.beneficiaries).toHaveLength(3);
     expect(
       await commission.readCommissionSnapshot(trx, { ...f.input, appId: otherApp.input.appId }),
     ).toBeNull();
@@ -244,4 +281,32 @@ it('[AC-B2-04i#12] BR-CALC-10/13 分享角色与初始没收原样保留，不�
       reason: 'deleted',
     },
   ]);
+});
+
+it('[AC-B2-04i#13] BR-CALC-10 请求仅同 app 对照订单拥有的版本时报错', async () => {
+  const f = fixture();
+  const sibling = fixture();
+  sibling.input = { ...sibling.input, appId: f.input.appId };
+  sibling.people[0] = { ...sibling.people[0]!, role: 'share', ratioBp: 4000 };
+  sibling.people[1] = { ...sibling.people[1]!, ratioBp: 1200 };
+  sibling.people[2] = { ...sibling.people[2]!, ratioBp: 600 };
+  await seed(db, f);
+  await seed(db, sibling, [640n, 192n, 96n], 928n, 672n, {
+    rawNFen: 2000n,
+    baseFen: 1600n,
+    reserveBp: 2000,
+    reserveFen: 400n,
+  });
+  await appendVersion(db, sibling, 2, 2400n, 3000n, [960n, 288n, 144n], 1392n, AT);
+  await db.transaction().execute(async (trx) => {
+    // 有效读取先成功，避免把骨架抛错误当成负向用例通过。
+    expect((await commission.readCommissionSnapshot(trx, f.input))?.baseFen).toBe(850n);
+    await expect(
+      commission.readCommissionSnapshot(trx, { ...f.input, commissionVersion: 2 }),
+    ).rejects.toThrow();
+    expect(
+      (await commission.readCommissionSnapshot(trx, { ...sibling.input, commissionVersion: 2 }))
+        ?.baseFen,
+    ).toBe(2400n);
+  });
 });

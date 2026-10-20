@@ -63,6 +63,7 @@ export async function seed(
   initialAmounts: readonly bigint[] = [425n, 85n, 42n],
   initialUserTotal: bigint = 552n,
   initialRetain: bigint = 298n,
+  snapshot = { rawNFen: 1000n, baseFen: 850n, reserveBp: 1500, reserveFen: 150n },
 ): Promise<void> {
   const app = db.withSchema('app');
   await app
@@ -98,12 +99,12 @@ export async function seed(
       rebate_mode: null,
       paid_at: AT,
       paid_at_source: 'platform',
-      raw_n_fen: 1000n,
+      raw_n_fen: snapshot.rawNFen,
       subsidy_commission_fen: 0n,
-      reserve_bp: 1500,
-      reserve_fen: 150n,
+      reserve_bp: snapshot.reserveBp,
+      reserve_fen: snapshot.reserveFen,
       tlj_deduct_fen: 0n,
-      base_fen: 850n,
+      base_fen: snapshot.baseFen,
       platform_retain_fen: initialRetain,
       beneficiaries: JSON.stringify(
         f.people.map((p) => ({
@@ -118,7 +119,16 @@ export async function seed(
       created_at: AT,
     })
     .execute();
-  await appendVersion(db, f, 1, 850n, 1000n, initialAmounts, initialUserTotal, AT);
+  await appendVersion(
+    db,
+    f,
+    1,
+    snapshot.baseFen,
+    snapshot.rawNFen,
+    initialAmounts,
+    initialUserTotal,
+    AT,
+  );
   for (const p of f.people) {
     await event(db, f, p, p.initialStatus, p.forfeitReason, AT);
   }
