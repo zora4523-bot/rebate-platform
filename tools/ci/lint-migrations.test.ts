@@ -97,6 +97,7 @@ it('knows the funds and attribution tables by name, with or without schema and q
     // B2-04c: settlement tables no prefix matches.
     'beneficiary_credits',
     'recon_union',
+    'asset_snapshot_receivables',
   ]) {
     expect(isFundsTable(t), t).toBe(true);
   }

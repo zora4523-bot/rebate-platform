@@ -154,6 +154,8 @@ export const FUNDS_TABLE_NAMES: readonly string[] = [
   // `reconcil` does not match recon_union): beneficiary credit obligations and union reconciliation.
   'beneficiary_credits',
   'recon_union',
+  // Per-platform union receivable of an asset snapshot (B2-04b child table, decision 40).
+  'asset_snapshot_receivables',
 ];
 
 /** Column types a money column (`*_fen`) may have (ADR-0001 §4: integer fen in bigint); anything else is refused. */
