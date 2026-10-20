@@ -1,0 +1,104 @@
+# 结算批次状态 settle_batches.status 的状态机（规划/04 §4.7；规划/08 BR-FUND-04 细则「结算批次迁移表」SB1–SB10；任务 B2-04d）。
+# 迁移表只在 08 维护；本文件按 SPEC_REF 逐行转写，生成 packages/domain/src/state-machines/settle-batch.gen.ts
+# （node packages/domain/scripts/state-machines.ts；--verify 只比对）。生成物勿手改，改这里再生成。
+#
+# 写法约定（同 CT-04a、B2-03j）：
+# - from 中 null 表示「—」（入库首态：月结账单生成或补充批次发起时插入批次行）。
+# - guard 是原文「守卫」列文字；guard 只作说明，transition() 不求值；守卫、step-up、CAS、审计与副作用由调用方负责。
+# - 原文事件是中文描述，英文事件名是本任务的技术命名；测试 ID 为 SM-SB-<n>。
+# - 状态值与 contracts/enums/fund.yaml 的 settle_batch_status 一致。
+#
+# 未开放的迁移：
+# SB10 财务确认前不开放（BR-FUND-04），开放时另开任务加行
+# （SB10：CONFIRMED + 手动开始 MANUAL_START → EXECUTING，2026-10-06 新增；确认前带停住标记的批次停在 CONFIRMED，
+#   是不动资金的保守状态；在加行之前 transition('CONFIRMED', 'MANUAL_START') 按表外事件拒绝。）
+#
+# 表外说明（原文）：已确认的立即结算批次、EXECUTING、PARTIAL、DONE 都不能到 CANCELLED；不新增「取消已确认批次」
+# 或「关闭 PARTIAL 批次」的能力，已入账的不回滚，没处理的子订单靠续跑或被后续批次重新纳入（决-02 选 A）。
+# 并发冲突返回 20902（data.resource=settle_batch）。DONE、CANCELLED 是终态。
+name: settle-batch
+field: status
+states: [DRAFT, CONFIRMED, EXECUTING, PARTIAL, DONE, CANCELLED]
+# GENERATE 生成；CONFIRM 确认；CANCEL_SCHEDULE 撤销定时；REJECT 驳回；START 开始执行；
+# COMPLETE 明细全部处理完；SWITCH_OFF 开关被关闭；RESUME 继续执行；TAKE_OVER 执行进程中断后被调度重新接管；
+# MANUAL_START 手动开始（SB10，未开放，表内无行）。
+events:
+  - GENERATE
+  - CONFIRM
+  - CANCEL_SCHEDULE
+  - REJECT
+  - START
+  - COMPLETE
+  - SWITCH_OFF
+  - RESUME
+  - TAKE_OVER
+  - MANUAL_START
+transitions:
+  # SB1 | — | 生成 | 该平台 credit.enabled 为 on，候选非空 | DRAFT | 月结账单生成或补充批次发起
+  - id: SB1
+    from: [null]
+    event: GENERATE
+    to: DRAFT
+    guard: '该平台 credit.enabled 为 on，候选非空'
+    test_id: SM-SB-1
+  # SB2 | DRAFT | 确认 | 有权限者 step-up；定时须晚于确认时刻，且不落在资产快照的名义时段内（时段取值见 BR-FUND-18） | CONFIRMED
+  # 记 confirmed_by、confirmed_at、settle_mode
+  - id: SB2
+    from: [DRAFT]
+    event: CONFIRM
+    to: CONFIRMED
+    guard: '有权限者 step-up；定时须晚于确认时刻，且不落在资产快照的名义时段内（时段取值见 BR-FUND-18）'
+    test_id: SM-SB-2
+  # SB3 | CONFIRMED | 撤销定时 | 定时结算且尚未开始执行 | DRAFT
+  - id: SB3
+    from: [CONFIRMED]
+    event: CANCEL_SCHEDULE
+    to: DRAFT
+    guard: '定时结算且尚未开始执行'
+    test_id: SM-SB-3
+  # SB4 | DRAFT | 驳回 | step-up，必填原因 | CANCELLED（终态） | 批内订单保持 WAITING
+  - id: SB4
+    from: [DRAFT]
+    event: REJECT
+    to: CANCELLED
+    guard: 'step-up，必填原因'
+    test_id: SM-SB-4
+  # SB5 | CONFIRMED | 开始执行 | 已到执行时刻；当日资产快照已完成或已超时（BR-FUND-18）；settle.auto.enabled 与该平台
+  # credit.enabled 都为 on；该批次没有「因开关为 off 停住」的标记 | EXECUTING | 快照没完成就等，不执行；带停住标记的只能走 SB10
+  - id: SB5
+    from: [CONFIRMED]
+    event: START
+    to: EXECUTING
+    guard: '已到执行时刻；当日资产快照已完成或已超时（BR-FUND-18）；settle.auto.enabled 与该平台 credit.enabled 都为 on；该批次没有「因开关为 off 停住」的标记（到执行时刻因开关为 off 未开始时写入，先于快照是否完成的判断，快照未完成时也写；持久化由契约线定；上线前没有存量批次）'
+    test_id: SM-SB-5
+  # SB6 | EXECUTING | 明细全部处理完 | — | DONE（终态）
+  - id: SB6
+    from: [EXECUTING]
+    event: COMPLETE
+    to: DONE
+    guard: '—'
+    test_id: SM-SB-6
+  # SB7 | EXECUTING | 开关被关闭 | — | PARTIAL | 已入账的保持，未处理的保持 WAITING
+  - id: SB7
+    from: [EXECUTING]
+    event: SWITCH_OFF
+    to: PARTIAL
+    guard: '—'
+    test_id: SM-SB-7
+  # SB8 | PARTIAL | 继续执行 | step-up；两个开关都为 on | EXECUTING
+  # 快照条件见表下「到执行时刻开关为 off 与执行中跨日」：SB8 因开关为 off 或快照未完成被拒。
+  - id: SB8
+    from: [PARTIAL]
+    event: RESUME
+    to: EXECUTING
+    guard: 'step-up；两个开关都为 on（settle.auto.enabled 与该平台 credit.enabled）；当日资产快照已完成或已超时（BR-FUND-18；表下：SB8 因开关为 off 或快照未完成被拒）'
+    test_id: SM-SB-8
+  # SB9 | EXECUTING | 执行进程中断后被调度重新接管 | 批次仍为 EXECUTING 且没有存活的执行者 | EXECUTING（自迁移）
+  # 从第一条未处理的明细续跑；已入账的靠 uniq_key 跳过；执行中跨日暂停后同样由本迁移续跑（SB9 同样要过快照守卫）。
+  # 自迁移有续跑动作，不是同状态 noop：to 写 EXECUTING，不写 same。
+  - id: SB9
+    from: [EXECUTING]
+    event: TAKE_OVER
+    to: EXECUTING
+    guard: '批次仍为 EXECUTING 且没有存活的执行者；当日资产快照已完成或已超时（BR-FUND-18；执行中跨日暂停后续跑同样要过快照守卫）'
+    test_id: SM-SB-9
