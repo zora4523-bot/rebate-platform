@@ -1995,6 +1995,37 @@ ALTER TABLE app.deleted_identities ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
 
 
 --
+-- Name: deletion_requests; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.deletion_requests (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    status text NOT NULL,
+    apply_at timestamp with time zone NOT NULL,
+    cooling_until timestamp with time zone NOT NULL,
+    cancelled_at timestamp with time zone,
+    cancel_reason text,
+    processed_at timestamp with time zone,
+    balance_snapshot_fen bigint NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT deletion_requests_balance_snapshot_fen_check CHECK ((balance_snapshot_fen >= 0)),
+    CONSTRAINT deletion_requests_cancel_reason_check CHECK ((cancel_reason = ANY (ARRAY['user'::text, 'negative_balance'::text]))),
+    CONSTRAINT deletion_requests_cancel_reason_pair_check CHECK (((status = 'cancelled'::text) = (cancel_reason IS NOT NULL))),
+    CONSTRAINT deletion_requests_cancelled_at_pair_check CHECK (((status = 'cancelled'::text) = (cancelled_at IS NOT NULL))),
+    CONSTRAINT deletion_requests_cooling_window_check CHECK ((cooling_until > apply_at)),
+    CONSTRAINT deletion_requests_done_pair_check CHECK (((status = 'done'::text) = (processed_at IS NOT NULL))),
+    CONSTRAINT deletion_requests_negative_balance_window_check CHECK (((cancel_reason IS DISTINCT FROM 'negative_balance'::text) OR (cancelled_at >= cooling_until))),
+    CONSTRAINT deletion_requests_processed_after_check CHECK (((processed_at IS NULL) OR (processed_at >= cooling_until))),
+    CONSTRAINT deletion_requests_status_check CHECK ((status = ANY (ARRAY['cooling'::text, 'processing'::text, 'done'::text, 'cancelled'::text]))),
+    CONSTRAINT deletion_requests_user_cancel_window_check CHECK (((cancel_reason IS DISTINCT FROM 'user'::text) OR (cancelled_at < cooling_until)))
+);
+
+
+--
 -- Name: device_registrations; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4646,6 +4677,14 @@ ALTER TABLE ONLY app.deleted_identities
 
 
 --
+-- Name: deletion_requests deletion_requests_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.deletion_requests
+    ADD CONSTRAINT deletion_requests_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: device_registrations device_registrations_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -5866,6 +5905,27 @@ CREATE INDEX deleted_identities_expire_at_idx ON app.deleted_identities USING bt
 --
 
 CREATE INDEX deleted_identities_phone_hmac_idx ON app.deleted_identities USING btree (app_id, phone_hmac) WHERE (phone_hmac IS NOT NULL);
+
+
+--
+-- Name: deletion_requests_open_user_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX deletion_requests_open_user_key ON app.deletion_requests USING btree (app_id, user_id) WHERE (status = ANY (ARRAY['cooling'::text, 'processing'::text]));
+
+
+--
+-- Name: deletion_requests_status_cooling_until_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX deletion_requests_status_cooling_until_idx ON app.deletion_requests USING btree (status, cooling_until);
+
+
+--
+-- Name: deletion_requests_user_apply_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX deletion_requests_user_apply_idx ON app.deletion_requests USING btree (app_id, user_id, apply_at DESC);
 
 
 --
@@ -7141,6 +7201,14 @@ ALTER TABLE ONLY app.consent_records
 
 ALTER TABLE ONLY app.daily_balances
     ADD CONSTRAINT daily_balances_account_fkey FOREIGN KEY (app_id, account_id) REFERENCES app.ledger_accounts(app_id, id);
+
+
+--
+-- Name: deletion_requests deletion_requests_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.deletion_requests
+    ADD CONSTRAINT deletion_requests_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -9239,6 +9307,56 @@ GRANT SELECT ON TABLE app.daily_balances TO couli_readonly;
 
 GRANT SELECT,INSERT,DELETE ON TABLE app.deleted_identities TO couli_app;
 GRANT SELECT ON TABLE app.deleted_identities TO couli_readonly;
+
+
+--
+-- Name: TABLE deletion_requests; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.deletion_requests TO couli_app;
+GRANT SELECT ON TABLE app.deletion_requests TO couli_readonly;
+
+
+--
+-- Name: COLUMN deletion_requests.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.deletion_requests TO couli_app;
+
+
+--
+-- Name: COLUMN deletion_requests.cancelled_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(cancelled_at) ON TABLE app.deletion_requests TO couli_app;
+
+
+--
+-- Name: COLUMN deletion_requests.cancel_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(cancel_reason) ON TABLE app.deletion_requests TO couli_app;
+
+
+--
+-- Name: COLUMN deletion_requests.processed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(processed_at) ON TABLE app.deletion_requests TO couli_app;
+
+
+--
+-- Name: COLUMN deletion_requests.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.deletion_requests TO couli_app;
+
+
+--
+-- Name: COLUMN deletion_requests.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.deletion_requests TO couli_app;
 
 
 --
