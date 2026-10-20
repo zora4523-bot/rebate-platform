@@ -1,0 +1,38 @@
+id: CT-25a
+repo: rebate-platform
+title: 契约（CT-25 邀请奖励）：enums 补资格状态、两方结果、不发原因、作废原因、绑定渠道编码；ConfigInvite 加可选 reward_enabled、reward_amount_fen；后台 invite-rewards 只读列表与详情（planned）；texts 加 invite.reward.tip、tip_inviter、invite.post_login.optional_hint 并归类；before_buy_tip 与 tips 键 inviter_before_buy 标停用不删
+type: contract
+# 2026-10-20 入账（content-client 第五阶段第二波，计划 couli-runs/CONTENT-client/phase5-plan.md §3 序 4、§4；编排 2026-10-20 08:5x 派工 ②）。
+# 依据（SPEC_REF 5ecafb3）：05 l.151 CT-25 行；08 11_INV BR-INV-24 正文 l.61 与细则 l.557 起「资格记录与状态」「判定顺序」；12_TEXT l.75、l.942–944；
+#   04 l.176 §2.4 REWARD、l.418 user_tip_reads、l.419 invite_rewards、l.503–504 tips、l.592 §6.6 invite-rewards、l.874 / l.903 §10.1 invite。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：编码由契约线定、含义只引 BR-INV-24；ConfigInvite 两字段可选（同 bind_phone_guide 写法，服务端在 F1-02zp 之后总会下发）；
+#   后台两操作只读、fund.view、手机号脱敏，不开写口；没有新增错误码（变更记录 docs/changes/20261019 §3）；全部新增或只改描述，oasdiff 预期非破坏。
+# 默认（notices 01:00 预占条，编排未回复即照默认）：D-T2 tip_inviter 归 fund_terms；D-T3 旧键只标停用不删；D-T4 两字段总会下发；
+#   D-T5 契约一份；D-T6 ledger_type.REWARD.name_invite / hint_invite 不在本任务。金额字段一律 *_fen。
+# 占契约槽（B1-13l #960 已放槽）；合并即放槽并在 notices 告知 identity（B1-35）与 funds（B2-16b）。05 写的依赖 CT-02、CT-24 均已完成。
+refs: []
+refs_hash: {}
+contract_sections: ['2.4', '3.2', '6.1', '6.6', '10.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/identity.yaml'
+  - 'contracts/enums/fund.yaml'
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+  - 'specs/permissions.yaml'
+  - 'apps/api/src/modules/admin/domain/permissions.gen.ts'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
