@@ -206,7 +206,6 @@ it('[AC-B2-04b#13] 同 app 处理人和显式结案时间可保存，空处理�
   const handler = await seedHandler(h.app, row['app_id']);
   expect(await sqlState(insert(h.app, 'recon_diffs', row))).toBe('ok');
   // 本测试直接验证存储能力；step-up 和合法状态迁移由后续命令任务验证。
-  // closed 的必填原因如何编码尚未由 S4 定义，不断言“无原因也可关闭”。
   for (const status of ['processing', 'adjusted']) {
     expect(
       await sqlState(
@@ -222,6 +221,58 @@ it('[AC-B2-04b#13] 同 app 处理人和显式结案时间可保存，空处理�
       { status, handler_id: handler, exact_time: status === 'adjusted' ? true : null },
     ]);
   }
+});
+
+it('[AC-B2-04b#24] 不恢复可直接登记 closed，也可从 open 或 processing 关闭，拒绝未知状态', async () => {
+  await ready(h.app);
+  // S4 未限定结论编码；JSON 文本夹具兼容 text / jsonb，不规定结论枚举。
+  const resolution = JSON.stringify({ reason: '人工核对后决定不恢复' });
+  for (const type of ['platform_restore', 'appeal_restore']) {
+    for (const status of ['closed', 'open', 'processing']) {
+      const row = recon({ type, ref_type: 'order', status });
+      const handler = await seedHandler(h.app, row['app_id']);
+      expect(
+        await sqlState(
+          insert(h.app, 'recon_diffs', {
+            ...row,
+            handler_id: handler,
+            closed_at: status === 'closed' ? AT : null,
+            resolution: status === 'closed' ? resolution : null,
+          }),
+        ),
+      ).toBe('ok');
+      if (status !== 'closed') {
+        expect(
+          await sqlState(
+            sql`UPDATE app.recon_diffs SET status = 'closed', handler_id = ${handler},
+              closed_at = ${AT}::timestamptz, resolution = ${resolution}
+              WHERE id = ${row['id']}`.execute(h.app),
+          ),
+        ).toBe('ok');
+      }
+      expect(
+        await sqlState(
+          sql`UPDATE app.recon_diffs SET status = 'unknown'
+            WHERE id = ${row['id']}`.execute(h.app),
+        ),
+      ).toBe('23514');
+      const stored = await sql<{
+        resolution: string;
+      }>`SELECT status, handler_id, resolution::text AS resolution,
+        closed_at = TIMESTAMPTZ '2032-06-30 16:01:00+00' AS exact_time
+        FROM app.recon_diffs WHERE id = ${row['id']}`.execute(h.app);
+      expect(stored.rows).toEqual([
+        {
+          status: 'closed',
+          handler_id: handler,
+          resolution: expect.any(String),
+          exact_time: true,
+        },
+      ]);
+      expect(JSON.parse(stored.rows[0]!.resolution)).toEqual(JSON.parse(resolution));
+    }
+  }
+  expect(await sqlState(insert(h.app, 'recon_diffs', recon({ status: 'unknown' })))).toBe('23514');
 });
 
 it('[AC-B2-04b#14] 不存在或跨 app 的处理人不能插入、不能通过更新挂入', async () => {
