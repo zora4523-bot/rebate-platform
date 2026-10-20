@@ -55,6 +55,7 @@
 | `apps/api/src/modules/union/**` | Claude | Codex | Claude + Codex | RV2 |
 | `apps/api/src/modules/commission/**` | Claude | Codex | Claude + Codex | RV2 |
 | `apps/api/src/modules/ledger/**` | Claude | Codex | Claude + Codex | RV2 |
+| `apps/api/src/modules/settlement/**` | Claude | Codex | Claude + Codex | RV2 |
 | `apps/api/src/modules/orders/**` | Claude | Codex | Claude + Codex | RV2 |
 | `apps/api/src/modules/admin/**` | Claude | Codex | Claude + Codex | RV2 |
 | `apps/api/src/modules/content/**` | Claude | Codex | Claude + Codex | RV2 |

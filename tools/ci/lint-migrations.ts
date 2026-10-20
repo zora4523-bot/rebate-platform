@@ -150,6 +150,12 @@ export const FUNDS_TABLE_NAMES: readonly string[] = [
   // ruling D10-94 5): amounts in fen, no prefix above matches.
   'invite_rewards',
   'invite_reward_budgets',
+  // Settlement tables whose names no prefix above matches (B2-04c, couli-runs settlement plan D10-93;
+  // `reconcil` does not match recon_union): beneficiary credit obligations and union reconciliation.
+  'beneficiary_credits',
+  'recon_union',
+  // Per-platform union receivable of an asset snapshot (B2-04b child table, decision 40).
+  'asset_snapshot_receivables',
 ];
 
 /** Column types a money column (`*_fen`) may have (ADR-0001 §4: integer fen in bigint); anything else is refused. */

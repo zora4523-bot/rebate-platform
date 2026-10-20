@@ -94,6 +94,10 @@ it('knows the funds and attribution tables by name, with or without schema and q
     // F1-02zu: invite reward grants and budget counters (CT-25b).
     'invite_rewards',
     'invite_reward_budgets',
+    // B2-04c: settlement tables no prefix matches.
+    'beneficiary_credits',
+    'recon_union',
+    'asset_snapshot_receivables',
   ]) {
     expect(isFundsTable(t), t).toBe(true);
   }
