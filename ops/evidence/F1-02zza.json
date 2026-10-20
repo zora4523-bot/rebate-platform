@@ -1,0 +1,92 @@
+{
+  "task": "F1-02zza",
+  "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
+  "spec_commit": "1e0944cc6ef22e78716f253123ae50ee2dc1af7c",
+  "red_tests": [
+    "test/spec/content/invite-reward-default-amount/domain.test.ts > [AC-F1-02zza#1] 只给缺行金额默认值；已有非法金额和缺行预算仍拒绝",
+    "test/spec/content/invite-reward-default-amount/domain.test.ts > [AC-F1-02zza#2] 缺行金额开启校验与客户端下发默认每方 1000 分一致且不补键",
+    "test/spec/content/invite-reward-default-amount/race.int.test.ts > [AC-F1-02zza#8] 缺行金额开启与首写 0 按活动锁串行，两种先读顺序均不能双赢",
+    "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#3] 金额无行可打开，只增加开关的行、历史、审计和告警",
+    "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#4] 金额无行时预算 growth.invite_reward.daily_budget_fen=undefined 拒绝无副作用，补足预算后才能打开",
+    "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#4] 金额无行时预算 growth.invite_reward.total_budget_fen=undefined 拒绝无副作用，补足预算后才能打开",
+    "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#4] 金额无行时预算 growth.invite_reward.daily_budget_fen=0 拒绝无副作用，补足预算后才能打开",
+    "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#4] 金额无行时预算 growth.invite_reward.total_budget_fen=0 拒绝无副作用，补足预算后才能打开",
+    "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#5] 缺行金额可打开，但已有非法金额不能被默认值掩盖",
+    "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#6] 以默认金额打开后首写 0 拒绝，首写 500 成功，关闭后才能改 0",
+    "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#7] app 隔离：别处的 0 不挡缺行默认，本 app 缺行也不掩盖别处的 0"
+  ],
+  "risk_note": "RV2 (content invite reward enable guard; no amount computed). Orchestrator ruling D10-98 4 and 04 10.1: when the invite reward switch is turned on, a missing per-side amount row (Map.has) counts as the 08 default 1000 (the same INVITE_REWARD_DEFAULT_AMOUNT_FEN constant /v1/config uses); a present but invalid value (not an integer >= 1, including undefined) is still refused, and missing budgets still count as 0. Locks, write paths and the no-backfill rule are unchanged. The frozen [AC-F1-02zn#8] accepts both outcomes since F1-02zzb (#1014); F1-02zt tightens. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "1e0944cc6ef22e78716f253123ae50ee2dc1af7c",
+      "tree": "fc9d61929d50ea29b91b2cac4103e2bbad1ca770",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T11:57:53Z",
+      "finished_at": "2026-10-20T11:58:09Z",
+      "red_tests": [
+        "test/spec/content/invite-reward-default-amount/domain.test.ts > [AC-F1-02zza#1] 只给缺行金额默认值；已有非法金额和缺行预算仍拒绝",
+        "test/spec/content/invite-reward-default-amount/domain.test.ts > [AC-F1-02zza#2] 缺行金额开启校验与客户端下发默认每方 1000 分一致且不补键",
+        "test/spec/content/invite-reward-default-amount/race.int.test.ts > [AC-F1-02zza#8] 缺行金额开启与首写 0 按活动锁串行，两种先读顺序均不能双赢",
+        "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#3] 金额无行可打开，只增加开关的行、历史、审计和告警",
+        "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#4] 金额无行时预算 growth.invite_reward.daily_budget_fen=undefined 拒绝无副作用，补足预算后才能打开",
+        "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#4] 金额无行时预算 growth.invite_reward.total_budget_fen=undefined 拒绝无副作用，补足预算后才能打开",
+        "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#4] 金额无行时预算 growth.invite_reward.daily_budget_fen=0 拒绝无副作用，补足预算后才能打开",
+        "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#4] 金额无行时预算 growth.invite_reward.total_budget_fen=0 拒绝无副作用，补足预算后才能打开",
+        "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#5] 缺行金额可打开，但已有非法金额不能被默认值掩盖",
+        "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#6] 以默认金额打开后首写 0 拒绝，首写 500 成功，关闭后才能改 0",
+        "test/spec/content/invite-reward-default-amount/writes.int.test.ts > [AC-F1-02zza#7] app 隔离：别处的 0 不挡缺行默认，本 app 缺行也不掩盖别处的 0"
+      ],
+      "expected": [
+        "test/spec/content/invite-reward-default-amount/domain.test.ts",
+        "test/spec/content/invite-reward-default-amount/race.int.test.ts",
+        "test/spec/content/invite-reward-default-amount/writes.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "600abb19b9d7ab03e9954b4cb4dfbc97306a8c3fde21e9783e44e78e23af588d"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "06084c136e3570e8e25056501eb8eb80ce6e35ebb7f472b33fe3547924f8d2a7"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass with one S2 (missing means the key is absent, followed by the implementation)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "047f9709a1e1dd8e711bbac2e5dba327392e9f19",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "e308f96db2c38fa575aabb2b645906c6d79ab386",
+    "test/spec": "72aac181df97052b2a4069b36f4fcec919242b96",
+    "specs": "b80f759906adb5320a33adb9ff0a59fcb0fb9a3a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "e308f96db2c38fa575aabb2b645906c6d79ab386"
+  }
+}
