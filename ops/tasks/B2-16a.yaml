@@ -4,6 +4,7 @@ title: 邀请奖励记账模板：specs/ledger-templates.csv 补 REWARD（sub_ty
 type: impl
 # 2026-10-20 资金线（规划/05 B2-16 拆 a / b，编排 06:3x ④、D10-93 照开；活动默认关，模板先就绪不影响线上）。依据 BR-FUND-15 细则（REWARD sub_type=invite）、BR-FUND-01（不伴随订单迁移）、BR-FUND-13、16、BR-INV-24 ⑦⑧。
 # 2026-10-20 补 red_exempt（CT-06r 口径，16 条；先红 red/1 中改动过的旧冻结测试文件里测试体未动的用例在骨架上本就绿；规则测试过审 r1 已逐条核为未削弱，作 red_exempt_confirmed 依据）。
+# 2026-10-20 test_paths 加 test/properties/domain/ledger-templates/**：属性 [AC-B2-01j#20] 写死模板数 107，加 REWARD:INVITE 后须同步为 108（收紧型必要同步，B2-01l 先例；Codex 写，Claude 过审）。
 # 凭证键与金额名由资金线定（BR-FUND-15 细则）；所得类型映射待 06 Q-F6，不在 tax.income_type_map 里臆定。发放写入函数归 B2-16b（等 CT-25）。
 # 先例 B2-01l：Codex 在 test(spec) 提交里同步 B2-01i expected.csv（只增 REWARD 行），Claude 过审；Opus 改 specs 并重生成，Codex money 评审；改冻结测试属收紧型，编排按 #24 核对后加标签。
 refs: [BR-FUND-01, BR-FUND-13, BR-FUND-15, BR-FUND-16, BR-INV-24]
