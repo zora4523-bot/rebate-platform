@@ -1517,6 +1517,38 @@ CREATE TABLE app.articles (
 
 
 --
+-- Name: asset_snapshot_receivables; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.asset_snapshot_receivables (
+    asset_snapshot_id uuid NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    union_receivable_fen bigint NOT NULL,
+    CONSTRAINT asset_snapshot_receivables_platform_check CHECK ((platform = ANY (ARRAY['taobao'::text, 'jd'::text, 'pdd'::text, 'meituan'::text, 'vip'::text, 'douyin'::text, 'eleme'::text, 'kuaishou'::text, 'suning'::text])))
+);
+
+
+--
+-- Name: asset_snapshots; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.asset_snapshots (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    snapshot_date date NOT NULL,
+    total_available_positive_fen bigint NOT NULL,
+    total_negative_fen bigint NOT NULL,
+    total_frozen_fen bigint NOT NULL,
+    total_waiting_fen bigint NOT NULL,
+    total_estimated_fen bigint NOT NULL,
+    waiting_comparable boolean NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL
+);
+
+
+--
 -- Name: audit_logs; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3453,6 +3485,39 @@ CREATE TABLE app.realname (
 
 
 --
+-- Name: recon_diffs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.recon_diffs (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    type text NOT NULL,
+    source text NOT NULL,
+    period text NOT NULL,
+    ref_type text NOT NULL,
+    ref_id text NOT NULL,
+    expected_fen bigint NOT NULL,
+    actual_fen bigint NOT NULL,
+    diff_fen bigint NOT NULL,
+    status text NOT NULL,
+    handler_id uuid,
+    closed_at timestamp with time zone,
+    dedupe_key text,
+    resolution jsonb,
+    created_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    CONSTRAINT recon_diffs_dedupe_key_check CHECK ((dedupe_key <> ''::text)),
+    CONSTRAINT recon_diffs_period_check CHECK ((period ~ '^[0-9]{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12][0-9]|3[01]))?$'::text)),
+    CONSTRAINT recon_diffs_ref_id_check CHECK ((ref_id <> ''::text)),
+    CONSTRAINT recon_diffs_ref_type_check CHECK ((ref_type <> ''::text)),
+    CONSTRAINT recon_diffs_resolution_check CHECK ((jsonb_typeof(resolution) = 'object'::text)),
+    CONSTRAINT recon_diffs_source_check CHECK ((source = ANY (ARRAY['R1'::text, 'R2'::text, 'R3'::text, 'R4'::text]))),
+    CONSTRAINT recon_diffs_status_check CHECK ((status = ANY (ARRAY['open'::text, 'processing'::text, 'adjusted'::text, 'written_off'::text, 'closed'::text]))),
+    CONSTRAINT recon_diffs_type_check CHECK ((type = ANY (ARRAY['union_mismatch'::text, 'channel_mismatch'::text, 'ledger_mismatch'::text, 'platform_restore'::text, 'month_end_unbalanced'::text, 'settle_amount_mismatch'::text, 'settle_missing'::text, 'appeal_restore'::text, 'estimate_changed_after_credit'::text])))
+);
+
+
+--
 -- Name: refresh_tokens; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4501,6 +4566,38 @@ ALTER TABLE ONLY app.articles
 
 
 --
+-- Name: asset_snapshot_receivables asset_snapshot_receivables_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.asset_snapshot_receivables
+    ADD CONSTRAINT asset_snapshot_receivables_pkey PRIMARY KEY (asset_snapshot_id, platform);
+
+
+--
+-- Name: asset_snapshots asset_snapshots_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.asset_snapshots
+    ADD CONSTRAINT asset_snapshots_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: asset_snapshots asset_snapshots_day_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.asset_snapshots
+    ADD CONSTRAINT asset_snapshots_day_key UNIQUE (app_id, snapshot_date);
+
+
+--
+-- Name: asset_snapshots asset_snapshots_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.asset_snapshots
+    ADD CONSTRAINT asset_snapshots_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -5258,6 +5355,22 @@ ALTER TABLE ONLY app.realname
 
 ALTER TABLE ONLY app.realname
     ADD CONSTRAINT realname_user_key UNIQUE (app_id, user_id);
+
+
+--
+-- Name: recon_diffs recon_diffs_business_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.recon_diffs
+    ADD CONSTRAINT recon_diffs_business_key UNIQUE (app_id, type, period, ref_id);
+
+
+--
+-- Name: recon_diffs recon_diffs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.recon_diffs
+    ADD CONSTRAINT recon_diffs_pkey PRIMARY KEY (id);
 
 
 --
@@ -6279,6 +6392,27 @@ CREATE UNIQUE INDEX realname_verified_id_no_hmac_key ON app.realname USING btree
 
 
 --
+-- Name: recon_diffs_dedupe_key_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX recon_diffs_dedupe_key_key ON app.recon_diffs USING btree (app_id, dedupe_key) WHERE (dedupe_key IS NOT NULL);
+
+
+--
+-- Name: recon_diffs_month_end_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX recon_diffs_month_end_key ON app.recon_diffs USING btree (app_id, period) WHERE (type = 'month_end_unbalanced'::text);
+
+
+--
+-- Name: recon_diffs_status_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX recon_diffs_status_idx ON app.recon_diffs USING btree (app_id, status, created_at);
+
+
+--
 -- Name: refresh_tokens_session_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -6988,6 +7122,14 @@ ALTER TABLE ONLY app.appeals
 
 
 --
+-- Name: asset_snapshot_receivables asset_snapshot_receivables_snapshot_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.asset_snapshot_receivables
+    ADD CONSTRAINT asset_snapshot_receivables_snapshot_fkey FOREIGN KEY (app_id, asset_snapshot_id) REFERENCES app.asset_snapshots(app_id, id);
+
+
+--
 -- Name: audit_logs audit_logs_admin_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -7593,6 +7735,14 @@ ALTER TABLE ONLY app.push_tokens
 
 ALTER TABLE ONLY app.realname
     ADD CONSTRAINT realname_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: recon_diffs recon_diffs_handler_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.recon_diffs
+    ADD CONSTRAINT recon_diffs_handler_fkey FOREIGN KEY (app_id, handler_id) REFERENCES app.admin_users(app_id, id);
 
 
 --
@@ -8916,6 +9066,36 @@ GRANT UPDATE(row_version) ON TABLE app.articles TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.articles TO couli_app;
+
+
+--
+-- Name: TABLE asset_snapshot_receivables; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.asset_snapshot_receivables TO couli_app;
+GRANT SELECT ON TABLE app.asset_snapshot_receivables TO couli_readonly;
+
+
+--
+-- Name: TABLE asset_snapshots; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.asset_snapshots TO couli_app;
+GRANT SELECT ON TABLE app.asset_snapshots TO couli_readonly;
+
+
+--
+-- Name: COLUMN asset_snapshots.waiting_comparable; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(waiting_comparable) ON TABLE app.asset_snapshots TO couli_app;
+
+
+--
+-- Name: COLUMN asset_snapshots.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.asset_snapshots TO couli_app;
 
 
 --
@@ -10471,6 +10651,56 @@ GRANT SELECT(created_at) ON TABLE app.realname TO couli_readonly;
 
 GRANT UPDATE(updated_at) ON TABLE app.realname TO couli_app;
 GRANT SELECT(updated_at) ON TABLE app.realname TO couli_readonly;
+
+
+--
+-- Name: TABLE recon_diffs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.recon_diffs TO couli_app;
+GRANT SELECT ON TABLE app.recon_diffs TO couli_readonly;
+
+
+--
+-- Name: COLUMN recon_diffs.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.recon_diffs TO couli_app;
+
+
+--
+-- Name: COLUMN recon_diffs.handler_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(handler_id) ON TABLE app.recon_diffs TO couli_app;
+
+
+--
+-- Name: COLUMN recon_diffs.closed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(closed_at) ON TABLE app.recon_diffs TO couli_app;
+
+
+--
+-- Name: COLUMN recon_diffs.dedupe_key; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(dedupe_key) ON TABLE app.recon_diffs TO couli_app;
+
+
+--
+-- Name: COLUMN recon_diffs.resolution; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(resolution) ON TABLE app.recon_diffs TO couli_app;
+
+
+--
+-- Name: COLUMN recon_diffs.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.recon_diffs TO couli_app;
 
 
 --

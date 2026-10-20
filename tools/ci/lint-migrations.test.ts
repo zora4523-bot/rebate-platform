@@ -204,6 +204,10 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'daily_balances',
     'invite_rewards',
     'invite_reward_budgets',
+    // B2-04b: settlement-side ledger tables.
+    'recon_diffs',
+    'asset_snapshots',
+    'asset_snapshot_receivables',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));

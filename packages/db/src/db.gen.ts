@@ -260,6 +260,27 @@ export interface Articles {
   version: Generated<number>;
 }
 
+export interface AssetSnapshotReceivables {
+  app_id: string;
+  asset_snapshot_id: string;
+  platform: string;
+  union_receivable_fen: ColumnType<bigint, bigint, bigint>;
+}
+
+export interface AssetSnapshots {
+  app_id: string;
+  created_at: Timestamp;
+  id: string;
+  snapshot_date: Timestamp;
+  total_available_positive_fen: ColumnType<bigint, bigint, bigint>;
+  total_estimated_fen: ColumnType<bigint, bigint, bigint>;
+  total_frozen_fen: ColumnType<bigint, bigint, bigint>;
+  total_negative_fen: ColumnType<bigint, bigint, bigint>;
+  total_waiting_fen: ColumnType<bigint, bigint, bigint>;
+  updated_at: Timestamp;
+  waiting_comparable: boolean;
+}
+
 export interface AuditLogs {
   action: string;
   admin_id: string;
@@ -1208,6 +1229,26 @@ export interface Realname {
   verified_at: Timestamp | null;
 }
 
+export interface ReconDiffs {
+  actual_fen: ColumnType<bigint, bigint, bigint>;
+  app_id: string;
+  closed_at: Timestamp | null;
+  created_at: Timestamp;
+  dedupe_key: string | null;
+  diff_fen: ColumnType<bigint, bigint, bigint>;
+  expected_fen: ColumnType<bigint, bigint, bigint>;
+  handler_id: string | null;
+  id: string;
+  period: string;
+  ref_id: string;
+  ref_type: string;
+  resolution: Json | null;
+  source: string;
+  status: string;
+  type: string;
+  updated_at: Timestamp;
+}
+
 export interface RefreshTokens {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1500,6 +1541,8 @@ export interface DB {
   app_versions: AppVersions;
   appeals: Appeals;
   articles: Articles;
+  asset_snapshot_receivables: AssetSnapshotReceivables;
+  asset_snapshots: AssetSnapshots;
   audit_logs: AuditLogs;
   blocklist: Blocklist;
   category_blocklist: CategoryBlocklist;
@@ -1564,6 +1607,7 @@ export interface DB {
   product_refs: ProductRefs;
   push_tokens: PushTokens;
   realname: Realname;
+  recon_diffs: ReconDiffs;
   refresh_tokens: RefreshTokens;
   relation_change_logs: RelationChangeLogs;
   risk_hits: RiskHits;
