@@ -1,0 +1,22 @@
+id: F1-02zz
+repo: rebate-platform
+title: 过渡测试改动（F1-02zn 前置，F1-02zm / F1-02zv 漏列）：[AC-F1-02zj#13] 配置列表的 SETTLE 十六项改为紧接原 29 项、其后只能是邀请奖励组（无、五键或加 eligibility_days 六键）；[AC-F1-10d#9] 打开邀请奖励开关前同一 app 再写入非零每方金额
+type: test-change
+# 2026-10-20 入账（content-client 第五阶段；F1-02zn #986 把五键追加在 SETTLE 之后，config-settle/writes.int.test.ts:198 的 items.slice(-16) 必红，verify-int 待出结果）。
+# 做法：config-items kit 只新增 INVITE_ELIG 与 inviteNow()（返回 [] / 五键 / 六键，其余组合失败），不改 expectedNow 与既有导出；
+#   [AC-F1-10d#9]：F1-02zn 的冻结规则测试要求金额缺行按 0 拒绝开启，F1-02zm 只写了两个预算，补写 growth.invite_reward.amount_fen=1000（08 默认）。
+#   #13 的位置断言改为 SETTLE 紧接 EXPECTED、其后恰为 inviteNow() 的键；逐项字段核对一字不改。主干现在、F1-02zn 合并后、F1-02zx 合并后都成立。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR，按 approvals #24 由编排加 owner-approved 标签（F1-02zm / F1-02zv 先例）。宜在 #986 合并前落地。
+refs: []
+refs_hash: {}
+deps: [F1-02zj, F1-02zm, F1-02zv, F1-10d]
+paths:
+  - 'test/spec/content/config-items/kit.ts'
+  - 'test/spec/content/config-settle/writes.int.test.ts'
+  - 'test/spec/content/kill-switches/update.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null
