@@ -3,6 +3,7 @@ repo: rebate-platform
 title: 邀请奖励记账模板：specs/ledger-templates.csv 补 REWARD（sub_type=invite）模板——用户侧 USER_BALANCE available、平台侧 MKT_EXPENSE，每个受益方一张凭证、不随订单迁移；重生成 templates.gen.ts，buildVouchers 可按模板名出平衡凭证
 type: impl
 # 2026-10-20 资金线（规划/05 B2-16 拆 a / b，编排 06:3x ④、D10-93 照开；活动默认关，模板先就绪不影响线上）。依据 BR-FUND-15 细则（REWARD sub_type=invite）、BR-FUND-01（不伴随订单迁移）、BR-FUND-13、16、BR-INV-24 ⑦⑧。
+# 2026-10-20 补 red_exempt（CT-06r 口径，16 条；先红 red/1 中改动过的旧冻结测试文件里测试体未动的用例在骨架上本就绿；规则测试过审 r1 已逐条核为未削弱，作 red_exempt_confirmed 依据）。
 # 凭证键与金额名由资金线定（BR-FUND-15 细则）；所得类型映射待 06 Q-F6，不在 tax.income_type_map 里臆定。发放写入函数归 B2-16b（等 CT-25）。
 # 先例 B2-01l：Codex 在 test(spec) 提交里同步 B2-01i expected.csv（只增 REWARD 行），Claude 过审；Opus 改 specs 并重生成，Codex money 评审；改冻结测试属收紧型，编排按 #24 核对后加标签。
 refs: [BR-FUND-01, BR-FUND-13, BR-FUND-15, BR-FUND-16, BR-INV-24]
@@ -21,6 +22,55 @@ test_paths:
   - 'test/spec/ledger-rules/**'
   - 'test/spec/domain/ledger-templates/**'
   - 'test/spec/domain/ledger-templates-reward/**'
+red_exempt:
+  - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
+    test: '[AC-B2-01j#1] 每个完整模板逐业务组匹配 CSV，分录无序但不得丢失或重复'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
+    test: '[AC-B2-01j#3] 缺金额、键占位值或用户归属参数均拒绝'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
+    test: '[AC-B2-01j#4] 多余金额、别名或无关上下文不能被默默忽略'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
+    test: '[AC-B2-01j#5] 金额只接受非负 int64 bigint，拒绝负数、溢出与隐式转换'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
+    test: '[AC-B2-01j#6] 零金额不产生零分录或空凭证，参数校验仍执行'
+    reason: 测试体只为新模板 REWARD:INVITE 加了分支（骨架 csv 尚无该模板，分支不执行），其余模板的断言未改；只因同文件读到本任务改动的 fixtures 而入列，在骨架上不可能有效红
+  - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
+    test: '[AC-B2-01j#7] BR-WDR-09 冻结/退回方向及 wd 键固定，用户所有者不得串户'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
+    test: '[AC-B2-01j#8] 相同输入结果相同且不修改冻结的参数或先前结果'
+    reason: 测试体只为新模板 REWARD:INVITE 加了分支（骨架 csv 尚无该模板，分支不执行），其余模板的断言未改；只因同文件读到本任务改动的 fixtures 而入列，在骨架上不可能有效红
+  - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
+    test: '[AC-B2-01j#9] 未登记的模板与无分录的提现时点不得回落为默认模板'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
+    test: '[AC-B2-01j#10] 已定的每对红冲实际执行，保持原类型与子类型、原键加 REVERSE、原金额反号'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
+    test: '[AC-B2-01j#11] 键组件拒绝空值、冒号和非字符串，不接受能碰撞的插值'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/ledger-rules/ledger-rules.test.ts
+    test: '[AC-B2-01i#1] CSV 固定十一列、按模板升序、行号从一连续且键唯一'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/ledger-rules/ledger-rules.test.ts
+    test: '[AC-B2-01i#4] 每模板每种金额符号均借贷成对，分录借正贷负且不使用数值金额'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/ledger-rules/ledger-rules.test.ts
+    test: '[AC-B2-01i#6] 红冲沿用原科目金额与类型，分录反号且原键只追加一次 REVERSE'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/ledger-rules/ledger-rules.test.ts
+    test: '[AC-B2-01i#8] 文档显式列出待定格、财务确认白名单与银行通道限制'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/ledger-rules/ledger-rules.test.ts
+    test: '[AC-B2-01i#9] 口径说明包含租户幂等、账户所有者、整数分与时钟会计日'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
+  - file: test/spec/ledger-rules/ledger-rules.test.ts
+    test: '[AC-B2-01i#10] 红冲与提现说明保留整笔限制、单张成功凭证和无分录迁移'
+    reason: 测试体自基线未改，数据驱动的结构断言对旧、新 csv 均成立，只因同文件读到本任务改动的 expected.csv / fixtures 而入列，不可能有效红
 impl: claude
 tester: codex
 accept:
