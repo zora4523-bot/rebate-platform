@@ -45,6 +45,8 @@ function property<T>(
   }
 }
 
+// B2-04ea: explicit 600 s timeout, the same as the longrun layer's testTimeout (vitest.shared.ts) — #61 hit the default timeout at 17.4 s in verify-props (#1012, #1013, #1016);
+// property runs scale with PROP_RUNS and CPU contention. Assertions, samples and run counts unchanged.
 it('[AC-B2-04e#60] 属性：Σ各份额+基础平台=B+预留，已出凭证+暂缓=B+预留，逐份floor', () => {
   expect(
     property(
@@ -124,7 +126,7 @@ it('[AC-B2-04e#60] 属性：Σ各份额+基础平台=B+预留，已出凭证+暂
       },
     ),
   ).toBe(true);
-});
+}, 600_000);
 
 it('[AC-B2-04e#61] 属性：每用户角色最多一个入账/义务意图，重放同键，跨平台不同键', () => {
   expect(
@@ -162,7 +164,7 @@ it('[AC-B2-04e#61] 属性：每用户角色最多一个入账/义务意图，重
       );
     }),
   ).toBe(true);
-});
+}, 600_000);
 
 it('[AC-B2-04e#62] 属性：⑤按每份剩余截零、仅未完成义务计入，应收差一分必失败', () => {
   expect(
@@ -202,7 +204,7 @@ it('[AC-B2-04e#62] 属性：⑤按每份剩余截零、仅未完成义务计入�
       },
     ),
   ).toBe(true);
-});
+}, 600_000);
 
 it('[AC-B2-04e#63] 属性：补记或没收只处置剩余；关闭义务后旧执行项不再产出凭证', () => {
   expect(
@@ -254,4 +256,4 @@ it('[AC-B2-04e#63] 属性：补记或没收只处置剩余；关闭义务后旧�
       },
     ),
   ).toBe(true);
-});
+}, 600_000);
