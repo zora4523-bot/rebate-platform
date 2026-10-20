@@ -26,6 +26,7 @@ const UNMASKED_ID = 'exp_Fb3Qw8Rt5Ym1Zx7N';
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -135,7 +136,18 @@ it('nextExpiry picks the earliest expires_at still ahead among done tasks', () =
   expect(nextExpiry(items, START + 5000)).toBeUndefined();
 });
 
+/**
+ * The expiry timer runs on faked setTimeout / clearTimeout (installed before the mount), so the
+ * re-render at expires_at never waits on the real event loop. Testing Library drives the faked
+ * timers while it waits when it sees a `jest` global with `advanceTimersByTime`.
+ */
+function fakeTimeouts(): void {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  vi.stubGlobal('jest', { advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms) });
+}
+
 it('a done task turns 已过期 without 【下载】 once the injected clock reaches its expires_at', async () => {
+  fakeTimeouts();
   let now = START;
   const expiresAt = START + 300;
   const { calls } = mount({ now: () => now }, (call) =>
@@ -146,16 +158,45 @@ it('a done task turns 已过期 without 【下载】 once the injected clock rea
   await waitFor(() =>
     expect(within(rowOf(DONE_ID)).queryByRole('button', { name: t.download })).not.toBeNull(),
   );
+  // The clock is still before expires_at however long the wait took: the row stays 已完成.
+  act(() => {
+    vi.advanceTimersByTime(1000);
+  });
+  expect(within(rowOf(DONE_ID)).queryByRole('button', { name: t.download })).not.toBeNull();
   now = expiresAt;
-  // The expiry timer re-renders on the real event loop; a loaded CI container can starve it.
-  await waitFor(
-    () => {
+  act(() => {
+    vi.advanceTimersByTime(300);
+  });
+  expect(within(rowOf(DONE_ID)).queryByRole('button', { name: t.download })).toBeNull();
+  expect(within(rowOf(DONE_ID)).getByText(t.status.expired)).toBeTruthy();
+  expect(calls).toEqual([{ method: 'GET', path: LIST }]);
+});
+
+it('a done task still turns 已过期 when the clock passes expires_at between the render and its effect', async () => {
+  // Real timers here: the gap is the one between React's commit and its passive effects.
+  let now = START;
+  const expiresAt = START + 300;
+  // A DOM mutation callback (a microtask right after the commit that shows the row) runs before
+  // React's passive effects (a later scheduler task): the clock passes expires_at in that gap.
+  const observer = new MutationObserver(() => {
+    if (screen.queryByText(DONE_ID) !== null) now = expiresAt;
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  try {
+    const { calls } = mount({ now: () => now }, (call) =>
+      call.path === LIST
+        ? page([task(DONE_ID, { expires_at: new Date(expiresAt).toISOString() })])
+        : Promise.reject(new Error(`unexpected ${call.path}`)),
+    );
+    // Judged again at once (a timer due now), never left as 已完成 with 【下载】.
+    await waitFor(() => {
       expect(within(rowOf(DONE_ID)).queryByRole('button', { name: t.download })).toBeNull();
       expect(within(rowOf(DONE_ID)).getByText(t.status.expired)).toBeTruthy();
-    },
-    { timeout: 25_000 },
-  );
-  expect(calls).toEqual([{ method: 'GET', path: LIST }]);
+    });
+    expect(calls).toEqual([{ method: 'GET', path: LIST }]);
+  } finally {
+    observer.disconnect();
+  }
 });
 
 it('a click on 【下载】 after the expiry sends no download, tells 已过期 and reads the list again', async () => {

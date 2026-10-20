@@ -195,18 +195,23 @@ function ExportsContent({ clock }: { readonly clock: ExportsClock }): ReactEleme
     };
   }, [getProvider, query, attempt]);
 
+  // Judged at every render against the injected clock (never frozen at the time of the read).
+  const now = clock.now();
+
   // A done row turns 已过期 (and loses 【下载】) once its expires_at comes, without a new read.
+  // The next expiry is picked against the time this render judged the rows at, not the time the
+  // effect runs: the clock may pass an expires_at between the commit and the effect, and that row
+  // (still shown as 已完成) must then be judged again at once instead of never.
   useEffect(() => {
     if (data === undefined) return;
-    const current = clock.now();
-    const next = nextExpiry(data.items, current);
+    const next = nextExpiry(data.items, now);
     if (next === undefined) return;
     const timer = setTimeout(
       () => setExpiryTick((value) => value + 1),
-      Math.min(next - current, MAX_TIMER_MS),
+      Math.min(Math.max(next - clock.now(), 0), MAX_TIMER_MS),
     );
     return () => clearTimeout(timer);
-  }, [data, clock, expiryTick]);
+  }, [data, clock, now, expiryTick]);
 
   const reload = () => {
     setStatus('loading');
@@ -359,8 +364,6 @@ function ExportsContent({ clock }: { readonly clock: ExportsClock }): ReactEleme
     void sendRetry(current.id, current.reason, stepUpToken);
   };
 
-  // Judged at every render against the injected clock (never frozen at the time of the read).
-  const now = clock.now();
   const code = { fontFamily: token.fontFamilyCode } as const;
   const secondary = { fontSize: token.fontSizeSM, color: token.colorTextSecondary } as const;
 
