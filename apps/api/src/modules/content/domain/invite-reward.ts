@@ -4,6 +4,11 @@
 // requires that, and while it is on none of them may be saved as 0. The minimum paid amount and
 // the IP window take no part. The application layer runs the check inside the write transaction
 // after taking the campaign's lock, so the two write paths cannot both succeed.
+// Task F1-02zza (orchestrator ruling D10-98 ④, 04 §10.1): when turning the switch on, a missing
+// per-side amount row counts as the 08 default (the same constant /v1/config delivers) and is not
+// written; a stored amount must still be a positive integer, and a missing budget still counts as 0.
+
+import { INVITE_REWARD_DEFAULT_AMOUNT_FEN } from './client-config.ts';
 
 export const INVITE_REWARD_ENABLED = 'growth.invite_reward.enabled';
 export const INVITE_REWARD_AMOUNT = 'growth.invite_reward.amount_fen';
@@ -40,11 +45,18 @@ export function inviteRewardEnabled(value: unknown): boolean {
 }
 
 /**
- * Whether turning the switch on must be refused, given the current values by key (a missing key
- * is a missing row and counts as 0).
+ * Whether turning the switch on must be refused, given the current rows by key. A missing key is a
+ * missing row: the per-side amount then takes the 08 default, each budget counts as 0. A key that
+ * is present is judged by its stored value, even when that value is undefined.
  */
 export function inviteRewardOpenRefused(current: ReadonlyMap<string, unknown>): boolean {
-  return INVITE_REWARD_POSITIVE_KEYS.some((key) => !inviteRewardPositive(current.get(key)));
+  return INVITE_REWARD_POSITIVE_KEYS.some((key) => {
+    const value =
+      key === INVITE_REWARD_AMOUNT && !current.has(key)
+        ? INVITE_REWARD_DEFAULT_AMOUNT_FEN
+        : current.get(key);
+    return !inviteRewardPositive(value);
+  });
 }
 
 /** The guarded keys among `entries` whose new value is not positive, in the given order. */
