@@ -1,0 +1,27 @@
+id: CT-24m
+repo: rebate-platform
+title: 契约：后台订单只读——GET /admin/v1/orders（平台 / platform_status / rebate_status / 订单标记 / 订单号 / 用户 / paid_at 区间筛选，页码分页）与 GET /admin/v1/orders/{sub_order_id}（状态历史、分佣快照、link_log 关联、「已锁定」「归属已锁定」等标记，原始报文按权限）；权限 order.view（带 user_id 时 user.lookup 亦可读，04 §11.2）、无二次验证；planned
+type: contract
+# 2026-10-21 入账（前端线 f1-frontend-7，编排 10-20 16:2x 派工：后台线暂停期间由本线补 CT-24 子契约）。依据 01 F-ADM-05、04 §6.6 orders、§3.2 orders / order_status_history / link_logs、§11.1 / §11.2、
+#   design/specs/admin-orders.md、admin-order-detail.md（负责人 2026-10-18 第 1 批定稿）。写操作（手动同步 order-syncs、维权 / 违规导入 rights-imports、hold / unhold、未归因指派 order.assign）拆到后续 CT-24n。
+# 技术取舍沿用 CT-24d：另建 AdminOrderListItem / AdminOrderDetail，只复用已有枚举 schema（platform、platform_status、rebate_status 等），不扩展用户端订单投影；分页沿用 AdminPage / AdminPageSize；
+#   用户筛选只收 user_id（UID 与手机号走 CT-24b 一框搜）；订单号精确匹配（子订单号或主订单号）；未知 id 20001 [sub_order_id]（后台先例，不用 40401）；金额字段为整数分；用户手机号脱敏（BR-ID-33）。
+#   顺带修正 CT-24a 工作台「待审找回」卡 route 示例 /orders/claims?status=pending → /claims 下合法的 claim_status 筛选（F1-07f 页面路由；pending 不是 claim_status 取值，用哪个待审状态由契约实现时按 BR-ATTR-18 定）。
+refs: []
+refs_hash: {}
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
