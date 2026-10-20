@@ -39,6 +39,13 @@ export { agreementTextUrl } from './domain/agreements/text-url.ts';
 export type { AgreementType } from './domain/agreements/index.ts';
 // F1-09g: the cross-module reads app.module assembles for the page audience facts.
 export type { AudienceUnionPlatform, PageAudienceReads } from './application/page-audience.ts';
+export { createSystemSwitchWriter } from './application/system-switch-writer.ts';
+export type {
+  SystemSwitchInput,
+  SystemSwitchResult,
+  SystemSwitchWriter,
+  SystemSwitchWriterOptions,
+} from './application/system-switch-writer.ts';
 
 export interface ContentReaderOptions {
   /** Primary handle (ADR-0001 §4.2 #11); the reader only reads. */
