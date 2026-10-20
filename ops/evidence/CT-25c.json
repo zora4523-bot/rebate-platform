@@ -1,0 +1,44 @@
+{
+  "task": "CT-25c",
+  "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
+  "spec_commit": "5fd08e12c30755777fdb29928a12b420e77c59d7",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; the console invite reward operations stay planned). #161 eligibility period (couli ac4d993, BR-INV-24): invite_reward_status replaces budget_exhausted with expired, synchronized in AdminInviteRewardStatus and the per-side result descriptions; AdminInviteReward gains required eligibility_days (int32, min 1). Texts ledger_type.REWARD.name_invite / hint_invite copied from BR-TEXT-19 (already classified by the ledger_type. prefix). The planned operations are excluded from the oasdiff base, so the value swap and the new required field are not breaking. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "money review of amount / budget / eligibility fields, round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "b3d3ec3eeea72a9d52e63316872454ed5efe9b06",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "c35ac8d118fc65f5a7bbe388181d8084c40676c6",
+    "specs": "c150895f9c4c3249d17ebd0894736c9169aad3f5"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
