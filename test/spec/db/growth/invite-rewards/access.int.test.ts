@@ -5,15 +5,16 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   AT,
   NEXT,
-  SHAPES,
   TABLES,
   UPDATABLE,
   close,
+  formOf,
   insert,
   open,
   ready,
   references,
   reward,
+  shapesOf,
   update,
   type Harness,
 } from './kit.ts';
@@ -28,6 +29,9 @@ afterAll(async () => {
 
 it('[AC-CT-25b#18] app 仅 SELECT/INSERT 与指定列 UPDATE，readonly 仅 SELECT，无整表 UPDATE', async () => {
   await ready(h.app);
+  // CT-25e (test-change, transitional; F1-02zt tightens): columns of the detected form;
+  // eligibility_days is insertable but not in UPDATABLE.
+  const shapes = shapesOf(await formOf(h.app));
   for (const table of TABLES) {
     for (const role of ['couli_app', 'couli_readonly']) {
       for (const privilege of [
@@ -49,7 +53,7 @@ it('[AC-CT-25b#18] app 仅 SELECT/INSERT 与指定列 UPDATE，readonly 仅 SELE
           { allowed, grantable: false },
         ]);
       }
-      for (const column of Object.keys(SHAPES[table])) {
+      for (const column of Object.keys(shapes[table])) {
         for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) {
           const allowed =
             privilege === 'SELECT' ||
@@ -79,6 +83,8 @@ it('[AC-CT-25b#18] app 仅 SELECT/INSERT 与指定列 UPDATE，readonly 仅 SELE
 
 it('[AC-CT-25b#19] 逐列实测更新权限，禁止改资格身份、金额、绑定来源/IP 与预算键', async () => {
   await ready(h.app);
+  // CT-25e (test-change, transitional; F1-02zt tightens): columns of the detected form.
+  const shapes = shapesOf(await formOf(h.app));
   const row = await reward(h.app);
   const stored = {
     invite_rewards: await insert(h.app, 'invite_rewards', row),
@@ -89,7 +95,7 @@ it('[AC-CT-25b#19] 逐列实测更新权限，禁止改资格身份、金额、�
     }),
   };
   for (const table of TABLES) {
-    for (const column of Object.keys(SHAPES[table])) {
+    for (const column of Object.keys(shapes[table])) {
       // A no-op on a real row isolates authorization from CHECK, FK and uniqueness errors.
       const change =
         sql`UPDATE ${sql.table(`app.${table}`)} SET ${sql.ref(column)} = ${sql.ref(column)}
