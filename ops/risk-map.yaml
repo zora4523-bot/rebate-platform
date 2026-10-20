@@ -77,6 +77,12 @@ rules:
     impl: claude
     tester: codex
     review: claude+codex
+  # settlement: 订单类凭证编排与返利状态（资金，规划/02 §4.1、规划/11 §1.1 资金行）为 RV2，分工同 ledger（B2-04c，2026-10-20）。
+  - path: 'apps/api/src/modules/settlement/**'
+    risk: RV2
+    impl: claude
+    tester: codex
+    review: claude+codex
   # orders: 订单同步、映射、归因与状态（订单归属，规划/02 §4.1、规划/11 §1.1 第 3 行）为 RV2，分工同 union（B1-08b，2026-10-17）。
   - path: 'apps/api/src/modules/orders/**'
     risk: RV2

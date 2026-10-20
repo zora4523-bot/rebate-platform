@@ -20,6 +20,7 @@ describe('ops/risk-map.yaml', () => {
       'apps/api/src/modules/union/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/commission/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/ledger/** RV2 claude/codex/claude+codex',
+      'apps/api/src/modules/settlement/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/orders/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/admin/** RV2 claude/codex/claude+codex',
       'apps/api/src/modules/content/** RV2 claude/codex/claude+codex',
@@ -126,8 +127,11 @@ describe('riskOfPath: literal paths', () => {
       'RV1',
     );
     expect(riskOfPath('packages/money/src/index.ts', map, cfg).rule).toBe('packages/money/**');
-    expect(riskOfPath('apps/api/src/modules/settlement/post.ts', map, cfg)).toEqual({
-      path: 'apps/api/src/modules/settlement/post.ts',
+    expect(riskOfPath('apps/api/src/modules/settlement/post.ts', map, cfg).rule).toBe(
+      'apps/api/src/modules/settlement/**',
+    );
+    expect(riskOfPath('apps/api/src/modules/payout/post.ts', map, cfg)).toEqual({
+      path: 'apps/api/src/modules/payout/post.ts',
       risk: 'RV2',
       rule: 'default',
       protected: null,
