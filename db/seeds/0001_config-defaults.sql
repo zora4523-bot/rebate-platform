@@ -55,5 +55,11 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'settle.period_offset_months.jd', '1'::jsonb, 'seed'), -- BR-FUND-04 细则
   ('couli', 'settle.period_offset_months.pdd', '1'::jsonb, 'seed'), -- BR-FUND-04 细则
   ('couli', 'settle.period_offset_months.meituan', '1'::jsonb, 'seed'), -- BR-FUND-04 细则
-  ('couli', 'settle.statement.grace_days', '10'::jsonb, 'seed') -- BR-FUND-04 细则
+  ('couli', 'settle.statement.grace_days', '10'::jsonb, 'seed'), -- BR-FUND-04 细则
+  -- 第 6 批：BR-INV-24 细则默认值（SPEC_REF 5ecafb3）；两个开关不进种子（缺行即默认 off）
+  ('couli', 'growth.invite_reward.amount_fen', '1000'::jsonb, 'seed'), -- BR-INV-24
+  ('couli', 'growth.invite_reward.daily_budget_fen', '0'::jsonb, 'seed'), -- BR-INV-24
+  ('couli', 'growth.invite_reward.total_budget_fen', '0'::jsonb, 'seed'), -- BR-INV-24
+  ('couli', 'growth.invite_reward.min_paid_fen', '0'::jsonb, 'seed'), -- BR-INV-24
+  ('couli', 'growth.invite_reward.ip_window_hours', '24'::jsonb, 'seed') -- BR-INV-24
 ON CONFLICT (app_id, key) DO NOTHING;

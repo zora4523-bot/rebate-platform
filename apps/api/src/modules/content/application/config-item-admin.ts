@@ -9,6 +9,13 @@ import {
   type ConfigItemSpec,
   type ConfigPermission,
 } from '../domain/config-registry.ts';
+import {
+  INVITE_REWARD_ENABLED,
+  inviteRewardEnabled,
+  inviteRewardGuardedKey,
+  inviteRewardPositive,
+  inviteRewardZeroedKeys,
+} from '../domain/invite-reward.ts';
 
 type Json = DB['config_items']['value'];
 type Item = Schema<'AdminConfigItem'>;
@@ -45,6 +52,10 @@ export interface ConfigItemTx {
   version(appId: string, key: string, version: number): Promise<{ value: Json } | undefined>;
   change(input: ConfigItemWrite): Promise<ConfigItemRow | undefined>;
   history(input: ConfigItemWrite, version: number): Promise<void>;
+  /** F1-02zn: the invite reward campaign's transaction lock (shared with kill-switch writes). */
+  lockInviteReward(appId: string): Promise<void>;
+  /** Current values of the named keys (full keys); a missing row is absent. */
+  values(appId: string, keys: readonly string[]): Promise<ReadonlyMap<string, Json>>;
   audit(input: AuditInput): Promise<void>;
 }
 
@@ -195,8 +206,12 @@ export class ConfigItemAdmin {
   ): Promise<Item> {
     const spec = requireConfigItem(key, true);
     if (!configValueFits(spec, body.value)) throw new ConfigItemFieldsError(['value']);
+    const zeroed = inviteRewardZeroedKeys([{ key, value: body.value }]);
     const result = await this.#store.transaction(async (tx) => {
+      // Campaign lock first, then the row lock: the same order as the switch write.
+      if (zeroed.length > 0) await tx.lockInviteReward(actor.appId);
       const before = await tx.lock(actor.appId, key);
+      if (zeroed.length > 0) await this.#refuseWhileEnabled(tx, actor.appId, ['value']);
       return this.#change(tx, actor, { key, ...body }, before, body.reason ?? null);
     });
     this.#alert(actor, result);
@@ -208,7 +223,14 @@ export class ConfigItemAdmin {
     body: Schema<'AdminConfigItemBatchRequest'>,
   ): Promise<Schema<'AdminConfigItemList'>> {
     configBatchPermission(body.items);
+    const zeroed = inviteRewardZeroedKeys(body.items);
     const results = await this.#store.transaction(async (tx) => {
+      // The whole batch is refused, before any write, when it zeroes a guarded key while the
+      // invite reward campaign is on; fields name every such key.
+      if (zeroed.length > 0) {
+        await tx.lockInviteReward(actor.appId);
+        await this.#refuseWhileEnabled(tx, actor.appId, zeroed);
+      }
       // Finish each key in sorted order, including INSERTs: absent rows cannot be locked
       // by SELECT FOR UPDATE. Any later conflict rolls back every earlier key's writes.
       const sorted = [...body.items].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -229,7 +251,10 @@ export class ConfigItemAdmin {
     body: Schema<'AdminConfigItemRollbackRequest'>,
   ): Promise<Item> {
     const spec = requireConfigItem(key, true);
+    // The restored value is only known inside the transaction: lock for every guarded key.
+    const guarded = inviteRewardGuardedKey(key);
     const result = await this.#store.transaction(async (tx) => {
+      if (guarded) await tx.lockInviteReward(actor.appId);
       const before = await tx.lock(actor.appId, key);
       const historical = await tx.version(actor.appId, key, body.to_version);
       // Check the historical value and target before the expected_version comparison.
@@ -240,6 +265,9 @@ export class ConfigItemAdmin {
         !configValueFits(spec, historical.value)
       ) {
         throw new ConfigItemFieldsError(['to_version']);
+      }
+      if (guarded && !inviteRewardPositive(historical.value)) {
+        await this.#refuseWhileEnabled(tx, actor.appId, ['to_version']);
       }
       return this.#change(
         tx,
@@ -252,6 +280,18 @@ export class ConfigItemAdmin {
     });
     this.#alert(actor, result);
     return itemOf(key, result.row);
+  }
+
+  /** F1-02zn: 20001 `fields` when the invite reward switch is currently on (call under lock). */
+  async #refuseWhileEnabled(
+    tx: ConfigItemTx,
+    appId: string,
+    fields: readonly string[],
+  ): Promise<void> {
+    const current = await tx.values(appId, [INVITE_REWARD_ENABLED]);
+    if (inviteRewardEnabled(current.get(INVITE_REWARD_ENABLED))) {
+      throw new ConfigItemFieldsError(fields);
+    }
   }
 
   async #change(

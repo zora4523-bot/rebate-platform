@@ -57,6 +57,18 @@ function businessInteger(key: string, min: number, max = INT4_MAX): ConfigItemSp
   });
 }
 
+/** F1-02zn: an editable config.risk integer item with inclusive bounds. */
+function riskInteger(key: string, min: number, max = INT4_MAX): ConfigItemSpec {
+  return Object.freeze({
+    key,
+    valueType: 'number' as const,
+    options: null,
+    permission: 'config.risk' as const,
+    adminEditable: true,
+    range: Object.freeze({ integer: true as const, min, max }),
+  });
+}
+
 /** F1-02zj: an editable config.business enum item. */
 function businessEnum(key: string, options: readonly string[]): ConfigItemSpec {
   return Object.freeze({
@@ -115,6 +127,14 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   businessInteger('settle.batch.max_orders', 1),
   ...perPlatform('settle.period_offset_months', (key) => businessInteger(key, 0)),
   businessInteger('settle.statement.grace_days', 0),
+  // F1-02zn: BR-INV-24 细则 invite reward campaign (08 11_INV at SPEC_REF 5ecafb3; ruling
+  // D10-94 ⑥), appended after SETTLE in the ruled order. Amounts are integer fen; the IP
+  // window is in hours and at least 1 (0 would compare nothing).
+  businessInteger('growth.invite_reward.amount_fen', 0),
+  businessInteger('growth.invite_reward.daily_budget_fen', 0),
+  businessInteger('growth.invite_reward.total_budget_fen', 0),
+  businessInteger('growth.invite_reward.min_paid_fen', 0),
+  riskInteger('growth.invite_reward.ip_window_hours', 1),
 ]);
 
 const BY_KEY = new Map(REGISTRY.map((entry) => [entry.key, entry]));

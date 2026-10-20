@@ -6,6 +6,7 @@ import type {
   KillSwitchStore,
   KillSwitchTx,
 } from '../application/kill-switch-admin.ts';
+import { currentConfigValues, lockInviteReward } from './invite-reward-guard.ts';
 
 const COLUMNS = ['key', 'value', 'version', 'updated_by', 'updated_at'] as const;
 
@@ -91,6 +92,10 @@ function writeTx(trx: Kysely<DB>, audit: AuditPort): KillSwitchTx {
         })
         .execute();
     },
+
+    lockInviteReward: (appId) => lockInviteReward(trx, appId),
+
+    values: (appId, keys) => currentConfigValues(trx, appId, keys),
 
     audit: (input) => audit.append(input),
   };

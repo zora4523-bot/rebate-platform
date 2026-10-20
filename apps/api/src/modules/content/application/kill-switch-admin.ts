@@ -2,6 +2,11 @@ import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Logger } from 'pino';
 import type { AuditInput, Clock } from '../../platform/index.ts';
+import {
+  INVITE_REWARD_POSITIVE_KEYS,
+  inviteRewardOpenRefused,
+  inviteRewardTurnsOn,
+} from '../domain/invite-reward.ts';
 import { killSwitchChangeRefusal, killSwitchDescriptor } from '../domain/kill-switch.ts';
 import { switchRegistry, switchSpecOf } from '../domain/switch-registry.ts';
 
@@ -39,6 +44,10 @@ export interface KillSwitchTx {
   /** INSERT ON CONFLICT DO NOTHING for version 0; otherwise a conditional UPDATE. */
   change(input: KillSwitchWrite): Promise<KillSwitchRow | undefined>;
   history(input: KillSwitchWrite, version: number): Promise<void>;
+  /** F1-02zn: the invite reward campaign's transaction lock (shared with config item writes). */
+  lockInviteReward(appId: string): Promise<void>;
+  /** Current config_items values of the named keys (full keys); a missing row is absent. */
+  values(appId: string, keys: readonly string[]): Promise<ReadonlyMap<string, Json>>;
   audit(input: AuditInput): Promise<void>;
 }
 
@@ -140,13 +149,23 @@ export class KillSwitchAdmin {
       throw new KillSwitchFieldsError(['value']);
     }
     const value = body.value;
+    // F1-02zn: only turning the invite reward campaign on is checked; off and payout_paused never.
+    const opening = inviteRewardTurnsOn(key, value);
     const result = await this.#store.transaction(async (tx) => {
+      // The campaign lock comes before any row lock, in the same order as config item writes.
+      if (opening) await tx.lockInviteReward(actor.appId);
       const before = await tx.lock(actor.appId, key);
       const fromVersion = before?.version ?? 0;
       if (fromVersion !== body.expected_version) throw new KillSwitchConflictError();
       // Version comparison precedes equality: a stale request can never become a no-op.
       if (before !== undefined && before.value === value) {
         return { row: before, before: before.value, changed: false };
+      }
+      if (
+        opening &&
+        inviteRewardOpenRefused(await tx.values(actor.appId, INVITE_REWARD_POSITIVE_KEYS))
+      ) {
+        throw new KillSwitchFieldsError(['value']);
       }
       const input: KillSwitchWrite = {
         actor,
