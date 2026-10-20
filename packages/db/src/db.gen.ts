@@ -510,6 +510,22 @@ export interface DeletedIdentities {
   reason: string;
 }
 
+export interface DeletionRequests {
+  app_id: string;
+  apply_at: Timestamp;
+  balance_snapshot_fen: ColumnType<bigint, bigint, bigint>;
+  cancel_reason: string | null;
+  cancelled_at: Timestamp | null;
+  cooling_until: Timestamp;
+  created_at: Generated<Timestamp>;
+  id: string;
+  processed_at: Timestamp | null;
+  row_version: Generated<number>;
+  status: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface DeviceRegistrations {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1502,6 +1518,7 @@ export interface DB {
   consent_records: ConsentRecords;
   daily_balances: DailyBalances;
   deleted_identities: DeletedIdentities;
+  deletion_requests: DeletionRequests;
   device_registrations: DeviceRegistrations;
   devices: Devices;
   dict_items: DictItems;
