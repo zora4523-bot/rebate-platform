@@ -57,6 +57,7 @@ import {
 import {
   IdentityAdminModule,
   IdentityModule,
+  IdentityWorkerModule,
   ME_READ_PORTS,
   CONSENT_SIGNATURE_CHECK,
   TOKEN_CHECK,
@@ -257,6 +258,19 @@ function requestChecks(options: PlatformOptions): Provider {
 }
 
 /**
+ * B1-13e: content's reader on the caller's handle (B1-11d precedent): a plain read each time,
+ * never a second pooled connection while the caller's transaction is held. Shared by the api
+ * entry's IdentityModule and the worker's IdentityWorkerModule (B1-13g).
+ */
+const payoutAccountConfig = {
+  inject: [CLOCK],
+  useFactory: (clock: Clock): PayoutAccountConfigPort => ({
+    configValue: (appId, key, handle) =>
+      createContentReader({ db: handle, clock }).configValue(appId, key),
+  }),
+};
+
+/**
  * The identity module of the `api` entry. Its configuration port (sms.blocked_prefixes, BR-ID-05;
  * the minimum supported version of the session scope, BR-ID-01 细则「受限会话」) is content's cached
  * reader of config_items and app_versions: content implements the port's shape without importing
@@ -359,15 +373,7 @@ function identityModule(): DynamicModule {
       useFactory: (clock: Clock, db?: Kysely<Database>): IdentityConfigReader | null =>
         db === undefined ? null : createContentReader({ db, clock }),
     },
-    // B1-13e: content's reader on the caller's handle (B1-11d precedent): a plain read each time,
-    // never a second pooled connection while the caller's transaction is held.
-    payoutAccountConfig: {
-      inject: [CLOCK],
-      useFactory: (clock: Clock): PayoutAccountConfigPort => ({
-        configValue: (appId, key, handle) =>
-          createContentReader({ db: handle, clock }).configValue(appId, key),
-      }),
-    },
+    payoutAccountConfig,
     blocklist: {
       inject: [
         CLOCK,
@@ -1574,6 +1580,12 @@ export class AppModule {
         // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.
         ...(options.entry === 'worker'
           ? [RiskScanModule.forWorker(), AgentModule.forWorker()]
+          : []),
+        // The scheduled takeover / recheck of the paid bank-card verification records (B1-13g,
+        // BR-WDR-02 ⑦): worker entry only, without the HTTP IdentityModule; entry.ts starts the
+        // timer after the risk-scan heal and stops it first on shutdown.
+        ...(options.entry === 'worker'
+          ? [IdentityWorkerModule.forWorker({ payoutAccountConfig })]
           : []),
         // Order sync (B1-08n): the order-sync handler and its scheduler, worked by the worker
         // entry only over its own governed union adapters; entry.ts starts the scheduler after

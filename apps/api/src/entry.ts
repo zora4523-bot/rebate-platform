@@ -1,6 +1,7 @@
 // Shared runner behind the five `main.<entry>.ts` files.
 import { createHttpApp, createWorkerContext } from './bootstrap.ts';
 import { agentSweeperToken, type AgentSweeperRuntime } from './modules/agent/index.ts';
+import { payoutVerifyRecheckToken, startPayoutVerifyRecheck } from './modules/identity/index.ts';
 import {
   type AppConfig,
   type ConnectionConfig,
@@ -237,6 +238,24 @@ async function start(
       // continuation does not stop the scans until the next worker start. Started even after a
       // failed seed; stopped first on shutdown, before the services.
       const heal = startRiskScanHeal(resolveScan, logger, () => signals.stopping());
+      // The paid bank-card verification records' takeover / recheck (B1-13g, BR-WDR-02 ⑦): a
+      // 60-second timer, no immediate round. Not started once a stop was requested; stopped first
+      // on shutdown, waiting for its current row, before anything else closes. Optional like the
+      // agent and order-sync runtimes: a context without the provider (older or isolated worker
+      // contexts) resolves to null, so no timer, no crash and no log line.
+      const recheck = signals.stopping()
+        ? undefined
+        : startPayoutVerifyRecheck(
+            () => {
+              try {
+                return context.get<unknown>(payoutVerifyRecheckToken(), { strict: false });
+              } catch {
+                return null;
+              }
+            },
+            logger,
+            () => signals.stopping(),
+          );
       let runtime: Partial<AgentSweeperRuntime> | null | undefined;
       if (!signals.stopping()) {
         try {
@@ -266,15 +285,19 @@ async function start(
       await signals.serve(
         async () => {
           try {
-            heal.stop();
             try {
-              try {
-                await sync?.stop();
-              } finally {
-                await loop?.stop();
-              }
+              await recheck?.stop();
             } finally {
-              await services.stop();
+              heal.stop();
+              try {
+                try {
+                  await sync?.stop();
+                } finally {
+                  await loop?.stop();
+                }
+              } finally {
+                await services.stop();
+              }
             }
           } finally {
             clearInterval(keepAlive);
