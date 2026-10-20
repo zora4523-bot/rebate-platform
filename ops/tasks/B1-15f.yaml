@@ -1,0 +1,26 @@
+id: B1-15f
+repo: rebate-platform
+title: 注销冷静期满处理：identity 内定时扫描 cooling_until 已到的 cooling 单，users 行锁内重读——余额 < 0 → cancelled（negative_balance）；有未到终态的提现（含封禁冻结，经端口）→ 推迟并告警；否则 users.status=deleting 并经 transition() 进入 processing；自申请起 15 个工作日（含调休）未 done 告警；短信登录 deleting → 10007（stage=processing）
+type: impl
+# 草稿 2026-10-21（身份与风控线 identity-lane，第三波；编排 01:5x 派工）。依据 BR-ID-27、BR-ID-36 工作日口径、BR-ID-01（SPEC_REF 76f61aa）；摘录 couli-runs/B1-15f/excerpt.md（基线 07131974）。
+# 调度照 B1-13g 定时器（不新开 pg-boss 队列，免改 platform/queue 目录的冻结测试）；工作日函数改为可传天数并经 risk/index.ts 导出，resolveAppealDeadline 签名与行为不变。提现端口 hasNonTerminal 与 B1-15d 共用文件，B2-05 前注入 false（TODO blocked on B2-05）。
+# processed_at、balance_snapshot_fen 以 0059 为准（本任务不写）；会话吊销与 BR-ID-28 清理归 B1-15g，站内信归 B1-15i；与 B1-15g 相邻合并。短信登录 deleting → 10007 由 B1-15e 移交，冻结测试 [AC-S1-83#17] 由 B1-15k 先改。
+# RV2（余额判定 + app.module），评审 Codex money；Opus 高推理。
+refs: []
+refs_hash: {}
+deps: [B1-15d, B1-15b, B1-15k, B1-03i]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/entry.ts'
+  - 'apps/api/src/modules/risk/domain/appeal-deadline.ts'
+  - 'apps/api/src/modules/risk/application/appeal-calendar.ts'
+  - 'apps/api/src/modules/risk/index.ts'
+test_paths:
+  - 'test/spec/identity/deletion-expiry/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/deletion-expiry/**'
+status: todo

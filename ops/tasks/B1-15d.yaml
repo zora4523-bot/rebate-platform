@@ -1,0 +1,28 @@
+id: B1-15d
+repo: rebate-platform
+title: 注销申请 / 撤回 / 查询：GET /v1/me/deletion、POST /v1/me/deletion（step-up account_deletion；在途提现 30412 经 WithdrawalInFlightReader 端口、余额为负 30416 data.amount_fen 经余额端口；users 行锁内判定，插入 cooling 单）、POST /v1/me/deletion/cancel（now < apply_at + 7×24h 才可撤回，否则 10007）；去掉三条操作的 planned
+type: impl
+# 草稿 2026-10-21（身份与风控线 identity-lane，第三波；编排 01:5x 派工）。依据 BR-ID-27、BR-ID-08、BR-ID-10、BR-ID-31（SPEC_REF 76f61aa）；摘录 couli-runs/B1-15d/excerpt.md（基线 07131974）。
+# D10-97：WithdrawalInFlightReader 在 B2-05 上线前由 app.module 注入「如实返回无在途」实现（TODO blocked on B2-05），规则测试要有「端口报在途 → 30412」；B2-05 入账时替换注入。余额经 identity 端口，app.module 用 ledger getBalances（资金线 10-20 07:53 回复），无账户按 0。
+# 规划缺口按摘录 §12 定：未申请时 cancel → 200 data null；截止后 cancel → 10007 stage=processing；已有未结束单再申请 → 返回原单。待加验账号（BR-WDR-01）主干无标记，留 TODO。
+# 冻结测试 step-up-verify 夹具为 planned 的 requestDeletion 挂桩，B1-15j 先合。RV2（app.module + 余额判定），评审 Codex money；Opus 高推理。
+refs: []
+refs_hash: {}
+deps: [B1-15a, B1-15b, B1-15c, B1-15j, B1-02y]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/identity/deletion-request/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/deletion-request/**'
+status: todo
