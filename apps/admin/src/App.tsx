@@ -37,8 +37,10 @@ import { Sidebar } from './layout/Sidebar.tsx';
 import { TopBar } from './layout/TopBar.tsx';
 import { AdminsPage } from './pages/admins/index.ts';
 import { ClaimReviewPage, ClaimsPage } from './pages/claims/index.ts';
+import { AuditLogDetailPage, AuditLogsPage } from './pages/audit-logs/index.ts';
 import { ConfigCenterPage } from './pages/config-center/index.ts';
 import { DashboardPage, dashboardTargetOf } from './pages/dashboard/index.ts';
+import { ExportsPage } from './pages/exports/index.ts';
 import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
@@ -63,6 +65,8 @@ import {
 } from './resources/index.ts';
 import type { AdminShellOptions } from './shell-options.ts';
 import { claimsTexts } from './texts/claims.ts';
+import { auditLogsTexts } from './texts/audit-logs.ts';
+import { exportsTexts } from './texts/exports.ts';
 import { shellTexts } from './texts/shell.ts';
 import { createAntdTheme, sameAntdTheme } from './theme.ts';
 
@@ -83,6 +87,22 @@ function claimIdOf(path: string): string | undefined {
     return decodeURIComponent(found[1]!);
   } catch {
     return undefined;
+  }
+}
+
+const AUDIT_LOGS_MENU_ID = 'audit-logs';
+/** 导出记录: no sidebar item; a subpage of 操作日志 (reached from its header link). */
+const EXPORTS_ROUTE = 'exports';
+const AUDIT_LOG_DETAIL = /^audit-logs\/([^/]+)$/;
+
+/** Record id of an /audit-logs/<id> address (the detail subpage), else undefined. */
+function auditLogIdOf(path: string): string | undefined {
+  const found = AUDIT_LOG_DETAIL.exec(path)?.[1];
+  if (found === undefined) return undefined;
+  try {
+    return decodeURIComponent(found);
+  } catch {
+    return found;
   }
 }
 
@@ -416,12 +436,22 @@ function ShellFrame({
     [navigate],
   );
 
-  const menuId = location.pathname.replace(/^\/+/, '');
+  const path = location.pathname.replace(/^\/+/, '');
+  // The audit record detail (/audit-logs/<id>) and 导出记录 (/exports) are subpages of 操作日志.
+  const auditLogId = auditLogIdOf(path);
+  const exportsRoute = path === EXPORTS_ROUTE;
+  const auditSubpage =
+    auditLogId !== undefined
+      ? auditLogsTexts.detail.crumb
+      : exportsRoute
+        ? exportsTexts.title
+        : undefined;
+  const menuId = auditSubpage === undefined ? path : AUDIT_LOGS_MENU_ID;
   const searchUser = menuId === USERS_MENU_ID ? searchUserOf(location.state) : undefined;
   // A claim's review page (/claims/<claim_id>) belongs to the claims menu (sidebar, crumbs).
   const claimId = claimIdOf(menuId);
   const match = findMenuItem(groups, claimId === undefined ? menuId : CLAIMS_MENU_ID);
-  let subpage = match === undefined ? undefined : subpageOf(location.state);
+  let subpage = match === undefined ? undefined : (auditSubpage ?? subpageOf(location.state));
   if (match !== undefined && claimId !== undefined) subpage = claimsTexts.review.crumb;
   // A workbench card opened a route whose page is not in the catalogue yet (e.g. /risk/appeals):
   // the placeholder shows under the card's page name instead of falling back home.
@@ -457,6 +487,11 @@ function ShellFrame({
     const { snapshot } = state;
     if (match !== undefined && claimId !== undefined) {
       content = <ClaimReviewPage key={claimId} access={access} claimId={claimId} />;
+    } else if (match !== undefined && auditLogId !== undefined) {
+      // Direct address or 【查看】 of a row: only this record is read, never the list.
+      content = <AuditLogDetailPage key={auditLogId} id={auditLogId} access={access} />;
+    } else if (match !== undefined && exportsRoute) {
+      content = <ExportsPage access={access} />;
     } else if (match !== undefined && options.renderPage !== undefined) {
       content = options.renderPage(match.item.id, access);
     } else if (searchUser !== undefined && (snapshot.isSuper || snapshot.permissions.length > 0)) {
@@ -489,6 +524,8 @@ function ShellFrame({
       content = <ClaimsPage key={location.key} access={access} />;
     } else if (match !== undefined && match.item.id === 'users') {
       content = <UsersPage access={access} />;
+    } else if (match !== undefined && match.item.id === AUDIT_LOGS_MENU_ID) {
+      content = <AuditLogsPage access={access} />;
     } else if (match !== undefined) {
       content = <PagePending title={match.item.label} />;
     } else if (menuId === 'users' && (snapshot.isSuper || snapshot.permissions.length > 0)) {
