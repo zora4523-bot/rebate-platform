@@ -55,7 +55,7 @@ import {
 } from './providers/access-control/index.ts';
 import { createRefineAccessControl } from './providers/access-control/refine.ts';
 import { createAdminApi, createAdminDataProvider, type AdminApi } from './providers/admin-api.ts';
-import type { AdminAuthProvider } from './providers/auth/index.ts';
+import type { AdminAuthProvider, AuthClock } from './providers/auth/index.ts';
 import {
   DASHBOARD_MENU_ID,
   findMenuItem,
@@ -146,14 +146,17 @@ function subpageOf(state: unknown): string | undefined {
 export interface AdminAppOptions extends AdminShellOptions {
   readonly dataProvider?: DataProvider;
   readonly authProvider?: AdminAuthProvider;
+  /** Console clock (epoch ms) for the own guard and time-dependent pages; defaults to Date.now. */
+  readonly clock?: AuthClock;
 }
 
 /** The browser entry's own guard and data provider against /admin/v1 on this origin. */
-function defaultAdminApi(): AdminApi {
+function defaultAdminApi(clock: AuthClock | undefined): AdminApi {
   return createAdminApi({
     baseUrl: window.location.origin,
     fetch: (input, init) => globalThis.fetch(input, init),
     manualStart: true,
+    ...(clock === undefined ? {} : { clock }),
   });
 }
 
@@ -250,7 +253,7 @@ function AdminApp({ options }: { readonly options: AdminAppOptions }) {
   // stops them on unmount, so a render React throws away (StrictMode) never clears the session.
   const [ownApi] = useState(() =>
     options.authProvider === undefined && options.router === 'browser'
-      ? defaultAdminApi()
+      ? defaultAdminApi(options.clock)
       : undefined,
   );
   const ownAuth = ownApi?.auth;
@@ -381,7 +384,7 @@ function AdminApp({ options }: { readonly options: AdminAppOptions }) {
 }
 
 interface ShellFrameProps {
-  readonly options: AdminShellOptions;
+  readonly options: AdminAppOptions;
   readonly state: PermissionState;
   readonly access: AccessControl | undefined;
   readonly groups: readonly AdminMenuGroup[];
@@ -491,7 +494,7 @@ function ShellFrame({
       // Direct address or 【查看】 of a row: only this record is read, never the list.
       content = <AuditLogDetailPage key={auditLogId} id={auditLogId} access={access} />;
     } else if (match !== undefined && exportsRoute) {
-      content = <ExportsPage access={access} />;
+      content = <ExportsPage access={access} clock={options.clock} />;
     } else if (match !== undefined && options.renderPage !== undefined) {
       content = options.renderPage(match.item.id, access);
     } else if (searchUser !== undefined && (snapshot.isSuper || snapshot.permissions.length > 0)) {

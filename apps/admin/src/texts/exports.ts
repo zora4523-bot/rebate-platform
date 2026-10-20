@@ -49,9 +49,13 @@ export const exportsTexts = {
   downloadForbidden: '当前账号没有下载这项导出的权限。',
   downloadMissing: '导出任务不存在或不可见，下载失败。',
   downloadFailed: '下载链接获取失败，请稍后再试。',
+  /** done but expires_at has come since the list was shown: nothing is requested. */
+  downloadExpired: '这项导出已过期，不能下载；已刷新导出记录。',
   retryForbidden: '当前账号没有重试这项导出的权限。',
   retryMissing: '导出任务不存在或不可见，重试失败。',
   retryFailed: '重试未能提交，请稍后再试。',
+  /** The step-up token was refused while another task's dialog was open. */
+  retryVerifyAgain: '动态码验证未被接受，重试未提交，请重新点【重试】。',
   retried: '已重新提交导出任务。',
   reason: {
     title: '重试未脱敏导出',

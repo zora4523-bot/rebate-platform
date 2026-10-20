@@ -37,6 +37,18 @@ export function shownStatus(row: ExportRow, now: number): ExportStatus {
   return Number.isNaN(expires) || expires > now ? 'done' : 'expired';
 }
 
+/** Earliest expires_at still ahead of `now` among the done rows (when 【下载】 must go). */
+export function nextExpiry(items: readonly ExportRow[], now: number): number | undefined {
+  let next: number | undefined;
+  for (const item of items) {
+    if (item.status !== 'done' || item.expires_at === null) continue;
+    const at = Date.parse(item.expires_at);
+    if (Number.isNaN(at) || at <= now) continue;
+    if (next === undefined || at < next) next = at;
+  }
+  return next;
+}
+
 export function statusLabel(status: string): string {
   return (t.status as Readonly<Record<string, string>>)[status] ?? status;
 }

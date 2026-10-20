@@ -33,6 +33,7 @@ import {
   PAGE_SIZE,
   STATUSES,
   beijingTime,
+  nextExpiry,
   rejectedStatus,
   resourceLabel,
   shownStatus,
@@ -58,9 +59,17 @@ type ListStatus = 'loading' | 'ready' | 'failed' | 'forbidden';
 interface ListData {
   readonly items: readonly ExportRow[];
   readonly total: number;
-  /** When this page was read: a done task whose expires_at has come by then shows as expired. */
-  readonly readAt: number;
 }
+
+/** Time source of the page (AGENTS.md §4 rule 5): the console's injected clock, in epoch ms. */
+export interface ExportsClock {
+  now(): number;
+}
+
+const SYSTEM_CLOCK: ExportsClock = { now: () => Date.now() };
+
+/** setTimeout keeps a 32-bit delay; a later expiry is checked again after this long. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 type Notice = { readonly type: 'success' | 'error'; readonly text: string };
 
@@ -77,7 +86,13 @@ type RetryFlow =
 
 const IDLE: RetryFlow = { phase: 'idle' };
 
-export function ExportsPage({ access }: { readonly access: AccessControl }): ReactElement {
+export interface ExportsPageProps {
+  readonly access: AccessControl;
+  /** Injected clock (App options); expiry is judged against it at render and before a download. */
+  readonly clock?: ExportsClock | undefined;
+}
+
+export function ExportsPage({ access, clock = SYSTEM_CLOCK }: ExportsPageProps): ReactElement {
   if (!access.can('export')) {
     return (
       <Flex vertical gap={16}>
@@ -90,10 +105,10 @@ export function ExportsPage({ access }: { readonly access: AccessControl }): Rea
       </Flex>
     );
   }
-  return <ExportsContent />;
+  return <ExportsContent clock={clock} />;
 }
 
-function ExportsContent(): ReactElement {
+function ExportsContent({ clock }: { readonly clock: ExportsClock }): ReactElement {
   const getProvider = useDataProvider();
   const { token } = theme.useToken();
   const statusId = useId();
@@ -107,6 +122,8 @@ function ExportsContent(): ReactElement {
   const busyRef = useRef(new Set<string>());
   const flowRef = useRef<RetryFlow>(IDLE);
   const alive = useRef(true);
+  // Bumped when the earliest expires_at comes: the rows are judged again against the clock.
+  const [expiryTick, setExpiryTick] = useState(0);
 
   useEffect(() => {
     alive.current = true;
@@ -118,6 +135,16 @@ function ExportsContent(): ReactElement {
   const setFlow = (next: RetryFlow) => {
     flowRef.current = next;
     setFlowState(next);
+  };
+
+  const flowOwnedBy = (id: string): boolean => {
+    const current = flowRef.current;
+    return current.phase !== 'idle' && current.id === id;
+  };
+
+  /** Closes the dialog of `id` only: one task's answer never touches another task's dialog. */
+  const endFlowOf = (id: string) => {
+    if (flowOwnedBy(id)) setFlow(IDLE);
   };
 
   const claim = (id: string): boolean => {
@@ -153,11 +180,7 @@ function ExportsContent(): ReactElement {
     }).then(
       (response) => {
         if (!current) return;
-        setData({
-          items: response.data.items,
-          total: response.data.total,
-          readAt: Date.now(),
-        });
+        setData({ items: response.data.items, total: response.data.total });
         setStatus('ready');
       },
       (cause: unknown) => {
@@ -171,6 +194,19 @@ function ExportsContent(): ReactElement {
       current = false;
     };
   }, [getProvider, query, attempt]);
+
+  // A done row turns 已过期 (and loses 【下载】) once its expires_at comes, without a new read.
+  useEffect(() => {
+    if (data === undefined) return;
+    const current = clock.now();
+    const next = nextExpiry(data.items, current);
+    if (next === undefined) return;
+    const timer = setTimeout(
+      () => setExpiryTick((value) => value + 1),
+      Math.min(next - current, MAX_TIMER_MS),
+    );
+    return () => clearTimeout(timer);
+  }, [data, clock, expiryTick]);
 
   const reload = () => {
     setStatus('loading');
@@ -202,6 +238,12 @@ function ExportsContent(): ReactElement {
   };
 
   const download = async (row: ExportRow) => {
+    // Judged again at the click: a task that expired since the last render is never requested.
+    if (shownStatus(row, clock.now()) !== 'done') {
+      setNotice({ type: 'error', text: t.downloadExpired });
+      reload();
+      return;
+    }
     if (!claim(row.id)) return;
     setNotice(undefined);
     try {
@@ -243,27 +285,33 @@ function ExportsContent(): ReactElement {
             },
       );
       setNotice({ type: 'success', text: t.retried });
-      setFlow(IDLE);
+      endFlowOf(id);
     } catch (cause) {
       if (!alive.current) return;
+      let text: string = t.retryFailed;
       if (
         stepUpToken !== undefined &&
         reason !== undefined &&
         cause instanceof AdminApiError &&
         cause.code === 10003
       ) {
-        // The token was not accepted: verify again (never resend the old token).
-        setFlow({ phase: 'verify', id, reason, again: true });
-        return;
+        if (flowRef.current.phase === 'idle') {
+          // The token was not accepted: verify again (never resend the old token).
+          setFlow({ phase: 'verify', id, reason, again: true });
+          return;
+        }
+        // Another task's dialog is open meanwhile: it is left alone; this retry starts over.
+        text = t.retryVerifyAgain;
+      } else {
+        endFlowOf(id);
+        if (handleRejected(cause)) return;
+        if (cause instanceof AdminApiError && cause.code === 10403) text = t.retryForbidden;
+        else if (cause instanceof AdminApiError && cause.code === 20001) text = t.retryMissing;
       }
-      setFlow(IDLE);
-      if (handleRejected(cause)) return;
-      let text: string = t.retryFailed;
-      if (cause instanceof AdminApiError && cause.code === 10403) text = t.retryForbidden;
-      else if (cause instanceof AdminApiError && cause.code === 20001) text = t.retryMissing;
       setNotice({ type: 'error', text });
     } finally {
-      if (flowRef.current.phase === 'idle') release(id);
+      // The row stays busy only while its own dialog is open (verify again).
+      if (!flowOwnedBy(id)) release(id);
     }
   };
 
@@ -311,7 +359,8 @@ function ExportsContent(): ReactElement {
     void sendRetry(current.id, current.reason, stepUpToken);
   };
 
-  const now = data?.readAt ?? 0;
+  // Judged at every render against the injected clock (never frozen at the time of the read).
+  const now = clock.now();
   const code = { fontFamily: token.fontFamilyCode } as const;
   const secondary = { fontSize: token.fontSizeSM, color: token.colorTextSecondary } as const;
 
