@@ -8,8 +8,9 @@
 // judge(handle, input): the window is [at − 720 h, at], both ends closed, where `at` is the Clock's
 // now at the first judgement. A rank ≥ risk.device_login_accounts_limit (default 3) on any device
 // marks the subject; each marked device gets one risk_hits row (rule SAME_DEVICE_MULTI_ACCOUNT,
-// manual_review, dimension device, value_hmac = the device_hash, ref_type / ref_id = the ref as
-// passed in). Nothing else is written: no user state, no session, no ban (BR-ID-37: marking only).
+// manual_review, dimension device, value_hmac = the device_hash, ref_type / ref_id = the judged
+// ref: a withdrawal's id, or `<invite_rewards.id>:<party>` for one party of an invite reward).
+// Nothing else is written: no user state, no session, no ban (BR-ID-37: marking only).
 // The rule row is one per app whatever the ref type (registered with scene withdrawal, as before).
 //
 // One conclusion per judged object (B1-03n): the first judgement, marked or not, inserts one
@@ -79,14 +80,26 @@ export interface SameDeviceLoginReader {
   ): Promise<readonly SameDeviceFirstLogin[]>;
 }
 
+/** The party of an invite reward a judgement is for (one invite_rewards row names both). */
+export type InviteRewardParty = 'inviter' | 'invitee';
+
+/**
+ * The judged object. A withdrawal: ref_id = its id. An invite reward (B1-35b): one invite_rewards
+ * row carries both the inviter's and the invitee's reward, each judged on its own, so the ref names
+ * the party and ref_id = `<invite_rewards.id>:<party>`; without it the second party's judgement
+ * would replay the first party's conclusion.
+ */
+export type SameDeviceRef =
+  | { readonly type: 'withdrawal'; readonly id: string }
+  | { readonly type: 'invite_reward'; readonly id: string; readonly party: InviteRewardParty };
+
 /** risk_judgements / risk_hits ref_type values this check writes (CHECKs widened in B1-35b). */
-export type SameDeviceRefType = 'withdrawal' | 'invite_reward';
+export type SameDeviceRefType = SameDeviceRef['type'];
 
 export interface SameDeviceAccountsInput {
   readonly app_id: string;
   readonly user_id: string;
-  /** The judged object: a withdrawal, or an invite_rewards row (B1-35b; id = its id as text). */
-  readonly ref: { readonly type: SameDeviceRefType; readonly id: string };
+  readonly ref: SameDeviceRef;
 }
 
 export interface SameDeviceAccountsResult {
@@ -164,6 +177,38 @@ function storedResult(value: unknown): SameDeviceAccountsResult {
   throw new Error('same-device judgement: stored result malformed');
 }
 
+/** One judgement's key as stored: ref_type / ref_id of risk_judgements and risk_hits. */
+interface JudgedRef {
+  readonly app_id: string;
+  readonly user_id: string;
+  readonly ref_type: SameDeviceRefType;
+  readonly ref_id: string;
+}
+
+const INVITE_REWARD_PARTIES: ReadonlySet<string> = new Set<InviteRewardParty>([
+  'inviter',
+  'invitee',
+]);
+
+/** The stored key of an input; any other ref type, or a reward without a party, is refused. */
+function judgedRef(input: SameDeviceAccountsInput): JudgedRef {
+  const { ref } = input;
+  if (ref.type === 'withdrawal') {
+    return { app_id: input.app_id, user_id: input.user_id, ref_type: ref.type, ref_id: ref.id };
+  }
+  // Runtime check too: a caller that cast its way past the type gets an error, not a stray row.
+  const type: string = ref.type;
+  if (type === 'invite_reward' && INVITE_REWARD_PARTIES.has(ref.party)) {
+    return {
+      app_id: input.app_id,
+      user_id: input.user_id,
+      ref_type: ref.type,
+      ref_id: `${ref.id}:${ref.party}`,
+    };
+  }
+  throw new Error('same-device judgement: unknown ref');
+}
+
 export function createSameDeviceAccountsCheck(
   options: SameDeviceAccountsOptions,
 ): SameDeviceAccountsCheck {
@@ -221,8 +266,8 @@ export function createSameDeviceAccountsCheck(
   }
 
   /** Transaction-level lock of one judged ref; held until the transaction ends. */
-  async function lockRef(trx: Kysely<DB>, input: SameDeviceAccountsInput): Promise<void> {
-    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`risk.same_device:${input.app_id}:${input.ref.type}:${input.ref.id}`}, 0))`.execute(
+  async function lockRef(trx: Kysely<DB>, input: JudgedRef): Promise<void> {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`risk.same_device:${input.app_id}:${input.ref_type}:${input.ref_id}`}, 0))`.execute(
       trx,
     );
   }
@@ -242,7 +287,7 @@ export function createSameDeviceAccountsCheck(
   /** The stored conclusion of this ref; null when it was never judged. */
   async function stored(
     trx: Kysely<DB>,
-    input: SameDeviceAccountsInput,
+    input: JudgedRef,
   ): Promise<SameDeviceAccountsResult | null> {
     const row = await trx
       .withSchema('app')
@@ -250,8 +295,8 @@ export function createSameDeviceAccountsCheck(
       .select('result')
       .where('app_id', '=', input.app_id)
       .where('rule_id', '=', RULE_ID)
-      .where('ref_type', '=', input.ref.type)
-      .where('ref_id', '=', input.ref.id)
+      .where('ref_type', '=', input.ref_type)
+      .where('ref_id', '=', input.ref_id)
       .executeTakeFirst();
     return row === undefined ? null : storedResult(row.result);
   }
@@ -259,7 +304,7 @@ export function createSameDeviceAccountsCheck(
   /** Ranks every device the subject used in the window [at − 720 h, at]. */
   async function rank(
     trx: Kysely<DB>,
-    input: SameDeviceAccountsInput,
+    input: JudgedRef,
     at: Date,
   ): Promise<{
     readonly devices: SameDeviceAccountsResult['devices'];
@@ -277,10 +322,7 @@ export function createSameDeviceAccountsCheck(
   }
 
   /** The whole judgement inside one transaction (the caller's or judge's own). */
-  async function judgeIn(
-    trx: Kysely<DB>,
-    input: SameDeviceAccountsInput,
-  ): Promise<SameDeviceAccountsResult> {
+  async function judgeIn(trx: Kysely<DB>, input: JudgedRef): Promise<SameDeviceAccountsResult> {
     await requireReadCommitted(trx);
     await lockRef(trx, input);
     const prior = await stored(trx, input);
@@ -312,8 +354,8 @@ export function createSameDeviceAccountsCheck(
       .values({
         app_id: input.app_id,
         rule_id: RULE_ID,
-        ref_type: input.ref.type,
-        ref_id: input.ref.id,
+        ref_type: input.ref_type,
+        ref_id: input.ref_id,
         user_id: input.user_id,
         marked: result.marked,
         result: sql`CAST(${JSON.stringify(result)} AS jsonb)`,
@@ -340,8 +382,8 @@ export function createSameDeviceAccountsCheck(
           risk_action: RISK_ACTION,
           dimension: 'device',
           value_hmac: device.device_hash,
-          ref_type: input.ref.type,
-          ref_id: input.ref.id,
+          ref_type: input.ref_type,
+          ref_id: input.ref_id,
           created_at: now,
         })),
       )
@@ -353,8 +395,8 @@ export function createSameDeviceAccountsCheck(
       {
         app_id: input.app_id,
         rule_id: RULE_ID,
-        ref_type: input.ref.type,
-        ref_id: input.ref.id,
+        ref_type: input.ref_type,
+        ref_id: input.ref_id,
         devices: hit.length,
       },
       'risk_same_device_multi_account',
@@ -364,11 +406,12 @@ export function createSameDeviceAccountsCheck(
 
   return {
     async judge(handle, input) {
-      if (handle.isTransaction) return judgeIn(handle, input);
+      const judged = judgedRef(input);
+      if (handle.isTransaction) return judgeIn(handle, judged);
       return handle
         .transaction()
         .setIsolationLevel('read committed')
-        .execute((trx) => judgeIn(trx, input));
+        .execute((trx) => judgeIn(trx, judged));
     },
   };
 }

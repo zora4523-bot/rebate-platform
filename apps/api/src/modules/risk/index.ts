@@ -57,6 +57,8 @@ export type {
   SameDeviceLoginReader,
   SameDeviceAccountsInput,
   SameDeviceRefType,
+  SameDeviceRef,
+  InviteRewardParty,
   SameDeviceAccountsResult,
   SameDeviceAccountsCheck,
   SameDeviceAccountsOptions,
