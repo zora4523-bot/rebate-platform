@@ -1,0 +1,150 @@
+{
+  "task": "F1-02zx",
+  "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
+  "spec_commit": "be8568a4f5cba0b415133946932768283b1025a7",
+  "red_tests": [
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#1] 资格天数是唯一的可改业务配置，整数范围 1–3650，不是开关",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#2] 六项邀请奖励配置连续位于注册表末尾，资格天数紧接 IP 窗口",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#3] 资格天数接受整数 1",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#3] 资格天数接受整数 2",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#3] 资格天数接受整数 30",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#3] 资格天数接受整数 3649",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#3] 资格天数接受整数 3650",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 零",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 负数",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 超过十年",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 int32 上限",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 非整数",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 NaN",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 正无穷",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 负无穷",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 字符串",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 null",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 undefined",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 布尔",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 数组",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 对象",
+    "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#5] 登记资格天数不扩大活动正数校验，也不增加客户端读取或下发",
+    "test/spec/content/invite-reward-eligibility/seeds.test.ts > [AC-F1-02zx#6] 0001 种子在第六批后追加数字 30 且重跑不覆盖，同组旧值不变",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#7] config.business 加 step-up 首次 PUT 45，版本 1、历史与审计各一条",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#8] PUT 0 返回 20001 [value]，当前值、历史和审计不变",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#8] PUT 3651 返回 20001 [value]，当前值、历史和审计不变",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#8] PUT 30.5 返回 20001 [value]，当前值、历史和审计不变",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#9] batch 混合合法金额与 3651 天，报资格键名且整批不写",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#10] rollback 到 SQL 注入的 0 天历史被拒，报 to_version 且不写",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.risk 即使带 step-up 也不能 update 资格天数",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.risk 即使带 step-up 也不能 batch 资格天数",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.risk 即使带 step-up 也不能 rollback 资格天数",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.general 即使带 step-up 也不能 update 资格天数",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.general 即使带 step-up 也不能 batch 资格天数",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.general 即使带 step-up 也不能 rollback 资格天数",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#12] config.business 未 step-up 修改天数和同组金额均要求 TOTP",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#13] 已开启且金额预算为正时 PUT 1 天成功，不获取活动咨询锁",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#14] 登记后缺资格天数行也能开启活动，不隐式写入默认值",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#15] config.business 加 step-up 的合法 batch 成功且不获取活动咨询锁",
+    "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#15] config.business 加 step-up 的合法 rollback 成功且不获取活动咨询锁"
+  ],
+  "risk_note": "RV2 (content config registry; #161 invite reward eligibility period, no amount computed). Registers growth.invite_reward.eligibility_days as the last key of the invite reward group and of the registry (integer days 1-3650, config.business, editable, no options; not part of the enable guard keys) with seed 30 appended to db/seeds/0001_config-defaults.sql (08 BR-INV-24 eligibility paragraph, SPEC_REF ac4d993). Frozen registry tests accept the sixth key since F1-02zw; F1-02zt tightens. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "be8568a4f5cba0b415133946932768283b1025a7",
+      "tree": "ebefb2e1d61a08349cc2f31d4747fc46a1183cac",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T08:28:32Z",
+      "finished_at": "2026-10-20T08:28:51Z",
+      "red_tests": [
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#1] 资格天数是唯一的可改业务配置，整数范围 1–3650，不是开关",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#2] 六项邀请奖励配置连续位于注册表末尾，资格天数紧接 IP 窗口",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#3] 资格天数接受整数 1",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#3] 资格天数接受整数 2",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#3] 资格天数接受整数 30",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#3] 资格天数接受整数 3649",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#3] 资格天数接受整数 3650",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 零",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 负数",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 超过十年",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 int32 上限",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 非整数",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 NaN",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 正无穷",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 负无穷",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 字符串",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 null",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 undefined",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 布尔",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 数组",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#4] 资格天数拒绝 对象",
+        "test/spec/content/invite-reward-eligibility/registry.test.ts > [AC-F1-02zx#5] 登记资格天数不扩大活动正数校验，也不增加客户端读取或下发",
+        "test/spec/content/invite-reward-eligibility/seeds.test.ts > [AC-F1-02zx#6] 0001 种子在第六批后追加数字 30 且重跑不覆盖，同组旧值不变",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#7] config.business 加 step-up 首次 PUT 45，版本 1、历史与审计各一条",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#8] PUT 0 返回 20001 [value]，当前值、历史和审计不变",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#8] PUT 3651 返回 20001 [value]，当前值、历史和审计不变",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#8] PUT 30.5 返回 20001 [value]，当前值、历史和审计不变",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#9] batch 混合合法金额与 3651 天，报资格键名且整批不写",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#10] rollback 到 SQL 注入的 0 天历史被拒，报 to_version 且不写",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.risk 即使带 step-up 也不能 update 资格天数",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.risk 即使带 step-up 也不能 batch 资格天数",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.risk 即使带 step-up 也不能 rollback 资格天数",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.general 即使带 step-up 也不能 update 资格天数",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.general 即使带 step-up 也不能 batch 资格天数",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#11] 仅 config.general 即使带 step-up 也不能 rollback 资格天数",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#12] config.business 未 step-up 修改天数和同组金额均要求 TOTP",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#13] 已开启且金额预算为正时 PUT 1 天成功，不获取活动咨询锁",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#14] 登记后缺资格天数行也能开启活动，不隐式写入默认值",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#15] config.business 加 step-up 的合法 batch 成功且不获取活动咨询锁",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts > [AC-F1-02zx#15] config.business 加 step-up 的合法 rollback 成功且不获取活动咨询锁"
+      ],
+      "expected": [
+        "test/spec/content/invite-reward-eligibility/registry.test.ts",
+        "test/spec/content/invite-reward-eligibility/seeds.test.ts",
+        "test/spec/content/invite-reward-eligibility/writes.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "790cebe9ad8d965a23f789270434842d01b01c308fcacfbb0ec7bb771fb323cb"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "f82e26697d523a5aefc05e30c2bd453d9a58239e3254b31a5fdff107ca06f399"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass with one S2 (fixture app_id with a hyphen, not reachable in ordinary use)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "40cf8e01d7d56c555047b8c565fbb6a9e959f609",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "2366aa21ac6d84107380a2d99c6dc1677632a824",
+    "specs": "b80f759906adb5320a33adb9ff0a59fcb0fb9a3a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
