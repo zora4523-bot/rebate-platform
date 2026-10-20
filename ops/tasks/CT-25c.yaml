@@ -1,0 +1,30 @@
+id: CT-25c
+repo: rebate-platform
+title: 契约（#161 资格有效期跟进）：invite_reward_status 以 expired（已过期）取代 budget_exhausted，OpenAPI AdminInviteRewardStatus 与 AdminInviteReward 同步并加 eligibility_days；texts 加 ledger_type.REWARD.name_invite / hint_invite（BR-TEXT-19 原文）
+type: contract
+# 2026-10-20 入账（content-client 第五阶段；负责人决定 couli #161 ac4d993，notices 12:5x / 13:1x，编号 05:41 UTC 预占；并入 D10-94 ⑦ 文案键）。
+# 依据（SPEC_REF ac4d993，#985 合并后）：08 11_INV 细则 l.569「资格记录与状态」、l.571「有效期」、l.560 默认值；12_TEXT l.1213 BR-TEXT-19 REWARD 行；
+#   04 l.421 §3.2 invite_rewards（加 eligibility_days、已过期取代预算用尽）；05 l.151 CT-25 行 2026-10-20 追加。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：只改值与说明，不新增错误码；两个后台操作仍是 planned，oasdiff 基线剔除 planned 操作，直接替换预期非破坏（报 breaking 即停）。
+#   ledger_type.REWARD.* 由 fund-term-keys 现有前缀 ledger_type. 归资金术语，清单与生成物不改。
+# 占契约槽；合并即放槽并在 notices 告知 identity（B1-35a 状态机按新枚举改）与 funds。
+refs: []
+refs_hash: {}
+contract_sections: ['3.2', '6.6']
+deps: [CT-25a]
+paths:
+  - 'contracts/enums/identity.yaml'
+  - 'contracts/openapi.yaml'
+  - 'contracts/texts.default.json'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

@@ -1,0 +1,22 @@
+id: CT-25e
+repo: rebate-platform
+title: 过渡测试改动（CT-25d 前置）：CT-25b 规则测试接受 invite_rewards 的两种形状——0055 原样，或加 eligibility_days 列且 status 以 expired 取代 budget_exhausted（两项同有同无，半套即失败）
+type: test-change
+# 2026-10-20 入账（content-client 第五阶段；#161 跟进，CT-25d 合并后 [AC-CT-25b#1] #4 #6 #9 #18 及全部经 kit reward() 插入的用例必红）。
+# 做法：kit 读 information_schema 判断 eligibility_days 是否存在，再读 pg_constraint 判断 status 约束收 expired 还是 budget_exhausted，两者不一致即失败；
+#   SHAPES / reward() / 状态清单按判断结果取新旧一套，原有断言不删；#4 的「约束名出现在 0055」放宽为「出现在 0055 或之后改 invite_rewards 的迁移」，convalidated 仍须为 true。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR，按 approvals #24 由编排加 owner-approved 标签（F1-02zm / F1-02zv 先例）。CT-25d 合并后另开收紧。
+refs: []
+refs_hash: {}
+deps: [CT-25b]
+paths:
+  - 'test/spec/db/growth/invite-rewards/kit.ts'
+  - 'test/spec/db/growth/invite-rewards/schema.int.test.ts'
+  - 'test/spec/db/growth/invite-rewards/constraints.int.test.ts'
+  - 'test/spec/db/growth/invite-rewards/access.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

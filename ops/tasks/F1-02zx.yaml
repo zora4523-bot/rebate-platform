@@ -1,0 +1,26 @@
+id: F1-02zx
+repo: rebate-platform
+title: content：配置注册表在 growth.invite_reward.* 组尾登记 eligibility_days（整数天 1–3650、config.business、可改），种子按 08 默认 30
+type: impl
+# 2026-10-20 入账（content-client 第五阶段；负责人决定 couli #161 ac4d993，notices 12:5x / 13:1x，编号 05:41 UTC 预占）。
+# 依据（SPEC_REF ac4d993）：08 11_INV 细则 l.560 默认值「资格有效期 30 天（growth.invite_reward.eligibility_days…取得资格时随金额一起锁定）」、l.571「有效期」；
+#   04 l.928 §10.1 服务端业务配置键（天，默认见 BR-INV-24）、l.1005 §11.2 config.business。原文由编排者摘入任务书第 9 节，refs 置空。
+# 取值只照 08：默认 30；代码与种子都不另定。范围（技术取舍，D-E1）：整数，下限 1（0 天等于活动无法触发），上限 3650（防 B1-35 按天加时刻溢出），越界 20001。
+# 权限（D-E2）：config.business（同组金额与预算；ip_window_hours 的 config.risk 是 D-C1 个例）。
+# 不并入「开关为 on 时金额与预算须为正」的保存校验（08 未要求）；改值只影响之后取得资格的记录（08「有效期」），由 growth 在取得资格时读值写入 invite_rewards。
+# 种子追加在 0001 第 6 批之后（同一条 INSERT 或新一批，ON CONFLICT DO NOTHING），不是迁移、不占迁移号。
+refs: []
+refs_hash: {}
+deps: [F1-02zn, F1-02zw]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'db/seeds/0001_config-defaults.sql'
+test_paths:
+  - 'test/spec/content/invite-reward-eligibility/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/invite-reward-eligibility/**'
+status: todo
+pr: null
