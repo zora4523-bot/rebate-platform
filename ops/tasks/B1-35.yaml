@@ -1,0 +1,24 @@
+id: B1-35
+repo: rebate-platform
+title: 邀请奖励资格、发放与过期（BR-INV-24 含有效期）：资格写入与预算占用、可用额端口、触发入口、发放服务、每日过期任务
+type: impl
+# 草稿 2026-10-20（身份与风控线 identity-lane）。依据 SPEC_REF ac4d993；细则与裁定见任务书摘录（couli-runs/B1-35/excerpt.md），refs 置空（E13）。不含后台只读接口、分录写入（B2-16b）、CREDITED 接线（B2-04）。
+refs: []
+refs_hash: {}
+deps: [CT-25a, CT-25b, CT-25c, CT-25d, F1-02zx, F1-02zp, B1-35a, B1-35b]
+paths:
+  - 'apps/api/src/modules/growth/**'
+  - 'apps/api/src/modules/identity/ports/**'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/modules/orders/ports/**'
+  - 'apps/api/src/modules/orders/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/growth/invite-reward/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/growth/invite-reward/**'
+status: todo

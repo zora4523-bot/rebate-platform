@@ -22,4 +22,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/payout-verify-recheck/**'
-status: todo
+status: done
+pr: 999
