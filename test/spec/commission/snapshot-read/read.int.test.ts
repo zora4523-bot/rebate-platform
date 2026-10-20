@@ -162,6 +162,60 @@ it('[AC-B2-04i#5] BR-CALC-10/13 按 app 与子订单隔离快照、版本和同�
   });
 });
 
+it('[AC-B2-04i#14] BR-CALC-02/10 同 app 同版本的两单在同一事务内分别读取自己的 B 与受益人', async () => {
+  const f = fixture();
+  const sibling = fixture();
+  sibling.input = { ...sibling.input, appId: f.input.appId };
+  // 同 app 已发布规则的生效时间不同，避免夹具撞唯一约束。
+  sibling.ruleEffectiveFrom = new Date('2026-10-18T01:00:00Z');
+  sibling.people[0] = { ...sibling.people[0]!, role: 'share', ratioBp: 4000 };
+  sibling.people[1] = { ...sibling.people[1]!, ratioBp: 1200 };
+  sibling.people[2] = { ...sibling.people[2]!, ratioBp: 600 };
+  await seed(db, f);
+  await seed(db, sibling, [640n, 192n, 96n], 928n, 672n, {
+    rawNFen: 2000n,
+    baseFen: 1600n,
+    reserveBp: 2000,
+    reserveFen: 400n,
+  });
+  // 两单当前最大版本均为 2：B 分别为 2000×85%=1700、3000×80%=2400。
+  await appendVersion(db, f, 2, 1700n, 2000n, [850n, 170n, 85n], 1105n, AT);
+  await appendVersion(db, sibling, 2, 2400n, 3000n, [960n, 288n, 144n], 1392n, AT);
+  await db.transaction().execute(async (trx) => {
+    // 分别读取两单：若金额查询漏 order_id 而返回同一行，至少一单的 B 断言失败。
+    const first = await commission.readCommissionSnapshot(trx, {
+      ...f.input,
+      commissionVersion: 2,
+    });
+    const second = await commission.readCommissionSnapshot(trx, {
+      ...sibling.input,
+      commissionVersion: 2,
+    });
+    expect(first).toEqual({
+      appId: f.input.appId,
+      orderId: f.input.orderId,
+      ruleVersionId: f.ruleVersionId,
+      commissionVersion: 2,
+      baseFen: 1700n,
+      reserveBp: 1500,
+      beneficiaries: expect.arrayContaining(f.people),
+      forfeitedEvents: [],
+    });
+    expect(first?.beneficiaries).toHaveLength(3);
+    expect(second).toEqual({
+      appId: sibling.input.appId,
+      orderId: sibling.input.orderId,
+      ruleVersionId: sibling.ruleVersionId,
+      commissionVersion: 2,
+      baseFen: 2400n,
+      reserveBp: 2000,
+      beneficiaries: expect.arrayContaining(sibling.people),
+      forfeitedEvents: [],
+    });
+    expect(second?.beneficiaries).toHaveLength(3);
+  });
+});
+
 it('[AC-B2-04i#6] BR-CALC-13 返回所有没收事件及原因，不混入 active/held，不按时间错排', async () => {
   const f = fixture();
   await seed(db, f);
