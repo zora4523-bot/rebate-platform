@@ -1,9 +1,10 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
 import { expect, it } from 'vitest';
 
 import { TABLES, TOTALS, columns, harness, indexes, migrationSource, ready } from './kit.ts';
 
-const h = harness();
+const h = harness(createTestDatabase);
 
 it('[AC-B2-04b#1] 04 的差错单列齐全，金额 bigint，S4 新列及待处理信息可空', async () => {
   await ready(h.app);
@@ -43,12 +44,21 @@ it('[AC-B2-04b#2] 日快照含全部独立金额与可比标记，日期由调�
     app_id: 'text',
     snapshot_date: 'date',
     waiting_comparable: 'bool',
-    union_receivable_fen: 'jsonb',
     ...Object.fromEntries(TOTALS.map((name) => [name, 'int8'])),
   })) {
     expect(stored, name).toContainEqual(expect.objectContaining({ name, type, nullable: false }));
   }
   expect(stored.find((c) => c.name === 'snapshot_date')?.expression).toBeNull();
+  expect(stored.map((c) => c.name)).not.toContain('union_receivable_fen');
+  const child = await columns(h.app, 'asset_snapshot_receivables');
+  for (const [name, type] of Object.entries({
+    asset_snapshot_id: 'uuid',
+    app_id: 'text',
+    platform: 'text',
+    union_receivable_fen: 'int8',
+  })) {
+    expect(child, name).toContainEqual(expect.objectContaining({ name, type, nullable: false }));
+  }
 });
 
 it('[AC-B2-04b#3] 原业务键唯一，dedupe_key 是 app 内非空部分唯一，日快照按 app 与日期唯一', async () => {
@@ -74,9 +84,17 @@ it('[AC-B2-04b#3] 原业务键唯一，dedupe_key 是 app 内非空部分唯一�
       predicate: null,
     }),
   );
+  expect(await indexes(h.app, 'asset_snapshot_receivables')).toContainEqual(
+    expect.objectContaining({
+      keys: ['asset_snapshot_id', 'platform'],
+      unique: true,
+      valid: true,
+      predicate: null,
+    }),
+  );
 });
 
-it('[AC-B2-04b#4] 同一迁移创建并授权两表，资金表约束与独立索引全部显式具名', async () => {
+it('[AC-B2-04b#4] 同一迁移创建并授权三表，资金表约束与独立索引全部显式具名', async () => {
   await ready(h.app);
   const source = migrationSource().replace(/"/g, '');
   const escape = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -128,13 +146,22 @@ it('[AC-B2-04b#5] 处理人外键绑定本 app 的管理员，所有新增外键
       JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = k.num ORDER BY k.pos) AS target_keys,
       c.confdeltype::text AS del, c.confupdtype::text AS upd, c.convalidated AS valid
     FROM pg_constraint c WHERE c.contype = 'f'
-      AND c.conrelid IN ('app.recon_diffs'::regclass, 'app.asset_snapshots'::regclass)
+      AND c.conrelid IN ('app.recon_diffs'::regclass, 'app.asset_snapshots'::regclass,
+        'app.asset_snapshot_receivables'::regclass)
   `.execute(h.app);
   expect(foreign.rows).toContainEqual(
     expect.objectContaining({
       keys: ['app_id', 'handler_id'],
       target: 'app.admin_users',
       target_keys: ['app_id', 'id'],
+      valid: true,
+    }),
+  );
+  expect(foreign.rows).toContainEqual(
+    expect.objectContaining({
+      keys: expect.arrayContaining(['asset_snapshot_id']),
+      target: 'app.asset_snapshots',
+      target_keys: expect.arrayContaining(['id']),
       valid: true,
     }),
   );

@@ -3,12 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect } from 'vitest';
 
 export type Row = Record<string, unknown>;
-export const TABLES = ['recon_diffs', 'asset_snapshots'] as const;
+export const TABLES = ['recon_diffs', 'asset_snapshots', 'asset_snapshot_receivables'] as const;
 export const AT = '2032-07-01T00:01:00+08:00';
 export const TOTALS = [
   'total_available_positive_fen',
@@ -18,8 +17,13 @@ export const TOTALS = [
   'total_estimated_fen',
 ] as const;
 
-export function harness() {
-  let database: TestDatabase | undefined;
+interface Database {
+  urlFor(role: 'couli_app'): string;
+  drop(): Promise<void>;
+}
+
+export function harness(createTestDatabase: () => Promise<Database>) {
+  let database: Database | undefined;
   let app: Kysely<DB>;
   beforeAll(async () => {
     database = await createTestDatabase();
@@ -98,7 +102,7 @@ export function recon(values: Row = {}): Row {
   };
 }
 
-// S15 选择允许的 jsonb 方案：平台键、JSON 整数分，不把多个平台加成一个数。
+// S15：快照合计放主表，各平台应收以 bigint 分存入子表。
 export function snapshot(values: Row = {}): Row {
   return {
     id: randomUUID(),
@@ -109,10 +113,19 @@ export function snapshot(values: Row = {}): Row {
     total_frozen_fen: 100n,
     total_waiting_fen: 925n,
     total_estimated_fen: 123n,
-    union_receivable_fen: '{"taobao":1000,"jd":2000,"pdd":0,"meituan":3000}',
     waiting_comparable: true,
     created_at: AT,
     updated_at: AT,
+    ...values,
+  };
+}
+
+export function receivable(parent: Row, values: Row = {}): Row {
+  return {
+    asset_snapshot_id: parent['id'],
+    app_id: parent['app_id'],
+    platform: 'taobao',
+    union_receivable_fen: 9007199254740993n,
     ...values,
   };
 }

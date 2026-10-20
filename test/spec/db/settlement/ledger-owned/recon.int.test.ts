@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
+import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
 import { expect, it } from 'vitest';
 
 import { AT, harness, insert, ready, recon, seedHandler, sqlState } from './kit.ts';
 
-const h = harness();
+const h = harness(createTestDatabase);
 
 it('[AC-B2-04b#23] 差错单租户、业务键和金额不得为 NULL，重复主键不能覆盖原记录', async () => {
   await ready(h.app);
