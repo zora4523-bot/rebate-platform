@@ -1,4 +1,12 @@
 // Public surface of the identity module. Other modules import only from this file.
+export { lockUsersForUpdate } from './ports/lock-users.ts';
+export type { LockUsersInput } from './ports/lock-users.ts';
+export { createRealnameStatusBatchReader } from './ports/realname-status-batch.ts';
+export type {
+  RealnameStatusBatchInput,
+  RealnameStatusBatchReader,
+  RealnameStatusBatchReaderOptions,
+} from './ports/realname-status-batch.ts';
 export { laborAgreementSigned } from './ports/labor-agreement.ts';
 // B1-13h: the labor agreement's configuration port app.module assembles (IdentityModuleOptions).
 export type { LaborAgreementConfigReader } from './ports/labor-agreement.ts';

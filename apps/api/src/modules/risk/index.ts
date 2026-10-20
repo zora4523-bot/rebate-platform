@@ -1,4 +1,11 @@
 // Public surface of the risk module. Other modules import only from this file.
+export { createRiskStateBatchReader } from './application/risk-state-reader.ts';
+export type {
+  RiskStateBatchInput,
+  RiskStateBatchValue,
+  RiskStateBatchReader,
+  RiskStateBatchReaderOptions,
+} from './application/risk-state-reader.ts';
 // Task F1-07d: the console's ban / unban / freeze / unfreeze (PUT /admin/v1/users/{user_id}/
 // risk-state; BR-ID-31; admin entry only). Rule tests: test/spec/risk/admin-risk-state/**.
 export {
