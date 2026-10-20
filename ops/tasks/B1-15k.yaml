@@ -1,0 +1,18 @@
+id: B1-15k
+repo: rebate-platform
+title: 测试修改：冻结测试 [AC-S1-83#17]（test/spec/identity/sms-login/branches.int.test.ts）用 users.status=deleting 代表「注销冷静期」并断言受限登录成功（0005 时注销单表未建）；按 BR-ID-27 冷静期是 deletion_requests 的 cooling 单、deleting 是 processing 且登录应 10007。把该用例的冷静期种子改为「users.status=normal + 一张 cooling 注销单」（满足 0059 的 CHECK），断言不变
+type: test-change
+# 草稿 2026-10-21（身份与风控线 identity-lane，第三波）。B1-15f 要补短信登录 deleting → 10007，原用例会红；先例 B1-13j（冻结测试的种子 / 夹具挡住按规划的正确实现时开 test-change，不削弱断言）。改前（main）改后（叠 B1-15f）都要绿；deleting → 10007 的断言由 B1-15f 自己的规则测试覆盖。
+# 不属削弱资金测试；保护路径第一类改已有文件，走非 task/ 分支 test-change/B1-15k，Claude 只读复审「不削弱」后按 approvals #24 加标签合并。模型 Opus 5.5。须在 B1-15f 落地前合并。
+refs: []
+refs_hash: {}
+deps: [B1-15a]
+paths:
+  - 'test/spec/identity/sms-login/branches.int.test.ts'
+  - 'test/spec/identity/sms-login/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/sms-login/**'
+status: todo

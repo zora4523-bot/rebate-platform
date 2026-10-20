@@ -1,0 +1,18 @@
+id: B1-15j
+repo: rebate-platform
+title: 测试修改：冻结测试 test/spec/identity/step-up-verify/kit.ts 为 planned 的 requestDeletion（POST /v1/me/deletion）挂桩控制器并断言它不在 CONTRACT_ROUTE_SCHEMAS；B1-15d 上线后会重复注册路由、夹具自检报「已实现」而红。夹具改为逐操作判断：已实现的替换真实控制器方法（照 rate-limit/http-kit.ts 先例），仍 planned 的照旧挂桩，断言不变
+type: test-change
+# 草稿 2026-10-21（身份与风控线 identity-lane，第三波；编排 01:5x 派工）。先例 B1-13j / B1-13k（#920 等）。改前（main，planned）改后（叠 B1-15d）都要绿；B1-15d 的控制器约定见 couli-runs/B1-15d/excerpt.md §9.2 第 6 条（identity/http/public/deletion.controller.ts、DeletionController.requestDeletion）。
+# 要改的位置（B1-15d 摘录者核对主干 07131974）：kit.ts 头注释 :1-11、OPERATIONS.deletion :54、桩 :203-220、未实现断言 :256-265、controllers :279；同目录 once / order / token.int.test.ts 只经 u.send('deletion') 用夹具，不改。其余引用 me/deletion 的冻结测试（h5-token、privacy-min-version、platform/idempotency、risk-state、signature、h5-app-api）不依赖 planned，不改。
+# 不属削弱资金测试；保护路径第一类改已有文件，走非 task/ 分支 test-change/B1-15j，Claude 只读复审「不削弱」后按 approvals #24 加标签合并。模型 Opus 5.5。须在 B1-15d 落地前合并。
+refs: []
+refs_hash: {}
+deps: [B1-02y]
+paths:
+  - 'test/spec/identity/step-up-verify/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/step-up-verify/**'
+status: todo

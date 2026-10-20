@@ -1,0 +1,23 @@
+id: B1-15e
+repo: rebate-platform
+title: 全局守卫 ⑥ 注销冷静期 / 处理中 10007：x-auth ≥ login 的非 GET 接口，注销阶段 cooling 返回 10007（data.stage=cooling），processing / done（含 users.status=deleting）返回 stage=processing；白名单按 BR-ID-27（所有 GET、refresh、logout、consents、deletion/cancel、GET deletion、abandon）；挂在 ⑤ 封禁之后、⑦ 隐私最低版本之前，逐请求经注销阶段读口查库、不读缓存
+type: impl
+# 草稿 2026-10-21（身份与风控线 identity-lane，第三波；编排 01:5x 派工）。依据 BR-ID-01 ⑥、BR-ID-27（SPEC_REF 76f61aa）；摘录 couli-runs/B1-15e/excerpt.md（基线 07131974）。
+# 照 B1-02zh（⑦，#1004）的挂法：identity 新建守卫与 token，app.module 两个检查列表放在 privacy 之前；stream 入口主干未装 identity / risk，同 B1-02zh 留 TODO。/v1/agent/* 非 GET 带令牌也判（08 例：冷静期调 Agent → 10007）。
+# 短信登录 deleting → 10007 的缺口不在本任务：改它会红冻结测试 [AC-S1-83#17]，并入 B1-15f（首个写 deleting 的任务）连同 test-change 处理。
+# app.module 在风险图外按 RV2，评审 Codex money。与 B1-02zh 同一检查列表，B1-02zh 已合并，无并行冲突。
+refs: []
+refs_hash: {}
+deps: [B1-15c, B1-02zh]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/risk/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/deletion-guard/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/deletion-guard/**'
+status: todo
