@@ -87,6 +87,126 @@ const forfeitingStates: readonly {
   { state: { deletion_status: 'done' }, reason: 'deleted' },
 ];
 
+const boundaryStates: readonly {
+  label: string;
+  state: Partial<AdjustmentBeneficiary>;
+  reason: 'banned' | 'deleted' | 'minor';
+  negativePosting: 'user_available' | 'bad_debt';
+}[] = [
+  {
+    label: 'banned',
+    state: { risk_state: 'banned' },
+    reason: 'banned',
+    negativePosting: 'user_available',
+  },
+  {
+    label: 'processing',
+    state: { deletion_status: 'processing' },
+    reason: 'deleted',
+    negativePosting: 'bad_debt',
+  },
+  {
+    label: 'done',
+    state: { deletion_status: 'done' },
+    reason: 'deleted',
+    negativePosting: 'bad_debt',
+  },
+  {
+    label: 'minor-share',
+    state: { is_minor: true, role: 'share' },
+    reason: 'minor',
+    negativePosting: 'user_available',
+  },
+  {
+    label: 'minor-direct',
+    state: { is_minor: true, role: 'direct' },
+    reason: 'minor',
+    negativePosting: 'user_available',
+  },
+  {
+    label: 'minor-indirect',
+    state: { is_minor: true, role: 'indirect' },
+    reason: 'minor',
+    negativePosting: 'user_available',
+  },
+];
+
+// 无预留、快照比例 5000bp：旧基数 1000、用户净额 500、平台净额 500。
+// 新基数 998 / 1000 / 1002 手算重拆为 499 / 500 / 501；多出的 1 分归平台。
+const entitlementBoundaries = [
+  {
+    boundary: '等于净额',
+    n_new_fen: 1000n,
+    entitlement_fen: 500n,
+    delta_fen: 0n,
+    forfeit_fen: 0n,
+    platform_after_fen: 500n,
+    platform_delta_fen: 0n,
+    union_receivable_delta_fen: 0n,
+    route: 'none',
+  },
+  {
+    boundary: '比净额多 1 分',
+    n_new_fen: 1002n,
+    entitlement_fen: 500n,
+    delta_fen: 0n,
+    forfeit_fen: 1n,
+    platform_after_fen: 502n,
+    platform_delta_fen: 2n,
+    union_receivable_delta_fen: 2n,
+    route: 'approval',
+  },
+  {
+    boundary: '比净额少 1 分',
+    n_new_fen: 998n,
+    entitlement_fen: 499n,
+    delta_fen: -1n,
+    forfeit_fen: 0n,
+    platform_after_fen: 499n,
+    platform_delta_fen: -1n,
+    union_receivable_delta_fen: -2n,
+    route: 'immediate',
+  },
+] as const;
+
+it.each(
+  boundaryStates.flatMap((state) => entitlementBoundaries.map((row) => ({ ...state, ...row }))),
+)(
+  '[AC-B2-04g#41] BR-CALC-09：$label 重拆份额$boundary，新应得取较小值',
+  ({ state, reason, negativePosting, ...expected }) => {
+    const result = planCommissionAdjustment(
+      input({
+        event: 'settlement',
+        reserve_bp: 0n,
+        booked_base_fen: 1000n,
+        booked_n_fen: 1000n,
+        n_new_fen: expected.n_new_fen,
+        platform_net_fen: 500n,
+        beneficiaries: [beneficiary({ ...state, net_fen: 500n })],
+      }),
+    );
+    expect(result.beneficiaries).toMatchObject([
+      {
+        entitlement_fen: expected.entitlement_fen,
+        delta_fen: expected.delta_fen,
+        net_after_fen: expected.entitlement_fen,
+        posting: expected.delta_fen < 0n ? negativePosting : null,
+        forfeit_fen: expected.forfeit_fen,
+        pending_after_fen: 0n,
+      },
+    ]);
+    if (expected.forfeit_fen === 1n) {
+      expect(result.beneficiaries[0]!.forfeit_reason).toBe(reason);
+    }
+    expect(result).toMatchObject({
+      route: expected.route,
+      platform_after_fen: expected.platform_after_fen,
+      platform_delta_fen: expected.platform_delta_fen,
+      union_receivable_delta_fen: expected.union_receivable_delta_fen,
+    });
+  },
+);
+
 it.each(forfeitingStates)(
   '[AC-B2-04g#19] BR-CALC-09：$reason 正差归平台不计用户净额，新应得取较小值',
   ({ state, reason }) => {

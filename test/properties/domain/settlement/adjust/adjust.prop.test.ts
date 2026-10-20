@@ -7,8 +7,8 @@ import { beneficiary, freezeInput } from '../../../../spec/domain/settlement/adj
 
 // 独立 bigint 算术 oracle，不调用分佣实现；覆盖超过 Number 安全整数的金额。
 const positiveN = fc.oneof(
-  fc.bigInt({ min: 10000n, max: 10000000000000000n }),
-  fc.constantFrom(10000n, 12345n, 9007199254740993n),
+  fc.bigInt({ min: 0n, max: 10000000000000000n }),
+  fc.constantFrom(0n, 1n, 2n, 10000n, 12345n, 9007199254740993n),
 );
 const reserveBp = fc.bigInt({ min: 0n, max: 9999n });
 const ratios = fc.tuple(
