@@ -38,27 +38,46 @@ function options(overrides: Partial<AdminShellOptions> = {}): AdminShellOptions 
   };
 }
 
-for (const sample of CASES) {
-  it(`[AC-F1-06e-SHELL#1] ${sample.name} 的真实侧栏只渲染获准菜单且保留顺序`, async () => {
-    const provider = vi.fn(async () => sample.snapshot);
-    render(createAdminShell(options({ permissionsProvider: provider })));
-    await waitFor(() =>
-      expect(screen.queryByRole('navigation', { name: '主导航' })).not.toBeNull(),
-    );
-    const sidebar = within(screen.getByRole('navigation', { name: '主导航' }));
-    await waitFor(() =>
-      expect(sidebar.queryAllByRole('link').map((node) => node.textContent?.trim())).toEqual(
-        labels(sample.ids),
-      ),
-    );
-    expect(sidebar.getAllByRole('heading').map((node) => node.textContent?.trim())).toEqual(
-      sample.groups,
-    );
-    expect(screen.getByText('凑狸管理后台')).toBeDefined();
-    expect(provider).toHaveBeenCalled();
-    if (sample.snapshot.isSuper) expect(screen.queryByText(NO_PERMISSION_COPY.title)).toBeNull();
-  });
+async function expectSidebarSample(sample: (typeof CASES)[number]): Promise<void> {
+  const provider = vi.fn(async () => sample.snapshot);
+  render(createAdminShell(options({ permissionsProvider: provider })));
+  await waitFor(() => expect(screen.queryByRole('navigation', { name: '主导航' })).not.toBeNull());
+  const sidebar = within(screen.getByRole('navigation', { name: '主导航' }));
+  await waitFor(() =>
+    expect(sidebar.queryAllByRole('link').map((node) => node.textContent?.trim())).toEqual(
+      labels(sample.ids),
+    ),
+  );
+  expect(sidebar.getAllByRole('heading').map((node) => node.textContent?.trim())).toEqual(
+    sample.groups,
+  );
+  expect(screen.getByText('凑狸管理后台')).toBeDefined();
+  expect(provider).toHaveBeenCalled();
+  if (sample.snapshot.isSuper) expect(screen.queryByText(NO_PERMISSION_COPY.title)).toBeNull();
 }
+
+// Literal titles, one case per sample (bodies unchanged, moved into the helper above) so the
+// guard can tell the cases apart: a later change to one account's case leaves the others
+// unchanged (F1-06zn, D10-92).
+it('[AC-F1-06e-SHELL#1] 超管 的真实侧栏只渲染获准菜单且保留顺序', async () => {
+  await expectSidebarSample(CASES[0]!);
+});
+
+it('[AC-F1-06e-SHELL#1] 风控小狸 的真实侧栏只渲染获准菜单且保留顺序', async () => {
+  await expectSidebarSample(CASES[1]!);
+});
+
+it('[AC-F1-06e-SHELL#1] 财务小狸 的真实侧栏只渲染获准菜单且保留顺序', async () => {
+  await expectSidebarSample(CASES[2]!);
+});
+
+it('[AC-F1-06e-SHELL#1] 查询小狸 的真实侧栏只渲染获准菜单且保留顺序', async () => {
+  await expectSidebarSample(CASES[3]!);
+});
+
+it('[AC-F1-06e-SHELL#1] 客服小狸 的真实侧栏只渲染获准菜单且保留顺序', async () => {
+  await expectSidebarSample(CASES[4]!);
+});
 
 it('[AC-F1-06e-SHELL#2] 零权限登录落暂无权限页，主文案与两个入口符合画板', async () => {
   render(createAdminShell(options()));
