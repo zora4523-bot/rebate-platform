@@ -23,6 +23,7 @@ test_paths:
   - 'test/spec/ledger-rules/**'
   - 'test/spec/domain/ledger-templates/**'
   - 'test/spec/domain/ledger-templates-reward/**'
+  - 'test/properties/domain/ledger-templates/**'
 red_exempt:
   - file: test/spec/domain/ledger-templates/build-vouchers.test.ts
     test: '[AC-B2-01j#1] 每个完整模板逐业务组匹配 CSV，分录无序但不得丢失或重复'
