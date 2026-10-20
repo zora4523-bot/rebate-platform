@@ -1,0 +1,149 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#1] 真实 claims 入口显示契约列、服务端顺序和审核可访问名，不显示统计卡或一键通过",
+    "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#7] 订单号、子订单号和找回单号都通过 q 精确筛选，未知用户显示空结果",
+    "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#2] 平台、证据、单号和用户经查询合并为契约参数，重置清除全部条件",
+    "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#3] 六个状态页签读取完整字典，正计数显示 Badge，零计数页签仍可切换",
+    "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#4] status 深链首次请求即预选对应页签，计数不从当前页推算",
+    "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#5] 分页只请求目标页，第二页改条件回第一页并保留 page_size",
+    "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#6] 审核导航与刷新保留 claim_id，返回列表保留筛选条件",
+    "test/spec/frontend/admin-claims/pages.browser.test.ts > [AC-F1-07f-BROWSER#1] 1440 找回列表筛选、六状态、表格与分页可见，截图 admin-claims",
+    "test/spec/frontend/admin-claims/pages.browser.test.ts > [AC-F1-07f-BROWSER#2] 1440 审核页证据比对、两子订单和说明操作可见，截图 admin-claim-review",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#1] 深链直接读取目标找回单，逐项显示用户值、联盟值和服务端比对结论",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#18] 每条证据记录显示北京时间和对应场景，保留各子订单的全部记录",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#16] 通过时订单已失效也按系统 ORDER_INVALID 结案，不能显示通过成功",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#17] 驳回遇到 20902 同样刷新整单并关闭过期操作，不重发驳回",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#2] 通过说明空、纯空白和去空白后四字均不可提交，恰五字发送当前子项版本",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#3] 一键填入证据核实一致只填写本子项，提交中禁用且重复点击只请求一次",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#4] 驳回下拉仅六个客服原因，标签来自完整字典且不含两个系统原因",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#5] 驳回缺原因或说明不足不请求，正确提交只包含所选子项版本、原因编码与说明",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#6] 成功直接使用整张返回单刷新状态、说明和其他子项，不只修改当前子项",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#7] 通过返回 cancelled 且无审核人时提示订单已被自动归属",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#8] 通过返回系统 NOT_IN_POOL 显示完整字典原因和自动归属提示",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#9] 驳回返回系统 ORDER_INVALID 显示服务端原因与订单失效提示",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#10] 20902 claim_item 提示他人已处理并只重拉一次，不自动重发审核",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#11] 已结案的 approved、rejected、cancelled 均没有审核按钮，系统原因照字典显示",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#12] 未知 claim_id 的 20001 fields 提示参数或找回单错误，不能显示虚构详情",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#13] 审核写入 20001 显示字段错误并保留说明，不伪造成功或自动重试",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#14] 审核写入 10403 后移除旧详情与操作，提示无权限",
+    "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#15] 逐个审核用各自 row_version，第二个子项独立提交后更新整单",
+    "test/spec/frontend/admin-claims/source.test.ts > [AC-F1-07f-SOURCE#1] 页面实际使用 antd 表格、筛选、页签、计数和 Result，不拼 ant 类名、不写字面色值或直接 fetch",
+    "test/spec/frontend/admin-claims/source.test.ts > [AC-F1-07f-SOURCE#2] 画板与审核文案集中于 texts/claims.ts，页面通过现有 data provider 或 admin API 层请求",
+    "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#1] 空列表显示没有符合条件的找回申请，保留筛选和重置入口",
+    "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#2] 列表在途使用可读屏 status 加载态，请求完成后移除",
+    "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#3] 列表失败用 Result 和重试，保留原查询且手动重试只发一次",
+    "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#4] 列表已有数据后 10403 显示无权限并清除旧数据",
+    "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#5] 审核页 GET 在途显示 status，失败后一次重试加载该单",
+    "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#6] 审核页 GET 10403 显示无权限且不展示找回单或操作"
+  ],
+  "risk_note": "Admin console claim review (apps/admin; attribution is decided only by the server, the page shows its result; codex-run classed it RV2, so the Codex review ran on the money track). Contracts CT-24d / CT-24l (adminListClaims, adminGetClaim, adminApproveClaimItem, adminRejectClaimItem; planned, backend not done, developed against the contract with a fake server); visuals per the finalized spec design/specs/admin-claims.md. List /claims with filters, claim_status tabs and counts, ?status preselect; review page /claims/<id> with the evidence comparison taken only from the server's matched, per-item approve / reject with a 5-200 character note and the six staff reject reasons, single submit, refresh from the returned claim, the auto-attributed hint only for the reviewed item, 20902 refetch with a request token so stale responses never overwrite newer ones; states and 10403. Rule tests by Codex in two calls (a first call stopped on an excerpt error before writing anything was not counted); Claude spec-test review r2 pass; red on the test machine (red/2: 35 red, 0 problems). Implementation by Opus 5.5 in two rounds; test machine verify-fast/4 and browser/5 green. Review: Codex (approvals id 27 / 34). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1: review note had no upper bound and was sent past the contract maxLength; S2: a late refresh after 20902 could overwrite a newer review), round 2 pass after the implementation fix"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (S1: the evidence comparison could pass with a client-side string compare; S1: the auto-attributed hint had no negative assertions; 2 S2), round 2 pass after Codex round 2 (1 S2: the hint must follow only the reviewed item, carried into the implementation constraints)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "e308f96db2c38fa575aabb2b645906c6d79ab386"
+  },
+  "task": "F1-07f",
+  "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
+  "spec_commit": "7598e8a8ffb1552f6648739053fd346e68c9dc32",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "7598e8a8ffb1552f6648739053fd346e68c9dc32",
+      "tree": "f0ee7a2d6f58c65f4c17cb90ca414909c7ddd4c5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T11:50:47Z",
+      "finished_at": "2026-10-20T11:54:21Z",
+      "gate": {
+        "commit": "b4450d7dee6334bc03ad56372e5e812ce8870fe5",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#1] 真实 claims 入口显示契约列、服务端顺序和审核可访问名，不显示统计卡或一键通过",
+        "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#7] 订单号、子订单号和找回单号都通过 q 精确筛选，未知用户显示空结果",
+        "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#2] 平台、证据、单号和用户经查询合并为契约参数，重置清除全部条件",
+        "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#3] 六个状态页签读取完整字典，正计数显示 Badge，零计数页签仍可切换",
+        "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#4] status 深链首次请求即预选对应页签，计数不从当前页推算",
+        "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#5] 分页只请求目标页，第二页改条件回第一页并保留 page_size",
+        "test/spec/frontend/admin-claims/list.test.ts > [AC-F1-07f-LIST#6] 审核导航与刷新保留 claim_id，返回列表保留筛选条件",
+        "test/spec/frontend/admin-claims/pages.browser.test.ts > [AC-F1-07f-BROWSER#1] 1440 找回列表筛选、六状态、表格与分页可见，截图 admin-claims",
+        "test/spec/frontend/admin-claims/pages.browser.test.ts > [AC-F1-07f-BROWSER#2] 1440 审核页证据比对、两子订单和说明操作可见，截图 admin-claim-review",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#1] 深链直接读取目标找回单，逐项显示用户值、联盟值和服务端比对结论",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#18] 每条证据记录显示北京时间和对应场景，保留各子订单的全部记录",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#16] 通过时订单已失效也按系统 ORDER_INVALID 结案，不能显示通过成功",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#17] 驳回遇到 20902 同样刷新整单并关闭过期操作，不重发驳回",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#2] 通过说明空、纯空白和去空白后四字均不可提交，恰五字发送当前子项版本",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#3] 一键填入证据核实一致只填写本子项，提交中禁用且重复点击只请求一次",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#4] 驳回下拉仅六个客服原因，标签来自完整字典且不含两个系统原因",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#5] 驳回缺原因或说明不足不请求，正确提交只包含所选子项版本、原因编码与说明",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#6] 成功直接使用整张返回单刷新状态、说明和其他子项，不只修改当前子项",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#7] 通过返回 cancelled 且无审核人时提示订单已被自动归属",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#8] 通过返回系统 NOT_IN_POOL 显示完整字典原因和自动归属提示",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#9] 驳回返回系统 ORDER_INVALID 显示服务端原因与订单失效提示",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#10] 20902 claim_item 提示他人已处理并只重拉一次，不自动重发审核",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#11] 已结案的 approved、rejected、cancelled 均没有审核按钮，系统原因照字典显示",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#12] 未知 claim_id 的 20001 fields 提示参数或找回单错误，不能显示虚构详情",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#13] 审核写入 20001 显示字段错误并保留说明，不伪造成功或自动重试",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#14] 审核写入 10403 后移除旧详情与操作，提示无权限",
+        "test/spec/frontend/admin-claims/review.test.ts > [AC-F1-07f-REVIEW#15] 逐个审核用各自 row_version，第二个子项独立提交后更新整单",
+        "test/spec/frontend/admin-claims/source.test.ts > [AC-F1-07f-SOURCE#1] 页面实际使用 antd 表格、筛选、页签、计数和 Result，不拼 ant 类名、不写字面色值或直接 fetch",
+        "test/spec/frontend/admin-claims/source.test.ts > [AC-F1-07f-SOURCE#2] 画板与审核文案集中于 texts/claims.ts，页面通过现有 data provider 或 admin API 层请求",
+        "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#1] 空列表显示没有符合条件的找回申请，保留筛选和重置入口",
+        "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#2] 列表在途使用可读屏 status 加载态，请求完成后移除",
+        "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#3] 列表失败用 Result 和重试，保留原查询且手动重试只发一次",
+        "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#4] 列表已有数据后 10403 显示无权限并清除旧数据",
+        "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#5] 审核页 GET 在途显示 status，失败后一次重试加载该单",
+        "test/spec/frontend/admin-claims/states.test.ts > [AC-F1-07f-STATES#6] 审核页 GET 10403 显示无权限且不展示找回单或操作"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-claims/list.test.ts",
+        "test/spec/frontend/admin-claims/pages.browser.test.ts",
+        "test/spec/frontend/admin-claims/review.test.ts",
+        "test/spec/frontend/admin-claims/source.test.ts",
+        "test/spec/frontend/admin-claims/states.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "453eb23dda692274bb800956d7c677137f8ff5be645c01cdb44f9672328ca807"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "a70990bddebcdd4571a92deae3fbfe1c3a41422fe0efdc0a7e8bf1f532ce2d09"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "047f9709a1e1dd8e711bbac2e5dba327392e9f19",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "e308f96db2c38fa575aabb2b645906c6d79ab386",
+    "test/spec": "1223a4332e56532680f69696311f1b50ad9270e9",
+    "specs": "b80f759906adb5320a33adb9ff0a59fcb0fb9a3a"
+  }
+}
