@@ -34,3 +34,10 @@ export type {
   SettleAdjustmentTransitionResult,
   SettleAdjustmentTransitionRow,
 } from './settle-adjustment.gen.ts';
+export { transitionDeletionRequest } from './deletion-request.ts';
+export type {
+  DeletionRequestState,
+  DeletionRequestEvent,
+  DeletionRequestTransitionResult,
+  DeletionRequestTransitionRow,
+} from './deletion-request.ts';
