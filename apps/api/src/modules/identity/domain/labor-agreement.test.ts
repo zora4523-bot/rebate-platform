@@ -5,6 +5,7 @@ import {
   parseLaborAgreementConfig,
   parseOperatorEntity,
   signatureMismatches,
+  signatureVersionCurrent,
   signingState,
 } from './labor-agreement.ts';
 
@@ -109,12 +110,30 @@ it('[AC-B1-13h] need_sign: never signed, below the re-sign threshold, or not acc
   ).toEqual({ need_sign: true, signed_version: null, signed_at: null });
 });
 
-it('[AC-B1-13h] signature: every mismatching field is listed, none when it matches', () => {
+it('[AC-B1-13l] signature: the version is checked on its own, before the other fields', () => {
+  const config = { version: 2, text_sha256: SHA };
+  expect(signatureVersionCurrent({ version: 2, text_sha256: SHA, agreed: true }, config)).toBe(
+    true,
+  );
+  expect(signatureVersionCurrent({ version: 1, text_sha256: SHA, agreed: true }, config)).toBe(
+    false,
+  );
+  expect(signatureVersionCurrent({ version: 3, text_sha256: SHA, agreed: true }, config)).toBe(
+    false,
+  );
+  // Only the exact number counts; the other fields do not affect the version check.
+  expect(
+    signatureVersionCurrent({ version: '2', text_sha256: 'b'.repeat(64), agreed: false }, config),
+  ).toBe(false);
+  expect(
+    signatureVersionCurrent({ version: 2, text_sha256: 'b'.repeat(64), agreed: false }, config),
+  ).toBe(true);
+});
+
+it('[AC-B1-13l] signature: text_sha256 / agreed mismatches are listed, never version', () => {
   const config = { version: 2, text_sha256: SHA };
   expect(signatureMismatches({ version: 2, text_sha256: SHA, agreed: true }, config)).toEqual([]);
-  expect(signatureMismatches({ version: 1, text_sha256: SHA, agreed: true }, config)).toEqual([
-    'version',
-  ]);
+  expect(signatureMismatches({ version: 1, text_sha256: SHA, agreed: true }, config)).toEqual([]);
   expect(
     signatureMismatches({ version: 2, text_sha256: 'b'.repeat(64), agreed: true }, config),
   ).toEqual(['text_sha256']);
@@ -123,5 +142,5 @@ it('[AC-B1-13h] signature: every mismatching field is listed, none when it match
   ]);
   expect(
     signatureMismatches({ version: '2', text_sha256: SHA.toUpperCase(), agreed: 'true' }, config),
-  ).toEqual(['version', 'text_sha256', 'agreed']);
+  ).toEqual(['text_sha256', 'agreed']);
 });

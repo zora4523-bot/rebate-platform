@@ -1,5 +1,5 @@
 // Labor agreement (规划/08 BR-WDR-31, BR-ID-12, BR-ID-33; contract getLaborAgreement /
-// signLaborAgreement; task B1-13h §9.2). Native App only: h5_token is refused before this
+// signLaborAgreement; tasks B1-13h §9.2, B1-13l §9.2). Native App only: h5_token is refused before this
 // (the H5 exclusion prefix list in the access token checks), not-realname by stage ⑨ (B1-02za).
 //
 // read (GET /v1/me/labor-agreement): the configured current version, text_url and text_sha256, and
@@ -14,8 +14,12 @@
 //      one committed state by consistentConfigValues; identity never reads config_items itself): agreement metadata and the operating entity; a missing or
 //      malformed key → 50001 and one warn carrying only config_key (no user, device or record id),
 //      nothing written; no reader assembled → 50001 and one warn as well;
-//   3. version / text_sha256 / agreed against the current configuration → 20001 data.fields listing
-//      every mismatch (E20), nothing written;
+//   3. the request against the current configuration, version first (B1-13l): version ≠ the
+//      current version → 10004 data.consent_type=labor_agreement (BR-WDR-31: the user has not seen
+//      the current text; also when text_sha256 / agreed mismatch as well), nothing written; with
+//      the current version, text_sha256 / agreed → 20001 data.fields listing each mismatch (E20),
+//      nothing written. Neither result is stored by the idempotency rule (only 0 and 3xxxx are),
+//      so the same key may carry the corrected request;
 //   4. the verified real-name record (the signer); none → 30304 (stage ⑨ normally answers first);
 //   5. one Clock read, then one inserted consent_records row: subject_type=user, the token's user,
 //      the request's verified device, type=labor_agreement, version, accepted=true,
@@ -36,6 +40,7 @@ import {
   parseLaborAgreementConfig,
   parseOperatorEntity,
   signatureMismatches,
+  signatureVersionCurrent,
   signingState,
   type LaborAgreementConfig,
   type SignatureRequest,
@@ -75,6 +80,7 @@ export interface SignLaborAgreementCommand extends LaborAgreementSubject {
 
 export type SignLaborAgreementResult =
   | { readonly code: 0 }
+  | { readonly code: 10004; readonly data: { readonly consent_type: 'labor_agreement' } }
   | { readonly code: 20001; readonly data: { readonly fields: readonly string[] } }
   | { readonly code: 30304 }
   | { readonly code: 50001 };
@@ -177,6 +183,9 @@ export function createLaborAgreementService(options: LaborAgreementOptions): Lab
       const entity = parseOperatorEntity(values);
       if (!entity.ok) return configFault(entity.key);
       const config: LaborAgreementConfig = agreement.value;
+      if (!signatureVersionCurrent(command.body, config)) {
+        return { code: 10004, data: { consent_type: 'labor_agreement' } };
+      }
       const fields = signatureMismatches(command.body, config);
       if (fields.length > 0) return { code: 20001, data: { fields } };
       const signer = await verifiedRealnameSigner(trx, crypto, subject);
