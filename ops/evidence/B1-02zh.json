@@ -1,7 +1,7 @@
 {
   "task": "B1-02zh",
   "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
-  "spec_commit": "8427f05fd624df312658493055f6541e412bd86f",
+  "spec_commit": "43e97a8aa4cab685ec51cc636553613662a468e4",
   "red_tests": [
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#3] 配置缺失只警告 config_key；无用户记录放行；两种情况不能混为拒绝",
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#4] server_at 最新优先于版本、accepted 与插入顺序；同刻 id 后者获胜，逐请求读取",
@@ -24,10 +24,10 @@
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#7] POST /v1/idempotency-keys/abandon 没有隐私白名单豁免",
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#7] GET /v1/me/payout-account 没有隐私白名单豁免",
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#7] GET /v1/invites/me 没有隐私白名单豁免",
+    "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] no-config 等同最低版本缺失，放行且不读同意记录",
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] db → 50001，不能误放行",
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] config → 50001，不能误放行",
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] no-db → 50001，不能误放行",
-    "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] no-config → 50001，不能误放行",
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] zero → 50001，不能误放行",
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] fraction → 50001，不能误放行",
     "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] string → 50001，不能误放行",
@@ -61,7 +61,7 @@
     "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#12] GET /me 被拦，optional 同意带令牌写用户记录后立即放行，不要求最新展示版本",
     "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#13] POST 同键第一次 10004、重新同意后正常受理；封禁白名单仍须过隐私",
     "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#14] GET ⑤封禁先于隐私；封禁白名单 /me 仍返回 10004",
-    "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#15] GET ④a版本与受限作用域先于隐私",
+    "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#15] GET ④a受限作用域先于隐私",
     "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#16] GET 隐私先于 10005，业务不执行",
     "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#16] GET 隐私先于 30304，业务不执行",
     "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#17] GET 限流桶确已满仍先返回隐私 10004",
@@ -84,11 +84,11 @@
       "mode": "container",
       "script": "red",
       "exit_code": 0,
-      "commit": "8427f05fd624df312658493055f6541e412bd86f",
-      "tree": "5102abde63d200bffb74f1184ad5c7963666b8f2",
+      "commit": "43e97a8aa4cab685ec51cc636553613662a468e4",
+      "tree": "263434feed078ae093e7be36df95c460603f268e",
       "prop_seed": 20261001,
-      "started_at": "2026-10-20T08:23:19Z",
-      "finished_at": "2026-10-20T08:23:33Z",
+      "started_at": "2026-10-20T09:45:04Z",
+      "finished_at": "2026-10-20T09:45:31Z",
       "red_tests": [
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#3] 配置缺失只警告 config_key；无用户记录放行；两种情况不能混为拒绝",
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#4] server_at 最新优先于版本、accepted 与插入顺序；同刻 id 后者获胜，逐请求读取",
@@ -111,10 +111,10 @@
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#7] POST /v1/idempotency-keys/abandon 没有隐私白名单豁免",
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#7] GET /v1/me/payout-account 没有隐私白名单豁免",
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#7] GET /v1/invites/me 没有隐私白名单豁免",
+        "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] no-config 等同最低版本缺失，放行且不读同意记录",
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] db → 50001，不能误放行",
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] config → 50001，不能误放行",
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] no-db → 50001，不能误放行",
-        "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] no-config → 50001，不能误放行",
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] zero → 50001，不能误放行",
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] fraction → 50001，不能误放行",
         "test/spec/identity/privacy-min-version/checks.int.test.ts > [AC-B1-02zh#8] string → 50001，不能误放行",
@@ -148,7 +148,7 @@
         "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#12] GET /me 被拦，optional 同意带令牌写用户记录后立即放行，不要求最新展示版本",
         "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#13] POST 同键第一次 10004、重新同意后正常受理；封禁白名单仍须过隐私",
         "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#14] GET ⑤封禁先于隐私；封禁白名单 /me 仍返回 10004",
-        "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#15] GET ④a版本与受限作用域先于隐私",
+        "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#15] GET ④a受限作用域先于隐私",
         "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#16] GET 隐私先于 10005，业务不执行",
         "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#16] GET 隐私先于 30304，业务不执行",
         "test/spec/identity/privacy-min-version/http.int.test.ts > [AC-B1-02zh#17] GET 限流桶确已满仍先返回隐私 10004",
@@ -173,7 +173,7 @@
       "reports": [
         {
           "path": "out/spec-int.json",
-          "sha256": "7734ad0ffb684f8c8f8ac5f121d9adc4c552a11eb1dee689108ad029b6576203"
+          "sha256": "246176040ab970a463849c564a8323cb3713490b3e5674f7acfec3a14ea6cdd6"
         },
         {
           "path": "out/spec-unit.json",
@@ -189,22 +189,22 @@
       "open_s0_s1": 0,
       "checklist_complete": true,
       "review_type": "money",
-      "round": 1,
-      "note": "round 1 pass (a general review was refused because the task is RV2)"
+      "round": 2,
+      "note": "round 1 pass; CI on #1004 showed other modules' assemblies refused with 50001 (no config reader), round 2 treats an unassembled reader like a missing min_version and passed review"
     }
   ],
   "spec_test_review": {
     "reviewer": "claude",
-    "rounds": 2,
+    "rounds": 3,
     "last_verdict": "pass",
-    "note": "rule tests by Codex in 2 rounds (74 tests in 3 files, red/2), reviewed by fresh Claude subagents: r1 S1×1 (post-miss path did not require x-auth ≥ login), r2 pass"
+    "note": "rule tests by Codex in 3 rounds (red/2; round 3 after CI: #8 no-config passes, #15 version gate asserted on PUT only), reviewed by fresh Claude subagents: r1 S1×1, r2 pass, r3 pass"
   },
   "trees": {
     "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
-    "packages/domain": "40cf8e01d7d56c555047b8c565fbb6a9e959f609",
+    "packages/domain": "047f9709a1e1dd8e711bbac2e5dba327392e9f19",
     "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
-    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
-    "test/spec": "9a3cad0866a21fa8bdfb34d0c764aae0edb628d3",
+    "test/properties": "e308f96db2c38fa575aabb2b645906c6d79ab386",
+    "test/spec": "a2a648f9d7ad6f32055ef05366bb917e94f9a847",
     "specs": "b80f759906adb5320a33adb9ff0a59fcb0fb9a3a"
   },
   "longrun": {
@@ -213,6 +213,6 @@
     "passed": true,
     "mode": "ci",
     "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
-    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+    "tree": "e308f96db2c38fa575aabb2b645906c6d79ab386"
   }
 }
