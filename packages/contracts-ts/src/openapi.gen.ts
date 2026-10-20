@@ -1479,11 +1479,14 @@ export interface paths {
          * @description Signs the currently effective labor agreement version (BR-WDR-31). Native App only: an
          *     h5_token gets 10403, and neither JSBridge nor the Agent may sign on the user's behalf. The
          *     signer is the verified real-name person; not realname → 30304. version not the currently
-         *     effective version → 20001 data.fields=[version]; text_sha256 not the digest of that
-         *     version → 20001 data.fields=[text_sha256]; agreed not true → 20001 data.fields=[agreed].
-         *     Every signature inserts one record and never changes an earlier one (version, text
-         *     digest, server time, signer snapshot, channel, device_id). The client fetches
-         *     GET /v1/me/labor-agreement again after success. Version gate: applied.
+         *     effective version → 10004 data.consent_type=labor_agreement (the client fetches
+         *     GET /v1/me/labor-agreement and shows the current version; checked first, also when other
+         *     fields mismatch too; nothing recorded, not replayed). With the current version:
+         *     text_sha256 not the digest of that version and / or agreed not true → 20001 data.fields
+         *     listing each mismatching field (text_sha256, agreed). Every signature inserts one record
+         *     and never changes an earlier one (version, text digest, server time, signer snapshot,
+         *     channel, device_id). The client fetches GET /v1/me/labor-agreement again after success.
+         *     Version gate: applied.
          */
         post: operations["signLaborAgreement"];
         delete?: never;

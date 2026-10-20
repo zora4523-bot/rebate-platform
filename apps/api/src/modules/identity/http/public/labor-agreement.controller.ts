@@ -1,9 +1,10 @@
 // GET /v1/me/labor-agreement (getLaborAgreement) and POST /v1/me/labor-agreement/sign
-// (signLaborAgreement); 规划/08 BR-WDR-31; task B1-13h. Contract: both x-auth realname (stage ⑨ answers
-// 30304 first), h5_token refused with 10403 (access-tokens.ts). The signature is x-signed and
-// x-idempotent: it runs in the idempotency claim's transaction (executeInTransaction), so the
-// consent record and the stored result commit together; results stored by the idempotency rule
-// (0 and 3xxxx) replay, 2xxxx / 5xxxx leave the key reusable (a corrected request may reuse it).
+// (signLaborAgreement); 规划/08 BR-WDR-31; tasks B1-13h, B1-13l (version mismatch → 10004).
+// Contract: both x-auth realname (stage ⑨ answers 30304 first), h5_token refused with 10403
+// (access-tokens.ts). The signature is x-signed and x-idempotent: it runs in the idempotency claim's
+// transaction (executeInTransaction), so the consent record and the stored result commit together;
+// results stored by the idempotency rule (0 and 3xxxx) replay, 1xxxx / 2xxxx / 5xxxx (the version
+// mismatch 10004 included) leave the key reusable (a corrected request may reuse it).
 // `msg` is a fixed fallback text (clients show their dictionary text error.<code>); `data` carries
 // only what the result defines, never a submitted value.
 import { Controller, Get, Inject, Optional, Post, Req, Res } from '@nestjs/common';
@@ -42,12 +43,22 @@ interface RawReply {
 const SIGN_PATH = '/v1/me/labor-agreement/sign';
 
 const ERRORS = {
+  10004: { status: 403, msg: '请先阅读并签署最新版劳务协议' },
   20001: { status: 400, msg: '填写内容有误，请检查' },
   30304: { status: 422, msg: '未实名' },
   50001: { status: 500, msg: '服务端错误' },
 } as const;
 
-function signResponse(result: SignLaborAgreementResult, traceId: string): HandlerResult {
+function signErrorData(result: Exclude<SignLaborAgreementResult, { readonly code: 0 }>): {
+  readonly data?: Record<string, unknown>;
+} {
+  if (result.code === 10004) return { data: { consent_type: result.data.consent_type } };
+  if (result.code === 20001) return { data: { fields: [...result.data.fields] } };
+  return {};
+}
+
+/** The HTTP result of a signature (exported for its unit test). */
+export function signResponse(result: SignLaborAgreementResult, traceId: string): HandlerResult {
   if (result.code === 0) {
     const envelope: Schema<'EmptyResponse'> = { code: 0, msg: '', data: {}, trace_id: traceId };
     return { status: 200, envelope };
@@ -58,7 +69,7 @@ function signResponse(result: SignLaborAgreementResult, traceId: string): Handle
     envelope: {
       code: result.code,
       msg: error.msg,
-      ...('data' in result ? { data: { fields: [...result.data.fields] } } : {}),
+      ...signErrorData(result),
       trace_id: traceId,
     },
   };

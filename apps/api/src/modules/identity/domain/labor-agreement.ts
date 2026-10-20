@@ -1,5 +1,6 @@
-// Labor agreement (规划/08 BR-WDR-31, BR-ID-12; task B1-13h §9.2): the configuration it is read from,
-// the signing state, and the check of a signature request. Pure functions: no Nest, no data access.
+// Labor agreement (规划/08 BR-WDR-31, BR-ID-12; tasks B1-13h §9.2, B1-13l §9.2): the configuration it
+// is read from, the signing state, and the check of a signature request (version first, then the
+// remaining fields). Pure functions: no Nest, no data access.
 //
 // Configuration (config_items of the app, rulings E10 / E31; values provided by the owner, never
 // invented here):
@@ -159,16 +160,29 @@ export interface SignatureRequest {
 }
 
 /**
- * The fields of a signature request that do not match what is currently effective (E20; contract
- * signLaborAgreement): version ≠ current, text_sha256 ≠ the current digest, agreed ≠ true. Empty
- * when the request may be recorded. Every mismatching field is listed, in this order.
+ * Whether a signature request names the currently effective version (BR-WDR-31; contract
+ * signLaborAgreement; task B1-13l). Checked before the other fields: a different version means the
+ * user has not seen the current text, so the answer is 10004 consent_type=labor_agreement (fetch
+ * the current agreement and sign again), whatever the other fields hold.
+ */
+export function signatureVersionCurrent(
+  request: SignatureRequest,
+  config: Pick<LaborAgreementConfig, 'version'>,
+): boolean {
+  return request.version === config.version;
+}
+
+/**
+ * The fields of a signature request for the current version that do not match (E20; contract
+ * signLaborAgreement): text_sha256 ≠ the current digest, agreed ≠ true. Empty when the request may
+ * be recorded. Every mismatching field is listed, in this order; version is not among them (a
+ * version mismatch is signatureVersionCurrent's 10004, decided first).
  */
 export function signatureMismatches(
   request: SignatureRequest,
-  config: Pick<LaborAgreementConfig, 'version' | 'text_sha256'>,
+  config: Pick<LaborAgreementConfig, 'text_sha256'>,
 ): string[] {
   const fields: string[] = [];
-  if (request.version !== config.version) fields.push('version');
   if (request.text_sha256 !== config.text_sha256) fields.push('text_sha256');
   if (request.agreed !== true) fields.push('agreed');
   return fields;
