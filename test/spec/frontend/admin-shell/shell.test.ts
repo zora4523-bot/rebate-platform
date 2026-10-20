@@ -60,7 +60,26 @@ async function expectSidebarSample(sample: (typeof CASES)[number]): Promise<void
 // guard can tell the cases apart: a later change to one account's case leaves the others
 // unchanged (F1-06zn, D10-92).
 it('[AC-F1-06e-SHELL#1] 超管 的真实侧栏只渲染获准菜单且保留顺序', async () => {
-  await expectSidebarSample(CASES[0]!);
+  const sample = CASES[0]!;
+  const provider = vi.fn(async () => sample.snapshot);
+  render(createAdminShell(options({ permissionsProvider: provider })));
+  await waitFor(() => expect(screen.queryByRole('navigation', { name: '主导航' })).not.toBeNull());
+  const sidebar = within(screen.getByRole('navigation', { name: '主导航' }));
+  await waitFor(() =>
+    expect(sidebar.queryAllByRole('link').map((node) => node.textContent?.trim())).toEqual([
+      '工作台',
+      ...labels(sample.ids),
+    ]),
+  );
+  expect(
+    sidebar
+      .getAllByRole('heading')
+      .map((node) => node.textContent?.trim())
+      .filter((label) => label !== '工作台'),
+  ).toEqual(sample.groups);
+  expect(screen.getByText('凑狸管理后台')).toBeDefined();
+  expect(provider).toHaveBeenCalled();
+  if (sample.snapshot.isSuper) expect(screen.queryByText(NO_PERMISSION_COPY.title)).toBeNull();
 });
 
 it('[AC-F1-06e-SHELL#1] 风控小狸 的真实侧栏只渲染获准菜单且保留顺序', async () => {

@@ -111,8 +111,12 @@ it('[AC-F1-06h-APP#2] 只有资金流水权限完成登录后落到ledger', asyn
   );
 });
 
-it('[AC-F1-06h-APP#2] 超管即使空权限数组完成登录后落到users', async () => {
-  await expectLanding({ ...ME, is_super: true, permissions: [] }, 'users');
+it('[AC-F1-06h-APP#2] 超管即使空权限数组完成登录后落到dashboard', async () => {
+  const h = mount(harness('totp', { ...ME, is_super: true, permissions: [] }));
+  await login(h);
+  await waitFor(() => expect(screen.queryByText('page:dashboard')).not.toBeNull());
+  expect(window.location.pathname).toBe('/dashboard');
+  expect(screen.queryByRole('heading', { name: TITLES.credentials })).toBeNull();
 });
 
 it('[AC-F1-06h-APP#2] 普通零权限完成登录后落到暂无权限页', async () => {

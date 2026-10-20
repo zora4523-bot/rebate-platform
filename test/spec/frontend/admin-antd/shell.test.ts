@@ -55,17 +55,18 @@ it('[AC-F1-06p-SHELL#2] 主导航使用 Menu，所有菜单项保留名称和可
   await ready();
   const navigation = screen.getByRole('navigation', { name: '主导航' });
   expect(navigation.querySelector('.ant-menu')).not.toBeNull();
-  expect(within(navigation).queryAllByRole('menuitem')).toHaveLength(MENU.length);
-  for (const [, id, label] of MENU) {
+  expect(within(navigation).queryAllByRole('menuitem')).toHaveLength(MENU.length + 1);
+  expect(within(navigation).getAllByRole('link')[0]?.getAttribute('href')).toBe('/dashboard');
+  for (const [, id, label] of [['工作台', 'dashboard', '工作台'], ...MENU]) {
     const link = within(navigation).getByRole('link', { name: label });
     expect(link.getAttribute('href')).toBe(`/${id}`);
     expect(link.closest('[role="menuitem"]')).not.toBeNull();
     expect(link.closest('.ant-menu')).not.toBeNull();
   }
   expect(
-    [...navigation.querySelectorAll('.ant-menu-item-group-title')].map((node) =>
-      node.textContent?.trim(),
-    ),
+    [...navigation.querySelectorAll('.ant-menu-item-group-title')]
+      .map((node) => node.textContent?.trim())
+      .filter((label) => label !== '工作台'),
   ).toEqual([...new Set(MENU.map(([group]) => group))]);
 });
 
