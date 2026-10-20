@@ -61,5 +61,7 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'growth.invite_reward.daily_budget_fen', '0'::jsonb, 'seed'), -- BR-INV-24
   ('couli', 'growth.invite_reward.total_budget_fen', '0'::jsonb, 'seed'), -- BR-INV-24
   ('couli', 'growth.invite_reward.min_paid_fen', '0'::jsonb, 'seed'), -- BR-INV-24
-  ('couli', 'growth.invite_reward.ip_window_hours', '24'::jsonb, 'seed') -- BR-INV-24
+  ('couli', 'growth.invite_reward.ip_window_hours', '24'::jsonb, 'seed'), -- BR-INV-24
+  -- 第 7 批：BR-INV-24 细则资格有效期默认值（SPEC_REF ac4d993）
+  ('couli', 'growth.invite_reward.eligibility_days', '30'::jsonb, 'seed') -- BR-INV-24
 ON CONFLICT (app_id, key) DO NOTHING;

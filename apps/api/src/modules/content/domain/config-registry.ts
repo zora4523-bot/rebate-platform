@@ -135,6 +135,12 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   businessInteger('growth.invite_reward.total_budget_fen', 0),
   businessInteger('growth.invite_reward.min_paid_fen', 0),
   riskInteger('growth.invite_reward.ip_window_hours', 1),
+  // F1-02zx: BR-INV-24 细则 eligibility period in whole days (08 11_INV l.560 / l.571 at
+  // SPEC_REF ac4d993), the group's (and registry's) last item. Minimum 1 (0 would never
+  // trigger); maximum 3650 is a technical cap (ruling D-E1: claimed-at plus days must not
+  // overflow a timestamp), not a business value. config.business like the amounts (D-E2).
+  // Not one of INVITE_REWARD_POSITIVE_KEYS: the enable check does not read it.
+  businessInteger('growth.invite_reward.eligibility_days', 1, 3650),
 ]);
 
 const BY_KEY = new Map(REGISTRY.map((entry) => [entry.key, entry]));
