@@ -1,31 +1,35 @@
 # 邀请奖励资格记录 invite_rewards.status（invite_reward_status）的状态机（规划/04 §3.2 invite_rewards；
-# 规划/08 BR-INV-24 细则「资格记录与状态」「判定顺序」及正文 ②、④、⑥，依据 couli #160（7a5ed64bde31）；任务 B1-35a）。
+# 规划/08 BR-INV-24 细则「资格记录与状态」「判定顺序」「有效期」及正文 ②、④、⑥，依据 couli #160（7a5ed64bde31）、
+# couli #161（资格有效期 30 天，负责人 2026-10-20）、SPEC_REF ac4d993；任务 B1-35a）。
 # 迁移只在 08 维护；本文件按 SPEC_REF 转写，生成 packages/domain/src/state-machines/invite-reward.gen.ts
 # （node packages/domain/scripts/state-machines.ts；--verify 只比对）。生成物勿手改，改这里再生成。
 #
 # 写法约定（同 CT-04a、CT-04e）：
-# - 状态值与 contracts/enums/identity.yaml 的 invite_reward_status、0055 invite_rewards_status_check 一致
-#   （小写蛇形，顺序照枚举）；事件用大写蛇形名（08 未给事件编码，编排 B1-35a §9.3 采纳 DEFER / PROCESS / VOID）。
+# - 状态值与 contracts/enums/identity.yaml 的 invite_reward_status、db/schema.sql 的 invite_rewards_status_check
+#   （迁移 0057 / 0058 重建）一致（小写蛇形，顺序照枚举）；事件用大写蛇形名（08 未给事件编码，编排 B1-35a §9.3
+#   采纳 DEFER / PROCESS / VOID，第 2 次测试加 EXPIRE）。
 # - 插入资格行本身不是迁移：资格行由 growth 在绑定事务内插入并显式写 status='qualified'（0055 无 DEFAULT）；
 #   from 中不出现 null，「null + 任何事件」一律表外。
 # - 触发不是迁移：触发只写 trigger_order_id、triggered_at，status 仍为 qualified（库里 qualified 覆盖「等触发」与
 #   「已触发、待发放任务处理」两段）。
 # - 作废只由发放任务在判定顺序第 2、3 步判出，不另开事件入口。
+# - 过期（ac4d993 BR-INV-24「有效期」）：状态机允许所有 qualified 经 EXPIRE 到 expired；「到期与否、期内是否已有
+#   入账 / 已记触发单、期内订单是否都已 VOID 或 B=0、是否还在等结果」由 B1-35 的每日过期任务判，不在状态机里。
+#   deferred 不过期：顺延记录已有期内入账的触发订单，不满足「期限内没有自购子订单，或都已失效或 B=0」的过期条件
+#   （期限后才月结入账照发）；其触发单之后被扣回或进入维权仍按第 3 步 VOID。
 # - guard 只是规则文字说明（引 08 判定顺序第几步），transition() 不求值；资格写入、预算占用与释放、按被邀请人加锁、
 #   row_version 条件、原因码（void_reason、两方不发原因）、两方结果与 REWARD 凭证都由服务层（B1-35）负责，不进状态机。
 # - to 为 same 表示「不变」（同 order-platform.yaml P7、P8）。
 #
 # 表外说明：
-# - 只有下面四行迁移（六个合法「from + event」组合），其余组合一律为表外事件。
-# - processed、voided、budget_exhausted 都是终态（⑥「不再因之后的订单触发」、② 每个被邀请人只触发一次）。
-# - budget_exhausted：枚举与 0055 CHECK 保留此值，但 08 判定顺序第 6 步 2026-10-19 审阅改为「总预算在取得资格时占用，
-#   已取得资格的都发得出」后已无进入路径；本表无入迁移、也无出迁移（编排 D10-95 ⑤，待规划回写；删不删另开任务）。
-# - 资格无有效期、无 expired 状态（D10-95 ③）。
+# - 只有下面五行迁移（七个合法「from + event」组合），其余组合一律为表外事件。
+# - processed、voided、expired 都是终态（⑥「不再因之后的订单触发」、② 每个被邀请人只触发一次；过期后不再发放）。
+# - deferred + EXPIRE 表外（见上「过期」）。
 name: invite-reward
 field: status
-states: [qualified, deferred, processed, voided, budget_exhausted]
-# DEFER 顺延（暂停发放或当日预算不够）；PROCESS 两方结果已定、已处理；VOID 作废。
-events: [DEFER, PROCESS, VOID]
+states: [qualified, deferred, processed, voided, expired]
+# DEFER 顺延（暂停发放或当日预算不够）；PROCESS 两方结果已定、已处理；VOID 作废；EXPIRE 资格过期。
+events: [DEFER, PROCESS, VOID, EXPIRE]
 transitions:
   - id: R1
     from: [qualified]
@@ -51,3 +55,9 @@ transitions:
     to: voided
     guard: '第 2 步被邀请人当前 parent_id 已不是资格记录里的邀请人（relation_changed），或第 3 步触发订单已非 CREDITED、被扣回或在维权中（order_clawed_back / order_rights）；释放两方占用，void_reason 必填'
     test_id: SM-IRW-R4
+  - id: R5
+    from: [qualified]
+    event: EXPIRE
+    to: expired
+    guard: '每日过期任务判定：已到期（取得资格时刻 + 锁定天数），期限内没有下过自购子订单，或期限内下的自购子订单都已失效（VOID）或 B=0；释放总预算占用。期限内订单未有结果的等结果，不调本事件'
+    test_id: SM-IRW-R5

@@ -7,16 +7,17 @@ export type InviteRewardState =
   | 'deferred'
   | 'processed'
   | 'voided'
-  | 'budget_exhausted';
+  | 'expired';
 
-export const INVITE_REWARD_STATES: readonly InviteRewardState[] = ['qualified', 'deferred', 'processed', 'voided', 'budget_exhausted'];
+export const INVITE_REWARD_STATES: readonly InviteRewardState[] = ['qualified', 'deferred', 'processed', 'voided', 'expired'];
 
 export type InviteRewardEvent =
   | 'DEFER'
   | 'PROCESS'
-  | 'VOID';
+  | 'VOID'
+  | 'EXPIRE';
 
-export const INVITE_REWARD_EVENTS: readonly InviteRewardEvent[] = ['DEFER', 'PROCESS', 'VOID'];
+export const INVITE_REWARD_EVENTS: readonly InviteRewardEvent[] = ['DEFER', 'PROCESS', 'VOID', 'EXPIRE'];
 
 export interface InviteRewardTransitionRow {
   readonly id: string;
@@ -60,6 +61,14 @@ export const INVITE_REWARD_TRANSITIONS: readonly InviteRewardTransitionRow[] = [
     to: 'voided',
     guard: '第 2 步被邀请人当前 parent_id 已不是资格记录里的邀请人（relation_changed），或第 3 步触发订单已非 CREDITED、被扣回或在维权中（order_clawed_back / order_rights）；释放两方占用，void_reason 必填',
     test_id: 'SM-IRW-R4',
+  },
+  {
+    id: 'R5',
+    from: ['qualified'],
+    event: 'EXPIRE',
+    to: 'expired',
+    guard: '每日过期任务判定：已到期（取得资格时刻 + 锁定天数），期限内没有下过自购子订单，或期限内下的自购子订单都已失效（VOID）或 B=0；释放总预算占用。期限内订单未有结果的等结果，不调本事件',
+    test_id: 'SM-IRW-R5',
   },
 ];
 
