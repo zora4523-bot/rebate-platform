@@ -1,0 +1,19 @@
+id: B1-02zg
+repo: rebate-platform
+title: B1-02zg：[AC-B1-02c#1]「生成的路由校验与当前契约一致」单元测试超时与 CI 实际时长对齐（避免 5 秒默认超时偶发红）
+type: test-change
+# 2026-10-20 入账（身份与风控线 identity-lane，编排 2026-10-20 09:5x 派工）。起因：#962 的 verify-fast 失败在
+# apps/api/src/modules/platform/validation/contract-routes.test.ts 的 [AC-B1-02c#1] the generated route schemas match the current contract：
+# CI 上读文件 + 重新生成路由校验用了 6.2 秒，撞 5 秒默认超时，不是内容不一致（编排已 rerun 变绿）。
+# 做法（照 CT-06y 先例）：只给这条 it 加第三参数 30_000（约 CI 实测的 4.8 倍）并加两行注释；不改断言、不删用例、不动实现与生成脚本。
+# 该文件不在保护路径（apps 下单元测试），不需负责人标签；走非 task 分支 chore/test-change-B1-02zg、不带证据文件（先例 CT-06y #860）；Claude 实现、Codex 只读对抗评审。
+refs: []
+refs_hash: {}
+deps: [B1-02c]
+paths:
+  - 'apps/api/src/modules/platform/validation/contract-routes.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
