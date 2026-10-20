@@ -1,6 +1,6 @@
 # 记账规则（ledger-rules）
 
-本文件是人读版：科目表、uniq_key 总表、借贷模板说明、红冲规则、调账对方科目白名单与口径说明。机读版是同目录 `specs/ledger-templates.csv`（每行一条分录模板）。两者只依据 08 业务规则（规划仓库版本见根目录 `SPEC_REF`）的 BR-FUND-01、04、05、08、09、12、13、15、16、20、22、24，BR-WDR-07、09、20，BR-CALC-02、13，BR-INV-22，以及 02 §8.2 的科目表；代理按 08 起草的取值集中列在「代理起草、待财务确认」节，08 仍没写清的格子写 `TBD(08 未定)`，集中列在「待定」节，不自定。
+本文件是人读版：科目表、uniq_key 总表、借贷模板说明、红冲规则、调账对方科目白名单与口径说明。机读版是同目录 `specs/ledger-templates.csv`（每行一条分录模板）。两者只依据 08 业务规则（规划仓库版本见根目录 `SPEC_REF`）的 BR-FUND-01、04、05、08、09、12、13、15、16、20、22、24，BR-WDR-07、09、20，BR-CALC-02、13，BR-INV-22、24，以及 02 §8.2 的科目表；代理按 08 起草的取值集中列在「代理起草、待财务确认」节，08 仍没写清的格子写 `TBD(08 未定)`，集中列在「待定」节，不自定。
 
 状态：代理起草，财务确认前按本文件执行（BR-FUND-15、BR-FUND-16 细则「分工」：凭证粒度、科目、红冲规则由代理起草、财务确认）。
 
@@ -36,7 +36,7 @@
 | `COMMISSION_REVENUE` | platform | 收入 | 平台留存佣金（含预留 reserve_fen、FORFEIT 没收份额、注销放弃余额） |
 | `FEE_INCOME` | platform | 收入 | 提现手续费（MVP 为 0） |
 | `TAX_PAYABLE` | platform | 负债 | 代扣个税 |
-| `MKT_EXPENSE` | platform | 费用 | 淘礼金、奖励等营销费用（02 §8.2；RECON_FIX / OTHER 调账白名单科目之一；REWARD P1 前不列模板） |
+| `MKT_EXPENSE` | platform | 费用 | 淘礼金、奖励等营销费用（02 §8.2；RECON_FIX / OTHER 调账白名单科目之一；邀请奖励 `REWARD:INVITE` 的平台侧，BR-INV-24 ⑦；newbie / checkin 奖励 P1 前不列模板） |
 | `BAD_DEBT` | platform | 费用 | 负余额核销；注销中 / 已注销受益人的扣回与负差改记 |
 
 不设 `WITHDRAW_IN_TRANSIT`：打款中资金留在 USER_BALANCE.frozen（BR-WDR-09、BR-FUND-14）。不设单一的调账科目：调账对方科目按原因码取上表科目（第 6 节）。
@@ -68,6 +68,7 @@
 | 负余额核销 | `BADDEBT:{account_id}:{candidate_id}` | BR-FUND-12 |
 | 人工调账 | `ADJ:{adjust_id}` | BR-FUND-24 ⑥ |
 | 调账红冲 | `ADJ:{adjust_id}:REVERSE` | BR-FUND-24 ⑥、BR-FUND-16 |
+| 邀请奖励发放（每个受益方一张） | `INVITE_REWARD:{invitee_user_id}:{side}`（side 取 inviter / invitee） | BR-INV-24 ②⑦、BR-FUND-16（资金线定键，代理起草待财务确认） |
 | 任意更正红冲 | `{原 uniq_key}:REVERSE` | BR-FUND-16 |
 
 rights_event_id 取值（BR-FUND-08）：来自维权 / 处罚接口或导入 → `R{order_rights.id}`；来自订单同步的平台状态变化 → `P{platform_status 迁移后的 row_version}`；来自订单同步的佣金变化 → `C{commission_version}`（同一份联盟数据重放时 commission_version 不变，不生成新键）。占位符拼写照 08 原文（入账、扣回、补差、恢复写 `{user_id}`，FORFEIT 写 `{uid}`）；08 在延后补记、改派红冲 / 重记写的 `{uid}`、`{old_uid}`、`{new_uid}` 在 csv 用户行统一写 `{user_id}`（与用户账户的 owner_id 同一个参数，不另设别名）。
@@ -215,9 +216,23 @@ RESTORE 只由差错单（「已作废订单被平台恢复」「申诉恢复」
 - 例（BR-FUND-01 细则）：U1 入账 500（REBATE_CREDIT）、部分退款扣回 100（CLAWBACK / PART_REFUND），改派 A2：`…:U1:self:REASSIGN_REV:A2` 写 reassign_rebate_credit_credit_fen=500、reassign_clawback_part_refund_debit_fen=100 两组；平台同样两组。
 - 旧受益人已进入注销 processing 或已注销、且在本单键下还有不为 0 的类型组：待负责人决定（第 8 节），csv 不列该情形的模板（没有 `REASSIGN_REV:BAD_DEBT`），这种改派不执行。
 
-### 4.10 活动奖励（REWARD，P1）
+### 4.10 活动奖励（REWARD：invite 启用，newbie / checkin 仍 P1）
 
-REWARD（sub_type newbie / checkin / invite）P1 前不列入 csv：BR-INV-22 规定 MVP 不发放，金额在 P1 规格定；分录模板、键与金额随 P1 规格补（BR-FUND-15 细则末项）。`buildVouchers` 对 `REWARD:*` 一律按未登记模板拒绝。
+邀请奖励活动（BR-INV-24，开关 growth.invite_reward.enabled 默认 off）启用 REWARD 的 sub_type=invite（BR-FUND-15 细则 REWARD 项）：
+
+| template_id | ledger_type / sub_type | 借 | 贷 | 金额 | uniq_key |
+| --- | --- | --- | --- | --- | --- |
+| `REWARD:INVITE` | REWARD / invite | MKT_EXPENSE | USER_BALANCE.available | reward_fen | `INVITE_REWARD:{invitee_user_id}:{side}` |
+
+- 每个受益方一张凭证：邀请人（side=inviter）与被邀请人（side=invitee）各一张，键只按被邀请人与受益方区分；以被邀请人为幂等键，每个被邀请人每方至多一张，重放时键冲突视为已入账、跳过（BR-INV-24 ②）。
+- 用户侧入单一余额 USER_BALANCE 的 available 子户（BR-FUND-13），方向与入账（4.1）的用户行一致：贷 USER_BALANCE.available 使可用余额增加；平台侧借营销费用科目 MKT_EXPENSE（规划/02 §8.2）。
+- 不伴随订单迁移（BR-FUND-01）：由被邀请人首笔合格自购子订单迁移到 CREDITED 并提交之后的发放任务单独成凭证，键里不带 order_key，不进 commission_splits、不改任何订单份额（BR-INV-24 ⑤）。
+- 金额 reward_fen 取资格记录锁定的每方金额；领域层 buildVouchers 对 0 按通用口径处理（零金额不出凭证，返回空数组），负数、溢出、非 bigint 拒绝；side 只接受 inviter / invitee。user_id 是否为该 side 的受益人（invitee 侧是被邀请人本人、inviter 侧不是被邀请人）由 B2-16b 的发放写入函数校验，不在 buildVouchers 里判。
+- 已发放的不追回（BR-INV-24 ⑥），所以不列 `REWARD:INVITE:REVERSE`；确需更正按通用 `{原 uniq_key}:REVERSE` 另开任务补模板。
+- 税务：奖励属于哪类所得、是否代扣待税务意见（06 Q-F6），所得类型映射 tax.income_type_map 不写；结论到位前活动开关不得打开（BR-INV-24 ⑧）。
+- 本模板由资金线按 BR-INV-24 ⑦、BR-FUND-15、BR-FUND-16 起草（代理起草，待财务确认，第 7 节第 14 项）；发放任务的写入、预算与防刷在 B2-16b。
+
+REWARD 的 newbie / checkin 仍属 P1，不列入 csv：BR-INV-22 规定 MVP 不发放，金额在 P1 规格定；分录模板、键与金额随 P1 规格补。`buildVouchers` 对 `REWARD:NEWBIE`、`REWARD:CHECKIN` 及其他未登记的 `REWARD:*` 照旧按未登记模板拒绝。
 
 ### 4.11 人工调账（BR-FUND-24，ADMIN_ADJUST）
 
@@ -281,7 +296,7 @@ csv 中 RECON_FIX、OTHER 按白名单每个科目 × 调增 / 调减 × 正常 
 | 11 | 改派重记 `REASSIGN_CREDIT` 拆 5 个 | 角色 4 个取各自入账类型（BR-FUND-05 分录模板表），平台 1 个取 REBATE_CREDIT 占位、金额 platform_credit_fen | BR-FUND-01 R14、BR-FUND-15 细则第二项 |
 | 12 | 改派红冲 `REASSIGN_REV:USER`、`REASSIGN_REV:PLATFORM` | 按被更正分录的 (ledger_type, sub_type) 分组逐组反向，每组金额为该组在该账户上的代数和，按方向分 `_credit_fen` / `_debit_fen` 两个金额名；为 0 的组不写，全部组为 0 才不写凭证；净额为 0 而组不为 0 的照写 | BR-FUND-01 细则「R14 的分录类型」、BR-FUND-15 细则第二项、BR-FUND-25 |
 | 13 | RECON_FIX / OTHER 的对方科目 | 按白名单 COMMISSION_REVENUE、UNION_RECEIVABLE:{platform}、BAD_DEBT、MKT_EXPENSE 拆成 32 个模板；白名单本身待财务确认（D14） | BR-FUND-24 ⑥ |
-| 14 | REWARD 3 个模板 | 移出 csv，P1 规格定后再补（第 4.10 节占位） | BR-INV-22、BR-FUND-15 细则末项 |
+| 14 | REWARD 模板 | invite 启用：`REWARD:INVITE` 借 MKT_EXPENSE / 贷 USER_BALANCE.available，金额 reward_fen，键 `INVITE_REWARD:{invitee_user_id}:{side}`，每个受益方一张凭证、不伴随订单迁移、不列红冲（第 4.10 节）；newbie / checkin 仍 P1，P1 规格定后再补；所得类型待 06 Q-F6 | BR-INV-24 ⑦⑧、BR-FUND-01、BR-FUND-15 细则 REWARD 项、BR-INV-22 |
 | 15 | 改派时旧受益人注销中 / 已注销且本单键下还有不为 0 的类型组 | 待负责人决定（规划 08 §6.3 第 23 项，选项 A / B / C）；决定前没有分录模板，R14 事务整笔不提交、这种改派不执行；冷静期内的照常红冲 | BR-FUND-01 细则「R14 的分录类型」、BR-FUND-08、BR-ID-28 |
 
 ## 8. 待定

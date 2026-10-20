@@ -1,5 +1,6 @@
 // B2-01j: voucher entries from specs/ledger-templates.csv (via generated templates.gen.ts).
-// BR-FUND-05/15/16, BR-WDR-09. Pure: no clock, no I/O, inputs are never mutated.
+// BR-FUND-05/15/16, BR-WDR-09; B2-16a: REWARD:INVITE (BR-INV-24 ⑦, BR-FUND-01).
+// Pure: no clock, no I/O, inputs are never mutated.
 import { addFen, InvalidAmount, subFen } from '@couli/money';
 import { orderKey, uniqKey, validateVoucher, type LedgerRole } from './ledger.ts';
 import { LEDGER_TEMPLATE_ROWS, type LedgerTemplateRow } from './templates.gen.ts';
@@ -37,6 +38,9 @@ const REVERSE_SUFFIX = ':REVERSE';
 const USER_ID = 'user_id';
 const PLATFORM_OWNER_ID = 'platform';
 const ROLES: readonly string[] = ['self', 'share', 'direct', 'indirect'];
+/** BR-INV-24: the two beneficiaries of one invite reward, one voucher each. */
+const INVITE_SIDE = 'side';
+const INVITE_SIDES: readonly string[] = ['inviter', 'invitee'];
 const PLACEHOLDER = /\{([^{}]+)\}/g;
 
 /** Templates grouped by id, CSV row order preserved. A Map so '__proto__' etc. are not ids. */
@@ -94,6 +98,12 @@ function keyParam(value: unknown, name: string): string {
   if (name === 'role') {
     if (typeof value !== 'string' || !ROLES.includes(value)) {
       throw new RangeError('role must be one of self|share|direct|indirect');
+    }
+    return value;
+  }
+  if (name === INVITE_SIDE) {
+    if (typeof value !== 'string' || !INVITE_SIDES.includes(value)) {
+      throw new RangeError('side must be one of inviter|invitee');
     }
     return value;
   }
@@ -254,7 +264,9 @@ function signed(row: LedgerTemplateRow, amount: bigint): bigint {
  * malformed key components and invalid amounts with RangeError. Never infers TBDs.
  * Reuses orderKey/uniqKey for their supported key formats. Empty CSV sub_type is null;
  * platform rows ('available' in the CSV) carry sub_account null. order_key's platform must
- * equal the platform parameter when a template uses both.
+ * equal the platform parameter when a template uses both. REWARD:INVITE (B2-16a) additionally
+ * requires side ∈ inviter|invitee; whether user_id is the right beneficiary for that side is
+ * checked by the payout writer (B2-16b), not here.
  * Omits zero pairs; when no entries remain returns []. Rows sharing a filled uniq_key
  * form one voucher; every emitted voucher passes validateVoucher.
  */

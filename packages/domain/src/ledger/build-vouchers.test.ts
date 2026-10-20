@@ -148,3 +148,45 @@ it('[AC-B2-01l#u4] 提现成功一张凭证单键 wd:{id}:PAID，三种流水按
     'WITHDRAW_PAID',
   ]);
 });
+
+it('[AC-B2-16a#u1] 邀请奖励：每方一张凭证，借 MKT_EXPENSE、贷 USER_BALANCE.available，键按被邀请人与受益方', () => {
+  const vouchers = buildVouchers('REWARD:INVITE', {
+    invitee_user_id: 'u2',
+    side: 'inviter',
+    user_id: 'u1',
+    reward_fen: 1000n,
+  });
+  expect(vouchers.map((voucher) => voucher.uniq_key)).toEqual(['INVITE_REWARD:u2:inviter']);
+  expect(
+    vouchers[0]?.entries.map((e) => [
+      e.account.owner_type,
+      e.account.owner_id,
+      e.account.subject,
+      e.sub_account,
+      e.amount_fen,
+      e.ledger_type,
+      e.sub_type,
+    ]),
+  ).toEqual([
+    ['platform', 'platform', 'MKT_EXPENSE', null, 1000n, 'REWARD', 'invite'],
+    ['user', 'u1', 'USER_BALANCE', 'available', -1000n, 'REWARD', 'invite'],
+  ]);
+  const invitee = buildVouchers('REWARD:INVITE', {
+    invitee_user_id: 'u2',
+    side: 'invitee',
+    user_id: 'u2',
+    reward_fen: 1000n,
+  });
+  expect(invitee[0]?.uniq_key).toBe('INVITE_REWARD:u2:invitee');
+  expect(invitee[0]?.entries[1]?.account.owner_id).toBe('u2');
+});
+
+it('[AC-B2-16a#u2] 邀请奖励：side 非法时拒绝，金额为 0 与其他模板一样不出凭证', () => {
+  const base = { invitee_user_id: 'u2', user_id: 'u1', reward_fen: 1000n };
+  expect(() => buildVouchers('REWARD:INVITE', { ...base, side: 'self' })).toThrow(RangeError);
+  expect(buildVouchers('REWARD:INVITE', { ...base, side: 'inviter', reward_fen: 0n })).toEqual([]);
+  expect(() => buildVouchers('REWARD:INVITE', { ...base, side: 'self', reward_fen: 0n })).toThrow(
+    RangeError,
+  );
+  expect(() => buildVouchers('REWARD:NEWBIE', { ...base, side: 'inviter' })).toThrow(RangeError);
+});
