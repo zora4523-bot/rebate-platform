@@ -1,0 +1,24 @@
+id: F1-10j
+repo: rebate-platform
+title: 后台审计日志查询页与导出任务页：审计日志筛选（操作人 / 对象 / 时间 / 权限点）、详情前后值差异视图、无 audit.view_all 只看本人；导出任务列表（状态、下载、重试、失败 / 已过期态，30417 后台文案）；空 / 加载 / 出错三态
+type: impl
+# 2026-10-20 入账（前端线 f1-frontend-7，编排 16:2x 派工）。05 F1-10j、01 F-ADM-03；契约 CT-24c（adminListAuditLogs / adminGetAuditLog）、CT-24k（adminCreateExport / adminListExports / adminDownloadExport / adminRetryExport），均 planned，后端 B1-34a / B1-34b 在后台线暂停中——按契约用假服务端开发。
+# 本页无定稿画板：先逻辑后视觉（10-18 19:2x 派工），按现有后台页面摆布局。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+refs: []
+refs_hash: {}
+deps: [CT-24c, CT-24k, F1-06zb]
+paths:
+  - 'apps/admin/src/pages/audit-logs/**'
+  - 'apps/admin/src/pages/exports/**'
+  - 'apps/admin/src/texts/audit-logs.ts'
+  - 'apps/admin/src/texts/exports.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-audit-logs/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-audit-logs/**'
+status: todo
+pr: null
