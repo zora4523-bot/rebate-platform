@@ -5,6 +5,9 @@
 // as a JSON string, and #56 pins that group whole or absent.
 // F1-02zm (test-change, transitional; F1-02zt tightens): #1 and #56 also accept the whole
 // BR-INV-24 growth.invite_reward.* group of F1-02zn after SETTLE, and #57 pins it whole or absent.
+// F1-02zw (test-change, transitional; F1-02zt tightens): the invite reward tail of #56 and #57 is
+// inviteNow() (none, the five keys, or the five keys plus growth.invite_reward.eligibility_days of
+// F1-02zx), and #58 pins that sixth key as the last item or absent.
 import { expect, it } from 'vitest';
 import {
   configItemSpecOf,
@@ -20,9 +23,11 @@ import {
   EXPECTED,
   FUND_FLAGS,
   INVITE_CFG,
+  INVITE_ELIG,
   SETTLE,
   UNREGISTERED,
   expectedNow,
+  inviteNow,
   jsonTypeOf,
   presentOf,
   seedRows,
@@ -180,8 +185,10 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
   expect([0, SETTLE.length]).toContain(present.length);
   // F1-02zm (transitional): the only keys allowed after these groups are the whole
   // growth.invite_reward.* group (checked key by key in #57) or none.
-  const inviteTail =
-    presentOf(INVITE_CFG, 'growth.invite_reward.*') === 0 ? [] : INVITE_CFG.map((e) => e.key);
+  // F1-02zw (test-change, transitional; F1-02zt tightens): that group is inviteNow() (its sixth
+  // key checked in #58).
+  presentOf(INVITE_CFG, 'growth.invite_reward.*');
+  const inviteTail = inviteNow().map((e) => e.key);
   if (present.length === 0) {
     for (const entry of SETTLE) {
       expect(configItemSpecOf(entry.key), entry.key).toBeNull();
@@ -221,8 +228,14 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
     }
     return;
   }
-  const head = keys.length - INVITE_CFG.length;
-  expect(keys.slice(head)).toStrictEqual(INVITE_CFG.map((entry) => entry.key));
+  // F1-02zw (test-change, transitional; F1-02zt tightens): the tail is inviteNow(), the five
+  // keys optionally followed by eligibility_days (checked in #58).
+  const tail = inviteNow();
+  const head = keys.length - tail.length;
+  expect(keys.slice(head)).toStrictEqual(tail.map((entry) => entry.key));
+  expect(keys.slice(head, head + INVITE_CFG.length)).toStrictEqual(
+    INVITE_CFG.map((entry) => entry.key),
+  );
   const settled = presentOf(SETTLE, 'settle.*') !== 0;
   expect(keys[head - 1]).toBe((settled ? SETTLE : EXPECTED).at(-1)!.key);
   for (const entry of INVITE_CFG) {
@@ -236,4 +249,41 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
     }).toStrictEqual({ ...entry, options: null });
     expect(configItemSpecOf(entry.key), entry.key).toBe(spec);
   }
+});
+
+// F1-02zw (test-change, transitional; F1-02zt tightens to "always present"): the BR-INV-24 细则
+// eligibility period of F1-02zx (08 l.560; 04 §10.1, config.business) is registered as the last
+// item, right after growth.invite_reward.ip_window_hours, or not at all; never without the five
+// keys of #57 (inviteNow fails then); both branches assert.
+it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 登记为注册表最后一项（紧接 ip_window_hours，数值、options 为 null、config.business、可改）或没有', () => {
+  expect(INVITE_ELIG).toHaveLength(1);
+  const key = 'growth.invite_reward.eligibility_days';
+  expect(INVITE_ELIG[0]!.key).toBe(key);
+  const keys = configRegistry().map((spec) => spec.key);
+  const tail = inviteNow().map((entry) => entry.key);
+  if (!tail.includes(key)) {
+    expect(keys).not.toContain(key);
+    expect(configItemSpecOf(key)).toBeNull();
+    return;
+  }
+  expect(tail).toStrictEqual([...INVITE_CFG.map((entry) => entry.key), key]);
+  expect(keys.filter((entry) => entry === key)).toHaveLength(1);
+  expect(keys.at(-1)).toBe(key);
+  expect(keys.at(-2)).toBe('growth.invite_reward.ip_window_hours');
+  const spec = registered(key);
+  expect({
+    key: spec.key,
+    valueType: spec.valueType,
+    options: spec.options,
+    permission: spec.permission,
+    adminEditable: spec.adminEditable,
+  }).toStrictEqual({
+    key,
+    valueType: 'number',
+    options: null,
+    permission: 'config.business',
+    adminEditable: true,
+  });
+  expect(configItemSpecOf(key)).toBe(spec);
+  expect(switchSpecOf(key)).toBeNull();
 });

@@ -156,11 +156,14 @@ export function presentOf(group: readonly Expected[], name: string): number {
  * F1-02zi / F1-02zm (transitional): the registry oracle for the build under test. The SETTLE
  * group and the INVITE_CFG group must each be registered whole or not at all (a partial group
  * fails here); the oracle is EXPECTED followed by every present group, SETTLE first.
+ * F1-02zw (test-change, transitional; F1-02zt tightens): the invite reward group is inviteNow()
+ * (none, the five INVITE_CFG keys, or those five followed by INVITE_ELIG; any other combination
+ * fails there).
  */
 export function expectedNow(): readonly Expected[] {
   const settle = presentOf(SETTLE, 'settle.*') === 0 ? [] : SETTLE;
-  const invite = presentOf(INVITE_CFG, 'growth.invite_reward.*') === 0 ? [] : INVITE_CFG;
-  return [...EXPECTED, ...settle, ...invite];
+  presentOf(INVITE_CFG, 'growth.invite_reward.*');
+  return [...EXPECTED, ...settle, ...inviteNow()];
 }
 // F1-02zz (test-change, transitional; F1-02zt tightens). The BR-INV-24 细则 eligibility period
 // (08 l.560, SPEC_REF ac4d993) as F1-02zx registers it (couli-runs/F1-02zx excerpt 9.2-1, D-E2):
