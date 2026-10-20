@@ -1,0 +1,25 @@
+id: F1-02zzc
+repo: rebate-platform
+title: 过渡测试改动（#158 第三波前置）：[AC-F1-02p#15] 发布用户协议接受「只写 legal.agreement.version」或「另写 legal.agreement.min_version 及其历史」二选一；[AC-F1-02q#17]–[#21] 的 articles 整行与列清单接受「无 help_section 列」或「有该列、可空、无缺省、不可 UPDATE、值为 null」二选一
+type: test-change
+# 2026-10-20 入账（content-client 第五阶段第三波；编排裁定 D10-94 ⑧ L24 从 F1-02zm 拆出并入第三波，过渡改动随之移到这里）。
+# 依据（SPEC_REF ac4d993）：docs/changes/20261020-内容线默认回写.md §1.12（L24）、§1.6（L30）；04 l.904 §10.1、l.406 §3.2 articles。原文由编排者摘入任务书第 9 节。
+# 现状：agreements.int.test.ts:482 #15 断言用户协议发布后配置只多 legal.agreement.version、历史只有这一键，F1-02zr 必红；
+#   db/content/dict-items/articles.int.test.ts #17 列清单 = kit article() 的键、#18–#21 SELECT * 整行 toEqual，F1-02zq 加列后五例必红。
+# 做法：#15 按发布后快照里有无 legal.agreement.min_version 行选分支，两支都严格（新支：值 = 请求 min_version、version 1、历史键恰为两键）；
+#   articles 五例按 information_schema 有无 help_section 列选分支（新支：text、可空、无缺省、couli_app 不可 UPDATE、readonly 不可写、行内为 null），
+#   kit 只新增辅助（如 articleColumns()），既有导出与 article() 不改。主干现在、F1-02zq / F1-02zr 合并后都成立；F1-02zt 收紧为只认新支。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR，按 approvals #24 由编排加 owner-approved 标签（F1-02zz 先例）。
+refs: []
+refs_hash: {}
+deps: [F1-02p, F1-02q]
+paths:
+  - 'test/spec/content/agreements-admin/agreements.int.test.ts'
+  - 'test/spec/db/content/dict-items/articles.int.test.ts'
+  - 'test/spec/db/content/dict-items/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

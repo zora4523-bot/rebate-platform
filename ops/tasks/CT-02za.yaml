@@ -1,0 +1,29 @@
+id: CT-02za
+repo: rebate-platform
+title: 契约（#158 跟进）：ConfigLegalAgreement 加可选 min_version（L24）；新增 ArticleHelpSection 枚举（六类），Article / PlainArticleSummary / AdminArticleSummary / AdminArticleVersion 加可选 help_section（为空不出现），后台新建与存草稿请求体加可选 help_section，listArticles 加同名可选筛选（L30）
+type: contract
+# 2026-10-20 入账（content-client 第五阶段第三波；计划 couli-runs/CONTENT-client/phase5-plan.md §3 序 9；编排裁定 D10-94 ① D-L1、⑧）。
+# 依据（SPEC_REF ac4d993，含 #158 e70b86d）：docs/changes/20261020-内容线默认回写.md §1.6、§1.12、§3；04 l.406 §3.2 articles、l.524 §6.2、l.882 / l.904 §10.1；08 BR-ID-12 正文。
+#   原文由编排者摘入任务书第 9 节，refs 置空。D-T6 两个 ledger_type.REWARD 文案键已在 CT-25c 落地，本任务不再含。
+# 码值（规划只写「编码由契约线定，分类清单按帮助中心画板」，D-L2 默认）：getting_started / rebate_settlement / orders_claims / withdraw / invite / account_privacy。
+# 形状默认：D-L3 为空不出现；D-L5 游标形状不变（04 l.524）；D-L6 非 help 分类带 help_section：列表与后台保存都 20001 fields=[help_section]。不新增错误码；码值放 openapi 组件（同 ArticleCategory 先例）。
+# listArticles 已实现：合并后生成的路由 schema 即接受新参数，到 F1-02zs 合并前合法值被忽略。描述写明，并在 notices 提醒前端线。
+# 占契约槽；合并即放槽并在 notices 登记。
+refs: []
+refs_hash: {}
+contract_sections: ['3.2', '6.2', '6.6', '10.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

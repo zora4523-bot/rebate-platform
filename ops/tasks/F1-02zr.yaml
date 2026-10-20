@@ -1,0 +1,25 @@
+id: F1-02zr
+repo: rebate-platform
+title: content（L24）：发布用户协议时与 legal.agreement.version 同一事务写 legal.agreement.min_version（= 请求 min_version，带配置历史）；/v1/config 读到合法值才下发 legal.agreement.min_version，缺失不下发不记日志，形状不对按缺失并记 warn；不拦截
+type: impl
+# 2026-10-20 入账（content-client 第五阶段第三波；计划 phase5-plan.md §3 序 11；编排裁定 D10-94 ⑧）。
+# 依据（SPEC_REF ac4d993）：docs/changes/20261020-内容线默认回写.md §1.12、§3；04 l.882 / l.904 §10.1、l.924 形状规则 ②；08 BR-ID-12 正文。
+#   原文由编排者摘入任务书第 9 节，refs 置空。
+# 写入：legalKeysOf('agreement') 加 {legal.agreement.min_version, min_version}，沿用锁行 → 写 → 历史（与 privacy 的 min_version 同法）；L44 版本在前冲突只看 version 字段。
+# 下发：int32 ≥ 1 才下发；不校验 min_version ≤ version（04）；不让 /v1/config 因它 50001。
+# 不做（D-L4）：低于用户协议最低版本是否拦截、need_reconsent / 10004 均不改（变更记录 §3 待定，identity 范围）。不进配置注册表（legal.* 不经配置中心改）。
+# 冻结测试：[AC-F1-02p#15] 由 F1-02zzc 先过渡；config 系列夹具都不写该键，不受影响。
+refs: []
+refs_hash: {}
+deps: [CT-02za, F1-02zzc]
+paths:
+  - 'apps/api/src/modules/content/**'
+test_paths:
+  - 'test/spec/content/agreements-min-version/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/agreements-min-version/**'
+status: todo
+pr: null

@@ -1,0 +1,25 @@
+id: F1-02zze
+repo: rebate-platform
+title: content：/v1/config 的 invite 下发 eligibility_days（读 growth.invite_reward.eligibility_days，缺行按 08 默认 30，非 1–3650 整数按 30 并记 warn；与其他配置键同一次读取，ETag 随之变化）
+type: impl
+# 2026-10-20 入账（content-client 第五阶段；编排 2026-10-20 18:0x 契约缺口，邀请页活动规则摘要的天数 N）。
+# 依据（SPEC_REF ac4d993）：08 11_INV BR-INV-18 细则 l.470；BR-INV-24 细则 l.560 默认值、l.571「有效期」（改值只影响之后取得资格的记录）；
+#   04 l.878 / l.908 §10.1（待回写）、l.928。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：只改 content；键加入 CLIENT_CONFIG_KEYS 经 ContentReader 与其他键同批读取，不新开端口、不读 invite_rewards；
+#   派生放独立纯函数，deriveInviteReward 的返回形状不变（F1-02zp 规则测试冻结）；字段总会下发（含开关 off）；ETag 照 F1-02h 覆盖最终 data。
+# 推翻 F1-02zx 摘录「content 不下发客户端」的约定（当时 04 无此项、渲染归后续），冻结断言由 F1-02zzd 先过渡。
+# 依赖：CT-25f（契约字段）、F1-02zzd（冻结测试过渡）、F1-02zx（键登记与种子，已合并 #1005）。
+refs: []
+refs_hash: {}
+deps: [CT-25f, F1-02zzd, F1-02zx]
+paths:
+  - 'apps/api/src/modules/content/**'
+test_paths:
+  - 'test/spec/content/config-invite-eligibility/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/config-invite-eligibility/**'
+status: todo
+pr: null
