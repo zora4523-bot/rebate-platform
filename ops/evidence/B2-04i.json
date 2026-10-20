@@ -1,0 +1,96 @@
+{
+  "task": "B2-04i",
+  "spec_ref": "76f61aaa455a67f5b1d9212c6da710711cd255a1",
+  "spec_commit": "6f9c221863ae89dbfc28a1c61bec6a7ec3de715d",
+  "red_tests": [
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#1] BR-CALC-02/10 经公开出口读 v1 的整数分、预留与全部不可变受益人",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#2] BR-CALC-02/10 取最大版本，调用方期望版本不一致时报错",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#3] BR-CALC-10 无快照返回 null，重复读取不补建快照",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#4] BR-CALC-02/10 指定版本缺失时拒绝，不回退旧金额或按零处理",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#5] BR-CALC-10/13 按 app 与子订单隔离快照、版本和同一受益人的事件",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#14] BR-CALC-02/10 同 app 同版本的两单在同一事务内分别读取自己的 B 与受益人",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#6] BR-CALC-13 返回所有没收事件及原因，不混入 active/held，不按时间错排",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#7] BR-CALC-13 按 user_id 与 role 区分同一人的份额，held 不等于没收",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#8] BR-CALC-10 调用方未提交的快照、追加版本与事件都可见，回滚仍归调用方",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#9] BR-CALC-10/13 只读角色与 READ ONLY 事务可执行，重复读不改四张表",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#10] BR-CALC-02 当前版本 B=0 仍有快照与比例，不用初始金额替代",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#11] BR-CALC-02 bigint 金额超过安全整数仍逐分准确",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#12] BR-CALC-10/13 分享角色与初始没收原样保留，不重新判定用户状态",
+    "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#13] BR-CALC-10 请求仅同 app 对照订单拥有的版本时报错"
+  ],
+  "risk_note": "RV2 (commission read port; settlement-plan B2-04i, BR-CALC-02 / 10 / 13, decision 39). commission/index.ts exports a read-only function that, in the caller's transaction and without locks, returns the current maximum-version commission snapshot of one sub-order: integer-fen B, reserve_bp, the immutable beneficiaries with role and ratio, and every forfeiture event with its reason in event order (including those forfeited at snapshot time). Every query filters on app_id and order_id. No snapshot -> null. A missing version, mismatched maximum versions between the two amount tables, a caller-expected version that is not the maximum, or inconsistent B within one version rejects instead of falling back to an older amount or zero. Beneficiary user state is not re-evaluated. The snapshot write path is unchanged.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6f9c221863ae89dbfc28a1c61bec6a7ec3de715d",
+      "tree": "54500c289b7ad2139b49508359e831cc5873d78d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T16:51:39Z",
+      "finished_at": "2026-10-20T16:51:48Z",
+      "gate": {
+        "commit": "d3a7020f0c4814f8a77908b20c4edf126232eb6f",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#1] BR-CALC-02/10 经公开出口读 v1 的整数分、预留与全部不可变受益人",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#2] BR-CALC-02/10 取最大版本，调用方期望版本不一致时报错",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#3] BR-CALC-10 无快照返回 null，重复读取不补建快照",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#4] BR-CALC-02/10 指定版本缺失时拒绝，不回退旧金额或按零处理",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#5] BR-CALC-10/13 按 app 与子订单隔离快照、版本和同一受益人的事件",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#14] BR-CALC-02/10 同 app 同版本的两单在同一事务内分别读取自己的 B 与受益人",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#6] BR-CALC-13 返回所有没收事件及原因，不混入 active/held，不按时间错排",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#7] BR-CALC-13 按 user_id 与 role 区分同一人的份额，held 不等于没收",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#8] BR-CALC-10 调用方未提交的快照、追加版本与事件都可见，回滚仍归调用方",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#9] BR-CALC-10/13 只读角色与 READ ONLY 事务可执行，重复读不改四张表",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#10] BR-CALC-02 当前版本 B=0 仍有快照与比例，不用初始金额替代",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#11] BR-CALC-02 bigint 金额超过安全整数仍逐分准确",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#12] BR-CALC-10/13 分享角色与初始没收原样保留，不重新判定用户状态",
+        "test/spec/commission/snapshot-read/read.int.test.ts > [AC-B2-04i#13] BR-CALC-10 请求仅同 app 对照订单拥有的版本时报错"
+      ],
+      "expected": ["test/spec/commission/snapshot-read/read.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "8fb70ee7783735e1921ec600cb08cd98c66d7e6bf5514a6d972c9448662c9e18"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 4,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 4 runs (the 4th approved by the orchestrator, D10-96); S1 rounds covered a same-value control order, a fixture unique-key collision and a same-version read missing order_id; round 4 pass; the orchestrator removed the admin URL variable name from one comment (D10-88, assertions unchanged)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "dec84006fc9f61cef5fa6a9da9c9b65d4e046092",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "70d231ce7ae620b0e3264b30830f77043407ffc4",
+    "test/spec": "c827e44350ff9efc77c84a891dd782b313b26abf",
+    "specs": "a6a8f5fd85ce48d56f75ce7b44e798701dcbf0bb"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "70d231ce7ae620b0e3264b30830f77043407ffc4"
+  }
+}
