@@ -1,0 +1,32 @@
+id: B2-04d
+repo: rebate-platform
+title: 状态机三份：settle-batch.yaml（SB1–SB10，SB10 守卫写「财务确认前不开放」）、beneficiary-credit.yaml（open → done / forfeited / voided）、settle-adjustment.yaml（pending → approved / rejected / voided_stale_seq / voided_by_clawback）与生成的 transition()；settle_jobs.status 见 S7
+type: impl
+# 2026-10-20 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.1）。分工：Codex / Opus；先例 B2-03j；S7。
+# 状态备注：可先开。
+refs: [BR-CALC-23, BR-FUND-04, BR-FUND-09]
+refs_hash:
+  BR-CALC-23: 2fe92d9959ba
+  BR-FUND-04: 4b12018b0aaa
+  BR-FUND-09: 6b72b55621fb
+deps: []
+paths:
+  - 'specs/state-machines/settle-batch.yaml'
+  - 'specs/state-machines/beneficiary-credit.yaml'
+  - 'specs/state-machines/settle-adjustment.yaml'
+  - 'packages/domain/src/state-machines/*.gen.ts'
+  - 'packages/domain/src/state-machines/index.ts'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/domain/state-machines/settle-batch/**'
+  - 'test/spec/domain/state-machines/beneficiary-credit/**'
+  - 'test/spec/domain/state-machines/settle-adjustment/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/state-machines/settle-batch/**'
+  - 'test/spec/domain/state-machines/beneficiary-credit/**'
+  - 'test/spec/domain/state-machines/settle-adjustment/**'
+status: todo
+pr: null

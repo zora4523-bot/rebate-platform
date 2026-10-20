@@ -1,0 +1,29 @@
+id: B2-04e
+repo: rebate-platform
+title: packages/domain 入账计划纯函数：按快照与 B_credit 出每受益人「入账 / 暂缓开义务 / 没收」与平台留存 + 预留；补记项金额（剩余未履约金额）与执行前 ⑤ 等式判定；输出交 buildVouchers 的模板参数
+type: impl
+# 2026-10-20 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.1）。分工：Codex / Opus；属性：Σ 份额 + 平台 = B_credit + 预留，受益人入账 ≤1 次。
+# 状态备注：可先开。
+refs: [BR-CALC-02, BR-CALC-04, BR-CALC-13, BR-FUND-04, BR-FUND-05, BR-FUND-19]
+refs_hash:
+  BR-CALC-02: 0ffe8a4d0b65
+  BR-CALC-04: 6a3c3082b870
+  BR-CALC-13: 54c06125032c
+  BR-FUND-04: 4b12018b0aaa
+  BR-FUND-05: 668ffe6648b8
+  BR-FUND-19: 8d592a87d85c
+deps: []
+paths:
+  - 'packages/domain/src/settlement/credit/**'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/domain/settlement/credit/**'
+  - 'test/properties/domain/settlement/credit/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/settlement/credit/**'
+  - 'test/properties/domain/settlement/credit/**'
+status: todo
+pr: null

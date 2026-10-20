@@ -1,0 +1,29 @@
+id: B2-04g
+repo: rebate-platform
+title: packages/domain 扣回与补差纯函数：N_new 取值顺序、B_new、受益人扣回 / 补差额（受益人状态规则）、平台差额与符号、UNION_RECEIVABLE 净影响自检、R8 / R9 / R10 分流、两路分路、义务处置（关闭 / 作废）、booked 成对值
+type: impl
+# 2026-10-20 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.1）。分工：Codex / Opus；属性：多次调整 = 一次性重算（BR-CALC-09）、受益人净额不为负。
+# 状态备注：可先开。
+refs: [BR-CALC-09, BR-CALC-23, BR-FUND-04, BR-FUND-08, BR-FUND-09, BR-FUND-10]
+refs_hash:
+  BR-CALC-09: 2414ed15d885
+  BR-CALC-23: 2fe92d9959ba
+  BR-FUND-04: 4b12018b0aaa
+  BR-FUND-08: 0f044cf6e3f7
+  BR-FUND-09: 6b72b55621fb
+  BR-FUND-10: dc95dab8ed60
+deps: []
+paths:
+  - 'packages/domain/src/settlement/adjust/**'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/domain/settlement/adjust/**'
+  - 'test/properties/domain/settlement/adjust/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/settlement/adjust/**'
+  - 'test/properties/domain/settlement/adjust/**'
+status: todo
+pr: null

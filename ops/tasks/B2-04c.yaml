@@ -1,0 +1,25 @@
+id: B2-04c
+repo: rebate-platform
+title: 门禁登记：risk-map 加 apps/api/src/modules/settlement/** 为 RV2（同 ledger），重生成根 AGENTS.md 分工表，加 settlement/AGENTS.md 与一行 CLAUDE.md；lint-migrations 资金表清单加 beneficiary_credits、recon_union，同步锁定清单测试与 guard-cli 示例
+type: guard-change
+# 2026-10-20 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.1）。分工：无 / Claude；第三类保护路径，先例 B2-02a、B2-02b。
+# 状态备注：可先开（须负责人标签，先于 B2-04a 合并）。
+# 门禁登记只增不减，属收紧（D10-93 ④）：由编排按 approvals #24 核对后加 owner-approved 标签。先于 B2-04a 合并。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'ops/risk-map.yaml'
+  - 'AGENTS.md'
+  - 'tools/guard/lib/risk.test.ts'
+  - 'tools/guard/guard-cli.test.ts'
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+  - 'apps/api/src/modules/settlement/AGENTS.md'
+  - 'apps/api/src/modules/settlement/CLAUDE.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

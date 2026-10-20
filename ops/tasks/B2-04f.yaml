@@ -1,0 +1,23 @@
+id: B2-04f
+repo: rebate-platform
+title: packages/domain 月结纯函数：账单范围与校验结果分类（六种结果互斥）、按 order_key 升序拆批、账单状态由批次派生、expected_credit_period / credit_overdue、定时时刻落在快照名义时段的判定
+type: impl
+# 2026-10-20 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.1）。分工：Codex / Opus；只用 calendar 现有函数。
+# 状态备注：可先开（index.ts 与 e、g 按合并先后变基）。
+refs: [BR-FUND-04, BR-FUND-18]
+refs_hash:
+  BR-FUND-04: 4b12018b0aaa
+  BR-FUND-18: c7ebd23ee75e
+deps: []
+paths:
+  - 'packages/domain/src/settlement/bill/**'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/domain/settlement/bill/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/settlement/bill/**'
+status: todo
+pr: null

@@ -1,0 +1,25 @@
+id: B2-04a
+repo: rebate-platform
+title: 迁移：settle_jobs、settle_bills、settle_batches（含 S8 停住标记列）、settle_batch_items（两条部分唯一）、beneficiary_credits（status=open 部分唯一）、settle_adjust_batches、settle_adjustments、recon_union；外键指 order_keys；状态列 CHECK 取 fund.yaml 枚举；授权 couli_app（只给需要的 UPDATE 列）。payout_batch_items 不在本迁移（归 B2-06）
+type: migration
+# 2026-10-20 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.1）。分工：Codex / Opus；两段式。
+# 状态备注：等 c。
+refs: [BR-CALC-23, BR-FUND-04, BR-FUND-09]
+refs_hash:
+  BR-CALC-23: 2fe92d9959ba
+  BR-FUND-04: 4b12018b0aaa
+  BR-FUND-09: 6b72b55621fb
+deps: [B2-04b, B2-04c]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/settlement/core/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/settlement/core/**'
+status: todo
+pr: null

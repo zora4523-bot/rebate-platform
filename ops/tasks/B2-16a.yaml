@@ -1,0 +1,32 @@
+id: B2-16a
+repo: rebate-platform
+title: 邀请奖励记账模板：specs/ledger-templates.csv 补 REWARD（sub_type=invite）模板——用户侧 USER_BALANCE available、平台侧 MKT_EXPENSE，每个受益方一张凭证、不随订单迁移；重生成 templates.gen.ts，buildVouchers 可按模板名出平衡凭证
+type: impl
+# 2026-10-20 资金线（规划/05 B2-16 拆 a / b，编排 06:3x ④、D10-93 照开；活动默认关，模板先就绪不影响线上）。依据 BR-FUND-15 细则（REWARD sub_type=invite）、BR-FUND-01（不伴随订单迁移）、BR-FUND-13、16、BR-INV-24 ⑦⑧。
+# 凭证键与金额名由资金线定（BR-FUND-15 细则）；所得类型映射待 06 Q-F6，不在 tax.income_type_map 里臆定。发放写入函数归 B2-16b（等 CT-25）。
+# 先例 B2-01l：Codex 在 test(spec) 提交里同步 B2-01i expected.csv（只增 REWARD 行），Claude 过审；Opus 改 specs 并重生成，Codex money 评审；改冻结测试属收紧型，编排按 #24 核对后加标签。
+refs: [BR-FUND-01, BR-FUND-13, BR-FUND-15, BR-FUND-16, BR-INV-24]
+refs_hash:
+  BR-FUND-01: 80be454bec5a
+  BR-FUND-13: ad7aad8f8846
+  BR-FUND-15: bd05f14a7d97
+  BR-FUND-16: 077f6d412d5a
+  BR-INV-24: c80fb21a6b3b
+deps: [B2-01l]
+paths:
+  - 'specs/ledger-templates.csv'
+  - 'specs/ledger-rules.md'
+  - 'packages/domain/src/ledger/**'
+test_paths:
+  - 'test/spec/ledger-rules/**'
+  - 'test/spec/domain/ledger-templates/**'
+  - 'test/spec/domain/ledger-templates-reward/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger-rules/**'
+  - 'test/spec/domain/ledger-templates/**'
+  - 'test/spec/domain/ledger-templates-reward/**'
+status: todo
+pr: null
