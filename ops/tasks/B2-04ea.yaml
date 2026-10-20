@@ -1,9 +1,9 @@
 id: B2-04ea
 repo: rebate-platform
-title: B2-04ea：B2-04e 属性测试 [AC-B2-04e#60]–[#63] 加显式 60 秒时限（#61 在 verify-props 以 17.4 秒超时，连拦 #1012、#1013、#1016）
+title: B2-04ea：B2-04e 属性测试 [AC-B2-04e#60]–[#63] 加显式 600 秒时限（与长跑层一致）（#61 在 verify-props 以 17.4 秒超时，连拦 #1012、#1013、#1016）
 type: test-change
 # 2026-10-20 资金线（编排 20:2x：放宽时限的 test-change 排到最前）。test/properties/domain/settlement/credit/credit-plan.prop.test.ts
-# 四条属性测试未设时限、取默认值；#61 在 verify-props 实测 17.4 秒超时（与 B2-04i 等 PR 的改动无关）。做法：只给这四条 it 加第三参数 60_000
+# 四条属性测试未设时限、取默认值；#61 在 verify-props 实测 17.4 秒超时（与 B2-04i 等 PR 的改动无关）。做法：只给这四条 it 加第三参数 600_000（与长跑层 testTimeout 一致，编排 22:0x）
 # 与两行注释，不改断言、样本、生成器与次数。改既有规则测试属第一类保护路径，按 approvals 第 12 条走非 task 分支、不带证据文件，
 # 合并要 owner-approved 标签（approvals #24，先例 CT-06zb）；Claude 实现、Codex 只读对抗评审。
 refs: []
