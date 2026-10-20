@@ -1,0 +1,102 @@
+{
+  "task": "B2-04h",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "5d790ab9307fda0374c306258978b5434596f1a3",
+  "red_tests": [
+    "test/spec/ledger/order-nets/boundaries.int.test.ts > [AC-B2-04h#9] app_id 与 order_key 精确隔离，归属不解析 uniq_key、biz_id 或 memo",
+    "test/spec/ledger/order-nets/boundaries.int.test.ts > [AC-B2-04h#10] 受益人净额只归集其自身账户，包含两子户及历史会计日",
+    "test/spec/ledger/order-nets/boundaries.int.test.ts > [AC-B2-04h#11] 只读口径保留异常负净额，不把历史过扣截断为零",
+    "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#1] 空订单和没有历史的租户返回空列表及 bigint 零",
+    "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#2] 按受益人和角色分组，分录不因连接重复，平台入账含预留",
+    "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#3] 部分扣回、正负补差和申诉补发按代数和取数，平台可为负",
+    "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#4] 全额扣回、恢复、再次扣回后保留零净额受益人",
+    "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#5] 改记坏账的扣回与负差计入受益人，归平台正差和没收不计入",
+    "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#6] 凭证种类和 RESTORE 类型决定范围，应收排除回款及非订单调账",
+    "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#7] 普通红冲保留业务种类并相抵，历史改派红冲与重记按结构化种类计入",
+    "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#8] 超过 JS 安全整数后仍逐分精确，不经过浮点或丢弃尾数",
+    "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#15] 平台扣回与补差可双向，没收后申诉补发扣减平台，联盟科目不限淘宝",
+    "test/spec/ledger/order-nets/transactions.int.test.ts > [AC-B2-04h#12] 只读数据库角色及只读事务可重复调用，不锁余额或产生写入",
+    "test/spec/ledger/order-nets/transactions.int.test.ts > [AC-B2-04h#13] 读取调用方未提交凭证，外部连接不可见，调用方回滚后无残留",
+    "test/spec/ledger/order-nets/transactions.int.test.ts > [AC-B2-04h#14] 遵循调用方 REPEATABLE READ 快照，不另开事务读取并发提交"
+  ],
+  "risk_note": "RV2 (ledger). Read-only port getOrderNets(trx, { appId, orderKey }) for settlement (settlement-plan B2-04h, BR-FUND-08, BR-FUND-19 ④⑤): in the caller's transaction one read-only SELECT over ledger_vouchers / ledger_entries by (app_id, order_key) returns the net per (beneficiary, role), the platform's booked net and the order's net on UNION_RECEIVABLE, with the same sign and grouping as db/invariants/ledger/04_beneficiary-net.sql; the sums run in a pure function with @couli/money only. Platform-level R13 RESTORE vouchers without a beneficiary count toward the receivable net. A voucher whose beneficiary and role are set but whose role is outside the contract enum rejects with ORDER_HISTORY_INVALID rather than being dropped. No locks, no writes, no own transaction.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "5d790ab9307fda0374c306258978b5434596f1a3",
+      "tree": "64f3f6e2279357a47313dc9bad2c73b7f73ecf60",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T03:58:05Z",
+      "finished_at": "2026-10-20T03:58:14Z",
+      "gate": {
+        "commit": "13a9fc12bb9bf9fb0acfa5b30e0e365ecde9a9e2",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/order-nets/boundaries.int.test.ts > [AC-B2-04h#9] app_id 与 order_key 精确隔离，归属不解析 uniq_key、biz_id 或 memo",
+        "test/spec/ledger/order-nets/boundaries.int.test.ts > [AC-B2-04h#10] 受益人净额只归集其自身账户，包含两子户及历史会计日",
+        "test/spec/ledger/order-nets/boundaries.int.test.ts > [AC-B2-04h#11] 只读口径保留异常负净额，不把历史过扣截断为零",
+        "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#1] 空订单和没有历史的租户返回空列表及 bigint 零",
+        "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#2] 按受益人和角色分组，分录不因连接重复，平台入账含预留",
+        "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#3] 部分扣回、正负补差和申诉补发按代数和取数，平台可为负",
+        "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#4] 全额扣回、恢复、再次扣回后保留零净额受益人",
+        "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#5] 改记坏账的扣回与负差计入受益人，归平台正差和没收不计入",
+        "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#6] 凭证种类和 RESTORE 类型决定范围，应收排除回款及非订单调账",
+        "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#7] 普通红冲保留业务种类并相抵，历史改派红冲与重记按结构化种类计入",
+        "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#8] 超过 JS 安全整数后仍逐分精确，不经过浮点或丢弃尾数",
+        "test/spec/ledger/order-nets/nets.int.test.ts > [AC-B2-04h#15] 平台扣回与补差可双向，没收后申诉补发扣减平台，联盟科目不限淘宝",
+        "test/spec/ledger/order-nets/transactions.int.test.ts > [AC-B2-04h#12] 只读数据库角色及只读事务可重复调用，不锁余额或产生写入",
+        "test/spec/ledger/order-nets/transactions.int.test.ts > [AC-B2-04h#13] 读取调用方未提交凭证，外部连接不可见，调用方回滚后无残留",
+        "test/spec/ledger/order-nets/transactions.int.test.ts > [AC-B2-04h#14] 遵循调用方 REPEATABLE READ 快照，不另开事务读取并发提交"
+      ],
+      "expected": [
+        "test/spec/ledger/order-nets/boundaries.int.test.ts",
+        "test/spec/ledger/order-nets/nets.int.test.ts",
+        "test/spec/ledger/order-nets/transactions.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "860dfcea45dd6ae61cf8273640593ce1561e7263031f4bb261893e195af71516"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 1 run (15 red); round 1 pass, one S2 (platform RESTORE without beneficiary) taken into the implementation brief and covered by a unit test"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "58c9e4b811d46330dd6e6f5b7894ff52e0d7564b",
+    "specs": "c150895f9c4c3249d17ebd0894736c9169aad3f5"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
