@@ -6,6 +6,10 @@
 // Readings fixed by this kit (contract text and orchestrator rulings 7, 14～16):
 // - the registry oracle below is ruling 14 verbatim: key, JSON value type of the seed, permission
 //   point, admin_editable; options is null for every key (no enum among them);
+// - F1-02zi (test-change, transitional; F1-02zt tightens): F1-02zj appends the BR-FUND-04
+//   settle.* group (SETTLE below, 16 literal keys) to the registry and the 0001 seed. Until it
+//   lands either the bare ruling 14 registry or ruling 14 plus the whole group is accepted,
+//   never part of the group (expectedNow); EXPECTED itself stays ruling 14 verbatim;
 // - audit rows: action config_item_change / config_item_rollback, admin_id = the caller, at = the
 //   injected clock; `before.value` / `after.value` are the old and new values (an item never
 //   written may have before = null); key, from_version, to_version and reason are facts of
@@ -17,6 +21,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
 import type { Schema } from '../../../../packages/contracts-ts/src/index.ts';
+import { configRegistry } from '../../../../apps/api/src/modules/content/domain/config-registry.ts';
 import {
   createValidatorCompiler,
   type JsonSchema,
@@ -38,7 +43,8 @@ export type Version = Schema<'AdminConfigItemVersion'>;
 export type ItemPage = Schema<'AdminConfigItemPage'>;
 export type VersionPage = Schema<'AdminConfigItemVersionPage'>;
 export type Permission = 'config.general' | 'config.risk' | 'config.business';
-export type ValueType = 'boolean' | 'number' | 'string' | 'object';
+// 'enum' only for the F1-02zi transitional SETTLE group (F1-02zt tightens).
+export type ValueType = 'boolean' | 'number' | 'string' | 'object' | 'enum';
 
 export const LIST = '/admin/v1/config-items';
 export const OPERATIONS = ['list', 'get', 'versions', 'update', 'batch', 'rollback'] as const;
@@ -64,6 +70,8 @@ export interface Expected {
   readonly valueType: ValueType;
   readonly permission: Permission;
   readonly adminEditable: boolean;
+  /** F1-02zi (transitional): options of an enum item; absent means null. */
+  readonly options?: readonly string[];
 }
 const row = (
   key: string,
@@ -104,8 +112,38 @@ export const EXPECTED: readonly Expected[] = [
   row('agent.page_guide.routes', 'object', 'config.general', false),
   row('external_hosts', 'object', 'config.general', false),
 ];
+
+// F1-02zi (test-change, transitional; F1-02zt tightens to EXPECTED + SETTLE only).
+// The BR-FUND-04 细则 settle.* parameters as F1-02zj registers them (couli-runs/F1-02zj
+// excerpt 9.2-1/2): appended after external_hosts in this order, platforms taobao / jd / pdd /
+// meituan, every one config.business and editable.
+const PLATFORMS = ['taobao', 'jd', 'pdd', 'meituan'] as const;
+const enumRow = (key: string, options: readonly string[]): Expected => ({
+  ...row(key, 'enum', 'config.business'),
+  options,
+});
+export const SETTLE: readonly Expected[] = [
+  row('settle.bill_day', 'number', 'config.business'),
+  ...PLATFORMS.map((p) => enumRow(`settle.period_basis.${p}`, ['received_at'])),
+  ...PLATFORMS.map((p) => enumRow(`settle.statement_source.${p}`, ['api', 'upload'])),
+  row('settle.batch.match_tolerance_fen', 'number', 'config.business'),
+  row('settle.batch.max_orders', 'number', 'config.business'),
+  ...PLATFORMS.map((p) => row(`settle.period_offset_months.${p}`, 'number', 'config.business')),
+  row('settle.statement.grace_days', 'number', 'config.business'),
+];
+/**
+ * F1-02zi (transitional): the registry oracle for the build under test. The SETTLE group must be
+ * registered whole or not at all (a partial group fails here); with it the oracle is EXPECTED
+ * followed by SETTLE, without it EXPECTED alone.
+ */
+export function expectedNow(): readonly Expected[] {
+  const registered = new Set(configRegistry().map((spec) => spec.key));
+  const present = SETTLE.filter((entry) => registered.has(entry.key)).length;
+  expect([0, SETTLE.length], 'settle.* group registered whole or not at all').toContain(present);
+  return present === 0 ? EXPECTED : [...EXPECTED, ...SETTLE];
+}
 export const expectedOf = (key: string): Expected => {
-  const found = EXPECTED.find((entry) => entry.key === key);
+  const found = expectedNow().find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
   return found!;
 };
@@ -383,7 +421,7 @@ export function itemOf(
     key,
     value: state.value as Item['value'],
     value_type: spec.valueType,
-    options: null,
+    options: spec.options === undefined ? null : [...spec.options], // F1-02zi: null for EXPECTED
     permission: spec.permission,
     admin_editable: spec.adminEditable,
     version: state.version,
