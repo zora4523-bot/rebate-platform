@@ -1,0 +1,109 @@
+{
+  "task": "CT-25b",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "47d8f437a670381c3cbd5aa4815c26a3a65468dc",
+  "red_tests": [
+    "test/spec/db/growth/invite-rewards/access.int.test.ts > [AC-CT-25b#18] app 仅 SELECT/INSERT 与指定列 UPDATE，readonly 仅 SELECT，无整表 UPDATE",
+    "test/spec/db/growth/invite-rewards/access.int.test.ts > [AC-CT-25b#19] 逐列实测更新权限，禁止改资格身份、金额、绑定来源/IP 与预算键",
+    "test/spec/db/growth/invite-rewards/access.int.test.ts > [AC-CT-25b#20] 两表拒绝 app 删除/清空与 readonly 全部写入，失败后保留原记录",
+    "test/spec/db/growth/invite-rewards/access.int.test.ts > [AC-CT-25b#21] 允许实际更新触发信息、双方结果/凭证、作废原因、计数和版本",
+    "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#12] 预算默认计数为零、金额是 bigint，日期行与总量按 app/period 唯一",
+    "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#13] 非法 period、负计数和日期行占用在 INSERT/UPDATE 均被 CHECK 拒绝",
+    "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#14] 两个真实并发事务争总量或日预算时只允许一次扣减",
+    "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#15] 总预算把占用与已发放都算入，恰好用满可成功，超一分保持原值",
+    "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#16] +08:00 午夜前后使用独立日计数，不受数据库会话时区影响",
+    "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#17] 资格写入失败回滚总量占用，发放失败回滚两表，成功支持占用转发放及释放",
+    "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#5] 新资格允许结果与凭证为空，金额保留零及超过 JS 安全整数的分",
+    "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#6] 全部合法来源、状态、两方结果及原因可写入",
+    "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#7] CHECK 拒绝每个未知编码、负金额和非法 IP HMAC",
+    "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#8] 两方原因与结果联动，包括 NULL 结果不能带原因，processed 不可缺一方",
+    "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#9] 必填列拒绝 NULL，资格业务时刻不从 SQL 时钟补齐",
+    "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#10] 同 app 邀请对象只能一条，换邀请人或状态不能绕过且两个并发插入只成一个",
+    "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#11] 用户、触发订单、两张凭证拒绝不存在与跨 app 引用并接受本 app 引用",
+    "test/spec/db/growth/invite-rewards/schema.int.test.ts > [AC-CT-25b#1] 两表字段、类型、可空性与默认值符合 §9.2",
+    "test/spec/db/growth/invite-rewards/schema.int.test.ts > [AC-CT-25b#2] 联合主键无额外全局唯一限制，邀请查询与顺延索引保留列顺序",
+    "test/spec/db/growth/invite-rewards/schema.int.test.ts > [AC-CT-25b#3] 五条外键含 app_id、指向指定父键且禁止级联",
+    "test/spec/db/growth/invite-rewards/schema.int.test.ts > [AC-CT-25b#4] 约束与索引显式具名，创建两表和授权位于同一迁移且不绑定编号"
+  ],
+  "risk_note": "RV2 (migration 0055, invite reward storage; amounts in integer fen). app.invite_rewards keeps one qualification row per invitee (unique app_id + invitee_id) with per-side results and skip / void reason codes matching the CT-25a enums (a skip reason only with result skipped, NULL-safe), bind_ip_hmac, the triggering order referencing order_keys, row_version; no DELETE / TRUNCATE grant. app.invite_reward_budgets holds one row per app and period ('total' or a date) with reserved_fen and granted_fen (date rows keep reserved at 0), limits read from config, decremented by conditional updates (shape agreed in orchestrator ruling D10-94 3). One GRANT per table and role. schema.sql and db.gen.ts regenerated on the test machine; only the two new tables change. Renumbered from 0056 to 0055 because migration numbers must be contiguous. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "47d8f437a670381c3cbd5aa4815c26a3a65468dc",
+      "tree": "591cc429bf3f60ebc778a023f941b531f40c2db3",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T03:30:24Z",
+      "finished_at": "2026-10-20T03:30:29Z",
+      "red_tests": [
+        "test/spec/db/growth/invite-rewards/access.int.test.ts > [AC-CT-25b#18] app 仅 SELECT/INSERT 与指定列 UPDATE，readonly 仅 SELECT，无整表 UPDATE",
+        "test/spec/db/growth/invite-rewards/access.int.test.ts > [AC-CT-25b#19] 逐列实测更新权限，禁止改资格身份、金额、绑定来源/IP 与预算键",
+        "test/spec/db/growth/invite-rewards/access.int.test.ts > [AC-CT-25b#20] 两表拒绝 app 删除/清空与 readonly 全部写入，失败后保留原记录",
+        "test/spec/db/growth/invite-rewards/access.int.test.ts > [AC-CT-25b#21] 允许实际更新触发信息、双方结果/凭证、作废原因、计数和版本",
+        "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#12] 预算默认计数为零、金额是 bigint，日期行与总量按 app/period 唯一",
+        "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#13] 非法 period、负计数和日期行占用在 INSERT/UPDATE 均被 CHECK 拒绝",
+        "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#14] 两个真实并发事务争总量或日预算时只允许一次扣减",
+        "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#15] 总预算把占用与已发放都算入，恰好用满可成功，超一分保持原值",
+        "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#16] +08:00 午夜前后使用独立日计数，不受数据库会话时区影响",
+        "test/spec/db/growth/invite-rewards/budgets.int.test.ts > [AC-CT-25b#17] 资格写入失败回滚总量占用，发放失败回滚两表，成功支持占用转发放及释放",
+        "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#5] 新资格允许结果与凭证为空，金额保留零及超过 JS 安全整数的分",
+        "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#6] 全部合法来源、状态、两方结果及原因可写入",
+        "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#7] CHECK 拒绝每个未知编码、负金额和非法 IP HMAC",
+        "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#8] 两方原因与结果联动，包括 NULL 结果不能带原因，processed 不可缺一方",
+        "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#9] 必填列拒绝 NULL，资格业务时刻不从 SQL 时钟补齐",
+        "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#10] 同 app 邀请对象只能一条，换邀请人或状态不能绕过且两个并发插入只成一个",
+        "test/spec/db/growth/invite-rewards/constraints.int.test.ts > [AC-CT-25b#11] 用户、触发订单、两张凭证拒绝不存在与跨 app 引用并接受本 app 引用",
+        "test/spec/db/growth/invite-rewards/schema.int.test.ts > [AC-CT-25b#1] 两表字段、类型、可空性与默认值符合 §9.2",
+        "test/spec/db/growth/invite-rewards/schema.int.test.ts > [AC-CT-25b#2] 联合主键无额外全局唯一限制，邀请查询与顺延索引保留列顺序",
+        "test/spec/db/growth/invite-rewards/schema.int.test.ts > [AC-CT-25b#3] 五条外键含 app_id、指向指定父键且禁止级联",
+        "test/spec/db/growth/invite-rewards/schema.int.test.ts > [AC-CT-25b#4] 约束与索引显式具名，创建两表和授权位于同一迁移且不绑定编号"
+      ],
+      "expected": [
+        "test/spec/db/growth/invite-rewards/access.int.test.ts",
+        "test/spec/db/growth/invite-rewards/budgets.int.test.ts",
+        "test/spec/db/growth/invite-rewards/constraints.int.test.ts",
+        "test/spec/db/growth/invite-rewards/schema.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2c680e0da5caa47791d1baf9f84b12626ffb1381727e6a986ab49f30b23ef577"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "fail",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 fail with one S1 (the kit imported @couli/db/testing, breaking the dependency rule), fixed mechanically by the orchestrator (the int tests pass createTestDatabase in); one S2 (GRANT text match) followed by the implementation"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "db8bec6e3f9673f389790728c9ae881a664a54bc",
+    "specs": "a1b96a3002d99e9b2e9c35fa6b3b4fbdba07cfca"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
