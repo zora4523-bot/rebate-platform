@@ -17,8 +17,11 @@
 // accepted=false or version < min_version → 10004.
 //
 // From the database, uncached: one consent_records read (LIMIT 1, consent_records_user_type_idx)
-// per judged request. A failing read, a failing configuration read, or no database / reader
-// answers 50001: never let through.
+// per judged request. No configuration reader assembled (an app without content's reader or
+// without a database) counts as the key missing: not judged, nothing read, no warning
+// (orchestrator ruling, B1-02zh round 2). Only after a valid min_version has been read is the
+// consent needed: then no database or a failing read answers 50001, as does a failing
+// configuration read: never let through.
 //
 // Where (both paths, after ⑤ and before ⑧ ⑨; app.module puts them first in RiskModule's lists):
 // - non-idempotent operations: the guard (beforeRateLimitGuards); it skips the contract's
@@ -202,11 +205,11 @@ export function createPrivacyConsentChecks(options: PrivacyConsentOptions): Priv
   async function judge(
     request: MinimumVersionRequest,
     handle: Kysely<DB> | undefined | null,
-    reader: (() => PrivacyConsentConfigReader) | null,
+    reader: () => PrivacyConsentConfigReader,
   ): Promise<void> {
     // Stage ② has verified a token on every login-level route; none here fails closed.
     const principal = tokenPrincipal(request);
-    if (principal === undefined || reader === null) throw unavailable();
+    if (principal === undefined) throw unavailable();
     const minVersion = await minVersionOf(reader, principal.app_id);
     if (minVersion === undefined) return;
     // Validate the minimum before reading the consent: an invalid value is 50001 regardless.
@@ -226,7 +229,9 @@ export function createPrivacyConsentChecks(options: PrivacyConsentOptions): Priv
         if (route === undefined) return true;
         const template = request.routeOptions.url as string;
         if (isIdempotentRoute(String(request.method).toUpperCase(), template)) return true;
-        await judge(request, db, config === null ? null : () => config.pooled);
+        // No reader assembled: as if legal.privacy.min_version were missing (not judged).
+        if (config === null) return true;
+        await judge(request, db, () => config.pooled);
         return true;
       },
     },
@@ -234,9 +239,11 @@ export function createPrivacyConsentChecks(options: PrivacyConsentOptions): Priv
       const request = RiskModule.httpRequestInScope();
       if (request === undefined) return;
       if (judgedRoute(request) === undefined) return;
+      // No reader assembled: as if legal.privacy.min_version were missing (not judged).
+      if (config === null) return;
       const trx = idempotencyPostMissTransaction();
       if (trx === undefined) throw unavailable();
-      await judge(request, trx, config === null ? null : () => config.on(trx));
+      await judge(request, trx, () => config.on(trx));
     },
   };
 }

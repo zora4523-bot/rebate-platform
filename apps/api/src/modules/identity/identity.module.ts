@@ -257,7 +257,8 @@ export interface IdentityModuleOptions {
   /**
    * The configuration readers of stage ⑦ (legal.privacy.min_version; B1-02zh): content's pooled
    * reader for the guard and a fresh reader over the claim's transaction for the post-miss check,
-   * assembled by app.module. Absent or null (no database): every judged route answers 50001.
+   * assembled by app.module. Absent or null (no database): stage ⑦ is not judged, as when
+   * legal.privacy.min_version is missing.
    */
   readonly privacyConsentConfig?: Omit<FactoryProvider<PrivacyConsentOptions['config']>, 'provide'>;
   /** Register-time level log, assembled by app.module so identity never imports growth. */

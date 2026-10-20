@@ -462,7 +462,8 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
     realnameStatus: { useFactory: createRealnameStatusReader },
     // Stage ⑦ (B1-02zh): legal.privacy.min_version through content's reader. pooled: the shared
     // cached reader for the guard; on: a fresh reader over the idempotency claim's transaction for
-    // the post-miss check (no second pooled connection while holding one). No database: null.
+    // the post-miss check (no second pooled connection while holding one). No database: null (⑦
+    // not judged).
     privacyConsentConfig: {
       inject: [CLOCK, { token: DB, optional: true }],
       useFactory: (clock: Clock, db?: Kysely<Database>): PrivacyConsentOptions['config'] =>
