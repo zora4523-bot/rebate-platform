@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { gate, ROOT, run, TIMEOUTS, withFixture } from './kit.ts';
@@ -105,9 +105,18 @@ it(
     };
     const bytes = readFileSync(join(ROOT, 'db/migrations', APPROVED_FILE));
     // 先断言导出值，缺少新增导出必须是断言红，不能是 TypeError 或导入失败。
+    // F1-02zy (guard-change): CT-25d's 0057 is the second approved migration (orchestrator ruling
+    // D10-98 1). Its hash is pinned here; once the file is on disk it must match the pin.
+    const ct25d = '0057_invite-rewards-eligibility.sql';
+    const ct25dHash = '261a84f2a55dc9e8a65866c6767573d5de027c6bbe4cea3aee6ca3045e41ec89';
     expect(module.APPROVED_GUARD_CHANGES).toEqual({
       [APPROVED_FILE]: createHash('sha256').update(bytes).digest('hex'),
+      [ct25d]: ct25dHash,
     });
+    const ct25dPath = join(ROOT, 'db/migrations', ct25d);
+    if (existsSync(ct25dPath)) {
+      expect(createHash('sha256').update(readFileSync(ct25dPath)).digest('hex')).toBe(ct25dHash);
+    }
     const result = run([], { cwd: join(ROOT, 'test') });
     expect(result.status, result.stderr + result.stdout).toBe(0);
   },

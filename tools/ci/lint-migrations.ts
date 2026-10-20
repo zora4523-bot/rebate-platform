@@ -100,6 +100,11 @@ export const APPROVED_GUARD_CHANGES: Readonly<Record<string, string>> = {
   // B1-06r (#260 era): extends the union_auth_sessions guard to the new issuance columns.
   '0020_union-auth-sessions-issuance.sql':
     'f976192657be50f146f3dfdc6d4c50d58e9646e9c18319c43a185d14c675ca15',
+  // CT-25d (#161, BR-INV-24 eligibility period; orchestrator ruling D10-98 1): rebuilds the
+  // invite_rewards status constraint NOT VALID with expired in place of budget_exhausted (validated
+  // in 0058); Codex money review and Claude review passed. F1-02zy.
+  '0057_invite-rewards-eligibility.sql':
+    '261a84f2a55dc9e8a65866c6767573d5de027c6bbe4cea3aee6ca3045e41ec89',
 };
 /** Extensions node-pg-migrate would run from db/migrations besides SQL. */
 const SCRIPT_MIGRATION = /\.(?:js|cjs|mjs|ts|cts|mts|jsx|tsx)$/;
