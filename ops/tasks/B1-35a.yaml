@@ -1,0 +1,21 @@
+id: B1-35a
+repo: rebate-platform
+title: 状态机（邀请奖励）：specs/state-machines/invite-reward.yaml（invite_rewards.status：qualified / deferred / processed / voided / budget_exhausted，迁移按 BR-INV-24 细则「资格记录与状态」），复用生成器生成 invite-reward.gen.ts 与一致性测试；B1-35 的前置
+type: contract
+# 草稿 2026-10-20（身份与风控线 identity-lane）。编排 D10-95 ②：状态机不需要 approvals 例外，生成器已在主干（packages/domain/scripts/state-machines.ts），照资金线 D10-93 S7 与 CT-04e 先例新增 yaml 并生成 transition() 作为唯一入口。
+# 取值按 CT-25a 已合并枚举 invite_reward_status 与 BR-INV-24（依据 couli #160 7a5ed64，SPEC_REF 由编排提升）；资格有效期属负责人项，按 08 现文无有效期、无 expired 状态（D10-95 ③）。budget_exhausted 按 #160 已无入迁移，状态保留、待规划回写（D10-95 ⑤）。
+# 不改 openapi、不占契约槽（先例 F1-09h、CT-04e）；状态字段只经生成的 transition()（硬规则 2）。
+refs: []
+refs_hash: {}
+deps: [CT-25a]
+paths:
+  - 'specs/state-machines/**'
+  - 'packages/domain/**'
+test_paths:
+  - 'test/spec/state-machines/invite-reward/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/state-machines/invite-reward/**'
+status: todo
