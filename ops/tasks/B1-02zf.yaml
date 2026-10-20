@@ -1,0 +1,23 @@
+id: B1-02zf
+repo: rebate-platform
+title: 资金入账主链所需的三个调用方事务内端口：identity 导出 lockUsersForUpdate(trx, { appId, userIds })（按 id 升序锁 users 行，返回已锁 id 集合）与实名状态批量只读口；risk 导出风控状态批量只读口（state 与 frozen_until，无记录按 normal）
+type: impl
+# 草稿 2026-10-20（身份与风控线 identity-lane）。资金线跨线请求 2026-10-20 23:56 UTC（D10-93 ②，S2；B2-04m / q / s / t / u 依赖）。注销状态已由 B1-02ze 提供，不重复。
+# 编排口径（本线定，已在 notices 告资金线）：锁用 FOR NO KEY UPDATE（全线 users 行锁统一用它：彼此互斥、不阻塞外键 KEY SHARE，避免 B1-13e 记录的 FOR UPDATE 与 risk_hits 外键检查互锁）；按 id 升序一条 SQL；不存在的 id 不报错、不返回；只锁不读业务列。两个读口都按 (app_id, id = ANY(user_ids)) 只返回 users 表中存在的用户；实名无记录 → 'none'；风控无记录 → { state: 'normal', frozen_until: null }；空数组不查库；只读、不加锁、不写日志、不读敏感列。
+# RV1（identity / risk）；但服务于资金入账，评审用 Codex money 档。Codex 写规则测试、Claude 实现。
+refs: []
+refs_hash: {}
+deps: [B1-02ze, B1-03h]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/risk/index.ts'
+  - 'apps/api/src/modules/risk/application/risk-state-reader.ts'
+  - 'apps/api/src/modules/risk/application/risk-state-reader.test.ts'
+test_paths:
+  - 'test/spec/identity/funds-ports/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/funds-ports/**'
+status: todo
