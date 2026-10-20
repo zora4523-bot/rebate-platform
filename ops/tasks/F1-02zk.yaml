@@ -1,0 +1,26 @@
+id: F1-02zk
+repo: rebate-platform
+title: content：导出系统写开关端口 createSystemSwitchWriter——在调用方事务里把 settle.auto.enabled 置 off（actor=system、不需 step-up、同一套 version 递增、写配置历史，提交后由调用方发告警），供 ledger / settlement 日终全局差异时调用
+type: impl
+# 2026-10-20 入账（content-client 第五阶段第一波，计划 couli-runs/CONTENT-client/phase5-plan.md §3 序 3、§4；编排 2026-10-20 08:5x 派工 ①；资金线 D10-93 S10，B2-04za 依赖）。
+# 依据：08 06_FUND BR-FUND-19 正文 l.70（全局差异系统自动置 off、不需 step-up；重新打开需 step-up）、BR-FUND-20 l.71、细则 l.880 / l.894；04 §10.2 l.927、l.949。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（approvals #34）；评审 Codex（#27）。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：端口只能往安全方向写（现在只开放 settle.auto.enabled → false，D-S5）；必须收到调用方的事务（不是事务就拒绝），锁行后已是 off 则什么都不写；
+#   与后台写同表同 version（后台带旧版本照常 20902）；不提供写 on，打开仍只走后台 step-up。不改后台写路径与两份注册表。
+# 审计（D-S4）：audit_logs.admin_id 非空且外键指向 admin_users，系统写落不了；以 config_item_versions 一行（updated_by=system、updated_by_admin_id 为空、reason 记来源与原因）
+#   加提交后一条 config_change_alert（warn）代审计。备选改 audit_logs 约束属 admin 线迁移，要编排协调。
+# 冻结测试零影响（kill-switches、switch-read 无系统写用例；后台路径不改）。合并后在 notices 告诉资金线端口签名。
+refs: []
+refs_hash: {}
+deps: [F1-10b, F1-10d]
+paths:
+  - 'apps/api/src/modules/content/**'
+test_paths:
+  - 'test/spec/content/system-switch/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/system-switch/**'
+status: todo
+pr: null

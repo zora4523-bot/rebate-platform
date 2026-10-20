@@ -1,0 +1,28 @@
+id: F1-02zj
+repo: rebate-platform
+title: content：配置注册表登记 BR-FUND-04 的 settle.* 流程参数 16 项（按平台展开成字面键）并加取值范围校验（保存、批量保存、回滚三条路），种子写 08 默认值
+type: impl
+# 2026-10-20 入账（content-client 第五阶段第一波，计划 couli-runs/CONTENT-client/phase5-plan.md §3 序 2、§4；编排 2026-10-20 08:5x 派工 ①；资金线 D10-93 S9，settlement-plan S9 A）。
+# 依据：08 06_FUND BR-FUND-04 细则 l.268–292（默认值表 l.276–289）（取值、默认只照原文）；04 §10.1 l.923 服务端业务配置键（不下发客户端）、§11.2 l.1001 config.business。
+# 分工：impl claude（Opus 5.5 子代理）、tester codex（approvals #34）；评审 Codex（#27）。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：ConfigItemSpec 加可选 range（整数、下限、上限）；configValueFits 对带 range 的 number 键查整数与上下限，现有 29 键行为不变；
+#   S9 组追加在注册表末尾（不改前 29 项顺序）；period_basis / statement_source 为 enum 带 options；越界一律 20001 fields=[value]。
+# 种子：db/seeds/0001_config-defaults.sql 追加一批（ON CONFLICT DO NOTHING）。这是种子不是迁移（db/seeds/README.md），
+#   不在保护路径、不受 CT-06d 约束，不占迁移号；F1-10e kit 的 seedRows() 只读这一个文件，故必须写在 0001。
+# 默认：D-S1 平台 taobao / jd / pdd / meituan；D-S2 08 未给上限的只设下限、上限 int32；D-S3 全部可改、权限点 config.business。
+# 不改契约（AdminConfigKey 自由格式、enum / options 契约已有）；后台中文标签（apps/admin texts/config-center.ts）归前端线，另报。
+refs: []
+refs_hash: {}
+deps: [F1-10e]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'db/seeds/0001_config-defaults.sql'
+test_paths:
+  - 'test/spec/content/config-settle/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/config-settle/**'
+status: todo
+pr: null
