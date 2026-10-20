@@ -8,7 +8,10 @@ import {
   switchRegistry,
   switchSpecOf,
 } from '../../../../apps/api/src/modules/content/domain/switch-registry.ts';
-import { CONFIGS, ENABLED, PAUSED } from './oracle.ts';
+import { CONFIGS, ENABLED, PAUSED, PREFIX } from './oracle.ts';
+
+// F1-02zw (test-change, transitional; F1-02zt tightens): BR-INV-24 细则 (08 l.560).
+const ELIGIBILITY = `${PREFIX}eligibility_days`;
 
 it.each(CONFIGS)('[AC-F1-02zn#1] $key：类型、权限、可编辑性与整数范围', (row) => {
   expect(configItemSpecOf(row.key)).toStrictEqual({
@@ -23,12 +26,18 @@ it.each(CONFIGS)('[AC-F1-02zn#1] $key：类型、权限、可编辑性与整数�
   expect(switchSpecOf(row.key)).toBeNull();
 });
 
+// F1-02zw (test-change, transitional; F1-02zt tightens): F1-02zx may append
+// growth.invite_reward.eligibility_days right after the five keys as the last item; the five keys
+// still follow settle.statement.grace_days directly, and nothing else may follow them.
 it('[AC-F1-02zn#2] 五项按指定顺序追加在 SETTLE 之后', () => {
-  expect(
-    configRegistry()
-      .slice(-6)
-      .map((entry) => entry.key),
-  ).toStrictEqual(['settle.statement.grace_days', ...CONFIGS.map((row) => row.key)]);
+  const keys = configRegistry().map((entry) => entry.key);
+  const i = keys.indexOf('settle.statement.grace_days');
+  expect(i).toBeGreaterThanOrEqual(0);
+  expect(keys.slice(i, i + 6)).toStrictEqual([
+    'settle.statement.grace_days',
+    ...CONFIGS.map((row) => row.key),
+  ]);
+  expect([[], [ELIGIBILITY]]).toContainEqual(keys.slice(i + 6));
 });
 
 it.each(CONFIGS)('[AC-F1-02zn#3] $key：闭区间、默认值、拒绝浮点与隐式转换', (row) => {
