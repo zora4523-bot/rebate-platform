@@ -1,7 +1,7 @@
 {
   "task": "B1-13g",
   "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
-  "spec_commit": "1e26380dbbce5ac4600790224a922d191c525c01",
+  "spec_commit": "49b33d8eb621ce233df0c1ec2466e435ccba9736",
   "red_tests": [
     "test/spec/identity/payout-verify-recheck/entry.test.ts > [AC-B1-13g#40] worker 在 risk heal 后启动复核；停机先等复核 drain，再停循环、服务与池",
     "test/spec/identity/payout-verify-recheck/entry.test.ts > [AC-B1-13g#41] seed 时已收到停机信号，不再装复核循环",
@@ -56,11 +56,11 @@
       "mode": "container",
       "script": "red",
       "exit_code": 0,
-      "commit": "1e26380dbbce5ac4600790224a922d191c525c01",
-      "tree": "c4feec1018702e99368c59c6832d4fa5ff38c894",
+      "commit": "49b33d8eb621ce233df0c1ec2466e435ccba9736",
+      "tree": "f8d447d8ac24fed609bc09a5c1cab84c4ee9eb0b",
       "prop_seed": 20261001,
-      "started_at": "2026-10-20T07:41:16Z",
-      "finished_at": "2026-10-20T07:41:28Z",
+      "started_at": "2026-10-20T08:59:33Z",
+      "finished_at": "2026-10-20T08:59:59Z",
       "red_tests": [
         "test/spec/identity/payout-verify-recheck/entry.test.ts > [AC-B1-13g#40] worker 在 risk heal 后启动复核；停机先等复核 drain，再停循环、服务与池",
         "test/spec/identity/payout-verify-recheck/entry.test.ts > [AC-B1-13g#41] seed 时已收到停机信号，不再装复核循环",
@@ -146,11 +146,11 @@
   },
   "trees": {
     "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
-    "packages/domain": "b3d3ec3eeea72a9d52e63316872454ed5efe9b06",
+    "packages/domain": "047f9709a1e1dd8e711bbac2e5dba327392e9f19",
     "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
-    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
-    "test/spec": "465b2f07bb170e18ac730cb6a34ec08e5fad03b5",
-    "specs": "c150895f9c4c3249d17ebd0894736c9169aad3f5"
+    "test/properties": "e308f96db2c38fa575aabb2b645906c6d79ab386",
+    "test/spec": "fb5d1ca2516d4a652bc1bd3034f36514a4dba9eb",
+    "specs": "b80f759906adb5320a33adb9ff0a59fcb0fb9a3a"
   },
   "longrun": {
     "runs": 1000000,
@@ -158,6 +158,6 @@
     "passed": true,
     "mode": "ci",
     "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
-    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+    "tree": "e308f96db2c38fa575aabb2b645906c6d79ab386"
   }
 }
