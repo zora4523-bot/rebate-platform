@@ -1,5 +1,29 @@
 export { accountingDate, chinaMonth, chinaDayRange, chinaMonthRange } from './calendar/index.ts';
 export {
+  settlementBillPeriod,
+  classifySettlementBillOrder,
+  splitSettlementBillBatches,
+  deriveSettlementBillStatus,
+  expectedSettlementCredit,
+  isInAssetSnapshotWindow,
+  canScheduleSettlement,
+} from './settlement/bill/index.ts';
+export type {
+  BillValidationResult,
+  BillCommissionSnapshot,
+  BillOrderFacts,
+  BillSettlementFacts,
+  ClassifyBillOrderInput,
+  BillValidatedOrder,
+  BillDraftBatch,
+  BillBatchStatus,
+  SettlementBillStatus,
+  BillBatchFacts,
+  DeriveBillStatusInput,
+  ExpectedCreditInput,
+  ExpectedCreditResult,
+} from './settlement/bill/index.ts';
+export {
   normalizeSpec,
   findSpecInTitle,
   type NormalizedSpec,
