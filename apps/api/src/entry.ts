@@ -240,11 +240,19 @@ async function start(
       const heal = startRiskScanHeal(resolveScan, logger, () => signals.stopping());
       // The paid bank-card verification records' takeover / recheck (B1-13g, BR-WDR-02 ⑦): a
       // 60-second timer, no immediate round. Not started once a stop was requested; stopped first
-      // on shutdown, waiting for its current row, before anything else closes.
+      // on shutdown, waiting for its current row, before anything else closes. Optional like the
+      // agent and order-sync runtimes: a context without the provider (older or isolated worker
+      // contexts) resolves to null, so no timer, no crash and no log line.
       const recheck = signals.stopping()
         ? undefined
         : startPayoutVerifyRecheck(
-            () => context.get<unknown>(payoutVerifyRecheckToken(), { strict: false }),
+            () => {
+              try {
+                return context.get<unknown>(payoutVerifyRecheckToken(), { strict: false });
+              } catch {
+                return null;
+              }
+            },
             logger,
             () => signals.stopping(),
           );
