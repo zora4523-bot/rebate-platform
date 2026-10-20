@@ -1,6 +1,6 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
@@ -129,3 +129,25 @@ enums:
     values:
       order_no: 订单号（用户填写的单号与该子订单的子单号或主单号）
       paid_date: 付款日期（+08:00 自然日）
+  admin_order_flag:
+    source: 规划/01 F-ADM-05；规划/04 §2.3、§3.2 orders；规划/08 BR-FUND-01 细则「订单锁定（展示标记）」、BR-ATTR-20、BR-FUND-06；design/specs/admin-orders.md 筛选「订单标记」（CT-24m）
+    description: GET /admin/v1/orders 的 flag 筛选与列表项 flags 的键；locked 即 orders.locked（后台界面叫「归属已锁定」），status_locked 由 rebate_status 推导、不入库（后台界面叫「已锁定」）；中文名取 BR-TEXT-25 admin_dict，本契约不补文案
+    values:
+      locked: 归属已锁定（orders.locked，BR-ATTR-20）
+      status_locked: 已锁定（rebate_status ∈ VOID、CREDITED、CLAWED_BACK，BR-FUND-01 细则「订单锁定（展示标记）」）
+      rights_pending: 维权中（orders.rights_pending，BR-FUND-06）
+      hold: 暂停（orders.hold，BR-FUND-06）
+  admin_order_history_field:
+    source: 规划/04 §3.2 order_status_history.field（CT-24m）
+    description: GET /admin/v1/orders/{order_id} 的 status_history[].field，这一行记的是哪个状态字段
+    values:
+      platform: 平台状态 platform_status
+      rebate: 返利状态 rebate_status
+  admin_order_history_source:
+    source: 规划/04 §3.2 order_status_history.source（CT-24m）
+    description: GET /admin/v1/orders/{order_id} 的 status_history[].source，状态变化的来源
+    values:
+      sync: 订单同步
+      admin: 后台操作
+      claim: 找回
+      system: 系统

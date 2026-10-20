@@ -84,6 +84,8 @@ tags:
     description: App users in the admin console — list, lookup, detail, audited reveal, ban / freeze and union binding reset / disable / enable (permission points user.*, pii.*, risk.*, union.binding_*; 04 §6.6, §11; F1-07).
   - name: admin-search
     description: Admin console top-bar search — one box for an order number, withdrawal number, full phone number or UID, trimmed to the account's permission points (order.view, user.lookup, fund.view; 01 F-ADM-04, 04 §6.6 search, BR-ID-34).
+  - name: admin-orders
+    description: Admin order console, read side — the sub-order list with filters and one sub-order with its status history, commission snapshot and link records (permission point order.view, or user.lookup together with user_id; 01 F-ADM-05, 04 §6.6 orders, §11). Manual sync, rights import, hold / unhold and assigning an unattributed order follow in a later contract task.
   - name: admin-claims
     description: Admin order claim review — the list with filters and per-status counts and one claim with its child orders and evidence view, read only (permission point order.claim, or user.lookup together with user_id; 01 F-ADM-06, 04 §6.6 claims, §11, BR-ATTR-18). Approve and reject follow in CT-24l.
   - name: admin-content
@@ -6837,7 +6839,7 @@ paths:
                       todo:
                         - key: claim_review_pending
                           count: 7
-                          route: /orders/claims?status=pending
+                          route: /claims?status=manual_review
                           oldest_at: '2026-10-17T09:12:00+08:00'
                           breakdown:
                             - key: auto_matched
@@ -6881,7 +6883,7 @@ paths:
                       todo:
                         - key: claim_review_pending
                           count: 0
-                          route: /orders/claims?status=pending
+                          route: /claims?status=manual_review
                           oldest_at: null
                       yesterday:
                         date: '2026-10-18'
@@ -8896,6 +8898,322 @@ paths:
                   $ref: '#/components/examples/AdminUnionBindingNotAllowed'
                 conflict:
                   $ref: '#/components/examples/AdminUnionBindingConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/orders:
+    get:
+      operationId: adminListOrders
+      tags:
+        - admin-orders
+      summary: Sub-orders of the app (filters, page by page, newest paid first)
+      description: |
+        The order list of the console (01 F-ADM-05; 04 §6.6 orders; design/specs/admin-orders.md).
+        Read only, no step-up. Permission point `order.view` (04 §11.2) reads every sub-order of
+        the console's app. An account holding only `user.lookup` (04 §11.1: it may see the orders
+        of a user it looks up) may read the list only together with `user_id`, the user detail
+        page's orders tab (design/specs/admin-user-detail.md); without `user_id` that account gets
+        10403 with `data.reason=admin_permission_denied`, the same as an account holding neither
+        point. A super admin holds every point. Writes (manual sync, rights import, hold / unhold,
+        assigning an unattributed order) come with a later contract task.
+
+        One row per sub-order (04 §3.2 orders), with its `order_id` for the detail route. Filters combine
+        with AND: `platform`, `platform_status`, `rebate_status`, `flag` (enum admin_order_flag:
+        only rows whose flag of that name is true, see the row's `flags`), `user_id` (the
+        attributed user; the user filter takes the user_id only: UID and phone number go through
+        the top-bar search GET /admin/v1/search, not this list; an unattributed order never
+        matches it), `q`, `paid_from` (inclusive) and `paid_to` (exclusive). `q` is trimmed of
+        surrounding whitespace and spaces inside are removed, then it must be 1–64 characters, else
+        20001 with `data.fields=[q]`; it matches exactly (no prefix or partial match) the
+        sub-order number (`sub_order_id`) or the parent order number (`parent_order_id`), so a
+        parent order number lists all its sub-orders. `paid_from` and `paid_to` are ISO 8601 times
+        with offset (04 §5) compared with `paid_at`; `paid_from` later than `paid_to` is 20001 with
+        `data.fields=[paid_from, paid_to]`, and a row without `paid_at` never matches either bound.
+        A `user_id` that names no user of the app, or a filter set nothing matches, is an empty
+        page (`items=[]`, `total=0`), not an error. A value outside an enum is 20001 with
+        `data.fields` naming the parameter.
+
+        Order: `paid_at` descending (rows without `paid_at` last), then the server's internal
+        order for the same time. Pages with `page` (any positive integer, as AdminPage; a page past
+        the last one is `items=[]`) and `page_size` ≤ 200 (a `page_size` above 200 is 20001, as
+        AdminPageSize); `total` is the count of the filter set. Amounts are integer fen. The
+        attributed user is shown as user_id and phone number masked 3 + 4 (BR-ID-33), never the
+        full number; `user` is null for an unattributed order. The Chinese names of the statuses
+        and flags come from the console dictionary (BR-TEXT-25 admin_dict), not from this
+        contract. Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+        - $ref: '#/components/parameters/AdminOrderPlatformFilter'
+        - $ref: '#/components/parameters/AdminOrderPlatformStatusFilter'
+        - $ref: '#/components/parameters/AdminOrderRebateStatusFilter'
+        - $ref: '#/components/parameters/AdminOrderFlagFilter'
+        - $ref: '#/components/parameters/AdminOrderUserFilter'
+        - $ref: '#/components/parameters/AdminOrderQuery'
+        - $ref: '#/components/parameters/AdminOrderPaidFrom'
+        - $ref: '#/components/parameters/AdminOrderPaidTo'
+      responses:
+        '200':
+          description: One page of sub-orders, newest paid first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrderPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01
+                      sub_order_id: 231006-1234567891
+                      parent_order_id: 231006-1234567890
+                      platform: pdd
+                      title: 抽纸 3 层 120 抽 24 包
+                      image_url: https://img.example.com/p/a1.jpg
+                      user:
+                        user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                        phone_masked: '138****5678'
+                      paid_at: '2026-10-06T10:58:40+08:00'
+                      pay_amount_fen: 3990
+                      est_commission_fen: 500
+                      settle_commission_fen: null
+                      platform_status: PAID
+                      rebate_status: ESTIMATED
+                      hold_reason: CS
+                      flags:
+                        locked: true
+                        status_locked: false
+                        rights_pending: false
+                        hold: true
+                    - order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a02
+                      sub_order_id: 231005-0987654322
+                      parent_order_id: 231005-0987654321
+                      platform: pdd
+                      title: null
+                      image_url: null
+                      user: null
+                      paid_at: '2026-10-05T21:12:03+08:00'
+                      pay_amount_fen: 12900
+                      est_commission_fen: 1032
+                      settle_commission_fen: null
+                      platform_status: RECEIVED
+                      rebate_status: UNATTRIBUTED
+                      hold_reason: null
+                      flags:
+                        locked: false
+                        status_locked: false
+                        rights_pending: false
+                        hold: false
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                queryInvalid:
+                  $ref: '#/components/examples/AdminOrderQueryInvalid'
+                paidRangeInvalid:
+                  $ref: '#/components/examples/AdminOrderPaidRangeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/orders/{order_id}:
+    get:
+      operationId: adminGetOrder
+      tags:
+        - admin-orders
+      summary: One sub-order with its status history, commission snapshot and link records
+      description: |
+        The order detail page (01 F-ADM-05; 04 §6.6 orders; design/specs/admin-order-detail.md).
+        Read only, no step-up. Permission point `order.view` (04 §11.2) reads any sub-order of the
+        console's app. An account holding only `user.lookup` (04 §11.1) must pass `user_id` (the
+        user it is looking at); without it the account gets 10403 with
+        `data.reason=admin_permission_denied`, the same as an account holding neither point. The
+        sub-order is named by its `order_id` (04 §3.2 orders / order_keys, the id a list row and an
+        order hit of GET /admin/v1/search carry; 04 §6.6 `orders/{id}`). When `user_id` is given
+        (by any account) and the order is attributed to another user or to nobody, the answer is
+        20001 with `data.fields=[order_id]`, the same as an unknown order_id or an order of another
+        app: unknown and not visible deliberately share one code (no probing, as GET
+        /admin/v1/claims/{claim_id}), so there is no 404 here.
+
+        Same fields as a list row plus the product, quantity and attribution fields of 04 §3.2
+        orders, `display_status` (what the user sees, derived by BR-FUND-17, not stored), `reason`,
+        `row_version`, `status_history`, `commission_split` and `link_logs`. Flags: `locked` is the
+        attribution lock orders.locked (BR-ATTR-20; the console calls it 「归属已锁定」);
+        `status_locked` is derived, not stored: true when rebate_status is VOID, CREDITED or
+        CLAWED_BACK (BR-FUND-01 细则「订单锁定（展示标记）」; the console calls it 「已锁定」). The
+        two are independent and may both be true. Neither has a separate time or reason in 04: the
+        attribution source is `user_basis`, and when the status lock began is in
+        `status_history`.
+
+        `status_history` lists order_status_history oldest first: `field` (platform or rebate),
+        `from` (null for the first value), `to`, `event` (the transition code as stored, such as
+        R5 of BR-FUND-01), `source` and `at`. `commission_split` is the commission snapshot
+        (commission_splits, BR-CALC-10: written once, null until it is generated, for instance
+        while the order is unattributed): amounts in fen, ratios in basis points (1/10000), the
+        beneficiaries with role, ratio and forfeit reason. `link_logs` lists the records of the
+        order's link (orders.link_id; empty when the order has no link): the 50 newest, newest
+        first, each with its time, event and scene only: no product, shop, promotion, user or raw
+        union data.
+
+        The raw union payload (union_raw_payloads, the 「原始报文」 card of the design spec) is not
+        returned: 04 §11 defines no permission point for it, so it stays out of this contract
+        until one is decided (pending). Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminOrderIdPath'
+        - $ref: '#/components/parameters/AdminOrderUserFilter'
+      responses:
+        '200':
+          description: The sub-order with its history, commission snapshot and link records.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrderDetailResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01
+                  sub_order_id: 231006-1234567891
+                  parent_order_id: 231006-1234567890
+                  platform: pdd
+                  title: 抽纸 3 层 120 抽 24 包
+                  image_url: https://img.example.com/p/a1.jpg
+                  user:
+                    user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                    phone_masked: '138****5678'
+                  paid_at: '2026-10-06T10:58:40+08:00'
+                  pay_amount_fen: 3990
+                  est_commission_fen: 500
+                  settle_commission_fen: null
+                  platform_status: PAID
+                  rebate_status: ESTIMATED
+                  hold_reason: CS
+                  flags:
+                    locked: true
+                    status_locked: false
+                    rights_pending: false
+                    hold: true
+                  raw_item_id: '61234'
+                  product_key: null
+                  quantity: 1
+                  refunded_quantity: 0
+                  display_status: REVIEWING
+                  reason: null
+                  buy_type: self
+                  scene_basis: param
+                  user_basis: claim
+                  is_presale: false
+                  deposit_paid_at: null
+                  received_at: null
+                  settled_at: null
+                  credited_at: null
+                  settle_period: null
+                  commission_rate_bp: 1000
+                  row_version: 3
+                  status_history:
+                    - field: platform
+                      from: null
+                      to: PAID
+                      event: P2
+                      source: sync
+                      at: '2026-10-06T11:05:12+08:00'
+                    - field: rebate
+                      from: null
+                      to: UNATTRIBUTED
+                      event: R1
+                      source: sync
+                      at: '2026-10-06T11:05:12+08:00'
+                    - field: rebate
+                      from: UNATTRIBUTED
+                      to: ESTIMATED
+                      event: R3
+                      source: claim
+                      at: '2026-10-08T09:30:00+08:00'
+                  commission_split:
+                    rule_version_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+                    order_type: self
+                    raw_n_fen: 500
+                    subsidy_commission_fen: 0
+                    reserve_bp: 1000
+                    reserve_fen: 50
+                    tlj_deduct_fen: 0
+                    base_fen: 450
+                    platform_retain_fen: 135
+                    beneficiaries:
+                      - user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                        role: self
+                        ratio_bp: 6000
+                        forfeit_reason: null
+                      - user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c09
+                        role: direct
+                        ratio_bp: 1000
+                        forfeit_reason: null
+                    created_at: '2026-10-08T09:30:00+08:00'
+                  link_logs:
+                    - at: '2026-10-06T10:57:02+08:00'
+                      event: open
+                      scene: detail
+                    - at: '2026-10-06T10:56:48+08:00'
+                      event: convert
+                      scene: detail
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unknownOrder:
+                  $ref: '#/components/examples/AdminUnknownOrder'
                 noPermission:
                   $ref: '#/components/examples/AdminPermissionDenied'
                 tokenExpired:
@@ -14195,6 +14513,80 @@ components:
         give exactly one of uid and phone.
       schema:
         $ref: '#/components/schemas/Phone'
+    AdminOrderIdPath:
+      name: order_id
+      in: path
+      required: true
+      description: |
+        order_id of the sub-order (orders / order_keys, a UUID; the id of a list row and of an order
+        hit of the top-bar search); unknown, of another app, or (with user_id) attributed to another
+        user or to nobody → 20001 with data.fields=[order_id].
+      schema:
+        $ref: '#/components/schemas/Id'
+    AdminOrderPlatformFilter:
+      name: platform
+      in: query
+      required: false
+      description: Only sub-orders of this platform (enum platform); absent = all.
+      schema:
+        $ref: '#/components/schemas/PlatformCode'
+    AdminOrderPlatformStatusFilter:
+      name: platform_status
+      in: query
+      required: false
+      description: Only sub-orders in this union status (enum platform_status); absent = all.
+      schema:
+        $ref: '#/components/schemas/AdminOrderPlatformStatus'
+    AdminOrderRebateStatusFilter:
+      name: rebate_status
+      in: query
+      required: false
+      description: Only sub-orders in this rebate status (enum rebate_status); absent = all.
+      schema:
+        $ref: '#/components/schemas/AdminOrderRebateStatus'
+    AdminOrderFlagFilter:
+      name: flag
+      in: query
+      required: false
+      description: Only sub-orders whose flag of this name is true (enum admin_order_flag, the keys of a row's flags); absent = all.
+      schema:
+        $ref: '#/components/schemas/AdminOrderFlag'
+    AdminOrderUserFilter:
+      name: user_id
+      in: query
+      required: false
+      description: |
+        Only sub-orders attributed to this user (the user_id; UID and phone lookups go through the
+        top-bar search). Required for an account holding user.lookup but not order.view (else
+        10403 with data.reason=admin_permission_denied).
+      schema:
+        $ref: '#/components/schemas/Id'
+    AdminOrderQuery:
+      name: q
+      in: query
+      required: false
+      description: |
+        A sub-order number or a parent order number, matched exactly. Trimmed and with spaces
+        removed, then 1–64 characters, else 20001 with data.fields=[q]; the bound is checked after
+        trimming, so the schema carries none.
+      schema:
+        type: string
+    AdminOrderPaidFrom:
+      name: paid_from
+      in: query
+      required: false
+      description: Earliest paid_at, inclusive (ISO 8601 with offset); later than paid_to → 20001 with data.fields=[paid_from, paid_to].
+      schema:
+        type: string
+        format: date-time
+    AdminOrderPaidTo:
+      name: paid_to
+      in: query
+      required: false
+      description: Latest paid_at, exclusive (ISO 8601 with offset).
+      schema:
+        type: string
+        format: date-time
     AdminClaimIdPath:
       name: claim_id
       in: path
@@ -14807,6 +15199,34 @@ components:
         msg: 导出任务当前的状态不允许这项操作，请刷新后查看
         data:
           status: expired
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderQueryInvalid:
+      summary: 20001 order list q empty or over 64 characters after trimming
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - q
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderPaidRangeInvalid:
+      summary: 20001 order list with paid_from later than paid_to
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - paid_from
+            - paid_to
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnknownOrder:
+      summary: 20001 unknown order_id, an order of another app, or (with user_id) attributed to another user or to nobody
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - order_id
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminClaimQueryInvalid:
       summary: 20001 claim list q empty or over 64 characters after trimming
@@ -25424,6 +25844,612 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminUserDetail'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminOrderPlatformStatus:
+      type: string
+      description: Union order status (contracts/enums/order.yaml platform_status; BR-FUND-01, BR-FUND-02).
+      enum:
+        - DEPOSIT_PAID
+        - PAID
+        - RECEIVED
+        - SETTLED
+        - INVALID
+    AdminOrderRebateStatus:
+      type: string
+      description: Rebate status (contracts/enums/order.yaml rebate_status; BR-FUND-01).
+      enum:
+        - UNATTRIBUTED
+        - ESTIMATED
+        - WAITING
+        - CREDITED
+        - VOID
+        - CLAWED_BACK
+    AdminOrderHoldReason:
+      type: string
+      description: Why the order is held (contracts/enums/order.yaml order_hold_reason; BR-FUND-06, BR-FUND-02).
+      enum:
+        - RISK
+        - CS
+        - UNMAPPED_STATUS
+    AdminOrderFlag:
+      type: string
+      description: A flag of an admin order row (enum admin_order_flag); the keys of AdminOrderFlags.
+      enum:
+        - locked
+        - status_locked
+        - rights_pending
+        - hold
+    AdminOrderHistoryField:
+      type: string
+      description: The status field a history row records (enum admin_order_history_field).
+      enum:
+        - platform
+        - rebate
+    AdminOrderHistorySource:
+      type: string
+      description: Where a status change came from (enum admin_order_history_source).
+      enum:
+        - sync
+        - admin
+        - claim
+        - system
+    AdminOrderBuyType:
+      type: string
+      description: Self purchase or share (contracts/enums/trade.yaml buy_type; BR-ATTR-08).
+      enum:
+        - self
+        - share
+    AdminOrderSceneBasis:
+      type: string
+      description: What buy_type was decided from (contracts/enums/trade.yaml scene_basis; BR-ATTR-09).
+      enum:
+        - pid
+        - param
+        - fallback
+    AdminOrderUserBasis:
+      type: string
+      description: Where the attributed user came from (contracts/enums/trade.yaml user_basis; BR-ATTR-09).
+      enum:
+        - param
+        - claim
+        - admin
+    AdminOrderLinkEvent:
+      type: string
+      description: Event of a link record (contracts/enums/trade.yaml link_event; BR-ATTR-14).
+      enum:
+        - convert
+        - precompute
+        - register
+        - open
+    AdminOrderLinkScene:
+      type: string
+      description: Scene of a link record (contracts/enums/trade.yaml scene).
+      enum:
+        - search
+        - detail
+        - home_card
+        - feed
+        - clipboard
+        - agent
+        - share
+        - h5
+        - push
+        - taolijin
+        - watch_alert
+        - share_ext
+        - wechat_bot
+        - mcp
+    AdminOrderBeneficiaryRole:
+      type: string
+      description: Role of a beneficiary in the commission snapshot (contracts/enums/fund.yaml beneficiary_role).
+      enum:
+        - self
+        - share
+        - direct
+        - indirect
+    AdminOrderForfeitReason:
+      type: string
+      description: Why a beneficiary's share is forfeited (contracts/enums/fund.yaml forfeit_reason; BR-CALC-13).
+      enum:
+        - banned
+        - deleted
+        - minor
+    AdminOrderUser:
+      type: object
+      description: The attributed user of an order as the console shows it; the phone number only masked (BR-ID-33).
+      additionalProperties: false
+      required:
+        - user_id
+        - phone_masked
+      properties:
+        user_id:
+          $ref: '#/components/schemas/Id'
+        phone_masked:
+          $ref: '#/components/schemas/AdminMaskedPhone'
+    AdminOrderFlags:
+      type: object
+      description: |
+        The flags of an order (enum admin_order_flag). locked is orders.locked, the attribution
+        lock (BR-ATTR-20, 「归属已锁定」); status_locked is derived from rebate_status ∈ {VOID,
+        CREDITED, CLAWED_BACK}, not stored (BR-FUND-01 细则「订单锁定（展示标记）」, 「已锁定」);
+        rights_pending and hold are the columns of the same name (BR-FUND-06). Independent of each
+        other.
+      additionalProperties: false
+      required:
+        - locked
+        - status_locked
+        - rights_pending
+        - hold
+      properties:
+        locked:
+          type: boolean
+        status_locked:
+          type: boolean
+        rights_pending:
+          type: boolean
+        hold:
+          type: boolean
+    AdminOrderListItem:
+      type: object
+      description: |
+        A sub-order row of the admin order list (04 §3.2 orders). Not the user-side OrderSummary.
+        Amounts in fen.
+      additionalProperties: false
+      required:
+        - order_id
+        - sub_order_id
+        - parent_order_id
+        - platform
+        - title
+        - image_url
+        - user
+        - paid_at
+        - pay_amount_fen
+        - est_commission_fen
+        - settle_commission_fen
+        - platform_status
+        - rebate_status
+        - hold_reason
+        - flags
+      properties:
+        order_id:
+          $ref: '#/components/schemas/Id'
+        sub_order_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The sub-order number (orders.sub_order_id); unique together with platform.
+        parent_order_id:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: The parent order number (orders.parent_order_id); null when the union gave none.
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        title:
+          type:
+            - string
+            - 'null'
+          description: Product title from the union order; null when the union gave none.
+        image_url:
+          type:
+            - string
+            - 'null'
+          description: Product image from the union order; null when the union gave none.
+        user:
+          description: The attributed user; null for an unattributed order.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderUser'
+            - type: 'null'
+        paid_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Payment time (orders.paid_at); null when not known yet.
+        pay_amount_fen:
+          $ref: '#/components/schemas/NullableFen'
+        est_commission_fen:
+          $ref: '#/components/schemas/NullableFen'
+        settle_commission_fen:
+          $ref: '#/components/schemas/NullableFen'
+        platform_status:
+          $ref: '#/components/schemas/AdminOrderPlatformStatus'
+        rebate_status:
+          $ref: '#/components/schemas/AdminOrderRebateStatus'
+        hold_reason:
+          description: Set while hold is true, else null.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderHoldReason'
+            - type: 'null'
+        flags:
+          $ref: '#/components/schemas/AdminOrderFlags'
+    AdminOrderPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminOrderListItem'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminOrderPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminOrderPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminOrderStatusHistoryEntry:
+      type: object
+      description: One row of order_status_history (04 §3.2, insert only).
+      additionalProperties: false
+      required:
+        - field
+        - from
+        - to
+        - event
+        - source
+        - at
+      properties:
+        field:
+          $ref: '#/components/schemas/AdminOrderHistoryField'
+        from:
+          description: The value before (a platform_status for field platform, a rebate_status for field rebate); null for the first value.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderPlatformStatus'
+            - $ref: '#/components/schemas/AdminOrderRebateStatus'
+            - type: 'null'
+        to:
+          description: The value after, of the same kind as from.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderPlatformStatus'
+            - $ref: '#/components/schemas/AdminOrderRebateStatus'
+        event:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The transition code as stored (order_status_history.event), such as R5 of BR-FUND-01.
+        source:
+          $ref: '#/components/schemas/AdminOrderHistorySource'
+        at:
+          type: string
+          format: date-time
+    AdminOrderBeneficiary:
+      type: object
+      description: One beneficiary of the commission snapshot (commission_splits.beneficiaries).
+      additionalProperties: false
+      required:
+        - user_id
+        - role
+        - ratio_bp
+        - forfeit_reason
+      properties:
+        user_id:
+          $ref: '#/components/schemas/Id'
+        role:
+          $ref: '#/components/schemas/AdminOrderBeneficiaryRole'
+        ratio_bp:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 10000
+          description: The beneficiary's ratio in basis points (1/10000).
+        forfeit_reason:
+          description: Set when the share is forfeited (BR-CALC-13), else null.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderForfeitReason'
+            - type: 'null'
+    AdminOrderCommissionSplit:
+      type: object
+      description: |
+        The commission snapshot of a sub-order (04 §3.2 commission_splits; BR-CALC-10: written
+        once). Amounts in fen, ratios in basis points (1/10000).
+      additionalProperties: false
+      required:
+        - rule_version_id
+        - order_type
+        - raw_n_fen
+        - subsidy_commission_fen
+        - reserve_bp
+        - reserve_fen
+        - tlj_deduct_fen
+        - base_fen
+        - platform_retain_fen
+        - beneficiaries
+        - created_at
+      properties:
+        rule_version_id:
+          $ref: '#/components/schemas/Id'
+        order_type:
+          $ref: '#/components/schemas/AdminOrderBuyType'
+        raw_n_fen:
+          $ref: '#/components/schemas/Fen'
+        subsidy_commission_fen:
+          $ref: '#/components/schemas/Fen'
+        reserve_bp:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 10000
+          description: Platform reserve ratio of the rule version (commission_rule_reserves), basis points.
+        reserve_fen:
+          $ref: '#/components/schemas/Fen'
+        tlj_deduct_fen:
+          $ref: '#/components/schemas/Fen'
+        base_fen:
+          $ref: '#/components/schemas/Fen'
+        platform_retain_fen:
+          $ref: '#/components/schemas/Fen'
+        beneficiaries:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AdminOrderBeneficiary'
+        created_at:
+          type: string
+          format: date-time
+          description: When the snapshot was generated.
+    AdminOrderLinkLog:
+      type: object
+      description: A record of the order's link; its time, event and scene only, no product, shop, promotion, user or raw union data.
+      additionalProperties: false
+      required:
+        - at
+        - event
+        - scene
+      properties:
+        at:
+          type: string
+          format: date-time
+        event:
+          $ref: '#/components/schemas/AdminOrderLinkEvent'
+        scene:
+          $ref: '#/components/schemas/AdminOrderLinkScene'
+    AdminOrderDetail:
+      type: object
+      description: |
+        A sub-order as the order detail page sees it: the list row's fields plus product,
+        attribution and time fields of 04 §3.2 orders, the status history, the commission snapshot
+        and the link records. Not the user-side OrderDetail. No raw union payload (no permission
+        point for it in 04 §11; pending).
+      additionalProperties: false
+      required:
+        - order_id
+        - sub_order_id
+        - parent_order_id
+        - platform
+        - title
+        - image_url
+        - user
+        - paid_at
+        - pay_amount_fen
+        - est_commission_fen
+        - settle_commission_fen
+        - platform_status
+        - rebate_status
+        - hold_reason
+        - flags
+        - raw_item_id
+        - product_key
+        - quantity
+        - refunded_quantity
+        - display_status
+        - reason
+        - buy_type
+        - scene_basis
+        - user_basis
+        - is_presale
+        - deposit_paid_at
+        - received_at
+        - settled_at
+        - credited_at
+        - settle_period
+        - commission_rate_bp
+        - row_version
+        - status_history
+        - commission_split
+        - link_logs
+      properties:
+        order_id:
+          $ref: '#/components/schemas/Id'
+        sub_order_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The sub-order number (orders.sub_order_id); unique together with platform.
+        parent_order_id:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: The parent order number; null when the union gave none.
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        title:
+          type:
+            - string
+            - 'null'
+        image_url:
+          type:
+            - string
+            - 'null'
+        user:
+          description: The attributed user; null for an unattributed order.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderUser'
+            - type: 'null'
+        paid_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        pay_amount_fen:
+          $ref: '#/components/schemas/NullableFen'
+        est_commission_fen:
+          $ref: '#/components/schemas/NullableFen'
+        settle_commission_fen:
+          $ref: '#/components/schemas/NullableFen'
+        platform_status:
+          $ref: '#/components/schemas/AdminOrderPlatformStatus'
+        rebate_status:
+          $ref: '#/components/schemas/AdminOrderRebateStatus'
+        hold_reason:
+          description: Set while hold is true, else null.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderHoldReason'
+            - type: 'null'
+        flags:
+          $ref: '#/components/schemas/AdminOrderFlags'
+        raw_item_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The union's item id (orders.raw_item_id).
+        product_key:
+          description: The product key (BR-PROD-02); null until it is resolved.
+          anyOf:
+            - $ref: '#/components/schemas/ProductKey'
+            - type: 'null'
+        quantity:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 0
+        refunded_quantity:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 0
+        display_status:
+          description: What the user sees (BR-FUND-17, derived, not stored); null for an unattributed order (BR-FUND-17 row 0).
+          anyOf:
+            - $ref: '#/components/schemas/OrderDisplayStatus'
+            - type: 'null'
+        reason:
+          description: orders.reason (BR-TEXT-05); null when none.
+          anyOf:
+            - $ref: '#/components/schemas/OrderReasonCode'
+            - type: 'null'
+        buy_type:
+          description: null until decided.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderBuyType'
+            - type: 'null'
+        scene_basis:
+          description: null until decided.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderSceneBasis'
+            - type: 'null'
+        user_basis:
+          description: null for an unattributed order.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderUserBasis'
+            - type: 'null'
+        is_presale:
+          type: boolean
+        deposit_paid_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        received_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        settled_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the union status became SETTLED (orders.settled_at).
+        credited_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the rebate was credited (orders.credited_at).
+        settle_period:
+          type:
+            - string
+            - 'null'
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+          description: Settlement month YYYY-MM (orders.settle_period); null until written.
+        commission_rate_bp:
+          type:
+            - integer
+            - 'null'
+          format: int32
+          minimum: 0
+          description: Union commission rate in basis points; null when the union gave none.
+        row_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: CAS value of the order row (orders.row_version), for the write operations of a later contract task.
+        status_history:
+          type: array
+          description: Oldest first.
+          items:
+            $ref: '#/components/schemas/AdminOrderStatusHistoryEntry'
+        commission_split:
+          description: The commission snapshot; null until it is generated.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderCommissionSplit'
+            - type: 'null'
+        link_logs:
+          type: array
+          maxItems: 50
+          description: The 50 newest records of orders.link_id, newest first; empty when the order has no link.
+          items:
+            $ref: '#/components/schemas/AdminOrderLinkLog'
+    AdminOrderDetailResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminOrderDetail'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     AdminClaimEvidenceLevel:

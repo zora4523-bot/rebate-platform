@@ -169,6 +169,40 @@ export const admin_claim_match_field = [
 export type AdminClaimMatchField = (typeof admin_claim_match_field)[number];
 
 /**
+ * GET /admin/v1/orders 的 flag 筛选与列表项 flags 的键；locked 即 orders.locked（后台界面叫「归属已锁定」），status_locked 由 rebate_status 推导、不入库（后台界面叫「已锁定」）；中文名取 BR-TEXT-25 admin_dict，本契约不补文案
+ * Source: 规划/01 F-ADM-05；规划/04 §2.3、§3.2 orders；规划/08 BR-FUND-01 细则「订单锁定（展示标记）」、BR-ATTR-20、BR-FUND-06；design/specs/admin-orders.md 筛选「订单标记」（CT-24m） (contracts/enums/admin.yaml).
+ */
+export const admin_order_flag = [
+  "locked", // 归属已锁定（orders.locked，BR-ATTR-20）
+  "status_locked", // 已锁定（rebate_status ∈ VOID、CREDITED、CLAWED_BACK，BR-FUND-01 细则「订单锁定（展示标记）」）
+  "rights_pending", // 维权中（orders.rights_pending，BR-FUND-06）
+  "hold", // 暂停（orders.hold，BR-FUND-06）
+] as const;
+export type AdminOrderFlag = (typeof admin_order_flag)[number];
+
+/**
+ * GET /admin/v1/orders/{order_id} 的 status_history[].field，这一行记的是哪个状态字段
+ * Source: 规划/04 §3.2 order_status_history.field（CT-24m） (contracts/enums/admin.yaml).
+ */
+export const admin_order_history_field = [
+  "platform", // 平台状态 platform_status
+  "rebate", // 返利状态 rebate_status
+] as const;
+export type AdminOrderHistoryField = (typeof admin_order_history_field)[number];
+
+/**
+ * GET /admin/v1/orders/{order_id} 的 status_history[].source，状态变化的来源
+ * Source: 规划/04 §3.2 order_status_history.source（CT-24m） (contracts/enums/admin.yaml).
+ */
+export const admin_order_history_source = [
+  "sync", // 订单同步
+  "admin", // 后台操作
+  "claim", // 找回
+  "system", // 系统
+] as const;
+export type AdminOrderHistorySource = (typeof admin_order_history_source)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -1583,6 +1617,9 @@ export const enums = {
   export_status,
   export_resource,
   admin_claim_match_field,
+  admin_order_flag,
+  admin_order_history_field,
+  admin_order_history_source,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,
