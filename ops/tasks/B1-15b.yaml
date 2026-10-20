@@ -16,4 +16,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/state-machines/deletion-request/**'
-status: todo
+status: done
+pr: 1019
