@@ -23,6 +23,7 @@ interface World {
   count: string;
   birth: string | null;
   risk: 'normal' | 'frozen' | 'appealing' | 'banned';
+  stage: 'none' | 'cooling' | 'processing' | 'done';
   domains: unknown;
 }
 
@@ -32,12 +33,14 @@ async function fixture(overrides: Partial<World> = {}) {
     count: '2',
     birth: null,
     risk: 'normal',
+    stage: 'none',
     domains: ['share.example.test'],
     ...overrides,
   };
   const driver = new DummyDriver();
   const connection = await driver.acquireConnection();
   const queries: CompiledQuery[] = [];
+  const stageReads: unknown[] = [];
   connection.executeQuery = async <R>(query: CompiledQuery) => {
     queries.push(query);
     const rows = (value: unknown[]) => ({ rows: value as R[] });
@@ -73,9 +76,13 @@ async function fixture(overrides: Partial<World> = {}) {
     },
     readRisk: async () => ({ state: world.risk, reason_category: null, frozen_until: null }),
     verifiedBirthDate: async () => world.birth,
+    readDeletionStage: async (_trx, subject) => {
+      stageReads.push(subject);
+      return world.stage;
+    },
   };
   const read = () => createMyInviteReader(deps).read({ app_id: APP, user_id: USER });
-  return { world, queries, lines, clock, read };
+  return { world, queries, lines, clock, read, stageReads };
 }
 
 it('[AC-B1-11j] firstShareDomain accepts bare domains only and never falls back', () => {
@@ -136,7 +143,9 @@ for (const [label, patch] of [
   ['banned', { risk: 'banned' }],
   ['appealing', { risk: 'appealing' }],
   ['frozen', { risk: 'frozen' }],
-  ['deleted', { user: { invite_code: 'K7M2QX', status: 'deleted', phone_hmac: 'f'.repeat(64) } }],
+  ['deletion cooling', { stage: 'cooling' }],
+  ['deletion processing', { stage: 'processing' }],
+  ['deletion done', { stage: 'done' }],
   ['no phone', { user: { invite_code: 'K7M2QX', status: 'normal', phone_hmac: null } }],
 ] as const) {
   it(`[AC-B1-11j] unavailable (${label}): code, link and poster null, count kept`, async () => {
@@ -153,6 +162,14 @@ for (const [label, patch] of [
     });
   });
 }
+
+it('[AC-B1-15c] the deletion stage comes from the injected port, not users.status', async () => {
+  const f = await fixture({
+    user: { invite_code: 'K7M2QX', status: 'deleted', phone_hmac: 'f'.repeat(64) },
+  });
+  expect(await f.read()).toMatchObject({ invite: { can_invite: true, invite_code: 'K7M2QX' } });
+  expect(f.stageReads).toEqual([{ app_id: APP, user_id: USER }]);
+});
 
 it('[AC-B1-11j] invalid share_domains: landing_url null, warn with config_key only', async () => {
   const f = await fixture({ domains: ['https://share.example.test', 'ok.example.test'] });

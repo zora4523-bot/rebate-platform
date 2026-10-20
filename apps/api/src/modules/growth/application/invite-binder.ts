@@ -131,6 +131,26 @@ export interface InviteBinderDeps {
     trx: Transaction<DB>,
     subject: InviteSubject,
   ) => Promise<string | null>;
+  /**
+   * identity's deletion-stage reader (B1-15c): the later of the open / done deletion request and
+   * users.status, read on this trx. app.module always wires it (growthReadPorts); omitted only by
+   * unit and rule tests, where the stage follows the inviter's users.status alone (deleting →
+   * processing, deleted → done, BR-ID-28).
+   */
+  readonly readDeletionStage?: (
+    trx: Transaction<DB>,
+    subject: InviteSubject,
+  ) => Promise<InviteDeletionStage>;
+}
+
+/** Structurally identity's DeletionStage (B1-15c), without importing identity. */
+export type InviteDeletionStage = 'none' | 'cooling' | 'processing' | 'done';
+
+/** BR-ID-28 fallback when no deletion-stage reader is wired: users.status alone. */
+function deletionStageFromUserStatus(status: string): InviteDeletionStage {
+  if (status === 'deleting') return 'processing';
+  if (status === 'deleted') return 'done';
+  return 'none';
 }
 
 /** Per-call options outside the command (the command stays the rule tests' exact shape). */
@@ -307,7 +327,7 @@ export async function findInviterByCode(
  * (shared by every channel: one definition of the function, BR-INV-02 【邀请人不可用判定】).
  */
 export async function isInviterUnavailable(
-  deps: Pick<InviteBinderDeps, 'readRisk' | 'verifiedBirthDate'>,
+  deps: Pick<InviteBinderDeps, 'readRisk' | 'verifiedBirthDate' | 'readDeletionStage'>,
   trx: Transaction<DB>,
   appId: string,
   inviter: InviterRow,
@@ -315,12 +335,17 @@ export async function isInviterUnavailable(
 ): Promise<boolean> {
   const subject = { app_id: appId, user_id: inviter.id };
   const risk = await deps.readRisk(trx, subject);
+  // After risk, never before the code-format check (B1-15c §9.2 #2); no lock (BR-INV-02).
+  const readDeletionStage = deps.readDeletionStage;
+  const stage =
+    readDeletionStage === undefined
+      ? deletionStageFromUserStatus(inviter.status)
+      : await readDeletionStage(trx, subject);
   const verifiedBirthDate = deps.verifiedBirthDate;
   const birthDate = verifiedBirthDate === undefined ? null : await verifiedBirthDate(trx, subject);
   return inviterUnavailable({
     risk_state: risk.state,
-    // TODO(规划/11 §2.3): 读注销单 deletion_status（cooling / processing / done）— blocked on B1-15
-    deletion_status: inviter.status === 'deleted' ? 'done' : null,
+    deletion_status: stage === 'none' ? null : stage,
     phone_bound: inviter.phone_hmac !== null,
     verified_minor: birthDate !== null && !isAtLeastAge(birthDate, INVITER_MIN_AGE, at),
   });

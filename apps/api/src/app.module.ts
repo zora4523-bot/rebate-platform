@@ -77,6 +77,7 @@ import {
   createUserLevelReader,
   createInviteBackfillActivityReader,
   createInviteLoginDevicesReader,
+  createDeletionStageReader,
   createOrderUserReader,
   revokeSessionsByUser,
   unbindRevoked,
@@ -625,15 +626,18 @@ function inviteBinderDeps(
  * The reads growth's binding core (B1-11d) and invite page (B1-11j) share, each on the caller's
  * transaction (no second pooled connection while it is held) and uncached: config_items through
  * content's reader (a fresh reader per call, so the value is never older than the transaction),
- * risk's fresh state read, and identity's realname reader (B1-13d) for the verified birth date —
- * the decrypted name is dropped here and the birth date never reaches a log or a response.
+ * risk's fresh state read, identity's realname reader (B1-13d) for the verified birth date —
+ * the decrypted name is dropped here and the birth date never reaches a log or a response — and
+ * identity's deletion-stage reader (B1-15c) for the one subject on the trx (absent → none). Every
+ * growth channel is assembled from here: register and backfill (inviteBinderDeps), landing and the
+ * invite page.
  */
 function growthReadPorts(
   clock: Clock,
   crypto: FieldCrypto,
   events: EventBus,
 ): Pick<InviteBinderDeps, 'config' | 'readRisk'> &
-  Required<Pick<InviteBinderDeps, 'verifiedBirthDate'>> {
+  Required<Pick<InviteBinderDeps, 'verifiedBirthDate' | 'readDeletionStage'>> {
   const realname = createRealnameReader(crypto);
   return {
     config: {
@@ -646,6 +650,13 @@ function growthReadPorts(
       }),
     verifiedBirthDate: async (trx, subject) =>
       (await realname.verified(trx, subject))?.birth_date ?? null,
+    readDeletionStage: async (trx, subject) =>
+      (
+        await createDeletionStageReader({ db: trx }).read(trx, {
+          appId: subject.app_id,
+          userIds: [subject.user_id],
+        })
+      ).get(subject.user_id) ?? 'none',
   };
 }
 

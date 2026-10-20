@@ -124,6 +124,7 @@ async function fixture() {
   const redis = fakeRedis();
   const values = new Map<string, unknown>();
   const risk = { state: 'normal' as 'normal' | 'frozen' | 'appealing' | 'banned' };
+  const deletion = { stage: 'none' as 'none' | 'cooling' | 'processing' | 'done' };
   const deps: LandingInviteBinderDeps = {
     clock: new FixedClock(NOW),
     logger,
@@ -135,6 +136,7 @@ async function fixture() {
       ),
     },
     readRisk: vi.fn(async () => ({ state: risk.state, reason_category: null, frozen_until: null })),
+    readDeletionStage: vi.fn(async () => deletion.stage),
   };
   const binder = createLandingInviteBinder(deps);
   const pre: LandingPrecheckInput = {
@@ -159,6 +161,7 @@ async function fixture() {
     redis,
     values,
     risk,
+    deletion,
     deps,
     precheck: (input: Partial<LandingPrecheckInput> = {}) =>
       db.transaction().execute((trx) => binder.precheck(trx, { ...pre, ...input })),
@@ -234,8 +237,11 @@ it('[AC-B1-11h#10] a missing or unavailable inviter answers 30401 and counts', a
   expect(await f.precheck()).toEqual({ ok: false, code: 30401 });
   f.world.inviter = { id: INVITER, phone_hmac: null, status: 'normal' };
   expect(await f.precheck({ attempt_key: 'k2' })).toEqual({ ok: false, code: 30401 });
+  // The deletion stage comes from identity's port (app.module wires it, B1-15c).
   f.world.inviter = { id: INVITER, phone_hmac: 'e'.repeat(64), status: 'deleted' };
+  f.deletion.stage = 'done';
   expect(await f.precheck({ attempt_key: 'k3' })).toEqual({ ok: false, code: 30401 });
+  f.deletion.stage = 'none';
   f.world.inviter = { id: INVITER, phone_hmac: 'e'.repeat(64), status: 'normal' };
   f.risk.state = 'banned';
   expect(await f.precheck({ attempt_key: 'k4' })).toEqual({ ok: false, code: 30401 });
@@ -289,6 +295,21 @@ it('[AC-B1-11h#24] an inviter banned since the precheck fails the bind with 3040
   expect(f.writes()).toEqual([]);
   expect(f.redis.store.get(PHONE_KEY)).toBe('1');
   expect(f.redis.store.get(IP_KEY)).toBe('1');
+});
+
+it('[AC-B1-15c] an inviter in a deletion stage fails precheck and bind with 30401 and counts', async () => {
+  const f = await fixture();
+  f.deletion.stage = 'cooling';
+  expect(await f.precheck()).toEqual({ ok: false, code: 30401 });
+  expect(f.deps.readDeletionStage).toHaveBeenCalledWith(expect.anything(), {
+    app_id: APP,
+    user_id: INVITER,
+  });
+  expect(await f.bind({ attempt_key: 'k2' })).toEqual({ result: 'failed', code: 30401 });
+  expect(f.writes()).toEqual([]);
+  expect(f.redis.store.get(PHONE_KEY)).toBe('2');
+  f.deletion.stage = 'none';
+  expect(await f.precheck({ attempt_key: 'k3' })).toEqual({ ok: true, inviter_id: INVITER });
 });
 
 it('[AC-B1-11h#14] a conditional update matching no row answers 50001 without a relation log', async () => {

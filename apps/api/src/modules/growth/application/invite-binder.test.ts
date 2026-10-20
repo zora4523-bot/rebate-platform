@@ -381,6 +381,60 @@ it.each([
   },
 );
 
+it.each([
+  ['none', 'bound'],
+  ['cooling', 30401],
+  ['processing', 30401],
+  ['done', 30401],
+] as const)(
+  '[AC-B1-15c] injected deletion stage %s → %s, read after risk',
+  async (stage, expected) => {
+    const f = await fixture();
+    const order: string[] = [];
+    const readRisk: InviteBinderDeps['readRisk'] = async (trx, subject) => {
+      order.push('risk');
+      return f.deps.readRisk(trx, subject);
+    };
+    const readDeletionStage = vi.fn(async () => {
+      order.push('stage');
+      return stage;
+    });
+    const result = await f.bind({}, { readRisk, readDeletionStage });
+    if (expected === 'bound') expect(result).toMatchObject({ result: 'bound' });
+    else expect(result).toEqual({ result: 'failed', code: expected });
+    expect(readDeletionStage).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+      app_id: APP,
+      user_id: INVITER,
+    });
+    expect(order).toEqual(['risk', 'stage']);
+  },
+);
+
+it('[AC-B1-15c] the injected stage overrides users.status (deleted row, port none → bound)', async () => {
+  const f = await fixture();
+  f.world.inviter = { id: INVITER, phone_hmac: 'e'.repeat(64), status: 'deleted' };
+  expect(await f.bind({}, { readDeletionStage: async () => 'none' })).toMatchObject({
+    result: 'bound',
+  });
+});
+
+it('[AC-B1-15c] without the port, users.status deleting counts as processing → 30401', async () => {
+  const f = await fixture();
+  f.world.inviter = { id: INVITER, phone_hmac: 'e'.repeat(64), status: 'deleting' };
+  expect(await f.bind()).toEqual({ result: 'failed', code: 30401 });
+  expect(f.redis.store.get(KEY)?.value).toBe('1');
+});
+
+it('[AC-B1-15c] an invalid code never reads the deletion stage', async () => {
+  const f = await fixture();
+  const readDeletionStage = vi.fn(async () => 'none' as const);
+  expect(await f.bind({ invite_code: 'BAD' }, { readDeletionStage })).toEqual({
+    result: 'failed',
+    code: 30401,
+  });
+  expect(readDeletionStage).not.toHaveBeenCalled();
+});
+
 it('[AC-B1-11d#18] own code → 30403 without counting', async () => {
   const f = await fixture();
   f.world.inviter = { id: USER, phone_hmac: PHONE, status: 'normal' };
