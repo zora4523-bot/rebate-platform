@@ -1,29 +1,29 @@
-import type { UserLevel } from '@couli/contracts-ts';
+// B2-04i: read-only port over the commission snapshot of one sub-order (BR-CALC-02/10/13),
+// answered inside the caller's transaction.
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
-import type { SnapshotRole } from '../domain/snapshot.ts';
+import {
+  assertCommissionVersion,
+  assertCurrentVersion,
+  parseSnapshotBeneficiaries,
+  parseSnapshotRole,
+  type ReadSnapshotBeneficiary,
+  type SnapshotForfeitedEvent,
+} from '../domain/snapshot-read.ts';
+import {
+  selectForfeitedEvents,
+  selectMaxVersions,
+  selectSplit,
+  selectVersionBase,
+} from '../infra/snapshot-reader.ts';
+
+export type { ReadSnapshotBeneficiary, SnapshotForfeitedEvent } from '../domain/snapshot-read.ts';
 
 export interface ReadCommissionSnapshotInput {
   readonly appId: string;
   readonly orderId: string;
   /** 调用方期望的 commission_version，须等于本子订单最大版本；本模块不读取 orders。 */
   readonly commissionVersion: number;
-}
-
-export interface ReadSnapshotBeneficiary {
-  readonly userId: string;
-  readonly role: SnapshotRole;
-  readonly ratioBp: number;
-  readonly level: UserLevel;
-  readonly initialStatus: 'active' | 'forfeited';
-  readonly forfeitReason: string | null;
-}
-
-export interface SnapshotForfeitedEvent {
-  readonly eventSeq: bigint;
-  readonly userId: string;
-  readonly role: SnapshotRole;
-  readonly reason: string | null;
 }
 
 export interface ReadCommissionSnapshotResult {
@@ -49,7 +49,36 @@ export async function readCommissionSnapshot(
   trx: Transaction<DB>,
   input: ReadCommissionSnapshotInput,
 ): Promise<ReadCommissionSnapshotResult | null> {
-  void trx;
-  void input;
-  throw new Error('NotImplemented: readCommissionSnapshot');
+  assertCommissionVersion(input.commissionVersion);
+  const { appId, orderId } = input;
+  const split = await selectSplit(trx, appId, orderId);
+  if (split === undefined) return null;
+  const beneficiaries = parseSnapshotBeneficiaries(split.beneficiaries);
+  const max = await selectMaxVersions(trx, appId, orderId);
+  const version = assertCurrentVersion(input.commissionVersion, max.totals, max.amounts);
+  const base = await selectVersionBase(trx, appId, orderId, version);
+  const baseFen = base.totalsBase;
+  if (baseFen === undefined) {
+    throw new Error(`commission: snapshot version ${String(version)} has no totals row`);
+  }
+  // One B per version (BR-CALC-02): every amount row of the version carries the totals' B.
+  if (base.amountBases.length === 0 || base.amountBases.some((b) => b !== baseFen)) {
+    throw new Error(`commission: snapshot version ${String(version)} amount rows disagree on B`);
+  }
+  const events = await selectForfeitedEvents(trx, appId, orderId);
+  return {
+    appId,
+    orderId,
+    ruleVersionId: split.ruleVersionId,
+    commissionVersion: version,
+    baseFen,
+    reserveBp: split.reserveBp,
+    beneficiaries,
+    forfeitedEvents: events.map((e): SnapshotForfeitedEvent => ({
+      eventSeq: e.eventSeq,
+      userId: e.userId,
+      role: parseSnapshotRole(e.role, `event ${String(e.eventSeq)}`),
+      reason: e.reason,
+    })),
+  };
 }
