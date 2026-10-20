@@ -30,4 +30,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/admin-dashboard/**'
-status: todo
+status: done
+pr: 978
