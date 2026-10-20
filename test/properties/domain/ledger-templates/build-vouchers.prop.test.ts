@@ -58,7 +58,7 @@ it('[AC-B2-01j#20] 任意非负金额按 CSV 精确出分录且 Σ=0，零不出
   expect(CSV_AND_BALANCE_SHARDS).toHaveLength(6);
   for (const shard of CSV_AND_BALANCE_SHARDS) expect(shard.length).toBeGreaterThan(0);
   const ids = CSV_AND_BALANCE_SHARDS.flat();
-  expect(ids).toHaveLength(107);
+  expect(ids).toHaveLength(108); // +REWARD:INVITE（B2-16a）
   expect(new Set(ids).size).toBe(ids.length);
   expect([...ids].sort()).toEqual(templates.map(([id]) => id).sort());
 }, 120_000);
