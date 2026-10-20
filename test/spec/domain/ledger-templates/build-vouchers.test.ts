@@ -42,7 +42,7 @@ it('[AC-B2-01j#1] 每个完整模板逐业务组匹配 CSV，分录无序但不�
   }
 });
 
-it('[AC-B2-01j#2] 已定模板出正确分录，任一格 TBD 仍整张拒绝，P1 奖励 id 不登记且拒绝', () => {
+it('[AC-B2-01j#2] [AC-B2-16a#11] invite 出平衡凭证，TBD 与新人签到奖励仍拒绝', () => {
   const templates = readTemplates();
   const pending = [...readTemplates()].filter(([, rows]) => isTbd(rows));
   for (const id of [
@@ -50,6 +50,7 @@ it('[AC-B2-01j#2] 已定模板出正确分录，任一格 TBD 仍整张拒绝，
     'WITHDRAW:SUCCESS:CASH_ALIPAY',
     'WITHDRAW:SUCCESS:CASH_BANK',
     'WITHDRAW:SUCCESS:CASH_WECHAT',
+    'REWARD:INVITE',
   ]) {
     const rows = templates.get(id);
     expect(rows, id).toBeDefined();
@@ -64,7 +65,13 @@ it('[AC-B2-01j#2] 已定模板出正确分录，任一格 TBD 仍整张拒绝，
       expect(vouchers[0]?.uniq_key, id).toBe(`wd:${params['withdrawal_id']}:PAID`);
     }
   }
-  for (const id of ['REWARD:newbie', 'REWARD:checkin', 'REWARD:invite']) {
+  for (const id of [
+    'REWARD:newbie',
+    'REWARD:checkin',
+    'REWARD:invite',
+    'REWARD:NEWBIE',
+    'REWARD:CHECKIN',
+  ]) {
     expect(templates.has(id), id).toBe(false);
     expect(() => buildVouchers(id, {}), id).toThrow(RangeError);
   }
@@ -158,7 +165,12 @@ it('[AC-B2-01j#6] 零金额不产生零分录或空凭证，参数校验仍执�
   );
   for (const [id, rows] of templates) {
     const params = parameters(rows, 0n);
-    expect(buildVouchers(id, params), id).toEqual([]);
+    // BR-INV-24 / B2-16a: a payout requires a strictly positive locked reward.
+    if (id === 'REWARD:INVITE') {
+      expect(() => buildVouchers(id, params), id).toThrow(RangeError);
+    } else {
+      expect(buildVouchers(id, params), id).toEqual([]);
+    }
     expect(() => buildVouchers(id, { ...params, unknown: 'x' })).toThrow(RangeError);
     for (const key of Object.keys(params)) {
       const missing = { ...params };
@@ -221,6 +233,7 @@ it('[AC-B2-01j#8] 相同输入结果相同且不修改冻结的参数或先前�
       if (typeof changed[key] !== 'string') continue;
       if (key === 'order_key') changed[key] = 'jd:another-order';
       else if (key === 'platform') changed[key] = 'jd';
+      else if (key === 'side') changed[key] = 'invitee';
       else if (key !== 'role') changed[key] = 'another-value';
     }
     expect(() => buildVouchers(id, changed), id).not.toThrow();

@@ -207,7 +207,7 @@ it('[AC-B2-01i#2] 按类型、子类型及原文幂等键分组，分录无序�
   }
 });
 
-it('[AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖除 P1 REWARD 外全部类型', () => {
+it('[AC-B2-01i#3] [AC-B2-16a#10] 已定类型只取契约值，REWARD 只启用 invite 且覆盖全部类型', () => {
   const rows = readRows(actualUrl);
   const types = contractValues('ledger_type');
   expect(types).toHaveLength(13);
@@ -228,8 +228,10 @@ it('[AC-B2-01i#3] 已定 ledger_type 与 sub_type 只取契约值，覆盖除 P1
   }
   expect(
     [...new Set(rows.map((row) => row.ledger_type).filter((type) => type !== tbd))].sort(),
-  ).toEqual(types.filter((type) => type !== 'REWARD').sort());
-  expect(rows.some((row) => row.ledger_type === 'REWARD')).toBe(false);
+  ).toEqual(types.sort());
+  expect([
+    ...new Set(rows.filter((row) => row.ledger_type === 'REWARD').map((row) => row.sub_type)),
+  ]).toEqual(['invite']);
 });
 
 it('[AC-B2-01i#4] 每模板每种金额符号均借贷成对，分录借正贷负且不使用数值金额', () => {
