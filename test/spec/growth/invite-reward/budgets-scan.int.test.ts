@@ -228,6 +228,41 @@ it('[AC-B1-35#68] 每日过期首轮即跑，同 +08 日不重扫，跨午夜再
   expect(seen).toEqual([f.invitee, newer, f.invitee, newer]);
 });
 
+it('[AC-B1-35#67] 首条预算顺延即停，不跳过它发放更晚且只有一方可领的奖励', async () => {
+  const f = await scannerFixture();
+  await ready(f);
+  const later = await f.user(f.inviter);
+  const order = await f.order({ user_id: later });
+  await f.seedReward({
+    invitee_id: later,
+    trigger_order_id: order.order_id,
+    triggered_at: new Date('2026-11-25T02:00:01Z'),
+  });
+  f.risks.set(later, 'frozen');
+  f.settings.set('daily_budget_fen', 1000);
+  const laterBefore = await f.row(later);
+  const g = await growth();
+  const payout = g.createInviteRewardPayout(f.deps);
+  const scanned: string[] = [];
+  const scanner = g.createInviteRewardScanner({
+    ...f.deps,
+    expiry: g.createInviteRewardExpiry(f.deps),
+    payout: {
+      process: async (app, id) => {
+        scanned.push(id);
+        return payout.process(app, id);
+      },
+    },
+  });
+  await scanner.tick();
+  expect(scanned).toEqual([f.invitee]);
+  expect(await f.row()).toMatchObject({ status: 'deferred' });
+  expect(await f.row(later)).toEqual(laterBefore);
+  expect(f.grants).toEqual([]);
+  expect(await f.budget()).toMatchObject({ reserved_fen: 4000n, granted_fen: 0n });
+  expect((await f.budget('2026-11-25'))?.granted_fen ?? 0n).toBe(0n);
+});
+
 it('[AC-B1-35#69] 两个扫描器并发不重复发放或释放', async () => {
   const f = await scannerFixture();
   await ready(f);

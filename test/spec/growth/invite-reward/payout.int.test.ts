@@ -52,6 +52,13 @@ it('[AC-B1-35#40] 例：A/U 各得锁定 1000 分，总占用转已发、当日�
     ]),
   );
   expect(f.grants).toHaveLength(2);
+  expect(f.reads.filter((read) => read.kind === 'retained')).toEqual([
+    {
+      kind: 'retained',
+      transactional: true,
+      input: { app_id: f.appId, user_id: f.invitee, at: new Date(PAID) },
+    },
+  ]);
   const vouchers = await f.vouchers();
   expect(vouchers.map((v) => v.id).sort()).toEqual(
     [row?.inviter_voucher_id, row?.invitee_voucher_id].sort(),
@@ -179,6 +186,7 @@ it('[AC-B1-35#44] 身份年龄在发放时判，恰满 18 岁可以发', async (
 
 it.each([
   'relation_changed',
+  'relation_changed_to_other',
   'clawed_back',
   'partial_refund',
   'not_credited',
@@ -188,14 +196,16 @@ it.each([
   const f = await fixture(database);
   const order = await ready(f);
   let reason = 'order_clawed_back';
-  if (kind === 'relation_changed') {
+  if (kind === 'relation_changed' || kind === 'relation_changed_to_other') {
+    const parent = kind === 'relation_changed_to_other' ? await f.user() : null;
     await f.db
       .updateTable('users')
-      .set({ parent_id: null })
+      .set({ parent_id: parent })
       .where('app_id', '=', f.appId)
       .where('id', '=', f.invitee)
       .execute();
-    order.rebate_status = 'CLAWED_BACK'; // relation check takes precedence
+    // Keep the other-parent case CREDITED: it must fail solely on the changed relation.
+    if (kind === 'relation_changed') order.rebate_status = 'CLAWED_BACK';
     reason = 'relation_changed';
   } else if (kind === 'clawed_back') order.rebate_status = 'CLAWED_BACK';
   else if (kind === 'partial_refund') order.refunded_quantity = 1;
@@ -208,6 +218,7 @@ it.each([
   await f.process();
   expect(await f.row()).toMatchObject({ status: 'voided', void_reason: reason });
   expect(await f.budget()).toMatchObject({ reserved_fen: 0n, granted_fen: 0n });
+  expect(f.grants).toEqual([]);
   const later = await f.order();
   await f.trigger(later.order_id);
   await f.process();
@@ -360,4 +371,21 @@ it('[AC-B1-35#54] 发放按 app_id 隔离，不读取另一应用同一用户的
   await payout.process(f.appId, f.invitee);
   expect(await f.row()).toMatchObject({ status: 'processed' });
   expect(f.grants).toHaveLength(2);
+});
+
+it('[AC-B1-35#55] 邀请人窗口内登录 IP 与绑定 IP 不同，两方照发、不记 same_ip', async () => {
+  const f = await fixture(database);
+  await ready(f);
+  f.ips.set(f.inviter, ['2001:db8::2', '203.0.113.88']);
+  await f.process();
+  expect(f.reads.filter((read) => read.kind === 'ip')).toHaveLength(1);
+  expect(await f.row()).toMatchObject({
+    status: 'processed',
+    inviter_result: 'granted',
+    invitee_result: 'granted',
+    inviter_skip_reason: null,
+    invitee_skip_reason: null,
+  });
+  expect(f.grants).toHaveLength(2);
+  expect(await f.budget()).toMatchObject({ reserved_fen: 0n, granted_fen: 2000n });
 });

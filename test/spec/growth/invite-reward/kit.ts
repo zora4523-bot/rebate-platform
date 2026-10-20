@@ -139,7 +139,12 @@ export async function fixture(database: Database) {
         return ips.get(input.user_id) ?? [];
       },
     },
-    deletedPhone: { retained: async (_trx, input) => retained.has(input.user_id) },
+    deletedPhone: {
+      retained: async (trx, input) => {
+        reads.push({ kind: 'retained', input, transactional: trx.isTransaction });
+        return retained.has(input.user_id);
+      },
+    },
     deletionStatus: {
       read: async (_trx, input) =>
         new Map(input.user_ids.map((id) => [id, deleting.get(id) ?? 'none'])),
