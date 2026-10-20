@@ -21,6 +21,10 @@ test_paths:
   - 'test/spec/frontend/admin-auth/app.test.ts'
   - 'test/spec/frontend/admin-auth-qr/permissions.test.ts'
   - 'test/spec/frontend/admin-antd/shell.test.ts'
+red_exempt:
+  - file: test/spec/frontend/admin-shell/layout.browser.test.ts
+    test: '[AC-F1-06e-BROWSER#1] admin-home-no-perm'
+    reason: 零权限账号的侧栏截图用例体未改；只因同文件超管用例体内动态加载了本任务新增的 dashboard-fixtures.ts 而被判可能读到改动的共用文件，零权限账号看不到工作台、行为不变
 impl: claude
 tester: codex
 accept:
