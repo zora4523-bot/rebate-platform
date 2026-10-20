@@ -1,0 +1,35 @@
+{
+  "task": "CT-02za",
+  "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
+  "spec_commit": "1d6e939196ca2bef9efd6972c7585687a9bdb7dd",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; #158 follow-up, couli ac4d993 docs/changes/20261020-内容线默认回写.md). L24: ConfigLegalAgreement gains optional min_version (int32 >= 1; absent when unset, never blocks). L30: ArticleHelpSection enum (six codes) with optional help_section on public and console article responses (absent when unset), optional on console create / draft (20001 fields=[help_section] when the category is not help), optional listArticles query filter (current version only, cursor unchanged). All additions are optional; route-schemas.gen.ts regenerated. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "047f9709a1e1dd8e711bbac2e5dba327392e9f19",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "e308f96db2c38fa575aabb2b645906c6d79ab386",
+    "test/spec": "d0497c662fc48882ee90f0a387aca263daf7912f",
+    "specs": "b80f759906adb5320a33adb9ff0a59fcb0fb9a3a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "e308f96db2c38fa575aabb2b645906c6d79ab386"
+  }
+}
