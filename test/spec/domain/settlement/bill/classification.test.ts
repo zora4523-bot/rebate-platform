@@ -206,6 +206,20 @@ it.each(['ESTIMATED', 'VOID', 'CLAWED_BACK'] as const)(
   },
 );
 
+it.each(['ESTIMATED', 'VOID', 'CLAWED_BACK', 'CREDITED'] as const)(
+  '[AC-B2-04f#52] %s 缺少联盟结算数据时不生成应结未结差错',
+  (status) => {
+    expect(
+      classifySettlementBillOrder(
+        classification({
+          order: order({ rebate_status: status }),
+          settlement: null,
+        }),
+      ),
+    ).toBeNull();
+  },
+);
+
 it('[AC-B2-04f#14] 上传备用有数据而我方无单是异常；无双方数据不造差错', () => {
   expect([
     classifySettlementBillOrder(
