@@ -1,7 +1,7 @@
 import { createDb, destroyDb } from '@couli/db';
 import { createTestDatabase } from '@couli/db/testing';
-import { sql, type KyselyPlugin, type QueryId } from 'kysely';
-import { expect, it } from 'vitest';
+import { sql, type DatabaseConnection, type QueryResult } from 'kysely';
+import { expect, it, vi } from 'vitest';
 
 import { APP, DAY, TIMEOUT, account, pair, platform, setup, snapshots, voucher } from './kit.ts';
 
@@ -28,7 +28,7 @@ async function bounded<T>(promise: Promise<T>, label: string): Promise<T> {
 }
 
 it(
-  '[AC-B2-02m#5] 全品牌旧读数与单品牌重跑交错：两次成功，最终日余额包含迟到分录',
+  '[AC-B2-02m#5] 全品牌写入前暂停时单品牌重跑等待锁：两次成功，最终日余额包含迟到分录',
   async () => {
     const database = await createTestDatabase();
     // Independent pools: a paused transaction must not prevent fixtures or B from connecting.
@@ -36,29 +36,10 @@ it(
     const db = createDb(options);
     const runA = createDb(options);
     const runB = createDb(options);
-    const readCompleted = signal();
+    const beforeWrite = signal();
     const releaseA = signal();
     const running: Promise<unknown>[] = [];
-    let firstRead: QueryId | undefined;
     let paused = false;
-    const pauseAfterRead: KyselyPlugin = {
-      transformQuery(args) {
-        // Observe the public table, not an implementation function or advisory-lock key.
-        // Match both a query-builder TableNode and raw SQL fragments.
-        if (firstRead === undefined && /\bledger_entries\b/i.test(JSON.stringify(args.node))) {
-          firstRead = args.queryId;
-        }
-        return args.node;
-      },
-      async transformResult(args) {
-        if (!paused && args.queryId === firstRead) {
-          paused = true;
-          readCompleted.resolve();
-          await bounded(releaseA.promise, 'release A after its entry read');
-        }
-        return args.result;
-      },
-    };
 
     try {
       // Bound database waits too, including failure-path cleanup; no lock-name dependency.
@@ -76,19 +57,46 @@ it(
         .rows[0]!.pid;
       expect(pidA).not.toBe(pidB);
       const { runner } = setup();
-      const resultA = runner
-        .runDailyCheck(runA.withPlugin(pauseAfterRead), { accountingDate: DAY })
+      const resultA = runA
+        .connection()
+        .execute(async (pinnedDb) => {
+          const connection = await pinnedDb.getExecutor().provideConnection(async (value) => value);
+          const execute = connection.executeQuery.bind(connection);
+          const spy = vi
+            .spyOn(connection, 'executeQuery')
+            .mockImplementation(
+              async <R>(
+                ...args: Parameters<DatabaseConnection['executeQuery']>
+              ): Promise<QueryResult<R>> => {
+                // Pause BEFORE sending the write, including atomic INSERT ... SELECT.
+                // Match the public table only, without depending on the mutex's lock key.
+                const writesDailyBalances =
+                  /\b(?:insert\s+into|update)\s+(?:"?app"?\s*\.\s*)?"?daily_balances"?\b/i.test(
+                    args[0].sql,
+                  );
+                if (!paused && writesDailyBalances) {
+                  paused = true;
+                  beforeWrite.resolve();
+                  await bounded(releaseA.promise, 'release A before writing daily_balances');
+                }
+                return execute<R>(...args);
+              },
+            );
+          try {
+            return await runner.runDailyCheck(pinnedDb, { accountingDate: DAY });
+          } finally {
+            spy.mockRestore();
+          }
+        })
         .then(
           (value) => ({ status: 'fulfilled', value }) as const,
           (error: unknown) => ({ status: 'rejected', error }) as const,
         );
       running.push(resultA);
-      await bounded(readCompleted.promise, 'A must finish reading ledger_entries');
+      await bounded(beforeWrite.promise, 'A must reach the daily_balances write');
       expect(paused).toBe(true);
 
-      // In a split read/write implementation A is paused before writing daily_balances.
-      // With atomic INSERT ... SELECT the same hook pauses after that statement, before COMMIT;
-      // its read snapshot still predates these committed late entries.
+      // A has not sent its INSERT ... SELECT, so no snapshot row lock can mask a missing mutex.
       await db.transaction().execute(async (trx) => {
         const late = await voucher(trx, { app_id: APP, accounting_date: DAY });
         await pair(trx, a, p, late, -50n, { account_version: 2n });
@@ -107,20 +115,27 @@ it(
         });
       running.push(resultB);
 
-      // Let B finish if no conflicting lock exists, otherwise prove it has reached A's lock.
-      // Poll an observable condition with a deadline; a fixed sleep cannot establish ordering.
+      // B must wait for A's lock while A has not sent its write. Finishing early is a failure,
+      // even if both runs would eventually produce the same totals without the mutex.
+      let blockedByA = false;
       await expect
         .poll(
           async () => {
             if (bFinished) return true;
             const waiting = await sql<{ blocked: boolean }>`
-              SELECT ${pidA}::integer = ANY(pg_blocking_pids(${pidB}::integer)) AS blocked
+              SELECT wait_event_type = 'Lock'
+                AND ${pidA}::integer = ANY(pg_blocking_pids(pid)) AS blocked
+              FROM pg_stat_activity
+              WHERE pid = ${pidB}::integer
             `.execute(db);
-            return waiting.rows[0]!.blocked || bFinished;
+            blockedByA = waiting.rows[0]?.blocked === true;
+            return blockedByA || bFinished;
           },
           { timeout: 10_000, interval: 20 },
         )
         .toBe(true);
+      expect(bFinished, 'B must not finish while A is paused before its write').toBe(false);
+      expect(blockedByA, 'B must observably wait for a lock held by A').toBe(true);
       releaseA.resolve();
 
       const outcomes = await bounded(Promise.all([resultA, resultB]), 'both daily checks finish');
