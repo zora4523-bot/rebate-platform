@@ -88,6 +88,13 @@ export { createInviteLoginDevicesReader } from './ports/invite-login-devices.ts'
 export type { InviteLoginDevicesReader } from './ports/invite-login-devices.ts';
 export { createUserLevelReader } from './ports/user-level.ts';
 export { createUserDeletionStatusReader } from './ports/user-deletion-status.ts';
+export { createDeletionStageReader } from './ports/deletion-stage.ts';
+export type {
+  DeletionStage,
+  DeletionStageInput,
+  DeletionStageReader,
+  DeletionStageReaderOptions,
+} from './ports/deletion-stage.ts';
 export type {
   UserDeletionStatus,
   UserDeletionStatusInput,
