@@ -6,7 +6,13 @@ import {
   type KnownPermission,
   type PermissionSnapshot,
 } from '../providers/access-control/index.ts';
+import { dashboardTexts } from '../texts/dashboard.ts';
 import { menuTexts, type MenuGroupKey, type MenuItemId } from '../texts/menu.ts';
+
+/** The workbench (01 F-ADM-26): a single menu above every group, the landing page after login. */
+export const DASHBOARD_MENU_ID = 'dashboard';
+export type AdminMenuId = MenuItemId | typeof DASHBOARD_MENU_ID;
+export type AdminMenuGroupKey = MenuGroupKey | typeof DASHBOARD_MENU_ID;
 
 export type MenuAccess =
   | { readonly kind: 'authenticated' }
@@ -14,13 +20,13 @@ export type MenuAccess =
   | { readonly kind: 'any'; readonly permissions: readonly KnownPermission[] };
 
 export interface AdminMenuItem {
-  readonly id: MenuItemId;
+  readonly id: AdminMenuId;
   readonly label: string;
   readonly access: MenuAccess;
 }
 
 export interface AdminMenuGroup {
-  readonly key: MenuGroupKey;
+  readonly key: AdminMenuGroupKey;
   readonly label: string;
   readonly items: readonly AdminMenuItem[];
 }
@@ -90,8 +96,22 @@ const CATALOGUE: readonly CatalogueRow[] = [
   ],
 ];
 
-const MENU_GROUPS: readonly AdminMenuGroup[] = Object.freeze(
-  CATALOGUE.map(([key, items]) =>
+// The workbench sits in a one-menu group of its own (the sidebar hides that group's title).
+const DASHBOARD_GROUP: AdminMenuGroup = Object.freeze({
+  key: DASHBOARD_MENU_ID,
+  label: dashboardTexts.menu,
+  items: Object.freeze([
+    Object.freeze({
+      id: DASHBOARD_MENU_ID,
+      label: dashboardTexts.menu,
+      access: any('dashboard.view'),
+    }),
+  ]),
+});
+
+const MENU_GROUPS: readonly AdminMenuGroup[] = Object.freeze([
+  DASHBOARD_GROUP,
+  ...CATALOGUE.map(([key, items]): AdminMenuGroup =>
     Object.freeze({
       key,
       label: menuTexts.groups[key],
@@ -100,7 +120,7 @@ const MENU_GROUPS: readonly AdminMenuGroup[] = Object.freeze(
       ),
     }),
   ),
-);
+]);
 
 /** The full catalogue, in design order (what a super admin sees). */
 export function getAdminMenuGroups(): readonly AdminMenuGroup[] {
