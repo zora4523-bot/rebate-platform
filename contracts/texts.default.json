@@ -229,6 +229,8 @@
     "invite.reward.tip_inviter": "好友首单结算后，你们各得 {amount}",
     "jump.taobao_sdk_unavailable": "暂时无法打开淘宝，请稍后再试",
     "ledger.balance_after": "余额 {amount}",
+    "ledger_type.REWARD.hint_invite": "邀请好友活动奖励",
+    "ledger_type.REWARD.name_invite": "邀请奖励",
     "link_landing.invalid": "链接已失效",
     "link_landing.owner_hint": "这是你分享的商品，自己购买按自购返利计算",
     "login.help_entry": "登录遇到问题",

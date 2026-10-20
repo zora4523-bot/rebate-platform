@@ -9004,10 +9004,10 @@ export interface components {
         /**
          * @description Status of an invite reward record (enum invite_reward_status; meanings only in BR-INV-24
          *     细则「资格记录与状态」): qualified → deferred → processed, with the end states voided and
-         *     budget_exhausted.
+         *     expired (no qualifying own order within the locked eligibility days, BR-INV-24「有效期」).
          * @enum {string}
          */
-        AdminInviteRewardStatus: "qualified" | "deferred" | "processed" | "voided" | "budget_exhausted";
+        AdminInviteRewardStatus: "qualified" | "deferred" | "processed" | "voided" | "expired";
         /**
          * @description One party's result (enum invite_reward_party_result; BR-INV-24).
          * @enum {string}
@@ -9043,6 +9043,11 @@ export interface components {
              * @description Amount each party gets, locked when the invitee qualified (BR-INV-24 ①).
              */
             amount_fen: number;
+            /**
+             * Format: int32
+             * @description Eligibility days locked when the invitee qualified (BR-INV-24「有效期」; config growth.invite_reward.eligibility_days at that time).
+             */
+            eligibility_days: number;
             bind_source: components["schemas"]["AdminInviteRewardBindSource"];
             /**
              * Format: date-time
@@ -9057,9 +9062,9 @@ export interface components {
              */
             triggered_at: string | null;
             status: components["schemas"]["AdminInviteRewardStatus"];
-            /** @description The inviter's result; null until processed (and for a voided or budget_exhausted record). */
+            /** @description The inviter's result; null until processed (and for a voided or expired record). */
             inviter_result: components["schemas"]["AdminInviteRewardPartyResult"] | null;
-            /** @description The invitee's result; null until processed (and for a voided or budget_exhausted record). */
+            /** @description The invitee's result; null until processed (and for a voided or expired record). */
             invitee_result: components["schemas"]["AdminInviteRewardPartyResult"] | null;
             /** @description Why the inviter is not paid; null unless inviter_result is skipped. */
             inviter_skip_reason: components["schemas"]["AdminInviteRewardSkipReason"] | null;
@@ -16385,6 +16390,7 @@ export interface operations {
                      *             "invitee_phone_masked": "139****0000",
                      *             "inviter_phone_masked": "138****5678",
                      *             "amount_fen": 1000,
+                     *             "eligibility_days": 30,
                      *             "bind_source": "landing",
                      *             "qualified_at": "2026-10-20T10:00:00+08:00",
                      *             "trigger_order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01",
@@ -16403,6 +16409,7 @@ export interface operations {
                      *             "invitee_phone_masked": "137****1111",
                      *             "inviter_phone_masked": "138****5678",
                      *             "amount_fen": 1000,
+                     *             "eligibility_days": 30,
                      *             "bind_source": "register",
                      *             "qualified_at": "2026-10-19T20:30:00+08:00",
                      *             "trigger_order_id": null,
@@ -16482,6 +16489,7 @@ export interface operations {
                      *         "invitee_phone_masked": "136****2222",
                      *         "inviter_phone_masked": "138****5678",
                      *         "amount_fen": 1000,
+                     *         "eligibility_days": 30,
                      *         "bind_source": "backfill",
                      *         "qualified_at": "2026-10-21T08:15:00+08:00",
                      *         "trigger_order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a02",
