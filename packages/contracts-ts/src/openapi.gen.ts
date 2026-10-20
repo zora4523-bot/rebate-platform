@@ -3896,10 +3896,11 @@ export interface paths {
          *     batch, 编排者默认), whose host is in the `union_host` category of the platform
          *     link-pattern table while switch `external_page.union_host_block` is on (BR-ATTR-29 ①), or
          *     that carries a personal-data placeholder (BR-ID-33 细则「外链不带个人数据」); a notice
-         *     that cannot be closed without notice_end_at (BR-TEXT-13 细则「生效区间」) → 20001.
+         *     that cannot be closed without notice_end_at (BR-TEXT-13 细则「生效区间」); help_section sent
+         *     with a category other than help (变更记录 20261020-内容线默认回写 §1.6) → 20001.
          *     `data.fields` lists, in this order, the offending field names (title, body,
-         *     notice_end_at), the forbidden words hit and the JSON paths inside the body written as
-         *     `body.content[i]…` (编排者默认); no other data key. For categories other than notice the
+         *     notice_end_at, help_section), the forbidden words hit and the JSON paths inside the body
+         *     written as `body.content[i]…` (编排者默认); no other data key. For categories other than notice the
          *     notice fields are ignored and stored as notice_closable=true, notice_end_at=null
          *     (编排者默认). notice_content_version is maintained by the server on save, never sent by
          *     the console (BR-TEXT-13 细则「首页公告条的关闭与内容版本」). Written to the audit log in the
@@ -3948,9 +3949,10 @@ export interface paths {
         /**
          * Save a new draft version of an article
          * @description Permission point `content.article`. Inserts a new version row (newest version + 1) in
-         *     status draft with the given title, body and notice fields; a saved version's body is never
-         *     changed in place (编排者默认). Same save checks and `data.fields` as POST
-         *     /admin/v1/articles. An article of category agreement → 20001 `data.fields=[category]`.
+         *     status draft with the given title, body, notice fields and help_section (omitted = none); a
+         *     saved version's body is never changed in place (编排者默认). Same save checks and
+         *     `data.fields` as POST /admin/v1/articles (help_section with a category other than help →
+         *     20001, listed after notice_end_at and before the forbidden words). An article of category agreement → 20001 `data.fields=[category]`.
          *     CAS: `expected_row_version` is the article's `row_version` the console showed; the new
          *     row takes the previous newest row's row_version + 1, and a mismatch → 20902 with
          *     `data.resource=article` (编排者默认). An article_id that is not a lowercase canonical UUID,
@@ -6028,6 +6030,16 @@ export interface components {
          */
         ArticleCategory: "help" | "rule" | "notice" | "agreement";
         /**
+         * @description Sub-section of a help article (04 §3.2 articles.help_section; 变更记录 20261020-内容线默认回写
+         *     §1.6). Codes are defined by the contract line (no enums/ entry, same as ArticleCategory);
+         *     the list follows the help-centre board and grows or shrinks with it under the enum
+         *     extension rules: getting_started = 新手教程, rebate_settlement = 返利与结算, orders_claims =
+         *     订单与找回, withdraw = 提现, invite = 邀请好友, account_privacy = 账号与隐私. Only an article of
+         *     category help may carry one.
+         * @enum {string}
+         */
+        ArticleHelpSection: "getting_started" | "rebate_settlement" | "orders_claims" | "withdraw" | "invite" | "account_privacy";
+        /**
          * @description In-app jump target {route, params} (contracts/routes.json; TECH-04). route stays a string on
          *     purpose: a server may return a route newer than an installed client, which then opens the
          *     upgrade page (03 §4.4), so the HTTP contract cannot pin the route list. The client checks
@@ -6080,6 +6092,8 @@ export interface components {
             version: number;
             /** Format: date-time */
             published_at: string;
+            /** @description Present only when category is help and the current version has one set; absent otherwise (never null). */
+            help_section?: components["schemas"]["ArticleHelpSection"];
         };
         ArticleListData: {
             items: components["schemas"]["ArticleSummary"][];
@@ -6100,6 +6114,8 @@ export interface components {
             /** Format: date-time */
             published_at: string;
             body: string;
+            /** @description Present only when category is help and the returned version has one set; absent otherwise (never null). */
+            help_section?: components["schemas"]["ArticleHelpSection"];
         };
         ArticleResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -6142,6 +6158,8 @@ export interface components {
             row_version: number;
             /** Format: date-time */
             updated_at: string;
+            /** @description Value of the newest version row; present only when category is help and that row has one set; absent otherwise (never null). */
+            help_section?: components["schemas"]["ArticleHelpSection"];
         };
         AdminArticleList: {
             /** @description Newest updated_at first. */
@@ -6188,6 +6206,8 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description Value of this version row; present only when category is help and the row has one set; absent otherwise (never null). */
+            help_section?: components["schemas"]["ArticleHelpSection"];
         };
         /** @description An article with every version row. */
         AdminArticle: {
@@ -6233,6 +6253,11 @@ export interface components {
              * @description Notices only; required when notice_closable is false. Ignored for other categories.
              */
             notice_end_at?: string | null;
+            /**
+             * @description Help articles only; omitted = no sub-section. Not nullable. Sent with a category
+             *     other than help → 20001 `data.fields` containing help_section.
+             */
+            help_section?: components["schemas"]["ArticleHelpSection"];
         };
         AdminArticleDraftRequest: {
             title: string;
@@ -6245,6 +6270,12 @@ export interface components {
              * @description Notices only; required when notice_closable is false. Ignored for other categories.
              */
             notice_end_at?: string | null;
+            /**
+             * @description Help articles only; omitted = no sub-section (a draft is a whole new version row, so
+             *     omitting it clears the value). Not nullable. Sent with a category other than help →
+             *     20001 `data.fields` containing help_section.
+             */
+            help_section?: components["schemas"]["ArticleHelpSection"];
             /**
              * Format: int32
              * @description The article's `row_version` as the console showed it; a mismatch is 20902.
@@ -6709,8 +6740,19 @@ export interface components {
         ConfigLegalAgreement: {
             /** Format: int32 */
             version: number;
+            /**
+             * Format: int32
+             * @description legal.agreement.min_version (BR-ID-12 正文; 04 §10.1 2026-10-20 补登). Absent when the key
+             *     is not set (缺失不下发). This field triggers no blocking: whether a client below it is
+             *     refused is pending (变更记录 20261020-内容线默认回写 §3). The server does not check it
+             *     against version.
+             */
+            min_version?: number;
         };
-        /** @description legal.privacy.version, legal.privacy.min_version, legal.agreement.version (04 §10.1). */
+        /**
+         * @description legal.privacy.version, legal.privacy.min_version, legal.agreement.version and the optional
+         *     legal.agreement.min_version (04 §10.1).
+         */
         ConfigLegal: {
             privacy: components["schemas"]["ConfigLegalPrivacy"];
             agreement: components["schemas"]["ConfigLegalAgreement"];
@@ -11591,6 +11633,14 @@ export interface operations {
         parameters: {
             query: {
                 category: components["schemas"]["ArticleCategory"];
+                /**
+                 * @description Optional filter on the help_section of each article's current version (04 §6.2;
+                 *     变更记录 20261020-内容线默认回写 §1.6). Only with category=help: with any other category →
+                 *     20001 `data.fields=[help_section]`; an unknown code is refused by the route schema with
+                 *     20001. The cursor shape is unchanged and not bound to this filter (04 §6.2). Until
+                 *     F1-02zs is merged the server ignores this parameter.
+                 */
+                help_section?: components["schemas"]["ArticleHelpSection"];
                 /** @description Opaque cursor from `next_cursor`; absent for the first page. */
                 cursor?: components["parameters"]["Cursor"];
                 /** @description Page size, at most 50 (04 §5). */

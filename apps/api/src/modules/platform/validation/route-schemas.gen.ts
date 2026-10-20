@@ -2569,6 +2569,18 @@ export const CONTRACT_ROUTE_SCHEMAS = {
             "agreement"
           ]
         },
+        "help_section": {
+          "type": "string",
+          "description": "Sub-section of a help article (04 §3.2 articles.help_section; 变更记录 20261020-内容线默认回写\n§1.6). Codes are defined by the contract line (no enums/ entry, same as ArticleCategory);\nthe list follows the help-centre board and grows or shrinks with it under the enum\nextension rules: getting_started = 新手教程, rebate_settlement = 返利与结算, orders_claims =\n订单与找回, withdraw = 提现, invite = 邀请好友, account_privacy = 账号与隐私. Only an article of\ncategory help may carry one.\n",
+          "enum": [
+            "getting_started",
+            "rebate_settlement",
+            "orders_claims",
+            "withdraw",
+            "invite",
+            "account_privacy"
+          ]
+        },
         "cursor": {
           "type": "string",
           "maxLength": 512
@@ -7769,6 +7781,18 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           ],
           "format": "date-time",
           "description": "Notices only; required when notice_closable is false. Ignored for other categories."
+        },
+        "help_section": {
+          "description": "Help articles only; omitted = no sub-section. Not nullable. Sent with a category\nother than help → 20001 `data.fields` containing help_section.\n",
+          "type": "string",
+          "enum": [
+            "getting_started",
+            "rebate_settlement",
+            "orders_claims",
+            "withdraw",
+            "invite",
+            "account_privacy"
+          ]
         }
       }
     }
@@ -7861,6 +7885,18 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           ],
           "format": "date-time",
           "description": "Notices only; required when notice_closable is false. Ignored for other categories."
+        },
+        "help_section": {
+          "description": "Help articles only; omitted = no sub-section (a draft is a whole new version row, so\nomitting it clears the value). Not nullable. Sent with a category other than help →\n20001 `data.fields` containing help_section.\n",
+          "type": "string",
+          "enum": [
+            "getting_started",
+            "rebate_settlement",
+            "orders_claims",
+            "withdraw",
+            "invite",
+            "account_privacy"
+          ]
         },
         "expected_row_version": {
           "type": "integer",
