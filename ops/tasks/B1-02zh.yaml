@@ -18,4 +18,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/privacy-min-version/**'
-status: todo
+status: done
+pr: 1004
