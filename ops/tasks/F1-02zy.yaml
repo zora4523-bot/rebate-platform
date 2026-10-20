@@ -1,0 +1,20 @@
+id: F1-02zy
+repo: rebate-platform
+title: 迁移门禁 APPROVED_GUARD_CHANGES 登记 CT-25d 的 invite_rewards_status_check 重建迁移（内容哈希），[AC-CT-06d#1] 同步接受 0020 与该迁移两条
+type: guard-change
+# 2026-10-20 入账（content-client 第五阶段；#161 跟进）。invite_rewards 进资金表清单（F1-02zu）后，CT-25d 同名重建 status 约束且定义变化，严格模式拒绝，须按 CT-06d 登记审批。
+# 做法：只加一条 '<CT-25d 重建迁移文件名>': '<sha256>'，不改判定逻辑；哈希取 CT-25d 评审定稿后的文件字节，定稿后再动迁移须重登。
+#   guard-approvals.test.ts [AC-CT-06d#1] 的期望改为 0020 加这一条；该迁移文件已在 db/migrations 时另断言其实际哈希与登记相等，未合并时只比登记值。
+# 先例：0020（B1-06r，CT-06d 合入时登记）。门禁放行属第三类保护路径，按 approvals #24 由编排判定是否另需负责人确认后加标签。
+refs: []
+refs_hash: {}
+deps: [F1-02zu]
+paths:
+  - 'tools/ci/lint-migrations.ts'
+  - 'test/spec/db/lint-migrations/guard-approvals.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

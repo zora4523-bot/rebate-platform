@@ -1,0 +1,29 @@
+id: CT-25d
+repo: rebate-platform
+title: 迁移（#161 资格有效期跟进）：app.invite_rewards 加 eligibility_days（integer NOT NULL、≥ 1、取得资格时写入、不可 UPDATE），status 约束以 expired 取代 budget_exhausted（同名重建 NOT VALID，下一号迁移单独 VALIDATE）；不改 0055
+type: migration
+# 2026-10-20 入账（content-client 第五阶段；负责人决定 couli #161 ac4d993，notices 12:5x / 13:1x，编号 05:41 UTC 预占）。
+# 依据（SPEC_REF ac4d993）：04 l.421 §3.2 invite_rewards（eligibility_days「锁定的有效期天数」；status 五种以已过期取代预算用尽）；
+#   08 11_INV 细则 l.560 默认值（30 天，取得资格时随金额锁定）、l.569、l.571「有效期」。原文由编排者摘入任务书第 9 节，refs 置空。
+# 形状：列 integer NOT NULL，具名 CHECK ≥ 1；加列时 DEFAULT 30 只为补已有行，同迁移内 DROP DEFAULT（写者必须显式写入）；
+#   授权不变（0055 表级 INSERT 覆盖新列，列级 UPDATE 清单不含它，锁定后不可改）。
+# 迁移门禁：invite_rewards 在资金表清单（F1-02zu），同名约束定义变化须登记 APPROVED_GUARD_CHANGES（F1-02zy）；
+#   funds 表不许 squawk-ignore，同文件 VALIDATE 触发 constraint-missing-not-valid，故 VALIDATE 放下一号迁移。写法按 lint-migrations 与 squawk 实跑通过（任务书 9.2）。
+# 迁移号：落地时取主干最大 +1、+2 连号（现主干 0055；B1-35b 拟用 0056），先在 notices 登记。
+# 两段式：只写迁移 SQL；schema.sql 与 db.gen.ts 由编排者沙箱外 pnpm db:snapshot 生成（outside_needed）。
+refs: []
+refs_hash: {}
+deps: [CT-25b, CT-25c, CT-25e, F1-02zy]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/growth/invite-reward-eligibility/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/growth/invite-reward-eligibility/**'
+status: todo
+pr: null
