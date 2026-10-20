@@ -1,0 +1,127 @@
+{
+  "task": "F1-02ze",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "47b4c0ad4767064aefd8886fda9d833d207f7015",
+  "red_tests": [
+    "test/spec/content/agreements-read-version/contract.test.ts > [AC-F1-02ze#13] getAgreementVersion 启用并生成 schema，三类匿名不签名，响应恰八字段",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] privacy version=current 精确读取八字段，按版本号而非时间排序",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] privacy version=1 精确读取八字段，按版本号而非时间排序",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] agreement version=current 精确读取八字段，按版本号而非时间排序",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] agreement version=1 精确读取八字段，按版本号而非时间排序",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] labor_agreement version=current 精确读取八字段，按版本号而非时间排序",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] labor_agreement version=1 精确读取八字段，按版本号而非时间排序",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#2] missing-version 返回 HTTP 404 / 30701 和空 data",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#2] unpublished-type 返回 HTTP 404 / 30701 和空 data",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#2] other-app-type 返回 HTTP 404 / 30701 和空 data",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#2] other-app-version 返回 HTTP 404 / 30701 和空 data",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 foo/ 返回 20001、fields=[type]，不查询协议表",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 privacy/0 返回 20001、fields=[version]，不查询协议表",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 privacy/-1 返回 20001、fields=[version]，不查询协议表",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 privacy/abc 返回 20001、fields=[version]，不查询协议表",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 privacy/2147483648 返回 20001、fields=[version]，不查询协议表",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 privacy/1.5 返回 20001、fields=[version]，不查询协议表",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#4] int32 最大合法版本按不存在处理，不误报校验错误",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#5] privacy 当前与历史版本匿名、deletion_only、无效令牌得到相同内容",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#5] agreement 当前与历史版本匿名、deletion_only、无效令牌得到相同内容",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#5] labor_agreement 当前与历史版本匿名、deletion_only、无效令牌得到相同内容",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#6] 不推进时钟发布新版本即见，每次请求含重复历史读取恰好查询一次",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#7] 未发布类型的空结果不缓存，首次发布同一时钟即可读取",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#8] 相同类型版本跨 app 交替请求始终隔离",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#9] 公共读不改协议、不写同意记录或审计，含不存在与非法请求",
+    "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#10] 新读口不改变列表的两类形状与缓存，也不改变 identity 端口单次查询",
+    "test/spec/content/agreements-read-version/no-database.test.ts > [AC-F1-02ze#12] 无数据库仍注册版本路由并返回 50001",
+    "test/spec/content/agreements-read-version/store.int.test.ts > [AC-F1-02ze#11] 版本仓储每次只做一条 SELECT，返回精确八字段或 null"
+  ],
+  "risk_note": "RV2 (content public read, no funds, no writes). Anonymous GET /v1/agreements/{type}?version= (getAgreementVersion, contract CT-02z #951): one SELECT per request filtered by app_id, type and (when given) version, the highest version when none is given, no cross-request cache; labor agreement and historical versions are public (orchestrator ruling X3); no row answers 30701. Mounted on the existing AgreementsController; getAgreements, currentAgreementRow(s) and PublicAgreementReader unchanged. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "47b4c0ad4767064aefd8886fda9d833d207f7015",
+      "tree": "b1ff2b4627058863388f40a5d0c37f75ddd599b5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T23:52:48Z",
+      "finished_at": "2026-10-19T23:53:03Z",
+      "red_tests": [
+        "test/spec/content/agreements-read-version/contract.test.ts > [AC-F1-02ze#13] getAgreementVersion 启用并生成 schema，三类匿名不签名，响应恰八字段",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] privacy version=current 精确读取八字段，按版本号而非时间排序",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] privacy version=1 精确读取八字段，按版本号而非时间排序",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] agreement version=current 精确读取八字段，按版本号而非时间排序",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] agreement version=1 精确读取八字段，按版本号而非时间排序",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] labor_agreement version=current 精确读取八字段，按版本号而非时间排序",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#1] labor_agreement version=1 精确读取八字段，按版本号而非时间排序",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#2] missing-version 返回 HTTP 404 / 30701 和空 data",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#2] unpublished-type 返回 HTTP 404 / 30701 和空 data",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#2] other-app-type 返回 HTTP 404 / 30701 和空 data",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#2] other-app-version 返回 HTTP 404 / 30701 和空 data",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 foo/ 返回 20001、fields=[type]，不查询协议表",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 privacy/0 返回 20001、fields=[version]，不查询协议表",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 privacy/-1 返回 20001、fields=[version]，不查询协议表",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 privacy/abc 返回 20001、fields=[version]，不查询协议表",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 privacy/2147483648 返回 20001、fields=[version]，不查询协议表",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#3] 非法参数 privacy/1.5 返回 20001、fields=[version]，不查询协议表",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#4] int32 最大合法版本按不存在处理，不误报校验错误",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#5] privacy 当前与历史版本匿名、deletion_only、无效令牌得到相同内容",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#5] agreement 当前与历史版本匿名、deletion_only、无效令牌得到相同内容",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#5] labor_agreement 当前与历史版本匿名、deletion_only、无效令牌得到相同内容",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#6] 不推进时钟发布新版本即见，每次请求含重复历史读取恰好查询一次",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#7] 未发布类型的空结果不缓存，首次发布同一时钟即可读取",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#8] 相同类型版本跨 app 交替请求始终隔离",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#9] 公共读不改协议、不写同意记录或审计，含不存在与非法请求",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts > [AC-F1-02ze#10] 新读口不改变列表的两类形状与缓存，也不改变 identity 端口单次查询",
+        "test/spec/content/agreements-read-version/no-database.test.ts > [AC-F1-02ze#12] 无数据库仍注册版本路由并返回 50001",
+        "test/spec/content/agreements-read-version/store.int.test.ts > [AC-F1-02ze#11] 版本仓储每次只做一条 SELECT，返回精确八字段或 null"
+      ],
+      "expected": [
+        "test/spec/content/agreements-read-version/contract.test.ts",
+        "test/spec/content/agreements-read-version/delivery.int.test.ts",
+        "test/spec/content/agreements-read-version/no-database.test.ts",
+        "test/spec/content/agreements-read-version/store.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ab7a4d7eeea812f6589025f7990f0ac0f0a0a0f80609cebe833771c8b4fbefe9"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "d00342acf73139f5f55f73bb190f0f558c9f6c84fd87a9aff344c65a102159bb"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (2 runs) reviewed by fresh Claude subagents: r1 fail (S1 the typed read with a version did not pin the type filter), Codex added a field-by-field comparison in #9, r2 pass"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "4d479f27e7b02859af5452b77962047c3c14be8d",
+    "specs": "a1b96a3002d99e9b2e9c35fa6b3b4fbdba07cfca"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}

@@ -1982,7 +1982,6 @@ paths:
       x-auth: none
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 30701
       security: []
