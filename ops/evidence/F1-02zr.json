@@ -1,0 +1,136 @@
+{
+  "task": "F1-02zr",
+  "spec_ref": "76f61aaa455a67f5b1d9212c6da710711cd255a1",
+  "spec_commit": "3f606ef8bb66061a358c35bdb904287ece505e1f",
+  "red_tests": [
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#7] 缺行静默省略，合法值含 int32 上界照常下发且不与 version 比较",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为零仍返回 200 并省略，仅 warn 一次键名且不含原值",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为负数仍返回 200 并省略，仅 warn 一次键名且不含原值",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为小数仍返回 200 并省略，仅 warn 一次键名且不含原值",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为字符串仍返回 200 并省略，仅 warn 一次键名且不含原值",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为null仍返回 200 并省略，仅 warn 一次键名且不含原值",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为布尔 true仍返回 200 并省略，仅 warn 一次键名且不含原值",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为布尔 false仍返回 200 并省略，仅 warn 一次键名且不含原值",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为超 int32仍返回 200 并省略，仅 warn 一次键名且不含原值",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为对象仍返回 200 并省略，仅 warn 一次键名且不含原值",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为数组仍返回 200 并省略，仅 warn 一次键名且不含原值",
+    "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#9] 仅改最低版本即改变 config_version，旧 ETag 返回新 200，缺行及非法值保持原 ETag",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#10] 最低版本只经协议发布写入，不登记配置中心；隐私与劳务映射不变",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#1] 合法最低版本 1 确定性下发，允许大于 version；缺行无字段、无报告",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#1] 合法最低版本 2 确定性下发，允许大于 version；缺行无字段、无报告",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#1] 合法最低版本 2147483647 确定性下发，允许大于 version；缺行无字段、无报告",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为零按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为负数按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为小数按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为字符串按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为null按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为true按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为false按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为超出 int32按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为对象按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为数组按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为NaN按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为Infinity按缺行处理，每次仅报告该键且结果确定",
+    "test/spec/content/agreements-min-version/publish.int.test.ts > [AC-F1-02zr#3] 首发及逐版发布写请求 min_version，两键各自递增修订并逐次记录历史",
+    "test/spec/content/agreements-min-version/publish.int.test.ts > [AC-F1-02zr#4] 配置中较大的最低版本可以回写为请求值，其他协议及其他 app 不碰它",
+    "test/spec/content/agreements-min-version/publish.int.test.ts > [AC-F1-02zr#5] 已有配置=false，最低版本历史已写后失败则文章、协议、两键、历史、审计全部回滚",
+    "test/spec/content/agreements-min-version/publish.int.test.ts > [AC-F1-02zr#5] 已有配置=true，最低版本历史已写后失败则文章、协议、两键、历史、审计全部回滚",
+    "test/spec/content/agreements-min-version/publish.int.test.ts > [AC-F1-02zr#6] L44 的 version 在前仍返回 20902，修正版本后才原子发布两键"
+  ],
+  "risk_note": "RV2 (content agreements / client config; L24 from the #158 write-back, contract CT-02za #1020; no funds). Publishing the user agreement also writes legal.agreement.min_version (the request's min_version) in the same transaction with the existing lock, config history and audit; the 20902 conflict still looks only at version; the labor agreement writes no config. /v1/config delivers legal.agreement.min_version when present and valid; missing is silent, an invalid shape is omitted with one warn naming only the key; never 50001 and never blocks; ETag follows the body. Identity need_reconsent / 10004 unchanged. Rule-test kit fixes (app id length, status before parse) were mechanical, by the orchestrator, before the implementation. Frozen [AC-F1-02p#15] accepts the new branch since F1-02zzc (#1013). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "3f606ef8bb66061a358c35bdb904287ece505e1f",
+      "tree": "f877ebbfa00eab5117be2189a242aff846acdb0b",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T20:43:44Z",
+      "finished_at": "2026-10-20T20:43:59Z",
+      "red_tests": [
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#7] 缺行静默省略，合法值含 int32 上界照常下发且不与 version 比较",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为零仍返回 200 并省略，仅 warn 一次键名且不含原值",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为负数仍返回 200 并省略，仅 warn 一次键名且不含原值",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为小数仍返回 200 并省略，仅 warn 一次键名且不含原值",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为字符串仍返回 200 并省略，仅 warn 一次键名且不含原值",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为null仍返回 200 并省略，仅 warn 一次键名且不含原值",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为布尔 true仍返回 200 并省略，仅 warn 一次键名且不含原值",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为布尔 false仍返回 200 并省略，仅 warn 一次键名且不含原值",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为超 int32仍返回 200 并省略，仅 warn 一次键名且不含原值",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为对象仍返回 200 并省略，仅 warn 一次键名且不含原值",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#8] 最低版本为数组仍返回 200 并省略，仅 warn 一次键名且不含原值",
+        "test/spec/content/agreements-min-version/delivery.int.test.ts > [AC-F1-02zr#9] 仅改最低版本即改变 config_version，旧 ETag 返回新 200，缺行及非法值保持原 ETag",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#10] 最低版本只经协议发布写入，不登记配置中心；隐私与劳务映射不变",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#1] 合法最低版本 1 确定性下发，允许大于 version；缺行无字段、无报告",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#1] 合法最低版本 2 确定性下发，允许大于 version；缺行无字段、无报告",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#1] 合法最低版本 2147483647 确定性下发，允许大于 version；缺行无字段、无报告",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为零按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为负数按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为小数按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为字符串按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为null按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为true按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为false按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为超出 int32按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为对象按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为数组按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为NaN按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/domain.test.ts > [AC-F1-02zr#2] 最低版本为Infinity按缺行处理，每次仅报告该键且结果确定",
+        "test/spec/content/agreements-min-version/publish.int.test.ts > [AC-F1-02zr#3] 首发及逐版发布写请求 min_version，两键各自递增修订并逐次记录历史",
+        "test/spec/content/agreements-min-version/publish.int.test.ts > [AC-F1-02zr#4] 配置中较大的最低版本可以回写为请求值，其他协议及其他 app 不碰它",
+        "test/spec/content/agreements-min-version/publish.int.test.ts > [AC-F1-02zr#5] 已有配置=false，最低版本历史已写后失败则文章、协议、两键、历史、审计全部回滚",
+        "test/spec/content/agreements-min-version/publish.int.test.ts > [AC-F1-02zr#5] 已有配置=true，最低版本历史已写后失败则文章、协议、两键、历史、审计全部回滚",
+        "test/spec/content/agreements-min-version/publish.int.test.ts > [AC-F1-02zr#6] L44 的 version 在前仍返回 20902，修正版本后才原子发布两键"
+      ],
+      "expected": [
+        "test/spec/content/agreements-min-version/delivery.int.test.ts",
+        "test/spec/content/agreements-min-version/domain.test.ts",
+        "test/spec/content/agreements-min-version/publish.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "30501994879ed5db9fe1f4e444aaf42dd0bdc1ee187fed5fb434e6b1b1112577"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "2f50055b61b3a3081a0028f312e7b47998a018afc77775e2836decda45c451e1"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings (earlier no-output calls during the Codex outage are uncounted)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "fail",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 fail with one S1 (fixture app id longer than X-App-Id maxLength); fixed mechanically by the orchestrator together with a status assertion before parsing; the test machine then showed every red test failing on an assertion"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "dec84006fc9f61cef5fa6a9da9c9b65d4e046092",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "70d231ce7ae620b0e3264b30830f77043407ffc4",
+    "test/spec": "bfed92dc3f169dd7eed07b1994cd6c5239b5c6ac",
+    "specs": "a6a8f5fd85ce48d56f75ce7b44e798701dcbf0bb"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "70d231ce7ae620b0e3264b30830f77043407ffc4"
+  }
+}

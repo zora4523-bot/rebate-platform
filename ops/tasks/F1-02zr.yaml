@@ -21,5 +21,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/content/agreements-min-version/**'
-status: todo
-pr: null
+status: done
+pr: 1038

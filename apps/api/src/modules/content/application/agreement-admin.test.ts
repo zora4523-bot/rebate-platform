@@ -295,7 +295,10 @@ it('[AC-F1-02p] legal keys per type (L24)', () => {
     'legal.privacy.version',
     'legal.privacy.min_version',
   ]);
-  expect(legalKeysOf('agreement').map((k) => k.key)).toEqual(['legal.agreement.version']);
+  expect(legalKeysOf('agreement')).toEqual([
+    { key: 'legal.agreement.version', field: 'version' },
+    { key: 'legal.agreement.min_version', field: 'min_version' },
+  ]);
   expect(legalKeysOf('labor_agreement')).toEqual([]);
 });
 
