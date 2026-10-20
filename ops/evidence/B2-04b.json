@@ -1,0 +1,121 @@
+{
+  "task": "B2-04b",
+  "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
+  "spec_commit": "20f90344ca70dff3af748c486df0b36b7f62e538",
+  "red_tests": [
+    "test/spec/db/settlement/ledger-owned/access.int.test.ts > [AC-B2-04b#21] couli_app 仅有读、插入和更新所需权限，无删除或管理权限",
+    "test/spec/db/settlement/ledger-owned/access.int.test.ts > [AC-B2-04b#22] 应用账号实际 DELETE、TRUNCATE、ALTER 均被拒绝且原数据保留",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#23] 差错单租户、业务键和金额不得为 NULL，重复主键不能覆盖原记录",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#6] 应用账号可登记日差错和月差错，保留正负差额与大整数精度",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#7] 原业务键拒绝重复，app、类型、周期、引用各自区分差错",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#8] 非空 dedupe_key 独立去重，同 app 跨引用仍冲突、其他 app 不冲突",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#9] 多条 NULL 去重键允许入库，更新到已占用非空键被数据库拒绝",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#10] 并发登记同 dedupe_key 只成功一条，其余收到唯一冲突",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#11] 月末三项不平按 app 与月份去重，处置后重跑也不能再登记",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#12] 本任务差错类型与状态遵循契约，拒绝未知类型、来源、状态",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#13] 同 app 处理人和显式结案时间可保存，空处理人、空结论允许待处理",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#24] 不恢复可直接登记 closed，也可从 open 或 processing 关闭，拒绝未知状态",
+    "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#14] 不存在或跨 app 的处理人不能插入、不能通过更新挂入",
+    "test/spec/db/settlement/ledger-owned/schema.int.test.ts > [AC-B2-04b#1] 04 的差错单列齐全，金额 bigint，S4 新列及待处理信息可空",
+    "test/spec/db/settlement/ledger-owned/schema.int.test.ts > [AC-B2-04b#2] 日快照含全部独立金额与可比标记，日期由调用方传入",
+    "test/spec/db/settlement/ledger-owned/schema.int.test.ts > [AC-B2-04b#3] 原业务键唯一，dedupe_key 是 app 内非空部分唯一，日快照按 app 与日期唯一",
+    "test/spec/db/settlement/ledger-owned/schema.int.test.ts > [AC-B2-04b#4] 同一迁移创建并授权三表，资金表约束与独立索引全部显式具名",
+    "test/spec/db/settlement/ledger-owned/schema.int.test.ts > [AC-B2-04b#5] 处理人外键绑定本 app 的管理员，所有新增外键均不级联",
+    "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#15] 日快照精确保留大整数及各项金额，按平台存应收而不合并",
+    "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#16] 同 app 同日只有一张快照，跨 app、相邻日不冲突",
+    "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#17] 并发快照只保留一行，不依赖应用先查后插",
+    "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#18] 超时快照能标记不可比，余额金额及其他日期不被改动",
+    "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#19] 显式 D 日不受会话时区影响，日期和各金额不能为 NULL",
+    "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#20] 应收子表按快照和平台唯一，必填列不空且必须关联已有快照"
+  ],
+  "risk_note": "RV2 migration (data model only; settlement-plan B2-04b, BR-FUND-18 / 19 / 22 / 23; S4, S15, decisions 36 and 40). Migration 0060_settlement-ledger-owned.sql: app.recon_diffs with the 04 columns plus nullable dedupe_key and resolution (S4), named constraints and indexes, unique (app_id, type, period, ref_id), partial unique on non-null dedupe_key per app and one month-end three-way mismatch per (app_id, month), type / source / status CHECKs from the contract enums including closed, handler FK to the app's admin users without cascade; app.asset_snapshots unique per (app_id, date) with a named (app_id, id) unique key; app.asset_snapshot_receivables child table for the per-platform union receivable (bigint fen, one row per snapshot and platform, platform limited to the contract list, composite FK (app_id, asset_snapshot_id) without cascade). Grants: couli_app SELECT / INSERT plus column-level UPDATE only on status / handler / closed_at / dedupe_key / resolution / updated_at and the snapshot comparability flag; amount columns are not updatable; couli_readonly SELECT. Two SET LOCAL timeouts; no DO block. db/schema.sql and db.gen.ts regenerated on the test machine. tools/ci/lint-migrations.test.ts lists the three new funds tables (additions only).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "20f90344ca70dff3af748c486df0b36b7f62e538",
+      "tree": "2e9d30e9983c20b660fe4be3900c3b84af000f56",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T11:41:03Z",
+      "finished_at": "2026-10-20T11:41:34Z",
+      "gate": {
+        "commit": "b4450d7dee6334bc03ad56372e5e812ce8870fe5",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/settlement/ledger-owned/access.int.test.ts > [AC-B2-04b#21] couli_app 仅有读、插入和更新所需权限，无删除或管理权限",
+        "test/spec/db/settlement/ledger-owned/access.int.test.ts > [AC-B2-04b#22] 应用账号实际 DELETE、TRUNCATE、ALTER 均被拒绝且原数据保留",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#23] 差错单租户、业务键和金额不得为 NULL，重复主键不能覆盖原记录",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#6] 应用账号可登记日差错和月差错，保留正负差额与大整数精度",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#7] 原业务键拒绝重复，app、类型、周期、引用各自区分差错",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#8] 非空 dedupe_key 独立去重，同 app 跨引用仍冲突、其他 app 不冲突",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#9] 多条 NULL 去重键允许入库，更新到已占用非空键被数据库拒绝",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#10] 并发登记同 dedupe_key 只成功一条，其余收到唯一冲突",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#11] 月末三项不平按 app 与月份去重，处置后重跑也不能再登记",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#12] 本任务差错类型与状态遵循契约，拒绝未知类型、来源、状态",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#13] 同 app 处理人和显式结案时间可保存，空处理人、空结论允许待处理",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#24] 不恢复可直接登记 closed，也可从 open 或 processing 关闭，拒绝未知状态",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts > [AC-B2-04b#14] 不存在或跨 app 的处理人不能插入、不能通过更新挂入",
+        "test/spec/db/settlement/ledger-owned/schema.int.test.ts > [AC-B2-04b#1] 04 的差错单列齐全，金额 bigint，S4 新列及待处理信息可空",
+        "test/spec/db/settlement/ledger-owned/schema.int.test.ts > [AC-B2-04b#2] 日快照含全部独立金额与可比标记，日期由调用方传入",
+        "test/spec/db/settlement/ledger-owned/schema.int.test.ts > [AC-B2-04b#3] 原业务键唯一，dedupe_key 是 app 内非空部分唯一，日快照按 app 与日期唯一",
+        "test/spec/db/settlement/ledger-owned/schema.int.test.ts > [AC-B2-04b#4] 同一迁移创建并授权三表，资金表约束与独立索引全部显式具名",
+        "test/spec/db/settlement/ledger-owned/schema.int.test.ts > [AC-B2-04b#5] 处理人外键绑定本 app 的管理员，所有新增外键均不级联",
+        "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#15] 日快照精确保留大整数及各项金额，按平台存应收而不合并",
+        "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#16] 同 app 同日只有一张快照，跨 app、相邻日不冲突",
+        "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#17] 并发快照只保留一行，不依赖应用先查后插",
+        "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#18] 超时快照能标记不可比，余额金额及其他日期不被改动",
+        "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#19] 显式 D 日不受会话时区影响，日期和各金额不能为 NULL",
+        "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts > [AC-B2-04b#20] 应收子表按快照和平台唯一，必填列不空且必须关联已有快照"
+      ],
+      "expected": [
+        "test/spec/db/settlement/ledger-owned/access.int.test.ts",
+        "test/spec/db/settlement/ledger-owned/recon.int.test.ts",
+        "test/spec/db/settlement/ledger-owned/schema.int.test.ts",
+        "test/spec/db/settlement/ledger-owned/snapshots.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "4f1b071c786e305d98fbf7e9699c613cacca22f3745ac2008c4dedc8ceb53356"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 3 runs; round 1 fail (S1: closed resolution untested; S2 column-level grants), round 2 pass, then the implementation hit two frozen-test problems (jsonb *_fen against the migration gate; kit.ts importing @couli/db/testing) fixed in run 3 with a child table (decision 40), round 3 pass; the orchestrator then fixed one fixture prefix retry: -> rerun: mechanically (D10-88)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "047f9709a1e1dd8e711bbac2e5dba327392e9f19",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "e308f96db2c38fa575aabb2b645906c6d79ab386",
+    "test/spec": "d193be651278a0db5ee08c564add554b7eb7c274",
+    "specs": "b80f759906adb5320a33adb9ff0a59fcb0fb9a3a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "e308f96db2c38fa575aabb2b645906c6d79ab386"
+  }
+}
