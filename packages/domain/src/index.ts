@@ -107,6 +107,26 @@ export type {
   NegativeBalanceInput,
 } from './ledger/ledger.ts';
 export { buildVouchers } from './ledger/build-vouchers.ts';
+export {
+  planInitialCredit,
+  checkCreditInvariant,
+  planBeneficiaryCredit,
+} from './settlement/credit/credit-plan.ts';
+export type {
+  CreditBeneficiaryState,
+  CreditBeneficiary,
+  CreditForfeitReason,
+  CreditVoucherRequest,
+  InitialCreditInput,
+  InitialCreditDecision,
+  InitialCreditPlan,
+  CreditNetPosition,
+  CreditInvariantInput,
+  CreditInvariantResult,
+  CreditObligation,
+  BeneficiaryCreditInput,
+  BeneficiaryCreditPlan,
+} from './settlement/credit/credit-plan.ts';
 export type {
   VoucherAccount,
   BuiltVoucherEntry,
