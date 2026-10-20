@@ -50,6 +50,11 @@ function fake(rows: Record<string, ConfigItemRow>, history: Record<string, unkno
       });
     },
     history: () => Promise.resolve(),
+    lockInviteReward: () => Promise.resolve(),
+    values: (_app, keys) =>
+      Promise.resolve(
+        new Map(keys.flatMap((key) => (rows[key] === undefined ? [] : [[key, rows[key].value]]))),
+      ),
     audit: (input) => {
       audits.push(input);
       return Promise.resolve();
@@ -131,5 +136,5 @@ it('[AC-F1-02zj#11] list exposes the enum options of settle.* items', async () =
   const page = await admin.list('couli', { page: 1, page_size: 100 });
   const source = page.items.find((item) => item.key === 'settle.statement_source.taobao');
   expect(source?.options).toStrictEqual(['api', 'upload']);
-  expect(page.total).toBe(45);
+  expect(page.total).toBe(50);
 });

@@ -118,6 +118,10 @@ const REGISTRY: readonly SwitchSpec[] = Object.freeze([
   spec('tlj.enabled', false, ALL),
   spec('growth.invite_bind.enabled', true, ALL),
   spec('watch.enabled.<platform>', false, ALL),
+  // F1-02zn: BR-INV-24 invite reward campaign switches, both default off. Turning `enabled` on
+  // is guarded by the invite reward prerequisites (../domain/invite-reward.ts).
+  spec('growth.invite_reward.enabled', false, ALL),
+  spec('growth.invite_reward.payout_paused', false, ALL),
 ]);
 
 const PLACEHOLDERS = new Set(['<platform>', '<channel>', '<pay_channel>', '<name>']);

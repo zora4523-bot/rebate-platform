@@ -28,10 +28,10 @@ function spec(key: string) {
 
 it('[AC-F1-02zj#2] settle.* items are appended after the 29 earlier items, editable config.business', () => {
   const registry = configRegistry();
-  expect(registry).toHaveLength(45);
+  expect(registry).toHaveLength(50);
   expect(registry[28]!.key).toBe('external_hosts');
-  expect(registry.slice(29).map((entry) => entry.key)).toStrictEqual(SETTLE_KEYS);
-  for (const entry of registry.slice(29)) {
+  expect(registry.slice(29, 45).map((entry) => entry.key)).toStrictEqual(SETTLE_KEYS);
+  for (const entry of registry.slice(29, 45)) {
     expect(entry.permission).toBe('config.business');
     expect(entry.adminEditable).toBe(true);
   }
@@ -88,4 +88,22 @@ it('[AC-F1-02zj#2] number items without a range keep the finite-number check', (
   const sample = spec('external_page.nav_host_sample_bp');
   for (const value of [-1, 0.5, 2147483648]) expect(configValueFits(sample, value)).toBe(true);
   expect(configValueFits(sample, Number.POSITIVE_INFINITY)).toBe(false);
+});
+
+it('[AC-F1-02zn#2] growth.invite_reward.* items follow SETTLE as editable integers', () => {
+  expect(
+    configRegistry()
+      .slice(45)
+      .map((entry) => [entry.key, entry.permission, entry.range?.min, entry.adminEditable]),
+  ).toStrictEqual([
+    ['growth.invite_reward.amount_fen', 'config.business', 0, true],
+    ['growth.invite_reward.daily_budget_fen', 'config.business', 0, true],
+    ['growth.invite_reward.total_budget_fen', 'config.business', 0, true],
+    ['growth.invite_reward.min_paid_fen', 'config.business', 0, true],
+    ['growth.invite_reward.ip_window_hours', 'config.risk', 1, true],
+  ]);
+  const window = spec('growth.invite_reward.ip_window_hours');
+  expect(configValueFits(window, 0)).toBe(false);
+  expect(configValueFits(window, 24)).toBe(true);
+  expect(configValueFits(spec('growth.invite_reward.amount_fen'), 2147483648)).toBe(false);
 });

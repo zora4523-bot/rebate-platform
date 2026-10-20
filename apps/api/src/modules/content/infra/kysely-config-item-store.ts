@@ -6,6 +6,7 @@ import type {
   ConfigItemStore,
   ConfigItemTx,
 } from '../application/config-item-admin.ts';
+import { currentConfigValues, lockInviteReward } from './invite-reward-guard.ts';
 
 const COLUMNS = ['key', 'value', 'version', 'updated_by', 'updated_at'] as const;
 
@@ -115,6 +116,10 @@ function writeTx(trx: Kysely<DB>, audit: AuditPort): ConfigItemTx {
         })
         .execute();
     },
+
+    lockInviteReward: (appId) => lockInviteReward(trx, appId),
+
+    values: (appId, keys) => currentConfigValues(trx, appId, keys),
 
     audit: (input) => audit.append(input),
   };
