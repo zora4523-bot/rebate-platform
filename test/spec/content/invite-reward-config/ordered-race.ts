@@ -6,6 +6,9 @@ import { expect, vi } from 'vitest';
 import { factory, type Harness, type Response } from '../../admin/auth/kit.ts';
 import type { Request, Setup } from './kit.ts';
 
+const bigintSafe = (_key: string, value: unknown): unknown =>
+  typeof value === 'bigint' ? value.toString() : value;
+
 export async function orderedRace(
   h: Harness,
   f: Setup,
@@ -48,8 +51,9 @@ export async function orderedRace(
                 /^\s*select\b/iu.test(query.sql) && /\bconfig_items\b/u.test(query.sql);
               const mentionsOther =
                 query.sql.includes(readKey) ||
-                JSON.stringify(query.parameters).includes(readKey) ||
-                JSON.stringify(result.rows).includes(readKey);
+                // Orchestrator mechanical fix: int8 columns arrive as BigInt.
+                JSON.stringify(query.parameters, bigintSafe).includes(readKey) ||
+                JSON.stringify(result.rows, bigintSafe).includes(readKey);
               if (!entered && configRead && mentionsOther) {
                 entered = true;
                 pending = second(appB).then((response) => {
