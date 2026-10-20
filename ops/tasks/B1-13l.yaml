@@ -23,4 +23,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/labor-agreement-version/**'
-status: todo
+status: done
+pr: 960
