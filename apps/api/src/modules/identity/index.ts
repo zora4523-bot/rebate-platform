@@ -1,11 +1,12 @@
 // Public surface of the identity module. Other modules import only from this file.
+// B1-13g: the worker's scheduled takeover / recheck of the paid bank-card verification records.
 export {
+  PAYOUT_VERIFY_RECHECK_INTERVAL_MS,
   createPayoutVerifyRecheck,
   startPayoutVerifyRecheck,
   payoutVerifyRecheckToken,
 } from './application/payout-verify-recheck.ts';
 export type {
-  PAYOUT_VERIFY_RECHECK_INTERVAL_MS,
   PayoutVerifyRecheck,
   PayoutVerifyRecheckOptions,
   PayoutVerifyRecheckSchedule,
