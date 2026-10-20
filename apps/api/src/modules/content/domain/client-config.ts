@@ -105,6 +105,21 @@ export interface ConfigReport {
   invalid(key: string): void;
 }
 
+export interface InviteRewardInput {
+  readonly values: ConfigValues;
+  /** undefined: port not installed; null: available budget could not be calculated. */
+  readonly availableBudgetFen: number | null | undefined;
+  readonly report: ConfigReport;
+}
+
+/** BR-INV-24 / F1-02zp: derive the two always-delivered invitation reward fields. */
+export function deriveInviteReward(
+  input: InviteRewardInput,
+): Required<Pick<Schema<'ConfigInvite'>, 'reward_enabled' | 'reward_amount_fen'>> {
+  void input;
+  throw new Error('NotImplemented: deriveInviteReward');
+}
+
 export interface ClientConfigInput {
   readonly values: ConfigValues;
   readonly viewer: ConfigViewer;
