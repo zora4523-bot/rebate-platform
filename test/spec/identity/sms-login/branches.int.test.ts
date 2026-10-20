@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { PHONE_BLIND_INDEX_CONTEXT } from '../../../../apps/api/src/modules/identity/application/registration.ts';
@@ -190,7 +191,7 @@ it('[AC-B1-02j#3][BR-ID-01] 查账号在验证码核销之后，核销期间出�
 });
 
 it.each(
-  (['normal', 'deleting'] as const).flatMap((state) =>
+  (['normal', 'cooling'] as const).flatMap((state) =>
     [undefined, '', '   ', 'BAD'].map((invite) => ({ state, invite })),
   ),
 )(
@@ -198,8 +199,15 @@ it.each(
   async ({ state, invite }) => {
     const bind = vi.fn(async () => ({ result: 'bound' as const, code: null }));
     const f = await fixture(kit, { bindInvite: bind });
-    // 0005 reserves users.status=deleting; deletion_requests is not in this schema yet.
-    const uid = await f.account(state);
+    // BR-ID-27: the cooling period is a users.status=normal account with a cooling deletion request.
+    const uid = await f.account('normal');
+    if (state === 'cooling') {
+      const at = f.clock.now();
+      await sql`INSERT INTO app.deletion_requests
+        (id, app_id, user_id, status, apply_at, cooling_until, balance_snapshot_fen, created_at, updated_at)
+        VALUES (${randomUUID()}, ${f.appId}, ${uid}, 'cooling', ${at},
+          ${new Date(at.getTime() + 7 * 86_400_000)}, 0, ${at}, ${at})`.execute(kit.db);
+    }
     f.minimum.mockResolvedValue('3.0.0');
     const before = await rows(kit, f.appId);
     const data = await assertLogin(
