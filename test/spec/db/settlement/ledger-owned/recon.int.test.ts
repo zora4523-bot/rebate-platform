@@ -172,7 +172,7 @@ it('[AC-B2-04b#11] 月末三项不平按 app 与月份去重，处置后重跑�
           ...row,
           id: randomUUID(),
           ref_id: randomUUID(),
-          dedupe_key: `retry:${randomUUID()}`,
+          dedupe_key: `rerun:${randomUUID()}`,
         }),
       ),
     ).toBe('23505');
