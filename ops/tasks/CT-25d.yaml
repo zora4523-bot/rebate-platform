@@ -25,5 +25,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/db/growth/invite-reward-eligibility/**'
-status: todo
-pr: null
+status: done
+pr: 1007
