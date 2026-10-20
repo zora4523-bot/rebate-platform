@@ -1509,7 +1509,10 @@ CREATE TABLE app.articles (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    help_section text,
     CONSTRAINT articles_category_check CHECK ((category = ANY (ARRAY['help'::text, 'rule'::text, 'notice'::text, 'agreement'::text]))),
+    CONSTRAINT articles_help_section_category_check CHECK (((help_section IS NULL) OR (category = 'help'::text))),
+    CONSTRAINT articles_help_section_check CHECK (((help_section IS NULL) OR (help_section = ANY (ARRAY['getting_started'::text, 'rebate_settlement'::text, 'orders_claims'::text, 'withdraw'::text, 'invite'::text, 'account_privacy'::text])))),
     CONSTRAINT articles_notice_content_version_check CHECK ((notice_content_version >= 1)),
     CONSTRAINT articles_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'offline'::text]))),
     CONSTRAINT articles_version_check CHECK ((version >= 1))

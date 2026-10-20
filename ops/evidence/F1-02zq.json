@@ -1,0 +1,84 @@
+{
+  "task": "F1-02zq",
+  "spec_ref": "76f61aaa455a67f5b1d9212c6da710711cd255a1",
+  "spec_commit": "c96b5f00a9fd9aef2cdbf15543deb1f042622f13",
+  "red_tests": [
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#1] help_section is ordinary nullable text without a default",
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#2] both named help CHECKs are validated and the category/status CHECKs remain",
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#3] help accepts and preserves each of the six exact section codes",
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#4] invalid, case-folded and whitespace-padded codes fail the value CHECK",
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#5] rule, notice and agreement reject every non-null section via the category CHECK",
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#6] every category accepts explicit NULL and legacy inserts omitting help_section",
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#7] app and readonly retain their table grants and app UPDATE is exactly the original five columns",
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#8] app cannot UPDATE help_section; a new draft version can carry a different section",
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#9] each original mutable column remains writable without changing help_section",
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#10] readonly selects help_section but cannot insert, update any column, delete or truncate",
+    "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#11] existing status and category CHECKs still enforce their values with a null section"
+  ],
+  "risk_note": "RV2 (migration 0061 on app.articles; L30 from the #158 write-back, no funds). Adds help_section text, nullable, no default, no backfill; named CHECKs allow only NULL or the six ArticleHelpSection codes of CT-02za (#1020) and only rows with category help may set it; added directly with squawk-ignore as in 0049 (empty column, no rewrite); no grant change, so couli_app cannot UPDATE it. schema.sql and db.gen.ts regenerated on the test machine. Frozen [AC-F1-02q#17]-[#21] accept the column since F1-02zzc (#1013). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c96b5f00a9fd9aef2cdbf15543deb1f042622f13",
+      "tree": "5718615b271a1a15d6faf78e5f55eb50584e0450",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T14:19:22Z",
+      "finished_at": "2026-10-20T14:19:27Z",
+      "red_tests": [
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#1] help_section is ordinary nullable text without a default",
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#2] both named help CHECKs are validated and the category/status CHECKs remain",
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#3] help accepts and preserves each of the six exact section codes",
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#4] invalid, case-folded and whitespace-padded codes fail the value CHECK",
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#5] rule, notice and agreement reject every non-null section via the category CHECK",
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#6] every category accepts explicit NULL and legacy inserts omitting help_section",
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#7] app and readonly retain their table grants and app UPDATE is exactly the original five columns",
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#8] app cannot UPDATE help_section; a new draft version can carry a different section",
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#9] each original mutable column remains writable without changing help_section",
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#10] readonly selects help_section but cannot insert, update any column, delete or truncate",
+        "test/spec/db/content/articles-help-section/articles.int.test.ts > [AC-F1-02zq#11] existing status and category CHECKs still enforce their values with a null section"
+      ],
+      "expected": ["test/spec/db/content/articles-help-section/articles.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ee9f84e6658f18d6cfa378452732232da72a504adc496f095f4c8dadb6c4067d"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass with one S2 (only one invalid code tried), followed by the implementation; afterwards a header comment naming the admin URL variable tripped test-guard and was reworded by the orchestrator (mechanical, before the implementation commit)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "279d303e3d24d6cc1fcfcecd135411811f48d7dc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "e308f96db2c38fa575aabb2b645906c6d79ab386",
+    "test/spec": "dd24dfa3fa6d05c8bac1f5b1fc59b878473b7ae5",
+    "specs": "9ec0f98bba0e3b6cd90bbdb1f7e1047b8a483e44"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "e308f96db2c38fa575aabb2b645906c6d79ab386"
+  }
+}

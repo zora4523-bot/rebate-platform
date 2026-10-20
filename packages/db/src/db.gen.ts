@@ -248,6 +248,7 @@ export interface Articles {
   body: string;
   category: string;
   created_at: Generated<Timestamp>;
+  help_section: string | null;
   id: string;
   notice_closable: boolean;
   notice_content_version: Generated<number>;
