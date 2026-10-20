@@ -108,7 +108,10 @@ export interface DictItemStore {
 }
 
 export interface DictSpecs {
-  /** contracts/texts.default.json `texts`: the keys the dictionary may override. */
+  /**
+   * The keys the dictionary may override and their defaults: contracts/texts.default.json and
+   * contracts/texts.admin.default.json `texts` together (F1-02zd W5).
+   */
   readonly defaults: () => Readonly<Record<string, string>>;
   readonly rules: () => DictTextRules;
   readonly fundTermKeys: () => FundTermKeys;

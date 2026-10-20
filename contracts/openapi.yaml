@@ -12016,7 +12016,6 @@ paths:
         (fund term keys → `content.fund_terms`, other keys → `config.general`, as classified in
         specs/fund-term-keys.yaml).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

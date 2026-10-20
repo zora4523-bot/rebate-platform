@@ -41,6 +41,53 @@ export function parseDictVersion(value: unknown): { version: string; limit: numb
   return { version: value, limit: limit <= INT32_MAX ? limit : null };
 }
 
+/** dict_items.dict of the console dictionary (BR-TEXT-25); GET /v1/dict never serves it. */
+export const ADMIN_DICT = 'admin_dict';
+/** Key prefix of the console dictionary: `admin_dict.<enum>.<code>`. */
+export const ADMIN_DICT_PREFIX = `${ADMIN_DICT}.`;
+
+/**
+ * A console dictionary key split for GET /admin/v1/dict (F1-02zd): the prefix dropped, the rest cut
+ * at its LAST dot (`enum` may hold dots, e.g. `admin_adjustments.status`). null when the key is not
+ * of the form `admin_dict.<enum>.<code>` with both parts non-empty.
+ */
+export function splitAdminDictKey(key: string): { enumName: string; code: string } | null {
+  if (!key.startsWith(ADMIN_DICT_PREFIX)) return null;
+  const rest = key.slice(ADMIN_DICT_PREFIX.length);
+  const dot = rest.lastIndexOf('.');
+  if (dot <= 0 || dot === rest.length - 1) return null;
+  return { enumName: rest.slice(0, dot), code: rest.slice(dot + 1) };
+}
+
+/**
+ * GET /admin/v1/dict items (F1-02zd G1–G2): every key of the bundled console defaults, as
+ * items[enum][code], with its current override when one is set (text not null) and its default
+ * otherwise. Rows of other dictionaries and admin_dict rows the defaults do not name are ignored.
+ * Assignment goes through defineProperty so names such as `__proto__` stay ordinary keys.
+ */
+export function adminDictItems(
+  defaults: Readonly<Record<string, string>>,
+  rows: readonly CurrentDictRow[],
+): DictItems {
+  const overrides = new Map<string, string>();
+  for (const row of rows) {
+    if (row.dict !== ADMIN_DICT || row.text === null) continue;
+    overrides.set(joinDictKey(row.dict, row.code), row.text);
+  }
+  const items: DictItems = {};
+  for (const [key, text] of Object.entries(defaults)) {
+    const split = splitAdminDictKey(key);
+    if (split === null) throw new Error(`content: ${key} is not a console dictionary key`);
+    let entries = Object.hasOwn(items, split.enumName) ? items[split.enumName] : undefined;
+    if (entries === undefined) {
+      entries = {};
+      define(items, split.enumName, entries);
+    }
+    define(entries, split.code, overrides.get(key) ?? text);
+  }
+  return items;
+}
+
 /** One current dict_items row: the highest version ≤ the published dict_version of its key. */
 export interface CurrentDictRow {
   readonly dict: string;
@@ -131,13 +178,12 @@ export function parseWritableDictVersion(value: unknown): number | null {
 
 /**
  * The banned-word scope of a dictionary key (BR-TEXT-13: user_visible = texts users see,
- * admin_report = console and report fields). Every key of contracts/texts.default.json is shown to
- * users by the clients, so all dictionary keys check the user_visible list; the scope stays a
- * parameter of the check so a console-only key family can be routed to admin_report here.
+ * admin_report = console and report fields). Keys of contracts/texts.default.json are shown to
+ * users by the clients (user_visible); `admin_dict.*` keys (BR-TEXT-25, contracts/
+ * texts.admin.default.json) are console names only, so they check the admin_report list (F1-02zd G5).
  */
 export function dictTextScope(key: string): TextScope {
-  void key;
-  return 'user_visible';
+  return key.startsWith(ADMIN_DICT_PREFIX) ? 'admin_report' : 'user_visible';
 }
 
 export interface DictTextRules {

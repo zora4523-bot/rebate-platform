@@ -5,14 +5,20 @@
 // The version and the rows come from one database snapshot (DictStore.snapshot), never from two
 // independent reads, so a concurrent publish cannot pair a new version with old texts.
 // Cached per app_id for CONTENT_CACHE_TTL_MS on the injected Clock (L11); the query's `version`
-// hint never reaches this class (L13: always the whole current dictionary).
+// hint never reaches this class (L13: always the whole current dictionary). admin_dict rows are
+// never served (F1-02zd D5; contract getDict).
 //
 // Pure module (no decorators, erasable syntax).
 import type { Schema } from '@couli/contracts-ts';
 import type { Logger } from 'pino';
 import type { Clock } from '../../platform/index.ts';
 import { CONTENT_CACHE_TTL_MS } from '../domain/cache-policy.ts';
-import { dictItems, parseDictVersion, type CurrentDictRow } from '../domain/dict/index.ts';
+import {
+  ADMIN_DICT,
+  dictItems,
+  parseDictVersion,
+  type CurrentDictRow,
+} from '../domain/dict/index.ts';
 import { TtlCache } from './ttl-cache.ts';
 
 export interface DictSnapshot {
@@ -63,6 +69,8 @@ export class DictReader {
       }
       return { version, items: {} };
     }
-    return { version, items: dictItems(rows) };
+    // admin_dict is the console dictionary (BR-TEXT-25): never served here, even if a store
+    // hands such rows back (F1-02zd D5; the module's store already leaves them out).
+    return { version, items: dictItems(rows.filter((row) => row.dict !== ADMIN_DICT)) };
   }
 }

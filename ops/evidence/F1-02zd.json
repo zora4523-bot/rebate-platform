@@ -1,0 +1,107 @@
+{
+  "task": "F1-02zd",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "543c79e7264ff1cd6ba99f98bb5ab46ab255d975",
+  "red_tests": [
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#1] 无版本和行仍返回全部默认；多点枚举按末点切分，路由解除 planned",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#2] 每键选当前版本以内最新行，null 恢复默认，未来行、未知键和别的 app 不泄漏",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#3] 无行、非字符串及未发布版本不应用覆盖；非规范串原样返回并告警",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#4] 每个权限点单独持有都可读，超管可读，无点拒绝，停用拒绝，所有读取不审计",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#5] 读取不消耗 step-up，资金键权限及动态码拒绝留审计，原 token 仍可写且只用一次",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#6] 普通后台键无需动态码；同一后台进程改完即见，无缓存；null 覆盖恢复默认",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#7] 公共接口冷读、缓存命中及失效后都隔离 admin_dict；版本及普通覆盖保持原行为",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#8] 编辑列表严格为两份默认并集，键排序、分类、default_text、admin 前缀筛选一致",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#9] 两文件之外的键保存和回滚仍按索引拒绝；admin 已知键能保存和回滚",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#10] admin_report 允许佣金和高佣原文，仍拒绝全网最低；用户键仍拒绝佣金",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#11] 版本和覆盖来自同一快照：版本 SELECT 后提交的新行对本次不可见，对下次可见",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#18] 默认文件加载失败时字典读写返回 50001，不以空默认成功，也不留下半次写入",
+    "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#19] 快照读取失败返回 50001，不能吞掉数据库故障而返回默认成功",
+    "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#12] 包内后台默认原文无重键、按字母序、非空无占位符、键形和资金分类齐全；loader 保真",
+    "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#13] 默认文件拒绝错误前缀、非字符串、结构损坏及跨文件重键，不能默默丢弃或覆盖",
+    "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#14] reader 只覆盖已知后台键、null 回默认，最后点切键，原型名称作为普通自有属性",
+    "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#15] reader 保留非规范版本但只供默认，limit 不允许读覆盖并发告警",
+    "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#16] reader 每次重新读快照、不缓存；app_id 原样传入并隔离，不在构造期加载默认文件",
+    "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#17] 无数据库或默认文件损坏必须失败，不伪装为默认成功响应"
+  ],
+  "risk_note": "RV2 (content dictionary, no funds). GET /admin/v1/dict for any permission point (guard gets the full admin_permission list, read-only, no audit): defaults from contracts/texts.admin.default.json overlaid by published dict_items read in one REPEATABLE READ snapshot (version first, then rows), no cache; the default file is self-checked (key shape, string values, no key shared with texts.default.json) and a broken file answers 50001. dict-items list / save / rollback accept keys of both default files (orchestrator ruling); admin_dict texts are checked in the admin_report banned-word scope (approved default G5). Public /v1/dict filters out admin_dict rows in SQL and again in the reader; without the filter option the store SQL is unchanged. The frozen [AC-F1-02t#8] already accepts the union key set (F1-02zg #950); F1-02zh tightens it next. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "543c79e7264ff1cd6ba99f98bb5ab46ab255d975",
+      "tree": "29686c3713655cd6171dad74b7e5193f670ba8d7",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-19T23:28:38Z",
+      "finished_at": "2026-10-19T23:28:50Z",
+      "red_tests": [
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#1] 无版本和行仍返回全部默认；多点枚举按末点切分，路由解除 planned",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#2] 每键选当前版本以内最新行，null 恢复默认，未来行、未知键和别的 app 不泄漏",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#3] 无行、非字符串及未发布版本不应用覆盖；非规范串原样返回并告警",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#4] 每个权限点单独持有都可读，超管可读，无点拒绝，停用拒绝，所有读取不审计",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#5] 读取不消耗 step-up，资金键权限及动态码拒绝留审计，原 token 仍可写且只用一次",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#6] 普通后台键无需动态码；同一后台进程改完即见，无缓存；null 覆盖恢复默认",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#7] 公共接口冷读、缓存命中及失效后都隔离 admin_dict；版本及普通覆盖保持原行为",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#8] 编辑列表严格为两份默认并集，键排序、分类、default_text、admin 前缀筛选一致",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#9] 两文件之外的键保存和回滚仍按索引拒绝；admin 已知键能保存和回滚",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#10] admin_report 允许佣金和高佣原文，仍拒绝全网最低；用户键仍拒绝佣金",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#11] 版本和覆盖来自同一快照：版本 SELECT 后提交的新行对本次不可见，对下次可见",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#18] 默认文件加载失败时字典读写返回 50001，不以空默认成功，也不留下半次写入",
+        "test/spec/content/admin-dict/delivery.int.test.ts > [AC-F1-02zd#19] 快照读取失败返回 50001，不能吞掉数据库故障而返回默认成功",
+        "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#12] 包内后台默认原文无重键、按字母序、非空无占位符、键形和资金分类齐全；loader 保真",
+        "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#13] 默认文件拒绝错误前缀、非字符串、结构损坏及跨文件重键，不能默默丢弃或覆盖",
+        "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#14] reader 只覆盖已知后台键、null 回默认，最后点切键，原型名称作为普通自有属性",
+        "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#15] reader 保留非规范版本但只供默认，limit 不允许读覆盖并发告警",
+        "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#16] reader 每次重新读快照、不缓存；app_id 原样传入并隔离，不在构造期加载默认文件",
+        "test/spec/content/admin-dict/reader.test.ts > [AC-F1-02zd#17] 无数据库或默认文件损坏必须失败，不伪装为默认成功响应"
+      ],
+      "expected": [
+        "test/spec/content/admin-dict/delivery.int.test.ts",
+        "test/spec/content/admin-dict/reader.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "361520a34522fa7113bc5fac82409c9b078f2a16796324316d772ee6e1669f20"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b30d320107acb8612f5b3c7d6adfe5bf345b10582a436d3f8f950fba1d065ec5"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass with two S2 handled in the implementation and its unit tests"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "18430934574a9e674e0709633adfb347f0388500",
+    "specs": "a1b96a3002d99e9b2e9c35fa6b3b4fbdba07cfca"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
