@@ -1,4 +1,18 @@
 // Public surface of the identity module. Other modules import only from this file.
+export {
+  createPayoutVerifyRecheck,
+  startPayoutVerifyRecheck,
+  payoutVerifyRecheckToken,
+} from './application/payout-verify-recheck.ts';
+export type {
+  PAYOUT_VERIFY_RECHECK_INTERVAL_MS,
+  PayoutVerifyRecheck,
+  PayoutVerifyRecheckOptions,
+  PayoutVerifyRecheckSchedule,
+  PayoutVerifyRecheckControl,
+} from './application/payout-verify-recheck.ts';
+export { IdentityWorkerModule } from './identity-worker.module.ts';
+export type { IdentityWorkerModuleOptions } from './identity-worker.module.ts';
 export { lockUsersForUpdate } from './ports/lock-users.ts';
 export type { LockUsersInput } from './ports/lock-users.ts';
 export { createRealnameStatusBatchReader } from './ports/realname-status-batch.ts';
