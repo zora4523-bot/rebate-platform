@@ -206,7 +206,7 @@ function planRow(
   }
 
   if (sharesUnchanged) {
-    // 两值均相等（无动作），或基数相等只有联盟佣金不同（BR-FUND-09 / BR-CALC-23：
+    // 两值均相等（无动作），或结算补差基数相等只有联盟佣金不同（BR-FUND-09 / BR-CALC-23：
     // 受益人应得不变、差额为 0，只调平台金额）：不补不扣，待补记额与义务原样保留。
     const entitlement_fen =
       state.kind === 'forfeit' && share_fen > person.net_fen ? person.net_fen : share_fen;
@@ -307,9 +307,11 @@ export function planCommissionAdjustment(input: AdjustmentInput): AdjustmentPlan
     (n_positive_fen === 0n || (input.booked_base_fen > 0n && base_new_fen === 0n));
   if (clawedBack) route = 'immediate';
 
-  // 基数相等而联盟佣金不同（未转 R8）：受益人差额为 0，单独走平台差额计划。
+  // 结算补差基数相等而联盟佣金不同（未转 R8，BR-FUND-09）：受益人差额为 0，单独走平台差额计划。
+  // 扣回事件即使基数不变也按 BR-CALC-09 逐受益人重算状态与义务处置（BR-FUND-08 / 04 ⑫）。
   const sharesUnchanged =
-    route === 'none' || (!clawedBack && base_new_fen === input.booked_base_fen);
+    route === 'none' ||
+    (input.event === 'settlement' && !clawedBack && base_new_fen === input.booked_base_fen);
 
   let transition: AdjustmentPlan['transition'] = null;
   if (route !== 'none') transition = clawedBack ? 'R8' : input.event === 'clawback' ? 'R9' : 'R10';

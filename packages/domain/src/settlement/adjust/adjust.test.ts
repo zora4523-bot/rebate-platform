@@ -221,3 +221,46 @@ it('[AC-B2-04g#14] 结算事件两值均相等：不作废候选', () => {
   const plan = planCommissionAdjustment(sameBaseOrder({ n_new_fen: 1000n }));
   expect(plan).toMatchObject({ route: 'none', void_pending_candidates: false });
 });
+
+it('[AC-B2-04g#10] 扣回事件基数不变、受益人封禁且有未完成义务：义务没收，重拆份额归平台', () => {
+  const plan = planCommissionAdjustment(
+    sameBaseOrder({
+      event: 'clawback',
+      booked_n_fen: 1001n,
+      n_new_fen: 1000n,
+      platform_net_fen: 751n,
+      beneficiaries: [
+        person({
+          net_fen: 0n,
+          risk_state: 'banned',
+          obligation: { beneficiary_credit_id: 'c1', kind: 'first_credit' },
+        }),
+      ],
+    }),
+  );
+  expect(plan).toMatchObject({
+    route: 'immediate',
+    transition: 'R9',
+    rebate_status: 'CREDITED',
+    ledger_type: 'CLAWBACK',
+    booked_after: { booked_base_fen: 500n, booked_n_fen: 1000n },
+    platform_after_fen: 1000n,
+    platform_delta_fen: 249n,
+    platform_posting: { amount_fen: 249n, debit: 'UNION_RECEIVABLE', credit: 'COMMISSION_REVENUE' },
+    union_receivable_delta_fen: 249n,
+    void_pending_candidates: true,
+  });
+  expect(plan.beneficiaries[0]).toMatchObject({
+    entitlement_fen: 0n,
+    delta_fen: 0n,
+    net_after_fen: 0n,
+    posting: null,
+    forfeit_fen: 250n,
+    forfeit_reason: 'banned',
+    pending_before_fen: 250n,
+    pending_after_fen: 0n,
+    obligation_action: 'forfeited',
+    beneficiary_credit_id: 'c1',
+    append_forfeited_event: true,
+  });
+});
