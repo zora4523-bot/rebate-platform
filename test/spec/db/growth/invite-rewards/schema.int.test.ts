@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { readFileSync, readdirSync } from 'node:fs';
 
 import { sql } from 'kysely';
@@ -7,7 +8,7 @@ import { SHAPES, TABLES, close, open, ready, type Harness } from './kit.ts';
 
 let h: Harness;
 beforeAll(async () => {
-  h = await open();
+  h = await open(createTestDatabase);
 });
 afterAll(async () => {
   await close(h);

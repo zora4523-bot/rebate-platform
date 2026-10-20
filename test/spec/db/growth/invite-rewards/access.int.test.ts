@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
@@ -19,7 +20,7 @@ import {
 
 let h: Harness;
 beforeAll(async () => {
-  h = await open();
+  h = await open(createTestDatabase);
 });
 afterAll(async () => {
   await close(h);

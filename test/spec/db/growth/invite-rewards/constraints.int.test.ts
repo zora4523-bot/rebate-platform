@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { randomUUID } from 'node:crypto';
 
 import { sql } from 'kysely';
@@ -25,7 +26,7 @@ import {
 
 let h: Harness;
 beforeAll(async () => {
-  h = await open();
+  h = await open(createTestDatabase);
 });
 afterAll(async () => {
   await close(h);

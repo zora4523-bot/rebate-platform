@@ -4,7 +4,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { expect } from 'vitest';
 
@@ -75,13 +74,19 @@ export const UPDATABLE: Record<Table, readonly string[]> = {
   ],
   invite_reward_budgets: ['reserved_fen', 'granted_fen', 'row_version', 'updated_at'],
 };
+// Orchestrator mechanical fix: @couli/db/testing may only be imported by *.int.test.ts
+// (dependency rule testcontainers-only-in-int-tests); the int tests pass createTestDatabase in.
+export interface TestDatabaseLike {
+  urlFor(role: 'couli_app' | 'couli_readonly'): string;
+  drop(): Promise<void>;
+}
 export interface Harness {
-  database: TestDatabase;
+  database: TestDatabaseLike;
   app: Connection;
   readonly: Connection;
 }
-export async function open(): Promise<Harness> {
-  const database = await createTestDatabase();
+export async function open(create: () => Promise<TestDatabaseLike>): Promise<Harness> {
+  const database = await create();
   return {
     database,
     app: createDb({ connectionString: database.urlFor('couli_app'), max: 4 }),
