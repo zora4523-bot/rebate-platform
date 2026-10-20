@@ -197,9 +197,9 @@ it('[AC-F1-02zj#12] batch 可保存全部 16 项；rollback 可恢复范围内�
 it('[AC-F1-02zj#13] GET 配置列表包含全部 16 项，enum 选项按契约返回', async () => {
   const f = await setup();
   const items = await listAll(f);
-  // F1-02zz (test-change, transitional; F1-02zt tightens): F1-02zn / F1-02zx append the
-  // BR-INV-24 growth.invite_reward.* group after SETTLE. The 16 SETTLE keys stay contiguous and in
-  // order, right after the 29 ruling 14 keys, and are followed by exactly inviteNow()'s keys.
+  // F1-02zz: F1-02zn / F1-02zx append the BR-INV-24 growth.invite_reward.* group after SETTLE.
+  // The 16 SETTLE keys stay contiguous and in order, right after the 29 ruling 14 keys, and are
+  // followed by exactly inviteNow()'s six keys (F1-02zt：过渡已收紧).
   const keys = items.map((item) => item.key);
   const tail = inviteNow().map((entry) => entry.key);
   const settleEnd = keys.length - tail.length;

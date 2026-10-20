@@ -1,13 +1,9 @@
 // F1-10e ruling 14: the configuration item registry (content/domain, pure data, disjoint from the
 // emergency switch registry). Oracle in ./kit.ts (EXPECTED) and the seed file itself.
-// F1-02zi (test-change, transitional; F1-02zt tightens): #1 compares with expectedNow() (EXPECTED,
-// or EXPECTED + the whole BR-FUND-04 settle.* group of F1-02zj), #3 reads an enum item's seed
-// as a JSON string, and #56 pins that group whole or absent.
-// F1-02zm (test-change, transitional; F1-02zt tightens): #1 and #56 also accept the whole
-// BR-INV-24 growth.invite_reward.* group of F1-02zn after SETTLE, and #57 pins it whole or absent.
-// F1-02zw (test-change, transitional; F1-02zt tightens): the invite reward tail of #56 and #57 is
-// inviteNow() (none, the five keys, or the five keys plus growth.invite_reward.eligibility_days of
-// F1-02zx), and #58 pins that sixth key as the last item or absent.
+// F1-02zi / F1-02zm / F1-02zw: #1 compares with expectedNow() (EXPECTED + the BR-FUND-04 settle.*
+// group of F1-02zj + the BR-INV-24 growth.invite_reward.* group of F1-02zn / F1-02zx), #3 reads an
+// enum item's seed as a JSON string, #56 pins SETTLE, #57 the five invite reward keys and #58
+// growth.invite_reward.eligibility_days as the last item. F1-02zt：过渡已收紧, every group present.
 import { expect, it } from 'vitest';
 import {
   configItemSpecOf,
@@ -49,8 +45,7 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
   expect(seeds.length).toBeGreaterThan(0);
   const fromSeeds = seeds.filter((key) => switchSpecOf(key) === null);
   expect(sorted(keys)).toStrictEqual(sorted([...new Set([...fromSeeds, ...EXTRA])]));
-  // F1-02zi / F1-02zm (transitional): EXPECTED plus each of settle.* and
-  // growth.invite_reward.* whole or absent.
+  // F1-02zt：过渡已收紧: EXPECTED + settle.* + growth.invite_reward.*, all present.
   expect(sorted(keys)).toStrictEqual(sorted(expectedNow().map((entry) => entry.key)));
 });
 
@@ -74,7 +69,7 @@ it('[AC-F1-10e#3] 裁定 14：值类型取种子值的 JSON 类型（数组记 o
   let checked = 0;
   for (const spec of configRegistry()) {
     if (!seeds.has(spec.key)) continue;
-    // F1-02zi (transitional): an enum item's seed is a JSON string (EXPECTED has no enum).
+    // F1-02zi: an enum item's seed is a JSON string (EXPECTED has no enum).
     const seedType = spec.valueType === 'enum' ? 'string' : spec.valueType;
     expect(seedType, spec.key).toBe(jsonTypeOf(seeds.get(spec.key)));
     checked += 1;
@@ -175,27 +170,17 @@ it('[AC-F1-10e#9] enum 型（契约 AdminConfigValueType）只接受 options 里
   expect(configValueFits(spec, ['a'])).toBe(false);
 });
 
-// F1-02zi (test-change, transitional; F1-02zt tightens to "always present"): the BR-FUND-04 细则
-// settle.* group of F1-02zj is registered whole, after the ruling 14 items and in its own order,
-// or not at all; both branches assert.
-it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加在裁定 14 之后，逐键值类型、options、权限点、可改标记）或整组没有', () => {
+// F1-02zi: the BR-FUND-04 细则 settle.* group of F1-02zj is registered whole, after the ruling 14
+// items and in its own order. F1-02zt：过渡已收紧, the absent branch is gone.
+it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加在裁定 14 之后，逐键值类型、options、权限点、可改标记）', () => {
   expect(SETTLE).toHaveLength(16);
   const keys = configRegistry().map((spec) => spec.key);
   const present = SETTLE.filter((entry) => keys.includes(entry.key));
-  expect([0, SETTLE.length]).toContain(present.length);
-  // F1-02zm (transitional): the only keys allowed after these groups are the whole
-  // growth.invite_reward.* group (checked key by key in #57) or none.
-  // F1-02zw (test-change, transitional; F1-02zt tightens): that group is inviteNow() (its sixth
-  // key checked in #58).
+  expect(present).toHaveLength(SETTLE.length);
+  // F1-02zm / F1-02zw: the only keys after this group are the whole growth.invite_reward.* group
+  // inviteNow() (checked key by key in #57 and #58).
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const inviteTail = inviteNow().map((e) => e.key);
-  if (present.length === 0) {
-    for (const entry of SETTLE) {
-      expect(configItemSpecOf(entry.key), entry.key).toBeNull();
-    }
-    expect(keys).toHaveLength(EXPECTED.length + inviteTail.length);
-    return;
-  }
   expect(keys.slice(EXPECTED.length, EXPECTED.length + SETTLE.length)).toStrictEqual(
     SETTLE.map((entry) => entry.key),
   );
@@ -213,31 +198,23 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
   }
 });
 
-// F1-02zm (test-change, transitional; F1-02zt tightens to "always present"): the BR-INV-24 细则
-// growth.invite_reward.* group of F1-02zn is registered whole as the last five items, right after
-// SETTLE (or after the ruling 14 items while SETTLE is absent), in its own order, or not at all;
-// both branches assert.
-it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（注册表最后 5 项、紧接 settle.* 之后，逐键值类型、options、权限点、可改标记）或整组没有', () => {
+// F1-02zm: the BR-INV-24 细则 growth.invite_reward.* group of F1-02zn is registered whole right
+// after SETTLE, in its own order, followed only by eligibility_days (#58). F1-02zt：过渡已收紧, the
+// absent branch is gone.
+it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（紧接 settle.* 之后、其后只有 eligibility_days，逐键值类型、options、权限点、可改标记）', () => {
   expect(INVITE_CFG).toHaveLength(5);
   const keys = configRegistry().map((spec) => spec.key);
   const present = INVITE_CFG.filter((entry) => keys.includes(entry.key));
-  expect([0, INVITE_CFG.length]).toContain(present.length);
-  if (present.length === 0) {
-    for (const entry of INVITE_CFG) {
-      expect(configItemSpecOf(entry.key), entry.key).toBeNull();
-    }
-    return;
-  }
-  // F1-02zw (test-change, transitional; F1-02zt tightens): the tail is inviteNow(), the five
-  // keys optionally followed by eligibility_days (checked in #58).
+  expect(present).toHaveLength(INVITE_CFG.length);
+  // F1-02zw: the tail is inviteNow(), the five keys followed by eligibility_days (checked in #58).
   const tail = inviteNow();
   const head = keys.length - tail.length;
   expect(keys.slice(head)).toStrictEqual(tail.map((entry) => entry.key));
   expect(keys.slice(head, head + INVITE_CFG.length)).toStrictEqual(
     INVITE_CFG.map((entry) => entry.key),
   );
-  const settled = presentOf(SETTLE, 'settle.*') !== 0;
-  expect(keys[head - 1]).toBe((settled ? SETTLE : EXPECTED).at(-1)!.key);
+  presentOf(SETTLE, 'settle.*');
+  expect(keys[head - 1]).toBe(SETTLE.at(-1)!.key);
   for (const entry of INVITE_CFG) {
     const spec = registered(entry.key);
     expect({
@@ -251,21 +228,15 @@ it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登
   }
 });
 
-// F1-02zw (test-change, transitional; F1-02zt tightens to "always present"): the BR-INV-24 细则
-// eligibility period of F1-02zx (08 l.560; 04 §10.1, config.business) is registered as the last
-// item, right after growth.invite_reward.ip_window_hours, or not at all; never without the five
-// keys of #57 (inviteNow fails then); both branches assert.
-it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 登记为注册表最后一项（紧接 ip_window_hours，数值、options 为 null、config.business、可改）或没有', () => {
+// F1-02zw: the BR-INV-24 细则 eligibility period of F1-02zx (08 l.560; 04 §10.1, config.business)
+// is registered as the last item, right after growth.invite_reward.ip_window_hours.
+// F1-02zt：过渡已收紧, the absent branch is gone.
+it('[AC-F1-10e#58] BR-INV-24 细则 growth.invite_reward.eligibility_days 登记为注册表最后一项（紧接 ip_window_hours，数值、options 为 null、config.business、可改）', () => {
   expect(INVITE_ELIG).toHaveLength(1);
   const key = 'growth.invite_reward.eligibility_days';
   expect(INVITE_ELIG[0]!.key).toBe(key);
   const keys = configRegistry().map((spec) => spec.key);
   const tail = inviteNow().map((entry) => entry.key);
-  if (!tail.includes(key)) {
-    expect(keys).not.toContain(key);
-    expect(configItemSpecOf(key)).toBeNull();
-    return;
-  }
   expect(tail).toStrictEqual([...INVITE_CFG.map((entry) => entry.key), key]);
   expect(keys.filter((entry) => entry === key)).toHaveLength(1);
   expect(keys.at(-1)).toBe(key);

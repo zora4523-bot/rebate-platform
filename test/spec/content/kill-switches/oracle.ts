@@ -1,9 +1,9 @@
 // F1-10d registry oracle without any database or HTTP import, shared by the unit rule tests
 // (rules.test.ts) and the integration kit (kit.ts). Built on the frozen F1-10b kit
 // (test/spec/content/switch-read/kit.ts), never on the implementation's registry.
-// F1-02zm (test-change, transitional; F1-02zt tightens): the registry rows below come from that
-// kit's expectedNow() (EXPECTED, or EXPECTED + the whole BR-INV-24 growth.invite_reward.* pair of
-// F1-02zn); EXPECTED itself is still re-exported unchanged.
+// F1-02zm: the registry rows below come from that kit's expectedNow() (EXPECTED + the BR-INV-24
+// growth.invite_reward.* pair of F1-02zn; F1-02zt：过渡已收紧, the pair must be present); EXPECTED
+// itself is still re-exported unchanged.
 import type { DB } from '@couli/db';
 import { expectedNow, type ExpectedSwitch } from '../switch-read/kit.ts';
 

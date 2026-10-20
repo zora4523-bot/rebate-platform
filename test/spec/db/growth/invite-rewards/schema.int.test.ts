@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
-import { TABLES, close, formOf, open, ready, shapesOf, type Harness } from './kit.ts';
+import { SHAPES_NOW, TABLES, close, expectForm, open, ready, type Harness } from './kit.ts';
 
 let h: Harness;
 beforeAll(async () => {
@@ -16,8 +16,9 @@ afterAll(async () => {
 
 it('[AC-CT-25b#1] 两表字段、类型、可空性与默认值符合 §9.2', async () => {
   await ready(h.app);
-  // CT-25e (test-change, transitional; F1-02zt tightens): exact column set of the detected form.
-  const shapes = shapesOf(await formOf(h.app));
+  // CT-25e: exact column set after CT-25d (F1-02zt：过渡已收紧).
+  await expectForm(h.app);
+  const shapes = SHAPES_NOW;
   for (const table of TABLES) {
     const columns = await sql<{
       name: string;
@@ -118,7 +119,7 @@ it('[AC-CT-25b#3] 五条外键含 app_id、指向指定父键且禁止级联', a
 
 it('[AC-CT-25b#4] 约束与索引显式具名，创建两表和授权位于同一迁移且不绑定编号', async () => {
   await ready(h.app);
-  const form = await formOf(h.app);
+  await expectForm(h.app);
   const directory = new URL('../../../../../db/migrations/', import.meta.url);
   const migrations = readdirSync(directory)
     .filter((name) => name.endsWith('.sql'))
@@ -131,7 +132,7 @@ it('[AC-CT-25b#4] 约束与索引显式具名，创建两表和授权位于同�
   );
   expect(candidates).toHaveLength(1);
   const source = candidates[0]!;
-  // CT-25e (test-change, transitional; F1-02zt tightens): constraints added or rebuilt by later
+  // CT-25e (F1-02zt：过渡已收紧, kept): constraints added or rebuilt by later
   // migrations (CT-25d) are named there; the creating migration plus every later migration that
   // alters app.invite_rewards is the source for constraint names. Tables, grants and indexes
   // still come from the creating migration only.
@@ -159,11 +160,7 @@ it('[AC-CT-25b#4] 约束与索引显式具名，创建两表和授权位于同�
     if (table === 'invite_rewards') {
       expect(
         constraints.rows.filter((c) => c.name === 'invite_rewards_eligibility_days_check'),
-      ).toEqual(
-        form === 'eligibility'
-          ? [{ name: 'invite_rewards_eligibility_days_check', kind: 'c', valid: true }]
-          : [],
-      );
+      ).toEqual([{ name: 'invite_rewards_eligibility_days_check', kind: 'c', valid: true }]);
     }
     for (const constraint of constraints.rows) {
       expect(constraint.valid).toBe(true);
