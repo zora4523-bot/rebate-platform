@@ -1,0 +1,26 @@
+id: F1-02zp
+repo: rebate-platform
+title: content：/v1/config 的 invite 下发 reward_enabled（开关 on 且总预算可用额 ≥ 两方金额之和）与 reward_amount_fen（每方金额，缺失取 08 默认）；总预算可用额经 content 声明的读端口取，端口未装配或开关 off 时 reward_enabled=false
+type: impl
+# 2026-10-20 入账（content-client 第五阶段第二波，计划 couli-runs/CONTENT-client/phase5-plan.md §3 序 8、§4；编排 2026-10-20 08:5x 派工 ②）。
+# 依据（SPEC_REF 5ecafb3）：08 11_INV BR-INV-24 ① 「活动有效」定义与 ⑨ 展示、细则「默认值」；04 l.874、l.903 §10.1（不读同名 config_items，开关缺失按 off、金额缺失按 BR-INV-24 默认）。
+#   原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：content 声明端口 InviteRewardBudgetReader（按 app 返回总预算可用额，分），由 growth 实现、B1-35 在 app.module 装配；
+#   本任务只改 content，ContentPublicModule 加可选注入（同 audienceReads 先例），不装配时按活动无效处理、不报错。
+#   开关 off 时不调端口；端口抛错按无效处理并记 warn，不让整个 /v1/config 返回 50001。两字段总会下发（D-T4）；ETag 与缓存跟现有 /v1/config 走。
+# 不碰 invite.before_buy_tip 是否停止下发（归 B1-11 后续子编号）。
+# 依赖：CT-25a（契约字段）、F1-02zm（过渡测试）、F1-02zn（开关与金额登记）均尚未入账；F1-02c 为 /v1/config 原实现。
+refs: []
+refs_hash: {}
+deps: [F1-02c, CT-25a, F1-02zn]
+paths:
+  - 'apps/api/src/modules/content/**'
+test_paths:
+  - 'test/spec/content/config-invite-reward/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/config-invite-reward/**'
+status: todo
+pr: null

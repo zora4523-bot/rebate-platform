@@ -1,0 +1,32 @@
+id: CT-25b
+repo: rebate-platform
+title: 迁移（CT-25 邀请奖励）：app.invite_rewards（资格与发放记录，含 bind_ip_hmac，唯一 (app_id, invitee_id)，不删行）与预算计数表 app.invite_reward_budgets（总量占用 / 已发放与按 +08:00 自然日的已发放，条件更新扣减）；授权写在本迁移
+type: migration
+# 2026-10-20 入账（content-client 第五阶段第二波，计划 couli-runs/CONTENT-client/phase5-plan.md §3 序 5、§4；编排 2026-10-20 08:5x 派工 ②）。
+# 依据（SPEC_REF 5ecafb3）：04 l.419 §3.2 invite_rewards 行；08 11_INV BR-INV-24 正文 ①④ 与细则 l.557 起「资格记录与状态」「判定顺序」6；原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：status / 两方结果 / 两方不发原因 / 作废原因 / bind_source 的 CHECK 取 CT-25a 的编码；*_fen 一律 bigint ≥ 0；
+#   外键：两方用户 → users (app_id, id)，trigger_order_id → order_keys (app_id, order_id)（commission_splits 先例），两张凭证 → ledger_vouchers (app_id, id)；
+#   bind_ip_hmac 照 0053 landing_registrations.ip_hmac（text，64 位小写十六进制 CHECK）。约束与索引具名。
+# 预算计数（D-T1 默认，04 写「由资金线与契约线定」）：(app_id, period) 主键，period = 'total' 或 YYYY-MM-DD；reserved_fen、granted_fen、row_version、updated_at；
+#   上限不入表（在 config_items），扣减用条件更新。形状待资金线在 notices 确认（D-T1）。
+# 授权：couli_app SELECT、INSERT 与列级 UPDATE，不给 DELETE；couli_readonly SELECT。
+# 迁移号未分配：落地时按 notices 取主干最大 +1（现主干 0054；0055 有 W1 B1-08s 意向，B2-04a / b 也在排），先在 notices 登记。
+# 两段式：Opus 只写迁移 SQL，编排者在沙箱外跑 pnpm db:snapshot 提交 schema.sql 与 db.gen.ts（outside_needed）。
+# 两张表进不进 lint-migrations 资金表清单（D-G1）是门禁改动，另开 guard-change，宜先于本任务合并。
+# 依赖 CT-25a（编码先定；尚未入账，同批入账时写进 deps）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/growth/invite-rewards/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/growth/invite-rewards/**'
+status: todo
+pr: null

@@ -1,0 +1,29 @@
+id: F1-02zn
+repo: rebate-platform
+title: content：登记 growth.invite_reward.* ——配置注册表加金额、每日预算、总预算、首单实付下限、同 IP 窗口五项（带取值范围，种子照 08 默认），开关注册表加 enabled 与 payout_paused（默认 off）；每日或总预算为 0 时不能打开 enabled，enabled 为 on 时任一预算不能存成 0（20001）
+type: impl
+# 2026-10-20 入账（content-client 第五阶段第二波，计划 couli-runs/CONTENT-client/phase5-plan.md §3 序 7、§4；编排 2026-10-20 08:5x 派工 ②）。
+# 依据（SPEC_REF 5ecafb3）：08 11_INV BR-INV-24 正文 ①③④ 与细则「默认值」；04 l.592 §6.6、l.923 §10.1、l.956–958 §10.2、l.1001 §11.2；05 l.191 B1-35 行。
+#   原文由编排者摘入任务书第 9 节，refs 置空。
+# 取值只照 08：每方金额 1000 分；两个预算 0（未填）；首单实付下限 0；同 IP 窗口 24 小时；两个开关默认 off。代码与种子都不另定。
+# 范围（技术取舍，同 F1-02zj 的 D-S2）：都是整数；金额、预算、下限 ≥ 0，窗口 ≥ 1；上限 int32。越界 20001，保存、批量保存、回滚三条路一致。
+# 默认：D-C1 ip_window_hours 进配置注册表、权限点 config.risk（先例 push.token_conflict_window_hours）、种子 24；D-C2 payout_paused 为 switch.all、非系统写；
+#   D-C3 「预算为 0 不能开」两边都由本任务挡（05 写在 B1-35，但开关与配置的保存都在 content），在 notices 告诉 identity。
+# 校验在保存事务内按固定顺序锁开关行与两个预算行，并发「开开关」与「预算改 0」不得同时成功；缺行按 0 处理。关闭开关、payout_paused 的写入不受预算校验。
+# 种子写进 db/seeds/0001_config-defaults.sql（F1-10e kit 的 seedRows 只读这一个文件），追加在 F1-02zj 那批之后，不是迁移、不占迁移号。
+# 依赖：F1-02zm（过渡测试先合并，尚未入账）、F1-02zj（S9 那组先追加在注册表末尾）。
+refs: []
+refs_hash: {}
+deps: [F1-02zj, CT-25a]
+paths:
+  - 'apps/api/src/modules/content/**'
+  - 'db/seeds/0001_config-defaults.sql'
+test_paths:
+  - 'test/spec/content/invite-reward-config/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/invite-reward-config/**'
+status: todo
+pr: null
