@@ -162,6 +162,34 @@ export function expectedNow(): readonly Expected[] {
   const invite = presentOf(INVITE_CFG, 'growth.invite_reward.*') === 0 ? [] : INVITE_CFG;
   return [...EXPECTED, ...settle, ...invite];
 }
+// F1-02zz (test-change, transitional; F1-02zt tightens). The BR-INV-24 细则 eligibility period
+// (08 l.560, SPEC_REF ac4d993) as F1-02zx registers it (couli-runs/F1-02zx excerpt 9.2-1, D-E2):
+// one editable number, config.business, appended right after ip_window_hours as the last item.
+export const INVITE_ELIG: readonly Expected[] = [
+  row('growth.invite_reward.eligibility_days', 'number', 'config.business'),
+];
+/**
+ * F1-02zz (transitional): the invite reward group the registry under test holds, in order:
+ * none, the five INVITE_CFG keys, or those five followed by INVITE_ELIG. INVITE_CFG must be
+ * whole or absent, INVITE_ELIG whole or absent, and INVITE_ELIG never without INVITE_CFG.
+ */
+export function inviteNow(): readonly Expected[] {
+  const registered = new Set(configRegistry().map((spec) => spec.key));
+  const count = (group: readonly Expected[]): number =>
+    group.filter((entry) => registered.has(entry.key)).length;
+  const cfg = count(INVITE_CFG);
+  const elig = count(INVITE_ELIG);
+  expect(
+    [
+      [0, 0],
+      [INVITE_CFG.length, 0],
+      [INVITE_CFG.length, INVITE_ELIG.length],
+    ],
+    'growth.invite_reward.* registered as none, the five keys, or the five keys plus eligibility_days',
+  ).toContainEqual([cfg, elig]);
+  if (cfg === 0) return [];
+  return elig === 0 ? INVITE_CFG : [...INVITE_CFG, ...INVITE_ELIG];
+}
 export const expectedOf = (key: string): Expected => {
   const found = expectedNow().find((entry) => entry.key === key);
   expect(found, key).toBeDefined();
