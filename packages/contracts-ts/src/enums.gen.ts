@@ -183,7 +183,7 @@ export const ledger_type = [
   "WITHDRAW_RETURN", // 提现退回（冻结 → 可用）
   "WITHDRAW_FEE", // 提现手续费（冻结 −，MVP 为 0）
   "TAX_WITHHOLD", // 代扣个税（冻结 −）
-  "REWARD", // 活动奖励（+，P1）
+  "REWARD", // 活动奖励（+；invite 随邀请奖励活动启用（BR-INV-24，2026-10-19），newbie、checkin 仍 P1）
   "ADMIN_ADJUST", // 人工调账（±）
   "BAD_DEBT_WRITEOFF", // 负余额核销（+）
 ] as const;
@@ -223,8 +223,8 @@ export const settle_adjust_sub_type = [
 export type SettleAdjustSubType = (typeof settle_adjust_sub_type)[number];
 
 /**
- * reward_sub_type
- * Source: 规划/04 §2.4（P1） (contracts/enums/fund.yaml).
+ * REWARD 的 sub_type；invite 随邀请奖励活动启用，邀请人与被邀请人都用 invite，两方由 invite_rewards 区分；newbie、checkin 仍 P1
+ * Source: 规划/04 §2.4；BR-INV-24（invite，2026-10-19）、BR-INV-22（newbie、checkin 仍 P1） (contracts/enums/fund.yaml).
  */
 export const reward_sub_type = [
   "newbie", // 新人
@@ -803,7 +803,7 @@ export type DeletionCancelReason = (typeof deletion_cancel_reason)[number];
  */
 export const tip_key = [
   "jump_tip", // 下单须知（按平台记已读）
-  "inviter_before_buy", // 首次购买前的邀请码提示（不分平台）
+  "inviter_before_buy", // 首次购买前的邀请码提示（不分平台）；2026-10-19 作废（BR-INV-03 细则、BR-INV-21）：不再写入与读取，已有行保留，取值不复用；契约里保留不删
 ] as const;
 export type TipKey = (typeof tip_key)[number];
 
@@ -840,6 +840,66 @@ export const blocked_request_type = [
   "payout_account", // 收款账号：绑定或更换收款账号时被拦（支付宝、银行卡、微信零钱，BR-WDR-02 ⓪、BR-WDR-33）
 ] as const;
 export type BlockedRequestType = (typeof blocked_request_type)[number];
+
+/**
+ * invite_rewards.status，邀请奖励活动资格与发放记录的状态；编码由契约线定，含义只在 BR-INV-24；不发与作废的原因只在后台可查，用户端不展示
+ * Source: 规划/04 §3.2 invite_rewards；BR-INV-24 细则「资格记录与状态」 (contracts/enums/identity.yaml).
+ */
+export const invite_reward_status = [
+  "qualified", // 已取得资格（等触发）
+  "deferred", // 顺延（已触发，当日预算不够或暂停发放，次日起按触发先后补发）
+  "processed", // 已处理（两方各自已发或不发）
+  "voided", // 作废（终态，原因见 invite_reward_void_reason）
+  "budget_exhausted", // 预算用尽（终态）
+] as const;
+export type InviteRewardStatus = (typeof invite_reward_status)[number];
+
+/**
+ * invite_rewards.inviter_result、invitee_result，一方的发放结果；处理前为空
+ * Source: 规划/04 §3.2 invite_rewards；BR-INV-24 细则「资格记录与状态」 (contracts/enums/identity.yaml).
+ */
+export const invite_reward_party_result = [
+  "granted", // 已发
+  "skipped", // 不发（原因见 invite_reward_skip_reason）
+] as const;
+export type InviteRewardPartyResult = (typeof invite_reward_party_result)[number];
+
+/**
+ * invite_rewards 两方各一的不发原因（可空）；前三个双方都不发，后四个只命中的一方不发、另一方照发；编码由契约线定，含义只在 BR-INV-24
+ * Source: 规划/04 §3.2 invite_rewards；BR-INV-24 ③、细则「判定顺序」第 4、5 步 (contracts/enums/identity.yaml).
+ */
+export const invite_reward_skip_reason = [
+  "same_device", // 同设备：两人的设备集合相交（BR-INV-08 ③ 口径），双方都不发
+  "same_ip", // 同 IP：被邀请人绑定时的 IP 与邀请人绑定前一段时间内的登录 IP 相同，双方都不发
+  "deleted_phone_retained", // 被邀请人手机号命中未过期的注销留存记录（BR-ID-28、BR-ID-06），双方都不发
+  "multi_account", // 该方被 BR-ID-37 标为同设备多账号，只该方不发
+  "risk_restricted", // 该方处于封禁、申诉中或冻结（risk_state ∈ {banned, appealing, frozen}），只该方不发
+  "deleting", // 该方处于注销流程（cooling、processing、done），只该方不发
+  "minor", // 该方为已识别未满 18 周岁（BR-ID-26），只该方不发
+] as const;
+export type InviteRewardSkipReason = (typeof invite_reward_skip_reason)[number];
+
+/**
+ * invite_rewards.void_reason，资格作废的原因（可空，仅 status=voided）；编码由契约线定，含义只在 BR-INV-24
+ * Source: 规划/04 §3.2 invite_rewards；BR-INV-24 ③ ⑥、细则「判定顺序」第 2、3 步 (contracts/enums/identity.yaml).
+ */
+export const invite_reward_void_reason = [
+  "relation_changed", // 关系已变：发放时被邀请人的上级已不是资格记录里的邀请人
+  "order_clawed_back", // 触发之后、发放之前触发订单被扣回（CLAWED_BACK，含部分退款扣回）
+  "order_rights", // 触发之后、发放之前触发订单进入维权
+] as const;
+export type InviteRewardVoidReason = (typeof invite_reward_void_reason)[number];
+
+/**
+ * invite_rewards.bind_source，取得资格时的绑定渠道；后台改上级（admin）不取得资格，不在此列
+ * Source: 规划/04 §3.2 invite_rewards；BR-INV-24 ① (contracts/enums/identity.yaml).
+ */
+export const invite_reward_bind_source = [
+  "landing", // 邀请落地页注册绑定
+  "register", // 注册时随登录绑定
+  "backfill", // 注册后补填邀请码
+] as const;
+export type InviteRewardBindSource = (typeof invite_reward_bind_source)[number];
 
 /**
  * 消息模板编码；UNION_AUTH_EXPIRING、UNION_AUTH_EXPIRED 只发站长手机号，不属于用户通知分类
@@ -1579,6 +1639,11 @@ export const enums = {
   appeal_status,
   appeal_target_type,
   blocked_request_type,
+  invite_reward_status,
+  invite_reward_party_result,
+  invite_reward_skip_reason,
+  invite_reward_void_reason,
+  invite_reward_bind_source,
   notify_template_code,
   notify_category,
   user_level,

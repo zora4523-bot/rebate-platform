@@ -4163,7 +4163,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "properties": {
         "tip_key": {
           "type": "string",
-          "description": "One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则).",
+          "description": "One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则). inviter_before_buy is deprecated\nsince 2026-10-19 (first-purchase inviter tip cancelled): kept and accepted as before, not\nused by clients, never reused.\n",
           "enum": [
             "jump_tip",
             "inviter_before_buy"

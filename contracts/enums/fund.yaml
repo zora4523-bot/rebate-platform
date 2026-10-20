@@ -14,7 +14,7 @@ enums:
       WITHDRAW_RETURN: 提现退回（冻结 → 可用）
       WITHDRAW_FEE: 提现手续费（冻结 −，MVP 为 0）
       TAX_WITHHOLD: 代扣个税（冻结 −）
-      REWARD: 活动奖励（+，P1）
+      REWARD: 活动奖励（+；invite 随邀请奖励活动启用（BR-INV-24，2026-10-19），newbie、checkin 仍 P1）
       ADMIN_ADJUST: 人工调账（±）
       BAD_DEBT_WRITEOFF: 负余额核销（+）
   referral_credit_sub_type:
@@ -38,7 +38,8 @@ enums:
       PRICE_COMPARE: 比价
       PRICE_PROTECT: 价保
   reward_sub_type:
-    source: 规划/04 §2.4（P1）
+    source: 规划/04 §2.4；BR-INV-24（invite，2026-10-19）、BR-INV-22（newbie、checkin 仍 P1）
+    description: REWARD 的 sub_type；invite 随邀请奖励活动启用，邀请人与被邀请人都用 invite，两方由 invite_rewards 区分；newbie、checkin 仍 P1
     values:
       newbie: 新人
       checkin: 签到

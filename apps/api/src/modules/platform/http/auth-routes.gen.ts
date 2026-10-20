@@ -498,6 +498,16 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/invite-rewards",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/invite-rewards/:invitee_id",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/search",
     "auth": "admin"
   },

@@ -1,0 +1,44 @@
+{
+  "task": "CT-25a",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "2e7093846c5bbb6224032b845204d11acbce93aa",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; new console operations planned). CT-25 invite reward contract: identity enums for qualification state, per-side result, skip and void reasons and bind source (meanings per BR-INV-24); optional ConfigInvite reward_enabled and reward_amount_fen (int64 because contracts:check requires *_fen to be int64, capped at 2147483647 to keep the int32 range of 04 10.2); console GET /admin/v1/invite-rewards list and detail (fund.view, read-only, phone masked, no IP / HMAC / voucher, list carries today's and cumulative budget, detail 30701); texts invite.reward.tip / tip_inviter / invite.post_login.optional_hint copied from 08 and classified in fund-term-keys.yaml; the before-buy tip is only marked deprecated. All additions or description changes. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings"
+    },
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "money review of amount and budget field names, round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "1eb67d9bbd12d4c43f138cc6f5b7bba1109de48e",
+    "specs": "c150895f9c4c3249d17ebd0894736c9169aad3f5"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}

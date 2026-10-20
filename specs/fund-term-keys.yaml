@@ -21,6 +21,8 @@
 # 08 列了、texts.default.json 里还没有的键（tag.rebate、btn.buy.no_rebate、btn.buy.rebate_suffix、jump_tip，普通段的
 # btn.buy、btn.buy.coupon）照 08 先归类；08「还没有取键名的资金文案」取键名后补进 fund_terms.keys。
 # P1 订阅提醒模板 watch.price_drop.* 进 notify_template_code 时归 fund_terms（BR-WATCH-14）。
+# invite.reward.tip 归 fund_terms、invite.post_login.optional_hint 归 ordinary（BR-TEXT-12 细则，2026-10-19）；
+# invite.reward.tip_inviter 08 未写归类，与 invite.reward.tip 同为带 {amount} 的奖励句，归 fund_terms（编排者默认，待规划回写）。
 fund_terms:
   prefixes:
     - order_status.
@@ -72,6 +74,8 @@ fund_terms:
     - error.50301.not_launched
     - external_page.product_unresolved
     - invite.notice_inviter
+    - invite.reward.tip
+    - invite.reward.tip_inviter
     - jump_tip
     - link_landing.owner_hint
     - no_rebate.price_compare
@@ -306,6 +310,7 @@ ordinary:
     - invite.bind_phone_guide.body
     - invite.bind_phone_guide.body_before_buy
     - invite.bind_phone_guide.title
+    - invite.post_login.optional_hint
     - jump.taobao_sdk_unavailable
     - link_landing.invalid
     - login.help_entry

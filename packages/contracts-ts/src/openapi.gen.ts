@@ -1507,7 +1507,9 @@ export interface paths {
          * @description jump_tip is read per platform (a platform without a record is absent or null);
          *     inviter_before_buy is not per platform (BR-INV-03 细则). Fetched with /v1/config after
          *     login; after a login on another device a tip already read on the same platform is not
-         *     shown again (BR-ATTR-21, AC-S1-17).
+         *     shown again (BR-ATTR-21, AC-S1-17). inviter_before_buy is deprecated since 2026-10-19
+         *     (the first-purchase inviter tip is cancelled, BR-INV-03 细则, 04 §6.1): clients no longer
+         *     read it; kept in the contract and returned as before until removed, never reused.
          */
         get: operations["getTips"];
         put?: never;
@@ -1530,8 +1532,9 @@ export interface paths {
         /**
          * Mark a tip as read
          * @description tip_key=jump_tip needs a body {platform}; without it → 20001 with data.fields=[platform].
-         *     tip_key=inviter_before_buy sends no body. Repeating the call is harmless:
-         *     an existing record keeps its read_at. Version gate: applied.
+         *     tip_key=inviter_before_buy sends no body (deprecated since 2026-10-19, BR-INV-03 细则:
+         *     clients no longer call it; still accepted as before until removed). Repeating the call is
+         *     harmless: an existing record keeps its read_at. Version gate: applied.
          */
         post: operations["markTipRead"];
         delete?: never;
@@ -2742,6 +2745,66 @@ export interface paths {
          *     risk reason. Balances, orders and withdrawals of a user are not part of this contract yet.
          */
         get: operations["adminListUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/invite-rewards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Invite reward records with today's and total used budget (read only)
+         * @description Permission point `fund.view` (04 §6.6 invite-rewards, 01 F-ADM-27; read only, no step-up);
+         *     without it → 10403 with `data.reason=admin_permission_denied`. The qualification and
+         *     payout records of the invite reward campaign (BR-INV-24 细则「资格记录与状态」, one per
+         *     invitee) of the console's app, latest `qualified_at` first, page by page (`page`,
+         *     `page_size` ≤ 200), optionally filtered by `invitee_id`, `inviter_id`, `status` and the
+         *     +08:00 calendar days of `qualified_at` (`qualified_from` to `qualified_to`, both
+         *     inclusive; `qualified_from` later than `qualified_to` → 20001 with
+         *     `data.fields=[qualified_from, qualified_to]`). Each row carries both parties' results and,
+         *     for a party not paid or a voided record, the reason code (enums invite_reward_skip_reason,
+         *     invite_reward_void_reason; meanings only in BR-INV-24; the console shows them, the app
+         *     never does). Phone numbers are masked 3 + 4 (`138****5678`, BR-ID-33); the full number is
+         *     only shown through POST /admin/v1/users/{user_id}/reveal (`pii.reveal_phone`). No client
+         *     IP or its HMAC and no voucher ids. `budget` holds the amounts used, whatever the filters:
+         *     granted on the current +08:00 day, and reserved and granted in total (BR-INV-24 ④); the
+         *     limits themselves are config items (`growth.invite_reward.*`, GET /admin/v1/config-items).
+         *     There is no write operation: no re-issue and no change of a result (04 §6.6).
+         */
+        get: operations["adminListInviteRewards"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/invite-rewards/{invitee_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One invite reward record, by invitee (read only)
+         * @description Permission point `fund.view` (04 §6.6 invite-rewards; read only, no step-up); without it →
+         *     10403 with `data.reason=admin_permission_denied`. The invite reward record of one invitee
+         *     (BR-INV-24, at most one per invitee) of the console's app, with the same fields and masking
+         *     as a row of GET /admin/v1/invite-rewards; the full phone numbers only through POST
+         *     /admin/v1/users/{user_id}/reveal (`pii.reveal_phone`). An invitee without a record
+         *     (unknown, of another app, or never qualified) → 30701. No write operation (04 §6.6).
+         */
+        get: operations["adminGetInviteReward"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5616,7 +5679,9 @@ export interface components {
             trace_id: components["schemas"]["TraceId"];
         };
         /**
-         * @description One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则).
+         * @description One-time tip (enum tip_key; BR-ATTR-21, BR-INV-03 细则). inviter_before_buy is deprecated
+         *     since 2026-10-19 (first-purchase inviter tip cancelled): kept and accepted as before, not
+         *     used by clients, never reused.
          * @enum {string}
          */
         TipKey: "jump_tip" | "inviter_before_buy";
@@ -5625,12 +5690,17 @@ export interface components {
          * @enum {string}
          */
         ResettableTipKey: "jump_tip";
-        /** @description Body of tip_key=jump_tip; tip_key=inviter_before_buy sends no body. */
+        /** @description Body of tip_key=jump_tip; tip_key=inviter_before_buy (deprecated 2026-10-19) sends no body. */
         MarkTipReadRequest: {
             platform: components["schemas"]["PlatformCode"];
         };
         /** Format: date-time */
         TipReadAt: string | null;
+        /**
+         * @description Read states of the one-time tips. inviter_before_buy is deprecated since 2026-10-19
+         *     (first-purchase inviter tip cancelled, BR-INV-03 细则): clients no longer read it; still
+         *     returned as before until removed from the contract.
+         */
         TipsData: {
             /** @description read_at per platform; a platform never read is absent or null. */
             jump_tip: {
@@ -6658,8 +6728,31 @@ export interface components {
              *     the schema like every key added after v0.9; the server always sends it.
              */
             bind_phone_guide?: boolean;
-            /** @description Show the inviter tip before the first purchase (BR-INV-21). */
+            /**
+             * @deprecated
+             * @description Deprecated 2026-10-19: the first-purchase inviter tip is cancelled (BR-INV-03 细则,
+             *     BR-INV-21); clients no longer read it. Kept in the schema and never reused; the server
+             *     may still send it until it is removed.
+             */
             before_buy_tip?: boolean;
+            /**
+             * @description Whether the invite reward campaign is live (BR-INV-24 ① ⑨): the switch is on and the
+             *     total budget left (total − reserved − granted) covers both parties' amounts. When true
+             *     the client shows invite.reward.tip (invitee side) or invite.reward.tip_inviter (invite
+             *     page). Server-derived, never read from config_items of the same name (04 §10.1,
+             *     BR-INV-24 ⑨); a missing switch counts as off. Optional in the schema like every key
+             *     added after v0.9; the server always sends it.
+             */
+            reward_enabled?: boolean;
+            /**
+             * Format: int64
+             * @description Amount each party gets, in fen (BR-INV-24 ①; the {amount} of invite.reward.tip and
+             *     invite.reward.tip_inviter, formatted by BR-TEXT-10). Server-derived, never read from
+             *     config_items of the same name (04 §10.1, BR-INV-24 ⑨); a missing amount takes the
+             *     BR-INV-24 default. Optional in the schema like every key added after v0.9; the server
+             *     always sends it.
+             */
+            reward_amount_fen?: number;
         };
         /** @description Agent availability and guest quota (04 §10.1; BR-AI-11, BR-AI-12). */
         ConfigAgent: {
@@ -8906,6 +8999,130 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["AdminUserPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description Status of an invite reward record (enum invite_reward_status; meanings only in BR-INV-24
+         *     细则「资格记录与状态」): qualified → deferred → processed, with the end states voided and
+         *     budget_exhausted.
+         * @enum {string}
+         */
+        AdminInviteRewardStatus: "qualified" | "deferred" | "processed" | "voided" | "budget_exhausted";
+        /**
+         * @description One party's result (enum invite_reward_party_result; BR-INV-24).
+         * @enum {string}
+         */
+        AdminInviteRewardPartyResult: "granted" | "skipped";
+        /**
+         * @description Why a party is not paid (enum invite_reward_skip_reason; BR-INV-24 ③): same_device,
+         *     same_ip and deleted_phone_retained skip both parties, the others only the party hit.
+         * @enum {string}
+         */
+        AdminInviteRewardSkipReason: "same_device" | "same_ip" | "deleted_phone_retained" | "multi_account" | "risk_restricted" | "deleting" | "minor";
+        /**
+         * @description Why a record is voided (enum invite_reward_void_reason; BR-INV-24 ③ ⑥).
+         * @enum {string}
+         */
+        AdminInviteRewardVoidReason: "relation_changed" | "order_clawed_back" | "order_rights";
+        /**
+         * @description Bind channel the invitee qualified through (enum invite_reward_bind_source; BR-INV-24 ①; admin changes never qualify).
+         * @enum {string}
+         */
+        AdminInviteRewardBindSource: "landing" | "register" | "backfill";
+        /**
+         * @description An invite reward record (04 §3.2 invite_rewards, BR-INV-24), one per invitee. Phone
+         *     numbers masked; no client IP or its HMAC and no voucher ids.
+         */
+        AdminInviteReward: {
+            invitee_id: components["schemas"]["Id"];
+            inviter_id: components["schemas"]["Id"];
+            invitee_phone_masked: components["schemas"]["AdminMaskedPhone"];
+            inviter_phone_masked: components["schemas"]["AdminMaskedPhone"];
+            /**
+             * Format: int64
+             * @description Amount each party gets, locked when the invitee qualified (BR-INV-24 ①).
+             */
+            amount_fen: number;
+            bind_source: components["schemas"]["AdminInviteRewardBindSource"];
+            /**
+             * Format: date-time
+             * @description When the invitee qualified (in the bind transaction).
+             */
+            qualified_at: string;
+            /** @description Id of the order that triggered the reward (the invitee's first own purchase credited, BR-INV-24 ②); null before the trigger. */
+            trigger_order_id: string | null;
+            /**
+             * Format: date-time
+             * @description When the trigger happened; null before it.
+             */
+            triggered_at: string | null;
+            status: components["schemas"]["AdminInviteRewardStatus"];
+            /** @description The inviter's result; null until processed (and for a voided or budget_exhausted record). */
+            inviter_result: components["schemas"]["AdminInviteRewardPartyResult"] | null;
+            /** @description The invitee's result; null until processed (and for a voided or budget_exhausted record). */
+            invitee_result: components["schemas"]["AdminInviteRewardPartyResult"] | null;
+            /** @description Why the inviter is not paid; null unless inviter_result is skipped. */
+            inviter_skip_reason: components["schemas"]["AdminInviteRewardSkipReason"] | null;
+            /** @description Why the invitee is not paid; null unless invitee_result is skipped. */
+            invitee_skip_reason: components["schemas"]["AdminInviteRewardSkipReason"] | null;
+            /** @description Why the record is voided; null unless status is voided. */
+            void_reason: components["schemas"]["AdminInviteRewardVoidReason"] | null;
+            /**
+             * Format: date-time
+             * @description When the granted amounts were posted; null when no party was paid.
+             */
+            granted_at: string | null;
+        };
+        /**
+         * @description Invite reward budget used (BR-INV-24 ④), independent of the list's filters; the limits are
+         *     the config items growth.invite_reward.daily_budget_fen and total_budget_fen.
+         */
+        AdminInviteRewardBudget: {
+            today: {
+                /**
+                 * Format: date
+                 * @description The current +08:00 calendar day.
+                 */
+                date: string;
+                /**
+                 * Format: int64
+                 * @description Amount granted on that day (what the daily budget counts).
+                 */
+                granted_fen: number;
+            };
+            total: {
+                /**
+                 * Format: int64
+                 * @description Amount reserved by qualified records not yet paid (both parties' amounts each).
+                 */
+                reserved_fen: number;
+                /**
+                 * Format: int64
+                 * @description Amount granted since the campaign started.
+                 */
+                granted_fen: number;
+            };
+        };
+        AdminInviteRewardPage: {
+            items: components["schemas"]["AdminInviteReward"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+            budget: components["schemas"]["AdminInviteRewardBudget"];
+        };
+        AdminInviteRewardPageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminInviteRewardPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminInviteRewardResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminInviteReward"];
             trace_id: components["schemas"]["TraceId"];
         };
         /**
@@ -13960,7 +14177,9 @@ export interface operations {
                      *           "required": false,
                      *           "backfill_hours": 168,
                      *           "bind_phone_guide": true,
-                     *           "before_buy_tip": true
+                     *           "before_buy_tip": true,
+                     *           "reward_enabled": false,
+                     *           "reward_amount_fen": 1000
                      *         },
                      *         "agent": {
                      *           "enabled": true,
@@ -16108,6 +16327,181 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListInviteRewards: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+                /** @description Only the record of this invitee (user_id); absent = all. */
+                invitee_id?: components["schemas"]["Id"];
+                /** @description Only records of this inviter (user_id); absent = all. */
+                inviter_id?: components["schemas"]["Id"];
+                /** @description Only records in this status (enum invite_reward_status); absent = all. */
+                status?: components["schemas"]["AdminInviteRewardStatus"];
+                /** @description First +08:00 calendar day of `qualified_at`, inclusive. */
+                qualified_from?: string;
+                /** @description Last +08:00 calendar day of `qualified_at`, inclusive. */
+                qualified_to?: string;
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of invite reward records, latest qualification first, with the used budget. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "invitee_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *             "inviter_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *             "invitee_phone_masked": "139****0000",
+                     *             "inviter_phone_masked": "138****5678",
+                     *             "amount_fen": 1000,
+                     *             "bind_source": "landing",
+                     *             "qualified_at": "2026-10-20T10:00:00+08:00",
+                     *             "trigger_order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01",
+                     *             "triggered_at": "2026-11-25T09:00:00+08:00",
+                     *             "status": "processed",
+                     *             "inviter_result": "skipped",
+                     *             "invitee_result": "granted",
+                     *             "inviter_skip_reason": "risk_restricted",
+                     *             "invitee_skip_reason": null,
+                     *             "void_reason": null,
+                     *             "granted_at": "2026-11-25T09:00:05+08:00"
+                     *           },
+                     *           {
+                     *             "invitee_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03",
+                     *             "inviter_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *             "invitee_phone_masked": "137****1111",
+                     *             "inviter_phone_masked": "138****5678",
+                     *             "amount_fen": 1000,
+                     *             "bind_source": "register",
+                     *             "qualified_at": "2026-10-19T20:30:00+08:00",
+                     *             "trigger_order_id": null,
+                     *             "triggered_at": null,
+                     *             "status": "qualified",
+                     *             "inviter_result": null,
+                     *             "invitee_result": null,
+                     *             "inviter_skip_reason": null,
+                     *             "invitee_skip_reason": null,
+                     *             "void_reason": null,
+                     *             "granted_at": null
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2,
+                     *         "budget": {
+                     *           "today": {
+                     *             "date": "2026-11-25",
+                     *             "granted_fen": 1000
+                     *           },
+                     *           "total": {
+                     *             "reserved_fen": 2000,
+                     *             "granted_fen": 1000
+                     *           }
+                     *         }
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminInviteRewardPageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Invalid query or not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetInviteReward: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description user_id of the invitee; no record for it → 30701. */
+                invitee_id: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The invite reward record. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "invitee_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c04",
+                     *         "inviter_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "invitee_phone_masked": "136****2222",
+                     *         "inviter_phone_masked": "138****5678",
+                     *         "amount_fen": 1000,
+                     *         "bind_source": "backfill",
+                     *         "qualified_at": "2026-10-21T08:15:00+08:00",
+                     *         "trigger_order_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a02",
+                     *         "triggered_at": "2026-11-25T09:00:00+08:00",
+                     *         "status": "voided",
+                     *         "inviter_result": null,
+                     *         "invitee_result": null,
+                     *         "inviter_skip_reason": null,
+                     *         "invitee_skip_reason": null,
+                     *         "void_reason": "order_clawed_back",
+                     *         "granted_at": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminInviteRewardResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description No record or not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
