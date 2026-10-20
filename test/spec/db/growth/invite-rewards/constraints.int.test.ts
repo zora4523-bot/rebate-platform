@@ -8,16 +8,18 @@ import {
   AT,
   IP,
   REASONS,
-  SHAPES,
+  STATUS_TERMINAL_OF,
   TABLES,
   VOID_REASONS,
   appId,
   close,
+  formOf,
   insert,
   open,
   ready,
   references,
   reward,
+  shapesOf,
   update,
   user,
   type Harness,
@@ -62,11 +64,18 @@ it('[AC-CT-25b#6] 全部合法来源、状态、两方结果及原因可写入',
       bind_source,
     });
   }
-  for (const status of ['qualified', 'deferred', 'budget_exhausted']) {
+  // CT-25e (test-change, transitional; F1-02zt tightens): the third status is the terminal value
+  // of the detected form (budget_exhausted before CT-25d, expired after); the other one is refused.
+  const form = await formOf(h.app);
+  for (const status of ['qualified', 'deferred', STATUS_TERMINAL_OF(form)]) {
     expect(
       await insert(h.app, 'invite_rewards', { ...(await reward(h.app)), status }),
     ).toMatchObject({ status });
   }
+  const retired = STATUS_TERMINAL_OF(form === 'v0055' ? 'eligibility' : 'v0055');
+  await expect(
+    insert(h.app, 'invite_rewards', { ...(await reward(h.app)), status: retired }),
+  ).rejects.toMatchObject({ code: '23514' });
   for (const void_reason of VOID_REASONS) {
     expect(
       await insert(h.app, 'invite_rewards', {
@@ -152,7 +161,9 @@ it('[AC-CT-25b#8] 两方原因与结果联动，包括 NULL 结果不能带原�
     );
   }
   invalid.push({ status: 'processed' }, { status: 'voided', void_reason: null });
-  for (const status of ['qualified', 'deferred', 'processed', 'budget_exhausted']) {
+  // CT-25e (test-change, transitional; F1-02zt tightens): terminal value of the detected form.
+  const terminal = STATUS_TERMINAL_OF(await formOf(h.app));
+  for (const status of ['qualified', 'deferred', 'processed', terminal]) {
     invalid.push({
       status,
       void_reason: 'relation_changed',
@@ -176,12 +187,14 @@ it('[AC-CT-25b#8] 两方原因与结果联动，包括 NULL 结果不能带原�
 
 it('[AC-CT-25b#9] 必填列拒绝 NULL，资格业务时刻不从 SQL 时钟补齐', async () => {
   await ready(h.app);
+  // CT-25e (test-change, transitional; F1-02zt tightens): required columns of the detected form.
+  const form = await formOf(h.app);
   const rows = {
     invite_rewards: await reward(h.app),
     invite_reward_budgets: { app_id: appId(), period: 'total', updated_at: AT },
   };
   for (const table of TABLES) {
-    for (const [column, [, nullable]] of Object.entries(SHAPES[table])) {
+    for (const [column, [, nullable]] of Object.entries(shapesOf(form)[table])) {
       if (nullable) continue;
       await expect(insert(h.app, table, { ...rows[table], [column]: null })).rejects.toMatchObject({
         code: '23502',
@@ -191,6 +204,20 @@ it('[AC-CT-25b#9] 必填列拒绝 NULL，资格业务时刻不从 SQL 时钟补�
   const omitted = { ...rows.invite_rewards };
   delete omitted['qualified_at'];
   await expect(insert(h.app, 'invite_rewards', omitted)).rejects.toMatchObject({ code: '23502' });
+  if (form === 'eligibility') {
+    // CT-25e (test-change, transitional; F1-02zt tightens): the locked day count has no database
+    // default and must be at least one day.
+    const unlocked = { ...rows.invite_rewards };
+    delete unlocked['eligibility_days'];
+    await expect(insert(h.app, 'invite_rewards', unlocked)).rejects.toMatchObject({
+      code: '23502',
+    });
+    for (const eligibility_days of [0, -1]) {
+      await expect(
+        insert(h.app, 'invite_rewards', { ...rows.invite_rewards, eligibility_days }),
+      ).rejects.toMatchObject({ code: '23514' });
+    }
+  }
 });
 
 it('[AC-CT-25b#10] 同 app 邀请对象只能一条，换邀请人或状态不能绕过且两个并发插入只成一个', async () => {

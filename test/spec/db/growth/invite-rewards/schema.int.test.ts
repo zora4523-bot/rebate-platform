@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { sql } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
-import { SHAPES, TABLES, close, open, ready, type Harness } from './kit.ts';
+import { TABLES, close, formOf, open, ready, shapesOf, type Harness } from './kit.ts';
 
 let h: Harness;
 beforeAll(async () => {
@@ -16,6 +16,8 @@ afterAll(async () => {
 
 it('[AC-CT-25b#1] 两表字段、类型、可空性与默认值符合 §9.2', async () => {
   await ready(h.app);
+  // CT-25e (test-change, transitional; F1-02zt tightens): exact column set of the detected form.
+  const shapes = shapesOf(await formOf(h.app));
   for (const table of TABLES) {
     const columns = await sql<{
       name: string;
@@ -26,7 +28,7 @@ it('[AC-CT-25b#1] 两表字段、类型、可空性与默认值符合 §9.2', as
       column_default AS default_value FROM information_schema.columns
       WHERE table_schema = 'app' AND table_name = ${table} ORDER BY column_name`.execute(h.app);
     expect(columns.rows).toEqual(
-      Object.entries(SHAPES[table])
+      Object.entries(shapes[table])
         .map(([name, [type, nullable, default_value]]) => ({ name, type, nullable, default_value }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     );
@@ -116,15 +118,29 @@ it('[AC-CT-25b#3] 五条外键含 app_id、指向指定父键且禁止级联', a
 
 it('[AC-CT-25b#4] 约束与索引显式具名，创建两表和授权位于同一迁移且不绑定编号', async () => {
   await ready(h.app);
+  const form = await formOf(h.app);
   const directory = new URL('../../../../../db/migrations/', import.meta.url);
-  const candidates = readdirSync(directory)
+  const migrations = readdirSync(directory)
     .filter((name) => name.endsWith('.sql'))
+    .sort()
     .map((name) =>
       readFileSync(new URL(name, directory), 'utf8').replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, ''),
-    )
-    .filter((source) => /CREATE\s+TABLE\s+app\.invite_rewards\s*\(/i.test(source));
+    );
+  const candidates = migrations.filter((source) =>
+    /CREATE\s+TABLE\s+app\.invite_rewards\s*\(/i.test(source),
+  );
   expect(candidates).toHaveLength(1);
   const source = candidates[0]!;
+  // CT-25e (test-change, transitional; F1-02zt tightens): constraints added or rebuilt by later
+  // migrations (CT-25d) are named there; the creating migration plus every later migration that
+  // alters app.invite_rewards is the source for constraint names. Tables, grants and indexes
+  // still come from the creating migration only.
+  const named = [
+    source,
+    ...migrations
+      .slice(migrations.indexOf(source) + 1)
+      .filter((later) => /ALTER\s+TABLE\s+(?:ONLY\s+)?app\.invite_rewards\b/i.test(later)),
+  ].join('\n');
   for (const table of TABLES) {
     expect(source).toMatch(new RegExp(`CREATE\\s+TABLE\\s+app\\.${table}\\s*\\(`, 'i'));
     for (const role of ['couli_app', 'couli_readonly']) {
@@ -140,9 +156,18 @@ it('[AC-CT-25b#4] 约束与索引显式具名，创建两表和授权位于同�
       FROM pg_constraint WHERE conrelid = to_regclass(${`app.${table}`})
         AND contype IN ('p', 'u', 'c', 'f')`.execute(h.app);
     expect(constraints.rows.some((c) => c.kind === 'c')).toBe(true);
+    if (table === 'invite_rewards') {
+      expect(
+        constraints.rows.filter((c) => c.name === 'invite_rewards_eligibility_days_check'),
+      ).toEqual(
+        form === 'eligibility'
+          ? [{ name: 'invite_rewards_eligibility_days_check', kind: 'c', valid: true }]
+          : [],
+      );
+    }
     for (const constraint of constraints.rows) {
       expect(constraint.valid).toBe(true);
-      expect(source, constraint.name).toMatch(
+      expect(named, constraint.name).toMatch(
         new RegExp(`\\bCONSTRAINT\\s+"?${constraint.name}"?\\s`, 'i'),
       );
     }
