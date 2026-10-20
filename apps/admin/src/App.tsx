@@ -37,6 +37,7 @@ import { Sidebar } from './layout/Sidebar.tsx';
 import { TopBar } from './layout/TopBar.tsx';
 import { AdminsPage } from './pages/admins/index.ts';
 import { ConfigCenterPage } from './pages/config-center/index.ts';
+import { DashboardPage, dashboardTargetOf } from './pages/dashboard/index.ts';
 import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
@@ -52,6 +53,7 @@ import { createRefineAccessControl } from './providers/access-control/refine.ts'
 import { createAdminApi, createAdminDataProvider, type AdminApi } from './providers/admin-api.ts';
 import type { AdminAuthProvider } from './providers/auth/index.ts';
 import {
+  DASHBOARD_MENU_ID,
   findMenuItem,
   getAdminMenuGroups,
   selectAdminMenuGroups,
@@ -382,10 +384,24 @@ function ShellFrame({
   const menuId = location.pathname.replace(/^\/+/, '');
   const match = findMenuItem(groups, menuId);
   const subpage = match === undefined ? undefined : subpageOf(location.state);
-  const crumbs =
-    match === undefined
-      ? [shellTexts.welcomeCrumb]
-      : [match.group.label, match.item.label, ...(subpage === undefined ? [] : [subpage])];
+  // A workbench card opened a route whose page is not in the catalogue yet (e.g. /risk/appeals):
+  // the placeholder shows under the card's page name instead of falling back home.
+  const cardTarget =
+    match === undefined && findMenuItem(getAdminMenuGroups(), menuId) === undefined
+      ? dashboardTargetOf(location.state)
+      : undefined;
+  // First permitted menu after the workbench (sidebar order): where the workbench sends accounts
+  // without dashboard.view.
+  const firstOther = groups
+    .flatMap((group) => group.items)
+    .find((item) => item.id !== DASHBOARD_MENU_ID);
+  const noPermission =
+    state.status === 'ready' && !state.snapshot.isSuper && state.snapshot.permissions.length === 0;
+  const fallback = noPermission || firstOther === undefined ? '/' : `/${firstOther.id}`;
+  let crumbs: string[];
+  if (match === undefined) crumbs = [cardTarget ?? shellTexts.welcomeCrumb];
+  else if (match.group.key === DASHBOARD_MENU_ID) crumbs = [match.item.label];
+  else crumbs = [match.group.label, match.item.label, ...(subpage === undefined ? [] : [subpage])];
 
   let content: ReactNode = (
     <Typography.Text type="secondary" role="status">
@@ -400,6 +416,8 @@ function ShellFrame({
     const { snapshot } = state;
     if (match !== undefined && options.renderPage !== undefined) {
       content = options.renderPage(match.item.id, access);
+    } else if (match !== undefined && match.item.id === DASHBOARD_MENU_ID) {
+      content = <DashboardPage access={access} fallback={fallback} />;
     } else if (match !== undefined && match.item.id === 'admins') {
       // Default page for the super-admin-only menu (the menu itself is hidden otherwise).
       content = <AdminsPage />;
@@ -419,6 +437,11 @@ function ShellFrame({
       // A direct address to the users page without user.list / user.lookup: the page itself says
       // so (and sends nothing) instead of silently landing on the home page.
       content = <UsersPage access={access} />;
+    } else if (menuId === DASHBOARD_MENU_ID) {
+      // The workbench without dashboard.view: the first permitted menu instead (never a request).
+      content = <Navigate to={fallback} replace />;
+    } else if (cardTarget !== undefined) {
+      content = <PagePending title={cardTarget} />;
     } else if (menuId !== '') {
       // Unknown or no longer permitted menu (e.g. after 刷新权限): back to the home page.
       content = <Navigate to="/" replace />;

@@ -24,7 +24,7 @@ it('[AC-F1-06j-PERMISSION#1] 首次权限加载失败可重试，成功后按菜
       { ...ME, permissions: [{ key: 'fund.view', step_up_tier: null, step_up_operations: [] }] },
       'ledger',
     ],
-    [{ ...ME, is_super: true, permissions: [] }, 'users'],
+    [{ ...ME, is_super: true, permissions: [] }, 'dashboard'],
     [{ ...ME, is_super: false, permissions: [] }, null],
   ] as const) {
     const h0 = harness('totp', {

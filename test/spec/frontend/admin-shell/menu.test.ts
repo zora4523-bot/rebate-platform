@@ -30,7 +30,19 @@ it('[AC-F1-06e-MENU#1] 菜单权限 key 仅来自契约枚举或待同步集合�
 });
 
 it('[AC-F1-06e-MENU#2] 菜单目录逐项固定分组、顺序、名称与任一权限点规则', () => {
-  const groups = getAdminMenuGroups();
+  const catalogue = getAdminMenuGroups();
+  expect(catalogue.flatMap((group) => group.items)[0]).toMatchObject({
+    id: 'dashboard',
+    label: '工作台',
+    access: { kind: 'any', permissions: ['dashboard.view'] },
+  });
+  // F-ADM-26 adds a standalone first menu; preserve every existing group's oracle below.
+  const groups = catalogue
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => String(item.id) !== 'dashboard'),
+    }))
+    .filter((group) => group.items.length > 0);
   expect(groups.map((group) => group.label)).toEqual(CASES[0]!.groups);
   expect(
     groups.flatMap((group) =>
@@ -60,7 +72,23 @@ function expectMenuSample(sample: (typeof CASES)[number]): void {
 // guard can tell the cases apart: a later change to one account's case leaves the others
 // unchanged (F1-06zm, D10-92).
 it('[AC-F1-06e-MENU#3] 超管 的菜单与非空分组逐项匹配样例', () => {
-  expectMenuSample(CASES[0]!);
+  const sample = CASES[0]!;
+  const snapshot = Object.freeze({
+    ...sample.snapshot,
+    permissions: Object.freeze([...sample.snapshot.permissions]),
+  });
+  const result = selectAdminMenuGroups(snapshot);
+  expect(
+    result
+      .filter((group) => group.items.some((item) => String(item.id) !== 'dashboard'))
+      .map((group) => group.label),
+  ).toEqual(sample.groups);
+  expect(result.flatMap((group) => group.items.map((item) => item.id))).toEqual([
+    'dashboard',
+    ...sample.ids,
+  ]);
+  expect(result.every((group) => group.items.length > 0)).toBe(true);
+  expect(snapshot).toEqual(sample.snapshot);
 });
 
 it('[AC-F1-06e-MENU#3] 风控小狸 的菜单与非空分组逐项匹配样例', () => {
@@ -103,9 +131,10 @@ it('[AC-F1-06e-MENU#5] 普通账号即使拥有全部权限点也不能看到后
     isSuper: false,
     permissions: [...new Set([...admin_permission, ...PENDING_CONTRACT_PERMISSIONS])],
   });
-  expect(result.flatMap((group) => group.items.map((item) => item.id))).toEqual(
-    MENU.filter((row) => row[3] !== 'super').map((row) => row[1]),
-  );
+  expect(result.flatMap((group) => group.items.map((item) => item.id))).toEqual([
+    'dashboard',
+    ...MENU.filter((row) => row[3] !== 'super').map((row) => row[1]),
+  ]);
 });
 
 it('[AC-F1-06e-MENU#6] 未知 key、相似前缀和菜单名不能授予业务权限', () => {
