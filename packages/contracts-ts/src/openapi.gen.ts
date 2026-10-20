@@ -6795,6 +6795,17 @@ export interface components {
              *     always sends it.
              */
             reward_amount_fen?: number;
+            /**
+             * Format: int32
+             * @description Days an invited friend has, counted from qualifying at binding, to place a qualifying
+             *     own order (BR-INV-24「有效期」); the N of the invite page rule summary (BR-INV-18 细则,
+             *     rendered by BR-TEXT-13). Server-derived from config growth.invite_reward.eligibility_days,
+             *     never read from a config_items key of the same name; a missing or malformed value takes
+             *     the BR-INV-24 default. Applies to friends who qualify from now on; already-qualified
+             *     friends keep their locked days. Optional in the schema like every key added after v0.9;
+             *     the server always sends it.
+             */
+            eligibility_days?: number;
         };
         /** @description Agent availability and guest quota (04 §10.1; BR-AI-11, BR-AI-12). */
         ConfigAgent: {
@@ -14234,7 +14245,8 @@ export interface operations {
                      *           "bind_phone_guide": true,
                      *           "before_buy_tip": true,
                      *           "reward_enabled": false,
-                     *           "reward_amount_fen": 1000
+                     *           "reward_amount_fen": 1000,
+                     *           "eligibility_days": 30
                      *         },
                      *         "agent": {
                      *           "enabled": true,
