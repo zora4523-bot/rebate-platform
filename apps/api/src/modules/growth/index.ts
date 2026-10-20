@@ -1,4 +1,22 @@
 // growth module public surface (B1-11b): change-log writers and as-of readers; other modules import
+export {
+  createInviteRewardQualifier,
+  createInviteRewardBudgetReader,
+  createInviteRewardTrigger,
+  createInviteRewardPayout,
+  createInviteRewardExpiry,
+  createInviteRewardScanner,
+  startInviteRewardWorker,
+} from './application/invite-reward.ts';
+export type {
+  InviteRewardOrderFacts,
+  InviteRewardOrder,
+  InviteRewardGrantWriter,
+  InviteRewardQualifier,
+  InviteRewardPayout,
+  InviteRewardExpiry,
+  InviteRewardTrigger,
+} from './application/invite-reward.ts';
 // only from here. B1-11e: the Nest module with POST /v1/me/inviter, assembled by app.module.
 export { GrowthModule } from './growth.module.ts';
 export type { GrowthModuleOptions } from './growth.module.ts';

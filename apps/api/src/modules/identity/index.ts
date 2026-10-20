@@ -218,3 +218,7 @@ export { projectAdminUser } from './application/admin-user-view.ts';
 export type { AdminUserViewReader, AdminUserViewSource } from './application/admin-user-view.ts';
 // B1-08n: orders' attr_code → user_id reader (status not filtered), assembled by app.module.
 export { createOrderUserReader } from './infra/order-user-reader.ts';
+export {
+  createInviteRewardLoginIpsReader,
+  createInviteRewardDeletedPhoneReader,
+} from './ports/invite-reward.ts';
