@@ -229,3 +229,15 @@ export type {
   ClaimItemTransitionResult,
   ClaimItemTransitionRow,
 } from './state-machines/claim-item.gen.ts';
+export {
+  INVITE_REWARD_EVENTS,
+  INVITE_REWARD_STATES,
+  INVITE_REWARD_TRANSITIONS,
+  transitionInviteReward,
+} from './state-machines/invite-reward.gen.ts';
+export type {
+  InviteRewardState,
+  InviteRewardEvent,
+  InviteRewardTransitionResult,
+  InviteRewardTransitionRow,
+} from './state-machines/invite-reward.gen.ts';
