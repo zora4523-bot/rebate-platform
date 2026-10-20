@@ -146,6 +146,10 @@ export const FUNDS_TABLE_NAMES: readonly string[] = [
   'admin_adjustments',
   'recon_diffs',
   'fund_ledger',
+  // Invite reward grants and their budget counters (CT-25b migration 0055, BR-INV-24; orchestrator
+  // ruling D10-94 5): amounts in fen, no prefix above matches.
+  'invite_rewards',
+  'invite_reward_budgets',
 ];
 
 /** Column types a money column (`*_fen`) may have (ADR-0001 §4: integer fen in bigint); anything else is refused. */

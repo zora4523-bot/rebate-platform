@@ -91,6 +91,9 @@ it('knows the funds and attribution tables by name, with or without schema and q
     'admin_adjustments',
     'recon_diffs',
     'fund_ledger',
+    // F1-02zu: invite reward grants and budget counters (CT-25b).
+    'invite_rewards',
+    'invite_reward_budgets',
   ]) {
     expect(isFundsTable(t), t).toBe(true);
   }
@@ -195,6 +198,8 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'ledger_entries_default',
     'account_balances',
     'daily_balances',
+    'invite_rewards',
+    'invite_reward_budgets',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));

@@ -1,0 +1,18 @@
+id: F1-02zu
+repo: rebate-platform
+title: 迁移门禁资金表清单加 invite_rewards、invite_reward_budgets（CT-25b 迁移 0055 的邀请奖励发放与预算计数表，现有前缀匹配不到），同步锁定清单测试
+type: guard-change
+# 2026-10-20 入账（content-client 第五阶段；编排裁定 D10-94 ⑤：两张新表进迁移门禁资金表清单，由本线在 CT-25b 合并后开，只增、属收紧，编排核对后按 approvals #24 加标签；不并进资金线 B2-04c）。
+# 收紧门禁：这两张存整数分金额与预算计数的表纳入「不得 DROP / 改类型 / squawk-ignore、约束须命名」保护。只加表名，不改判定逻辑。先例 B2-02b（#611）。
+refs: []
+refs_hash: {}
+deps: [CT-25b]
+paths:
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null
