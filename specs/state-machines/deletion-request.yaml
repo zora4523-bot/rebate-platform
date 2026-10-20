@@ -1,0 +1,42 @@
+# 注销单 deletion_requests.status（deletion_status）的状态机（规划/04 §4.5、§2.5；规划/08 BR-ID-27 正文与细则、BR-ID-28 首句；
+# 契约 contracts/enums/identity.yaml 的 deletion_status；迁移 db/migrations/0059_deletion-requests.sql；任务 B1-15b）。
+# 迁移表只在 08 维护；本文件按 SPEC_REF 转写，生成 packages/domain/src/state-machines/deletion-request.gen.ts
+# （node packages/domain/scripts/state-machines.ts；--verify 只比对）。生成物勿手改，改这里再生成。
+#
+# 写法约定（同 CT-04e、B1-35a）：
+# - 插入注销单本身不是迁移：申请由 identity 插入，显式写 status='cooling'（0059 无 DEFAULT；08「REQUESTED 并入 cooling」）；
+#   from 中不出现 null，null 加任何事件一律表外。
+# - guard 只是规则文字说明，transition() 不求值；users.status（deleting / deleted）、站内信、余额复查、提现终态检查、
+#   BR-ID-28 清单、CAS 与 row_version 条件都由服务层负责。
+# - 撤回原因（cancel_reason：user / negative_balance）不进状态机：用户撤回与冷静期满余额为负共用 CANCEL，
+#   cancel_reason 与 cancelled_at 由服务层同次写入。
+# - processing 推迟不是迁移：提现未到终态时单子停在 cooling（冷静期已过、不能再撤回），不调 transition()、不写 status。
+# - 状态值与契约 deletion_status、0059 的 CHECK 一致（小写蛇形）；事件用大写蛇形名。
+#
+# 表外说明：
+# - 只有下面三行迁移，其余组合一律为表外事件。
+# - done、cancelled 是终态；processing 不能撤回（08 撤回只在冷静期内，超过返回 10007）；cooling 不能跳过 processing 直接到 done。
+name: deletion-request
+field: status
+states: [cooling, processing, done, cancelled]
+# PROCESS 冷静期满进入处理；COMPLETE BR-ID-28 清单处理完毕；CANCEL 用户撤回或冷静期满余额为负由系统撤销。
+events: [PROCESS, COMPLETE, CANCEL]
+transitions:
+  - id: D1
+    from: [cooling]
+    event: PROCESS
+    to: processing
+    guard: '冷静期已满（now ≥ cooling_until）；重新检查余额 available_fen ≥ 0；该用户所有提现已到终态（未到终态则推迟并告警、不迁移）；同一事务先把 users.status 置为 deleting（BR-ID-27）'
+    test_id: SM-DEL-D1
+  - id: D2
+    from: [processing]
+    event: COMPLETE
+    to: done
+    guard: 'BR-ID-28 清单处理完毕，users 行保留为墓碑（status=deleted）；processed_at 同次写入；自 requested_at 起 ≤15 个工作日必须到 done（BR-ID-27）'
+    test_id: SM-DEL-D2
+  - id: D3
+    from: [cooling]
+    event: CANCEL
+    to: cancelled
+    guard: '两种情形，原因由服务层写 cancel_reason：① 用户显式撤回且 now < cooling_until（cancel_reason=user；超过返回 10007，不迁移）；② 冷静期满重新检查余额 available_fen < 0（cancel_reason=negative_balance，ADD-07）'
+    test_id: SM-DEL-D3
