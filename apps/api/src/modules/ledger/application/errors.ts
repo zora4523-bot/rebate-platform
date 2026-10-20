@@ -27,7 +27,12 @@ export type LedgerErrorCode =
    * the output contract, or no invariant file is left to run (B2-02n). Never a zero-difference
    * result.
    */
-  | 'DAILY_CHECK_FAILED';
+  | 'DAILY_CHECK_FAILED'
+  /**
+   * getOrderNets found stored history it cannot attribute without guessing (a complete
+   * beneficiary key whose role is outside the contract enum). Never a partial result.
+   */
+  | 'ORDER_HISTORY_INVALID';
 
 export class LedgerError extends Error {
   readonly code: LedgerErrorCode;
