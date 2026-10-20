@@ -41,14 +41,18 @@ import type { AccessControl } from '../../providers/access-control/index.ts';
 import { claimsTexts as t } from '../../texts/claims.ts';
 import type { ClaimsBackState } from './ClaimsPage.tsx';
 import {
+  NOTE_MAX,
   STAFF_REJECT_REASONS,
   beijingTime,
   claimUrl,
+  createRequestGate,
   evidenceLabel,
   evidenceTone,
   failureOf,
   itemActionUrl,
   matchFieldLabel,
+  noteLength,
+  noteProblem,
   outcomeOf,
   platformLabel,
   rejectReasonLabel,
@@ -159,7 +163,11 @@ function ReviewContent({
   const [submitting, setSubmitting] = useState<string>();
   const [outcome, setOutcome] = useState<{ itemId: string; kind: ReviewOutcome }>();
   const [conflict, setConflict] = useState(false);
+  // After a 20902 the claim is read again; review actions stay locked until that read settles.
+  const [refreshing, setRefreshing] = useState(false);
   const submittingRef = useRef(false);
+  const refreshingRef = useRef(false);
+  const [gate] = useState(createRequestGate);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -173,14 +181,22 @@ function ReviewContent({
     let current = true;
     const custom = getProvider().custom;
     if (custom === undefined) throw new Error('Missing custom data provider');
+    const token = gate.issue();
+    const settle = (): boolean => {
+      if (!current) return false;
+      refreshingRef.current = false;
+      setRefreshing(false);
+      // A write sent after this read already put a newer claim on screen.
+      return gate.isLatest(token);
+    };
     custom<ClaimDetail>({ url: claimUrl(claimId), method: 'get' }).then(
       (response) => {
-        if (!current) return;
+        if (!settle()) return;
         setClaim(response.data);
         setStatus('ready');
       },
       (cause: unknown) => {
-        if (!current) return;
+        if (!settle()) return;
         const kind = failureOf(cause);
         // Nothing of the claim stays on screen after a failed read.
         setClaim(undefined);
@@ -192,7 +208,7 @@ function ReviewContent({
     return () => {
       current = false;
     };
-  }, [getProvider, claimId, attempt]);
+  }, [getProvider, gate, claimId, attempt]);
 
   const retry = () => {
     setStatus('loading');
@@ -207,15 +223,18 @@ function ReviewContent({
     }));
 
   const submit = async (item: ClaimItem, mode: Mode) => {
-    if (submittingRef.current) return;
+    if (submittingRef.current || refreshingRef.current) return;
     const draft = draftOf(item.item_id);
     if (mode === 'reject' && draft.reason === undefined) {
       patch(item.item_id, { error: t.review.rejectReasonMissing });
       return;
     }
+    const problem = noteProblem(draft.note);
     const note = validNote(draft.note);
-    if (note === undefined) {
-      patch(item.item_id, { error: t.review.noteTooShort });
+    if (problem !== undefined || note === undefined) {
+      patch(item.item_id, {
+        error: problem === 'long' ? t.review.noteTooLong : t.review.noteTooShort,
+      });
       return;
     }
     submittingRef.current = true;
@@ -223,6 +242,7 @@ function ReviewContent({
     setConflict(false);
     setOutcome(undefined);
     patch(item.item_id, { error: undefined });
+    const token = gate.issue();
     try {
       const custom = getProvider().custom;
       if (custom === undefined) throw new Error('Missing custom data provider');
@@ -235,7 +255,7 @@ function ReviewContent({
         method: 'post',
         payload,
       });
-      if (!alive.current) return;
+      if (!alive.current || !gate.isLatest(token)) return;
       // The whole returned claim replaces the view (status, note and every child order).
       setClaim(response.data);
       setDrafts((previous) => {
@@ -246,7 +266,7 @@ function ReviewContent({
       const kind = outcomeOf(response.data.items.find((entry) => entry.item_id === item.item_id));
       setOutcome(kind === 'reviewed' ? undefined : { itemId: item.item_id, kind });
     } catch (cause) {
-      if (!alive.current) return;
+      if (!alive.current || !gate.isLatest(token)) return;
       const kind = failureOf(cause);
       if (kind === 'forbidden') {
         setClaim(undefined);
@@ -255,6 +275,8 @@ function ReviewContent({
         // Another reviewer was first: close the stale form and read the claim once more.
         setConflict(true);
         patch(item.item_id, { mode: 'approve', error: undefined });
+        refreshingRef.current = true;
+        setRefreshing(true);
         setAttempt((value) => value + 1);
       } else {
         patch(item.item_id, { error: kind === 'invalid' ? t.review.invalid : t.review.failed });
@@ -373,7 +395,7 @@ function ReviewContent({
                   key={item.item_id}
                   item={item}
                   draft={draftOf(item.item_id)}
-                  submitting={submitting}
+                  busy={submitting !== undefined || refreshing}
                   outcome={outcome?.itemId === item.item_id ? outcome.kind : undefined}
                   onChange={(change) => patch(item.item_id, change)}
                   onSubmit={(mode) => void submit(item, mode)}
@@ -549,25 +571,17 @@ function EvidenceView({ claim }: { readonly claim: ClaimDetail }): ReactElement 
 interface ItemCardProps {
   readonly item: ClaimItem;
   readonly draft: ItemDraft;
-  readonly submitting: string | undefined;
+  readonly busy: boolean;
   readonly outcome: ReviewOutcome | undefined;
   readonly onChange: (change: Partial<ItemDraft>) => void;
   readonly onSubmit: (mode: Mode) => void;
 }
 
-function ItemCard({
-  item,
-  draft,
-  submitting,
-  outcome,
-  onChange,
-  onSubmit,
-}: ItemCardProps): ReactElement {
+function ItemCard({ item, draft, busy, outcome, onChange, onSubmit }: ItemCardProps): ReactElement {
   const { token } = theme.useToken();
   const noteId = useId();
   const reasonId = useId();
   const code: CSSProperties = { fontFamily: token.fontFamilyCode, wordBreak: 'break-all' };
-  const busy = submitting !== undefined;
   const title = (
     <Flex align="center" gap={8} wrap>
       <span style={code}>{item.sub_order_id}</span>
@@ -656,6 +670,9 @@ function ItemCard({
             id={noteId}
             rows={3}
             value={draft.note}
+            // Counted as the contract counts it (code points after trimming); not cut off, so a
+            // pasted note over the limit stays visible and is refused with noteTooLong.
+            count={{ show: true, max: NOTE_MAX, strategy: noteLength }}
             placeholder={rejecting ? t.review.rejectNotePlaceholder : t.review.notePlaceholder}
             onChange={(event) => onChange({ note: event.target.value, error: undefined })}
           />

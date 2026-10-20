@@ -26,6 +26,8 @@ export const itemActionUrl = (
 export const PAGE_SIZE = 20;
 /** Review note: at least 5 characters after trimming (AdminClaimReviewReason, BR-ATTR-20). */
 export const NOTE_MIN = 5;
+/** Review note: at most 200 characters (AdminClaimReviewReason maxLength). */
+export const NOTE_MAX = 200;
 /** q: 1–64 characters (adminListClaims). */
 export const QUERY_MAX = 64;
 
@@ -164,10 +166,40 @@ export function awaitsReview(status: string): boolean {
   return status === 'submitted' || status === 'auto_matched' || status === 'manual_review';
 }
 
-/** The trimmed note when it is long enough to send, else undefined. */
+/** Characters of the note as the contract counts them: code points after trimming. */
+export const noteLength = (note: string): number => Array.from(note.trim()).length;
+
+/** Why the note cannot be sent: under NOTE_MIN or over NOTE_MAX after trimming. */
+export function noteProblem(note: string): 'short' | 'long' | undefined {
+  const length = noteLength(note);
+  if (length < NOTE_MIN) return 'short';
+  if (length > NOTE_MAX) return 'long';
+  return undefined;
+}
+
+/** The trimmed note when its length is within the contract bounds, else undefined. */
 export function validNote(note: string): string | undefined {
-  const trimmed = note.trim();
-  return Array.from(trimmed).length >= NOTE_MIN ? trimmed : undefined;
+  return noteProblem(note) === undefined ? note.trim() : undefined;
+}
+
+/**
+ * Only the latest issued read or write may replace the claim on screen: each request takes a
+ * token when it is sent, and a response whose token is no longer the latest is dropped.
+ */
+export interface RequestGate {
+  readonly issue: () => number;
+  readonly isLatest: (token: number) => boolean;
+}
+
+export function createRequestGate(): RequestGate {
+  let latest = 0;
+  return {
+    issue: () => {
+      latest += 1;
+      return latest;
+    },
+    isLatest: (token) => token === latest,
+  };
 }
 
 /**

@@ -1,6 +1,10 @@
 import { expect, it } from 'vitest';
 import {
+  NOTE_MAX,
   beijingTime,
+  createRequestGate,
+  noteLength,
+  noteProblem,
   outcomeOf,
   queryFromSearch,
   requestQuery,
@@ -49,6 +53,32 @@ it('[F1-07f] note length counts trimmed characters, time shows Beijing time', ()
   expect(validNote('  证据已核实  ')).toBe('证据已核实');
   expect(beijingTime('2026-10-12T01:15:00Z')).toBe('2026-10-12 09:15');
   expect(beijingTime(null)).toBe('—');
+});
+
+it('[F1-07f] note over 200 characters after trimming is refused before any request', () => {
+  const max = '证'.repeat(NOTE_MAX);
+  expect(NOTE_MAX).toBe(200);
+  expect(validNote(`  ${max}  `)).toBe(max);
+  expect(noteProblem(`  ${max}  `)).toBeUndefined();
+  expect(validNote(`${max}据`)).toBeUndefined();
+  expect(noteProblem(`${max}据`)).toBe('long');
+  expect(noteProblem(' 证据 ')).toBe('short');
+  // Code points, as the contract counts them: 200 emoji (400 UTF-16 units) still fit.
+  const emoji = '😀'.repeat(NOTE_MAX);
+  expect(noteLength(emoji)).toBe(NOTE_MAX);
+  expect(validNote(emoji)).toBe(emoji);
+});
+
+it('[F1-07f] a stale refresh read cannot overwrite the claim of a later write', () => {
+  const gate = createRequestGate();
+  const refresh = gate.issue();
+  const write = gate.issue();
+  // The refresh GET resolves after the later POST: it is dropped, the POST result applies.
+  expect(gate.isLatest(refresh)).toBe(false);
+  expect(gate.isLatest(write)).toBe(true);
+  const next = gate.issue();
+  expect(gate.isLatest(write)).toBe(false);
+  expect(gate.isLatest(next)).toBe(true);
 });
 
 it('[F1-07f] only system closures of the reviewed item are reported', () => {

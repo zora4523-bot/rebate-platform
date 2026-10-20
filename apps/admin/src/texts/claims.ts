@@ -164,6 +164,7 @@ export const claimsTexts = {
     notePlaceholder: '写明核对依据，例如付款记录与点击记录一致',
     rejectNotePlaceholder: '说明驳回依据，申请人会收到驳回原因',
     noteTooShort: '说明至少 5 个字（去掉首尾空白后）',
+    noteTooLong: '说明最多 200 个字（去掉首尾空白后），请删减后再提交',
     prefill: '证据核实一致',
     prefillName: '一键填入：证据核实一致',
     approve: '通过',
