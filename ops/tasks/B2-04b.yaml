@@ -4,6 +4,7 @@ title: 迁移：ledger 所有的 recon_diffs（04 列 + S4 的 dedupe_key、reso
 type: migration
 # 2026-10-20 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.1）。分工：Codex / Opus；两段式。
 # 状态备注：可先开（表名已在资金清单）。
+# 2026-10-20 paths 加 tools/ci/lint-migrations.test.ts：「db/schema.sql 每张资金表都在清单里」的测试要随本迁移新建的 recon_diffs / asset_snapshots / asset_snapshot_receivables 同步只增（#982 先例；第三类保护路径，编排按 #24 加标签）。
 refs: [BR-FUND-18, BR-FUND-19, BR-FUND-22, BR-FUND-23]
 refs_hash:
   BR-FUND-18: c7ebd23ee75e
@@ -15,6 +16,7 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
 test_paths:
   - 'test/spec/db/settlement/ledger-owned/**'
 impl: claude
