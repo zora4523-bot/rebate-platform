@@ -1,0 +1,24 @@
+id: B1-35b
+repo: rebate-platform
+title: 风控记录支持邀请奖励：迁移放宽 risk_judgements / risk_hits 的 ref_type CHECK 加 invite_reward，同设备判定端口 SameDeviceAccountsInput.ref 接受 invite_reward（BR-ID-37 奖励发放时判定）；B1-35 的前置
+type: impl
+# 草稿 2026-10-20（身份与风控线 identity-lane）。编排 D10-95 ④ 同意作前置任务。依据 BR-ID-37（couli #160 7a5ed64，SPEC_REF 由编排提升）。
+# 迁移照 0044（B1-03x）写法只放宽，号落地时取主干最大 + 1 并在 notices 登记；schema.sql / db.gen.ts 由编排在测试机快照。端口只扩 ref 类型，判定与记录逻辑不变，是否发放由 B1-35 决定。
+refs: []
+refs_hash: {}
+deps: [B1-03k, B1-03n]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'apps/api/src/modules/risk/application/same-device-accounts.ts'
+  - 'apps/api/src/modules/risk/application/same-device-accounts.test.ts'
+  - 'apps/api/src/modules/risk/index.ts'
+test_paths:
+  - 'test/spec/risk/invite-reward-ref/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/invite-reward-ref/**'
+status: todo
