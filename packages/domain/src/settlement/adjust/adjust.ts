@@ -187,6 +187,7 @@ function planRow(
   pending_before_fen: bigint,
   route: AdjustmentPlan['route'],
   clawedBack: boolean,
+  sharesUnchanged: boolean,
 ): Row {
   const hasObligation = person.obligation !== null;
   const keepOrNull = hasObligation ? 'keep' : null;
@@ -204,8 +205,9 @@ function planRow(
     return { ...none, obligation_action: clawedBack && hasObligation ? 'voided' : keepOrNull };
   }
 
-  if (route === 'none') {
-    // 两值均相等：无动作，待补记额不变。
+  if (sharesUnchanged) {
+    // 两值均相等（无动作），或基数相等只有联盟佣金不同（BR-FUND-09 / BR-CALC-23：
+    // 受益人应得不变、差额为 0，只调平台金额）：不补不扣，待补记额与义务原样保留。
     const entitlement_fen =
       state.kind === 'forfeit' && share_fen > person.net_fen ? person.net_fen : share_fen;
     return { ...none, entitlement_fen, pending_after_fen: pending_before_fen };
@@ -305,6 +307,10 @@ export function planCommissionAdjustment(input: AdjustmentInput): AdjustmentPlan
     (n_positive_fen === 0n || (input.booked_base_fen > 0n && base_new_fen === 0n));
   if (clawedBack) route = 'immediate';
 
+  // 基数相等而联盟佣金不同（未转 R8）：受益人差额为 0，单独走平台差额计划。
+  const sharesUnchanged =
+    route === 'none' || (!clawedBack && base_new_fen === input.booked_base_fen);
+
   let transition: AdjustmentPlan['transition'] = null;
   if (route !== 'none') transition = clawedBack ? 'R8' : input.event === 'clawback' ? 'R9' : 'R10';
   const ledger_type: AdjustmentPlan['ledger_type'] =
@@ -323,7 +329,15 @@ export function planCommissionAdjustment(input: AdjustmentInput): AdjustmentPlan
       person.obligation !== null && state.kind !== 'forfeited'
         ? positivePart(subFen(share_old_fen, person.net_fen))
         : 0n;
-    const row = planRow(person, state, share_new_fen, pending_before_fen, route, clawedBack);
+    const row = planRow(
+      person,
+      state,
+      share_new_fen,
+      pending_before_fen,
+      route,
+      clawedBack,
+      sharesUnchanged,
+    );
     const net_after_fen = addFen(person.net_fen, row.delta_fen);
     let posting: AdjustmentBeneficiaryResult['posting'] = null;
     if (row.delta_fen !== 0n) {
@@ -367,7 +381,8 @@ export function planCommissionAdjustment(input: AdjustmentInput): AdjustmentPlan
       platform_delta_fen: 0n,
       platform_posting: null,
       union_receivable_delta_fen: 0n,
-      void_pending_candidates: false,
+      // BR-FUND-08 / 09 ②：扣回事务即使金额差为 0、无凭证可写，也作废该单未批准的正差候选。
+      void_pending_candidates: input.event === 'clawback',
     };
   }
 
@@ -412,7 +427,8 @@ export function planCommissionAdjustment(input: AdjustmentInput): AdjustmentPlan
     platform_delta_fen,
     platform_posting,
     union_receivable_delta_fen,
-    void_pending_candidates: transition === 'R8' || transition === 'R9',
+    // 候选作废与金额差额分开判断：扣回事件（R8 / R9）与结算转 R8 都作废。
+    void_pending_candidates: input.event === 'clawback' || transition === 'R8',
   };
 }
 

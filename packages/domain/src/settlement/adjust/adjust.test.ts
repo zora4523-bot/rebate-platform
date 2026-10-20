@@ -98,3 +98,126 @@ it('[AC-B2-04g#5] 结算 seq 标记变化但结算额为空时不当作新结算
     }),
   ).toEqual({ kind: 'wait_commission' });
 });
+
+const deferredOpen = { beneficiary_credit_id: 'd1', kind: 'deferred' } as const;
+
+// 基数 500、预留 5000bp；唯一受益人 5000bp 重拆 250、净额 200，延后义务待补记 50。
+function sameBaseOrder(overrides: Partial<AdjustmentInput> = {}): AdjustmentInput {
+  return order({
+    event: 'settlement',
+    reserve_bp: 5000n,
+    booked_base_fen: 500n,
+    booked_n_fen: 1000n,
+    n_new_fen: 1001n,
+    platform_net_fen: 750n,
+    beneficiaries: [person({ net_fen: 200n, obligation: deferredOpen })],
+    ...overrides,
+  });
+}
+
+it('[AC-B2-04g#10] 基数相等、佣金 1000→1001：只调平台 +1，用户差额 0，未完成义务原样保留', () => {
+  const plan = planCommissionAdjustment(sameBaseOrder());
+  expect(plan).toMatchObject({
+    route: 'approval',
+    transition: 'R10',
+    ledger_type: 'SETTLE_ADJUST',
+    booked_after: { booked_base_fen: 500n, booked_n_fen: 1001n },
+    platform_after_fen: 751n,
+    platform_delta_fen: 1n,
+    platform_posting: { amount_fen: 1n, debit: 'UNION_RECEIVABLE', credit: 'COMMISSION_REVENUE' },
+    union_receivable_delta_fen: 1n,
+    void_pending_candidates: false,
+  });
+  expect(plan.beneficiaries[0]).toMatchObject({
+    entitlement_fen: 250n,
+    delta_fen: 0n,
+    net_after_fen: 200n,
+    posting: null,
+    pending_before_fen: 50n,
+    pending_after_fen: 50n,
+    obligation_action: 'keep',
+    beneficiary_credit_id: 'd1',
+  });
+});
+
+it('[AC-B2-04g#10] 基数相等、佣金 1001→1000：平台即时 -1，用户差额 0，义务保持', () => {
+  const plan = planCommissionAdjustment(
+    sameBaseOrder({ booked_n_fen: 1001n, n_new_fen: 1000n, platform_net_fen: 751n }),
+  );
+  expect(plan).toMatchObject({
+    route: 'immediate',
+    transition: 'R10',
+    platform_delta_fen: -1n,
+    platform_posting: { amount_fen: 1n, debit: 'COMMISSION_REVENUE', credit: 'UNION_RECEIVABLE' },
+    union_receivable_delta_fen: -1n,
+  });
+  expect(plan.beneficiaries[0]).toMatchObject({
+    delta_fen: 0n,
+    pending_after_fen: 50n,
+    obligation_action: 'keep',
+  });
+});
+
+it('[AC-B2-04g#10] 基数相等时封禁受益人的未完成义务不没收，不归平台', () => {
+  const plan = planCommissionAdjustment(
+    sameBaseOrder({
+      beneficiaries: [person({ net_fen: 200n, risk_state: 'banned', obligation: deferredOpen })],
+    }),
+  );
+  expect(plan.platform_delta_fen).toBe(1n);
+  expect(plan.beneficiaries[0]).toMatchObject({
+    delta_fen: 0n,
+    forfeit_fen: 0n,
+    forfeit_reason: null,
+    pending_after_fen: 50n,
+    obligation_action: 'keep',
+    append_forfeited_event: false,
+  });
+});
+
+it('[AC-B2-04g#10] 扣回事件基数相等、佣金 1001→1000：R9 只冲平台 1，义务保持并作废候选', () => {
+  const plan = planCommissionAdjustment(
+    sameBaseOrder({
+      event: 'clawback',
+      booked_n_fen: 1001n,
+      n_new_fen: 1000n,
+      platform_net_fen: 751n,
+    }),
+  );
+  expect(plan).toMatchObject({
+    transition: 'R9',
+    ledger_type: 'CLAWBACK',
+    platform_delta_fen: -1n,
+    union_receivable_delta_fen: -1n,
+    void_pending_candidates: true,
+  });
+  expect(plan.beneficiaries[0]).toMatchObject({ delta_fen: 0n, obligation_action: 'keep' });
+});
+
+it('[AC-B2-04g#14] 扣回事件金额差为 0：无凭证，但仍作废该单未批准的正差候选', () => {
+  const plan = planCommissionAdjustment(order({ event: 'clawback', n_new_fen: 1000n }));
+  expect(plan).toMatchObject({
+    route: 'none',
+    transition: null,
+    ledger_type: null,
+    platform_posting: null,
+    union_receivable_delta_fen: 0n,
+    void_pending_candidates: true,
+  });
+  expect(plan.beneficiaries[0]).toMatchObject({ delta_fen: 0n, posting: null });
+});
+
+it('[AC-B2-04g#14] 扣回事件金额差为 0 且有未完成义务：义务保持，候选仍作废', () => {
+  const plan = planCommissionAdjustment(sameBaseOrder({ event: 'clawback', n_new_fen: 1000n }));
+  expect(plan).toMatchObject({ route: 'none', void_pending_candidates: true });
+  expect(plan.beneficiaries[0]).toMatchObject({
+    delta_fen: 0n,
+    pending_after_fen: 50n,
+    obligation_action: 'keep',
+  });
+});
+
+it('[AC-B2-04g#14] 结算事件两值均相等：不作废候选', () => {
+  const plan = planCommissionAdjustment(sameBaseOrder({ n_new_fen: 1000n }));
+  expect(plan).toMatchObject({ route: 'none', void_pending_candidates: false });
+});
