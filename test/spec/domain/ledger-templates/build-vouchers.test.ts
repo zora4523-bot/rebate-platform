@@ -159,6 +159,7 @@ it('[AC-B2-01j#5] 金额只接受非负 int64 bigint，拒绝负数、溢出与�
 });
 
 it('[AC-B2-01j#6] 零金额不产生零分录或空凭证，参数校验仍执行', () => {
+  expect(readTemplates().has('REWARD:INVITE')).toBe(true);
   const templates = executableTemplates();
   expect(templates.map(([id]) => id)).toEqual(
     expect.arrayContaining(['CREDIT:SELF', 'CREDIT:PLATFORM', 'WITHDRAW:SUCCESS:CASH_WECHAT']),
@@ -218,6 +219,7 @@ it('[AC-B2-01j#7] BR-WDR-09 冻结/退回方向及 wd 键固定，用户所有�
 });
 
 it('[AC-B2-01j#8] 相同输入结果相同且不修改冻结的参数或先前结果', () => {
+  expect(readTemplates().has('REWARD:INVITE')).toBe(true);
   const templates = executableTemplates();
   expect(templates.map(([id]) => id)).toEqual(
     expect.arrayContaining(['CREDIT:SELF', 'CREDIT:PLATFORM', 'WITHDRAW:SUCCESS:CASH_WECHAT']),
