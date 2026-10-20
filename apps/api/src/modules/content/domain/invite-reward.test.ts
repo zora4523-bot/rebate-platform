@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { INVITE_REWARD_DEFAULT_AMOUNT_FEN } from './client-config.ts';
 import { configItemSpecOf, configValueFits } from './config-registry.ts';
 import {
   INVITE_REWARD_POSITIVE_KEYS,
@@ -22,7 +23,7 @@ it('[AC-F1-02zn#8] 单元：只有 ≥1 的整数算已设置', () => {
   }
 });
 
-it('[AC-F1-02zn#7] 单元：三项都为正才能开启，缺键按 0', () => {
+it('[AC-F1-02zn#7] 单元：三项都为正才能开启；预算缺键按 0', () => {
   const full = new Map<string, unknown>([
     [AMOUNT, 1],
     [DAILY, 1],
@@ -30,11 +31,28 @@ it('[AC-F1-02zn#7] 单元：三项都为正才能开启，缺键按 0', () => {
   ]);
   expect(inviteRewardOpenRefused(full)).toBe(false);
   for (const key of INVITE_REWARD_POSITIVE_KEYS) {
+    expect(inviteRewardOpenRefused(new Map(full).set(key, 0)), key).toBe(true);
+  }
+  for (const key of [DAILY, TOTAL]) {
     const missing = new Map(full);
     missing.delete(key);
     expect(inviteRewardOpenRefused(missing), key).toBe(true);
-    expect(inviteRewardOpenRefused(new Map(full).set(key, 0)), key).toBe(true);
   }
+});
+
+it('[AC-F1-02zza#1] 单元：金额缺行按 08 默认参与开启校验，有行但非正整数仍拒绝', () => {
+  const budgets = new Map<string, unknown>([
+    [DAILY, 1],
+    [TOTAL, 1],
+  ]);
+  expect(inviteRewardPositive(INVITE_REWARD_DEFAULT_AMOUNT_FEN)).toBe(true);
+  expect(inviteRewardOpenRefused(budgets)).toBe(false);
+  expect(budgets.has(AMOUNT)).toBe(false);
+  for (const value of [0, -1, 1.5, '1000', null, undefined, true, [], {}]) {
+    expect(inviteRewardOpenRefused(new Map(budgets).set(AMOUNT, value)), String(value)).toBe(true);
+  }
+  expect(inviteRewardOpenRefused(new Map([[AMOUNT, 1000]]))).toBe(true);
+  expect(inviteRewardOpenRefused(new Map())).toBe(true);
 });
 
 it('[AC-F1-02zn#12] 单元：只有把 enabled 写 true 才校验；只有存值 true 算开启', () => {

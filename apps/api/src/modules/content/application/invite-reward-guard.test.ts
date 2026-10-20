@@ -186,7 +186,9 @@ const open = (memory: Memory, expected = 0) =>
 
 it.each([
   ...GUARDED.flatMap((key) =>
-    [undefined, 0, -1, 1.5, '100', null, true].map((value) => ({ key, value })),
+    [undefined, 0, -1, 1.5, '100', null, true]
+      .filter((value) => !(key === AMOUNT && value === undefined))
+      .map((value) => ({ key, value })),
   ),
 ])(
   '[AC-F1-02zn#8] 单元：开启时 $key=$value（undefined 即缺行）拒绝 [value]，无写入与告警',
@@ -199,6 +201,26 @@ it.each([
     expect(memory.snapshot()).toBe(before);
   },
 );
+
+it('[AC-F1-02zza#1] 单元：金额缺行、两预算为正时开启成功，且不补写金额行', async () => {
+  const memory = new Memory();
+  positive(memory, AMOUNT);
+  const result = await open(memory);
+  expect(result).toMatchObject({ key: ENABLED, value: true, version: 1 });
+  expect(memory.rows.has(AMOUNT)).toBe(false);
+  expect(memory.alerts).toHaveLength(1);
+  expect(memory.events).toStrictEqual(['lock', `row:${ENABLED}`, `read:${GUARDED.join(',')}`]);
+});
+
+it('[AC-F1-02zza#3] 单元：金额缺行但某个预算缺行时仍拒绝 [value]', async () => {
+  for (const missing of [DAILY, TOTAL]) {
+    const memory = new Memory();
+    memory.put(missing === DAILY ? TOTAL : DAILY, 100);
+    const before = memory.snapshot();
+    expect(await refusedFields(open(memory)), missing).toStrictEqual(['value']);
+    expect(memory.snapshot()).toBe(before);
+  }
+});
 
 it('[AC-F1-02zn#7] 单元：三项都为正整数（1 分即可）时开启成功，并按完整键名读取', async () => {
   const memory = new Memory();
