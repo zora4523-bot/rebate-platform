@@ -82,7 +82,9 @@ export function parameters(rows: readonly TemplateRow[], amount = 617n): BuildVo
               ? 'taobao'
               : name === 'role'
                 ? 'self'
-                : `${name}-42`;
+                : name === 'side'
+                  ? 'inviter'
+                  : `${name}-42`;
       }
     }
     if (row.account_owner === 'user') params['user_id'] = 'user-42';
