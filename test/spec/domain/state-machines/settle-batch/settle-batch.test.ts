@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { readRequired } from '../../../state-machines/order/kit.ts';
 import {
   assertDefinition,
   assertGenerated,
@@ -10,7 +11,8 @@ import {
   type Contract,
 } from './kit.ts';
 
-// 独立预期：SPEC_REF 的 BR-FUND-04 细则 SB1–SB10；事件英文名是本任务的技术命名。
+// 独立预期：SPEC_REF 的 BR-FUND-04 细则；按任务第 10 节，SB10 仅留注释、按表外事件拒绝。
+// 合法迁移仅 SB1–SB9；事件英文名是本任务的技术命名。
 // SB9 明确到 EXECUTING（有续跑动作），不是忽略同状态报文的 noop。
 const BATCH = {
   name: 'settle-batch',
@@ -40,26 +42,27 @@ const BATCH = {
     { id: 'SB7', from: 'EXECUTING', event: 'SWITCH_OFF', to: 'PARTIAL' },
     { id: 'SB8', from: 'PARTIAL', event: 'RESUME', to: 'EXECUTING' },
     { id: 'SB9', from: 'EXECUTING', event: 'TAKE_OVER', to: 'EXECUTING' },
-    { id: 'SB10', from: 'CONFIRMED', event: 'MANUAL_START', to: 'EXECUTING' },
   ],
 } as const satisfies Contract;
 
-it('[AC-B2-04d#1] 批次 YAML 完整保留 SB1–SB10，状态值与资金契约一致', () => {
+it('[AC-B2-04d#1] 批次 YAML 恰含 SB1–SB9 九行，不含 SB10，状态值与资金契约一致', () => {
   assertDefinition(BATCH);
+  const rows = machine(BATCH).transitions;
+  expect(rows).toHaveLength(9);
+  expect(rows.some((row) => row.from.includes('CONFIRMED') && row.event === 'MANUAL_START')).toBe(
+    false,
+  );
 });
 
 it('[AC-B2-04d#2] 批次由 YAML 生成，包入口和生成物的枚举、迁移表一致', () => {
   assertGenerated(BATCH);
 });
 
-it.each(BATCH.rows.filter((row) => row.id !== 'SB10'))(
-  '[AC-B2-04d#3] $id 接受 $from + $event → $to',
-  ({ id, from, event, to }) => {
-    for (const entry of ENTRIES) {
-      expect(transition(BATCH, entry)(from, event)).toEqual({ ok: true, to, id, noop: false });
-    }
-  },
-);
+it.each(BATCH.rows)('[AC-B2-04d#3] $id 接受 $from + $event → $to', ({ id, from, event, to }) => {
+  for (const entry of ENTRIES) {
+    expect(transition(BATCH, entry)(from, event)).toEqual({ ok: true, to, id, noop: false });
+  }
+});
 
 it.each(illegalPairs(BATCH))(
   '[AC-B2-04d#4] 批次表外 $from + $event 返回 illegal（包括终态、未确认执行和非法取消）',
@@ -73,7 +76,7 @@ it.each(illegalPairs(BATCH))(
 it.each([null, ...BATCH.states])(
   '[AC-B2-04d#5] %s 的 SB10 手动开始恒拒：财务确认前不开放',
   (from) => {
-    // 不能把守卫只留作注释、却从 CONFIRMED 放行；也不能开放为调用方可传 true 的参数。
+    // SB10 不进入迁移表；包括 CONFIRMED 在内，所有状态均按表外事件拒绝。
     for (const entry of ENTRIES) {
       expect(transition(BATCH, entry)(from, 'MANUAL_START')).toEqual(ILLEGAL);
     }
@@ -101,25 +104,21 @@ const GUARDS = [
   },
   { id: 'SB8', terms: [/step-up/, /两个开关|settle\.auto\.enabled/, /on/, /快照/, /完成/, /超时/] },
   { id: 'SB9', terms: [/EXECUTING/, /没有存活|无存活/, /执行者/, /快照/, /完成/, /超时/] },
-  {
-    id: 'SB10',
-    terms: [
-      /财务确认前不开放/,
-      /停住/,
-      /step-up/,
-      /两个开关|settle\.auto\.enabled/,
-      /on/,
-      /快照/,
-      /完成/,
-      /超时/,
-    ],
-  },
 ];
 
 it.each(GUARDS)('[AC-B2-04d#6] $id 守卫保留 BR-FUND-04 前置条件', ({ id, terms }) => {
   const row = machine(BATCH).transitions.find((candidate) => candidate.id === id);
   expect(row).toBeDefined();
   for (const term of terms) expect(row?.guard).toMatch(term);
+});
+
+it('[AC-B2-04d#6] SB10 仅在 YAML 注释说明未开放，手动开始按表外事件拒绝', () => {
+  const source = readRequired('specs/state-machines/settle-batch.yaml');
+  expect(source).toMatch(/^\s*#\s*SB10 财务确认前不开放（BR-FUND-04），开放时另开任务加行\s*$/m);
+  expect(machine(BATCH).transitions.some((row) => row.id === 'SB10')).toBe(false);
+  for (const entry of ENTRIES) {
+    expect(transition(BATCH, entry)('CONFIRMED', 'MANUAL_START')).toEqual(ILLEGAL);
+  }
 });
 
 it.each(['', 'CANCEL', 'confirmed', '__proto__'])(
