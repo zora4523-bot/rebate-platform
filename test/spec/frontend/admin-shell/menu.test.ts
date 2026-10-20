@@ -44,19 +44,40 @@ it('[AC-F1-06e-MENU#2] 菜单目录逐项固定分组、顺序、名称与任一
   ).toEqual(MENU);
 });
 
-for (const sample of CASES) {
-  it(`[AC-F1-06e-MENU#3] ${sample.name} 的菜单与非空分组逐项匹配样例`, () => {
-    const snapshot = Object.freeze({
-      ...sample.snapshot,
-      permissions: Object.freeze([...sample.snapshot.permissions]),
-    });
-    const result = selectAdminMenuGroups(snapshot);
-    expect(result.map((group) => group.label)).toEqual(sample.groups);
-    expect(result.flatMap((group) => group.items.map((item) => item.id))).toEqual(sample.ids);
-    expect(result.every((group) => group.items.length > 0)).toBe(true);
-    expect(snapshot).toEqual(sample.snapshot);
+function expectMenuSample(sample: (typeof CASES)[number]): void {
+  const snapshot = Object.freeze({
+    ...sample.snapshot,
+    permissions: Object.freeze([...sample.snapshot.permissions]),
   });
+  const result = selectAdminMenuGroups(snapshot);
+  expect(result.map((group) => group.label)).toEqual(sample.groups);
+  expect(result.flatMap((group) => group.items.map((item) => item.id))).toEqual(sample.ids);
+  expect(result.every((group) => group.items.length > 0)).toBe(true);
+  expect(snapshot).toEqual(sample.snapshot);
 }
+
+// Literal titles, one case per sample (bodies unchanged, moved into the helper above) so the
+// guard can tell the cases apart: a later change to one account's case leaves the others
+// unchanged (F1-06zm, D10-92).
+it('[AC-F1-06e-MENU#3] 超管 的菜单与非空分组逐项匹配样例', () => {
+  expectMenuSample(CASES[0]!);
+});
+
+it('[AC-F1-06e-MENU#3] 风控小狸 的菜单与非空分组逐项匹配样例', () => {
+  expectMenuSample(CASES[1]!);
+});
+
+it('[AC-F1-06e-MENU#3] 财务小狸 的菜单与非空分组逐项匹配样例', () => {
+  expectMenuSample(CASES[2]!);
+});
+
+it('[AC-F1-06e-MENU#3] 查询小狸 的菜单与非空分组逐项匹配样例', () => {
+  expectMenuSample(CASES[3]!);
+});
+
+it('[AC-F1-06e-MENU#3] 客服小狸 的菜单与非空分组逐项匹配样例', () => {
+  expectMenuSample(CASES[4]!);
+});
 
 // One-key probes distinguish OR from AND, prefix matching, group-level grants and accidental
 // grants by unrelated permissions. Expected entries come from the task table, never production.

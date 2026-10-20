@@ -76,37 +76,48 @@ it('[AC-F1-06h-APP#1] 未登录直达业务路由只显示登录，不加载后�
   expect(h.requests.some((r) => r.path.endsWith('/me/permissions'))).toBe(false);
 });
 
-for (const [name, me, destination] of [
-  ['契约财务账号', ME, 'withdrawals'],
-  [
-    '只有资金流水权限',
+async function expectLanding(me: typeof ME, destination: string | null): Promise<void> {
+  const h = mount(
+    harness('totp', {
+      ...me,
+      permissions: [...me.permissions].map((grant) => ({
+        ...grant,
+        step_up_operations: [...grant.step_up_operations],
+      })),
+    }),
+  );
+  await login(h);
+  if (destination === null) {
+    expect(await screen.findByText('还没有分配权限')).toBeTruthy();
+    expect(screen.queryByText('page:reports')).toBeNull();
+  } else {
+    expect(await screen.findByText(`page:${destination}`)).toBeTruthy();
+    expect(window.location.pathname).toBe(`/${destination}`);
+  }
+  expect(screen.queryByRole('heading', { name: TITLES.credentials })).toBeNull();
+}
+
+// Literal titles, one case per sample (bodies unchanged, moved into the helper above) so the
+// guard can tell the cases apart: a later change to one account's case leaves the others
+// unchanged (F1-06zm, D10-92).
+it('[AC-F1-06h-APP#2] 契约财务账号完成登录后落到withdrawals', async () => {
+  await expectLanding(ME, 'withdrawals');
+});
+
+it('[AC-F1-06h-APP#2] 只有资金流水权限完成登录后落到ledger', async () => {
+  await expectLanding(
     { ...ME, permissions: [{ key: 'fund.view', step_up_tier: null, step_up_operations: [] }] },
     'ledger',
-  ],
-  ['超管即使空权限数组', { ...ME, is_super: true, permissions: [] }, 'users'],
-  ['普通零权限', { ...ME, is_super: false, permissions: [] }, null],
-] as const) {
-  it(`[AC-F1-06h-APP#2] ${name}完成登录后落到${destination ?? '暂无权限页'}`, async () => {
-    const h = mount(
-      harness('totp', {
-        ...me,
-        permissions: [...me.permissions].map((grant) => ({
-          ...grant,
-          step_up_operations: [...grant.step_up_operations],
-        })),
-      }),
-    );
-    await login(h);
-    if (destination === null) {
-      expect(await screen.findByText('还没有分配权限')).toBeTruthy();
-      expect(screen.queryByText('page:reports')).toBeNull();
-    } else {
-      expect(await screen.findByText(`page:${destination}`)).toBeTruthy();
-      expect(window.location.pathname).toBe(`/${destination}`);
-    }
-    expect(screen.queryByRole('heading', { name: TITLES.credentials })).toBeNull();
-  });
-}
+  );
+});
+
+it('[AC-F1-06h-APP#2] 超管即使空权限数组完成登录后落到users', async () => {
+  await expectLanding({ ...ME, is_super: true, permissions: [] }, 'users');
+});
+
+it('[AC-F1-06h-APP#2] 普通零权限完成登录后落到暂无权限页', async () => {
+  await expectLanding({ ...ME, is_super: false, permissions: [] }, null);
+});
 
 it('[AC-F1-06h-APP#3] 已显示后台时收到 10001，主动返回登录并隐藏原页面', async () => {
   const h = mount();

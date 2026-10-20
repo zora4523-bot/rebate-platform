@@ -1,3 +1,4 @@
+import type { createAdminShell } from '../../../../apps/admin/src/shell.ts';
 import type { PermissionSnapshot } from '../../../../apps/admin/src/providers/access-control/index.ts';
 
 // Independent oracle transcribed from task §2 and sample-data.md §10/10.1. The missing pay.*
@@ -121,4 +122,13 @@ export const NO_PERMISSION_COPY = {
 
 export function labels(ids: readonly string[]): string[] {
   return ids.map((id) => MENU.find((row) => row[1] === id)![2]);
+}
+
+/**
+ * Extra shell options for shell screenshots. Empty keeps the shell's own default data provider; a
+ * task whose landing page reads an aggregate can serve it offline from here (test support,
+ * F1-06zm).
+ */
+export function shellDataOptions(): Pick<Parameters<typeof createAdminShell>[0], 'dataProvider'> {
+  return {};
 }
