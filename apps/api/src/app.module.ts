@@ -63,6 +63,7 @@ import {
   TOKEN_CHECK,
   STEP_UP_CHECK,
   IDENTITY_LEVEL_CHECKS,
+  PRIVACY_CONSENT_CHECKS,
   createRealnameReader,
   createRealnameStatusReader,
   createSmsSender,
@@ -92,6 +93,8 @@ import {
   type SessionPushTokens,
   type UserLevelReader,
   type IdentityLevelChecks,
+  type PrivacyConsentChecks,
+  type PrivacyConsentOptions,
   type AccountAssetsPort,
   type AccountRiskPort,
   type MeReadPorts,
@@ -300,7 +303,7 @@ const payoutAccountConfig = {
  * identity's login-device reader and risk's invite-relation hit writer, all on the login
  * transaction; the SMS and the third-party login both run it.
  */
-function identityModule(): DynamicModule {
+function identityModule(contentReader: SharedContentReader): DynamicModule {
   return IdentityModule.forRoot({
     accountAssets: {
       useFactory: (): AccountAssetsPort => ({
@@ -457,6 +460,19 @@ function identityModule(): DynamicModule {
     // Stage ⑨'s real-name status port (B1-02za), also GET /v1/me's realname_status: app.realname
     // read on the caller's handle, uncached (B1-13d).
     realnameStatus: { useFactory: createRealnameStatusReader },
+    // Stage ⑦ (B1-02zh): legal.privacy.min_version through content's reader. pooled: the shared
+    // cached reader for the guard; on: a fresh reader over the idempotency claim's transaction for
+    // the post-miss check (no second pooled connection while holding one). No database: null.
+    privacyConsentConfig: {
+      inject: [CLOCK, { token: DB, optional: true }],
+      useFactory: (clock: Clock, db?: Kysely<Database>): PrivacyConsentOptions['config'] =>
+        db === undefined
+          ? null
+          : {
+              pooled: contentReader(db, clock),
+              on: (handle) => createContentReader({ db: handle, clock }),
+            },
+    },
     // BR-WDR-31 (B1-13h): the labor agreement's configuration on the caller's handle (connection
     // or transaction), as inviteBinderDeps: a fresh reader per read, so no cache and no second
     // pooled connection; identity never reads config_items itself.
@@ -1310,18 +1326,23 @@ function parsingPorts(): DynamicModule {
 function riskModule(identity: DynamicModule, contentReader: SharedContentReader): DynamicModule {
   return RiskModule.forRoot({
     imports: [identity],
-    // ⑧ ⑨ identity level (B1-02za) before ⑫ step-up (B1-02y) on the idempotent path; the level
-    // guard alone between ⑤ and ⑬ on the non-idempotent path.
+    // ⑦ privacy consent (B1-02zh), then ⑧ ⑨ identity level (B1-02za), before ⑫ step-up (B1-02y)
+    // on the idempotent path; the privacy and level guards, in that order, between ⑤ and ⑬ on the
+    // non-idempotent path. The list order is the decision order.
     beforeRateLimit: {
-      inject: [IDENTITY_LEVEL_CHECKS, STEP_UP_CHECK],
-      useFactory: (level: IdentityLevelChecks, stepUp: IdempotencyPostMissCheck) => [
-        level.postMiss,
-        stepUp,
-      ],
+      inject: [PRIVACY_CONSENT_CHECKS, IDENTITY_LEVEL_CHECKS, STEP_UP_CHECK],
+      useFactory: (
+        privacy: PrivacyConsentChecks,
+        level: IdentityLevelChecks,
+        stepUp: IdempotencyPostMissCheck,
+      ) => [privacy.postMiss, level.postMiss, stepUp],
     },
     beforeRateLimitGuards: {
-      inject: [IDENTITY_LEVEL_CHECKS],
-      useFactory: (level: IdentityLevelChecks) => [level.guard],
+      inject: [PRIVACY_CONSENT_CHECKS, IDENTITY_LEVEL_CHECKS],
+      useFactory: (privacy: PrivacyConsentChecks, level: IdentityLevelChecks) => [
+        privacy.guard,
+        level.guard,
+      ],
     },
     minimumVersions: {
       inject: [CLOCK, { token: DB, optional: true }],
@@ -1459,10 +1480,10 @@ function sessionPushTokens(clock: Clock): SessionPushTokens {
 @Module({})
 export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
+    const contentReader = sharedContentReader();
     // One module object for both imports, so Nest builds the identity module once.
     // TODO(规划/11 §2.3): stream 入口装 ⑦ — blocked on B3 线给 stream 装配 identity / risk 与流式路由
-    const identity = options.entry === 'api' ? identityModule() : undefined;
-    const contentReader = sharedContentReader();
+    const identity = options.entry === 'api' ? identityModule(contentReader) : undefined;
     const risk = identity === undefined ? undefined : riskModule(identity, contentReader);
     // One module object per import: Nest builds union and linking once.
     const union =
