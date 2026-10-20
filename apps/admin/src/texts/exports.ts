@@ -1,0 +1,72 @@
+// Export tasks page copy (04 §6.6 exports, BR-ID-34 细则「后台导出任务」, F1-10j). Status names
+// repeat BR-TEXT-25 admin_dict.export_status (contracts/texts.admin.default.json); error wording
+// follows contracts/error-codes.yaml (30417: refresh and tell the task's current status).
+export const exportsTexts = {
+  title: '导出记录',
+  listTitle: '导出任务',
+  dash: '—',
+  loading: '正在加载导出任务…',
+  empty: '暂无导出任务',
+  emptyHint: '在操作日志等列表页点【导出】即可创建导出任务。',
+  total: (total: number): string => `共 ${total} 条`,
+  loadFailedTitle: '导出任务加载失败',
+  loadFailedDescription: '网络错误或服务异常，点【重试】重新请求。',
+  retryLoad: '重试',
+  forbiddenTitle: '无权限查看导出记录',
+  forbiddenDescription: '当前账号没有导出权限点（export），请联系超管勾选。',
+  statusAll: '全部',
+  /** BR-TEXT-25 admin_dict.export_status.* */
+  status: {
+    pending: '排队中',
+    running: '生成中',
+    done: '已完成',
+    failed: '失败',
+    expired: '已过期',
+    cancelled: '已取消',
+  },
+  resource: {
+    users: '用户列表',
+    audit_logs: '操作日志',
+  },
+  columns: {
+    id: '任务编号',
+    resource: '资源',
+    filters: '筛选条件',
+    status: '状态',
+    createdBy: '创建人',
+    createdAt: '创建时间',
+    expiresAt: '过期时间',
+    actions: '操作',
+  },
+  progress: (value: number): string => `进度 ${value}%`,
+  rows: (count: number): string => `${count} 行`,
+  unmasked: '未脱敏',
+  download: '下载',
+  retry: '重试',
+  /** 30417: the task's status changed meanwhile; the list was read again. */
+  statusChanged: (status: string): string =>
+    `导出任务当前状态为「${status}」，不能进行这项操作；已刷新导出记录。`,
+  downloadForbidden: '当前账号没有下载这项导出的权限。',
+  downloadMissing: '导出任务不存在或不可见，下载失败。',
+  downloadFailed: '下载链接获取失败，请稍后再试。',
+  /** done but expires_at has come since the list was shown: nothing is requested. */
+  downloadExpired: '这项导出已过期，不能下载；已刷新导出记录。',
+  retryForbidden: '当前账号没有重试这项导出的权限。',
+  retryMissing: '导出任务不存在或不可见，重试失败。',
+  retryFailed: '重试未能提交，请稍后再试。',
+  /** The step-up token was refused while another task's dialog was open. */
+  retryVerifyAgain: '动态码验证未被接受，重试未提交，请重新点【重试】。',
+  retried: '已重新提交导出任务。',
+  reason: {
+    title: '重试未脱敏导出',
+    note: '这项导出包含完整手机号；每次重新生成都要填写原因并完成动态码验证，原因会写入审计日志。',
+    label: '导出原因',
+    placeholder: '说明本次重新导出完整信息的原因（1–200 字）',
+    invalid: '请填写 1–200 字的原因',
+    cancel: '取消',
+    submit: '验证并重试',
+    operation: '重试未脱敏导出',
+    stepUpDetail: (id: string): string => `导出任务 ${id}`,
+    stepUpAgain: '上次验证未被接受，请重新验证。',
+  },
+} as const;

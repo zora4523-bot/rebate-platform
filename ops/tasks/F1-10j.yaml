@@ -20,5 +20,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/admin-audit-logs/**'
-status: todo
-pr: null
+status: done
+pr: 1035
