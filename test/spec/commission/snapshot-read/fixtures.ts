@@ -21,6 +21,7 @@ export const EARLIER = new Date('2026-10-19T01:00:00Z');
 export interface Fixture {
   input: ReadCommissionSnapshotInput;
   ruleVersionId: string;
+  ruleEffectiveFrom: Date;
   people: ReadSnapshotBeneficiary[];
 }
 
@@ -28,6 +29,7 @@ export function fixture(): Fixture {
   return {
     input: { appId: `snapshot-read-${randomUUID()}`, orderId: randomUUID(), commissionVersion: 1 },
     ruleVersionId: randomUUID(),
+    ruleEffectiveFrom: EARLIER,
     people: [
       {
         userId: randomUUID(),
@@ -82,7 +84,7 @@ export async function seed(
       app_id: f.input.appId,
       rule_version_id: f.ruleVersionId,
       status: 'published',
-      effective_from: EARLIER,
+      effective_from: f.ruleEffectiveFrom,
       indirect_enabled: true,
       created_at: EARLIER,
     })

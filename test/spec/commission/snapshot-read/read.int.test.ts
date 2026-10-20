@@ -111,6 +111,8 @@ it('[AC-B2-04i#5] BR-CALC-10/13 按 app 与子订单隔离快照、版本和同�
   const f = fixture();
   const sibling = fixture();
   sibling.input = { ...sibling.input, appId: f.input.appId };
+  // 同 app 的已发布规则版本生效时间必须唯一，避免夹具先于读取断言失败。
+  sibling.ruleEffectiveFrom = new Date('2026-10-18T01:00:00Z');
   sibling.people[0] = { ...sibling.people[0]!, role: 'share', ratioBp: 4000 };
   sibling.people[1] = { ...f.people[1]!, ratioBp: 1200 };
   sibling.people[2] = { ...sibling.people[2]!, ratioBp: 600 };
@@ -287,6 +289,8 @@ it('[AC-B2-04i#13] BR-CALC-10 请求仅同 app 对照订单拥有的版本时报
   const f = fixture();
   const sibling = fixture();
   sibling.input = { ...sibling.input, appId: f.input.appId };
+  // 同 app 的已发布规则版本生效时间必须唯一，避免夹具先于读取断言失败。
+  sibling.ruleEffectiveFrom = new Date('2026-10-18T01:00:00Z');
   sibling.people[0] = { ...sibling.people[0]!, role: 'share', ratioBp: 4000 };
   sibling.people[1] = { ...sibling.people[1]!, ratioBp: 1200 };
   sibling.people[2] = { ...sibling.people[2]!, ratioBp: 600 };
