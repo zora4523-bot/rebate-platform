@@ -163,3 +163,35 @@ it('[CT-25a] ConfigInvite adds optional reward_enabled and reward_amount_fen; be
   expect([...enums.tip_key]).toContain('inviter_before_buy');
   expect(contract.components.schemas['TipsData']!.required).toContain('inviter_before_buy');
 });
+
+it('[CT-25f] ConfigInvite adds optional int32 eligibility_days (minimum 1, no maximum) and the /v1/config example carries it', () => {
+  const invite = contract.components.schemas['ConfigInvite']!;
+  expect(invite.required).toEqual(['required', 'backfill_hours']);
+  const days = invite.properties!['eligibility_days']!;
+  expect(days.type).toBe('integer');
+  expect(days.format).toBe('int32');
+  expect(days.minimum).toBe(1);
+  expect(days).not.toHaveProperty('maximum');
+
+  const media = op('/v1/config').responses['200']!.content!['application/json']!;
+  const example = media.example as { data: { invite: Record<string, unknown> } };
+  expect(example.data.invite['eligibility_days']).toBe(30);
+  const strict = new Ajv2020({ strict: true, allErrors: true });
+  addFormats(strict);
+  for (const [name, bits] of [
+    ['int32', 31],
+    ['int64', 63],
+  ] as const) {
+    strict.addFormat(name, {
+      type: 'number',
+      validate: (value) => Number.isInteger(value) && Math.abs(value) <= 2 ** bits,
+    });
+  }
+  const validate = strict.compile(invite);
+  expect(validate(example.data.invite)).toBe(true);
+  expect(validate({ ...example.data.invite, eligibility_days: 0 })).toBe(false);
+  expect(validate({ ...example.data.invite, eligibility_days: 1.5 })).toBe(false);
+  const withoutDays = { ...example.data.invite };
+  delete withoutDays['eligibility_days'];
+  expect(validate(withoutDays)).toBe(true);
+});

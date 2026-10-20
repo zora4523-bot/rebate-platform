@@ -1,0 +1,35 @@
+{
+  "task": "CT-25f",
+  "spec_ref": "76f61aaa455a67f5b1d9212c6da710711cd255a1",
+  "spec_commit": "a6cad454493b1f6469d08cdd83a6dae18ad7baf2",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). /v1/config ConfigInvite gains optional eligibility_days (int32, >= 1, no maximum), derived from growth.invite_reward.eligibility_days with the BR-INV-24 default 30 when missing; planning 04 10.1 invite row and derivation table written back by couli #162 (SPEC_REF 76f61aa, #1016). Example updated. An optional response field only, not breaking. Implementation F1-02zze; frozen tests transitioned by F1-02zzd (#1015). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 fail (S1 the field was not in the planning baseline); orchestrator chose to write planning back (couli #162) and SPEC_REF moved to 76f61aa; round 2 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "279d303e3d24d6cc1fcfcecd135411811f48d7dc",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "e308f96db2c38fa575aabb2b645906c6d79ab386",
+    "test/spec": "05d9f91285df9272d5c09161d83937235cb61b89",
+    "specs": "9ec0f98bba0e3b6cd90bbdb1f7e1047b8a483e44"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "e308f96db2c38fa575aabb2b645906c6d79ab386"
+  }
+}
