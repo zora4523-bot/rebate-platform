@@ -1,0 +1,48 @@
+/* Top-bar search (design/specs/admin-search.md): antd draws the controls; colours come from the
+   antd token in the component. Only sizes and spacing that antd has no prop for live here. */
+.admin-search .admin-search-input {
+  width: 280px;
+}
+@media (max-width: 1280px) {
+  .admin-search .admin-search-input {
+    width: 220px;
+  }
+}
+.admin-search-panel {
+  width: min(560px, calc(100vw - 32px));
+  overflow: hidden;
+}
+.admin-search-empty {
+  padding: 16px 20px;
+}
+.admin-search-listbox:focus {
+  outline: none;
+}
+.admin-search-listbox:focus-visible {
+  outline: 2px solid var(--color-brand-primary);
+  outline-offset: -2px;
+}
+.admin-search-head {
+  padding: 10px 16px;
+  font-size: 12px;
+}
+.admin-search .admin-search-note,
+.admin-search-panel .admin-search-note {
+  font-size: 12px;
+}
+.admin-search-panel .admin-search-option {
+  padding: 12px 16px;
+  cursor: pointer;
+}
+.admin-search-option-row {
+  width: 100%;
+  min-width: 0;
+}
+.admin-search-type {
+  flex: none;
+  margin-inline-end: 0;
+}
+.admin-search-truncated,
+.admin-search-foot {
+  padding: 10px 16px;
+}

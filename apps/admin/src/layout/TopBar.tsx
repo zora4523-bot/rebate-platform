@@ -1,5 +1,6 @@
 import { Breadcrumb, Button, Flex, Layout, Tag, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
+import { AdminSearch } from '../components/search/index.ts';
 import type { AdminEnvironment } from '../shell-options.ts';
 import { shellTexts } from '../texts/shell.ts';
 
@@ -9,10 +10,15 @@ export interface TopBarProps {
   readonly displayName: string;
   /** A returned promise keeps 【退出】 disabled until the request ends (success, failure, timeout). */
   readonly onLogout: () => void | Promise<unknown>;
+  /** Shows the top-bar search (pages with permission keys only); opens a user hit's detail. */
+  readonly onOpenUser?: ((userId: string) => void) | undefined;
 }
 
-/** Breadcrumb on the left; environment tag, account and logout on the right (antd Layout.Header). */
-export function TopBar({ crumbs, environment, displayName, onLogout }: TopBarProps) {
+/**
+ * Breadcrumb on the left; search, environment tag, account and logout on the right (antd
+ * Layout.Header).
+ */
+export function TopBar({ crumbs, environment, displayName, onLogout, onOpenUser }: TopBarProps) {
   const [loggingOut, setLoggingOut] = useState(false);
   // The click handler reads this, so a second click in the same frame is ignored too.
   const inFlight = useRef(false);
@@ -45,6 +51,7 @@ export function TopBar({ crumbs, environment, displayName, onLogout }: TopBarPro
           items={crumbs.map((crumb, index) => ({ key: index, title: crumb }))}
         />
         <Flex align="center" gap="small">
+          {onOpenUser === undefined ? null : <AdminSearch onOpenUser={onOpenUser} />}
           {environment === 'production' ? null : (
             <Tag color="warning" bordered={false}>
               {shellTexts.nonProductionEnvironment}

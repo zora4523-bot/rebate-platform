@@ -1,0 +1,141 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-search/pages.browser.test.ts > [AC-F1-07h-BROWSER#1] 1440 多命中下拉与首条高亮、摘要、固定说明可见，admin-search-multi",
+    "test/spec/frontend/admin-search/pages.browser.test.ts > [AC-F1-07h-BROWSER#2] 1440 无命中提示和完整号码说明可见且不提权限，admin-search-no-hit",
+    "test/spec/frontend/admin-search/pages.browser.test.ts > [AC-F1-07h-BROWSER#3] 1280 搜索框收为 220 宽，候选可见且 Esc 返回输入焦点",
+    "test/spec/frontend/admin-search/place.test.ts > [AC-F1-07h-PLACE#1] 工作台与各有权限菜单共用顶栏搜索区域和占位文案",
+    "test/spec/frontend/admin-search/place.test.ts > [AC-F1-07h-PLACE#2] 有权限页有搜索框，零权限账号的暂无权限页没有搜索框",
+    "test/spec/frontend/admin-search/place.test.ts > [AC-F1-07h-PLACE#3] 仅有非搜索权限的登录账号仍可提交，由服务端返回裁剪后的空结果",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#1] 单个 user 命中从订单页直接进入 users 菜单的真实用户详情",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#2] 单个 order 命中只显示候选摘要，点击保持原页",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#3] 单个 withdrawal 命中只显示候选摘要，点击保持原页",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#4] 多命中按服务端顺序显示类型与脱敏摘要，读屏名含 ID，首条高亮且焦点进入列表",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#5] 上下键切换高亮，回车打开选中的 user 而不是第一条订单",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#6] Esc 关闭候选并把焦点还给原输入框，不再发搜索请求",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#7] 点击多命中的 user 候选打开真实详情并关闭候选",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#8] 服务端最多十条且 truncated 时全部显示并提示请输入更完整的号码",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#9] 查无和无搜索权限返回同样空结果，提示一致且没有权限字样",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#10] 第二次搜索无命中时清除上次候选，不留旧对象可点击",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#11] 订单与所属用户多命中时，回车激活订单保持原页、不进入假详情",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#12] 订单与所属用户多命中时，点击订单保持原页、不进入假详情",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#13] 提现单与所属用户多命中时，回车激活提现单保持原页、不进入假详情",
+    "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#14] 提现单与所属用户多命中时，点击提现单保持原页、不进入假详情",
+    "test/spec/frontend/admin-search/source.test.ts > [AC-F1-07h-SOURCE#1] 搜索实际使用 antd Input.Search、Dropdown、List 与 Typography，不拼 ant 类名或字面色值",
+    "test/spec/frontend/admin-search/source.test.ts > [AC-F1-07h-SOURCE#2] 搜索文案来自 texts/search.ts 并经现有 data provider 或 admin API 层请求",
+    "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#1] 只输入不搜索，回车只发一次 GET 且唯一参数 q 去除首尾空白",
+    "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#2] 点放大镜只请求一次且只带去空白后的 q",
+    "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#3] 空串和全空白无论回车或点放大镜都不请求",
+    "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#4] 请求在途显示 Input.Search loading，重复回车及点击只发送一次",
+    "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#5] 服务端 20001 fields q 在输入框旁提示并保留输入，修正后可重试",
+    "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#6] 网络失败通过 message.error 提示并保留输入",
+    "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#7] HTTP 500 通过 message.error 提示并保留输入",
+    "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#8] 1 字与去空白后 64 字都可提交，不在前端按号码形状拒绝",
+    "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#9] 超过 64 字提示输入错误且不静默截断为另一个号码"
+  ],
+  "risk_note": "Admin console top-bar search (apps/admin; no money logic; codex-run classed it RV2 because App.tsx is touched, so the Codex review ran on the money track). Contract CT-24 adminSearch (planned; backend not done, developed against the contract with a fake server); visuals per the finalized spec design/specs/admin-search.md. Input.Search in the top bar of permitted pages only; one request on enter or the search icon, trimmed q, blank not sent, in-flight duplicates dropped; 20001 shown by the input and network / 5xx via message.error, input kept; a single user hit opens the user detail; order / withdrawal hits (no detail page yet) are listed and stay on the page; candidate list with keyboard, focus and screen-reader names; truncated hint; no-hit text never mentions permission. Rule tests by Codex in two calls plus one orchestrator mechanical fix counted as the exception (vitest 5 toHaveTextContent is whole-text equality: four browser assertions switched to toMatchTextContent, meaning unchanged); Claude spec-test review r2 pass; red on the test machine (red/3: 31 red, 0 problems). Implementation by Opus 5.5; test machine verify-fast/4 and browser/6, browser/7 green. Review: Codex (approvals id 27 / 34). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (S1: a no-hit check forced a listbox; 2 S2), round 2 pass after Codex round 2 (2 S2: footer inside the listbox, order hits must not navigate; carried into the implementation constraints)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  },
+  "task": "F1-07h",
+  "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
+  "spec_commit": "0d21f612ba6205ad789b205229146d0f10d563f0",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0d21f612ba6205ad789b205229146d0f10d563f0",
+      "tree": "665cc4fdf080eaac876fc24f103595ec5b3511fb",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T07:28:37Z",
+      "finished_at": "2026-10-20T07:31:41Z",
+      "gate": {
+        "commit": "5fd08e12c30755777fdb29928a12b420e77c59d7",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-search/pages.browser.test.ts > [AC-F1-07h-BROWSER#1] 1440 多命中下拉与首条高亮、摘要、固定说明可见，admin-search-multi",
+        "test/spec/frontend/admin-search/pages.browser.test.ts > [AC-F1-07h-BROWSER#2] 1440 无命中提示和完整号码说明可见且不提权限，admin-search-no-hit",
+        "test/spec/frontend/admin-search/pages.browser.test.ts > [AC-F1-07h-BROWSER#3] 1280 搜索框收为 220 宽，候选可见且 Esc 返回输入焦点",
+        "test/spec/frontend/admin-search/place.test.ts > [AC-F1-07h-PLACE#1] 工作台与各有权限菜单共用顶栏搜索区域和占位文案",
+        "test/spec/frontend/admin-search/place.test.ts > [AC-F1-07h-PLACE#2] 有权限页有搜索框，零权限账号的暂无权限页没有搜索框",
+        "test/spec/frontend/admin-search/place.test.ts > [AC-F1-07h-PLACE#3] 仅有非搜索权限的登录账号仍可提交，由服务端返回裁剪后的空结果",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#1] 单个 user 命中从订单页直接进入 users 菜单的真实用户详情",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#2] 单个 order 命中只显示候选摘要，点击保持原页",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#3] 单个 withdrawal 命中只显示候选摘要，点击保持原页",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#4] 多命中按服务端顺序显示类型与脱敏摘要，读屏名含 ID，首条高亮且焦点进入列表",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#5] 上下键切换高亮，回车打开选中的 user 而不是第一条订单",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#6] Esc 关闭候选并把焦点还给原输入框，不再发搜索请求",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#7] 点击多命中的 user 候选打开真实详情并关闭候选",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#8] 服务端最多十条且 truncated 时全部显示并提示请输入更完整的号码",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#9] 查无和无搜索权限返回同样空结果，提示一致且没有权限字样",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#10] 第二次搜索无命中时清除上次候选，不留旧对象可点击",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#11] 订单与所属用户多命中时，回车激活订单保持原页、不进入假详情",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#12] 订单与所属用户多命中时，点击订单保持原页、不进入假详情",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#13] 提现单与所属用户多命中时，回车激活提现单保持原页、不进入假详情",
+        "test/spec/frontend/admin-search/result.test.ts > [AC-F1-07h-RESULT#14] 提现单与所属用户多命中时，点击提现单保持原页、不进入假详情",
+        "test/spec/frontend/admin-search/source.test.ts > [AC-F1-07h-SOURCE#1] 搜索实际使用 antd Input.Search、Dropdown、List 与 Typography，不拼 ant 类名或字面色值",
+        "test/spec/frontend/admin-search/source.test.ts > [AC-F1-07h-SOURCE#2] 搜索文案来自 texts/search.ts 并经现有 data provider 或 admin API 层请求",
+        "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#1] 只输入不搜索，回车只发一次 GET 且唯一参数 q 去除首尾空白",
+        "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#2] 点放大镜只请求一次且只带去空白后的 q",
+        "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#3] 空串和全空白无论回车或点放大镜都不请求",
+        "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#4] 请求在途显示 Input.Search loading，重复回车及点击只发送一次",
+        "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#5] 服务端 20001 fields q 在输入框旁提示并保留输入，修正后可重试",
+        "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#6] 网络失败通过 message.error 提示并保留输入",
+        "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#7] HTTP 500 通过 message.error 提示并保留输入",
+        "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#8] 1 字与去空白后 64 字都可提交，不在前端按号码形状拒绝",
+        "test/spec/frontend/admin-search/submit.test.ts > [AC-F1-07h-SUBMIT#9] 超过 64 字提示输入错误且不静默截断为另一个号码"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-search/pages.browser.test.ts",
+        "test/spec/frontend/admin-search/place.test.ts",
+        "test/spec/frontend/admin-search/result.test.ts",
+        "test/spec/frontend/admin-search/source.test.ts",
+        "test/spec/frontend/admin-search/submit.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "07dc8c71348a05733afd1e709cd15458109db24a059165ff629abce2581e7766"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "6416c0716d5681d00bd0b5e004c518db0b74662a7ccec643d271af902e52f88d"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "b3d3ec3eeea72a9d52e63316872454ed5efe9b06",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "1cf30f444f1641fee734d48885f353f318d042cc",
+    "specs": "c150895f9c4c3249d17ebd0894736c9169aad3f5"
+  }
+}
