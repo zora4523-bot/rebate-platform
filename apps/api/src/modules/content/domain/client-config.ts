@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import ajvFormats from 'ajv-formats';
 import type { Schema } from '@couli/contracts-ts';
+import { addFen, parseFen, subFen } from '@couli/money';
 
 export type ClientConfig = Schema<'Config'>;
 type PlatformCode = Schema<'PlatformCode'>;
@@ -148,13 +149,20 @@ export function deriveInviteReward(
     if (intIn(0, INT32_MAX)(value)) amount = value;
     else report.invalid(INVITE_REWARD_AMOUNT_KEY);
   }
-  // amount <= int32 max, so both parties' sum (<= 2^32 - 2) is exact in a double.
-  const enabled =
-    inviteRewardSwitchOn(values) &&
-    typeof availableBudgetFen === 'number' &&
-    Number.isSafeInteger(availableBudgetFen) &&
-    availableBudgetFen >= 2 * amount;
-  return { reward_enabled: enabled, reward_amount_fen: amount };
+  return {
+    reward_enabled:
+      inviteRewardSwitchOn(values) &&
+      typeof availableBudgetFen === 'number' &&
+      Number.isSafeInteger(availableBudgetFen) &&
+      budgetCoversBothParties(availableBudgetFen, amount),
+    reward_amount_fen: amount,
+  };
+}
+
+/** available − (amount + amount) ≥ 0, in bigint fen through @couli/money (hard rule 1). */
+function budgetCoversBothParties(availableFen: number, amountFen: number): boolean {
+  const perParty = parseFen(amountFen);
+  return subFen(parseFen(availableFen), addFen(perParty, perParty)) >= 0n;
 }
 
 export interface ClientConfigInput {
