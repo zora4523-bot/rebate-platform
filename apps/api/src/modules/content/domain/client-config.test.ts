@@ -4,6 +4,8 @@ import {
   agentOpen,
   buildClientConfig,
   CLIENT_CONFIG_KEYS,
+  deriveInviteReward,
+  inviteRewardSwitchOn,
   h5Bucket,
   PLATFORM_CODES,
   purchaseStatus,
@@ -47,7 +49,14 @@ it('[AC-F1-02c] minimal configuration gets every planned default', () => {
   expect(config).toMatchObject({
     dict_version: '0',
     h5_release: { version: 'stable-v1' },
-    invite: { required: false, backfill_hours: 168, bind_phone_guide: true, before_buy_tip: true },
+    invite: {
+      required: false,
+      backfill_hours: 168,
+      bind_phone_guide: true,
+      before_buy_tip: true,
+      reward_enabled: false,
+      reward_amount_fen: 1000,
+    },
     agent: { enabled: false, whitelist_only: true, guest_daily_quota: 3, require_phone: false },
     external_page: { nav_host_sample_bp: 1000 },
     app_update: { recheck_interval_sec: 1800 },
@@ -294,4 +303,88 @@ it('[AC-F1-02j] clipboard.auto_read flags pass through as-is; missing clients ar
     'earnings.dashboard.visible': true,
   });
   expect(bad.invalid).toEqual(['features.flags']);
+});
+
+const ON = 'growth.invite_reward.enabled';
+const AMOUNT = 'growth.invite_reward.amount_fen';
+
+function reward(values: Record<string, unknown>, available: number | null | undefined) {
+  const invalid: string[] = [];
+  const result = deriveInviteReward({
+    values: new Map(Object.entries(values)),
+    availableBudgetFen: available,
+    report: { missing: () => undefined, invalid: (k) => invalid.push(k) },
+  });
+  return { result, invalid };
+}
+
+it('[AC-F1-02zp] the reward keys are read; same-named invite.reward_* never are', () => {
+  expect(CLIENT_CONFIG_KEYS).toEqual(expect.arrayContaining([ON, AMOUNT]));
+  expect(CLIENT_CONFIG_KEYS).not.toContain('invite.reward_enabled');
+  expect(CLIENT_CONFIG_KEYS).not.toContain('invite.reward_amount_fen');
+});
+
+it('[AC-F1-02zp] only JSON true turns the switch on', () => {
+  expect(inviteRewardSwitchOn(new Map([[ON, true]]))).toBe(true);
+  for (const value of [false, 'true', 1, 'on', null, {}]) {
+    expect(inviteRewardSwitchOn(new Map([[ON, value]]))).toBe(false);
+  }
+  expect(inviteRewardSwitchOn(new Map())).toBe(false);
+});
+
+it('[AC-F1-02zp] enabled needs a safe-integer budget of at least both parties', () => {
+  for (const [amount, available, enabled] of [
+    [1000, 1999, false],
+    [1000, 2000, true],
+    [500, 1000, true],
+    [0, 0, true],
+    [0, -1, false],
+    [2147483647, 4294967293, false],
+    [2147483647, 4294967294, true],
+    [1000, 2 ** 53, false],
+    [2147483647, Number.MAX_SAFE_INTEGER, true],
+    [1000, -Number.MAX_SAFE_INTEGER, false],
+    [1000, 2000.5, false],
+    [1000, null, false],
+    [1000, undefined, false],
+  ] as const) {
+    const { result, invalid } = reward({ [ON]: true, [AMOUNT]: amount }, available);
+    expect(result).toEqual({ reward_enabled: enabled, reward_amount_fen: amount });
+    expect(invalid).toEqual([]);
+  }
+});
+
+it('[AC-F1-02zp] a malformed amount falls back to 1000 and is reported; off still sends it', () => {
+  expect(reward({ [ON]: true, [AMOUNT]: '500' }, 1999)).toEqual({
+    result: { reward_enabled: false, reward_amount_fen: 1000 },
+    invalid: [AMOUNT],
+  });
+  expect(reward({ [ON]: false, [AMOUNT]: 300 }, 10_000)).toEqual({
+    result: { reward_enabled: false, reward_amount_fen: 300 },
+    invalid: [],
+  });
+  expect(reward({ [ON]: 'true' }, 10_000)).toEqual({
+    result: { reward_enabled: false, reward_amount_fen: 1000 },
+    invalid: [ON],
+  });
+});
+
+it('[AC-F1-02zp] buildClientConfig derives invite reward from the budget it is given', () => {
+  const values = new Map(Object.entries({ ...REQUIRED, [ON]: true, [AMOUNT]: 500 }));
+  const base = {
+    values,
+    viewer: { appId: 'app', userId: null },
+    deviceId: null,
+    linkPatterns: PATTERNS,
+    rankPlatforms: [],
+    report: { missing: () => undefined, invalid: () => undefined },
+  };
+  expect(buildClientConfig({ ...base, inviteRewardBudgetFen: 1000 })?.invite).toMatchObject({
+    reward_enabled: true,
+    reward_amount_fen: 500,
+  });
+  expect(buildClientConfig(base)?.invite).toMatchObject({
+    reward_enabled: false,
+    reward_amount_fen: 500,
+  });
 });

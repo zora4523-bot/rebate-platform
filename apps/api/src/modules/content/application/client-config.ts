@@ -10,11 +10,13 @@ import { MediaStoreUnavailableError, type MaterialChannelsSpec } from '../../pla
 import {
   buildClientConfig,
   CLIENT_CONFIG_KEYS,
+  inviteRewardSwitchOn,
   type ClientConfig,
   type ConfigViewer,
 } from '../domain/client-config.ts';
 import { configEtag, rankPlatforms } from '../domain/config-etag.ts';
 import type { ContentReader } from './content-reader.ts';
+import type { InviteRewardBudgetReader } from './invite-reward-budget-reader.ts';
 import type { PublishedPlatformIcons } from './published-platform-icons.ts';
 
 /** The caller of one request, resolved by identity (content never imports identity). */
@@ -39,6 +41,12 @@ export interface ClientConfigDeps {
   readonly linkPatterns: () => NonNullable<ClientConfig['link_patterns']>;
   /** platform's getMaterialChannels(): features.rank_platforms is derived from it (F1-02h). */
   readonly materialChannels: () => MaterialChannelsSpec;
+  /**
+   * F1-02zp: growth's total available invitation reward budget (null or absent: not installed,
+   * reward_enabled is always false). Asked at most once per request, only while the switch is
+   * on, and never cached here.
+   */
+  readonly inviteRewardBudget?: InviteRewardBudgetReader | null;
   readonly logger: Pick<Logger, 'warn' | 'error'>;
 }
 
@@ -66,6 +74,7 @@ export class ClientConfigService {
     for (const { key, row } of rows) {
       if (row !== null) values.set(key, row.value);
     }
+    const inviteRewardBudgetFen = await this.#inviteRewardBudget(viewer.appId, values);
     const missing: string[] = [];
     const config = buildClientConfig({
       values,
@@ -73,6 +82,7 @@ export class ClientConfigService {
       deviceId,
       linkPatterns: this.#deps.linkPatterns(),
       rankPlatforms: rankPlatforms(this.#deps.materialChannels()),
+      ...(inviteRewardBudgetFen === undefined ? {} : { inviteRewardBudgetFen }),
       report: {
         missing: (key) => {
           missing.push(key);
@@ -104,5 +114,44 @@ export class ClientConfigService {
     const etag = configEtag(config);
     config.config_version = etag.slice(1, -1);
     return config;
+  }
+
+  /**
+   * The budget port's answer, or undefined when it is not installed or the switch is off (then it
+   * is not asked). A rejection or a value that is not a safe integer degrades to null with one
+   * warning naming the app: the reward is hidden, /v1/config still answers (never 50001).
+   */
+  async #inviteRewardBudget(
+    appId: string,
+    values: ReadonlyMap<string, unknown>,
+  ): Promise<number | null | undefined> {
+    const port = this.#deps.inviteRewardBudget;
+    if (port === undefined || port === null || !inviteRewardSwitchOn(values)) return undefined;
+    let available: unknown;
+    try {
+      available = await port.available(appId);
+    } catch (error) {
+      this.#deps.logger.warn(
+        {
+          event: 'content_config_invite_budget_unavailable',
+          app_id: appId,
+          reason: 'rejected',
+          error_name: error instanceof Error ? error.name : typeof error,
+        },
+        'invite reward budget read failed; reward disabled',
+      );
+      return null;
+    }
+    if (available === null) return null;
+    if (typeof available === 'number' && Number.isSafeInteger(available)) return available;
+    this.#deps.logger.warn(
+      {
+        event: 'content_config_invite_budget_unavailable',
+        app_id: appId,
+        reason: 'not_integer',
+      },
+      'invite reward budget is not an integer; reward disabled',
+    );
+    return null;
   }
 }

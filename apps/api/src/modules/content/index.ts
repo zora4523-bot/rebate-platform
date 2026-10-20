@@ -29,6 +29,7 @@ export type {
 // F1-02c: GET /v1/config, loaded by app.module on the api entry only with identity's viewer.
 export { ContentPublicModule } from './content-public.module.ts';
 export type { ContentPublicPorts } from './content-public.module.ts';
+export { InviteRewardBudgetReader } from './application/invite-reward-budget-reader.ts';
 export { createAgreementReader } from './application/agreement-reader.ts';
 export type {
   AgreementReader,

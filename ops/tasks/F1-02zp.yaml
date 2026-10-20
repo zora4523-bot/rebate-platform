@@ -22,5 +22,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/content/config-invite-reward/**'
-status: todo
-pr: null
+status: done
+pr: 989

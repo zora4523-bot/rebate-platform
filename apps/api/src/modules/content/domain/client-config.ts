@@ -9,6 +9,7 @@
 import { createHash } from 'node:crypto';
 import ajvFormats from 'ajv-formats';
 import type { Schema } from '@couli/contracts-ts';
+import { addFen, parseFen, subFen } from '@couli/money';
 
 export type ClientConfig = Schema<'Config'>;
 type PlatformCode = Schema<'PlatformCode'>;
@@ -72,6 +73,9 @@ const OPTIONAL_CONFIG_KEYS = [
   // F1-02h: not the same-named keys lkg_max_age_sec / bridge_disabled_methods.
   'config.lkg_max_age_sec',
   'bridge.disabled_methods',
+  // F1-02zp (BR-INV-24): invite.reward_* is derived from these, never read from same-named keys.
+  'growth.invite_reward.enabled',
+  'growth.invite_reward.amount_fen',
 ] as const;
 
 /** Every config_items key GET /v1/config reads (link_patterns is not one: platform's table). */
@@ -105,6 +109,62 @@ export interface ConfigReport {
   invalid(key: string): void;
 }
 
+export const INVITE_REWARD_ENABLED_KEY = 'growth.invite_reward.enabled';
+export const INVITE_REWARD_AMOUNT_KEY = 'growth.invite_reward.amount_fen';
+/** BR-INV-24: the per-party amount when growth.invite_reward.amount_fen is absent or malformed. */
+export const INVITE_REWARD_DEFAULT_AMOUNT_FEN = 1000;
+
+export interface InviteRewardInput {
+  readonly values: ConfigValues;
+  /** undefined: port not installed; null: available budget could not be calculated. */
+  readonly availableBudgetFen: number | null | undefined;
+  readonly report: ConfigReport;
+}
+
+/**
+ * Whether the reward switch is on: only JSON true (absent or any other value is off). The caller
+ * asks the budget port only when this holds; reporting a malformed switch is left to
+ * deriveInviteReward.
+ */
+export function inviteRewardSwitchOn(values: ConfigValues): boolean {
+  return values.get(INVITE_REWARD_ENABLED_KEY) === true;
+}
+
+/**
+ * BR-INV-24 ① / ⑨ / F1-02zp: derive the two always-delivered invitation reward fields.
+ * reward_enabled = switch is JSON true, and the total available budget (fen; growth computes total
+ * budget minus occupied minus paid) is a safe integer of at least both parties' amounts.
+ * reward_amount_fen = the per-party amount (int32 range), else the 08 default, even when off.
+ */
+export function deriveInviteReward(
+  input: InviteRewardInput,
+): Required<Pick<Schema<'ConfigInvite'>, 'reward_enabled' | 'reward_amount_fen'>> {
+  const { values, availableBudgetFen, report } = input;
+  if (values.has(INVITE_REWARD_ENABLED_KEY) && !isBoolean(values.get(INVITE_REWARD_ENABLED_KEY))) {
+    report.invalid(INVITE_REWARD_ENABLED_KEY);
+  }
+  let amount = INVITE_REWARD_DEFAULT_AMOUNT_FEN;
+  if (values.has(INVITE_REWARD_AMOUNT_KEY)) {
+    const value = values.get(INVITE_REWARD_AMOUNT_KEY);
+    if (intIn(0, INT32_MAX)(value)) amount = value;
+    else report.invalid(INVITE_REWARD_AMOUNT_KEY);
+  }
+  return {
+    reward_enabled:
+      inviteRewardSwitchOn(values) &&
+      typeof availableBudgetFen === 'number' &&
+      Number.isSafeInteger(availableBudgetFen) &&
+      budgetCoversBothParties(availableBudgetFen, amount),
+    reward_amount_fen: amount,
+  };
+}
+
+/** available − (amount + amount) ≥ 0, in bigint fen through @couli/money (hard rule 1). */
+function budgetCoversBothParties(availableFen: number, amountFen: number): boolean {
+  const perParty = parseFen(amountFen);
+  return subFen(parseFen(availableFen), addFen(perParty, perParty)) >= 0n;
+}
+
 export interface ClientConfigInput {
   readonly values: ConfigValues;
   readonly viewer: ConfigViewer;
@@ -114,6 +174,11 @@ export interface ClientConfigInput {
   readonly linkPatterns: NonNullable<ClientConfig['link_patterns']>;
   /** features.rank_platforms, derived from platform's material channel whitelist (F1-02h). */
   readonly rankPlatforms: readonly PlatformCode[];
+  /**
+   * F1-02zp: the total available invitation reward budget in fen, as the budget port answered
+   * (null: could not be calculated); absent when the port is not installed or was not asked.
+   */
+  readonly inviteRewardBudgetFen?: number | null;
   readonly report: ConfigReport;
 }
 
@@ -353,6 +418,11 @@ export function buildClientConfig(input: ClientConfigInput): ClientConfig | unde
       backfill_hours: optional('invite.backfill_hours', intIn(0, INT32_MAX), 168),
       bind_phone_guide: optional('invite.bind_phone_guide', isBoolean, true),
       before_buy_tip: optional('invite.before_buy_tip', isBoolean, true),
+      ...deriveInviteReward({
+        values,
+        availableBudgetFen: input.inviteRewardBudgetFen,
+        report,
+      }),
     },
     agent,
     kf: kf ?? { url: '' },

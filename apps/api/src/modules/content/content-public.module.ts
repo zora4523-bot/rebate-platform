@@ -27,6 +27,7 @@ import {
   type RootLogger,
 } from '../platform/index.ts';
 import { ClientConfigService, ConfigViewerContext } from './application/client-config.ts';
+import type { InviteRewardBudgetReader } from './application/invite-reward-budget-reader.ts';
 import { ArticleReader } from './application/article-reader.ts';
 import {
   PublicAgreementReader,
@@ -86,9 +87,15 @@ export interface ContentPublicPorts {
    * When absent, a logged-in viewer's facts are unknown and only `any` matches them.
    */
   readonly audienceReads?: Omit<FactoryProvider<PageAudienceReads | null>, 'provide'>;
+  /**
+   * F1-02zp (BR-INV-24): growth's total available invitation reward budget behind
+   * /v1/config invite.reward_enabled. When absent (or null), reward_enabled is always false.
+   */
+  readonly inviteRewardBudget?: Omit<FactoryProvider<InviteRewardBudgetReader | null>, 'provide'>;
 }
 
 const AUDIENCE_READS = Symbol('AUDIENCE_READS');
+const INVITE_REWARD_BUDGET = Symbol('INVITE_REWARD_BUDGET');
 
 function ownContentReader(db: Kysely<Database> | undefined, clock: Clock): ContentReader | null {
   if (db === undefined) return null;
@@ -192,16 +199,30 @@ export class ContentPublicModule {
           useFactory: (reader: ContentReader | null): ContentReader => reader ?? UNAVAILABLE_READER,
         },
         {
+          provide: INVITE_REWARD_BUDGET,
+          ...(ports.inviteRewardBudget ?? {
+            useFactory: (): InviteRewardBudgetReader | null => null,
+          }),
+        },
+        {
           provide: ClientConfigService,
-          inject: [CONTENT_READER, { token: DB, optional: true }, ROOT_LOGGER, APP_CONFIG],
+          inject: [
+            CONTENT_READER,
+            { token: DB, optional: true },
+            ROOT_LOGGER,
+            APP_CONFIG,
+            INVITE_REWARD_BUDGET,
+          ],
           useFactory: (
             reader: ContentReader,
             db: Kysely<Database> | undefined,
             logger: RootLogger,
             config: AppConfig,
+            inviteRewardBudget: InviteRewardBudgetReader | null,
           ): ClientConfigService =>
             new ClientConfigService({
               reader,
+              inviteRewardBudget,
               platformIcons: (appId) => {
                 if (db === undefined) {
                   return Promise.reject(

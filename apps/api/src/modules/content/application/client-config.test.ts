@@ -8,6 +8,7 @@ import {
   type ClientConfigDeps,
 } from './client-config.ts';
 import type { ContentReader } from './content-reader.ts';
+import type { InviteRewardBudgetReader } from './invite-reward-budget-reader.ts';
 
 const REQUIRED: Record<string, unknown> = {
   h5_base_url: 'https://h5.example.test/',
@@ -166,4 +167,100 @@ it('[AC-F1-02j] a malformed clipboard warns with the key only, never the value',
     { event: 'content_config_value_invalid', app_id: 'a', config_key: 'clipboard' },
   ]);
   expect(JSON.stringify(s.warns)).not.toContain('secret-marker');
+});
+
+const ON = 'growth.invite_reward.enabled';
+const AMOUNT = 'growth.invite_reward.amount_fen';
+
+function rewardService(
+  values: Record<string, Record<string, unknown>>,
+  budgets: Map<string, number | null | Error>,
+  installed = true,
+) {
+  const warns: Record<string, unknown>[] = [];
+  const calls: string[] = [];
+  const port: InviteRewardBudgetReader = {
+    available: (appId) => {
+      calls.push(appId);
+      const value = budgets.get(appId) ?? null;
+      return value instanceof Error ? Promise.reject(value) : Promise.resolve(value);
+    },
+  };
+  const reader: ContentReader = {
+    appVersion: () => Promise.resolve(null),
+    minSupportedVersion: () => Promise.resolve(null),
+    configValue: (appId, key) => {
+      const app = { ...REQUIRED, ...values[appId] };
+      return Promise.resolve(
+        Object.hasOwn(app, key) ? { value: app[key] as never, version: 1 } : null,
+      );
+    },
+  };
+  const svc = new ClientConfigService({
+    reader,
+    platformIcons: () => Promise.resolve({}),
+    linkPatterns: () =>
+      ({ version: 'lp', rules: [] }) as NonNullable<ClientConfig['link_patterns']>,
+    materialChannels: () => ({ version: 'empty', channels: [] }),
+    inviteRewardBudget: installed ? port : null,
+    logger: {
+      warn: ((o: Record<string, unknown>) => void warns.push(o)) as never,
+      error: (() => undefined) as never,
+    },
+  });
+  const read = (appId: string) => svc.read({ appId, userId: null }, null);
+  return { read, warns, calls };
+}
+
+it('[AC-F1-02zp] the switch off or the port absent never asks the budget port', async () => {
+  const budgets = new Map([['a', 5000]]);
+  const off = rewardService({ a: { [ON]: false, [AMOUNT]: 500 } }, budgets);
+  expect((await off.read('a')).invite).toMatchObject({
+    reward_enabled: false,
+    reward_amount_fen: 500,
+  });
+  expect(off.calls).toEqual([]);
+  const absent = rewardService({ a: { [ON]: true } }, budgets, false);
+  expect((await absent.read('a')).invite).toMatchObject({
+    reward_enabled: false,
+    reward_amount_fen: 1000,
+  });
+  expect(absent.calls).toEqual([]);
+  expect(absent.warns).toEqual([]);
+});
+
+it('[AC-F1-02zp] a rejected or non-integer budget hides the reward with one warning', async () => {
+  for (const value of [new Error('synthetic'), 1.5, Number.NaN]) {
+    const s = rewardService({ a: { [ON]: true } }, new Map([['a', value]]));
+    const config = await s.read('a');
+    expect(config.invite).toMatchObject({ reward_enabled: false, reward_amount_fen: 1000 });
+    expect(s.calls).toEqual(['a']);
+    expect(s.warns).toEqual([
+      expect.objectContaining({ event: 'content_config_invite_budget_unavailable', app_id: 'a' }),
+    ]);
+  }
+  const nothing = rewardService({ a: { [ON]: true } }, new Map([['a', null]]));
+  expect((await nothing.read('a')).invite.reward_enabled).toBe(false);
+});
+
+it('[AC-F1-02zp] two apps swapping budgets swap results; the version follows', async () => {
+  // §9.12: no per-app cache may leak one app's budget into another's answer.
+  const values = { a: { [ON]: true }, b: { [ON]: true } };
+  const budgets = new Map<string, number | null | Error>([
+    ['a', 2000],
+    ['b', 1999],
+  ]);
+  const s = rewardService(values, budgets);
+  const a1 = await s.read('a');
+  const b1 = await s.read('b');
+  expect([a1.invite.reward_enabled, b1.invite.reward_enabled]).toEqual([true, false]);
+  budgets.set('a', 1999);
+  budgets.set('b', 2000);
+  const a2 = await s.read('a');
+  const b2 = await s.read('b');
+  expect([a2.invite.reward_enabled, b2.invite.reward_enabled]).toEqual([false, true]);
+  expect(a2.config_version).toBe(b1.config_version);
+  expect(b2.config_version).toBe(a1.config_version);
+  expect(a1.config_version).not.toBe(b1.config_version);
+  expect(s.calls).toEqual(['a', 'b', 'a', 'b']);
 });
