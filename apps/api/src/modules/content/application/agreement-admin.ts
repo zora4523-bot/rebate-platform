@@ -177,7 +177,12 @@ export function legalKeysOf(
       { key: 'legal.privacy.min_version', field: 'min_version' },
     ];
   }
-  if (type === 'agreement') return [{ key: 'legal.agreement.version', field: 'version' }];
+  if (type === 'agreement') {
+    return [
+      { key: 'legal.agreement.version', field: 'version' },
+      { key: 'legal.agreement.min_version', field: 'min_version' },
+    ];
+  }
   return [];
 }
 

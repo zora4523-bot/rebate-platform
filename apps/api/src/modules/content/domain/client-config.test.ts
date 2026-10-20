@@ -200,6 +200,29 @@ it('[AC-F1-02h] the namespaced keys are read; same-named keys are ignored', () =
   expect(config!.bridge_disabled_methods).toEqual(['ext.openApp', 'clipboard.read']);
 });
 
+it('[AC-F1-02zr] legal.agreement.min_version is delivered only when present and int32 >= 1', () => {
+  expect(CLIENT_CONFIG_KEYS).toContain('legal.agreement.min_version');
+  const absent = build();
+  expect(absent.config!.legal.agreement).toEqual({ version: 5 });
+  expect(absent.invalid).toEqual([]);
+  // Not compared with version: a min_version above version is still delivered.
+  for (const value of [1, 9, 2_147_483_647]) {
+    const { config, invalid, missing } = build({ 'legal.agreement.min_version': value });
+    expect(config!.legal.agreement).toEqual({ version: 5, min_version: value });
+    expect(invalid).toEqual([]);
+    expect(missing).toEqual([]);
+  }
+});
+
+it('[AC-F1-02zr] a malformed legal.agreement.min_version is left out and reported once', () => {
+  for (const value of [0, -1, 1.5, '2', null, true, 2_147_483_648, { v: 2 }, [2], Number.NaN]) {
+    const { config, invalid, missing } = build({ 'legal.agreement.min_version': value });
+    expect(config!.legal.agreement).toEqual({ version: 5 });
+    expect(invalid).toEqual(['legal.agreement.min_version']);
+    expect(missing).toEqual([]);
+  }
+});
+
 it('[AC-F1-02h] a malformed lkg_max_age_sec falls back whole and is reported', () => {
   for (const value of [0, -1, 1.5, '3600', 2_147_483_648, null]) {
     const { config, invalid } = build({ 'config.lkg_max_age_sec': value });

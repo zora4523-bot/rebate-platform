@@ -76,6 +76,8 @@ const OPTIONAL_CONFIG_KEYS = [
   // F1-02zp (BR-INV-24): invite.reward_* is derived from these, never read from same-named keys.
   'growth.invite_reward.enabled',
   'growth.invite_reward.amount_fen',
+  // F1-02zr (L24): delivered only when present and int32 >= 1; written by agreement publishing.
+  'legal.agreement.min_version',
 ] as const;
 
 /** Every config_items key GET /v1/config reads (link_patterns is not one: platform's table). */
@@ -348,6 +350,12 @@ export function buildClientConfig(input: ClientConfigInput): ClientConfig | unde
   const privacyVersion = required('legal.privacy.version', isVersion);
   const privacyMin = required('legal.privacy.min_version', isVersion);
   const agreementVersion = required('legal.agreement.version', isVersion);
+  // L24: optional, absent (or malformed, reported) means not delivered; never compared to version.
+  const agreementMin = optional<number | undefined>(
+    'legal.agreement.min_version',
+    isVersion,
+    undefined,
+  );
 
   // A null canary means "no canary" (not reported); any other wrong shape is reported.
   const canaryValue = values.get('h5_release.canary');
@@ -410,7 +418,10 @@ export function buildClientConfig(input: ClientConfigInput): ClientConfig | unde
     texts: optional('texts', dictOf(isString), {}),
     legal: {
       privacy: { version: privacyVersion ?? 1, min_version: privacyMin ?? 1 },
-      agreement: { version: agreementVersion ?? 1 },
+      agreement: {
+        version: agreementVersion ?? 1,
+        ...(agreementMin === undefined ? {} : { min_version: agreementMin }),
+      },
     },
     invite: {
       // Always false in the MVP (BR-INV-06); never read from config_items.
