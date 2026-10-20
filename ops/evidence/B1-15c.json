@@ -1,0 +1,120 @@
+{
+  "task": "B1-15c",
+  "spec_ref": "76f61aaa455a67f5b1d9212c6da710711cd255a1",
+  "spec_commit": "0308e58753792de74d07aa331a48ca78425b8586",
+  "red_tests": [
+    "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#9] register 绑定拒绝冷静期邀请人，30401 进入原频控且不写关系",
+    "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#9] backfill 绑定拒绝冷静期邀请人，30401 进入原频控且不写关系",
+    "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#10] register 同一邀请人取消冷静期后恢复绑定，阶段在 risk 之后读取",
+    "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#10] backfill 同一邀请人取消冷静期后恢复绑定，阶段在 risk 之后读取",
+    "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#11] register 省略新端口时 deleting 按 processing 拒绝，正常用户仍可绑定",
+    "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#11] backfill 省略新端口时 deleting 按 processing 拒绝，正常用户仍可绑定",
+    "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#12] landing 预检通过后同事务出现 cooling，最终绑定重新判定并拒绝",
+    "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#13] 邀请页本人 cooling 隐藏码和链接，直推仍计 cooling/deleting、不计 deleted",
+    "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#13] 邀请页本人 processing 隐藏码和链接，直推仍计 cooling/deleting、不计 deleted",
+    "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#14] 邀请页取消注销后恢复本人码；banned 拦截仍先于注销阶段查询",
+    "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#15] GET /v1/me 的 cooling 隐藏本人码，full 与 deletion_only 一致",
+    "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#15] GET /v1/me 的 processing 隐藏本人码，full 与 deletion_only 一致",
+    "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#15] GET /v1/me 的 done 隐藏本人码，full 与 deletion_only 一致",
+    "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#15] GET /v1/me 的 deleting 隐藏本人码，full 与 deletion_only 一致",
+    "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#16] GET /v1/me 从 cooling 撤回后两种会话均恢复邀请码，其余字段不变",
+    "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#17] landing 真实装配拒绝 cooling，统一文案不暴露原因；取消后照常注册绑定",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#1] users=normal 与无单及四种注销单的完整组合",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#1] users=deleting 与无单及四种注销单的完整组合",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#1] users=deleted 与无单及四种注销单的完整组合",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#1] users=synthetic_other 与无单及四种注销单的完整组合",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#2] 历史取消不遮盖新单；未结束单优先于历史 done，否则 done 不被较新的取消遮盖",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#3] 空数组零查询，重复 ID 去重，缺失及未请求用户不出现在结果中",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#4] 同一个查询 ID 换 app 不可见，批量交错读取不串用户或注销单",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#5] 事务未提交的注销申请和用户插入可见，回滚后恢复；工厂 db 不查询",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#6] 同一个读口看见事务内注销单及 users 状态更新，回滚后不缓存中间阶段",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#7] 一条只读 SQL 左连接，不加锁，不取标识或时间列，不记录日志",
+    "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#8] 冷静期已过仍读 cooling；取消后 none；资金口对 cooling 始终是 none"
+  ],
+  "risk_note": "RV2 (growth attribution: who may invite). createDeletionStageReader({ db }).read(executor, { appId, userIds }) reads open / done deletion_requests (B1-15a) and users.status in one select on the caller's executor (no locks) and takes the later stage (none < cooling < processing < done; users.status deleting → processing per BR-ID-28, deleted → done). Inviter availability (BR-INV-02: registration, backfill, landing, my invite) reads it through the single app.module wiring point growthReadPorts (InviteBinderDeps.readDeletionStage optional with a users.status fallback for the frozen kit; MyInviteDeps required); GET /v1/me reads it inside identity. Replaces the blocked-on-B1-15 TODOs; funds' createUserDeletionStatusReader (B1-02ze) unchanged. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0308e58753792de74d07aa331a48ca78425b8586",
+      "tree": "4f3f679c3cbbc08ce7151e6c3b97a19864eefda5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T15:44:25Z",
+      "finished_at": "2026-10-20T15:44:36Z",
+      "red_tests": [
+        "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#9] register 绑定拒绝冷静期邀请人，30401 进入原频控且不写关系",
+        "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#9] backfill 绑定拒绝冷静期邀请人，30401 进入原频控且不写关系",
+        "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#10] register 同一邀请人取消冷静期后恢复绑定，阶段在 risk 之后读取",
+        "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#10] backfill 同一邀请人取消冷静期后恢复绑定，阶段在 risk 之后读取",
+        "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#11] register 省略新端口时 deleting 按 processing 拒绝，正常用户仍可绑定",
+        "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#11] backfill 省略新端口时 deleting 按 processing 拒绝，正常用户仍可绑定",
+        "test/spec/identity/deletion-stage/binding.int.test.ts > [AC-B1-15c#12] landing 预检通过后同事务出现 cooling，最终绑定重新判定并拒绝",
+        "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#13] 邀请页本人 cooling 隐藏码和链接，直推仍计 cooling/deleting、不计 deleted",
+        "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#13] 邀请页本人 processing 隐藏码和链接，直推仍计 cooling/deleting、不计 deleted",
+        "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#14] 邀请页取消注销后恢复本人码；banned 拦截仍先于注销阶段查询",
+        "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#15] GET /v1/me 的 cooling 隐藏本人码，full 与 deletion_only 一致",
+        "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#15] GET /v1/me 的 processing 隐藏本人码，full 与 deletion_only 一致",
+        "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#15] GET /v1/me 的 done 隐藏本人码，full 与 deletion_only 一致",
+        "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#15] GET /v1/me 的 deleting 隐藏本人码，full 与 deletion_only 一致",
+        "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#16] GET /v1/me 从 cooling 撤回后两种会话均恢复邀请码，其余字段不变",
+        "test/spec/identity/deletion-stage/http.int.test.ts > [AC-B1-15c#17] landing 真实装配拒绝 cooling，统一文案不暴露原因；取消后照常注册绑定",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#1] users=normal 与无单及四种注销单的完整组合",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#1] users=deleting 与无单及四种注销单的完整组合",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#1] users=deleted 与无单及四种注销单的完整组合",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#1] users=synthetic_other 与无单及四种注销单的完整组合",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#2] 历史取消不遮盖新单；未结束单优先于历史 done，否则 done 不被较新的取消遮盖",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#3] 空数组零查询，重复 ID 去重，缺失及未请求用户不出现在结果中",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#4] 同一个查询 ID 换 app 不可见，批量交错读取不串用户或注销单",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#5] 事务未提交的注销申请和用户插入可见，回滚后恢复；工厂 db 不查询",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#6] 同一个读口看见事务内注销单及 users 状态更新，回滚后不缓存中间阶段",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#7] 一条只读 SQL 左连接，不加锁，不取标识或时间列，不记录日志",
+        "test/spec/identity/deletion-stage/reader.int.test.ts > [AC-B1-15c#8] 冷静期已过仍读 cooling；取消后 none；资金口对 cooling 始终是 none"
+      ],
+      "expected": [
+        "test/spec/identity/deletion-stage/binding.int.test.ts",
+        "test/spec/identity/deletion-stage/http.int.test.ts",
+        "test/spec/identity/deletion-stage/reader.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "411818dad52b6e2f65ddd71496d96cd473f7164e4aaa6c34d1c58b72320403c0"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex in 2 rounds (27 tests, red/1; round 2 after CI on #1023: [AC-B1-15c#14] advances the injected clock 61 s after writing banned so the 60 s risk-state cache expires), reviewed by fresh Claude subagents: r1 pass with 2 S2, r2 (quick review of the one-step change) pass"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "640c315ce2a00e5c0174307acb9b807f99c437ad",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "e308f96db2c38fa575aabb2b645906c6d79ab386",
+    "test/spec": "429be8b9e4c0f20f5042d11d59dd16f1f3c7edea",
+    "specs": "b76f51e9f83a2f0b0113b7908f5003e7ce875a25"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "e308f96db2c38fa575aabb2b645906c6d79ab386"
+  }
+}
