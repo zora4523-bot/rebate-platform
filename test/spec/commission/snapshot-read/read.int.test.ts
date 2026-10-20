@@ -12,7 +12,7 @@ let db: Kysely<DB>;
 let readonlyDb: Kysely<DB>;
 
 beforeAll(async () => {
-  // globalSetup 经 TEST_PG_ADMIN_URL 建模板；此处只使用一次性测试库的业务角色。
+  // globalSetup 已建好模板库；此处只使用一次性测试库的业务角色。
   database = await createTestDatabase();
   db = createDb({ connectionString: database.urlFor('couli_app'), max: 2 });
   readonlyDb = createDb({ connectionString: database.urlFor('couli_readonly'), max: 1 });
