@@ -18,6 +18,9 @@ const { createSameDeviceAccountsCheck } = (await import(
 
 const RULE = 'SAME_DEVICE_MULTI_ACCOUNT';
 const HASH = 'a'.repeat(64);
+type RewardParty = 'inviter' | 'invitee';
+type Ref =
+  { type: 'withdrawal'; id: string } | { type: 'invite_reward'; id: string; party: RewardParty };
 let database: TestDatabase;
 let db: ReturnType<typeof createDb>;
 beforeAll(async () => {
@@ -100,9 +103,9 @@ async function fixture() {
     clock,
     logins,
     reads: () => ({ loginReads, configReads }),
-    judge(user: string, id: string, type: 'invite_reward' | 'withdrawal' = 'invite_reward') {
+    judge(user: string, ref: Ref) {
       // 仅此边界兼容先红阶段的窄类型；port.test.ts 独立核对真实公开类型，不能靠强转过关。
-      const input = { app_id: appId, user_id: user, ref: { type, id } };
+      const input = { app_id: appId, user_id: user, ref };
       return service.judge(db, input as SameDeviceAccountsInput);
     },
   };
@@ -130,7 +133,7 @@ async function seedRule(f: Fixture) {
   ).resolves.toHaveLength(1);
 }
 
-function judgement(f: Fixture, refType: string, refId = randomUUID()) {
+function judgement(f: Fixture, refType: string, refId: string = randomUUID()) {
   return {
     app_id: f.appId,
     user_id: f.users[2]!,
@@ -143,7 +146,7 @@ function judgement(f: Fixture, refType: string, refId = randomUUID()) {
   };
 }
 
-function hit(f: Fixture, refType: string, refId = randomUUID()) {
+function hit(f: Fixture, refType: string, refId: string = randomUUID()) {
   return {
     app_id: f.appId,
     user_id: f.users[2]!,
@@ -241,14 +244,16 @@ it('[AC-B1-35b#3] risk_hits 接受邀请奖励及原四值，拒绝未知值且�
 });
 
 it.each([1, 2, 3])(
-  '[AC-B1-35b#4] 邀请奖励判定第 %i 位账号，只标记第三位并按原 ref 记录',
+  '[AC-B1-35b#4] 邀请奖励判定第 %i 位账号，只标记第三位并按奖励及一方记录',
   async (rank) => {
     await expectInviteRewardRefConstraints();
     const f = await fixture();
     const user = f.users[rank - 1]!;
     const ref = randomUUID(); // invite_rewards.id 的文本；端口不负责创建或发放奖励。
+    const inputRef = { type: 'invite_reward', id: ref, party: 'invitee' } as const;
+    const storedRef = `${ref}:invitee`;
     const result = { marked: rank >= 3, devices: [{ device_hash: HASH, rank }] };
-    await expect(f.judge(user, ref)).resolves.toEqual(result);
+    await expect(f.judge(user, inputRef)).resolves.toEqual(result);
     const stored = await records(f);
     expect(stored.judgements).toEqual([
       expect.objectContaining({
@@ -256,7 +261,7 @@ it.each([1, 2, 3])(
         user_id: user,
         rule_id: RULE,
         ref_type: 'invite_reward',
-        ref_id: ref,
+        ref_id: storedRef,
         result,
         marked: result.marked,
         judged_at: f.clock.now(),
@@ -264,13 +269,13 @@ it.each([1, 2, 3])(
     ]);
     expect(stored.hits).toEqual(
       rank >= 3
-        ? [expect.objectContaining({ ...hit(f, 'invite_reward', ref), user_id: user })]
+        ? [expect.objectContaining({ ...hit(f, 'invite_reward', storedRef), user_id: user })]
         : [],
     );
     const reads = f.reads();
     f.logins.length = 0;
     f.clock.set('2026-11-25T00:00:00Z');
-    await expect(f.judge(user, ref)).resolves.toEqual(result);
+    await expect(f.judge(user, inputRef)).resolves.toEqual(result);
     expect(f.reads()).toEqual(reads);
     expect(await records(f)).toEqual(stored);
   },
@@ -280,54 +285,73 @@ it('[AC-B1-35b#5] 邀请奖励并发与重试只判定一次，数据库唯一�
   await expectInviteRewardRefConstraints();
   const f = await fixture();
   const ref = randomUUID();
+  const inputRef = { type: 'invite_reward', id: ref, party: 'invitee' } as const;
+  const storedRef = `${ref}:invitee`;
   const result = { marked: true, devices: [{ device_hash: HASH, rank: 3 }] };
   await expect(
-    Promise.all([f.judge(f.users[2]!, ref), f.judge(f.users[2]!, ref)]),
+    Promise.all([f.judge(f.users[2]!, inputRef), f.judge(f.users[2]!, inputRef)]),
   ).resolves.toEqual([result, result]);
   const before = await records(f);
   expect(before.judgements).toHaveLength(1);
   expect(before.hits).toHaveLength(1);
+  expect(before.judgements[0]).toMatchObject({ ref_type: 'invite_reward', ref_id: storedRef });
+  expect(before.hits[0]).toMatchObject({ ref_type: 'invite_reward', ref_id: storedRef });
   expect(f.reads().loginReads).toBe(1);
   const reads = f.reads();
   f.logins.length = 0;
   f.clock.set('2026-11-25T00:00:00Z');
-  await expect(f.judge(f.users[2]!, ref)).resolves.toEqual(result);
+  await expect(f.judge(f.users[2]!, inputRef)).resolves.toEqual(result);
   expect(f.reads()).toEqual(reads);
   expect(await records(f)).toEqual(before);
   // 绕开应用锁，证明幂等最终由 PG 约束保障。
   await expect(
     db
       .insertInto('risk_judgements')
-      .values(judgement(f, 'invite_reward', ref))
+      .values(judgement(f, 'invite_reward', storedRef))
       .execute(),
   ).rejects.toMatchObject({ code: '23505', constraint: 'risk_judgements_ref_key' });
   await expect(
     db
       .insertInto('risk_hits')
-      .values(hit(f, 'invite_reward', ref))
+      .values(hit(f, 'invite_reward', storedRef))
       .execute(),
   ).rejects.toMatchObject({ code: '23505', constraint: 'risk_hits_same_device_once_key' });
   // 不同奖励对象必须独立判定，不能按 user_id 把奖励合并。
-  await expect(f.judge(f.users[2]!, randomUUID())).resolves.toEqual({
+  await expect(
+    f.judge(f.users[2]!, { type: 'invite_reward', id: randomUUID(), party: 'invitee' }),
+  ).resolves.toEqual({
     marked: false,
     devices: [],
   });
   expect((await records(f)).judgements).toHaveLength(2);
 });
 
-it('[AC-B1-35b#6] 相同 ref_id 的奖励与提现独立，提现命中及未命中行为保持不变', async () => {
+it('[AC-B1-35b#6] 相同对象 id 的奖励与提现独立，提现命中及未命中行为保持不变', async () => {
   await expectInviteRewardRefConstraints();
   const f = await fixture();
   const ref = randomUUID();
+  const inputRef = { type: 'invite_reward', id: ref, party: 'inviter' } as const;
   const marked = { marked: true, devices: [{ device_hash: HASH, rank: 3 }] };
   const clear = { marked: false, devices: [{ device_hash: HASH, rank: 1 }] };
-  await expect(f.judge(f.users[2]!, ref)).resolves.toEqual(marked);
+  await expect(f.judge(f.users[2]!, inputRef)).resolves.toEqual(marked);
   const reward = await records(f);
-  await expect(f.judge(f.users[0]!, ref, 'withdrawal')).resolves.toEqual(clear);
+  expect(reward.judgements).toEqual([
+    expect.objectContaining({
+      ref_type: 'invite_reward',
+      ref_id: `${ref}:inviter`,
+      result: marked,
+    }),
+  ]);
+  expect(reward.hits).toEqual([expect.objectContaining(hit(f, 'invite_reward', `${ref}:inviter`))]);
+  await expect(f.judge(f.users[0]!, { type: 'withdrawal', id: ref })).resolves.toEqual(clear);
   const withdrawal = randomUUID();
-  await expect(f.judge(f.users[2]!, withdrawal, 'withdrawal')).resolves.toEqual(marked);
-  await expect(f.judge(f.users[2]!, withdrawal, 'withdrawal')).resolves.toEqual(marked);
-  await expect(f.judge(f.users[2]!, ref)).resolves.toEqual(marked);
+  await expect(f.judge(f.users[2]!, { type: 'withdrawal', id: withdrawal })).resolves.toEqual(
+    marked,
+  );
+  await expect(f.judge(f.users[2]!, { type: 'withdrawal', id: withdrawal })).resolves.toEqual(
+    marked,
+  );
+  await expect(f.judge(f.users[2]!, inputRef)).resolves.toEqual(marked);
   const stored = await records(f);
   expect(stored.judgements).toEqual([
     ...reward.judgements,
@@ -357,17 +381,75 @@ it('[AC-B1-35b#7] 相同奖励 ref 在不同 app_id 分别持久化判定与命�
   const ref = randomUUID();
   const result = { marked: true, devices: [{ device_hash: HASH, rank: 3 }] };
   for (const f of [first, second]) {
-    await expect(f.judge(f.users[2]!, ref)).resolves.toEqual(result);
+    await expect(
+      f.judge(f.users[2]!, { type: 'invite_reward', id: ref, party: 'invitee' }),
+    ).resolves.toEqual(result);
     const stored = await records(f);
     expect(stored.judgements).toEqual([
       expect.objectContaining({
         app_id: f.appId,
         user_id: f.users[2],
         ref_type: 'invite_reward',
-        ref_id: ref,
+        ref_id: `${ref}:invitee`,
         result,
       }),
     ]);
-    expect(stored.hits).toEqual([expect.objectContaining(hit(f, 'invite_reward', ref))]);
+    expect(stored.hits).toEqual([
+      expect.objectContaining(hit(f, 'invite_reward', `${ref}:invitee`)),
+    ]);
   }
 });
+
+it.each([
+  { firstParty: 'inviter', secondParty: 'invitee' },
+  { firstParty: 'invitee', secondParty: 'inviter' },
+] as const)(
+  '[AC-B1-35b#8] 同一奖励先判 $firstParty 排名一，再判 $secondParty 排名三，双方分别记录和回放',
+  async ({ firstParty, secondParty }) => {
+    await expectInviteRewardRefConstraints();
+    const f = await fixture();
+    const rewardId = randomUUID();
+    const firstRef = { type: 'invite_reward', id: rewardId, party: firstParty } as const;
+    const secondRef = { type: 'invite_reward', id: rewardId, party: secondParty } as const;
+    const clear = { marked: false, devices: [{ device_hash: HASH, rank: 1 }] };
+    const marked = { marked: true, devices: [{ device_hash: HASH, rank: 3 }] };
+
+    await expect(f.judge(f.users[0]!, firstRef)).resolves.toEqual(clear);
+    await expect(f.judge(f.users[2]!, secondRef)).resolves.toEqual(marked);
+    const stored = await records(f);
+    expect(stored.judgements).toEqual([
+      expect.objectContaining({
+        app_id: f.appId,
+        rule_id: RULE,
+        user_id: f.users[0],
+        ref_type: 'invite_reward',
+        ref_id: `${rewardId}:${firstParty}`,
+        marked: false,
+        result: clear,
+        judged_at: f.clock.now(),
+      }),
+      expect.objectContaining({
+        app_id: f.appId,
+        rule_id: RULE,
+        user_id: f.users[2],
+        ref_type: 'invite_reward',
+        ref_id: `${rewardId}:${secondParty}`,
+        marked: true,
+        result: marked,
+        judged_at: f.clock.now(),
+      }),
+    ]);
+    // 精确一条命中：排名一的一方没有命中，排名三的一方持有自己的命中。
+    expect(stored.hits).toEqual([
+      expect.objectContaining(hit(f, 'invite_reward', `${rewardId}:${secondParty}`)),
+    ]);
+    expect(f.reads().loginReads).toBe(2);
+    const reads = f.reads();
+    f.logins.length = 0;
+    f.clock.set('2026-11-25T00:00:00Z');
+    await expect(f.judge(f.users[0]!, firstRef)).resolves.toEqual(clear);
+    await expect(f.judge(f.users[2]!, secondRef)).resolves.toEqual(marked);
+    expect(f.reads()).toEqual(reads);
+    expect(await records(f)).toEqual(stored);
+  },
+);
