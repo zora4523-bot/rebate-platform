@@ -1,0 +1,108 @@
+{
+  "task": "B1-15a",
+  "spec_ref": "ac4d993eb6cf844c5ef4268bbaaba471af19785e",
+  "spec_commit": "46cdd4a893219ab654e28367ce134d36b38be43b",
+  "red_tests": [
+    "test/spec/db/deletion-requests/access.int.test.ts > [AC-B1-15a#17] app can insert, read, and update exactly the lifecycle fields",
+    "test/spec/db/deletion-requests/access.int.test.ts > [AC-B1-15a#18] app cannot update immutable columns or delete a request",
+    "test/spec/db/deletion-requests/access.int.test.ts > [AC-B1-15a#19] readonly can read all columns but cannot insert, update, or delete",
+    "test/spec/db/deletion-requests/access.int.test.ts > [AC-B1-15a#20] grants do not leak table-wide update or privileges to other runtime roles",
+    "test/spec/db/deletion-requests/access.int.test.ts > [AC-B1-15a#21] permitted updates still enforce enums, field pairing and time boundaries",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#4] accepts exactly the four contract statuses with legal companion fields",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#5] cancellation reasons accept contract values and reject aliases or casing changes",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#6] cancellation status requires both reason and timestamp, and other statuses forbid either",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#7] processed_at denotes done, never entry into processing or cancellation",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#8] cooling deadline must follow application time without hard-coding seven days",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#9] user cancellation is strictly before deadline; negative-balance cancellation starts at deadline",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#10] initial balance is nonnegative bigint fen and survives without precision loss",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#11] required columns reject null and application-supplied values have no fallback",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#12] one open request per app/user applies to both cooling and processing",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#13] terminal history is repeatable and closing an open request releases its unique slot",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#14] updating historical rows cannot create a second open request",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#15] concurrent applications yield one committed row and one unique violation",
+    "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#16] user FK rejects absent users and wrong apps; request IDs are globally unique",
+    "test/spec/db/deletion-requests/schema.int.test.ts > [AC-B1-15a#1] columns have the specified types, nullability and defaults",
+    "test/spec/db/deletion-requests/schema.int.test.ts > [AC-B1-15a#2] named primary key and tenant-qualified user foreign key are validated and cannot cascade",
+    "test/spec/db/deletion-requests/schema.int.test.ts > [AC-B1-15a#3] open-user, cross-app scheduler and latest-request indexes have the required keys"
+  ],
+  "risk_note": "RV2 (db). Migration 0059 creates app.deletion_requests (BR-ID-27 / BR-ID-28, 04 §3.2): status / cancel_reason from the contract enums, balance_snapshot_fen bigint ≥ 0 (renamed per the 04 _fen rule), named pairing CHECKs (cancel_reason / cancelled_at only and both when cancelled; processed_at only and always when done) and time-window CHECKs (cooling_until > apply_at; user cancel before cooling_until; negative-balance cancel not before it; processed not before it), at most one open request per user (partial unique on cooling / processing), indexes for the cooling-until job and the latest request, FK to users(app_id, id), column-level UPDATE grant for couli_app, readonly SELECT. No writer code yet (B1-15c / B1-15d). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "46cdd4a893219ab654e28367ce134d36b38be43b",
+      "tree": "bd5900f47d668a7561cc0384c83f3a4911f4f640",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T10:23:36Z",
+      "finished_at": "2026-10-20T10:23:42Z",
+      "red_tests": [
+        "test/spec/db/deletion-requests/access.int.test.ts > [AC-B1-15a#17] app can insert, read, and update exactly the lifecycle fields",
+        "test/spec/db/deletion-requests/access.int.test.ts > [AC-B1-15a#18] app cannot update immutable columns or delete a request",
+        "test/spec/db/deletion-requests/access.int.test.ts > [AC-B1-15a#19] readonly can read all columns but cannot insert, update, or delete",
+        "test/spec/db/deletion-requests/access.int.test.ts > [AC-B1-15a#20] grants do not leak table-wide update or privileges to other runtime roles",
+        "test/spec/db/deletion-requests/access.int.test.ts > [AC-B1-15a#21] permitted updates still enforce enums, field pairing and time boundaries",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#4] accepts exactly the four contract statuses with legal companion fields",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#5] cancellation reasons accept contract values and reject aliases or casing changes",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#6] cancellation status requires both reason and timestamp, and other statuses forbid either",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#7] processed_at denotes done, never entry into processing or cancellation",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#8] cooling deadline must follow application time without hard-coding seven days",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#9] user cancellation is strictly before deadline; negative-balance cancellation starts at deadline",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#10] initial balance is nonnegative bigint fen and survives without precision loss",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#11] required columns reject null and application-supplied values have no fallback",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#12] one open request per app/user applies to both cooling and processing",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#13] terminal history is repeatable and closing an open request releases its unique slot",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#14] updating historical rows cannot create a second open request",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#15] concurrent applications yield one committed row and one unique violation",
+        "test/spec/db/deletion-requests/constraints.int.test.ts > [AC-B1-15a#16] user FK rejects absent users and wrong apps; request IDs are globally unique",
+        "test/spec/db/deletion-requests/schema.int.test.ts > [AC-B1-15a#1] columns have the specified types, nullability and defaults",
+        "test/spec/db/deletion-requests/schema.int.test.ts > [AC-B1-15a#2] named primary key and tenant-qualified user foreign key are validated and cannot cascade",
+        "test/spec/db/deletion-requests/schema.int.test.ts > [AC-B1-15a#3] open-user, cross-app scheduler and latest-request indexes have the required keys"
+      ],
+      "expected": [
+        "test/spec/db/deletion-requests/access.int.test.ts",
+        "test/spec/db/deletion-requests/constraints.int.test.ts",
+        "test/spec/db/deletion-requests/schema.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "c3675ecbcf80f4cc309a6787f325750e0313a2b9bf71fc59b7ad7fc847cf22b4"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass (migration renumbered 0057 → 0059 after CT-25d took 0057 / 0058, content unchanged)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (21 tests in 3 files, red/1) reviewed by a fresh Claude subagent: r1 pass with 1 S2"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "047f9709a1e1dd8e711bbac2e5dba327392e9f19",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "e308f96db2c38fa575aabb2b645906c6d79ab386",
+    "test/spec": "190f5bef157960db8b28d483989c3bcd8a77f18c",
+    "specs": "b80f759906adb5320a33adb9ff0a59fcb0fb9a3a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "e308f96db2c38fa575aabb2b645906c6d79ab386"
+  }
+}
