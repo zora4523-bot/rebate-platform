@@ -5,7 +5,7 @@ import {
   configValueFits,
   type ConfigItemSpec,
 } from '../../../../apps/api/src/modules/content/domain/config-registry.ts';
-import { EXPECTED } from '../config-items/kit.ts';
+import { EXPECTED, INVITE_CFG, presentOf } from '../config-items/kit.ts';
 import { SETTLE } from './oracle.ts';
 
 function registered(key: string): ConfigItemSpec {
@@ -23,9 +23,13 @@ it.each(SETTLE)('[AC-F1-02zj#1] BR-FUND-04：$key 的类型、选项、权限及
 
 it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行为保持不变', () => {
   const registry = configRegistry();
+  // F1-02zv (test-change, transitional; F1-02zt tightens): the CT-25 invite reward group
+  // (F1-02zn) may follow SETTLE, whole or not at all; nothing else may follow.
+  const invite = presentOf(INVITE_CFG, 'growth.invite_reward.*') === 0 ? [] : INVITE_CFG;
   expect(registry.map((entry) => entry.key)).toStrictEqual([
     ...EXPECTED.map((entry) => entry.key),
     ...SETTLE.map((entry) => entry.key),
+    ...invite.map((entry) => entry.key),
   ]);
   expect(registry.slice(0, 29)).toStrictEqual(
     EXPECTED.map((entry) => ({ ...entry, options: null })),
