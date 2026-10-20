@@ -7,9 +7,11 @@ import { contractRouteSchema, type ContractOperationId } from '../index.ts';
 import { routeSchemaOf, type ContractOperation, type ContractParameter } from './index.ts';
 import { routeSchemasFile, routeSchemasSource } from './scripts/generate-route-schemas.ts';
 
+// B1-02zg: reading the file and regenerating the schemas from the contract took 6.2 s on CI (#962),
+// over the 5 s default; only the time limit is raised, the assertion is unchanged.
 it('[AC-B1-02c#1] the generated route schemas match the current contract', async () => {
   expect(await readFile(routeSchemasFile, 'utf8')).toBe(await routeSchemasSource());
-});
+}, 30_000);
 
 it('[AC-B1-02c#1] exports routeSchemaOf of every implemented operation and refuses planned or unknown ones', async () => {
   const document = await dereference<OpenAPIV3_1.Document>(
