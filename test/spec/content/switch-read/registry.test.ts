@@ -1,4 +1,7 @@
 // F1-10b: the emergency switch registry of 规划/04 §10.2 and its lookup. Readings in ./kit.ts.
+// F1-02zm (test-change, transitional; F1-02zt tightens): #1 and #6 compare with expectedNow()
+// (EXPECTED, or EXPECTED + the whole growth.invite_reward.* pair of F1-02zn), #7 looks rows up
+// there too, and #15 pins that pair whole or absent.
 import { expect, it } from 'vitest';
 import {
   switchRegistry,
@@ -6,7 +9,7 @@ import {
   type SwitchPermission,
   type SwitchSpec,
 } from '../../../../apps/api/src/modules/content/domain/switch-registry.ts';
-import { EXPECTED, NOT_SWITCHES, expectedOf } from './kit.ts';
+import { EXPECTED, INVITE_SW, NOT_SWITCHES, expectedNow, expectedOf } from './kit.ts';
 
 function sorted<T>(items: readonly T[]): T[] {
   return [...items].sort();
@@ -23,7 +26,7 @@ function registered(pattern: string): SwitchSpec {
 it('[AC-F1-10b#1] 04 §10.2、§9.2 (1)：注册表恰好收全 04 §10.2 每个键或键模式，不多不少不重复', () => {
   const patterns = switchRegistry().map((spec) => spec.pattern);
   expect(new Set(patterns).size).toBe(patterns.length);
-  expect(sorted(patterns)).toStrictEqual(sorted(EXPECTED.map((row) => row.pattern)));
+  expect(sorted(patterns)).toStrictEqual(sorted(expectedNow().map((row) => row.pattern)));
 });
 
 it.each(EXPECTED.map((row) => [row.pattern, row] as const))(
@@ -101,7 +104,7 @@ it('[AC-F1-10b#6] 04 §11.2：switch.payout 只覆盖五个打款类键、switch
   expect(holders('switch.pay')).toStrictEqual(
     sorted(['pay.enabled', 'pay.channel_enabled.<pay_channel>']),
   );
-  expect(holders('switch.all')).toStrictEqual(sorted(EXPECTED.map((row) => row.pattern)));
+  expect(holders('switch.all')).toStrictEqual(sorted(expectedNow().map((row) => row.pattern)));
   for (const spec of switchRegistry()) {
     expect(
       spec.permissions.includes('switch.payout') && spec.permissions.includes('switch.pay'),
@@ -217,4 +220,34 @@ it('[AC-F1-10b#14] §9.2 (1) 纯数据：改动查询结果不影响之后的注
     'switch.payout',
   ]);
   expect(switchSpecOf('withdraw.enabled')?.defaultValue).toBe(true);
+});
+
+// F1-02zm (test-change, transitional; F1-02zt tightens to "always present"): the BR-INV-24 pair
+// of F1-02zn is registered whole as the last two entries, after watch.enabled.<platform>, or not
+// at all; both branches assert.
+it('[AC-F1-10b#15] BR-INV-24 ①④、04 §10.2、§11.2：growth.invite_reward.enabled 与 payout_paused 两个开关整组登记（注册表最后两项，布尔、默认 off、只认 switch.all、可改、非系统写）或整组没有', () => {
+  expect(INVITE_SW).toHaveLength(2);
+  const patterns = switchRegistry().map((spec) => spec.pattern);
+  const present = INVITE_SW.filter((row) => switchSpecOf(row.sample) !== null);
+  expect([0, INVITE_SW.length]).toContain(present.length);
+  if (present.length === 0) {
+    for (const row of INVITE_SW) {
+      expect(switchSpecOf(row.sample), row.sample).toBeNull();
+      expect(patterns).not.toContain(row.pattern);
+    }
+    return;
+  }
+  const head = patterns.length - INVITE_SW.length;
+  expect(patterns.slice(head)).toStrictEqual(INVITE_SW.map((row) => row.pattern));
+  expect(patterns[head - 1]).toBe(EXPECTED.at(-1)!.pattern);
+  for (const row of INVITE_SW) {
+    const spec = registered(row.pattern);
+    expect(switchSpecOf(row.sample)).toStrictEqual(spec);
+    expect(spec.valueType).toStrictEqual({ kind: 'boolean' });
+    expect(spec.defaultValue).toBe(false);
+    expect({ ...spec.defaultOverrides }).toStrictEqual({});
+    expect([...spec.permissions]).toStrictEqual(['switch.all']);
+    expect(spec.adminEditable).toBe(true);
+    expect(spec.systemWritten).toBe(false);
+  }
 });

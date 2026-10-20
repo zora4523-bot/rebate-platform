@@ -1,10 +1,19 @@
 // F1-10d registry oracle without any database or HTTP import, shared by the unit rule tests
 // (rules.test.ts) and the integration kit (kit.ts). Built on the frozen F1-10b kit
 // (test/spec/content/switch-read/kit.ts), never on the implementation's registry.
+// F1-02zm (test-change, transitional; F1-02zt tightens): the registry rows below come from that
+// kit's expectedNow() (EXPECTED, or EXPECTED + the whole BR-INV-24 growth.invite_reward.* pair of
+// F1-02zn); EXPECTED itself is still re-exported unchanged.
 import type { DB } from '@couli/db';
-import { EXPECTED, type ExpectedSwitch } from '../switch-read/kit.ts';
+import { expectedNow, type ExpectedSwitch } from '../switch-read/kit.ts';
 
-export { EXPECTED, NOT_SWITCHES, SWITCH_EFFECTIVE_MS } from '../switch-read/kit.ts';
+export {
+  EXPECTED,
+  INVITE_SW,
+  NOT_SWITCHES,
+  SWITCH_EFFECTIVE_MS,
+  expectedNow,
+} from '../switch-read/kit.ts';
 export type { ExpectedSwitch } from '../switch-read/kit.ts';
 
 type Json = DB['config_items']['value'];
@@ -14,7 +23,7 @@ const PLACEHOLDER = /^<(platform|channel|pay_channel|name)>$/;
 /** The expected registry row whose pattern `key` matches, or undefined for a non-switch key. */
 export function expectedFor(key: string): { row: ExpectedSwitch; index: number } | undefined {
   const parts = key.split('.');
-  for (const [index, row] of EXPECTED.entries()) {
+  for (const [index, row] of expectedNow().entries()) {
     const segments = row.pattern.split('.');
     if (
       segments.length === parts.length &&
@@ -57,14 +66,14 @@ export function staticFields(key: string) {
 }
 
 /** Literal keys (no placeholder) of the registry, in registry order. */
-export const LITERAL_KEYS = EXPECTED.filter((row) => !row.pattern.includes('<')).map(
-  (row) => row.pattern,
-);
+export const LITERAL_KEYS = expectedNow()
+  .filter((row) => !row.pattern.includes('<'))
+  .map((row) => row.pattern);
 
 /** Sample keys the console may change, one per registry row. */
-export const EDITABLE_SAMPLES = EXPECTED.filter((row) => row.adminEditable).map(
-  (row) => row.sample,
-);
+export const EDITABLE_SAMPLES = expectedNow()
+  .filter((row) => row.adminEditable)
+  .map((row) => row.sample);
 
 /** A value of the key's type, different from `current`, that the console may write. */
 export function changedValue(key: string, current: Json | null): Json {
