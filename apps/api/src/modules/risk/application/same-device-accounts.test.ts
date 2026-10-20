@@ -25,6 +25,7 @@ import {
   sameDeviceAccountsCheckToken,
   sameDeviceLoginReaderToken,
   type SameDeviceFirstLogin,
+  type SameDeviceRefType,
 } from './same-device-accounts.ts';
 
 const H = 'a'.repeat(64);
@@ -105,6 +106,8 @@ interface SetupOptions {
   readonly failure?: () => unknown;
   readonly respond?: Respond;
   readonly clock?: Clock;
+  /** The judged ref's type (default withdrawal). */
+  readonly refType?: SameDeviceRefType;
 }
 
 function setup(values: Record<string, unknown>, opts: SetupOptions = {}) {
@@ -142,8 +145,9 @@ function setup(values: Record<string, unknown>, opts: SetupOptions = {}) {
       };
     },
   });
+  const refType = opts.refType ?? 'withdrawal';
   const input = (user: string) =>
-    ({ app_id: 'couli', user_id: user, ref: { type: 'withdrawal', id: 'w1' } }) as const;
+    ({ app_id: 'couli', user_id: user, ref: { type: refType, id: 'w1' } }) as const;
   const judge = (user: string) => service.judge(db, input(user));
   /** Judges inside a Kysely transaction (handle.isTransaction is true). */
   const judgeInTransaction = (user: string) =>
@@ -464,4 +468,26 @@ it('[AC-B1-03k#10][AC-B1-03n#8] 锁键按 app_id、ref_type、ref_id 区分', as
     'risk.same_device:couli:withdrawal:w1',
     'risk.same_device:couli:withdrawal:w2',
   ]);
+});
+
+it('[AC-B1-35b#1] 邀请奖励 ref：锁键、判定查询、判定行与命中行都按 invite_reward 写，逻辑同提现', async () => {
+  const { statements, recorder, writes, judge } = setup({}, { refType: 'invite_reward' });
+  expect(await judge('c')).toEqual({ marked: true, devices: [{ device_hash: H, rank: 3 }] });
+  expect(writes()).toHaveLength(3);
+  const lock = statements.indexOf('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))');
+  expect(recorder.parameters[lock]).toEqual(['risk.same_device:couli:invite_reward:w1']);
+  const lookup = statements.findIndex((sql) => sql.startsWith(LOOKUP));
+  expect(recorder.parameters[lookup]).toEqual([
+    'couli',
+    'SAME_DEVICE_MULTI_ACCOUNT',
+    'invite_reward',
+    'w1',
+  ]);
+  const judgement = statements.findIndex((sql) => sql.startsWith(JUDGEMENT_INSERT));
+  expect(recorder.parameters[judgement]).toContain('invite_reward');
+  expect(recorder.parameters[judgement]).not.toContain('withdrawal');
+  const hits = statements.findIndex((sql) => sql.startsWith('insert into "app"."risk_hits"'));
+  expect(recorder.parameters[hits]).toContain('invite_reward');
+  expect(recorder.parameters[hits]).toContain('manual_review');
+  expect(recorder.parameters[hits]).not.toContain('withdrawal');
 });

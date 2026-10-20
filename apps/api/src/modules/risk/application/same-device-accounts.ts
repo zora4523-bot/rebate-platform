@@ -1,13 +1,16 @@
-// BR-ID-37 同设备多账号 (tasks B1-03k, B1-03n): judged when a withdrawal is accepted (and, later,
-// when a reward is granted), once per judged object. Identity implements SameDeviceLoginReader
-// (login_logs, users, user_oauth are its tables); the ranking, the merge tombstone dedupe, the
-// threshold and the configuration fallbacks are risk's (../domain/same-device-ranking.ts).
+// BR-ID-37 同设备多账号 (tasks B1-03k, B1-03n, B1-35b): judged when a withdrawal is accepted and
+// when a reward is granted (ref invite_reward, B1-35b), once per judged object. Identity implements
+// SameDeviceLoginReader (login_logs, users, user_oauth are its tables); the ranking, the merge
+// tombstone dedupe, the threshold and the configuration fallbacks are risk's
+// (../domain/same-device-ranking.ts). Whether a marked reward is withheld is the caller's call
+// (B1-35); this check only judges and records.
 //
 // judge(handle, input): the window is [at − 720 h, at], both ends closed, where `at` is the Clock's
 // now at the first judgement. A rank ≥ risk.device_login_accounts_limit (default 3) on any device
 // marks the subject; each marked device gets one risk_hits row (rule SAME_DEVICE_MULTI_ACCOUNT,
-// manual_review, dimension device, value_hmac = the device_hash, ref = the withdrawal). Nothing
-// else is written: no user state, no session, no ban (BR-ID-37: marking only).
+// manual_review, dimension device, value_hmac = the device_hash, ref_type / ref_id = the ref as
+// passed in). Nothing else is written: no user state, no session, no ban (BR-ID-37: marking only).
+// The rule row is one per app whatever the ref type (registered with scene withdrawal, as before).
 //
 // One conclusion per judged object (B1-03n): the first judgement, marked or not, inserts one
 // app.risk_judgements row keyed by (app_id, rule_id, ref_type, ref_id) (unique constraint
@@ -76,10 +79,14 @@ export interface SameDeviceLoginReader {
   ): Promise<readonly SameDeviceFirstLogin[]>;
 }
 
+/** risk_judgements / risk_hits ref_type values this check writes (CHECKs widened in B1-35b). */
+export type SameDeviceRefType = 'withdrawal' | 'invite_reward';
+
 export interface SameDeviceAccountsInput {
   readonly app_id: string;
   readonly user_id: string;
-  readonly ref: { readonly type: 'withdrawal'; readonly id: string };
+  /** The judged object: a withdrawal, or an invite_rewards row (B1-35b; id = its id as text). */
+  readonly ref: { readonly type: SameDeviceRefType; readonly id: string };
 }
 
 export interface SameDeviceAccountsResult {

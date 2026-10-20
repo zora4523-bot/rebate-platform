@@ -56,6 +56,7 @@ export type {
   SameDeviceFirstLogin,
   SameDeviceLoginReader,
   SameDeviceAccountsInput,
+  SameDeviceRefType,
   SameDeviceAccountsResult,
   SameDeviceAccountsCheck,
   SameDeviceAccountsOptions,
