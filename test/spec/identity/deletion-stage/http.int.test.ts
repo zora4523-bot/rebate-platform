@@ -67,6 +67,8 @@ it('[AC-B1-15c#14] 邀请页取消注销后恢复本人码；banned 拦截仍先
     await cancel(f.db, rid, f.clock.now());
     success(f, await c.get(), owner.code);
     await risk(f, owner, 'banned');
+    // Direct SQL seeding does not bump the risk stamp; expire the guard's 60-second cache.
+    f.clock.advanceMs(61_000);
     const start = f.queries.length;
     riskBlocked(f, await c.get(), start);
     expect(f.queries.slice(start).join('\n')).not.toContain('deletion_requests');
