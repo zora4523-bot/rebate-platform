@@ -103,43 +103,61 @@ it('[AC-B2-04e#31] BR-FUND-04⑫ 首次暂缓义务按执行时B=720补360，沿
   expect(materialize(plan.vouchers)[0]?.uniq_key).toBe('taobao:1234567:u-self:self:CREDIT');
 });
 
+// B=960、比例5000bp，应得480；首次净额0欠480，延后差额净额400欠80。
+// 两种输入均满足⑤：720=1200-480；1120=1200-80。
+const obligationCases = [
+  { kind: 'initial', net_fen: 0n, remaining_fen: 480n, receivable_fen: 720n, revenue_fen: -480n },
+  { kind: 'deferred', net_fen: 400n, remaining_fen: 80n, receivable_fen: 1120n, revenue_fen: -80n },
+] as const;
+
 const forfeits: readonly { state: Partial<CreditBeneficiaryState>; reason: string }[] = [
   { state: { risk_state: 'banned' }, reason: 'banned' },
   { state: { deletion_status: 'processing' }, reason: 'deleted' },
   { state: { deletion_status: 'done' }, reason: 'deleted' },
 ];
-it.each(forfeits)(
-  '[AC-B2-04e#32] BR-FUND-04⑫ 延后差额$state只没收80，不没收已入账400',
-  ({ state, reason }) => {
-    const plan = planBeneficiaryCredit(supplemental({ current: { ...normal, ...state } }));
+it.each(obligationCases.flatMap((item) => forfeits.map((entry) => ({ ...item, ...entry }))))(
+  '[AC-B2-04e#32] BR-FUND-04⑫ $kind义务$state只没收剩余$remaining_fen，不动已入账净额',
+  ({ kind, net_fen, remaining_fen, receivable_fen, revenue_fen, state, reason }) => {
+    const input = supplemental();
+    const plan = planBeneficiaryCredit({
+      ...input,
+      union_receivable_net_fen: receivable_fen,
+      positions: [position({ net_fen })],
+      obligation: kind === 'initial' ? { ...input.obligation, kind } : input.obligation,
+      current: { ...normal, ...state },
+    });
     expect(plan).toMatchObject({
       action: 'forfeited',
-      remaining_fen: 80n,
+      remaining_fen,
       obligation_action: 'forfeit',
-      append_forfeited_event: false,
+      append_forfeited_event: kind === 'initial',
       forfeit_reason: reason,
       alert: false,
       skip_reason: null,
     });
     expect(plan.vouchers).toEqual([
       {
-        template_id: 'FORFEIT:DEFERRED',
+        template_id: kind === 'initial' ? 'FORFEIT' : 'FORFEIT:DEFERRED',
         params: {
           order_key: 'taobao:1234567',
           platform: 'taobao',
           uid: 'u-self',
           role: 'self',
-          beneficiary_credit_id: 'obligation-1',
-          pending_credit_fen: 80n,
+          ...(kind === 'initial'
+            ? { share_fen: 480n }
+            : { beneficiary_credit_id: 'obligation-1', pending_credit_fen: 80n }),
         },
         forfeit_reason: reason,
       },
     ]);
     expect(materialize(plan.vouchers)[0]).toMatchObject({
-      uniq_key: 'taobao:1234567:PLATFORM:FORFEIT:u-self:self:DEFERRED:obligation-1',
+      uniq_key:
+        kind === 'initial'
+          ? 'taobao:1234567:PLATFORM:FORFEIT:u-self:self'
+          : 'taobao:1234567:PLATFORM:FORFEIT:u-self:self:DEFERRED:obligation-1',
       entries: [
-        { amount_fen: 80n },
-        { account: { subject: 'COMMISSION_REVENUE' }, amount_fen: -80n },
+        { account: { subject: 'UNION_RECEIVABLE:taobao' }, amount_fen: remaining_fen },
+        { account: { subject: 'COMMISSION_REVENUE' }, amount_fen: revenue_fen },
       ],
     });
   },
@@ -179,14 +197,25 @@ it('[AC-B2-04e#33] BR-CALC-13 首次义务转没收追加事件，与R5共用FOR
   expect(materialize(plan.vouchers)[0]?.uniq_key).toBe(materialize(first.vouchers)[0]?.uniq_key);
 });
 
-it.each(['frozen', 'appealing'] as const)(
-  '[AC-B2-04e#34] BR-FUND-04⑫ 仍%s保持原义务与待补记额，不自动入账/没收',
-  (risk_state) => {
-    const plan = planBeneficiaryCredit(supplemental({ current: { ...normal, risk_state } }));
+it.each(
+  obligationCases.flatMap((item) =>
+    (['frozen', 'appealing'] as const).map((risk_state) => ({ ...item, risk_state })),
+  ),
+)(
+  '[AC-B2-04e#34] BR-FUND-04⑫ $kind义务仍$risk_state保持原义务与待补记额，不自动入账/没收',
+  ({ kind, net_fen, remaining_fen, receivable_fen, risk_state }) => {
+    const input = supplemental();
+    const plan = planBeneficiaryCredit({
+      ...input,
+      union_receivable_net_fen: receivable_fen,
+      positions: [position({ net_fen })],
+      obligation: kind === 'initial' ? { ...input.obligation, kind } : input.obligation,
+      current: { ...normal, risk_state },
+    });
     expect(plan).toEqual({
       beneficiary_credit_id: 'obligation-1',
       action: 'deferred',
-      remaining_fen: 80n,
+      remaining_fen,
       obligation_action: 'keep',
       append_forfeited_event: false,
       forfeit_reason: null,
@@ -206,41 +235,101 @@ it.each(['cooling', 'cancelled'] as const)(
   },
 );
 
-it.each(['self', 'share', 'direct', 'indirect'] as const)(
-  '[AC-B2-04e#36] BR-CALC-13 未成年人补记%s只没收推广欠额，不动既有净额',
-  (role) => {
+it.each(
+  obligationCases.flatMap((item) =>
+    (['self', 'share', 'direct', 'indirect'] as const).map((role) => ({ ...item, role })),
+  ),
+)(
+  '[AC-B2-04e#36] BR-CALC-13 未成年人$kind义务补记$role只没收推广欠额，不动既有净额',
+  ({ kind, net_fen, remaining_fen, receivable_fen, revenue_fen, role }) => {
     const input = supplemental();
     const plan = planBeneficiaryCredit({
       ...input,
-      positions: [position({ role })],
-      obligation: { ...input.obligation, role },
+      union_receivable_net_fen: receivable_fen,
+      positions: [position({ role, net_fen })],
+      obligation:
+        kind === 'initial' ? { ...input.obligation, kind, role } : { ...input.obligation, role },
       current: { ...normal, is_minor: true },
     });
     expect(plan).toMatchObject({
       action: role === 'self' ? 'credit' : 'forfeited',
-      remaining_fen: 80n,
+      remaining_fen,
       obligation_action: role === 'self' ? 'complete' : 'forfeit',
-      append_forfeited_event: false,
+      append_forfeited_event: kind === 'initial' && role !== 'self',
       forfeit_reason: role === 'self' ? null : 'minor',
+      alert: false,
+      skip_reason: null,
     });
-    expect(plan.vouchers[0]?.template_id).toBe(
-      role === 'self' ? 'ADJ:DEFERRED:SETTLE_DIFF' : 'FORFEIT:DEFERRED',
-    );
+    expect(plan.vouchers).toEqual([
+      {
+        template_id:
+          role === 'self'
+            ? kind === 'initial'
+              ? 'CREDIT:SELF'
+              : 'ADJ:DEFERRED:SETTLE_DIFF'
+            : kind === 'initial'
+              ? 'FORFEIT'
+              : 'FORFEIT:DEFERRED',
+        params: {
+          order_key: 'taobao:1234567',
+          platform: 'taobao',
+          ...(role === 'self' ? { user_id: 'u-self' } : { uid: 'u-self' }),
+          role,
+          ...(kind === 'initial'
+            ? { share_fen: 480n }
+            : { beneficiary_credit_id: 'obligation-1', pending_credit_fen: 80n }),
+        },
+        forfeit_reason: role === 'self' ? null : 'minor',
+      },
+    ]);
+    expect(materialize(plan.vouchers)[0]).toMatchObject({
+      uniq_key:
+        role === 'self'
+          ? kind === 'initial'
+            ? 'taobao:1234567:u-self:self:CREDIT'
+            : 'taobao:1234567:u-self:self:ADJ:DEFERRED:obligation-1'
+          : kind === 'initial'
+            ? `taobao:1234567:PLATFORM:FORFEIT:u-self:${role}`
+            : `taobao:1234567:PLATFORM:FORFEIT:u-self:${role}:DEFERRED:obligation-1`,
+      entries: [
+        { account: { subject: 'UNION_RECEIVABLE:taobao' }, amount_fen: remaining_fen },
+        {
+          account:
+            role === 'self'
+              ? { owner_id: 'u-self', subject: 'USER_BALANCE' }
+              : { subject: 'COMMISSION_REVENUE' },
+          amount_fen: revenue_fen,
+        },
+      ],
+    });
   },
 );
 
-it.each([480n, 500n])(
-  '[AC-B2-04e#37] BR-FUND-04⑫ 当前净额%s不少于应得，零金额不写凭证但义务完成',
-  (net_fen) => {
-    const plan = planBeneficiaryCredit(
-      supplemental({ union_receivable_net_fen: 1200n, positions: [position({ net_fen })] }),
-    );
+it.each([
+  { kind: 'initial', net_fen: 0n, booked_base_fen: 0n, booked_n_fen: 0n },
+  { kind: 'deferred', net_fen: 480n, booked_base_fen: 960n, booked_n_fen: 1200n },
+  { kind: 'deferred', net_fen: 500n, booked_base_fen: 960n, booked_n_fen: 1200n },
+] as const)(
+  '[AC-B2-04e#37] BR-FUND-04⑫ $kind义务当前净额$net_fen不少于应得，零金额不写凭证但义务完成',
+  ({ kind, net_fen, booked_base_fen, booked_n_fen }) => {
+    const input = supplemental();
+    const plan = planBeneficiaryCredit({
+      ...input,
+      booked_base_fen,
+      booked_n_fen,
+      union_receivable_net_fen: booked_n_fen,
+      positions: [position({ net_fen })],
+      obligation: kind === 'initial' ? { ...input.obligation, kind } : input.obligation,
+    });
     expect(plan).toMatchObject({
       action: 'credit',
       remaining_fen: 0n,
       obligation_action: 'complete',
+      append_forfeited_event: false,
+      forfeit_reason: null,
       vouchers: [],
       alert: false,
+      skip_reason: null,
     });
   },
 );
