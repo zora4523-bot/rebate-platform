@@ -3497,7 +3497,7 @@ CASE
     WHEN (request_type = 'withdraw'::text) THEN ((amount_fen IS NOT NULL) AND (amount_fen > 0))
     ELSE (amount_fen IS NULL)
 END),
-    CONSTRAINT risk_hits_ref_type_check CHECK ((ref_type = ANY (ARRAY['order'::text, 'withdrawal'::text, 'blocked_request'::text, 'invite_relation'::text]))),
+    CONSTRAINT risk_hits_ref_type_check CHECK ((ref_type = ANY (ARRAY['order'::text, 'withdrawal'::text, 'blocked_request'::text, 'invite_relation'::text, 'invite_reward'::text]))),
     CONSTRAINT risk_hits_related_phone_check CHECK (
 CASE
     WHEN (request_type = ANY (ARRAY['register'::text, 'phone_change'::text])) THEN ((related_phone_hmac IS NOT NULL) AND (related_phone_masked IS NOT NULL))
@@ -3545,7 +3545,7 @@ CREATE TABLE app.risk_judgements (
     result jsonb NOT NULL,
     judged_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT risk_judgements_ref_type_check CHECK ((ref_type = ANY (ARRAY['order'::text, 'withdrawal'::text, 'blocked_request'::text]))),
+    CONSTRAINT risk_judgements_ref_type_check CHECK ((ref_type = ANY (ARRAY['order'::text, 'withdrawal'::text, 'blocked_request'::text, 'invite_reward'::text]))),
     CONSTRAINT risk_judgements_result_check CHECK (((jsonb_typeof(result) = 'object'::text) AND ((result -> 'marked'::text) = to_jsonb(marked))))
 );
 
