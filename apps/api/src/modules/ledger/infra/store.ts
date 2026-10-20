@@ -82,6 +82,35 @@ export async function relockHeldBalances(
     .execute();
 }
 
+/**
+ * Transaction-local setting that carries one token per lockBalances call (B2-02n). A SET LOCAL
+ * (set_config(…, true)) made inside a savepoint is undone by ROLLBACK TO that savepoint and kept
+ * by RELEASE, exactly like the row locks the same call took, so a token still present means the
+ * locks of that call are still held by this transaction. Read without touching any row lock.
+ */
+export const LOCK_TOKENS_SETTING = 'couli.ledger_lock_tokens';
+
+/** Appends one token to this transaction's lock-token setting (at the caller's savepoint level). */
+export async function markLockToken(trx: Transaction<DB>, token: string): Promise<void> {
+  await sql`SELECT set_config(${LOCK_TOKENS_SETTING},
+    coalesce(current_setting(${LOCK_TOKENS_SETTING}, true), '') || ' ' || ${token}, true)`.execute(
+    trx,
+  );
+}
+
+/** Tokens whose lockBalances call has not been undone by a ROLLBACK TO SAVEPOINT. */
+export async function liveLockTokens(trx: Transaction<DB>): Promise<Set<string>> {
+  const result = await sql<{
+    tokens: string | null;
+  }>`SELECT current_setting(${LOCK_TOKENS_SETTING}, true) AS tokens`.execute(trx);
+  return parseLockTokens(result.rows[0]?.tokens);
+}
+
+export function parseLockTokens(value: string | null | undefined): Set<string> {
+  if (typeof value !== 'string') return new Set();
+  return new Set(value.split(' ').filter((token) => token !== ''));
+}
+
 /** Ids among accountIds that are USER_BALANCE accounts of this app. */
 export async function userAccountsOfApp(
   trx: Transaction<DB>,

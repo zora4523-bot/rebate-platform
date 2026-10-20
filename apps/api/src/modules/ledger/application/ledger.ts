@@ -21,7 +21,9 @@ import {
   insertEntries,
   insertVoucher,
   isUniqKeyViolation,
+  liveLockTokens,
   lockBalancesByUser,
+  markLockToken,
   readBalancesByUser,
   relockHeldBalances,
   updateBalance,
@@ -99,11 +101,37 @@ const INCOME_TYPES: readonly (string | null)[] = ['SERVICE_FEE', 'INCIDENTAL', n
 const REASSIGN_REV = 'REASSIGN_REV';
 
 /**
- * Balance rows each open transaction locked through lockBalances, by transaction object.
- * Module-wide (not per ledger instance): a lock belongs to the transaction, whichever ledger
- * instance took it. A different transaction object never inherits another one's locks.
+ * Balance rows each open transaction locked through lockBalances, by transaction object and then
+ * by the token of each lockBalances call. Module-wide (not per ledger instance): a lock belongs to
+ * the transaction, whichever ledger instance took it. A different transaction object never
+ * inherits another one's locks.
+ *
+ * B2-02n: an entry counts only while its token is still in the transaction-local setting
+ * (infra/store.ts LOCK_TOKENS_SETTING). A caller's ROLLBACK TO SAVEPOINT releases the row locks
+ * taken after that savepoint and, in the same way, undoes the setting written with them, so post
+ * then refuses those accounts with NOT_LOCKED instead of taking the locks again out of order.
+ * The ledger's own savepoints never write the setting, so rolling one back keeps earlier locks.
  */
-const heldLocks = new WeakMap<Transaction<DB>, Set<string>>();
+const heldLocks = new WeakMap<Transaction<DB>, Map<string, ReadonlySet<string>>>();
+
+/**
+ * Accounts whose lockBalances call is still in effect in this transaction. Reads the setting
+ * only; never locks a row. Tokens that were rolled back can never return and are dropped.
+ */
+async function heldAccounts(trx: Transaction<DB>): Promise<Set<string>> {
+  const calls = heldLocks.get(trx);
+  const held = new Set<string>();
+  if (calls === undefined || calls.size === 0) return held;
+  const live = await liveLockTokens(trx);
+  for (const [token, accounts] of calls) {
+    if (!live.has(token)) {
+      calls.delete(token);
+      continue;
+    }
+    for (const id of accounts) held.add(id);
+  }
+  return held;
+}
 
 function text(value: unknown, name: string): string {
   if (typeof value !== 'string' || value.length === 0) {
@@ -353,9 +381,11 @@ export function createPostingCore(input: { readonly clock: Clock }): PostingCore
         throw new LedgerError('UNKNOWN_ACCOUNT', `account ${id} is not a user account of the app`);
       }
     }
-    const held = heldLocks.get(trx);
+    // Before any row lock is touched: an account whose lock was rolled back is refused here and
+    // never re-locked by relockHeldBalances below (B2-02n).
+    const held = userAccountIds.length === 0 ? new Set<string>() : await heldAccounts(trx);
     for (const id of userAccountIds) {
-      if (held?.has(id) !== true) {
+      if (!held.has(id)) {
         throw new LedgerError('NOT_LOCKED', `account ${id} was not locked by this transaction`);
       }
     }
@@ -476,12 +506,17 @@ export function createPostingCore(input: { readonly clock: Clock }): PostingCore
     async lockBalances(trx, selection) {
       const appId = text(selection.appId, 'appId');
       const rows = await lockBalancesByUser(trx, appId, userIdList(selection));
-      let held = heldLocks.get(trx);
-      if (held === undefined) {
-        held = new Set();
-        heldLocks.set(trx, held);
+      if (rows.length > 0) {
+        // Same savepoint level as the row locks above: both end with a ROLLBACK TO before here.
+        const token = randomUUID();
+        await markLockToken(trx, token);
+        let calls = heldLocks.get(trx);
+        if (calls === undefined) {
+          calls = new Map();
+          heldLocks.set(trx, calls);
+        }
+        calls.set(token, new Set(rows.map((row) => row.account_id)));
       }
-      for (const row of rows) held.add(row.account_id);
       return rows.map(toBalance);
     },
 

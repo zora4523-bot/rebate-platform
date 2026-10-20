@@ -78,6 +78,12 @@ export function createDailyCheck(dependencies: DailyCheckDependencies): DailyChe
       // Load and vet the SQL first: a broken file set stops the run before anything is written.
       const files = orderInvariantFiles(await source.load());
       for (const file of files) assertSingleStatement(file);
+      // B2-02n: no invariant to run (none loaded, or all superseded) is a broken file set, never
+      // a clean result with checks=[]; refused before daily_balances is written.
+      if (files.length === 0) {
+        logger.error({ ...base, step: 'invariants', reason: 'no_invariant_files' });
+        throw new LedgerError('DAILY_CHECK_FAILED', 'no invariant files to run');
+      }
 
       try {
         await writeDailyBalances(db, { accountingDate, appId, computedAt: clock.now() });
