@@ -112,6 +112,45 @@ export function article(): Row {
   };
 }
 
+// F1-02zzc (test-change, transitional; F1-02zt tightens): articles may gain the nullable
+// help_section column (docs/changes/20261020 §1.6). Returns null while the column is absent.
+export async function helpSectionColumn(
+  db: Connection,
+): Promise<{ type: string; nullable: boolean; default: string | null } | null> {
+  const result = await sql<{
+    type: string;
+    nullable: string;
+    defaultValue: string | null;
+  }>`SELECT udt_name AS type, is_nullable AS nullable, column_default AS "defaultValue"
+    FROM information_schema.columns
+    WHERE table_schema = 'app' AND table_name = 'articles' AND column_name = 'help_section'`.execute(
+    db,
+  );
+  expect(result.rows.length, 'app.articles.help_section column count').toBeLessThanOrEqual(1);
+  const column = result.rows[0];
+  if (column === undefined) return null;
+  return { type: column.type, nullable: column.nullable === 'YES', default: column.defaultValue };
+}
+
+// F1-02zzc (test-change, transitional; F1-02zt tightens): when present, help_section must be
+// text, nullable and without default; returns whether the column exists.
+export async function helpSectionPresent(db: Connection): Promise<boolean> {
+  const column = await helpSectionColumn(db);
+  if (column === null) return false;
+  expect(column, 'app.articles.help_section shape').toEqual({
+    type: 'text',
+    nullable: true,
+    default: null,
+  });
+  return true;
+}
+
+// F1-02zzc (test-change, transitional; F1-02zt tightens): the full stored row expected for an
+// article fixture, with help_section null when the column exists.
+export function rowOf(row: Row, present: boolean): Row {
+  return present ? { ...row, help_section: null } : { ...row };
+}
+
 export async function rejects(
   run: Promise<unknown>,
   constraint: string,
