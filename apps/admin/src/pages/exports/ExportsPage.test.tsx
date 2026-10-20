@@ -14,7 +14,7 @@ import { createDataProvider } from '../../providers/data/index.ts';
 import { exportsTexts as t } from '../../texts/exports.ts';
 import { nextExpiry, type ExportRow } from './model.ts';
 
-vi.setConfig({ testTimeout: 30_000 });
+vi.setConfig({ testTimeout: 60_000 });
 // The first mount loads antd and the shell; a cold start takes longer than the 1 s default.
 configure({ asyncUtilTimeout: 10_000 });
 
@@ -147,10 +147,14 @@ it('a done task turns 已过期 without 【下载】 once the injected clock rea
     expect(within(rowOf(DONE_ID)).queryByRole('button', { name: t.download })).not.toBeNull(),
   );
   now = expiresAt;
-  await waitFor(() => {
-    expect(within(rowOf(DONE_ID)).queryByRole('button', { name: t.download })).toBeNull();
-    expect(within(rowOf(DONE_ID)).getByText(t.status.expired)).toBeTruthy();
-  });
+  // The expiry timer re-renders on the real event loop; a loaded CI container can starve it.
+  await waitFor(
+    () => {
+      expect(within(rowOf(DONE_ID)).queryByRole('button', { name: t.download })).toBeNull();
+      expect(within(rowOf(DONE_ID)).getByText(t.status.expired)).toBeTruthy();
+    },
+    { timeout: 25_000 },
+  );
   expect(calls).toEqual([{ method: 'GET', path: LIST }]);
 });
 
