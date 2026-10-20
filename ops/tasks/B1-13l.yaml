@@ -1,0 +1,26 @@
+id: B1-13l
+repo: rebate-platform
+title: 劳务协议签署 signLaborAgreement 版本不符改返回 10004（data.consent_type=labor_agreement，BR-WDR-31），契约 x-error-codes 加 10004；text_sha256 或 agreed 不符仍 20001 data.fields
+type: impl
+# 草稿 2026-10-20（身份与风控线 identity-lane）。规划回写 couli #158（编排 2026-10-20 07:0x notices：内容线默认回写里的 identity 条）：B1-13h 当时按契约与 E45 回 20001 fields=[version]，08 BR-WDR-31 写 10004；现按 BR-WDR-31 改。
+# 口径：请求 version 与当前劳务协议版本不符 → 10004，data = { consent_type: 'labor_agreement' }（与契约其他 10004 同形状），不写记录、既有记录不变；version 相符但 text_sha256 或 agreed 不符 → 20001 data.fields（照旧，不含 version）；version 与 text_sha256 同时不符 → 10004（版本先判）。契约走契约槽；B1-13h 已合并测试的口径由 test-change B1-13m 按契约状态切换（先合 B1-13m，再合本任务）。
+# 模型 Opus 5.5；Codex 写规则测试与评审。
+refs: []
+refs_hash: {}
+deps: [B1-13h, B1-13m]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/identity/labor-agreement-version/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/labor-agreement-version/**'
+status: todo

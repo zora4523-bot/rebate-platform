@@ -1,0 +1,19 @@
+id: B1-13m
+repo: rebate-platform
+title: 测试修改：B1-13h 冻结测试 test/spec/identity/labor-agreement/ 中「版本不符 → 20001 fields 含 version」的断言按契约状态切换——契约 signLaborAgreement 的 x-error-codes 含 10004 时期望 10004 data.consent_type=labor_agreement，否则照旧 20001；text_sha256 / agreed 不符仍 20001（断言不削弱）
+type: test-change
+# 草稿 2026-10-20（身份与风控线 identity-lane）。规划回写 couli #158：signLaborAgreement 版本不符按 BR-WDR-31 改 10004，实现在 B1-13l。编排写明 B1-13h 已合并测试的口径改走 test-change（非任务分支、台账同 PR、#24 标签）。按编排 2026-10-18 23:1x 先例。
+# 改前（main，契约无 10004）改后（叠 B1-13l）都要绿；不得写成「接受任一值」，按契约状态二选一。
+# 不属削弱资金测试；保护路径第一类改已有文件，走非 task/ 分支 test-change/B1-13m，Claude 只读复审「不削弱」后按 approvals #24 加标签合并。模型 Opus 5.5。
+refs: []
+refs_hash: {}
+deps: [B1-13h]
+paths:
+  - 'test/spec/identity/labor-agreement/labor-agreement.int.test.ts'
+  - 'test/spec/identity/labor-agreement/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/labor-agreement/**'
+status: todo

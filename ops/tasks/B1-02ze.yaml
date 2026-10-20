@@ -17,4 +17,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/deletion-status/**'
-status: todo
+status: done
+pr: 949
