@@ -1,5 +1,8 @@
 // F1-10e ruling 14: the configuration item registry (content/domain, pure data, disjoint from the
 // emergency switch registry). Oracle in ./kit.ts (EXPECTED) and the seed file itself.
+// F1-02zi (test-change, transitional; F1-02zt tightens): #1 compares with expectedNow() (EXPECTED,
+// or EXPECTED + the whole BR-FUND-04 settle.* group of F1-02zj), #3 reads an enum item's seed
+// as a JSON string, and #56 pins that group whole or absent.
 import { expect, it } from 'vitest';
 import {
   configItemSpecOf,
@@ -11,7 +14,15 @@ import {
   switchRegistry,
   switchSpecOf,
 } from '../../../../apps/api/src/modules/content/domain/switch-registry.ts';
-import { EXPECTED, FUND_FLAGS, UNREGISTERED, jsonTypeOf, seedRows } from './kit.ts';
+import {
+  EXPECTED,
+  FUND_FLAGS,
+  SETTLE,
+  UNREGISTERED,
+  expectedNow,
+  jsonTypeOf,
+  seedRows,
+} from './kit.ts';
 
 const sorted = <T>(items: readonly T[]): T[] => [...items].sort();
 const EXTRA = ['agent.page_guide.routes', 'external_hosts'];
@@ -29,7 +40,8 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
   expect(seeds.length).toBeGreaterThan(0);
   const fromSeeds = seeds.filter((key) => switchSpecOf(key) === null);
   expect(sorted(keys)).toStrictEqual(sorted([...new Set([...fromSeeds, ...EXTRA])]));
-  expect(sorted(keys)).toStrictEqual(sorted(EXPECTED.map((entry) => entry.key)));
+  // F1-02zi (transitional): EXPECTED, or EXPECTED + the whole settle.* group.
+  expect(sorted(keys)).toStrictEqual(sorted(expectedNow().map((entry) => entry.key)));
 });
 
 it.each(EXPECTED.map((entry) => [entry.key, entry] as const))(
@@ -52,7 +64,9 @@ it('[AC-F1-10e#3] 裁定 14：值类型取种子值的 JSON 类型（数组记 o
   let checked = 0;
   for (const spec of configRegistry()) {
     if (!seeds.has(spec.key)) continue;
-    expect(spec.valueType, spec.key).toBe(jsonTypeOf(seeds.get(spec.key)));
+    // F1-02zi (transitional): an enum item's seed is a JSON string (EXPECTED has no enum).
+    const seedType = spec.valueType === 'enum' ? 'string' : spec.valueType;
+    expect(seedType, spec.key).toBe(jsonTypeOf(seeds.get(spec.key)));
     checked += 1;
   }
   expect(checked).toBe(configRegistry().length - 1); // agent.page_guide.routes has no seed row
@@ -149,4 +163,33 @@ it('[AC-F1-10e#9] enum 型（契约 AdminConfigValueType）只接受 options 里
   expect(configValueFits(spec, 'A')).toBe(false);
   expect(configValueFits(spec, null)).toBe(false);
   expect(configValueFits(spec, ['a'])).toBe(false);
+});
+
+// F1-02zi (test-change, transitional; F1-02zt tightens to "always present"): the BR-FUND-04 细则
+// settle.* group of F1-02zj is registered whole, after the ruling 14 items and in its own order,
+// or not at all; both branches assert.
+it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加在裁定 14 之后，逐键值类型、options、权限点、可改标记）或整组没有', () => {
+  expect(SETTLE).toHaveLength(16);
+  const keys = configRegistry().map((spec) => spec.key);
+  const present = SETTLE.filter((entry) => keys.includes(entry.key));
+  expect([0, SETTLE.length]).toContain(present.length);
+  if (present.length === 0) {
+    for (const entry of SETTLE) {
+      expect(configItemSpecOf(entry.key), entry.key).toBeNull();
+    }
+    expect(keys).toHaveLength(EXPECTED.length);
+    return;
+  }
+  expect(keys.slice(EXPECTED.length)).toStrictEqual(SETTLE.map((entry) => entry.key));
+  for (const entry of SETTLE) {
+    const spec = registered(entry.key);
+    expect({
+      key: spec.key,
+      valueType: spec.valueType,
+      options: spec.options,
+      permission: spec.permission,
+      adminEditable: spec.adminEditable,
+    }).toStrictEqual({ ...entry, options: entry.options ?? null });
+    expect(configItemSpecOf(entry.key), entry.key).toBe(spec);
+  }
 });
