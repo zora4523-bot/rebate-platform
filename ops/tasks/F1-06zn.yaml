@@ -1,0 +1,17 @@
+id: F1-06zn
+repo: rebate-platform
+title: F1-06e 规则测试只拆结构（F1-06zm 补漏）——admin-shell shell.test.ts 的 [AC-F1-06e-SHELL#1] 循环展开为五条字面标题用例（原循环体逐字移入同文件辅助函数 expectSidebarSample；用例名、断言、期望值、条数、顺序不变）
+type: test-change
+# 2026-10-20 入账（前端线 f1-frontend-7；编排裁定 D10-92 B′「F1-14a 要改的其他循环 / 参数表同样处理」）。F1-06zm（#954）漏了 admin-shell/shell.test.ts 的 SHELL#1 循环：
+# F1-14a 只为超管改该用例体时，循环体一变，其余四个账号的用例被判「new or changed」（red/5 剩 4 条无法豁免）。本 test-change 照 F1-06zm 同法展开为字面标题用例。主干保持全绿。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件（approvals 第 12 条），第二家评审为本地 Codex 只读会话（编排 10-19 12:1x 裁定 B），合并需 #24 标签。
+refs: []
+refs_hash: {}
+deps: [F1-06e, F1-06zm]
+paths:
+  - 'test/spec/frontend/admin-shell/shell.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
