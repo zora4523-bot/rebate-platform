@@ -504,6 +504,8 @@ export async function getConfig(app: HttpApp, appId: string, extra: Record<strin
 
 export async function readConfig(app: HttpApp, appId: string, extra: Record<string, string> = {}) {
   const sent = await getConfig(app, appId, extra);
+  // Orchestrator mechanical fix: a 304 (empty body) must fail as an assertion, not a JSON parse error.
+  expect(sent.response.statusCode, 'config read status').toBe(200);
   const data = await success<Schema<'Config'>>(sent, 'config');
   const etag = sent.response.headers['etag'];
   expect(etag).toBe(`"${data.config_version}"`);
