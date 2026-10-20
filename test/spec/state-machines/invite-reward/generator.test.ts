@@ -6,8 +6,8 @@ import {
 import { generatedExports, readRequired } from '../order/kit.ts';
 import { GENERATED, ILLEGAL, LEGAL, SOURCE, machine, transitionOf } from './kit.ts';
 
-it('[AC-B1-35a#7] 生成器自动发现 invite-reward，无需登记', () => {
-  expect(MACHINES).toContain('invite-reward');
+it('[AC-B1-35a#7] 生成器自动发现含过期状态的 invite-reward，无需登记', () => {
+  expect(MACHINES).toContain(machine().name);
 });
 
 it('[AC-B1-35a#7] 生成物与 renderStateMachine 逐字一致，保留 YAML 全表', () => {
@@ -20,7 +20,7 @@ it('[AC-B1-35a#7] 生成物与 renderStateMachine 逐字一致，保留 YAML 全
   expect(exports['INVITE_REWARD_TRANSITIONS']).toEqual(doc.transitions);
 });
 
-it('[AC-B1-35a#7] guard 中的可执行字样只作文字，不改变全部 18 个组合的结果', () => {
+it('[AC-B1-35a#7] guard 中的可执行字样只作文字，不改变全部 24 个组合的结果', () => {
   const yaml = readRequired(SOURCE);
   const guard = 'throw new Error("guard must remain text")';
   const changed = yaml.replace(/^(\s*guard:)\s*[^\r\n]+/gm, `$1 '${guard}'`);

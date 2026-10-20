@@ -9,12 +9,12 @@ import {
   renderStateMachine,
 } from '../../../../packages/domain/scripts/state-machines.ts';
 import { readRequired, repoFile } from '../order/kit.ts';
-import { GENERATED, SOURCE } from './kit.ts';
+import { GENERATED, SOURCE, machine } from './kit.ts';
 
 async function fixture(): Promise<string> {
   // 所有缺失资产先通过断言报错，不让文件操作产生 ENOENT；只在隔离容器中运行。
-  readRequired(SOURCE);
-  expect(MACHINES).toContain('invite-reward');
+  // --verify 只比较源与生成物；还须确认夹具使用含 expired / EXPIRE 的当前规格。
+  expect(MACHINES).toContain(machine().name);
   const assets = MACHINES.flatMap((name) => [
     `specs/state-machines/${name}.yaml`,
     `packages/domain/src/state-machines/${name}.gen.ts`,

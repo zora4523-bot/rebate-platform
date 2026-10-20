@@ -11,8 +11,9 @@ it.each(LEGAL_CASES)(
   },
 );
 
-// 6 个起点（含 null）× 3 个事件，减去 6 个合法组合 = 12 个表外组合；
+// 6 个起点（含 null）× 4 个事件，减去 7 个合法组合 = 17 个表外组合；
 // null 表示不存在资格行，三个终态均不能重新触发或发放。
+// BR-INV-24「有效期」按下单时间判断，期内订单期限后入账照发；deferred 只等补发，EXPIRE 表外。
 it.each(ILLEGAL_CASES)(
   '[AC-B1-35a#5] $entry.name：$from + $event 为表外组合',
   ({ entry, from, event }) => {
