@@ -14,6 +14,17 @@ export type {
 } from './application/payout-verify-recheck.ts';
 export { IdentityWorkerModule } from './identity-worker.module.ts';
 export type { IdentityWorkerModuleOptions } from './identity-worker.module.ts';
+export {
+  PRIVACY_CONSENT_CHECKS,
+  privacyConsentRefusal,
+  createPrivacyConsentChecks,
+} from './application/privacy-consent.ts';
+export type {
+  PrivacyConsentInput,
+  PrivacyConsentConfigReader,
+  PrivacyConsentOptions,
+  PrivacyConsentChecks,
+} from './application/privacy-consent.ts';
 export { lockUsersForUpdate } from './ports/lock-users.ts';
 export type { LockUsersInput } from './ports/lock-users.ts';
 export { createRealnameStatusBatchReader } from './ports/realname-status-batch.ts';

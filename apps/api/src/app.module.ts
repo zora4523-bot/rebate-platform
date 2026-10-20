@@ -1460,6 +1460,7 @@ function sessionPushTokens(clock: Clock): SessionPushTokens {
 export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
     // One module object for both imports, so Nest builds the identity module once.
+    // TODO(规划/11 §2.3): stream 入口装 ⑦ — blocked on B3 线给 stream 装配 identity / risk 与流式路由
     const identity = options.entry === 'api' ? identityModule() : undefined;
     const contentReader = sharedContentReader();
     const risk = identity === undefined ? undefined : riskModule(identity, contentReader);
