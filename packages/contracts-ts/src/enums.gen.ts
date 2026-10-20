@@ -842,15 +842,15 @@ export const blocked_request_type = [
 export type BlockedRequestType = (typeof blocked_request_type)[number];
 
 /**
- * invite_rewards.status，邀请奖励活动资格与发放记录的状态；编码由契约线定，含义只在 BR-INV-24；不发与作废的原因只在后台可查，用户端不展示
- * Source: 规划/04 §3.2 invite_rewards；BR-INV-24 细则「资格记录与状态」 (contracts/enums/identity.yaml).
+ * invite_rewards.status，邀请奖励活动资格与发放记录的状态；编码由契约线定，含义只在 BR-INV-24；不发与作废的原因只在后台可查，用户端不展示；budget_exhausted 2026-10-20 取消（无路径，BR-INV-24 有效期）
+ * Source: 规划/04 §3.2 invite_rewards；BR-INV-24 细则「资格记录与状态」「有效期」 (contracts/enums/identity.yaml).
  */
 export const invite_reward_status = [
   "qualified", // 已取得资格（等触发）
   "deferred", // 顺延（已触发，当日预算不够或暂停发放，次日起按触发先后补发）
   "processed", // 已处理（两方各自已发或不发）
   "voided", // 作废（终态，原因见 invite_reward_void_reason）
-  "budget_exhausted", // 预算用尽（终态）
+  "expired", // 已过期（终态：有效期内没有可触发的自购子订单，到期由每日任务判定，释放总预算占用；取代 2026-10-20 前的预算用尽）
 ] as const;
 export type InviteRewardStatus = (typeof invite_reward_status)[number];
 

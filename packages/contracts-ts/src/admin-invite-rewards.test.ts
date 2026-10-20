@@ -117,8 +117,9 @@ it('[CT-25a] the five enum schemas mirror contracts/enums', () => {
     'deferred',
     'processed',
     'voided',
-    'budget_exhausted',
+    'expired',
   ]);
+  expect([...enums.invite_reward_status]).not.toContain('budget_exhausted');
   expect([...enums.invite_reward_bind_source]).not.toContain('admin');
 });
 
@@ -130,6 +131,9 @@ it('[CT-25a] a record carries no client IP, HMAC or voucher id, and amounts are 
   const amount = record.properties!['amount_fen']!;
   expect(amount.format).toBe('int64');
   expect(amount.minimum).toBe(0);
+  const days = record.properties!['eligibility_days']!;
+  expect(days.type).toBe('integer');
+  expect(days.minimum).toBe(1);
   const budget = contract.components.schemas['AdminInviteRewardBudget']!;
   expect(budget.properties!['today']!.required).toEqual(['date', 'granted_fen']);
   expect(budget.properties!['total']!.required).toEqual(['reserved_fen', 'granted_fen']);
