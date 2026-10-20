@@ -10,6 +10,9 @@
 //   settle.* group (SETTLE below, 16 literal keys) to the registry and the 0001 seed. Until it
 //   lands either the bare ruling 14 registry or ruling 14 plus the whole group is accepted,
 //   never part of the group (expectedNow); EXPECTED itself stays ruling 14 verbatim;
+// - F1-02zm (test-change, transitional; F1-02zt tightens): F1-02zn appends the BR-INV-24
+//   growth.invite_reward.* group (INVITE_CFG below, 5 literal keys) after SETTLE. Each group is
+//   judged on its own, whole or not at all; expectedNow is EXPECTED followed by the present groups;
 // - audit rows: action config_item_change / config_item_rollback, admin_id = the caller, at = the
 //   injected clock; `before.value` / `after.value` are the old and new values (an item never
 //   written may have before = null); key, from_version, to_version and reason are facts of
@@ -131,16 +134,33 @@ export const SETTLE: readonly Expected[] = [
   ...PLATFORMS.map((p) => row(`settle.period_offset_months.${p}`, 'number', 'config.business')),
   row('settle.statement.grace_days', 'number', 'config.business'),
 ];
+// F1-02zm (test-change, transitional; F1-02zt tightens to EXPECTED + SETTLE + INVITE_CFG only).
+// The BR-INV-24 细则 invite reward parameters as F1-02zn registers them (couli-runs/F1-02zn
+// excerpt 9.2-1): appended after the SETTLE group in this order, every one an editable number;
+// the four money amounts config.business (04 §10.1), the same-IP window config.risk (D-C1).
+export const INVITE_CFG: readonly Expected[] = [
+  row('growth.invite_reward.amount_fen', 'number', 'config.business'),
+  row('growth.invite_reward.daily_budget_fen', 'number', 'config.business'),
+  row('growth.invite_reward.total_budget_fen', 'number', 'config.business'),
+  row('growth.invite_reward.min_paid_fen', 'number', 'config.business'),
+  row('growth.invite_reward.ip_window_hours', 'number', 'config.risk'),
+];
+/** How many keys of `group` the registry under test holds; must be 0 or all of them. */
+export function presentOf(group: readonly Expected[], name: string): number {
+  const registered = new Set(configRegistry().map((spec) => spec.key));
+  const present = group.filter((entry) => registered.has(entry.key)).length;
+  expect([0, group.length], `${name} group registered whole or not at all`).toContain(present);
+  return present;
+}
 /**
- * F1-02zi (transitional): the registry oracle for the build under test. The SETTLE group must be
- * registered whole or not at all (a partial group fails here); with it the oracle is EXPECTED
- * followed by SETTLE, without it EXPECTED alone.
+ * F1-02zi / F1-02zm (transitional): the registry oracle for the build under test. The SETTLE
+ * group and the INVITE_CFG group must each be registered whole or not at all (a partial group
+ * fails here); the oracle is EXPECTED followed by every present group, SETTLE first.
  */
 export function expectedNow(): readonly Expected[] {
-  const registered = new Set(configRegistry().map((spec) => spec.key));
-  const present = SETTLE.filter((entry) => registered.has(entry.key)).length;
-  expect([0, SETTLE.length], 'settle.* group registered whole or not at all').toContain(present);
-  return present === 0 ? EXPECTED : [...EXPECTED, ...SETTLE];
+  const settle = presentOf(SETTLE, 'settle.*') === 0 ? [] : SETTLE;
+  const invite = presentOf(INVITE_CFG, 'growth.invite_reward.*') === 0 ? [] : INVITE_CFG;
+  return [...EXPECTED, ...settle, ...invite];
 }
 export const expectedOf = (key: string): Expected => {
   const found = expectedNow().find((entry) => entry.key === key);

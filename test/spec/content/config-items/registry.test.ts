@@ -3,6 +3,8 @@
 // F1-02zi (test-change, transitional; F1-02zt tightens): #1 compares with expectedNow() (EXPECTED,
 // or EXPECTED + the whole BR-FUND-04 settle.* group of F1-02zj), #3 reads an enum item's seed
 // as a JSON string, and #56 pins that group whole or absent.
+// F1-02zm (test-change, transitional; F1-02zt tightens): #1 and #56 also accept the whole
+// BR-INV-24 growth.invite_reward.* group of F1-02zn after SETTLE, and #57 pins it whole or absent.
 import { expect, it } from 'vitest';
 import {
   configItemSpecOf,
@@ -17,10 +19,12 @@ import {
 import {
   EXPECTED,
   FUND_FLAGS,
+  INVITE_CFG,
   SETTLE,
   UNREGISTERED,
   expectedNow,
   jsonTypeOf,
+  presentOf,
   seedRows,
 } from './kit.ts';
 
@@ -40,7 +44,8 @@ it('[AC-F1-10e#1] 裁定 14：注册表恰好是种子里全部非开关键加 a
   expect(seeds.length).toBeGreaterThan(0);
   const fromSeeds = seeds.filter((key) => switchSpecOf(key) === null);
   expect(sorted(keys)).toStrictEqual(sorted([...new Set([...fromSeeds, ...EXTRA])]));
-  // F1-02zi (transitional): EXPECTED, or EXPECTED + the whole settle.* group.
+  // F1-02zi / F1-02zm (transitional): EXPECTED plus each of settle.* and
+  // growth.invite_reward.* whole or absent.
   expect(sorted(keys)).toStrictEqual(sorted(expectedNow().map((entry) => entry.key)));
 });
 
@@ -173,14 +178,21 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
   const keys = configRegistry().map((spec) => spec.key);
   const present = SETTLE.filter((entry) => keys.includes(entry.key));
   expect([0, SETTLE.length]).toContain(present.length);
+  // F1-02zm (transitional): the only keys allowed after these groups are the whole
+  // growth.invite_reward.* group (checked key by key in #57) or none.
+  const inviteTail =
+    presentOf(INVITE_CFG, 'growth.invite_reward.*') === 0 ? [] : INVITE_CFG.map((e) => e.key);
   if (present.length === 0) {
     for (const entry of SETTLE) {
       expect(configItemSpecOf(entry.key), entry.key).toBeNull();
     }
-    expect(keys).toHaveLength(EXPECTED.length);
+    expect(keys).toHaveLength(EXPECTED.length + inviteTail.length);
     return;
   }
-  expect(keys.slice(EXPECTED.length)).toStrictEqual(SETTLE.map((entry) => entry.key));
+  expect(keys.slice(EXPECTED.length, EXPECTED.length + SETTLE.length)).toStrictEqual(
+    SETTLE.map((entry) => entry.key),
+  );
+  expect(keys.slice(EXPECTED.length + SETTLE.length)).toStrictEqual(inviteTail);
   for (const entry of SETTLE) {
     const spec = registered(entry.key);
     expect({
@@ -190,6 +202,38 @@ it('[AC-F1-10e#56] BR-FUND-04 细则 settle.* 一组 16 键整组登记（追加
       permission: spec.permission,
       adminEditable: spec.adminEditable,
     }).toStrictEqual({ ...entry, options: entry.options ?? null });
+    expect(configItemSpecOf(entry.key), entry.key).toBe(spec);
+  }
+});
+
+// F1-02zm (test-change, transitional; F1-02zt tightens to "always present"): the BR-INV-24 细则
+// growth.invite_reward.* group of F1-02zn is registered whole as the last five items, right after
+// SETTLE (or after the ruling 14 items while SETTLE is absent), in its own order, or not at all;
+// both branches assert.
+it('[AC-F1-10e#57] BR-INV-24 细则 growth.invite_reward.* 一组 5 键整组登记（注册表最后 5 项、紧接 settle.* 之后，逐键值类型、options、权限点、可改标记）或整组没有', () => {
+  expect(INVITE_CFG).toHaveLength(5);
+  const keys = configRegistry().map((spec) => spec.key);
+  const present = INVITE_CFG.filter((entry) => keys.includes(entry.key));
+  expect([0, INVITE_CFG.length]).toContain(present.length);
+  if (present.length === 0) {
+    for (const entry of INVITE_CFG) {
+      expect(configItemSpecOf(entry.key), entry.key).toBeNull();
+    }
+    return;
+  }
+  const head = keys.length - INVITE_CFG.length;
+  expect(keys.slice(head)).toStrictEqual(INVITE_CFG.map((entry) => entry.key));
+  const settled = presentOf(SETTLE, 'settle.*') !== 0;
+  expect(keys[head - 1]).toBe((settled ? SETTLE : EXPECTED).at(-1)!.key);
+  for (const entry of INVITE_CFG) {
+    const spec = registered(entry.key);
+    expect({
+      key: spec.key,
+      valueType: spec.valueType,
+      options: spec.options,
+      permission: spec.permission,
+      adminEditable: spec.adminEditable,
+    }).toStrictEqual({ ...entry, options: null });
     expect(configItemSpecOf(entry.key), entry.key).toBe(spec);
   }
 });

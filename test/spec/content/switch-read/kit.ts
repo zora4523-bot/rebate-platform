@@ -24,15 +24,21 @@
 //   - Cache: a registered switch key is cached for switchCacheTtlMs() and is read again from the
 //     store once its age reaches that value (same age >= TTL rule as CONTENT_CACHE_TTL_MS); every
 //     other key keeps 60,000 ms exactly as test/spec/content/read/** freezes.
+//   - F1-02zm (test-change, transitional; F1-02zt tightens): F1-02zn appends the BR-INV-24 pair
+//     growth.invite_reward.enabled / payout_paused (INVITE_SW below) after watch.enabled.<platform>.
+//     Until it lands either the bare 04 §10.2 table or the table plus the whole pair is accepted,
+//     never one of the two (expectedNow); EXPECTED itself stays the 04 §10.2 table verbatim.
 import type { DB } from '@couli/db';
+import { expect } from 'vitest';
 import type {
   ContentConfig,
   ContentStore,
 } from '../../../../apps/api/src/modules/content/application/content-reader.ts';
-import type {
-  SwitchDefault,
-  SwitchPermission,
-  SwitchValueType,
+import {
+  switchSpecOf,
+  type SwitchDefault,
+  type SwitchPermission,
+  type SwitchValueType,
 } from '../../../../apps/api/src/modules/content/domain/switch-registry.ts';
 
 export const START = '2031-05-06T07:08:09.000Z';
@@ -126,8 +132,36 @@ export const EXPECTED: readonly ExpectedSwitch[] = [
   entry('watch.enabled.<platform>', 'watch.enabled.pdd', BOOL, false, ALL),
 ];
 
+// F1-02zm (test-change, transitional; F1-02zt tightens to EXPECTED + INVITE_SW only).
+// BR-INV-24 ① / ④ and 04 §10.2 l.956–957, §11.2 l.1001, as F1-02zn registers them (couli-runs/
+// F1-02zn excerpt 9.2-2): the activity switch and the payout pause switch, both boolean, default
+// off, switch.all only, editable from the console, never written by the system.
+export const INVITE_SW: readonly ExpectedSwitch[] = [
+  entry('growth.invite_reward.enabled', 'growth.invite_reward.enabled', BOOL, false, ALL),
+  entry(
+    'growth.invite_reward.payout_paused',
+    'growth.invite_reward.payout_paused',
+    BOOL,
+    false,
+    ALL,
+  ),
+];
+
+/**
+ * F1-02zm (transitional): the registry oracle for the build under test. The INVITE_SW pair must
+ * be registered whole or not at all (one of the two alone fails here); with it the oracle is
+ * EXPECTED followed by INVITE_SW, without it EXPECTED alone.
+ */
+export function expectedNow(): readonly ExpectedSwitch[] {
+  const present = INVITE_SW.filter((row) => switchSpecOf(row.sample) !== null).length;
+  expect([0, INVITE_SW.length], 'growth.invite_reward.* switches whole or not at all').toContain(
+    present,
+  );
+  return present === 0 ? EXPECTED : [...EXPECTED, ...INVITE_SW];
+}
+
 export function expectedOf(pattern: string): ExpectedSwitch {
-  const found = EXPECTED.find((row) => row.pattern === pattern);
+  const found = expectedNow().find((row) => row.pattern === pattern);
   if (found === undefined) throw new Error(`kit: no expected row for ${pattern}`);
   return found;
 }

@@ -26,11 +26,21 @@ import {
 } from './kit.ts';
 
 const h = useHarness();
+const INVITE_BUDGET_KEYS = [
+  'growth.invite_reward.daily_budget_fen',
+  'growth.invite_reward.total_budget_fen',
+] as const;
 
 it.each(EDITABLE_SAMPLES)(
   '[AC-F1-10d#9] §9.2 #2 按键的权限点：%s 只有登记的权限点之一可改（withdraw.* / payout.* 认 switch.payout、pay.* 认 switch.pay、其余只认 switch.all），无权限 10403 且不写库',
   async (key) => {
     const f = await setup(h);
+    // F1-02zm (test-change, transitional; F1-02zt tightens): BR-INV-24 ④ and 04 §10.2 l.956 refuse
+    // turning growth.invite_reward.enabled on while the daily or the total budget is 0 (their
+    // default), so this app first gets two non-zero budgets; every step below is unchanged.
+    if (key === 'growth.invite_reward.enabled') {
+      for (const budget of INVITE_BUDGET_KEYS) await seedSwitch(h, f.appId, budget, 100_000, 1);
+    }
     const allowed = staticFields(key).permissions;
     let current: Json | null = null;
     let version = 0;

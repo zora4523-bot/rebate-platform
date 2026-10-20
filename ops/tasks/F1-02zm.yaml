@@ -1,0 +1,28 @@
+id: F1-02zm
+repo: rebate-platform
+title: 过渡测试改动（CT-25 前置）：F1-10e 配置注册表再接受 growth.invite_reward.* 五键一组、F1-10b / F1-10d 开关注册表接受 growth.invite_reward.enabled 与 payout_paused 一组（各组整组有或整组无）、F1-02c 的 invite 精确相等接受有或没有 reward_enabled 与 reward_amount_fen
+type: test-change
+# 2026-10-20 入账（content-client 第五阶段第二波，计划 couli-runs/CONTENT-client/phase5-plan.md §3 序 6、§4；编排 2026-10-20 08:5x 派工 ②）。
+# 起因：F1-02zn（登记）、F1-02zp（/v1/config 下发）合并后，F1-10e #1 / #10 / #56、F1-10b #1 / #6、F1-10d #1 等列表形状与 #9、F1-02c #1 / #2 原断言必红。
+# 做法：照 F1-02zi 的「整组有或无」——原期望一字不动，另加组 INVITE_CFG（5 键）与 INVITE_SW（2 个开关），按注册表里组键个数（0 或全数）决定期望；
+#   #56 的「SETTLE 之后不再有键」放宽为「SETTLE 之后只能是 INVITE_CFG 整组」；F1-10d #9 写 true 到 growth.invite_reward.enabled 前，同一 app 先写入两个非零预算。
+#   F1-02c：invite 等于原对象，或原对象加 reward_enabled:false、reward_amount_fen:1000（无配置时的派生值），按响应里有没有这两个键分支，两键须同有同无。
+# 依据（SPEC_REF 5ecafb3）：08 BR-INV-24 正文与细则默认值、04 l.903 / l.923 / l.956–958；L24（[AC-F1-02p#15]）按默认拆出，随第三波另开 test-change。
+# 默认：D-C1 ip_window_hours 进配置注册表、config.risk、种子 24；D-C2 payout_paused 为 switch.all、非系统写；D-T4 两字段总会下发。
+# 改既有规则测试属第一类保护路径：走非 task 分支、台账同 PR，按 approvals #24 由编排加 owner-approved 标签（F1-02zi 先例）。合并后由 F1-02zt 收紧。
+refs: []
+refs_hash: {}
+deps: [F1-02zi, F1-10b, F1-10d, F1-02c]
+paths:
+  - 'test/spec/content/config-items/kit.ts'
+  - 'test/spec/content/config-items/registry.test.ts'
+  - 'test/spec/content/config-items/read.int.test.ts'
+  - 'test/spec/content/switch-read/**'
+  - 'test/spec/content/kill-switches/**'
+  - 'test/spec/content/config/delivery.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null
