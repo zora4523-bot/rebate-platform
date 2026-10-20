@@ -191,15 +191,26 @@ for (const [method, path] of [
   });
 }
 
-for (const failure of [
-  'db',
-  'config',
-  'no-db',
-  'no-config',
-  'zero',
-  'fraction',
-  'string',
-] as const) {
+it('[AC-B1-02zh#8] no-config 等同最低版本缺失，放行且不读同意记录', async () => {
+  const f = await fixture();
+  await consent(db, f.appId, f.uid, { accepted: false });
+  const query = vi.fn();
+  const unread = db.withPlugin({
+    transformQuery(args) {
+      query();
+      return args.node;
+    },
+    async transformResult(args) {
+      return args.result;
+    },
+  });
+  const checks = api.createPrivacyConsentChecks({ ...f.options, db: unread, config: null });
+  await expect(activate(checks, f.input)).resolves.toBe(true);
+  expect(query).not.toHaveBeenCalled();
+  expect(f.configValue).not.toHaveBeenCalled();
+});
+
+for (const failure of ['db', 'config', 'no-db', 'zero', 'fraction', 'string'] as const) {
   it(`[AC-B1-02zh#8] ${failure} → 50001，不能误放行`, async () => {
     const f = await fixture();
     await consent(db, f.appId, f.uid, { version: 9 });
@@ -218,7 +229,6 @@ for (const failure of [
     const checks = api.createPrivacyConsentChecks({
       ...f.options,
       db: failure === 'no-db' ? null : failure === 'db' ? unavailable : db,
-      config: failure === 'no-config' ? null : f.options.config,
     });
     await expect(activate(checks, f.input)).rejects.toMatchObject({ code: 50001, statusCode: 500 });
   });

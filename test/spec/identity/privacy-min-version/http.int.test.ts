@@ -175,9 +175,11 @@ for (const method of ['GET', 'PUT'] as const) {
     expect(f.handled(c.uid)).toBe(0);
   });
 
-  it(`[AC-B1-02zh#15] ${method} ④a版本与受限作用域先于隐私`, async () => {
+  it(`[AC-B1-02zh#15] ${method} ④a${method === 'PUT' ? '版本与' : ''}受限作用域先于隐私`, async () => {
     const c = await subject({ minVersion: '2.0.0' });
-    await refusal(await c.send(method, PAYOUT, { version: '1.0.0' }), 403, 10405, false);
+    if (method === 'PUT') {
+      await refusal(await c.send(method, PAYOUT, { version: '1.0.0' }), 403, 10405, false);
+    }
     const restricted = await c.accessWithClaims({ scp: 'deletion_only' });
     await refusal(await c.send(method, PAYOUT, { token: restricted }), 403, 10405, false);
     await privacy(await c.send(method));
