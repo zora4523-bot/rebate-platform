@@ -1,13 +1,8 @@
 id: B1-35
 repo: rebate-platform
-title: 邀请奖励资格、发放与过期：landing / register / backfill 绑定成功且活动有效（开关严格 true、总预算可用额 ≥ 两方金额、每方金额 ≥ 1 分）时同事务写 invite_rewards（锁定金额与有效期天数）并条件占用总预算（失败不影响绑定）；导出总预算可用额只读端口并装配给 content F1-02zp；导出 CREDITED 触发入口（供 B2-04，SAVEPOINT 内不抛，只认下单时间在有效期内的自购单）；发放服务按 BR-INV-24 判定顺序 1–7（作废、双方 / 单方防刷、暂停与当日预算顺延、占用转已发或释放），凭证经消费方端口 InviteRewardGrantWriter（B2-16b 实现）写入；每日过期任务（到期且期限内无可触发自购子订单 → 已过期、释放占用）；worker 定时循环驱动发放与过期
+title: 邀请奖励资格、发放与过期（BR-INV-24 含有效期）：资格写入与预算占用、可用额端口、触发入口、发放服务、每日过期任务
 type: impl
-# 草稿 2026-10-20（身份与风控线 identity-lane；按编排 notices 12:5x、13:1x 与 D10-95 更新）。依据 couli ac4d993（含 #158–#161；BR-INV-24 本体与细则含新「有效期」段、04 invite_rewards 行、05 B1-35 行追加）；SPEC_REF 已由 #985 提升到 ac4d993。BR-INV-24 本体加细则超 24KB，refs 置空，由编排者摘入（E13）。
-# 范围：资格写入 + 可用额端口 + 触发入口（含下单时间判定）+ 发放服务 + 每日过期任务 + worker 循环。不含后台 GET /admin/v1/invite-rewards（契约 planned，另开后续任务）、分录写入（B2-16b，按端口 + 假实现跑规则测试）、CREDITED 迁移与调用方接线（B2-04）。
-# 前置（D10-95）：B1-35a 状态机 yaml 与生成的 transition()（qualified / deferred / processed / voided / expired，待 CT-25c 后改掉 budget_exhausted）；B1-35b risk ref_type invite_reward 迁移与同设备端口（ref 带 party，ref_id = <invitee_id>:<party>）。本任务不改 db/、specs/、packages/domain。
-# 内容线 #161 契约跟进已合并：CT-25c（枚举 budget_exhausted → expired，#998）、CT-25d（迁移 0057 / 0058 eligibility_days 与状态约束，#1007）、F1-02zx（配置 growth.invite_reward.eligibility_days）。
-# 下单时间取 orders.attr_at（BR-ATTR-25；本线定，08「联盟订单创建时间」措辞记待规划同步）。
-# 要点：新依赖一律可选（B1-11d / B1-11h 冻结测试不受影响）；eligibility_days 显式写入（坏值按 30）；触发区间 [qualified_at, qualified_at + N×24h)；过期任务遇期内未有结果的单等待、遇漏触发的合格单补触发；status 只经 transition()；不写 budget_exhausted；不新增队列。测试标题 AC-B1-35#n。
+# 草稿 2026-10-20（身份与风控线 identity-lane）。依据 SPEC_REF ac4d993；细则与裁定见任务书摘录（couli-runs/B1-35/excerpt.md），refs 置空（E13）。不含后台只读接口、分录写入（B2-16b）、CREDITED 接线（B2-04）。
 refs: []
 refs_hash: {}
 deps: [CT-25a, CT-25b, CT-25c, CT-25d, F1-02zx, F1-02zp, B1-35a, B1-35b]
