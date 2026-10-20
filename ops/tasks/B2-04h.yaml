@@ -18,5 +18,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/ledger/order-nets/**'
-status: todo
-pr: null
+status: done
+pr: 981

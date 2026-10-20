@@ -83,5 +83,5 @@ accept:
   - 'test/spec/ledger-rules/**'
   - 'test/spec/domain/ledger-templates/**'
   - 'test/spec/domain/ledger-templates-reward/**'
-status: todo
-pr: null
+status: done
+pr: 1022

@@ -28,5 +28,5 @@ accept:
   - 'test/spec/domain/state-machines/settle-batch/**'
   - 'test/spec/domain/state-machines/beneficiary-credit/**'
   - 'test/spec/domain/state-machines/settle-adjustment/**'
-status: todo
-pr: null
+status: done
+pr: 995
