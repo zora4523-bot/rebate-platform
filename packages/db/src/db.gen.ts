@@ -594,6 +594,37 @@ export interface InboxMessages {
   user_id: string;
 }
 
+export interface InviteRewardBudgets {
+  app_id: string;
+  granted_fen: Generated<ColumnType<bigint, bigint, bigint>>;
+  period: string;
+  reserved_fen: Generated<ColumnType<bigint, bigint, bigint>>;
+  row_version: Generated<number>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface InviteRewards {
+  amount_fen: ColumnType<bigint, bigint, bigint>;
+  app_id: string;
+  bind_ip_hmac: string;
+  bind_source: string;
+  granted_at: Timestamp | null;
+  invitee_id: string;
+  invitee_result: string | null;
+  invitee_skip_reason: string | null;
+  invitee_voucher_id: string | null;
+  inviter_id: string;
+  inviter_result: string | null;
+  inviter_skip_reason: string | null;
+  inviter_voucher_id: string | null;
+  qualified_at: Timestamp;
+  row_version: Generated<number>;
+  status: string;
+  trigger_order_id: string | null;
+  triggered_at: Timestamp | null;
+  void_reason: string | null;
+}
+
 export interface LandingRegistrations {
   app_id: string;
   created_at: Timestamp;
@@ -1477,6 +1508,8 @@ export interface DB {
   favorites: Favorites;
   idempotency_keys: IdempotencyKeys;
   inbox_messages: InboxMessages;
+  invite_reward_budgets: InviteRewardBudgets;
+  invite_rewards: InviteRewards;
   landing_registrations: LandingRegistrations;
   ledger_accounts: LedgerAccounts;
   ledger_entries: LedgerEntries;
