@@ -2165,6 +2165,64 @@ CREATE TABLE app.inbox_messages (
 
 
 --
+-- Name: invite_reward_budgets; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.invite_reward_budgets (
+    app_id text NOT NULL,
+    period text NOT NULL,
+    reserved_fen bigint DEFAULT 0 NOT NULL,
+    granted_fen bigint DEFAULT 0 NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT invite_reward_budgets_day_reserved_check CHECK (((period = 'total'::text) OR (reserved_fen = 0))),
+    CONSTRAINT invite_reward_budgets_granted_fen_check CHECK ((granted_fen >= 0)),
+    CONSTRAINT invite_reward_budgets_period_check CHECK (((period = 'total'::text) OR (period ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'::text))),
+    CONSTRAINT invite_reward_budgets_reserved_fen_check CHECK ((reserved_fen >= 0))
+);
+
+
+--
+-- Name: invite_rewards; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.invite_rewards (
+    app_id text NOT NULL,
+    invitee_id uuid NOT NULL,
+    inviter_id uuid NOT NULL,
+    amount_fen bigint NOT NULL,
+    qualified_at timestamp with time zone NOT NULL,
+    bind_source text NOT NULL,
+    bind_ip_hmac text NOT NULL,
+    trigger_order_id uuid,
+    triggered_at timestamp with time zone,
+    status text NOT NULL,
+    inviter_result text,
+    invitee_result text,
+    inviter_skip_reason text,
+    invitee_skip_reason text,
+    void_reason text,
+    inviter_voucher_id uuid,
+    invitee_voucher_id uuid,
+    granted_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
+    CONSTRAINT invite_rewards_amount_fen_check CHECK ((amount_fen >= 0)),
+    CONSTRAINT invite_rewards_bind_ip_hmac_check CHECK ((bind_ip_hmac ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT invite_rewards_bind_source_check CHECK ((bind_source = ANY (ARRAY['landing'::text, 'register'::text, 'backfill'::text]))),
+    CONSTRAINT invite_rewards_invitee_result_check CHECK ((invitee_result = ANY (ARRAY['granted'::text, 'skipped'::text]))),
+    CONSTRAINT invite_rewards_invitee_skip_pair_check CHECK (((NOT (invitee_result IS DISTINCT FROM 'skipped'::text)) = (invitee_skip_reason IS NOT NULL))),
+    CONSTRAINT invite_rewards_invitee_skip_reason_check CHECK ((invitee_skip_reason = ANY (ARRAY['same_device'::text, 'same_ip'::text, 'deleted_phone_retained'::text, 'multi_account'::text, 'risk_restricted'::text, 'deleting'::text, 'minor'::text]))),
+    CONSTRAINT invite_rewards_inviter_result_check CHECK ((inviter_result = ANY (ARRAY['granted'::text, 'skipped'::text]))),
+    CONSTRAINT invite_rewards_inviter_skip_pair_check CHECK (((NOT (inviter_result IS DISTINCT FROM 'skipped'::text)) = (inviter_skip_reason IS NOT NULL))),
+    CONSTRAINT invite_rewards_inviter_skip_reason_check CHECK ((inviter_skip_reason = ANY (ARRAY['same_device'::text, 'same_ip'::text, 'deleted_phone_retained'::text, 'multi_account'::text, 'risk_restricted'::text, 'deleting'::text, 'minor'::text]))),
+    CONSTRAINT invite_rewards_processed_results_check CHECK (((status <> 'processed'::text) OR ((inviter_result IS NOT NULL) AND (invitee_result IS NOT NULL)))),
+    CONSTRAINT invite_rewards_status_check CHECK ((status = ANY (ARRAY['qualified'::text, 'deferred'::text, 'processed'::text, 'voided'::text, 'budget_exhausted'::text]))),
+    CONSTRAINT invite_rewards_void_pair_check CHECK (((status = 'voided'::text) = (void_reason IS NOT NULL))),
+    CONSTRAINT invite_rewards_void_reason_check CHECK ((void_reason = ANY (ARRAY['relation_changed'::text, 'order_clawed_back'::text, 'order_rights'::text])))
+);
+
+
+--
 -- Name: landing_registrations; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4666,6 +4724,22 @@ ALTER TABLE ONLY app.inbox_messages
 
 
 --
+-- Name: invite_reward_budgets invite_reward_budgets_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.invite_reward_budgets
+    ADD CONSTRAINT invite_reward_budgets_pkey PRIMARY KEY (app_id, period);
+
+
+--
+-- Name: invite_rewards invite_rewards_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.invite_rewards
+    ADD CONSTRAINT invite_rewards_pkey PRIMARY KEY (app_id, invitee_id);
+
+
+--
 -- Name: landing_registrations landing_registrations_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -5846,6 +5920,20 @@ CREATE INDEX favorites_app_id_user_id_created_at_id_idx ON app.favorites USING b
 --
 
 CREATE INDEX inbox_messages_user_created_idx ON app.inbox_messages USING btree (app_id, user_id, created_at, message_id);
+
+
+--
+-- Name: invite_rewards_inviter_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX invite_rewards_inviter_idx ON app.invite_rewards USING btree (app_id, inviter_id);
+
+
+--
+-- Name: invite_rewards_status_triggered_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX invite_rewards_status_triggered_idx ON app.invite_rewards USING btree (app_id, status, triggered_at);
 
 
 --
@@ -7091,6 +7179,46 @@ ALTER TABLE ONLY app.dict_items
 
 ALTER TABLE ONLY app.inbox_messages
     ADD CONSTRAINT inbox_messages_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: invite_rewards invite_rewards_invitee_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.invite_rewards
+    ADD CONSTRAINT invite_rewards_invitee_fkey FOREIGN KEY (app_id, invitee_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: invite_rewards invite_rewards_invitee_voucher_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.invite_rewards
+    ADD CONSTRAINT invite_rewards_invitee_voucher_fkey FOREIGN KEY (app_id, invitee_voucher_id) REFERENCES app.ledger_vouchers(app_id, id);
+
+
+--
+-- Name: invite_rewards invite_rewards_inviter_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.invite_rewards
+    ADD CONSTRAINT invite_rewards_inviter_fkey FOREIGN KEY (app_id, inviter_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: invite_rewards invite_rewards_inviter_voucher_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.invite_rewards
+    ADD CONSTRAINT invite_rewards_inviter_voucher_fkey FOREIGN KEY (app_id, inviter_voucher_id) REFERENCES app.ledger_vouchers(app_id, id);
+
+
+--
+-- Name: invite_rewards invite_rewards_trigger_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.invite_rewards
+    ADD CONSTRAINT invite_rewards_trigger_order_fkey FOREIGN KEY (app_id, trigger_order_id) REFERENCES app.order_keys(app_id, order_id);
 
 
 --
@@ -9319,6 +9447,134 @@ GRANT UPDATE(row_version) ON TABLE app.inbox_messages TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.inbox_messages TO couli_app;
+
+
+--
+-- Name: TABLE invite_reward_budgets; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.invite_reward_budgets TO couli_app;
+GRANT SELECT ON TABLE app.invite_reward_budgets TO couli_readonly;
+
+
+--
+-- Name: COLUMN invite_reward_budgets.reserved_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reserved_fen) ON TABLE app.invite_reward_budgets TO couli_app;
+
+
+--
+-- Name: COLUMN invite_reward_budgets.granted_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(granted_fen) ON TABLE app.invite_reward_budgets TO couli_app;
+
+
+--
+-- Name: COLUMN invite_reward_budgets.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.invite_reward_budgets TO couli_app;
+
+
+--
+-- Name: COLUMN invite_reward_budgets.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.invite_reward_budgets TO couli_app;
+
+
+--
+-- Name: TABLE invite_rewards; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.invite_rewards TO couli_app;
+GRANT SELECT ON TABLE app.invite_rewards TO couli_readonly;
+
+
+--
+-- Name: COLUMN invite_rewards.trigger_order_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(trigger_order_id) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.triggered_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(triggered_at) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.inviter_result; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(inviter_result) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.invitee_result; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(invitee_result) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.inviter_skip_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(inviter_skip_reason) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.invitee_skip_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(invitee_skip_reason) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.void_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(void_reason) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.inviter_voucher_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(inviter_voucher_id) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.invitee_voucher_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(invitee_voucher_id) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.granted_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(granted_at) ON TABLE app.invite_rewards TO couli_app;
+
+
+--
+-- Name: COLUMN invite_rewards.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.invite_rewards TO couli_app;
 
 
 --
