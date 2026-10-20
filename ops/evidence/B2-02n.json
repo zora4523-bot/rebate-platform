@@ -1,0 +1,79 @@
+{
+  "task": "B2-02n",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "571139ac727f5b27cb879fddb873300634fea06f",
+  "red_tests": [
+    "test/spec/ledger/hardening/empty-invariants.int.test.ts > [AC-B2-02n#1] load 返回空集合必须 DAILY_CHECK_FAILED、记录失败且不新增或覆盖日终快照",
+    "test/spec/ledger/hardening/empty-invariants.int.test.ts > [AC-B2-02n#2] 真实目录的 SQL 全被 superseded 排除后同样拒绝、记录失败且零写入",
+    "test/spec/ledger/hardening/savepoint-locks.int.test.ts > [AC-B2-02n#3] 回滚后 post 拒绝且不重新取锁；显式重锁、RELEASE 与连续 post 均有效",
+    "test/spec/ledger/hardening/savepoint-locks.int.test.ts > [AC-B2-02n#4] 回滚后 reverse 同样 NOT_LOCKED、零写入且不重新取锁；重锁后可红冲"
+  ],
+  "risk_note": "RV2 (ledger). Two fail-closed fixes (orchestrator 2026-10-20 06:3x assignment 2). (1) Daily check: after loading and dropping superseded files, an empty invariant set rejects with DAILY_CHECK_FAILED, logs one failure and writes no daily_balances (B2-02j money round 2 S2). (2) Lock registry: lockBalances appends a random token to the transaction-local setting couli.ledger_lock_tokens at the current (sub)transaction level and records token -> accounts in memory; a caller's ROLLBACK TO SAVEPOINT undoes both the row locks and the setting, RELEASE keeps both; post and reverse read the setting before touching row locks and accept only accounts whose token is still present, otherwise NOT_LOCKED with no write and no re-lock (B2-02f money round 1 S2). The ledger's own savepoints never write the setting, so a rejected post does not invalidate earlier locks. No change to amounts, signs or posting order.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "571139ac727f5b27cb879fddb873300634fea06f",
+      "tree": "e79c271abe6d24067a72c2760ef358b2f77a7a38",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T00:33:58Z",
+      "finished_at": "2026-10-20T00:34:28Z",
+      "gate": {
+        "commit": "97f6f6aebd0776af4e84f1081d4844e3f2d0e561",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/hardening/empty-invariants.int.test.ts > [AC-B2-02n#1] load 返回空集合必须 DAILY_CHECK_FAILED、记录失败且不新增或覆盖日终快照",
+        "test/spec/ledger/hardening/empty-invariants.int.test.ts > [AC-B2-02n#2] 真实目录的 SQL 全被 superseded 排除后同样拒绝、记录失败且零写入",
+        "test/spec/ledger/hardening/savepoint-locks.int.test.ts > [AC-B2-02n#3] 回滚后 post 拒绝且不重新取锁；显式重锁、RELEASE 与连续 post 均有效",
+        "test/spec/ledger/hardening/savepoint-locks.int.test.ts > [AC-B2-02n#4] 回滚后 reverse 同样 NOT_LOCKED、零写入且不重新取锁；重锁后可红冲"
+      ],
+      "expected": [
+        "test/spec/ledger/hardening/empty-invariants.int.test.ts",
+        "test/spec/ledger/hardening/savepoint-locks.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "8c87e9a6e6e6737895d8b46eaeb0be92763284f814b26072e478dad6c1908167"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 1 run (4 red); round 1 pass with one S2 (a rejected post followed by a valid post without re-locking) taken into the implementation brief and covered by a unit test; the orchestrator committed a prettier-only reformat of one rule test file (content unchanged)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "71a89304c791784997c37d07c46fc554dfa134c9",
+    "specs": "a1b96a3002d99e9b2e9c35fa6b3b4fbdba07cfca"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}

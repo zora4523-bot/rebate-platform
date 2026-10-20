@@ -10,7 +10,10 @@ export type LedgerErrorCode =
   | 'INVALID_VOUCHER'
   /** A user account id that is not a USER_BALANCE account of this app_id. */
   | 'UNKNOWN_ACCOUNT'
-  /** A user account whose balance row this transaction did not lock through lockBalances. */
+  /**
+   * A user account whose balance row this transaction did not lock through lockBalances, or whose
+   * lock a ROLLBACK TO SAVEPOINT released (B2-02n); post never takes such a lock itself.
+   */
   | 'NOT_LOCKED'
   /** applyEntries refused the result (negative frozen, int64 overflow). */
   | 'INVALID_BALANCE'
@@ -21,7 +24,8 @@ export type LedgerErrorCode =
   /**
    * The daily check (BR-FUND-19) did not complete: a snapshot or invariant statement failed
    * (the PostgreSQL error is the `cause`, SQLSTATE in cause.code) or an invariant file broke
-   * the output contract. Never a zero-difference result.
+   * the output contract, or no invariant file is left to run (B2-02n). Never a zero-difference
+   * result.
    */
   | 'DAILY_CHECK_FAILED';
 
