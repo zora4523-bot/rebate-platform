@@ -3,7 +3,11 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createDb, type DB } from '@couli/db';
-import type { TestDatabase } from '@couli/db/testing';
+// B1-13g: a structural type instead of importing @couli/db/testing, which depcruise allows only in
+// *.int.test.ts (testcontainers-only-in-int-tests); the integration file passes its real TestDatabase.
+interface TestDatabaseUrls {
+  urlFor(role: string): string;
+}
 import {
   sql,
   DummyDriver,
@@ -204,7 +208,7 @@ export function manualSchedule() {
   };
 }
 
-export async function open(database: TestDatabase) {
+export async function open(database: TestDatabaseUrls) {
   const p = await ports();
   const api = await identity();
   const db = createDb({ connectionString: database.urlFor('couli_app'), max: 6 });
