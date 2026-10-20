@@ -28,7 +28,9 @@ export interface UserDeletionStatusReaderOptions {
   db: Kysely<DB>;
 }
 
-// TODO(规划/11 §4.5): 与注销单 deletion_requests 对齐 — blocked on B1-15
+// BR-CALC-13 / BR-ID-28: users.status only (no cooling; the funds lane locks the users row and reads
+// that same row). The deletion request's own stage is ports/deletion-stage.ts (B1-15c), on purpose
+// not routed through here.
 function toDeletionStatus(status: string): UserDeletionStatus {
   if (status === 'deleting') return 'processing';
   if (status === 'deleted') return 'done';

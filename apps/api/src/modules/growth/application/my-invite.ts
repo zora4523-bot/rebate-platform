@@ -10,10 +10,12 @@
 //      (the route answers 30413 data.reason=self_minor), before anything else is judged;
 //      unverified users count as adults;
 //   3. otherwise inviter_unavailable(self) (packages/domain, the one function shared with the
-//      binding core and the admin parent change) over risk's fresh state, the deletion status
-//      (users.status='deleted' → done, see the TODO), the phone binding and verified_minor;
+//      binding core and the admin parent change) over risk's fresh state, the deletion stage
+//      (identity's deletion-stage reader through the injected port, B1-15c: cooling / processing /
+//      done → unavailable; read after risk), the phone binding and verified_minor;
 //   4. direct_count (BR-INV-16): direct children of this app not deleted, counted live (cooling,
-//      banned and frozen children included); no child field is ever read;
+//      processing (users.status=deleting), banned and frozen children included); no child field is
+//      ever read;
 //   5. landing_url = `https://{share_domains[0]}/i/{invite_code}` from config_items share_domains
 //      (bare domains); a missing, empty or non-array value, or a first item that is not a bare
 //      domain → landing_url null and one warn carrying config_key only (never the second item, never
@@ -31,7 +33,7 @@ import { inviterUnavailable, isAtLeastAge } from '@couli/domain';
 import type { Kysely, Transaction } from 'kysely';
 import type { Clock, RootLogger } from '../../platform/index.ts';
 import type { RiskStateSnapshot } from '../../risk/index.ts';
-import type { InviteSubject } from './invite-binder.ts';
+import type { InviteDeletionStage, InviteSubject } from './invite-binder.ts';
 
 /** BR-INV-19 / BR-ID-26: a verified user under this age gets 30413 on the invite page. */
 const INVITER_MIN_AGE = 18;
@@ -57,6 +59,11 @@ export interface MyInviteDeps {
     trx: Transaction<DB>,
     subject: InviteSubject,
   ) => Promise<string | null>;
+  /** identity's deletion-stage reader (B1-15c) on this trx; app.module wires it (growthReadPorts). */
+  readonly readDeletionStage: (
+    trx: Transaction<DB>,
+    subject: InviteSubject,
+  ) => Promise<InviteDeletionStage>;
 }
 
 export interface MyInvite {
@@ -89,7 +96,7 @@ export function firstShareDomain(value: unknown): string | null {
 }
 
 export function createMyInviteReader(deps: MyInviteDeps): MyInviteReader {
-  const { clock, logger, db, config, readRisk, verifiedBirthDate } = deps;
+  const { clock, logger, db, config, readRisk, verifiedBirthDate, readDeletionStage } = deps;
 
   async function readOn(trx: Transaction<DB>, subject: InviteSubject): Promise<MyInviteResult> {
     const at = clock.now();
@@ -107,15 +114,16 @@ export function createMyInviteReader(deps: MyInviteDeps): MyInviteReader {
     if (verifiedMinor) return { result: 'minor' };
 
     const risk = await readRisk(trx, subject);
+    const stage = await readDeletionStage(trx, subject);
     const unavailable = inviterUnavailable({
       risk_state: risk.state,
-      // TODO(规划/11 §2.3): 读注销单 deletion_status（cooling / processing / done）— blocked on B1-15
-      deletion_status: user.status === 'deleted' ? 'done' : null,
+      deletion_status: stage === 'none' ? null : stage,
       phone_bound: user.phone_hmac !== null,
       verified_minor: verifiedMinor,
     });
 
-    // TODO(规划/11 §2.3): 注销 done 以注销单为准 — blocked on B1-15（现只认 users.status='deleted'）
+    // A done deletion always leaves the users row as a tombstone (status = deleted, BR-ID-28), so
+    // excluding deleted excludes done; cooling and processing children still count (B1-15c).
     const counted = await trx
       .withSchema('app')
       .selectFrom('users')

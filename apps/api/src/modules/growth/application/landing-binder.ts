@@ -110,7 +110,14 @@ export interface LandingInviteBinder {
 
 export type LandingInviteBinderDeps = Pick<
   InviteBinderDeps,
-  'clock' | 'logger' | 'redis' | 'crypto' | 'config' | 'readRisk' | 'verifiedBirthDate'
+  | 'clock'
+  | 'logger'
+  | 'redis'
+  | 'crypto'
+  | 'config'
+  | 'readRisk'
+  | 'verifiedBirthDate'
+  | 'readDeletionStage'
 >;
 
 // Two (count key, seen marker) pairs: for each, SET NX EX ARGV[1] on the marker first; a marker

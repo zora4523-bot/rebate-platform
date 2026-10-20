@@ -5,9 +5,11 @@
 //   realname when the phone is bound and app.realname is verified; realname_status from the
 //   realname table (none without a row, BR-ID-25; read through the stage ⑨ reader).
 // - invite_code null when inviter_unavailable(self) (BR-INV-18, BR-INV-02; task B1-11k): the
-//   domain's inviterUnavailable over the current facts — risk_state read fresh, deletion from
-//   users.status, phone_hmac, and a verified real name under 18 at the Clock's instant (BR-INV-19;
-//   unverified counts as adult). inviter_bound = parent_id set.
+//   domain's inviterUnavailable over the current facts — risk_state read fresh, the deletion stage
+//   from this module's deletion-stage reader (B1-15c: the later of the deletion request and
+//   users.status, so cooling, processing / deleting and done all hide the code), phone_hmac, and a
+//   verified real name under 18 at the Clock's instant (BR-INV-19; unverified counts as adult).
+//   inviter_bound = parent_id set.
 // - invite_backfill per BR-INV-07 (a)(b)(c) and growth.invite_bind.enabled (BR-INV-21); the
 //   deadline is the domain's inviteBackfillDeadline, open while withinBackfill (now < deadline);
 //   deadline_at is that deadline when eligible, else null.
@@ -34,6 +36,7 @@ import { userConsentRecords } from '../infra/consent-records.ts';
 import type { RealnameStatusReader } from './identity-level.ts';
 import type { RealnameReader } from '../infra/realname-reader.ts';
 import { meUser, hasDirectChildren } from '../infra/me-reads.ts';
+import { createDeletionStageReader } from '../ports/deletion-stage.ts';
 import type { InviteBackfillActivityPort, MeSubject } from '../ports/invite-backfill-activity.ts';
 export type { InviteBackfillActivityPort, MeSubject } from '../ports/invite-backfill-activity.ts';
 
@@ -88,6 +91,8 @@ function configuredNumber(value: unknown, key: string): number {
 export function createMeService(options: MeServiceOptions): MeService {
   const { clock, config, logger, risk, balance, unionBindings, activity, realname } = options;
   const db = options.db.withSchema('app');
+  // Same module: the reader runs on options.db (GET /v1/me opens no transaction).
+  const deletionStages = createDeletionStageReader({ db: options.db });
   return {
     async read(subject) {
       const user = await meUser(db, subject);
@@ -123,7 +128,7 @@ export function createMeService(options: MeServiceOptions): MeService {
       }
       const deadline = inviteBackfillDeadline(user.created_at, hours);
       const now = clock.now();
-      const [snapshot, records, summary, taobao, pdd, realnameStatus] = await Promise.all([
+      const [snapshot, records, summary, taobao, pdd, realnameStatus, stages] = await Promise.all([
         // Fresh: the invitation view follows the risk state at the call (BR-INV-02), never a cache.
         risk.readRiskState({ app_id: subject.appId, user_id: subject.userId }, { fresh: true }),
         userConsentRecords(db, subject.appId, subject.userId),
@@ -131,6 +136,7 @@ export function createMeService(options: MeServiceOptions): MeService {
         unionBindings.statusOf(subject, 'taobao'),
         unionBindings.statusOf(subject, 'pdd'),
         realname.read(db, { app_id: subject.appId, user_id: subject.userId }),
+        deletionStages.read(options.db, { appId: subject.appId, userIds: [subject.userId] }),
       ]);
       let eligible =
         user.parent_id === null &&
@@ -151,10 +157,11 @@ export function createMeService(options: MeServiceOptions): MeService {
         realnameStatus === 'verified'
           ? await realname.verified(db, { app_id: subject.appId, user_id: subject.userId })
           : null;
+      const stage = stages.get(subject.userId) ?? 'none';
+      const deletionStatus = stage === 'none' ? null : stage;
       const cannotInvite = inviterUnavailable({
         risk_state: snapshot.state,
-        // TODO(规划/11 §2.3): 读注销单 deletion_status（cooling / processing / done）— blocked on B1-15
-        deletion_status: user.status === 'deleted' ? 'done' : null,
+        deletion_status: deletionStatus,
         phone_bound: phoneBound,
         verified_minor:
           verifiedRealname !== null &&
