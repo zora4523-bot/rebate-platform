@@ -9,7 +9,7 @@ type: test-change
 #   其余断言（#4 资金规则标志不可改、#5–#9、读写各用例）一条不删不改。主干现在（无 settle.*）与 F1-02zj 合并后（有整组）都成立。
 # 默认：D-S1 平台 taobao / jd / pdd / meituan；D-S3 全部可改、config.business。D-S3 若改为某键只读，本任务须同步改 #4 的期望（届时另议）。
 # 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走非 task 分支、不带证据文件。
-# Codex 对抗评审只看「不削弱」；F1-02zj 合并后由 F1-02zt 收紧为只认 BASE+SETTLE。
+# F1-02zj 合并后由 F1-02zt 收紧为只认 BASE+SETTLE。
 refs: []
 refs_hash: {}
 deps: [F1-10e]
