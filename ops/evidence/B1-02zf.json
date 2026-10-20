@@ -1,0 +1,102 @@
+{
+  "task": "B1-02zf",
+  "spec_ref": "5ecafb36a34ea341604fb5775edbd13411cd5c7b",
+  "spec_commit": "252492f3a9a596c930ca83c3b9f77c5f20707d5a",
+  "red_tests": [
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#1] 锁结果去重，只含本 app 请求且存在的用户，不按业务状态过滤",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#2] 锁入口接受普通 Kysely，空数组不查库",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#3] 单条 SQL 仅选 id，按 id 升序 FOR NO KEY UPDATE，绑定 ID 去重",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#4] 请求行互斥、未请求与跨 app 行不锁、兼容 KEY SHARE，提交后释放",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#5] 调用方回滚释放锁，不另开事务或提前提交",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#6] 锁入口看见调用方尚未提交的用户插入",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#7] 实名批量返回三种状态，无实名行补 none，未请求和不存在的用户不返回",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#8] 风控四种状态及空记录，已过期/未来/空截止时间均原样返回",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#9] 实名：跨 app 同 ID 不可见，缺失 ID 不补默认值",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#9] 风控：跨 app 同 ID 不可见，缺失 ID 不补默认值",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#10] 实名：空数组与构造均不向 db 或 executor 发 SQL",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#10] 风控：空数组与构造均不向 db 或 executor 发 SQL",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#11] 实名：仅调用方执行一条左连接批量只读 SQL，不读敏感列、不加锁",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#11] 风控：仅调用方执行一条左连接批量只读 SQL，不读敏感列、不加锁",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#12] 实名：调用方未提交的用户与状态插入可见，回滚后消失",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#12] 风控：调用方未提交的用户与状态插入可见，回滚后消失",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#13] 实名重读未提交的状态更新，回滚不污染后续读取",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#14] 风控重读未提交的状态和截止时间更新，回滚不缓存",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#15] 实名非法状态按库损坏拒绝，不降为 none",
+    "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#16] 三个端口在命中、缺失、跨 app、空数组分支均不写应用日志"
+  ],
+  "risk_note": "RV1 (identity / risk read and lock ports for funds' posting chain, D10-93 S2; reviewed at the money level). identity lockUsersForUpdate(trx, { appId, userIds }) runs one select of id on the caller's transaction ordered by id with FOR NO KEY UPDATE (the lane's users row lock: mutually exclusive, does not block foreign-key KEY SHARE checks) and returns the ids locked; identity createRealnameStatusBatchReader and risk createRiskStateBatchReader read on the caller's executor (users left join realname / user_risk_state; none / normal defaults; state and frozen_until raw; no locks, no Clock, no sensitive columns). Empty input never queries; ids deduplicated; app-scoped. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "252492f3a9a596c930ca83c3b9f77c5f20707d5a",
+      "tree": "df8e3bc1868b557eaa230ba65774c330afcae687",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-20T02:15:10Z",
+      "finished_at": "2026-10-20T02:15:17Z",
+      "red_tests": [
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#1] 锁结果去重，只含本 app 请求且存在的用户，不按业务状态过滤",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#2] 锁入口接受普通 Kysely，空数组不查库",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#3] 单条 SQL 仅选 id，按 id 升序 FOR NO KEY UPDATE，绑定 ID 去重",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#4] 请求行互斥、未请求与跨 app 行不锁、兼容 KEY SHARE，提交后释放",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#5] 调用方回滚释放锁，不另开事务或提前提交",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#6] 锁入口看见调用方尚未提交的用户插入",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#7] 实名批量返回三种状态，无实名行补 none，未请求和不存在的用户不返回",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#8] 风控四种状态及空记录，已过期/未来/空截止时间均原样返回",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#9] 实名：跨 app 同 ID 不可见，缺失 ID 不补默认值",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#9] 风控：跨 app 同 ID 不可见，缺失 ID 不补默认值",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#10] 实名：空数组与构造均不向 db 或 executor 发 SQL",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#10] 风控：空数组与构造均不向 db 或 executor 发 SQL",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#11] 实名：仅调用方执行一条左连接批量只读 SQL，不读敏感列、不加锁",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#11] 风控：仅调用方执行一条左连接批量只读 SQL，不读敏感列、不加锁",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#12] 实名：调用方未提交的用户与状态插入可见，回滚后消失",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#12] 风控：调用方未提交的用户与状态插入可见，回滚后消失",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#13] 实名重读未提交的状态更新，回滚不污染后续读取",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#14] 风控重读未提交的状态和截止时间更新，回滚不缓存",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#15] 实名非法状态按库损坏拒绝，不降为 none",
+        "test/spec/identity/funds-ports/ports.int.test.ts > [AC-B1-02zf#16] 三个端口在命中、缺失、跨 app、空数组分支均不写应用日志"
+      ],
+      "expected": ["test/spec/identity/funds-ports/ports.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "8b41fc9db671765f0b000a741b9b86675aeb7683e8fc7e87ea35ff996f83c74b"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (20 tests in 1 file, red for the right reason, red/1) reviewed by a fresh Claude subagent: r1 pass with 2 S2"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "ce3e6697643beba34dd9e5d919fed343ee3d884f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a",
+    "test/spec": "d99008b91d825a8f8f797b68adb47ec03fa34493",
+    "specs": "a1b96a3002d99e9b2e9c35fa6b3b4fbdba07cfca"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "850a2eeead5bf6f5c68573fb4854a7536edb0c6a"
+  }
+}
