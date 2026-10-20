@@ -1,5 +1,5 @@
 // F1-02zq §9.2–9.3; codes from contracts/openapi.yaml ArticleHelpSection (CT-02za).
-// The integration globalSetup alone reads TEST_PG_ADMIN_URL and applies migrations.
+// The integration globalSetup alone reads the admin database URL and applies migrations.
 // Exercise the migrated database through business roles, without fixing a migration number.
 import { randomUUID } from 'node:crypto';
 
