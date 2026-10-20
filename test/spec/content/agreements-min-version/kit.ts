@@ -469,7 +469,8 @@ export async function configApp(h: Harness) {
 }
 
 export async function configured(h: Harness, values: Record<string, unknown> = {}) {
-  const id = `f102zr_${randomUUID().replaceAll('-', '')}`;
+  // Orchestrator mechanical fix: X-App-Id maxLength 32 (same slice as setup()).
+  const id = `f102zr_${randomUUID().replaceAll('-', '').slice(0, 24)}`;
   const required = {
     h5_base_url: H5,
     'h5_release.stable': 'stable',
