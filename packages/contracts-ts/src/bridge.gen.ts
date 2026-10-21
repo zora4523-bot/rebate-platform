@@ -380,7 +380,7 @@ export interface components {
         };
         RouteAgreementParams: {
             /** @enum {string} */
-            type?: "agreement" | "privacy" | "sdk_list" | "labor_agreement";
+            type?: "agreement" | "privacy" | "sdk_list" | "labor_agreement" | "collect_list";
             version?: number;
         };
         RouteWebPageParams: {
