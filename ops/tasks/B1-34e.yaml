@@ -1,0 +1,28 @@
+id: B1-34e
+repo: rebate-platform
+title: admin：导出生成 worker——export 队列处理器（按创建人限并发、行数上限、进度、CSV、done 时 expires_at = 生成 + 24 小时、同事务投延迟 expire job 到期置 expired）；users 来源经 identity 批量投影（未脱敏时批量解密），audit_logs 来源复用 B1-34a reader 与本人强制；按创建人取消 pending / running 的端口
+type: impl
+# 2026-10-19 入账（admin-backend，B1-34 导出部分）。依据：契约 CT-24k 原文与台账注释、08 BR-ID-34 细则、BR-ID-33。配置键 admin.export.max_rows / admin.export.max_running_per_admin 用代码默认值 + ContentReader.configValue 覆盖，**不进配置注册表与种子**（registry 冻结测试）；规划 04 §10 无此两键、02 §11 队列清单无 export，已请规划回写。
+# 状态迁移只经 B1-34g 生成的 transitionExportTask()（硬规则第 2 条）。队列只在 worker 入口注册（目录取值照 B1-34c），发送方在创建事务内 send(trx)；到期：任务转 done 的同一事务内 send(trx, expire, {delaySeconds 至 expires_at})——**不带 singletonKey**（export 为 standard 队列，validation.ts 拒绝 standard 队列带 singletonKey，冻结测试 contract.test.ts 钉住；#907 r3 Codex S1），重复投递由消费端 CAS done→expired 幂等兜住，到点 CAS done→expired 并删对象；**不起启动种子、不改 entry.ts**（队列在 startWorkerServices 才启动，onApplicationBootstrap 里 send 会 not_running；且三份入口冻结测试遇未知令牌会失败，#907 两家评审 r2）。
+#   并发上限：领取任务时按创建人 pg_advisory_xact_lock(创建人) 后计数 running 再 CAS pending→running（防两 job 同时超限）；明文任务生成后另写一条 export_unmasked 审计带 row_count（审计只追加，契约要求）；本期读主库（worker 无只读库，02 部署表「导出走只读库」待 B1-30 一并处理，notices 已登记）。CSV：UTF-8 BOM、RFC 4180 转义，单元格防公式注入（以 = + - @ 开头加前导单引号）。账号停用即取消的接入要等 admins 停用契约与实现（未入账），本任务只提供端口。
+refs: [BR-ID-42, BR-ID-33]
+refs_hash:
+  BR-ID-42: c0c9ee5e6809
+  BR-ID-33: 01b25f773b29
+deps: [B1-34a, B1-34b, B1-34c, B1-34d, B1-34g]
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/modules/identity/application/**'
+  - 'apps/api/src/modules/identity/infra/**'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/admin/export-worker/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/export-worker/**'
+status: todo
+pr: null
