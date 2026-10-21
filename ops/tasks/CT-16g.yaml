@@ -1,0 +1,28 @@
+id: CT-16g
+repo: rebate-platform
+title: 文案（CT-16 续，第 2 段·钱）：texts.default.json 补 App 高保真第 2 批定稿登记的键（钱包、提现页、收款账号、劳务协议、核实身份 reverify.*、找回记录、余额流水、AI 卡片、申诉提交与进度、实名单独同意、earnings.as_of、表 B 30303.payee_daily_count）；fund-term-keys.yaml 逐键归类
+type: contract
+# 2026-10-22 入账（content-client 第六阶段；编排 2026-10-21 17:4x 分派「CT-16f」的第 2 段，拆分理由见 CT-16f 台账）。
+# 依据（SPEC_REF 8209d6e）：08 12_TEXT l.188（BR-TEXT-01 earnings.as_of）、l.869（表 B 30303.payee_daily_count）、表 C l.1023–1046、表 D l.1106、BR-TEXT-22 l.1449；
+#   docs/changes/20261021-App内高保真定稿回写.md「第 2 批 BR-TEXT-14 补键」；归类规则 08 l.665–681。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：只转写 08 已给出文案的键，一字不改；「画板未起草，待补」的 claim_reject_reason 编码不建；reverify.id.fail_limit 的 {fail_limit} 下发归 CT-26c，变量缺失写法 08 未登记、不建 fallback。
+#   本段多为资金术语（wallet. / withdraw. / ledger. / earnings. / claim_reject_reason. / error.303 前缀已覆盖），其余逐键按规则归类；资金术语归类改动按资金类评审（fund-term-keys.yaml 头注）。
+# 必改单测（非保护，在 paths 内）：packages/contracts-ts/src/texts.test.ts:227（earnings.* 个数，CT-16f 后为 18，本段加 as_of 后为 19）。
+# 【待编排裁定】agent.card.* / appeal.form.* / appeal.progress.* / reverify.* / payout_account.* / labor_agreement.* / real_name.consent.* 的逐键归类结果（默认见摘录 9.2）。
+# 【待规划回写】08 BR-TEXT-14 登记 reverify.id.fail_limit 取不到变量时不写数字的措辞（05 l.152 CT-26 行）。
+# 占契约槽；排在 CT-16f 之后（同改 texts.default.json、fund-term-keys.yaml）；合并后在 notices 告知 funds 线。
+refs: []
+refs_hash: {}
+deps: [CT-16f]
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

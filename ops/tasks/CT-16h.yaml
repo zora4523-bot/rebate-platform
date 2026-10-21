@@ -1,0 +1,27 @@
+id: CT-16h
+repo: rebate-platform
+title: 文案（CT-16 续，第 3 段·「我的」上半）：texts.default.json 补 App 高保真第 3 批定稿登记的键——表 B 场景子键（30101 / 30102 auth_unavailable.auth_manage、30151.auth_manage、30411.phone_change）与表 C 申诉结果、账号状态页、我的、邀请页与海报、收藏夹、消息中心与消息标题、公告、通知设置、设置（08 l.1047–1070）；fund-term-keys.yaml 逐键归类
+type: contract
+# 2026-10-22 入账（content-client 第六阶段；编排 2026-10-21 17:4x 分派「CT-16f」的第 3 段，拆分理由见 CT-16f 台账；第 3 批键约 210 个，按 08 行号在 l.1070 / l.1071 之间切成 CT-16h、CT-16i）。
+# 依据（SPEC_REF 8209d6e）：08 12_TEXT 表 B l.853、l.855、l.875（「场景子键」，表 B 表头 l.835 说明）、表 C l.1047–1070；
+#   docs/changes/20261021-App内高保真定稿回写.md「第 3 批 W-01～W-07」「W-15」；归类规则 08 l.665–681。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：只转写 08 已给出文案的键；「正文待提供 / 不入字典」的 invite.share.rule.1～.4、invite.share.reward_rule.1～.5 不建；settings.nickname.hint 的三个变量下发在 CT-26a，变量缺失写法 08 未登记、不建 fallback。
+#   inbox.title.<code>[.<变体>] 的变体段名 08 未定（默认见摘录 9.4）；inbox.title. 整组归资金术语（对应的通知模板编码在 08 l.670 全部归资金术语）。
+# 【待编排裁定】inbox.title 变体段名；拿不准的键默认归 fund_terms（守卫对未归类键本就按资金术语处理）。
+# 【待规划回写】08 BR-TEXT-14 登记 settings.nickname.hint 取不到变量时不写数字的措辞（05 l.152 CT-26 行）；inbox.title 变体段名。
+# 占契约槽；排在 CT-16g 之后。
+refs: []
+refs_hash: {}
+deps: [CT-16g]
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

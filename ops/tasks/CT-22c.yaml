@@ -1,0 +1,38 @@
+id: CT-22c
+repo: rebate-platform
+title: 契约（CT-22 续）：routes.json 加 ProductShare / ShareHub / Favorites / HotRankList / InviteBackfill（及待裁定的 InviteLink；入口按 BR-ID-10 矩阵）；新增 GET /v1/rank/hot 与 GET /v1/search/hot-words（均 planned）；50304 加 data.reason=rank_unavailable；texts.default.json 加 rank.* 与 error.50304.rank_unavailable
+type: contract
+# 2026-10-22 入账（content-client 第六阶段；编排 2026-10-21 17:4x 契约缺口分派「CT-22c」，05 l.152 CT-26 行末挂在 CT-22 系列下）。
+# 依据（SPEC_REF 8209d6e）：01 l.132（InviteBackfill）、l.176–179（Favorites / HotRankList / ProductShare / ShareHub）、l.344 F-PROD-03、l.353–354 F-PROD-12/13、l.513 F-SHARE-11；
+#   08 10_ID l.646–648、l.657 路由入口矩阵；04 l.543 hot-words、l.557 rank/hot；08 12_TEXT l.879 表 B 50304.rank_unavailable、l.1008 表 C rank.*；
+#   第 3 批定稿 N-01，design/specs/app-{favorites,hot-rank-list,share-hub,product-share,invite-backfill,search}.md §7。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：五条路由都是 native、无 agent_guide；ProductShare entry [in_app]，ShareHub / Favorites [in_app, push]，HotRankList [in_app, push, deeplink]，InviteBackfill [in_app]；
+#   page 文字不得命中 agent_guide_account 正则（不写「绑手机」「实名」「提现申请」等）。两个接口 planned（rank 实现 B1-28，hot-words 实现随 B1-05 后续）；新增均非破坏，oasdiff 报 breaking 即停。
+# 默认（【待编排裁定】，见摘录 9.4）：FavoritesPickShare 做 ShareHub 内子状态、不设路由参数；M-公开四路由 since 全 null（同 Earnings），InviteBackfill since 1.0.0；
+#   InviteBackfill 参数 source ∈ me / login；HotRankList 参数只有可选 platform；hot-words 形状与数据来源规划未定（hot_words[] + keyword_routes[{keyword, target: RouteTarget}]）；
+#   InviteLink（01 §4.2 有、routes.json 也没有）默认一并补（entry 只 deeplink，参数 code）。
+# 【待规划回写】04 §6.3 hot-words 行（形状、匹配规则、数据来源与后台写口）；04 §6.3 rank/hot 的 categories[] 项形状与分页大小；01 §4.2 Favorites 行写明「从收藏夹选」承载。
+# 必改单测（非保护，在 paths 内）：packages/contracts-ts/src/catalog.test.ts:73–74（50304 data / retry_kind_by_reason 精确相等）。占契约槽；合并即放槽并在 notices 告知 native、w1（CT-22d）、B1-28 / B1-05 实现线。
+refs: []
+refs_hash: {}
+contract_sections: ['6.3', '7', '10.1']
+deps: [CT-22b]
+paths:
+  - 'contracts/routes.json'
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

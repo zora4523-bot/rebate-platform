@@ -1,0 +1,28 @@
+id: CT-16f
+repo: rebate-platform
+title: 文案（CT-16 续，第 1 段）：texts.default.json 补 08 早已登记、包内默认还缺的用户侧键（N-06 清单、第 1 批定稿键、btn.buy.* / price_basis / rebate_estimate / rebate_compare、登录与邀请、分享页与分享赚、剪贴板、agent.guide.* / agent.earnings.*、earnings.empty_hint），invite.post_login.optional_hint 改变量写法；fund-term-keys.yaml 逐键归类
+type: contract
+# 2026-10-22 入账（content-client 第六阶段；编排 2026-10-21 17:4x 分派「CT-16f」；因缺口约 400 键，按批拆成 CT-16f / g / h / i 四段，本段是 10-21 以前登记的键加第 1 批）。
+# 依据（SPEC_REF 8209d6e）：08 12_TEXT 表 C l.900–1022 与表 D l.1099–1124 中 2026-10-21 以前登记的行、l.187（BR-TEXT-01）、l.660 与 l.669（BR-TEXT-12 购买按钮与资金术语单列键）、l.1432–1453（BR-TEXT-22，l.1449 除外）；
+#   08 03_PRICE l.33 / l.47（price_basis、rebate_estimate、rebate_compare 原文）；第 1 批定稿「契约缺口」、第 3 批 N-06；归类规则 08 l.665–681。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：只转写 08 已给出文案的键，一字不改；08 写「保留不用」「正文待提供」「不入字典」的键不建；后台文案（ADMIN_ONLY 码、totp、admin_*）、P1 支付码（30901 / 30902 / 50306）、作废的 cs_verify.* 不建。
+#   search.placeholder 08 没有登记（规划缺口），本任务不建。rank.* 与 error.50304.rank_unavailable 在 CT-22c。
+# 必改单测（非保护，在 paths 内）：packages/contracts-ts/src/texts.test.ts:37–39（btn.buy.rebate_suffix 不存在）、:41–48（optional_hint 旧写法）、:227（earnings.* 恰 17 个）。
+# 【待编排裁定】保留不用的键不建；BR-PRICE 与 BR-TEXT-12 正文里的键（price_basis、rebate_estimate、rebate_compare、btn.buy、btn.buy.coupon、btn.buy.no_rebate、tag.rebate）一并建；agent.earnings.* 逐键归类结果。
+# 【待规划回写】08 BR-TEXT-14 表 C 补 search.placeholder（app-search.md §3 已引用）。
+# 占契约槽；与 CT-16g / h / i 同改 texts.default.json 与 fund-term-keys.yaml，按 f → g → h → i 串行。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
