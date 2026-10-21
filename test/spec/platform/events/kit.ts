@@ -55,12 +55,14 @@ export const PLAN_02_EVENTS = [
   'order.illegal_transition',
   'order.attr_binding_conflict',
   'order.blacklist_hit_after_credit',
+  'order.snapshot_retry_exhausted',
 ] as const;
 
 /**
  * Names 02 §11 gained after the event bus was first frozen (order.reassigned; the four alert / risk
- * events of couli#125, D10-48). Until the task that registers each one lands it may be missing from
- * EVENT_NAMES; once present it must sit at its 02 §11 position. Every other name is required.
+ * events of couli#125, D10-48; order.snapshot_retry_exhausted of couli#163, D10-105). Until the
+ * task that registers each one lands it may be missing from EVENT_NAMES; once present it must sit
+ * at its 02 §11 position. Every other name is required.
  */
 export const PLAN_02_PENDING: ReadonlySet<string> = new Set([
   'order.reassigned',
@@ -68,6 +70,7 @@ export const PLAN_02_PENDING: ReadonlySet<string> = new Set([
   'order.illegal_transition',
   'order.attr_binding_conflict',
   'order.blacklist_hit_after_credit',
+  'order.snapshot_retry_exhausted',
 ]);
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
