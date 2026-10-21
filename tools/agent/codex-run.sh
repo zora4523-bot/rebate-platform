@@ -86,6 +86,7 @@ PHASE=''
 TASK=''
 TASK_PATHS=''
 TASK_TEST_PATHS=''
+PREV_HEAD=''
 WT_ARG=''
 REVIEW_TYPE=''
 REVIEW_EFFORT=''
@@ -751,6 +752,11 @@ write_claude_context() {
     >"$dir/git-diff.patch" 2>&1 || true
   git -C "$WT_REAL" -c core.quotepath=false ls-files --others --exclude-standard \
     >"$dir/untracked.txt" 2>&1 || true
+  # Incremental review (CT-06x): the increment since the previous round's head.
+  if [ -n "$PREV_HEAD" ]; then
+    git -C "$WT_REAL" -c core.quotepath=false diff --no-ext-diff --no-textconv "$PREV_HEAD" -- \
+      >"$dir/git-diff-since-previous.patch" 2>&1 || true
+  fi
   if [ -f "$WT_REAL/SPEC_REF" ]; then spec_ref="$(head -n 1 "$WT_REAL/SPEC_REF" | tr -cd '0-9a-f')"; fi
   if [ -n "$spec_ref" ] && [ -d "${SPEC_REPO:-}" ] &&
     git -C "$SPEC_REPO" rev-parse --verify --quiet "$spec_ref^{commit}" >/dev/null; then
@@ -849,8 +855,10 @@ review_meta_facts() {
 
 # Checks that a review output and a meta file describe the same usable review call of this review
 # type: mode review, the same review_type, has_output true, exit_code 0, output_file is this
-# run's review-codex.json, and the output's mtime lies within that call's started_at ..
-# finished_at (second resolution, one second of slack). Prints `ok` or why the two do not pair.
+# run's output of that name ($3: review-codex.json or review-claude-independent.json, approvals
+# #36: a round of either engine is a previous round), and the output's mtime lies within that
+# call's started_at .. finished_at (second resolution, one second of slack). Prints `ok` or why
+# the two do not pair.
 review_output_paired() {
   node -e '
 const fs = require("node:fs");
@@ -871,45 +879,54 @@ if (mtime < started - 1000 || mtime > finished + 1000) {
   say(`output written at ${new Date(mtime).toISOString()}, outside that call`);
 }
 say("ok");
-' "$1" "$2" "$REVIEW_TYPE" "$RUN/review-codex.json" 2>/dev/null || printf 'pairing check failed\n'
+' "$1" "$2" "$REVIEW_TYPE" "$RUN/$3" 2>/dev/null || printf 'pairing check failed\n'
 }
 
 # Incremental review (REVIEW.md, CT-06x): from the second round on, the previous review output of
 # the same review type and the head commit it reviewed are given to the reviewer as data. Looked
 # up before archive_previous moves anything, and only from an output and a meta of one and the
-# same call (review_output_paired): RUN/review-codex.json with RUN/meta.review.json, else the
-# highest RUN/attempts/<n>/ holding a review-codex.json and its meta.json. Other files in RUN
+# same call (review_output_paired): RUN/<output> with RUN/meta.review.json, else the highest
+# RUN/attempts/<n>/ holding an <output> and its meta.json, <output> being review-codex.json or
+# review-claude-independent.json (approvals #36: either engine's round counts). Other files in RUN
 # (numbered review-codex*-r<N>.json copies a caller may keep) are never paired with a meta.
 # Sets PREV_BLOCK (empty on the first round or when the previous round cannot be read; a log
 # line says which).
 build_previous_round() {
   PREV_BLOCK=''
-  local prev_json='' prev_meta='' d name best=0 rounds=0 facts h why
-  if [ -s "$RUN/review-codex.json" ] && [ -s "$RUN/meta.review.json" ]; then
-    why="$(review_output_paired "$RUN/review-codex.json" "$RUN/meta.review.json")"
-    if [ "$why" = ok ]; then
-      prev_json="$RUN/review-codex.json"
-      prev_meta="$RUN/meta.review.json"
-      rounds=1
-    else
-      log "review: $RUN/review-codex.json is not used as a previous $REVIEW_TYPE round ($why)"
+  PREV_HEAD=''
+  local prev_json='' prev_meta='' d name best=0 rounds=0 facts h why out
+  # approvals #36: the previous round may be either engine's output (REVIEW_OUT_NAMES).
+  for out in $REVIEW_OUT_NAMES; do
+    [ -z "$prev_json" ] || break
+    if [ -s "$RUN/$out" ] && [ -s "$RUN/meta.review.json" ]; then
+      why="$(review_output_paired "$RUN/$out" "$RUN/meta.review.json" "$out")"
+      if [ "$why" = ok ]; then
+        prev_json="$RUN/$out"
+        prev_meta="$RUN/meta.review.json"
+        rounds=1
+      else
+        log "review: $RUN/$out is not used as a previous $REVIEW_TYPE round ($why)"
+      fi
     fi
-  fi
+  done
   # Earlier usable outputs of this review type in attempts/ (counted for the round number; the
   # highest is the previous round when RUN holds none).
   for d in "$RUN/attempts"/*; do
-    [ -s "$d/review-codex.json" ] && [ -s "$d/meta.json" ] || continue
+    [ -s "$d/meta.json" ] || continue
     name="$(basename "$d")"
     case "$name" in
       '' | *[!0-9]*) continue ;;
     esac
-    [ "$(review_output_paired "$d/review-codex.json" "$d/meta.json")" = ok ] || continue
-    rounds=$((rounds + 1))
-    if [ "$prev_meta" != "$RUN/meta.review.json" ] && [ "$((10#$name))" -gt "$best" ]; then
-      best="$((10#$name))"
-      prev_json="$d/review-codex.json"
-      prev_meta="$d/meta.json"
-    fi
+    for out in $REVIEW_OUT_NAMES; do
+      [ -s "$d/$out" ] || continue
+      [ "$(review_output_paired "$d/$out" "$d/meta.json" "$out")" = ok ] || continue
+      rounds=$((rounds + 1))
+      if [ "$prev_meta" != "$RUN/meta.review.json" ] && [ "$((10#$name))" -gt "$best" ]; then
+        best="$((10#$name))"
+        prev_json="$d/$out"
+        prev_meta="$d/meta.json"
+      fi
+    done
   done
   if [ -z "$prev_json" ]; then
     log "review: no previous $REVIEW_TYPE round of $TASK in $RUN, full review (round 1)"
@@ -929,6 +946,12 @@ build_previous_round() {
   git -C "$WT_REAL" merge-base --is-ancestor "$h" HEAD 2>/dev/null || ancestry='no (rebased: the increment also holds main changes; judge by content)'
   since="$(git -C "$WT_REAL" -c core.quotepath=false diff --name-only "$h" -- || true)"
   prev_text="$(cat "$prev_json")"
+  PREV_HEAD="$h"
+  # claude-independent has no shell: the increment is written to its context directory.
+  local increment="\`git diff $h\` in the working directory, plus the untracked files above"
+  if [ "$AGENT_ENGINE" = claude-independent ]; then
+    increment="git-diff-since-previous.patch in the context directory (\`git diff $h\`), plus the untracked files above"
+  fi
   log "review: round $((rounds + 1)) of $REVIEW_TYPE, previous output $prev_json, previous head $h"
   PREV_BLOCK="
 
@@ -937,7 +960,7 @@ build_previous_round() {
 - This review round: $((rounds + 1)) (earlier usable $REVIEW_TYPE outputs found: $rounds)
 - Head commit at the previous round: $h (from $prev_meta)
 - Previous head is an ancestor of the current HEAD: $ancestry
-- Increment to review: \`git diff $h\` in the working directory, plus the untracked files above
+- Increment to review: $increment
 - Previous review output: $prev_json
 
 #### Files changed since the previous round (\`git diff --name-only $h\`)

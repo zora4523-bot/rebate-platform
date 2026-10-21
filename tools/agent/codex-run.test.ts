@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import {
   AGENT_DIR,
+  FAKE_CLAUDE,
   FAKE_CODEX,
   type Fixture,
   gitIn,
@@ -1244,5 +1245,48 @@ it(
     // both reviews (GT-23a round 2).
     const review = codexRun(fx, ['review', TASK, '--base', fx.baseSha, '--dry-run']);
     expect(review.status, review.stderr).toBe(0);
+  },
+);
+
+it(
+  '[CT-06x, approvals 36] a previous round of either engine is the baseline; the independent Claude reads the increment from its context directory',
+  LONG,
+  () => {
+    const fx = fixture('review-prev-engines');
+    fx.env['COULI_CLAUDE_BIN'] = FAKE_CLAUDE;
+    writeFileSync(join(fx.trusted, 'REVIEW.md'), '# review guide (fixture)\n');
+    writeFileSync(join(fx.worktree, 'src', 'a.ts'), 'export const a = 2;\n');
+    const review = ['review', TASK, '--review-type', 'general', '--base', fx.baseSha];
+    const claudeRun = (args: readonly string[]) => runScript('claude-run.sh', args, fx.env);
+    // Round 1 by Codex.
+    const firstHead = gitIn(fx.worktree, ['rev-parse', 'HEAD']);
+    const run1 = codexRun(fx, review);
+    expect(run1.status, run1.stderr).toBe(0);
+    gitIn(fx.worktree, ['add', '-A']);
+    gitIn(fx.worktree, ['commit', '-q', '-m', 'fix']);
+    writeFileSync(join(fx.worktree, 'src', 'a.ts'), 'export const a = 3;\n');
+    // Round 2 by the independent Claude: Codex's round 1 is its baseline, and with no shell the
+    // increment since that head is a file of its context directory.
+    const run2 = claudeRun(review);
+    expect(run2.status, run2.stderr).toBe(0);
+    const prompt = observedArgv(fx).at(-1) ?? '';
+    expect(prompt).toContain('- This review round: 2 (earlier usable general outputs found: 1)');
+    expect(prompt).toContain(`- Head commit at the previous round: ${firstHead}`);
+    expect(prompt).toContain('git-diff-since-previous.patch in the context directory');
+    expect(prompt).toContain('<<<REVIEW.md (trusted root) begin>>>');
+    const patch = readFileSync(
+      join(fx.run, 'wrapper-review', 'context', 'git-diff-since-previous.patch'),
+      'utf8',
+    );
+    expect(patch).toContain('+export const a = 3;');
+    // Round 3 by Codex again: the independent Claude's round 2 (archived) counts as well.
+    const third = codexRun(fx, [...review, '--dry-run']);
+    expect(third.status, third.stderr).toBe(0);
+    const thirdPrompt = decodeDryRun(third.stdout).at(-1) ?? '';
+    expect(thirdPrompt).toContain(
+      '- This review round: 3 (earlier usable general outputs found: 2)',
+    );
+    expect(thirdPrompt).toContain('review-claude-independent.json');
+    expect(thirdPrompt).toContain('- Increment to review: `git diff ');
   },
 );
