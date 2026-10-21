@@ -1,4 +1,5 @@
 // Public surface of the orders module (规划/02 §4.1); other modules import only from this file.
+export { createInviteRewardOrderFacts } from './ports/invite-reward.ts';
 export { readSnapshotRetryInput } from './infra/snapshot-retry-input.ts';
 // B1-08t：分佣快照补偿重试的纯判定与定时扫描（worker 经 worker-runtime 装配）。
 export {

@@ -2,6 +2,31 @@
 // only from here. B1-11e: the Nest module with POST /v1/me/inviter, assembled by app.module.
 export { GrowthModule } from './growth.module.ts';
 export type { GrowthModuleOptions } from './growth.module.ts';
+// B1-35: the invite reward campaign (BR-INV-24): qualification, budget port, trigger, payout,
+// daily expiry, scanner and the worker loop.
+export {
+  createInviteRewardQualifier,
+  createInviteRewardBudgetReader,
+  createInviteRewardTrigger,
+  createInviteRewardPayout,
+  createInviteRewardExpiry,
+  createInviteRewardScanner,
+  startInviteRewardWorker,
+  inviteRewardScannerToken,
+  INVITE_REWARD_SCAN_INTERVAL_MS,
+} from './application/invite-reward.ts';
+export type {
+  InviteRewardScanner,
+  InviteRewardPayoutDeps,
+  InviteRewardBaseDeps,
+  InviteRewardOrderFacts,
+  InviteRewardOrder,
+  InviteRewardGrantWriter,
+  InviteRewardQualifier,
+  InviteRewardPayout,
+  InviteRewardExpiry,
+  InviteRewardTrigger,
+} from './application/invite-reward.ts';
 export { appendLevelChange, appendRelationChange } from './infra/change-logs.ts';
 export { createGrowthHistory } from './infra/history.ts';
 // B1-11d: every write that changes users.parent_id takes this app-level lock first.

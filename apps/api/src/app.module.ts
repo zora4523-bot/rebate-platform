@@ -50,6 +50,12 @@ import {
   appendLevelChange,
   createFirstAppLoginReview,
   createInviteBinder,
+  createInviteRewardBudgetReader,
+  createInviteRewardExpiry,
+  createInviteRewardPayout,
+  createInviteRewardQualifier,
+  createInviteRewardScanner,
+  inviteRewardScannerToken,
   createLandingInviteBinder,
   createMyInviteReader,
   createParentRelationReader,
@@ -58,6 +64,8 @@ import {
   type InviteBinder,
   type InviteBinderDeps,
   type MyInviteReader,
+  type InviteRewardQualifier,
+  type InviteRewardScanner,
 } from './modules/growth/index.ts';
 import {
   IdentityAdminModule,
@@ -85,6 +93,9 @@ import {
   createInviteLoginDevicesReader,
   createDeletionStageReader,
   createOrderUserReader,
+  createUserDeletionStatusReader,
+  createInviteRewardLoginIpsReader,
+  createInviteRewardDeletedPhoneReader,
   revokeSessionsByUser,
   unbindRevoked,
   type IdentityAttrCodeReader,
@@ -147,6 +158,7 @@ import {
   OrdersAdminModule,
   OrdersModule,
   type AdminClaimPorts,
+  createInviteRewardOrderFacts,
   type ClaimEvidenceFactory,
   createOrderSourcePorts,
   type OrderSourcePorts,
@@ -193,6 +205,7 @@ import {
   SIGNATURE_CHECK,
   createBlocklistService,
   createInviteRelationHitWriter,
+  createSameDeviceAccountsCheck,
   createRiskStateService,
   createDeviceRegistrationRisk,
   createSmsRisk,
@@ -507,6 +520,7 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
         { token: REDIS, optional: true },
         { token: FIELD_CRYPTO, optional: true },
         { token: EVENT_BUS, optional: true },
+        { token: DB, optional: true },
       ],
       useFactory: (
         clock: Clock,
@@ -514,6 +528,7 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
         redis?: RedisHandle,
         crypto?: FieldCrypto,
         events?: EventBus,
+        db?: Kysely<Database>,
       ): LandingInvitePort | null => {
         if (redis === undefined || crypto === undefined || events === undefined) {
           logger.info(
@@ -532,6 +547,10 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
           redis,
           crypto,
           ...growthReadPorts(clock, crypto, events),
+          // BR-INV-24 ① (B1-35): the reward qualification in the landing transaction.
+          ...(db === undefined
+            ? {}
+            : { inviteReward: inviteRewardQualifier(clock, logger, db, crypto) }),
         });
       },
     },
@@ -590,7 +609,9 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
           return null;
         }
         return createRegistrationInviteBinding(
-          createInviteBinder(inviteBinderDeps(clock, logger, redis, crypto, events)),
+          createInviteBinder(inviteBinderDeps(clock, logger, db, redis, crypto, events)),
+          // The registration's client IP reaches the invite reward qualification (B1-35).
+          { forwardClientIp: true },
         );
       },
     },
@@ -617,6 +638,7 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
 function inviteBinderDeps(
   clock: Clock,
   logger: RootLogger,
+  db: Kysely<Database>,
   redis: RedisHandle,
   crypto: FieldCrypto,
   events: EventBus,
@@ -629,6 +651,114 @@ function inviteBinderDeps(
     loginDevices: createInviteLoginDevicesReader(),
     activity: (trx) => createInviteBackfillActivityReader(trx),
     ...growthReadPorts(clock, crypto, events),
+    inviteReward: inviteRewardQualifier(clock, logger, db, crypto),
+  };
+}
+
+/**
+ * BR-INV-24 ① (B1-35): growth's invite reward qualifier for the three self-service binding
+ * channels, over config_items read on the binding transaction (a fresh content reader per call,
+ * as growthReadPorts) and the field cipher's blind index of the bind IP. The binders call it after
+ * the relation log, under their own savepoint.
+ */
+function inviteRewardQualifier(
+  clock: Clock,
+  logger: RootLogger,
+  db: Kysely<Database>,
+  crypto: FieldCrypto,
+): InviteRewardQualifier {
+  return createInviteRewardQualifier({
+    db,
+    clock,
+    logger,
+    crypto,
+    config: transactionConfig(clock),
+  });
+}
+
+/** content's config_items reader bound to the caller's transaction (fresh per call, uncached). */
+function transactionConfig(clock: Clock): InviteBinderDeps['config'] {
+  return {
+    configValue: (appId, key, trx) =>
+      createContentReader({ db: trx, clock }).configValue(appId, key),
+  };
+}
+
+@Module({})
+class InviteRewardWorkerModule {}
+
+/**
+ * The worker's invite reward scanner (B1-35 §9.2 第 9 条; BR-INV-24 ④ and 「有效期」): growth's
+ * payout over orders' fact port, identity's login-device / login-IP / retained-phone / deletion
+ * readers, risk's fresh state read and BR-ID-37 check (configuration through content's reader on
+ * the judging transaction), and growth's daily expiry. Without a database, the field cipher or the
+ * event bus the provider is null and entry.ts starts no loop.
+ * TODO(规划/11 §2.3): grantWriter（REWARD 凭证写入） — blocked on B2-16b; until then every payout
+ * is deferred with a warn (invite_reward_writer_unavailable), nothing is released or paid.
+ */
+function inviteRewardWorkerModule(): DynamicModule {
+  return {
+    module: InviteRewardWorkerModule,
+    global: true,
+    providers: [
+      {
+        provide: inviteRewardScannerToken(),
+        inject: [
+          CLOCK,
+          ROOT_LOGGER,
+          { token: DB, optional: true },
+          { token: FIELD_CRYPTO, optional: true },
+          { token: EVENT_BUS, optional: true },
+        ],
+        useFactory: (
+          clock: Clock,
+          logger: RootLogger,
+          db?: Kysely<Database>,
+          crypto?: FieldCrypto,
+          events?: EventBus,
+        ): InviteRewardScanner | null => {
+          if (db === undefined || crypto === undefined || events === undefined) {
+            logger.info(
+              {
+                db: db !== undefined,
+                field_crypto: crypto !== undefined,
+                event_bus: events !== undefined,
+              },
+              'invite_reward_worker_unassembled',
+            );
+            return null;
+          }
+          const reads = growthReadPorts(clock, crypto, events);
+          const base = { db, clock, logger, config: transactionConfig(clock) };
+          const orders = createInviteRewardOrderFacts();
+          const payout = createInviteRewardPayout({
+            ...base,
+            orders,
+            crypto,
+            loginDevices: createInviteLoginDevicesReader(),
+            loginIps: createInviteRewardLoginIpsReader(),
+            deletedPhone: createInviteRewardDeletedPhoneReader(),
+            deletionStatus: createUserDeletionStatusReader({ db }),
+            readRisk: reads.readRisk,
+            verifiedBirthDate: reads.verifiedBirthDate,
+            multiAccount: createSameDeviceAccountsCheck({
+              clock,
+              logger,
+              logins: createSameDeviceLoginReader(),
+              config: (handle) => createContentReader({ db: handle, clock }),
+            }),
+          });
+          return createInviteRewardScanner({
+            db,
+            clock,
+            logger,
+            payout,
+            expiry: createInviteRewardExpiry({ ...base, orders }),
+          });
+        },
+      },
+    ],
+    exports: [inviteRewardScannerToken()],
   };
 }
 
@@ -712,7 +842,7 @@ function growthModule(): DynamicModule {
           );
           return null;
         }
-        return createInviteBinder(inviteBinderDeps(clock, logger, redis, crypto, events));
+        return createInviteBinder(inviteBinderDeps(clock, logger, db, redis, crypto, events));
       },
     },
     // GET /v1/invites/me (B1-11j): no Redis needed; without a database, the field cipher (realname
@@ -1619,6 +1749,15 @@ export class AppModule {
                       ? null
                       : pageAudienceReads(db, contentReader(db, clock), appConfig),
                 },
+                // F1-02zp / B1-35: GET /v1/config's invite.reward_enabled reads growth's available
+                // total budget (total − reserved − granted), config_items on its own read transaction.
+                inviteRewardBudget: {
+                  inject: [CLOCK, { token: DB, optional: true }],
+                  useFactory: (clock: Clock, db?: Kysely<Database>) =>
+                    db === undefined
+                      ? null
+                      : createInviteRewardBudgetReader({ db, config: transactionConfig(clock) }),
+                },
               }),
               NotificationModule.forApi((db, clock) => createContentReader({ db, clock })),
               // GET /v1/orders and /v1/orders/{order_id} over the shared OrderQueries (B1-08l):
@@ -1661,6 +1800,9 @@ export class AppModule {
         ...(options.entry === 'worker'
           ? [IdentityWorkerModule.forWorker({ payoutAccountConfig })]
           : []),
+        // growth's invite reward scanner (B1-35, BR-INV-24): worker entry only; entry.ts starts its
+        // 60-second loop after the queue runs and stops it first on shutdown.
+        ...(options.entry === 'worker' ? [inviteRewardWorkerModule()] : []),
         // Order sync (B1-08n): the order-sync handler and its scheduler, worked by the worker
         // entry only over its own governed union adapters; entry.ts starts the scheduler after
         // the queue runs.
