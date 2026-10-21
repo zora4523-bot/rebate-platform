@@ -14,7 +14,7 @@ import {
 import { EmptyState, Skeleton } from '../../../../components/base/index.ts';
 import { RetryPage } from '../../../../components/retry/index.ts';
 import { useApi } from '../../../../shared/api/app-api.ts';
-import type { H5ApiClient } from '../../../../shared/api/index.ts';
+import { ApiError, type H5ApiClient } from '../../../../shared/api/index.ts';
 import { ledgerText, ledgerTexts } from '../../../../texts/ledger.ts';
 import { Component as PagePending } from '../page-pending.tsx';
 import {
@@ -155,23 +155,45 @@ function LedgerList({ api }: { api: H5ApiClient }): ReactElement {
   );
   const pageCount = data?.pages.length ?? 0;
 
-  // 翻页：同一时间只有一个请求在途（含刷新），到底后不再请求。
-  const loadingMore = useRef(false);
+  // 同一时间只有一个请求在途：翻页与下拉刷新共用这把锁，另以查询缓存的实时状态兜底
+  // （API 客户端不接收取消信号，取消查询并不会真的中止 HTTP 请求，所以只能不重叠发起）。
+  const busy = useRef<'more' | 'refresh' | null>(null);
+  // 翻页在途时的下拉刷新先记下，等这一页回来再刷新（只刷新一次）。
+  const refreshQueued = useRef(false);
+  function inFlight(): boolean {
+    return busy.current !== null || queryClient.isFetching({ queryKey: QUERY_KEY }) > 0;
+  }
+
+  // 翻页：到底后不再请求。
   function loadMore(): void {
-    if (loadingMore.current || !hasNextPage || isFetching) return;
-    loadingMore.current = true;
+    if (!hasNextPage || inFlight()) return;
+    busy.current = 'more';
     list
       .fetchNextPage({ cancelRefetch: false })
       .catch(() => undefined)
       .finally(() => {
-        loadingMore.current = false;
+        busy.current = null;
+        if (refreshQueued.current) {
+          refreshQueued.current = false;
+          refresh();
+        }
       });
   }
   const onReachBottom = useEffectEvent(loadMore);
 
+  // 已有数据时刷新失败（含 10405）：保留已显示的流水，顶部显示错误提示与手动重试；
+  // 不自动重放。重试进行中只显示刷新提示。
+  const refreshFailed = list.isRefetchError && !isFetching;
+  const refreshError = refreshFailed
+    ? list.error instanceof ApiError && list.error.code === 10405
+      ? ledgerText('error.10405')
+      : ledgerTexts.refreshFailed
+    : null;
+
   // 滚到底：列表末尾的哨兵进入视口时取下一页；每加载一页重建观察器，短列表也能继续触发。
+  // 刷新失败时不翻页（旧游标对应的是刷新前的首页）。
   const sentinel = useRef<HTMLDivElement>(null);
-  const showSentinel = hasNextPage && !isFetchNextPageError;
+  const showSentinel = hasNextPage && !isFetchNextPageError && !refreshFailed;
   useEffect(() => {
     const target = sentinel.current;
     if (!showSentinel || target === null || typeof IntersectionObserver === 'undefined') return;
@@ -182,12 +204,15 @@ function LedgerList({ api }: { api: H5ApiClient }): ReactElement {
     return () => observer.disconnect();
   }, [showSentinel, pageCount]);
 
-  // 下拉刷新：丢掉第一页以后的页，只重取第一页一次；刷新在途时不再发起。
-  const refreshing = useRef(false);
+  // 下拉刷新：丢掉第一页以后的页，只重取第一页一次；刷新在途时不再发起，翻页在途时排到其后。
   const [isRefreshing, setRefreshing] = useState(false);
   function refresh(): void {
-    if (refreshing.current) return;
-    refreshing.current = true;
+    if (busy.current === 'more') {
+      refreshQueued.current = true;
+      return;
+    }
+    if (inFlight()) return;
+    busy.current = 'refresh';
     setRefreshing(true);
     queryClient.setQueryData<InfiniteData<LedgerListData, string | null>>(QUERY_KEY, (old) =>
       old === undefined || old.pages.length <= 1
@@ -198,7 +223,7 @@ function LedgerList({ api }: { api: H5ApiClient }): ReactElement {
       .refetch()
       .catch(() => undefined)
       .finally(() => {
-        refreshing.current = false;
+        busy.current = null;
         setRefreshing(false);
       });
   }
@@ -237,11 +262,16 @@ function LedgerList({ api }: { api: H5ApiClient }): ReactElement {
   }
 
   const touch = { onTouchStart, onTouchMove, onTouchEnd };
+  const banner = isRefreshing ? (
+    <Refreshing />
+  ) : refreshError === null ? null : (
+    <RefreshFailed message={refreshError} onRetry={refresh} />
+  );
   const empty = !data.pages.some((page) => page.items.some(isVisible));
   if (empty && !hasNextPage) {
     return (
       <Page {...touch}>
-        {isRefreshing ? <Refreshing /> : null}
+        {banner}
         <div className="flex justify-center pt-couli-12">
           <EmptyState
             icon={<ListIcon />}
@@ -281,7 +311,7 @@ function LedgerList({ api }: { api: H5ApiClient }): ReactElement {
 
   return (
     <Page {...touch}>
-      {isRefreshing ? <Refreshing /> : null}
+      {banner}
       {groups.map((group) => (
         <section key={group.key} className="flex flex-col gap-couli-2">
           <h2 className={`${CAPTION} px-couli-1`}>{group.title}</h2>
@@ -303,6 +333,29 @@ function Refreshing(): ReactElement {
     <p role="status" className={`${CAPTION} text-center`}>
       {ledgerTexts.refreshing}
     </p>
+  );
+}
+
+function RefreshFailed({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}): ReactElement {
+  return (
+    <div className="flex min-h-11 items-center justify-center gap-couli-3 rounded-couli-button bg-couli-background-muted px-couli-3">
+      <p role="alert" className={`${CAPTION} min-w-0 [overflow-wrap:anywhere]`}>
+        {message}
+      </p>
+      <button
+        type="button"
+        className={`${FOCUS} min-h-11 flex-none cursor-pointer px-couli-2 text-couli-footnote leading-couli-footnote font-couli-medium text-couli-text-link`}
+        onClick={onRetry}
+      >
+        {ledgerTexts.retry}
+      </button>
+    </div>
   );
 }
 

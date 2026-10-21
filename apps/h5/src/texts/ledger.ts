@@ -61,6 +61,8 @@ export const ledgerTexts = {
   /** 下一页加载失败；已显示的流水保留。 */
   moreFailed: '更多记录加载失败',
   retry: '重试',
+  /** 已有流水时下拉刷新失败（10405 改用字典 error.10405）；已显示的流水保留。 */
+  refreshFailed: '刷新失败',
   /** 下拉刷新进行中。 */
   refreshing: '正在刷新…',
 } as const;
