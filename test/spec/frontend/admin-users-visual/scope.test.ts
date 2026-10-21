@@ -19,13 +19,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// 上级与直推 / 调等级 / 改上级 / 查看直推名单 are contract-backed since CT-24e (F1-07g) and left out.
 function expectContractScope(): void {
   const main = within(mainElement());
   expect(main.queryAllByRole('tab')).toEqual([]);
   for (const name of [
     '余额与流水',
     '风控命中',
-    '上级与直推',
     '余额',
     '风控与名单',
     '客服代办',
@@ -44,12 +44,9 @@ function expectContractScope(): void {
     '加入黑名单',
     '冻结',
     '封禁',
-    '调等级',
-    '改上级',
     '调整余额',
     '重置授权',
     '停用返利',
-    '查看直推名单',
   ]) {
     expect(main.queryByRole('button', { name }), `no action ${name}`).toBeNull();
     expect(main.queryByRole('link', { name }), `no link ${name}`).toBeNull();
@@ -89,6 +86,11 @@ it(
     expect(
       within(mainElement()).queryByRole('button', { name: /^查看(?:完整手机号)?$/ }),
     ).toBeNull();
+    // user.level / user.inviter are not held: their entries stay hidden even though contracted.
+    for (const name of ['调等级', '改上级']) {
+      expect(within(mainElement()).queryByRole('button', { name }), `no action ${name}`).toBeNull();
+      expect(within(mainElement()).queryByRole('link', { name }), `no link ${name}`).toBeNull();
+    }
     expect(server.requests('GET', LIST)).toEqual([]);
     expect(server.requests('GET', LOOKUP)).toHaveLength(1);
     expect(server.requests('POST')).toEqual([]);

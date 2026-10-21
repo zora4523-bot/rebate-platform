@@ -1,0 +1,19 @@
+id: F1-06zp
+repo: rebate-platform
+title: F1-07i / F1-07j 规则测试同步（F1-07g 用户详情补齐前置）——「只展示已接入契约」的否定清单去掉 CT-24e 已接入的四项（admin-users-visual scope.test.ts 的「上级与直推」区标题与【调等级】【改上级】【查看直推名单】按钮），admin-users detail.test.ts 不出现文字的正则去掉「直推名单」；其余禁止项（直推数、调整余额、页签等）与用例名、条数不变
+type: test-change
+# 2026-10-21 入账（前端线 f1-frontend-7）。冻结测试 [AC-F1-07j-NOPE#1] 等与 [AC-F1-07i-…] 详情用例按当时「未接入契约的模块不得出现」列了禁止项；CT-24e（#1042）已合并直推名单、调等级、改上级契约，adminGetUser 已有 inviter_user_id，
+# F1-07g 上线这些入口后上述否定断言必然变红。本改动只移除已有契约支撑的这几项，其余未接入项（直推数无 invitee_count 字段、调整余额属资金类、各页签等）仍禁止；正向行为由 F1-07g 的规则测试覆盖。主干保持全绿。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件（approvals 第 12 条），第二家评审为本地 Codex 只读会话（不可用时无上下文 Claude 子代理，D10-104），合并需 #24 标签。
+refs: []
+refs_hash: {}
+deps: [F1-07j, CT-24e]
+paths:
+  - 'test/spec/frontend/admin-users-visual/scope.test.ts'
+  - 'test/spec/frontend/admin-users/detail.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 1073
