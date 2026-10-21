@@ -109,6 +109,9 @@ it('[AC-B1-15f#40] 超时扫描按 (apply_at, id) 分批读完：batchSize=2 时
   // Still cooling: its withdrawal is not terminal, so the expiry defers it (and it stays cooling).
   const rc = await seedRequest(kit.db, c, { applyAt: new Date(Date.parse(APPLY_AT) + 120_000) });
   kit.setNonTerminal(c, true);
+  // batchSize also bounds the overdue scan's pages: ordered by (apply_at, id) the first page holds
+  // exactly ra and rb, so rc is only reached through the next keyset page. An implementation that
+  // reads one page of overdue requests per round never alarms rc and fails below.
   const { runner } = runnerWith(calendars, 2);
   kit.clock.set('2026-10-23T16:00:00.000Z');
   await runner.runOnce();
@@ -179,5 +182,14 @@ it('[AC-B1-15f#41] 日历按 (app_id, 年) 缓存：两个 app 不同调休配�
   for (const line of own) {
     expect(instant(line['deadline_at'])).toBe(Date.parse('2026-10-26T16:00:00.000Z'));
   }
-  expect(warnings(kit, OVERDUE, withMakeup.appId)).toHaveLength(2);
+  // §9.2 #6: the dedup set is cleared at the +08:00 day change (2026-10-24 → 2026-10-27), so the
+  // first app's two requests, still overdue, are reported once more on the new day: 4 lines.
+  const repeated = warnings(kit, OVERDUE, withMakeup.appId);
+  expect(repeated).toHaveLength(4);
+  expect(repeated.map((line) => line['deletion_request_id']).sort()).toEqual(
+    [rows.first.id, rows.first.id, rows.second.id, rows.second.id].sort(),
+  );
+  for (const line of repeated) {
+    expect(instant(line['deadline_at'])).toBe(Date.parse('2026-10-23T16:00:00.000Z'));
+  }
 });
