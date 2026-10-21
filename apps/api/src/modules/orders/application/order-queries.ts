@@ -16,6 +16,7 @@ import { chinaMonthRange } from '@couli/domain';
 import { fenToJsonNumber } from '@couli/money';
 import { sql, type Kysely } from 'kysely';
 import type { ContentReader } from '../../content/index.ts';
+import type { ClaimEntryReader } from '../../linking/index.ts';
 import type { Clock } from '../../platform/index.ts';
 import {
   buildTimeline,
@@ -72,6 +73,8 @@ export interface OrderLinkReader {
 }
 
 export interface OrderQueryDeps {
+  /** Optional only for legacy direct callers; production must supply linking's raw reader. */
+  claimEntry?: ClaimEntryReader;
   db: Kysely<DB>;
   clock: Clock;
   config: ContentReader;

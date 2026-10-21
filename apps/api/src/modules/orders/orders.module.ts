@@ -15,7 +15,7 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { ContentReader } from '../content/index.ts';
-import type { PendingAttemptStore } from '../linking/index.ts';
+import type { ClaimEntryReader, PendingAttemptStore } from '../linking/index.ts';
 import {
   CLOCK,
   DB,
@@ -55,6 +55,7 @@ import {
 } from './worker-runtime.ts';
 
 export interface OrdersModuleOptions {
+  readonly claimEntry?: (db: Kysely<Database>) => ClaimEntryReader;
   /**
    * B1-10c: the claim evidence ports over the acceptance transaction (linking's raw reads, the
    * product-key derivation over catalog's platforms). app.module always gives it; optional only
