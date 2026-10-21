@@ -129,6 +129,7 @@ import {
   type LinkOpenQuoteReads,
   type LinkOpenReadPlan,
   type LinkRegistrations,
+  needsTaobaoReauth,
 } from './modules/linking/index.ts';
 import {
   NotificationModule,
@@ -1613,7 +1614,13 @@ export class AppModule {
         // Freeze expiry and the daily risk alerts (BR-ID-36, B1-03j): the risk-scan queue's
         // handler, worked by the worker entry only; entry.ts seeds the chain after the queue starts.
         ...(options.entry === 'worker'
-          ? [RiskScanModule.forWorker(), AgentModule.forWorker()]
+          ? [
+              RiskScanModule.forWorker(),
+              AgentModule.forWorker(),
+              // risk.state_changed → RISK_STATE_CHANGED inbox message (B1-12g, BR-TEXT-23).
+              // Its unbanned {need_reauth} reads linking's Taobao binding port (SELECT only).
+              NotificationModule.forWorker({ taobaoReauthReader: needsTaobaoReauth }),
+            ]
           : []),
         // The scheduled takeover / recheck of the paid bank-card verification records (B1-13g,
         // BR-WDR-02 ⑦): worker entry only, without the HTTP IdentityModule; entry.ts starts the

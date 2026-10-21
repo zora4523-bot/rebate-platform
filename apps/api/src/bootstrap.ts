@@ -3,7 +3,7 @@
 import 'reflect-metadata';
 import type { IncomingMessage } from 'node:http';
 import { fastifyMultipart } from '@fastify/multipart';
-import type { INestApplicationContext } from '@nestjs/common';
+import { type DynamicModule, type INestApplicationContext, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module.ts';
@@ -19,8 +19,10 @@ import {
   type DbHandles,
   type EntryName,
   type HttpEntry,
+  JOB_QUEUE,
   PinoNestLogger,
   type PlatformOptions,
+  type QueueRuntime,
   REQUEST_CHECKS,
   type RequestCheckPlan,
   type RootLogger,
@@ -60,6 +62,49 @@ export interface BootstrapOverrides {
    * a lazy `REDIS` handle and closes it on shutdown. Null (payout) or omitted: no `REDIS`.
    */
   readonly redisUrl?: ConnectionConfig['redisUrl'];
+  /**
+   * HTTP entries only (B1-12g, orchestrator ruling C). Default: true when `dbHandles` is given,
+   * false without them. When true, `app.init()` also starts the entry's real JOB_QUEUE (pg-boss)
+   * as the last bootstrap step, so a business transaction that publishes an event
+   * (same-transaction enqueue) has a running queue; `app.close()` stops it before the database
+   * handles close (platform's DB_LIFECYCLE shutdown hook, as for every entry). A start failure
+   * rejects `init()` with that error (the runtime has already stopped itself; the caller closes
+   * the app). false: the queue is not started (entry.ts passes false and starts it itself after
+   * its own checks, so production start order is unchanged). true without `dbHandles` throws.
+   */
+  readonly startQueue?: boolean;
+}
+
+/** Nest token of the provider that starts JOB_QUEUE on application bootstrap. */
+export const QUEUE_START = Symbol('QUEUE_START');
+
+/** The bootstrap hook object: starts the queue when Nest's init reaches onApplicationBootstrap. */
+export function queueStarter(queue: Pick<QueueRuntime, 'start'>): {
+  onApplicationBootstrap(): Promise<void>;
+} {
+  return { onApplicationBootstrap: () => queue.start() };
+}
+
+/**
+ * Root module wrapping the entry's AppModule with the queue starter. Its provider is a root
+ * module provider, so Nest runs its bootstrap hook after every imported module's (and never
+ * replaces methods of the proxied application object).
+ */
+class QueueStartModule {}
+Module({})(QueueStartModule);
+
+function withQueueStart(root: DynamicModule): DynamicModule {
+  return {
+    module: QueueStartModule,
+    imports: [root],
+    providers: [
+      {
+        provide: QUEUE_START,
+        inject: [JOB_QUEUE],
+        useFactory: (queue: QueueRuntime) => queueStarter(queue),
+      },
+    ],
+  };
 }
 
 function platformOptions(entry: EntryName, overrides: BootstrapOverrides): PlatformOptions {
@@ -117,10 +162,19 @@ export async function createHttpApp(
       reply.header('X-Trace-Id', request.id);
       done(null, payload);
     });
-    app = await NestFactory.create<NestFastifyApplication>(AppModule.forEntry(options), adapter, {
-      logger: new PinoNestLogger(options.logger),
-      abortOnError: false,
-    });
+    const startQueue = overrides.startQueue ?? overrides.dbHandles !== undefined;
+    if (startQueue && overrides.dbHandles === undefined) {
+      throw new Error('startQueue needs dbHandles: without a database the entry has no queue');
+    }
+    const root = AppModule.forEntry(options);
+    app = await NestFactory.create<NestFastifyApplication>(
+      startQueue ? withQueueStart(root) : root,
+      adapter,
+      {
+        logger: new PinoNestLogger(options.logger),
+        abortOnError: false,
+      },
+    );
     // The only global filter: every error of a request ends in the contract ErrorEnvelope (or, for
     // an uncertain commit, a closed connection); see platform/http/global-errors.ts.
     app.useGlobalFilters(new GlobalErrorFilter(app.getHttpAdapter(), options.logger));

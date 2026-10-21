@@ -48,8 +48,16 @@ export interface EventSubscription {
   readonly events: readonly string[];
 }
 
-/** Production routing table (section 6): empty until the first consumer arrives. */
-export const EVENT_SUBSCRIPTIONS: readonly EventSubscription[] = Object.freeze([]);
+/**
+ * Production routing table (section 6). notification-risk-state: the RISK_STATE_CHANGED inbox
+ * message of notification (B1-12g, BR-TEXT-23).
+ */
+export const EVENT_SUBSCRIPTIONS: readonly EventSubscription[] = Object.freeze([
+  Object.freeze({
+    consumer: 'notification-risk-state',
+    events: Object.freeze(['risk.state_changed']),
+  }),
+]);
 
 export interface DomainEvent {
   readonly appId: string;

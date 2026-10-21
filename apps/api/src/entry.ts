@@ -154,7 +154,15 @@ async function start(
   signals: StartupSignals,
 ): Promise<void> {
   if (isHttpEntry(entry)) {
-    const app = await createHttpApp(entry, { config, logger, dbHandles, redisUrl });
+    // startQueue: false — this runner starts JOB_QUEUE itself below, after init and its exit /
+    // signal checks and before listen, so the production start order stays as it was (B1-12g).
+    const app = await createHttpApp(entry, {
+      config,
+      logger,
+      dbHandles,
+      redisUrl,
+      startQueue: false,
+    });
     const close = (): Promise<void> => app.close();
     try {
       if (signals.stopping()) {

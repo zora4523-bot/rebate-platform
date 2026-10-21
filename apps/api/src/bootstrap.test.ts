@@ -1,5 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MAX_PARAM_LENGTH, createHttpApp, createWorkerContext } from './bootstrap.ts';
+import type { DB } from '@couli/db';
+import {
+  DummyDriver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+} from 'kysely';
+import {
+  MAX_PARAM_LENGTH,
+  QUEUE_START,
+  createHttpApp,
+  createWorkerContext,
+  queueStarter,
+} from './bootstrap.ts';
 import {
   APP_CONFIG,
   APP_ENTRY,
@@ -7,7 +21,9 @@ import {
   ConfigError,
   FixedClock,
   HTTP_ENTRIES,
+  JOB_QUEUE,
   OffsetClock,
+  type QueueRuntime,
   ROOT_LOGGER,
   SystemClock,
   WORKER_ENTRIES,
@@ -124,5 +140,107 @@ describe('defaults from process.env', () => {
     vi.stubEnv('APP_ENV', undefined);
     vi.stubEnv('CLOCK_NOW', undefined);
     await expect(createWorkerContext('worker')).rejects.toBeInstanceOf(ConfigError);
+  });
+});
+
+describe('startQueue (B1-12g)', () => {
+  function dummyHandles() {
+    const db = new Kysely<DB>({
+      dialect: {
+        createAdapter: () => new PostgresAdapter(),
+        createDriver: () => new DummyDriver(),
+        createIntrospector: (handle) => new PostgresIntrospector(handle),
+        createQueryCompiler: () => new PostgresQueryCompiler(),
+      },
+    });
+    return { db, dbRead: null, close: vi.fn(async () => undefined) };
+  }
+
+  it('[AC-B1-12g] the bootstrap hook starts the queue and rejects with its error', async () => {
+    const error = new Error('start failed');
+    const start = vi.fn<() => Promise<void>>().mockResolvedValueOnce().mockRejectedValueOnce(error);
+    const starter = queueStarter({ start });
+    expect(start).not.toHaveBeenCalled();
+    await expect(starter.onApplicationBootstrap()).resolves.toBeUndefined();
+    await expect(starter.onApplicationBootstrap()).rejects.toBe(error);
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
+  it('[AC-B1-12g] with database handles init starts the real JOB_QUEUE by default; close stops it before the handles close', async () => {
+    const handles = dummyHandles();
+    try {
+      const app = await createHttpApp('api', { ...overrides('api'), dbHandles: handles });
+      const queue = app.get<QueueRuntime>(JOB_QUEUE);
+      const events: string[] = [];
+      const start = vi.spyOn(queue, 'start').mockImplementation(async () => {
+        events.push('start');
+      });
+      const stop = vi.spyOn(queue, 'stop').mockImplementation(async () => {
+        events.push('stop');
+      });
+      handles.close.mockImplementation(async () => {
+        events.push('handles');
+      });
+      expect(start).not.toHaveBeenCalled();
+      await app.init();
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(events).toEqual(['start']);
+      await app.close();
+      expect(stop).toHaveBeenCalled();
+      expect(events).toEqual(['start', 'stop', 'handles']);
+    } finally {
+      await handles.db.destroy();
+    }
+  });
+
+  it('[AC-B1-12g] a failing queue start rejects init with that error', async () => {
+    const handles = dummyHandles();
+    try {
+      const app = await createHttpApp('api', { ...overrides('api'), dbHandles: handles });
+      const error = new Error('queue start failed');
+      vi.spyOn(app.get<QueueRuntime>(JOB_QUEUE), 'start').mockRejectedValue(error);
+      let caught: unknown;
+      await app.init().catch((reason: unknown) => {
+        caught = reason;
+      });
+      expect(caught).toBe(error);
+      await app.close();
+      expect(handles.close).toHaveBeenCalled();
+    } finally {
+      await handles.db.destroy();
+    }
+  });
+
+  it('[AC-B1-12g] startQueue false never starts the queue; without handles none is started', async () => {
+    const handles = dummyHandles();
+    try {
+      const app = await createHttpApp('api', {
+        ...overrides('api'),
+        dbHandles: handles,
+        startQueue: false,
+      });
+      const start = vi.spyOn(app.get<QueueRuntime>(JOB_QUEUE), 'start');
+      expect(() => app.get(QUEUE_START)).toThrow();
+      await app.init();
+      expect(start).not.toHaveBeenCalled();
+      await app.close();
+    } finally {
+      await handles.db.destroy();
+    }
+    const plain = await createHttpApp('api', overrides('api'));
+    expect(() => plain.get(QUEUE_START)).toThrow();
+    await plain.init();
+    await plain.close();
+  });
+
+  it('[AC-B1-12g] createHttpApp refuses startQueue without database handles', async () => {
+    let caught: unknown;
+    await createHttpApp('api', { ...overrides('api'), startQueue: true }).catch(
+      (reason: unknown) => {
+        caught = reason;
+      },
+    );
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toMatch(/startQueue needs dbHandles/);
   });
 });
