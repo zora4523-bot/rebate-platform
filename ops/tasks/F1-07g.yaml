@@ -1,0 +1,21 @@
+id: F1-07g
+repo: rebate-platform
+title: 后台用户详情补齐（第一部分）：「上级与直推」区的【查看直推名单】抽屉（分页，脱敏手机号）、等级旁【调等级】对话框（user.level，动态码，必填原因）、【改上级】对话框（user.inviter，动态码，必填原因；30409 只显示原因不可提交，30401 / 30403 提示）；无对应权限点时按钮不显示；视觉按 design/specs/admin-user-detail.md
+type: impl
+# 2026-10-21 入账（前端线 f1-frontend-7）。05 F1-07g、01 F-ADM-04；契约 CT-24e（adminListInvitees / adminChangeUserLevel / adminChangeInviter，planned，后端未做——按契约用假服务端开发）。
+# 本任务只做直推名单、调等级、改上级；「余额与流水」「订单」「找回」「提现」四个页签、「调整余额」入口（资金类）、注销中 / 已注销状态等另开后续任务。二次验证复用现有 components/step-up。approvals 第 34 / 36 条：Claude 实现，Codex（不可用时独立 Claude）写测试与评审。
+refs: []
+refs_hash: {}
+deps: [CT-24e, F1-07i]
+paths:
+  - 'apps/admin/src/pages/users/**'
+  - 'apps/admin/src/texts/users.ts'
+test_paths:
+  - 'test/spec/frontend/admin-user-relations/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-user-relations/**'
+status: todo
+pr: null
