@@ -1,6 +1,7 @@
 import type { Schema } from '@couli/contracts-ts';
 
 export type ArticleCategory = Schema<'ArticleCategory'>;
+export type ArticleHelpSection = Schema<'ArticleHelpSection'>;
 
 export interface ArticleCursor {
   readonly at: string;
@@ -17,6 +18,8 @@ export interface PublishedArticleSummary {
   readonly notice_closable: boolean;
   readonly notice_content_version: number;
   readonly notice_end_at: string | null;
+  /** Of this (current) version row; null when unset (articles_help_section_category_check). */
+  readonly help_section: string | null;
 }
 
 export class ArticleCursorError extends Error {
@@ -24,6 +27,32 @@ export class ArticleCursorError extends Error {
     super('content: invalid article cursor');
     this.name = 'ArticleCursorError';
   }
+}
+
+/** 04 §6.2 / L30: the help_section filter of GET /v1/articles goes with category=help only. */
+export class ArticleHelpSectionFilterError extends Error {
+  constructor() {
+    super('content: help_section filter needs category help');
+    this.name = 'ArticleHelpSectionFilterError';
+  }
+}
+
+/** True when a help_section list filter may be combined with the category. */
+export function helpSectionFilterAllowed(
+  category: ArticleCategory,
+  helpSection: ArticleHelpSection | undefined,
+): boolean {
+  return helpSection === undefined || category === 'help';
+}
+
+/** L30: `help_section` only when set (never null); notices and agreements never carry one. */
+export function withHelpSection<T extends object>(
+  category: ArticleCategory,
+  value: string | null,
+  target: T,
+): T & { help_section?: ArticleHelpSection } {
+  if (value === null || category !== 'help') return target;
+  return { ...target, help_section: value as ArticleHelpSection }; // articles_help_section_check
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -86,7 +115,8 @@ export function articleSummary(row: PublishedArticleSummary): Schema<'ArticleSum
     version: row.version,
     published_at: row.published_at,
   };
-  if (category !== 'notice') return { ...summary, category };
+  if (category !== 'notice')
+    return withHelpSection(category, row.help_section, { ...summary, category });
   return {
     ...summary,
     category,

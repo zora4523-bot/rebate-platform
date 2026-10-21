@@ -1,0 +1,107 @@
+{
+  "task": "F1-02zs",
+  "spec_ref": "76f61aaa455a67f5b1d9212c6da710711cd255a1",
+  "spec_commit": "78aa3c689863b4666f724dffa8af9889505ea654",
+  "red_tests": [
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 getting_started，后台详情和列表均带值，审计保留值不带正文",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 rebate_settlement，后台详情和列表均带值，审计保留值不带正文",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 orders_claims，后台详情和列表均带值，审计保留值不带正文",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 withdraw，后台详情和列表均带值，审计保留值不带正文",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 invite，后台详情和列表均带值，审计保留值不带正文",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 account_privacy，后台详情和列表均带值，审计保留值不带正文",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#8] 存草稿写新值，省略再存即 NULL；旧行不变、后台最新值与公共当前值独立",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#9] rule 新建和存稿带子分类均 20001，库和审计不变",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#9] notice 新建和存稿带子分类均 20001，库和审计不变",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#10] create 同时标题违禁、公告缺截止与子分类非法，fields 按契约排列且无副作用",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#10] save 同时标题违禁、公告缺截止与子分类非法，fields 按契约排列且无副作用",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#11] 发布与整篇下线保留每版子分类，审计前后都含该版值且无正文",
+    "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#12] 各分类有值才返回，省略新建为 NULL，协议发布生成的文章也为 NULL",
+    "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#1] 按子分类只取匹配帮助文章；不筛选仍返回全部，空值省略字段",
+    "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#2] 先选最大已生效版本再筛；草稿、未来发布、下线不能覆盖当前版本，旧详情取旧值",
+    "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#3] 当前版本清空子分类或改成规则时，不复活旧的 invite 版本",
+    "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#4] rule 与 help_section 不兼容，先于游标校验；编码大小写及未知值拒绝",
+    "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#4] notice 与 help_section 不兼容，先于游标校验；编码大小写及未知值拒绝",
+    "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#4] agreement 与 help_section 不兼容，先于游标校验；编码大小写及未知值拒绝",
+    "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#5] 筛选在分页前完成，微秒与同刻 id 连续翻页，游标不绑定子分类",
+    "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#6] app_id 隔离；公告与协议无子分类，帮助详情保留值"
+  ],
+  "risk_note": "RV2 (content articles; L30 help_section; no funds). Admin create and save-draft write help_section (omitted means NULL); a non-help category carrying help_section is rejected with 20001 fields=[help_section] before any write or audit. The public article list filters by the current version's help_section in SQL before pagination; the cursor format is unchanged; filtering under a non-help category is 20001. help_section appears in responses only for the help category with a value. Audit before/after and publish audit carry help_section, never the body. Full verification by the required CI checks (ops/approvals.yaml id 21); the test-machine full verify passed on rerun (first run hit only the known worker-signal flake, D10-103).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "78aa3c689863b4666f724dffa8af9889505ea654",
+      "tree": "e456002225b7754969b1736cb2a36c79ad8a00e5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T07:27:50Z",
+      "finished_at": "2026-10-21T07:28:05Z",
+      "red_tests": [
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 getting_started，后台详情和列表均带值，审计保留值不带正文",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 rebate_settlement，后台详情和列表均带值，审计保留值不带正文",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 orders_claims，后台详情和列表均带值，审计保留值不带正文",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 withdraw，后台详情和列表均带值，审计保留值不带正文",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 invite，后台详情和列表均带值，审计保留值不带正文",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#7] 新建 help 保存 account_privacy，后台详情和列表均带值，审计保留值不带正文",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#8] 存草稿写新值，省略再存即 NULL；旧行不变、后台最新值与公共当前值独立",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#9] rule 新建和存稿带子分类均 20001，库和审计不变",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#9] notice 新建和存稿带子分类均 20001，库和审计不变",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#10] create 同时标题违禁、公告缺截止与子分类非法，fields 按契约排列且无副作用",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#10] save 同时标题违禁、公告缺截止与子分类非法，fields 按契约排列且无副作用",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#11] 发布与整篇下线保留每版子分类，审计前后都含该版值且无正文",
+        "test/spec/content/articles-help-section/admin.int.test.ts > [AC-F1-02zs#12] 各分类有值才返回，省略新建为 NULL，协议发布生成的文章也为 NULL",
+        "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#1] 按子分类只取匹配帮助文章；不筛选仍返回全部，空值省略字段",
+        "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#2] 先选最大已生效版本再筛；草稿、未来发布、下线不能覆盖当前版本，旧详情取旧值",
+        "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#3] 当前版本清空子分类或改成规则时，不复活旧的 invite 版本",
+        "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#4] rule 与 help_section 不兼容，先于游标校验；编码大小写及未知值拒绝",
+        "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#4] notice 与 help_section 不兼容，先于游标校验；编码大小写及未知值拒绝",
+        "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#4] agreement 与 help_section 不兼容，先于游标校验；编码大小写及未知值拒绝",
+        "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#5] 筛选在分页前完成，微秒与同刻 id 连续翻页，游标不绑定子分类",
+        "test/spec/content/articles-help-section/public.int.test.ts > [AC-F1-02zs#6] app_id 隔离；公告与协议无子分类，帮助详情保留值"
+      ],
+      "expected": [
+        "test/spec/content/articles-help-section/admin.int.test.ts",
+        "test/spec/content/articles-help-section/public.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "0693ba9d23ea5251f41a2ccaf8c093e75080b6d1ccbfec68b917052f0bc254a4"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass with no findings; the test machine showed all 21 red tests failing on an assertion"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "6676982f5d62d9c1a736632c316382e28f566aee",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "eb3b6d5bba64a3ac79ef9d3bcc47c0055859272c",
+    "specs": "a6a8f5fd85ce48d56f75ce7b44e798701dcbf0bb"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
