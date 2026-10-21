@@ -6490,9 +6490,10 @@ export interface components {
         ArticleListSummaryText: string;
         /**
          * Format: int32
-         * @description Manual order of a help article in the help home 「常见问题」 list (W-25, 编排者默认): smaller
-         *     first, ties by article id; GET /v1/articles?category=help&faq=true lists only articles
-         *     whose current version has it set. Help articles only. Not returned until its
+         * @description Manual order of a help article in the help home 「常见问题」 list (W-25, 编排者默认): the
+         *     client sorts that list by faq_rank ascending (the server keeps the usual list order of
+         *     04 §6.2); GET /v1/articles?category=help&faq=true lists only articles whose current
+         *     version has it set. Help articles only. Not returned until its
          *     implementation is merged.
          */
         ArticleFaqRank: number;
@@ -12602,13 +12603,13 @@ export interface operations {
                  */
                 help_section?: components["schemas"]["ArticleHelpSection"];
                 /**
-                 * @description Help home 「常见问题」 list (W-25, 编排者默认). Only with category=help: with any other
-                 *     category → 20001 `data.fields=[faq]`. faq=true returns only articles whose current
-                 *     version has faq_rank set, ordered by (faq_rank ASC, id ASC), in one page of at most 50
-                 *     items with `next_cursor` always null; a cursor sent together with faq=true → 20001
-                 *     `data.fields=[cursor]`. faq=false or omitted keeps the usual order and cursor
-                 *     (published_at DESC, id DESC; 04 §6.2). Until its implementation is merged the server
-                 *     ignores this parameter.
+                 * @description Filter for the help home 「常见问题」 list (W-25, 编排者默认). Only with category=help:
+                 *     with any other category → 20001 `data.fields=[faq]`. faq=true only filters: it returns
+                 *     only help articles whose current version has faq_rank set; order, page size limit and
+                 *     cursor are exactly those of this operation without the filter (published_at DESC, id
+                 *     DESC, 04 §6.2), with no exception. The display order of the 「常见问题」 list is applied
+                 *     by the client, sorting by faq_rank ascending. faq=false or omitted = no filter. Until
+                 *     its implementation is merged the server ignores this parameter.
                  */
                 faq?: boolean;
                 /** @description Opaque cursor from `next_cursor`; absent for the first page. */
