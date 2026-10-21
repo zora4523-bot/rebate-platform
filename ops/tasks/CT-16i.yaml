@@ -1,0 +1,25 @@
+id: CT-16i
+repo: rebate-platform
+title: 文案（CT-16 续，第 4 段·「我的」下半）：texts.default.json 补 App 高保真第 3 批定稿登记的键——撤回注销、绑手机与并入、换手机号、二次验证、注销页与冷静期、帮助中心与找回指引、客服、关于、可选更新、断网、页面维护（08 l.1071–1093）与表 D 隐私新键（l.1101–1105）；fund-term-keys.yaml 逐键归类
+type: contract
+# 2026-10-22 入账（content-client 第六阶段；编排 2026-10-21 17:4x 分派「CT-16f」的第 4 段，拆分理由见 CT-16f 台账）。
+# 依据（SPEC_REF 8209d6e）：08 12_TEXT 表 C l.1071–1093、表 D l.1101–1105；docs/changes/20261021-App内高保真定稿回写.md「第 3 批 W-04～W-07」「W-05 末句」「W-22」；归类规则 08 l.665–681。原文由编排者摘入任务书第 9 节，refs 置空。
+# 要点：只转写 08 已给出文案的键；deletion.notice.item.1～.6（正文待法务、不入字典）不建；help.section.<help_section> 的编码用契约 ArticleHelpSection 六个码；bind_phone.risk_blocked.desc 是 06 待负责人确认的句子（回写记录：确认前按该句实现），照转。
+#   注销页资金区、负余额、冷静期提现类句子按资金术语归类（BR-TEXT-12 ① ⑤，「待抵扣」是 BR-TEXT-01 术语）。
+# 【待编排裁定】注销与二次验证类键的逐键归类结果（默认见摘录 9.2）。
+# 占契约槽；排在 CT-16h 之后。合并后 CT-16 系列的 N-06 与三批「契约缺口」文案项可关（search.placeholder 除外，待 08 登记）。
+refs: []
+refs_hash: {}
+deps: [CT-16h]
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null

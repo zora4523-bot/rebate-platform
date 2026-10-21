@@ -1,0 +1,33 @@
+id: CT-26a
+repo: rebate-platform
+title: 契约（CT-26a，App 高保真内容缺口）：文章列表项加可选 summary、帮助文章加可选 faq_rank 与 listArticles 的 faq 筛选；Config.help_links 登记 share_rules / faq.invite_code_bind；Config 加可选 nickname{min_len,max_len,monthly_limit}；Me 加可选 invite_blocked_reason；routes.json Agreement.type 加 collect_list；markMessagesRead 描述补冷静期
+type: contract
+# 2026-10-22 入账（content-client 第六阶段；编排 2026-10-21 17:4x 分派、05 l.152 CT-26 行 CT-26a 段与 #169 r2 N1 并入的 nickname 变量）。
+# 依据（SPEC_REF 8209d6e）：05 l.152；第 3 批定稿 W-25、N-02、N-05；04 l.503 GET /v1/me、l.530 articles 列表与游标、l.584 messages、l.896 help_links；
+#   08 11_INV l.57–58 BR-INV-18 / 19；10_ID l.110 BR-ID-39、l.1086 冷静期消息中心（W-20）；12_TEXT l.1070 settings.nickname.hint；
+#   design/specs/app-{messages,notice,help,me,privacy-center,settings}.md §7。原文由编排者摘入任务书第 9 节，refs 置空。
+# 已具备（核对后不改形状）：POST /v1/messages/read 已有 {message_ids} / {all:true} 两种形状，GET /v1/messages/unread-count 已有；未读数显示位置属设计。
+# 要点：全部为新增可选字段 / 可选参数 / 新枚举值，oasdiff 预期非破坏（报 breaking 即停）；不新增错误码与文案键（文案键在 CT-16f–i）。
+#   getMe（identity）、/v1/config（content）、listArticles / 后台文章（content）已实现：新字段一律可选，实现另开任务（F1 内容线 / identity 线），描述里写「实现合并前不返回」。
+# 默认（【待编排裁定】，见摘录 9.4）：不加置顶字段；summary 服务端从正文首段派生；FAQ 排序用 faq_rank；nickname 走 /v1/config；不能邀请原因用 invite_blocked_reason ∈ self_minor / unavailable；收集清单类型名 collect_list。
+# 【待规划回写】04 §6.2 articles（summary、faq_rank、faq 筛选与游标）、§10.1 help_links 两键与 nickname 块、§6.1 GET /v1/me 字段；01 §4.2 Agreement 行类型清单。
+# 占契约槽；合并即放槽并在 notices 告知 f1-frontend（H5 帮助 / 公告 / 协议页）、identity（getMe 实现）、native（Me 页、设置昵称页）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.1', '6.2', '10.1']
+deps: [CT-22c]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/routes.json'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
