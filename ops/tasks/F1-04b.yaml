@@ -1,0 +1,22 @@
+id: F1-04b
+repo: rebate-platform
+title: H5 订单找回页 /find-order：取 H5 令牌与 /v1/config（claim 期限、指引链接），分平台填写提示与「订单号在哪里找？」入口，经桥 net.signedRequest 提交 createOrderClaim（20001、30201～30206、10405 处理），「找回记录」读 listOrderClaims（状态标签、驳回原因按字典），三态；视觉按 design/specs/app-find-order.md（App 内高保真第 2 批定稿）
+type: impl
+# 2026-10-22 入账（前端线 f1-frontend-7）。05 F1-04（订单找回部分）；契约 createOrderClaim（签名路径）、listOrderClaims、issueH5Token、app.getConfig 均已实现；规格 app-find-order.md（couli #166，SPEC_REF 已含）。
+# 期限句取 /v1/config.claim.window_days（BR-ATTR-17 细则），不写死数字；规格 §7 的字典缺键（找回记录状态标签、说明句、底注、claim.records.empty）按规格占位原文登记在 texts/find-order.ts，契约缺口（ops CT-26 系列）出来后另开任务同步。approvals 第 34 / 36 条。
+refs: []
+refs_hash: {}
+deps: [F1-01q]
+paths:
+  - 'apps/h5/src/entries/app/pages/find-order/**'
+  - 'apps/h5/src/entries/app/routes.ts'
+  - 'apps/h5/src/texts/find-order.ts'
+test_paths:
+  - 'test/spec/frontend/h5-find-order/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-find-order/**'
+status: todo
+pr: null
