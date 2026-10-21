@@ -1,0 +1,29 @@
+id: B3-04h
+repo: rebate-platform
+title: parsing 导出官方口令解析端口 parseToken：复用口令识别（淘宝）、开关 parse.tpwd.enabled 与 resolveLink → detail，失败抛 ParsingError；不接第三方口令解析
+type: impl
+# 2026-10-21 入账（agent2-acct4）。B3-04f（#1069）让 tools/quote 的口令候选经可注入 TokenParser 报价，缺省 30132；
+# 真实 TokenParser 由 parsing 提供（followups/agent-plan-b3-planning-sync.md「B3-04f」条）。parsing.ts 的口令分支已有识别、开关与
+# 适配器调用，本任务把它们导出成与 parseUrl 同形的 parseToken（返回 ParsedUrlProduct，不建卡、不去重），并从 parsing/index.ts 导出。
+# 非生产环境的演示适配器只认 URL，口令一律失败（30132 / 30131 照实），不伪造平台报文（AGENTS.md 硬规则 7）；规则测试用替身适配器造合成口令商品。
+# 真实识别 blocked on 淘宝口令权限包与录制（followups INDEX F-31），写成 TODO。接到 agent 生产装配归 B3-04g。
+# 并入 B3-04f spec-test S2：口令入口补测 no_rebate / availability unknown（只在本任务 test_paths 新增）。
+# 分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 评审（approvals #34、#27；Codex 不可用按 #36 由独立 Claude）。风险 RV1。
+refs: [BR-PROD-03, BR-AI-04, BR-TEXT-14]
+refs_hash:
+  BR-PROD-03: 1708058a2ff7
+  BR-AI-04: a07587a282ba
+  BR-TEXT-14: 192ad6d99d4b
+deps: [B1-07a, B3-04f]
+paths:
+  - 'apps/api/src/modules/parsing/application/**'
+  - 'apps/api/src/modules/parsing/index.ts'
+test_paths:
+  - 'test/spec/parsing/token/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/parsing/token/**'
+status: todo
+pr: null
