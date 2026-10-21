@@ -25,6 +25,23 @@ export type {
   ExpectedCreditResult,
 } from './settlement/bill/index.ts';
 export {
+  selectClawbackCommission,
+  planCommissionAdjustment,
+  checkAdjustmentReceivable,
+  AdjustmentReceivableMismatch,
+} from './settlement/adjust/adjust.ts';
+export type {
+  ClawbackCommissionInput,
+  ClawbackCommissionResult,
+  AdjustmentObligation,
+  AdjustmentBeneficiary,
+  AdjustmentInput,
+  AdjustmentBeneficiaryResult,
+  AdjustmentPlatformPosting,
+  AdjustmentPlan,
+  AdjustmentReceivableInput,
+} from './settlement/adjust/adjust.ts';
+export {
   normalizeSpec,
   findSpecInTitle,
   type NormalizedSpec,
