@@ -4,6 +4,7 @@ title: 迁移：settle_jobs、settle_bills、settle_batches（含 S8 停住标�
 type: migration
 # 2026-10-20 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.1）。分工：Codex / Opus；两段式。
 # 状态备注：等 c。
+# 2026-10-21 paths 加 tools/ci/lint-migrations.test.ts：「db/schema.sql 每张资金表都在清单里」的测试要随本迁移新建的 8 张 settle_* / beneficiary_credits / recon_union 表只增同步（B2-04b #1006 先例；第三类保护路径，编排按 #24 加标签）。
 refs: [BR-CALC-23, BR-FUND-04, BR-FUND-09]
 refs_hash:
   BR-CALC-23: 2fe92d9959ba
@@ -14,6 +15,7 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
 test_paths:
   - 'test/spec/db/settlement/core/**'
 impl: claude
