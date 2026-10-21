@@ -49,7 +49,11 @@ it('[AC-F1-07i-PERMISSION#3] 无 pii.reveal_phone 时基础投影仍可见但没
   await openDetail();
   await detailLoaded();
   expect(mainElement().textContent).toContain('138****5678');
-  expect(within(mainElement()).queryAllByRole('button', { name: /查看/ })).toEqual([]);
+  // The reveal entry is 查看 / 查看完整手机号 (as in [AC-F1-07j-NOPE#2]); 查看直推名单 (CT-24e, user.list)
+  // is a different, permitted entry.
+  expect(within(mainElement()).queryAllByRole('button', { name: /^查看(?:完整手机号)?$/ })).toEqual(
+    [],
+  );
   expect(server.requests('POST')).toEqual([]);
 });
 
