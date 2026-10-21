@@ -5,12 +5,14 @@ type: impl
 # 草稿 2026-10-18（W1 线，订单线第二段第二波）。拆分方案 couli-runs/W1-search-linking/orders-plan-b110-b109.md（待编排裁定 J-1～J-22 按默认做法，见 notices 03:10 UTC 登记），依据按 SPEC_REF 逐字摘录进任务书。
 # 分工：订单归属 / 找回属 approvals 30 留 Claude 的范围 → impl claude、tester codex（D10-15）。用户侧、不涉资金；不碰同步流水线（pipeline-port / update-step），与 B1-08i～k 不冲突。
 # 字段已由 CT-04f 加在 listOrders 响应（可选布尔，D10-54），本任务不改契约；只在本人自购视图计算。linking 只读端口同 B1-10c。
+# 2026-10-22 补 paths（W1 D10-97）：置顶判定读口须在生产装配接上（先例 B1-10c）。
 refs: []
 refs_hash: {}
 deps: [B1-10b, B1-08l]
 paths:
   - 'apps/api/src/modules/orders/**'
   - 'apps/api/src/modules/linking/**'
+  - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/orders/claim-entry/**'
 impl: claude
