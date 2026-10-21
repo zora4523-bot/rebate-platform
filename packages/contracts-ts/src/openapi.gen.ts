@@ -3129,6 +3129,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/users/{user_id}/invitees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A user's direct invitees, page by page (masked)
+         * @description Permission point `user.lookup` or `user.list` (either is enough; 04 §6.6
+         *     users/{id}/invitees; read only, no step-up); lacking both is 10403 with
+         *     `data.reason=admin_permission_denied`. An unknown `user_id`, or one of another app, is
+         *     20001 with `data.fields=[user_id]`. Lists the user's direct invitees: the users of the
+         *     console's app whose current inviter (users.parent_id, the current value only, BR-INV-11)
+         *     is this user. A former invitee moved to another inviter through POST
+         *     /admin/v1/users/{user_id}/inviter is no longer listed, and indirect invitees are not
+         *     listed. Latest bound first (users.parent_bound_at descending, then user_id), page by page
+         *     (`page`, `page_size` ≤ 200). Rows hold the fields of 04 §6.6 only: `user_id`,
+         *     `phone_masked` (3 + 4, BR-ID-33; the full number only through POST
+         *     /admin/v1/users/{user_id}/reveal), `nickname`, `registered_at` and `level`. No member-tier
+         *     fields (BR-INV-23 is not shown in this phase). The bind source and bind time of each row
+         *     are not part of 04 §6.6 and are pending.
+         */
+        get: operations["adminListInvitees"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/level": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change a user's distribution level (调等级)
+         * @description Permission point `user.level` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier (without a valid totp-tier
+         *     `X-Step-Up-Token` → 10003 with `data.tier=totp`). In the MVP a level only changes through
+         *     this operation, with step-up and a reason (BR-INV-14); automatic promotion is P1.
+         *     Body checks (20001 with `data.fields` naming the field): `level` is required and only
+         *     L1, L2 or L3 (enum user_level, BR-INV-14); `reason` is required (1–200 characters). An
+         *     unknown `user_id` is 20001 with `data.fields=[user_id]`. A level whose status in the
+         *     levels table is disabled is 20001 with `data.fields=[level]`: no user enters a disabled
+         *     level, users already on it keep it (BR-INV-14). The user's current level is 20001 with
+         *     `data.fields=[level]` as well (nothing is changed or logged).
+         *     Effects (BR-INV-14), in one transaction: users.level becomes `level` and one
+         *     level_change_logs row is written (user_id, before, after, source, operator, reason,
+         *     effective_at); a console change has effective_at = created_at = the time of submission
+         *     (+08:00). The new level only applies to orders with paid_at ≥ effective_at (BR-CALC-12,
+         *     the equal instant takes the new level); existing commission snapshots are not
+         *     recalculated, and quotes use the current level at once. The level is not shown in the
+         *     app (OPS-20). Writes an audit record (action user_level_change, before and after level,
+         *     reason). The response is the user as GET /admin/v1/users/{user_id} returns it now.
+         *     A compare-and-set value with its 20902 conflict is pending: 04 §3.2 users has no
+         *     row_version and contracts/error-codes.yaml 20902 has no resource for a user's level.
+         *     No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminChangeUserLevel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/users/{user_id}/inviter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change or remove a user's inviter (改上级)
+         * @description Permission point `user.inviter` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier (without a valid totp-tier
+         *     `X-Step-Up-Token` → 10003 with `data.tier=totp`). Users never change or remove their own
+         *     inviter (BR-INV-10); this is the console's change of inviter, removal included
+         *     (`inviter_user_id: null` leaves the user without an inviter). `reason` is required (1–200
+         *     characters, else 20001 with `data.fields=[reason]`). An unknown `user_id` is 20001 with
+         *     `data.fields=[user_id]`.
+         *     Order of checks, the first hit is returned (BR-INV-10): permission, step-up and reason
+         *     (10403, 10003, 20001) → the target user has no direct invitee, no order (any status; an
+         *     UNATTRIBUTED order has no user and does not count, BR-INV-07 细则) and no claim in any
+         *     status, else 30409 → the new inviter (`inviter_user_id`) is a user of the console's app
+         *     and inviter_unavailable is false (BR-INV-02), else 30401; an unknown inviter_user_id is
+         *     30401 too, never 20001; skipped when removing → relation conflict (BR-INV-08: the new
+         *     inviter is the target user, an invitee of the target at any depth, or shares a device
+         *     with the target; the operator's device is not added to the target's device set), else
+         *     30403; skipped when removing. 30401 does not tell the reason. The change is not bound by
+         *     the backfill window (BR-INV-07, 30404) nor by growth.invite_bind.enabled (30408 never
+         *     comes back here). Setting the user's current inviter again, or removing on a user
+         *     without an inviter, is not defined by BR-INV-10 and is pending.
+         *     Effects (BR-INV-10), in one transaction: users.parent_id becomes `inviter_user_id`,
+         *     self_bind_used = true, parent_bind_source = admin, parent_bound_at = the time of the
+         *     operation, and one relation_change_logs row is written (user_id, old and new parent,
+         *     source admin, operator, reason, created_at +08:00). After a removal the user gets no
+         *     self-binding chance again (POST /v1/me/inviter answers 30402). Commission snapshots
+         *     already written do not change; an order paid before the change keeps the inviter of its
+         *     paid_at (BR-INV-13, BR-CALC-12). Writes an audit record (action user_inviter_change, old
+         *     and new inviter, reason). The response is the user as GET /admin/v1/users/{user_id}
+         *     returns it now. A compare-and-set value with its 20902 conflict is pending: 04 §3.2 users
+         *     has no row_version and contracts/error-codes.yaml 20902 has no resource for a user's
+         *     inviter. No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminChangeInviter"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/orders": {
         parameters: {
             query?: never;
@@ -9375,6 +9496,48 @@ export interface components {
             msg: string;
             data: components["schemas"]["AdminUserDetail"];
             trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description A direct invitee of the user (04 §6.6 users/{id}/invitees); the fields of 04 only, no
+         *     member-tier fields (BR-INV-23) and no full phone number.
+         */
+        AdminInviteeListItem: {
+            user_id: components["schemas"]["Id"];
+            phone_masked: components["schemas"]["AdminMaskedPhone"];
+            nickname: string;
+            /**
+             * Format: date-time
+             * @description Registration time of the invitee (users.created_at).
+             */
+            registered_at: string;
+            level: components["schemas"]["AdminUserLevel"];
+        };
+        AdminInviteePage: {
+            items: components["schemas"]["AdminInviteeListItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            page_size: number;
+            /** Format: int32 */
+            total: number;
+        };
+        AdminInviteePageResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminInviteePage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Body of POST /admin/v1/users/{user_id}/level (BR-INV-14). */
+        AdminUserLevelChangeRequest: {
+            /** @description The new level; the current one or a disabled one is 20001. */
+            level: components["schemas"]["AdminUserLevel"];
+            reason: components["schemas"]["AdminUserReason"];
+        };
+        /** @description Body of POST /admin/v1/users/{user_id}/inviter (BR-INV-10). */
+        AdminUserInviterChangeRequest: {
+            /** @description user_id of the new inviter; null removes the inviter (BR-INV-10). */
+            inviter_user_id: components["schemas"]["Id"] | null;
+            reason: components["schemas"]["AdminUserReason"];
         };
         /**
          * @description Union order status (contracts/enums/order.yaml platform_status; BR-FUND-01, BR-FUND-02).
@@ -17547,6 +17710,240 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["AdminUserUnionBindingResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListInvitees: {
+        parameters: {
+            query?: {
+                /** @description Page number of an admin list, from 1 (04 §5 后台分页). */
+                page?: components["parameters"]["AdminPage"];
+                /** @description Page size of an admin list, at most 200 (04 §5 后台分页); above that → 20001. */
+                page_size?: components["parameters"]["AdminPageSize"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of direct invitees, latest bound first. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c03",
+                     *             "phone_masked": "137****1111",
+                     *             "nickname": "凑狸用户1111",
+                     *             "registered_at": "2026-10-19T20:30:00+08:00",
+                     *             "level": "L1"
+                     *           },
+                     *           {
+                     *             "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *             "phone_masked": null,
+                     *             "nickname": "凑狸用户0000",
+                     *             "registered_at": "2026-10-10T20:30:00+08:00",
+                     *             "level": "L2"
+                     *           }
+                     *         ],
+                     *         "page": 1,
+                     *         "page_size": 20,
+                     *         "total": 2
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminInviteePageResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminChangeUserLevel: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "level": "L2",
+                 *       "reason": "核实为长期推广用户，按运营方案调到二级"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminUserLevelChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description The user as it is now, with the new level. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "nickname": "凑狸用户5678",
+                     *         "phone_masked": "138****5678",
+                     *         "invite_code": "K7QX2M",
+                     *         "inviter_user_id": null,
+                     *         "level": "L2",
+                     *         "register_method": "sms",
+                     *         "registered_channel": "appstore",
+                     *         "created_at": "2026-10-12T09:00:00+08:00",
+                     *         "risk": {
+                     *           "state": "normal",
+                     *           "reason_category": null,
+                     *           "reason": null,
+                     *           "frozen_until": null,
+                     *           "changed_by": null,
+                     *           "changed_at": null,
+                     *           "row_version": null
+                     *         },
+                     *         "union_bindings": []
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminChangeInviter: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserInviterChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description The user as it is now, with the new inviter (or none). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *         "nickname": "凑狸用户0000",
+                     *         "phone_masked": "139****0000",
+                     *         "invite_code": "P3RT8N",
+                     *         "inviter_user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c04",
+                     *         "level": "L1",
+                     *         "register_method": "sms",
+                     *         "registered_channel": null,
+                     *         "created_at": "2026-10-10T20:30:00+08:00",
+                     *         "risk": {
+                     *           "state": "normal",
+                     *           "reason_category": null,
+                     *           "reason": null,
+                     *           "frozen_until": null,
+                     *           "changed_by": null,
+                     *           "changed_at": null,
+                     *           "row_version": null
+                     *         },
+                     *         "union_bindings": []
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserDetailResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];

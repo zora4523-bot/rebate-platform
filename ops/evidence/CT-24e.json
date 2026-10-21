@@ -1,0 +1,38 @@
+{
+  "legacy_no_red": true,
+  "red_tests": [],
+  "risk_note": "Contract task (contracts/openapi.yaml, contracts-ts and the regenerated route tables): adds GET /admin/v1/users/{user_id}/invitees (adminListInvitees; user.lookup or user.list, paged, masked phone, ordered by parent_bound_at), POST /admin/v1/users/{user_id}/level (adminChangeUserLevel; user.level, totp step-up, level + required reason; current or disabled level → 20001 [level]) and POST /admin/v1/users/{user_id}/inviter (adminChangeInviter; user.inviter, totp step-up, inviter_user_id or null + required reason; checks in BR-INV-10 order 30409 → 30401 → 30403; not limited by the fill-in window or growth.invite_bind.enabled), all x-implementation planned, per 01 F-ADM-04, 04 §6.6 / §3.2 / §11.2, BR-INV-10, BR-INV-14 and design/specs/admin-user-detail.md. Not defined this time (marked pending, followups): optimistic locking (no users.row_version in 04), invitee bind source / time, two inviter edge cases, the level log source value; balance adjustment belongs to funds. tester none; implementation by an Opus 5.5 subagent. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "CT-24e",
+  "spec_ref": "f41137533d254d4b78dc01ea95f474171c694485",
+  "spec_commit": "96d55b24d32aaf7100f9d7ee6123212b3f39bb64",
+  "runs": [],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "ceaa63f524fbbfd709c32abd201ce633f5a98a6a",
+    "specs": "3c84b34e39aa6d9540cdb6c59afd21eb171cedce"
+  }
+}

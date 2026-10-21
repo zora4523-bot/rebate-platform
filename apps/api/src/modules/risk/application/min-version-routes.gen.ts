@@ -1113,6 +1113,36 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListInvitees",
+    "method": "GET",
+    "path": "/admin/v1/users/:user_id/invitees",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminChangeUserLevel",
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/level",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminChangeInviter",
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/inviter",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListOrders",
     "method": "GET",
     "path": "/admin/v1/orders",
