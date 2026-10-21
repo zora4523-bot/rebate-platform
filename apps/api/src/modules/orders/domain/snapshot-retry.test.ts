@@ -2,12 +2,14 @@
 import { expect, it } from 'vitest';
 import { FixedClock } from '../../platform/index.ts';
 import {
+  isScanSkipCertain,
   isSnapshotRetryDue,
   isSnapshotRetryExhausted,
   isSnapshotRetryReason,
   planSnapshotRetry,
   resolveRetryPaidAt,
   type PlanSnapshotRetryInput,
+  type ScanSkipOrder,
 } from './snapshot-retry.ts';
 
 const clock = new FixedClock('2026-10-18T12:00:00.000Z');
@@ -113,4 +115,98 @@ it('[AC-B1-08t#U3] paidAt 按库内来源恢复；platform_modified 与缺值 sk
       ownerUserId: 'user-1',
     },
   });
+});
+
+// —— B1-08v：扫描读订单服务费列；必然 skip 的单排在候选末尾 ——
+
+it('[AC-B1-08v#U1] 拼多多服务费按传入值扣除（结算优先，大整数不丢精度）；服务费 0 不扣、未知仍 skip', () => {
+  const pdd = { ...input().order, platform: 'pdd' as const };
+  expect(planSnapshotRetry(input({ order: pdd, serviceFeeFen: 47n }))).toMatchObject({
+    kind: 'call',
+    input: { nBaseFen: 742n },
+  });
+  expect(
+    planSnapshotRetry(
+      input({ order: { ...pdd, settle_commission_fen: 901n }, serviceFeeFen: 31n }),
+    ),
+  ).toMatchObject({ kind: 'call', input: { nBaseFen: 870n } });
+  expect(planSnapshotRetry(input({ order: pdd, serviceFeeFen: 0n }))).toMatchObject({
+    kind: 'call',
+    input: { nBaseFen: 789n },
+  });
+  expect(
+    planSnapshotRetry(
+      input({
+        order: { ...pdd, settle_commission_fen: 9_007_199_254_741_782n },
+        serviceFeeFen: 9_007_199_254_740_993n,
+      }),
+    ),
+  ).toMatchObject({ kind: 'call', input: { nBaseFen: 789n } });
+  expect(planSnapshotRetry(input({ order: pdd, serviceFeeFen: 'unknown' }))).toEqual({
+    kind: 'skip',
+    reason: 'service_fee_unknown',
+  });
+});
+
+it('[AC-B1-08v#U2] isScanSkipCertain 与扫描路径的 planSnapshotRetry 逐格一致（observed 按历史可恢复）', () => {
+  const now = clock.now();
+  const paidAt = at('2026-10-17T10:00:00.000Z');
+  let cases = 0;
+  for (const platform of ['jd', 'pdd', 'taobao'] as const)
+    for (const fee of [null, 31n])
+      for (const source of [null, 'platform', 'observed', 'platform_modified', 'unknown-source'])
+        for (const paid of [paidAt, null])
+          for (const est of [789n, null])
+            for (const settle of [null, 0n]) {
+              const order: ScanSkipOrder = {
+                platform,
+                est_commission_fen: est,
+                settle_commission_fen: settle,
+                service_fee_fen: fee,
+                paid_at_source: source,
+                paid_at: paid,
+              };
+              const plan = planSnapshotRetry(
+                input({
+                  order: {
+                    ...input().order,
+                    platform,
+                    est_commission_fen: est,
+                    settle_commission_fen: settle,
+                  },
+                  paid: resolveRetryPaidAt({
+                    paidAtSource: source,
+                    paidAt: paid,
+                    depositPaidAt: null,
+                    firstPaidAt: at('2026-10-17T09:00:00.000Z'),
+                    now,
+                  }),
+                  serviceFeeFen: fee ?? 'unknown',
+                  pidScene: 'unknown',
+                }),
+              );
+              expect(isScanSkipCertain(order), JSON.stringify({ ...order, fee: String(fee) })).toBe(
+                plan.kind === 'skip',
+              );
+              cases++;
+            }
+  expect(cases).toBe(240);
+});
+
+it('[AC-B1-08v#U3] 必然 skip 的三类：拼多多服务费为空、platform_modified、淘宝；佣金都空时是 pending 不算', () => {
+  const base: ScanSkipOrder = {
+    platform: 'jd',
+    est_commission_fen: 789n,
+    settle_commission_fen: null,
+    service_fee_fen: null,
+    paid_at_source: 'platform',
+    paid_at: at('2026-10-17T10:00:00.000Z'),
+  };
+  expect(isScanSkipCertain(base)).toBe(false);
+  expect(isScanSkipCertain({ ...base, platform: 'pdd' })).toBe(true);
+  expect(isScanSkipCertain({ ...base, platform: 'pdd', service_fee_fen: 31n })).toBe(false);
+  expect(isScanSkipCertain({ ...base, platform: 'pdd', service_fee_fen: 0n })).toBe(false);
+  expect(isScanSkipCertain({ ...base, paid_at_source: 'platform_modified' })).toBe(true);
+  expect(isScanSkipCertain({ ...base, platform: 'taobao' })).toBe(true);
+  expect(isScanSkipCertain({ ...base, platform: 'pdd', est_commission_fen: null })).toBe(false);
 });

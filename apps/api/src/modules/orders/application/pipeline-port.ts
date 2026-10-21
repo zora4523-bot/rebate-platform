@@ -331,6 +331,8 @@ export function createOrderPipeline(deps: OrderPipelineDeps): OrderPipeline {
       shop_id: shop ?? null,
       pay_amount_fen: order.paid_fen,
       est_commission_fen: order.est_commission_fen ?? null,
+      // B1-08v：联盟报文的平台服务费（只有拼多多给）按本次报文原样写，缺失为 NULL；未归因订单同样写。
+      service_fee_fen: order.service_fee_fen ?? null,
       pid: slot,
       relation_id: params.relation_id,
       sub_union_id: params.sub_union_id,
