@@ -6,13 +6,11 @@
 // Readings fixed by this kit (contract text and orchestrator rulings 7, 14～16):
 // - the registry oracle below is ruling 14 verbatim: key, JSON value type of the seed, permission
 //   point, admin_editable; options is null for every key (no enum among them);
-// - F1-02zi (test-change, transitional; F1-02zt tightens): F1-02zj appends the BR-FUND-04
-//   settle.* group (SETTLE below, 16 literal keys) to the registry and the 0001 seed. Until it
-//   lands either the bare ruling 14 registry or ruling 14 plus the whole group is accepted,
-//   never part of the group (expectedNow); EXPECTED itself stays ruling 14 verbatim;
-// - F1-02zm (test-change, transitional; F1-02zt tightens): F1-02zn appends the BR-INV-24
-//   growth.invite_reward.* group (INVITE_CFG below, 5 literal keys) after SETTLE. Each group is
-//   judged on its own, whole or not at all; expectedNow is EXPECTED followed by the present groups;
+// - F1-02zi: F1-02zj appends the BR-FUND-04 settle.* group (SETTLE below, 16 literal keys) to
+//   the registry and the 0001 seed; EXPECTED itself stays ruling 14 verbatim;
+// - F1-02zm / F1-02zz: F1-02zn appends the BR-INV-24 growth.invite_reward.* group (INVITE_CFG
+//   below, 5 literal keys) after SETTLE, and F1-02zx appends INVITE_ELIG after it; expectedNow is
+//   EXPECTED + SETTLE + INVITE_CFG + INVITE_ELIG. F1-02zt：过渡已收紧, every group must be present;
 // - audit rows: action config_item_change / config_item_rollback, admin_id = the caller, at = the
 //   injected clock; `before.value` / `after.value` are the old and new values (an item never
 //   written may have before = null); key, from_version, to_version and reason are facts of
@@ -46,7 +44,7 @@ export type Version = Schema<'AdminConfigItemVersion'>;
 export type ItemPage = Schema<'AdminConfigItemPage'>;
 export type VersionPage = Schema<'AdminConfigItemVersionPage'>;
 export type Permission = 'config.general' | 'config.risk' | 'config.business';
-// 'enum' only for the F1-02zi transitional SETTLE group (F1-02zt tightens).
+// 'enum' only for the F1-02zi SETTLE group.
 export type ValueType = 'boolean' | 'number' | 'string' | 'object' | 'enum';
 
 export const LIST = '/admin/v1/config-items';
@@ -73,7 +71,7 @@ export interface Expected {
   readonly valueType: ValueType;
   readonly permission: Permission;
   readonly adminEditable: boolean;
-  /** F1-02zi (transitional): options of an enum item; absent means null. */
+  /** F1-02zi: options of an enum item; absent means null. */
   readonly options?: readonly string[];
 }
 const row = (
@@ -116,7 +114,7 @@ export const EXPECTED: readonly Expected[] = [
   row('external_hosts', 'object', 'config.general', false),
 ];
 
-// F1-02zi (test-change, transitional; F1-02zt tightens to EXPECTED + SETTLE only).
+// F1-02zi (F1-02zt：过渡已收紧, always registered).
 // The BR-FUND-04 细则 settle.* parameters as F1-02zj registers them (couli-runs/F1-02zj
 // excerpt 9.2-1/2): appended after external_hosts in this order, platforms taobao / jd / pdd /
 // meituan, every one config.business and editable.
@@ -134,7 +132,7 @@ export const SETTLE: readonly Expected[] = [
   ...PLATFORMS.map((p) => row(`settle.period_offset_months.${p}`, 'number', 'config.business')),
   row('settle.statement.grace_days', 'number', 'config.business'),
 ];
-// F1-02zm (test-change, transitional; F1-02zt tightens to EXPECTED + SETTLE + INVITE_CFG only).
+// F1-02zm (F1-02zt：过渡已收紧, always registered).
 // The BR-INV-24 细则 invite reward parameters as F1-02zn registers them (couli-runs/F1-02zn
 // excerpt 9.2-1): appended after the SETTLE group in this order, every one an editable number;
 // the four money amounts config.business (04 §10.1), the same-IP window config.risk (D-C1).
@@ -145,53 +143,35 @@ export const INVITE_CFG: readonly Expected[] = [
   row('growth.invite_reward.min_paid_fen', 'number', 'config.business'),
   row('growth.invite_reward.ip_window_hours', 'number', 'config.risk'),
 ];
-/** How many keys of `group` the registry under test holds; must be 0 or all of them. */
+/**
+ * How many keys of `group` the registry under test holds; F1-02zt：过渡已收紧, it must be all of
+ * them (the 0 branch is gone).
+ */
 export function presentOf(group: readonly Expected[], name: string): number {
   const registered = new Set(configRegistry().map((spec) => spec.key));
   const present = group.filter((entry) => registered.has(entry.key)).length;
-  expect([0, group.length], `${name} group registered whole or not at all`).toContain(present);
+  expect(present, `${name} group registered whole`).toBe(group.length);
   return present;
 }
 /**
- * F1-02zi / F1-02zm (transitional): the registry oracle for the build under test. The SETTLE
- * group and the INVITE_CFG group must each be registered whole or not at all (a partial group
- * fails here); the oracle is EXPECTED followed by every present group, SETTLE first.
- * F1-02zw (test-change, transitional; F1-02zt tightens): the invite reward group is inviteNow()
- * (none, the five INVITE_CFG keys, or those five followed by INVITE_ELIG; any other combination
- * fails there).
+ * F1-02zi / F1-02zm / F1-02zw: the registry oracle, EXPECTED followed by SETTLE and the invite
+ * reward group inviteNow(). F1-02zt：过渡已收紧, the oracle is fixed.
  */
 export function expectedNow(): readonly Expected[] {
-  const settle = presentOf(SETTLE, 'settle.*') === 0 ? [] : SETTLE;
-  presentOf(INVITE_CFG, 'growth.invite_reward.*');
-  return [...EXPECTED, ...settle, ...inviteNow()];
+  return [...EXPECTED, ...SETTLE, ...inviteNow()];
 }
-// F1-02zz (test-change, transitional; F1-02zt tightens). The BR-INV-24 细则 eligibility period
+// F1-02zz (F1-02zt：过渡已收紧, always registered). The BR-INV-24 细则 eligibility period
 // (08 l.560, SPEC_REF ac4d993) as F1-02zx registers it (couli-runs/F1-02zx excerpt 9.2-1, D-E2):
 // one editable number, config.business, appended right after ip_window_hours as the last item.
 export const INVITE_ELIG: readonly Expected[] = [
   row('growth.invite_reward.eligibility_days', 'number', 'config.business'),
 ];
 /**
- * F1-02zz (transitional): the invite reward group the registry under test holds, in order:
- * none, the five INVITE_CFG keys, or those five followed by INVITE_ELIG. INVITE_CFG must be
- * whole or absent, INVITE_ELIG whole or absent, and INVITE_ELIG never without INVITE_CFG.
+ * F1-02zz: the invite reward group, in order: the five INVITE_CFG keys followed by INVITE_ELIG.
+ * F1-02zt：过渡已收紧, the none and five-keys-only branches are gone.
  */
 export function inviteNow(): readonly Expected[] {
-  const registered = new Set(configRegistry().map((spec) => spec.key));
-  const count = (group: readonly Expected[]): number =>
-    group.filter((entry) => registered.has(entry.key)).length;
-  const cfg = count(INVITE_CFG);
-  const elig = count(INVITE_ELIG);
-  expect(
-    [
-      [0, 0],
-      [INVITE_CFG.length, 0],
-      [INVITE_CFG.length, INVITE_ELIG.length],
-    ],
-    'growth.invite_reward.* registered as none, the five keys, or the five keys plus eligibility_days',
-  ).toContainEqual([cfg, elig]);
-  if (cfg === 0) return [];
-  return elig === 0 ? INVITE_CFG : [...INVITE_CFG, ...INVITE_ELIG];
+  return [...INVITE_CFG, ...INVITE_ELIG];
 }
 export const expectedOf = (key: string): Expected => {
   const found = expectedNow().find((entry) => entry.key === key);

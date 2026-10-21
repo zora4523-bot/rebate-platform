@@ -74,26 +74,22 @@ export const UPDATABLE: Record<Table, readonly string[]> = {
   ],
   invite_reward_budgets: ['reserved_fen', 'granted_fen', 'row_version', 'updated_at'],
 };
-// CT-25e (test-change, transitional; F1-02zt tightens): CT-25d adds the locked
-// eligibility_days column (04 §3.2; BR-INV-24) and swaps budget_exhausted for expired in
-// invite_rewards_status_check. Both changes land together or not at all: the column without the
-// new status set, or the new status set without the column, fails formOf.
-export type Form = 'v0055' | 'eligibility';
+// CT-25e: CT-25d adds the locked eligibility_days column (04 §3.2; BR-INV-24) and swaps
+// budget_exhausted for expired in invite_rewards_status_check. F1-02zt：过渡已收紧, only that form
+// is accepted: the 0055 table, the column without the new status set, or the new status set
+// without the column fails expectForm.
 export const ELIGIBILITY_COLUMN: Record<string, readonly [string, boolean, string | null]> = {
   eligibility_days: ['int4', false, null],
 };
-export function shapesOf(form: Form): typeof SHAPES {
-  if (form === 'v0055') return SHAPES;
-  return {
-    ...SHAPES,
-    invite_rewards: { ...SHAPES.invite_rewards, ...ELIGIBILITY_COLUMN },
-  };
-}
-export function STATUS_TERMINAL_OF(form: Form): 'budget_exhausted' | 'expired' {
-  return form === 'v0055' ? 'budget_exhausted' : 'expired';
-}
-const forms = new WeakMap<Connection, Promise<Form>>();
-export function formOf(db: Connection): Promise<Form> {
+/** SHAPES plus the CT-25d column: the exact column set of the table under test. */
+export const SHAPES_NOW: typeof SHAPES = {
+  ...SHAPES,
+  invite_rewards: { ...SHAPES.invite_rewards, ...ELIGIBILITY_COLUMN },
+};
+export const STATUS_TERMINAL = 'expired';
+export const STATUS_RETIRED = 'budget_exhausted';
+const forms = new WeakMap<Connection, Promise<void>>();
+export function expectForm(db: Connection): Promise<void> {
   let form = forms.get(db);
   if (!form) {
     form = detect(db);
@@ -101,7 +97,7 @@ export function formOf(db: Connection): Promise<Form> {
   }
   return form;
 }
-async function detect(db: Connection): Promise<Form> {
+async function detect(db: Connection): Promise<void> {
   const column = await sql<{ name: string }>`SELECT column_name::text AS name
     FROM information_schema.columns WHERE table_schema = 'app'
       AND table_name = 'invite_rewards' AND column_name = 'eligibility_days'`.execute(db);
@@ -114,14 +110,8 @@ async function detect(db: Connection): Promise<Form> {
     budget_exhausted: /'budget_exhausted'/.test(definition),
     expired: /'expired'/.test(definition),
   };
-  const form: Form = column.rows.length === 1 ? 'eligibility' : 'v0055';
-  expect(column.rows.length, 'eligibility_days appears at most once').toBeLessThanOrEqual(1);
-  expect(accepts, `${form}: ${definition}`).toEqual(
-    form === 'v0055'
-      ? { budget_exhausted: true, expired: false }
-      : { budget_exhausted: false, expired: true },
-  );
-  return form;
+  expect(column.rows.length, 'eligibility_days appears exactly once').toBe(1);
+  expect(accepts, definition).toEqual({ budget_exhausted: false, expired: true });
 }
 // Orchestrator mechanical fix: @couli/db/testing may only be imported by *.int.test.ts
 // (dependency rule testcontainers-only-in-int-tests); the int tests pass createTestDatabase in.
@@ -180,9 +170,9 @@ export async function user(db: Connection, app: string): Promise<string> {
   return id;
 }
 export async function reward(db: Connection, app = appId()): Promise<Row> {
-  // CT-25e (test-change, transitional; F1-02zt tightens): BR-INV-24 default of 30 days, written
-  // explicitly only when the column exists (no database default is relied on).
-  const locked = (await formOf(db)) === 'eligibility' ? { eligibility_days: 30 } : {};
+  // CT-25e: BR-INV-24 default of 30 days, written explicitly (no database default is relied on).
+  // F1-02zt：过渡已收紧, the column must exist.
+  await expectForm(db);
   return {
     app_id: app,
     invitee_id: await user(db, app),
@@ -192,7 +182,7 @@ export async function reward(db: Connection, app = appId()): Promise<Row> {
     bind_source: 'register',
     bind_ip_hmac: IP,
     status: 'qualified',
-    ...locked,
+    eligibility_days: 30,
   };
 }
 export async function references(db: Connection, app: string) {

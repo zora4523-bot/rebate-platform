@@ -35,7 +35,7 @@ it('[AC-F1-10e#10] 列表按注册表顺序列出每个配置项，未写过的 
   const items = await listAll(f);
   expect(items.map((item) => item.key)).toStrictEqual(configRegistry().map((spec) => spec.key));
   expect(items.map(normalized)).toStrictEqual(configRegistry().map((spec) => unwritten(spec.key)));
-  expect(items).toHaveLength(expectedNow().length); // F1-02zi (transitional): EXPECTED or + settle.*
+  expect(items).toHaveLength(expectedNow().length); // F1-02zt：过渡已收紧, EXPECTED + settle.* + invite
 });
 
 it('[AC-F1-10e#11] 列表与单项给出写过的当前值、version、作者快照与时间；种子行照常列出', async () => {

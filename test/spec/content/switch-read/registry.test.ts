@@ -1,7 +1,7 @@
 // F1-10b: the emergency switch registry of 规划/04 §10.2 and its lookup. Readings in ./kit.ts.
-// F1-02zm (test-change, transitional; F1-02zt tightens): #1 and #6 compare with expectedNow()
-// (EXPECTED, or EXPECTED + the whole growth.invite_reward.* pair of F1-02zn), #7 looks rows up
-// there too, and #15 pins that pair whole or absent.
+// F1-02zm: #1 and #6 compare with expectedNow() (EXPECTED + the growth.invite_reward.* pair of
+// F1-02zn), #7 looks rows up there too, and #15 pins that pair as the last two entries.
+// F1-02zt：过渡已收紧, the pair must be present.
 import { expect, it } from 'vitest';
 import {
   switchRegistry,
@@ -222,21 +222,13 @@ it('[AC-F1-10b#14] §9.2 (1) 纯数据：改动查询结果不影响之后的注
   expect(switchSpecOf('withdraw.enabled')?.defaultValue).toBe(true);
 });
 
-// F1-02zm (test-change, transitional; F1-02zt tightens to "always present"): the BR-INV-24 pair
-// of F1-02zn is registered whole as the last two entries, after watch.enabled.<platform>, or not
-// at all; both branches assert.
-it('[AC-F1-10b#15] BR-INV-24 ①④、04 §10.2、§11.2：growth.invite_reward.enabled 与 payout_paused 两个开关整组登记（注册表最后两项，布尔、默认 off、只认 switch.all、可改、非系统写）或整组没有', () => {
+// F1-02zm: the BR-INV-24 pair of F1-02zn is registered whole as the last two entries, after
+// watch.enabled.<platform>. F1-02zt：过渡已收紧, the absent branch is gone.
+it('[AC-F1-10b#15] BR-INV-24 ①④、04 §10.2、§11.2：growth.invite_reward.enabled 与 payout_paused 两个开关整组登记（注册表最后两项，布尔、默认 off、只认 switch.all、可改、非系统写）', () => {
   expect(INVITE_SW).toHaveLength(2);
   const patterns = switchRegistry().map((spec) => spec.pattern);
   const present = INVITE_SW.filter((row) => switchSpecOf(row.sample) !== null);
-  expect([0, INVITE_SW.length]).toContain(present.length);
-  if (present.length === 0) {
-    for (const row of INVITE_SW) {
-      expect(switchSpecOf(row.sample), row.sample).toBeNull();
-      expect(patterns).not.toContain(row.pattern);
-    }
-    return;
-  }
+  expect(present).toHaveLength(INVITE_SW.length);
   const head = patterns.length - INVITE_SW.length;
   expect(patterns.slice(head)).toStrictEqual(INVITE_SW.map((row) => row.pattern));
   expect(patterns[head - 1]).toBe(EXPECTED.at(-1)!.pattern);

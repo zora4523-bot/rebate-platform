@@ -1,0 +1,24 @@
+id: F1-02zt
+repo: rebate-platform
+title: 收紧测试改动：已落地实现对应的过渡分支去掉——F1-02zi / zm / zv / zz / zw（settle 与邀请奖励配置、开关组只认整组在）、F1-02zzb（金额缺行只认 1000 放行）、CT-25e（invite_rewards 只认 eligibility_days 新形状）
+type: test-change
+# 2026-10-21 入账（content-client 第五阶段收尾）。各过渡 test-change 的对应实现均已合并：F1-02zj #970、F1-02zn #986、F1-02zx #1005、F1-02zza #1018、CT-25d #1007。
+# 做法：每处「有或无 / 两态二选一」只留实现后的那一支，原严格断言不变；kit 里只为过渡存在的分支函数随之简化。L24 / L30（F1-02zzc）与 /v1/config eligibility_days（F1-02zzd）待 F1-02zr / F1-02zs / F1-02zze 合并后由 F1-02zzf 收紧。
+# 改既有规则测试属第一类保护路径：非 task 分支、台账同 PR，按 approvals #24 加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: [F1-02zi, F1-02zm, F1-02zv, F1-02zz, F1-02zw, F1-02zzb, CT-25e]
+paths:
+  - 'test/spec/content/config-items/**'
+  - 'test/spec/content/config-settle/**'
+  - 'test/spec/content/switch-read/**'
+  - 'test/spec/content/kill-switches/**'
+  - 'test/spec/content/config/delivery.int.test.ts'
+  - 'test/spec/content/invite-reward-config/**'
+  - 'test/spec/db/growth/invite-rewards/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null

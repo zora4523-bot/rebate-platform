@@ -35,12 +35,12 @@ it.each(EDITABLE_SAMPLES)(
   '[AC-F1-10d#9] §9.2 #2 按键的权限点：%s 只有登记的权限点之一可改（withdraw.* / payout.* 认 switch.payout、pay.* 认 switch.pay、其余只认 switch.all），无权限 10403 且不写库',
   async (key) => {
     const f = await setup(h);
-    // F1-02zm (test-change, transitional; F1-02zt tightens): BR-INV-24 ④ and 04 §10.2 l.956 refuse
+    // F1-02zm (F1-02zt：过渡已收紧, setup kept): BR-INV-24 ④ and 04 §10.2 l.956 refuse
     // turning growth.invite_reward.enabled on while the daily or the total budget is 0 (their
     // default), so this app first gets two non-zero budgets; every step below is unchanged.
     if (key === 'growth.invite_reward.enabled') {
       for (const budget of INVITE_BUDGET_KEYS) await seedSwitch(h, f.appId, budget, 100_000, 1);
-      // F1-02zz (test-change, transitional; F1-02zt tightens): F1-02zn's rule tests also refuse
+      // F1-02zz (F1-02zt：过渡已收紧, setup kept): F1-02zn's rule tests also refuse
       // turning it on while the per-side amount is below 1, a missing row counting as 0, so the
       // same app also gets the 08 default amount of 1000 fen.
       await seedSwitch(h, f.appId, 'growth.invite_reward.amount_fen', 1000, 1);

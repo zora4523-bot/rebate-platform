@@ -23,10 +23,9 @@ it.each(SETTLE)('[AC-F1-02zj#1] BR-FUND-04：$key 的类型、选项、权限及
 
 it('[AC-F1-02zj#2] 16 项按裁定顺序追加；原 29 项及其无 range 行为保持不变', () => {
   const registry = configRegistry();
-  // F1-02zv (test-change, transitional; F1-02zt tightens): the CT-25 invite reward group
-  // (F1-02zn) may follow SETTLE, whole or not at all; nothing else may follow.
-  // F1-02zw (test-change, transitional; F1-02zt tightens): that group is inviteNow(), the five
-  // keys optionally followed by growth.invite_reward.eligibility_days (F1-02zx).
+  // F1-02zv / F1-02zw: the CT-25 invite reward group inviteNow() (F1-02zn's five keys followed by
+  // F1-02zx's growth.invite_reward.eligibility_days) follows SETTLE; nothing else may follow.
+  // F1-02zt：过渡已收紧, the group must be present.
   presentOf(INVITE_CFG, 'growth.invite_reward.*');
   const invite = inviteNow();
   expect(registry.map((entry) => entry.key)).toStrictEqual([

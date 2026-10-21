@@ -2,7 +2,6 @@ import { expect, it } from 'vitest';
 import { member } from '../config-items/kit.ts';
 import { ACTION, alertLines, expectAuditFacts, listAll } from '../kill-switches/kit.ts';
 import {
-  checkRejected,
   checkSuccess,
   current,
   enable,
@@ -61,8 +60,8 @@ it('[AC-F1-02zn#7] 缺行开关列出默认 off；缺预算、仅 daily 和完�
   expect(await current(h, f.appId, ENABLED)).toMatchObject({ value: true, version: 1 });
 });
 
-// F1-02zzb (test-change, transitional; F1-02zt tightens): the missing amount row is split out
-// below; every other case keeps its original expectation.
+// F1-02zzb: the missing amount row is split out below; every other case keeps its original
+// expectation.
 const invalidPrerequisites = POSITIVE_WHEN_ENABLED.flatMap((key) =>
   [undefined, 0, -1, 1.5, '100', null, true].map((value) => ({ key, value })),
 ).filter(({ key, value }) => !(key === AMOUNT && value === undefined));
@@ -82,10 +81,10 @@ it.each(invalidPrerequisites)(
   },
 );
 
-// F1-02zzb (test-change, transitional; F1-02zt tightens): 04 §10.1 reads a missing amount as the
-// BR-INV-24 default (08: 1000 per side). Until F1-02zza lands either reading is accepted, chosen
-// by this response's status; both branches are strict. F1-02zt keeps only the 200 branch.
-it('[AC-F1-02zn#8] 开启时 amount_fen 缺行：拒绝且无写入（缺行按 0），或开启成功且不补写金额行（缺行按 08 默认 1000）', async () => {
+// F1-02zzb: 04 §10.1 reads a missing amount as the BR-INV-24 default (08: 1000 per side), so
+// turning the switch on succeeds without writing an amount row. F1-02zt：过渡已收紧, the refusal
+// branch is gone.
+it('[AC-F1-02zn#8] 开启时 amount_fen 缺行：开启成功且不补写金额行（缺行按 08 默认 1000）', async () => {
   const f = await setup(h);
   await positive(h, f, AMOUNT);
   const request = await prepare(f, 'switch', ENABLED, { value: true, expected_version: 0 });
@@ -94,12 +93,6 @@ it('[AC-F1-02zn#8] 开启时 amount_fen 缺行：拒绝且无写入（缺行按 
   const response = await request();
   const after = await snapshot(h, f.appId);
   const alerts = alertLines(f.lines, logStart);
-  if (response.statusCode === 400) {
-    await checkRejected(response, 'switch', ['value']);
-    expect(after).toStrictEqual(before);
-    expect(alerts).toStrictEqual([]);
-    return;
-  }
   expect(response.statusCode, JSON.stringify(response.json())).toBe(200);
   await checkSuccess(response, 'switch');
   expect(await current(h, f.appId, ENABLED)).toMatchObject({ value: true, version: 1 });

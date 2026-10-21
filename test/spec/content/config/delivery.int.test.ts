@@ -24,27 +24,18 @@ import {
   type Values,
 } from './kit.ts';
 
-// F1-02zm (test-change, transitional; F1-02zt tightens to "always present"): F1-02zp adds
-// invite.reward_enabled and invite.reward_amount_fen (BR-INV-24 ⑨, 04 §10.1 l.903). These cases
-// write neither growth.invite_reward.enabled nor .amount_fen and wire no budget port, so once
-// delivered the pair is the derived default: off (switch missing) and 1000 (BR-INV-24 细则 每方
-// 1000 分). The pair is present together or absent together; the rest of invite is returned for
-// the original exact comparison.
+// F1-02zm: F1-02zp adds invite.reward_enabled and invite.reward_amount_fen (BR-INV-24 ⑨, 04 §10.1
+// l.903). These cases write neither growth.invite_reward.enabled nor .amount_fen and wire no budget
+// port, so the pair is the derived default: off (switch missing) and 1000 (BR-INV-24 细则 每方
+// 1000 分). F1-02zt：过渡已收紧, the pair must be delivered; the rest of invite is returned for the
+// original exact comparison.
 const INVITE_REWARD_DEFAULT = { reward_enabled: false, reward_amount_fen: 1000 };
 const INVITE_ELIGIBILITY_DAYS_DEFAULT = 30; // F1-02zzd (transitional)
 function inviteOf<T extends object>(invite: T): T {
   const has = Object.keys(INVITE_REWARD_DEFAULT).map((key) => Object.hasOwn(invite, key));
-  expect(
-    [
-      [false, false],
-      [true, true],
-    ],
-    'reward_enabled / reward_amount_fen together',
-  ).toContainEqual(has);
+  expect(has, 'reward_enabled / reward_amount_fen delivered').toStrictEqual([true, true]);
   const { reward_enabled, reward_amount_fen, ...rest } = invite as Record<string, unknown>;
-  if (has[0] === true) {
-    expect({ reward_enabled, reward_amount_fen }).toStrictEqual(INVITE_REWARD_DEFAULT);
-  }
+  expect({ reward_enabled, reward_amount_fen }).toStrictEqual(INVITE_REWARD_DEFAULT);
   // F1-02zzd (test-change, transitional; F1-02zt tightens to "always present"): F1-02zze adds
   // invite.eligibility_days (BR-INV-18 / BR-INV-24 细则: missing row reads as 30). These cases
   // write no growth.invite_reward.eligibility_days, so when delivered it must be exactly 30;
@@ -95,7 +86,7 @@ it('[AC-F1-02c#1] 最小有效配置下发所有约定键、规划缺省与完�
   ).toBe(true);
   expect({
     ...data,
-    invite: inviteOf(data.invite), // F1-02zm (transitional)
+    invite: inviteOf(data.invite), // F1-02zm
     platform_icons: undefined,
     lkg_max_age_sec: undefined,
     config_version: undefined,
@@ -170,7 +161,7 @@ it('[AC-F1-02c#2] 有效非缺省配置按键读取，不遗漏 free-form、字�
     help_links: { login_help: { route: 'Help', params: { article_id: 'help-1' } } },
   });
   const data = await success(h.app, id);
-  inviteOf(data.invite); // F1-02zm (transitional): the reward pair together or not at all
+  inviteOf(data.invite); // F1-02zm: the reward pair delivered as the derived default
   expect(data).toMatchObject({
     ...objects,
     h5_base_url: 'https://alternate.example.test/h5/',
@@ -193,7 +184,7 @@ it.each(['bind_phone_guide', 'before_buy_tip'] as const)(
   '[AC-F1-02c#2] invite.%s 单独关闭时不影响另一个缺省开启的开关',
   async (key) => {
     const id = await configured(h, { [`invite.${key}`]: false });
-    // F1-02zm (transitional): the reward pair, when delivered, is checked and set aside.
+    // F1-02zm: the reward pair is checked and set aside.
     expect(inviteOf((await success(h.app, id)).invite)).toEqual({
       required: false,
       backfill_hours: 168,

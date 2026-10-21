@@ -8,18 +8,19 @@ import {
   AT,
   IP,
   REASONS,
-  STATUS_TERMINAL_OF,
+  SHAPES_NOW,
+  STATUS_RETIRED,
+  STATUS_TERMINAL,
   TABLES,
   VOID_REASONS,
   appId,
   close,
-  formOf,
+  expectForm,
   insert,
   open,
   ready,
   references,
   reward,
-  shapesOf,
   update,
   user,
   type Harness,
@@ -64,15 +65,15 @@ it('[AC-CT-25b#6] 全部合法来源、状态、两方结果及原因可写入',
       bind_source,
     });
   }
-  // CT-25e (test-change, transitional; F1-02zt tightens): the third status is the terminal value
-  // of the detected form (budget_exhausted before CT-25d, expired after); the other one is refused.
-  const form = await formOf(h.app);
-  for (const status of ['qualified', 'deferred', STATUS_TERMINAL_OF(form)]) {
+  // CT-25e: the third status is expired (CT-25d); budget_exhausted is refused.
+  // F1-02zt：过渡已收紧, the 0055 form is gone.
+  await expectForm(h.app);
+  for (const status of ['qualified', 'deferred', STATUS_TERMINAL]) {
     expect(
       await insert(h.app, 'invite_rewards', { ...(await reward(h.app)), status }),
     ).toMatchObject({ status });
   }
-  const retired = STATUS_TERMINAL_OF(form === 'v0055' ? 'eligibility' : 'v0055');
+  const retired = STATUS_RETIRED;
   await expect(
     insert(h.app, 'invite_rewards', { ...(await reward(h.app)), status: retired }),
   ).rejects.toMatchObject({ code: '23514' });
@@ -161,8 +162,9 @@ it('[AC-CT-25b#8] 两方原因与结果联动，包括 NULL 结果不能带原�
     );
   }
   invalid.push({ status: 'processed' }, { status: 'voided', void_reason: null });
-  // CT-25e (test-change, transitional; F1-02zt tightens): terminal value of the detected form.
-  const terminal = STATUS_TERMINAL_OF(await formOf(h.app));
+  // CT-25e: terminal value after CT-25d (F1-02zt：过渡已收紧).
+  await expectForm(h.app);
+  const terminal = STATUS_TERMINAL;
   for (const status of ['qualified', 'deferred', 'processed', terminal]) {
     invalid.push({
       status,
@@ -187,14 +189,14 @@ it('[AC-CT-25b#8] 两方原因与结果联动，包括 NULL 结果不能带原�
 
 it('[AC-CT-25b#9] 必填列拒绝 NULL，资格业务时刻不从 SQL 时钟补齐', async () => {
   await ready(h.app);
-  // CT-25e (test-change, transitional; F1-02zt tightens): required columns of the detected form.
-  const form = await formOf(h.app);
+  // CT-25e: required columns after CT-25d (F1-02zt：过渡已收紧).
+  await expectForm(h.app);
   const rows = {
     invite_rewards: await reward(h.app),
     invite_reward_budgets: { app_id: appId(), period: 'total', updated_at: AT },
   };
   for (const table of TABLES) {
-    for (const [column, [, nullable]] of Object.entries(shapesOf(form)[table])) {
+    for (const [column, [, nullable]] of Object.entries(SHAPES_NOW[table])) {
       if (nullable) continue;
       await expect(insert(h.app, table, { ...rows[table], [column]: null })).rejects.toMatchObject({
         code: '23502',
@@ -204,19 +206,17 @@ it('[AC-CT-25b#9] 必填列拒绝 NULL，资格业务时刻不从 SQL 时钟补�
   const omitted = { ...rows.invite_rewards };
   delete omitted['qualified_at'];
   await expect(insert(h.app, 'invite_rewards', omitted)).rejects.toMatchObject({ code: '23502' });
-  if (form === 'eligibility') {
-    // CT-25e (test-change, transitional; F1-02zt tightens): the locked day count has no database
-    // default and must be at least one day.
-    const unlocked = { ...rows.invite_rewards };
-    delete unlocked['eligibility_days'];
-    await expect(insert(h.app, 'invite_rewards', unlocked)).rejects.toMatchObject({
-      code: '23502',
-    });
-    for (const eligibility_days of [0, -1]) {
-      await expect(
-        insert(h.app, 'invite_rewards', { ...rows.invite_rewards, eligibility_days }),
-      ).rejects.toMatchObject({ code: '23514' });
-    }
+  // CT-25e: the locked day count has no database default and must be at least one day.
+  // F1-02zt：过渡已收紧, always checked.
+  const unlocked = { ...rows.invite_rewards };
+  delete unlocked['eligibility_days'];
+  await expect(insert(h.app, 'invite_rewards', unlocked)).rejects.toMatchObject({
+    code: '23502',
+  });
+  for (const eligibility_days of [0, -1]) {
+    await expect(
+      insert(h.app, 'invite_rewards', { ...rows.invite_rewards, eligibility_days }),
+    ).rejects.toMatchObject({ code: '23514' });
   }
 });
 
