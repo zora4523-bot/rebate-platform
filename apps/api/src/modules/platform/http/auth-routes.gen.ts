@@ -353,6 +353,16 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/rank/hot",
+    "auth": "none"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/search/hot-words",
+    "auth": "none"
+  },
+  {
+    "method": "GET",
     "path": "/v1/me/favorites",
     "auth": "login"
   },

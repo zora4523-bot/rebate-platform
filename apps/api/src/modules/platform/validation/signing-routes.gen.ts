@@ -353,6 +353,16 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/v1/rank/hot",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/v1/search/hot-words",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/v1/me/favorites",
     "signed": false
   },

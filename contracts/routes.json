@@ -1,5 +1,5 @@
 {
-  "$comment": "Route table (CT-03): route name → native page or H5 path (规划/01 §4.2, 03 §4.4). Every jump is {route, params} (拍板第二批 TECH-04); external links use {route: ExternalPage, params: {url}}. since is per platform (拍板第二批 TECH-07): null = not shipped on that platform yet; an unknown route or a since above the app version opens the upgrade page. h5_path is relative to config.h5_base_url. InvitedFriends and LevelUpgrade are P1 with since null (the bridge answers unsupported); CustomPage, MyWatches and WatchLanding are added when they ship. debug_only routes open only in debug / staging builds (TECH-11). entry lists where a route may be opened from (route_entry: in_app, push, deeplink; values only from 规划/08 BR-ID-10 细则「路由入口矩阵」; InvitedFriends and LevelUpgrade are not in the matrix and are in_app only, orchestrator decision D-13). push means a route the server returned for a message id; any route carried directly in launch parameters is checked as deeplink. agent_guide (boolean, default false; 规划/04 §10, D31): true only on the candidate routes of 规划/08 BR-AI-01 细则「页面引导」 (Wallet, WithdrawRecords, AuthManage, OrderList, InviteShare, Messages); an Agent page_guide card and the two earnings_summary buttons may open only these, and entry stays as in BR-ID-10. agent_guide_account (phone | delete | fund) marks the account-security routes the Agent never guides to and answers with an agent.guide.account.* text instead (BR-TEXT-22); such routes are never agent_guide.",
+  "$comment": "Route table (CT-03): route name → native page or H5 path (规划/01 §4.2, 03 §4.4). Every jump is {route, params} (拍板第二批 TECH-04); external links use {route: ExternalPage, params: {url}}. since is per platform (拍板第二批 TECH-07): null = not shipped on that platform yet; an unknown route or a since above the app version opens the upgrade page. h5_path is relative to config.h5_base_url. InvitedFriends and LevelUpgrade are P1 with since null (the bridge answers unsupported); CustomPage, MyWatches and WatchLanding are added when they ship. debug_only routes open only in debug / staging builds (TECH-11). entry lists where a route may be opened from (route_entry: in_app, push, deeplink; values only from 规划/08 BR-ID-10 细则「路由入口矩阵」; InvitedFriends and LevelUpgrade are not in the matrix and are in_app only, orchestrator decision D-13). push means a route the server returned for a message id; any route carried directly in launch parameters is checked as deeplink. agent_guide (boolean, default false; 规划/04 §10, D31): true only on the candidate routes of 规划/08 BR-AI-01 细则「页面引导」 (Wallet, WithdrawRecords, AuthManage, OrderList, InviteShare, Messages); an Agent page_guide card and the two earnings_summary buttons may open only these, and entry stays as in BR-ID-10. agent_guide_account (phone | delete | fund) marks the account-security routes the Agent never guides to and answers with an agent.guide.account.* text instead (BR-TEXT-22); such routes are never agent_guide. FavoritesPickShare (F-SHARE-11 ③, pick a product from my favorites to share) is a selection state inside ShareHub, not a route.",
   "version": 1,
   "routes": {
     "Launch": {
@@ -130,6 +130,39 @@
       },
       "entry": ["in_app", "push", "deeplink"]
     },
+    "HotRankList": {
+      "page": "热销榜（名次与销量按平台返回原样展示）",
+      "kind": "native",
+      "auth": "none",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "phase": "M-公开",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "taobao",
+              "jd",
+              "pdd",
+              "meituan",
+              "vip",
+              "douyin",
+              "eleme",
+              "kuaishou",
+              "suning"
+            ]
+          }
+        },
+        "required": []
+      },
+      "entry": ["in_app", "push", "deeplink"]
+    },
     "ProductDetail": {
       "page": "商品详情",
       "kind": "native",
@@ -172,6 +205,84 @@
         "required": ["platform", "product_key"]
       },
       "entry": ["in_app", "push", "deeplink"]
+    },
+    "ProductShare": {
+      "page": "商品分享（生成分享链接与海报）",
+      "kind": "native",
+      "auth": "phone",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "phase": "M-公开",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "taobao",
+              "jd",
+              "pdd",
+              "meituan",
+              "vip",
+              "douyin",
+              "eleme",
+              "kuaishou",
+              "suning"
+            ]
+          },
+          "product_key": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "link_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["platform", "product_key"]
+      },
+      "entry": ["in_app"]
+    },
+    "ShareHub": {
+      "page": "分享赚（选商品分享；从收藏夹选商品是本页内的选择状态，不是单独路由）",
+      "kind": "native",
+      "auth": "phone",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "phase": "M-公开",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "entry": ["in_app", "push"]
+    },
+    "Favorites": {
+      "page": "我的收藏",
+      "kind": "native",
+      "auth": "login",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "phase": "M-公开",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "entry": ["in_app", "push"]
     },
     "AuthSheet": {
       "page": "平台授权说明半屏",
@@ -697,6 +808,54 @@
       },
       "entry": ["in_app", "push"],
       "agent_guide": true
+    },
+    "InviteBackfill": {
+      "page": "补填邀请码（「我的」入口与登录后新号步骤共用；source=login 为登录后步骤）",
+      "kind": "native",
+      "auth": "phone",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "phase": "M-内测",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "me =「我的」补填入口（缺省同 me）；login = 登录成功后的新号步骤；预填码来自本机待绑定码，不进参数",
+            "enum": ["me", "login"]
+          }
+        },
+        "required": []
+      },
+      "entry": ["in_app"]
+    },
+    "InviteLink": {
+      "page": "邀请链接拉起 App 的分流入口（不是页面，只带邀请码）",
+      "kind": "native",
+      "auth": "none",
+      "since": {
+        "ios": "1.0.0",
+        "android": "1.0.0",
+        "harmony": "1.0.0"
+      },
+      "phase": "M-内测",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16
+          }
+        },
+        "required": ["code"]
+      },
+      "entry": ["deeplink"]
     },
     "Rules": {
       "page": "返利规则",

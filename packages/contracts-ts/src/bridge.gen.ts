@@ -297,12 +297,24 @@ export interface components {
             /** @enum {string} */
             platform?: "taobao" | "jd" | "pdd" | "meituan" | "vip" | "douyin" | "eleme" | "kuaishou" | "suning";
         };
+        RouteHotRankListParams: {
+            /** @enum {string} */
+            platform?: "taobao" | "jd" | "pdd" | "meituan" | "vip" | "douyin" | "eleme" | "kuaishou" | "suning";
+        };
         RouteProductDetailParams: {
             /** @enum {string} */
             platform: "taobao" | "jd" | "pdd" | "meituan" | "vip" | "douyin" | "eleme" | "kuaishou" | "suning";
             product_key: string;
             item_ref?: string;
         };
+        RouteProductShareParams: {
+            /** @enum {string} */
+            platform: "taobao" | "jd" | "pdd" | "meituan" | "vip" | "douyin" | "eleme" | "kuaishou" | "suning";
+            product_key: string;
+            link_id?: string;
+        };
+        RouteShareHubParams: Record<string, never>;
+        RouteFavoritesParams: Record<string, never>;
         RouteAuthSheetParams: {
             /** @enum {string} */
             platform: "taobao" | "jd" | "pdd" | "meituan" | "vip" | "douyin" | "eleme" | "kuaishou" | "suning";
@@ -349,6 +361,16 @@ export interface components {
         RouteAboutParams: Record<string, never>;
         RouteMessagesParams: Record<string, never>;
         RouteInviteShareParams: Record<string, never>;
+        RouteInviteBackfillParams: {
+            /**
+             * @description me =「我的」补填入口（缺省同 me）；login = 登录成功后的新号步骤；预填码来自本机待绑定码，不进参数
+             * @enum {string}
+             */
+            source?: "me" | "login";
+        };
+        RouteInviteLinkParams: {
+            code: string;
+        };
         RouteRulesParams: Record<string, never>;
         RouteHelpParams: {
             article_id?: string;
@@ -973,6 +995,25 @@ export const routes = {
     "agent_guide": false,
     "agent_guide_account": null
   },
+  "HotRankList": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "none",
+    "phase": "M-公开",
+    "since": {
+      "ios": null,
+      "android": null,
+      "harmony": null
+    },
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push",
+      "deeplink"
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
+  },
   "ProductDetail": {
     "kind": "native",
     "h5_path": null,
@@ -988,6 +1029,59 @@ export const routes = {
       "in_app",
       "push",
       "deeplink"
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
+  },
+  "ProductShare": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "phone",
+    "phase": "M-公开",
+    "since": {
+      "ios": null,
+      "android": null,
+      "harmony": null
+    },
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
+  },
+  "ShareHub": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "phone",
+    "phase": "M-公开",
+    "since": {
+      "ios": null,
+      "android": null,
+      "harmony": null
+    },
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
+  },
+  "Favorites": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "login",
+    "phase": "M-公开",
+    "since": {
+      "ios": null,
+      "android": null,
+      "harmony": null
+    },
+    "debug_only": false,
+    "entry": [
+      "in_app",
+      "push"
     ],
     "agent_guide": false,
     "agent_guide_account": null
@@ -1437,6 +1531,40 @@ export const routes = {
     "agent_guide": true,
     "agent_guide_account": null
   },
+  "InviteBackfill": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "phone",
+    "phase": "M-内测",
+    "since": {
+      "ios": "1.0.0",
+      "android": "1.0.0",
+      "harmony": "1.0.0"
+    },
+    "debug_only": false,
+    "entry": [
+      "in_app"
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
+  },
+  "InviteLink": {
+    "kind": "native",
+    "h5_path": null,
+    "auth": "none",
+    "phase": "M-内测",
+    "since": {
+      "ios": "1.0.0",
+      "android": "1.0.0",
+      "harmony": "1.0.0"
+    },
+    "debug_only": false,
+    "entry": [
+      "deeplink"
+    ],
+    "agent_guide": false,
+    "agent_guide_account": null
+  },
   "Rules": {
     "kind": "h5",
     "h5_path": "/rules",
@@ -1642,7 +1770,7 @@ export const routes = {
 } as const;
 export type RouteName = keyof typeof routes;
 /** Routes kept in release builds (debug_only routes are dropped there, TECH-11). */
-export const releaseRouteNames = ["Launch","BasicMode","Login","BindPhone","Home","Search","ProductDetail","AuthSheet","JumpTip","AgentChat","AgentConsent","OrderList","OrderDetail","FindOrder","Me","Wallet","Withdraw","WithdrawRecords","Ledger","RealName","PayoutAccount","LaborAgreement","Settings","PrivacyCenter","DeleteAccount","RiskNotice","Appeal","ForceUpdate","About","Messages","InviteShare","Rules","Help","Notice","Agreement","WebPage","ExternalPage","InvitedFriends","LevelUpgrade","LinkLanding","Earnings","AuthManage"] as const;
+export const releaseRouteNames = ["Launch","BasicMode","Login","BindPhone","Home","Search","HotRankList","ProductDetail","ProductShare","ShareHub","Favorites","AuthSheet","JumpTip","AgentChat","AgentConsent","OrderList","OrderDetail","FindOrder","Me","Wallet","Withdraw","WithdrawRecords","Ledger","RealName","PayoutAccount","LaborAgreement","Settings","PrivacyCenter","DeleteAccount","RiskNotice","Appeal","ForceUpdate","About","Messages","InviteShare","InviteBackfill","InviteLink","Rules","Help","Notice","Agreement","WebPage","ExternalPage","InvitedFriends","LevelUpgrade","LinkLanding","Earnings","AuthManage"] as const;
 /** Routes an Agent page_guide card or earnings_summary button may open (agent_guide, 04 §10, D31); the client checks its bundled list (03 §7.4). */
 export const agentGuideRouteNames = ["OrderList","Wallet","WithdrawRecords","Messages","InviteShare","AuthManage"] as const;
 export interface RouteParams {
@@ -1652,7 +1780,11 @@ export interface RouteParams {
   BindPhone: components['schemas']["RouteBindPhoneParams"];
   Home: components['schemas']["RouteHomeParams"];
   Search: components['schemas']["RouteSearchParams"];
+  HotRankList: components['schemas']["RouteHotRankListParams"];
   ProductDetail: components['schemas']["RouteProductDetailParams"];
+  ProductShare: components['schemas']["RouteProductShareParams"];
+  ShareHub: components['schemas']["RouteShareHubParams"];
+  Favorites: components['schemas']["RouteFavoritesParams"];
   AuthSheet: components['schemas']["RouteAuthSheetParams"];
   JumpTip: components['schemas']["RouteJumpTipParams"];
   AgentChat: components['schemas']["RouteAgentChatParams"];
@@ -1678,6 +1810,8 @@ export interface RouteParams {
   About: components['schemas']["RouteAboutParams"];
   Messages: components['schemas']["RouteMessagesParams"];
   InviteShare: components['schemas']["RouteInviteShareParams"];
+  InviteBackfill: components['schemas']["RouteInviteBackfillParams"];
+  InviteLink: components['schemas']["RouteInviteLinkParams"];
   Rules: components['schemas']["RouteRulesParams"];
   Help: components['schemas']["RouteHelpParams"];
   Notice: components['schemas']["RouteNoticeParams"];
@@ -1691,7 +1825,7 @@ export interface RouteParams {
   AuthManage: components['schemas']["RouteAuthManageParams"];
 }
 /** A jump target shared by banners, push, messages, SDUI, Agent cards and nav.open. */
-export type RouteWithOptionalParams = "Launch" | "BasicMode" | "Login" | "BindPhone" | "Home" | "Search" | "AgentChat" | "AgentConsent" | "OrderList" | "FindOrder" | "Me" | "Wallet" | "Withdraw" | "WithdrawRecords" | "Ledger" | "RealName" | "PayoutAccount" | "LaborAgreement" | "Settings" | "PrivacyCenter" | "DeleteAccount" | "RiskNotice" | "Appeal" | "ForceUpdate" | "About" | "Messages" | "InviteShare" | "Rules" | "Help" | "Notice" | "Agreement" | "InvitedFriends" | "LevelUpgrade" | "Earnings" | "AuthManage";
+export type RouteWithOptionalParams = "Launch" | "BasicMode" | "Login" | "BindPhone" | "Home" | "Search" | "HotRankList" | "ShareHub" | "Favorites" | "AgentChat" | "AgentConsent" | "OrderList" | "FindOrder" | "Me" | "Wallet" | "Withdraw" | "WithdrawRecords" | "Ledger" | "RealName" | "PayoutAccount" | "LaborAgreement" | "Settings" | "PrivacyCenter" | "DeleteAccount" | "RiskNotice" | "Appeal" | "ForceUpdate" | "About" | "Messages" | "InviteShare" | "InviteBackfill" | "Rules" | "Help" | "Notice" | "Agreement" | "InvitedFriends" | "LevelUpgrade" | "Earnings" | "AuthManage";
 export type RouteTarget = { [N in RouteName]: N extends RouteWithOptionalParams ? { route: N; params?: RouteParams[N] } : { route: N; params: RouteParams[N] } }[RouteName];
 
 /** External target apps (contracts/apps.json); the only targets of ext.openApp. */

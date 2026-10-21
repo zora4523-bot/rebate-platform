@@ -290,6 +290,7 @@ ordinary:
     - error.50302
     - error.50303
     - error.50304
+    - error.50304.rank_unavailable
     - error.50304.search_disabled
     - error.50305
     - error.50401
@@ -346,6 +347,9 @@ ordinary:
     - price_trend.source.general
     - price_trend.title
     - price_trend.title.general
+    - rank.notice
+    - rank.sales.neutral
+    - rank.sales.tb
     - settings.clear_cache
     - settings.clear_cache.confirm
     - settings.clear_cache.confirm_cancel

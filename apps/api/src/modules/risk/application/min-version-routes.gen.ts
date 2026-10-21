@@ -723,6 +723,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "getHotRank",
+    "method": "GET",
+    "path": "/v1/rank/hot",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "getSearchHotWords",
+    "method": "GET",
+    "path": "/v1/search/hot-words",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "listFavorites",
     "method": "GET",
     "path": "/v1/me/favorites",
