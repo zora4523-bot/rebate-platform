@@ -1,0 +1,37 @@
+{
+  "task": "CT-16g",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "27de604126232e3595a8576af1300e26fcdb2d0d",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; user-side text keys, App hi-fi batch 2 money pages, orchestrator 17:4x, SPEC_REF 8209d6e). texts.default.json gains 78 keys copied verbatim from 08 BR-TEXT-14 (wallet, withdrawal, payout account, appeals, claims); specs/fund-term-keys.yaml classifies each (unsure ones as fund terms, exceptions with reasons) and the generated file is regenerated; the contracts-ts texts unit test follows the earnings.* count. Keys 08 marks as not drafted or pending legal text are not created; real_name.consent.* is left out because the content text-key classifier does not yet treat that prefix as legal-confirmation text (Codex round 1 S0; follow-up task). New keys only, not breaking. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 fail (S0: real_name.consent.* classified ordinary would be editable without legal confirmation); those keys removed; round 2 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "1576f210c631af98ffb0bf6ec9168a0fb5062ed1",
+    "specs": "86ca8f584d407e3fd3f28091686969a446ba7094"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
