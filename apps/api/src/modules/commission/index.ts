@@ -30,6 +30,8 @@ export type {
   CreateCommissionSnapshotResult,
 } from './application/snapshot.ts';
 export { createInMemoryBeneficiaryResolver } from './infra/in-memory-beneficiary-resolver.ts';
+export { createSnapshotBeneficiaryResolver } from './infra/beneficiary-resolver.ts';
+export type { SnapshotBeneficiaryResolverOptions } from './infra/beneficiary-resolver.ts';
 export {
   createDraft,
   validateDraft,
