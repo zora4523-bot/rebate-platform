@@ -135,6 +135,13 @@ function LedgerList({ api }: { api: H5ApiClient }): ReactElement {
       last.next_cursor === null || last.next_cursor === '' || last.next_cursor === lastCursor
         ? undefined
         : last.next_cursor,
+    // 请求只来自进页、下拉刷新、用户点重试与翻页：关掉一切自动重取（10405 等错误不得被自动重放）。
+    // 共用 QueryClient 只关了 retry 与窗口聚焦，这里逐项显式关闭，不依赖默认值。
+    retry: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
   const { data, hasNextPage, isFetching, isFetchingNextPage, isFetchNextPageError } = list;
 

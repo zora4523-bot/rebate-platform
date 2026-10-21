@@ -1,3 +1,4 @@
+import { onlineManager } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ApiProvider } from '../../../../shared/api/app-api.ts';
@@ -40,6 +41,7 @@ afterEach(() => {
   observers.clear();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  onlineManager.setOnline(true);
 });
 
 function reply(data: unknown, code = 0, status = 200): Response {
@@ -167,6 +169,48 @@ it('a refresh answering 10405 shows the 10405 text and is never replayed automat
   expect(screen.getByText(/1\.01/)).toBeTruthy();
   expect(screen.getByRole('button', { name: ledgerTexts.retry })).toBeTruthy();
   expect(http.requests).toHaveLength(2);
+});
+
+/** 模拟手机断网再恢复（TanStack 的 onlineManager 恢复时会触发 refetchOnReconnect）。 */
+async function dropAndRestoreNetwork(): Promise<void> {
+  await act(async () => {
+    onlineManager.setOnline(false);
+    await Promise.resolve();
+  });
+  await act(async () => {
+    onlineManager.setOnline(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+  });
+}
+
+it('after a refresh answers 10405, going offline and back online sends no new request', async () => {
+  const http = fakeApi((_url, count) => (count === 1 ? page(101) : reply(null, 10405, 403)));
+  mount(http.api);
+  await screen.findByText(/1\.01/);
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  pullDown();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(screen.getByRole('alert').textContent).toBe(t('error.10405'));
+  expect(http.requests).toHaveLength(2);
+
+  await dropAndRestoreNetwork();
+  expect(http.requests).toHaveLength(2);
+  expect(screen.getByRole('alert').textContent).toBe(t('error.10405'));
+});
+
+it('after the first page answers 10405, going offline and back online sends no new request', async () => {
+  const http = fakeApi(() => reply(null, 10405, 403));
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  mount(http.api);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+  expect(http.requests).toHaveLength(1);
+
+  await dropAndRestoreNetwork();
+  expect(http.requests).toHaveLength(1);
 });
 
 it('a refresh while the next page is in flight waits for it, so only one request is ever open', async () => {
