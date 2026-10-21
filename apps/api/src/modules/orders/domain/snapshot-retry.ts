@@ -2,12 +2,14 @@
 // 不做 I/O。信号只看「该子订单仍有 open 的快照类待处理行」，不看 commission_splits 是否存在；资格沿用
 // isSnapshotEligible（本次 ⑦ 迁移与 ② 归属后的值，rebate_status 用库内值）。planCommissionSnapshot 与
 // crossesSnapshotEligibility 的行为不变（「首次跨入」仍只由它们判定）。
-// - 入参恢复：N = 结算收入 ?? 预估收入（两者都空 → AMOUNT_PARSE_FAILED，不按 0 兜底）；拼多多扣服务费，服务费
-//   取不到（扫描路径无报文）→ skip service_fee_unknown；报文明确没给 → SERVICE_FEE_RATE_MISSING。
+// - 入参恢复：N = 结算收入 ?? 预估收入（两者都空 → AMOUNT_PARSE_FAILED，不按 0 兜底）；拼多多扣服务费（B1-08k 扣法：
+//   N − 报文服务费金额）。流水线取本次报文的服务费，报文明确没给 → SERVICE_FEE_RATE_MISSING；扫描取订单当前列
+//   orders.service_fee_fen（B1-08v），列为空 → skip service_fee_unknown。
 // - paidAt 按库内 paid_at_source：platform → paid_at；observed → 首条到 PAID+ 的历史时刻；platform_modified
 //   （预售迁到 PAID 那条报文的平台更新时间）不可恢复 → skip paid_at_unknown；为空 → chooseSnapshotPaidAt
 //   （movedToPaidNow=false），由调用方照 B1-08k 写入 paid_at_source。
 // - 淘礼金场景：推广位场景取不到（扫描路径无 pids 端口）的淘宝单 → skip pid_scene_unknown，不替它选返利模式。
+// - 扫描排序（B1-08v，待编排裁定 3）：isScanSkipCertain 判定扫描路径必然 skip 的单，候选排序把它们排在末尾。
 // 金额只经 @couli/money（整数分）。
 import { subFen } from '@couli/money';
 import {
@@ -127,13 +129,17 @@ export interface PlanSnapshotRetryInput {
   readonly ownerUserId: string;
   /** null = paidAt 不可恢复。 */
   readonly paid: SnapshotRetryPaid | null;
-  /** 本次报文的拼多多服务费；'unknown' = 没有报文可读（扫描路径）。 */
+  /** 拼多多服务费：流水线为本次报文的值（null = 报文没给）；扫描为订单当前列，列为空传 'unknown'。 */
   readonly serviceFeeFen: bigint | null | 'unknown';
   /** 订单推广位的 pid_scene；'unknown' = 无从查询（扫描路径无 pids 端口）。 */
   readonly pidScene: string | null | 'unknown';
 }
 
 const TAOLIJIN_SCENE = 'taolijin';
+/** 佣金基数要扣平台服务费的平台（拼多多报文的佣金含软件服务费，B1-08k）。 */
+export const SERVICE_FEE_PLATFORM = 'pdd';
+/** 推广位场景（淘礼金）决定返利模式的平台；扫描路径查不到场景，此平台的单一律 skip。 */
+export const PID_SCENE_PLATFORM = 'taobao';
 
 /** 重试时的入参组装；判定顺序与 planCommissionSnapshot 一致（金额 → 服务费 → paidAt），其余字段同 B1-08k。 */
 export function planSnapshotRetry(input: PlanSnapshotRetryInput): SnapshotRetryPlan {
@@ -141,7 +147,7 @@ export function planSnapshotRetry(input: PlanSnapshotRetryInput): SnapshotRetryP
   const commission = order.settle_commission_fen ?? order.est_commission_fen;
   if (commission === null) return { kind: 'pending', reason: 'AMOUNT_PARSE_FAILED' };
   let nBaseFen = commission;
-  if (order.platform === 'pdd') {
+  if (order.platform === SERVICE_FEE_PLATFORM) {
     if (input.serviceFeeFen === 'unknown') return { kind: 'skip', reason: 'service_fee_unknown' };
     if (input.serviceFeeFen === null)
       return { kind: 'pending', reason: 'SERVICE_FEE_RATE_MISSING' };
@@ -151,7 +157,7 @@ export function planSnapshotRetry(input: PlanSnapshotRetryInput): SnapshotRetryP
   let pidScene: string | null;
   if (input.pidScene === 'unknown') {
     // 淘礼金只在淘宝；别的平台场景未知时与 B1-08k「查不到 → 非淘礼金」一致。
-    if (order.platform === 'taobao') return { kind: 'skip', reason: 'pid_scene_unknown' };
+    if (order.platform === PID_SCENE_PLATFORM) return { kind: 'skip', reason: 'pid_scene_unknown' };
     pidScene = null;
   } else {
     pidScene = input.pidScene;
@@ -175,4 +181,31 @@ export function planSnapshotRetry(input: PlanSnapshotRetryInput): SnapshotRetryP
       ownerUserId: input.ownerUserId,
     },
   };
+}
+
+/** 扫描排序用的订单列（读自 orders 当前行）。 */
+export interface ScanSkipOrder {
+  readonly platform: string;
+  readonly est_commission_fen: bigint | null;
+  readonly settle_commission_fen: bigint | null;
+  readonly service_fee_fen: bigint | null;
+  readonly paid_at_source: string | null;
+  readonly paid_at: Date | null;
+}
+
+/**
+ * B1-08v（待编排裁定 3）：扫描路径对该单是否必然 skip（只看订单列，不读状态历史）。与 readSnapshotRetryInput →
+ * planSnapshotRetry 的 skip 分支同口径：佣金基数可得（否则是 pending AMOUNT_PARSE_FAILED，会刷新 detected_at），且
+ * ① 拼多多而服务费列为空，或 ② paidAt 不可恢复（platform 而 paid_at 为空；platform_modified 或未知来源），或
+ * ③ 淘宝（推广位场景未知）。observed 而状态历史没有到 PAID+ 的记录也会 skip，但要读历史，这里不计（排在前面只是多试一次）。
+ * skip 不刷新 detected_at、不离开候选；selectDueSubOrders 按同一口径把这类单排在候选末尾，免得它们占满每轮名额
+ * 饿死后面的订单。两处须同改（SQL 在 infra/snapshot-retry-store.ts）。
+ */
+export function isScanSkipCertain(order: ScanSkipOrder): boolean {
+  if ((order.settle_commission_fen ?? order.est_commission_fen) === null) return false;
+  if (order.platform === SERVICE_FEE_PLATFORM && order.service_fee_fen === null) return true;
+  const source = order.paid_at_source;
+  if (source === 'platform' && order.paid_at === null) return true;
+  if (source !== null && source !== 'platform' && source !== 'observed') return true;
+  return order.platform === PID_SCENE_PLATFORM;
 }

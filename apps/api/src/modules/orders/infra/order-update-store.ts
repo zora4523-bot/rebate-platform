@@ -1,5 +1,6 @@
 // B1-08i：已有订单同步更新的 CAS UPDATE（BR-FUND-01；规划/02 §18）。只写 orders 模块拥有的同步列与
-// 未归因时的归属列与来源四列（B1-08j）、paid_at_source（B1-08k）、shop_id（B1-08p，只空 → 非空）；返利列（rebate_status、hold*、rights_pending、locked、booked_*、settle_period、reason*）、
+// 未归因时的归属列与来源四列（B1-08j）、paid_at_source（B1-08k）、shop_id（B1-08p，只空 → 非空）、
+// service_fee_fen（B1-08v，按本次报文原样）；返利列（rebate_status、hold*、rights_pending、locked、booked_*、settle_period、reason*）、
 // 身份列与 attr_at 不在可写集合里。调用方已在本事务里取得子订单 advisory 锁。
 import type { DB } from '@couli/db';
 import type { Selectable, Transaction, Updateable } from 'kysely';
@@ -11,6 +12,11 @@ export type OrderUpdateSet = OrderSyncColumns &
   Pick<Updateable<DB['orders']>, 'platform_status'> & {
     readonly row_version: number;
     readonly updated_at: Date;
+    /**
+     * 平台服务费（B1-08v）：每次写库都按本次报文原样写（含 null，不保留库内旧值），与快照入参同口径；
+     * 不放进 OrderSyncColumns（那是 B1-08i 冻结的同步列集合）。
+     */
+    readonly service_fee_fen: bigint | null;
     readonly pid?: string | null;
     readonly relation_id?: string | null;
     readonly sub_union_id?: string | null;

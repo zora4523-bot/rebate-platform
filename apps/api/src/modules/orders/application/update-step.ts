@@ -283,6 +283,8 @@ export function createOrderUpdateStep(
     const set: OrderUpdateSet = {
       ...columns,
       ...(plan.platform_status !== from ? { platform_status: plan.platform_status } : {}),
+      // B1-08v（待编排裁定 2 默认）：服务费按本次写库报文原样写，报文没给即 NULL，不保留库内旧值。
+      service_fee_fen: incoming.service_fee_fen ?? null,
       row_version: current.row_version + 1,
       updated_at: now,
     };

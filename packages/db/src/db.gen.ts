@@ -923,6 +923,7 @@ export interface Orders {
   rights_pending: Generated<boolean>;
   row_version: Generated<number>;
   scene_basis: string | null;
+  service_fee_fen: ColumnType<bigint, bigint, bigint> | null;
   settle_commission_fen: ColumnType<bigint, bigint, bigint> | null;
   settle_period: string | null;
   settled_at: Timestamp | null;

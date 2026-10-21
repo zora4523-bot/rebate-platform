@@ -1,0 +1,129 @@
+{
+  "task": "B1-08v",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "10ceffb1272512f47de1f3f2db1691055efdb87f",
+  "red_tests": [
+    "test/spec/orders/service-fee-column/cas.int.test.ts > [AC-B1-08v#16] CAS 两次未命中时不能旁路写服务费，也不调用下游端口",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#4] 拼多多首次入库保存服务费，已归因=true",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#4] 拼多多首次入库保存服务费，已归因=false",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#5] 京东服务费 null 入库为 NULL",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#5] 京东服务费 omitted 入库为 NULL",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#6] 仅服务费变化也进入 CAS 更新，重放不再写订单",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#7] 写库报文服务费 null 原样覆盖旧值",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#7] 写库报文服务费 omitted 原样覆盖旧值",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#7] 写库报文服务费 zero 原样覆盖旧值",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#8] 乱序报文不覆盖服务费，整条拒收也不落服务费",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#9] 存量 NULL 不因读取或 unchanged 重放回填，变更报文才写入",
+    "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#10] 后续端口失败时服务费随订单事务回滚",
+    "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#11] 拼多多扫描用持久化结算=null、预估=789n 扣服务费=31n",
+    "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#11] 拼多多扫描用持久化结算=901n、预估=789n 扣服务费=31n",
+    "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#11] 拼多多扫描用持久化结算=0n、预估=789n 扣服务费=0n",
+    "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#11] 拼多多扫描用持久化结算=null、预估=789n 扣服务费=0n",
+    "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#11] 拼多多扫描用持久化结算=9007199254741782n、预估=789n 扣服务费=9007199254740993n",
+    "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#12] 存量无服务费仍跳过，读取与扫描均不回填、不处置并记录 warn",
+    "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#13] 已写服务费的拼多多 pending 刷新 detected_at，原发现时间不延后",
+    "test/spec/orders/service-fee-column/schema.int.test.ts > [AC-B1-08v#1] 父表与默认分区均有 bigint 可空无默认服务费列",
+    "test/spec/orders/service-fee-column/schema.int.test.ts > [AC-B1-08v#2] 业务角色可插入和更新服务费，支持大整数及 NULL",
+    "test/spec/orders/service-fee-column/schema.int.test.ts > [AC-B1-08v#3] 新迁移只扩展父表，不回填、不给默认值、不改约束或授权",
+    "test/spec/orders/service-fee-column/starvation.int.test.ts > [AC-B1-08v#14] 100 张有服务费的拼多多 pending 刷新后，下一轮京东获得名额",
+    "test/spec/orders/service-fee-column/starvation.int.test.ts > [AC-B1-08v#15] 100 张必然跳过的 missing_fee 候选排后，首轮就处理京东且跳过单不变",
+    "test/spec/orders/service-fee-column/starvation.int.test.ts > [AC-B1-08v#15] 100 张必然跳过的 platform_modified 候选排后，首轮就处理京东且跳过单不变",
+    "test/spec/orders/service-fee-column/starvation.int.test.ts > [AC-B1-08v#15] 100 张必然跳过的 taobao 候选排后，首轮就处理京东且跳过单不变"
+  ],
+  "risk_note": "RV2 (orders/**, migration 0063). orders.service_fee_fen: nullable bigint, no default, no backfill, written as reported on import and on changed updates (null kept). The snapshot retry scan reads it: PDD orders with a fee get N = commission − reported fee (same deduction as B1-08k; the BR-CALC-03 wording was reported to the orchestrator) and are no longer skipped; orders bound to be skipped go to the end of the candidate list so a backlog cannot starve later orders. The pipeline and the scan both use the current report / column fee for nBaseFen. Integer fen via @couli/money. The frozen B1-08t #25 fixture was adjusted separately (test-change B1-08x, #1060).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "10ceffb1272512f47de1f3f2db1691055efdb87f",
+      "tree": "a7935d67a823a7986859c20b5debe66b81703a85",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T17:55:04Z",
+      "finished_at": "2026-10-21T17:55:16Z",
+      "gate": {
+        "commit": "0fcd76e381c8d19e4d148a5cca290b9f7d69709d",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/orders/service-fee-column/cas.int.test.ts > [AC-B1-08v#16] CAS 两次未命中时不能旁路写服务费，也不调用下游端口",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#4] 拼多多首次入库保存服务费，已归因=true",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#4] 拼多多首次入库保存服务费，已归因=false",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#5] 京东服务费 null 入库为 NULL",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#5] 京东服务费 omitted 入库为 NULL",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#6] 仅服务费变化也进入 CAS 更新，重放不再写订单",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#7] 写库报文服务费 null 原样覆盖旧值",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#7] 写库报文服务费 omitted 原样覆盖旧值",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#7] 写库报文服务费 zero 原样覆盖旧值",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#8] 乱序报文不覆盖服务费，整条拒收也不落服务费",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#9] 存量 NULL 不因读取或 unchanged 重放回填，变更报文才写入",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts > [AC-B1-08v#10] 后续端口失败时服务费随订单事务回滚",
+        "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#11] 拼多多扫描用持久化结算=null、预估=789n 扣服务费=31n",
+        "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#11] 拼多多扫描用持久化结算=901n、预估=789n 扣服务费=31n",
+        "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#11] 拼多多扫描用持久化结算=0n、预估=789n 扣服务费=0n",
+        "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#11] 拼多多扫描用持久化结算=null、预估=789n 扣服务费=0n",
+        "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#11] 拼多多扫描用持久化结算=9007199254741782n、预估=789n 扣服务费=9007199254740993n",
+        "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#12] 存量无服务费仍跳过，读取与扫描均不回填、不处置并记录 warn",
+        "test/spec/orders/service-fee-column/scan.int.test.ts > [AC-B1-08v#13] 已写服务费的拼多多 pending 刷新 detected_at，原发现时间不延后",
+        "test/spec/orders/service-fee-column/schema.int.test.ts > [AC-B1-08v#1] 父表与默认分区均有 bigint 可空无默认服务费列",
+        "test/spec/orders/service-fee-column/schema.int.test.ts > [AC-B1-08v#2] 业务角色可插入和更新服务费，支持大整数及 NULL",
+        "test/spec/orders/service-fee-column/schema.int.test.ts > [AC-B1-08v#3] 新迁移只扩展父表，不回填、不给默认值、不改约束或授权",
+        "test/spec/orders/service-fee-column/starvation.int.test.ts > [AC-B1-08v#14] 100 张有服务费的拼多多 pending 刷新后，下一轮京东获得名额",
+        "test/spec/orders/service-fee-column/starvation.int.test.ts > [AC-B1-08v#15] 100 张必然跳过的 missing_fee 候选排后，首轮就处理京东且跳过单不变",
+        "test/spec/orders/service-fee-column/starvation.int.test.ts > [AC-B1-08v#15] 100 张必然跳过的 platform_modified 候选排后，首轮就处理京东且跳过单不变",
+        "test/spec/orders/service-fee-column/starvation.int.test.ts > [AC-B1-08v#15] 100 张必然跳过的 taobao 候选排后，首轮就处理京东且跳过单不变"
+      ],
+      "expected": [
+        "test/spec/orders/service-fee-column/cas.int.test.ts",
+        "test/spec/orders/service-fee-column/persistence.int.test.ts",
+        "test/spec/orders/service-fee-column/scan.int.test.ts",
+        "test/spec/orders/service-fee-column/schema.int.test.ts",
+        "test/spec/orders/service-fee-column/starvation.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "e3aa01d6c95bbc5e0008d29a34e41f719ac61a61e999a2850d0ceacedff69221"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "r1 fail: two content-module S1 were artefacts of a stale review base (the review compared against the newest main, D10-94) plus one S2 (bigint in a unit-test message, fixed); r2 one more stale-base S1; r3 against the merge base pass with one S2 (the B1-08t #25 fixture, handled by test-change B1-08x)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run, 26 tests). Round 1 pass with one S2 (#6 did not assert nBaseFen when the fee changes) written into the implementation brief."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "2875870c6067a426d1e03ef82227fe4939202cf0",
+    "specs": "3c84b34e39aa6d9540cdb6c59afd21eb171cedce"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}

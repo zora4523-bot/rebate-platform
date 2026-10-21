@@ -3,6 +3,8 @@
 import type { DB } from '@couli/db';
 import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 import {
+  PID_SCENE_PLATFORM,
+  SERVICE_FEE_PLATFORM,
   SNAPSHOT_RETRY_DUE_MS,
   SNAPSHOT_RETRY_HANDOFF_NOTE,
   SNAPSHOT_RETRY_REASONS,
@@ -99,8 +101,23 @@ export async function readOrderByKey(
 }
 
 /**
+ * 扫描必然 skip 的单（B1-08v，待编排裁定 3）：与 domain isScanSkipCertain 同口径，两处须同改。每个子订单只连到一行
+ * orders；表达式里每一项都不为 NULL（is not distinct from / is not null），外层再 coalesce，避免 NULL 排序。
+ */
+const SCAN_SKIP_CERTAIN = sql<boolean>`coalesce(bool_or(
+  coalesce(o.settle_commission_fen, o.est_commission_fen) is not null and (
+    (o.platform = ${SERVICE_FEE_PLATFORM} and o.service_fee_fen is null)
+    or (o.paid_at_source is not distinct from 'platform' and o.paid_at is null)
+    or (o.paid_at_source is not null and o.paid_at_source not in ('platform', 'observed'))
+    or o.platform = ${PID_SCENE_PLATFORM}
+  )
+), false)`;
+
+/**
  * 一轮扫描的候选子订单：同 App、open 快照类行最晚一次 detected_at ≤ now − 1 小时、未转人工，订单当前满足 ⑥
- * 资格（不满足的留后台人工处置，不占批量名额）；按最早 detected_at、最小 id 升序，至多 limit 个。锁内另行重读。
+ * 资格（不满足的留后台人工处置，不占批量名额）；扫描必然 skip 的单（拼多多服务费列为空、paidAt 不可恢复、淘宝）排在
+ * 末尾（B1-08v：skip 不刷新 detected_at，排在前面会占满每轮名额、饿死后面的订单），其余按最早 detected_at、最小 id
+ * 升序，至多 limit 个。锁内另行重读。
  */
 export async function selectDueSubOrders(
   db: Kysely<DB>,
@@ -133,6 +150,7 @@ export async function selectDueSubOrders(
       '=',
       true,
     )
+    .orderBy(SCAN_SKIP_CERTAIN)
     .orderBy((eb) => eb.fn.min('p.detected_at'))
     .orderBy((eb) => eb.fn.min('p.id'))
     .limit(limit)
