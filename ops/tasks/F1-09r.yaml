@@ -14,6 +14,12 @@ deps: [CT-07b]
 paths:
   - 'apps/api/src/modules/content/**'
   - 'apps/api/src/modules/platform/media/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
 test_paths:
   - 'test/spec/content/popup-assets/**'
 impl: claude
