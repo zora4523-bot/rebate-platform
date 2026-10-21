@@ -40,6 +40,10 @@ import {
   type ContentReader,
   type PageAudienceReads,
 } from './modules/content/index.ts';
+// The configuration registry is pure data that content's index.ts does not export yet; the audit
+// search only needs its key → permission column (B1-34a).
+// TODO(规划/11 §2.3): 配置注册表改从 content 的 index.ts 导入 — blocked on content 任务补该导出（不在 B1-34a 路径内）
+import { configRegistry } from './modules/content/domain/config-registry.ts';
 import { HealthModule } from './modules/health/index.ts';
 import {
   GrowthModule,
@@ -1434,6 +1438,8 @@ function riskModule(identity: DynamicModule, contentReader: SharedContentReader)
  */
 function adminAuthModule(): DynamicModule {
   return AdminAuthModule.forRoot({
+    // B1-34a: the audit search derives a configuration record's permission point from it.
+    configPermissions: new Map(configRegistry().map((item) => [item.key, item.permission])),
     smsSender: {
       provide: smsSenderToken(),
       inject: [APP_CONFIG, ROOT_LOGGER],
