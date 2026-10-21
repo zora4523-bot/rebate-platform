@@ -1,0 +1,37 @@
+{
+  "task": "CT-02y",
+  "spec_ref": "f41137533d254d4b78dc01ea95f474171c694485",
+  "spec_commit": "89b8f08973bf9a9e54cc85a972c09a496be4a3ef",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). Page scheduled publish: adminPublishPageConfig request gains optional publish_at (date-time; must be after now and within 30 days, and a page with a pending schedule rejects another publish, both 20001 fields=[publish_at]); new DELETE /admin/v1/pages/{page_key}/schedule (adminCancelPageConfigSchedule, planned, expected_revision query, 30701 when no pending schedule); AdminPageConfig gains optional scheduled (null when none); revision and publish_at descriptions updated. Basis: 01 F-HOME-07 (publish now or scheduled), orchestrator D8. Optional field and new planned operation only, not breaking. Transitional risk (Codex S2): until F1-09p lands the route schema accepts publish_at but the current implementation ignores it; the console does not send it, and the frontend lane is told not to. Implementation F1-09n / F1-09p. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass; one S2 on the transitional window before F1-09p (publish_at accepted but ignored), handled by landing order and a notice to the frontend lane"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "f7e2efdd001c6fee9a6a3b5aad076fe533ed29fa",
+    "specs": "3c84b34e39aa6d9540cdb6c59afd21eb171cedce"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}

@@ -7789,6 +7789,11 @@ export const CONTRACT_ROUTE_SCHEMAS = {
           "maximum": 100,
           "description": "100 = release fully; 1..99 = gray rollout to that share of devices."
         },
+        "publish_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Scheduled publish time, later than now and at most 30 days after now; absent = publish\nnow.\n"
+        },
         "expected_revision": {
           "type": "integer",
           "format": "int32",

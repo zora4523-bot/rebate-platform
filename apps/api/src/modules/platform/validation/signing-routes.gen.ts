@@ -657,6 +657,11 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "DELETE",
+    "path": "/admin/v1/pages/:page_key/schedule",
+    "signed": false
+  },
+  {
     "method": "POST",
     "path": "/admin/v1/pages/:page_key/gray",
     "signed": false

@@ -657,6 +657,11 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "admin"
   },
   {
+    "method": "DELETE",
+    "path": "/admin/v1/pages/:page_key/schedule",
+    "auth": "admin"
+  },
+  {
     "method": "POST",
     "path": "/admin/v1/pages/:page_key/gray",
     "auth": "admin"
