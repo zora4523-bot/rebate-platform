@@ -223,6 +223,7 @@ export function createRefinement(
   deps: ResultsContinuationDeps,
 ): Pick<IntentDeps['continuation'], 'run'> {
   const store = deps.store;
+  const state = stateOf(deps.tools);
   const clarification = createClarification(deps);
 
   async function notice(request: IntentRequest, ctx: RunContext, key: string, suggest: boolean) {
@@ -235,29 +236,49 @@ export function createRefinement(
     return done();
   }
 
+  /**
+   * The latest search conditions of the session for 换一批 / 换平台 / a price answer: the current
+   * chain's last attempt (recorded by the decorator even when it only asked a clarify question and
+   * nothing was shown, BR-AI-08), else the latest result set that delivered products. Delivered
+   * products are not required: a clarify answer continues the chain it answers.
+   */
+  async function latestSearch(request: IntentRequest): Promise<SearchConditions | null> {
+    const appId = request.input.caller.appId;
+    const sessionId = request.input.sessionId;
+    const chain = await currentChain(state, store, appId, sessionId);
+    if (chain !== null && chain.conditions !== null) return chain.conditions;
+    const latest = await store.latestWithProducts(appId, sessionId);
+    return latest?.conditions ?? null;
+  }
+
   async function refine(intent: Refine, request: IntentRequest, ctx: RunContext): Promise<Done> {
-    const latest = await store.latestWithProducts(
-      request.input.caller.appId,
-      request.input.sessionId,
-    );
-    // Nothing shown yet in this session: there is no list to refine.
-    if (latest === null) return notice(request, ctx, resultKeys.noResult, true);
-    const base = latest.conditions;
-    const chain = { kind: 'refine' as const, chainId: base.chain_id };
-    const args = argsOf(base);
     const conditions = intent.conditions;
 
     if ('cheaper' in conditions) {
-      // Only cards actually delivered count (BR-AI-05 细则); prices never come from the model.
+      // 再便宜点 depends on the cards actually shown (BR-AI-05 细则 / BR-PRICE-15).
+      const latest = await store.latestWithProducts(
+        request.input.caller.appId,
+        request.input.sessionId,
+      );
+      if (latest === null) return notice(request, ctx, resultKeys.noResult, true);
+      const base = latest.conditions;
+      // Only cards actually delivered count; prices never come from the model.
       const ceiling = cheaperCeiling(
         base,
         latest.delivered.map((item) => item.final_price_fen),
       );
       if (ceiling === null) return notice(request, ctx, resultKeys.noCheaper, false);
       // A new price condition and ordering restart at page 1 (编排裁定).
-      const next = { ...args, price_max_fen: ceiling, sort: 'final_price_asc', page: 1 };
-      return runSearch(deps, request, ctx, next, { ...chain, kind: 'cheaper' });
+      const next = { ...argsOf(base), price_max_fen: ceiling, sort: 'final_price_asc', page: 1 };
+      return runSearch(deps, request, ctx, next, { kind: 'cheaper', chainId: base.chain_id });
     }
+
+    const base = await latestSearch(request);
+    // Nothing searched in this session (no chain attempt, no result set): nothing to refine.
+    if (base === null) return notice(request, ctx, resultKeys.noResult, true);
+    const chain = { kind: 'refine' as const, chainId: base.chain_id };
+    const args = argsOf(base);
+
     if ('next_batch' in conditions) {
       const page = (base.page ?? 1) + 1;
       if (page > maxSearchPage()) return notice(request, ctx, resultKeys.noResult, false);
@@ -267,6 +288,7 @@ export function createRefinement(
     if (conditions.platform !== undefined) next['platforms'] = [conditions.platform];
     if (conditions.price_min_fen !== undefined) next['price_min_fen'] = conditions.price_min_fen;
     if (conditions.price_max_fen !== undefined) next['price_max_fen'] = conditions.price_max_fen;
+    // Same chain: an answer still invalid after the one ask drops the price (BR-AI-08).
     return runSearch(deps, request, ctx, next, chain);
   }
 
