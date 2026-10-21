@@ -31,6 +31,9 @@ export type IntentOutput =
         readonly platform?: Platform;
         readonly price_min_fen?: number;
         readonly price_max_fen?: number;
+        /** B3-05g: each flag must appear alone; values are literal true. */
+        readonly cheaper?: true;
+        readonly next_batch?: true;
       };
     }
   | {
