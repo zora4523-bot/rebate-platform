@@ -133,6 +133,10 @@ export { unbindRevoked } from './application/push-tokens.ts';
 export { IdentityModule } from './identity.module.ts';
 // The admin entry's console routes of identity (F1-07a: the audited phone reveal).
 export { IdentityAdminModule } from './identity-admin.module.ts';
+// B1-10j: the applicants' masked phones (BR-ID-33 3+4) for orders' console claim review, assembled
+// by app.module on the admin entry (decrypted and masked inside identity).
+export { createMaskedPhoneReader } from './ports/masked-phones.ts';
+export type { MaskedPhoneReader } from './ports/masked-phones.ts';
 export { ME_READ_PORTS } from './application/tokens.ts';
 export type { MeReadPorts, MeUnionBindingStatus } from './application/me.ts';
 export type { InviteBackfillActivityPort, MeSubject } from './ports/invite-backfill-activity.ts';

@@ -46,7 +46,7 @@ import {
   beijingTime,
   claimUrl,
   createRequestGate,
-  evidenceLabel,
+  evidenceText,
   evidenceTone,
   failureOf,
   itemActionUrl,
@@ -458,7 +458,7 @@ function ClaimInfo({ claim }: { readonly claim: ClaimDetail }): ReactElement {
         <Field label={f.paidDate}>{claim.paid_date}</Field>
         <Field label={f.evidence}>
           <Tag color={evidenceTone(claim.evidence_level)} style={{ marginInlineEnd: 0 }}>
-            {`${evidenceLabel(claim.evidence_level)} ${claim.evidence_level}`}
+            {evidenceText(claim.evidence_level)}
           </Tag>
         </Field>
       </div>
@@ -535,7 +535,7 @@ function EvidenceView({ claim }: { readonly claim: ClaimDetail }): ReactElement 
                 <span style={code}>{item.sub_order_id}</span>
               </Typography.Text>
               <Tag color={evidenceTone(item.evidence)} style={{ marginInlineEnd: 0 }}>
-                {`${evidenceLabel(item.evidence)} ${item.evidence}`}
+                {evidenceText(item.evidence)}
               </Tag>
             </Flex>
             <Table<Match>
@@ -589,7 +589,7 @@ function ItemCard({ item, draft, busy, outcome, onChange, onSubmit }: ItemCardPr
   );
   const evidence = (
     <Tag color={evidenceTone(item.evidence)} style={{ marginInlineEnd: 0 }}>
-      {`${evidenceLabel(item.evidence)} ${item.evidence}`}
+      {evidenceText(item.evidence)}
     </Tag>
   );
 

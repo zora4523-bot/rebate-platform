@@ -7,6 +7,7 @@ import {
   ADMIN_CHECK,
   AdminAuthModule,
   AdminModule,
+  createAdminDisplayNameReader,
   createAuditWriter,
 } from './modules/admin/index.ts';
 import { AgentModule } from './modules/agent/index.ts';
@@ -59,6 +60,7 @@ import {
   IdentityModule,
   IdentityWorkerModule,
   ME_READ_PORTS,
+  createMaskedPhoneReader,
   CONSENT_SIGNATURE_CHECK,
   TOKEN_CHECK,
   STEP_UP_CHECK,
@@ -111,6 +113,7 @@ import {
   LinkingModule,
   createOrderBindingReader,
   createClaimEvidenceReader,
+  createLinkLogMomentReader,
   createOrderSourceReader,
   blockForBan,
   restoreAfterUnban,
@@ -137,7 +140,9 @@ import {
   unbindPushTokensForSession,
 } from './modules/notification/index.ts';
 import {
+  OrdersAdminModule,
   OrdersModule,
+  type AdminClaimPorts,
   type ClaimEvidenceFactory,
   createOrderSourcePorts,
   type OrderSourcePorts,
@@ -935,6 +940,21 @@ const claimEvidencePorts: ClaimEvidenceFactory = (trx, clock) => {
   };
 };
 /**
+ * B1-10j: orders' console claim review ports — identity's masked phones (BR-ID-33, decrypted and
+ * masked inside identity; without the field cipher a phone read fails closed), admin's reviewer
+ * display names and linking's link_logs time and scene. Building them reads nothing.
+ */
+function adminClaimPorts(db: Kysely<Database>, crypto: FieldCrypto | null): AdminClaimPorts {
+  const phones = createMaskedPhoneReader(db, crypto);
+  const names = createAdminDisplayNameReader(db);
+  const links = createLinkLogMomentReader(db);
+  return {
+    phones: (appId, userIds) => phones.maskedPhones(appId, userIds),
+    reviewerNames: (appId, adminIds) => names.displayNames(appId, adminIds),
+    linkMoments: (appId, ids) => links.moments(appId, ids),
+  };
+}
+/**
  * B1-08q: orders' source backfill ports (BR-ATTR-15) over linking's link_logs reader, catalog's
  * platforms (key_prefix) and content's config_items. Building them reads nothing; every call
  * reads again (a fresh content reader per call, so a changed config_items row is seen at once;
@@ -1560,6 +1580,13 @@ export class AppModule {
                 restoreAfterUnban,
               }),
             ]
+          : []),
+        // orders' /admin/v1 claim review reads (B1-10j; BR-ATTR-30): guarded by AdminOperationGuard;
+        // the applicant's masked phone through identity's port (decrypted and masked there), the
+        // reviewer's display name through admin's, the evidence records' time and scene through
+        // linking's. Reads only, no audit row.
+        ...(options.entry === 'admin'
+          ? [OrdersAdminModule.forAdmin({ ports: adminClaimPorts })]
           : []),
         // content's GET /v1/config (F1-02c): agent availability and the h5_release bucket read
         // identity's request viewer (token principal, else the X-App-Id guest). GET

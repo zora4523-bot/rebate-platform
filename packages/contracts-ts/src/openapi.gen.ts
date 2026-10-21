@@ -9850,7 +9850,8 @@ export interface components {
              * @description When the claim was submitted.
              */
             submitted_at: string;
-            evidence_level: components["schemas"]["AdminClaimEvidenceLevel"];
+            /** @description The claim's evidence level (its weakest child order); null while the claim is submitted and its evidence is not yet settled. */
+            evidence_level: components["schemas"]["AdminClaimEvidenceLevel"] | null;
             status: components["schemas"]["ClaimStatus"];
         };
         /**
@@ -9901,14 +9902,16 @@ export interface components {
         AdminClaimEvidenceLink: {
             /** Format: date-time */
             at: string;
-            scene: components["schemas"]["AdminClaimEvidenceScene"];
+            /** @description The record's scene; null for a historical record that carries no channel (历史记录可能无渠道). */
+            scene: components["schemas"]["AdminClaimEvidenceScene"] | null;
         };
         /** @description One child order of a claim (04 §3.2 claim_items). Not the user-side OrderClaimItem. */
         AdminClaimItem: {
             item_id: components["schemas"]["Id"];
             /** @description The child order number. */
             sub_order_id: string;
-            evidence: components["schemas"]["AdminClaimEvidenceLevel"];
+            /** @description This child order's evidence level; null while the claim is submitted and its evidence is not yet settled. */
+            evidence: components["schemas"]["AdminClaimEvidenceLevel"] | null;
             /** @description null while pending. */
             decision: components["schemas"]["ClaimItemDecision"] | null;
             /** @description Set with a rejection only, else null. */
@@ -9945,7 +9948,8 @@ export interface components {
             paid_date: string;
             /** Format: date-time */
             submitted_at: string;
-            evidence_level: components["schemas"]["AdminClaimEvidenceLevel"];
+            /** @description As the list row's; null while the claim is submitted. */
+            evidence_level: components["schemas"]["AdminClaimEvidenceLevel"] | null;
             status: components["schemas"]["ClaimStatus"];
             /** @description Note of the latest approval or rejection (claims.reason); null before any. */
             reason: string | null;

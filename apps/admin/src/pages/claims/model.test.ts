@@ -3,11 +3,14 @@ import {
   NOTE_MAX,
   beijingTime,
   createRequestGate,
+  evidenceText,
+  evidenceTone,
   noteLength,
   noteProblem,
   outcomeOf,
   queryFromSearch,
   requestQuery,
+  sceneLabel,
   searchOf,
   validNote,
   type ClaimItem,
@@ -101,4 +104,12 @@ it('[F1-07f] only system closures of the reviewed item are reported', () => {
     ),
   ).toBe('reviewed');
   expect(outcomeOf(undefined)).toBe('reviewed');
+});
+
+it('[AC-B1-10j#28] 尚未计算证据（null）与无渠道的历史记录（scene null）显示占位，不显示 null', () => {
+  expect(evidenceText(null)).toBe(beijingTime(null));
+  expect(evidenceText('strong')).toMatch(/ strong$/);
+  expect(evidenceTone(null)).toBe('default');
+  expect(sceneLabel(null)).toBe(beijingTime(null));
+  expect(sceneLabel('detail')).not.toBe('detail');
 });

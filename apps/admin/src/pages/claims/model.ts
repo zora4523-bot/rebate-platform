@@ -140,9 +140,14 @@ const label = (names: Readonly<Record<string, string>>, code: string): string =>
   names[code] ?? code;
 export const platformLabel = (code: string): string => label(t.platforms, code);
 export const evidenceLabel = (code: string): string => label(t.evidence, code);
+/** Tag text of an evidence level: name and code; a submitted claim (null, not yet settled) shows the dash. */
+export const evidenceText = (code: string | null): string =>
+  code === null ? t.dash : `${evidenceLabel(code)} ${code}`;
 export const statusLabel = (code: string): string => label(t.status, code);
 export const rejectReasonLabel = (code: string): string => label(t.rejectReasons, code);
-export const sceneLabel = (code: string): string => label(t.scenes, code);
+/** A historical link record may carry no scene (null): shown as the dash (unknown channel). */
+export const sceneLabel = (code: string | null): string =>
+  code === null ? t.dash : label(t.scenes, code);
 export const matchFieldLabel = (code: string): string => label(t.matchFields, code);
 
 /** antd preset Tag / Badge status by claim status or item decision (the text carries the meaning). */
@@ -154,7 +159,7 @@ export function statusTone(status: string): 'success' | 'warning' | 'error' | 'd
   return 'default';
 }
 
-export function evidenceTone(level: string): 'success' | 'warning' | 'error' | 'default' {
+export function evidenceTone(level: string | null): 'success' | 'warning' | 'error' | 'default' {
   if (level === 'strong') return 'success';
   if (level === 'weak') return 'warning';
   if (level === 'none') return 'error';

@@ -9588,7 +9588,6 @@ paths:
         as user_id and phone number masked 3 + 4 (BR-ID-33), never the full number. Reading does
         not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -9707,7 +9706,6 @@ paths:
         promotion or raw union data. It is empty for evidence `none`. Reading does not write an
         audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -26990,7 +26988,10 @@ components:
           format: date-time
           description: When the claim was submitted.
         evidence_level:
-          $ref: '#/components/schemas/AdminClaimEvidenceLevel'
+          description: The claim's evidence level (its weakest child order); null while the claim is submitted and its evidence is not yet settled.
+          oneOf:
+            - $ref: '#/components/schemas/AdminClaimEvidenceLevel'
+            - type: 'null'
         status:
           $ref: '#/components/schemas/ClaimStatus'
     AdminClaimStatusCounts:
@@ -27114,7 +27115,10 @@ components:
           type: string
           format: date-time
         scene:
-          $ref: '#/components/schemas/AdminClaimEvidenceScene'
+          description: The record's scene; null for a historical record that carries no channel (历史记录可能无渠道).
+          oneOf:
+            - $ref: '#/components/schemas/AdminClaimEvidenceScene'
+            - type: 'null'
     AdminClaimItem:
       type: object
       description: One child order of a claim (04 §3.2 claim_items). Not the user-side OrderClaimItem.
@@ -27140,7 +27144,10 @@ components:
           maxLength: 64
           description: The child order number.
         evidence:
-          $ref: '#/components/schemas/AdminClaimEvidenceLevel'
+          description: This child order's evidence level; null while the claim is submitted and its evidence is not yet settled.
+          oneOf:
+            - $ref: '#/components/schemas/AdminClaimEvidenceLevel'
+            - type: 'null'
         decision:
           description: null while pending.
           anyOf:
@@ -27218,7 +27225,10 @@ components:
           type: string
           format: date-time
         evidence_level:
-          $ref: '#/components/schemas/AdminClaimEvidenceLevel'
+          description: As the list row's; null while the claim is submitted.
+          oneOf:
+            - $ref: '#/components/schemas/AdminClaimEvidenceLevel'
+            - type: 'null'
         status:
           $ref: '#/components/schemas/ClaimStatus'
         reason:

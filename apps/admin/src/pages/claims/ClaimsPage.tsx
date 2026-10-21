@@ -43,6 +43,7 @@ import {
   awaitsReview,
   beijingTime,
   evidenceLabel,
+  evidenceText,
   evidenceTone,
   failureOf,
   platformLabel,
@@ -258,7 +259,7 @@ function ClaimsList(): ReactElement {
       title: t.columns.evidence,
       render: (_, row) => (
         <Tag color={evidenceTone(row.evidence_level)} style={{ marginInlineEnd: 0 }}>
-          {`${evidenceLabel(row.evidence_level)} ${row.evidence_level}`}
+          {evidenceText(row.evidence_level)}
         </Tag>
       ),
     },
