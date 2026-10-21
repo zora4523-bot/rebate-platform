@@ -91,3 +91,8 @@ export const CARD_BIN = Symbol('IDENTITY_CARD_BIN');
 export const BANK_CARD_VERIFIER = Symbol('IDENTITY_BANK_CARD_VERIFIER');
 /** The landing page's registration (POST /v1/invites/landing-register, B1-11h), or null. */
 export const LANDING_REGISTER = Symbol('IDENTITY_LANDING_REGISTER');
+/**
+ * Account deletion apply / cancel / read (deletion-request.ts, B1-15d), or null without the
+ * database.
+ */
+export const DELETION_REQUESTS = Symbol('IDENTITY_DELETION_REQUESTS');

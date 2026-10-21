@@ -56,6 +56,13 @@ import {
   type PayoutAccountChange,
 } from './application/payout-bank-card.ts';
 import { createRealnameService, type RealnameService } from './application/realname.ts';
+import {
+  createDeletionRequestService,
+  type DeletionRequestModuleOptions,
+  type DeletionRequestService,
+} from './application/deletion-request.ts';
+import type { DeletionBalanceReader } from './ports/deletion-balance.ts';
+import type { WithdrawalInFlightReader } from './ports/withdrawal-in-flight.ts';
 import type { RealnameVerifierPort } from './ports/realname-verifier.ts';
 import type { BankCardVerifierPort, CardBinPort } from './ports/bank-card-verifier.ts';
 import {
@@ -139,6 +146,7 @@ import {
   CARD_BIN,
   CONSENTS,
   CONSENT_SIGNATURE_CHECK,
+  DELETION_REQUESTS,
   H5_TOKENS,
   IDENTITY_CONFIG,
   LABOR_AGREEMENT,
@@ -181,6 +189,7 @@ import { MeController } from './http/public/me.controller.ts';
 import { PayoutAccountController } from './http/public/payout-account.controller.ts';
 import { RealnameController } from './http/public/realname.controller.ts';
 import { LaborAgreementController } from './http/public/labor-agreement.controller.ts';
+import { DeletionController } from './http/public/deletion.controller.ts';
 import { DevicesRepository } from './infra/devices.repository.ts';
 import { deviceHashOf } from './infra/login-accounts.ts';
 import { createSmsSender, smsSenderToken } from './infra/fake-sms.ts';
@@ -195,7 +204,11 @@ import { createSmsHmac } from './infra/sms-hmac.ts';
  */
 export type IdentityConfigReader = SmsConfigReader & MinimumVersionReader;
 
-export interface IdentityModuleOptions {
+/**
+ * withdrawalInFlight / deletionBalance (DeletionRequestModuleOptions, B1-15d): the two ports of
+ * POST /v1/me/deletion, assembled by app.module (D10-97); missing → the application answers 50001.
+ */
+export interface IdentityModuleOptions extends DeletionRequestModuleOptions {
   readonly accountAssets?: Omit<FactoryProvider<AccountAssetsPort>, 'provide'>;
   readonly accountRisk?: Omit<FactoryProvider<AccountRiskPort | null>, 'provide'>;
   /**
@@ -397,6 +410,10 @@ const ACCOUNT_RISK = Symbol('IDENTITY_ACCOUNT_RISK');
 const LABOR_AGREEMENT_CONFIG = Symbol('IDENTITY_LABOR_AGREEMENT_CONFIG');
 /** The payout-account configuration port (IdentityModuleOptions.payoutAccountConfig), or null. */
 const PAYOUT_ACCOUNT_CONFIG = Symbol('IDENTITY_PAYOUT_ACCOUNT_CONFIG');
+/** The in-flight withdrawal port (IdentityModuleOptions.withdrawalInFlight), or null. */
+const WITHDRAWAL_IN_FLIGHT = Symbol('IDENTITY_WITHDRAWAL_IN_FLIGHT');
+/** The deletion-time balance port (IdentityModuleOptions.deletionBalance), or null. */
+const DELETION_BALANCE = Symbol('IDENTITY_DELETION_BALANCE');
 /** growth's landing channel (IdentityModuleOptions.landingInvite), or null. */
 const LANDING_INVITE = Symbol('IDENTITY_LANDING_INVITE');
 /** The landing configuration reader (IdentityModuleOptions.landingConfig), or null. */
@@ -426,8 +443,34 @@ export class IdentityModule {
         RealnameController,
         LaborAgreementController,
         PayoutAccountController,
+        DeletionController,
       ],
       providers: [
+        options.withdrawalInFlight === undefined
+          ? { provide: WITHDRAWAL_IN_FLIGHT, useValue: null }
+          : { ...options.withdrawalInFlight, provide: WITHDRAWAL_IN_FLIGHT },
+        options.deletionBalance === undefined
+          ? { provide: DELETION_BALANCE, useValue: null }
+          : { ...options.deletionBalance, provide: DELETION_BALANCE },
+        {
+          // GET / POST /v1/me/deletion, POST /v1/me/deletion/cancel (B1-15d, BR-ID-27).
+          provide: DELETION_REQUESTS,
+          inject: [CLOCK, WITHDRAWAL_IN_FLIGHT, DELETION_BALANCE, { token: DB, optional: true }],
+          useFactory: (
+            clock: Clock,
+            withdrawalInFlight: WithdrawalInFlightReader | null,
+            balance: DeletionBalanceReader | null,
+            db?: Kysely<Database>,
+          ): DeletionRequestService | null =>
+            db === undefined
+              ? null
+              : createDeletionRequestService({
+                  db,
+                  clock,
+                  withdrawalInFlight: withdrawalInFlight ?? null,
+                  balance: balance ?? null,
+                }),
+        },
         options.accountAssets === undefined
           ? { provide: ACCOUNT_ASSETS, useValue: null }
           : { ...options.accountAssets, provide: ACCOUNT_ASSETS },

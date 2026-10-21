@@ -102,6 +102,8 @@ import {
   type IdentityConfigReader,
   type IdentityContext,
   type LaborAgreementConfigReader,
+  type DeletionBalanceReader,
+  type WithdrawalInFlightReader,
   type LandingInvitePort,
   type LandingRegisterConfigReader,
   type IdentityRequest,
@@ -119,7 +121,7 @@ import {
   type MeUnionBindingStatus,
   type PayoutAccountConfigPort,
 } from './modules/identity/index.ts';
-import { LedgerModule } from './modules/ledger/index.ts';
+import { LedgerModule, createLedger } from './modules/ledger/index.ts';
 import {
   LINK_LANDING_PORTS,
   LINK_OPEN_PORTS,
@@ -613,6 +615,35 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
           // The registration's client IP reaches the invite reward qualification (B1-35).
           { forwardClientIp: true },
         );
+      },
+    },
+    // POST /v1/me/deletion (B1-15d, D10-97): whether the user has a withdrawal in flight, on the
+    // application's transaction. The payout module does not exist yet, so there is truthfully none.
+    withdrawalInFlight: {
+      inject: [],
+      useFactory: (): WithdrawalInFlightReader => ({
+        // TODO(规划/11 §2.3): 在途提现读 payout 模块 — blocked on B2-05
+        hasInFlight: () => Promise.resolve(false),
+      }),
+    },
+    // POST /v1/me/deletion (B1-15d, BR-ID-27 30416): the user's available_fen through the ledger's
+    // getBalances on the application's transaction (bigint fen; no account → 0n).
+    deletionBalance: {
+      inject: [CLOCK],
+      useFactory: (clock: Clock): DeletionBalanceReader => {
+        const ledger = createLedger({ clock });
+        return {
+          async availableFen(trx, input) {
+            const balances = await ledger.getBalances(trx, {
+              appId: input.appId,
+              userIds: [input.userId],
+            });
+            const own = balances.find(
+              (row) => row.app_id === input.appId && row.user_id === input.userId,
+            );
+            return own === undefined ? 0n : own.available_fen;
+          },
+        };
       },
     },
     // Runs only on the login's own transaction (no handle of its own), so it needs no database.

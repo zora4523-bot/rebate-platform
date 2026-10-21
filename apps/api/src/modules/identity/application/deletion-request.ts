@@ -1,7 +1,5 @@
 // Account deletion: apply, cancel, read (task B1-15d; 08 BR-ID-27, BR-ID-08, BR-ID-31; contract
-// operations requestDeletion / cancelDeletion / getDeletion). NotImplemented skeleton written by
-// the rule-test author; the implementer fills it in (and may reshape the internals as long as the
-// rule tests in test/spec/identity/deletion-request/** hold).
+// operations requestDeletion / cancelDeletion / getDeletion).
 //
 // request(trx, subject) — called inside the idempotency claim's transaction (executeInTransaction,
 // wrapped by withStepUp in the controller). Fixed order (§9.2 #3):
@@ -20,9 +18,13 @@
 // read(subject) — the latest request or null; can_cancel = cooling and clock.now() < cooling_until.
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
+import { transitionDeletionRequest } from '@couli/domain';
+import { subFen } from '@couli/money';
 import type { FactoryProvider } from '@nestjs/common';
-import type { Kysely, Transaction } from 'kysely';
-import type { Clock } from '../../platform/index.ts';
+import type { Kysely, Selectable, Transaction } from 'kysely';
+import { newUuidV7, type Clock } from '../../platform/index.ts';
+import { lockUsersForUpdate } from '../ports/lock-users.ts';
+import { instantPlus } from './config-seconds.ts';
 import type { DeletionBalanceReader } from '../ports/deletion-balance.ts';
 import type { WithdrawalInFlightReader } from '../ports/withdrawal-in-flight.ts';
 
@@ -55,19 +57,191 @@ export type CancelDeletionResult =
 export interface DeletionRequestServiceOptions {
   readonly db: Kysely<DB>;
   readonly clock: Clock;
-  readonly withdrawalInFlight: WithdrawalInFlightReader;
-  readonly balance: DeletionBalanceReader;
+  /** Null when app.module assembled none: POST /v1/me/deletion fails closed (50001). */
+  readonly withdrawalInFlight: WithdrawalInFlightReader | null;
+  /** Null when app.module assembled none: POST /v1/me/deletion fails closed (50001). */
+  readonly balance: DeletionBalanceReader | null;
 }
 
 export interface DeletionRequestService {
+  /** False when a port of the application is missing: request() would refuse (50001). */
+  readonly canRequest: boolean;
   read(subject: DeletionSubject): Promise<DeletionView | null>;
   request(trx: Transaction<DB>, subject: DeletionSubject): Promise<RequestDeletionResult>;
   cancel(subject: DeletionSubject): Promise<CancelDeletionResult>;
 }
 
+/** BR-ID-27: the cooling period, 7×24 hours. */
+const COOLING_MS = 7 * 24 * 60 * 60 * 1000;
+
+type RequestRow = Pick<
+  Selectable<DB['deletion_requests']>,
+  | 'id'
+  | 'status'
+  | 'apply_at'
+  | 'cooling_until'
+  | 'cancelled_at'
+  | 'cancel_reason'
+  | 'processed_at'
+  | 'row_version'
+>;
+
+const COLUMNS = [
+  'id',
+  'status',
+  'apply_at',
+  'cooling_until',
+  'cancelled_at',
+  'cancel_reason',
+  'processed_at',
+  'row_version',
+] as const;
+
+const STATUSES: ReadonlySet<string> = new Set(['cooling', 'processing', 'done', 'cancelled']);
+const REASONS: ReadonlySet<string> = new Set(['user', 'negative_balance']);
+
+/** The latest request of the subject (apply_at DESC, id DESC), or undefined. */
+function latest(
+  executor: Kysely<DB> | Transaction<DB>,
+  subject: DeletionSubject,
+): Promise<RequestRow | undefined> {
+  return executor
+    .withSchema('app')
+    .selectFrom('deletion_requests')
+    .select(COLUMNS)
+    .where('app_id', '=', subject.appId)
+    .where('user_id', '=', subject.userId)
+    .orderBy('apply_at', 'desc')
+    .orderBy('id', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+}
+
+function iso(value: Date | null): string | null {
+  return value === null ? null : value.toISOString();
+}
+
+/** The contract's Deletion; can_cancel judged by time alone (BR-ID-27), status as stored. */
+function view(row: RequestRow, now: Date): DeletionView {
+  if (!STATUSES.has(row.status)) throw new Error('identity: unknown deletion request status');
+  if (row.cancel_reason !== null && !REASONS.has(row.cancel_reason)) {
+    throw new Error('identity: unknown deletion cancel reason');
+  }
+  return {
+    status: row.status as DeletionView['status'],
+    apply_at: row.apply_at.toISOString(),
+    cooling_until: row.cooling_until.toISOString(),
+    can_cancel: row.status === 'cooling' && now.getTime() < row.cooling_until.getTime(),
+    cancelled_at: iso(row.cancelled_at),
+    cancel_reason: row.cancel_reason as DeletionView['cancel_reason'],
+    processed_at: iso(row.processed_at),
+  };
+}
+
+async function lockSubject(trx: Transaction<DB>, subject: DeletionSubject): Promise<void> {
+  const locked = await lockUsersForUpdate(trx, {
+    appId: subject.appId,
+    userIds: [subject.userId],
+  });
+  // The token check resolved this user; a missing row is a server-side inconsistency.
+  if (!locked.has(subject.userId)) throw new Error('identity: deletion subject has no user row');
+}
+
 export function createDeletionRequestService(
   options: DeletionRequestServiceOptions,
 ): DeletionRequestService {
-  void options;
-  throw new Error('NotImplemented: createDeletionRequestService');
+  const { db, clock, withdrawalInFlight, balance } = options;
+  return Object.freeze({
+    canRequest: withdrawalInFlight !== null && balance !== null,
+
+    async read(subject: DeletionSubject): Promise<DeletionView | null> {
+      const row = await latest(db, subject);
+      return row === undefined ? null : view(row, clock.now());
+    },
+
+    async request(trx: Transaction<DB>, subject: DeletionSubject): Promise<RequestDeletionResult> {
+      if (withdrawalInFlight === null || balance === null) {
+        throw new Error('identity: deletion request needs the in-flight and balance ports');
+      }
+      // ① The caller's users row first: the posting chain locks users before balances
+      // (B1-02zf), so the balance read below cannot interleave with a posting for this user.
+      await lockSubject(trx, subject);
+      // ② TODO(规划/11 §2.3): 待加验账号申请注销返回待加验码（BR-ID-27 细则、BR-WDR-01 细则）— blocked on 旧号提现加验启用（新码由契约线定义，withdraw.dormant_reverify_days 默认 0）
+      // ③ An open request is returned as it is (no new row, cooling_until unchanged).
+      const open = await latest(trx, subject);
+      if (open !== undefined && (open.status === 'cooling' || open.status === 'processing')) {
+        return { code: 0, data: view(open, clock.now()) };
+      }
+      // ④ Withdrawal in flight (the port owns the status rule, BR-ID-31) → 30412, before 30416.
+      if (await withdrawalInFlight.hasInFlight(trx, subject)) return { code: 30412 };
+      // ⑤ Negative balance → 30416 with the amount still to be recovered (a positive number).
+      const available = await balance.availableFen(trx, subject);
+      if (available < 0n) return { code: 30416, data: { amount_fen: subFen(0n, available) } };
+      // ⑥ The cooling request (an insert, not a state transition).
+      const now = clock.now();
+      const coolingUntil = instantPlus(now, COOLING_MS);
+      const row = await trx
+        .withSchema('app')
+        .insertInto('deletion_requests')
+        .values({
+          id: newUuidV7(now),
+          app_id: subject.appId,
+          user_id: subject.userId,
+          status: 'cooling',
+          apply_at: now,
+          cooling_until: coolingUntil,
+          cancelled_at: null,
+          cancel_reason: null,
+          processed_at: null,
+          balance_snapshot_fen: available,
+          row_version: 0,
+          created_at: now,
+          updated_at: now,
+        })
+        .returning(COLUMNS)
+        .executeTakeFirstOrThrow();
+      // TODO(规划/11 §2.3): 站内信 DELETION_PROGRESS requested — blocked on B1-15i
+      // ⑦
+      return { code: 0, data: view(row, now) };
+    },
+
+    async cancel(subject: DeletionSubject): Promise<CancelDeletionResult> {
+      return db.transaction().execute(async (trx): Promise<CancelDeletionResult> => {
+        await lockSubject(trx, subject);
+        const row = await latest(trx, subject);
+        const now = clock.now();
+        // Never applied (规划待补, ruling §12): data null.
+        if (row === undefined) return { code: 0, data: null };
+        // A repeated cancel (or a negative_balance cancellation) is returned as it is.
+        if (row.status === 'cancelled') return { code: 0, data: view(row, now) };
+        // Judged by time, not by whether the scheduled job ran (BR-ID-27); processing / done and
+        // a cooling request past its cutoff are 10007 stage processing (ruling §12).
+        if (row.status !== 'cooling' || now.getTime() >= row.cooling_until.getTime()) {
+          return { code: 10007, data: { stage: 'processing' } };
+        }
+        const moved = transitionDeletionRequest('cooling', 'CANCEL');
+        if (!moved.ok) throw new Error('identity: deletion cancel transition refused');
+        const updated = await trx
+          .withSchema('app')
+          .updateTable('deletion_requests')
+          .set({
+            status: moved.to,
+            cancelled_at: now,
+            cancel_reason: 'user',
+            row_version: row.row_version + 1,
+            updated_at: now,
+          })
+          .where('app_id', '=', subject.appId)
+          .where('id', '=', row.id)
+          .where('status', '=', 'cooling')
+          .where('row_version', '=', row.row_version)
+          .returning(COLUMNS)
+          .executeTakeFirst();
+        if (updated === undefined)
+          throw new Error('identity: deletion request changed concurrently');
+        // TODO(规划/11 §2.3): 站内信 DELETION_PROGRESS cancelled — blocked on B1-15i
+        return { code: 0, data: view(updated, now) };
+      });
+    },
+  });
 }
