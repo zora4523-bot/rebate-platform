@@ -1,0 +1,136 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#1] 详情直达及刷新都仅取该订单，在主内容区展示基本信息和归属信息",
+    "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#2] 状态卡呈现平台、返利、用户侧显示，两个锁定标记在同一卡片并列",
+    "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#3] 暂停原因与用户侧状态照服务端显示，不以返利状态自行推导或混淆锁定标记",
+    "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#4] 分佣快照金额按分转元，万分之一比例显示两位百分比并保留受益人与没收原因",
+    "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#5] 状态历史和转链记录展示每条时间及契约内容，不渲染原始报文或写操作",
+    "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#6] 未归因订单及尚无快照、历史、转链的区块如实显示为空，零值仍可见",
+    "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#7] 未知或不可见 order_id 的 20001 提示不区分两者，不回退请求列表",
+    "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#8] 查询后进入详情再返回保留已应用筛选，表单与恢复的请求一致",
+    "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#9] 只有订单状态锁定时不误显示归属锁定",
+    "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#1] 默认列表只请求一页，列、北京时间、服务端付款顺序及后台金额格式正确",
+    "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#2] 用户只显示 UID 与脱敏手机号，未归因与零金额区别于未知值，标记独立呈现",
+    "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#3] 七类筛选通过查询一次提交，参数名与北京时间区间按契约，展示已应用条件",
+    "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#4] 页码分页保留筛选，改条件回第一页，重置移除所有空参数",
+    "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#5] 订单号精确查询由服务端判定，不对本页缓存做模糊过滤",
+    "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#6] 行操作名含订单号，使用 order_id 进入详情，超管也无未接入写操作",
+    "test/spec/frontend/admin-orders/pages.browser.test.ts > [AC-F1-07e-BROWSER#1] 1440 订单列表筛选、表格及只读入口可见且等宽订单号，截图 admin-orders",
+    "test/spec/frontend/admin-orders/pages.browser.test.ts > [AC-F1-07e-BROWSER#2] 1440 详情各区块和两个锁定标记可见，截图 admin-order-detail",
+    "test/spec/frontend/admin-orders/pages.browser.test.ts > [AC-F1-07e-BROWSER#3] 1280 窄窗订单详情完整可读且页面不横向溢出，截图 admin-order-detail-1280",
+    "test/spec/frontend/admin-orders/source.test.ts > [AC-F1-07e-SOURCE#1] 实际使用 antd 表格、筛选、信息卡与 Result，不拼 ant 类名、不写字面色值或直接 fetch",
+    "test/spec/frontend/admin-orders/source.test.ts > [AC-F1-07e-SOURCE#2] 订单文案集中登记且不写死状态中文名，页面通过现有 data provider 或 admin API 请求",
+    "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#1] 空列表显示没有符合条件的订单，仍可筛选和重置",
+    "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#2] 列表在途显示可读屏加载状态，完成后显示数据并移除加载提示",
+    "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#3] 列表失败使用 Result，重试保留条件且只增加一个请求",
+    "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#4] 再查失败清除旧行、金额及详情入口，成功重试才恢复",
+    "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#5] 列表再查 10403 显示无权限并清除旧数据",
+    "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#6] 详情在途显示加载状态，失败后只重试当前订单一次",
+    "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#7] 详情 10403 显示无权限，不泄露订单与用户信息"
+  ],
+  "risk_note": "Admin console orders read-only pages (apps/admin; no money logic beyond display; codex-run classed it RV2 because App.tsx is touched, so the Codex review ran on the money track). Contract CT-24m (adminListOrders, adminGetOrder; planned, backend not done, developed against the contract with a fake server); visuals per the finalized specs design/specs/admin-orders.md / admin-order-detail.md. List /orders with filters (paid date range by day, Beijing time; paid_to exclusive), money via @couli/money admin format, masked or unattributed user, row action names, paging, states and 10403; detail subpage /orders/<uuid> only (other shapes still land on the placeholder), status card with both lock marks side by side, attribution, commission snapshot (fen, basis points), status history and link records, 20001 notice; write actions and the raw payload are not rendered (contract CT-24n / permission pending). Status display names only from the admin dictionary (codes shown while keys are missing). Frozen admin-search assertions synced first by test-change F1-06zo (#1045). Rule tests by Codex in two calls; Claude spec-test review r2 pass; red on the test machine (red/1: 27 red, 0 problems). Implementation by Opus 5.5; test machine browser/2 green and verify-fast/4 green after the rebase. Review: Codex (approvals id 27 / 34 / 36). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, one S2 (an amount above the safe integer range throws while rendering) tracked in followups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (3 S1: date-time range input vs the day picker, address-bar filters not required, hardcoded status names not caught; 4 S2) plus two frozen-test conflicts (admin-search handled by F1-06zo, dashboard by routing only UUID ids), round 2 pass after Codex round 2 (2 S2 carried into the implementation constraints)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "F1-07e",
+  "spec_ref": "f41137533d254d4b78dc01ea95f474171c694485",
+  "spec_commit": "abc17d04d1980c20c0898b44c6b398541880f8da",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "abc17d04d1980c20c0898b44c6b398541880f8da",
+      "tree": "c7de63214d69dd12b6220ecd31282bd8a736acf4",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T12:32:31Z",
+      "finished_at": "2026-10-21T12:34:49Z",
+      "gate": {
+        "commit": "49c2a73277ddbbcc0288fe9db272ce395b99b1e2",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#1] 详情直达及刷新都仅取该订单，在主内容区展示基本信息和归属信息",
+        "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#2] 状态卡呈现平台、返利、用户侧显示，两个锁定标记在同一卡片并列",
+        "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#3] 暂停原因与用户侧状态照服务端显示，不以返利状态自行推导或混淆锁定标记",
+        "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#4] 分佣快照金额按分转元，万分之一比例显示两位百分比并保留受益人与没收原因",
+        "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#5] 状态历史和转链记录展示每条时间及契约内容，不渲染原始报文或写操作",
+        "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#6] 未归因订单及尚无快照、历史、转链的区块如实显示为空，零值仍可见",
+        "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#7] 未知或不可见 order_id 的 20001 提示不区分两者，不回退请求列表",
+        "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#8] 查询后进入详情再返回保留已应用筛选，表单与恢复的请求一致",
+        "test/spec/frontend/admin-orders/detail.test.ts > [AC-F1-07e-DETAIL#9] 只有订单状态锁定时不误显示归属锁定",
+        "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#1] 默认列表只请求一页，列、北京时间、服务端付款顺序及后台金额格式正确",
+        "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#2] 用户只显示 UID 与脱敏手机号，未归因与零金额区别于未知值，标记独立呈现",
+        "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#3] 七类筛选通过查询一次提交，参数名与北京时间区间按契约，展示已应用条件",
+        "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#4] 页码分页保留筛选，改条件回第一页，重置移除所有空参数",
+        "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#5] 订单号精确查询由服务端判定，不对本页缓存做模糊过滤",
+        "test/spec/frontend/admin-orders/list.test.ts > [AC-F1-07e-LIST#6] 行操作名含订单号，使用 order_id 进入详情，超管也无未接入写操作",
+        "test/spec/frontend/admin-orders/pages.browser.test.ts > [AC-F1-07e-BROWSER#1] 1440 订单列表筛选、表格及只读入口可见且等宽订单号，截图 admin-orders",
+        "test/spec/frontend/admin-orders/pages.browser.test.ts > [AC-F1-07e-BROWSER#2] 1440 详情各区块和两个锁定标记可见，截图 admin-order-detail",
+        "test/spec/frontend/admin-orders/pages.browser.test.ts > [AC-F1-07e-BROWSER#3] 1280 窄窗订单详情完整可读且页面不横向溢出，截图 admin-order-detail-1280",
+        "test/spec/frontend/admin-orders/source.test.ts > [AC-F1-07e-SOURCE#1] 实际使用 antd 表格、筛选、信息卡与 Result，不拼 ant 类名、不写字面色值或直接 fetch",
+        "test/spec/frontend/admin-orders/source.test.ts > [AC-F1-07e-SOURCE#2] 订单文案集中登记且不写死状态中文名，页面通过现有 data provider 或 admin API 请求",
+        "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#1] 空列表显示没有符合条件的订单，仍可筛选和重置",
+        "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#2] 列表在途显示可读屏加载状态，完成后显示数据并移除加载提示",
+        "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#3] 列表失败使用 Result，重试保留条件且只增加一个请求",
+        "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#4] 再查失败清除旧行、金额及详情入口，成功重试才恢复",
+        "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#5] 列表再查 10403 显示无权限并清除旧数据",
+        "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#6] 详情在途显示加载状态，失败后只重试当前订单一次",
+        "test/spec/frontend/admin-orders/states.test.ts > [AC-F1-07e-STATES#7] 详情 10403 显示无权限，不泄露订单与用户信息"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-orders/detail.test.ts",
+        "test/spec/frontend/admin-orders/list.test.ts",
+        "test/spec/frontend/admin-orders/pages.browser.test.ts",
+        "test/spec/frontend/admin-orders/source.test.ts",
+        "test/spec/frontend/admin-orders/states.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "1eeaa89e99fef0c8ec2165eaf971e5a0204153ce4d131ccb46b4f2f633f64b76"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8ade173739e1d20a5db4ac32ff74bbc0c7693f859eb71b7db2ee3572fe2157b1"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "2c40da4b8ee344c740a5741094bee2517d868ac9",
+    "specs": "3c84b34e39aa6d9540cdb6c59afd21eb171cedce"
+  }
+}
