@@ -127,6 +127,10 @@ export type {
   OrderQueryDeps,
 } from './application/order-queries.ts';
 export { OrdersModule } from './orders.module.ts';
+// B1-10j: the admin entry's claim review reads (GET /admin/v1/claims, /admin/v1/claims/{claim_id}).
+export { OrdersAdminModule } from './orders-admin.module.ts';
+export type { OrdersAdminOptions } from './orders-admin.module.ts';
+export type { AdminClaimPorts } from './application/admin-claims.ts';
 // B1-08n: the worker's order-sync runtime (OrdersModule.forWorker; entry.ts starts it once).
 export { orderSyncToken } from './worker-runtime.ts';
 export type { OrderSyncReadPorts, OrderSyncRuntime } from './worker-runtime.ts';

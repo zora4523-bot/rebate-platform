@@ -7,6 +7,9 @@ export type {
   ClaimEvidenceConflict,
   ClaimEvidenceReader,
 } from './application/claim-evidence-reader.ts';
+// B1-10j: link_logs time and scene by id for orders' console claim review (app.module, admin entry).
+export { createLinkLogMomentReader } from './application/link-log-reader.ts';
+export type { LinkLogMoment, LinkLogMomentReader } from './application/link-log-reader.ts';
 // Task B1-06c: card-time link registration with its quote snapshot and frozen identity_snapshot
 // (BR-PRICE-12, BR-ATTR-05/06/08/14, D33), implementing catalog's LinkRegistrar and
 // SourceLinkReader; the CallerContext, attr_code and configuration ports. Rule tests:

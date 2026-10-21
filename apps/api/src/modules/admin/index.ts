@@ -22,6 +22,9 @@ export type {
   TotpVerifier,
 } from './domain/totp.ts';
 export { createPgTotpReplayStore } from './infra/totp-replay-pg.ts';
+// B1-10j: the reviewers' display names for orders' console claim review (app.module only).
+export { createAdminDisplayNameReader } from './infra/admin-display-names.ts';
+export type { AdminDisplayNameReader } from './infra/admin-display-names.ts';
 // Test double only; production uses createPgTotpReplayStore.
 export { createMemoryTotpReplayStore } from './infra/totp-replay-memory.ts';
 export { createSuperVerifier } from './application/verify-super.ts';
