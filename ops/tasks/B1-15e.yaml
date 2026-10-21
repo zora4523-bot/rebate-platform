@@ -16,7 +16,7 @@ paths:
 test_paths:
   - 'test/spec/identity/deletion-guard/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/deletion-guard/**'
