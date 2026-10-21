@@ -16,7 +16,8 @@ export type ClarifySlot = 'reference' | 'price' | 'platform';
  * empty string is structurally valid, but route membership is checked by handle.
  * Other intents have only the fields below; earnings topic is optional (default summary).
  * clarify requires a slot. ref_ordinal requires a positive safe integer; refine requires a
- * nonempty conditions object with a contract platform / finite numeric price fields. Actual
+ * nonempty conditions object with a contract platform / finite numeric price fields, or exactly
+ * one of cheaper: true / next_batch: true. Actual
  * reference and price semantics are delegated to B3-05g, not evaluated by this parser.
  * Bare intents require only agent_intent. No model text, identity, route params or suggestions.
  */
@@ -27,14 +28,16 @@ export type IntentOutput =
   | { readonly agent_intent: 'ref_ordinal'; readonly ordinal: number }
   | {
       readonly agent_intent: 'refine';
-      readonly conditions: {
-        readonly platform?: Platform;
-        readonly price_min_fen?: number;
-        readonly price_max_fen?: number;
-        /** B3-05g: each flag must appear alone; values are literal true. */
-        readonly cheaper?: true;
-        readonly next_batch?: true;
-      };
+      /** B3-05g: 再便宜点 / 换一批 are flags that must appear alone with the literal true; the
+       * server computes the new price bound and page (BR-AI-05, BR-PRICE-15). */
+      readonly conditions:
+        | {
+            readonly platform?: Platform;
+            readonly price_min_fen?: number;
+            readonly price_max_fen?: number;
+          }
+        | { readonly cheaper: true }
+        | { readonly next_batch: true };
     }
   | {
       readonly agent_intent:
@@ -97,8 +100,11 @@ export interface IntentDeps {
     scope(request: PathInput): Promise<ClarificationScope>;
     /** Atomically consume the one question for this chain/slot. false means already asked. */
     takeOnce(scope: ClarificationScope, slot: ClarifySlot): Promise<boolean>;
+    /** appId selects the app's copy when the caller knows it (B3-05g search path); the intent
+     * port calls without it and gets the default copy. */
     options(
       slot: ClarifySlot,
+      appId?: string,
     ): Promise<
       readonly [
         SuggestionsData['items'][number],

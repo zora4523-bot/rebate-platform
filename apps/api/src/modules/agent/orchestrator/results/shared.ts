@@ -1,0 +1,245 @@
+// B3-05g: state and helpers shared by the search decorator, clarification and refinement.
+import { randomUUID } from 'node:crypto';
+import { platform as PLATFORM_CODES } from '@couli/contracts-ts';
+import type { Platform } from '@couli/contracts-ts';
+import type { UnnumberedCard } from '../../stream/run/index.ts';
+import { maxPriceFen, searchSorts } from '../../tools/search/schema.ts';
+import type { SearchSort } from '../../tools/search/schema.ts';
+import type { OrchestratorToolCall, OrchestratorTools, ToolOutcome } from '../core/ports.ts';
+import type { ClarifySlot, IntentDeps } from '../intents/types.ts';
+import type { ResultSetStore, SearchConditions } from './types.ts';
+
+/** Text keys (contracts/texts.default.json; clarify options and the platform notice are new keys
+ * for the dictionary owner, B3-13). */
+export const resultKeys = {
+  priceUnrecognized: 'agent.notice.price_unrecognized',
+  platformUnrecognized: 'agent.notice.platform_unrecognized',
+  ordinalDefault: 'agent.notice.ordinal_default',
+  relaxedSpec: 'agent.notice.relaxed_spec',
+  relaxedPrice: 'agent.notice.relaxed_price',
+  noResult: 'agent.notice.no_result',
+  noCheaper: 'agent.notice.no_cheaper',
+  noResultSuggestion: (n: number) => `agent.suggest.no_result.${n}`,
+  clarifyOption: (slot: ClarifySlot, n: number) => `agent.suggest.clarify.${slot}.${n}`,
+} as const;
+
+/** How a server-built call (refinement, clarification answer) asks the decorator to behave.
+ * Carried on the call object under a symbol, so model arguments can never forge it. */
+export interface ServerCall {
+  readonly kind: 'cheaper' | 'refine';
+  readonly chainId: string;
+}
+
+export const SERVER_CALL = Symbol('B3-05g server call');
+
+export type InternalToolCall = OrchestratorToolCall & { readonly [SERVER_CALL]?: ServerCall };
+
+/** The session's current result-set chain and the conditions of its last search attempt
+ * (null until a search ran on the chain). */
+export interface SessionChain {
+  readonly chainId: string;
+  readonly conditions: SearchConditions | null;
+}
+
+export interface ResultsState {
+  readonly chains: Map<string, SessionChain>;
+  /** Tool calls per app/session/run: model calls and appended relaxation calls together. */
+  readonly calls: Map<string, number>;
+}
+
+const states = new WeakMap<OrchestratorTools, ResultsState>();
+
+/** State shared by one decorated tools port and the continuations built on it. */
+export function stateOf(tools: OrchestratorTools): ResultsState {
+  let state = states.get(tools);
+  if (state === undefined) {
+    state = { chains: new Map(), calls: new Map() };
+    states.set(tools, state);
+  }
+  return state;
+}
+
+export function domainKey(...parts: readonly string[]): string {
+  return JSON.stringify(parts);
+}
+
+export function newChainId(): string {
+  return randomUUID();
+}
+
+/** The chain in use: this process's latest search on the session, else the latest result set
+ * that actually delivered products. Never a model-supplied id. */
+export async function currentChain(
+  state: ResultsState,
+  store: ResultSetStore,
+  appId: string,
+  sessionId: string,
+): Promise<SessionChain | null> {
+  const own = state.chains.get(domainKey(appId, sessionId));
+  if (own !== undefined) return own;
+  const latest = await store.latestWithProducts(appId, sessionId);
+  return latest === null
+    ? null
+    : { chainId: latest.conditions.chain_id, conditions: latest.conditions };
+}
+
+export function setChain(
+  state: ResultsState,
+  appId: string,
+  sessionId: string,
+  chain: SessionChain,
+): void {
+  state.chains.set(domainKey(appId, sessionId), chain);
+}
+
+export function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isPlatform(value: unknown): value is Platform {
+  return typeof value === 'string' && (PLATFORM_CODES as readonly string[]).includes(value);
+}
+
+function isSort(value: unknown): value is SearchSort {
+  return typeof value === 'string' && (searchSorts() as readonly string[]).includes(value);
+}
+
+/** BR-AI-08: an integer number of fen, 0 < value ≤ 10,000,000. */
+export function validPrice(value: unknown): value is number {
+  return (
+    Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= maxPriceFen()
+  );
+}
+
+/** BR-AI-08 / BR-PRICE-15: a given bound out of range, or min > max. */
+export function priceInvalid(args: Readonly<Record<string, unknown>>): boolean {
+  const min = args['price_min_fen'];
+  const max = args['price_max_fen'];
+  if (min !== undefined && !validPrice(min)) return true;
+  if (max !== undefined && !validPrice(max)) return true;
+  return validPrice(min) && validPrice(max) && min > max;
+}
+
+/** Conditions to remember for a search_products argument object; null without a usable q. */
+export function conditionsOf(
+  args: Readonly<Record<string, unknown>>,
+  chainId: string,
+): SearchConditions | null {
+  const q = args['q'];
+  if (typeof q !== 'string') return null;
+  const platforms = args['platforms'];
+  const sort = args['sort'];
+  const min = args['price_min_fen'];
+  const max = args['price_max_fen'];
+  const spec = args['spec'];
+  const page = args['page'];
+  return {
+    q,
+    ...(Array.isArray(platforms) && platforms.every(isPlatform)
+      ? { platforms: [...platforms] }
+      : {}),
+    ...(isSort(sort) ? { sort } : {}),
+    ...(validPrice(min) ? { price_min_fen: min } : {}),
+    ...(validPrice(max) ? { price_max_fen: max } : {}),
+    ...(typeof spec === 'string' ? { spec } : {}),
+    ...(Number.isSafeInteger(page) ? { page: page as number } : {}),
+    chain_id: chainId,
+  };
+}
+
+/** Tool arguments rebuilt from stored conditions; chain_id stays on the server. */
+export function argsOf(conditions: SearchConditions): Record<string, unknown> {
+  const { chain_id, ...rest } = conditions;
+  void chain_id;
+  const args: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (value !== undefined) args[key] = Array.isArray(value) ? [...(value as unknown[])] : value;
+  }
+  return args;
+}
+
+export function without(
+  args: Readonly<Record<string, unknown>>,
+  ...keys: readonly string[]
+): Record<string, unknown> {
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) if (!keys.includes(key)) next[key] = value;
+  return next;
+}
+
+export async function noticeCard(
+  texts: IntentDeps['texts'],
+  appId: string,
+  key: string,
+): Promise<UnnumberedCard> {
+  return {
+    type: 'notice',
+    schema_version: 1,
+    data: { level: 'info', text_key: key, actions: [] },
+    fallback_text: await texts.text(appId, key),
+  };
+}
+
+export async function suggestionItems(
+  texts: IntentDeps['texts'],
+  appId: string,
+  keys: readonly string[],
+): Promise<{ readonly text: string; readonly send_text: string }[]> {
+  const items: { readonly text: string; readonly send_text: string }[] = [];
+  for (const key of keys) {
+    const text = await texts.text(appId, key);
+    items.push({ text, send_text: text });
+  }
+  return items;
+}
+
+/** BR-AI-05: the model learns which server notices went out by name only, never a number. */
+export function withServerNotices(view: unknown, notices: readonly string[]): unknown {
+  if (notices.length === 0) return view;
+  const base = isRecord(view) ? view : { items: [] };
+  return { ...base, server_notices: [...notices] };
+}
+
+export function productLists(cards: readonly UnnumberedCard[]): readonly UnnumberedCard[] {
+  return cards.filter((card) => card.type === 'product_list');
+}
+
+export function listItems(card: UnnumberedCard): readonly unknown[] {
+  const items = card.data['items'];
+  return Array.isArray(items) ? items : [];
+}
+
+/** "No result" means an ok outcome without any product in a product_list. */
+export function hasProducts(outcome: Extract<ToolOutcome, { kind: 'ok' }>): boolean {
+  return productLists(outcome.cards).some((card) => listItems(card).length > 0);
+}
+
+/** Read effective handler metadata, never assume ToolTraceFragment has search_params. */
+export function readSearchParams(trace: unknown): { spec: string | null; page: number } | null {
+  if (!isRecord(trace)) return null;
+  const params = trace['search_params'];
+  if (!isRecord(params) || !Object.hasOwn(params, 'spec')) return null;
+  const spec = params['spec'];
+  const page = params['page'];
+  if (spec !== null && typeof spec !== 'string') return null;
+  if (typeof page !== 'number' || !Number.isSafeInteger(page)) return null;
+  return { spec, page };
+}
+
+type SuggestionItem = { readonly text: string; readonly send_text: string };
+
+/** BR-AI-08 / BR-AI-01: the three quick options of one clarify slot, from the text port. Without
+ * an app (the intent port's call) the empty app id asks the text port for its default copy. */
+export async function clarifyOptions(
+  texts: IntentDeps['texts'],
+  slot: ClarifySlot,
+  appId?: string,
+): Promise<readonly [SuggestionItem, SuggestionItem, SuggestionItem]> {
+  const [a, b, c] = await suggestionItems(
+    texts,
+    appId ?? '',
+    [1, 2, 3].map((n) => resultKeys.clarifyOption(slot, n)),
+  );
+  if (a === undefined || b === undefined || c === undefined) throw new Error('clarify options');
+  return [a, b, c];
+}
