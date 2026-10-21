@@ -1,7 +1,6 @@
-// B2-03g: in-memory SnapshotBeneficiaryResolver for tests and for callers wiring the writer before
-// the real resolver exists. It answers from a fixed table keyed by (appId, ownerUserId) and never
-// touches the database. Unknown owner → throws (no default relation or level is invented).
-// TODO(规划/11 §4.2): 读 level_change_logs / relation_change_logs 的真实解析器 — blocked on B1-11a
+// B2-03g: in-memory SnapshotBeneficiaryResolver for tests only; the real one is
+// beneficiary-resolver.ts (B2-03p). It answers from a fixed table keyed by (appId, ownerUserId) and
+// never touches the database. Unknown owner → throws (no default relation or level is invented).
 import type {
   SnapshotBeneficiaries,
   SnapshotBeneficiaryResolver,
