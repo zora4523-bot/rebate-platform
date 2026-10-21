@@ -354,7 +354,7 @@ export const CONTRACT_AUTH_ROUTES = [
   {
     "method": "GET",
     "path": "/v1/rank/hot",
-    "auth": "optional"
+    "auth": "none"
   },
   {
     "method": "GET",

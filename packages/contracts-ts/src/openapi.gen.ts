@@ -1917,10 +1917,7 @@ export interface paths {
          *     data.reason=rank_unavailable and is left out of /v1/config features.rank_platforms; a
          *     union failure without a usable cache answers 50304 without reason (retry later). The
          *     product pool is never served as the hot list. Page size 20 (no limit parameter); a
-         *     malformed or foreign cursor is 20001 with data.fields=[cursor]. `x-auth` is optional
-         *     although 04 §6.3 lists none, for the same reason as search: rebate amounts on the cards
-         *     are computed for the current user and links are registered per user (BR-PRICE-11,
-         *     BR-PRICE-12; 08 wins over 04); without a token the cards follow the guest rules.
+         *     malformed or foreign cursor is 20001 with data.fields=[cursor].
          */
         get: operations["getHotRank"];
         put?: never;
