@@ -1,0 +1,159 @@
+{
+  "task": "B3-03f",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "f9bf11acc7ed6ae48c23bb6726406d2ccb8eba22",
+  "red_tests": [
+    "test/spec/agent/stream-mount/access.int.test.ts > [AC-B3-03f#3][BR-AI-23][BR-AI-12] ① agent.enabled=false → 30501；缺键 → 30501；被拒不写 agent_* 表",
+    "test/spec/agent/stream-mount/access.int.test.ts > [AC-B3-03f#4][BR-AI-23][BR-AI-11][BR-ID-03] ② agent.require_phone=true：游客 → 10001、未绑手机 → 10005；已绑手机通过 ①–③ 落到 ④ 30504；被拒不写 agent_* 表",
+    "test/spec/agent/stream-mount/access.int.test.ts > [AC-B3-03f#5][BR-AI-13][BR-AI-23] ③ 无同意、已撤回、版本落后 → 10004（consent_type=ai_third_party）；当前版本的同意通过 ①–③ 落到 ④ 30504；被拒不写 agent_* 表",
+    "test/spec/agent/stream-mount/access.int.test.ts > [AC-B3-03f#19][BR-AI-13] 运行中发布新同意版本：同一 runtime 先以 v1 同意受理；legal.ai_third_party.version 发布为 2 并过了配置缓存期后，旧 v1 同意 → 10004、不建 run；补写 v2 同意后恢复受理（版本不被永久缓存）",
+    "test/spec/agent/stream-mount/e2e.int.test.ts > [AC-B3-03f#1][BR-AI-23][BR-AI-13] 生产默认装配：消息被拒为「审核不可用」——meta → safety_unavailable 文字 → done(safety)；run 有 final_event、锁已释放、按 input_review_timeout 退还；零次模型传输",
+    "test/spec/agent/stream-mount/e2e.int.test.ts > [AC-B3-03f#2][BR-AI-14][BR-AI-23] 降级（测试缝放行输入检查）：no_model 路由进 B3-05c 降级口，emptyOrchestratorTools 下出 agent.degraded.empty notice、done(fallback)，不出卡、不调模型；同一 client_msg_id 重放得两帧 duplicate",
+    "test/spec/agent/stream-mount/e2e.int.test.ts > [AC-B3-03f#32][BR-AI-13] 正常消息的首帧 meta.ai_label 等于 texts.default.json 的 ai_label：生产默认装配（done(safety)）与降级路径（done(fallback)）各一次",
+    "test/spec/agent/stream-mount/entry.test.ts > [AC-B3-03f#16][BR-AI-23] stream 入口：SIGTERM → app.close() 时先等 runtime.close() 完成，之后才关库；停机后不留计时器",
+    "test/spec/agent/stream-mount/entry.test.ts > [AC-B3-03f#17] COULI_EXIT_AFTER_INIT=1：stream 初始化后关闭、不 listen；先停 runtime 再关库，不留计时器",
+    "test/spec/agent/stream-mount/entry.test.ts > [AC-B3-03f#18] worker 入口不建 stream 运行体：上下文从不被问 agentStreamToken()",
+    "test/spec/agent/stream-mount/module.test.ts > [AC-B3-03f#12][BR-AI-23] stream 入口（有库）：agentStreamToken() 提供运行体；maxRunMs = timings.runMaxMs、timings = runTimingsDefaults()、assertRunTimings 成立、0 < guardPollMs ≤ 5000；errorMsg 取自 texts.default.json；init 不被拒、装配不发查询",
+    "test/spec/agent/stream-mount/module.test.ts > [AC-B3-03f#13][BR-AI-23][BR-ID-01] stream 入口（无库）：token 为 null、恰一条 info agent_stream_disabled；四条路由已注册，不带 token、不带签名头的游客请求回 JSON 50001；坏 token → 10002",
+    "test/spec/agent/stream-mount/module.test.ts > [AC-B3-03f#14] api 入口不挂 /v1/agent/*（404）也没有 agentStreamToken()；worker / admin / payout 同样没有该 token；都不记 agent_stream_disabled",
+    "test/spec/agent/stream-mount/module.test.ts > [AC-B3-03f#15][BR-AI-13] agentStreamProvider(options)：provide 为 agentStreamToken()（同一个 symbol）；无库为 null 并记一条 agent_stream_disabled；有库时用 options.consentReader（app.module 传入的 identity 同意读取器）建同意端口",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#22][BR-AI-23][BR-ID-01] 真实 stream 入口 + PG：已同意的登录用户带有效 token 建会话、取当前会话、发消息（SSE done(safety)）、取消已结束 run（30505）；四条路由都不回 50001，会话与 run 落在令牌主体名下",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#23][BR-AI-13] 真实 stream 入口 + PG：撤回同意后四条路由（含 GET）都回 10004（consent_type=ai_third_party），不建会话、不建 run",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#24][BR-AI-13] 真实 stream 入口 + PG：带设备身份的游客（设备级同意）受理；同一设备登录后用户级无同意 → 10004、无副作用；写用户级同意后该设备受理，同一账号换设备仍受理",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#25][BR-AI-23][BR-ID-03] 真实 stream 入口 + PG：agent.require_phone=true 时游客 10001、已登录未绑手机 10005（无副作用）、已绑手机照常受理",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#26][BR-AI-23][BR-AI-12] 真实 stream 入口 + PG：whitelist_only=true 时名单外 30501、名单外且未同意仍 30501（不是 10004），均无副作用；名单内照常受理",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#27][BR-AI-12] 真实 stream 入口 + PG：运行中打开 whitelist_only，5 s 后名单外用户的新消息与建会话都 30501、不建 run",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#28][BR-AI-23][BR-AI-15][BR-ID-03] 真实 stream 入口 + PG：游客与未绑手机账号按设备与 IP 两个键计数——同设备换 IP 设备键同、IP 键异，换设备同 IP 反之；设备或 IP 任一达上限（各为 1）→ 30502、不建 run，换设备且换 IP 照常受理",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#29][BR-AI-23] 真实 stream 入口 + PG：已同意用户向自己的有效会话发 501 个码点 → 20001（data.fields=[text]），不建 run、不写消息、不计配额；500 个码点照常受理",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#30][BR-AI-23][BR-AI-12][BR-AI-13] 真实 stream 入口 + PG：GET 当前会话先过 ①——whitelist_only=true 时名单外且未同意 → 30501（不是 10004）；名单内未同意 → 10004；均无副作用",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#31][BR-AI-23][BR-AI-11][BR-ID-03][BR-AI-13] 真实 stream 入口 + PG：GET 当前会话先过 ②——agent.require_phone=true 时未绑手机且未同意 → 10005、游客未同意 → 10001（都不是 10004）；已绑手机未同意 → 10004；均无副作用",
+    "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#33][BR-AI-23][BR-AI-15] 真实 stream 入口 + PG：截止前取消进行中的 run → 200 EmptyResponse；run 在截止前停止，SSE 末帧 done(cancelled)，end_reason cancelled、照常计数（未下发卡片也不退）；再次取消仍 200 且不再写入",
+    "test/spec/agent/stream-mount/quota.int.test.ts > [AC-B3-03f#20][BR-AI-23][BR-AI-15] 会员日额度设为 2：前两条 done 的 quota_left 依次 1、0（结算用配置额度），第三条 30502、不建 run、已用不变；每条消息（受理与被拒）都经 runtime.limits 读额度（不写死次数）",
+    "test/spec/agent/stream-mount/quota.int.test.ts > [AC-B3-03f#21][BR-AI-23] 同一个 limits 实例：把 runtime.limits 的读数换成会员日额度 1，受理侧第二条即 30502，结算侧第一条 done 的 quota_left 为 0",
+    "test/spec/agent/stream-mount/redact.int.test.ts > [AC-B3-03f#6][BR-AI-19][BR-AI-14] 存储形态：agent_runs.user_text 与用户消息文本逐字等于手写期望（手机号 138****8000、长数字只留后 4 位、其余文字一字不少），原值不出现在任何 agent_* 表；模型形态：searchKeyword 的关键词里是 <num_k>、没有原值",
+    "test/spec/agent/stream-mount/redact.int.test.ts > [AC-B3-03f#7][BR-AI-19] runtime.traceMask 先还原占位再转存储形态：结果不含原值，也不等于原样返回的输入",
+    "test/spec/agent/stream-mount/switch.int.test.ts > [AC-B3-03f#8][BR-AI-12][BR-AI-13] 关开关：进行中的 run 在 agent.enabled 改为 false 后 ≤10 s 内以 30501 结束（end_reason disabled、退还）",
+    "test/spec/agent/stream-mount/switch.int.test.ts > [AC-B3-03f#9][BR-AI-12] 开关缓存 ≤5 s：agent.enabled 改为 false 之后 5 s 新消息 → 30501，不建 run",
+    "test/spec/agent/stream-mount/switch.int.test.ts > [AC-B3-03f#10][BR-AI-13] 撤回同意（与关开关分开）：进行中的 run ≤10 s 内以 10004 结束（end_reason consent_withdrawn），不退配额（settle_result counted，当日已用仍为 1）",
+    "test/spec/agent/stream-mount/switch.int.test.ts > [AC-B3-03f#11][BR-AI-23] runtime.close()：先不再受理（新消息不开新 run），等进行中的 run 结束后才 resolve，不关库",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/sessions（createAgentSession）的共同标注、请求头和错误外壳",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] get /v1/agent/sessions/current（getCurrentAgentSession）的共同标注、请求头和错误外壳",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/sessions/{id}/messages（sendAgentMessage）的共同标注、请求头和错误外壳",
+    "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/runs/{run_id}/cancel（cancelAgentRun）的共同标注、请求头和错误外壳"
+  ],
+  "risk_note": "RV2: app.module.ts and main.stream.ts mount the agent HTTP handlers on the stream entry; stream/run/manager.ts sits on the quota-settlement path (notice cards no longer counted as delivered, BR-AI-15); contracts/openapi.yaml loses planned on four operations through a mechanical commit (approvals #31, trailer Couli-Mechanical: contract-codegen). Codex-first implementation (ops/approvals.yaml id 23; kept on Codex after the owner's 2026-10-17 decision because tests were already written for it and RV2 needs tester != implementer). Rule tests by Claude in 3 attempts plus an owner-approved extra round (couli-runs/B3-03f/owner-extra-spec-round.md); orchestrator mechanical fixes to frozen fixtures only (required client headers, body-less POSTs without Content-Type, the entry test's queue send and listen spy) #33 on the skeleton tree taking the unmodified stream entry when AgentModule.forStream is absent (it was red with a TypeError instead of the skeleton NotImplemented; 2026-10-22), and to the CT-08d / CT-08f contract assertions that expected planned (no other assertion changed). Prerequisite tasks found during implementation: B1-02x (identity caller context, #720) and ledger path extensions (#740 contract.test.ts route ownership, #745 request-check-plan tests, #755 manager.ts). Full pnpm verify passed on the AWS test machine (host-ephemeral PostgreSQL). Claude money-checklist review round 1 fail (stream lacked the api entry's non-signature checks, S1), round 2 pass. BR-ID-01 ⑥ ⑦ are not implemented in identity yet (followups item 40). Rebased 2026-10-22 onto main (one conflict in app.module.ts resolved: identityModule(contentReader) from B1-02zh; stage ⑦ is not assembled on stream because it judges only x-auth login/phone/realname routes and every /v1/agent/ route is optional). Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f9bf11acc7ed6ae48c23bb6726406d2ccb8eba22",
+      "tree": "5851bde9eef5c343c71ac947093451aee144b494",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T19:02:59Z",
+      "finished_at": "2026-10-21T19:03:38Z",
+      "red_tests": [
+        "test/spec/agent/stream-mount/access.int.test.ts > [AC-B3-03f#3][BR-AI-23][BR-AI-12] ① agent.enabled=false → 30501；缺键 → 30501；被拒不写 agent_* 表",
+        "test/spec/agent/stream-mount/access.int.test.ts > [AC-B3-03f#4][BR-AI-23][BR-AI-11][BR-ID-03] ② agent.require_phone=true：游客 → 10001、未绑手机 → 10005；已绑手机通过 ①–③ 落到 ④ 30504；被拒不写 agent_* 表",
+        "test/spec/agent/stream-mount/access.int.test.ts > [AC-B3-03f#5][BR-AI-13][BR-AI-23] ③ 无同意、已撤回、版本落后 → 10004（consent_type=ai_third_party）；当前版本的同意通过 ①–③ 落到 ④ 30504；被拒不写 agent_* 表",
+        "test/spec/agent/stream-mount/access.int.test.ts > [AC-B3-03f#19][BR-AI-13] 运行中发布新同意版本：同一 runtime 先以 v1 同意受理；legal.ai_third_party.version 发布为 2 并过了配置缓存期后，旧 v1 同意 → 10004、不建 run；补写 v2 同意后恢复受理（版本不被永久缓存）",
+        "test/spec/agent/stream-mount/e2e.int.test.ts > [AC-B3-03f#1][BR-AI-23][BR-AI-13] 生产默认装配：消息被拒为「审核不可用」——meta → safety_unavailable 文字 → done(safety)；run 有 final_event、锁已释放、按 input_review_timeout 退还；零次模型传输",
+        "test/spec/agent/stream-mount/e2e.int.test.ts > [AC-B3-03f#2][BR-AI-14][BR-AI-23] 降级（测试缝放行输入检查）：no_model 路由进 B3-05c 降级口，emptyOrchestratorTools 下出 agent.degraded.empty notice、done(fallback)，不出卡、不调模型；同一 client_msg_id 重放得两帧 duplicate",
+        "test/spec/agent/stream-mount/e2e.int.test.ts > [AC-B3-03f#32][BR-AI-13] 正常消息的首帧 meta.ai_label 等于 texts.default.json 的 ai_label：生产默认装配（done(safety)）与降级路径（done(fallback)）各一次",
+        "test/spec/agent/stream-mount/entry.test.ts > [AC-B3-03f#16][BR-AI-23] stream 入口：SIGTERM → app.close() 时先等 runtime.close() 完成，之后才关库；停机后不留计时器",
+        "test/spec/agent/stream-mount/entry.test.ts > [AC-B3-03f#17] COULI_EXIT_AFTER_INIT=1：stream 初始化后关闭、不 listen；先停 runtime 再关库，不留计时器",
+        "test/spec/agent/stream-mount/entry.test.ts > [AC-B3-03f#18] worker 入口不建 stream 运行体：上下文从不被问 agentStreamToken()",
+        "test/spec/agent/stream-mount/module.test.ts > [AC-B3-03f#12][BR-AI-23] stream 入口（有库）：agentStreamToken() 提供运行体；maxRunMs = timings.runMaxMs、timings = runTimingsDefaults()、assertRunTimings 成立、0 < guardPollMs ≤ 5000；errorMsg 取自 texts.default.json；init 不被拒、装配不发查询",
+        "test/spec/agent/stream-mount/module.test.ts > [AC-B3-03f#13][BR-AI-23][BR-ID-01] stream 入口（无库）：token 为 null、恰一条 info agent_stream_disabled；四条路由已注册，不带 token、不带签名头的游客请求回 JSON 50001；坏 token → 10002",
+        "test/spec/agent/stream-mount/module.test.ts > [AC-B3-03f#14] api 入口不挂 /v1/agent/*（404）也没有 agentStreamToken()；worker / admin / payout 同样没有该 token；都不记 agent_stream_disabled",
+        "test/spec/agent/stream-mount/module.test.ts > [AC-B3-03f#15][BR-AI-13] agentStreamProvider(options)：provide 为 agentStreamToken()（同一个 symbol）；无库为 null 并记一条 agent_stream_disabled；有库时用 options.consentReader（app.module 传入的 identity 同意读取器）建同意端口",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#22][BR-AI-23][BR-ID-01] 真实 stream 入口 + PG：已同意的登录用户带有效 token 建会话、取当前会话、发消息（SSE done(safety)）、取消已结束 run（30505）；四条路由都不回 50001，会话与 run 落在令牌主体名下",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#23][BR-AI-13] 真实 stream 入口 + PG：撤回同意后四条路由（含 GET）都回 10004（consent_type=ai_third_party），不建会话、不建 run",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#24][BR-AI-13] 真实 stream 入口 + PG：带设备身份的游客（设备级同意）受理；同一设备登录后用户级无同意 → 10004、无副作用；写用户级同意后该设备受理，同一账号换设备仍受理",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#25][BR-AI-23][BR-ID-03] 真实 stream 入口 + PG：agent.require_phone=true 时游客 10001、已登录未绑手机 10005（无副作用）、已绑手机照常受理",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#26][BR-AI-23][BR-AI-12] 真实 stream 入口 + PG：whitelist_only=true 时名单外 30501、名单外且未同意仍 30501（不是 10004），均无副作用；名单内照常受理",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#27][BR-AI-12] 真实 stream 入口 + PG：运行中打开 whitelist_only，5 s 后名单外用户的新消息与建会话都 30501、不建 run",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#28][BR-AI-23][BR-AI-15][BR-ID-03] 真实 stream 入口 + PG：游客与未绑手机账号按设备与 IP 两个键计数——同设备换 IP 设备键同、IP 键异，换设备同 IP 反之；设备或 IP 任一达上限（各为 1）→ 30502、不建 run，换设备且换 IP 照常受理",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#29][BR-AI-23] 真实 stream 入口 + PG：已同意用户向自己的有效会话发 501 个码点 → 20001（data.fields=[text]），不建 run、不写消息、不计配额；500 个码点照常受理",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#30][BR-AI-23][BR-AI-12][BR-AI-13] 真实 stream 入口 + PG：GET 当前会话先过 ①——whitelist_only=true 时名单外且未同意 → 30501（不是 10004）；名单内未同意 → 10004；均无副作用",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#31][BR-AI-23][BR-AI-11][BR-ID-03][BR-AI-13] 真实 stream 入口 + PG：GET 当前会话先过 ②——agent.require_phone=true 时未绑手机且未同意 → 10005、游客未同意 → 10001（都不是 10004）；已绑手机未同意 → 10004；均无副作用",
+        "test/spec/agent/stream-mount/mount.int.test.ts > [AC-B3-03f#33][BR-AI-23][BR-AI-15] 真实 stream 入口 + PG：截止前取消进行中的 run → 200 EmptyResponse；run 在截止前停止，SSE 末帧 done(cancelled)，end_reason cancelled、照常计数（未下发卡片也不退）；再次取消仍 200 且不再写入",
+        "test/spec/agent/stream-mount/quota.int.test.ts > [AC-B3-03f#20][BR-AI-23][BR-AI-15] 会员日额度设为 2：前两条 done 的 quota_left 依次 1、0（结算用配置额度），第三条 30502、不建 run、已用不变；每条消息（受理与被拒）都经 runtime.limits 读额度（不写死次数）",
+        "test/spec/agent/stream-mount/quota.int.test.ts > [AC-B3-03f#21][BR-AI-23] 同一个 limits 实例：把 runtime.limits 的读数换成会员日额度 1，受理侧第二条即 30502，结算侧第一条 done 的 quota_left 为 0",
+        "test/spec/agent/stream-mount/redact.int.test.ts > [AC-B3-03f#6][BR-AI-19][BR-AI-14] 存储形态：agent_runs.user_text 与用户消息文本逐字等于手写期望（手机号 138****8000、长数字只留后 4 位、其余文字一字不少），原值不出现在任何 agent_* 表；模型形态：searchKeyword 的关键词里是 <num_k>、没有原值",
+        "test/spec/agent/stream-mount/redact.int.test.ts > [AC-B3-03f#7][BR-AI-19] runtime.traceMask 先还原占位再转存储形态：结果不含原值，也不等于原样返回的输入",
+        "test/spec/agent/stream-mount/switch.int.test.ts > [AC-B3-03f#8][BR-AI-12][BR-AI-13] 关开关：进行中的 run 在 agent.enabled 改为 false 后 ≤10 s 内以 30501 结束（end_reason disabled、退还）",
+        "test/spec/agent/stream-mount/switch.int.test.ts > [AC-B3-03f#9][BR-AI-12] 开关缓存 ≤5 s：agent.enabled 改为 false 之后 5 s 新消息 → 30501，不建 run",
+        "test/spec/agent/stream-mount/switch.int.test.ts > [AC-B3-03f#10][BR-AI-13] 撤回同意（与关开关分开）：进行中的 run ≤10 s 内以 10004 结束（end_reason consent_withdrawn），不退配额（settle_result counted，当日已用仍为 1）",
+        "test/spec/agent/stream-mount/switch.int.test.ts > [AC-B3-03f#11][BR-AI-23] runtime.close()：先不再受理（新消息不开新 run），等进行中的 run 结束后才 resolve，不关库",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/sessions（createAgentSession）的共同标注、请求头和错误外壳",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] get /v1/agent/sessions/current（getCurrentAgentSession）的共同标注、请求头和错误外壳",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/sessions/{id}/messages（sendAgentMessage）的共同标注、请求头和错误外壳",
+        "test/spec/contracts/agent-http/http.test.ts > [AC-CT-08d#1] post /v1/agent/runs/{run_id}/cancel（cancelAgentRun）的共同标注、请求头和错误外壳"
+      ],
+      "expected": [
+        "test/spec/agent/stream-mount/access.int.test.ts",
+        "test/spec/agent/stream-mount/e2e.int.test.ts",
+        "test/spec/agent/stream-mount/entry.test.ts",
+        "test/spec/agent/stream-mount/module.test.ts",
+        "test/spec/agent/stream-mount/mount.int.test.ts",
+        "test/spec/agent/stream-mount/quota.int.test.ts",
+        "test/spec/agent/stream-mount/redact.int.test.ts",
+        "test/spec/agent/stream-mount/switch.int.test.ts",
+        "test/spec/contracts/agent-http/http.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "678f4eb8ca5dc02a0c54d38e85f42224874212c9e6fb8ae507e5978379adb4d1"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "de71b591a973448ae91748bc1556f5bd2843025210608208b01736cdd0974b66"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "1c639ee26f5e5c4e6fcb49dc4ce5e6306ca103bf",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "fresh read-only Claude subagents: round 1 fail (S1: the stream entry ran only the token check; three S2 handled: notice counting ruling = followups 39, unsigned guest device id by contract = followups 34, a stale-ledger path finding), round 2 pass with one S2 (no stream-side 10006 / 10405 test) (couli-runs/B3-03f/review-claude-money-r1.json, review-claude-money.json)",
+      "engine": "claude"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 5,
+    "last_verdict": "pass",
+    "red_exempt_confirmed": true,
+    "note": "Codex spec-test reviews r1 (5 S1) and r2 (3 S1), each fixed by the test author; a fresh Claude closing review (2 S1) and recheck (1 fixture S1) handled in the owner-approved extra round (owner-extra-spec-round.md); owner's second extra round 2026-10-19: Codex r3 confirmed the 12 red_exempt declarations (test bodies unchanged, independent of stream-mount and planned) and raised 3 assembly S1, added as #29-#32; Codex r4 re-confirmed the 12 red_exempt and raised 1 S1 (live cancel), added as #33 (207de4e2); r5 by an independent Claude (claude-run.sh, orchestrator ruling D10-111) reviewed only 207de4e2: pass, r4 S1 closed. Codex not called again for this task (13 calls). Files: review-codex-spec-test-r1/r2/r3.json, review-codex-spec-test-r4.json, review-claude-independent-spec-test-r5.json, round5-uncounted-note.md."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "7f699f08a1d2ef7b48d49a54a1f6cabdd861c771"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
