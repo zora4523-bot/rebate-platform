@@ -185,9 +185,11 @@ it('[AC-B1-08v#U2] isScanSkipCertain 与扫描路径的 planSnapshotRetry 逐格
                   pidScene: 'unknown',
                 }),
               );
-              expect(isScanSkipCertain(order), JSON.stringify({ ...order, fee: String(fee) })).toBe(
-                plan.kind === 'skip',
+              // 消息参数会先求值：bigint 须经 replacer 转字符串，否则 JSON.stringify 直接抛 TypeError。
+              const label = JSON.stringify(order, (_key, value: unknown) =>
+                typeof value === 'bigint' ? `${value}n` : value,
               );
+              expect(isScanSkipCertain(order), label).toBe(plan.kind === 'skip');
               cases++;
             }
   expect(cases).toBe(240);
