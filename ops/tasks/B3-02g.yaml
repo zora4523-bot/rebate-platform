@@ -1,0 +1,26 @@
+id: B3-02g
+repo: rebate-platform
+title: 评测模型来源接线：runEval 的 live 请求携带当前题目可信 provenance，改写样本不可降为 synthetic 绕过许可
+type: impl
+# B3-02c 已合并 PR #234 的来源透传遗留；B3-01d 已合并 PR #185。B3-02 整行 Codex 首发例外（approvals 第 23 条）。
+# Claude 先写规则测试并容器先红，独立 Codex 过审，Codex 实现，Claude 新会话对抗 review，RV2 另加独立 Codex review。
+# B 与 integration 的 live model 调用附加当前 EvalCase 的可信来源；请求自带来源不能覆盖题目来源。
+# 缓存端口、跨题与跨 run、异步晚到调用保持实际来源隔离；不把旧 rewritten 内容套成新 synthetic。
+# A 模式录制请求/key、工具端口、判分、报告格式不变。只做已有模型端口接线，不新增外发许可或改许可规则。
+# 只用合成正文声明来源来测许可分支；不读取真实改写样本，不调用真实厂商，不冒充私有 Agent 冒烟。
+refs: [BR-AI-14]
+refs_hash:
+  BR-AI-14: e8ed6052e898
+deps: [B3-02c, B3-01d]
+paths:
+  - 'packages/evals/src/replay.ts'
+  - 'packages/evals/src/types.ts'
+test_paths:
+  - 'test/spec/evals-provenance/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/evals-provenance/**'
+status: todo
+pr: 312
