@@ -740,7 +740,9 @@ it("[approvals 36] the rounds are the task's whoever runs them: same counters, s
     },
   ]);
   expect(settleCall(id, meta, T0).changed).toBe(false);
-  const codex = settleCall(id, { ...meta, engine: undefined }, T0);
+  const codexMeta: CallMeta = { ...meta };
+  delete codexMeta.engine;
+  const codex = settleCall(id, codexMeta, T0);
   expect(codex.changed).toBe(true);
   expect(readState(id)?.uncounted_calls[1]).not.toHaveProperty('engine');
   expect(readState(id)?.attempts.test).toBe(1);
