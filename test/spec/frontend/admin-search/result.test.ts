@@ -62,6 +62,14 @@ async function placeholderHit(hit: Hit, query: string): Promise<void> {
       permissions: hit.type === 'order' ? ['order.view'] : ['order.view', 'fund.view'],
     }),
   });
+  // The current page's own reads (the orders list once that page is live) settle before the
+  // search; only those may reach the shared users/page fixture, and nothing may be added by the
+  // search or by activating the hit.
+  await settled(server);
+  expect(
+    server.users.log.every((entry) => entry.method === 'GET' && entry.path === '/admin/v1/orders'),
+  ).toBe(true);
+  const pageRequests = server.users.log.length;
   await submit(query);
   const entries = await options();
   expect(entries).toHaveLength(1);
@@ -75,7 +83,7 @@ async function placeholderHit(hit: Hit, query: string): Promise<void> {
   await settled(server);
   expect(mainElement().textContent).toBe(before);
   expect(screen.getByRole('navigation', { name: '面包屑' }).textContent).toBe(crumbs);
-  expect(server.users.log).toHaveLength(0);
+  expect(server.users.log).toHaveLength(pageRequests);
 }
 
 async function multiplePlaceholderHit(
@@ -85,6 +93,14 @@ async function multiplePlaceholderHit(
 ): Promise<void> {
   const server = createServer({ items: [hit, USER], truncated: false });
   await mount(server);
+  // The current page's own reads (the orders list once that page is live) settle before the
+  // search; only those may reach the shared users/page fixture, and nothing may be added by the
+  // search or by activating the hit.
+  await settled(server);
+  expect(
+    server.users.log.every((entry) => entry.method === 'GET' && entry.path === '/admin/v1/orders'),
+  ).toBe(true);
+  const pageRequests = server.users.log.length;
   await submit(query);
   const entries = await options();
   expect(entries).toHaveLength(2);
@@ -101,7 +117,7 @@ async function multiplePlaceholderHit(
   await settled(server);
   expect(mainElement().textContent).toBe(before);
   expect(screen.getByRole('navigation', { name: '面包屑' }).textContent).toBe(crumbs);
-  expect(server.users.log).toHaveLength(0);
+  expect(server.users.log).toHaveLength(pageRequests);
   expect(server.log).toHaveLength(1);
 }
 
