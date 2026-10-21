@@ -1605,6 +1605,7 @@ CREATE TABLE app.beneficiary_credits (
     voucher_id uuid,
     opened_at timestamp with time zone NOT NULL,
     closed_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT beneficiary_credits_closed_check CHECK ((((status = 'open'::text) = (closed_by IS NULL)) AND ((status = 'open'::text) = (closed_ref IS NULL)) AND ((status = 'open'::text) = (closed_at IS NULL)) AND (closed_by <> ''::text) AND (closed_ref <> ''::text))),
     CONSTRAINT beneficiary_credits_kind_check CHECK ((kind = ANY (ARRAY['first_credit'::text, 'reassign_credit'::text, 'deferred'::text]))),
@@ -3848,6 +3849,7 @@ CREATE TABLE app.settle_adjustments (
     status text NOT NULL,
     approver uuid,
     decided_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT settle_adjustments_beneficiary_check CHECK (((user_id IS NULL) = (role IS NULL))),
     CONSTRAINT settle_adjustments_decision_check CHECK ((((status = 'pending'::text) AND (approver IS NULL) AND (decided_at IS NULL)) OR ((status = ANY (ARRAY['approved'::text, 'rejected'::text])) AND (approver IS NOT NULL) AND (decided_at IS NOT NULL)) OR ((status = ANY (ARRAY['voided_stale_seq'::text, 'voided_by_clawback'::text])) AND (decided_at IS NOT NULL)))),
@@ -3908,6 +3910,7 @@ CREATE TABLE app.settle_batches (
     started_at timestamp with time zone,
     finished_at timestamp with time zone,
     paused_by_switch_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT settle_batches_cancelled_reason_check CHECK ((((status = 'CANCELLED'::text) = (cancelled_reason IS NOT NULL)) AND (cancelled_reason <> ''::text))),
     CONSTRAINT settle_batches_confirmed_check CHECK (((status <> ALL (ARRAY['CONFIRMED'::text, 'EXECUTING'::text, 'PARTIAL'::text, 'DONE'::text])) OR (confirmed_at IS NOT NULL))),
@@ -3959,6 +3962,7 @@ CREATE TABLE app.settle_jobs (
     skipped_count integer NOT NULL,
     started_at timestamp with time zone NOT NULL,
     finished_at timestamp with time zone,
+    row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT settle_jobs_counts_check CHECK (((processed_count >= 0) AND (skipped_count >= 0))),
     CONSTRAINT settle_jobs_finished_check CHECK (((status = 'running'::text) = (finished_at IS NULL))),
@@ -9771,6 +9775,13 @@ GRANT UPDATE(closed_at) ON TABLE app.beneficiary_credits TO couli_app;
 
 
 --
+-- Name: COLUMN beneficiary_credits.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.beneficiary_credits TO couli_app;
+
+
+--
 -- Name: TABLE blocklist; Type: ACL; Schema: app; Owner: -
 --
 
@@ -11841,6 +11852,13 @@ GRANT UPDATE(decided_at) ON TABLE app.settle_adjustments TO couli_app;
 
 
 --
+-- Name: COLUMN settle_adjustments.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.settle_adjustments TO couli_app;
+
+
+--
 -- Name: TABLE settle_batch_items; Type: ACL; Schema: app; Owner: -
 --
 
@@ -11948,6 +11966,13 @@ GRANT UPDATE(paused_by_switch_at) ON TABLE app.settle_batches TO couli_app;
 
 
 --
+-- Name: COLUMN settle_batches.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.settle_batches TO couli_app;
+
+
+--
 -- Name: TABLE settle_bills; Type: ACL; Schema: app; Owner: -
 --
 
@@ -12038,6 +12063,13 @@ GRANT UPDATE(skipped_count) ON TABLE app.settle_jobs TO couli_app;
 --
 
 GRANT UPDATE(finished_at) ON TABLE app.settle_jobs TO couli_app;
+
+
+--
+-- Name: COLUMN settle_jobs.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.settle_jobs TO couli_app;
 
 
 --

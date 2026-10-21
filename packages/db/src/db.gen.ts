@@ -310,6 +310,7 @@ export interface BeneficiaryCredits {
   origin_ledger_type: string | null;
   origin_sub_type: string | null;
   role: string;
+  row_version: Generated<number>;
   split_ref: string;
   status: string;
   user_id: string;
@@ -1421,6 +1422,7 @@ export interface SettleAdjustments {
   order_id: string;
   reason: string | null;
   role: string | null;
+  row_version: Generated<number>;
   settle_seq: number;
   status: string;
   user_id: string | null;
@@ -1439,6 +1441,7 @@ export interface SettleBatches {
   order_count: number;
   paused_by_switch_at: Timestamp | null;
   platform: string;
+  row_version: Generated<number>;
   scheduled_at: Timestamp | null;
   settle_mode: string;
   settle_run_id: string | null;
@@ -1485,6 +1488,7 @@ export interface SettleJobs {
   job: string;
   platform: string;
   processed_count: number;
+  row_version: Generated<number>;
   run_at: Timestamp;
   skipped_count: number;
   started_at: Timestamp;

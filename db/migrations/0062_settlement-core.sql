@@ -19,7 +19,14 @@
 -- order_keys (app_id, order_id), never to the partitioned orders table. Status columns take the
 -- values of contracts/enums/fund.yaml and of specs/state-machines/{settle-batch,
 -- beneficiary-credit,settle-adjustment}.yaml; transitions go through the generated transition()
--- (the CHECKs below only keep each row's fields consistent with its state). Business instants
+-- (the CHECKs below only keep each row's fields consistent with its state). Tables whose status
+-- moves (settle_jobs, settle_batches, beneficiary_credits, settle_adjustments) carry row_version
+-- integer NOT NULL DEFAULT 0 for the CAS of ADR-0001 §4.1 and 04's 状态迁移 row (SET status =
+-- :to, row_version = row_version + 1 WHERE … AND row_version = :read): a status check alone misses
+-- a round trip between read and write (settle-batch CONFIRMED → DRAFT, PARTIAL ↔ EXECUTING,
+-- EXECUTING → EXECUTING; a failed job run back to running). settle_bills,
+-- settle_batch_items and settle_adjust_batches have no status; their columns are filled once
+-- (guarded by IS NULL), so they carry none. Business instants
 -- (run_at, *_at) come from the injected Clock and have no database default; only created_at
 -- defaults to now(). Writer of every table: settlement.
 --
@@ -76,12 +83,13 @@
 -- Retention: none (financial records are kept).
 --
 -- Grants: couli_app SELECT, INSERT on the eight tables; UPDATE only on the columns the settlement
--- commands change — settle_jobs (status, processed_count, skipped_count, finished_at);
--- settle_bills (the six totals, generated_at); settle_batches (status, settle_mode, scheduled_at,
--- confirmed_by, confirmed_at, cancelled_reason, settle_run_id, started_at, finished_at,
--- paused_by_switch_at); settle_batch_items (amount_fen, result, skip_reason); beneficiary_credits
--- (status, closed_by, closed_ref, voucher_id, closed_at); settle_adjust_batches (confirmed_by,
--- confirmed_at); settle_adjustments (status, approver, decided_at, reason); none on recon_union.
+-- commands change — settle_jobs (status, processed_count, skipped_count, finished_at,
+-- row_version); settle_bills (the six totals, generated_at); settle_batches (status, settle_mode,
+-- scheduled_at, confirmed_by, confirmed_at, cancelled_reason, settle_run_id, started_at,
+-- finished_at, paused_by_switch_at, row_version); settle_batch_items (amount_fen, result,
+-- skip_reason); beneficiary_credits (status, closed_by, closed_ref, voucher_id, closed_at,
+-- row_version); settle_adjust_batches (confirmed_by, confirmed_at); settle_adjustments (status,
+-- approver, decided_at, reason, row_version); none on recon_union.
 -- Never on identities, keys or the other money columns. No DELETE, TRUNCATE, REFERENCES or
 -- TRIGGER for anyone. couli_readonly SELECT.
 --
@@ -102,6 +110,7 @@ CREATE TABLE app.settle_jobs (
   skipped_count   integer     NOT NULL,
   started_at      timestamptz NOT NULL,
   finished_at     timestamptz,
+  row_version     integer     NOT NULL DEFAULT 0,
   created_at      timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT settle_jobs_pkey PRIMARY KEY (id),
   CONSTRAINT settle_jobs_run_key UNIQUE (app_id, job, platform, run_at),
@@ -151,6 +160,7 @@ CREATE TABLE app.settle_batches (
   started_at          timestamptz,
   finished_at         timestamptz,
   paused_by_switch_at timestamptz,
+  row_version         integer     NOT NULL DEFAULT 0,
   created_at          timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT settle_batches_pkey PRIMARY KEY (batch_id),
   CONSTRAINT settle_batches_app_id_batch_id_key UNIQUE (app_id, batch_id),
@@ -200,6 +210,7 @@ CREATE TABLE app.beneficiary_credits (
   voucher_id            uuid,
   opened_at             timestamptz NOT NULL,
   closed_at             timestamptz,
+  row_version           integer     NOT NULL DEFAULT 0,
   created_at            timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT beneficiary_credits_pkey PRIMARY KEY (beneficiary_credit_id),
   CONSTRAINT beneficiary_credits_item_ref_key
@@ -319,6 +330,7 @@ CREATE TABLE app.settle_adjustments (
   status             text        NOT NULL,
   approver           uuid,
   decided_at         timestamptz,
+  row_version        integer     NOT NULL DEFAULT 0,
   created_at         timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT settle_adjustments_pkey PRIMARY KEY (id),
   CONSTRAINT settle_adjustments_candidate_key
@@ -378,7 +390,8 @@ CREATE TABLE app.recon_union (
 CREATE INDEX recon_union_period_idx ON app.recon_union (app_id, period, platform);
 
 GRANT SELECT, INSERT ON app.settle_jobs TO couli_app;
-GRANT UPDATE (status, processed_count, skipped_count, finished_at) ON app.settle_jobs TO couli_app;
+GRANT UPDATE (status, processed_count, skipped_count, finished_at, row_version)
+  ON app.settle_jobs TO couli_app;
 GRANT SELECT, INSERT ON app.settle_bills TO couli_app;
 GRANT UPDATE (
   platform_order_counts, platform_settle_commission_totals, beneficiary_total_fen,
@@ -387,17 +400,18 @@ GRANT UPDATE (
 GRANT SELECT, INSERT ON app.settle_batches TO couli_app;
 GRANT UPDATE (
   status, settle_mode, scheduled_at, confirmed_by, confirmed_at, cancelled_reason, settle_run_id,
-  started_at, finished_at, paused_by_switch_at
+  started_at, finished_at, paused_by_switch_at, row_version
 ) ON app.settle_batches TO couli_app;
 GRANT SELECT, INSERT ON app.settle_batch_items TO couli_app;
 GRANT UPDATE (amount_fen, result, skip_reason) ON app.settle_batch_items TO couli_app;
 GRANT SELECT, INSERT ON app.beneficiary_credits TO couli_app;
-GRANT UPDATE (status, closed_by, closed_ref, voucher_id, closed_at)
+GRANT UPDATE (status, closed_by, closed_ref, voucher_id, closed_at, row_version)
   ON app.beneficiary_credits TO couli_app;
 GRANT SELECT, INSERT ON app.settle_adjust_batches TO couli_app;
 GRANT UPDATE (confirmed_by, confirmed_at) ON app.settle_adjust_batches TO couli_app;
 GRANT SELECT, INSERT ON app.settle_adjustments TO couli_app;
-GRANT UPDATE (status, approver, decided_at, reason) ON app.settle_adjustments TO couli_app;
+GRANT UPDATE (status, approver, decided_at, reason, row_version)
+  ON app.settle_adjustments TO couli_app;
 GRANT SELECT, INSERT ON app.recon_union TO couli_app;
 GRANT SELECT ON app.settle_jobs, app.settle_bills, app.settle_batches, app.settle_batch_items,
   app.beneficiary_credits, app.settle_adjust_batches, app.settle_adjustments, app.recon_union
