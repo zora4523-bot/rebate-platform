@@ -101,6 +101,14 @@ export type {
   UserDeletionStatusReader,
   UserDeletionStatusReaderOptions,
 } from './ports/user-deletion-status.ts';
+// B1-15d: the two ports of POST /v1/me/deletion that app.module assembles (IdentityModuleOptions
+// withdrawalInFlight / deletionBalance).
+export type {
+  WithdrawalInFlightInput,
+  WithdrawalInFlightReader,
+} from './ports/withdrawal-in-flight.ts';
+export type { DeletionBalanceInput, DeletionBalanceReader } from './ports/deletion-balance.ts';
+export type { DeletionRequestModuleOptions } from './application/deletion-request.ts';
 export type {
   UserLevel,
   UserLevelSubject,

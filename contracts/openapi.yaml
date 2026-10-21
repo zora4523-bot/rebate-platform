@@ -4424,7 +4424,6 @@ paths:
       x-session-scopes:
         - full
         - deletion_only
-      x-implementation: planned
       x-error-codes: []
       security:
         - bearerAuth: []
@@ -4487,7 +4486,6 @@ paths:
       x-session-scopes:
         - full
         - deletion_only
-      x-implementation: planned
       x-error-codes:
         - 30412
         - 30416
@@ -4554,7 +4552,6 @@ paths:
       x-session-scopes:
         - full
         - deletion_only
-      x-implementation: planned
       x-error-codes:
         - 10007
       security:
