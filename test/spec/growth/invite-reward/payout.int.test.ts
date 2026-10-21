@@ -173,8 +173,10 @@ it.each(['deleting', 'risk_restricted', 'minor', 'multi_account'] as const)(
 it('[AC-B1-35#44] 身份年龄在发放时判，恰满 18 岁可以发', async () => {
   const f = await fixture(database);
   await ready(f);
-  f.birthdays.set(f.inviter, '2008-11-25');
-  f.birthdays.set(f.invitee, '2008-11-26');
+  // BR-ID-26: 18 is reached at 00:00 (+08:00) the day after the 18th birthday. Processing runs at
+  // PAID (2026-11-25 10:00 +08:00): born 2008-11-24 is exactly 18, born 2008-11-25 is still a minor.
+  f.birthdays.set(f.inviter, '2008-11-24');
+  f.birthdays.set(f.invitee, '2008-11-25');
   await f.process();
   expect(await f.row()).toMatchObject({
     inviter_result: 'granted',

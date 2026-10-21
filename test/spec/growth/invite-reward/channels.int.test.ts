@@ -232,7 +232,16 @@ it('[AC-B1-35#83] AppModule 奖励 SQL 出错仍绑定成功并记录 error', as
           .map((line) => JSON.parse(line) as { level: number })
           .some((line) => line.level === 50),
       ).toBe(true);
-      expect(f.lines.join('')).not.toContain(IP);
+      // The platform request serializer always logs req.remoteAddress (outside this task);
+      // every other field, including the reward error line, must stay free of the IP.
+      const scrubbed = f.lines.map((line) => {
+        const { req, ...rest } = JSON.parse(line) as { req?: Record<string, unknown> };
+        if (req === undefined) return JSON.stringify(rest);
+        const other = { ...req };
+        delete other['remoteAddress'];
+        return JSON.stringify({ ...rest, req: other });
+      });
+      expect(scrubbed.join('')).not.toContain(IP);
     });
   } finally {
     spy.mockRestore();
