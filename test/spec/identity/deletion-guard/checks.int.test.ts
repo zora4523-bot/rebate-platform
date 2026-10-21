@@ -138,7 +138,8 @@ it('[AC-B1-15e#5] 冷静期已过、定时任务未执行的 cooling 单仍返�
   // Applied 8 days before NOW: cooling_until is a day past, the row still says cooling.
   await deletion(db, s.appId, s.uid, 'cooling', '2026-10-09T02:00:00Z');
   const checks = api.createDeletionStageChecks({ db });
-  const input = request(s.appId, s.uid, 'POST', '/v1/links/convert');
+  // A non-idempotent write: the guard judges it (idempotent ones go to the post-miss check).
+  const input = request(s.appId, s.uid, 'POST', '/v1/me/tips/:tip_key/read');
   await expect(activate(checks, input)).rejects.toMatchObject(refusal(input.id, 'cooling'));
 });
 
@@ -355,5 +356,115 @@ for (const failure of ['no-db', 'read'] as const) {
     await expect(
       activate(checks, request(s.appId, s.uid, 'POST', '/v1/me/deletion/cancel')),
     ).resolves.toBe(true);
+  });
+}
+
+/** The same request with a restricted (deletion_only) principal, BR-ID-01 细则「受限会话」. */
+function restricted(input: Scope.MinimumVersionRequest): Scope.MinimumVersionRequest {
+  return { ...input, principal: { ...input.principal!, scp: 'deletion_only' } };
+}
+
+/** Runs `checks.postMiss` inside the HTTP scope of `input` and a real idempotency claim. */
+function claimed(
+  checks: Guard.DeletionStageChecks,
+  s: { appId: string; uid: string },
+  input: Scope.MinimumVersionRequest,
+  path: string,
+) {
+  const key = randomUUID();
+  const idem = platform.createIdempotency({
+    db: db.withSchema('app'),
+    clock: new platform.FixedClock(NOW),
+    logger: { warn: vi.fn(), error: vi.fn() },
+  });
+  platform.registerIdempotencyPostMissCheck(idem, checks.postMiss);
+  const later = vi.fn(async () => {});
+  platform.registerIdempotencyPostMissCheck(idem, later);
+  const business = vi.fn(async () => ({
+    status: 200,
+    envelope: { code: 0, msg: '', data: {}, trace_id: input.id },
+  }));
+  const run = () =>
+    scope.MINIMUM_VERSION_SCOPE.run({ request: input, idempotencyEntered: false }, () =>
+      idem.executeInTransaction(
+        {
+          appId: s.appId,
+          actor: { userId: s.uid, deviceId: null, phoneHmac: null },
+          method: 'POST',
+          path,
+          key,
+          body: {},
+          traceId: input.id,
+        },
+        business,
+      ),
+    );
+  return { key, later, business, run };
+}
+
+it('[AC-B1-15e#10] deletion_only 会话调表内、10007 白名单外的写接口（step-up）仍判 10007；表内白名单照常放行不读库', async () => {
+  const s = await subject();
+  await deletion(db, s.appId, s.uid, 'cooling');
+  const { executor, statements } = observe(db);
+  const checks = api.createDeletionStageChecks({ db: executor });
+  for (const [method, path] of [
+    ['POST', '/v1/me/deletion/cancel'],
+    ['GET', '/v1/me/deletion'],
+    ['POST', '/v1/idempotency-keys/abandon'],
+    ['POST', '/v1/auth/logout'],
+    ['GET', '/v1/me'],
+  ] as const) {
+    await expect(
+      activate(checks, restricted(request(s.appId, s.uid, method, path))),
+      `${method} ${path}`,
+    ).resolves.toBe(true);
+  }
+  expect(statements).toEqual([]);
+  const input = restricted(request(s.appId, s.uid, 'POST', '/v1/auth/step-up'));
+  await expect(activate(checks, input)).rejects.toMatchObject(refusal(input.id, 'cooling'));
+  await userStatus(db, s.appId, s.uid, 'deleting');
+  const later = restricted(request(s.appId, s.uid, 'POST', '/v1/auth/step-up'));
+  await expect(activate(checks, later)).rejects.toMatchObject(refusal(later.id, 'processing'));
+});
+
+for (const status of ['cooling', 'processing'] as const) {
+  it(`[AC-B1-15e#11] DELETE 方法同样是写接口：${status} 用户 DELETE /v1/me/tips/:tip_key → 10007`, async () => {
+    const s = await subject();
+    await deletion(db, s.appId, s.uid, status);
+    const checks = api.createDeletionStageChecks({ db });
+    const input = request(s.appId, s.uid, 'DELETE', '/v1/me/tips/:tip_key');
+    await expect(activate(checks, input)).rejects.toMatchObject(refusal(input.id, status));
+  });
+}
+
+it('[AC-B1-15e#11] 幂等的 DELETE 收藏经 post-miss 对冷静期用户 → 10007，不留键、业务不执行', async () => {
+  const s = await subject();
+  await deletion(db, s.appId, s.uid, 'cooling');
+  const path = '/v1/me/favorites/:platform/:product_key';
+  const input = request(s.appId, s.uid, 'DELETE', path);
+  const c = claimed(api.createDeletionStageChecks({ db }), s, input, path);
+  await expect(c.run()).rejects.toMatchObject(refusal(input.id, 'cooling'));
+  expect(c.later).not.toHaveBeenCalled();
+  expect(c.business).not.toHaveBeenCalled();
+  await noKey(db, s.appId, c.key);
+});
+
+for (const scp of ['full', 'deletion_only'] as const) {
+  it(`[AC-B1-15e#12] planned POST /v1/me/deletion 经 post-miss：${scp} 会话的冷静期用户再申请 → 10007 stage=cooling，不留键、业务不执行`, async () => {
+    const s = await subject();
+    const path = '/v1/me/deletion';
+    const plain = request(s.appId, s.uid, 'POST', path);
+    const input = scp === 'full' ? plain : restricted(plain);
+    const checks = api.createDeletionStageChecks({ db });
+    // Positive control: without a deletion request the same claim reaches the business.
+    const first = claimed(checks, s, input, path);
+    expect((await first.run()).status).toBe(200);
+    expect(first.business).toHaveBeenCalledTimes(1);
+    await deletion(db, s.appId, s.uid, 'cooling');
+    const again = claimed(checks, s, input, path);
+    await expect(again.run()).rejects.toMatchObject(refusal(input.id, 'cooling'));
+    expect(again.later).not.toHaveBeenCalled();
+    expect(again.business).not.toHaveBeenCalled();
+    await noKey(db, s.appId, again.key);
   });
 }

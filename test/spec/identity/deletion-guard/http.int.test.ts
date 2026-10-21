@@ -422,3 +422,25 @@ it('[AC-B1-15e#8] 只看令牌主体：A 冷静期不影响 B，请求头伪造�
   expect(f.handled(b.uid)).toBe(before + 1);
   await refused(await a.send('PUT', PAYOUT, { headers: { 'x-user-id': b.uid } }), 'cooling');
 });
+
+it('[AC-B1-15e#10] 冷静期 deletion_only 会话：表内的 step-up（account_deletion）→ 10007；表内白名单 abandon、GET /v1/me 放行', async () => {
+  const c = await subject({ scope: 'deletion_only' });
+  await stage(c, 'cooling');
+  const trace = randomUUID();
+  await refused(
+    await c.send('POST', '/v1/auth/step-up', {
+      key: null,
+      body: { action: 'account_deletion', code: '123456' },
+      headers: { 'x-trace-id': trace },
+    }),
+    'cooling',
+    trace,
+  );
+  const abandoned = await c.send('POST', '/v1/idempotency-keys/abandon', {
+    key: null,
+    body: { action: 'account_deletion', idempotency_key: randomUUID() },
+  });
+  await ok(abandoned);
+  expect(abandoned.json()['data']).toEqual({ outcome: 'abandoned', original: null });
+  await ok(await c.send('GET', ME));
+});
