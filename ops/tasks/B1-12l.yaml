@@ -1,0 +1,22 @@
+id: B1-12l
+repo: rebate-platform
+title: 迁移：app.notification_settings（app_id、user_id 主键并外键 users，service_push / subscription_push / marketing_push boolean NOT NULL，row_version、created_at、updated_at；写者 notification，授权写在本迁移）
+type: impl
+# 2026-10-21 入账（be-codex）。契约 get/updateNotificationSettings（CT-02t）的三项开关无处存放：04 §10「notification_pref 不另建，由 /v1/me/notification-settings 承载」，§3.2 未登记存储。
+# 编排者技术决定：独立表、写者 notification，不加在 users（users 写者是 identity，加列会成双写者）；无行即三项默认 true（由读取方兜底，不预插行）。记 needs 交规划回写 04 §3.2。
+# 迁移号 0065（notices 10-21 预占；落地前重新 grep 主干最大号与预占，撞号改空号）。不在本任务：读写接口（B1-12m）、推送发送时读开关（发送核心 / 扇出任务）。
+refs: []
+refs_hash: {}
+deps: [B1-12e]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/notification/settings/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/notification/settings/**'
+status: todo

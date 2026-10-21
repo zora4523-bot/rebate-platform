@@ -1,0 +1,29 @@
+id: B1-12k
+repo: rebate-platform
+title: notification：GET /v1/messages（listMessages，本人站内信按 created_at、message_id 倒序游标分页，不改 read_at）、POST /v1/messages/read（markMessagesRead，message_ids 1–100 或 all=true，跳过不存在与他人的、已读保留原 read_at，返回 marked_count 与剩余 unread_count）、GET /v1/messages/unread-count（getUnreadMessageCount）；去掉三操作的 planned
+type: impl
+# 2026-10-21 入账（be-codex，B1-12 系列余项；契约 CT-02t #754 已合并、三操作 planned）。表 inbox_messages 已在 schema（写者 notification，04 §3.2），授权含 UPDATE(read_at, row_version, updated_at)，不建表。
+# 依据：契约三操作描述；04 §6.4 站内消息、§3.2 inbox_messages 行；08 BR-ID-10 细则「推送点击的落点」（只本人，他人与不存在不区分、不暴露），由编排者摘入任务书。所有查询带 app_id；时间只读 Clock。
+# 游标：不透明串，非法或他人的 → 20001 data.fields=[cursor]；按 (created_at, message_id) 严格倒序，注意 created_at 微秒精度不得丢行或重复。版本闸门与 h5 只读作用域由平台已生成的路由表处理，不另写。
+# 复用 B1-12d 的 MessagesController / NotificationModule 装配；静态路径 read、unread-count 不得被 :message_id 吞掉。
+refs: [BR-ID-10]
+refs_hash:
+  BR-ID-10: c52da301b6b2
+deps: [B1-12d, CT-02t]
+paths:
+  - 'apps/api/src/modules/notification/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/notification/message-list/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/message-list/**'
+status: todo
