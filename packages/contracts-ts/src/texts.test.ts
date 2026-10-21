@@ -34,15 +34,15 @@ it('[AC-CT-19c#2] withdraw_detail.net.expected 默认文案为预计到账 {net}
   expect(texts['withdraw_detail.net.expected']).toBe('预计到账 {net}');
 });
 
-it('[AC-CT-19c#3] btn.buy.rebate_suffix 不在本任务的默认文案中', () => {
-  expect(Object.hasOwn(texts, 'btn.buy.rebate_suffix')).toBe(false);
+it('[AC-CT-19c#3] btn.buy.rebate_suffix 默认文案为 · 预估返 {amount}（CT-16f 补键）', () => {
+  expect(texts['btn.buy.rebate_suffix']).toBe('· 预估返 {amount}');
 });
 
 it('[CT-25a] invite reward and optional-hint texts are 08 BR-TEXT-14 table C verbatim', () => {
   expect(texts['invite.reward.tip']).toBe('首单结算后，你和好友各得 {amount}');
   expect(texts['invite.reward.tip_inviter']).toBe('好友首单结算后，你们各得 {amount}');
   expect(texts['invite.post_login.optional_hint']).toBe(
-    '选填，注册 7 天内、首次下单前可到「我的」补填',
+    '选填，注册 {backfill_days} 天内、首次下单前可到「我的」补填',
   );
   // Deprecated 2026-10-19 but kept (key never reused).
   expect(texts['invite.before_buy_tip']).toBeTypeOf('string');
@@ -224,7 +224,7 @@ it('covers the keys of contract ledger rows b1-40 … b5-28', () => {
     'app_update.retry',
   ];
   for (const key of required) expect(texts[key], key).toBeTypeOf('string');
-  expect(Object.keys(texts).filter((k) => k.startsWith('earnings.'))).toHaveLength(17);
+  expect(Object.keys(texts).filter((k) => k.startsWith('earnings.'))).toHaveLength(18);
   // b4-31: 30201 no longer tells a missing order from a hidden share order (BR-ATTR-17).
   expect(texts['error.30201']).toBe(
     '没有找到可以找回的订单，请核对订单号；刚下单的订单可能还未同步，请稍后再试',

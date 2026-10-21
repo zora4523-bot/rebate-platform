@@ -1,0 +1,37 @@
+{
+  "task": "CT-16f",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "c5101d99084a22538a35790e50f25dd94799e6e6",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; user-side text keys, App hi-fi gap, orchestrator 17:4x, SPEC_REF 8209d6e). texts.default.json gains 110 keys copied verbatim from 08 BR-TEXT-14 (keys 08 already registered but missing from the package default, App hi-fi batch 1, N-06, agent.guide.* and agent.earnings.*); invite.post_login.optional_hint moves to the {backfill_days} wording of 08; keys 08 marks reserved or pending text are not created; specs/fund-term-keys.yaml classifies every new key (unsure ones as fund terms) and its generated file is regenerated; the contracts-ts texts unit test follows the new key set. New keys only, not breaking. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "d79a5e2ba70579e59243ea852d89e00bd0e59a0f",
+    "specs": "de75142dc27f95fe3e3a0731541b650b0cc60fa5"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
