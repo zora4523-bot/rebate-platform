@@ -132,4 +132,96 @@ export const usersTexts = {
     noPhone: '该用户未绑定手机号，没有可查看的号码。',
     failed: '查看失败，请稍后手动重试。',
   },
+  /**
+   * 「上级与直推」区、等级旁【调等级】、【改上级】与直推名单抽屉（design-hifi AdmUserDetail、
+   * AdmUserLevelChange、AdmUserInviterChange / ChangeOk、AdmUserInvitees；F1-07g）。
+   * 契约里没有的绑定方式、绑定时间、直推人数不出现在这里。
+   */
+  relations: {
+    title: '上级与直推',
+    /** 不叫「上级」：那一项属「基本信息」。 */
+    currentInviter: '当前上级',
+    noInviter: '无上级',
+    changeInviter: '改上级',
+    viewInvitees: '查看直推名单',
+    changeLevel: '调等级',
+    /** 二次验证对话框里的对象行。 */
+    stepUpUser: (uid: string): string => `用户 ${uid}`,
+    stepUpAgain: '上一次验证已失效，请重新输入动态码。',
+    reasonLabel: '原因',
+    reasonPlaceholder: '必填，写明依据，如：用户在企业微信提交申请，已核实',
+    reasonExtra: '写明依据；记入操作日志',
+    reasonEmpty: '请填写原因',
+    reasonTooLong: (max: number): string => `原因不能超过 ${max} 字`,
+    cancel: '取消',
+    close: '关闭',
+    submit: '验证并保存',
+    stepUpNote: (permission: string): string => `需动态码二次验证 · 所需权限 ${permission}`,
+    network: '网络异常，保存失败，请稍后手动重试；已填内容已保留。',
+    server: '服务异常，保存失败，请稍后手动重试；已填内容已保留。',
+    forbidden: '当前账号没有这项操作的权限，保存失败。',
+    failed: '保存失败，请稍后手动重试；已填内容已保留。',
+    /** 契约 contracts/texts.default.json error.<code> 原文（BR-TEXT-14）。 */
+    errors: {
+      invalid: '填写内容有误，请检查',
+      inviterUnavailable: '邀请码无效',
+      inviterConflict: '不能绑定该邀请人',
+      inviterLocked: '已有订单、找回申请或邀请记录，不能补填或修改邀请人',
+    },
+    level: {
+      title: (uid: string): string => `调等级 · ${uid}`,
+      operation: '调等级',
+      current: '当前等级',
+      inviter: '上级',
+      label: '新等级',
+      placeholder: '选择新等级',
+      empty: '请选择新等级',
+      /** 20001 [level]：契约原文后补一句本页能给的说明。 */
+      invalid: (contractText: string): string => `${contractText}：不能调到当前等级或已停用的等级`,
+      change: (from: string, to: string): string => `等级 ${from} → ${to}`,
+      note: '只影响之后付款订单的分佣快照（按付款时刻取等级）；已生成的快照不变。本页不显示升降级条件。',
+    },
+    inviter: {
+      title: (uid: string): string => `改上级 · ${uid}`,
+      operation: '改上级',
+      modeSet: '改为新上级',
+      modeRemove: '解绑为无上级',
+      modeRemoveHint: '解绑后用户不再获得自助绑定机会',
+      label: '新上级 UID',
+      placeholder: '输入新上级的 UID',
+      empty: '请填写新上级的 UID',
+      malformed: 'UID 格式不正确，请核对后再填',
+      change: (from: string, to: string): string => `上级 ${from} → ${to}`,
+      removed: '无上级',
+      reasonExtra: '记入上级变更记录与操作日志',
+      note: '不受补填期限与邀请绑定开关约束；成功后用户不能再自助绑定上级；已生成的分佣快照不变（BR-INV-10）。',
+      lockedTitle: (contractText: string): string => `不能改上级：${contractText}（30409）`,
+      lockedDetail: '目标用户须没有直推下级、没有订单（任何状态）、没有找回申请，才能改上级。',
+      lockedNote:
+        '校验顺序固定：权限与二次验证 → 目标用户无下级、无订单、无找回 → 新上级存在且可用（30401）→ 关系冲突（30403）。本用户不满足前置条件，输入区不显示；要纠正归属请走找回审核与人工调账（BR-INV-10）。',
+    },
+    invitees: {
+      title: (uid: string): string => `直推名单 · ${uid}`,
+      summary:
+        '字段：UID、脱敏手机号、昵称、注册时间、等级；不含会员口径字段 · 需 user.lookup 或 user.list',
+      count: (total: number): string => `共 ${total} 人`,
+      total: (total: number): string => `共 ${total} 条`,
+      tableLabel: '直推名单',
+      loading: '正在加载直推名单…',
+      empty: '暂无直推用户',
+      failedTitle: '直推名单加载失败',
+      failedDescription: '网络异常或服务暂不可用，点【重试】重新请求。',
+      retry: '重试',
+      close: '关闭',
+      columns: {
+        uid: 'UID',
+        nickname: '昵称',
+        phone: '手机号',
+        registeredAt: '注册时间',
+        level: '等级',
+      },
+      /** 行操作的读屏名（「查看 <UID>」）。 */
+      open: (uid: string): string => `查看 ${uid}`,
+    },
+  },
 } as const;

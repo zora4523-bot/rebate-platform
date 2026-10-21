@@ -4,7 +4,7 @@
 // full number lives in this view's memory only: leaving the view (or opening another user)
 // drops it, and a late answer for a view that is gone is ignored.
 import type { Schema } from '@couli/contracts-ts';
-import { ArrowLeftOutlined, EyeOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, EyeOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useDataProvider } from '@refinedev/core';
 import {
   Alert,
@@ -23,6 +23,7 @@ import {
 } from 'antd';
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { StepUpModal, type StepUpResult } from '../../components/step-up/index.ts';
+import { createAccessControl, type AccessControl } from '../../providers/access-control/index.ts';
 import { AdminApiError } from '../../providers/data/index.ts';
 import { usersTexts } from '../../texts/users.ts';
 import {
@@ -38,6 +39,7 @@ import {
   type UserDetail,
 } from './model.ts';
 import { ReasonModal } from './ReasonModal.tsx';
+import { LevelChangeDialog, UserRelationsCard } from './relations.ts';
 import { RiskTag } from './RiskTag.tsx';
 
 const t = usersTexts.detail;
@@ -49,6 +51,11 @@ export interface UserDetailViewProps {
   /** The user as the lookup returned it (no second read). */
   readonly initial?: UserDetail | undefined;
   readonly canReveal: boolean;
+  /**
+   * 【调等级】【改上级】【查看直推名单】按权限点显示；不传时（顶栏搜索打开的详情）这些入口都不
+   * 显示，只读展示当前上级。
+   */
+  readonly access?: AccessControl | undefined;
   readonly onBack: () => void;
   readonly onOpenUser: (userId: string) => void;
 }
@@ -66,10 +73,14 @@ interface Reveal {
 
 const IDLE: Reveal = { phase: 'idle', reason: '', again: false };
 
+/** 没有传入权限时：关系区的读写入口一律不显示。 */
+const NO_ACCESS = createAccessControl({ isSuper: false, permissions: [] });
+
 export function UserDetailView({
   userId,
   initial,
   canReveal,
+  access = NO_ACCESS,
   onBack,
   onOpenUser,
 }: UserDetailViewProps): ReactElement {
@@ -248,11 +259,13 @@ export function UserDetailView({
         user={user}
         phone={phone}
         canReveal={canReveal}
+        access={access}
         revealBusy={reveal.phase !== 'idle'}
         revealError={revealError}
         onReveal={startReveal}
         onCloseError={() => setRevealError(undefined)}
         onOpenUser={onOpenUser}
+        onUserChange={setUser}
       />
     );
   }
@@ -291,25 +304,32 @@ interface DetailBodyProps {
   readonly user: UserDetail;
   readonly phone: string | undefined;
   readonly canReveal: boolean;
+  readonly access: AccessControl;
   readonly revealBusy: boolean;
   readonly revealError: string | undefined;
   readonly onReveal: () => void;
   readonly onCloseError: () => void;
   readonly onOpenUser: (userId: string) => void;
+  readonly onUserChange: (user: UserDetail) => void;
 }
 
 function DetailBody({
   user,
   phone,
   canReveal,
+  access,
   revealBusy,
   revealError,
   onReveal,
   onCloseError,
   onOpenUser,
+  onUserChange,
 }: DetailBodyProps): ReactElement {
   const f = t.fields;
   const { token } = theme.useToken();
+  const canChangeLevel = access.can('user.level');
+  const [levelOpen, setLevelOpen] = useState(false);
+  const levelTrigger = useRef<HTMLButtonElement>(null);
   const code = { fontFamily: token.fontFamilyCode } as const;
   const inviter = user.inviter_user_id;
   const phoneValue =
@@ -373,7 +393,27 @@ function DetailBody({
           </Button>
         ),
     },
-    { key: 'level', label: f.level, children: user.level },
+    {
+      key: 'level',
+      label: f.level,
+      children: canChangeLevel ? (
+        <Flex align="center" gap={8} wrap>
+          <span>{user.level}</span>
+          <Button
+            ref={levelTrigger}
+            type="link"
+            size="small"
+            icon={<SafetyOutlined aria-hidden />}
+            style={{ paddingInline: 0 }}
+            onClick={() => setLevelOpen(true)}
+          >
+            {usersTexts.relations.changeLevel}
+          </Button>
+        </Flex>
+      ) : (
+        user.level
+      ),
+    },
     {
       key: 'risk',
       label: f.risk,
@@ -467,6 +507,21 @@ function DetailBody({
           }}
         />
       </Card>
+      <UserRelationsCard
+        user={user}
+        access={access}
+        onOpenUser={onOpenUser}
+        onUserChange={onUserChange}
+      />
+      {canChangeLevel ? (
+        <LevelChangeDialog
+          user={user}
+          open={levelOpen}
+          onClose={() => setLevelOpen(false)}
+          onUserChange={onUserChange}
+          afterClose={() => levelTrigger.current?.focus()}
+        />
+      ) : null}
     </Flex>
   );
 }
