@@ -10,6 +10,8 @@ import { createHash } from 'node:crypto';
 import ajvFormats from 'ajv-formats';
 import type { Schema } from '@couli/contracts-ts';
 import { addFen, parseFen, subFen } from '@couli/money';
+import type { ConfigReport, ConfigValues } from './config-values.ts';
+import { deriveInviteEligibilityDays } from './invite-eligibility.ts';
 
 export type ClientConfig = Schema<'Config'>;
 type PlatformCode = Schema<'PlatformCode'>;
@@ -76,6 +78,8 @@ const OPTIONAL_CONFIG_KEYS = [
   // F1-02zp (BR-INV-24): invite.reward_* is derived from these, never read from same-named keys.
   'growth.invite_reward.enabled',
   'growth.invite_reward.amount_fen',
+  // F1-02zze (BR-INV-24): invite.eligibility_days; never the same-named invite.eligibility_days.
+  'growth.invite_reward.eligibility_days',
   // F1-02zr (L24): delivered only when present and int32 >= 1; written by agreement publishing.
   'legal.agreement.min_version',
 ] as const;
@@ -95,20 +99,13 @@ export const CLIENT_CONFIG_KEYS: readonly string[] = [
 export const H5_BUCKETS = 10_000;
 const INT32_MAX = 2_147_483_647;
 
-/** Values as read: a key that has no config_items row is absent from the map. */
-export type ConfigValues = ReadonlyMap<string, unknown>;
+/** Values as read and the report channel (moved to config-values.ts by F1-02zze; re-exported). */
+export type { ConfigReport, ConfigValues } from './config-values.ts';
 
 export interface ConfigViewer {
   readonly appId: string;
   /** null for a guest. */
   readonly userId: string | null;
-}
-
-export interface ConfigReport {
-  /** A required key is absent or of the wrong shape: the response fails. */
-  missing(key: string): void;
-  /** An optional key has the wrong shape: its default is used. */
-  invalid(key: string): void;
 }
 
 export const INVITE_REWARD_ENABLED_KEY = 'growth.invite_reward.enabled';
@@ -434,6 +431,7 @@ export function buildClientConfig(input: ClientConfigInput): ClientConfig | unde
         availableBudgetFen: input.inviteRewardBudgetFen,
         report,
       }),
+      eligibility_days: deriveInviteEligibilityDays(values, report),
     },
     agent,
     kf: kf ?? { url: '' },

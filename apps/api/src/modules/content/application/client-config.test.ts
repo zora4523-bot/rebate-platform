@@ -264,3 +264,39 @@ it('[AC-F1-02zp] two apps swapping budgets swap results; the version follows', a
   expect(a1.config_version).not.toBe(b1.config_version);
   expect(s.calls).toEqual(['a', 'b', 'a', 'b']);
 });
+
+const DAYS = 'growth.invite_reward.eligibility_days';
+
+it('[AC-F1-02zze] invite.eligibility_days is read with the other keys and moves the version', async () => {
+  const values: Record<string, Record<string, unknown>> = { a: { [DAYS]: 45 } };
+  const s = rewardService(values, new Map());
+  const first = await s.read('a');
+  expect(first.invite).toMatchObject({
+    eligibility_days: 45,
+    reward_enabled: false,
+    reward_amount_fen: 1000,
+  });
+  values['a'] = { [DAYS]: 60 };
+  const second = await s.read('a');
+  expect(second.invite.eligibility_days).toBe(60);
+  expect(second.config_version).not.toBe(first.config_version);
+  expect({
+    ...second,
+    config_version: '',
+    invite: { ...second.invite, eligibility_days: 45 },
+  }).toEqual({ ...first, config_version: '' });
+  expect(s.warns).toEqual([]);
+});
+
+it('[AC-F1-02zze] a malformed eligibility_days still answers 30 with one warning', async () => {
+  const s = rewardService({ a: { [DAYS]: 3651, 'invite.eligibility_days': 7 } }, new Map());
+  const config = await s.read('a');
+  expect(config.invite.eligibility_days).toBe(30);
+  expect(s.warns).toEqual([
+    expect.objectContaining({
+      event: 'content_config_value_invalid',
+      config_key: DAYS,
+      app_id: 'a',
+    }),
+  ]);
+});
