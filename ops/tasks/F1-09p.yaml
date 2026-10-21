@@ -8,13 +8,15 @@ type: impl
 # 要点：到点生效 = 原发布语义（指针切换、版本置 published 经生成的 transition()、publish_at 写计划时刻）；读侧在定时任务没跑之前也按 Clock 判定，避免延迟；
 #   物化任务按至少一次投递写、消费端幂等（重复执行不重复切换）；撤销只清槽位；状态机不加新状态。同事务审计 page_publish_schedule / page_schedule_cancel。
 # app.module.ts 只为注册队列；去掉对应操作的 planned，同 PR 重生成生成物；契约槽：改 openapi.yaml 前在 couli-runs/B3-lane/notices.md 认领。
+# 2026-10-21 更正（编排 2026-10-20 02:1x 裁定 P2 / P13）：新增 content 定时队列（platform/queue/catalog.ts 登记，worker 消费），冻结队列契约测试先由 test-change F1-09q 过渡；契约实名 adminPublishPageConfig / adminCancelPageConfigSchedule。
 # 用到的默认：D8。TECH-29 自动回滚不在本任务（R10）。
 refs: []
 refs_hash: {}
-deps: [CT-02y, F1-09n]
+deps: [CT-02y, F1-09n, F1-09q]
 paths:
   - 'apps/api/src/modules/content/**'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
