@@ -99,3 +99,33 @@ it('[AC-F1-09r#9] 只读取 Uint8Array 视图范围，摘要不含前后缓冲�
     durationMs: 2400,
   });
 });
+
+it.each(['', 'images/'])(
+  '[AC-F1-09r#30] 内嵌图片 p 为 data URI 时 u=%j 不影响接收',
+  (u) => {
+    const input = lottie({
+      assets: [{ u, p: `data:image/png;base64,${PNG.toString('base64')}` }],
+    });
+    expect(inspectPopupAsset('lottie', input)).toMatchObject({
+      ok: true,
+      durationMs: 2400,
+      sha256: digest(input),
+    });
+  },
+);
+
+it.each([
+  { name: '恰为 3 秒', op: 40_000 },
+  { name: '2.9996 秒四舍五入为 3000 ms', op: 39_996 },
+])('[AC-F1-09r#31] $name 通过，先判精确时长再四舍五入', ({ op }) => {
+  expect(inspectPopupAsset('lottie', lottie({ fr: 10_000, ip: 10_000, op }))).toMatchObject({
+    ok: true,
+    durationMs: 3000,
+  });
+});
+
+it('[AC-F1-09r#32] 3.0004 秒即使四舍五入为 3000 ms 仍拒收 too_long', () => {
+  expect(
+    inspectPopupAsset('lottie', lottie({ fr: 10_000, ip: 10_000, op: 40_004 })),
+  ).toEqual({ ok: false, reason: 'too_long' });
+});

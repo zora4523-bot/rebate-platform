@@ -182,3 +182,30 @@ it('[AC-F1-09r#17] 媒体 put 不可用返回 50001，不生成页面或成功�
     put.mockRestore();
   }
 });
+
+it('[AC-F1-09r#33] 500000 字节 PNG 超过 Lottie 限额但仍上传成功', async () => {
+  const f = await setup(h);
+  const bytes = Buffer.concat([PNG, Buffer.alloc(500_000 - PNG.length)]);
+  const sha256 = digest(bytes);
+  expect(
+    await success(await upload(f, bytes, { kind: 'image', filename: 'popup.png' })),
+  ).toEqual({ url: `${MEDIA_BASE}${sha256}.png`, sha256, bytes: 500_000 });
+  expect(Buffer.from(f.media.get(sha256)!)).toEqual(bytes);
+});
+
+it('[AC-F1-09r#34] 1000001 字节 PNG 在全局请求上限内按文件 too_large 拒收', async () => {
+  const f = await setup(h);
+  const bytes = Buffer.concat([PNG, Buffer.alloc(1_000_001 - PNG.length)]);
+  const before = await snapshot(h, f.appId);
+  const put = vi.spyOn(f.media, 'put');
+  try {
+    await rejected(await upload(f, bytes, { kind: 'image', filename: 'popup.png' }), 20001, {
+      fields: ['file'],
+      reason: 'too_large',
+    });
+    expect(put).not.toHaveBeenCalled();
+    expect(await snapshot(h, f.appId)).toEqual(before);
+  } finally {
+    put.mockRestore();
+  }
+});
