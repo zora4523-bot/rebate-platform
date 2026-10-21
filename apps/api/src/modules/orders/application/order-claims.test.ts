@@ -25,6 +25,7 @@ import {
   type ClaimRequest,
   type OrderClaimDeps,
 } from './order-claims.ts';
+import { orderLockKeyText } from '../infra/order-lock.ts';
 
 const subject = { app_id: 'claims_unit', user_id: '019c0000-0000-7000-8000-000000000001' };
 const COUNTER = `claim:${subject.app_id}:${subject.user_id}:20280115`;
@@ -172,3 +173,117 @@ it.each(['2028-02-30T00:00:00.000Z', '2027-02-29T00:00:00.000Z', '2028-01-15T24:
     });
   },
 );
+
+/** Parent number P matches; the re-read under the order locks answers `reread` (B1-10k r2). */
+function lockingDb(first: readonly object[], reread: readonly object[]) {
+  const log: { sql: string; parameters: readonly unknown[] }[] = [];
+  let parentReads = 0;
+  class LockingDriver extends DummyDriver {
+    override acquireConnection(): Promise<DatabaseConnection> {
+      return Promise.resolve({
+        executeQuery<R>(compiled: {
+          sql: string;
+          parameters: readonly unknown[];
+        }): Promise<QueryResult<R>> {
+          log.push({ sql: compiled.sql, parameters: compiled.parameters });
+          if (compiled.sql.includes('count(*)') && compiled.sql.includes('"app"."claims"')) {
+            return Promise.resolve({ rows: [{ n: 0 }] as R[] });
+          }
+          if (compiled.sql.includes('"app"."orders"') && compiled.sql.includes('parent_order_id')) {
+            parentReads += 1;
+            return Promise.resolve({ rows: (parentReads === 1 ? first : reread) as R[] });
+          }
+          return Promise.resolve({ rows: [] });
+        },
+        streamQuery() {
+          throw new Error('not used');
+        },
+      });
+    }
+  }
+  const db = new Kysely<DB>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => new LockingDriver(),
+      createIntrospector: (kysely) => new PostgresIntrospector(kysely),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+  });
+  return { db, log };
+}
+
+function child(sub_order_id: string, user_id: string | null) {
+  return {
+    order_id: `order-${sub_order_id}`,
+    sub_order_id,
+    buy_type: null,
+    user_id,
+    rebate_status: 'PENDING',
+    locked: false,
+    attr_at: new Date('2028-01-15T02:00:00.000Z'),
+    product_key: null,
+    shop_id: null,
+    raw_item_id: 'item-1',
+  };
+}
+
+it('[AC-B1-10k#36] 受理对匹配到的子订单按键升序取订单锁，锁内重读归属再判定；首读后才出现的子订单不纳入', async () => {
+  const other = '019c0000-0000-7000-8000-0000000000ff';
+  // First read: both children unattributed. Under the locks a review has meanwhile attributed
+  // them to another user, and a child S-0 (already the applicant's) has appeared unlocked.
+  const { db, log } = lockingDb(
+    [child('S-2', null), child('S-1', null)],
+    [child('S-0', subject.user_id), child('S-1', other), child('S-2', other)],
+  );
+  const s = setup(0);
+  const deps: OrderClaimDeps = {
+    db,
+    redis: s.redis.handle,
+    clock: new FixedClock('2028-01-15T04:00:00.000Z'),
+    config: {
+      appVersion: async () => null,
+      minSupportedVersion: async () => null,
+      configValue: async () => null,
+    },
+    logger: { child: () => ({ info: vi.fn(), warn: vi.fn() }) } as unknown as RootLogger,
+  };
+  // S-0 left out: the answer is S-1's 30204 (attributed under the lock), not ALREADY_YOURS.
+  expect(await createOrderClaim(deps, subject, { ...input, order_no: 'P' })).toEqual({
+    code: 30204,
+  });
+  const locks = log
+    .map((entry, index) => ({ ...entry, index }))
+    .filter((entry) => entry.sql.includes('pg_advisory_xact_lock'));
+  expect(locks.map((entry) => entry.parameters[0])).toEqual([
+    `orders.claim_user:${subject.app_id}:${subject.user_id}`,
+    orderLockKeyText('jd', 'S-1'),
+    orderLockKeyText('jd', 'S-2'),
+  ]);
+  const parentReads = log
+    .map((entry, index) => ({ ...entry, index }))
+    .filter(
+      (entry) => entry.sql.includes('"app"."orders"') && entry.sql.includes('parent_order_id'),
+    )
+    .map((entry) => entry.index);
+  expect(parentReads).toHaveLength(2);
+  expect(parentReads[0]!).toBeLessThan(locks[1]!.index);
+  expect(parentReads[1]!).toBeGreaterThan(locks[2]!.index);
+});
+
+it('[AC-B1-10k#37] 单号一个订单也没匹配到时不取订单锁（30201）', async () => {
+  const { db, log } = lockingDb([], []);
+  const s = setup(0);
+  const deps: OrderClaimDeps = {
+    db,
+    redis: s.redis.handle,
+    clock: new FixedClock('2028-01-15T04:00:00.000Z'),
+    config: {
+      appVersion: async () => null,
+      minSupportedVersion: async () => null,
+      configValue: async () => null,
+    },
+    logger: { child: () => ({ info: vi.fn(), warn: vi.fn() }) } as unknown as RootLogger,
+  };
+  expect(await createOrderClaim(deps, subject, input)).toEqual({ code: 30201 });
+  expect(log.filter((entry) => entry.sql.includes('pg_advisory_xact_lock'))).toHaveLength(1);
+});

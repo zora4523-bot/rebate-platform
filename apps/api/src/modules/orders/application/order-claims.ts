@@ -14,7 +14,8 @@
 //   ② claims created today (PG, +08:00 day, any status) ≥ 5 → 30203 without data, not counted;
 //   ③ match in the token's app and the request platform: child number first, then parent number
 //      (null parents never), share orders (buy_type=share) removed from both before deciding;
-//      nothing left → 30201 (no data);
+//      nothing left → 30201 (no data); B1-10k r2: then each matched child's lockOrderKey (key
+//      ascending) and the same match re-read under those locks (lockClaimOrders);
 //   ④ each remaining child by sub_order_id ascending, a→f (domain/claim-rules.ts); nobody passes →
 //      the first child's error.
 // A request ending with a ③ or ④ code adds one failure (INCR + EXPIRE to the next 00:00 +08:00)
@@ -71,7 +72,7 @@ import {
   underClaimSavepoint,
   type ClaimOrderRow,
 } from '../infra/claim-store.ts';
-import { lockClaimUser } from '../infra/order-lock.ts';
+import { lockClaimUser, lockOrderKey, orderLockKeyText } from '../infra/order-lock.ts';
 import type { OrderSubject } from './order-queries.ts';
 import {
   readClaimEvidenceWindow,
@@ -165,6 +166,43 @@ async function matchClaimOrders(
     if (children.length > 0) return { kind, children, removed };
   }
   return { kind: null, children: [], removed };
+}
+
+/**
+ * B1-10k r2（Codex 资金评审 r1 S1，BR-ATTR-30）：③ 找到的每个子订单，按订单锁键升序取同步流水线与找回审核
+ * 共用的 lockOrderKey，锁内重读订单再交 ④ 判定。审核通过持同一把锁时受理在此等待，审核提交后重读到的已是
+ * 已归属订单，按 ④ 拒绝；受理持锁期间插入的待审子项，审核取锁后查 siblings 时必定看得见。锁顺序：受理先用户锁
+ * 后订单锁（多个时按键升序），审核、同步与快照重试都只取一把订单锁且不取用户锁，不会交叉死锁。
+ * 重读只按首次匹配的方式（子单号或父单号）、只保留已上锁的子订单：首读与取锁之间才出现的子订单视为本次受理之后
+ * 到达，不再追加取锁（追加的锁会打乱升序）。
+ */
+async function lockClaimOrders(
+  trx: Parameters<typeof findClaimOrders>[0],
+  appId: string,
+  platform: string,
+  orderNo: string,
+  first: Matched,
+): Promise<Matched> {
+  if (first.kind === null) return first;
+  const keys = new Map<string, string>();
+  for (const row of first.children) {
+    keys.set(orderLockKeyText(platform, row.sub_order_id), row.sub_order_id);
+  }
+  for (const key of [...keys.keys()].sort()) {
+    await lockOrderKey(trx, platform, keys.get(key)!);
+  }
+  const lockedIds = new Set(keys.values());
+  const rows = await findClaimOrders(
+    trx,
+    appId,
+    platform,
+    claimCompareValue(platform, orderNo),
+    first.kind,
+  );
+  const children = rows.filter(
+    (row) => row.buy_type !== 'share' && lockedIds.has(row.sub_order_id),
+  );
+  return { kind: children.length > 0 ? first.kind : null, children, removed: first.removed };
 }
 
 /**
@@ -268,7 +306,13 @@ async function submitClaim(
     if ((await countClaimsOn(trx, subject, accountingDate(now))) >= CLAIM_DAILY_LIMIT) {
       return { code: 30203 };
     }
-    matched = await matchClaimOrders(trx, appId, input.platform, orderNo);
+    matched = await lockClaimOrders(
+      trx,
+      appId,
+      input.platform,
+      orderNo,
+      await matchClaimOrders(trx, appId, input.platform, orderNo),
+    );
     if (matched.kind === null) return failed(now, failureOf({ code: 30201 }));
     const children = matched.children;
     const judgement = judgeClaimChildren(children, {
