@@ -26,6 +26,8 @@ export const requireApi = createRequire(new URL('apps/api/package.json', ROOT));
 export function snapshot(overrides: Partial<LandingLink> = {}): LandingLink {
   return {
     link_id: LINK,
+    // links.lk (B1-08s) is nullable; a link without a short code (mechanical fixture fix, D10-88).
+    lk: null,
     app_id: APP,
     user_id: OWNER,
     device_id: DEVICE,

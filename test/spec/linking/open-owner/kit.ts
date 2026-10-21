@@ -88,11 +88,16 @@ export async function unknownPriceLink(db: Kysely<DB>) {
 /** Synthetic PDD direct-link card: no product information or quote snapshot. */
 export async function unknownPricePddLink(db: Kysely<DB>) {
   const original = await sourceLink(db, { scene: 'clipboard' }, {}, 'pdd');
+  // The copy leaves out lk: a link's short code is unique per app (B1-08s), so the copied row
+  // takes the column default instead of reusing it (mechanical fixture fix, D10-88).
+  const copied = Object.fromEntries(
+    Object.entries(original).filter(([column]) => column !== 'lk'),
+  ) as typeof original;
   const linkId = newUuidV7(new Date(START));
   await db
     .insertInto('links')
     .values({
-      ...original,
+      ...copied,
       link_id: linkId,
       product_key: null,
       raw_item_id: null,

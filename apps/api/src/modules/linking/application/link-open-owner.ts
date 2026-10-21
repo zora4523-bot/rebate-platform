@@ -35,6 +35,7 @@ import type { Caller } from '../ports.ts';
 import {
   attrCodeOf,
   insertLinkRow,
+  linkCodeIssue,
   resolveSnapshot,
   snapshotJson,
   type IdentitySnapshot,
@@ -42,7 +43,7 @@ import {
 } from './link-registration.ts';
 
 /** B1-06d: ownership stage only; registration uses the existing B1-06c dependencies. */
-export type LinkOpenOwnerOptions = Omit<LinkingOptions, 'context'>;
+export type LinkOpenOwnerOptions = Omit<LinkingOptions, 'context' | 'logger'>;
 
 type LinkRow = Selectable<DB['links']>;
 
@@ -133,7 +134,7 @@ function storedScene(link: LinkRow): Scene {
 }
 
 export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwnerService {
-  const { db, clock, callerContext, attrCodes, pids } = options;
+  const { db, clock, callerContext, attrCodes, config, pids } = options;
 
   async function load(
     executor: Kysely<DB>,
@@ -196,27 +197,37 @@ export function createLinkOpenOwner(options: LinkOpenOwnerOptions): LinkOpenOwne
       scene,
       agentSessionId: null,
     });
+    // B1-08s (BR-ATTR-15): a new link gets its own lk; the original's code is never copied.
+    const issue = await linkCodeIssue(
+      config,
+      { appId: caller.appId, platform, userId: caller.userId },
+      options,
+    );
     const now = clock.now();
-    const row = await insertLinkRow(executor, {
-      now,
-      caller,
-      linkId: newUuidV7(now),
-      snapshot,
-      values: {
-        platform,
-        productKey: original.product_key,
-        rawItemId: original.raw_item_id,
-        rawFetchedAt: original.raw_fetched_at,
-        scene,
-        subScene: scene === original.scene ? original.sub_scene : null,
-        entrySource: original.entry_source,
-        quotedFinalPriceFen: original.quoted_final_price_fen,
-        quotedCouponFen: original.quoted_coupon_fen,
-        quotedCouponId: original.quoted_coupon_id,
-        quotedAt: original.quoted_at,
-        agentCardId: null,
+    const row = await insertLinkRow(
+      executor,
+      {
+        now,
+        caller,
+        linkId: newUuidV7(now),
+        snapshot,
+        values: {
+          platform,
+          productKey: original.product_key,
+          rawItemId: original.raw_item_id,
+          rawFetchedAt: original.raw_fetched_at,
+          scene,
+          subScene: scene === original.scene ? original.sub_scene : null,
+          entrySource: original.entry_source,
+          quotedFinalPriceFen: original.quoted_final_price_fen,
+          quotedCouponFen: original.quoted_coupon_fen,
+          quotedCouponId: original.quoted_coupon_id,
+          quotedAt: original.quoted_at,
+          agentCardId: null,
+        },
       },
-    });
+      issue,
+    );
     return { link: row, snapshot };
   }
 

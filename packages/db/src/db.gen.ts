@@ -781,6 +781,7 @@ export interface Links {
   expire_at: Timestamp;
   identity_snapshot: Json | null;
   link_id: string;
+  lk: string | null;
   pid: string | null;
   pid_scene: string | null;
   platform: string;

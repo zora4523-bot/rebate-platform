@@ -56,6 +56,8 @@ export function owner(platform: 'jd' | 'pdd' | 'taobao' = 'jd'): LinkOpenOwnerRe
       created_at: new Date(START),
       updated_at: new Date(START),
       row_version: 0,
+      // links.lk (B1-08s) is nullable; a link without a short code (mechanical fixture fix, D10-88).
+      lk: null,
     },
     new_link_id: null,
     old_final_price_fen: '2990',

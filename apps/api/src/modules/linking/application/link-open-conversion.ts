@@ -28,7 +28,8 @@ import {
   isSwitchOn,
 } from '../domain/rules.ts';
 import type { AttrCodeReader, Caller, CallerContext, LinkingConfigReader } from '../ports.ts';
-import { attrCodeOf } from './link-registration.ts';
+import { storedLinkCode } from '../infra/link-code.ts';
+import { attrCodeOf, clickCodeOn } from './link-registration.ts';
 import type { LinkOpenOwnerResult } from './link-open-owner.ts';
 import {
   openScopedAttrCodes,
@@ -145,7 +146,7 @@ export class LinkingUnionIdentity extends UnionIdentity implements JdPddIdentity
     /** The attribution key the adapter sees as its user claim: attr_code, never a user_id. */
     readonly userKey: string;
     readonly subUnionId?: string;
-    readonly customParameters?: Readonly<{ app: 'n'; uid?: string; sc: string }>;
+    readonly customParameters?: Readonly<{ app: 'n'; uid?: string; sc: string; lk?: string }>;
   }) {
     super({
       appId: input.appId,
@@ -294,12 +295,31 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
     return `${client}:${installed}`;
   }
 
+  /**
+   * B1-08s: the lk a non-no_rebate conversion of this link carries — the link's own stored code
+   * (or, for an open's renewed snapshot, the new link's code: input.linkCode),
+   * only for jd / pdd while attr.click_code.<platform> is JSON true (read through the open's
+   * pre-read inside an open); null otherwise.
+   */
+  async function injectedLinkCode(
+    owner: LinkOpenOwnerResult,
+    renewedCode: string | null | undefined,
+  ): Promise<string | null> {
+    const { link } = owner;
+    const platform = link.platform;
+    const lk = renewedCode !== undefined ? renewedCode : storedLinkCode(link);
+    if (lk === null || (platform !== 'jd' && platform !== 'pdd')) return null;
+    const value = await config.configValue(link.app_id, CLICK_CODE[platform]);
+    return clickCodeOn(value?.value) ? lk : null;
+  }
+
   async function identityFor(
     owner: LinkOpenOwnerResult,
     platform: 'jd' | 'pdd',
     noRebate: boolean,
     traceId: string,
     unionAccountId: string | undefined,
+    renewedCode?: string | null,
   ): Promise<LinkingUnionIdentity> {
     const { link, identitySnapshot } = owner;
     const appId = link.app_id;
@@ -354,27 +374,26 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
         throw paused('linking: jd user key mode not served');
       }
     }
-    if (await switchOn(appId, CLICK_CODE[platform])) {
-      // TODO(规划/11 §4.5): 点击码 lk（BR-ATTR-15） — blocked on B1-06 点击码任务。
-      logger.warn(
-        { event: 'linking.open.click_code_unserved', app_id: appId, platform },
-        'linking: click code switch on but not served; converting without lk',
-      );
-    }
+    // B1-08s (BR-ATTR-15, BR-ATTR-06): the lk of this conversion's link, while the switch is JSON
+    // true now; otherwise byte for byte the identity without it.
+    const lk = await injectedLinkCode(owner, renewedCode);
     return platform === 'jd'
       ? new LinkingUnionIdentity({
           appId,
           platform,
           promotionSlot: row.pid,
           userKey: attrCode,
-          subUnionId: `n_${attrCode}`,
+          subUnionId: lk === null ? `n_${attrCode}` : `n_${attrCode}_${lk}`,
         })
       : new LinkingUnionIdentity({
           appId,
           platform,
           promotionSlot: row.pid,
           userKey: attrCode,
-          customParameters: { app: 'n', uid: attrCode, sc: pidScene },
+          customParameters:
+            lk === null
+              ? { app: 'n', uid: attrCode, sc: pidScene }
+              : { app: 'n', uid: attrCode, sc: pidScene, lk },
         });
   }
 
@@ -391,6 +410,7 @@ export function createLinkOpenConversion(options: LinkConversionOptions): LinkCo
       noRebate,
       input.traceId,
       input.unionAccountId,
+      input.linkCode,
     );
     let noRebateUrl = '';
     try {

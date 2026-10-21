@@ -2591,7 +2591,9 @@ CREATE TABLE app.links (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     promo_url text,
-    promo_url_fetched_at timestamp with time zone
+    promo_url_fetched_at timestamp with time zone,
+    lk text,
+    CONSTRAINT links_lk_check CHECK ((lk ~ '^[0-9a-z]{1,16}$'::text))
 );
 
 
@@ -4990,6 +4992,14 @@ ALTER TABLE ONLY app.link_open_attempts
 
 ALTER TABLE ONLY app.links
     ADD CONSTRAINT links_app_id_link_id_key UNIQUE (app_id, link_id);
+
+
+--
+-- Name: links links_app_id_lk_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.links
+    ADD CONSTRAINT links_app_id_lk_key UNIQUE (app_id, lk);
 
 
 --

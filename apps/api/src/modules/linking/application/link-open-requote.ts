@@ -16,7 +16,8 @@
 //   link's identity snapshot and scene (a share link keeps the sharer, BR-PRICE-12 2026-10-07);
 //   the row is written in the open's transaction with the log and attempt, and never when the
 //   snapshot is unchanged or the conversion fails. A share link opened by anyone but the sharer
-//   shows no rebate (BR-ATTR-10).
+//   shows no rebate (BR-ATTR-10). B1-08s: the row is written right after its conversion; the
+//   answered jump carries exactly the lk the row was stored with (converted again otherwise).
 // - off-shelf 30141 > coupon_gone > price_changed; taolijin claimed out 30602; anomalies,
 //   price_unavailable, fetch or assembly failures → the requote-failed branch: the identity's
 //   conversion cache (≤ link.convert_cache_ttl_sec, at most 900 s) with requote_failed, else 50303.
@@ -78,12 +79,19 @@ import {
   quoteSnapshotChanged,
 } from '../domain/rules.ts';
 import { hasUnresolvedBindingConflict } from '../infra/binding-conflicts.ts';
+import { storedLinkCode } from '../infra/link-code.ts';
 import type { Caller } from '../ports.ts';
 import type { Platform, UnionItem } from '../../union/index.ts';
 import {
   attrCodeOf,
+  clickCodeKey,
+  clickCodeOn,
   insertConvertLink,
+  drawFreeLinkCode,
   insertPendingOpenLink,
+  linkCodeIssue,
+  type DrawnLinkCode,
+  type LinkCodeIssue,
   resolveSnapshot,
   openRegistrationScope,
   type IdentitySnapshot,
@@ -126,6 +134,11 @@ export interface LinkOpenCacheKey {
   readonly noRebate: boolean;
   /** The jump-plan variant (client × installed) when the conversion port names one. */
   readonly variant?: string;
+  /**
+   * B1-08s: the lk the conversion injects (BR-ATTR-15); absent — not even undefined — when none is
+   * injected, so such a key is exactly the key before lk existed.
+   */
+  readonly linkCode?: string;
 }
 
 export interface LinkOpenCachedJump {
@@ -149,6 +162,11 @@ export interface LinkOpenConversionInput {
   readonly client: LinkOpenRequoteInput['client'];
   readonly idempotencyKey: string;
   readonly traceId: string;
+  /**
+   * B1-08s (BR-ATTR-15): the lk of the link this conversion answers for when that is not
+   * owner.link — an open's renewed snapshot (null: the new link has none). Absent: owner.link's lk.
+   */
+  readonly linkCode?: string | null;
   /**
    * B1-19d (BR-ATTR-07, BR-ID-17): the union account this open's authorization settled on (set
    * by the Pinduoduo composition); the conversion then reads only that account's active slot.
@@ -430,10 +448,11 @@ interface Flight {
 
 interface Settled {
   readonly code: number;
-  /** The link the log and attempt are written for. */
+  /**
+   * The link the log and attempt are written for. A renewed snapshot's link is already written
+   * in the open's transaction (B1-08s: before the answer, so its jump carries the stored lk).
+   */
   readonly linkId: string;
-  /** Present when linkId is a renewed snapshot not yet written; it commits with the log. */
-  readonly card?: Extract<CardConclusion, { kind: 'card' }>;
   readonly quotedPriceFen: bigint | null;
   readonly cacheHit: boolean;
   readonly data: Omit<LinkOpenRequoteResult, 'attempt_id'> | null;
@@ -525,6 +544,12 @@ function effectiveNoRebate(caller: Caller, owner: LinkOpenOwnerResult, requested
   return requested === true && !sharedByOther;
 }
 
+/**
+ * B1-08s: the lk pre-drawn for each pending renewed link (shared by the opens of one flight);
+ * null when the link gets none.
+ */
+const PENDING_LINK_CODES = new WeakMap<PendingOpenLink, Promise<DrawnLinkCode | null>>();
+
 function openerKey(caller: Caller): string {
   return caller.userId !== null ? `u:${caller.userId}` : `d:${caller.deviceId ?? ''}`;
 }
@@ -552,10 +577,99 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     return conversion.variant?.({ client: input.client, installed: input.installed ?? 'unknown' });
   }
 
-  function cacheKeyOf(owner: LinkOpenOwnerResult, input: LinkOpenRequoteInput): LinkOpenCacheKey {
+  /**
+   * B1-08s: the lk this open's conversion injects — as link-open-conversion.ts decides it: jd /
+   * pdd, not no_rebate (input.noRebate is already effective here), the link's stored lk, and
+   * attr.click_code.<platform> JSON true (pre-read before the transaction). Null otherwise.
+   */
+  async function linkCodeOf(
+    owner: LinkOpenOwnerResult,
+    input: LinkOpenRequoteInput,
+    renewedCode: string | null | undefined,
+  ): Promise<string | null> {
+    const { link } = owner;
+    const platform = link.platform;
+    const lk = renewedCode !== undefined ? renewedCode : storedLinkCode(link);
+    if (input.noRebate === true || lk === null) return null;
+    if (platform !== 'jd' && platform !== 'pdd') return null;
+    const value = await config.configValue(link.app_id, clickCodeKey(platform));
+    return clickCodeOn(value?.value) ? lk : null;
+  }
+
+  /** B1-08s: how a renewed snapshot's link draws its lk; null when it gets none. */
+  function pendingIssue(pending: PendingOpenLink): Promise<LinkCodeIssue | null> {
+    return linkCodeIssue(
+      config,
+      {
+        appId: pending.caller.appId,
+        platform: pending.values.platform,
+        userId: pending.snapshot.user_id,
+      },
+      options,
+    );
+  }
+
+  /**
+   * B1-08s: the lk a renewed snapshot's link is converted with first, drawn (and checked free)
+   * once per pending link however many opens of the flight answer with it (they share the card).
+   * Only a candidate: writeRenewedLink settles the stored code and the jump follows it.
+   */
+  function renewedLinkCode(
+    pending: PendingOpenLink,
+    executor: Kysely<DB>,
+  ): Promise<DrawnLinkCode | null> {
+    let code = PENDING_LINK_CODES.get(pending);
+    if (code === undefined) {
+      code = pendingIssue(pending).then((issue) =>
+        issue === null
+          ? null
+          : drawFreeLinkCode(
+              executor,
+              { appId: pending.caller.appId, platform: pending.values.platform },
+              issue,
+            ),
+      );
+      PENDING_LINK_CODES.set(pending, code);
+    }
+    return code;
+  }
+
+  /**
+   * B1-08s (BR-ATTR-15): writes an open's renewed link in the open's transaction, its lk settled
+   * by the (app_id, lk) unique key — the pre-drawn code, a redraw after a collision since (another
+   * link took it between the draw and this insert), NULL after 4 (alerted), or the code an earlier
+   * open of the flight wrote the link with — and answers with a jump whose code is exactly that
+   * lk: when it is not the code `converted` carries, the open converts again with the stored one
+   * (its own cache key); a failure of that conversion fails the open (nothing is committed). A
+   * jump carrying any other code is never answered.
+   */
+  async function writeRenewedLink(
+    flight: Flight,
+    owner: LinkOpenOwnerResult,
+    input: LinkOpenRequoteInput,
+    item: AssembleCardInput['item'],
+    pending: PendingOpenLink,
+    drawn: DrawnLinkCode | null,
+    converted: Extract<Converted, { kind: 'ok' }>,
+    executor: Kysely<DB>,
+  ): Promise<Converted> {
+    const issue = drawn === null ? null : await pendingIssue(pending);
+    const written = await insertPendingOpenLink(executor, pending, issue, drawn ?? undefined);
+    const carried = await linkCodeOf(owner, input, drawn?.code ?? null);
+    const stored = await linkCodeOf(owner, input, written.lk);
+    if (stored === carried) return converted;
+    return sharedConversion(flight, owner, input, item, written.lk);
+  }
+
+  async function cacheKeyOf(
+    owner: LinkOpenOwnerResult,
+    input: LinkOpenRequoteInput,
+    renewedCode?: string | null,
+  ): Promise<LinkOpenCacheKey> {
     const { link, identitySnapshot } = owner;
     const noRebate = input.noRebate === true;
     const variant = variantOf(input);
+    const linkCode = await linkCodeOf(owner, input, renewedCode);
     return {
       appId: link.app_id,
       userId: identitySnapshot.user_id,
@@ -566,6 +680,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       pidScene: identitySnapshot.pid_scene,
       noRebate,
       ...(variant === undefined ? {} : { variant }),
+      ...(linkCode === null ? {} : { linkCode }),
     };
   }
 
@@ -610,9 +725,10 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
     item: AssembleCardInput['item'] | undefined,
+    renewedCode?: string | null,
   ): Promise<Converted> {
     const noRebate = input.noRebate === true;
-    const key = cacheKeyOf(owner, input);
+    const key = await cacheKeyOf(owner, input, renewedCode);
     const tag = cacheTagOf(owner, input);
     const hit = await cached(owner.link.app_id, key, tag);
     if (hit !== null) return { kind: 'ok', jump: hit, cacheHit: true };
@@ -626,6 +742,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
         client: input.client,
         idempotencyKey: input.idempotencyKey,
         traceId: input.traceId,
+        ...(renewedCode === undefined ? {} : { linkCode: renewedCode }),
       });
     } catch (error) {
       return conversionFailure(error);
@@ -729,8 +846,9 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
     item?: AssembleCardInput['item'],
+    renewedCode?: string | null,
   ): Promise<Converted> {
-    const key = flightName(cacheKeyOf(owner, input), cacheTagOf(owner, input));
+    const key = flightName(await cacheKeyOf(owner, input, renewedCode), cacheTagOf(owner, input));
     const pending = flight.conversions.get(key);
     if (pending !== undefined) {
       const shared = await pending;
@@ -738,9 +856,9 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       // flight's price conclusion stays).
       if (shared.kind !== 'ok' || jumpUsable(shared.jump, clock.now().getTime())) return shared;
       if (flight.conversions.get(key) !== pending)
-        return sharedConversion(flight, owner, input, item);
+        return sharedConversion(flight, owner, input, item, renewedCode);
     }
-    const fresh = convertFor(owner, input, item);
+    const fresh = convertFor(owner, input, item, renewedCode);
     flight.conversions.set(key, fresh);
     return fresh;
   }
@@ -801,7 +919,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     if (input.noRebate === true) return noRebateAfterFailedRequote(flight, owner, input, item);
     // One lookup per identity key and window: a first 50303 is not turned into a cached jump by
     // a conversion another open stored meanwhile; a reused jump still has to be usable now.
-    const key = cacheKeyOf(owner, input);
+    const key = await cacheKeyOf(owner, input);
     const tag = cacheTagOf(owner, input);
     const name = flightName(key, tag);
     let lookup = flight.fallbacks.get(name);
@@ -943,7 +1061,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       reason = decided.noRebateReason;
     }
     reason = await serverNoRebateReason(caller, owner, input, executor, reason);
-    const settled = await settleAuthorized(caller, owner, input, nowMs);
+    const settled = await settleAuthorized(caller, owner, input, nowMs, executor);
     return reason === undefined ? settled : { ...settled, noRebateReason: reason };
   }
 
@@ -952,6 +1070,7 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     owner: LinkOpenOwnerResult,
     input: LinkOpenRequoteInput,
     nowMs: number,
+    executor: Kysely<DB>,
   ): Promise<Settled> {
     const flight = flightFor(owner, input.linkId, nowMs);
     const link: LinkRow = owner.link;
@@ -1057,10 +1176,29 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     // BR-PRICE-08: a no_rebate purchase never writes a quote snapshot, so it never renews.
     const renewed = input.noRebate !== true && quoteSnapshotChanged(snapshot, current);
 
-    const converted = await sharedConversion(flight, owner, input, price.input.item);
+    // B1-08s: a renewed snapshot converts for its new link, so it carries that link's own lk
+    // (pre-drawn now); never the opened link's code. The link is then written and the jump made
+    // to carry the code it was stored with (writeRenewedLink).
+    const pending = renewed ? card.pending : null;
+    const drawn = pending === null ? undefined : await renewedLinkCode(pending, executor);
+    const renewedCode = drawn === undefined ? undefined : (drawn?.code ?? null);
+    let converted = await sharedConversion(flight, owner, input, price.input.item, renewedCode);
     const fallback =
       converted.kind === 'failed' ? await conversionFallback(converted, owner, input) : null;
     if (converted.kind === 'failed' && fallback === null) return failure(converted.code, owner);
+    if (pending !== null && drawn !== undefined && converted.kind === 'ok') {
+      converted = await writeRenewedLink(
+        flight,
+        owner,
+        input,
+        price.input.item,
+        pending,
+        drawn,
+        converted,
+        executor,
+      );
+      if (converted.kind === 'failed') return failure(converted.code, owner);
+    }
     const effective = renewed ? card.linkId : link.link_id;
     const rebates =
       input.noRebate === true
@@ -1069,7 +1207,6 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     return {
       code: 0,
       linkId: effective,
-      ...(renewed && card.pending !== null ? { card } : {}),
       quotedPriceFen: renewed ? card.finalFen : link.quoted_final_price_fen,
       cacheHit: converted.kind === 'ok' && converted.cacheHit,
       data: {
@@ -1089,8 +1226,9 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
   }
 
   /**
-   * BR-ATTR-14 open log, and on success the renewed link and the attempt, through `executor`:
-   * the open's transaction for a stored result, the db handle for the log of one that is not.
+   * BR-ATTR-14 open log, and on success the attempt, through `executor`: the open's transaction
+   * for a stored result, the db handle for the log of one that is not. (A renewed snapshot's link
+   * is written before, in settleAuthorized, so the answered jump carries its stored lk; B1-08s.)
    * B1-06i: a convert writes its own event (event=convert, with the request's spm) instead of
    * open; logLinkId null is the log of a convert whose registered link was rolled back.
    */
@@ -1107,8 +1245,6 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     const now = clock.now();
     const { link, identitySnapshot } = subject;
     const attemptId = settled.code === 0 ? newUuidV7(now) : null;
-    const card = settled.code === 0 ? settled.card : undefined;
-    if (card?.pending != null) await insertPendingOpenLink(executor, card.pending);
     await executor
       .insertInto('link_logs')
       .values({
@@ -1279,6 +1415,10 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     }
     if (link !== undefined && plan !== null) {
       const { platform } = link;
+      // B1-08s: the lk switch the owner stage, a renewed snapshot and the cache key read.
+      if (platform === 'jd' || platform === 'pdd') {
+        reads.push(config.configValue(appId, clickCodeKey(platform)));
+      }
       if (plan.callerAttr) {
         reads.push(attrCodeOf(attrCodes, appId, caller.userId));
       }
@@ -1461,6 +1601,12 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
       } catch (error) {
         prepared.snapshot = { ok: false, error };
       }
+      // B1-08s: the lk switch the new link's registration reads in the transaction.
+      const clickCode =
+        platform === 'jd' || platform === 'pdd'
+          ? [config.configValue(appId, clickCodeKey(platform))]
+          : [];
+      await Promise.allSettled(clickCode);
       if (conversion.prepare !== undefined) {
         await Promise.allSettled([
           conversion.prepare({
@@ -1536,28 +1682,38 @@ export function createLinkOpenRequote(options: LinkOpenRequoteOptions): LinkOpen
     // The caller's own H5 link (BR-ATTR-08: scene h5 → self_buy), through the module's single
     // links insert, in this transaction: it commits with the convert's log and attempt or not at all.
     const linkId = newUuidV7(now);
-    await insertConvertLink(trx, {
-      now,
-      caller,
-      linkId,
-      snapshot: snapshot.value,
-      shopId: target.shopId,
-      values: {
-        platform: target.platform,
-        productKey: target.productKey,
-        rawItemId: target.rawItemId,
-        rawFetchedAt: target.rawFetchedAt,
-        scene: CONVERT_SCENE,
-        subScene: null,
-        entrySource: target.entrySource,
-        quotedFinalPriceFen: item.final_price_fen,
-        quotedCouponFen: item.coupon_fen,
-        quotedCouponId:
-          item.coupon_ids === undefined || item.coupon_ids === '' ? null : item.coupon_ids,
-        quotedAt: item.quoted_at,
-        agentCardId: null,
+    // B1-08s: the caller's new link gets an lk while the switch is on (pre-read by prepareConvert).
+    const issue = await linkCodeIssue(
+      config,
+      { appId: caller.appId, platform: target.platform, userId: caller.userId },
+      options,
+    );
+    await insertConvertLink(
+      trx,
+      {
+        now,
+        caller,
+        linkId,
+        snapshot: snapshot.value,
+        shopId: target.shopId,
+        values: {
+          platform: target.platform,
+          productKey: target.productKey,
+          rawItemId: target.rawItemId,
+          rawFetchedAt: target.rawFetchedAt,
+          scene: CONVERT_SCENE,
+          subScene: null,
+          entrySource: target.entrySource,
+          quotedFinalPriceFen: item.final_price_fen,
+          quotedCouponFen: item.coupon_fen,
+          quotedCouponId:
+            item.coupon_ids === undefined || item.coupon_ids === '' ? null : item.coupon_ids,
+          quotedAt: item.quoted_at,
+          agentCardId: null,
+        },
       },
-    });
+      issue,
+    );
     let owner: LinkOpenOwnerResult;
     try {
       owner = await owners.open({ linkId, noRebate: false }, trx);
