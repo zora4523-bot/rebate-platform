@@ -67,7 +67,7 @@ it('[AC-F1-09a#2] omitted values produce draft, zero counters/revision and trans
 it('[AC-F1-09a#3] primary keys and checks exist under their prescribed names and are validated', async () => {
   await ready(app);
   const checks = {
-    pages: ['page_key', 'gray_percent', 'gray', 'revision'],
+    pages: ['page_key', 'gray_percent', 'gray', 'revision', 'scheduled'],
     page_versions: ['page_key', 'version', 'sections', 'status', 'counts', 'publish'],
     page_preview_tokens: ['token_hash', 'expire_at', 'used_count'],
   };
@@ -128,6 +128,14 @@ it('[AC-F1-09a#4] named foreign keys retain full app/page identity and never cas
       ['app_id', 'page_key', 'version'],
     ],
     ['pages', 'pages_updated_by_admin_id_fkey', ['updated_by_admin_id'], 'admin_users', ['id']],
+    [
+      'pages',
+      'pages_scheduled_version_fkey',
+      ['app_id', 'page_key', 'scheduled_version'],
+      'page_versions',
+      ['app_id', 'page_key', 'version'],
+    ],
+    ['pages', 'pages_scheduled_by_admin_id_fkey', ['scheduled_by_admin_id'], 'admin_users', ['id']],
     ['page_versions', 'page_versions_publisher_fkey', ['publisher'], 'admin_users', ['id']],
     [
       'page_versions',
