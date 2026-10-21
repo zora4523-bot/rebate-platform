@@ -1,0 +1,26 @@
+id: CT-06zd
+repo: rebate-platform
+title: CT-06zd：worker 信号测试在 stopped 时数会话改为进程暂停期间等到归零（≤5 s），修完整验证里偶发的 sessionsAtStopped=1
+type: test-change
+# 2026-10-21 入账（ops 线，编排派工）。起因：test/spec/platform/maintenance/worker-signal-start-more.int.test.ts 契约 7 e 用例在测试机完整
+# 验证里偶发红（F1-02zs、CT-06o、B1-35、B2-04g 的 verify/1），四次都是同一处：进程停在 stopped 行（SIGSTOP）时 pg_stat_activity 里
+# couli-worker / couli-worker-maint 会话数 1（期望 0）；CI（近 3 天含重跑的首轮）没出现过，只在负载高的完整验证里出现，不是超时。
+# 原因：pg Client.end() 在连接尚未就绪或其上有查询时本地销毁 socket（pg 8.23 lib/client.js），worker 一侧已关、句柄的 socket 'end' 已到，
+# 服务端后端要等发现 EOF 才退出，这段时间仍在 pg_stat_activity 里；单次立即查询会数到它。
+# 做法：两份文件（同一写法的兄弟文件 worker-signal-start.int.test.ts 一并改）在 stopped 时、进程仍暂停期间轮询直到会话为 0（上限 5 s，
+# 与句柄关闭上限一致）；暂停的进程不能再关任何连接，期间消失的会话是 worker 早已关掉的，worker 真留着不关的连接会一直在、照样判红；
+# endsPromptly 扣掉测试暂停进程的时长（那不是 worker 的时间）。断言、样本、期望值（sessionsAtStopped 0、sessionsLeft 0）与用例时限都不改。
+# 改既有规则测试属第一类保护路径：非 task 分支（chore/test-change-CT-06zd）、不带证据，合并要 owner-approved 标签（approvals #24）；
+# Claude 实现，评审按 D10-104（Codex 可用优先 Codex，否则独立 Claude）。
+refs: []
+refs_hash: {}
+deps: [B1-01t]
+paths:
+  - 'test/spec/platform/maintenance/worker-signal-start-more.int.test.ts'
+  - 'test/spec/platform/maintenance/worker-signal-start.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null
