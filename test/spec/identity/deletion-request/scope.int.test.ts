@@ -15,6 +15,7 @@ import {
   seedBalance,
   seedRequest,
   setInFlight,
+  stepUpRequired,
   user,
   type Fixture,
 } from './kit.ts';
@@ -94,4 +95,25 @@ it('[AC-B1-15d#35] 封禁用户可申请、查询、撤回（10006 白名单）�
   expect((await deletion(await u.apply({ stepUp: await u.mint() }))).status).toBe('cooling');
   expect((await deletion(await u.get())).status).toBe('cooling');
   expect((await deletion(await u.cancel())).status).toBe('cancelled');
+});
+
+it('[AC-B1-15d#38] 封禁用户申请注销仍须 step-up（BR-ID-31）：缺 token、action 不符 → 10003 且无单；合法 token 成功', async () => {
+  const u = await user(f);
+  await f.db.transaction().execute((trx) =>
+    f.risk.setRiskState(trx, {
+      app_id: u.appId,
+      user_id: u.uid,
+      state: 'banned',
+      reason: 'b1-15d fixture',
+      reason_category: 'other',
+      frozen_until: null,
+      changed_by: 'fixture_operator',
+    }),
+  );
+  await stepUpRequired(await u.apply({ stepUp: null }));
+  await stepUpRequired(await u.apply({ stepUp: await u.mint('withdraw') }));
+  expect(await requests(f, u.appId, u.uid)).toEqual([]);
+  expect(inFlightCallsOf(u.appId, u.uid)).toEqual([]);
+  expect((await deletion(await u.apply({ stepUp: await u.mint() }))).status).toBe('cooling');
+  expect(await requests(f, u.appId, u.uid)).toHaveLength(1);
 });

@@ -7,7 +7,7 @@
 // by a reader the test controls per (app_id, user_id): this is how "the port says in flight →
 // 30412" proves the judgement goes through the port. The `deletionBalance` option stays the one
 // app.module assembles over the ledger's getBalances (balances are seeded as ledger rows); it is
-// only wrapped to record its calls. Mode `assembled` keeps app.module's own in-flight port too
+// only wrapped to record its calls (and whether the user's row was locked while it read). Mode `assembled` keeps app.module's own in-flight port too
 // (D10-97: until B2-05 it truthfully answers "none"); modes `no_in_flight` / `no_balance` remove
 // one option to check that a missing port answers 50001 instead of letting the application through.
 // Step-up tokens are signed exactly as POST /v1/auth/step-up issues them (signScopedToken with the
@@ -86,14 +86,18 @@ export interface PortCall {
   /** The executor the port got was a Kysely Transaction (the caller's), not the pool. */
   readonly inTransaction: boolean;
 }
-/** One call of the in-flight port, with a probe of the caller's row lock on app.users. */
-export interface InFlightCall extends PortCall {
+/** One call of a port, with a probe of the caller's row lock on app.users. */
+export interface LockedPortCall extends PortCall {
   /**
    * While the port ran, another connection could not take FOR SHARE NOWAIT on the user's
    * app.users row (55P03): the request held the user's row lock (FOR NO KEY UPDATE / FOR UPDATE).
    */
   readonly userRowLocked: boolean;
 }
+/** One call of the in-flight port. */
+export type InFlightCall = LockedPortCall;
+/** One call of the balance port (read inside the user's row lock, BR-ID-27 / brief §9.2 #3). */
+export type BalanceCall = LockedPortCall;
 /** What the controlled in-flight port does on its next call for a user. */
 export type InFlightPlan = { readonly hold: Promise<void>; readonly entered: () => void };
 
@@ -112,7 +116,7 @@ export interface Fixture {
 const inFlightAnswers = new Map<string, boolean>();
 const inFlightHolds = new Map<string, InFlightPlan[]>();
 const inFlightCalls: InFlightCall[] = [];
-const balanceCalls: PortCall[] = [];
+const balanceCalls: BalanceCall[] = [];
 const scopeKey = (appId: string, userId: string) => `${appId}/${userId}`;
 
 /** Sets what the controlled in-flight port answers for (app_id, user_id) from now on. */
@@ -127,7 +131,7 @@ export function holdInFlight(appId: string, userId: string, plan: InFlightPlan):
 export function inFlightCallsOf(appId: string, userId: string): InFlightCall[] {
   return inFlightCalls.filter((call) => call.appId === appId && call.userId === userId);
 }
-export function balanceCallsOf(appId: string, userId: string): PortCall[] {
+export function balanceCallsOf(appId: string, userId: string): BalanceCall[] {
   return balanceCalls.filter((call) => call.appId === appId && call.userId === userId);
 }
 function isTransaction(executor: unknown): boolean {
@@ -172,28 +176,38 @@ function controlledInFlight(db: Kysely<DB>): WithdrawalInFlightReader {
   };
 }
 
-function recordingBalance(port: DeletionBalanceReader | null): DeletionBalanceReader | null {
+function recordingBalance(
+  db: Kysely<DB>,
+  port: DeletionBalanceReader | null,
+): DeletionBalanceReader | null {
   if (port === null || port === undefined) return port;
   return {
-    availableFen(trx, input) {
+    async availableFen(trx, input) {
+      const locked = await userRowLocked(db, input.appId, input.userId);
       balanceCalls.push({
         appId: input.appId,
         userId: input.userId,
         inTransaction: isTransaction(trx),
+        userRowLocked: locked,
       });
       return port.availableFen(trx, input);
     },
   };
 }
 
-function wrapBalanceOption(option: FactoryOption | undefined): FactoryOption | undefined {
+function wrapBalanceOption(
+  db: Kysely<DB>,
+  option: FactoryOption | undefined,
+): FactoryOption | undefined {
   if (option === undefined) return undefined;
   return {
     ...option,
     useFactory: (...args: never[]) => {
       const made = option.useFactory(...args) as
         DeletionBalanceReader | null | Promise<DeletionBalanceReader | null>;
-      return made instanceof Promise ? made.then(recordingBalance) : recordingBalance(made);
+      return made instanceof Promise
+        ? made.then((port) => recordingBalance(db, port))
+        : recordingBalance(db, made);
     },
   };
 }
@@ -225,7 +239,7 @@ export async function openFixture(mode: PortMode = 'controlled'): Promise<Fixtur
     const balance = options['deletionBalance'] as FactoryOption | undefined;
     const assembled: Record<string, unknown> = {
       ...options,
-      deletionBalance: wrapBalanceOption(balance),
+      deletionBalance: wrapBalanceOption(kit.db, balance),
     };
     if (mode === 'controlled') {
       assembled['withdrawalInFlight'] = { useFactory: () => controlledInFlight(kit.db) };

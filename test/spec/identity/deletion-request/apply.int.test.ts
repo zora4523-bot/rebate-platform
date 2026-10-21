@@ -71,7 +71,7 @@ it('[AC-B1-15d#2] 两个端口都在调用方事务内、持有本人 users 行�
   expect(inFlight[0]).toMatchObject({ inTransaction: true, userRowLocked: true });
   const balance = balanceCallsOf(u.appId, u.uid);
   expect(balance).toHaveLength(1);
-  expect(balance[0]).toMatchObject({ inTransaction: true });
+  expect(balance[0]).toMatchObject({ inTransaction: true, userRowLocked: true });
 });
 
 it.each([
