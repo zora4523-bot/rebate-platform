@@ -143,7 +143,7 @@ it('[AC-B1-15e#2] cooling 用户幂等 PUT 收款账号 → 10007：业务未执
 
 for (const status of ['cooling', 'processing', 'deleting'] as const) {
   it(`[AC-B1-15e#3] ${status} 用户经 HTTP 的白名单逐项放行：GET /v1/me、GET /v1/invites/me、consents、abandon、refresh、logout`, async () => {
-    const c = await subject();
+    const c = await subject({ phone: true });
     if (status === 'deleting') await userStatus(db, c.appId, c.uid, 'deleting');
     else await stage(c, status);
     // Positive control: this session is refused on a write outside the whitelist.
@@ -359,8 +359,8 @@ it('[AC-B1-15e#6] ④ 同键正在处理先返回 40901，新键才返回 10007'
 });
 
 for (const [label, phone, realname, expected] of [
-  ['30304（未绑手机）', false, false, 30304],
-  ['10005（未实名）', true, false, 10005],
+  ['10005（未绑手机）', false, false, 10005],
+  ['30304（未实名）', true, false, 30304],
   ['10003（缺 step-up）', true, true, 10003],
 ] as const) {
   it(`[AC-B1-15e#6] 10007 先于 ${label}，业务未执行；撤回后才返回 ${expected}`, async () => {
