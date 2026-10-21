@@ -1,0 +1,17 @@
+id: B1-08x
+repo: rebate-platform
+title: test-change：B1-08t #25（扫描缺持久化服务费时跳过拼多多单）在 app.orders.service_fee_fen 存在时先把该单服务费置空再扫描，使 B1-08v 加列后仍测「缺服务费」场景；断言不动
+type: test-change
+# 2026-10-21 入账（W1）。起因：B1-08v 入库会写报文服务费，冻结 [AC-B1-08t#25] 的拼多多夹具不再「缺服务费」。若在 B1-08v 的规则测试提交里改，path-guard-author 与先红核对冲突（D10-93），故拆成独立 test-change，先于 B1-08v 合并。
+# 只改夹具准备方式（列存在才 UPDATE 为 NULL，主干无列时行为不变），断言、用例集合不动（编排裁定 D10-88 同类）。按 approvals #24 由编排核对加标签。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/orders/snapshot-retry/scan.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
