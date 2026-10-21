@@ -258,5 +258,15 @@ export type {
   InviteRewardTransitionResult,
   InviteRewardTransitionRow,
 } from './state-machines/invite-reward.gen.ts';
-export { transitionExportTask } from './state-machines/export-task.ts';
-export type { ExportTaskState, ExportTaskEvent } from './state-machines/export-task.ts';
+export {
+  EXPORT_TASK_EVENTS,
+  EXPORT_TASK_STATES,
+  EXPORT_TASK_TRANSITIONS,
+  transitionExportTask,
+} from './state-machines/export-task.gen.ts';
+export type {
+  ExportTaskState,
+  ExportTaskEvent,
+  ExportTaskTransitionResult,
+  ExportTaskTransitionRow,
+} from './state-machines/export-task.gen.ts';
