@@ -16,6 +16,8 @@ import type { IntentDeps, IntentRequest } from '../intents/index.ts';
 import { createMemoryResultSetStore } from './store.ts';
 import { createClarification, createRefinement, createResultsTools } from './index.ts';
 import type { ResultSetStore, ResultsDeps } from './index.ts';
+import { openServerCall } from './references.ts';
+import { priceRangeInvalidView } from '../../tools/search/index.ts';
 
 // Synthetic only. BR-AI-08 / AC-B3-05g#3 / #11: a clarify answer continues the chain it answers
 // even when the first search only asked (no product was ever delivered in the session).
@@ -60,11 +62,11 @@ function request(output: unknown, runId: string): IntentRequest {
   };
 }
 
-function productList(): UnnumberedCard {
+function productList(id: string): UnnumberedCard {
   return {
     type: 'product_list',
     schema_version: 1,
-    data: { result_set_id: 'synthetic-list', items: [{ product_key: 'jd:synthetic' }] },
+    data: { result_set_id: id, items: [{ product_key: 'jd:synthetic' }] },
     fallback_text: '合成商品列表',
   };
 }
@@ -73,11 +75,10 @@ function productList(): UnnumberedCard {
 function searchHandler() {
   return vi.fn(async (call: OrchestratorToolCall, ctx: ToolContext): Promise<ToolOutcome> => {
     const ref = cardReference(ctx, 0);
-    void call;
     return {
       kind: 'ok',
       modelView: { items: [{ card_id: ref, title: '<untrusted>合成牛奶</untrusted>' }] },
-      cards: [productList()],
+      cards: [productList(call.id)],
     };
   });
 }
@@ -111,15 +112,21 @@ function harness() {
   const port = createIntentPort(intentDeps);
 
   /** A model search_products call in its own run (the core's path, through the decorator). */
-  function modelSearch(args: Readonly<Record<string, unknown>>, runId: string) {
+  async function modelSearch(args: Readonly<Record<string, unknown>>, runId: string) {
+    const id = `model-${runId}`;
+    const scope = openServerCall(id, Object.freeze({}));
     const ctx: ToolContext = {
       subject: input(runId).caller,
       runId,
       sessionId: SESSION,
       signal: new AbortController().signal,
-      placeholders: Object.freeze({}),
+      placeholders: scope.placeholders,
     };
-    return tools.execute({ id: `model-${runId}`, name: 'search_products', args }, ctx);
+    try {
+      return await tools.execute({ id, name: 'search_products', args }, ctx);
+    } finally {
+      scope.refs.close();
+    }
   }
 
   /** The model's intent output of a later run, through the intent port. */
@@ -145,7 +152,7 @@ function harness() {
     return { result, cards, suggestions };
   }
 
-  return { execute, store, modelSearch, intent };
+  return { execute, store, modelSearch, intent, clarification };
 }
 
 function noticeKeys(cards: readonly UnnumberedCard[]): unknown[] {
@@ -219,4 +226,146 @@ it('[AC-B3-05g#7][BR-PRICE-15] 再便宜点仍依赖已下发商品：只有追�
   const out = await h.intent({ agent_intent: 'refine', conditions: { cheaper: true } }, 'run-2');
   expect(h.execute).not.toHaveBeenCalled();
   expect(noticeKeys(out.cards)).toEqual(['agent.notice.no_result']);
+});
+
+function emptySearch(spec: string | null): ToolOutcome {
+  const trace = { link_registrations: [], search_params: { spec, page: 2 } };
+  return { kind: 'ok', modelView: { items: [] }, cards: [], trace };
+}
+
+it.each([
+  { conditions: { platform: 'taobao' }, changes: { platforms: ['taobao'] } },
+  { conditions: { next_batch: true }, changes: { page: 3 } },
+  { conditions: { price_min_fen: 200 }, changes: { price_min_fen: 200 } },
+])(
+  '[AC-B3-05g#8][AC-B3-05g#11] 放宽出卡后跨轮续搜 %j 以实际生效条件为基准',
+  async ({ conditions, changes }) => {
+    const h = harness();
+    const save = vi.spyOn(h.store, 'save');
+    const original = {
+      q: Q,
+      spec: '24盒',
+      platforms: ['jd'],
+      sort: 'sales_desc',
+      page: 2,
+      price_min_fen: 100,
+      price_max_fen: 5000,
+    };
+    h.execute.mockResolvedValueOnce(emptySearch('24盒'));
+    h.execute.mockResolvedValueOnce(emptySearch(null));
+    const first = await h.modelSearch(original, 'relax-run');
+    expect(first.kind).toBe('ok');
+    expect(first.kind === 'ok' ? noticeKeys(first.cards) : []).toEqual([
+      'agent.notice.relaxed_spec',
+      'agent.notice.relaxed_price',
+    ]);
+    const effective = {
+      q: Q,
+      platforms: ['jd'],
+      sort: 'sales_desc',
+      page: 2,
+      price_min_fen: 100,
+    };
+    expect(h.execute.mock.calls.map(([call]) => call.args)).toEqual([
+      original,
+      { ...effective, price_max_fen: 5000 },
+      effective,
+    ]);
+    const saved = save.mock.calls[0]?.[0].conditions;
+    expect(saved).toEqual({ ...effective, chain_id: expect.any(String) });
+    const out = await h.intent({ agent_intent: 'refine', conditions }, 'continue-run');
+    expect(h.execute).toHaveBeenCalledTimes(4);
+    expect(h.execute.mock.calls[3]?.[0].args).toEqual({ ...effective, ...changes });
+    expect(out.cards.map((card) => card.type)).toEqual(['product_list']);
+    expect(save.mock.calls[1]?.[0].conditions).toEqual({ ...saved, ...changes });
+  },
+);
+
+it('[AC-B3-05g#8] 仅放宽规格后换平台不恢复规格，保留价格上限', async () => {
+  const h = harness();
+  h.execute.mockResolvedValueOnce(emptySearch('24盒'));
+  await h.modelSearch({ q: Q, spec: '24盒', price_max_fen: 5000 }, 'relax-run');
+  const out = await h.intent(
+    { agent_intent: 'refine', conditions: { platform: 'taobao' } },
+    'continue-run',
+  );
+  expect(h.execute.mock.calls.map(([call]) => call.args)).toEqual([
+    { q: Q, spec: '24盒', price_max_fen: 5000 },
+    { q: Q, price_max_fen: 5000 },
+    { q: Q, price_max_fen: 5000, platforms: ['taobao'] },
+  ]);
+  expect(out.cards.map((card) => card.type)).toEqual(['product_list']);
+});
+
+it.each(['local', 'inner'] as const)(
+  '[AC-B3-05g#3][AC-B3-05g#11] %s 价格追问跨轮直接续答，出卡后同关键词搜索重开链',
+  async (source) => {
+    const h = harness();
+    const save = vi.spyOn(h.store, 'save');
+    const invalid = { q: Q, price_min_fen: 6000, price_max_fen: 5000 };
+    const args = source === 'local' ? invalid : { q: Q, price_max_fen: 5000 };
+    if (source === 'inner') {
+      h.execute.mockResolvedValueOnce({
+        kind: 'ok',
+        modelView: priceRangeInvalidView(),
+        cards: [],
+      });
+    }
+    const first = await h.modelSearch(args, 'question-run');
+    expect(first).toMatchObject({ kind: 'ok', cards: [], suggestions: expect.any(Array) });
+    expect(first.kind === 'ok' ? first.suggestions : []).toHaveLength(3);
+    const req = request({ agent_intent: 'clarify', slot: 'price' }, 'scope-run');
+    const pending = await h.clarification.scope(req);
+    const answer = await h.modelSearch({ q: Q, price_max_fen: 6000 }, 'answer-run');
+    expect(answer.kind === 'ok' ? answer.cards.map((card) => card.type) : []).toEqual([
+      'product_list',
+    ]);
+    expect(save.mock.calls[0]?.[0].conditions.chain_id).toBe(pending.chainId);
+    expect(await h.clarification.scope(req)).toEqual(pending);
+    const before = h.execute.mock.calls.length;
+    const next = await h.modelSearch(invalid, 'new-search-run');
+    expect(h.execute).toHaveBeenCalledTimes(before);
+    expect(next).toMatchObject({ kind: 'ok', cards: [] });
+    expect(next.kind === 'ok' ? next.suggestions : []).toHaveLength(3);
+    const fresh = await h.clarification.scope(req);
+    expect(fresh.chainId).not.toBe(pending.chainId);
+    const fallback = await h.modelSearch(invalid, 'new-answer-run');
+    expect(h.execute).toHaveBeenCalledTimes(before + 1);
+    expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: Q });
+    expect(fallback.kind === 'ok' ? noticeKeys(fallback.cards) : []).toEqual([
+      'agent.notice.price_unrecognized',
+    ]);
+    expect(save.mock.calls.at(-1)?.[0].conditions.chain_id).toBe(fresh.chainId);
+  },
+);
+
+it('[AC-B3-05g#11] 已出卡链上的 refine 保留已用追问次数，同关键词直接搜索重置', async () => {
+  const h = harness();
+  await firstSearchAsks(h);
+  await h.modelSearch({ q: Q, price_max_fen: 6000 }, 'answer-run');
+  const req = request({ agent_intent: 'clarify', slot: 'price' }, 'scope-run');
+  const previous = await h.clarification.scope(req);
+  const refined = await h.intent(
+    { agent_intent: 'refine', conditions: { price_max_fen: 0 } },
+    'refine-run',
+  );
+  expect(refined.suggestions).toEqual([]);
+  expect(noticeKeys(refined.cards)).toEqual(['agent.notice.price_unrecognized']);
+  expect(h.execute.mock.calls.at(-1)?.[0].args).toEqual({ q: Q });
+  expect(await h.clarification.scope(req)).toEqual(previous);
+  const next = await h.modelSearch({ q: Q, price_max_fen: 0 }, 'new-search-run');
+  expect(next.kind === 'ok' ? next.suggestions : []).toHaveLength(3);
+  expect(h.execute).toHaveBeenCalledTimes(2);
+  expect((await h.clarification.scope(req)).chainId).not.toBe(previous.chainId);
+});
+
+it('[AC-B3-05g#11] 尚未回答的价格追问遇到不同关键词也重开链', async () => {
+  const h = harness();
+  await firstSearchAsks(h);
+  const req = request({ agent_intent: 'clarify', slot: 'price' }, 'scope-run');
+  const previous = await h.clarification.scope(req);
+  const next = await h.modelSearch({ q: '合成咖啡', price_max_fen: 0 }, 'new-search-run');
+  expect(next.kind === 'ok' ? next.suggestions : []).toHaveLength(3);
+  expect(h.execute).not.toHaveBeenCalled();
+  expect((await h.clarification.scope(req)).chainId).not.toBe(previous.chainId);
 });

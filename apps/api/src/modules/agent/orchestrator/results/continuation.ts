@@ -159,7 +159,7 @@ export function createClarification(deps: ResultsContinuationDeps): IntentDeps['
       const sessionId = request.input.sessionId;
       let chain = await currentChain(state, store, appId, sessionId);
       if (chain === null) {
-        chain = { chainId: newChainId(), conditions: null };
+        chain = { chainId: newChainId(), conditions: null, status: 'searching' };
         setChain(state, appId, sessionId, chain);
       }
       return { appId, sessionId, chainId: chain.chainId };

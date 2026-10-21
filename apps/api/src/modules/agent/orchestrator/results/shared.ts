@@ -43,6 +43,8 @@ export type InternalToolCall = OrchestratorToolCall & { readonly [SERVER_CALL]?:
 export interface SessionChain {
   readonly chainId: string;
   readonly conditions: SearchConditions | null;
+  /** Only an unanswered price question before any products permits a direct-call continuation. */
+  readonly status: 'searching' | 'awaiting_price' | 'has_products';
 }
 
 export interface ResultsState {
@@ -84,7 +86,11 @@ export async function currentChain(
   const latest = await store.latestWithProducts(appId, sessionId);
   return latest === null
     ? null
-    : { chainId: latest.conditions.chain_id, conditions: latest.conditions };
+    : {
+        chainId: latest.conditions.chain_id,
+        conditions: latest.conditions,
+        status: 'has_products',
+      };
 }
 
 export function setChain(

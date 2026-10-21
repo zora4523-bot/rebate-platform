@@ -36,6 +36,7 @@ import {
   SERVER_CALL,
   type InternalToolCall,
   type ResultsState,
+  type SessionChain,
 } from './shared.ts';
 import { shiftCardReferences } from './references.ts';
 import type { ResultsDeps } from './types.ts';
@@ -127,13 +128,25 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
     return search(call, args, ctx, take);
   }
 
-  /** New searches open a chain; a call answering on the same query keeps the current one. */
-  async function searchChain(appId: string, sessionId: string, q: unknown): Promise<string> {
+  /** Only a pending question on the same query keeps a direct model call on its old chain.
+   * Explicit server continuations retain their chain even after it has produced products. */
+  async function searchChain(
+    appId: string,
+    sessionId: string,
+    q: unknown,
+    serverChainId?: string,
+  ): Promise<SessionChain> {
     const current = await currentChain(state, deps.store, appId, sessionId);
-    if (current !== null && (current.conditions === null || current.conditions.q === q)) {
-      return current.chainId;
+    if (
+      current !== null &&
+      (serverChainId === current.chainId ||
+        (serverChainId === undefined &&
+          current.status === 'awaiting_price' &&
+          current.conditions?.q === q))
+    ) {
+      return current;
     }
-    return newChainId();
+    return { chainId: serverChainId ?? newChainId(), conditions: null, status: 'searching' };
   }
 
   async function search(
@@ -144,23 +157,33 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
   ): Promise<ToolOutcome> {
     const appId = ctx.subject.appId;
     const server = call[SERVER_CALL];
-    const chainId = server?.chainId ?? (await searchChain(appId, ctx.sessionId, args['q']));
-    setChain(state, appId, ctx.sessionId, { chainId, conditions: conditionsOf(args, chainId) });
+    const previous = await searchChain(appId, ctx.sessionId, args['q'], server?.chainId);
+    const chainId = previous.chainId;
+    const chain = { ...previous, conditions: conditionsOf(args, chainId) };
+    setChain(state, appId, ctx.sessionId, chain);
     const scope = { appId, sessionId: ctx.sessionId, chainId };
     const notices: string[] = [];
     let requested: Args = args;
     let outcome: ToolOutcome;
 
+    const askPrice = () => {
+      setChain(state, appId, ctx.sessionId, {
+        ...chain,
+        status: chain.status === 'has_products' ? 'has_products' : 'awaiting_price',
+      });
+      return clarifyPrice(appId);
+    };
+
     if (priceInvalid(args)) {
       // BR-AI-08: never search with an invalid price; ask once per chain, then drop it.
-      if (await deps.store.takeOnce(scope, 'price')) return clarifyPrice(appId);
+      if (await deps.store.takeOnce(scope, 'price')) return askPrice();
       requested = without(args, 'price_min_fen', 'price_max_fen');
       notices.push(resultKeys.priceUnrecognized);
       outcome = await inner.execute(forward(call, requested), ctx);
     } else {
       outcome = await inner.execute(forward(call, args), ctx);
       if (isPriceRangeInvalid(outcome)) {
-        if (await deps.store.takeOnce(scope, 'price')) return clarifyPrice(appId);
+        if (await deps.store.takeOnce(scope, 'price')) return askPrice();
         requested = without(args, 'price_min_fen', 'price_max_fen');
         notices.push(resultKeys.priceUnrecognized);
         if (!take()) return noResult(ctx, outcome, notices);
@@ -284,6 +307,8 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
         });
       }
     }
+    // Continuations must start from the same effective conditions that produced these cards.
+    setChain(state, appId, ctx.sessionId, { chainId, conditions, status: 'has_products' });
     if (notices.length === 0 && deps.match === undefined) return outcome;
     const moved = shifted(ctx, outcome, notices.length);
     return {
