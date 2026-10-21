@@ -1,6 +1,6 @@
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { setup, setupScan, succeed, splits, capture, HOUR } from './kit.ts';
 
@@ -227,6 +227,19 @@ it('[AC-B1-08t#19] 超时后端口抛错也转人工，不能无限重试或提�
 
 it('[AC-B1-08t#25] 拼多多扫描缺持久化服务费时跳过，不调用端口、不处置且记录 warn', async () => {
   const f = await setup(db);
+  // B1-08v adds app.orders.service_fee_fen and stores the reported fee on import; this case needs
+  // the order without a persisted fee, so clear it when the column exists (B1-08x test-change,
+  // ruling D10-88 kind: fixture preparation only, assertions unchanged).
+  const feeColumn = await sql<{ n: number }>`
+    select count(*)::int as n from information_schema.columns
+    where table_schema = 'app' and table_name = 'orders' and column_name = 'service_fee_fen'`.execute(
+    db,
+  );
+  if (feeColumn.rows[0]?.n === 1) {
+    await sql`update app.orders set service_fee_fen = null where app_id = ${f.ctx.app_id}`.execute(
+      db,
+    );
+  }
   f.clock.advanceMs(HOUR + 1);
   const before = await f.pending();
   const orderBefore = (await f.read()).orders;
