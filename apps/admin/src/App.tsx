@@ -43,6 +43,7 @@ import { DashboardPage, dashboardTargetOf } from './pages/dashboard/index.ts';
 import { ExportsPage } from './pages/exports/index.ts';
 import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
+import { OrderDetailPage, OrdersPage } from './pages/orders/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
 import { UsersPage } from './pages/users/index.ts';
 import { UserDetailView } from './pages/users/UserDetailView.tsx';
@@ -67,6 +68,7 @@ import type { AdminShellOptions } from './shell-options.ts';
 import { claimsTexts } from './texts/claims.ts';
 import { auditLogsTexts } from './texts/audit-logs.ts';
 import { exportsTexts } from './texts/exports.ts';
+import { ordersTexts } from './texts/orders.ts';
 import { shellTexts } from './texts/shell.ts';
 import { createAntdTheme, sameAntdTheme } from './theme.ts';
 
@@ -88,6 +90,18 @@ function claimIdOf(path: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+const ORDERS_MENU_ID = 'orders';
+const ORDER_DETAIL = /^orders\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+/**
+ * The order_id of an order detail address (/orders/<order_id>), else undefined. Only a UUID-shaped
+ * id is an order (contract AdminOrderIdPath); other /orders/… addresses (such as a workbench
+ * card's /orders/claims) keep their own handling.
+ */
+function orderIdOf(path: string): string | undefined {
+  return ORDER_DETAIL.exec(path)?.[1];
 }
 
 const AUDIT_LOGS_MENU_ID = 'audit-logs';
@@ -453,9 +467,15 @@ function ShellFrame({
   const searchUser = menuId === USERS_MENU_ID ? searchUserOf(location.state) : undefined;
   // A claim's review page (/claims/<claim_id>) belongs to the claims menu (sidebar, crumbs).
   const claimId = claimIdOf(menuId);
-  const match = findMenuItem(groups, claimId === undefined ? menuId : CLAIMS_MENU_ID);
+  // An order's detail page (/orders/<order_id>) belongs to the orders menu (sidebar, crumbs).
+  const orderId = claimId === undefined ? orderIdOf(menuId) : undefined;
+  const match = findMenuItem(
+    groups,
+    claimId !== undefined ? CLAIMS_MENU_ID : orderId !== undefined ? ORDERS_MENU_ID : menuId,
+  );
   let subpage = match === undefined ? undefined : (auditSubpage ?? subpageOf(location.state));
   if (match !== undefined && claimId !== undefined) subpage = claimsTexts.review.crumb;
+  if (match !== undefined && orderId !== undefined) subpage = ordersTexts.detail.crumb;
   // A workbench card opened a route whose page is not in the catalogue yet (e.g. /risk/appeals):
   // the placeholder shows under the card's page name instead of falling back home.
   const cardTarget =
@@ -490,6 +510,9 @@ function ShellFrame({
     const { snapshot } = state;
     if (match !== undefined && claimId !== undefined) {
       content = <ClaimReviewPage key={claimId} access={access} claimId={claimId} />;
+    } else if (match !== undefined && orderId !== undefined) {
+      // Direct address or 【详情】 of a row: only this order is read, never the list.
+      content = <OrderDetailPage key={orderId} access={access} orderId={orderId} />;
     } else if (match !== undefined && auditLogId !== undefined) {
       // Direct address or 【查看】 of a row: only this record is read, never the list.
       content = <AuditLogDetailPage key={auditLogId} id={auditLogId} access={access} />;
@@ -525,6 +548,9 @@ function ShellFrame({
       // Keyed by the history entry: a new address (sidebar, 【返回】, ?status= link) reads its
       // conditions afresh.
       content = <ClaimsPage key={location.key} access={access} />;
+    } else if (match !== undefined && match.item.id === ORDERS_MENU_ID) {
+      // Keyed by the history entry: 【返回】 from a detail restores the conditions it carries.
+      content = <OrdersPage key={location.key} access={access} />;
     } else if (match !== undefined && match.item.id === 'users') {
       content = <UsersPage access={access} />;
     } else if (match !== undefined && match.item.id === AUDIT_LOGS_MENU_ID) {
