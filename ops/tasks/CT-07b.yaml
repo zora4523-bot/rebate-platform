@@ -1,0 +1,30 @@
+id: CT-07b
+repo: rebate-platform
+title: 契约（BR-TEXT-26 首页弹窗动效）：home-schema 的 popup props 加可选 lottie {url, sha256} 与可选替代文字 alt，golden 加「有动画」「只有静态图」两份；openapi 新增后台弹窗素材上传 POST /admin/v1/pages/popup-assets（multipart，kind ∈ lottie / image，返回 url / sha256 / bytes，lottie 另返回 width / height / duration_ms；20001 data.reason 取值），planned
+type: contract
+# 2026-10-21 入账（content-client 第六阶段；编排 15:5x #165 排期、17:4x 契约缺口分派「popup lottie + 替代文字」）。
+# 依据（SPEC_REF f411375）：08 12_TEXT BR-TEXT-26 正文与细则「素材与校验」；04 §6.2「首页弹窗卡 popup」（lottie 两键必填、不收其他键、有 lottie 时 image 仍必填、卡片 version 不变）；
+#   04 §6.6 pages「弹窗素材上传」（路径与字段名契约线定稿；权限点 content.page，不要 step-up；上传不改页面版本）；docs/changes/20261021-首页弹窗动效与搜相似商品.md §3、§6。原文由编排者摘入任务书第 9 节，refs 置空。
+# 【待编排裁定 / 待规划回写】替代文字：04 §6.2 尚无该字段（couli #169 后 design/specs/app-home.md 仍写「契约 popup 暂无替代文字字段」）；默认加可选 alt（string，1–40 字，客户端作读屏名，缺省时读屏名「首页弹窗」），回写 04 §6.2。
+# 要点：lottie 是可选新键，oasdiff / home-schema 预期非破坏；上传接口 planned（实现 F1-09r）；data.reason 取值 format / too_large / too_long / external_ref（格式、大小、时长、外部引用）；不新增错误码。
+# btn.search_similar 文案键归 CT-16f（17:4x 分派），不在本任务。占契约槽；合并即放槽并在 notices 告知 F1-09r、fe（popup 表单）与 native（APP-11 / HM-07）。
+refs: []
+refs_hash: {}
+contract_sections: ['6.2', '6.6']
+deps: [CT-07a]
+paths:
+  - 'contracts/home-schema.json'
+  - 'contracts/fixtures/home-golden/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
