@@ -18,6 +18,15 @@ export type SearchConditions = {
   readonly chain_id: string;
 };
 
+export type ChainStatus = 'searching' | 'awaiting_price' | 'has_products';
+
+/** Server-owned current chain and its effective search conditions (or pending question). */
+export interface SessionChain {
+  readonly chainId: string;
+  readonly status: ChainStatus;
+  readonly conditions: SearchConditions | null;
+}
+
 /** Only actual delivery receipts populate this server-only snapshot. */
 export interface DeliveredProduct {
   readonly card_id: string;
@@ -48,6 +57,10 @@ export interface ResultSetStore {
   /** Earlier rounds remain addressable; all lookup dimensions come from server context. */
   findDelivered(appId: string, sessionId: string, cardId: string): Promise<DeliveredProduct | null>;
   takeOnce(scope: ClarificationScope, slot: ClarifySlot): Promise<boolean>;
+  /** Last append for this app/session, or null; never falls back to delivered result sets. */
+  currentChain?(appId: string, sessionId: string): Promise<SessionChain | null>;
+  /** Append only. Reject has_products with null conditions or a mismatching chain_id. */
+  appendChain?(appId: string, sessionId: string, chain: SessionChain): Promise<void>;
 }
 
 export interface ResultsDeps {

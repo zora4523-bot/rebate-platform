@@ -7,7 +7,8 @@ import { maxPriceFen, searchSorts } from '../../tools/search/schema.ts';
 import type { SearchSort } from '../../tools/search/schema.ts';
 import type { OrchestratorToolCall, OrchestratorTools, ToolOutcome } from '../core/ports.ts';
 import type { ClarifySlot, IntentDeps } from '../intents/types.ts';
-import type { ResultSetStore, SearchConditions } from './types.ts';
+import type { ResultSetStore, SearchConditions, SessionChain } from './types.ts';
+export type { SessionChain } from './types.ts';
 
 /** Text keys (contracts/texts.default.json; clarify options and the platform notice are new keys
  * for the dictionary owner, B3-13). */
@@ -37,15 +38,6 @@ export interface ServerCall {
 export const SERVER_CALL = Symbol('B3-05g server call');
 
 export type InternalToolCall = OrchestratorToolCall & { readonly [SERVER_CALL]?: ServerCall };
-
-/** The session's current result-set chain and the conditions of its last search attempt
- * (null until a search ran on the chain). */
-export interface SessionChain {
-  readonly chainId: string;
-  readonly conditions: SearchConditions | null;
-  /** Only an unanswered price question before any products permits a direct-call continuation. */
-  readonly status: 'searching' | 'awaiting_price' | 'has_products';
-}
 
 export interface ResultsState {
   readonly chains: Map<string, SessionChain>;

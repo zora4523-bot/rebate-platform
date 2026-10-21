@@ -17,6 +17,9 @@ function sameDomain(row: Row, appId: string, sessionId: string): boolean {
   return row.input.appId === appId && row.input.sessionId === sessionId;
 }
 
+// B3-05k test-phase surface only: keep the frozen factory body unchanged until implementation.
+// New rule tests assert that the required methods exist before invoking them.
+export function createMemoryResultSetStore(): Required<ResultSetStore>;
 export function createMemoryResultSetStore(): ResultSetStore {
   // Save order is the recency order; a re-save of the same id keeps its place and receipts.
   const rows: Row[] = [];
