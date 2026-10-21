@@ -224,7 +224,7 @@ it('covers the keys of contract ledger rows b1-40 … b5-28', () => {
     'app_update.retry',
   ];
   for (const key of required) expect(texts[key], key).toBeTypeOf('string');
-  expect(Object.keys(texts).filter((k) => k.startsWith('earnings.'))).toHaveLength(18);
+  expect(Object.keys(texts).filter((k) => k.startsWith('earnings.'))).toHaveLength(19);
   // b4-31: 30201 no longer tells a missing order from a hidden share order (BR-ATTR-17).
   expect(texts['error.30201']).toBe(
     '没有找到可以找回的订单，请核对订单号；刚下单的订单可能还未同步，请稍后再试',

@@ -25,6 +25,10 @@
 # P1 订阅提醒模板 watch.price_drop.* 进 notify_template_code 时归 fund_terms（BR-WATCH-14）。
 # invite.reward.tip 归 fund_terms、invite.post_login.optional_hint 归 ordinary（BR-TEXT-12 细则，2026-10-19）；
 # invite.reward.tip_inviter 08 未写归类，与 invite.reward.tip 同为带 {amount} 的奖励句，归 fund_terms（编排者默认，待规划回写）。
+# CT-16g：08 未写归类的第 2 批键按认定规则归类：说提现照常或暂停、提现前置条件的 appeal.form.desc.order / .frozen、
+# appeal.progress.scope.order / .frozen、labor_agreement.resign_hint，找回结果 claim.records.status.approved / .rejected / .auto_tracked，
+# 与 appeal.progress.result_pending.order 归 fund_terms（拿不准按资金术语）；reverify.、payout_account.、real_name.consent.、agent.card.、
+# appeal. 其余键、claim.records. 其余键、order_list.claim_entry 逐键归 ordinary（编排者默认，待规划回写）。
 fund_terms:
   prefixes:
     - order_status.
@@ -67,8 +71,16 @@ fund_terms:
     - agent.guide.Wallet
     - agent.guide.WithdrawRecords
     - agent.guide.account.fund
+    - appeal.form.desc.frozen
+    - appeal.form.desc.order
+    - appeal.progress.result_pending.order
+    - appeal.progress.scope.frozen
+    - appeal.progress.scope.order
     - btn.buy.no_rebate
     - btn.buy.rebate_suffix
+    - claim.records.status.approved
+    - claim.records.status.auto_tracked
+    - claim.records.status.rejected
     - claim_required
     - error.30103
     - error.30121
@@ -84,6 +96,7 @@ fund_terms:
     - invite.reward.tip
     - invite.reward.tip_inviter
     - jump_tip
+    - labor_agreement.resign_hint
     - link_landing.owner_hint
     - no_rebate.price_compare
     - no_rebate.price_compare.confirm
@@ -177,6 +190,13 @@ ordinary:
     - admin_dict.union_pids.status.active
     - admin_dict.union_pids.status.pending
     - admin_dict.union_pids.status.retired
+    - agent.card.auth_required.title_bind_phone
+    - agent.card.auth_required.title_login
+    - agent.card.claim_draft.open_times
+    - agent.card.claim_draft.paid_date
+    - agent.card.claim_draft.title
+    - agent.card.handoff.desc
+    - agent.card.handoff.title
     - agent.degraded
     - agent.degraded.empty
     - agent.disclaimer.commission
@@ -223,13 +243,38 @@ ordinary:
     - agent.timeout
     - agent.welcome
     - ai_label
+    - appeal.form.current_status
+    - appeal.form.desc.banned
+    - appeal.form.note_title
+    - appeal.form.submit
+    - appeal.form.target
+    - appeal.form.type
+    - appeal.form.type.account
+    - appeal.form.type.order
+    - appeal.progress.content_title
+    - appeal.progress.desc.banned
+    - appeal.progress.desc.frozen
+    - appeal.progress.desc.order
+    - appeal.progress.no_repeat
+    - appeal.progress.processing
+    - appeal.progress.result_pending.banned
+    - appeal.progress.result_pending.frozen
+    - appeal.progress.scope.banned
+    - appeal.progress.step.processing
+    - appeal.progress.step.result
+    - appeal.progress.step.submitted
+    - appeal.progress.title
     - btn.buy
     - btn.buy.coupon
     - btn.search_similar
     - buy.opening
     - buy.opening.cancel
     - buy.timeout
+    - claim.records.desc.auto_tracked
+    - claim.records.desc.pending
     - claim.records.empty
+    - claim.records.footer
+    - claim.records.status.pending
     - clipboard.consent.body
     - clipboard.consent.enable
     - clipboard.consent.not_now
@@ -379,10 +424,13 @@ ordinary:
     - no_rebate.price_compare.similar
     - order_detail.copy.done
     - order_detail.view_product
+    - order_list.claim_entry
     - order_list.empty
     - order_list.history_hint
     - order_list.other_product
     - order_list.summary
+    - payout_account.risk_blocked.desc
+    - payout_account.wechat.steps_hint
     - pdd.parse_failed
     - pending_confirm.abandon
     - pending_confirm.abandon.cancel
@@ -413,6 +461,27 @@ ordinary:
     - rank.notice
     - rank.sales.neutral
     - rank.sales.tb
+    - real_name.consent.agree
+    - real_name.consent.cancel
+    - real_name.consent.continue
+    - real_name.consent.point.1
+    - real_name.consent.point.2
+    - real_name.consent.point.3
+    - real_name.consent.title
+    - reverify.desc
+    - reverify.heading
+    - reverify.id.fail_limit
+    - reverify.id.label
+    - reverify.id.note
+    - reverify.id.placeholder
+    - reverify.id.submit
+    - reverify.manual.action
+    - reverify.manual.desc
+    - reverify.manual.title
+    - reverify.oauth.action
+    - reverify.oauth.desc
+    - reverify.oauth.title
+    - reverify.title
     - settings.clear_cache
     - settings.clear_cache.confirm
     - settings.clear_cache.confirm_cancel
@@ -505,3 +574,5 @@ exempt:
     reason: 首启隐私摘要，说明收集信息的用途含发放返利，不说金额、状态或有没有返利（表 D 隐私文案，另归 content.agreement）
   - key: privacy.second_notice.body
     reason: 不同意隐私政策时的说明，只说基本模式下不能登录、拿不到返利，不说金额或某笔返利的状态（表 D 隐私文案，另归 content.agreement）
+  - key: real_name.consent.point.1
+    reason: 实名认证单独同意的收集用途说明（用于提现前核验身份），不说金额，也不说提现处在什么状态（表 D 风格占位措辞）
