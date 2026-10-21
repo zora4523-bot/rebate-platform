@@ -7,6 +7,7 @@ import { maxSearchPage } from '../../tools/search/schema.ts';
 import type { RunBodyResult, RunContext } from '../../stream/run/index.ts';
 import type { PathInput, ToolContext, ToolOutcome } from '../core/ports.ts';
 import type { ClarifySlot, IntentDeps, IntentOutput, IntentRequest } from '../intents/types.ts';
+import { openServerCall } from './references.ts';
 import {
   argsOf,
   clarifyOptions,
@@ -32,7 +33,11 @@ function done(): Done {
   return { kind: 'done', finishReason: 'stop' };
 }
 
-function toolContext(request: PathInput, ctx: RunContext): ToolContext {
+function toolContext(
+  request: PathInput,
+  ctx: RunContext,
+  placeholders: Readonly<Record<string, string>>,
+): ToolContext {
   const input = request.input;
   return {
     subject: input.caller,
@@ -40,11 +45,11 @@ function toolContext(request: PathInput, ctx: RunContext): ToolContext {
     runId: input.runId,
     sessionId: input.sessionId,
     signal: ctx.signal,
-    placeholders: request.proceed.placeholders,
+    placeholders,
   };
 }
 
-/** A server-built search_products call; the marker is a symbol, never a model argument. */
+/** A server-built tool call; the marker is a symbol, never a model argument. */
 function serverCall(
   name: string,
   args: Readonly<Record<string, unknown>>,
@@ -63,9 +68,67 @@ function isClarify(outcome: ToolOutcome): boolean {
   );
 }
 
-/** Deliver a tool outcome produced outside the model loop: cards, then suggestions. */
-async function emit(ctx: RunContext, outcome: ToolOutcome): Promise<void> {
-  if (outcome.kind !== 'ok') return;
+/** Warn notice when a server-built call fails: there is no model turn left to explain it. */
+const FAILURE_KEYS: Readonly<Record<string, string>> = {
+  search_products: resultKeys.searchFailed,
+  get_rebate_quote: resultKeys.quoteFailed,
+};
+
+/**
+ * One tool call outside the model loop (refinement, 第 N 个, a clarification answer), run like the
+ * core runs a model call: tool.status start → execute inside its own card-reference scope (B3-05i;
+ * the search and quote handlers issue references and throw without one) → end / failed. The scope
+ * is closed once execute returns. Cards and suggestions of an ok outcome are delivered in order; a
+ * failed or rejected outcome is never swallowed: tool.status failed (when the status texts are
+ * wired) and a warn notice. The modelView reaches no model here, so it is not resolved.
+ */
+async function execute(
+  deps: ResultsContinuationDeps,
+  request: PathInput,
+  ctx: RunContext,
+  call: InternalToolCall,
+): Promise<ToolOutcome> {
+  const appId = request.input.caller.appId;
+  await status(deps, appId, call.name, 'start', ctx);
+  const scope = openServerCall(call.id, request.proceed.placeholders);
+  let outcome: ToolOutcome;
+  try {
+    // deps.tools is read on every call (tests and wiring may replace execute after creation).
+    outcome = await deps.tools.execute(call, toolContext(request, ctx, scope.placeholders));
+  } catch {
+    outcome = { kind: 'failed', modelView: { error: 'tool_failed' } };
+  } finally {
+    scope.refs.close();
+  }
+  await status(deps, appId, call.name, outcome.kind === 'ok' ? 'end' : 'failed', ctx);
+  return outcome;
+}
+
+async function status(
+  deps: ResultsContinuationDeps,
+  appId: string,
+  tool: string,
+  phase: 'start' | 'end' | 'failed',
+  ctx: RunContext,
+): Promise<void> {
+  const display = deps.texts.toolDisplay;
+  if (display === undefined) return;
+  ctx.toolStatus(tool, phase, await display(appId, tool, phase));
+}
+
+/** Deliver a server-built call's outcome: cards then suggestions, or the failure notice. */
+async function emit(
+  deps: ResultsContinuationDeps,
+  appId: string,
+  ctx: RunContext,
+  name: string,
+  outcome: ToolOutcome,
+): Promise<void> {
+  if (outcome.kind !== 'ok') {
+    const key = FAILURE_KEYS[name] ?? resultKeys.searchFailed;
+    await ctx.card(await noticeCard(deps.texts, appId, key, 'warn'));
+    return;
+  }
   for (const card of outcome.cards) await ctx.card(card);
   if (outcome.suggestions !== undefined && outcome.suggestions.length > 0) {
     ctx.suggestions(outcome.suggestions);
@@ -81,7 +144,8 @@ async function runSearch(
   marker: ServerCall,
 ): Promise<Done> {
   const call = serverCall('search_products', args, marker);
-  await emit(ctx, await deps.tools.execute(call, toolContext(request, ctx)));
+  const outcome = await execute(deps, request, ctx, call);
+  await emit(deps, request.input.caller.appId, ctx, call.name, outcome);
   return done();
 }
 
@@ -209,13 +273,13 @@ export function createRefinement(
   /** 第 N 个: a fresh quote through get_rebate_quote (the resolver maps the ordinal). An ordinal
    * beyond the list asks once per chain (BR-AI-01), then falls back to the first delivered card. */
   async function ordinal(ordinalValue: number, request: IntentRequest, ctx: RunContext) {
+    const appId = request.input.caller.appId;
     const call = serverCall('get_rebate_quote', { ref_ordinal: ordinalValue });
-    const outcome = await deps.tools.execute(call, toolContext(request, ctx));
+    const outcome = await execute(deps, request, ctx, call);
     if (!isClarify(outcome)) {
-      await emit(ctx, outcome);
+      await emit(deps, appId, ctx, call.name, outcome);
       return done();
     }
-    const appId = request.input.caller.appId;
     const scope = await clarification.scope(request);
     if (await store.takeOnce(scope, 'reference')) {
       ctx.suggestions([...(await clarifyOptions(deps.texts, 'reference', appId))]);

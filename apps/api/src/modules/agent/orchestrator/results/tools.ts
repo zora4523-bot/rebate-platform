@@ -37,6 +37,7 @@ import {
   type InternalToolCall,
   type ResultsState,
 } from './shared.ts';
+import { shiftCardReferences } from './references.ts';
 import type { ResultsDeps } from './types.ts';
 
 type Ok = Extract<ToolOutcome, { kind: 'ok' }>;
@@ -162,7 +163,7 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
         if (await deps.store.takeOnce(scope, 'price')) return clarifyPrice(appId);
         requested = without(args, 'price_min_fen', 'price_max_fen');
         notices.push(resultKeys.priceUnrecognized);
-        if (!take()) return noResult(appId, outcome, notices);
+        if (!take()) return noResult(ctx, outcome, notices);
         outcome = await inner.execute(forward(call, requested, 'without-price'), ctx);
       }
     }
@@ -172,7 +173,7 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
       return finish(ctx, chainId, outcome, requested, requested, notices, false);
     // BR-AI-08 ①: 再便宜点 never relaxes.
     if (server?.kind === 'cheaper') {
-      return withNotices(appId, outcome, [...notices, resultKeys.noCheaper], false);
+      return withNotices(ctx, outcome, [...notices, resultKeys.noCheaper], false);
     }
 
     // BR-AI-08 relaxation: the handler's effective spec decides whether step 1 applies.
@@ -200,7 +201,7 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
       if (hasProducts(outcome))
         return finish(ctx, chainId, outcome, requested, working, notices, true);
     }
-    return noResult(appId, outcome, notices);
+    return noResult(ctx, outcome, notices);
   }
 
   async function clarifyPrice(appId: string): Promise<ToolOutcome> {
@@ -212,19 +213,24 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
     };
   }
 
-  async function noResult(appId: string, last: ToolOutcome, notices: readonly string[]) {
+  async function noResult(
+    ctx: ToolContext,
+    last: ToolOutcome,
+    notices: readonly string[],
+  ): Promise<ToolOutcome> {
     const base: Ok =
       last.kind === 'ok' ? last : { kind: 'ok', modelView: { items: [] }, cards: [] };
-    return withNotices(appId, base, [...notices, resultKeys.noResult], true);
+    return withNotices(ctx, base, [...notices, resultKeys.noResult], true);
   }
 
   /** Server notices first, then the handler's own cards; the trailing no-result notice last. */
   async function withNotices(
-    appId: string,
+    ctx: ToolContext,
     outcome: Ok,
     keys: readonly string[],
     suggest: boolean,
   ): Promise<ToolOutcome> {
+    const appId = ctx.subject.appId;
     const tail = keys.at(-1);
     const head = keys.slice(0, -1);
     const cards: UnnumberedCard[] = [];
@@ -240,9 +246,11 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
       : undefined;
     const { suggestions: own, ...rest } = outcome;
     void own;
+    const moved = shifted(ctx, outcome, head.length);
     return {
       ...rest,
-      modelView: withServerNotices(outcome.modelView, keys.map(noticeName)),
+      ...moved,
+      modelView: withServerNotices(moved.modelView, keys.map(noticeName)),
       cards,
       ...(suggestions === undefined ? {} : { suggestions }),
     };
@@ -277,10 +285,26 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
       }
     }
     if (notices.length === 0 && deps.match === undefined) return outcome;
+    const moved = shifted(ctx, outcome, notices.length);
     return {
       ...outcome,
-      modelView: withServerNotices(outcome.modelView, notices.map(noticeName)),
+      ...moved,
+      modelView: withServerNotices(moved.modelView, notices.map(noticeName)),
       cards,
+    };
+  }
+
+  /**
+   * B3-05i: `offset` server notices now precede the handler's cards, so each card reference the
+   * handler issued (modelView and trace) moves with its card; otherwise the core would resolve a
+   * product's reference to the notice in its old position.
+   */
+  function shifted(ctx: ToolContext, outcome: Ok, offset: number): Pick<Ok, 'modelView' | 'trace'> {
+    const modelView = shiftCardReferences(outcome.modelView, ctx, offset);
+    if (outcome.trace === undefined) return { modelView };
+    return {
+      modelView,
+      trace: shiftCardReferences(outcome.trace, ctx, offset) as NonNullable<Ok['trace']>,
     };
   }
 

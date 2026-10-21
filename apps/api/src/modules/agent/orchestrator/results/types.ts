@@ -3,7 +3,7 @@ import type { Platform } from '@couli/contracts-ts';
 import type { UnnumberedCard } from '../../stream/run/index.ts';
 import type { MatchDeps } from '../../tools/match/index.ts';
 import type { SearchSort } from '../../tools/search/schema.ts';
-import type { OrchestratorLimits, OrchestratorTools } from '../core/ports.ts';
+import type { AgentRunTexts, OrchestratorLimits, OrchestratorTools } from '../core/ports.ts';
 import type { ClarificationScope, ClarifySlot, IntentDeps } from '../intents/types.ts';
 
 /** Server-owned conditions; chain_id is never accepted from model tool arguments. */
@@ -52,7 +52,9 @@ export interface ResultSetStore {
 
 export interface ResultsDeps {
   readonly store: ResultSetStore;
-  readonly texts: IntentDeps['texts'];
+  /** toolDisplay, when wired, gives server-built calls (refinement, 第 N 个) the same
+   * tool.status frames as the core's model calls. */
+  readonly texts: IntentDeps['texts'] & { readonly toolDisplay?: AgentRunTexts['toolDisplay'] };
   readonly limits: OrchestratorLimits;
   readonly match?: MatchDeps;
 }

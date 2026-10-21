@@ -19,6 +19,10 @@ export const resultKeys = {
   relaxedPrice: 'agent.notice.relaxed_price',
   noResult: 'agent.notice.no_result',
   noCheaper: 'agent.notice.no_cheaper',
+  /** A server-built call failed (no model turn follows): the error notices of the same failures
+   * elsewhere — 50302 search unavailable without a model answer, 50303 price not confirmed. */
+  searchFailed: 'error.50302',
+  quoteFailed: 'error.50303',
   noResultSuggestion: (n: number) => `agent.suggest.no_result.${n}`,
   clarifyOption: (slot: ClarifySlot, n: number) => `agent.suggest.clarify.${slot}.${n}`,
 } as const;
@@ -171,11 +175,12 @@ export async function noticeCard(
   texts: IntentDeps['texts'],
   appId: string,
   key: string,
+  level: 'info' | 'warn' = 'info',
 ): Promise<UnnumberedCard> {
   return {
     type: 'notice',
     schema_version: 1,
-    data: { level: 'info', text_key: key, actions: [] },
+    data: { level, text_key: key, actions: [] },
     fallback_text: await texts.text(appId, key),
   };
 }
