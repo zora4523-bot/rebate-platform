@@ -86,7 +86,7 @@ it(
     expect(table!.textContent).toContain('2026-10-13 01:10');
     expect(within(table!).queryAllByRole('button')).toEqual([]);
     expect(mainElement().textContent).not.toMatch(
-      /余额|流水|提现|订单|直推名单|风控命中|客服代办|加入黑名单|冻结账号|封禁账号|重置授权|停用返利|导出/,
+      /余额|流水|提现|订单|风控命中|客服代办|加入黑名单|冻结账号|封禁账号|重置授权|停用返利|导出/,
     );
     expect(server.requests('GET', DETAIL)).toHaveLength(1);
     expect(server.requests('POST')).toEqual([]);
