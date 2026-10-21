@@ -8,16 +8,19 @@ import {
   COOLING_MS,
   balanceCallsOf,
   deletion,
+  deletionStageRefused,
   failed,
   inFlightCallsOf,
   ms,
   openFixture,
+  requestDirectly,
   requests,
   seedBalance,
   seedRequest,
   setInFlight,
   stepUpRequired,
   user,
+  type DeletionData,
   type Fixture,
 } from './kit.ts';
 
@@ -105,6 +108,17 @@ it('[AC-B1-15d#4] 在途端口报 true → 30412（422、无 data）、无单、
   expect(inFlightCallsOf(u.appId, u.uid)).toHaveLength(1);
   // The token was not consumed by the 30412: a new key with the same token succeeds once.
   expect((await deletion(await u.apply({ stepUp: token }))).status).toBe('cooling');
+  // B1-15l: the request is now cooling; with stage ⑥ assembled it answers first (BR-ID-27: POST
+  // /v1/me/deletion is not on the cooling whitelist, ⑥ before ⑫), without it ⑫ refuses the
+  // consumed token.
+  if (f.deletionGuard) await deletionStageRefused(await u.apply({ stepUp: token }), 'cooling');
+  else await stepUpRequired(await u.apply({ stepUp: token }));
+  expect(await requests(f, u.appId, u.uid)).toHaveLength(1);
+  // In both states: once no request is open (cancelled), the consumed token is still 10003.
+  // Why HTTP and not the service layer: the service does no step-up, so calling it directly
+  // cannot reach 10003. Once the request is cancelled no request is open, ⑥ lets the call through
+  // in both states, and ⑫ still shows the token was consumed exactly once (B1-15l).
+  expect((await deletion(await u.cancel())).status).toBe('cancelled');
   await stepUpRequired(await u.apply({ stepUp: token }));
   expect(await requests(f, u.appId, u.uid)).toHaveLength(1);
 });
@@ -163,11 +177,17 @@ it('[AC-B1-15d#9] 已有 cooling 单再申请（新键）→ 返回原单、不�
   const u = await user(f);
   const first = await deletion(await u.apply({ stepUp: await u.mint() }));
   f.clock.advanceMs(5_000);
-  const second = await deletion(await u.apply({ stepUp: await u.mint() }));
-  expect(second).toEqual(first);
+  // B1-15l: over HTTP, stage ⑥ (when assembled) answers 10007 stage=cooling before the business.
+  const again = await u.apply({ stepUp: await u.mint() });
+  if (f.deletionGuard) await deletionStageRefused(again, 'cooling');
+  else expect(await deletion(again)).toEqual(first);
+  // The service layer itself returns the open request in both states.
+  const direct = await requestDirectly(f, u.appId, u.uid);
+  expect(direct).toEqual({ code: 0, data: first });
   const rows = await requests(f, u.appId, u.uid);
   expect(rows).toHaveLength(1);
   expect(rows[0]!.cooling_until.getTime()).toBe(ms(first.cooling_until));
+  expect(rows[0]!.row_version).toBe(0);
   expect(inFlightCallsOf(u.appId, u.uid)).toHaveLength(1);
 });
 
@@ -176,10 +196,23 @@ it('[AC-B1-15d#10] 已有 processing 单再申请 → 返回该单（can_cancel=
   const applied = new Date(f.clock.now().getTime() - COOLING_MS - 60_000);
   await seedRequest(f, u.appId, u.uid, 'processing', applied);
   await seedBalance(f, u.appId, u.uid, -500n);
-  const data = await deletion(await u.apply({ stepUp: await u.mint() }));
+  // B1-15l: over HTTP, stage ⑥ (when assembled) answers 10007 stage=processing first.
+  const response = await u.apply({ stepUp: await u.mint() });
+  if (f.deletionGuard) {
+    await deletionStageRefused(response, 'processing');
+  } else {
+    const data = await deletion(response);
+    expect(data).toMatchObject({ status: 'processing', can_cancel: false, processed_at: null });
+    expect(ms(data.apply_at)).toBe(applied.getTime());
+  }
+  // The service layer returns the processing request in both states (no 30416 judged).
+  const direct = await requestDirectly(f, u.appId, u.uid);
+  expect(direct.code).toBe(0);
+  const data = (direct as { readonly data: DeletionData }).data;
   expect(data).toMatchObject({ status: 'processing', can_cancel: false, processed_at: null });
   expect(ms(data.apply_at)).toBe(applied.getTime());
   expect(await requests(f, u.appId, u.uid)).toHaveLength(1);
+  expect(inFlightCallsOf(u.appId, u.uid)).toEqual([]);
 });
 
 it('[AC-B1-15d#11] 只有已撤回的历史单时可重新申请：新建一张 cooling 单', async () => {

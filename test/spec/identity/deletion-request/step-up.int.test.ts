@@ -7,6 +7,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   TTL_SECONDS,
   deletion,
+  deletionStageRefused,
   failed,
   inFlightCallsOf,
   openFixture,
@@ -48,6 +49,15 @@ it('[AC-B1-15d#13] 成功后同一 token 换新键 → 10003，仍只有一张�
   const u = await user(f);
   const token = await u.mint();
   await deletion(await u.apply({ stepUp: token }));
+  // B1-15l: the request is now cooling; stage ⑥ (when assembled) answers before ⑫.
+  if (f.deletionGuard) await deletionStageRefused(await u.apply({ stepUp: token }), 'cooling');
+  else await stepUpRequired(await u.apply({ stepUp: token }));
+  expect(await requests(f, u.appId, u.uid)).toHaveLength(1);
+  // In both states: with no open request (cancelled), the consumed token is 10003 on a new key.
+  // Why HTTP and not the service layer: the service does no step-up, so calling it directly
+  // cannot reach 10003. Once the request is cancelled no request is open, ⑥ lets the call through
+  // in both states, and ⑫ still shows the token was consumed exactly once (B1-15l).
+  expect((await deletion(await u.cancel())).status).toBe('cancelled');
   await stepUpRequired(await u.apply({ stepUp: token }));
   expect(await requests(f, u.appId, u.uid)).toHaveLength(1);
 });
