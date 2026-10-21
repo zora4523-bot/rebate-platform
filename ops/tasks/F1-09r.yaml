@@ -6,11 +6,14 @@ type: impl
 # 依据（SPEC_REF f411375）：08 12_TEXT BR-TEXT-26 细则「素材与校验」（≤ 300KB；JSON 对象含 v / fr / ip / op / w / h / layers；时长 (op − ip) ÷ fr 大于 0 且 ≤ 3 秒；assets 图片只能内嵌 data URI，网址或相对路径整份拒收；dotLottie 不收；兜底图同弹窗图要求；宽高比只提示不拦截）；
 #   04 §6.2「首页弹窗卡 popup」、§6.6 pages「弹窗素材上传」（权限点 content.page，不要 step-up，上传不改页面版本，保存草稿时才写进 props；不合格 20001 data.fields=[file]）。原文由编排者摘入任务书第 9 节，refs 置空。
 # 要点：只改 content（OSS 经 platform 的 MediaStore 端口，非生产只用假实现）；同一内容重复上传返回同一 url；保存与发布对 popup.lottie 只核对引用（url 在 media 域名下、文件名与 sha256 一致），不重新下载校验。
+# 2026-10-22 更正：OSS 经 platform/media 的 MediaStore 端口，现只收 image/svg+xml、image/png（F1-06z）；本任务扩为另收 application/json（Lottie）与 image/jpeg，文件名仍为内容 SHA-256 加对应扩展名，故 paths 加 platform/media/**（RV2）。
+# 【待编排裁定】兜底图要求：规划只写「同只配静态图时的弹窗图」，未定格式与大小——默认 png / jpeg、≤ 1 MB、按文件头判格式（不信扩展名与 Content-Type），不合格 20001 reason format / too_large。
 refs: []
 refs_hash: {}
 deps: [CT-07b]
 paths:
   - 'apps/api/src/modules/content/**'
+  - 'apps/api/src/modules/platform/media/**'
 test_paths:
   - 'test/spec/content/popup-assets/**'
 impl: claude

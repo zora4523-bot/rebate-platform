@@ -13,11 +13,13 @@ type: contract
 #   InviteLink（01 §4.2 有、routes.json 也没有）默认一并补（entry 只 deeplink，参数 code）。
 # 【待规划回写】04 §6.3 hot-words 行（形状、匹配规则、数据来源与后台写口）；04 §6.3 rank/hot 的 categories[] 项形状与分页大小；01 §4.2 Favorites 行写明「从收藏夹选」承载。
 # 必改单测（非保护，在 paths 内）：packages/contracts-ts/src/catalog.test.ts:73–74（50304 data / retry_kind_by_reason 精确相等）。占契约槽；合并即放槽并在 notices 告知 native、w1（CT-22d）、B1-28 / B1-05 实现线。
+# 2026-10-22 更正：apps/h5/src/shared/api/anonymous.ts 收录契约全部免登录 / 可选登录接口（h5 单测 anonymous.test.ts 精确比对），新增 GET /v1/rank/hot、/v1/search/hot-words 须同 PR 登记，故 paths 加该文件；本线取舍：GET /v1/rank/hot 鉴权 optional（卡片带按用户算的预估返利与登记 link_id，同 GET /v1/products/search），不用 none。
 refs: []
 refs_hash: {}
 contract_sections: ['6.3', '7', '10.1']
 deps: [CT-22b]
 paths:
+  - 'apps/h5/src/shared/api/anonymous.ts'
   - 'contracts/routes.json'
   - 'contracts/openapi.yaml'
   - 'contracts/error-codes.yaml'
