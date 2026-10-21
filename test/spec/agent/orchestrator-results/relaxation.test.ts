@@ -2,12 +2,23 @@ import { expect, it } from 'vitest';
 import fc from 'fast-check';
 import { propParams } from '@couli/testing';
 import { readSearchParams } from '../../../../apps/api/src/modules/agent/orchestrator/results/index.ts';
-import { BASE, cards, copy, fixture, notice, noticeKeys, outcome, product } from './kit.ts';
+import {
+  BASE,
+  cards,
+  copy,
+  expectSafeModelView,
+  fixture,
+  notice,
+  noticeKeys,
+  outcome,
+  product,
+} from './kit.ts';
 
 it('[AC-B3-05g#4][BR-AI-08] 无结果按规格、价格上限依序放宽，保留下限，其余条件不变', async () => {
   const h = fixture();
   h.replies.push(outcome(), outcome([], 'step1', null), outcome([], 'step2', null));
   const result = await h.call(BASE);
+  expectSafeModelView(result.modelView);
   const { spec, ...noSpec } = BASE;
   const { price_max_fen, ...noMax } = noSpec;
   void spec;
@@ -31,6 +42,7 @@ it('[AC-B3-05g#4][BR-AI-08] 规格放宽已有商品就停止，整组 notice �
   const h = fixture();
   h.replies.push(outcome(), outcome([product()], 'step1', null));
   const result = await h.call(BASE);
+  expectSafeModelView(result.modelView);
   expect(h.execute).toHaveBeenCalledTimes(2);
   expect(noticeKeys(result)).toEqual(['agent.notice.relaxed_spec']);
   expect(cards(result).filter((c) => c.type === 'product_list')).toHaveLength(1);
@@ -49,6 +61,7 @@ it('[AC-B3-05g#4][BR-AI-08] 没有规格跳过第一步不消耗调用，只有�
   h.reset();
   h.replies.push(outcome([], 'only-min', null, 1));
   const onlyMin = await h.call({ q: '合成商品', price_min_fen: 100 });
+  expectSafeModelView(onlyMin.modelView);
   expect(h.execute).toHaveBeenCalledTimes(1);
   expect(noticeKeys(onlyMin)).toEqual(['agent.notice.no_result']);
 });

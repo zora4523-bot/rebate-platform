@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { BASE, delivered, fixture, list, notice, outcome, product, request } from './kit.ts';
 import { candidate, fixture as searchFixture } from '../tools-search-params/kit.ts';
 
@@ -34,6 +34,40 @@ it('[AC-B3-05g#1][BR-AI-05] 没有已下发商品时序号引用只追问', asyn
     kind: 'clarify',
   });
 });
+
+it.each([{ sessionId: 'other-session' }, { appId: 'other-app' }])(
+  '[AC-B3-05g#1][AC-B3-05g#2][BR-AI-05] 较新的异域结果 %j 不遮蔽本域结果，编号可在域内重复',
+  async (identity) => {
+    const h = fixture();
+    const own = delivered('c2', product('jd:own'));
+    const foreign = delivered('c2', product('jd:foreign'));
+    await h.seed('older-own', [own]);
+    await h.seed('newer-foreign', [foreign, delivered('c3')], undefined, identity);
+    for (const [ctx, id, items] of [
+      [h.quoteContext(), 'older-own', [own]],
+      [h.quoteContext(identity), 'newer-foreign', [foreign, delivered('c3')]],
+    ] as const) {
+      expect(await h.store.latestWithProducts(ctx.appId, ctx.sessionId)).toMatchObject({
+        id,
+        delivered: items,
+      });
+      expect(await h.references.resolve({ ref_ordinal: 1 }, ctx)).toEqual({
+        kind: 'product',
+        productKey: items[0].product_key,
+      });
+      expect(await h.references.resolve({ card_id: 'c2' }, ctx)).toEqual({
+        kind: 'product',
+        productKey: items[0].product_key,
+      });
+    }
+    expect(await h.references.resolve({ ref_ordinal: 2 }, h.quoteContext())).toEqual({
+      kind: 'clarify',
+    });
+    expect(await h.references.resolve({ card_id: 'c3' }, h.quoteContext())).toEqual({
+      kind: 'invalid_args',
+    });
+  },
+);
 
 it('[AC-B3-05g#2][BR-AI-05] card_id 可跨轮引用，不能跨会话、跨 app 或引用未下发和非商品卡', async () => {
   const h = fixture();
@@ -95,6 +129,31 @@ it('[AC-B3-05g#10][BR-AI-05] 没有 product_list 的工具结果不落结果集'
   h.replies.push({ kind: 'ok', modelView: {}, cards: [notice('synthetic.notice')] });
   await h.call({}, h.ctx, 'get_my_earnings');
   expect(h.save).not.toHaveBeenCalled();
+});
+
+it('[AC-B3-05g#10][AC-B3-05g#12][BR-AI-05] searchKeyword 原样透传，不保存或改变序号引用', async () => {
+  const h = fixture();
+  await h.seed('previous', [delivered('c2', product('jd:previous'))]);
+  const previous = await h.store.latestWithProducts(h.ctx.subject.appId, h.ctx.sessionId);
+  h.save.mockClear();
+  const item = product('jd:keyword');
+  const reply = {
+    cards: [list('keyword-result', [item])],
+    results: [{ platform: 'jd', ok: true as const, items: [item] }],
+  };
+  const search = vi.spyOn(h.inner, 'searchKeyword').mockResolvedValue(reply);
+  const plan = { q: '合成关键词', platforms: ['jd'], sort: 'relevance' as const };
+  expect(await h.tools.searchKeyword(plan, h.ctx)).toBe(reply);
+  expect(search).toHaveBeenCalledExactlyOnceWith(plan, h.ctx);
+  expect(search.mock.calls[0]?.[0]).toBe(plan);
+  expect(search.mock.calls[0]?.[1]).toBe(h.ctx);
+  expect(h.execute).not.toHaveBeenCalled();
+  expect(h.save).not.toHaveBeenCalled();
+  expect(await h.store.latestWithProducts(h.ctx.subject.appId, h.ctx.sessionId)).toEqual(previous);
+  expect(await h.references.resolve({ ref_ordinal: 1 }, h.quoteContext())).toEqual({
+    kind: 'product',
+    productKey: 'jd:previous',
+  });
 });
 
 it('[AC-B3-05g#3][AC-B3-05g#10][BR-AI-08] 真实 search registry 前拦截非法价格，并读取 handler 的结果元数据', async () => {

@@ -105,6 +105,21 @@ export function cards(value: ToolOutcome): readonly UnnumberedCard[] {
   return value.kind === 'ok' ? value.cards : [];
 }
 
+/** BR-AI-05: inspect only the model projection; server cards may contain prices. */
+export function expectSafeModelView(view: unknown): void {
+  expect(typeof view).not.toBe('number');
+  expect(typeof view).not.toBe('bigint');
+  if (typeof view === 'string') expect(view).not.toMatch(/^-?\d+(?:\.\d+)?$/u);
+  if (Array.isArray(view)) {
+    view.forEach(expectSafeModelView);
+  } else if (view !== null && typeof view === 'object') {
+    for (const [key, value] of Object.entries(view)) {
+      expect(key).not.toMatch(/price|coupon|rebate|commission|balance|earnings|_fen/iu);
+      expectSafeModelView(value);
+    }
+  }
+}
+
 export function noticeKeys(value: ToolOutcome | readonly UnnumberedCard[]): string[] {
   const entries = 'kind' in value ? cards(value) : value;
   return entries

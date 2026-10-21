@@ -1,7 +1,7 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { parseIntentOutput } from '../../../../apps/api/src/modules/agent/orchestrator/intents/index.ts';
 import { maxSearchPage } from '../../../../apps/api/src/modules/agent/tools/search/schema.ts';
-import { BASE, delivered, fixture, noticeKeys, outcome, product } from './kit.ts';
+import { BASE, delivered, expectSafeModelView, fixture, noticeKeys, outcome, product } from './kit.ts';
 
 it.each(['cheaper', 'next_batch'] as const)(
   '[AC-B3-05g#8][BR-AI-05] refine.%s 只接受独立 true，禁止附加数字或其他键',
@@ -46,12 +46,37 @@ it.each([5000, undefined, 2000])(
     expect(h.execute.mock.calls.map(([call]) => ({ name: call.name, args: call.args }))).toEqual([
       {
         name: 'search_products',
-        args: { ...other, price_max_fen: max === 2000 ? 2000 : 2989, sort: 'final_price_asc' },
+        // Cheaper changes the price condition and ordering; explicitly restart at page 1.
+        args: {
+          ...other,
+          page: 1,
+          price_max_fen: max === 2000 ? 2000 : 2989,
+          sort: 'final_price_asc',
+        },
       },
     ]);
     expect(h.save.mock.calls.at(-1)?.[0].conditions.chain_id).toBe('synthetic-chain');
   },
 );
+
+it('[AC-B3-05g#7][BR-AI-05] 已下发最低 2 分时以 1 分上限正常检索并重置页码', async () => {
+  const h = fixture();
+  // No lower bound: isolate the valid 1-fen ceiling from min > max handling.
+  await h.seed('previous', [delivered('c2', product('jd:minimum', 2))], {
+    q: BASE.q,
+    page: 3,
+    chain_id: 'synthetic-chain',
+  });
+  h.replies.push(outcome([product('jd:one-fen', 1)], 'one-fen', null, 1));
+  const output = await h.intent({ agent_intent: 'refine', conditions: { cheaper: true } });
+  expect(h.execute.mock.calls.map(([call]) => call.args)).toEqual([
+    { q: BASE.q, price_max_fen: 1, sort: 'final_price_asc', page: 1 },
+  ]);
+  expect(output.result).toEqual({ kind: 'done', finishReason: 'stop' });
+  expect(output.cards.filter((card) => card.type === 'product_list')).toHaveLength(1);
+  expect(noticeKeys(output.cards)).toEqual([]);
+  expect(output.suggestions).toEqual([]);
+});
 
 it('[AC-B3-05g#7][BR-AI-05] 搜索返回但没有实际下发的更低价商品不参与 cheaper', async () => {
   const h = fixture();
@@ -92,8 +117,13 @@ it('[AC-B3-05g#6][BR-AI-08] cheaper 无结果即停止，即使有规格和上�
   const h = fixture();
   await h.seed('previous', [delivered('c2')]);
   h.replies.push(outcome());
+  const execute = vi.spyOn(h.tools, 'execute');
   const output = await h.intent({ agent_intent: 'refine', conditions: { cheaper: true } });
   expect(h.execute).toHaveBeenCalledTimes(1);
+  expect(execute).toHaveBeenCalledTimes(1);
+  const result = await execute.mock.results[0]?.value;
+  expect(result).toMatchObject({ kind: 'ok' });
+  expectSafeModelView(result?.modelView);
   expect(noticeKeys(output.cards)).toEqual(['agent.notice.no_cheaper']);
   expect(output.suggestions).toEqual([]);
   expect(await h.store.latestWithProducts(h.ctx.subject.appId, h.ctx.sessionId)).toMatchObject({
@@ -127,6 +157,21 @@ it('[AC-B3-05g#8][BR-AI-05] 换一批超 maxSearchPage 时不调用内层、不�
   expect(output.result).toEqual({ kind: 'done', finishReason: 'stop' });
   expect(h.execute).not.toHaveBeenCalled();
   expect(h.save).not.toHaveBeenCalled();
+});
+
+it('[AC-B3-05g#8][BR-AI-05] 上一轮未带 page 时换一批从默认第一页到第二页', async () => {
+  const h = fixture();
+  const { page, ...conditions } = BASE;
+  void page;
+  await h.seed('previous', [delivered('c2')], { ...conditions, chain_id: 'synthetic-chain' });
+  h.replies.push(outcome([product()], 'next', BASE.spec, 2));
+  await h.intent({ agent_intent: 'refine', conditions: { next_batch: true } });
+  expect(h.execute.mock.calls.map(([call]) => call.args)).toEqual([{ ...conditions, page: 2 }]);
+  expect(h.save.mock.calls.at(-1)?.[0].conditions).toEqual({
+    ...conditions,
+    page: 2,
+    chain_id: 'synthetic-chain',
+  });
 });
 
 it('[AC-B3-05g#8][BR-AI-05] 换平台只改 platforms，保留价格、规格、页数、排序和链', async () => {
