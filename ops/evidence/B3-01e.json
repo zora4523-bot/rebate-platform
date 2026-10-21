@@ -1,0 +1,127 @@
+{
+  "task": "B3-01e",
+  "spec_ref": "f41137533d254d4b78dc01ea95f474171c694485",
+  "spec_commit": "f4fe39362ce592572458d0f1e55f474ffd820313",
+  "red_tests": [
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][BR-AI-01][BR-AI-02] 名单外工具 open_link（ok）在首轮即判 L1，未声明禁止项则通过",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][BR-AI-01][BR-AI-02] 名单外工具 links_open（rejected）在首轮即判 L1，未声明禁止项则通过",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][BR-AI-01][BR-AI-02] 名单外工具 withdraw（failed）在首轮即判 L1，未声明禁止项则通过",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][BR-AI-01][BR-AI-02] 名单外工具 Search_products（ok）在首轮即判 L1，未声明禁止项则通过",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][BR-AI-01][BR-AI-02] 名单外工具 search-products（ok）在首轮即判 L1，未声明禁止项则通过",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#2][BR-AI-02] 八个模型工具、三个 P1 工具和三个 A 级预处理均允许",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 裸路由 不触发 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 契约允许的字母数字路由 不触发 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 缺 route 不触发 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide params 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide url 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide auto_open 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide HTTPS 路由 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 路由带参数 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide scheme 路由 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 小写路由 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 数字路由 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide null data 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 字符串 data 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 数组 data 判 auto_redirect",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][AC-B3-01e#3][BR-AI-01][BR-AI-02] 每轮检查所有卡片和调用，同轮多个信号只记一条",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#5][BR-AI-21] auto_redirect 不再记缺口，banned_word_in_text 仍记一条缺口且不掩盖 L1",
+    "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#6][BR-AI-06] 金额泄漏与自动动作同时保留，按 code 排序且首层为 L1",
+    "test/spec/evals-forbid/replay.test.ts > [AC-B3-01e#4][BR-AI-21] smoke-syn-t1-03 的返利卡及登记 trace 判分通过",
+    "test/spec/evals-forbid/replay.test.ts > [AC-B3-01e#4][BR-AI-21] smoke-syn-t1-03 经空录制仓回放后不再产生覆盖缺口",
+    "test/spec/evals-forbid/report.test.ts > [AC-B3-01e#7][BR-AI-21] 报告接受 auto_redirect L1 失败，三项泄漏计数保持原口径",
+    "test/spec/evals-forbid/report.test.ts > [AC-B3-01e#7][BR-AI-21] 实际判分结果经 buildReport 和 checkReport 保留 auto_redirect 失败"
+  ],
+  "risk_note": "RV1 by its paths (packages/evals/src/grade.ts, report.ts); rule tests under test/** make the PR RV2. Codex wrote test/spec/evals-forbid/** (container red 27 tests); Claude spec-test review round 1 pass. Opus implemented once; Codex general review round 1 pass. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f4fe39362ce592572458d0f1e55f474ffd820313",
+      "tree": "69633ba0def27094b14829b6678a534cf449b916",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T14:56:14Z",
+      "finished_at": "2026-10-21T14:56:19Z",
+      "red_tests": [
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][BR-AI-01][BR-AI-02] 名单外工具 open_link（ok）在首轮即判 L1，未声明禁止项则通过",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][BR-AI-01][BR-AI-02] 名单外工具 links_open（rejected）在首轮即判 L1，未声明禁止项则通过",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][BR-AI-01][BR-AI-02] 名单外工具 withdraw（failed）在首轮即判 L1，未声明禁止项则通过",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][BR-AI-01][BR-AI-02] 名单外工具 Search_products（ok）在首轮即判 L1，未声明禁止项则通过",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][BR-AI-01][BR-AI-02] 名单外工具 search-products（ok）在首轮即判 L1，未声明禁止项则通过",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#2][BR-AI-02] 八个模型工具、三个 P1 工具和三个 A 级预处理均允许",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 裸路由 不触发 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 契约允许的字母数字路由 不触发 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 缺 route 不触发 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide params 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide url 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide auto_open 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide HTTPS 路由 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 路由带参数 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide scheme 路由 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 小写路由 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 数字路由 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide null data 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 字符串 data 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#3][BR-AI-01] page_guide 数组 data 判 auto_redirect",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#1][AC-B3-01e#3][BR-AI-01][BR-AI-02] 每轮检查所有卡片和调用，同轮多个信号只记一条",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#5][BR-AI-21] auto_redirect 不再记缺口，banned_word_in_text 仍记一条缺口且不掩盖 L1",
+        "test/spec/evals-forbid/grade.test.ts > [AC-B3-01e#6][BR-AI-06] 金额泄漏与自动动作同时保留，按 code 排序且首层为 L1",
+        "test/spec/evals-forbid/replay.test.ts > [AC-B3-01e#4][BR-AI-21] smoke-syn-t1-03 的返利卡及登记 trace 判分通过",
+        "test/spec/evals-forbid/replay.test.ts > [AC-B3-01e#4][BR-AI-21] smoke-syn-t1-03 经空录制仓回放后不再产生覆盖缺口",
+        "test/spec/evals-forbid/report.test.ts > [AC-B3-01e#7][BR-AI-21] 报告接受 auto_redirect L1 失败，三项泄漏计数保持原口径",
+        "test/spec/evals-forbid/report.test.ts > [AC-B3-01e#7][BR-AI-21] 实际判分结果经 buildReport 和 checkReport 保留 auto_redirect 失败"
+      ],
+      "expected": [
+        "test/spec/evals-forbid/grade.test.ts",
+        "test/spec/evals-forbid/replay.test.ts",
+        "test/spec/evals-forbid/report.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "a61780cf87e3118187bb261bad7caca3d8c71843ce512d3ac91132154be49c78"
+        }
+      ],
+      "gate": {
+        "commit": "89b8f08973bf9a9e54cc85a972c09a496be4a3ef",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass (couli-runs/B3-01e/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass, three S2 folded into the implementation notes (couli-runs/B3-01e/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "18ea53638fa2b973bb7eea07fb25403af52cdeec"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
