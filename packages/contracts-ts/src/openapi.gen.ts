@@ -3799,6 +3799,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/pages/popup-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a home popup animation or picture
+         * @description Permission point `content.page`, no step-up (04 §6.6 `pages`「弹窗素材上传」).
+         *     `multipart/form-data` with two parts: `kind` (`lottie` | `image`) and `file`. The server
+         *     checks the file against BR-TEXT-26 细则「素材与校验」 and stores it in the OSS media bucket
+         *     under its content SHA-256: the same content uploaded again returns the same `url`. The
+         *     upload changes no page version; the console writes `url` and `sha256` into the popup
+         *     props (`lottie` = {url, sha256}, `image` = url; contracts/home-schema.json) only when the
+         *     draft is saved (POST /admin/v1/pages/{page_key}/versions). `kind=lottie`: one Lottie JSON
+         *     of at most 300 KB that parses as a JSON object with `v`, `fr`, `ip`, `op`, `w`, `h` and
+         *     `layers`; duration (`op` − `ip`) ÷ `fr` above 0 and at most 3 seconds; images in `assets`
+         *     only inlined as data URIs; dotLottie is not accepted. The response adds `width`, `height`
+         *     (from `w`, `h`) and `duration_ms`. `kind=image`: the popup picture, also the static
+         *     fallback when an animation is set, with the same requirements as a popup picture without
+         *     animation. An aspect ratio that differs from the fallback picture by more than 2 % is
+         *     only flagged by the console, never rejected here. Rejections are 20001 with
+         *     `data.fields=[file]` (`[kind]` when `kind` is missing or not one of the two) and an
+         *     admin-only `data.reason` (shown next to the field with admin text, not in the user
+         *     dictionary): `format` (not a Lottie JSON object, a required key missing, dotLottie, or a
+         *     picture of the wrong format), `too_large` (above the size limit), `too_long` (duration not
+         *     above 0 or above 3 seconds) and `external_ref` (an `assets` entry pointing to a web
+         *     address or a relative path). A request body above the global limit stays 413 with
+         *     `data.fields=[body]`.
+         */
+        post: operations["adminUploadPopupAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/pages/{page_key}": {
         parameters: {
             query?: never;
@@ -3850,9 +3890,12 @@ export interface paths {
          *     ①; personal-data placeholders in an external url, BR-ID-33 细则「外链不带个人数据」;
          *     Withdraw, PayoutAccount, LaborAgreement or RealName with params, BR-WDR-01 细则), the
          *     notice_bar api data source (only the notice CMS, 03 §6.3) and union_material channels (only
-         *     selectable channels of specs/material-channels.yaml, BR-TEXT-17 细则「联盟物料频道」); a
-         *     failure is 20001 with `data.fields` naming the offending field as a dotted path with array
-         *     indexes (e.g. `sections.0.data_source`), no `data.reason` (编排者默认). CAS:
+         *     selectable channels of specs/material-channels.yaml, BR-TEXT-17 细则「联盟物料频道」) and
+         *     a popup's `props.lottie` (only the reference: `url` on the media domain and its file name
+         *     equal to `sha256`; the file itself was checked by POST /admin/v1/pages/popup-assets, 04
+         *     §6.2, BR-TEXT-26 细则「素材与校验」); a failure is 20001 with `data.fields` naming the
+         *     offending field as a dotted path with array indexes (e.g. `sections.0.data_source`,
+         *     `sections.3.props.lottie`), no `data.reason` (编排者默认). CAS:
          *     `expected_revision` is the page's `revision` the console showed, 0 for a page not saved
          *     yet; saving adds 1, and a mismatch → 20902 with `data.resource=page` (编排者默认: drafts
          *     are whole pages, so two editors must not save over each other unseen).
@@ -8667,6 +8710,65 @@ export interface components {
              * @description The type's newest version as the console showed it, 0 when none is published; a mismatch is 20902.
              */
             expected_version: number;
+        };
+        /** @description multipart/form-data body of a home popup asset upload; parts `kind` and `file`. */
+        AdminPopupAssetUploadRequest: {
+            /**
+             * @description lottie = Lottie JSON animation; image = popup picture or static fallback.
+             * @enum {string}
+             */
+            kind: "lottie" | "image";
+            /** @description The file as uploaded (BR-TEXT-26 细则「素材与校验」). */
+            file: string;
+        };
+        /**
+         * Format: uri
+         * @description Stored file on the media domain (set by deployment), named by its content SHA-256; the
+         *     same content always gets the same url.
+         */
+        AdminPopupAssetUrl: string;
+        /** @description Lowercase hex SHA-256 of the stored file, the same digest as its file name. */
+        AdminPopupAssetSha256: string;
+        /** @description kind=image result. */
+        AdminPopupAssetImage: {
+            url: components["schemas"]["AdminPopupAssetUrl"];
+            sha256: components["schemas"]["AdminPopupAssetSha256"];
+            /**
+             * Format: int32
+             * @description Size of the stored file.
+             */
+            bytes: number;
+        };
+        /** @description kind=lottie result, with the animation's size and duration. */
+        AdminPopupAssetLottie: {
+            url: components["schemas"]["AdminPopupAssetUrl"];
+            sha256: components["schemas"]["AdminPopupAssetSha256"];
+            /**
+             * Format: int32
+             * @description Size of the stored file.
+             */
+            bytes: number;
+            /**
+             * Format: int32
+             * @description Lottie `w`.
+             */
+            width: number;
+            /**
+             * Format: int32
+             * @description Lottie `h`.
+             */
+            height: number;
+            /**
+             * Format: int32
+             * @description (`op` − `ip`) ÷ `fr`, in milliseconds rounded to the nearest one.
+             */
+            duration_ms: number;
+        };
+        AdminPopupAssetUploadResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminPopupAssetLottie"] | components["schemas"]["AdminPopupAssetImage"];
+            trace_id: components["schemas"]["TraceId"];
         };
         AdminPageConfigDraftRequest: {
             /** @description The whole page; section shape contracts/home-schema.json `$defs/section`. */
@@ -19301,6 +19403,68 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUploadPopupAsset: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AdminPopupAssetUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description The stored file (the same url for the same content). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPopupAssetUploadResponse"];
+                };
+            };
+            /** @description Request body above the global limit (20001 with data.fields=[body]). */
+            413: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 20001,
+                     *       "msg": "参数错误",
+                     *       "data": {
+                     *         "fields": [
+                     *           "body"
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Rejected (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

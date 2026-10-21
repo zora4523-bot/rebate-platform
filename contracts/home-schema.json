@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Home SDUI page contract (CT-07a). Shape: 规划/03 §6.1; client handling: 03 §6.2; card registry: 03 §6.3; jump targets and per-platform min_app_version: 04 §10.1; NoticeItem: 04 §6.2; ad_label: BR-TEXT-17. The root is one delivered page (GET /v1/pages/{page_key}, preview, and the sections the console saves and reads back use $defs/section). The 8 registered section types are validated strictly by type; any other type is an unknown card: only the section envelope is checked and the client skips it silently (03 §6.2). Jump targets are {route, params} (RouteTarget of openapi.yaml): route names are not enumerated here, a server may send a route newer than the client (03 §4.4). Props whose keys the plan only describes (icon_grid, activity_entry, notice_bar display, popup close button, product_scroll) stay open until the plan names them. union_material carries channels [{platform, channel_id}] chosen from the channel whitelist (BR-TEXT-17 细则); the platforms list of the 03 §6.1 example is derived from channels and not accepted here. At most one popup per page; section ids unique per page (checked by the contracts-ts unit test and on save, not expressible here). Fixtures: contracts/fixtures/home-golden/*.json (invalid/ holds counter-examples).",
+  "$comment": "Home SDUI page contract (CT-07a). Shape: 规划/03 §6.1; client handling: 03 §6.2; card registry: 03 §6.3; jump targets and per-platform min_app_version: 04 §10.1; NoticeItem: 04 §6.2; ad_label: BR-TEXT-17. The root is one delivered page (GET /v1/pages/{page_key}, preview, and the sections the console saves and reads back use $defs/section). The 8 registered section types are validated strictly by type; any other type is an unknown card: only the section envelope is checked and the client skips it silently (03 §6.2). Jump targets are {route, params} (RouteTarget of openapi.yaml): route names are not enumerated here, a server may send a route newer than the client (03 §4.4). Props whose keys the plan only describes (icon_grid, activity_entry, notice_bar display, popup close button, product_scroll) stay open until the plan names them. popup may carry an optional Lottie animation {url, sha256} (image is then the static fallback) and an optional screen-reader name alt (04 §6.2, BR-TEXT-26). union_material carries channels [{platform, channel_id}] chosen from the channel whitelist (BR-TEXT-17 细则); the platforms list of the 03 §6.1 example is derived from channels and not accepted here. At most one popup per page; section ids unique per page (checked by the contracts-ts unit test and on save, not expressible here). Fixtures: contracts/fixtures/home-golden/*.json (invalid/ holds counter-examples).",
   "title": "Page",
   "type": "object",
   "additionalProperties": false,
@@ -650,16 +650,40 @@
     },
     "section_popup": {
       "type": "object",
-      "$comment": "Popup (03 §6.1, §6.3): at most one per page; image, daily times, time window (start, end), close button (key name not given by the plan yet, so props stay open). static, items carry the action.",
+      "$comment": "Popup (03 §6.1, §6.3; 04 §6.2 首页弹窗卡 popup; BR-TEXT-26; D10-109): at most one per page; image, daily times, time window (start, end), close button (key name not given by the plan yet, so props stay open). image is the popup picture, or the static fallback picture when lottie is set (lottie requires image). lottie {url, sha256} is optional: url is the https address of the Lottie JSON under the OSS media domain (file named by its content digest), sha256 the lowercase hex SHA-256 of that file, which the native client checks after download; both keys required, no other key. alt is the optional screen-reader name (1-40 characters); without it the client reads the default name 「首页弹窗」. lottie and alt are new optional keys, so the card version stays the same. static, items carry the action.",
       "required": ["data_source"],
       "properties": {
         "props": {
           "type": "object",
           "additionalProperties": true,
+          "dependentRequired": {
+            "lottie": ["image"]
+          },
           "properties": {
             "image": {
               "type": "string",
               "minLength": 1
+            },
+            "lottie": {
+              "type": "object",
+              "required": ["url", "sha256"],
+              "additionalProperties": false,
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "minLength": 9,
+                  "pattern": "^https://"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "alt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
             },
             "daily_max": {
               "type": "integer",

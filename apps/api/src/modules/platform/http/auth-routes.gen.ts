@@ -632,6 +632,11 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "admin"
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/pages/popup-assets",
+    "auth": "admin"
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/pages/:page_key",
     "auth": "admin"

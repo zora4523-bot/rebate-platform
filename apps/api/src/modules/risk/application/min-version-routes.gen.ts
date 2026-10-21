@@ -1283,6 +1283,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminUploadPopupAsset",
+    "method": "POST",
+    "path": "/admin/v1/pages/popup-assets",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminGetPageConfig",
     "method": "GET",
     "path": "/admin/v1/pages/:page_key",
