@@ -1,8 +1,15 @@
-// B3-05g · BR-AI-05: in-memory ResultSetStore (tests and local wiring). The PG store of
-// agent_result_sets belongs to B3-09c; it must keep the same semantics: conditions and delivered
-// cards are kept apart, every lookup is scoped by app and session, takeOnce is atomic.
+// B3-05g / B3-05k · BR-AI-05: in-memory ResultSetStore (tests and local wiring). The PG store of
+// agent_result_sets / agent_result_chains belongs to B3-09c; it must keep the same semantics:
+// conditions and delivered cards are kept apart, every lookup is scoped by app and session,
+// takeOnce is atomic, chains are append-only and the last append is the current chain.
 import type { ClarificationScope, ClarifySlot } from '../intents/types.ts';
-import type { DeliveredProduct, ResultSetInput, ResultSetStore, StoredResultSet } from './types.ts';
+import type {
+  DeliveredProduct,
+  ResultSetInput,
+  ResultSetStore,
+  SessionChain,
+  StoredResultSet,
+} from './types.ts';
 
 interface Row {
   input: ResultSetInput;
@@ -17,11 +24,29 @@ function sameDomain(row: Row, appId: string, sessionId: string): boolean {
   return row.input.appId === appId && row.input.sessionId === sessionId;
 }
 
-export function createMemoryResultSetStore(): ResultSetStore {
+/** Same check as the agent_result_chains CHECK (0067): has_products needs conditions, and
+ * conditions always belong to the chain they are stored on. */
+export function chainProblem(chain: SessionChain): string | null {
+  if (chain.status === 'has_products' && chain.conditions === null) {
+    return 'has_products chain without conditions';
+  }
+  if (chain.conditions !== null && chain.conditions.chain_id !== chain.chainId) {
+    return 'conditions.chain_id differs from chainId';
+  }
+  return null;
+}
+
+function chainKey(appId: string, sessionId: string): string {
+  return JSON.stringify([appId, sessionId]);
+}
+
+export function createMemoryResultSetStore(): Required<ResultSetStore> {
   // Save order is the recency order; a re-save of the same id keeps its place and receipts.
   const rows: Row[] = [];
   const byId = new Map<string, Row>();
   const asked = new Set<string>();
+  // Appends per app/session: only the last one is ever read back, so only it is kept here.
+  const chains = new Map<string, SessionChain>();
 
   return {
     async save(value) {
@@ -72,6 +97,21 @@ export function createMemoryResultSetStore(): ResultSetStore {
       if (asked.has(key)) return false;
       asked.add(key);
       return true;
+    },
+
+    async currentChain(appId, sessionId) {
+      const last = chains.get(chainKey(appId, sessionId));
+      return last === undefined ? null : { ...last };
+    },
+
+    async appendChain(appId, sessionId, chain) {
+      const problem = chainProblem(chain);
+      if (problem !== null) throw new Error(`appendChain: ${problem}`);
+      chains.set(chainKey(appId, sessionId), {
+        chainId: chain.chainId,
+        status: chain.status,
+        conditions: chain.conditions,
+      });
     },
   };
 }

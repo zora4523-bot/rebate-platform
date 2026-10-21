@@ -1,0 +1,117 @@
+{
+  "task": "B3-05k",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "16b7cf28f0d6e85203877ea96e12f1d228cc4a81",
+  "red_tests": [
+    "test/spec/agent/orchestrator-results-chain/budget.test.ts > [AC-B3-05k#5][BR-AI-08] 每 run 恰好四次，第五次不调内层；新 signal 与新 runId 分别隔离",
+    "test/spec/agent/orchestrator-results-chain/budget.test.ts > [AC-B3-05k#5][BR-AI-08] 属性：N 个 run 用满后最后一个仍恰好四次，新 signal 不继承旧预算",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#1][BR-AI-08] A 追问后 B 从共享端口续答，保留查询词与同一链",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#2][BR-AI-08] 待回答时跨实例再给非法价格只检索一次，新 store 仍追问",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#3][BR-AI-08][BR-AI-05] 放宽规格后端口和结果集保存实际条件，B 换批只加页码",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#4][BR-AI-05][BR-AI-08] 已出商品后同词模型搜索也开新链，新链可重新追问",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#7][BR-AI-05][BR-AI-08] 搜索经 appendChain 写开始与完成，最后为生效条件",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#7][BR-AI-05][BR-AI-08] 空会话 scope 追加 searching 且条件为 null",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#1][BR-AI-08] 端口返回的较新链优先于实例旧状态，不同端口对象也可续答",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#1][BR-AI-08] 五方法旧端口按 store 身份共享待回答链，另一个 store 不受影响",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#8][BR-AI-05][BR-AI-08] cheaper 无结果保留生效条件，随后 next_batch 不沿用失败低价",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#8][BR-AI-05][BR-AI-08] cheaper 无结果保留生效条件，随后 platform 不沿用失败低价",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#9][BR-AI-05][BR-AI-08] 价格续答 {\"price_min_fen\":200} 回第一页，换平台仍保留原页码",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#9][BR-AI-05][BR-AI-08] 价格续答 {\"price_max_fen\":4000} 回第一页，换平台仍保留原页码",
+    "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#9][BR-AI-05][BR-AI-08] 价格续答 {\"price_min_fen\":200,\"price_max_fen\":4000} 回第一页，换平台仍保留原页码",
+    "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05] 从未追加链返回 null，即使已有实际下发的结果集也不回落",
+    "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] 三种状态均可追加，重复链与换链始终读取最后追加值",
+    "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] app 和会话双维隔离，各自最近值互不覆盖且不跨 store",
+    "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] 拒绝无条件商品链或条件链号不符 {\"chainId\":\"synthetic-invalid\",\"status\":\"has_products\",\"conditions\":null}，原当前链不变",
+    "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] 拒绝无条件商品链或条件链号不符 {\"chainId\":\"synthetic-invalid\",\"status\":\"has_products\",\"conditions\":{\"q\":\"合成追问链牛奶\",\"chain_id\":\"synthetic-other\"}}，原当前链不变",
+    "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] 拒绝无条件商品链或条件链号不符 {\"chainId\":\"synthetic-invalid\",\"status\":\"searching\",\"conditions\":{\"q\":\"合成追问链牛奶\",\"chain_id\":\"synthetic-other\"}}，原当前链不变",
+    "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] 拒绝无条件商品链或条件链号不符 {\"chainId\":\"synthetic-invalid\",\"status\":\"awaiting_price\",\"conditions\":{\"q\":\"合成追问链牛奶\",\"chain_id\":\"synthetic-other\"}}，原当前链不变"
+  ],
+  "risk_note": "RV1 by its paths (apps/api/src/modules/agent/orchestrator/results/**); rule tests under test/** make the PR RV2. Codex wrote test/spec/agent/orchestrator-results-chain/** (container red 22 tests); Claude spec-test review round 1 pass. Opus implemented once; Codex general review round 1 pass. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "16b7cf28f0d6e85203877ea96e12f1d228cc4a81",
+      "tree": "03a75099859c3d0ad9a7b9772a5eb8174b82192e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T22:03:06Z",
+      "finished_at": "2026-10-21T22:03:11Z",
+      "red_tests": [
+        "test/spec/agent/orchestrator-results-chain/budget.test.ts > [AC-B3-05k#5][BR-AI-08] 每 run 恰好四次，第五次不调内层；新 signal 与新 runId 分别隔离",
+        "test/spec/agent/orchestrator-results-chain/budget.test.ts > [AC-B3-05k#5][BR-AI-08] 属性：N 个 run 用满后最后一个仍恰好四次，新 signal 不继承旧预算",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#1][BR-AI-08] A 追问后 B 从共享端口续答，保留查询词与同一链",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#2][BR-AI-08] 待回答时跨实例再给非法价格只检索一次，新 store 仍追问",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#3][BR-AI-08][BR-AI-05] 放宽规格后端口和结果集保存实际条件，B 换批只加页码",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#4][BR-AI-05][BR-AI-08] 已出商品后同词模型搜索也开新链，新链可重新追问",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#7][BR-AI-05][BR-AI-08] 搜索经 appendChain 写开始与完成，最后为生效条件",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#7][BR-AI-05][BR-AI-08] 空会话 scope 追加 searching 且条件为 null",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#1][BR-AI-08] 端口返回的较新链优先于实例旧状态，不同端口对象也可续答",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#1][BR-AI-08] 五方法旧端口按 store 身份共享待回答链，另一个 store 不受影响",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#8][BR-AI-05][BR-AI-08] cheaper 无结果保留生效条件，随后 next_batch 不沿用失败低价",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#8][BR-AI-05][BR-AI-08] cheaper 无结果保留生效条件，随后 platform 不沿用失败低价",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#9][BR-AI-05][BR-AI-08] 价格续答 {\"price_min_fen\":200} 回第一页，换平台仍保留原页码",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#9][BR-AI-05][BR-AI-08] 价格续答 {\"price_max_fen\":4000} 回第一页，换平台仍保留原页码",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts > [AC-B3-05k#9][BR-AI-05][BR-AI-08] 价格续答 {\"price_min_fen\":200,\"price_max_fen\":4000} 回第一页，换平台仍保留原页码",
+        "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05] 从未追加链返回 null，即使已有实际下发的结果集也不回落",
+        "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] 三种状态均可追加，重复链与换链始终读取最后追加值",
+        "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] app 和会话双维隔离，各自最近值互不覆盖且不跨 store",
+        "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] 拒绝无条件商品链或条件链号不符 {\"chainId\":\"synthetic-invalid\",\"status\":\"has_products\",\"conditions\":null}，原当前链不变",
+        "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] 拒绝无条件商品链或条件链号不符 {\"chainId\":\"synthetic-invalid\",\"status\":\"has_products\",\"conditions\":{\"q\":\"合成追问链牛奶\",\"chain_id\":\"synthetic-other\"}}，原当前链不变",
+        "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] 拒绝无条件商品链或条件链号不符 {\"chainId\":\"synthetic-invalid\",\"status\":\"searching\",\"conditions\":{\"q\":\"合成追问链牛奶\",\"chain_id\":\"synthetic-other\"}}，原当前链不变",
+        "test/spec/agent/orchestrator-results-chain/store.test.ts > [AC-B3-05k#6][BR-AI-05][BR-AI-08] 拒绝无条件商品链或条件链号不符 {\"chainId\":\"synthetic-invalid\",\"status\":\"awaiting_price\",\"conditions\":{\"q\":\"合成追问链牛奶\",\"chain_id\":\"synthetic-other\"}}，原当前链不变"
+      ],
+      "expected": [
+        "test/spec/agent/orchestrator-results-chain/budget.test.ts",
+        "test/spec/agent/orchestrator-results-chain/continuation.test.ts",
+        "test/spec/agent/orchestrator-results-chain/store.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "331803de52bfea90ff3ef81fd43cba0d24a37a2ea0bb118b7443e59c9b798147"
+        }
+      ],
+      "gate": {
+        "commit": "c5101d99084a22538a35790e50f25dd94799e6e6",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass (couli-runs/B3-05k/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass, one S2 folded into the implementation notes (couli-runs/B3-05k/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "ad749674b0075fbcb7826560cd3691ecaff56182"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}

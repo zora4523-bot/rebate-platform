@@ -1,13 +1,15 @@
-// B3-05g: state and helpers shared by the search decorator, clarification and refinement.
+// B3-05g / B3-05k: chain access and helpers shared by the search decorator, clarification and refinement.
 import { randomUUID } from 'node:crypto';
 import { platform as PLATFORM_CODES } from '@couli/contracts-ts';
 import type { Platform } from '@couli/contracts-ts';
 import type { UnnumberedCard } from '../../stream/run/index.ts';
 import { maxPriceFen, searchSorts } from '../../tools/search/schema.ts';
 import type { SearchSort } from '../../tools/search/schema.ts';
-import type { OrchestratorToolCall, OrchestratorTools, ToolOutcome } from '../core/ports.ts';
+import type { OrchestratorToolCall, ToolOutcome } from '../core/ports.ts';
 import type { ClarifySlot, IntentDeps } from '../intents/types.ts';
-import type { ResultSetStore, SearchConditions } from './types.ts';
+import { createMemoryResultSetStore } from './store.ts';
+import type { ResultSetStore, SearchConditions, SessionChain } from './types.ts';
+export type { SessionChain } from './types.ts';
 
 /** Text keys (contracts/texts.default.json; clarify options and the platform notice are new keys
  * for the dictionary owner, B3-13). */
@@ -38,51 +40,42 @@ export const SERVER_CALL = Symbol('B3-05g server call');
 
 export type InternalToolCall = OrchestratorToolCall & { readonly [SERVER_CALL]?: ServerCall };
 
-/** The session's current result-set chain and the conditions of its last search attempt
- * (null until a search ran on the chain). */
-export interface SessionChain {
-  readonly chainId: string;
-  readonly conditions: SearchConditions | null;
-  /** Only an unanswered price question before any products permits a direct-call continuation. */
-  readonly status: 'searching' | 'awaiting_price' | 'has_products';
-}
+/** Chains of a five-method store (no chain port yet), bound to that store object's identity:
+ * every decorator and continuation sharing the store sees the same chain. */
+const fallbackChains = new WeakMap<ResultSetStore, Required<ResultSetStore>>();
 
-export interface ResultsState {
-  readonly chains: Map<string, SessionChain>;
-  /** Tool calls per app/session/run: model calls and appended relaxation calls together. */
-  readonly calls: Map<string, number>;
-}
+type ChainPort = Pick<Required<ResultSetStore>, 'currentChain' | 'appendChain'>;
 
-const states = new WeakMap<OrchestratorTools, ResultsState>();
-
-/** State shared by one decorated tools port and the continuations built on it. */
-export function stateOf(tools: OrchestratorTools): ResultsState {
-  let state = states.get(tools);
-  if (state === undefined) {
-    state = { chains: new Map(), calls: new Map() };
-    states.set(tools, state);
+function chainPort(store: ResultSetStore): ChainPort {
+  const { currentChain: read, appendChain: append } = store;
+  if (read !== undefined && append !== undefined) {
+    return {
+      currentChain: (appId, sessionId) => read.call(store, appId, sessionId),
+      appendChain: (appId, sessionId, chain) => append.call(store, appId, sessionId, chain),
+    };
   }
-  return state;
-}
-
-export function domainKey(...parts: readonly string[]): string {
-  return JSON.stringify(parts);
+  let memory = fallbackChains.get(store);
+  if (memory === undefined) {
+    memory = createMemoryResultSetStore();
+    fallbackChains.set(store, memory);
+  }
+  return memory;
 }
 
 export function newChainId(): string {
   return randomUUID();
 }
 
-/** The chain in use: this process's latest search on the session, else the latest result set
- * that actually delivered products. Never a model-supplied id. */
+/** The chain in use: the store's latest appended chain of the session, else (nothing appended
+ * yet, e.g. sessions from before the chain port) the latest result set that actually delivered
+ * products. Never a model-supplied id. */
 export async function currentChain(
-  state: ResultsState,
   store: ResultSetStore,
   appId: string,
   sessionId: string,
 ): Promise<SessionChain | null> {
-  const own = state.chains.get(domainKey(appId, sessionId));
-  if (own !== undefined) return own;
+  const own = await chainPort(store).currentChain(appId, sessionId);
+  if (own !== null) return own;
   const latest = await store.latestWithProducts(appId, sessionId);
   return latest === null
     ? null
@@ -93,13 +86,14 @@ export async function currentChain(
       };
 }
 
+/** Append one chain row; it becomes the session's current chain. */
 export function setChain(
-  state: ResultsState,
+  store: ResultSetStore,
   appId: string,
   sessionId: string,
   chain: SessionChain,
-): void {
-  state.chains.set(domainKey(appId, sessionId), chain);
+): Promise<void> {
+  return chainPort(store).appendChain(appId, sessionId, chain);
 }
 
 export function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

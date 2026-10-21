@@ -15,9 +15,9 @@ import {
   isRecord,
   newChainId,
   noticeCard,
+  priceInvalid,
   resultKeys,
   setChain,
-  stateOf,
   suggestionItems,
   without,
   SERVER_CALL,
@@ -150,17 +150,16 @@ async function runSearch(
 }
 
 export function createClarification(deps: ResultsContinuationDeps): IntentDeps['clarification'] {
-  const state = stateOf(deps.tools);
   const store = deps.store;
 
   return {
     async scope(request) {
       const appId = request.input.caller.appId;
       const sessionId = request.input.sessionId;
-      let chain = await currentChain(state, store, appId, sessionId);
+      let chain = await currentChain(store, appId, sessionId);
       if (chain === null) {
         chain = { chainId: newChainId(), conditions: null, status: 'searching' };
-        setChain(state, appId, sessionId, chain);
+        await setChain(store, appId, sessionId, chain);
       }
       return { appId, sessionId, chainId: chain.chainId };
     },
@@ -181,7 +180,7 @@ export function createClarification(deps: ResultsContinuationDeps): IntentDeps['
     async withoutCondition(slot, request, ctx) {
       const appId = request.input.caller.appId;
       const sessionId = request.input.sessionId;
-      const chain = await currentChain(state, store, appId, sessionId);
+      const chain = await currentChain(store, appId, sessionId);
       const latest = await store.latestWithProducts(appId, sessionId);
       const base = chain?.conditions ?? latest?.conditions ?? null;
       // Nothing was searched in this session: the port already delivered the notice.
@@ -223,7 +222,6 @@ export function createRefinement(
   deps: ResultsContinuationDeps,
 ): Pick<IntentDeps['continuation'], 'run'> {
   const store = deps.store;
-  const state = stateOf(deps.tools);
   const clarification = createClarification(deps);
 
   async function notice(request: IntentRequest, ctx: RunContext, key: string, suggest: boolean) {
@@ -245,7 +243,7 @@ export function createRefinement(
   async function latestSearch(request: IntentRequest): Promise<SearchConditions | null> {
     const appId = request.input.caller.appId;
     const sessionId = request.input.sessionId;
-    const chain = await currentChain(state, store, appId, sessionId);
+    const chain = await currentChain(store, appId, sessionId);
     if (chain !== null && chain.conditions !== null) return chain.conditions;
     const latest = await store.latestWithProducts(appId, sessionId);
     return latest?.conditions ?? null;
@@ -286,9 +284,17 @@ export function createRefinement(
     }
     const next: Record<string, unknown> = { ...args };
     if (conditions.platform !== undefined) next['platforms'] = [conditions.platform];
-    if (conditions.price_min_fen !== undefined) next['price_min_fen'] = conditions.price_min_fen;
-    if (conditions.price_max_fen !== undefined) next['price_max_fen'] = conditions.price_max_fen;
-    // Same chain: an answer still invalid after the one ask drops the price (BR-AI-08).
+    let priceChanged = false;
+    for (const key of ['price_min_fen', 'price_max_fen'] as const) {
+      const value = conditions[key];
+      if (value === undefined) continue;
+      next[key] = value;
+      if (value !== base[key]) priceChanged = true;
+    }
+    // A valid new price condition restarts at page 1 (编排裁定 AC-B3-05k#9); an answer that is
+    // still invalid keeps the page, and the decorator drops the price after the one ask
+    // (BR-AI-08). 换平台 alone keeps the page.
+    if (priceChanged && !priceInvalid(next)) next['page'] = 1;
     return runSearch(deps, request, ctx, next, chain);
   }
 
