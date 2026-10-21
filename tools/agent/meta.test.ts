@@ -3,13 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import {
-  applyValueFlags,
-  claudeEventFacts,
-  claudeOutput,
-  editRules,
-  eventFacts,
-} from './meta.ts';
+import { applyValueFlags, claudeEventFacts, claudeOutput, editRules, eventFacts } from './meta.ts';
 import { AGENT_DIR, REPO } from './testing/fixture.ts';
 
 const dirs: string[] = [];
@@ -183,10 +177,15 @@ const OK_RESULT = `{"type":"result","subtype":"success","is_error":false,"struct
 
 it('[approvals 36] Claude stream: the final result event decides, a later system line does not', () => {
   expect(
-    claudeEventFacts(claudeLines(INIT, OK_RESULT, `{"type":"system","subtype":"task_summary"}`), ''),
+    claudeEventFacts(
+      claudeLines(INIT, OK_RESULT, `{"type":"system","subtype":"task_summary"}`),
+      '',
+    ),
   ).toEqual({ lastType: 'result.success', threadId: 'abc-123', capacity: false });
   // No result at all: the type of the last line; an error result is result.error.
-  expect(claudeEventFacts(claudeLines(INIT, '{"type":"assistant"}'), '').lastType).toBe('assistant');
+  expect(claudeEventFacts(claudeLines(INIT, '{"type":"assistant"}'), '').lastType).toBe(
+    'assistant',
+  );
   expect(
     claudeEventFacts(
       claudeLines(INIT, `{"type":"result","subtype":"success","is_error":true,${SESSION}}`),
@@ -207,17 +206,28 @@ it('[approvals 36] Claude capacity: a rejected rate limit, HTTP 429 / 529, a usa
   ).toBe(true);
   expect(
     claudeEventFacts(
-      claudeLines(INIT, '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}', OK_RESULT),
+      claudeLines(
+        INIT,
+        '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}',
+        OK_RESULT,
+      ),
       '',
     ).capacity,
   ).toBe(false);
   expect(claudeEventFacts(claudeLines(error('"api_error_status":529')), '').capacity).toBe(true);
-  expect(claudeEventFacts(claudeLines(error('"result":"Claude AI usage limit reached|1792581000"')), '').capacity).toBe(true);
+  expect(
+    claudeEventFacts(claudeLines(error('"result":"Claude AI usage limit reached|1792581000"')), '')
+      .capacity,
+  ).toBe(true);
   expect(claudeEventFacts('', 'API Error: 529 Overloaded').capacity).toBe(true);
   // The same text in an ordinary message (a file the model read) is data.
   expect(
     claudeEventFacts(
-      claudeLines(INIT, '{"type":"user","message":{"content":"You\'ve hit your limit"}}', error('"result":"boom"')),
+      claudeLines(
+        INIT,
+        '{"type":"user","message":{"content":"You\'ve hit your limit"}}',
+        error('"result":"boom"'),
+      ),
       '',
     ).capacity,
   ).toBe(false);
@@ -227,19 +237,30 @@ it('[approvals 36] Claude output: only the structured output of a successful fin
   expect(claudeOutput(claudeLines(INIT, OK_RESULT))).toEqual({ verdict: 'pass' });
   expect(
     claudeOutput(
-      claudeLines(INIT, `{"type":"result","subtype":"success","is_error":true,"structured_output":{"verdict":"pass"}}`),
+      claudeLines(
+        INIT,
+        `{"type":"result","subtype":"success","is_error":true,"structured_output":{"verdict":"pass"}}`,
+      ),
     ),
   ).toBeNull();
-  expect(claudeOutput(claudeLines(INIT, `{"type":"result","subtype":"success","is_error":false,"result":"text"}`))).toBeNull();
+  expect(
+    claudeOutput(
+      claudeLines(INIT, `{"type":"result","subtype":"success","is_error":false,"result":"text"}`),
+    ),
+  ).toBeNull();
   expect(claudeOutput(claudeLines(INIT))).toBeNull();
   // The CLI writes the file only when there is an output.
   const dir = scratch();
   const events = join(dir, 'events.jsonl');
   writeFileSync(events, claudeLines(INIT, OK_RESULT));
-  expect(metaCli(['claude-output', '--events', events, '--out', join(dir, 'out.json')]).status).toBe(0);
+  expect(
+    metaCli(['claude-output', '--events', events, '--out', join(dir, 'out.json')]).status,
+  ).toBe(0);
   expect(JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'))).toEqual({ verdict: 'pass' });
   writeFileSync(events, claudeLines(INIT));
-  expect(metaCli(['claude-output', '--events', events, '--out', join(dir, 'none.json')]).status).toBe(0);
+  expect(
+    metaCli(['claude-output', '--events', events, '--out', join(dir, 'none.json')]).status,
+  ).toBe(0);
   expect(() => readFileSync(join(dir, 'none.json'))).toThrow();
 });
 

@@ -126,7 +126,12 @@ describe('expandBraces (ops/approvals.yaml id 36: Claude permission rules have n
       'test/acceptance/a/**',
       'test/acceptance/b/**',
     ]);
-    expect(expandBraces('a/{x,y}/{1,2}.ts')).toEqual(['a/x/1.ts', 'a/x/2.ts', 'a/y/1.ts', 'a/y/2.ts']);
+    expect(expandBraces('a/{x,y}/{1,2}.ts')).toEqual([
+      'a/x/1.ts',
+      'a/x/2.ts',
+      'a/y/1.ts',
+      'a/y/2.ts',
+    ]);
     expect(expandBraces('packages/money/**')).toEqual(['packages/money/**']);
   });
 

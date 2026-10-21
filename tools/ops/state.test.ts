@@ -660,7 +660,11 @@ it('[approvals 36] the failure breakers count each engine apart; a meta.json wit
   const id = 'G7-01';
   const independent = 'claude-independent';
   // Three Codex calls in a row without output stop Codex for the task, not the Claude calls.
-  writeEngineCalls(id, [{ outcome: 'none' }, { engine: 'codex', outcome: 'none' }, { outcome: 'none' }]);
+  writeEngineCalls(id, [
+    { outcome: 'none' },
+    { engine: 'codex', outcome: 'none' },
+    { outcome: 'none' },
+  ]);
   expect(taskCalls(id).reasons.map((r) => r.breaker)).toEqual(['no_output']);
   expect(taskCalls(id, independent)).toEqual({
     task: id,
@@ -682,7 +686,9 @@ it('[approvals 36] the failure breakers count each engine apart; a meta.json wit
   );
   const claude = taskCalls(id, independent);
   expect(claude).toMatchObject({ calls: 3, consecutive_no_output: 3 });
-  expect(claude.reasons[0]?.message).toContain('G7-01: 独立 Claude（claude-run.sh）连续 3 次调用没有产出');
+  expect(claude.reasons[0]?.message).toContain(
+    'G7-01: 独立 Claude（claude-run.sh）连续 3 次调用没有产出',
+  );
   expect(() => bumpAttempt(id, 'test', T0, independent)).toThrow(/独立 Claude/);
   // A Claude call with output does not end the Codex run of failures.
   writeEngineCalls(id, [{ engine: independent, outcome: 'ok' }], 6);
@@ -690,14 +696,19 @@ it('[approvals 36] the failure breakers count each engine apart; a meta.json wit
   expect(taskCalls(id, independent).reasons).toEqual([]);
   // An unknown engine value counts as Codex (the stricter default).
   expect(
-    parseCallMeta({ mode: 'impl', engine: 'gemini', started_at: 'x', finished_at: 'x', exit_code: 0 })
-      ?.engine,
+    parseCallMeta({
+      mode: 'impl',
+      engine: 'gemini',
+      started_at: 'x',
+      finished_at: 'x',
+      exit_code: 0,
+    })?.engine,
   ).toBe('codex');
   removeDir(stateFile(id));
   removeDir(join(runs, id));
 });
 
-it('[approvals 36] the rounds are the task\'s whoever runs them: same counters, same limits', () => {
+it("[approvals 36] the rounds are the task's whoever runs them: same counters, same limits", () => {
   const id = 'G7-02';
   const independent = 'claude-independent';
   expect(bumpAttempt(id, 'test', T0).attempts.test).toBe(1);
@@ -720,7 +731,13 @@ it('[approvals 36] the rounds are the task\'s whoever runs them: same counters, 
   };
   expect(settleCall(id, meta, T0)).toMatchObject({ kind: 'test', counted: false, changed: true });
   expect(readState(id)?.uncounted_calls).toEqual([
-    { kind: 'test', engine: independent, started_at: T0.toISOString(), exit_code: 11, reason: 'capacity' },
+    {
+      kind: 'test',
+      engine: independent,
+      started_at: T0.toISOString(),
+      exit_code: 11,
+      reason: 'capacity',
+    },
   ]);
   expect(settleCall(id, meta, T0).changed).toBe(false);
   const codex = settleCall(id, { ...meta, engine: undefined }, T0);
@@ -731,14 +748,23 @@ it('[approvals 36] the rounds are the task\'s whoever runs them: same counters, 
   const raw = JSON.parse(readFileSync(stateFile(id), 'utf8')) as Record<string, unknown>;
   writeFileSync(
     stateFile(id),
-    JSON.stringify({ ...raw, uncounted_calls: [{ ...meta, kind: 'test', reason: 'capacity', engine: 'x' }] }),
+    JSON.stringify({
+      ...raw,
+      uncounted_calls: [{ ...meta, kind: 'test', reason: 'capacity', engine: 'x' }],
+    }),
   );
   expect(() => readState(id)).toThrow(/uncounted_calls\[0\]/);
   removeDir(stateFile(id));
 });
 
 it('[approvals 36] bump-attempt --engine on the command line', { timeout: CLI_TIMEOUT }, () => {
-  const ok = runCli('state.ts', ['bump-attempt', 'G7-03', 'test', '--engine', 'claude-independent']);
+  const ok = runCli('state.ts', [
+    'bump-attempt',
+    'G7-03',
+    'test',
+    '--engine',
+    'claude-independent',
+  ]);
   expect(ok.status, ok.stderr).toBe(0);
   expect(readState('G7-03')?.attempts.test).toBe(1);
   const review = runCli('state.ts', [

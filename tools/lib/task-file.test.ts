@@ -293,9 +293,9 @@ describe('tester: claude-independent (ops/approvals.yaml id 36)', () => {
       'tester: claude-independent',
     );
     expect(parseTaskFile(text, 'B2-02a.yaml').tester).toBe('claude-independent');
-    expect(messageOf(EXAMPLE.replace('tester: claude', 'tester: claude-agent'), 'B2-02a.yaml')).toContain(
-      'tester: must be one of codex / claude / claude-independent / none',
-    );
+    expect(
+      messageOf(EXAMPLE.replace('tester: claude', 'tester: claude-agent'), 'B2-02a.yaml'),
+    ).toContain('tester: must be one of codex / claude / claude-independent / none');
     // The implementer stays codex or claude: an independent Claude context never implements.
     expect(
       messageOf(EXAMPLE.replace('impl: codex', 'impl: claude-independent'), 'B2-02a.yaml'),
