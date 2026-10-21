@@ -24,10 +24,18 @@ import {
 
 const h = harness(createTestDatabase);
 
-// 仅列出任务中确定的可变字段；未固定名称的账单汇总字段留给迁移设计。
+// 账单出账完成时回填六个汇总列与完成时刻；其余仅列出任务确定的可变字段。
 const MUTABLE: Record<Table, string[]> = {
   settle_jobs: ['status', 'processed_count', 'skipped_count', 'finished_at'],
-  settle_bills: ['generated_at'],
+  settle_bills: [
+    'platform_order_counts',
+    'platform_settle_commission_totals',
+    'beneficiary_total_fen',
+    'platform_retained_fen',
+    'error_count',
+    'held_count',
+    'generated_at',
+  ],
   settle_batches: [
     'status',
     'settle_mode',
@@ -113,7 +121,7 @@ it('[AC-B2-04a#20] couli_app 只有 SELECT、INSERT 和所需列级 UPDATE，没
     const amounts = (await columns(h.app, table))
       .filter((c) => c.name.endsWith('_fen') || ['our_value', 'union_value'].includes(c.name))
       .map((c) => c.name);
-    // 补记项金额在执行时写入；其余已定金额不授 UPDATE（规划 04 §3.2）。
+    // 账单汇总在出账完成时回填，补记项金额在执行时写入；其余已定金额不授 UPDATE。
     for (const column of [...MUTABLE[table], ...IMMUTABLE[table], ...amounts]) {
       const result =
         await sql`SELECT has_column_privilege('couli_app', ${`app.${table}`}, ${column}, 'UPDATE') AS granted`.execute(

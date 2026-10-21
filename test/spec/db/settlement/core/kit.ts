@@ -193,7 +193,7 @@ export function job(values: Row = {}): Row {
     ...values,
   };
 }
-// 出账开始时仅登记月份与开始时刻；未完成的汇总由后续任务填充，英文列名不在 04 中固定。
+// 出账开始时登记月份与开始时刻；出账完成时回填六个汇总列与 generated_at。
 export function bill(p: Parents, values: Row = {}): Row {
   return {
     app_id: p.appId,

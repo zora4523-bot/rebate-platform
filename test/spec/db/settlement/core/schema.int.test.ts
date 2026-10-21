@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import { expect, it } from 'vitest';
 
 import {
+  LATER,
   TABLES,
   bill,
   columns,
@@ -12,6 +13,8 @@ import {
   migrationSource,
   parents,
   ready,
+  sqlState,
+  update,
   type Table,
 } from './kit.ts';
 
@@ -142,9 +145,26 @@ it('[AC-B2-04a#1] 八表保留规划 04 §3.2 字段，app_id 非空，金额为
   ).toEqual([]);
 });
 
-it('[AC-B2-04a#25] 账单持久保存各平台及金额汇总、差错数和未进批次的暂缓数', async () => {
+it('[AC-B2-04a#25] couli_app 出账完成时回填六个账单汇总列与完成时刻并原样读回', async () => {
   await ready(h.app);
   const p = await parents(h.app);
+  const initial = {
+    platform_order_counts: {},
+    platform_settle_commission_totals: {},
+    beneficiary_total_fen: 0n,
+    platform_retained_fen: 0n,
+    error_count: 0,
+    held_count: 0,
+    generated_at: null,
+  };
+  await insert(h.app, 'settle_bills', bill(p, initial));
+  const before = await sql`
+    SELECT platform_order_counts, platform_settle_commission_totals,
+      beneficiary_total_fen, platform_retained_fen,
+      error_count::integer AS error_count, held_count::integer AS held_count, generated_at
+    FROM app.settle_bills WHERE app_id = ${p.appId} AND bill_id = '2032-06'
+  `.execute(h.app);
+  expect(before.rows).toEqual([initial]);
   // 分平台映射用 JSON；其中金额用整数字符串，避免 JSON 数字损失分值精度。
   const platformOrders = { taobao: 3, jd: 2 };
   const platformCommissions = { taobao: '9007199254740993', jd: '200' };
@@ -156,14 +176,23 @@ it('[AC-B2-04a#25] 账单持久保存各平台及金额汇总、差错数和未�
     error_count: 2,
     held_count: 3,
   };
-  await insert(h.app, 'settle_bills', bill(p, totals));
+  expect(
+    await sqlState(
+      update(
+        h.app,
+        'settle_bills',
+        { app_id: p.appId, bill_id: '2032-06' },
+        { ...totals, generated_at: LATER },
+      ),
+    ),
+  ).toBe('ok');
   const stored = await sql`
     SELECT platform_order_counts, platform_settle_commission_totals,
       beneficiary_total_fen, platform_retained_fen,
-      error_count::integer AS error_count, held_count::integer AS held_count
+      error_count::integer AS error_count, held_count::integer AS held_count, generated_at
     FROM app.settle_bills WHERE app_id = ${p.appId} AND bill_id = '2032-06'
   `.execute(h.app);
-  expect(stored.rows).toEqual([totals]);
+  expect(stored.rows).toEqual([{ ...totals, generated_at: new Date(LATER) }]);
   // 此账单没有批次明细，暂缓数仍能读回，不能依赖明细推算。
   const details = await sql`SELECT count(*)::integer AS count
     FROM app.settle_batch_items WHERE app_id = ${p.appId}`.execute(h.app);
