@@ -1584,6 +1584,42 @@ ALTER TABLE app.audit_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: beneficiary_credits; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.beneficiary_credits (
+    beneficiary_credit_id uuid NOT NULL,
+    app_id text NOT NULL,
+    order_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    role text NOT NULL,
+    kind text NOT NULL,
+    opened_by text NOT NULL,
+    opened_ref text NOT NULL,
+    origin_ledger_type text,
+    origin_sub_type text,
+    split_ref text NOT NULL,
+    status text NOT NULL,
+    closed_by text,
+    closed_ref text,
+    voucher_id uuid,
+    opened_at timestamp with time zone NOT NULL,
+    closed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT beneficiary_credits_closed_check CHECK ((((status = 'open'::text) = (closed_by IS NULL)) AND ((status = 'open'::text) = (closed_ref IS NULL)) AND ((status = 'open'::text) = (closed_at IS NULL)) AND (closed_by <> ''::text) AND (closed_ref <> ''::text))),
+    CONSTRAINT beneficiary_credits_kind_check CHECK ((kind = ANY (ARRAY['first_credit'::text, 'reassign_credit'::text, 'deferred'::text]))),
+    CONSTRAINT beneficiary_credits_opened_by_check CHECK ((((kind = 'first_credit'::text) AND (opened_by = 'R5'::text)) OR ((kind = 'reassign_credit'::text) AND (opened_by = 'R14'::text)) OR ((kind = 'deferred'::text) AND (opened_by = ANY (ARRAY['R10'::text, 'R13'::text]))))),
+    CONSTRAINT beneficiary_credits_opened_ref_check CHECK ((opened_ref <> ''::text)),
+    CONSTRAINT beneficiary_credits_origin_check CHECK ((((kind = 'deferred'::text) = (origin_ledger_type IS NOT NULL)) AND ((kind = 'deferred'::text) = (origin_sub_type IS NOT NULL)) AND (origin_ledger_type <> ''::text) AND (origin_sub_type <> ''::text))),
+    CONSTRAINT beneficiary_credits_role_check CHECK ((role = ANY (ARRAY['self'::text, 'share'::text, 'direct'::text, 'indirect'::text]))),
+    CONSTRAINT beneficiary_credits_split_ref_check CHECK ((split_ref <> ''::text)),
+    CONSTRAINT beneficiary_credits_status_check CHECK ((status = ANY (ARRAY['open'::text, 'done'::text, 'forfeited'::text, 'voided'::text]))),
+    CONSTRAINT beneficiary_credits_voided_check CHECK (((closed_by IS NULL) OR ((status = 'voided'::text) = (closed_by = ANY (ARRAY['R8'::text, 'R14'::text]))))),
+    CONSTRAINT beneficiary_credits_voucher_check CHECK (((voucher_id IS NULL) OR (status = ANY (ARRAY['done'::text, 'forfeited'::text]))))
+);
+
+
+--
 -- Name: blocklist; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3573,6 +3609,30 @@ CREATE TABLE app.recon_diffs (
 
 
 --
+-- Name: recon_union; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.recon_union (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    platform text NOT NULL,
+    period text NOT NULL,
+    order_key text NOT NULL,
+    our_value bigint,
+    union_value bigint,
+    diff_fen bigint NOT NULL,
+    result text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT recon_union_diff_check CHECK (((our_value IS NULL) OR (union_value IS NULL) OR (diff_fen = (our_value - union_value)))),
+    CONSTRAINT recon_union_order_key_check CHECK ((order_key <> ''::text)),
+    CONSTRAINT recon_union_period_check CHECK ((period ~ '^[0-9]{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12][0-9]|3[01]))?$'::text)),
+    CONSTRAINT recon_union_platform_check CHECK ((platform = ANY (ARRAY['taobao'::text, 'jd'::text, 'pdd'::text, 'meituan'::text, 'vip'::text, 'douyin'::text, 'eleme'::text, 'kuaishou'::text, 'suning'::text]))),
+    CONSTRAINT recon_union_result_check CHECK ((result <> ''::text)),
+    CONSTRAINT recon_union_values_check CHECK (((our_value IS NOT NULL) OR (union_value IS NOT NULL)))
+);
+
+
+--
 -- Name: refresh_tokens; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -3753,6 +3813,158 @@ CREATE TABLE app.sessions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     login_method text,
     CONSTRAINT sessions_login_method_check CHECK ((login_method = ANY (ARRAY['sms'::text, 'wechat'::text, 'apple'::text, 'huawei'::text, 'merge'::text])))
+);
+
+
+--
+-- Name: settle_adjust_batches; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.settle_adjust_batches (
+    batch_id uuid NOT NULL,
+    app_id text NOT NULL,
+    confirmed_by uuid,
+    confirmed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT settle_adjust_batches_confirmed_check CHECK (((confirmed_by IS NULL) = (confirmed_at IS NULL)))
+);
+
+
+--
+-- Name: settle_adjustments; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.settle_adjustments (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    batch_id uuid NOT NULL,
+    order_id uuid NOT NULL,
+    user_id uuid,
+    role text,
+    commission_version integer NOT NULL,
+    settle_seq integer NOT NULL,
+    diff_fen bigint NOT NULL,
+    reason text,
+    status text NOT NULL,
+    approver uuid,
+    decided_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT settle_adjustments_beneficiary_check CHECK (((user_id IS NULL) = (role IS NULL))),
+    CONSTRAINT settle_adjustments_decision_check CHECK ((((status = 'pending'::text) AND (approver IS NULL) AND (decided_at IS NULL)) OR ((status = ANY (ARRAY['approved'::text, 'rejected'::text])) AND (approver IS NOT NULL) AND (decided_at IS NOT NULL)) OR ((status = ANY (ARRAY['voided_stale_seq'::text, 'voided_by_clawback'::text])) AND (decided_at IS NOT NULL)))),
+    CONSTRAINT settle_adjustments_diff_check CHECK (((diff_fen <> 0) AND ((user_id IS NULL) OR (diff_fen > 0)))),
+    CONSTRAINT settle_adjustments_reason_check CHECK ((reason <> ''::text)),
+    CONSTRAINT settle_adjustments_role_check CHECK ((role = ANY (ARRAY['self'::text, 'share'::text, 'direct'::text, 'indirect'::text]))),
+    CONSTRAINT settle_adjustments_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'voided_stale_seq'::text, 'voided_by_clawback'::text])))
+);
+
+
+--
+-- Name: settle_batch_items; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.settle_batch_items (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    batch_id uuid NOT NULL,
+    item_type text NOT NULL,
+    order_id uuid NOT NULL,
+    user_id uuid,
+    role text,
+    beneficiary_credit_id uuid,
+    settle_seq integer NOT NULL,
+    b_settle_fen bigint,
+    amount_fen bigint,
+    result text,
+    skip_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT settle_batch_items_amount_check CHECK ((amount_fen >= 0)),
+    CONSTRAINT settle_batch_items_deferred_check CHECK (((result <> 'deferred'::text) OR (item_type = 'beneficiary'::text))),
+    CONSTRAINT settle_batch_items_item_type_check CHECK ((item_type = ANY (ARRAY['order'::text, 'beneficiary'::text]))),
+    CONSTRAINT settle_batch_items_result_check CHECK ((result = ANY (ARRAY['credited'::text, 'skipped'::text, 'deferred'::text]))),
+    CONSTRAINT settle_batch_items_role_check CHECK ((role = ANY (ARRAY['self'::text, 'share'::text, 'direct'::text, 'indirect'::text]))),
+    CONSTRAINT settle_batch_items_shape_check CHECK ((((item_type = 'order'::text) AND (user_id IS NULL) AND (role IS NULL) AND (beneficiary_credit_id IS NULL) AND (b_settle_fen IS NOT NULL) AND (amount_fen IS NULL)) OR ((item_type = 'beneficiary'::text) AND (user_id IS NOT NULL) AND (role IS NOT NULL) AND (beneficiary_credit_id IS NOT NULL)))),
+    CONSTRAINT settle_batch_items_skip_reason_check CHECK ((skip_reason <> ''::text))
+);
+
+
+--
+-- Name: settle_batches; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.settle_batches (
+    batch_id uuid NOT NULL,
+    app_id text NOT NULL,
+    bill_id text NOT NULL,
+    platform text NOT NULL,
+    kind text NOT NULL,
+    status text NOT NULL,
+    settle_mode text NOT NULL,
+    scheduled_at timestamp with time zone,
+    confirmed_by uuid,
+    confirmed_at timestamp with time zone,
+    cancelled_reason text,
+    settle_run_id uuid,
+    order_count integer NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    paused_by_switch_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT settle_batches_cancelled_reason_check CHECK ((((status = 'CANCELLED'::text) = (cancelled_reason IS NOT NULL)) AND (cancelled_reason <> ''::text))),
+    CONSTRAINT settle_batches_confirmed_check CHECK (((status <> ALL (ARRAY['CONFIRMED'::text, 'EXECUTING'::text, 'PARTIAL'::text, 'DONE'::text])) OR (confirmed_at IS NOT NULL))),
+    CONSTRAINT settle_batches_confirmed_pair_check CHECK (((confirmed_by IS NULL) = (confirmed_at IS NULL))),
+    CONSTRAINT settle_batches_kind_check CHECK ((kind = ANY (ARRAY['main'::text, 'supplement'::text]))),
+    CONSTRAINT settle_batches_order_count_check CHECK ((order_count >= 0)),
+    CONSTRAINT settle_batches_platform_check CHECK ((platform = ANY (ARRAY['taobao'::text, 'jd'::text, 'pdd'::text, 'meituan'::text, 'vip'::text, 'douyin'::text, 'eleme'::text, 'kuaishou'::text, 'suning'::text]))),
+    CONSTRAINT settle_batches_scheduled_check CHECK (((settle_mode = 'SCHEDULED'::text) OR (scheduled_at IS NULL))),
+    CONSTRAINT settle_batches_settle_mode_check CHECK ((settle_mode = ANY (ARRAY['IMMEDIATE'::text, 'SCHEDULED'::text]))),
+    CONSTRAINT settle_batches_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'CONFIRMED'::text, 'EXECUTING'::text, 'PARTIAL'::text, 'DONE'::text, 'CANCELLED'::text])))
+);
+
+
+--
+-- Name: settle_bills; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.settle_bills (
+    app_id text NOT NULL,
+    bill_id text NOT NULL,
+    generation_started_at timestamp with time zone NOT NULL,
+    generated_at timestamp with time zone,
+    platform_order_counts jsonb,
+    platform_settle_commission_totals jsonb,
+    beneficiary_total_fen bigint,
+    platform_retained_fen bigint,
+    error_count integer,
+    held_count integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT settle_bills_bill_id_check CHECK ((bill_id ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'::text)),
+    CONSTRAINT settle_bills_commission_totals_check CHECK ((jsonb_typeof(platform_settle_commission_totals) = 'object'::text)),
+    CONSTRAINT settle_bills_counts_check CHECK (((error_count >= 0) AND (held_count >= 0))),
+    CONSTRAINT settle_bills_order_counts_check CHECK ((jsonb_typeof(platform_order_counts) = 'object'::text))
+);
+
+
+--
+-- Name: settle_jobs; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.settle_jobs (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    job text NOT NULL,
+    platform text NOT NULL,
+    run_at timestamp with time zone NOT NULL,
+    status text NOT NULL,
+    processed_count integer NOT NULL,
+    skipped_count integer NOT NULL,
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT settle_jobs_counts_check CHECK (((processed_count >= 0) AND (skipped_count >= 0))),
+    CONSTRAINT settle_jobs_finished_check CHECK (((status = 'running'::text) = (finished_at IS NULL))),
+    CONSTRAINT settle_jobs_job_check CHECK ((job = ANY (ARRAY['bill'::text, 'settle_adjust'::text, 'recon_union'::text, 'recon_monthly'::text]))),
+    CONSTRAINT settle_jobs_platform_check CHECK ((platform <> ''::text)),
+    CONSTRAINT settle_jobs_status_check CHECK ((status = ANY (ARRAY['running'::text, 'done'::text, 'failed'::text])))
 );
 
 
@@ -4661,6 +4873,22 @@ ALTER TABLE ONLY app.audit_logs
 
 
 --
+-- Name: beneficiary_credits beneficiary_credits_item_ref_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.beneficiary_credits
+    ADD CONSTRAINT beneficiary_credits_item_ref_key UNIQUE (app_id, beneficiary_credit_id, order_id, user_id, role);
+
+
+--
+-- Name: beneficiary_credits beneficiary_credits_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.beneficiary_credits
+    ADD CONSTRAINT beneficiary_credits_pkey PRIMARY KEY (beneficiary_credit_id);
+
+
+--
 -- Name: blocklist blocklist_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -5461,6 +5689,14 @@ ALTER TABLE ONLY app.recon_diffs
 
 
 --
+-- Name: recon_union recon_union_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.recon_union
+    ADD CONSTRAINT recon_union_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: refresh_tokens refresh_tokens_parent_hash_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -5546,6 +5782,86 @@ ALTER TABLE ONLY app.sessions
 
 ALTER TABLE ONLY app.sessions
     ADD CONSTRAINT sessions_sid_key UNIQUE (app_id, sid);
+
+
+--
+-- Name: settle_adjust_batches settle_adjust_batches_app_id_batch_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_adjust_batches
+    ADD CONSTRAINT settle_adjust_batches_app_id_batch_id_key UNIQUE (app_id, batch_id);
+
+
+--
+-- Name: settle_adjust_batches settle_adjust_batches_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_adjust_batches
+    ADD CONSTRAINT settle_adjust_batches_pkey PRIMARY KEY (batch_id);
+
+
+--
+-- Name: settle_adjustments settle_adjustments_candidate_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_adjustments
+    ADD CONSTRAINT settle_adjustments_candidate_key UNIQUE NULLS NOT DISTINCT (app_id, order_id, settle_seq, commission_version, user_id, role);
+
+
+--
+-- Name: settle_adjustments settle_adjustments_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_adjustments
+    ADD CONSTRAINT settle_adjustments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: settle_batch_items settle_batch_items_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_batch_items
+    ADD CONSTRAINT settle_batch_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: settle_batches settle_batches_app_id_batch_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_batches
+    ADD CONSTRAINT settle_batches_app_id_batch_id_key UNIQUE (app_id, batch_id);
+
+
+--
+-- Name: settle_batches settle_batches_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_batches
+    ADD CONSTRAINT settle_batches_pkey PRIMARY KEY (batch_id);
+
+
+--
+-- Name: settle_bills settle_bills_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_bills
+    ADD CONSTRAINT settle_bills_pkey PRIMARY KEY (app_id, bill_id);
+
+
+--
+-- Name: settle_jobs settle_jobs_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_jobs
+    ADD CONSTRAINT settle_jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: settle_jobs settle_jobs_run_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_jobs
+    ADD CONSTRAINT settle_jobs_run_key UNIQUE (app_id, job, platform, run_at);
 
 
 --
@@ -6007,6 +6323,20 @@ CREATE INDEX audit_logs_at_idx ON app.audit_logs USING btree (app_id, at);
 --
 
 CREATE INDEX audit_logs_target_idx ON app.audit_logs USING btree (app_id, target, at);
+
+
+--
+-- Name: beneficiary_credits_open_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX beneficiary_credits_open_key ON app.beneficiary_credits USING btree (app_id, order_id, user_id, role) WHERE (status = 'open'::text);
+
+
+--
+-- Name: beneficiary_credits_order_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX beneficiary_credits_order_idx ON app.beneficiary_credits USING btree (app_id, order_id);
 
 
 --
@@ -6528,6 +6858,13 @@ CREATE INDEX recon_diffs_status_idx ON app.recon_diffs USING btree (app_id, stat
 
 
 --
+-- Name: recon_union_period_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX recon_union_period_idx ON app.recon_union USING btree (app_id, period, platform);
+
+
+--
 -- Name: refresh_tokens_session_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -6581,6 +6918,55 @@ CREATE INDEX sessions_device_idx ON app.sessions USING btree (app_id, device_id)
 --
 
 CREATE INDEX sessions_user_idx ON app.sessions USING btree (app_id, user_id);
+
+
+--
+-- Name: settle_adjustments_batch_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX settle_adjustments_batch_idx ON app.settle_adjustments USING btree (app_id, batch_id);
+
+
+--
+-- Name: settle_adjustments_status_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX settle_adjustments_status_idx ON app.settle_adjustments USING btree (app_id, status);
+
+
+--
+-- Name: settle_batch_items_beneficiary_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX settle_batch_items_beneficiary_key ON app.settle_batch_items USING btree (app_id, batch_id, beneficiary_credit_id) WHERE (item_type = 'beneficiary'::text);
+
+
+--
+-- Name: settle_batch_items_order_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX settle_batch_items_order_idx ON app.settle_batch_items USING btree (app_id, order_id);
+
+
+--
+-- Name: settle_batch_items_order_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX settle_batch_items_order_key ON app.settle_batch_items USING btree (app_id, batch_id, order_id) WHERE (item_type = 'order'::text);
+
+
+--
+-- Name: settle_batches_bill_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX settle_batches_bill_idx ON app.settle_batches USING btree (app_id, bill_id, platform);
+
+
+--
+-- Name: settle_batches_status_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX settle_batches_status_idx ON app.settle_batches USING btree (app_id, status);
 
 
 --
@@ -7250,6 +7636,30 @@ ALTER TABLE ONLY app.asset_snapshot_receivables
 
 ALTER TABLE ONLY app.audit_logs
     ADD CONSTRAINT audit_logs_admin_fkey FOREIGN KEY (app_id, admin_id) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: beneficiary_credits beneficiary_credits_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.beneficiary_credits
+    ADD CONSTRAINT beneficiary_credits_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: beneficiary_credits beneficiary_credits_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.beneficiary_credits
+    ADD CONSTRAINT beneficiary_credits_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: beneficiary_credits beneficiary_credits_voucher_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.beneficiary_credits
+    ADD CONSTRAINT beneficiary_credits_voucher_fkey FOREIGN KEY (app_id, voucher_id) REFERENCES app.ledger_vouchers(app_id, id);
 
 
 --
@@ -7962,6 +8372,86 @@ ALTER TABLE ONLY app.sessions
 
 ALTER TABLE ONLY app.sessions
     ADD CONSTRAINT sessions_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: settle_adjust_batches settle_adjust_batches_confirmed_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_adjust_batches
+    ADD CONSTRAINT settle_adjust_batches_confirmed_by_fkey FOREIGN KEY (app_id, confirmed_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: settle_adjustments settle_adjustments_approver_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_adjustments
+    ADD CONSTRAINT settle_adjustments_approver_fkey FOREIGN KEY (app_id, approver) REFERENCES app.admin_users(app_id, id);
+
+
+--
+-- Name: settle_adjustments settle_adjustments_batch_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_adjustments
+    ADD CONSTRAINT settle_adjustments_batch_fkey FOREIGN KEY (app_id, batch_id) REFERENCES app.settle_adjust_batches(app_id, batch_id);
+
+
+--
+-- Name: settle_adjustments settle_adjustments_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_adjustments
+    ADD CONSTRAINT settle_adjustments_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: settle_adjustments settle_adjustments_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_adjustments
+    ADD CONSTRAINT settle_adjustments_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: settle_batch_items settle_batch_items_batch_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_batch_items
+    ADD CONSTRAINT settle_batch_items_batch_fkey FOREIGN KEY (app_id, batch_id) REFERENCES app.settle_batches(app_id, batch_id);
+
+
+--
+-- Name: settle_batch_items settle_batch_items_credit_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_batch_items
+    ADD CONSTRAINT settle_batch_items_credit_fkey FOREIGN KEY (app_id, beneficiary_credit_id, order_id, user_id, role) REFERENCES app.beneficiary_credits(app_id, beneficiary_credit_id, order_id, user_id, role);
+
+
+--
+-- Name: settle_batch_items settle_batch_items_order_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_batch_items
+    ADD CONSTRAINT settle_batch_items_order_fkey FOREIGN KEY (app_id, order_id) REFERENCES app.order_keys(app_id, order_id);
+
+
+--
+-- Name: settle_batches settle_batches_bill_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_batches
+    ADD CONSTRAINT settle_batches_bill_fkey FOREIGN KEY (app_id, bill_id) REFERENCES app.settle_bills(app_id, bill_id);
+
+
+--
+-- Name: settle_batches settle_batches_confirmed_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.settle_batches
+    ADD CONSTRAINT settle_batches_confirmed_by_fkey FOREIGN KEY (app_id, confirmed_by) REFERENCES app.admin_users(app_id, id);
 
 
 --
@@ -9235,6 +9725,49 @@ GRANT UPDATE(updated_at) ON TABLE app.asset_snapshots TO couli_app;
 
 GRANT SELECT,INSERT ON TABLE app.audit_logs TO couli_app;
 GRANT SELECT ON TABLE app.audit_logs TO couli_readonly;
+
+
+--
+-- Name: TABLE beneficiary_credits; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.beneficiary_credits TO couli_app;
+GRANT SELECT ON TABLE app.beneficiary_credits TO couli_readonly;
+
+
+--
+-- Name: COLUMN beneficiary_credits.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.beneficiary_credits TO couli_app;
+
+
+--
+-- Name: COLUMN beneficiary_credits.closed_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(closed_by) ON TABLE app.beneficiary_credits TO couli_app;
+
+
+--
+-- Name: COLUMN beneficiary_credits.closed_ref; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(closed_ref) ON TABLE app.beneficiary_credits TO couli_app;
+
+
+--
+-- Name: COLUMN beneficiary_credits.voucher_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(voucher_id) ON TABLE app.beneficiary_credits TO couli_app;
+
+
+--
+-- Name: COLUMN beneficiary_credits.closed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(closed_at) ON TABLE app.beneficiary_credits TO couli_app;
 
 
 --
@@ -10956,6 +11489,14 @@ GRANT UPDATE(updated_at) ON TABLE app.recon_diffs TO couli_app;
 
 
 --
+-- Name: TABLE recon_union; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.recon_union TO couli_app;
+GRANT SELECT ON TABLE app.recon_union TO couli_readonly;
+
+
+--
 -- Name: TABLE refresh_tokens; Type: ACL; Schema: app; Owner: -
 --
 
@@ -11239,6 +11780,264 @@ GRANT UPDATE(revoke_reason) ON TABLE app.sessions TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.sessions TO couli_app;
+
+
+--
+-- Name: TABLE settle_adjust_batches; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.settle_adjust_batches TO couli_app;
+GRANT SELECT ON TABLE app.settle_adjust_batches TO couli_readonly;
+
+
+--
+-- Name: COLUMN settle_adjust_batches.confirmed_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(confirmed_by) ON TABLE app.settle_adjust_batches TO couli_app;
+
+
+--
+-- Name: COLUMN settle_adjust_batches.confirmed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(confirmed_at) ON TABLE app.settle_adjust_batches TO couli_app;
+
+
+--
+-- Name: TABLE settle_adjustments; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.settle_adjustments TO couli_app;
+GRANT SELECT ON TABLE app.settle_adjustments TO couli_readonly;
+
+
+--
+-- Name: COLUMN settle_adjustments.reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reason) ON TABLE app.settle_adjustments TO couli_app;
+
+
+--
+-- Name: COLUMN settle_adjustments.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.settle_adjustments TO couli_app;
+
+
+--
+-- Name: COLUMN settle_adjustments.approver; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(approver) ON TABLE app.settle_adjustments TO couli_app;
+
+
+--
+-- Name: COLUMN settle_adjustments.decided_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(decided_at) ON TABLE app.settle_adjustments TO couli_app;
+
+
+--
+-- Name: TABLE settle_batch_items; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.settle_batch_items TO couli_app;
+GRANT SELECT ON TABLE app.settle_batch_items TO couli_readonly;
+
+
+--
+-- Name: COLUMN settle_batch_items.amount_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(amount_fen) ON TABLE app.settle_batch_items TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batch_items.result; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(result) ON TABLE app.settle_batch_items TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batch_items.skip_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(skip_reason) ON TABLE app.settle_batch_items TO couli_app;
+
+
+--
+-- Name: TABLE settle_batches; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.settle_batches TO couli_app;
+GRANT SELECT ON TABLE app.settle_batches TO couli_readonly;
+
+
+--
+-- Name: COLUMN settle_batches.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.settle_batches TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batches.settle_mode; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(settle_mode) ON TABLE app.settle_batches TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batches.scheduled_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(scheduled_at) ON TABLE app.settle_batches TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batches.confirmed_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(confirmed_by) ON TABLE app.settle_batches TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batches.confirmed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(confirmed_at) ON TABLE app.settle_batches TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batches.cancelled_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(cancelled_reason) ON TABLE app.settle_batches TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batches.settle_run_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(settle_run_id) ON TABLE app.settle_batches TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batches.started_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(started_at) ON TABLE app.settle_batches TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batches.finished_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(finished_at) ON TABLE app.settle_batches TO couli_app;
+
+
+--
+-- Name: COLUMN settle_batches.paused_by_switch_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(paused_by_switch_at) ON TABLE app.settle_batches TO couli_app;
+
+
+--
+-- Name: TABLE settle_bills; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.settle_bills TO couli_app;
+GRANT SELECT ON TABLE app.settle_bills TO couli_readonly;
+
+
+--
+-- Name: COLUMN settle_bills.generated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(generated_at) ON TABLE app.settle_bills TO couli_app;
+
+
+--
+-- Name: COLUMN settle_bills.platform_order_counts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(platform_order_counts) ON TABLE app.settle_bills TO couli_app;
+
+
+--
+-- Name: COLUMN settle_bills.platform_settle_commission_totals; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(platform_settle_commission_totals) ON TABLE app.settle_bills TO couli_app;
+
+
+--
+-- Name: COLUMN settle_bills.beneficiary_total_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(beneficiary_total_fen) ON TABLE app.settle_bills TO couli_app;
+
+
+--
+-- Name: COLUMN settle_bills.platform_retained_fen; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(platform_retained_fen) ON TABLE app.settle_bills TO couli_app;
+
+
+--
+-- Name: COLUMN settle_bills.error_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(error_count) ON TABLE app.settle_bills TO couli_app;
+
+
+--
+-- Name: COLUMN settle_bills.held_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(held_count) ON TABLE app.settle_bills TO couli_app;
+
+
+--
+-- Name: TABLE settle_jobs; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.settle_jobs TO couli_app;
+GRANT SELECT ON TABLE app.settle_jobs TO couli_readonly;
+
+
+--
+-- Name: COLUMN settle_jobs.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.settle_jobs TO couli_app;
+
+
+--
+-- Name: COLUMN settle_jobs.processed_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(processed_count) ON TABLE app.settle_jobs TO couli_app;
+
+
+--
+-- Name: COLUMN settle_jobs.skipped_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(skipped_count) ON TABLE app.settle_jobs TO couli_app;
+
+
+--
+-- Name: COLUMN settle_jobs.finished_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(finished_at) ON TABLE app.settle_jobs TO couli_app;
 
 
 --

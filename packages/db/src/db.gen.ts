@@ -295,6 +295,27 @@ export interface AuditLogs {
   target: string | null;
 }
 
+export interface BeneficiaryCredits {
+  app_id: string;
+  beneficiary_credit_id: string;
+  closed_at: Timestamp | null;
+  closed_by: string | null;
+  closed_ref: string | null;
+  created_at: Generated<Timestamp>;
+  kind: string;
+  opened_at: Timestamp;
+  opened_by: string;
+  opened_ref: string;
+  order_id: string;
+  origin_ledger_type: string | null;
+  origin_sub_type: string | null;
+  role: string;
+  split_ref: string;
+  status: string;
+  user_id: string;
+  voucher_id: string | null;
+}
+
 export interface Blocklist {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1285,6 +1306,19 @@ export interface ReconDiffs {
   updated_at: Timestamp;
 }
 
+export interface ReconUnion {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  diff_fen: ColumnType<bigint, bigint, bigint>;
+  id: string;
+  order_key: string;
+  our_value: ColumnType<bigint, bigint, bigint> | null;
+  period: string;
+  platform: string;
+  result: string;
+  union_value: ColumnType<bigint, bigint, bigint> | null;
+}
+
 export interface RefreshTokens {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1365,6 +1399,96 @@ export interface Sessions {
   sid: string;
   updated_at: Generated<Timestamp>;
   user_id: string;
+}
+
+export interface SettleAdjustBatches {
+  app_id: string;
+  batch_id: string;
+  confirmed_at: Timestamp | null;
+  confirmed_by: string | null;
+  created_at: Generated<Timestamp>;
+}
+
+export interface SettleAdjustments {
+  app_id: string;
+  approver: string | null;
+  batch_id: string;
+  commission_version: number;
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  diff_fen: ColumnType<bigint, bigint, bigint>;
+  id: string;
+  order_id: string;
+  reason: string | null;
+  role: string | null;
+  settle_seq: number;
+  status: string;
+  user_id: string | null;
+}
+
+export interface SettleBatches {
+  app_id: string;
+  batch_id: string;
+  bill_id: string;
+  cancelled_reason: string | null;
+  confirmed_at: Timestamp | null;
+  confirmed_by: string | null;
+  created_at: Generated<Timestamp>;
+  finished_at: Timestamp | null;
+  kind: string;
+  order_count: number;
+  paused_by_switch_at: Timestamp | null;
+  platform: string;
+  scheduled_at: Timestamp | null;
+  settle_mode: string;
+  settle_run_id: string | null;
+  started_at: Timestamp | null;
+  status: string;
+}
+
+export interface SettleBatchItems {
+  amount_fen: ColumnType<bigint, bigint, bigint> | null;
+  app_id: string;
+  b_settle_fen: ColumnType<bigint, bigint, bigint> | null;
+  batch_id: string;
+  beneficiary_credit_id: string | null;
+  created_at: Generated<Timestamp>;
+  id: string;
+  item_type: string;
+  order_id: string;
+  result: string | null;
+  role: string | null;
+  settle_seq: number;
+  skip_reason: string | null;
+  user_id: string | null;
+}
+
+export interface SettleBills {
+  app_id: string;
+  beneficiary_total_fen: ColumnType<bigint, bigint, bigint> | null;
+  bill_id: string;
+  created_at: Generated<Timestamp>;
+  error_count: number | null;
+  generated_at: Timestamp | null;
+  generation_started_at: Timestamp;
+  held_count: number | null;
+  platform_order_counts: Json | null;
+  platform_retained_fen: ColumnType<bigint, bigint, bigint> | null;
+  platform_settle_commission_totals: Json | null;
+}
+
+export interface SettleJobs {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  finished_at: Timestamp | null;
+  id: string;
+  job: string;
+  platform: string;
+  processed_count: number;
+  run_at: Timestamp;
+  skipped_count: number;
+  started_at: Timestamp;
+  status: string;
 }
 
 export interface SmsSendAttempts {
@@ -1580,6 +1704,7 @@ export interface DB {
   asset_snapshot_receivables: AssetSnapshotReceivables;
   asset_snapshots: AssetSnapshots;
   audit_logs: AuditLogs;
+  beneficiary_credits: BeneficiaryCredits;
   blocklist: Blocklist;
   category_blocklist: CategoryBlocklist;
   claim_items: ClaimItems;
@@ -1646,12 +1771,19 @@ export interface DB {
   push_tokens: PushTokens;
   realname: Realname;
   recon_diffs: ReconDiffs;
+  recon_union: ReconUnion;
   refresh_tokens: RefreshTokens;
   relation_change_logs: RelationChangeLogs;
   risk_hits: RiskHits;
   risk_judgements: RiskJudgements;
   risk_rules: RiskRules;
   sessions: Sessions;
+  settle_adjust_batches: SettleAdjustBatches;
+  settle_adjustments: SettleAdjustments;
+  settle_batch_items: SettleBatchItems;
+  settle_batches: SettleBatches;
+  settle_bills: SettleBills;
+  settle_jobs: SettleJobs;
   sms_send_attempts: SmsSendAttempts;
   sync_cursors: SyncCursors;
   union_accounts: UnionAccounts;
