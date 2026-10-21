@@ -25,7 +25,13 @@ export type {
   PrivacyConsentOptions,
   PrivacyConsentChecks,
 } from './application/privacy-consent.ts';
-export { createDeletionStageChecks, deletionStageRefusal } from './application/deletion-guard.ts';
+// Stage ⑥ (BR-ID-27 deletion cooling / processing 10007, B1-15e): app.module hands
+// DELETION_STAGE_CHECKS' guard and post-miss check to RiskModule ahead of ⑦.
+export {
+  DELETION_STAGE_CHECKS,
+  createDeletionStageChecks,
+  deletionStageRefusal,
+} from './application/deletion-guard.ts';
 export type {
   DeletionStageChecks,
   DeletionStageChecksOptions,
