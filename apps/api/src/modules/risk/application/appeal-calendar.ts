@@ -90,3 +90,29 @@ export async function resolveAppealDeadline(options: AppealCalendarOptions): Pro
     if (!added) return deadline;
   }
 }
+
+/** B1-15f: the configuration port of resolveWorkingDayDeadline (RateLimitConfigReader fits it). */
+export interface WorkingDayCalendarReader {
+  configValue(appId: string, key: string): Promise<{ readonly value: unknown } | null>;
+}
+
+export interface WorkingDayDeadlineOptions {
+  readonly appId: string;
+  /** The instant counted from (its +08:00 civil date is excluded). */
+  readonly from: Date;
+  readonly workingDays: number;
+  readonly config: WorkingDayCalendarReader;
+  readonly logger: Pick<RootLogger, 'warn'>;
+}
+
+/**
+ * B1-15f §9.2 #4: resolveAppealDeadline with `from` and the number of working days as parameters
+ * (resolveAppealDeadline becomes this with clock.now() and 3; its signature, behaviour and log key
+ * stay). Same calendar reads; an unconfigured year counts weekends only and logs one warn line with
+ * app_id and year under a key of its own (not appeal_calendar_unconfigured).
+ * NotImplemented skeleton written by the rule-test author.
+ */
+export function resolveWorkingDayDeadline(options: WorkingDayDeadlineOptions): Promise<Date> {
+  void options;
+  throw new Error('NotImplemented: resolveWorkingDayDeadline');
+}

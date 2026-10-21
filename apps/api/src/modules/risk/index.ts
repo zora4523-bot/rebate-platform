@@ -175,3 +175,12 @@ export type {
   BlocklistOptions,
   BlocklistService,
 } from './application/blocklist.ts';
+// B1-15f: the working-day deadline with the number of working days as a parameter (BR-ID-27's 15
+// working days; identity's deletion overdue alarm). resolveAppealDeadline stays internal.
+export { workingDayDeadline } from './domain/appeal-deadline.ts';
+export type { AppealCalendarYear } from './domain/appeal-deadline.ts';
+export { resolveWorkingDayDeadline } from './application/appeal-calendar.ts';
+export type {
+  WorkingDayCalendarReader,
+  WorkingDayDeadlineOptions,
+} from './application/appeal-calendar.ts';

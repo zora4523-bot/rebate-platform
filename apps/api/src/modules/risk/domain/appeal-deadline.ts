@@ -65,3 +65,20 @@ export function appealDeadline(
   // 24:00 +08:00 of that day = 00:00 +08:00 of the next day.
   return dateAt(submittedAt, (day + 1) * DAY_MS - OFFSET_MS);
 }
+
+/**
+ * B1-15f (BR-ID-27 15 个工作日; BR-ID-36 口径「同 BR-ID-27」): the same calculation with the number of
+ * working days as a parameter — 24:00 (+08:00) of the `workingDays`-th working day after the
+ * +08:00 civil date of `from` (that day excluded). appealDeadline is this with 3.
+ * NotImplemented skeleton written by the rule-test author.
+ */
+export function workingDayDeadline(
+  from: Date,
+  calendars: Readonly<Record<number, AppealCalendarYear>>,
+  workingDays: number,
+): Date {
+  void from;
+  void calendars;
+  void workingDays;
+  throw new Error('NotImplemented: workingDayDeadline');
+}

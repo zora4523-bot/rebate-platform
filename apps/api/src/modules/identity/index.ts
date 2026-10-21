@@ -109,6 +109,22 @@ export type {
 } from './ports/withdrawal-in-flight.ts';
 export type { DeletionBalanceInput, DeletionBalanceReader } from './ports/deletion-balance.ts';
 export type { DeletionRequestModuleOptions } from './application/deletion-request.ts';
+// B1-15f: the scheduled processing of deletion requests whose cooling period has ended (worker).
+export type { WithdrawalNonTerminalReader } from './ports/withdrawal-in-flight.ts';
+export {
+  createDeletionExpiry,
+  startDeletionExpiry,
+  deletionExpiryToken,
+} from './application/deletion-expiry.ts';
+export type {
+  DeletionCalendarConfigReader,
+  DeletionExpiry,
+  DeletionExpiryControl,
+  DeletionExpiryOptions,
+  DeletionExpirySchedule,
+} from './application/deletion-expiry.ts';
+export { IdentityDeletionExpiryModule } from './deletion-expiry.module.ts';
+export type { IdentityDeletionExpiryModuleOptions } from './deletion-expiry.module.ts';
 export type {
   UserLevel,
   UserLevelSubject,
