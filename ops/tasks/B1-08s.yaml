@@ -8,7 +8,7 @@ type: impl
 # 2026-10-19 补 paths（D10-86）：linkByCode 接入 orders 生产装配需改 source-ports.ts 与 app.module.ts（去掉 B1-08q 的 TODO）。
 refs: [BR-ATTR-15]
 refs_hash:
-  BR-ATTR-15: fa1574dfc628
+  BR-ATTR-15: fb9f0b75f991
 deps: [B1-08j]
 paths:
   - 'apps/api/src/modules/linking/**'

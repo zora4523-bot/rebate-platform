@@ -8,11 +8,12 @@ type: impl
 #   通过时 orders 只写 user_id / user_basis=claim 与 order_status_history(source=claim)；**locked=true 与 rebate_status R3 同属 settlement（order-rebate.yaml R3 守卫 locked=false、同迁移置 locked=true；order-update-store 不让 orders 写 locked）**——orders 声明端口 rebate.onClaimApproved，在同一事务内、锁内重读之后调用，入参为写前快照，由端口一侧按 R3 CAS 写 rebate_status 与 locked（#907 r3 Claude S2-4）；本任务只给假实现与注入点，生产未注入时通过不可挂载即 J-1；分佣快照经 B1-08k 的 runCommissionSnapshot 端口（生产未注入时跳过，同 B1-08k）；来源回填 backfillOrderSource；
 #   claim.resolved 在业务事务内经 platform events 入队（02 §11，不另建发件表）（载荷 {claim_id, app_id, user_id, status}，规划未定，description 注明）；他人被系统 NOT_IN_POOL 的 claim 各自汇总、各发事件；审计 action：claim_item_approve / claim_item_reject，target claim_items:<item_id>（含 reason、原选码与实际结果；读侧映射由 B1-34a 登记），审计写入器绑事务（risk-admin 先例）。不加迁移。
 #   审核结果通知申请人（BR-ATTR-30：站内消息 + 推送，CLAIM_RESULT 模板）不在本任务：claim.resolved 的消费端由后续通知任务接，**是挂载任务的前置**（挂载任务入账时写进 deps，#907 r3 Claude S2-5）。
-# **派工待 BR-ATTR-20 拆分**：两条 refs 都必需（BR-ATTR-30 写「审核通过按 BR-ATTR-20 加锁执行」，自动结案 / 加锁复查只在 BR-ATTR-20），合计任务书 28.6KB 超 24KB；已请编排安排规划把 BR-ATTR-20 的「指派」与「找回」部分拆成独立编号（notices 10-21），拆后改 refs 再派工。按 J-1 本任务不挂载，等待不影响上线。
-refs: [BR-ATTR-30, BR-ATTR-20]
+# **refs 改为 BR-ATTR-30 + BR-ATTR-20 + BR-ATTR-32**（2026-10-21 SPEC_REF → f411375）：规划 #164 把 BR-ATTR-20 正文 ② 的找回通过复查拆为 BR-ATTR-32、管理员指派拆为 BR-ATTR-31（08 README 变更登记，原文未改取值）；本任务只做找回审核，取 BR-ATTR-32，不取 BR-ATTR-31；BR-ATTR-20 未作废、仍持加锁重读 ①、写入 ③ 与锁定之后，故保留。拆前任务书 28.6KB 超 24KB 的阻塞随之解除。按 J-1 本任务不挂载。
+refs: [BR-ATTR-30, BR-ATTR-20, BR-ATTR-32]
 refs_hash:
-  BR-ATTR-30: e43dbf178aa8
-  BR-ATTR-20: 74b2dde4c077
+  BR-ATTR-30: 127b5a4a8c63
+  BR-ATTR-20: 0d6dcf3ad887
+  BR-ATTR-32: 88561bf5b3eb
 deps: [CT-24l, B1-10j, B1-08k, B1-08q]
 paths:
   - 'apps/api/src/modules/orders/**'

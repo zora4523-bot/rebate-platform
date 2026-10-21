@@ -9,7 +9,7 @@ type: impl
 # 不改状态机、不改受理 / 证据路径；冻结测试 test/spec/orders/claims-*、test/spec/contracts/order-claims 不受影响。
 refs: [BR-ATTR-30, BR-ID-33]
 refs_hash:
-  BR-ATTR-30: e43dbf178aa8
+  BR-ATTR-30: 127b5a4a8c63
   BR-ID-33: 01b25f773b29
 deps: [CT-24d, B1-10c]
 paths:
