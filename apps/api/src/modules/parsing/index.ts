@@ -9,6 +9,7 @@ export {
   INTERNAL_FAILURE,
   OFF_SHELF,
   ParsingError,
+  parseToken,
   parseUrl,
   UNRECOGNIZED,
   UNSUPPORTED,

@@ -330,6 +330,18 @@ export async function parseUrl(
   return product.value;
 }
 
+/** Official token parser port for Agent quotes; returns a detail without building a card. */
+export async function parseToken(
+  options: ParsingOptions,
+  raw: string,
+  context: CallCtx,
+): Promise<ParsedUrlProduct> {
+  void options;
+  void raw;
+  void context;
+  throw new Error('NotImplemented: parseToken');
+}
+
 /** Shared pure-code use case for the later HTTP and Agent entry points. */
 export function createParsing(options: ParsingOptions): ParsingService {
   const resolver = createResolver(options);
