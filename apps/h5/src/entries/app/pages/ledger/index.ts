@@ -1,10 +1,5 @@
-import type { ReactElement } from 'react';
+import { LedgerPage } from './ledger-page.tsx';
 
-export type LedgerPageProps = Record<string, never>;
-
-export function LedgerPage(props: LedgerPageProps): ReactElement {
-  void props;
-  throw new Error('NotImplemented: LedgerPage');
-}
-
+export { LedgerPage, type LedgerPageProps } from './ledger-page.tsx';
+/** Route module shape (React Router `lazy`): the Ledger route renders this page. */
 export { LedgerPage as Component };
