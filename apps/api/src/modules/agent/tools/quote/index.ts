@@ -8,6 +8,7 @@ import {
   type Candidate,
   type ParsedUrlProduct,
   type ParsingErrorCode,
+  UNRECOGNIZED,
 } from '../../../parsing/index.ts';
 import type { CallCtx } from '../../../union/index.ts';
 import { wrapUntrusted } from '../../guard/index.ts';
@@ -23,7 +24,14 @@ export type QuoteReferenceResult =
   | { readonly kind: 'invalid_args' }
   | { readonly kind: 'clarify' };
 
+/** Official token parsing boundary; failures reject with ParsingError. No third-party fallback. */
+export interface TokenParser {
+  parseToken(raw: string, context: CallCtx): Promise<ParsedUrlProduct>;
+}
+
 export interface RebateQuoteDeps {
+  /** Absent means token parsing is unavailable (30132); supplied by the composition root. */
+  readonly tokens?: TokenParser;
   /** Bound parsing.parseUrl (its ParsingOptions are supplied by the composition root). */
   readonly parsing: {
     parseUrl(url: string, context: CallCtx): Promise<ParsedUrlProduct>;
@@ -59,11 +67,8 @@ export type LinkQuoteOutcome =
   | { readonly kind: 'no_card'; readonly cards: readonly [] };
 
 export interface LinkQuoteRunner {
-  /** Called by the deterministic path with a parse_input URL candidate, never by the model. */
-  run(
-    candidate: Candidate & { readonly kind: 'url' },
-    context: ToolCallContext,
-  ): Promise<LinkQuoteOutcome>;
+  /** Internal URL/token runner; deterministic token wiring is a separate task. */
+  run(candidate: Candidate, context: ToolCallContext): Promise<LinkQuoteOutcome>;
 }
 
 type QuoteResult =
@@ -354,20 +359,44 @@ export function createRebateQuoteHandler(deps: RebateQuoteDeps): ToolHandler {
   return { name: toolName(), definition: definition(), audience: 'all', run };
 }
 
+/**
+ * Resolves one candidate to a single product snapshot. URL candidates go only to parseUrl, token
+ * candidates only to the injected TokenParser; without that port token parsing is unavailable and
+ * yields 30132 (BR-AI-04: no third-party fallback). The raw text never leaves this function except
+ * as the parser argument. Non-ParsingError failures (timeouts, aborts) propagate to the caller.
+ */
+async function parseCandidate(
+  deps: RebateQuoteDeps,
+  candidate: Candidate,
+  ctx: ToolCallContext,
+): Promise<{ readonly kind: 'product'; readonly product: ParsedUrlProduct } | ParseFailure> {
+  const tokens = deps.tokens;
+  if (candidate.kind !== 'url' && tokens === undefined) {
+    return { kind: 'parse_error', error_code: UNRECOGNIZED, cards: [] };
+  }
+  try {
+    const product =
+      candidate.kind === 'url' || tokens === undefined
+        ? await deps.parsing.parseUrl(candidate.raw, callCtx(ctx))
+        : await tokens.parseToken(candidate.raw, callCtx(ctx));
+    return { kind: 'product', product };
+  } catch (error) {
+    if (error instanceof ParsingError) {
+      return { kind: 'parse_error', error_code: error.code, cards: [] };
+    }
+    throw error;
+  }
+}
+
+type ParseFailure = Extract<LinkQuoteOutcome, { readonly kind: 'parse_error' }>;
+
 export function createLinkQuoteRunner(deps: RebateQuoteDeps): LinkQuoteRunner {
   return {
     async run(candidate, ctx) {
-      if (candidate.kind !== 'url') return { kind: 'no_card', cards: [] };
-      let product: ParsedUrlProduct;
-      try {
-        product = await deps.parsing.parseUrl(candidate.raw, callCtx(ctx));
-      } catch (error) {
-        if (error instanceof ParsingError) {
-          return { kind: 'parse_error', error_code: error.code, cards: [] };
-        }
-        throw error;
-      }
-      const outcome = await quoteProduct(deps, product, ctx);
+      const parsed = await parseCandidate(deps, candidate, ctx);
+      if (parsed.kind === 'parse_error') return parsed;
+      // Same flow as a URL: the card is built from this one parsed snapshot (BR-AI-04).
+      const outcome = await quoteProduct(deps, parsed.product, ctx);
       if (outcome.kind === 'ok') return outcome;
       return { kind: outcome.kind, cards: [] };
     },
