@@ -1,0 +1,125 @@
+{
+  "task": "B3-04f",
+  "spec_ref": "f41137533d254d4b78dc01ea95f474171c694485",
+  "spec_commit": "a9ef7c3e63e5bae068798e302dc1a64a601ea96e",
+  "red_tests": [
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#1][BR-AI-01][BR-AI-04] 口令原样解析一次，再报价、登记并出一张契约卡，不转链",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 价格券与返利使用口令解析的同一快照，不拼接另一轮数据",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 price_fen 为 null 时 no_card，不登记",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 coupon_fen 为 null 时 no_card，不登记",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 final_price_fen 为 null 时 no_card，不登记",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 rebate_min_fen 为 null 时 no_card，不登记",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 rebate_max_fen 为 null 时 no_card，不登记",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 rebate_basis 为 null 时 no_card，不登记",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 availability 为 null 时 no_card，不登记",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 quoted_at 为 null 时 no_card，不登记",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 source 为 null 时 no_card，不登记",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品券为零合法，不能按缺失处理",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令卡 amount_unknown 允许返利上下限为 null，不补零",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令卡 login_required 允许返利上下限为 null，不补零",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#3][BR-AI-04] 解析后价格不可得，与 URL 一样返回 price_unavailable",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#4][BR-AI-04] 没有 tokens 端口时返回 30132，不走其他解析或报价入口",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#5][BR-AI-04] 口令 ParsingError(30131) 保留原码，只失败本次调用",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#5][BR-AI-04] 口令 ParsingError(30132) 保留原码，只失败本次调用",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#5][BR-AI-04] 口令 ParsingError(30141) 保留原码，只失败本次调用",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#5][BR-AI-04] 口令 ParsingError(50301) 保留原码，只失败本次调用",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#6][BR-AI-04] 非业务异常 Error 原样拒绝，由调用方处理单个失败",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#6][BR-AI-04] 非业务异常 TimeoutError 原样拒绝，由调用方处理单个失败",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#6][BR-AI-04] 非业务异常 AbortError 原样拒绝，由调用方处理单个失败",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#7][BR-AI-04] 解析上下文只包含应用、运行编号、用途和原始 signal",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#8][BR-AI-04] 口令原文不进入 ok 的卡片、fallback、modelView 或 trace",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#8][BR-AI-04] 口令原文不进入 parse_error 的卡片、fallback、modelView 或 trace",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#9][BR-AI-01][BR-AI-04] 同一 runner 的 URL→口令失败→URL→口令成功互不污染",
+    "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#10][BR-AI-01][BR-AI-04] URL 成功与解析失败保持旧口径，口令与其一致"
+  ],
+  "risk_note": "RV1 by its paths (apps/api/src/modules/agent/tools/quote/**); rule tests under test/** make the PR RV2. Codex wrote test/spec/agent/tools-quote-tpwd/** (container red 28 tests); Claude spec-test review round 1 pass. Opus implemented once (AWS verify:fast green); Codex general review round 1 pass. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a9ef7c3e63e5bae068798e302dc1a64a601ea96e",
+      "tree": "325c212d9d2c05e019c97cb617756fff8744bfe8",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T13:49:09Z",
+      "finished_at": "2026-10-21T13:49:14Z",
+      "red_tests": [
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#1][BR-AI-01][BR-AI-04] 口令原样解析一次，再报价、登记并出一张契约卡，不转链",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 价格券与返利使用口令解析的同一快照，不拼接另一轮数据",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 price_fen 为 null 时 no_card，不登记",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 coupon_fen 为 null 时 no_card，不登记",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 final_price_fen 为 null 时 no_card，不登记",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 rebate_min_fen 为 null 时 no_card，不登记",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 rebate_max_fen 为 null 时 no_card，不登记",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 rebate_basis 为 null 时 no_card，不登记",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 availability 为 null 时 no_card，不登记",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 quoted_at 为 null 时 no_card，不登记",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品必需字段 source 为 null 时 no_card，不登记",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令商品券为零合法，不能按缺失处理",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令卡 amount_unknown 允许返利上下限为 null，不补零",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#2][BR-AI-04] 口令卡 login_required 允许返利上下限为 null，不补零",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#3][BR-AI-04] 解析后价格不可得，与 URL 一样返回 price_unavailable",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#4][BR-AI-04] 没有 tokens 端口时返回 30132，不走其他解析或报价入口",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#5][BR-AI-04] 口令 ParsingError(30131) 保留原码，只失败本次调用",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#5][BR-AI-04] 口令 ParsingError(30132) 保留原码，只失败本次调用",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#5][BR-AI-04] 口令 ParsingError(30141) 保留原码，只失败本次调用",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#5][BR-AI-04] 口令 ParsingError(50301) 保留原码，只失败本次调用",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#6][BR-AI-04] 非业务异常 Error 原样拒绝，由调用方处理单个失败",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#6][BR-AI-04] 非业务异常 TimeoutError 原样拒绝，由调用方处理单个失败",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#6][BR-AI-04] 非业务异常 AbortError 原样拒绝，由调用方处理单个失败",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#7][BR-AI-04] 解析上下文只包含应用、运行编号、用途和原始 signal",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#8][BR-AI-04] 口令原文不进入 ok 的卡片、fallback、modelView 或 trace",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#8][BR-AI-04] 口令原文不进入 parse_error 的卡片、fallback、modelView 或 trace",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#9][BR-AI-01][BR-AI-04] 同一 runner 的 URL→口令失败→URL→口令成功互不污染",
+        "test/spec/agent/tools-quote-tpwd/tokens.test.ts > [AC-B3-04f#10][BR-AI-01][BR-AI-04] URL 成功与解析失败保持旧口径，口令与其一致"
+      ],
+      "expected": ["test/spec/agent/tools-quote-tpwd/tokens.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "762885423dd3ca3822cae2e1f549b40ef35569dbe425839ffdfbc58edd7148ba"
+        }
+      ],
+      "gate": {
+        "commit": "c9ab5dcb8edcf1e4425ab0824f39d7fc374d2ed5",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass (couli-runs/B3-04f/review-codex.json)",
+      "engine": "codex",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass, one S2 recorded as follow-up (couli-runs/B3-04f/review-claude-spec-test.json)",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "f1ba27e94d4109c0401776ed1c445467808054c7"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
