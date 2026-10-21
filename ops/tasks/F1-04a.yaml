@@ -1,0 +1,22 @@
+id: F1-04a
+repo: rebate-platform
+title: H5 余额流水页 /ledger：取 H5 令牌后读 listWalletLedger（游标 / 分页按契约），按会计日分组列出流水（类型名与说明按字典、金额正负与后台金额格式、关联单号按契约字段），下拉刷新与翻页，空 / 加载 / 出错三态与 10405 重新取令牌；视觉按 design/specs/app-ledger.md（App 内高保真第 2 批定稿）
+type: impl
+# 2026-10-22 入账（前端线 f1-frontend-7）。05 F1-04（收益明细部分）；契约 listWalletLedger、issueH5Token（桥 auth.getH5Token）均已实现；规格 app-ledger.md（couli #166，SPEC_REF 已含）。
+# 规格 §7 的字典缺键（BAD_DEBT_WRITEOFF hint、第二行与空态句）与契约无的「订单尾号」「今天 09:05」不造：缺键按规格占位原文登记在 texts/ledger.ts，契约无字段不显示。approvals 第 34 / 36 条：Claude 实现，Codex（不可用时独立 Claude）写测试与评审。
+refs: []
+refs_hash: {}
+deps: [F1-01q]
+paths:
+  - 'apps/h5/src/entries/app/pages/ledger/**'
+  - 'apps/h5/src/entries/app/routes.ts'
+  - 'apps/h5/src/texts/ledger.ts'
+test_paths:
+  - 'test/spec/frontend/h5-ledger/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-ledger/**'
+status: todo
+pr: null
