@@ -86,6 +86,11 @@ it(
     expect(
       within(mainElement()).queryByRole('button', { name: /^查看(?:完整手机号)?$/ }),
     ).toBeNull();
+    // user.level / user.inviter are not held: their entries stay hidden even though contracted.
+    for (const name of ['调等级', '改上级']) {
+      expect(within(mainElement()).queryByRole('button', { name }), `no action ${name}`).toBeNull();
+      expect(within(mainElement()).queryByRole('link', { name }), `no link ${name}`).toBeNull();
+    }
     expect(server.requests('GET', LIST)).toEqual([]);
     expect(server.requests('GET', LOOKUP)).toHaveLength(1);
     expect(server.requests('POST')).toEqual([]);
