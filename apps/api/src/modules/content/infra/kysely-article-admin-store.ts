@@ -12,7 +12,11 @@ import type {
   ArticleRow,
   ArticleVersionStatus,
 } from '../application/article-admin.ts';
-import type { ArticleCategory } from '../domain/articles.ts';
+import {
+  withHelpSection,
+  type ArticleCategory,
+  type ArticleHelpSection,
+} from '../domain/articles.ts';
 
 const PRIMARY_KEY = 'articles_pkey';
 
@@ -35,6 +39,7 @@ const ROW_COLUMNS = [
   'notice_closable',
   'notice_content_version',
   'notice_end_at',
+  'help_section',
   'row_version',
   'created_at',
   'updated_at',
@@ -52,6 +57,7 @@ interface StoredRow {
   notice_closable: boolean;
   notice_content_version: number;
   notice_end_at: Date | null;
+  help_section: string | null;
   row_version: number;
   created_at: Date;
   updated_at: Date;
@@ -62,6 +68,7 @@ function articleRow(row: StoredRow): ArticleRow {
     ...row,
     category: row.category as ArticleCategory,
     status: row.status as ArticleVersionStatus,
+    help_section: row.help_section as ArticleHelpSection | null, // articles_help_section_check
   };
 }
 
@@ -85,6 +92,7 @@ interface SummaryRow {
   status: string;
   row_version: number;
   updated_at: Date;
+  help_section: string | null;
   current_version: number | null;
   current_published_at: Date | null;
 }
@@ -94,7 +102,7 @@ function reads(db: Kysely<DB>): ArticleAdminReads {
     async list({ appId, now, category, status, offset, limit }) {
       // The newest row of every id of the app; filters apply to it (编排者默认).
       const latest = sql`select distinct on (a.id) a.id, a.category, a.title, a.version,
-        a.status, a.row_version, a.updated_at
+        a.status, a.row_version, a.updated_at, a.help_section
         from app.articles a where a.app_id = ${appId} order by a.id, a.version desc`;
       const filters = sql`where true
         ${category === undefined ? sql`` : sql`and l.category = ${category}`}
@@ -102,6 +110,7 @@ function reads(db: Kysely<DB>): ArticleAdminReads {
       const [page, count] = await Promise.all([
         sql<SummaryRow>`with latest as (${latest})
           select l.id, l.category, l.title, l.version, l.status, l.row_version, l.updated_at,
+            l.help_section,
             cur.version as current_version, cur.published_at as current_published_at
           from latest l
           left join lateral (
@@ -117,17 +126,21 @@ function reads(db: Kysely<DB>): ArticleAdminReads {
           select count(*) as n from latest l ${filters}`.execute(db),
       ]);
       return {
-        items: page.rows.map((row) => ({
-          article_id: row.id,
-          category: row.category as ArticleCategory,
-          title: row.title,
-          latest_version: row.version,
-          latest_status: row.status as ArticleVersionStatus,
-          current_version: row.current_version,
-          published_at: row.current_published_at?.toISOString() ?? null,
-          row_version: row.row_version,
-          updated_at: row.updated_at.toISOString(),
-        })),
+        // L30: help_section of the newest row, only when set.
+        items: page.rows.map((row) => {
+          const category = row.category as ArticleCategory;
+          return withHelpSection(category, row.help_section, {
+            article_id: row.id,
+            category,
+            title: row.title,
+            latest_version: row.version,
+            latest_status: row.status as ArticleVersionStatus,
+            current_version: row.current_version,
+            published_at: row.current_published_at?.toISOString() ?? null,
+            row_version: row.row_version,
+            updated_at: row.updated_at.toISOString(),
+          });
+        }),
         total: Number(count.rows[0]?.n ?? 0),
       };
     },

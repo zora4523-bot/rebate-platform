@@ -8,7 +8,7 @@ import {
 } from '../../../platform/index.ts';
 import { ArticleReader, type ArticleListQuery } from '../../application/article-reader.ts';
 import { ConfigViewerContext } from '../../application/client-config.ts';
-import { ArticleCursorError } from '../../domain/articles.ts';
+import { ArticleCursorError, ArticleHelpSectionFilterError } from '../../domain/articles.ts';
 
 interface ArticleRequest {
   readonly id: string;
@@ -33,6 +33,10 @@ export class ArticlesController {
       const data = await this.#reader.list(viewer.appId, query);
       return { code: 0, msg: '', data, trace_id: request.id };
     } catch (error) {
+      if (error instanceof ArticleHelpSectionFilterError) {
+        const refused = fieldsErrorEnvelope(['help_section'], request.id);
+        throw new HttpException(refused.body, refused.statusCode);
+      }
       if (error instanceof ArticleCursorError) {
         const refused = fieldsErrorEnvelope(['cursor'], request.id);
         throw new HttpException(refused.body, refused.statusCode);

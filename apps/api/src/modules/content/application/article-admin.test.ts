@@ -8,7 +8,10 @@ import {
   ArticleNotFoundError,
   articleConfigKeysFor,
   articleFieldList,
+  articleView,
   currentVersionOf,
+  helpSectionRejected,
+  withHelpSectionField,
   isNewArticleId,
   type ArticleAdminStore,
   type ArticleAdminTx,
@@ -67,6 +70,7 @@ function row(extra: Partial<ArticleRow> = {}): ArticleRow {
     notice_closable: true,
     notice_content_version: 1,
     notice_end_at: null,
+    help_section: null,
     row_version: 0,
     created_at: at,
     updated_at: at,
@@ -442,4 +446,92 @@ it('[AC-F1-02w#28] a primary key race on insert maps to 20902', async () => {
   await expect(
     admin(racing).create(ACTOR, { article_id: ID, category: 'help', title: 't', body: doc('x') }),
   ).rejects.toBeInstanceOf(ArticleConflictError);
+});
+
+it('[AC-F1-02zs#10] help_section goes after the named fields and before the words', () => {
+  expect(withHelpSectionField([])).toEqual(['help_section']);
+  expect(withHelpSectionField(['title', 'notice_end_at', '全网最低'])).toEqual([
+    'title',
+    'notice_end_at',
+    'help_section',
+    '全网最低',
+  ]);
+  expect(withHelpSectionField(['title', 'body', 'notice_end_at'])).toEqual([
+    'title',
+    'body',
+    'notice_end_at',
+    'help_section',
+  ]);
+  expect(withHelpSectionField(['body', '全网最低'])).toEqual(['body', 'help_section', '全网最低']);
+  expect(helpSectionRejected('help', 'invite')).toBe(false);
+  expect(helpSectionRejected('rule', null)).toBe(false);
+  expect(helpSectionRejected('rule', 'invite')).toBe(true);
+  expect(helpSectionRejected('notice', 'invite')).toBe(true);
+});
+
+it('[AC-F1-02zs#7] create and save store help_section; omitted clears it; audits carry it', async () => {
+  const { store, state } = memory();
+  const a = admin(store);
+  const created = await a.create(ACTOR, {
+    article_id: ID,
+    category: 'help',
+    title: '帮助',
+    body: doc('x'),
+    help_section: 'invite',
+  });
+  expect(created.versions[0]).toHaveProperty('help_section', 'invite');
+  expect(state.rows[0]!.help_section).toBe('invite');
+  expect(state.audits[0]).toMatchObject({ after: { help_section: 'invite' } });
+  const saved = await a.save(ACTOR, ID, { title: '帮助', body: doc('y'), expected_row_version: 0 });
+  expect(saved.versions[0]).not.toHaveProperty('help_section');
+  expect(saved.versions[1]).toHaveProperty('help_section', 'invite');
+  expect(state.rows.find((r) => r.version === 2)!.help_section).toBeNull();
+  expect(state.audits[1]).toMatchObject({
+    before: { help_section: 'invite' },
+    after: { help_section: null },
+  });
+});
+
+it('[AC-F1-02zs#9] help_section on another category is 20001 with nothing written', async () => {
+  const { store, state } = memory([row({ category: 'rule' })]);
+  const a = admin(store);
+  expect(
+    await fieldsOf(
+      a.create(ACTOR, {
+        article_id: '0199f102-aaaa-7000-8000-000000000002',
+        category: 'notice',
+        title: '全网最低',
+        body: doc('x'),
+        notice_closable: false,
+        help_section: 'invite',
+      }),
+    ),
+  ).toEqual(['title', 'notice_end_at', 'help_section', '全网最低']);
+  expect(
+    await fieldsOf(
+      a.save(ACTOR, ID, {
+        title: '规则',
+        body: doc('x'),
+        help_section: 'withdraw',
+        expected_row_version: 0,
+      }),
+    ),
+  ).toEqual(['help_section']);
+  expect(state.rows).toHaveLength(1);
+  expect(state.audits).toEqual([]);
+});
+
+it('[AC-F1-02zs#11] views show help_section only when set; publish audit keeps it', async () => {
+  const now = new Date(NOW);
+  const view = articleView([row({ version: 2, help_section: 'withdraw' }), row()], now);
+  expect(view.versions[0]).toHaveProperty('help_section', 'withdraw');
+  expect(view.versions[1]).not.toHaveProperty('help_section');
+  const { store, state } = memory([row({ help_section: 'invite' })]);
+  const published = await admin(store).publish(ACTOR, ID, { version: 1, expected_row_version: 0 });
+  expect(published.versions[0]).toHaveProperty('help_section', 'invite');
+  expect(state.audits[0]).toMatchObject({
+    action: 'article_publish',
+    before: { help_section: 'invite' },
+    after: { help_section: 'invite' },
+  });
 });

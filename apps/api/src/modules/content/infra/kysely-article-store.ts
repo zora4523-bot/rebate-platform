@@ -1,7 +1,7 @@
 import type { DB } from '@couli/db';
 import { sql, type Kysely } from 'kysely';
 import type { ArticleStore } from '../application/article-reader.ts';
-import type { ArticleCategory } from '../domain/articles.ts';
+import { withHelpSection, type ArticleCategory } from '../domain/articles.ts';
 
 /** SELECT only, app-scoped, on the primary handle. One statement gives each page a snapshot. */
 export function createKyselyArticleStore(db: Kysely<DB>): ArticleStore {
@@ -18,7 +18,7 @@ export function createKyselyArticleStore(db: Kysely<DB>): ArticleStore {
   const publishedAt = sql<string>`to_char(a.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
   return {
-    async list({ appId, now, category, after, take }) {
+    async list({ appId, now, category, helpSection, after, take }) {
       let query = published(appId, now)
         .select([
           'a.id',
@@ -27,6 +27,7 @@ export function createKyselyArticleStore(db: Kysely<DB>): ArticleStore {
           'a.version',
           'a.notice_closable',
           'a.notice_content_version',
+          'a.help_section',
         ])
         .select(publishedAt.as('published_at'))
         .select(
@@ -54,6 +55,8 @@ export function createKyselyArticleStore(db: Kysely<DB>): ArticleStore {
           ),
         )
         .where('a.category', '=', category);
+      // L30: the sub-section of the current revision, filtered in SQL before the page limit.
+      if (helpSection !== undefined) query = query.where('a.help_section', '=', helpSection);
       if (category === 'notice') {
         query = query
           .where('a.title', '!=', '')
@@ -74,20 +77,21 @@ export function createKyselyArticleStore(db: Kysely<DB>): ArticleStore {
 
     async detail({ appId, now, id, version }) {
       let query = published(appId, now)
-        .select(['a.id', 'a.category', 'a.title', 'a.version', 'a.body'])
+        .select(['a.id', 'a.category', 'a.title', 'a.version', 'a.body', 'a.help_section'])
         .select(publishedAt.as('published_at'))
         .where('a.id', '=', id);
       if (version !== undefined) query = query.where('a.version', '=', version);
       const row = await query.orderBy('a.version', 'desc').limit(1).executeTakeFirst();
       if (row === undefined) return null;
-      return {
+      const category = row.category as ArticleCategory; // articles_category_check
+      return withHelpSection(category, row.help_section, {
         article_id: row.id,
-        category: row.category as ArticleCategory, // articles_category_check
+        category,
         title: row.title,
         version: row.version,
         published_at: row.published_at,
         body: row.body,
-      };
+      });
     },
   };
 }

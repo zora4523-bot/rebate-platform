@@ -4,24 +4,33 @@ import {
   articleSummary,
   decodeArticleCursor,
   encodeArticleCursor,
+  helpSectionFilterAllowed,
   isArticleId,
+  ArticleHelpSectionFilterError,
   type ArticleCategory,
+  type ArticleHelpSection,
   type ArticleCursor,
   type PublishedArticleSummary,
 } from '../domain/articles.ts';
 
 export interface ArticleListQuery {
   readonly category: ArticleCategory;
+  /** Contract route schema has checked the code; only valid with category help (L30). */
+  readonly help_section?: ArticleHelpSection;
   readonly cursor?: string;
   readonly limit?: number;
 }
 
 export interface ArticleStore {
-  /** Current published revisions only; category, notice eligibility and keyset precede limit. */
+  /**
+   * Current published revisions only; category, help_section (of the current revision), notice
+   * eligibility and keyset precede limit.
+   */
   list(input: {
     readonly appId: string;
     readonly now: Date;
     readonly category: ArticleCategory;
+    readonly helpSection: ArticleHelpSection | undefined;
     readonly after: ArticleCursor | undefined;
     readonly take: number;
   }): Promise<readonly PublishedArticleSummary[]>;
@@ -45,12 +54,17 @@ export class ArticleReader {
 
   async list(appId: string, query: ArticleListQuery): Promise<Schema<'ArticleListData'>> {
     const limit = query.limit ?? 20; // Limit is validated by the contract route schema.
+    // L30: refused before the cursor is looked at; the cursor itself is not bound to the filter.
+    if (!helpSectionFilterAllowed(query.category, query.help_section)) {
+      throw new ArticleHelpSectionFilterError();
+    }
     const after =
       query.cursor === undefined ? undefined : decodeArticleCursor(query.cursor, query.category);
     const rows = await this.#available().list({
       appId,
       now: this.#clock.now(),
       category: query.category,
+      helpSection: query.help_section,
       after,
       take: limit + 1,
     });

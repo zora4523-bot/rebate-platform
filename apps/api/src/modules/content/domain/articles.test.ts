@@ -4,7 +4,9 @@ import {
   articleSummary,
   decodeArticleCursor,
   encodeArticleCursor,
+  helpSectionFilterAllowed,
   isArticleId,
+  withHelpSection,
   type PublishedArticleSummary,
 } from './articles.ts';
 
@@ -59,6 +61,7 @@ it('[AC-F1-02f#5] summaries expose independent notice versions without leaking s
     notice_closable: true,
     notice_content_version: 7,
     notice_end_at: null,
+    help_section: null,
   };
   expect(articleSummary(row)).toEqual({
     article_id: ID,
@@ -83,4 +86,31 @@ it('[AC-F1-02f#5] summaries expose independent notice versions without leaking s
     version: 3,
     published_at: AT,
   });
+});
+
+it('[AC-F1-02zs#1] help summaries carry help_section only when set; notices never', () => {
+  const base: PublishedArticleSummary = {
+    id: ID,
+    category: 'help',
+    title: '帮助',
+    version: 1,
+    published_at: AT,
+    notice_closable: true,
+    notice_content_version: 1,
+    notice_end_at: null,
+    help_section: 'invite',
+  };
+  expect(articleSummary(base)).toHaveProperty('help_section', 'invite');
+  expect(articleSummary({ ...base, help_section: null })).not.toHaveProperty('help_section');
+  expect(articleSummary({ ...base, category: 'notice' })).not.toHaveProperty('help_section');
+  expect(withHelpSection('agreement', 'invite', { a: 1 })).toEqual({ a: 1 });
+});
+
+it('[AC-F1-02zs#4] the help_section filter goes with category help only', () => {
+  expect(helpSectionFilterAllowed('help', 'invite')).toBe(true);
+  expect(helpSectionFilterAllowed('help', undefined)).toBe(true);
+  expect(helpSectionFilterAllowed('rule', undefined)).toBe(true);
+  for (const category of ['rule', 'notice', 'agreement'] as const) {
+    expect(helpSectionFilterAllowed(category, 'invite')).toBe(false);
+  }
 });

@@ -21,8 +21,8 @@
 import type { Schema } from '@couli/contracts-ts';
 import { transitionArticleVersion, type ArticleVersionEvent } from '@couli/domain';
 import type { AuditInput, Clock, LinkPatternsSpec } from '../../platform/index.ts';
-import type { ArticleCategory } from '../domain/articles.ts';
-import { isArticleId } from '../domain/articles.ts';
+import type { ArticleCategory, ArticleHelpSection } from '../domain/articles.ts';
+import { isArticleId, withHelpSection } from '../domain/articles.ts';
 import {
   nextNoticeContentVersion,
   validateArticleSave,
@@ -58,6 +58,8 @@ export interface ArticleRow {
   readonly notice_closable: boolean;
   readonly notice_content_version: number;
   readonly notice_end_at: Date | null;
+  /** L30: help articles only (articles_help_section_category_check); null = none. */
+  readonly help_section: ArticleHelpSection | null;
   readonly row_version: number;
   readonly created_at: Date;
   readonly updated_at: Date;
@@ -175,6 +177,29 @@ export function articleFieldList(fields: readonly string[], paths: readonly stri
   return out;
 }
 
+/** Named fields validateArticleSave may report, in contract order, before the words. */
+const NAMED_FIELDS: readonly string[] = ['title', 'body', 'notice_end_at'];
+
+/** L30: a help_section is only allowed on a help article (contract: 20001 with help_section). */
+export function helpSectionRejected(
+  category: ArticleCategory,
+  helpSection: ArticleHelpSection | null,
+): boolean {
+  return helpSection !== null && category !== 'help';
+}
+
+/**
+ * Inserts `help_section` into validateArticleSave's field list after the named fields (title,
+ * body, notice_end_at) and before the forbidden words (contract adminCreateArticle `data.fields`).
+ */
+export function withHelpSectionField(fields: readonly string[]): string[] {
+  let at = 0;
+  for (const name of NAMED_FIELDS) {
+    if (fields[at] === name) at += 1;
+  }
+  return [...fields.slice(0, at), 'help_section', ...fields.slice(at)];
+}
+
 /** Largest published version already due at `now` (04 §6.2), null when none. */
 export function currentVersionOf(rows: readonly ArticleRow[], now: Date): ArticleRow | undefined {
   let best: ArticleRow | undefined;
@@ -227,18 +252,20 @@ export function articleView(rows: readonly ArticleRow[], now: Date): Schema<'Adm
     category: newest.category,
     row_version: newest.row_version,
     current_version: currentVersionOf(rows, now)?.version ?? null,
-    versions: rows.map((row) => ({
-      version: row.version,
-      status: row.status,
-      title: row.title,
-      body: row.body,
-      notice_closable: row.notice_closable,
-      notice_content_version: row.notice_content_version,
-      notice_end_at: iso(row.notice_end_at),
-      published_at: iso(row.published_at),
-      created_at: row.created_at.toISOString(),
-      updated_at: row.updated_at.toISOString(),
-    })),
+    versions: rows.map((row) =>
+      withHelpSection(row.category, row.help_section, {
+        version: row.version,
+        status: row.status,
+        title: row.title,
+        body: row.body,
+        notice_closable: row.notice_closable,
+        notice_content_version: row.notice_content_version,
+        notice_end_at: iso(row.notice_end_at),
+        published_at: iso(row.published_at),
+        created_at: row.created_at.toISOString(),
+        updated_at: row.updated_at.toISOString(),
+      }),
+    ),
   };
 }
 
@@ -251,6 +278,7 @@ function facts(row: ArticleRow): Facts {
     status: row.status,
     row_version: row.row_version,
     published_at: iso(row.published_at),
+    help_section: row.help_section,
   };
 }
 
@@ -266,6 +294,12 @@ interface DraftInput {
   readonly body: string;
   readonly notice_closable?: boolean;
   readonly notice_end_at?: string | null;
+  readonly help_section?: ArticleHelpSection;
+}
+
+/** Save input plus the row's help_section (kept as sent so a wrong category is refused). */
+export interface ArticleDraftFields extends ArticleSaveInput {
+  readonly help_section: ArticleHelpSection | null;
 }
 
 /** A contract date-time as an instant, built from the Clock's value (no `new Date` here). */
@@ -275,8 +309,11 @@ export function instantOf(now: Date, text: string): Date {
   return result;
 }
 
-/** 9.2#8: notice fields kept for notices only; others store true / null. */
-function saveInput(category: ArticleCategory, input: DraftInput, now: Date): ArticleSaveInput {
+/**
+ * 9.2#8: notice fields kept for notices only; others store true / null. L30: help_section as sent
+ * (omitted = null); a non-help category with one is refused by the save checks.
+ */
+function saveInput(category: ArticleCategory, input: DraftInput, now: Date): ArticleDraftFields {
   const notice = category === 'notice';
   const end = notice ? (input.notice_end_at ?? null) : null;
   return {
@@ -285,6 +322,7 @@ function saveInput(category: ArticleCategory, input: DraftInput, now: Date): Art
     body: input.body,
     notice_closable: notice ? (input.notice_closable ?? true) : true,
     notice_end_at: end === null ? null : instantOf(now, end),
+    help_section: input.help_section ?? null,
   };
 }
 
@@ -366,7 +404,7 @@ export class ArticleAdmin {
     tx: ArticleAdminTx,
     appId: string,
     articleId: string,
-    input: ArticleSaveInput,
+    input: ArticleDraftFields,
   ): Promise<void> {
     const words = this.#options.bannedWords();
     const needsHelpLinks = words.some((word) =>
@@ -381,7 +419,13 @@ export class ArticleAdmin {
       bannedWords: words,
       articleConfigKeys: articleConfigKeysFor(articleId, words, helpLinks),
     });
-    if (!result.ok) throw new ArticleFieldsError(articleFieldList(result.fields, result.paths));
+    const helpSection = helpSectionRejected(input.category, input.help_section);
+    if (result.ok && !helpSection) return;
+    const fields = result.ok ? [] : result.fields;
+    const paths = result.ok ? [] : result.paths;
+    throw new ArticleFieldsError(
+      articleFieldList(helpSection ? withHelpSectionField(fields) : fields, paths),
+    );
   }
 
   /** 30701 → lock → [category]; returns the app's rows of the id, newest first. */
@@ -513,6 +557,7 @@ export class ArticleAdmin {
         status: 'published',
         row_version: newest.row_version + 1,
         published_at: at.toISOString(),
+        help_section: newest.help_section,
       },
       ip: actor.ip,
     });
