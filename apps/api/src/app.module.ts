@@ -71,6 +71,7 @@ import {
   IdentityAdminModule,
   IdentityModule,
   IdentityWorkerModule,
+  IdentityDeletionExpiryModule,
   ME_READ_PORTS,
   createMaskedPhoneReader,
   CONSENT_SIGNATURE_CHECK,
@@ -105,7 +106,9 @@ import {
   type IdentityContext,
   type LaborAgreementConfigReader,
   type DeletionBalanceReader,
+  type DeletionCalendarConfigReader,
   type WithdrawalInFlightReader,
+  type WithdrawalNonTerminalReader,
   type LandingInvitePort,
   type LandingRegisterConfigReader,
   type IdentityRequest,
@@ -362,6 +365,61 @@ const payoutAccountConfig = {
     configValue: (appId, key, handle) =>
       createContentReader({ db: handle, clock }).configValue(appId, key),
   }),
+};
+
+/**
+ * The user's withdrawals as identity's deletion flows see them, on the caller's transaction:
+ * POST /v1/me/deletion asks hasInFlight (B1-15d, D10-97: 30412), the worker's cooling-period
+ * expiry asks hasNonTerminal (B1-15f, BR-ID-27: any non-terminal one, ban-frozen included, defers
+ * processing). The payout module does not exist yet, so there is truthfully none; B2-05 replaces
+ * both methods together.
+ */
+const deletionWithdrawals = {
+  inject: [],
+  useFactory: (): WithdrawalInFlightReader & WithdrawalNonTerminalReader => ({
+    // TODO(规划/11 §2.3): 在途提现读 payout 模块 — blocked on B2-05
+    hasInFlight: () => Promise.resolve(false),
+    // TODO(规划/11 §2.3): 未到终态的提现（含封禁冻结）读 payout 模块 — blocked on B2-05
+    hasNonTerminal: () => Promise.resolve(false),
+  }),
+};
+
+/**
+ * The user's available_fen for the deletion flows (B1-15d 30416 on the api entry; B1-15f's expiry
+ * re-check on the worker): the ledger's getBalances on the caller's transaction (bigint fen; no
+ * account → 0n).
+ */
+const deletionBalance = {
+  inject: [CLOCK],
+  useFactory: (clock: Clock): DeletionBalanceReader => {
+    const ledger = createLedger({ clock });
+    return {
+      async availableFen(trx, input) {
+        const balances = await ledger.getBalances(trx, {
+          appId: input.appId,
+          userIds: [input.userId],
+        });
+        const own = balances.find(
+          (row) => row.app_id === input.appId && row.user_id === input.userId,
+        );
+        return own === undefined ? 0n : own.available_fen;
+      },
+    };
+  },
+};
+
+/**
+ * B1-15f: the working-day calendar of the deletion overdue alarm (calendar.cn_holidays.<year>,
+ * calendar.cn_makeup_workdays.<year>) through content's reader; without a database there is no
+ * expiry to read it (every read answers null).
+ */
+const deletionCalendarConfig = {
+  inject: [CLOCK, { token: DB, optional: true }],
+  useFactory: (clock: Clock, db?: Kysely<Database>): DeletionCalendarConfigReader => {
+    if (db === undefined) return { configValue: () => Promise.resolve(null) };
+    const reader = createContentReader({ db, clock });
+    return { configValue: (appId, key) => reader.configValue(appId, key) };
+  },
 };
 
 /**
@@ -682,35 +740,8 @@ function identityModule(contentReader: SharedContentReader): DynamicModule {
         );
       },
     },
-    // POST /v1/me/deletion (B1-15d, D10-97): whether the user has a withdrawal in flight, on the
-    // application's transaction. The payout module does not exist yet, so there is truthfully none.
-    withdrawalInFlight: {
-      inject: [],
-      useFactory: (): WithdrawalInFlightReader => ({
-        // TODO(规划/11 §2.3): 在途提现读 payout 模块 — blocked on B2-05
-        hasInFlight: () => Promise.resolve(false),
-      }),
-    },
-    // POST /v1/me/deletion (B1-15d, BR-ID-27 30416): the user's available_fen through the ledger's
-    // getBalances on the application's transaction (bigint fen; no account → 0n).
-    deletionBalance: {
-      inject: [CLOCK],
-      useFactory: (clock: Clock): DeletionBalanceReader => {
-        const ledger = createLedger({ clock });
-        return {
-          async availableFen(trx, input) {
-            const balances = await ledger.getBalances(trx, {
-              appId: input.appId,
-              userIds: [input.userId],
-            });
-            const own = balances.find(
-              (row) => row.app_id === input.appId && row.user_id === input.userId,
-            );
-            return own === undefined ? 0n : own.available_fen;
-          },
-        };
-      },
-    },
+    withdrawalInFlight: deletionWithdrawals,
+    deletionBalance,
     // Runs only on the login's own transaction (no handle of its own), so it needs no database.
     firstAppLoginReview: {
       inject: [CLOCK],
@@ -1909,6 +1940,17 @@ export class AppModule {
         // timer after the risk-scan heal and stops it first on shutdown.
         ...(options.entry === 'worker'
           ? [IdentityWorkerModule.forWorker({ payoutAccountConfig })]
+          : []),
+        // The cooling-period expiry of deletion requests (B1-15f, BR-ID-27): worker entry only;
+        // entry.ts starts its 60-second timer after the payout verification recheck.
+        ...(options.entry === 'worker'
+          ? [
+              IdentityDeletionExpiryModule.forWorker({
+                calendarConfig: deletionCalendarConfig,
+                withdrawals: deletionWithdrawals,
+                balance: deletionBalance,
+              }),
+            ]
           : []),
         // growth's invite reward scanner (B1-35, BR-INV-24): worker entry only; entry.ts starts its
         // 60-second loop after the queue runs and stops it first on shutdown.

@@ -52,33 +52,32 @@ export function appealDeadline(
   submittedAt: Date,
   calendars: Readonly<Record<number, AppealCalendarYear>>,
 ): Date {
-  const time = submittedAt.getTime();
-  if (!Number.isFinite(time)) throw new RangeError('appealDeadline: invalid submission time');
-  // Day number (days since 1970-01-01) of the +08:00 civil date of the submission.
-  let day = Math.floor((time + OFFSET_MS) / DAY_MS);
-  let counted = 0;
-  while (counted < WORKING_DAYS) {
-    day += 1;
-    // UTC midnight of the civil day: its UTC fields are the +08:00 date.
-    if (isWorkingDay(dateAt(submittedAt, day * DAY_MS), calendars)) counted += 1;
-  }
-  // 24:00 +08:00 of that day = 00:00 +08:00 of the next day.
-  return dateAt(submittedAt, (day + 1) * DAY_MS - OFFSET_MS);
+  return workingDayDeadline(submittedAt, calendars, WORKING_DAYS);
 }
 
 /**
  * B1-15f (BR-ID-27 15 个工作日; BR-ID-36 口径「同 BR-ID-27」): the same calculation with the number of
  * working days as a parameter — 24:00 (+08:00) of the `workingDays`-th working day after the
  * +08:00 civil date of `from` (that day excluded). appealDeadline is this with 3.
- * NotImplemented skeleton written by the rule-test author.
  */
 export function workingDayDeadline(
   from: Date,
   calendars: Readonly<Record<number, AppealCalendarYear>>,
   workingDays: number,
 ): Date {
-  void from;
-  void calendars;
-  void workingDays;
-  throw new Error('NotImplemented: workingDayDeadline');
+  const time = from.getTime();
+  if (!Number.isFinite(time)) throw new RangeError('workingDayDeadline: invalid start time');
+  if (!Number.isSafeInteger(workingDays) || workingDays < 1) {
+    throw new RangeError('workingDayDeadline: workingDays must be a positive integer');
+  }
+  // Day number (days since 1970-01-01) of the +08:00 civil date of `from`.
+  let day = Math.floor((time + OFFSET_MS) / DAY_MS);
+  let counted = 0;
+  while (counted < workingDays) {
+    day += 1;
+    // UTC midnight of the civil day: its UTC fields are the +08:00 date.
+    if (isWorkingDay(dateAt(from, day * DAY_MS), calendars)) counted += 1;
+  }
+  // 24:00 +08:00 of that day = 00:00 +08:00 of the next day.
+  return dateAt(from, (day + 1) * DAY_MS - OFFSET_MS);
 }

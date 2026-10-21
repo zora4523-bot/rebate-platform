@@ -14,17 +14,17 @@ export interface LoginAccount {
 /**
  * The account holding this phone blind index in the app, if any. An account in the deletion
  * cooling-off period counts as existing; a finished deletion (status deleted) does not (BR-ID-01
- * 细则「受限会话·受限登录」). The partial unique index (app_id, phone_hmac) WHERE status <> 'deleted'
+ * 细则「受限会话·受限登录」); its status tells a deletion in processing (deleting, B1-15f). The partial unique index (app_id, phone_hmac) WHERE status <> 'deleted'
  * keeps it at most one row.
  */
 export async function findAccountByPhone(
   trx: Transaction<DB>,
   appId: string,
   phoneHmac: string,
-): Promise<LoginAccount | undefined> {
+): Promise<(LoginAccount & { readonly status: string }) | undefined> {
   return trx
     .selectFrom('users')
-    .select(['id', 'parent_bind_source'])
+    .select(['id', 'parent_bind_source', 'status'])
     .where('app_id', '=', appId)
     .where('phone_hmac', '=', phoneHmac)
     .where('status', '<>', 'deleted')

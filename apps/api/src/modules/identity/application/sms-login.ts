@@ -14,6 +14,8 @@
 //      or borrows another pooled connection;
 //   4. one READ COMMITTED transaction: the account by phone blind index (status <> deleted;
 //      cooling-off counts as existing), then
+//      - account with users.status = deleting (deletion processing, B1-15f; BR-ID-27) → 10007
+//        with data.stage=processing in either scope: nothing created, issued or recorded;
 //      - restricted, no account → 10405 no_account, nothing written, no token; the minimum in the
 //        answer is read again after the rollback (the current value, null when removed);
 //      - restricted, account → deletion_only session; invite_code ignored (ignored_existing_user
@@ -85,6 +87,7 @@ export type SmsLoginResult =
     }
   | { readonly code: 20002 | 20003 | 50001 }
   | { readonly code: 44001; readonly data?: { readonly risk_msg_code: string } }
+  | { readonly code: 10007; readonly data: { readonly stage: 'processing' } }
   | {
       readonly code: 10405;
       readonly data: {
@@ -175,6 +178,11 @@ class LoginAbort extends Error {
   }
 }
 
+const DELETING: SmsLoginResult = Object.freeze({
+  code: 10007,
+  data: Object.freeze({ stage: 'processing' }),
+});
+
 const IGNORED_EXISTING_USER: InviteBindResult = Object.freeze({
   result: 'ignored_existing_user',
   code: null,
@@ -213,6 +221,9 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
     const appId = command.app_id;
     const existing = await findAccountByPhone(trx, appId, phoneHmac);
     const ignored = inviteCode === undefined ? {} : { invite_bind: IGNORED_EXISTING_USER };
+    // BR-ID-27: an account whose deletion is processing logs in by no method (10007,
+    // stage=processing), in either scope; nothing is created, issued or recorded.
+    if (existing?.status === 'deleting') throw new LoginAbort(DELETING);
     if (existing !== undefined) {
       return {
         user_id: existing.id,
@@ -260,6 +271,7 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
       if (winner === undefined) {
         throw new Error('identity: phone_taken without a visible account');
       }
+      if (winner.status === 'deleting') throw new LoginAbort(DELETING);
       logger.info({ app_id: appId }, 'sms_login_concurrent_first_login');
       return {
         user_id: winner.id,

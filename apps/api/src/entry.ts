@@ -6,7 +6,12 @@ import {
   startInviteRewardWorker,
   type InviteRewardScanner,
 } from './modules/growth/index.ts';
-import { payoutVerifyRecheckToken, startPayoutVerifyRecheck } from './modules/identity/index.ts';
+import {
+  deletionExpiryToken,
+  payoutVerifyRecheckToken,
+  startDeletionExpiry,
+  startPayoutVerifyRecheck,
+} from './modules/identity/index.ts';
 import {
   type AppConfig,
   type ConnectionConfig,
@@ -290,6 +295,23 @@ async function start(
             logger,
             () => signals.stopping(),
           );
+      // The cooling-period expiry of deletion requests (B1-15f, BR-ID-27): a 60-second timer, no
+      // immediate round, started after the recheck; on shutdown it is stopped after the recheck
+      // drained and waited for (its current request) before the services stop. A context without
+      // the provider resolves to null: no timer, no crash, no log line.
+      const expiry = signals.stopping()
+        ? undefined
+        : startDeletionExpiry(
+            () => {
+              try {
+                return context.get<unknown>(deletionExpiryToken(), { strict: false });
+              } catch {
+                return null;
+              }
+            },
+            logger,
+            () => signals.stopping(),
+          );
       let runtime: Partial<AgentSweeperRuntime> | null | undefined;
       if (!signals.stopping()) {
         try {
@@ -330,7 +352,11 @@ async function start(
               try {
                 await reward?.stop();
               } finally {
-                await recheck?.stop();
+                try {
+                  await recheck?.stop();
+                } finally {
+                  await expiry?.stop();
+                }
               }
             } finally {
               heal.stop();

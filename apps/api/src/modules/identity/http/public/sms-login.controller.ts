@@ -27,6 +27,7 @@ const MESSAGES = Object.freeze({
   20003: '验证码已失效，请重新获取',
   44001: '操作未通过安全校验',
   no_account: '这个账号还没有注册，请先更新 App 再注册',
+  10007: '账号正在注销处理中',
   50001: '服务端错误',
 });
 
@@ -89,6 +90,17 @@ export function smsLoginErrorResponse(
             reason: result.data.reason,
             min_supported_version: result.data.min_supported_version,
           },
+          trace_id: traceId,
+        },
+      };
+    case 10007:
+      // BR-ID-27: the same envelope as the third-party logins (oauth-login.controller.ts).
+      return {
+        statusCode: 403,
+        body: {
+          code: 10007,
+          msg: MESSAGES[10007],
+          data: { stage: result.data.stage },
           trace_id: traceId,
         },
       };
