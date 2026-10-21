@@ -4,6 +4,7 @@ title: 关系日志两列不分家：growth 的 appendRelationChange 写入时�
 type: impl
 # 草稿 2026-10-22（身份与风控线 identity-lane）。编排裁定 D10-118（更正 D10-112）：资金线 B2-03p money r1 S0——写入时 created_at 取 DB now()、at 取注入 Clock，二者可分居 paidAt 两侧；0040 建表时已定「08 的按 created_at 回放由业务时点 at 承载」（B1-11a §9.3 #3），冻结测试 B1-11b#14–#19 按 at。
 # 做法：appendRelationChange 的 insert 显式写 created_at: input.at；parentAt / levelAt 不改；三个写入方（invite-binder、landing-binder、first-app-login-review）都经它写，不另改。不改规则、不改迁移与冻结测试。funds B2-03p 在等本任务合并后评 money r2。
+# 2026-10-22 补 paths：insert 多一个参数，两个逐项比对参数的单元测试（invite-binder.test.ts:515、first-app-login-review.test.ts:110）同步补第 9 个参数；log-tables.ts 注释同步。
 # RV2（growth 归属），money 评审一家（Codex 优先，不可用按 approvals #36 独立 Claude）。
 refs: []
 refs_hash: {}
@@ -11,6 +12,9 @@ deps: [B1-11b]
 paths:
   - 'apps/api/src/modules/growth/infra/change-logs.ts'
   - 'apps/api/src/modules/growth/infra/change-logs.test.ts'
+  - 'apps/api/src/modules/growth/infra/log-tables.ts'
+  - 'apps/api/src/modules/growth/application/invite-binder.test.ts'
+  - 'apps/api/src/modules/growth/application/first-app-login-review.test.ts'
 test_paths:
   - 'test/spec/growth/relation-log-instant/**'
 impl: claude
