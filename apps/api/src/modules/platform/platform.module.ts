@@ -6,6 +6,7 @@ import type { FieldCrypto } from './crypto/index.ts';
 import type { ConnectionConfig, DbHandles } from './db/index.ts';
 import type { EntryName } from './entries.ts';
 import { createEventBus } from './events/index.ts';
+import { createExportStore, EXPORT_STORE } from './export-store/index.ts';
 import { AbandonController } from './http/public/abandon.controller.ts';
 import { createIdempotency } from './idempotency/index.ts';
 import { IDEMPOTENCY } from './idempotency/token.ts';
@@ -151,6 +152,20 @@ export class PlatformModule {
               options.logger,
             ),
         },
+        // Private export store (B1-34d): signed-link memory stand-in in local / test; staging / prod
+        // fail every put / signedUrl per request until the OSS adapter lands (B1-30).
+        {
+          provide: EXPORT_STORE,
+          inject: [CLOCK],
+          useFactory: (clock: Clock) =>
+            createExportStore({
+              appEnv: options.config.appEnv,
+              baseUrl: options.config.exportStoreBaseUrl,
+              signingKey: options.config.exportStoreSigningKey,
+              clock,
+              logger: options.logger,
+            }),
+        },
         ...databaseProviders,
         ...redisProviders,
         ...cryptoProviders,
@@ -161,6 +176,7 @@ export class PlatformModule {
         CLOCK,
         ROOT_LOGGER,
         MEDIA_STORE,
+        EXPORT_STORE,
         ...(keyring === null ? [] : [FIELD_CRYPTO]),
         ...(redisUrl === null ? [] : [REDIS]),
         ...(handles === undefined ? [] : [DB, IDEMPOTENCY, JOB_QUEUE, EVENT_BUS]),
