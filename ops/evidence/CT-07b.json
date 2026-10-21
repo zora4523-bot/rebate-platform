@@ -1,0 +1,37 @@
+{
+  "task": "CT-07b",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "0fcd76e381c8d19e4d148a5cca290b9f7d69709d",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). Home popup (04 6.2, BR-TEXT-26, D10-109 written back by couli #170): section_popup.props gains optional lottie {url https, sha256 64 lowercase hex; both required, no other key} and optional alt (1-40 characters, screen-reader name); lottie requires image (then the static fallback); card version unchanged; golden popup-lottie / popup-static and 8 invalid counter-examples. New planned POST /admin/v1/pages/popup-assets (multipart kind lottie|image + file; 200 url / sha256 / bytes, lottie adds width / height / duration_ms; 20001 fields=[file] or [kind] with admin-only reason format / too_large / too_long / external_ref; permission content.page, no step-up; same content same url; upload changes no page version); pages save / publish describe the popup.lottie reference check. Optional keys and a planned operation only, not breaking. Implementation F1-09r. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 fail (S1: alt was not in the planning baseline f411375); couli #170 wrote D10-109 back to 04 6.2 and SPEC_REF moved to 8209d6e (#1083); round 2 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "ea6e9cc07c4b259a50faee761fa7281a769df4b4",
+    "specs": "3c84b34e39aa6d9540cdb6c59afd21eb171cedce"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}

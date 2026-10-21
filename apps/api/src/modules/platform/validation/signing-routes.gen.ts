@@ -632,6 +632,11 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/pages/popup-assets",
+    "signed": false
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/pages/:page_key",
     "signed": false

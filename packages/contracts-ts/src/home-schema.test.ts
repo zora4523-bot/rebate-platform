@@ -58,6 +58,8 @@ const GOLDEN = [
   'min-app-version.json',
   'notice-bar-api.json',
   'notice-bar-static.json',
+  'popup-lottie.json',
+  'popup-static.json',
   'union-material.json',
   'unknown-type.json',
 ];
@@ -71,6 +73,14 @@ const INVALID = [
   'notice-bar-api-with-items.json',
   'notice-bar-api-wrong-type.json',
   'notice-bar-static-items-in-source.json',
+  'popup-alt-41.json',
+  'popup-alt-empty.json',
+  'popup-lottie-extra-key.json',
+  'popup-lottie-http.json',
+  'popup-lottie-no-image.json',
+  'popup-lottie-no-sha256.json',
+  'popup-lottie-sha256-63.json',
+  'popup-lottie-sha256-uppercase.json',
   'product-grid-columns-3.json',
   'two-popups.json',
   'union-material-empty-channels.json',
@@ -210,6 +220,27 @@ describe('home-schema.json (CT-07a)', () => {
     const appVersion = parameters['AppVersion']!.schema;
     expect(schema.$defs['app_version']!['pattern']).toBe(appVersion['pattern']);
     expect(schema.$defs['app_version']!['maxLength']).toBe(appVersion['maxLength']);
+  });
+
+  it('popup lottie {url, sha256} matches the popup asset upload of openapi (CT-07b, 04 §6.2)', () => {
+    const popup = schema.$defs['section_popup'] as {
+      properties: { props: Json & { properties: Record<string, Json> } };
+    };
+    const props = popup.properties.props;
+    expect(props['dependentRequired']).toEqual({ lottie: ['image'] });
+    const lottie = props.properties['lottie'] as Json & { properties: Record<string, Json> };
+    expect(lottie['required']).toEqual(['url', 'sha256']);
+    expect(lottie['additionalProperties']).toBe(false);
+    const { schemas } = openapi.components;
+    expect(lottie.properties['sha256']!['pattern']).toBe(
+      schemas['AdminPopupAssetSha256']!['pattern'],
+    );
+    expect(lottie.properties['url']!['pattern']).toBe(schemas['AdminPopupAssetUrl']!['pattern']);
+    expect(props.properties['alt']).toMatchObject({ minLength: 1, maxLength: 40 });
+    const golden = readJson<Page>(new URL('popup-lottie.json', goldenDir));
+    const section = golden.sections.find((s) => s.type === 'popup');
+    const ref = (section?.['props'] as Json)['lottie'] as { url: string; sha256: string };
+    expect(new URL(ref.url).pathname).toBe(`/${ref.sha256}.json`);
   });
 
   it('union_material platforms are enums/ platform; condition keys and values are 03 §6.1', () => {

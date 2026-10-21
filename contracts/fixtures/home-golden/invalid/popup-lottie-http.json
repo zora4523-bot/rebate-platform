@@ -1,0 +1,32 @@
+{
+  "page_key": "home",
+  "version": 1,
+  "ttl_sec": 300,
+  "sections": [
+    {
+      "id": "popup",
+      "type": "popup",
+      "version": 1,
+      "props": {
+        "image": "https://media.example.test/b1d2c3e4f5a6978877665544332211ffeeddccbbaa99887766554433221100aa.png",
+        "daily_max": 1,
+        "time_window": ["09:00", "22:00"],
+        "lottie": {
+          "url": "http://media.example.test/3f9a1c0e5b7d2468ace013579bdf2468ace013579bdf2468ace013579bdf2468.json",
+          "sha256": "3f9a1c0e5b7d2468ace013579bdf2468ace013579bdf2468ace013579bdf2468"
+        },
+        "alt": "邀请好友赚奖励"
+      },
+      "data_source": {
+        "kind": "static",
+        "items": [
+          {
+            "action": {
+              "route": "InviteShare"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

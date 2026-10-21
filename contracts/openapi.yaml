@@ -11051,6 +11051,128 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/pages/popup-assets:
+    post:
+      operationId: adminUploadPopupAsset
+      tags:
+        - admin-content
+      summary: Upload a home popup animation or picture
+      description: |
+        Permission point `content.page`, no step-up (04 §6.6 `pages`「弹窗素材上传」).
+        `multipart/form-data` with two parts: `kind` (`lottie` | `image`) and `file`. The server
+        checks the file against BR-TEXT-26 细则「素材与校验」 and stores it in the OSS media bucket
+        under its content SHA-256: the same content uploaded again returns the same `url`. The
+        upload changes no page version; the console writes `url` and `sha256` into the popup
+        props (`lottie` = {url, sha256}, `image` = url; contracts/home-schema.json) only when the
+        draft is saved (POST /admin/v1/pages/{page_key}/versions). `kind=lottie`: one Lottie JSON
+        of at most 300 KB that parses as a JSON object with `v`, `fr`, `ip`, `op`, `w`, `h` and
+        `layers`; duration (`op` − `ip`) ÷ `fr` above 0 and at most 3 seconds; images in `assets`
+        only inlined as data URIs; dotLottie is not accepted. The response adds `width`, `height`
+        (from `w`, `h`) and `duration_ms`. `kind=image`: the popup picture, also the static
+        fallback when an animation is set, with the same requirements as a popup picture without
+        animation. An aspect ratio that differs from the fallback picture by more than 2 % is
+        only flagged by the console, never rejected here. Rejections are 20001 with
+        `data.fields=[file]` (`[kind]` when `kind` is missing or not one of the two) and an
+        admin-only `data.reason` (shown next to the field with admin text, not in the user
+        dictionary): `format` (not a Lottie JSON object, a required key missing, dotLottie, or a
+        picture of the wrong format), `too_large` (above the size limit), `too_long` (duration not
+        above 0 or above 3 seconds) and `external_ref` (an `assets` entry pointing to a web
+        address or a relative path). A request body above the global limit stays 413 with
+        `data.fields=[body]`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminPopupAssetUploadRequest'
+      responses:
+        '200':
+          description: The stored file (the same url for the same content).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPopupAssetUploadResponse'
+              examples:
+                lottie:
+                  summary: Lottie animation (with its size and duration)
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      url: https://media.example.test/3f9a1c0e5b7d2468ace013579bdf2468ace013579bdf2468ace013579bdf2468.json
+                      sha256: 3f9a1c0e5b7d2468ace013579bdf2468ace013579bdf2468ace013579bdf2468
+                      bytes: 81920
+                      width: 750
+                      height: 1000
+                      duration_ms: 2400
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                image:
+                  summary: Popup picture or static fallback picture
+                  value:
+                    code: 0
+                    msg: ''
+                    data:
+                      url: https://media.example.test/b1d2c3e4f5a6978877665544332211ffeeddccbbaa99887766554433221100aa.png
+                      sha256: b1d2c3e4f5a6978877665544332211ffeeddccbbaa99887766554433221100aa
+                      bytes: 153600
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '413':
+          description: Request body above the global limit (20001 with data.fields=[body]).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                code: 20001
+                msg: 参数错误
+                data:
+                  fields:
+                    - body
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Rejected (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                kindInvalid:
+                  $ref: '#/components/examples/AdminPopupAssetKindInvalid'
+                formatInvalid:
+                  $ref: '#/components/examples/AdminPopupAssetFormatInvalid'
+                tooLarge:
+                  $ref: '#/components/examples/AdminPopupAssetTooLarge'
+                tooLong:
+                  $ref: '#/components/examples/AdminPopupAssetTooLong'
+                externalRef:
+                  $ref: '#/components/examples/AdminPopupAssetExternalRef'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/pages/{page_key}:
     get:
       operationId: adminGetPageConfig
@@ -11211,9 +11333,12 @@ paths:
         ①; personal-data placeholders in an external url, BR-ID-33 细则「外链不带个人数据」;
         Withdraw, PayoutAccount, LaborAgreement or RealName with params, BR-WDR-01 细则), the
         notice_bar api data source (only the notice CMS, 03 §6.3) and union_material channels (only
-        selectable channels of specs/material-channels.yaml, BR-TEXT-17 细则「联盟物料频道」); a
-        failure is 20001 with `data.fields` naming the offending field as a dotted path with array
-        indexes (e.g. `sections.0.data_source`), no `data.reason` (编排者默认). CAS:
+        selectable channels of specs/material-channels.yaml, BR-TEXT-17 细则「联盟物料频道」) and
+        a popup's `props.lottie` (only the reference: `url` on the media domain and its file name
+        equal to `sha256`; the file itself was checked by POST /admin/v1/pages/popup-assets, 04
+        §6.2, BR-TEXT-26 细则「素材与校验」); a failure is 20001 with `data.fields` naming the
+        offending field as a dotted path with array indexes (e.g. `sections.0.data_source`,
+        `sections.3.props.lottie`), no `data.reason` (编排者默认). CAS:
         `expected_revision` is the page's `revision` the console showed, 0 for a page not saved
         yet; saving adds 1, and a mismatch → 20902 with `data.resource=page` (编排者默认: drafts
         are whole pages, so two editors must not save over each other unseen).
@@ -16061,6 +16186,55 @@ components:
         data:
           fields:
             - sections.0.data_source
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPopupAssetKindInvalid:
+      summary: 20001 kind missing or not lottie / image
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - kind
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPopupAssetFormatInvalid:
+      summary: 20001 not a Lottie JSON object with the required keys, dotLottie, or a picture of the wrong format
+      value:
+        code: 20001
+        msg: 文件格式不符
+        data:
+          fields:
+            - file
+          reason: format
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPopupAssetTooLarge:
+      summary: 20001 file above the size limit
+      value:
+        code: 20001
+        msg: 文件超过大小上限
+        data:
+          fields:
+            - file
+          reason: too_large
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPopupAssetTooLong:
+      summary: 20001 animation duration not above 0 or above 3 seconds
+      value:
+        code: 20001
+        msg: 动画时长超过 3 秒
+        data:
+          fields:
+            - file
+          reason: too_long
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPopupAssetExternalRef:
+      summary: 20001 animation references an external file (web address or relative path)
+      value:
+        code: 20001
+        msg: 动画引用了外部文件，请内嵌图片后重新导出
+        data:
+          fields:
+            - file
+          reason: external_ref
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminPageConfigConflict:
       summary: 20902 the page was changed by someone else (revision moved on)
@@ -24438,6 +24612,110 @@ components:
           format: int32
           minimum: 0
           description: The type's newest version as the console showed it, 0 when none is published; a mismatch is 20902.
+    AdminPopupAssetUploadRequest:
+      type: object
+      description: multipart/form-data body of a home popup asset upload; parts `kind` and `file`.
+      additionalProperties: false
+      required:
+        - kind
+        - file
+      properties:
+        kind:
+          type: string
+          enum:
+            - lottie
+            - image
+          description: lottie = Lottie JSON animation; image = popup picture or static fallback.
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          description: The file as uploaded (BR-TEXT-26 细则「素材与校验」).
+    AdminPopupAssetUrl:
+      type: string
+      format: uri
+      pattern: '^https://'
+      maxLength: 2048
+      description: |
+        Stored file on the media domain (set by deployment), named by its content SHA-256; the
+        same content always gets the same url.
+    AdminPopupAssetSha256:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+      description: Lowercase hex SHA-256 of the stored file, the same digest as its file name.
+    AdminPopupAssetImage:
+      type: object
+      description: kind=image result.
+      additionalProperties: false
+      required:
+        - url
+        - sha256
+        - bytes
+      properties:
+        url:
+          $ref: '#/components/schemas/AdminPopupAssetUrl'
+        sha256:
+          $ref: '#/components/schemas/AdminPopupAssetSha256'
+        bytes:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Size of the stored file.
+    AdminPopupAssetLottie:
+      type: object
+      description: kind=lottie result, with the animation's size and duration.
+      additionalProperties: false
+      required:
+        - url
+        - sha256
+        - bytes
+        - width
+        - height
+        - duration_ms
+      properties:
+        url:
+          $ref: '#/components/schemas/AdminPopupAssetUrl'
+        sha256:
+          $ref: '#/components/schemas/AdminPopupAssetSha256'
+        bytes:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Size of the stored file.
+        width:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Lottie `w`.
+        height:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Lottie `h`.
+        duration_ms:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 3000
+          description: (`op` − `ip`) ÷ `fr`, in milliseconds rounded to the nearest one.
+    AdminPopupAssetUploadResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          oneOf:
+            - $ref: '#/components/schemas/AdminPopupAssetLottie'
+            - $ref: '#/components/schemas/AdminPopupAssetImage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
     AdminPageConfigDraftRequest:
       type: object
       additionalProperties: false
