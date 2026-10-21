@@ -1,0 +1,159 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-user-relations/invitees.test.ts > [AC-F1-07g-INVITEES#1] 打开才请求，页码分页按服务端返回行显示且翻页不累加旧行",
+    "test/spec/frontend/admin-user-relations/invitees.test.ts > [AC-F1-07g-INVITEES#2] 仅展示契约五个业务字段，号码脱敏、空号码不伪造，具名行操作打开详情",
+    "test/spec/frontend/admin-user-relations/invitees.test.ts > [AC-F1-07g-INVITEES#3] 空名单显示空态，不把空表当错误、不伪造样例行",
+    "test/spec/frontend/admin-user-relations/invitees.test.ts > [AC-F1-07g-INVITEES#4] 请求在途有加载态，返回后展示名单而非提前显示空态",
+    "test/spec/frontend/admin-user-relations/invitees.test.ts > [AC-F1-07g-INVITEES#5] 出错显示错误与重试，点击重试仅再请求一次且可恢复",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#11] 动态码校验未通过不发送改上级请求",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#12] 取消动态码不改上级，关闭后归还焦点",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#1] 原因不能为空、空白或超过契约上限，均不验证不提交",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#2] 改上级经动态码一次提交，详情用返回值刷新并关闭、归还焦点",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#3] 解绑发送 null，恰好原因上限可提交，返回后显示无上级",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#4] 30409 只保留原因说明且不可再次提交，关闭再开仍为说明",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#5] 30401 在新上级输入旁显示契约提示并保留输入",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#6] 30403 在新上级输入旁显示契约提示并保留输入",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#7] 网络失败使用 message.error，输入保留且不自动重发",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#8] 5xx 使用 message.error，输入保留且不自动重发",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#9] 改上级请求在途时禁用按钮，重复点击不重复写入",
+    "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#10] 动态码失效重新验证后才重发，使用新凭证与原请求体",
+    "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#8] 调等级网络异常用 message.error 且保留输入，不自动重发",
+    "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#9] 调等级 5xx 用 message.error 且保留输入，不自动重发",
+    "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#10] 动态码校验未通过不发送调等级请求",
+    "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#1] 空原因与全空白原因均不可提交，不请求动态码或写接口",
+    "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#2] 原因超过契约上限禁止提交，恰好上限可以验证并发送",
+    "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#3] totp 后只发送一次契约请求，使用返回详情刷新等级、关闭并归还焦点",
+    "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#4] 写入在途时禁用提交，重复点击只产生一次写请求",
+    "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#5] 20001 fields level 在选择旁提示并保留等级与原因",
+    "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#6] 10003 凭证失效后重新验证，验证前不重发，重发携带新 token",
+    "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#7] 取消动态码不修改等级，关闭对话框回到触发按钮",
+    "test/spec/frontend/admin-user-relations/pages.browser.test.ts > [AC-F1-07g-BROWSER#1] 1440 直推名单抽屉截图，对照 AdmUserInvitees",
+    "test/spec/frontend/admin-user-relations/pages.browser.test.ts > [AC-F1-07g-BROWSER#2] 1440 可改上级对话框截图，对照 AdmUserInviterChangeOk",
+    "test/spec/frontend/admin-user-relations/pages.browser.test.ts > [AC-F1-07g-BROWSER#3] 1440 调等级对话框截图，对照 AdmUserLevelChange",
+    "test/spec/frontend/admin-user-relations/source.test.ts > [AC-F1-07g-SOURCE#1] 关系区文案集中 users.ts，使用 antd 与现有 step-up、不硬编码色值类名或直接 fetch",
+    "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#1] 超管三个入口齐全；等级旁调等级，上级卡只显示契约数据",
+    "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#2] 只有 user.lookup 可看直推名单，两个写入口隐藏",
+    "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#3] 只有 user.list 可看直推名单，两个写入口隐藏",
+    "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#4] user.level 不授予 user.inviter",
+    "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#5] user.inviter 不授予 user.level",
+    "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#6] 关系卡无读取权限时不显示直推入口，空上级如实显示",
+    "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#7] adminGetUser 的 null 上级在真实详情卡显示为空"
+  ],
+  "risk_note": "Admin console user detail relations (apps/admin pages/users; RV1, no money logic). Contract CT-24e (adminListInvitees, adminChangeUserLevel, adminChangeInviter; planned, backend not done, developed against the contract with a fake server) plus adminGetUser; visuals per design/specs/admin-user-detail.md. Relations card (当前上级) and invitees drawer loaded on open (paging, states, masked phones, row link to the user); level and inviter dialogs by permission point (user.level / user.inviter), required reason within the contract limit, step-up through the existing component then a single write, refresh from the returned user, 20001 next to the level, 30409 explanation only, 30401 / 30403 keep input. Frozen admin-users scope / permission assertions synced first by test-changes F1-06zp (#1073) and F1-06zq (#1078). Rule tests by Codex in two calls; Claude spec-test review r2 pass; red on the test machine (red/2: 38 red, 0 problems). Implementation by Opus 5.5; test machine browser/2 green and verify-fast/4 green after the rebase. Review: Codex (approvals id 27 / 34 / 36). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (2 S1: a close helper rejected dialogs with both a close icon and a cancel button; an over-long reason case passed without checking that step-up stayed closed; 2 S2) plus two frozen-test conflicts (PERMISSION#3 synced by F1-06zq, DETAIL#2 avoided with the label 当前上级), round 2 pass after Codex round 2 (2 S2 carried into the implementation constraints)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "F1-07g",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "a63748df7e73716eee81d9ce9ddb751e565d184d",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a63748df7e73716eee81d9ce9ddb751e565d184d",
+      "tree": "2d207aae70dd47547bae47e6261bea35153414db",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T17:53:54Z",
+      "finished_at": "2026-10-21T17:54:50Z",
+      "gate": {
+        "commit": "0fcd76e381c8d19e4d148a5cca290b9f7d69709d",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-user-relations/invitees.test.ts > [AC-F1-07g-INVITEES#1] 打开才请求，页码分页按服务端返回行显示且翻页不累加旧行",
+        "test/spec/frontend/admin-user-relations/invitees.test.ts > [AC-F1-07g-INVITEES#2] 仅展示契约五个业务字段，号码脱敏、空号码不伪造，具名行操作打开详情",
+        "test/spec/frontend/admin-user-relations/invitees.test.ts > [AC-F1-07g-INVITEES#3] 空名单显示空态，不把空表当错误、不伪造样例行",
+        "test/spec/frontend/admin-user-relations/invitees.test.ts > [AC-F1-07g-INVITEES#4] 请求在途有加载态，返回后展示名单而非提前显示空态",
+        "test/spec/frontend/admin-user-relations/invitees.test.ts > [AC-F1-07g-INVITEES#5] 出错显示错误与重试，点击重试仅再请求一次且可恢复",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#11] 动态码校验未通过不发送改上级请求",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#12] 取消动态码不改上级，关闭后归还焦点",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#1] 原因不能为空、空白或超过契约上限，均不验证不提交",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#2] 改上级经动态码一次提交，详情用返回值刷新并关闭、归还焦点",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#3] 解绑发送 null，恰好原因上限可提交，返回后显示无上级",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#4] 30409 只保留原因说明且不可再次提交，关闭再开仍为说明",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#5] 30401 在新上级输入旁显示契约提示并保留输入",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#6] 30403 在新上级输入旁显示契约提示并保留输入",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#7] 网络失败使用 message.error，输入保留且不自动重发",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#8] 5xx 使用 message.error，输入保留且不自动重发",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#9] 改上级请求在途时禁用按钮，重复点击不重复写入",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts > [AC-F1-07g-INVITER#10] 动态码失效重新验证后才重发，使用新凭证与原请求体",
+        "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#8] 调等级网络异常用 message.error 且保留输入，不自动重发",
+        "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#9] 调等级 5xx 用 message.error 且保留输入，不自动重发",
+        "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#10] 动态码校验未通过不发送调等级请求",
+        "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#1] 空原因与全空白原因均不可提交，不请求动态码或写接口",
+        "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#2] 原因超过契约上限禁止提交，恰好上限可以验证并发送",
+        "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#3] totp 后只发送一次契约请求，使用返回详情刷新等级、关闭并归还焦点",
+        "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#4] 写入在途时禁用提交，重复点击只产生一次写请求",
+        "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#5] 20001 fields level 在选择旁提示并保留等级与原因",
+        "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#6] 10003 凭证失效后重新验证，验证前不重发，重发携带新 token",
+        "test/spec/frontend/admin-user-relations/level.test.ts > [AC-F1-07g-LEVEL#7] 取消动态码不修改等级，关闭对话框回到触发按钮",
+        "test/spec/frontend/admin-user-relations/pages.browser.test.ts > [AC-F1-07g-BROWSER#1] 1440 直推名单抽屉截图，对照 AdmUserInvitees",
+        "test/spec/frontend/admin-user-relations/pages.browser.test.ts > [AC-F1-07g-BROWSER#2] 1440 可改上级对话框截图，对照 AdmUserInviterChangeOk",
+        "test/spec/frontend/admin-user-relations/pages.browser.test.ts > [AC-F1-07g-BROWSER#3] 1440 调等级对话框截图，对照 AdmUserLevelChange",
+        "test/spec/frontend/admin-user-relations/source.test.ts > [AC-F1-07g-SOURCE#1] 关系区文案集中 users.ts，使用 antd 与现有 step-up、不硬编码色值类名或直接 fetch",
+        "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#1] 超管三个入口齐全；等级旁调等级，上级卡只显示契约数据",
+        "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#2] 只有 user.lookup 可看直推名单，两个写入口隐藏",
+        "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#3] 只有 user.list 可看直推名单，两个写入口隐藏",
+        "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#4] user.level 不授予 user.inviter",
+        "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#5] user.inviter 不授予 user.level",
+        "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#6] 关系卡无读取权限时不显示直推入口，空上级如实显示",
+        "test/spec/frontend/admin-user-relations/visible.test.ts > [AC-F1-07g-VISIBLE#7] adminGetUser 的 null 上级在真实详情卡显示为空"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-user-relations/invitees.test.ts",
+        "test/spec/frontend/admin-user-relations/inviter.test.ts",
+        "test/spec/frontend/admin-user-relations/level.test.ts",
+        "test/spec/frontend/admin-user-relations/pages.browser.test.ts",
+        "test/spec/frontend/admin-user-relations/source.test.ts",
+        "test/spec/frontend/admin-user-relations/visible.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "e03bf3368ec7f4bcdbcf00f512cb2291187ae23b00b75d4483ead148292e0165"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "b423c8796d48d265362770ee91abfb21479914b463b0aca445a72b0b7876129c"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "366f150358fd89b0ccaa285c6a5b1dd5ee85ceba",
+    "specs": "3c84b34e39aa6d9540cdb6c59afd21eb171cedce"
+  }
+}

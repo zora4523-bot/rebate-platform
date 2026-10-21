@@ -107,16 +107,19 @@ export function UsersPage({ access }: UsersPageProps): ReactElement {
       </Flex>
     );
   }
-  return <UsersContent canList={canList} canLookup={canLookup} canReveal={canReveal} />;
+  return (
+    <UsersContent access={access} canList={canList} canLookup={canLookup} canReveal={canReveal} />
+  );
 }
 
 interface UsersContentProps {
+  readonly access: AccessControl;
   readonly canList: boolean;
   readonly canLookup: boolean;
   readonly canReveal: boolean;
 }
 
-function UsersContent({ canList, canLookup, canReveal }: UsersContentProps): ReactElement {
+function UsersContent({ access, canList, canLookup, canReveal }: UsersContentProps): ReactElement {
   const getProvider = useDataProvider();
   const { token } = theme.useToken();
   const lookupId = useId();
@@ -231,6 +234,7 @@ function UsersContent({ canList, canLookup, canReveal }: UsersContentProps): Rea
         userId={view.userId}
         initial={view.initial}
         canReveal={canReveal}
+        access={access}
         onBack={() => setView({ kind: 'list' })}
         onOpenUser={(userId) => open(userId)}
       />
