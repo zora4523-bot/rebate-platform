@@ -9,6 +9,8 @@ type: migration
 # 迁移号：落地时按 couli-runs/B3-lane/notices.md 分配、取主干最大 +1（计划时主干最大 0051，0052 已被 B1-11g / B1-08s 登记）；先在 notices 登记。
 #   两段式：编排者在沙箱外跑 pnpm db:snapshot 提交 schema.sql 与 db.gen.ts（outside_needed）。
 # 用到的默认：D8（槽位模型 = 每页一个待生效槽位）。
+# 2026-10-21 更正（编排 2026-10-20 02:1x 裁定 P1 / P3）：实际为四列（另加 scheduled_by_admin_id uuid → admin_users，到点生效写 publisher 用；成组 CHECK 四列，gray 1..100）；
+#   F1-09a 冻结库测试 test/spec/db/content/pages/kit.ts、schema.int.test.ts 并入 test_paths，由规则测试作者只做加列 / 约束 / 外键 / 可更新列的最小改动（F1-02q 先例，approvals #24 标签由编排加）。迁移号 0068（notices 预占）。
 refs: []
 refs_hash: {}
 deps: []
@@ -18,6 +20,8 @@ paths:
   - 'packages/db/src/db.gen.ts'
 test_paths:
   - 'test/spec/db/content/pages-schedule/**'
+  - 'test/spec/db/content/pages/kit.ts'
+  - 'test/spec/db/content/pages/schema.int.test.ts'
 impl: claude
 tester: codex
 accept:

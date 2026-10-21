@@ -1,0 +1,19 @@
+id: F1-09q
+repo: rebate-platform
+title: 过渡测试改动（F1-09p 前置）：平台队列冻结契约测试容许页面定时发布队列 page-schedule（有则钉死名称、策略与位置，无则原断言不变）
+type: test-change
+# 2026-10-21 入账（content-client 第六阶段；编排 2026-10-20 02:1x 裁定 P2：加 content 队列，test-change 排在 B1-34c 之后——B1-34c #1043 已合并）。
+# 做法：照 B1-34c（#1043）对 export 队列、B1-03s（#428）对 risk-scan 的写法——test/spec/platform/queue/contract.test.ts 的目录与 worker 计划精确断言改为「page-schedule 有则须在约定位置且属性确切，无则原样」；
+#   其余条目与顺序仍确切，不删 it、不改宽其他断言，不加 skip / only / retry。F1-09p 合并后由后续收紧任务改回只认存在。
+# 改既有规则测试属第一类保护路径：非 task 分支、台账同 PR，按 approvals #24 由编排核对后加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/platform/queue/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
