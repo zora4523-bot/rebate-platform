@@ -26,6 +26,7 @@ const L1_CODES: readonly string[] = [
   'url_in_text',
   'identity_arg',
   'too_many_sentences',
+  'auto_redirect',
 ];
 const L3_CODES: readonly string[] = [
   'intent_mismatch',
