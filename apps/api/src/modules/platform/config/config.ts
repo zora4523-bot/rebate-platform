@@ -6,6 +6,7 @@ import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
 import { JWT_ENV_NAMES, readJwtKeyConfig, type JwtKeyConfig } from './jwt.ts';
 import { readKeyringConfig, type KeyringConfig } from './keyring.ts';
+import { readExportStoreConfig } from './export-store.ts';
 import { readMediaConfig } from './media.ts';
 import { readPddConfig, type PddClientConfig } from './pdd.ts';
 import { readPddQueryConfig } from './pdd-query.ts';
@@ -47,6 +48,14 @@ export interface AppConfig {
    * and URLs then fail per request). A hand-built config without it counts as unset.
    */
   readonly mediaPublicBaseUrl?: string | undefined;
+  /**
+   * EXPORT_STORE_BASE_URL / EXPORT_STORE_SIGNING_KEY (./export-store.ts, B1-34d): base and HMAC key
+   * of the private export store's signed links. loadConfig gives the local / test defaults when
+   * unset there; undefined in staging / prod when unset. A hand-built config without them counts as
+   * unset. The signing key is never logged.
+   */
+  readonly exportStoreBaseUrl?: string | undefined;
+  readonly exportStoreSigningKey?: string | undefined;
   readonly appEnv: AppEnv;
   readonly logLevel: LogLevel;
   /** Validated CLOCK_NOW text; parsed into an instant only inside platform/clock. */
@@ -171,6 +180,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     problems.push(...readTrustedProxies(env).problems);
     problems.push(...readAdminAuthConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     problems.push(...readMediaConfig(appEnv.success ? appEnv.data : undefined, env).problems);
+    problems.push(...readExportStoreConfig(appEnv.success ? appEnv.data : undefined, env).problems);
     if (appEnv.success) problems.push(...readPddConfig(appEnv.data, env).problems);
     problems.push(...readPddQueryConfig(env).problems);
     if (appEnv.success)
@@ -190,6 +200,12 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   violations.push(...adminProblems);
   const { mediaPublicBaseUrl, problems: mediaProblems } = readMediaConfig(values.APP_ENV, env);
   violations.push(...mediaProblems);
+  const {
+    exportStoreBaseUrl,
+    exportStoreSigningKey,
+    problems: exportStoreProblems,
+  } = readExportStoreConfig(values.APP_ENV, env);
+  violations.push(...exportStoreProblems);
   const { pdd, problems: pddProblems } = readPddConfig(values.APP_ENV, env);
   violations.push(...pddProblems);
   const { pddQueryCustomParameters, problems: pddQueryProblems } = readPddQueryConfig(env);
@@ -215,6 +231,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     trustedProxies,
     adminAuth,
     mediaPublicBaseUrl,
+    exportStoreBaseUrl,
+    exportStoreSigningKey,
     pdd,
     pddQueryCustomParameters,
     unionEndpointOverrideDir,

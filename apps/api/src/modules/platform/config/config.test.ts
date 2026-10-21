@@ -28,6 +28,8 @@ describe('loadConfig', () => {
       trustedProxies: [],
       adminAuth: null,
       mediaPublicBaseUrl: 'https://media.local.invalid',
+      exportStoreBaseUrl: 'https://exports.local.invalid',
+      exportStoreSigningKey: 'local-only-export-store-signing-key-not-secret',
       pdd: null,
       pddQueryCustomParameters: null,
       unionEndpointOverrideDir: null,
