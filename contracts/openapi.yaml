@@ -11374,6 +11374,21 @@ paths:
         stale request, including a retry of one that already took effect, never matches again: a
         mismatch → 20902 with `data.resource=page`. A page with no saved version → 30701. Written
         to the audit log.
+
+        Scheduled publish (编排者默认): with `publish_at` the request is checked exactly as an
+        immediate publish (version, gray_percent and sections, in the same order and with the same
+        `data.fields`), and also: `publish_at` not later than now, or more than 30 days after now,
+        → 20001 with `data.fields=[publish_at]`; while the page already has a pending schedule any
+        publish, immediate or scheduled, → 20001 with `data.fields=[publish_at]` (cancel it first
+        with DELETE /admin/v1/pages/{page_key}/schedule; it is never overwritten). On success the
+        version stays draft and the page keeps one pending schedule (version, gray_percent,
+        publish_at, the admin who scheduled it) shown as `scheduled`; revision adds 1 and the
+        request is written to the audit log. At `publish_at` the schedule takes effect as an
+        immediate publish would have then (100 = fully released, 1..99 = gray; the version's
+        `publish_at` is the scheduled time and its `publisher` the admin who scheduled it; revision
+        adds 1 again), judged by time and not by whether the scheduled job has run. While a
+        schedule is pending, gray changes, rollbacks and draft saves work as usual. Without
+        `publish_at` the request is an immediate publish and behaves as above.
       x-auth: admin
       x-error-codes:
         - 10001
@@ -11404,6 +11419,13 @@ paths:
                 value:
                   version: 8
                   gray_percent: 100
+                  expected_revision: 9
+              scheduled:
+                summary: Publish version 8 to everyone at 08:00 the next morning
+                value:
+                  version: 8
+                  gray_percent: 100
+                  publish_at: '2026-10-18T08:00:00+08:00'
                   expected_revision: 9
       responses:
         '200':
@@ -11446,6 +11468,91 @@ paths:
                   $ref: '#/components/examples/AdminPageConfigGrayInvalid'
                 sectionInvalid:
                   $ref: '#/components/examples/AdminPageConfigSectionInvalid'
+                scheduleInvalid:
+                  $ref: '#/components/examples/AdminPageConfigScheduleInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminPageConfigConflict'
+                notFound:
+                  $ref: '#/components/examples/AdminPageConfigNotFound'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/pages/{page_key}/schedule:
+    delete:
+      operationId: adminCancelPageConfigSchedule
+      tags:
+        - admin-content
+      summary: Cancel the pending scheduled publish of a page
+      description: |
+        Permission point `content.page`. Cancels the page's pending scheduled publish (see POST
+        /admin/v1/pages/{page_key}/publish with `publish_at`); the version stays draft. A page
+        without a pending schedule, because none was made, it was cancelled, or its `publish_at`
+        has passed so it already took effect (judged by time and not by whether the scheduled job
+        has run), → 30701 (编排者默认). CAS as in publish: `expected_revision` (query) is the
+        page's `revision` the console showed, the cancel adds 1, and a mismatch → 20902 with
+        `data.resource=page`. A page with no saved version → 30701. Written to the audit log.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+        - 30701
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/PageKeyPath'
+        - name: expected_revision
+          in: query
+          required: true
+          description: The page's `revision` as the console showed it; a mismatch is 20902.
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+      responses:
+        '200':
+          description: The page without a pending schedule.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPageConfigResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  page_key: home
+                  current_version: 7
+                  gray_version: null
+                  gray_percent: 0
+                  revision: 11
+                  latest_version: 8
+                  updated_by: ops-yi
+                  updated_at: '2026-10-17T12:30:00+08:00'
+                  scheduled: null
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not cancelled (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                noSchedule:
+                  $ref: '#/components/examples/AdminPageConfigScheduleNotFound'
                 conflict:
                   $ref: '#/components/examples/AdminPageConfigConflict'
                 notFound:
@@ -15909,6 +16016,21 @@ components:
       value:
         code: 30701
         msg: 页面不存在
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPageConfigScheduleNotFound:
+      summary: 30701 the page has no pending scheduled publish (none, cancelled, or already taken effect)
+      value:
+        code: 30701
+        msg: 定时发布不存在
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPageConfigScheduleInvalid:
+      summary: 20001 publish_at not in (now, now + 30 days], or the page already has a pending schedule
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - publish_at
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminInviteRewardNotFound:
       summary: 30701 the invitee has no invite reward record
@@ -23590,8 +23712,9 @@ components:
           format: int32
           minimum: 0
           description: |
-            Plus 1 on every draft save, publish, gray change and rollback, never going back. The CAS
-            value of every page write, so a retried old request cannot undo a later change.
+            Plus 1 on every draft save, publish, scheduled publish, schedule cancel, gray change and
+            rollback, and when a scheduled publish takes effect (judged by time), never going back.
+            The CAS value of every page write, so a retried old request cannot undo a later change.
         latest_version:
           type:
             - integer
@@ -23610,6 +23733,45 @@ components:
             - string
             - 'null'
           format: date-time
+        scheduled:
+          description: |
+            The pending scheduled publish; null = none. The server always returns it (optional only
+            so that existing readers keep working); a schedule whose `publish_at` has passed has
+            taken effect and is not shown (judged by time).
+          oneOf:
+            - $ref: '#/components/schemas/AdminPageConfigSchedule'
+            - type: 'null'
+    AdminPageConfigSchedule:
+      type: object
+      description: A pending scheduled publish of a page (one per page at most).
+      additionalProperties: false
+      required:
+        - version
+        - gray_percent
+        - publish_at
+        - scheduled_by
+      properties:
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Draft version to publish at `publish_at`.
+        gray_percent:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+          description: 100 = release fully; 1..99 = gray rollout to that share of devices.
+        publish_at:
+          type: string
+          format: date-time
+          description: When the version will be published.
+        scheduled_by:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: Username of the admin who scheduled it.
     AdminPageConfigList:
       type: object
       additionalProperties: false
@@ -23713,7 +23875,9 @@ components:
             - string
             - 'null'
           format: date-time
-          description: When the version was published; null = never.
+          description: |
+            When the version was published (for a scheduled publish, the scheduled time); null =
+            never, including a scheduled version before its time.
         publisher:
           type:
             - string
@@ -23767,7 +23931,9 @@ components:
             - string
             - 'null'
           format: date-time
-          description: When the version was published; null = never.
+          description: |
+            When the version was published (for a scheduled publish, the scheduled time); null =
+            never, including a scheduled version before its time.
         publisher:
           type:
             - string
@@ -24312,6 +24478,12 @@ components:
           minimum: 1
           maximum: 100
           description: 100 = release fully; 1..99 = gray rollout to that share of devices.
+        publish_at:
+          type: string
+          format: date-time
+          description: |
+            Scheduled publish time, later than now and at most 30 days after now; absent = publish
+            now.
         expected_revision:
           type: integer
           format: int32

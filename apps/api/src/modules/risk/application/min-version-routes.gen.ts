@@ -1333,6 +1333,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminCancelPageConfigSchedule",
+    "method": "DELETE",
+    "path": "/admin/v1/pages/:page_key/schedule",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminUpdatePageConfigGray",
     "method": "POST",
     "path": "/admin/v1/pages/:page_key/gray",

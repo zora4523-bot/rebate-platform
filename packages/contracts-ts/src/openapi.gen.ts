@@ -3911,9 +3911,50 @@ export interface paths {
          *     stale request, including a retry of one that already took effect, never matches again: a
          *     mismatch → 20902 with `data.resource=page`. A page with no saved version → 30701. Written
          *     to the audit log.
+         *
+         *     Scheduled publish (编排者默认): with `publish_at` the request is checked exactly as an
+         *     immediate publish (version, gray_percent and sections, in the same order and with the same
+         *     `data.fields`), and also: `publish_at` not later than now, or more than 30 days after now,
+         *     → 20001 with `data.fields=[publish_at]`; while the page already has a pending schedule any
+         *     publish, immediate or scheduled, → 20001 with `data.fields=[publish_at]` (cancel it first
+         *     with DELETE /admin/v1/pages/{page_key}/schedule; it is never overwritten). On success the
+         *     version stays draft and the page keeps one pending schedule (version, gray_percent,
+         *     publish_at, the admin who scheduled it) shown as `scheduled`; revision adds 1 and the
+         *     request is written to the audit log. At `publish_at` the schedule takes effect as an
+         *     immediate publish would have then (100 = fully released, 1..99 = gray; the version's
+         *     `publish_at` is the scheduled time and its `publisher` the admin who scheduled it; revision
+         *     adds 1 again), judged by time and not by whether the scheduled job has run. While a
+         *     schedule is pending, gray changes, rollbacks and draft saves work as usual. Without
+         *     `publish_at` the request is an immediate publish and behaves as above.
          */
         post: operations["adminPublishPageConfig"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/pages/{page_key}/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cancel the pending scheduled publish of a page
+         * @description Permission point `content.page`. Cancels the page's pending scheduled publish (see POST
+         *     /admin/v1/pages/{page_key}/publish with `publish_at`); the version stays draft. A page
+         *     without a pending schedule, because none was made, it was cancelled, or its `publish_at`
+         *     has passed so it already took effect (judged by time and not by whether the scheduled job
+         *     has run), → 30701 (编排者默认). CAS as in publish: `expected_revision` (query) is the
+         *     page's `revision` the console showed, the cancel adds 1, and a mismatch → 20902 with
+         *     `data.resource=page`. A page with no saved version → 30701. Written to the audit log.
+         */
+        delete: operations["adminCancelPageConfigSchedule"];
         options?: never;
         head?: never;
         patch?: never;
@@ -8288,8 +8329,9 @@ export interface components {
             gray_percent: number;
             /**
              * Format: int32
-             * @description Plus 1 on every draft save, publish, gray change and rollback, never going back. The CAS
-             *     value of every page write, so a retried old request cannot undo a later change.
+             * @description Plus 1 on every draft save, publish, scheduled publish, schedule cancel, gray change and
+             *     rollback, and when a scheduled publish takes effect (judged by time), never going back.
+             *     The CAS value of every page write, so a retried old request cannot undo a later change.
              */
             revision: number;
             /**
@@ -8301,6 +8343,32 @@ export interface components {
             updated_by: string | null;
             /** Format: date-time */
             updated_at: string | null;
+            /**
+             * @description The pending scheduled publish; null = none. The server always returns it (optional only
+             *     so that existing readers keep working); a schedule whose `publish_at` has passed has
+             *     taken effect and is not shown (judged by time).
+             */
+            scheduled?: components["schemas"]["AdminPageConfigSchedule"] | null;
+        };
+        /** @description A pending scheduled publish of a page (one per page at most). */
+        AdminPageConfigSchedule: {
+            /**
+             * Format: int32
+             * @description Draft version to publish at `publish_at`.
+             */
+            version: number;
+            /**
+             * Format: int32
+             * @description 100 = release fully; 1..99 = gray rollout to that share of devices.
+             */
+            gray_percent: number;
+            /**
+             * Format: date-time
+             * @description When the version will be published.
+             */
+            publish_at: string;
+            /** @description Username of the admin who scheduled it. */
+            scheduled_by: string | null;
         };
         AdminPageConfigList: {
             /** @description Ordered by page_key. */
@@ -8346,7 +8414,8 @@ export interface components {
             error_count: number;
             /**
              * Format: date-time
-             * @description When the version was published; null = never.
+             * @description When the version was published (for a scheduled publish, the scheduled time); null =
+             *     never, including a scheduled version before its time.
              */
             publish_at: string | null;
             /** @description Username of the admin who published the version; null = never published. */
@@ -8374,7 +8443,8 @@ export interface components {
             error_count: number;
             /**
              * Format: date-time
-             * @description When the version was published; null = never.
+             * @description When the version was published (for a scheduled publish, the scheduled time); null =
+             *     never, including a scheduled version before its time.
              */
             publish_at: string | null;
             /** @description Username of the admin who published the version; null = never published. */
@@ -8620,6 +8690,12 @@ export interface components {
              * @description 100 = release fully; 1..99 = gray rollout to that share of devices.
              */
             gray_percent: number;
+            /**
+             * Format: date-time
+             * @description Scheduled publish time, later than now and at most 30 days after now; absent = publish
+             *     now.
+             */
+            publish_at?: string;
             /**
              * Format: int32
              * @description The page's `revision` as the console showed it; a mismatch is 20902.
@@ -19562,6 +19638,69 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not published (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCancelPageConfigSchedule: {
+        parameters: {
+            query: {
+                /** @description The page's `revision` as the console showed it; a mismatch is 20902. */
+                expected_revision: number;
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /**
+                 * @description Page key: `home` or `custom:<name>` with name of 1..57 characters from [a-z0-9_-] (编排者默认);
+                 *     another shape → 20001 with data.fields=[page_key].
+                 */
+                page_key: components["parameters"]["PageKeyPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The page without a pending schedule. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "page_key": "home",
+                     *         "current_version": 7,
+                     *         "gray_version": null,
+                     *         "gray_percent": 0,
+                     *         "revision": 11,
+                     *         "latest_version": 8,
+                     *         "updated_by": "ops-yi",
+                     *         "updated_at": "2026-10-17T12:30:00+08:00",
+                     *         "scheduled": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminPageConfigResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not cancelled (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
