@@ -1,0 +1,23 @@
+id: F1-07e
+repo: rebate-platform
+title: 后台订单（只读部分）：订单列表（平台 / 平台状态 / 返利状态 / 订单标记 / 订单号 / 用户 / 付款时间筛选，页码分页）与订单详情子页（状态卡、基本信息、归属信息、分佣快照、状态历史、转链记录；「已锁定」「归属已锁定」并列）；空 / 加载 / 出错三态与 10403；视觉按 design/specs/admin-orders.md、admin-order-detail.md
+type: impl
+# 2026-10-21 入账（前端线 f1-frontend-7）。05 F1-07e、01 F-ADM-05；契约 CT-24m（adminListOrders / adminGetOrder，planned，后端未做——按契约用假服务端开发）。
+# 写操作（手动同步、维权 / 违规导入、暂停 / 恢复结算、未归因指派）等契约 CT-24n 后另开任务；本任务不渲染这些按钮（不留假入口）。原始报文 04 §11 无权限点，契约未出，本页不画该区。
+# 一框搜命中订单仍按 F1-07h 冻结测试「不跳转」，本任务不改；接详情另开 test-change + 任务。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+refs: []
+refs_hash: {}
+deps: [CT-24m, F1-06zb]
+paths:
+  - 'apps/admin/src/pages/orders/**'
+  - 'apps/admin/src/texts/orders.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-orders/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-orders/**'
+status: todo
+pr: null
