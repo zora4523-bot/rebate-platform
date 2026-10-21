@@ -8,7 +8,9 @@
 //   - (round 3) the registration configuration read before the transaction opens, register() given
 //     only that snapshot: no configuration read once the transaction has begun;
 //   - (B1-03d round 2) a blocklist refusal's risk hit written only after the login transaction
-//     rolled back and released its connection: no second pooled connection while it is open.
+//     rolled back and released its connection: no second pooled connection while it is open;
+//   - (B1-15f money review r1) an existing account's users row locked and its status reread
+//     under the lock before anything is written; deleting → 10007 with nothing written.
 // The SQL itself runs against PostgreSQL in the rule tests (test/spec/identity/sms-login).
 import type { DB } from '@couli/db';
 import { decodeJwt } from 'jose';
@@ -114,6 +116,8 @@ async function setup(
     blocked?: boolean;
     /** Risk ports onto the same database (built with it), merged into the login options. */
     risk?: (db: Kysely<DB>, clock: Clock, crypto: FieldCrypto) => Partial<SmsLoginOptions>;
+    /** users.status the row lock's reread answers (B1-15f); absent, the generic users row. */
+    lockedStatus?: string;
   } = {},
 ) {
   const statements: Statement[] = [];
@@ -123,6 +127,14 @@ async function setup(
       const statement = { sql: compiled.sql, parameters: compiled.parameters };
       statements.push(statement);
       if (overrides.pool === true) events.push(`sql:${compiled.sql.split(' ')[0] ?? ''}`);
+      if (
+        overrides.lockedStatus !== undefined &&
+        compiled.sql.startsWith('select') &&
+        compiled.sql.includes('from "users"') &&
+        compiled.sql.includes('for no key update')
+      ) {
+        return Promise.resolve({ rows: [{ status: overrides.lockedStatus }] } as QueryResult<R>);
+      }
       return Promise.resolve(
         answer(statement, overrides.newUser === true, overrides.blocked === true) as QueryResult<R>,
       );
@@ -184,7 +196,7 @@ async function setup(
     version: '3.0.0',
     client_ip: '192.0.2.7',
   };
-  return { statements, login: () => service.login(command) };
+  return { statements, events, login: () => service.login(command) };
 }
 
 function inserts(statements: readonly Statement[], table: string): Record<string, unknown>[] {
@@ -386,4 +398,43 @@ it('[AC-B1-03d#15][BR-ID-36] 命中写在回滚之后；写失败则登录失败
     }),
   });
   await expect(failing.login()).rejects.toBe(failure);
+});
+
+/** Index of the users row lock of the login (FOR NO KEY UPDATE on users, by id). */
+function userLockIndex(statements: readonly Statement[]): number {
+  return statements.findIndex(
+    (statement) =>
+      statement.sql.startsWith('select') &&
+      statement.sql.includes('from "users"') &&
+      statement.sql.includes('for no key update'),
+  );
+}
+
+it('[B1-15f][BR-ID-27] 已有账号：先锁 users 行并在锁内重读 status，锁在任何写入与用户级同意锁之前', async () => {
+  const { statements, login } = await setup({ lockedStatus: 'normal' });
+  expect((await login()).code).toBe(0);
+  const lookup = statements.findIndex(
+    (statement) => statement.sql.startsWith('select') && statement.sql.includes('"phone_hmac"'),
+  );
+  const lock = userLockIndex(statements);
+  expect(lookup).toBeGreaterThanOrEqual(0);
+  expect(lock).toBeGreaterThan(lookup);
+  expect(statements[lock]!.sql).toContain('"status"');
+  expect(statements[lock]!.parameters).toEqual(expect.arrayContaining(['couli', USER_ID]));
+  const firstWrite = statements.findIndex((statement) => /^(insert|update)/.test(statement.sql));
+  const consentLock = statements.findIndex((statement) =>
+    statement.sql.includes('pg_advisory_xact_lock'),
+  );
+  expect(firstWrite).toBeGreaterThan(lock);
+  expect(consentLock).toBeGreaterThan(lock);
+});
+
+it('[B1-15f][BR-ID-27] 锁内重读到 deleting → 10007 stage=processing，回滚，不写同意、登录记录与会话', async () => {
+  const { statements, events, login } = await setup({ lockedStatus: 'deleting' });
+  expect(await login()).toEqual({ code: 10007, data: { stage: 'processing' } });
+  const lock = userLockIndex(statements);
+  expect(lock).toBeGreaterThanOrEqual(0);
+  expect(statements.slice(lock + 1)).toEqual([]);
+  expect(statements.filter((statement) => /^(insert|update)/.test(statement.sql))).toEqual([]);
+  expect(events).toEqual(['begin', 'rollback']);
 });

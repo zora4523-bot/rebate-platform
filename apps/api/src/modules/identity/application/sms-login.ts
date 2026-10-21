@@ -14,8 +14,10 @@
 //      or borrows another pooled connection;
 //   4. one READ COMMITTED transaction: the account by phone blind index (status <> deleted;
 //      cooling-off counts as existing), then
-//      - account with users.status = deleting (deletion processing, B1-15f; BR-ID-27) → 10007
-//        with data.stage=processing in either scope: nothing created, issued or recorded;
+//      - an existing account: its users row locked FOR NO KEY UPDATE and its status reread under
+//        the lock (users first, as the deletion expiry); deleting (deletion processing, B1-15f;
+//        BR-ID-27) → 10007 with data.stage=processing in either scope: nothing created, issued
+//        or recorded;
 //      - restricted, no account → 10405 no_account, nothing written, no token; the minimum in the
 //        answer is read again after the rollback (the current value, null when removed);
 //      - restricted, account → deletion_only session; invite_code ignored (ignored_existing_user
@@ -54,7 +56,12 @@ import { completeLogin, type FirstAppLoginReview } from './login-completion.ts';
 export type { FirstAppLoginReview } from './login-completion.ts';
 import { normalize_phone } from '../domain/normalize-phone.ts';
 import { PHONE_BLIND_INDEX_CONTEXT } from '../domain/registration.ts';
-import { deviceHashOf, findAccountByPhone, type LoginAccount } from '../infra/login-accounts.ts';
+import {
+  deviceHashOf,
+  findAccountByPhone,
+  lockAccountStatus,
+  type LoginAccount,
+} from '../infra/login-accounts.ts';
 import type { TokenService } from './access-tokens.ts';
 import {
   snapshotRegistrationConfig,
@@ -198,6 +205,22 @@ function refusal(blocked: {
     : { code: 44001, data: { risk_msg_code: blocked.data.risk_msg_code } };
 }
 
+/**
+ * BR-ID-27: an account whose deletion is processing logs in by no method (10007,
+ * stage=processing), in either scope; nothing is created, issued or recorded. The status is read
+ * under the users row lock (lockAccountStatus), held until the login commits, so a concurrent
+ * deletion expiry (users lock → deleting) either sees this login committed first or is seen here.
+ */
+async function assertNotDeleting(
+  trx: Transaction<DB>,
+  appId: string,
+  userId: string,
+): Promise<void> {
+  const locked = await lockAccountStatus(trx, appId, userId);
+  if (locked === undefined) throw new Error('identity: the login account has no user row');
+  if (locked.status === 'deleting') throw new LoginAbort(DELETING);
+}
+
 interface Signed {
   readonly user_id: string;
   readonly is_new_user: boolean;
@@ -221,10 +244,8 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
     const appId = command.app_id;
     const existing = await findAccountByPhone(trx, appId, phoneHmac);
     const ignored = inviteCode === undefined ? {} : { invite_bind: IGNORED_EXISTING_USER };
-    // BR-ID-27: an account whose deletion is processing logs in by no method (10007,
-    // stage=processing), in either scope; nothing is created, issued or recorded.
-    if (existing?.status === 'deleting') throw new LoginAbort(DELETING);
     if (existing !== undefined) {
+      await assertNotDeleting(trx, appId, existing.id);
       return {
         user_id: existing.id,
         is_new_user: false,
@@ -271,7 +292,7 @@ export function createSmsLoginService(options: SmsLoginOptions): SmsLoginService
       if (winner === undefined) {
         throw new Error('identity: phone_taken without a visible account');
       }
-      if (winner.status === 'deleting') throw new LoginAbort(DELETING);
+      await assertNotDeleting(trx, appId, winner.id);
       logger.info({ app_id: appId }, 'sms_login_concurrent_first_login');
       return {
         user_id: winner.id,
