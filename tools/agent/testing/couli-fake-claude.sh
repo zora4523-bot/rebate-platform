@@ -132,6 +132,12 @@ case "$SCENARIO" in
     echo 'rogue' >rogue-review.txt
     finish_events
     ;;
+  rewrite-modified)
+    # A second edit of a file that was already modified: `git status` looks the same.
+    start_events
+    echo 'export const a = 3;' >src/a.ts
+    finish_events
+    ;;
   *)
     echo "fake claude: unknown scenario: $SCENARIO" >&2
     exit 64

@@ -13,6 +13,8 @@ type: guard-change
 # claude-independent。state.ts：轮次计数不分引擎、上限不变，失败熔断按引擎分开（bump-attempt --engine）。
 # tools/ 与 AGENTS.md、ops/approvals.yaml 属保护路径第三类：负责人本次决定（第 36 条）；本 PR 由编排派无上下文的独立 Claude 子代理
 # 对抗评审，评审通过、检查全绿后按 approvals #24 加标签。tools 自己的单元测试由实现者写（只增），不需要先写规则测试。
+# r1（编排派独立 Claude 评审 FAIL S0×1 S1×3 S2×3）修正：两种模式都不放 Bash，git 信息与 SPEC_REF 规划原文由包装脚本预先导出到 context 目录；评审核对工作区内容哈希；
+# Codex 写过测试就拒绝 Codex spec-test 评审；证据条目 engine 必填、与 model 绑定；runner 启动前按自身引擎查熔断；Codex 路径 cwd / argv 不变。
 refs: []
 refs_hash: {}
 deps: []

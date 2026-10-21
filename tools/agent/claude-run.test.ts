@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  mkdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -118,34 +119,45 @@ it(
     expect(after(argv, '--model')).toBe('claude-opus-5-5');
     expect(after(argv, '--output-format')).toBe('stream-json');
     expect(after(argv, '--permission-mode')).toBe('dontAsk');
-    expect(after(argv, '--tools')).toBe('Read,Grep,Glob,Edit,Write,Bash');
+    // #1046 r1 S0 / S1: no shell at all (no git, no pnpm exec on the host).
+    expect(after(argv, '--tools')).toBe('Read,Grep,Glob,Edit,Write');
     expect(after(argv, '--json-schema')).toBe(
       readFileSync(
         join(fx.trusted, 'tools', 'agent', 'schemas', 'impl.schema.json'),
         'utf8',
       ).replace(/\n$/, ''),
     );
-    // Edits only inside test_paths (braces expanded) and the skeleton paths; static checks only.
+    // Edits only inside test_paths (braces expanded) and the skeleton paths; nothing else.
     const rules = variadic(argv, '--allowedTools');
-    expect(rules).toEqual(
-      expect.arrayContaining([
-        'Read',
-        'Bash(git diff:*)',
-        'Bash(pnpm exec tsc:*)',
-        'Edit(/test/spec/t1/**)',
-        'Edit(/test/acceptance/t1/**)',
-        'Edit(/test/properties/t1/**)',
-        'Edit(/src/a.ts)',
-      ]),
-    );
-    expect(rules.filter((r) => r.startsWith('Edit(')).length).toBe(4);
-    expect(rules.some((r) => r === 'Bash' || r.startsWith('Bash(pnpm test') || r === 'Edit')).toBe(
-      false,
-    );
-    // The prompt is the brief, last; claude starts in the worktree with stdin closed.
-    expect(argv[argv.length - 1]).toBe(
-      readFileSync(join(fx.run, 'brief.md'), 'utf8').replace(/\n+$/, ''),
-    );
+    expect(rules).toEqual([
+      'Read',
+      'Grep',
+      'Glob',
+      'Edit(/test/spec/t1/**)',
+      'Edit(/test/acceptance/t1/**)',
+      'Edit(/test/properties/t1/**)',
+      'Edit(/src/a.ts)',
+    ]);
+    // The prompt is the brief plus where the wrapper's git context is, last; claude starts in
+    // the worktree with stdin closed and may read only the worktree and that directory.
+    const context = join(fx.run, 'wrapper-impl', 'context');
+    expect(after(argv, '--add-dir')).toBe(context);
+    expect(argv.filter((a) => a === '--add-dir')).toHaveLength(1);
+    const prompt = argv[argv.length - 1] ?? '';
+    expect(
+      prompt.startsWith(readFileSync(join(fx.run, 'brief.md'), 'utf8').replace(/\n+$/, '')),
+    ).toBe(true);
+    expect(prompt).toContain(`You have no shell. Git status, log and diff`);
+    expect(prompt).toContain(context);
+    for (const file of [
+      'README.txt',
+      'git-status.txt',
+      'git-log.txt',
+      'git-diff.patch',
+      'untracked.txt',
+    ]) {
+      expect(existsSync(join(context, file)), file).toBe(true);
+    }
     expect(observed(fx)).toMatchObject({ cwd: fx.worktree, stdin: 'devnull', wrapper: '1' });
     // Same run directory and meta.json as codex-run.sh, recorded as the independent Claude engine.
     const meta = readJson(join(fx.run, 'meta.impl.json'));
@@ -202,10 +214,20 @@ it(
     });
     expect(res.status, res.stderr).toBe(0);
     const argv = observedArgv(fx);
-    expect(after(argv, '--tools')).toBe('Read,Grep,Glob,Bash');
-    const rules = variadic(argv, '--allowedTools');
-    expect(rules.some((r) => r.startsWith('Edit('))).toBe(false);
-    expect(rules.some((r) => r.includes('tsc') || r.includes('eslint'))).toBe(false);
+    // #1046 r1 S0: read-only means no Bash at all, so `git log --output=<file>` (or any other
+    // writing git option) cannot be reached: no Bash tool, no Bash rule, no writing tool.
+    expect(after(argv, '--tools')).toBe('Read,Grep,Glob');
+    expect(variadic(argv, '--allowedTools')).toEqual(['Read', 'Grep', 'Glob']);
+    expect(
+      argv
+        .slice(0, -1)
+        .some((a) => /^Bash/.test(a) || (a.startsWith('--output') && a !== '--output-format')),
+    ).toBe(false);
+    // What git would have said is in the context directory instead.
+    const context = join(fx.run, 'wrapper-review', 'context');
+    expect(after(argv, '--add-dir')).toBe(context);
+    expect(readFileSync(join(context, 'git-diff.patch'), 'utf8')).toContain('+export const a = 2;');
+    expect(readFileSync(join(context, 'spec', 'MISSING.txt'), 'utf8')).toContain('not available');
     // RV2 defaults to the money review; the prompt is the trusted file plus the context block,
     // which says who wrote what.
     const prompt = argv[argv.length - 1] ?? '';
@@ -278,6 +300,93 @@ it('[approvals 36] a review that leaves a file in the working tree gives exit 12
   expect(res.status).toBe(12);
   expect(readJson(join(fx.run, 'meta.review.json'))['position_changed']).toEqual(['worktree']);
   expect(existsSync(join(fx.run, 'review-claude-independent.json'))).toBe(false);
+  // #1046 r1 S1: a second edit of a file that was already modified (same `git status`) is seen.
+  writeFileSync(join(fx.worktree, 'src', 'a.ts'), 'export const a = 2;\n');
+  rmSync(join(fx.worktree, 'rogue-review.txt'));
+  const rewrite = claudeRun(fx, ['review', TASK, '--base', fx.baseSha], {
+    FAKE_CLAUDE_SCENARIO: 'rewrite-modified',
+  });
+  expect(rewrite.status).toBe(12);
+  expect(readJson(join(fx.run, 'meta.review.json'))['position_changed']).toEqual(['worktree']);
+  // An untouched worktree with a modified file passes.
+  writeFileSync(join(fx.worktree, 'src', 'a.ts'), 'export const a = 2;\n');
+  expect(claudeRun(fx, ['review', TASK, '--base', fx.baseSha]).status).toBe(0);
+});
+
+it(
+  '[approvals 36] Codex is refused the spec-test review of rule tests Codex wrote, whatever the ledger says',
+  LONG,
+  () => {
+    const fx = fixture('own-tests');
+    ledger(fx, { tester: 'claude-independent' });
+    const args = ['review', TASK, '--base', fx.baseSha, '--review-type', 'spec-test', '--dry-run'];
+    const codexRun = () => runScript('codex-run.sh', args, fx.env);
+    // Only independent Claude calls wrote tests: Codex may review them.
+    const meta = (engine?: string) =>
+      JSON.stringify({
+        mode: 'impl',
+        phase: 'test',
+        ...(engine === undefined ? {} : { engine }),
+        started_at: 'x',
+        finished_at: 'x',
+        exit_code: 0,
+      });
+    writeFileSync(join(fx.run, 'meta.impl.json'), meta('claude-independent'));
+    expect(codexRun().status).toBe(0);
+    // A test-phase call of Codex (recorded, or older without engine) in the run directory: refused.
+    mkdirSync(join(fx.run, 'attempts', '1'), { recursive: true });
+    writeFileSync(join(fx.run, 'attempts', '1', 'meta.json'), meta());
+    const own = codexRun();
+    expect(own.status).toBe(2);
+    expect(own.stderr).toContain('Codex wrote rule tests of this task');
+    writeFileSync(join(fx.run, 'attempts', '1', 'meta.json'), meta('codex'));
+    expect(codexRun().status).toBe(2);
+    // The independent Claude review of the same tests is fine.
+    expect(claudeRun(fx, args).status).toBe(0);
+  },
+);
+
+it(
+  '[approvals 36] each runner checks the failure breakers of its own engine before the call',
+  LONG,
+  () => {
+    const fx = fixture('breakers');
+    ledger(fx, {});
+    writeStub(join(fx.trusted, 'tools', 'ops', 'state.ts'), 'state', [
+      {
+        when: ['breakers', '--engine', 'claude-independent'],
+        exit: 3,
+        stderr: 'G7: 独立 Claude 连续 3 次调用没有产出',
+      },
+    ]);
+    const refused = claudeRun(fx, ['impl', TASK]);
+    expect(refused.status).toBe(2);
+    expect(refused.stderr).toContain('a failure breaker of T1-01 is open for claude-independent');
+    expect(existsSync(join(fx.log, 'argv.nul'))).toBe(false);
+    // Codex asks for its own engine, whatever a caller counted the round with.
+    runScript('codex-run.sh', ['impl', TASK, '--dry-run'], fx.env);
+    expect(stubCalls(fx, 'state').filter((c) => c[1] === 'breakers')).toEqual([
+      ['state', 'breakers', TASK, '--engine', 'claude-independent'],
+      ['state', 'breakers', TASK, '--engine', 'codex'],
+    ]);
+    // Any other failure of state.ts is no refusal.
+    writeStub(join(fx.trusted, 'tools', 'ops', 'state.ts'), 'state', [{ exit: 2 }]);
+    expect(claudeRun(fx, ['impl', TASK]).status).toBe(0);
+  },
+);
+
+it("[approvals 36] Codex keeps the caller's working directory and its argv", LONG, () => {
+  const fx = fixture('codex-cwd');
+  const res = runScript('codex-run.sh', ['impl', TASK], fx.env);
+  expect(res.status, res.stderr).toBe(0);
+  expect(observed(fx)['cwd']).toBe(realpathSync(process.cwd()));
+  const argv = observedArgv(fx);
+  expect(argv.slice(0, 3)).toEqual(['exec', '-C', fx.worktree]);
+  expect(argv).not.toContain('--add-dir');
+  expect(readJson(join(fx.run, 'meta.impl.json'))).toMatchObject({
+    engine: 'codex',
+    model: 'gpt-6-astra',
+  });
 });
 
 it(

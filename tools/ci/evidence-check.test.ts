@@ -90,8 +90,15 @@ function evidence(extra: Evidence = {}): Evidence {
       },
     ],
     reviews: [
-      { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 },
-      { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true },
+      { reviewer: 'claude', engine: 'claude', verdict: 'pass', open_s0_s1: 0 },
+      {
+        reviewer: 'codex',
+        engine: 'codex',
+        model: 'gpt-6-astra',
+        verdict: 'pass',
+        open_s0_s1: 0,
+        checklist_complete: true,
+      },
     ],
     trees: { 'packages/money': moneyTree },
     longrun: { runs: 1000000, seed: 1, passed: true, tree: moneyTree },
@@ -222,7 +229,9 @@ it('every field of the evidence can fail the check', () => {
     ['runs not a list', evidence({ runs: 'ci' }), /runs: must be a list/],
     [
       'missing codex review',
-      evidence({ reviews: [{ reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 }] }),
+      evidence({
+        reviews: [{ reviewer: 'claude', engine: 'claude', verdict: 'pass', open_s0_s1: 0 }],
+      }),
       /missing the codex review/,
     ],
     ['no reviews at all', evidence({ reviews: [] }), /reviews: missing the codex review/],
@@ -230,8 +239,15 @@ it('every field of the evidence can fail the check', () => {
       'open S0',
       evidence({
         reviews: [
-          { reviewer: 'claude', verdict: 'pass', open_s0_s1: 1 },
-          { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true },
+          { reviewer: 'claude', engine: 'claude', verdict: 'pass', open_s0_s1: 1 },
+          {
+            reviewer: 'codex',
+            engine: 'codex',
+            model: 'gpt-6-astra',
+            verdict: 'pass',
+            open_s0_s1: 0,
+            checklist_complete: true,
+          },
         ],
       }),
       /reviews.claude.open_s0_s1: must be 0/,
@@ -240,8 +256,15 @@ it('every field of the evidence can fail the check', () => {
       'checklist',
       evidence({
         reviews: [
-          { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 },
-          { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: false },
+          { reviewer: 'claude', engine: 'claude', verdict: 'pass', open_s0_s1: 0 },
+          {
+            reviewer: 'codex',
+            engine: 'codex',
+            model: 'gpt-6-astra',
+            verdict: 'pass',
+            open_s0_s1: 0,
+            checklist_complete: false,
+          },
         ],
       }),
       /checklist_complete: must be true/,
@@ -296,12 +319,15 @@ it('[CR-09] after a handover the evidence names the handover commit and only the
   };
   const codexBefore = {
     reviewer: 'codex',
+    engine: 'codex',
+    model: 'gpt-6-astra',
     verdict: 'fail',
     open_s0_s1: 1,
     checklist_complete: true,
   };
   const claudePass = {
     reviewer: 'claude',
+    engine: 'claude',
     verdict: 'pass',
     open_s0_s1: 0,
     checklist_complete: true,
@@ -328,7 +354,13 @@ it('[CR-09] after a handover the evidence names the handover commit and only the
     /reviews: missing the claude review of the handover implementation/,
   );
   // A Claude review not bound to the handover commit (none, or from before it) does not count.
-  const unbound = { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0, checklist_complete: true };
+  const unbound = {
+    reviewer: 'claude',
+    engine: 'claude',
+    verdict: 'pass',
+    open_s0_s1: 0,
+    checklist_complete: true,
+  };
   for (const review of [unbound, { ...claudePass, commit: specCommit }]) {
     expect(problemsOf(evidence({ handover, reviews: [review, codexBefore] }))).toMatch(
       /reviews: missing the claude review of the handover implementation/,
@@ -465,6 +497,7 @@ it('[CR-09] checkEvidence refuses a handover on a money task and accepts one on 
       reviews: [
         {
           reviewer: 'claude',
+          engine: 'claude',
           verdict: 'pass',
           open_s0_s1: 0,
           checklist_complete: true,
@@ -515,6 +548,7 @@ it('[CR-09] checkEvidence refuses a handover on a money task and accepts one on 
   const evalsTree = git(repo, ['rev-parse', 'HEAD:packages/evals']);
   const claude = {
     reviewer: 'claude',
+    engine: 'claude',
     verdict: 'pass',
     open_s0_s1: 0,
     checklist_complete: true,
@@ -548,7 +582,13 @@ it('[CR-09] checkEvidence refuses a handover on a money task and accepts one on 
     git(repo, ['commit', '-q', '-m', 'evidence']);
     return git(repo, ['rev-parse', 'HEAD']);
   };
-  const codexFail = { reviewer: 'codex', verdict: 'fail', open_s0_s1: 1 };
+  const codexFail = {
+    reviewer: 'codex',
+    engine: 'codex',
+    model: 'gpt-6-astra',
+    verdict: 'fail',
+    open_s0_s1: 1,
+  };
   const good = check(commitDoc(doc([claude, codexFail])), 'task/B3-01z');
   expect(good.problems).toEqual([]);
   // The rule tests make the pull request RV2, so the Claude review carries the checklist.
@@ -945,6 +985,7 @@ it("[CT-06r] declared red exemptions need the rule-test reviewer's confirmation 
     'the ledger declares 2 red exemption(s) (red_exempt, CT-06r): the rule-test reviewer (claude) must confirm them in spec_test_review (reviewer claude, last_verdict pass, red_exempt_confirmed true)';
   const confirmed = {
     reviewer: 'claude',
+    engine: 'claude',
     rounds: 1,
     last_verdict: 'pass',
     red_exempt_confirmed: true,
@@ -955,9 +996,18 @@ it("[CT-06r] declared red exemptions need the rule-test reviewer's confirmation 
   // No review record, the wrong reviewer, a verdict other than pass, not confirmed or not true.
   expect(problemsOf(evidence())).toBe(`spec_test_review: ${want}`);
   expect(problemsOf(evidence({ spec_test_review: 'pass' }))).toBe(`spec_test_review: ${want}`);
-  expect(problemsOf(evidence({ spec_test_review: { ...confirmed, reviewer: 'codex' } }))).toBe(
-    `spec_test_review.reviewer: ${want}`,
-  );
+  expect(
+    problemsOf(
+      evidence({
+        spec_test_review: {
+          ...confirmed,
+          reviewer: 'codex',
+          engine: 'codex',
+          model: 'gpt-6-astra',
+        },
+      }),
+    ),
+  ).toBe(`spec_test_review.reviewer: ${want}`);
   expect(problemsOf(evidence({ spec_test_review: { ...confirmed, last_verdict: 'fail' } }))).toBe(
     `spec_test_review.last_verdict: ${want}`,
   );
@@ -971,7 +1021,14 @@ it("[CT-06r] declared red exemptions need the rule-test reviewer's confirmation 
   // Claude wrote the rule tests: Codex is the reviewer who confirms.
   expect(
     problemsOf(
-      evidence({ spec_test_review: { ...confirmed, reviewer: 'codex' } }),
+      evidence({
+        spec_test_review: {
+          ...confirmed,
+          reviewer: 'codex',
+          engine: 'codex',
+          model: 'gpt-6-astra',
+        },
+      }),
       declared('claude'),
     ),
   ).toBe('');
@@ -1060,8 +1117,15 @@ it('[approvals 27] the side that did not implement reviews; the other entry is o
       red: RED,
       ...(implementer === undefined ? {} : { implementer }),
     }).join('\n');
-  const codexPass = { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true };
-  const claudePass = { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 };
+  const codexPass = {
+    reviewer: 'codex',
+    engine: 'codex',
+    model: 'gpt-6-astra',
+    verdict: 'pass',
+    open_s0_s1: 0,
+    checklist_complete: true,
+  };
+  const claudePass = { reviewer: 'claude', engine: 'claude', verdict: 'pass', open_s0_s1: 0 };
   // Opus implemented (absent or explicit claude): the Codex review alone is enough.
   expect(problemsOf(evidence({ reviews: [codexPass] }))).toBe('');
   expect(problemsOf(evidence({ reviews: [codexPass] }), 'claude')).toBe('');
@@ -1151,12 +1215,20 @@ it('[approvals 36] an independent Claude review stands in for the missing side, 
   const independent = {
     reviewer: 'claude-independent',
     engine: 'claude-independent',
+    model: 'claude-opus-5-5',
     verdict: 'pass',
     open_s0_s1: 0,
     checklist_complete: true,
   };
-  const codexPass = { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true };
-  const claudePass = { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 };
+  const codexPass = {
+    reviewer: 'codex',
+    engine: 'codex',
+    model: 'gpt-6-astra',
+    verdict: 'pass',
+    open_s0_s1: 0,
+    checklist_complete: true,
+  };
+  const claudePass = { reviewer: 'claude', engine: 'claude', verdict: 'pass', open_s0_s1: 0 };
   // Opus implemented and Codex was not available: the independent Claude review is enough.
   expect(problemsOf(evidence({ reviews: [independent] }))).toBe('');
   expect(problemsOf(evidence({ reviews: [independent] }), 'claude')).toBe('');
@@ -1191,35 +1263,56 @@ it('[approvals 36] an independent Claude review stands in for the missing side, 
   );
 });
 
-it("[approvals 36] an independent Claude review is never filed as Codex's: the engine must match the reviewer", () => {
+it("[approvals 36] an independent Claude review is never filed as Codex's: engine and model are bound to the reviewer", () => {
   const head = git(repo, ['rev-parse', 'HEAD']);
   const cfg = loadProtected(REPO);
   const problemsOf = (doc: unknown): string =>
     evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg, red: RED }).join('\n');
-  const codexPass = { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true };
-  // Entries without engine (written before 2026-10-21) stay valid; an explicit codex engine too.
+  const codexPass = {
+    reviewer: 'codex',
+    engine: 'codex',
+    model: 'gpt-6-astra',
+    verdict: 'pass',
+    open_s0_s1: 0,
+    checklist_complete: true,
+  };
   expect(problemsOf(evidence({ reviews: [codexPass] }))).toBe('');
-  expect(problemsOf(evidence({ reviews: [{ ...codexPass, engine: 'codex' }] }))).toBe('');
-  // A Claude review recorded as Codex's is refused.
+  // #1046 r1 S2: every entry names its engine; a codex entry without one is refused.
+  const noEngine: Evidence = { ...codexPass };
+  delete noEngine['engine'];
+  expect(problemsOf(evidence({ reviews: [noEngine] }))).toMatch(
+    /reviews.codex.engine: must be "codex" \(every review entry names the engine/,
+  );
+  // A Claude review recorded as Codex's is refused, by its engine or by its model.
   expect(
     problemsOf(evidence({ reviews: [{ ...codexPass, engine: 'claude-independent' }] })),
   ).toMatch(/reviews.codex.engine: engine claude-independent does not match reviewer "codex"/);
-  expect(problemsOf(evidence({ reviews: [{ ...codexPass, engine: 'claude' }] }))).toMatch(
-    /reviews.codex.engine: engine claude does not match/,
+  expect(problemsOf(evidence({ reviews: [{ ...codexPass, model: 'claude-opus-5-5' }] }))).toMatch(
+    /reviews.codex.engine: engine codex runs gpt-6-astra: the entry must say model "gpt-6-astra"/,
   );
+  const noModel: Evidence = { ...codexPass };
+  delete noModel['model'];
+  expect(problemsOf(evidence({ reviews: [noModel] }))).toMatch(/must say model "gpt-6-astra"/);
   expect(problemsOf(evidence({ reviews: [{ ...codexPass, engine: 'gpt' }] }))).toMatch(
     /reviews.codex.engine: must be one of codex, claude, claude-independent/,
   );
-  // An independent Claude entry names its engine, and only that one.
-  const independent = { ...codexPass, reviewer: 'claude-independent' };
-  expect(problemsOf(evidence({ reviews: [independent] }))).toMatch(
-    /reviews.claude-independent.engine: must be "claude-independent"/,
+  // An independent Claude entry: its own engine and claude-opus-5-5.
+  const independent = {
+    ...codexPass,
+    reviewer: 'claude-independent',
+    engine: 'claude-independent',
+    model: 'claude-opus-5-5',
+  };
+  expect(problemsOf(evidence({ reviews: [independent] }))).toBe('');
+  expect(problemsOf(evidence({ reviews: [{ ...independent, model: 'gpt-6-astra' }] }))).toMatch(
+    /reviews.claude-independent.engine: engine claude-independent runs claude-opus-5-5/,
   );
   expect(problemsOf(evidence({ reviews: [{ ...independent, engine: 'codex' }] }))).toMatch(
     /reviews.claude-independent.engine: engine codex does not match/,
   );
+  // The orchestrator's Claude subagent: engine claude, no model bound.
   expect(engineProblem({ reviewer: 'claude', engine: 'claude' })).toBeNull();
-  expect(engineProblem({ reviewer: 'claude' })).toBeNull();
+  expect(engineProblem({ reviewer: 'claude' })).toMatch(/must be "claude"/);
 });
 
 it('[approvals 36] rule-test reviewers: an independent Claude context confirms red exemptions for any author', () => {
@@ -1239,6 +1332,7 @@ it('[approvals 36] rule-test reviewers: an independent Claude context confirms r
   const confirmed = {
     reviewer: 'claude-independent',
     engine: 'claude-independent',
+    model: 'claude-opus-5-5',
     rounds: 1,
     last_verdict: 'pass',
     red_exempt_confirmed: true,
@@ -1286,6 +1380,7 @@ it('[approvals 36] after a handover an independent Claude review of the handover
   const bound = {
     reviewer: 'claude-independent',
     engine: 'claude-independent',
+    model: 'claude-opus-5-5',
     verdict: 'pass',
     open_s0_s1: 0,
     checklist_complete: true,

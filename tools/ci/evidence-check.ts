@@ -28,10 +28,10 @@
 //              is not available, a fresh Claude context (tools/agent/claude-run.sh) may stand in
 //              for either side: an entry with reviewer "claude-independent" satisfies a required
 //              codex or claude entry, with the same conditions (pass, open_s0_s1 0, checklist
-//              complete). An entry must say truthfully which engine produced it: an `engine` field,
-//              when present, must equal its reviewer ("codex" for codex, "claude-independent" for
-//              claude-independent, "claude" for claude), so a Claude review cannot be filed as
-//              Codex's. Recorded engines are listed in the notices.
+//              complete). An entry must say truthfully which engine produced it: every entry
+//              carries `engine`, equal to its reviewer ("codex", "claude-independent", "claude"),
+//              and a codex / claude-independent entry the model of that engine (gpt-6-astra,
+//              claude-opus-5-5), so a Claude review cannot be filed as Codex's.
 //              Handover (规划/11 §2.5, CR-09): when Opus used up its rounds and Codex implemented
 //              once, the evidence carries `handover` and only the Claude review of the handover
 //              implementation must pass (Codex never reviews its own code). Allowed only when the
@@ -467,18 +467,28 @@ export type RedRequirement = {
 export const REVIEWERS = ['codex', 'claude', 'claude-independent'] as const;
 
 /**
- * ops/approvals.yaml id 36: an entry's `engine`, when present, must name the engine of its
- * reviewer (a Claude review is never filed as Codex's); an independent Claude entry must carry it.
- * Older entries without `engine` (codex, claude) stay valid. Returns the problem or null.
+ * The model each engine runs (tools/agent/codex-run.sh MODEL): an entry of that engine must name
+ * it (#1046 r1 S2), so an independent Claude review cannot pass for a Codex one by its fields.
+ */
+export const ENGINE_MODELS: Readonly<Record<string, string>> = {
+  codex: 'gpt-6-astra',
+  'claude-independent': 'claude-opus-5-5',
+};
+
+/**
+ * ops/approvals.yaml id 36: every review entry (and spec_test_review) names the engine that
+ * produced it, equal to its reviewer, and a codex / claude-independent entry the model of that
+ * engine (ENGINE_MODELS). Returns the problem or null.
  */
 export function engineProblem(entry: Record<string, unknown>): string | null {
   const reviewer = entry['reviewer'];
-  if (!Object.hasOwn(entry, 'engine')) {
-    return reviewer === 'claude-independent'
-      ? 'must be "claude-independent" (an independent Claude entry names its engine)'
-      : null;
-  }
   const engine = entry['engine'];
+  if (!Object.hasOwn(entry, 'engine')) {
+    return (
+      `must be ${JSON.stringify(reviewer)} (every review entry names the engine that produced it, ` +
+      'ops/approvals.yaml id 36)'
+    );
+  }
   if (!(REVIEWERS as readonly unknown[]).includes(engine)) {
     return `must be one of ${REVIEWERS.join(', ')} (got ${JSON.stringify(engine)})`;
   }
@@ -487,6 +497,13 @@ export function engineProblem(entry: Record<string, unknown>): string | null {
       `engine ${String(engine)} does not match reviewer ${JSON.stringify(reviewer)}: record ` +
       'the review under the engine that produced it (an independent Claude review is ' +
       'reviewer "claude-independent", never codex; ops/approvals.yaml id 36)'
+    );
+  }
+  const model = ENGINE_MODELS[String(engine)];
+  if (model !== undefined && entry['model'] !== model) {
+    return (
+      `engine ${String(engine)} runs ${model}: the entry must say model "${model}" ` +
+      `(got ${JSON.stringify(entry['model'])})`
     );
   }
   return null;

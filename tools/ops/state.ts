@@ -10,6 +10,7 @@
 //   node tools/ops/state.ts bump-attempt <id> test|impl|handover [--engine codex|claude-independent]
 //   node tools/ops/state.ts bump-attempt <id> review --review-type money|general|contract|spec-test
 //                                        [--engine codex|claude-independent]
+//   node tools/ops/state.ts breakers <id> [--engine codex|claude-independent]
 //   node tools/ops/state.ts settle <id> --meta <meta.json>
 //   node tools/ops/state.ts opus-run <id> --run-id <x> --outcome ok|no-output|timeout|capacity
 //                                         --risk RV0|RV1|RV2
@@ -62,6 +63,10 @@
 // engine uses the same counter and the same limits (3 / 2 / 3). The two failure breakers are
 // computed per engine (`taskCalls(id, engine)`, `bump-attempt --engine`): Codex calls that hit a
 // usage limit or failed say nothing about the Claude calls, and the other way round.
+// The engine a caller names to bump-attempt is its own claim; the runners therefore check their
+// own engine again before every call (`state.ts breakers <id> --engine <their AGENT_ENGINE>`,
+// exit 3 when one is open; codex-run.sh / claude-run.sh then refuse), so a round counted as
+// claude-independent cannot open a way past the Codex breakers.
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -882,6 +887,18 @@ function main(argv: string[]): number {
     console.log(JSON.stringify(state, null, 2));
     return 0;
   }
+  if (cmd === 'breakers') {
+    const engine = values.engine ?? 'codex';
+    if (!(ENGINES as readonly string[]).includes(engine)) {
+      throw new UsageError(`--engine must be ${ENGINES.join(' or ')}`);
+    }
+    const calls = taskCalls(id, engine as Engine);
+    console.log(JSON.stringify({ ...calls, engine }));
+    if (calls.reasons.length > 0) {
+      throw new BreakerError(calls.reasons.map((r) => r.message).join('\n'));
+    }
+    return 0;
+  }
   if (cmd === 'settle') {
     if (values.meta === undefined) throw new UsageError('settle <id> --meta <meta.json>');
     const meta = parseCallMeta(readJsonFile(values.meta));
@@ -932,7 +949,7 @@ function main(argv: string[]): number {
     return 0;
   }
   throw new UsageError(
-    'expected: get|set|claim|release|bump-attempt|settle|opus-run|migrate <id> ...',
+    'expected: get|set|claim|release|bump-attempt|breakers|settle|opus-run|migrate <id> ...',
   );
 }
 

@@ -278,24 +278,27 @@ tools/agent/claude-run.sh selfcheck      # 只读 claude --help，不发起任�
 **不一样的**：
 
 - 每次都是全新上下文：`claude -p --model claude-opus-5-5 --effort high --output-format stream-json --verbose --include-partial-messages --no-session-persistence --safe-mode --restricted --disable-slash-commands --strict-mcp-config --permission-mode dontAsk`，从不带 `--resume` / `--continue`；不读用户、项目、插件配置与 CLAUDE.md，没有 MCP 与技能，不能起子代理。结构化产出用 `--json-schema`（可信根 schema 原文），取 `result` 事件的 `structured_output`；成功的判定是最后一个 `result` 事件为 `success` 且非错误（`last_event: result.success`）。
-- **评审只读**：工具只有 Read、Grep、Glob 与只读 git（`git status / diff / log / show / ls-files / rev-parse / merge-base`，以及对规划仓库的 `git -C <规划仓库> show / log`），其余一律自动拒绝；Claude 没有只读沙箱，所以结束后另核对工作区（含未跟踪文件）不变，变了退出 12、产出作废。产出文件是 `review-claude-independent.json`（不是 `review-codex.json`）。spec-test 评审只要可信台账写明了作者（`codex` / `claude` / `claude-independent`）都接受，读不到作者拒绝；换家后的代码评审也可以由它做（不是 Codex 评审自己）。
-- **写测试只限本任务**：只有 `--phase test`（`handover` / `impl` 拒绝：实现仍归 Opus 子代理，换家仍归 Codex）；先开台账 PR 把 `tester` 改为 `claude-independent`（可信台账不是这个值就拒绝，退出 2），台账要有 `test_paths`。可编辑范围 = 台账 `test_paths` + `paths`（骨架），大括号展开成 `Edit(/<glob>)` 规则，其余写入自动拒绝；命令只放只读 git 与 `pnpm exec tsc`、`pnpm exec eslint`（静态检查，不跑测试）。结果照常过 `path-guard.ts` / `protected-paths.ts`、隔离红测。写测试的上下文与写实现的 Opus 子代理不是同一个，规则测试过审（spec-test）再起另一个独立 Claude 或由编排侧 Claude 子代理做（§11）。
+- **没有 shell**（#1046 r1 S0 / S1）：两种模式都不放 Bash——前缀规则拦不住 `git log --output=<任意文件>` 这类写入，`pnpm exec eslint -c x.mjs` 会在宿主执行生成的代码。模型要的 git 信息由包装脚本在调用前写进 `<runs>/<id>/wrapper-<mode>/context/`（`git-status.txt`、`git-log.txt`、`git-diff.patch`、`untracked.txt`，以及 `spec/`：规划仓库在 worktree 的 `SPEC_REF` 上的 `规划/` 与 `docs/`），以 `--add-dir` 只读给它，提示词末尾写明位置；`--restricted` 把文件工具限在 worktree 与这个目录里。静态检查与测试由编排者在隔离容器里跑。
+- **评审只读**：工具只有 Read、Grep、Glob，没有任何写入工具；Claude 没有操作系统级只读沙箱，所以结束后另核对工作区内容不变（`git diff HEAD` 全文 + 每个未跟踪文件的内容哈希；已修改文件被再次改写也算），变了退出 12、产出作废；被忽略的路径不在核对范围内（模型也没有能写它们的工具）。产出文件是 `review-claude-independent.json`（不是 `review-codex.json`）。spec-test 评审只要可信台账写明了作者（`codex` / `claude` / `claude-independent`）都接受，读不到作者拒绝；反过来 `codex-run.sh` 的 spec-test 评审会扫描运行目录里每次写测试调用的 `meta.json`，只要有一次是 Codex 写的（`engine: codex` 或没有 `engine`），就拒绝 Codex 评审（第 19 条：Codex 不评审自己写的测试；台账写的作者可能已改成 claude-independent，轮次又是跨引擎共用的）；换家后的代码评审也可以由它做（不是 Codex 评审自己）。
+- **写测试只限本任务**：只有 `--phase test`（`handover` / `impl` 拒绝：实现仍归 Opus 子代理，换家仍归 Codex）；先开台账 PR 把 `tester` 改为 `claude-independent`（可信台账不是这个值就拒绝，退出 2），台账要有 `test_paths`。可编辑范围 = 台账 `test_paths` + `paths`（骨架），大括号展开成 `Edit(/<glob>)` 规则，其余写入自动拒绝；不能执行任何命令（类型检查、lint 与先红都由编排者在容器里跑）。结果照常过 `path-guard.ts` / `protected-paths.ts`、隔离红测。写测试的上下文与写实现的 Opus 子代理不是同一个，规则测试过审（spec-test）再起另一个独立 Claude 或由编排侧 Claude 子代理做（§11）。
 - **账号**：`CLAUDE_INDEPENDENT_CONFIG_DIR=<某账号的 Claude 配置目录>`（绝对路径、已存在、不在仓库 / 可信副本 / 运行目录下）作为子进程的 `CLAUDE_CONFIG_DIR`；不设就沿用当前环境。脚本只用目录名，不读其中任何文件；调用方环境里的 `ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`、`CLAUDE_CODE_OAUTH_TOKEN` 不传给子进程（不会误走按量计费的 API key）。
-- `meta.json` 与 codex 相同的字段，另有 `engine: "claude-independent"`、`agent_exit`、`agent_version`、`config_dir`，没有 `codex_exit` / `codex_version`；codex 的 `meta.json` 现在也写 `engine: "codex"`。Codex 的 token 账本（`usage.ts`）不记 Claude 调用。
+- `meta.json` 与 codex 相同的字段，另有 `engine: "claude-independent"`、`agent_exit`、`agent_version`、`config_dir`，没有 `codex_exit` / `codex_version`。Codex 的 token 账本（`usage.ts`）不记 Claude 调用。
+- **Codex 路径登记的变化**（#1046 r1 S2）：Codex 的命令行与工作目录不变（只有 claude 分支在 worktree 里启动，有测试断言 Codex 的 cwd 与 argv）；`meta.json` 多一个 `engine: "codex"`；评审调用前归档时连 `review-claude-independent.json` 一起归档；退出 11 的日志文案多了「or a usage limit」；spec-test 评审多一道「Codex 写过本任务测试就拒绝」；每次调用前多查一次本引擎的失败熔断（`state.ts breakers <id> --engine codex`，退出 3 就拒绝，退出 2）。
 
-**计数**（`tools/ops/state.ts`）：轮次是任务的，不分引擎——写测试 3 次、规则测试评审 2 轮、代码评审 3 轮，Codex 与独立 Claude 合计；派发前照旧 `state.ts bump-attempt <id> test|review … --engine claude-independent`。失败熔断（每任务 10 次调用、连续 3 次无产出）按引擎分开算：Codex 撞用量上限或连败不挡独立 Claude，反过来也一样。`post-run.sh <id>` 可照常用于写测试那次运行（它读 `meta.impl.json` 与 `impl.json`）。
+**计数**（`tools/ops/state.ts`）：轮次是任务的，不分引擎——写测试 3 次、规则测试评审 2 轮、代码评审 3 轮，Codex 与独立 Claude 合计；派发前照旧 `state.ts bump-attempt <id> test|review … --engine claude-independent`。失败熔断（每任务 10 次调用、连续 3 次无产出）按引擎分开算：Codex 撞用量上限或连败不挡独立 Claude，反过来也一样。`--engine` 是调用方自报的，所以两个包装脚本启动前还会用自己的引擎再查一次（`state.ts breakers <id> --engine <AGENT_ENGINE>`），用 `--engine claude-independent` 计轮次再去跑 codex-run.sh 绕不过 Codex 的熔断。`post-run.sh <id>` 可照常用于写测试那次运行（它读 `meta.impl.json` 与 `impl.json`）。
 
 **证据怎么记**（`ops/evidence/<id>.json`，`tools/ci/evidence-check.ts`）：
 
-- 独立 Claude 的评审条目写 `"reviewer": "claude-independent", "engine": "claude-independent"`，其余字段与 Codex 条目相同：`verdict: "pass"`、`open_s0_s1: 0`、`checklist_complete: true`（资金清单必填）。它顶替缺的那一家：Opus 实现时顶替 `codex` 条目，Codex 实现时顶替 `claude` 条目；台账读不到时两家都要，其中只能有一家是顶替。换家时，绑定换家提交的独立 Claude 条目（写 `commit`）算作 Claude 评审。
-- 任何条目写了 `engine`，就必须等于它的 `reviewer`；把独立 Claude 的产出写成 `reviewer: "codex"`（带 `engine: "claude-independent"`）会被拒收；独立 Claude 条目不写 `engine` 也拒收。旧条目（不带 `engine` 的 `codex` / `claude`）照旧有效，新写的条目建议都带 `engine`。
+- 每条评审条目（`reviews[]`，以及有 red_exempt 时的 `spec_test_review`）都必须写 `engine`，且等于 `reviewer`；`codex` 条目另写 `"model": "gpt-6-astra"`，`claude-independent` 条目写 `"model": "claude-opus-5-5"`（#1046 r1 S2：引擎与模型绑定，取自 `meta.json` 的 `model`）。**在途 PR 的旧证据要补这两个字段**，否则 evidence-check 红。
+- 独立 Claude 的评审条目写 `"reviewer": "claude-independent", "engine": "claude-independent", "model": "claude-opus-5-5"`，其余字段与 Codex 条目相同：`verdict: "pass"`、`open_s0_s1: 0`、`checklist_complete: true`（资金清单必填）。它顶替缺的那一家：Opus 实现时顶替 `codex` 条目，Codex 实现时顶替 `claude` 条目；台账读不到时两家都要，其中只能有一家是顶替。换家时，绑定换家提交的独立 Claude 条目（写 `commit`）算作 Claude 评审。
+- 把独立 Claude 的产出写成 `reviewer: "codex"` 会被拒收：`engine` 不符，或 `model` 不是 `gpt-6-astra`；不写 `engine` 也拒收。
 - `spec_test_review`（红测豁免的确认）：台账 `tester: codex` → `claude` 或 `claude-independent`；`tester: claude` → `codex` 或 `claude-independent`；`tester: claude-independent` → `claude` 或另一次 `claude-independent`；写了 `engine` 同样要与 `reviewer` 一致。
 
 示例（Opus 实现、Codex 用不了时的资金评审）：
 
 ```json
 "reviews": [
-  { "reviewer": "claude-independent", "engine": "claude-independent", "review_type": "money", "verdict": "pass", "open_s0_s1": 0, "checklist_complete": true, "run": "couli-runs/<id>/attempts/<n>/meta.json" }
+  { "reviewer": "claude-independent", "engine": "claude-independent", "model": "claude-opus-5-5", "review_type": "money", "verdict": "pass", "open_s0_s1": 0, "checklist_complete": true, "run": "couli-runs/<id>/attempts/<n>/meta.json" }
 ]
 ```
 

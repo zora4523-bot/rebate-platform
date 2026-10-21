@@ -785,3 +785,24 @@ it('[approvals 36] bump-attempt --engine on the command line', { timeout: CLI_TI
   expect(bad.stderr).toContain('--engine must be codex or claude-independent');
   removeDir(stateFile('G7-03'));
 });
+
+it(
+  '[approvals 36] breakers <id> --engine: exit 3 when that engine is stopped, 0 otherwise',
+  { timeout: CLI_TIMEOUT },
+  () => {
+    const id = 'G7-04';
+    writeEngineCalls(id, [{ outcome: 'none' }, { outcome: 'none' }, { outcome: 'none' }]);
+    const codex = runCli('state.ts', ['breakers', id]);
+    expect(codex.status).toBe(3);
+    expect(codex.stderr).toContain(`${id}: 连续 3 次调用没有产出`);
+    const claude = runCli('state.ts', ['breakers', id, '--engine', 'claude-independent']);
+    expect(claude.status, claude.stderr).toBe(0);
+    expect(JSON.parse(claude.stdout)).toMatchObject({
+      task: id,
+      engine: 'claude-independent',
+      calls: 0,
+    });
+    expect(runCli('state.ts', ['breakers', id, '--engine', 'gemini']).status).toBe(2);
+    removeDir(join(runs, id));
+  },
+);
