@@ -22,6 +22,14 @@ export type {
   MessageReader,
   MessageReaderOptions,
 } from './application/message-read.ts';
+export { InboxCursorError, createInboxMessages } from './application/inbox-messages.ts';
+export type {
+  InboxListQuery,
+  InboxMessages,
+  InboxMessagesOptions,
+  InboxOwner,
+  InboxReadCommand,
+} from './application/inbox-messages.ts';
 export { MessagesController } from './http/public/messages.controller.ts';
 export type { MessageHttpRequest } from './http/public/messages.controller.ts';
 export { NotificationModule } from './notification.module.ts';

@@ -18,7 +18,12 @@ import {
   type PushTokenReporter,
 } from './application/push-token-report.ts';
 import { PUSH_TOKEN_REPORTER, PushTokenController } from './http/public/push-token.controller.ts';
-import { MESSAGE_READER, MessagesController } from './http/public/messages.controller.ts';
+import {
+  INBOX_MESSAGES,
+  MESSAGE_READER,
+  MessagesController,
+} from './http/public/messages.controller.ts';
+import { createInboxMessages, type InboxMessages } from './application/inbox-messages.ts';
 import type { TaobaoReauthReader } from '../linking/index.ts';
 import {
   RISK_STATE_MESSAGE_CONSUMER,
@@ -36,6 +41,17 @@ function lazyMessageReader(db: Kysely<Database>): MessageReader {
       reader ??= createMessageReader({ db });
       return reader.get(query);
     },
+  };
+}
+
+/** Build on first call so module startup never touches the database handle. */
+function lazyInboxMessages(db: Kysely<Database>, clock: Clock): InboxMessages {
+  let inbox: InboxMessages | undefined;
+  const get = (): InboxMessages => (inbox ??= createInboxMessages({ db, clock }));
+  return {
+    list: async (query) => get().list(query),
+    markRead: async (command) => get().markRead(command),
+    unreadCount: async (owner) => get().unreadCount(owner),
   };
 }
 
@@ -58,6 +74,16 @@ export class NotificationModule {
                     Promise.reject(new Error('notification: message reads need the database')),
                 }
               : lazyMessageReader(db),
+        },
+        {
+          provide: INBOX_MESSAGES,
+          inject: [CLOCK, { token: DB, optional: true }],
+          useFactory: (clock: Clock, db?: Kysely<Database>): InboxMessages => {
+            if (db !== undefined) return lazyInboxMessages(db, clock);
+            const missing = (): Promise<never> =>
+              Promise.reject(new Error('notification: inbox messages need the database'));
+            return { list: missing, markRead: missing, unreadCount: missing };
+          },
         },
         {
           provide: PUSH_TOKEN_REPORTER,

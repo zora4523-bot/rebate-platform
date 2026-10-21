@@ -2978,6 +2978,250 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "listMessages": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id"
+      ]
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "limit": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "markMessagesRead": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id"
+      ]
+    },
+    "body": {
+      "description": "Exactly one of message_ids (1–100 ids, duplicates counted once) or all=true.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "message_ids"
+          ],
+          "properties": {
+            "message_ids": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "type": "string",
+                "description": "Entity id, a UUIDv7 string (04 §5).",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "all"
+          ],
+          "properties": {
+            "all": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "getUnreadMessageCount": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id"
+      ]
+    }
+  },
   "getMe": {
     "headers": {
       "type": "object",
