@@ -23,7 +23,14 @@ export type QuoteReferenceResult =
   | { readonly kind: 'invalid_args' }
   | { readonly kind: 'clarify' };
 
+/** Official token parsing boundary; failures reject with ParsingError. No third-party fallback. */
+export interface TokenParser {
+  parseToken(raw: string, context: CallCtx): Promise<ParsedUrlProduct>;
+}
+
 export interface RebateQuoteDeps {
+  /** Absent means token parsing is unavailable (30132); supplied by the composition root. */
+  readonly tokens?: TokenParser;
   /** Bound parsing.parseUrl (its ParsingOptions are supplied by the composition root). */
   readonly parsing: {
     parseUrl(url: string, context: CallCtx): Promise<ParsedUrlProduct>;
@@ -59,11 +66,8 @@ export type LinkQuoteOutcome =
   | { readonly kind: 'no_card'; readonly cards: readonly [] };
 
 export interface LinkQuoteRunner {
-  /** Called by the deterministic path with a parse_input URL candidate, never by the model. */
-  run(
-    candidate: Candidate & { readonly kind: 'url' },
-    context: ToolCallContext,
-  ): Promise<LinkQuoteOutcome>;
+  /** Internal URL/token runner; deterministic token wiring is a separate task. */
+  run(candidate: Candidate, context: ToolCallContext): Promise<LinkQuoteOutcome>;
 }
 
 type QuoteResult =
