@@ -1,7 +1,7 @@
 {
   "task": "CT-06x",
   "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
-  "spec_commit": "983a1da4ba143e7ce7b7ec86a757691ad67f94f6",
+  "spec_commit": "0fcd76e381c8d19e4d148a5cca290b9f7d69709d",
   "red_tests": [],
   "risk_note": "Guard change (tools/, AGENTS.md, REVIEW.md: protected class 3) under the owner's standing authorization for small process-gate fixes (ops/approvals.yaml id 16); taken over by the ops line on 2026-10-22, rebased onto main 983a1da4ba14 and adapted to approvals #36 (both review engines); Claude implemented, Codex adversarial review; label per approvals id 24 by the orchestrator. tester: none (tools' own unit tests by the implementer).",
   "runs": [],
@@ -24,7 +24,7 @@
     "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
     "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
     "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
-    "test/spec": "77e6132d962e6d16a178dabac1c96ea919c1618a"
+    "test/spec": "ea6e9cc07c4b259a50faee761fa7281a769df4b4"
   },
   "longrun": {
     "runs": 1000000,
