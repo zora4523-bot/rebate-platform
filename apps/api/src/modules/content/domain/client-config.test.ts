@@ -56,6 +56,7 @@ it('[AC-F1-02c] minimal configuration gets every planned default', () => {
       before_buy_tip: true,
       reward_enabled: false,
       reward_amount_fen: 1000,
+      eligibility_days: 30,
     },
     agent: { enabled: false, whitelist_only: true, guest_daily_quota: 3, require_phone: false },
     external_page: { nav_host_sample_bp: 1000 },
