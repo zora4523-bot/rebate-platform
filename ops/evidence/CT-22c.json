@@ -1,0 +1,37 @@
+{
+  "task": "CT-22c",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "a1f9179cd91d72184128f382360d2aacb3295da0",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; App hi-fi contract gap, orchestrator 17:4x, SPEC_REF 8209d6e). routes.json gains native routes ProductShare, ShareHub, Favorites, HotRankList, InviteBackfill and InviteLink (FavoritesPickShare is a ShareHub selection state); planned GET /v1/rank/hot (auth none as in 04) and GET /v1/search/hot-words; 50304 gains rank_unavailable; four text keys plus one fallback, fund-term-keys classifies them as ordinary; the h5 anonymous route list registers the two new unauthenticated operations. New routes and planned operations only, not breaking. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 1 fail (S1: GET /v1/rank/hot had been changed to optional auth while 04 says none); reverted to none; round 2 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "068d48cac01e9ad574e5deccce77f685c0af3cd5",
+    "specs": "0cc0089ce32602c3cb7b93c5b35912d4b3492aab"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}

@@ -1893,6 +1893,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/rank/hot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hot-sales list of one platform
+         * @description Hot-sales list of the `HotRankList` page (04 §6.3 `GET /v1/rank/hot`; 规划/01 F-PROD-13;
+         *     BR-TEXT-13, BR-TEXT-17). The server reads one sales-list channel of the platform, which
+         *     must be a selectable channel of the whitelist specs/material-channels.yaml (BR-TEXT-17
+         *     细则「联盟物料频道」); `channel` names it. `categories` lists the categories that channel
+         *     offers; `category` in the query takes only a `category_id` from that list (anything else
+         *     is 20001 with data.fields=[category]). `items` keep the order the channel returned and are
+         *     never reordered (`rank` counts from 1 across pages); `sales_text` is the union's sales
+         *     field passed through unchanged, null when the union gives none (the client then hides the
+         *     sales line, texts rank.sales.tb / rank.sales.neutral); `notice_key` is rank.notice. Cards
+         *     have the shape of a search card (ProductCard) and only register a link with its quote
+         *     snapshot, never convert (BR-PRICE-12). Answers are cached by the server for
+         *     rank.cache_ttl_seconds. A platform with no compliant channel answers 50304 with
+         *     data.reason=rank_unavailable and is left out of /v1/config features.rank_platforms; a
+         *     union failure without a usable cache answers 50304 without reason (retry later). The
+         *     product pool is never served as the hot list. Page size 20 (no limit parameter); a
+         *     malformed or foreign cursor is 20001 with data.fields=[cursor].
+         */
+        get: operations["getHotRank"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/search/hot-words": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search hot words and keyword shortcuts
+         * @description Hot words and keyword shortcuts of the search page (04 §6.3 `GET /v1/search/hot-words`;
+         *     规划/01 F-PROD-03). Both lists are configured in the admin console and returned in their
+         *     configured order; this operation serves no search statistics (F-PROD-10 is P1).
+         *     `hot_words` are shown as chips that start a normal search. `keyword_routes` map a keyword
+         *     to an in-app target: the client trims the typed input and compares it with each keyword
+         *     as a whole word, ignoring case; on a match it opens `target` instead of searching,
+         *     otherwise it searches as usual. A target is only a route of contracts/routes.json, checked
+         *     when saved; an external link goes only through ExternalPage, and saving one on a union
+         *     domain is refused (BR-ATTR-29); shortcuts stay subject to F-HOME-09 / F-LINK-11. The
+         *     client checks route and params against its own routes table before opening (RouteTarget).
+         *     Readable anonymously in basic mode, without a device id. Empty lists when nothing is
+         *     configured.
+         */
+        get: operations["getSearchHotWords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/favorites": {
         parameters: {
             query?: never;
@@ -7531,6 +7597,59 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["ProductPriceTrend"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description One category the hot-list channel offers (04 §6.3 GET /v1/rank/hot). */
+        HotRankCategory: {
+            /** @description Value for the `category` query parameter. */
+            category_id: string;
+            /** @description Display name as the channel gives it. */
+            name: string;
+        };
+        HotRankItem: {
+            /**
+             * Format: int32
+             * @description Position in the channel's own order, from 1; never reordered.
+             */
+            rank: number;
+            /** @description The union's sales field unchanged; null when the union gives none. */
+            sales_text: string | null;
+            product_card: components["schemas"]["ProductCard"];
+        };
+        HotRankData: {
+            /** @description channel_id of the whitelisted channel used (specs/material-channels.yaml). */
+            channel: string;
+            categories: components["schemas"]["HotRankCategory"][];
+            items: components["schemas"]["HotRankItem"][];
+            /**
+             * @description Text key of the notice line at the top of the list.
+             * @constant
+             */
+            notice_key: "rank.notice";
+            next_cursor: string | null;
+        };
+        HotRankResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["HotRankData"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        SearchHotWord: {
+            text: string;
+        };
+        SearchKeywordRoute: {
+            /** @description Matched against the trimmed input as a whole word, ignoring case. */
+            keyword: string;
+            target: components["schemas"]["RouteTarget"];
+        };
+        SearchHotWordsData: {
+            hot_words: components["schemas"]["SearchHotWord"][];
+            keyword_routes: components["schemas"]["SearchKeywordRoute"][];
+        };
+        SearchHotWordsResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["SearchHotWordsData"];
             trace_id: components["schemas"]["TraceId"];
         };
         ParseInputRequest: {
@@ -15279,6 +15398,179 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductPriceTrendResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getHotRank: {
+        parameters: {
+            query: {
+                /** @description Platform of the list (enum platform). */
+                platform: components["schemas"]["PlatformCode"];
+                /** @description A `category_id` from `categories` of this operation; absent for the whole list. */
+                category?: string;
+                /** @description Opaque cursor from `next_cursor`; absent for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices; anything else is 10402 (BR-ID-09). */
+                "X-Device-Id": components["parameters"]["DeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the hot-sales list, in channel order. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "channel": "tb_sales_daily",
+                     *         "categories": [
+                     *           {
+                     *             "category_id": "digital",
+                     *             "name": "数码"
+                     *           },
+                     *           {
+                     *             "category_id": "home",
+                     *             "name": "家居"
+                     *           }
+                     *         ],
+                     *         "items": [
+                     *           {
+                     *             "rank": 1,
+                     *             "sales_text": "10万+",
+                     *             "product_card": {
+                     *               "product_key": "tb:7Kq9LmN3pQ",
+                     *               "item_ref": "v1.dGJfN0txOUxtTjNwUQ.c2ln",
+                     *               "platform": "taobao",
+                     *               "shop_type": "tmall",
+                     *               "title": "降噪蓝牙耳机 5.3",
+                     *               "image": "https://img.example.test/p/7Kq9LmN3pQ.jpg",
+                     *               "shop_name": "示例旗舰店",
+                     *               "price_fen": 3990,
+                     *               "coupon_fen": 1000,
+                     *               "final_price_fen": 2990,
+                     *               "est_net_price_fen": 2721,
+                     *               "rebate_min_fen": 269,
+                     *               "rebate_max_fen": 269,
+                     *               "rebate_basis": "normal",
+                     *               "benefit_tags": [
+                     *                 "有券"
+                     *               ],
+                     *               "spec_text": null,
+                     *               "is_presale": false,
+                     *               "link_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a70",
+                     *               "cta": {
+                     *                 "text_key": "btn.buy.coupon"
+                     *               },
+                     *               "quoted_at": "2026-10-05T10:00:00+08:00",
+                     *               "stale": false,
+                     *               "age_sec": 12,
+                     *               "source": "taobao_union",
+                     *               "disclaimer_keys": [
+                     *                 "price_basis"
+                     *               ],
+                     *               "ad_label": null,
+                     *               "availability": "ok"
+                     *             }
+                     *           }
+                     *         ],
+                     *         "notice_key": "rank.notice",
+                     *         "next_cursor": null
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["HotRankResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            "4XX": components["responses"]["ClientError"];
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    getSearchHotWords: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description App (brand) the request belongs to; before login it must match the app_id the device was registered with (10403, BR-ID-07). */
+                "X-App-Id": components["parameters"]["AppId"];
+                /** @description Client platform (enum client_platform, 03 §4.2). */
+                "X-Platform": components["parameters"]["Platform"];
+                /** @description SemVer, the same number on all three apps (拍板第二批 TECH-07). */
+                "X-App-Version": components["parameters"]["AppVersion"];
+                /** @description Build number of the client. */
+                "X-Build"?: components["parameters"]["Build"];
+                /** @description Install channel of the app package (enum install_channel); absent for H5. */
+                "X-Channel"?: components["parameters"]["Channel"];
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /** @description device_id issued by POST /v1/devices, when the device is registered. */
+                "X-Device-Id"?: components["parameters"]["OptionalDeviceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The configured hot words and keyword shortcuts. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "hot_words": [
+                     *           {
+                     *             "text": "蓝牙耳机"
+                     *           },
+                     *           {
+                     *             "text": "洗衣液"
+                     *           }
+                     *         ],
+                     *         "keyword_routes": [
+                     *           {
+                     *             "keyword": "热销榜",
+                     *             "target": {
+                     *               "route": "HotRankList",
+                     *               "params": {}
+                     *             }
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SearchHotWordsResponse"];
                 };
             };
             429: components["responses"]["TooManyRequests"];
