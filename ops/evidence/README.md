@@ -20,7 +20,7 @@
 | `spec_commit` | 规则测试提交号；之后规则测试不得改动。CI 的 guard-git 也读它：核对它是头提交的祖先、基线的后代后，路径守卫从它起算，它之前的提交按规则测试作者的路径检查（`tools/README.md`「任务分支按 spec_commit 分段」，`ops/approvals.yaml` 第 14 条） | `couli-runs/state/<编号>.json` |
 | `red_tests` | 规则测试先红时的测试名列表（红的原因必须是断言失败、断言型的属性反例或骨架的 `NotImplemented`） | `verify-container.sh --red` 的 `red/<n>/result.json` 的 `red_tests` |
 | `runs[]` | 每一次沙箱外运行：`mode`（`container`；`host` 一律拒绝，`ci` 暂不接受）、`script`（`verify` 或 `red`）、`commit`、`tree`、`prop_seed`、`exit_code`、起止时间。2026-10-06 起（`ops/approvals.yaml` 第 21 条）完整验证看 PR 头提交上的必过 CI 检查，检查器不再要求容器 `verify` 记录；列出的容器 `verify` 记录须 `exit_code: 0` 且 `tree` 等于头提交树（不含本证据文件）；`runs` 可为空列表，先红要求见下 | `couli-runs/<编号>/{verify,red}/<n>/result.json`，由 `tools/ops/verify-container.sh` 写出，字段同名 |
-| `reviews[]` | 每条评审的结论：`reviewer`（`codex`；台账 `impl: codex` 的任务另有 `claude`）、`verdict`、未关闭的 S0 / S1 数、资金清单是否齐全 | 评审输出（`tools/agent/schemas/review.schema.json`） |
+| `reviews[]` | 每条评审的结论：`reviewer`（`codex`；台账 `impl: codex` 的任务另有 `claude`；Codex 不可用时由 `claude-independent` 顶替缺的那一家，第 36 条）、`engine`（产出它的引擎，写了就必须等于 `reviewer`；`claude-independent` 条目必填）、`verdict`、未关闭的 S0 / S1 数、资金清单是否齐全 | 评审输出（`tools/agent/schemas/review.schema.json`；独立 Claude 的是 `review-claude-independent.json`） |
 | `handover` | 只在超限换家时有（规划/11 §2.5）：`implementer`（`codex`）、`commit`（换家实现提交）、`note`（原因）。换家时 Claude 评审条目另写 `commit`（评审对象：换家实现提交或其后、头提交的祖先），见下面的合并规则 | 编排者 |
 | `trees` | 受保护代码目录的树哈希：路径 → `git rev-parse HEAD:<路径>` | git |
 | `longrun` | 长跑属性测试：次数、种子、结果、对应的资金目录树哈希 | 长跑运行 |
@@ -57,3 +57,5 @@
 - 至少有一条 `claude` 条目的 `commit` 是换家实现提交或其后、头提交的祖先（spec-test 评审不算）；这样的条目全部 `pass`、`open_s0_s1` 为 0、`checklist_complete` 为 true；评审提交到头提交之间只改了本任务证据与台账文件。
 
 任一条不满足，换家记录不算数，照旧按上面的合并规则要求评审（这时要去掉 `handover`、补齐评审）。路径守卫（guard-git）另外保证所有改动都在台账 `paths` 内。
+
+独立 Claude（负责人 2026-10-21，`ops/approvals.yaml` 第 36 条；`tools/agent/README.md` §14）：Codex 不可用或额度不足时，无上下文的独立 Claude 子代理（`tools/agent/claude-run.sh`）写的评审记为 `"reviewer": "claude-independent", "engine": "claude-independent"`，条件与 Codex 条目相同（`pass`、`open_s0_s1` 为 0、`checklist_complete` 为 true），顶替缺的那一家（Opus 实现时顶替 `codex`，Codex 实现时顶替 `claude`；台账读不到时两家里只能一家是顶替；换家时绑定换家提交的独立 Claude 条目算 Claude 评审）。任何条目的 `engine` 与 `reviewer` 不一致都拒收——独立 Claude 的产出不得记成 `codex`。`spec_test_review` 的确认方：台账 `tester: codex` → `claude` 或 `claude-independent`；`claude` → `codex` 或 `claude-independent`；`claude-independent` → `claude` 或另一次 `claude-independent`。

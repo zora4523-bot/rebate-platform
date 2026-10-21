@@ -1,0 +1,33 @@
+id: CT-06zc
+repo: rebate-platform
+title: 门禁改动：Codex 不可用时由无上下文的独立 Claude 子代理写规则测试与对抗评审（claude-run.sh、证据 engine、approvals #36，编排裁定 D10-104）
+type: guard-change
+# 2026-10-21 入账（ops 线）。起因：本机 Codex（ChatGPT 账号）一天三次撞用量上限，写测试与对抗评审全线停摆；负责人 10-21 决定
+# 「对抗review 可以使用Claude 的子代理 没有上下文的去对抗review」，写测试也允许（Codex 能用时仍优先），见 ops/approvals.yaml 第 36 条。
+# 做法：tools/agent/claude-run.sh 以 engine claude-independent 复用 codex-run.sh 的同一流程（命令行、超时、退出码、可信根、
+# 运行目录、meta.json），每次 claude -p 新会话（不 resume / continue、不落会话、--safe-mode --restricted、无 MCP 与技能），
+# 模型 claude-opus-5-5；评审只给读文件与只读 git，结束后工作区不得有任何变化（否则 12）；写测试只限台账 test_paths 与 paths
+# （Edit 规则，大括号展开），台账 tester 须先改为 claude-independent；用量上限 / 过载映射 11；账号由 CLAUDE_INDEPENDENT_CONFIG_DIR 指定，
+# 不读凭据，调用方环境里的 API key 不传给子进程。evidence-check：reviewer claude-independent 可顶替缺的一家（同样 pass、0 个 S0/S1、
+# 资金清单齐全），engine 与 reviewer 不符拒收，独立 Claude 条目必须写 engine；red_exempt 的确认方相应扩展。task-file：tester 可为
+# claude-independent。state.ts：轮次计数不分引擎、上限不变，失败熔断按引擎分开（bump-attempt --engine）。
+# tools/ 与 AGENTS.md、ops/approvals.yaml 属保护路径第三类：负责人本次决定（第 36 条）；本 PR 由编排派无上下文的独立 Claude 子代理
+# 对抗评审，评审通过、检查全绿后按 approvals #24 加标签。tools 自己的单元测试由实现者写（只增），不需要先写规则测试。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/agent/**'
+  - 'tools/ci/evidence-check{,.test}.ts'
+  - 'tools/lib/{task-file,glob}{,.test}.ts'
+  - 'tools/ops/{state,status,task,brief}{,.test}.ts'
+  - 'ops/approvals.yaml'
+  - 'ops/evidence/README.md'
+  - 'ops/tasks/CT-06zc.yaml'
+  - 'AGENTS.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null

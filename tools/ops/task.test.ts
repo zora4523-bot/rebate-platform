@@ -772,3 +772,26 @@ it('[CT-06n] the exemption list is frozen at the open ledgers written before the
     'F1-09f',
   ]);
 });
+
+it('[approvals 36] tester: claude-independent passes check on a new ledger; RV2 still needs tester != impl', () => {
+  writeFiles(root, {
+    'tools/guard/protected-paths.json': JSON.stringify({
+      class1_add_only: ['test/spec/**'],
+      class2_verify_config: [],
+      class3_gates: [],
+    }),
+    'ops/tasks/X1-01q.yaml': good({
+      id: 'X1-01q',
+      impl: 'claude',
+      tester: 'claude-independent',
+      test_paths: "\n  - 'test/spec/demo/**'",
+    }),
+    'ops/tasks/X1-01r.yaml': good({ id: 'X1-01r', impl: 'claude', tester: 'claude-independent' }),
+  });
+  expect(checkTask('X1-01q', opts('RV2'))).toEqual([]);
+  expect(checkTask('X1-01q', opts('RV1'))).toEqual([]);
+  // A rule-test author needs test_paths, whoever it is.
+  expect(checkTask('X1-01r', opts('RV1')).join('\n')).toContain(
+    'test_paths: required for a task with a rule-test author (tester: claude-independent)',
+  );
+});

@@ -3,7 +3,13 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import { applyValueFlags, eventFacts } from './meta.ts';
+import {
+  applyValueFlags,
+  claudeEventFacts,
+  claudeOutput,
+  editRules,
+  eventFacts,
+} from './meta.ts';
 import { AGENT_DIR, REPO } from './testing/fixture.ts';
 
 const dirs: string[] = [];
@@ -167,4 +173,88 @@ it('CLI: events prints shell-readable facts', () => {
   expect(metaCli(['events', '--events', join(dir, 'absent.jsonl')]).stdout).toContain(
     'last_type=none',
   );
+});
+
+// claude-independent (ops/approvals.yaml id 36): `claude -p --output-format stream-json`.
+const SESSION = '"session_id":"abc-123"';
+const claudeLines = (...lines: string[]): string => `${lines.join('\n')}\n`;
+const INIT = `{"type":"system","subtype":"init",${SESSION}}`;
+const OK_RESULT = `{"type":"result","subtype":"success","is_error":false,"structured_output":{"verdict":"pass"},${SESSION}}`;
+
+it('[approvals 36] Claude stream: the final result event decides, a later system line does not', () => {
+  expect(
+    claudeEventFacts(claudeLines(INIT, OK_RESULT, `{"type":"system","subtype":"task_summary"}`), ''),
+  ).toEqual({ lastType: 'result.success', threadId: 'abc-123', capacity: false });
+  // No result at all: the type of the last line; an error result is result.error.
+  expect(claudeEventFacts(claudeLines(INIT, '{"type":"assistant"}'), '').lastType).toBe('assistant');
+  expect(
+    claudeEventFacts(
+      claudeLines(INIT, `{"type":"result","subtype":"success","is_error":true,${SESSION}}`),
+      '',
+    ).lastType,
+  ).toBe('result.error');
+  expect(claudeEventFacts('', '').lastType).toBe('none');
+});
+
+it('[approvals 36] Claude capacity: a rejected rate limit, HTTP 429 / 529, a usage-limit text; not quoted content', () => {
+  const error = (extra: string) =>
+    `{"type":"result","subtype":"success","is_error":true,${extra},${SESSION}}`;
+  expect(
+    claudeEventFacts(
+      claudeLines(INIT, '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected"}}'),
+      '',
+    ).capacity,
+  ).toBe(true);
+  expect(
+    claudeEventFacts(
+      claudeLines(INIT, '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}', OK_RESULT),
+      '',
+    ).capacity,
+  ).toBe(false);
+  expect(claudeEventFacts(claudeLines(error('"api_error_status":529')), '').capacity).toBe(true);
+  expect(claudeEventFacts(claudeLines(error('"result":"Claude AI usage limit reached|1792581000"')), '').capacity).toBe(true);
+  expect(claudeEventFacts('', 'API Error: 529 Overloaded').capacity).toBe(true);
+  // The same text in an ordinary message (a file the model read) is data.
+  expect(
+    claudeEventFacts(
+      claudeLines(INIT, '{"type":"user","message":{"content":"You\'ve hit your limit"}}', error('"result":"boom"')),
+      '',
+    ).capacity,
+  ).toBe(false);
+});
+
+it('[approvals 36] Claude output: only the structured output of a successful final result', () => {
+  expect(claudeOutput(claudeLines(INIT, OK_RESULT))).toEqual({ verdict: 'pass' });
+  expect(
+    claudeOutput(
+      claudeLines(INIT, `{"type":"result","subtype":"success","is_error":true,"structured_output":{"verdict":"pass"}}`),
+    ),
+  ).toBeNull();
+  expect(claudeOutput(claudeLines(INIT, `{"type":"result","subtype":"success","is_error":false,"result":"text"}`))).toBeNull();
+  expect(claudeOutput(claudeLines(INIT))).toBeNull();
+  // The CLI writes the file only when there is an output.
+  const dir = scratch();
+  const events = join(dir, 'events.jsonl');
+  writeFileSync(events, claudeLines(INIT, OK_RESULT));
+  expect(metaCli(['claude-output', '--events', events, '--out', join(dir, 'out.json')]).status).toBe(0);
+  expect(JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8'))).toEqual({ verdict: 'pass' });
+  writeFileSync(events, claudeLines(INIT));
+  expect(metaCli(['claude-output', '--events', events, '--out', join(dir, 'none.json')]).status).toBe(0);
+  expect(() => readFileSync(join(dir, 'none.json'))).toThrow();
+});
+
+it('[approvals 36] edit rules: one Edit(/glob) per glob, braces expanded, nothing outside the repository', () => {
+  expect(editRules(['test/spec/a/**,test/{acceptance,properties}/a/**', 'src/a.ts'])).toEqual([
+    'Edit(/test/spec/a/**)',
+    'Edit(/test/acceptance/a/**)',
+    'Edit(/test/properties/a/**)',
+    'Edit(/src/a.ts)',
+  ]);
+  expect(editRules(['', 'src/a.ts,src/a.ts'])).toEqual(['Edit(/src/a.ts)']);
+  expect(() => editRules(['../x/**'])).toThrow('not a repository-relative glob');
+  expect(() => editRules(['/etc/**'])).toThrow('not a repository-relative glob');
+  const cli = metaCli(['edit-rules', '--globs', 'a/{b,c}.ts', '--globs', 'd/**']);
+  expect(cli.status).toBe(0);
+  expect(cli.stdout).toBe('Edit(/a/b.ts)\nEdit(/a/c.ts)\nEdit(/d/**)\n');
+  expect(metaCli(['events', '--engine', 'gemini', '--events', '/dev/null']).status).toBe(2);
 });

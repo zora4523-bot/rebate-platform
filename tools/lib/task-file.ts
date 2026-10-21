@@ -47,7 +47,12 @@ export type TaskFile = {
    */
   red_exempt: RedExemptDeclaration[];
   impl: 'codex' | 'claude';
-  tester: 'codex' | 'claude' | 'none';
+  /**
+   * Who writes the rule tests. `claude-independent` (owner decision 2026-10-21, ops/approvals.yaml
+   * id 36): a fresh Claude context through tools/agent/claude-run.sh, when Codex is not available;
+   * never the implementing context.
+   */
+  tester: 'codex' | 'claude' | 'claude-independent' | 'none';
   accept: string[];
   status: 'todo' | 'done';
   pr: number | null;
@@ -82,7 +87,7 @@ export const TASK_TYPES = [
   'sync',
 ] as const;
 export const TASK_IMPLS = ['codex', 'claude'] as const;
-export const TASK_TESTERS = ['codex', 'claude', 'none'] as const;
+export const TASK_TESTERS = ['codex', 'claude', 'claude-independent', 'none'] as const;
 export const TASK_STATUSES = ['todo', 'done'] as const;
 
 /** A section number of 规划/04 as written in its headings: "2", "6.1", "10.2". */

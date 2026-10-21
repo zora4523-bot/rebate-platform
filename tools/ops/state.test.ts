@@ -626,3 +626,134 @@ it(
   },
   CLI_TIMEOUT,
 );
+
+/** Like writeCalls, with an `engine` on every meta.json (claude-run.sh, ops/approvals.yaml id 36). */
+function writeEngineCalls(
+  id: string,
+  calls: { engine?: string; outcome: 'ok' | 'none' }[],
+  from = 0,
+): void {
+  const dir = join(runs, id, 'attempts');
+  calls.forEach((c, i) => {
+    const n = from + i;
+    mkdirSync(join(dir, String(n + 1)), { recursive: true });
+    const started = new Date(T0.getTime() + n * 60_000).toISOString();
+    writeFileSync(
+      join(dir, String(n + 1), 'meta.json'),
+      JSON.stringify({
+        mode: 'impl',
+        phase: 'test',
+        ...(c.engine === undefined ? {} : { engine: c.engine }),
+        task: id,
+        started_at: started,
+        finished_at: started,
+        exit_code: c.outcome === 'ok' ? 0 : 124,
+        has_output: c.outcome === 'ok',
+        idle_killed: false,
+        validation: c.outcome === 'ok' ? 'ok' : 'not-run',
+      }),
+    );
+  });
+}
+
+it('[approvals 36] the failure breakers count each engine apart; a meta.json without engine is Codex', () => {
+  const id = 'G7-01';
+  const independent = 'claude-independent';
+  // Three Codex calls in a row without output stop Codex for the task, not the Claude calls.
+  writeEngineCalls(id, [{ outcome: 'none' }, { engine: 'codex', outcome: 'none' }, { outcome: 'none' }]);
+  expect(taskCalls(id).reasons.map((r) => r.breaker)).toEqual(['no_output']);
+  expect(taskCalls(id, independent)).toEqual({
+    task: id,
+    calls: 0,
+    consecutive_no_output: 0,
+    reasons: [],
+  });
+  expect(() => bumpAttempt(id, 'test', T0)).toThrow(/连续 3 次调用没有产出/);
+  expect(bumpAttempt(id, 'test', T0, independent).attempts.test).toBe(1);
+  // And the other way round, with its own message.
+  writeEngineCalls(
+    id,
+    [
+      { engine: independent, outcome: 'none' },
+      { engine: independent, outcome: 'none' },
+      { engine: independent, outcome: 'none' },
+    ],
+    3,
+  );
+  const claude = taskCalls(id, independent);
+  expect(claude).toMatchObject({ calls: 3, consecutive_no_output: 3 });
+  expect(claude.reasons[0]?.message).toContain('G7-01: 独立 Claude（claude-run.sh）连续 3 次调用没有产出');
+  expect(() => bumpAttempt(id, 'test', T0, independent)).toThrow(/独立 Claude/);
+  // A Claude call with output does not end the Codex run of failures.
+  writeEngineCalls(id, [{ engine: independent, outcome: 'ok' }], 6);
+  expect(taskCalls(id).consecutive_no_output).toBe(3);
+  expect(taskCalls(id, independent).reasons).toEqual([]);
+  // An unknown engine value counts as Codex (the stricter default).
+  expect(
+    parseCallMeta({ mode: 'impl', engine: 'gemini', started_at: 'x', finished_at: 'x', exit_code: 0 })
+      ?.engine,
+  ).toBe('codex');
+  removeDir(stateFile(id));
+  removeDir(join(runs, id));
+});
+
+it('[approvals 36] the rounds are the task\'s whoever runs them: same counters, same limits', () => {
+  const id = 'G7-02';
+  const independent = 'claude-independent';
+  expect(bumpAttempt(id, 'test', T0).attempts.test).toBe(1);
+  expect(bumpAttempt(id, 'test', T0, independent).attempts.test).toBe(2);
+  expect(bumpAttempt(id, 'test', T0, independent).attempts.test).toBe(3);
+  expect(() => bumpAttempt(id, 'test', T0)).toThrow(/test attempts exhausted \(3 of 3/);
+  expect(() => bumpAttempt(id, 'test', T0, independent)).toThrow(/test attempts exhausted/);
+  // A Claude call without output gives its round back, recorded with its engine; settling the
+  // same call again changes nothing, and a Codex call of the same second is another call.
+  const meta: CallMeta = {
+    mode: 'impl',
+    engine: independent,
+    review_type: null,
+    phase: 'test',
+    started_at: T0.toISOString(),
+    exit_code: 11,
+    has_output: false,
+    idle_killed: false,
+    validation: 'not-run',
+  };
+  expect(settleCall(id, meta, T0)).toMatchObject({ kind: 'test', counted: false, changed: true });
+  expect(readState(id)?.uncounted_calls).toEqual([
+    { kind: 'test', engine: independent, started_at: T0.toISOString(), exit_code: 11, reason: 'capacity' },
+  ]);
+  expect(settleCall(id, meta, T0).changed).toBe(false);
+  const codex = settleCall(id, { ...meta, engine: undefined }, T0);
+  expect(codex.changed).toBe(true);
+  expect(readState(id)?.uncounted_calls[1]).not.toHaveProperty('engine');
+  expect(readState(id)?.attempts.test).toBe(1);
+  // A state file whose uncounted call names an unknown engine is refused.
+  const raw = JSON.parse(readFileSync(stateFile(id), 'utf8')) as Record<string, unknown>;
+  writeFileSync(
+    stateFile(id),
+    JSON.stringify({ ...raw, uncounted_calls: [{ ...meta, kind: 'test', reason: 'capacity', engine: 'x' }] }),
+  );
+  expect(() => readState(id)).toThrow(/uncounted_calls\[0\]/);
+  removeDir(stateFile(id));
+});
+
+it('[approvals 36] bump-attempt --engine on the command line', { timeout: CLI_TIMEOUT }, () => {
+  const ok = runCli('state.ts', ['bump-attempt', 'G7-03', 'test', '--engine', 'claude-independent']);
+  expect(ok.status, ok.stderr).toBe(0);
+  expect(readState('G7-03')?.attempts.test).toBe(1);
+  const review = runCli('state.ts', [
+    'bump-attempt',
+    'G7-03',
+    'review',
+    '--review-type',
+    'money',
+    '--engine',
+    'claude-independent',
+  ]);
+  expect(review.status, review.stderr).toBe(0);
+  expect(readState('G7-03')?.attempts.code).toBe(1);
+  const bad = runCli('state.ts', ['bump-attempt', 'G7-03', 'test', '--engine', 'gemini']);
+  expect(bad.status).toBe(2);
+  expect(bad.stderr).toContain('--engine must be codex or claude-independent');
+  removeDir(stateFile('G7-03'));
+});

@@ -7,10 +7,12 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import {
   CI_REFUSED,
   checkEvidence,
+  engineProblem,
   evidenceProblems,
   handoverPolicy,
   headTreeWithoutEvidence,
   redRequirement,
+  specTestReviewers,
 } from './evidence-check.ts';
 import type { HandoverPolicy, RedRequirement } from './evidence-check.ts';
 import { loadProtected } from '../guard/lib/protected.ts';
@@ -1132,6 +1134,159 @@ it('[approvals 27] the side that did not implement reviews; the other entry is o
   const onlyClaude = commitEvidence(evidence({ reviews: [claudePass] }));
   expect(checkEvidence({ ...input, head: onlyClaude }).problems).toEqual([]);
   git(repo, ['checkout', '-q', branchBack]);
+});
+
+it('[approvals 36] an independent Claude review stands in for the missing side, recorded under its own engine', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const problemsOf = (doc: unknown, implementer?: 'claude' | 'codex' | 'unknown'): string =>
+    evidenceProblems(doc, {
+      prDir: repo,
+      head,
+      task: 'B2-01a',
+      cfg,
+      red: RED,
+      ...(implementer === undefined ? {} : { implementer }),
+    }).join('\n');
+  const independent = {
+    reviewer: 'claude-independent',
+    engine: 'claude-independent',
+    verdict: 'pass',
+    open_s0_s1: 0,
+    checklist_complete: true,
+  };
+  const codexPass = { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true };
+  const claudePass = { reviewer: 'claude', verdict: 'pass', open_s0_s1: 0 };
+  // Opus implemented and Codex was not available: the independent Claude review is enough.
+  expect(problemsOf(evidence({ reviews: [independent] }))).toBe('');
+  expect(problemsOf(evidence({ reviews: [independent] }), 'claude')).toBe('');
+  // Codex implemented: it stands in for the Claude review as well.
+  expect(problemsOf(evidence({ reviews: [independent] }), 'codex')).toBe('');
+  // Ledger unreadable: one side of its own is still needed besides one stand-in.
+  expect(problemsOf(evidence({ reviews: [claudePass, independent] }), 'unknown')).toBe('');
+  expect(problemsOf(evidence({ reviews: [codexPass, independent] }), 'unknown')).toBe('');
+  expect(problemsOf(evidence({ reviews: [independent] }), 'unknown')).toMatch(
+    /missing the codex review/,
+  );
+  expect(problemsOf(evidence({ reviews: [independent, { ...independent }] }), 'unknown')).toMatch(
+    /both sides are independent Claude entries/,
+  );
+  // The same conditions as a Codex entry: pass, no open S0 / S1, the funds checklist complete.
+  expect(problemsOf(evidence({ reviews: [{ ...independent, verdict: 'fail' }] }))).toMatch(
+    /reviews.claude-independent.verdict: must be pass/,
+  );
+  expect(problemsOf(evidence({ reviews: [{ ...independent, open_s0_s1: 1 }] }))).toMatch(
+    /reviews.claude-independent.open_s0_s1: must be 0/,
+  );
+  expect(problemsOf(evidence({ reviews: [{ ...independent, checklist_complete: false }] }))).toMatch(
+    /reviews.claude-independent.checklist_complete: must be true/,
+  );
+  // An extra independent entry next to a passing Codex review is checked all the same.
+  expect(
+    problemsOf(evidence({ reviews: [codexPass, { ...independent, verdict: 'fail' }] })),
+  ).toMatch(/reviews.claude-independent.verdict: must be pass/);
+  // No stand-in, no review: the message says how to record one.
+  expect(problemsOf(evidence({ reviews: [] }))).toMatch(
+    /missing the codex review[\s\S]*reviewer "claude-independent"/,
+  );
+});
+
+it('[approvals 36] an independent Claude review is never filed as Codex\'s: the engine must match the reviewer', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const problemsOf = (doc: unknown): string =>
+    evidenceProblems(doc, { prDir: repo, head, task: 'B2-01a', cfg, red: RED }).join('\n');
+  const codexPass = { reviewer: 'codex', verdict: 'pass', open_s0_s1: 0, checklist_complete: true };
+  // Entries without engine (written before 2026-10-21) stay valid; an explicit codex engine too.
+  expect(problemsOf(evidence({ reviews: [codexPass] }))).toBe('');
+  expect(problemsOf(evidence({ reviews: [{ ...codexPass, engine: 'codex' }] }))).toBe('');
+  // A Claude review recorded as Codex's is refused.
+  expect(
+    problemsOf(evidence({ reviews: [{ ...codexPass, engine: 'claude-independent' }] })),
+  ).toMatch(/reviews.codex.engine: engine claude-independent does not match reviewer "codex"/);
+  expect(problemsOf(evidence({ reviews: [{ ...codexPass, engine: 'claude' }] }))).toMatch(
+    /reviews.codex.engine: engine claude does not match/,
+  );
+  expect(problemsOf(evidence({ reviews: [{ ...codexPass, engine: 'gpt' }] }))).toMatch(
+    /reviews.codex.engine: must be one of codex, claude, claude-independent/,
+  );
+  // An independent Claude entry names its engine, and only that one.
+  const independent = { ...codexPass, reviewer: 'claude-independent' };
+  expect(problemsOf(evidence({ reviews: [independent] }))).toMatch(
+    /reviews.claude-independent.engine: must be "claude-independent"/,
+  );
+  expect(problemsOf(evidence({ reviews: [{ ...independent, engine: 'codex' }] }))).toMatch(
+    /reviews.claude-independent.engine: engine codex does not match/,
+  );
+  expect(engineProblem({ reviewer: 'claude', engine: 'claude' })).toBeNull();
+  expect(engineProblem({ reviewer: 'claude' })).toBeNull();
+});
+
+it('[approvals 36] rule-test reviewers: an independent Claude context confirms red exemptions for any author', () => {
+  expect(specTestReviewers('codex')).toEqual(['claude', 'claude-independent']);
+  expect(specTestReviewers('claude')).toEqual(['codex', 'claude-independent']);
+  expect(specTestReviewers('claude-independent')).toEqual(['claude', 'claude-independent']);
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const cfg = loadProtected(REPO);
+  const problemsOf = (doc: Evidence, tester: 'codex' | 'claude' | 'claude-independent'): string =>
+    evidenceProblems(doc, {
+      prDir: repo,
+      head,
+      task: 'B2-01a',
+      cfg,
+      red: { ...RED, declared: { count: 1, tester } },
+    }).join('\n');
+  const confirmed = {
+    reviewer: 'claude-independent',
+    engine: 'claude-independent',
+    rounds: 1,
+    last_verdict: 'pass',
+    red_exempt_confirmed: true,
+  };
+  for (const tester of ['codex', 'claude', 'claude-independent'] as const) {
+    expect(problemsOf(evidence({ spec_test_review: confirmed }), tester), tester).toBe('');
+  }
+  // Tests of an independent Claude call: the orchestrator's Claude may confirm, Codex is not listed.
+  expect(
+    problemsOf(evidence({ spec_test_review: { ...confirmed, reviewer: 'claude', engine: 'claude' } }), 'claude-independent'),
+  ).toBe('');
+  expect(
+    problemsOf(evidence({ spec_test_review: { ...confirmed, reviewer: 'codex', engine: 'codex' } }), 'claude-independent'),
+  ).toMatch(/spec_test_review.reviewer: .*reviewer \(claude\)/);
+  // The engine of the confirmation must match its reviewer too.
+  expect(
+    problemsOf(evidence({ spec_test_review: { ...confirmed, reviewer: 'claude' } }), 'codex'),
+  ).toMatch(/spec_test_review.engine: engine claude-independent does not match reviewer "claude"/);
+});
+
+it('[approvals 36] after a handover an independent Claude review of the handover commit counts as the Claude review', () => {
+  const head = git(repo, ['rev-parse', 'HEAD']);
+  const impl = git(repo, ['rev-list', '--reverse', `${specCommit}..${head}`]).split('\n')[0]!;
+  const cfg = loadProtected(REPO);
+  const handover = { implementer: 'codex', commit: impl, note: 'Opus implementation rounds used up' };
+  const problemsOf = (reviews: unknown[]): string =>
+    evidenceProblems(evidence({ handover, reviews }), {
+      prDir: repo,
+      head,
+      task: 'B2-01a',
+      cfg,
+      red: RED,
+      handover: { allowed: true, reason: 'task risk RV1', paths: ['packages/money/src/**'] },
+    }).join('\n');
+  const bound = {
+    reviewer: 'claude-independent',
+    engine: 'claude-independent',
+    verdict: 'pass',
+    open_s0_s1: 0,
+    checklist_complete: true,
+    commit: impl,
+  };
+  expect(problemsOf([bound])).toBe('');
+  expect(problemsOf([{ ...bound, verdict: 'fail' }])).toMatch(/reviews.claude.verdict: must be pass/);
+  expect(problemsOf([{ ...bound, engine: 'codex' }])).toMatch(/reviews.claude.engine/);
+  expect(problemsOf([{ ...bound, commit: specCommit }])).toMatch(
+    /missing the claude review of the handover implementation/,
+  );
 });
 
 it('[approvals 32] a pure migration rename hotfix needs no task branch and no evidence; anything more is refused', () => {

@@ -69,6 +69,29 @@ export function splitTopLevelCommas(text: string): string[] {
   return parts;
 }
 
+/**
+ * Expands the `{a,b}` alternatives of a glob into plain globs (nested braces included), for
+ * matchers without alternatives (Claude permission rules, ops/approvals.yaml id 36):
+ * `tools/ops/task{,.test}.ts` → `tools/ops/task.ts`, `tools/ops/task.test.ts`.
+ */
+export function expandBraces(glob: string): string[] {
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === '\\') {
+      i++;
+    } else if (c === '{') {
+      const close = matchingBrace(glob, i);
+      if (close === -1) throw new Error(`unbalanced "{" in glob: ${glob}`);
+      const head = glob.slice(0, i);
+      const tail = glob.slice(close + 1);
+      return splitTopLevelCommas(glob.slice(i + 1, close)).flatMap((alt) =>
+        expandBraces(`${head}${alt}${tail}`),
+      );
+    }
+  }
+  return [glob];
+}
+
 function convert(glob: string, atSegmentStart: boolean): string {
   let out = '';
   let segStart = atSegmentStart;

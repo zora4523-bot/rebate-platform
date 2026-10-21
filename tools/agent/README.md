@@ -1,6 +1,6 @@
 # tools/agent：Codex 调用包装与派工
 
-这里是本仓库调用 Codex 的唯一入口，也写明 Claude 实现子代理怎么派。规则出处：规划仓库 `规划/11_开发协作与自主推进.md` §1.1、§2.2–§2.5、§3.1、§3.3、§4.3、§9.3。本目录属于保护路径第三类（门禁与规则），改动要负责人确认。
+这里是本仓库调用 Codex 的唯一入口，也写明 Claude 实现子代理怎么派；Codex 不可用时顶替它的独立 Claude 子代理也只经这里的 `claude-run.sh`（§14）。规则出处：规划仓库 `规划/11_开发协作与自主推进.md` §1.1、§2.2–§2.5、§3.1、§3.3、§4.3、§9.3。本目录属于保护路径第三类（门禁与规则），改动要负责人确认。
 
 一句话：`codex-run.sh` 把 Codex 关在固定的沙箱参数里跑一次，跑完告诉编排者「有没有可用产出」；任务做没做对，不看它，只看沙箱外的 `pnpm verify`。
 
@@ -15,6 +15,7 @@
 | Codex 新只读会话 | 对抗评审（所有区域、所有风险级；Claude 写的实现只由它评审，推理档位默认 `low`） | `codex-run.sh review <id>` |
 | Claude 新子代理（不是实现那个） | 规则测试过审（spec-test）；Codex 实现的代码（换家、第 23 / 30 条首发）的评审 | §11 |
 | Codex（换家，一次） | Opus 超限后的 RV0 / RV1 实现 | `dispatch.sh <id> --handover`（`codex-run.sh impl --phase handover`） |
+| 独立 Claude 新上下文（`claude-opus-5-5`，每次 `claude -p` 新会话） | Codex 不可用或额度不足时顶替 Codex：写规则测试（先红）、对抗评审（money / general / contract / spec-test）；Codex 能用时仍优先 Codex（负责人 2026-10-21，`ops/approvals.yaml` 第 36 条） | `claude-run.sh impl <id> --phase test`、`claude-run.sh review <id>`，见 §14 |
 
 **执行边界**（规划第 2 轮评审 RO2-01/04）：Codex 沙箱里只做不执行测试的静态检查（类型检查、lint）；任何运行测试的命令都由编排者在隔离容器（`tools/ops/verify-container.sh`）或 CI 里跑；Codex 生成的任何可执行内容（规则测试、骨架、换家实现）都不在宿主上运行。Opus 实现子代理跑测试也只经 `verify-container.sh <id> --fast`，因为里面有 Codex 写的测试。`verify-container.sh` 没有宿主回退（CR-01）：Docker 用不了就停下，交给 CI。
 
@@ -31,6 +32,7 @@
 | 文件 | 作用 |
 | --- | --- |
 | `codex-run.sh` | 包装脚本：`impl`（`--phase test` 写测试 / `--phase handover` 换家实现 / `--phase impl` 旧台账的 Codex 实现）、`review`、`selfcheck` |
+| `claude-run.sh` | 同一包装脚本的独立 Claude 引擎（第 36 条）：以 `AGENT_ENGINE=claude-independent` 载入 `codex-run.sh`，命令行、超时、退出码、可信根、运行目录与 `meta.json` 相同；只有 `impl --phase test`、`review`、`selfcheck`（§14） |
 | `supervise.pl` | 进程组监管：硬超时、无活动看门狗、整组击杀、确认组内无存活进程 |
 | `dispatch.sh` | 派工前检查 + 后台启动一次 Codex 写测试（或 `--handover` 换家实现） |
 | `post-run.sh` | Codex 运行结束后：先跑守卫，再给出下一步动作 |
@@ -40,7 +42,7 @@
 | `common.sh` | 三个脚本共用的路径解析与进程组函数 |
 | `schemas/impl.schema.json`、`schemas/review.schema.json` | 结构化产出的 schema（每个 object 都是 `additionalProperties:false` + 全字段必填）；评审产出另有 `out_of_scope`（任务 refs 以外的问题，不计入结论） |
 | `prompts/review-{money,general,contract,spec-test}.md` | 四种评审提示词；`spec-test` 现由 Claude 新子代理使用（§11），其余三种是 Codex 代码评审用的，换家或 Codex 首发实现时 Claude 评审子代理也用 |
-| `testing/` | 测试用假 `codex`（`couli-fake-codex.sh`）和夹具；不连模型、不耗额度 |
+| `testing/` | 测试用假 `codex`（`couli-fake-codex.sh`）、假 `claude`（`couli-fake-claude.sh`）和夹具；不连模型、不耗额度 |
 
 ## 2. 命令
 
@@ -119,7 +121,7 @@ node tools/agent/validate-output.ts --schema <schema> --file <json> [--money] [-
 | `verify/<n>/` | 沙箱外验证的日志与结果（`tools/ops/verify-container.sh` 写） |
 | `out-of-scope.md` | 规则测试评审范围以外的条目，按 `key` 去重累积追加（`validate-output.ts --out-of-scope-log` 写，不随 `attempts/` 归档）；编排者据此给后续任务写规则测试 |
 
-`meta.json` 字段：`mode`、`phase`（只 `impl` 有：`test` / `handover`）、`task`、`worktree`、`run`、`started_at`、`finished_at`、`exit_code`、`codex_exit`、`timed_out`、`idle_killed`、`aborted`、`has_output`、`capacity_error`、`head_before`、`head_after`、`thread_id`、`codex_version`、`model`、`last_event`、`pgid`、`group_gone`、`stragglers_killed`、`validation`、`validation_messages`、`position_changed`、`other_task_branches_changed`、`timeout_secs`、`idle_secs`、`wrapper_pid`、`output_file`、`events_file`，评审另有 `review_type`、`base`。`has_output` 只表示产出通过了校验；位置断言失败时 `exit_code` 仍是 12。
+`meta.json` 字段：`mode`、`engine`（`codex` / `claude-independent`，§14；没有这个字段的旧文件是 Codex）、`phase`（只 `impl` 有：`test` / `handover`）、`task`、`worktree`、`run`、`started_at`、`finished_at`、`exit_code`、`codex_exit`、`timed_out`、`idle_killed`、`aborted`、`has_output`、`capacity_error`、`head_before`、`head_after`、`thread_id`、`codex_version`、`model`、`last_event`、`pgid`、`group_gone`、`stragglers_killed`、`validation`、`validation_messages`、`position_changed`、`other_task_branches_changed`、`timeout_secs`、`idle_secs`、`wrapper_pid`、`output_file`、`events_file`，评审另有 `review_type`、`base`。`has_output` 只表示产出通过了校验；位置断言失败时 `exit_code` 仍是 12。
 
 ## 6. 禁止的用法（规划/11 §2.4 禁用）
 
@@ -256,3 +258,44 @@ Agent 评测集与注入集放私有库（规划/11 §1.1）。读脚本的结�
 - 台账 `test_paths`：只有 `tools/guard/legacy-tasks.json` 列出的、合并分工切换时 origin/main（`85f4f53`，#97 合入前最后一个主干提交）上已有的 82 个台账可以没有（提交守卫对它们沿用全部第一类路径）；之后的新任务只要有测试作者就必须写，`task.ts check` 与提交守卫都拒绝缺字段（CR2-02）。
 - 隔离红测用可信的 Vitest reporter（`tools/ops/verify-image/red-reporter.mjs`，只读挂进容器）保留失败的 cause 链：fast-check 把属性里抛出的错误只放在 `cause` 里，Vitest 自带的 JSON reporter 会丢掉它；另导出每条测试的 annotation（JSON 附件解析后放 `json`，构建冒烟的诊断靠它）。red-check 以最内层 cause 判定：`AssertionError` 或骨架的 `NotImplemented` 才算有效红；属性只「返回 false」不算（属性的先红必须在属性里用 `expect` 断言，失败报告才显示底层断言）；看不出原因一律不算（CR2-03）。
 - 每个应跑的文件由可信项目表 `tools/ops/verify-image/red-projects.json`（与 `test/`、`packages/testing/` 的 Vitest 配置逐条核对，见 `tools/ops/red-plan.test.ts`）分到 `spec-unit`、`spec-int`（含 `acceptance/**`，起一次性 PG）、`spec-browser`（`spec/**/*.browser.test.{ts,tsx}`，真 Chromium；只有 `test/` 的单元配置排除这些文件，其他包里的浏览器测试会被单元层拾起并失败，不会静默不跑）、`build-smoke`（`spec/**/*.smoke.test.ts`，构建产物 + 真 Chromium，同样只有 `test/` 的单元配置排除）或 `testing-unit`；没有项目收的文件（如 `test/replay/**`）让红测直接失败（CR2-04）。
+
+## 14. Codex 不可用时：独立 Claude 子代理写测试与对抗评审（`claude-run.sh`）
+
+负责人 2026-10-21（`ops/approvals.yaml` 第 36 条，编排裁定 D10-104）：「对抗review 可以使用Claude 的子代理 没有上下文的去对抗review」，写规则测试也允许——**Codex 不可用或额度不足时**，写测试与对抗评审（money / general / contract / spec-test）交给无上下文的独立 Claude；**Codex 能用时仍优先 Codex**；证据如实记为独立 Claude，不得记成 `codex`。
+
+**什么时候用**：codex-run.sh 退出 11（用量上限、容量）或 Codex 账号 / 模型不可用（如 400 `model is not supported`），且编排没有说「等 Codex 恢复」。脚本不判断 Codex 是否可用，这一条靠编排与各线遵守；`claude-run.sh` 的运行在 `meta.json` 里一律是 `engine: "claude-independent"`，事后可查。
+
+**命令**（与 §2 相同，只是脚本名不同）：
+
+```bash
+tools/agent/claude-run.sh impl <id> [--phase test] [--worktree <dir>] [--timeout-min <n>] [--dry-run]
+tools/agent/claude-run.sh review <id> [--worktree <dir>] [--review-type money|general|contract|spec-test] [--base <ref>] [--timeout-min <n>] [--dry-run]
+tools/agent/claude-run.sh selfcheck      # 只读 claude --help，不发起任何 Claude 回合
+```
+
+**和 codex-run.sh 一样的**：参数不透传；硬超时与无活动阈值（实现 30 / 5 分钟、评审 15 / 12 分钟，只能调小）；退出码 0 / 10 / 11 / 12 / 124 / 2（用量上限、`rate_limit_event` 被拒、HTTP 429 / 529 都是 11，不计轮次）；提示词、schema、`validate-output.ts` 从可信根读；运行目录 `<runs>/<id>/`、`attempts/<n>/` 归档、位置断言、`state.ts settle`；评审类型跟风险级（RV2 默认 money）。
+
+**不一样的**：
+
+- 每次都是全新上下文：`claude -p --model claude-opus-5-5 --effort high --output-format stream-json --verbose --include-partial-messages --no-session-persistence --safe-mode --restricted --disable-slash-commands --strict-mcp-config --permission-mode dontAsk`，从不带 `--resume` / `--continue`；不读用户、项目、插件配置与 CLAUDE.md，没有 MCP 与技能，不能起子代理。结构化产出用 `--json-schema`（可信根 schema 原文），取 `result` 事件的 `structured_output`；成功的判定是最后一个 `result` 事件为 `success` 且非错误（`last_event: result.success`）。
+- **评审只读**：工具只有 Read、Grep、Glob 与只读 git（`git status / diff / log / show / ls-files / rev-parse / merge-base`，以及对规划仓库的 `git -C <规划仓库> show / log`），其余一律自动拒绝；Claude 没有只读沙箱，所以结束后另核对工作区（含未跟踪文件）不变，变了退出 12、产出作废。产出文件是 `review-claude-independent.json`（不是 `review-codex.json`）。spec-test 评审只要可信台账写明了作者（`codex` / `claude` / `claude-independent`）都接受，读不到作者拒绝；换家后的代码评审也可以由它做（不是 Codex 评审自己）。
+- **写测试只限本任务**：只有 `--phase test`（`handover` / `impl` 拒绝：实现仍归 Opus 子代理，换家仍归 Codex）；先开台账 PR 把 `tester` 改为 `claude-independent`（可信台账不是这个值就拒绝，退出 2），台账要有 `test_paths`。可编辑范围 = 台账 `test_paths` + `paths`（骨架），大括号展开成 `Edit(/<glob>)` 规则，其余写入自动拒绝；命令只放只读 git 与 `pnpm exec tsc`、`pnpm exec eslint`（静态检查，不跑测试）。结果照常过 `path-guard.ts` / `protected-paths.ts`、隔离红测。写测试的上下文与写实现的 Opus 子代理不是同一个，规则测试过审（spec-test）再起另一个独立 Claude 或由编排侧 Claude 子代理做（§11）。
+- **账号**：`CLAUDE_INDEPENDENT_CONFIG_DIR=<某账号的 Claude 配置目录>`（绝对路径、已存在、不在仓库 / 可信副本 / 运行目录下）作为子进程的 `CLAUDE_CONFIG_DIR`；不设就沿用当前环境。脚本只用目录名，不读其中任何文件；调用方环境里的 `ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`、`CLAUDE_CODE_OAUTH_TOKEN` 不传给子进程（不会误走按量计费的 API key）。
+- `meta.json` 与 codex 相同的字段，另有 `engine: "claude-independent"`、`agent_exit`、`agent_version`、`config_dir`，没有 `codex_exit` / `codex_version`；codex 的 `meta.json` 现在也写 `engine: "codex"`。Codex 的 token 账本（`usage.ts`）不记 Claude 调用。
+
+**计数**（`tools/ops/state.ts`）：轮次是任务的，不分引擎——写测试 3 次、规则测试评审 2 轮、代码评审 3 轮，Codex 与独立 Claude 合计；派发前照旧 `state.ts bump-attempt <id> test|review … --engine claude-independent`。失败熔断（每任务 10 次调用、连续 3 次无产出）按引擎分开算：Codex 撞用量上限或连败不挡独立 Claude，反过来也一样。`post-run.sh <id>` 可照常用于写测试那次运行（它读 `meta.impl.json` 与 `impl.json`）。
+
+**证据怎么记**（`ops/evidence/<id>.json`，`tools/ci/evidence-check.ts`）：
+
+- 独立 Claude 的评审条目写 `"reviewer": "claude-independent", "engine": "claude-independent"`，其余字段与 Codex 条目相同：`verdict: "pass"`、`open_s0_s1: 0`、`checklist_complete: true`（资金清单必填）。它顶替缺的那一家：Opus 实现时顶替 `codex` 条目，Codex 实现时顶替 `claude` 条目；台账读不到时两家都要，其中只能有一家是顶替。换家时，绑定换家提交的独立 Claude 条目（写 `commit`）算作 Claude 评审。
+- 任何条目写了 `engine`，就必须等于它的 `reviewer`；把独立 Claude 的产出写成 `reviewer: "codex"`（带 `engine: "claude-independent"`）会被拒收；独立 Claude 条目不写 `engine` 也拒收。旧条目（不带 `engine` 的 `codex` / `claude`）照旧有效，新写的条目建议都带 `engine`。
+- `spec_test_review`（红测豁免的确认）：台账 `tester: codex` → `claude` 或 `claude-independent`；`tester: claude` → `codex` 或 `claude-independent`；`tester: claude-independent` → `claude` 或另一次 `claude-independent`；写了 `engine` 同样要与 `reviewer` 一致。
+
+示例（Opus 实现、Codex 用不了时的资金评审）：
+
+```json
+"reviews": [
+  { "reviewer": "claude-independent", "engine": "claude-independent", "review_type": "money", "verdict": "pass", "open_s0_s1": 0, "checklist_complete": true, "run": "couli-runs/<id>/attempts/<n>/meta.json" }
+]
+```
+

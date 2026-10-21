@@ -34,6 +34,13 @@
 # only when the owner decides otherwise (只在负责人另有决定时改), not an orchestrator knob; only
 # minimal, low, medium, high and xhigh are accepted, anything else is a usage error (exit 2).
 # impl mode stays at high.
+#
+# Independent Claude (owner decision 2026-10-21, ops/approvals.yaml id 36): when Codex is not
+# available or out of quota, tools/agent/claude-run.sh runs the same flow with a fresh Claude
+# context instead (`claude -p`, never resumed). It sources this file with
+# AGENT_ENGINE=claude-independent; executed directly, this file always runs Codex. The engine is
+# recorded as `engine` in meta.json, and the binary always follows the engine, so a run can never
+# be recorded as the other engine's. Differences of that engine are marked "claude-independent".
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -45,7 +52,28 @@ SELF_REPO="$(cd "$SELF_DIR/../.." && pwd -P)"
 # Never take optional git locks (no opportunistic index refresh): this script only reads git state.
 export GIT_OPTIONAL_LOCKS=0
 
-MODEL='gpt-6-astra'
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then AGENT_ENGINE=codex; fi
+case "${AGENT_ENGINE:-}" in
+  codex)
+    SCRIPT_NAME=codex-run.sh
+    MODEL='gpt-6-astra'
+    REVIEW_OUT_NAME=review-codex.json
+    DONE_EVENT=turn.completed
+    ;;
+  claude-independent)
+    SCRIPT_NAME=claude-run.sh
+    MODEL='claude-opus-5-5'
+    REVIEW_OUT_NAME=review-claude-independent.json
+    DONE_EVENT=result.success
+    ;;
+  *)
+    printf 'codex-run.sh: unknown AGENT_ENGINE "%s" (only claude-run.sh sources this file)\n' \
+      "${AGENT_ENGINE:-}" >&2
+    exit 2
+    ;;
+esac
+# Output names of both engines: an earlier review of the other engine is archived as well.
+REVIEW_OUT_NAMES='review-codex.json review-claude-independent.json'
 IMPL_TIMEOUT_MIN=30   # 规划/11 §2.2: hard timeout, implementation
 REVIEW_TIMEOUT_MIN=15 # 规划/11 §2.2: hard timeout, review
 IMPL_IDLE_SECS=300    # 规划/11 §2.2: inactivity threshold, implementation
@@ -56,6 +84,8 @@ REF_PATTERN='^[A-Za-z0-9][A-Za-z0-9._/@^~-]*$'
 MODE=''
 PHASE=''
 TASK=''
+TASK_PATHS=''
+TASK_TEST_PATHS=''
 WT_ARG=''
 REVIEW_TYPE=''
 REVIEW_EFFORT=''
@@ -63,9 +93,22 @@ BASE_ARG=''
 TIMEOUT_MIN=''
 DRY_RUN=0
 
-log() { printf 'codex-run: %s\n' "$*" >&2; }
+log() { printf '%s: %s\n' "${SCRIPT_NAME%.sh}" "$*" >&2; }
 
 print_usage() {
+  if [ "$AGENT_ENGINE" = claude-independent ]; then
+    cat <<'EOF'
+usage: claude-run.sh impl   <id> [--phase test] [--worktree <dir>] [--timeout-min <n>] [--dry-run]
+       claude-run.sh review <id> [--worktree <dir>] [--review-type money|general|contract|spec-test]
+                                 [--base <ref>] [--timeout-min <n>] [--dry-run]
+       claude-run.sh selfcheck
+env:   CLAUDE_INDEPENDENT_CONFIG_DIR  Claude configuration directory (the account) of the fresh
+                                      context, passed as CLAUDE_CONFIG_DIR; unset: the current one
+exit:  0 usable output | 10 no usable output | 11 model capacity or usage limit
+       12 position assertion failed | 124 timeout | 2 usage error or refused argument
+EOF
+    return 0
+  fi
   cat <<'EOF'
 usage: codex-run.sh impl   <id> [--phase test|handover] [--worktree <dir>] [--timeout-min <n>]
                                 [--dry-run]
@@ -104,6 +147,14 @@ check_forbidden() {
   local text="$1" needle
   for needle in network_access sandbox_mode --add-dir \
     --dangerously-bypass-approvals-and-sandbox --worktree danger-full-access resume CODEX_HOME; do
+    case "$text" in
+      *"$needle"*) refuse "argument contains \"$needle\": $text" ;;
+    esac
+  done
+  # claude-independent: every call is a fresh context with fixed permissions.
+  [ "$AGENT_ENGINE" = claude-independent ] || return 0
+  for needle in --continue --fork-session --session-id --dangerously-skip-permissions \
+    bypassPermissions --permission-mode --allowedTools --allowed-tools CLAUDE_CONFIG_DIR; do
     case "$text" in
       *"$needle"*) refuse "argument contains \"$needle\": $text" ;;
     esac
@@ -163,6 +214,11 @@ parse_args() {
       test | handover | impl) ;;
       *) fail_usage "unknown phase: $PHASE (expected test, handover or impl)" ;;
     esac
+    # ops/approvals.yaml id 36 covers rule tests and reviews only: the implementation stays the
+    # Opus subagent's (README §10), a handover stays Codex's.
+    if [ "$AGENT_ENGINE" = claude-independent ] && [ "$PHASE" != test ]; then
+      fail_usage "an independent Claude run writes rule tests only (--phase test); --phase $PHASE is not covered by ops/approvals.yaml id 36"
+    fi
   else
     [ -z "$PHASE" ] || fail_usage "--phase applies to impl only"
     resolve_review_effort
@@ -227,7 +283,8 @@ resolve_tools() {
     }
   done
   # 规划/11 §2.4: a separate CODEX_HOME loses the login (401); refuse instead of burning a call.
-  if [ -n "${CODEX_HOME:-}" ] && [ "${CODEX_HOME%/}" != "$HOME/.codex" ]; then
+  if [ "$AGENT_ENGINE" = codex ] && [ -n "${CODEX_HOME:-}" ] &&
+    [ "${CODEX_HOME%/}" != "$HOME/.codex" ]; then
     refuse "CODEX_HOME is set to a non-default directory"
   fi
   # The binary is resolved after the roots (resolve_codex_bin): the test switch depends on RUNS.
@@ -239,26 +296,33 @@ resolve_tools() {
 # `.tmp` directory, so that no real task run can ever be served by a fake that writes a
 # "pass" verdict without a model. Nothing under the repository, a worktree, the run-state
 # directory or the temp directories may be used as the real codex.
+# claude-independent: the same rules for `claude`, with COULI_CLAUDE_BIN as the test switch.
 resolve_codex_bin() {
-  local real
-  if [ -n "${COULI_CODEX_BIN:-}" ]; then
+  local real name=codex switch=COULI_CODEX_BIN replacement
+  if [ "$AGENT_ENGINE" = claude-independent ]; then
+    name=claude
+    switch=COULI_CLAUDE_BIN
+  fi
+  replacement="$(printenv "$switch" || true)"
+  if [ -n "$replacement" ]; then
     if [ "${COULI_AGENT_TEST:-}" != 1 ]; then
-      refuse "COULI_CODEX_BIN is set but COULI_AGENT_TEST=1 is not: a replacement codex is for test fixtures only"
+      refuse "$switch is set but COULI_AGENT_TEST=1 is not: a replacement $name is for test fixtures only"
     fi
     case "/$RUNS/" in
       */.tmp/*) ;;
-      *) refuse "COULI_CODEX_BIN needs a run-state directory under a .tmp directory (got $RUNS)" ;;
+      *) refuse "$switch needs a run-state directory under a .tmp directory (got $RUNS)" ;;
     esac
-    CODEX_BIN="$COULI_CODEX_BIN"
+    CODEX_BIN="$replacement"
     [ -x "$CODEX_BIN" ] || {
-      log "COULI_CODEX_BIN is not executable: $CODEX_BIN"
+      log "$switch is not executable: $CODEX_BIN"
       exit 2
     }
+    resolve_claude_account
     return 0
   fi
-  CODEX_BIN="$(command -v codex || true)"
+  CODEX_BIN="$(command -v "$name" || true)"
   [ -n "$CODEX_BIN" ] || {
-    log "codex binary not found on PATH"
+    log "$name binary not found on PATH"
     exit 2
   }
   real="$(perl -MCwd=realpath -e 'print realpath($ARGV[0]) // $ARGV[0]' "$CODEX_BIN")"
@@ -266,12 +330,45 @@ resolve_codex_bin() {
   for root in "$SELF_REPO" "$TRUSTED" "$(real_dir "$RUNS")" "$RUNS"; do
     [ -n "$root" ] || continue
     case "$real/" in
-      "${root%/}"/*) refuse "codex on PATH resolves to $real, inside $root (a repository, worktree or run-state directory cannot provide the codex binary)" ;;
+      "${root%/}"/*) refuse "$name on PATH resolves to $real, inside $root (a repository, worktree or run-state directory cannot provide the $name binary)" ;;
     esac
   done
   if is_under_tmp "$real"; then
-    refuse "codex on PATH resolves to $real, under a temp directory"
+    refuse "$name on PATH resolves to $real, under a temp directory"
   fi
+  resolve_claude_account
+}
+
+# claude-independent (ops/approvals.yaml id 36): which Claude account runs the fresh context is
+# CLAUDE_INDEPENDENT_CONFIG_DIR, handed to the child as CLAUDE_CONFIG_DIR; unset, the current
+# CLAUDE_CONFIG_DIR (or Claude's default) is kept. Only the directory name is used: no file in it
+# is read here. Sets CLAUDE_ACCOUNT_DIR (empty: inherited).
+resolve_claude_account() {
+  CLAUDE_ACCOUNT_DIR=''
+  [ "$AGENT_ENGINE" = claude-independent ] || return 0
+  local dir="${CLAUDE_INDEPENDENT_CONFIG_DIR:-}" root
+  [ -n "$dir" ] || return 0
+  case "$dir" in
+    /*) ;;
+    *) fail_usage "CLAUDE_INDEPENDENT_CONFIG_DIR must be an absolute directory (got $dir)" ;;
+  esac
+  [ -d "$dir" ] || fail_usage "CLAUDE_INDEPENDENT_CONFIG_DIR is not a directory: $dir"
+  dir="$(real_dir "$dir")"
+  for root in "$SELF_REPO" "$TRUSTED" "$(real_dir "$RUNS")"; do
+    case "$dir/" in
+      "${root%/}"/*) refuse "CLAUDE_INDEPENDENT_CONFIG_DIR lies inside $root" ;;
+    esac
+  done
+  CLAUDE_ACCOUNT_DIR="$dir"
+}
+
+# claude-independent: the environment of the child. The account is the configuration directory
+# only; API keys and tokens in the caller's environment are dropped (never read), so a call is
+# neither billed to an API key nor run on another account by accident.
+claude_child_env() {
+  [ "$AGENT_ENGINE" = claude-independent ] || return 0
+  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL CLAUDE_CODE_OAUTH_TOKEN
+  if [ -n "$CLAUDE_ACCOUNT_DIR" ]; then export CLAUDE_CONFIG_DIR="$CLAUDE_ACCOUNT_DIR"; fi
 }
 
 resolve_roots() {
@@ -287,6 +384,7 @@ read_task_info() {
   TASK_PATHS=''
   TASK_TESTER=''
   TASK_IMPL=''
+  TASK_TEST_PATHS=''
   local task_json=''
   if [ -f "$TRUSTED/tools/ops/task.ts" ]; then
     task_json="$(node "$TRUSTED/tools/ops/task.ts" show "$TASK" --json 2>/dev/null || true)"
@@ -312,13 +410,19 @@ read_task_info() {
       node "$SELF_DIR/meta.ts" get --file /dev/stdin tester 2>/dev/null || true)"
     TASK_IMPL="$(printf '%s\n' "$task_json" |
       node "$SELF_DIR/meta.ts" get --file /dev/stdin impl 2>/dev/null || true)"
+    # claude-independent: where the test phase may write (test_paths and the skeleton paths).
+    TASK_TEST_PATHS="$(printf '%s\n' "$task_json" |
+      node "$SELF_DIR/meta.ts" get --file /dev/stdin test_paths 2>/dev/null || true)"
+    case "$TASK_TEST_PATHS" in
+      *[!A-Za-z0-9_.@*{},/-]* | *..*) TASK_TEST_PATHS='' ;;
+    esac
   fi
   case "$TASK_RISK" in
     RV0 | RV1 | RV2) ;;
     *) TASK_RISK='' ;;
   esac
   case "$TASK_TESTER" in
-    codex | claude | none) ;;
+    codex | claude | claude-independent | none) ;;
     *) TASK_TESTER='' ;;
   esac
 }
@@ -329,9 +433,17 @@ resolve_review_type() {
   # id 19): the spec-test review of such a task is a fresh Claude subagent's (README §11). Only a
   # task whose trusted ledger names Claude as the rule-test author (written before 2026-10-05)
   # still gets a Codex spec-test review; an author that cannot be read is refused (CR-08).
-  if [ "$REVIEW_TYPE" = spec-test ]; then
+  # claude-independent (ops/approvals.yaml id 36): every call is a fresh context, so it may review
+  # the rule tests of any known author (Codex, the orchestrator's Claude, or an earlier
+  # independent Claude call); an author that cannot be read is refused all the same.
+  if [ "$REVIEW_TYPE" = spec-test ] && [ "$AGENT_ENGINE" = claude-independent ]; then
     case "$TASK_TESTER" in
-      claude) ;;
+      codex | claude | claude-independent) ;;
+      *) fail_usage "task $TASK: the rule-test author is unknown (trusted ledger missing or unreadable, or tester: ${TASK_TESTER:-?}); a spec-test review needs the ledger to name the author" ;;
+    esac
+  elif [ "$REVIEW_TYPE" = spec-test ]; then
+    case "$TASK_TESTER" in
+      claude | claude-independent) ;;
       codex) fail_usage "task $TASK: its rule tests are written by Codex (ledger tester: codex); the spec-test review goes to a fresh Claude subagent, not to Codex (ops/approvals.yaml id 19)" ;;
       *) fail_usage "task $TASK: the rule-test author is unknown (trusted ledger missing or unreadable, or tester: ${TASK_TESTER:-?}); a Codex spec-test review needs the ledger to name Claude as the author" ;;
     esac
@@ -347,8 +459,10 @@ resolve_review_type() {
 # goes to a fresh Claude subagent; Codex never reviews its own implementation. The implementer is
 # recorded in the in-flight state (state.ts set --implementer codex, written by dispatch.sh
 # --handover) and, independently, by the meta.json of every handover run in the run directory.
+# claude-independent: a fresh Claude context reviews either implementer (ops/approvals.yaml id 36).
 check_implementer() {
   [ "$REVIEW_TYPE" != spec-test ] || return 0
+  [ "$AGENT_ENGINE" = codex ] || return 0
   local implementer='' f phase mode
   if [ -f "$TRUSTED/tools/ops/state.ts" ]; then
     implementer="$(node "$TRUSTED/tools/ops/state.ts" get "$TASK" 2>/dev/null |
@@ -479,6 +593,14 @@ position_snapshot() {
   printf 'head=%s\nsymbolic=%s\nbranches=%s\nother_task_branches=%s\nstash=%s\n' \
     "$head" "$sym" "$branches" "$others" "$stash" >"$out"
   printf 'index=%s\nstaged=%s\nconfig=%s\nhooks=%s\n' "$index" "$staged" "$config" "$hooks" >>"$out"
+  # claude-independent review: Claude has no read-only sandbox, only a tool allow-list, so the
+  # working tree itself (tracked changes and untracked files, ignored ones aside) must not change.
+  if [ "$AGENT_ENGINE" = claude-independent ] && [ "$MODE" = review ]; then
+    local tree
+    tree="$(git -C "$WT_REAL" status --porcelain=v1 -z --untracked-files=all | git hash-object --stdin)" ||
+      return 1
+    printf 'worktree=%s\n' "$tree" >>"$out"
+  fi
 }
 
 # branch_lines keep|other <symbolic HEAD> <listing>: splits a `refname objectname` listing into
@@ -502,7 +624,7 @@ snapshot_value() {
 # Prints the comma-separated names of the snapshot entries that differ.
 position_changes() {
   local key changed=''
-  for key in head symbolic branches stash index staged config hooks; do
+  for key in head symbolic branches stash index staged config hooks worktree; do
     if [ "$(snapshot_value "$1" "$key")" != "$(snapshot_value "$2" "$key")" ]; then
       changed="${changed:+$changed,}$key"
     fi
@@ -533,7 +655,11 @@ archive_previous() {
     done
   fi
   dest="$RUN/attempts/$((n + 1))"
-  for name in "$OUT_NAME" "$OUT_NAME.rejected" "$EVENTS_NAME" "$ERR_NAME" "wrapper-$MODE"; do
+  local outputs="$OUT_NAME"
+  if [ "$MODE" = review ]; then outputs="$REVIEW_OUT_NAMES"; fi
+  local names=()
+  for name in $outputs; do names+=("$name" "$name.rejected"); done
+  for name in "${names[@]}" "$EVENTS_NAME" "$ERR_NAME" "wrapper-$MODE"; do
     if [ -e "$RUN/$name" ]; then
       mkdir -p "$dest"
       mv "$RUN/$name" "$dest/$name"
@@ -550,9 +676,50 @@ archive_previous() {
   fi
 }
 
+# claude-independent: the permission rules of the fresh context. Every call may read (Read, Grep,
+# Glob; the working directory and the planning repository only, --restricted) and run read-only
+# git commands; the test phase may also edit the task's test_paths and paths (the NotImplemented
+# skeletons; path-guard checks the result again) and run the static checks. Everything else is
+# denied without a prompt (--permission-mode dontAsk). Prints one rule per line.
+claude_rules() {
+  local wt="$1" spec="$2" rule
+  printf '%s\n' Read Grep Glob
+  for rule in 'git status' 'git diff' 'git log' 'git show' 'git ls-files' 'git rev-parse' \
+    'git merge-base'; do
+    printf 'Bash(%s:*)\n' "$rule"
+  done
+  if [ -n "$spec" ]; then
+    printf 'Bash(git -C %s show:*)\nBash(git -C %s log:*)\n' "$spec" "$spec"
+  fi
+  [ "$MODE" = impl ] || return 0
+  printf '%s\n' 'Bash(pnpm exec tsc:*)' 'Bash(pnpm exec eslint:*)'
+  node "$SELF_DIR/meta.ts" edit-rules --globs "$TASK_TEST_PATHS" --globs "$TASK_PATHS"
+}
+
 # Sets CODEX_ARGV. Arguments: worktree, run directory, prompt. This is the command of 规划/11 §2.4.
+# claude-independent: `claude -p` in the worktree (the supervisor starts it there), a new
+# session every time (never --resume / --continue, not persisted), no user, project or plugin
+# configuration (--safe-mode, --restricted, no MCP, no skills), model claude-opus-5-5, the
+# trusted schema as --json-schema; the answer is the `structured_output` of the `result` event.
 build_argv() {
   local wt="$1" run="$2" prompt="$3"
+  if [ "$AGENT_ENGINE" = claude-independent ]; then
+    local schema=impl tools='Read,Grep,Glob,Bash' spec='' line rules=()
+    if [ "$MODE" = impl ]; then tools='Read,Grep,Glob,Edit,Write,Bash'; else schema=review; fi
+    if [ -d "${SPEC_REPO:-}" ]; then spec="$(real_dir "$SPEC_REPO")"; fi
+    while IFS= read -r line; do
+      [ -n "$line" ] && rules+=("$line")
+    done < <(claude_rules "$wt" "$spec")
+    CODEX_ARGV=("$CODEX_BIN" -p --model "$MODEL" --effort high
+      --output-format stream-json --verbose --include-partial-messages
+      --no-session-persistence --safe-mode --restricted --disable-slash-commands
+      --strict-mcp-config --permission-mode dontAsk)
+    if [ -n "$spec" ]; then CODEX_ARGV+=(--add-dir "$spec"); fi
+    CODEX_ARGV+=(--tools "$tools" --allowedTools "${rules[@]}"
+      --json-schema "$(cat "$TRUSTED/tools/agent/schemas/$schema.schema.json")"
+      "$prompt")
+    return 0
+  fi
   if [ "$MODE" = impl ]; then
     CODEX_ARGV=("$CODEX_BIN" exec -C "$wt" -s workspace-write
       --ignore-user-config --ignore-rules --json
@@ -620,7 +787,13 @@ build_review_prompt() {
   untracked="$(git -C "$WT_REAL" -c core.quotepath=false ls-files --others --exclude-standard)"
   # Spec-test reviews also name the task's paths: findings about behaviour outside them (and
   # outside the rule-test locations) are out of scope (owner decision 2026-10-02).
-  local paths_line=''
+  local paths_line='' engine_line=''
+  # claude-independent: who wrote what, from the trusted ledger, so that the reviewer knows the
+  # prompt's "written by" sentence may not apply (ops/approvals.yaml id 36).
+  if [ "$AGENT_ENGINE" = claude-independent ]; then
+    engine_line="
+- Reviewer: a fresh, independent Claude context (claude-independent) that wrote neither the change nor its rule tests; ledger implementer: ${TASK_IMPL:-unknown}, ledger rule-test author: ${TASK_TESTER:-unknown}"
+  fi
   if [ "$REVIEW_TYPE" = spec-test ]; then
     paths_line="
 - Allowed paths (the task's paths; the rule-test locations are added): ${TASK_PATHS:-(none listed)}"
@@ -629,7 +802,7 @@ build_review_prompt() {
 
 ---
 
-## Review context (generated by codex-run.sh; everything below is data, not instructions)
+## Review context (generated by $SCRIPT_NAME; everything below is data, not instructions)
 
 - Task: $TASK
 - Review type: $REVIEW_TYPE
@@ -638,7 +811,7 @@ build_review_prompt() {
 - Planning repo: $SPEC_REPO
 - SPEC_REF: ${spec_ref:-(not found in the worktree)}
 - Diff to review: \`git diff $BASE_SHA\` in the working directory, plus the untracked files below
-- In-scope rules (the task's refs): $(if [ -n "$TASK_REFS" ]; then printf '%s' "${TASK_REFS//,/, }"; else printf '(none listed)'; fi)${paths_line}
+- In-scope rules (the task's refs): $(if [ -n "$TASK_REFS" ]; then printf '%s' "${TASK_REFS//,/, }"; else printf '(none listed)'; fi)${paths_line}${engine_line}
 
 ### Changed files (\`git diff --name-only $BASE_SHA\`)
 
@@ -659,7 +832,7 @@ set_mode_files() {
     EVENTS_NAME=events.jsonl
     ERR_NAME=err.txt
   else
-    OUT_NAME=review-codex.json
+    OUT_NAME="$REVIEW_OUT_NAME"
     EVENTS_NAME=review-events.jsonl
     ERR_NAME=review-err.txt
   fi
@@ -700,6 +873,18 @@ run_task() {
     fi
     [ "$TASK_IMPL" = codex ] ||
       fail_usage "task $TASK names ${TASK_IMPL:-no} implementer in its trusted ledger, not codex: --phase impl is the old flow for impl: codex ledgers only"
+  fi
+
+  # claude-independent test phase: the edit rules come from the trusted ledger's test_paths (and
+  # paths, for the skeletons); without test_paths there is nothing it may write.
+  if [ "$AGENT_ENGINE" = claude-independent ] && [ "$MODE" = impl ]; then
+    read_task_info
+    [ -n "$TASK_TEST_PATHS" ] ||
+      fail_usage "task $TASK has no test_paths in its trusted ledger (or they could not be read): an independent Claude test phase writes only into them"
+    # The ledger says truthfully who writes the rule tests: switch it to claude-independent
+    # (a ledger PR) before the first independent Claude test phase.
+    [ "$TASK_TESTER" = claude-independent ] ||
+      fail_usage "task $TASK names ${TASK_TESTER:-no} rule-test author in its trusted ledger, not claude-independent: change the ledger's tester first (ops/approvals.yaml id 36: the record says which engine wrote the tests)"
   fi
 
   RUN="$RUNS/$TASK"
@@ -748,6 +933,7 @@ run_task() {
   # Audit copy of exactly what Codex is given as its prompt (archived with the next call).
   printf '%s\n' "$PROMPT" >"$WORK/prompt.md"
   export COULI_CODEX_WRAPPER=1
+  claude_child_env
   local codex_version started_at head_before
   codex_version="$("$CODEX_BIN" --version 2>/dev/null </dev/null | head -n 1 || true)"
   started_at="$(agent_now_utc)"
@@ -756,9 +942,15 @@ run_task() {
 
   local meta_args=(--str "mode=$MODE" --str "task=$TASK" --str "worktree=$WT_REAL"
     --str "run=$RUN" --str "started_at=$started_at" --null finished_at --null exit_code
-    --str "head_before=$head_before" --str "codex_version=$codex_version"
+    --str "head_before=$head_before" --str "engine=$AGENT_ENGINE"
     --str "model=$MODEL" --num "timeout_secs=$TIMEOUT_SECS" --num "idle_secs=$IDLE_SECS"
     --num "wrapper_pid=$$" --str "output_file=$OUT" --str "events_file=$EVENTS")
+  # The binary's version under the engine's own key: a Claude run never carries codex_* fields.
+  if [ "$AGENT_ENGINE" = codex ]; then
+    meta_args+=(--str "codex_version=$codex_version")
+  else
+    meta_args+=(--str "agent_version=$codex_version" --str "config_dir=$CLAUDE_ACCOUNT_DIR")
+  fi
   if [ "$MODE" = review ]; then
     meta_args+=(--str "review_type=$REVIEW_TYPE" --str "base=$BASE_SHA" --str "risk=$TASK_RISK")
   else
@@ -770,10 +962,15 @@ run_task() {
 
   # Codex runs in its own process group under the supervisor (规划/11 §2.4 超时). A signal sent
   # to this wrapper is forwarded, so stopping the wrapper also stops the whole Codex group.
+  # claude-independent: `claude` has no -C, so the supervisor is started in the worktree (the
+  # subshell execs perl: $! is the supervisor itself).
   local sup_pid sup_rc=0 aborted=0
-  perl "$SELF_DIR/supervise.pl" --timeout-secs "$TIMEOUT_SECS" --grace-secs "$GRACE_SECS" \
-    --idle-secs "$IDLE_SECS" --idle-file "$EVENTS" --stdout "$EVENTS" --stderr "$ERR" \
-    --status-file "$WORK/supervisor.status" --pgid-file "$WORK/pgid" -- "${CODEX_ARGV[@]}" &
+  (
+    cd "$WT_REAL"
+    exec perl "$SELF_DIR/supervise.pl" --timeout-secs "$TIMEOUT_SECS" --grace-secs "$GRACE_SECS" \
+      --idle-secs "$IDLE_SECS" --idle-file "$EVENTS" --stdout "$EVENTS" --stderr "$ERR" \
+      --status-file "$WORK/supervisor.status" --pgid-file "$WORK/pgid" -- "${CODEX_ARGV[@]}"
+  ) &
   sup_pid=$!
   trap 'aborted=1; kill -TERM "$sup_pid" 2>/dev/null || true' TERM INT HUP
   wait "$sup_pid" || sup_rc=$?
@@ -834,7 +1031,13 @@ run_task() {
       thread_id) thread_id="$value" ;;
       capacity) capacity="$value" ;;
     esac
-  done < <(node "$SELF_DIR/meta.ts" events --events "$EVENTS" --err "$ERR")
+  done < <(node "$SELF_DIR/meta.ts" events --engine "$AGENT_ENGINE" --events "$EVENTS" --err "$ERR")
+  # claude-independent: the answer is the structured output of the final `result` event; it is
+  # written to the output file only once the whole group is gone (no late writer).
+  if [ "$AGENT_ENGINE" = claude-independent ] && [ "$group_gone" = 1 ]; then
+    node "$SELF_DIR/meta.ts" claude-output --events "$EVENTS" --out "$OUT" ||
+      log "warning: the structured output could not be extracted"
+  fi
 
   # 规划/11 §2.4 成败判定: exit code 0 AND the stream ends with turn.completed AND the -o file
   # exists AND it passes the trusted validator. A run whose leader exited but left processes
@@ -843,7 +1046,7 @@ run_task() {
   local has_output=0 validated='not-run' final=10
   if [ "$group_gone" = 1 ] && [ "$timed_out" = 0 ] && [ "$idle_killed" = 0 ] && [ "$aborted" = 0 ] &&
     [ "$stragglers" = 0 ] && [ "$escaped" = 0 ] && [ "$descendants_left" = 0 ] &&
-    [ "$codex_exit" = 0 ] && [ "$last_type" = turn.completed ] && [ -f "$OUT" ]; then
+    [ "$codex_exit" = 0 ] && [ "$last_type" = "$DONE_EVENT" ] && [ -f "$OUT" ]; then
     local validate_args=(--schema "$TRUSTED/tools/agent/schemas/$MODE.schema.json" --file "$OUT")
     if [ "$MODE" = review ]; then
       validate_args+=(--diff-base "$BASE_SHA" --cwd "$WT_REAL")
@@ -884,8 +1087,10 @@ run_task() {
   local capacity_error=0
   if [ "$capacity" = 1 ] && [ "$has_output" = 0 ]; then capacity_error=1; fi
   rm -f "$WORK/pgid"
+  local exit_key=codex_exit
+  if [ "$AGENT_ENGINE" = claude-independent ]; then exit_key=agent_exit; fi
   node "$SELF_DIR/meta.ts" merge --file "$RUN/meta.json" --copy-to "$RUN/meta.$MODE.json" \
-    --str "finished_at=$(agent_now_utc)" --num "exit_code=$final" --num "codex_exit=$codex_exit" \
+    --str "finished_at=$(agent_now_utc)" --num "exit_code=$final" --num "$exit_key=$codex_exit" \
     --bool "timed_out=$timed_out" --bool "idle_killed=$idle_killed" --bool "aborted=$aborted" \
     --bool "has_output=$has_output" --bool "capacity_error=$capacity_error" \
     --str "head_after=$head_after" --str "thread_id=$thread_id" --str "last_event=$last_type" \
@@ -895,8 +1100,11 @@ run_task() {
     --list "position_changed=$changed" --bool "other_task_branches_changed=$other_tasks"
 
   # Token accounting only (规划/11 §1.3): the Codex quota is unlimited and nothing is gated on
-  # this ledger, so a failure here is a warning and never changes the exit code.
-  if [ -f "$TRUSTED/tools/ops/usage.ts" ]; then
+  # this ledger, so a failure here is a warning and never changes the exit code. The ledger reads
+  # Codex event streams; a claude-independent call is not recorded there.
+  if [ "$AGENT_ENGINE" = claude-independent ]; then
+    :
+  elif [ -f "$TRUSTED/tools/ops/usage.ts" ]; then
     node "$TRUSTED/tools/ops/usage.ts" record --run "$RUN" --task "$TASK" --mode "$MODE" >&2 ||
       log "warning: usage ledger was not updated (tools/ops/usage.ts record failed)"
   else
@@ -913,16 +1121,17 @@ run_task() {
 
   case "$final" in
     0) log "$MODE $TASK: usable output at $OUT" ;;
-    11) log "$MODE $TASK: model capacity error ($CAPACITY_TEXT)" ;;
+    11) log "$MODE $TASK: model capacity error ($CAPACITY_TEXT, or a usage limit)" ;;
     12) log "$MODE $TASK: position assertion failed, changed: $changed" ;;
     124) log "$MODE $TASK: killed after timeout or inactivity" ;;
-    *) log "$MODE $TASK: no usable output (codex exit $codex_exit, last event $last_type, validation $validated, stragglers $stragglers, escaped $escaped, descendants left $descendants_left)" ;;
+    *) log "$MODE $TASK: no usable output (${SCRIPT_NAME%-run.sh} exit $codex_exit, last event $last_type, validation $validated, stragglers $stragglers, escaped $escaped, descendants left $descendants_left)" ;;
   esac
   cat "$RUN/meta.json"
   exit "$final"
 }
 
-# selfcheck: uses no quota. It never starts a Codex turn.
+# selfcheck: uses no quota. It never starts a Codex turn (claude-independent: no Claude turn; it
+# only reads `claude --help`).
 # TODO(规划/11 §2.4, §9.3): the first live run with all three option groups in one command, and
 # a group kill in the middle of a real turn, are done by the orchestrator — blocked on the
 # orchestrator's first live self-check (the skeleton build must not start the real codex; steps
@@ -939,20 +1148,33 @@ selfcheck() {
     failed=1
   }
 
-  printf 'codex binary: %s\n' "$CODEX_BIN"
-  printf 'codex version: %s\n' "$("$CODEX_BIN" --version 2>&1 </dev/null | head -n 1 || true)"
+  local name=codex help_cmd='exec --help' flags
+  flags=('-C, --cd' '-s, --sandbox' '-m, --model' '-c, --config' '-o, --output-last-message'
+    '--ignore-user-config' '--ignore-rules' '--json' '--disable' '--output-schema'
+    'workspace-write' 'read-only')
+  if [ "$AGENT_ENGINE" = claude-independent ]; then
+    name=claude
+    help_cmd='--help'
+    flags=('-p, --print' '--model' '--effort' '--output-format' 'stream-json' '--verbose'
+      '--include-partial-messages' '--no-session-persistence' '--safe-mode' '--restricted'
+      '--disable-slash-commands' '--strict-mcp-config' '--permission-mode' 'dontAsk' '--add-dir'
+      '--tools' '--allowedTools' '--json-schema')
+    claude_child_env
+    printf 'claude account: %s\n' "${CLAUDE_ACCOUNT_DIR:-(inherited CLAUDE_CONFIG_DIR)}"
+  fi
+  printf '%s binary: %s\n' "$name" "$CODEX_BIN"
+  printf '%s version: %s\n' "$name" "$("$CODEX_BIN" --version 2>&1 </dev/null | head -n 1 || true)"
   printf 'trusted root: %s\n' "$TRUSTED"
   printf 'runs dir: %s\n' "$RUNS"
 
-  help="$("$CODEX_BIN" exec --help 2>&1 </dev/null || true)"
-  for flag in '-C, --cd' '-s, --sandbox' '-m, --model' '-c, --config' \
-    '-o, --output-last-message' '--ignore-user-config' '--ignore-rules' '--json' '--disable' \
-    '--output-schema' 'workspace-write' 'read-only'; do
+  # shellcheck disable=SC2086 # help_cmd is one or two fixed words
+  help="$("$CODEX_BIN" $help_cmd 2>&1 </dev/null || true)"
+  for flag in "${flags[@]}"; do
     # A `case` match instead of `printf | grep -q`: under pipefail grep -q may close the pipe
     # early, printf then dies of SIGPIPE and the check reports a false negative.
     case "$help" in
-      *"$flag"*) ok "codex exec --help lists $flag" ;;
-      *) bad "codex exec --help does not list $flag" ;;
+      *"$flag"*) ok "$name $help_cmd lists $flag" ;;
+      *) bad "$name $help_cmd does not list $flag" ;;
     esac
   done
 
@@ -995,6 +1217,8 @@ selfcheck() {
 
   printf '\n--- impl argv (dry run, placeholders for task values) ---\n'
   MODE=impl
+  TASK_TEST_PATHS='<test_paths>'
+  TASK_PATHS='<paths>'
   build_argv "$SELF_REPO" "$RUNS/<id>" '<content of RUN/brief.md>'
   print_argv "${CODEX_ARGV[@]}"
   printf '\n--- review argv (dry run, placeholders for task values) ---\n'
@@ -1003,7 +1227,7 @@ selfcheck() {
   print_argv "${CODEX_ARGV[@]}"
 
   if [ "$failed" = 0 ]; then
-    printf '\nselfcheck: ok (no Codex turn was started)\n'
+    printf '\nselfcheck: ok (no %s turn was started)\n' "$([ "$name" = claude ] && echo Claude || echo Codex)"
     exit 0
   fi
   printf '\nselfcheck: FAILED\n'

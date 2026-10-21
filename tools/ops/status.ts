@@ -14,6 +14,7 @@ import type { LockStatus } from './lock.ts';
 import { pathSetsMayOverlap } from './overlap.ts';
 import {
   emptyAttempts,
+  ENGINES,
   listStates,
   MAX_CALLS_PER_TASK,
   MAX_CONSECUTIVE_NO_OUTPUT,
@@ -247,7 +248,10 @@ export function collectBoard(opts: BoardOptions = {}): Board {
 
   const usage = currentSummary(now);
   const breakers: BreakerReason[] = [];
-  for (const s of states.values()) breakers.push(...taskCalls(s.id).reasons);
+  // Each engine has its own failure breakers (ops/approvals.yaml id 36).
+  for (const s of states.values()) {
+    for (const engine of ENGINES) breakers.push(...taskCalls(s.id, engine).reasons);
+  }
 
   return {
     at: now.toISOString(),

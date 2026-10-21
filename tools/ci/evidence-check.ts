@@ -24,6 +24,14 @@
 //              A ledger that cannot be read requires both (fail-closed). A PR commit carrying the
 //              handover marker without a handover record counts as impl: codex. The handover of
 //              规划/11 §2.5 is handled below.
+//              Independent Claude (owner decision 2026-10-21, ops/approvals.yaml id 36): when Codex
+//              is not available, a fresh Claude context (tools/agent/claude-run.sh) may stand in
+//              for either side: an entry with reviewer "claude-independent" satisfies a required
+//              codex or claude entry, with the same conditions (pass, open_s0_s1 0, checklist
+//              complete). An entry must say truthfully which engine produced it: an `engine` field,
+//              when present, must equal its reviewer ("codex" for codex, "claude-independent" for
+//              claude-independent, "claude" for claude), so a Claude review cannot be filed as
+//              Codex's. Recorded engines are listed in the notices.
 //              Handover (规划/11 §2.5, CR-09): when Opus used up its rounds and Codex implemented
 //              once, the evidence carries `handover` and only the Claude review of the handover
 //              implementation must pass (Codex never reviews its own code). Allowed only when the
@@ -53,7 +61,9 @@
 //              test-support file, which red-check lets pass on the skeleton), the evidence's
 //              `spec_test_review` must record the rule-test reviewer's confirmation:
 //              `red_exempt_confirmed: true`, `reviewer` the side that did not write the rule
-//              tests (ledger tester codex → claude, claude → codex), `last_verdict: pass`.
+//              tests (ledger tester codex → claude, claude → codex), `last_verdict: pass`; also
+//              "claude-independent" for either (ops/approvals.yaml id 36), and for a ledger tester
+//              claude-independent the reviewer is claude or another claude-independent call.
 //              Every expected file still needs a red test; MONEY_PATHS are unchanged.
 //              CI records (`mode: ci`) in the evidence file are refused (CR2-06): nothing a copied
 //              record says can be checked against a run; the CI checks count by themselves.
@@ -453,6 +463,46 @@ export type RedRequirement = {
   declared?: { count: number; tester: TaskFile['tester'] };
 };
 
+/** Who produced a review: the reviewer values an evidence entry may carry. */
+export const REVIEWERS = ['codex', 'claude', 'claude-independent'] as const;
+
+/**
+ * ops/approvals.yaml id 36: an entry's `engine`, when present, must name the engine of its
+ * reviewer (a Claude review is never filed as Codex's); an independent Claude entry must carry it.
+ * Older entries without `engine` (codex, claude) stay valid. Returns the problem or null.
+ */
+export function engineProblem(entry: Record<string, unknown>): string | null {
+  const reviewer = entry['reviewer'];
+  if (!Object.hasOwn(entry, 'engine')) {
+    return reviewer === 'claude-independent'
+      ? 'must be "claude-independent" (an independent Claude entry names its engine)'
+      : null;
+  }
+  const engine = entry['engine'];
+  if (!(REVIEWERS as readonly unknown[]).includes(engine)) {
+    return `must be one of ${REVIEWERS.join(', ')} (got ${JSON.stringify(engine)})`;
+  }
+  if (engine !== reviewer) {
+    return (
+      `engine ${String(engine)} does not match reviewer ${JSON.stringify(reviewer)}: record ` +
+      'the review under the engine that produced it (an independent Claude review is ' +
+      'reviewer "claude-independent", never codex; ops/approvals.yaml id 36)'
+    );
+  }
+  return null;
+}
+
+/**
+ * Who may review the rule tests of a ledger tester (CT-06r): the other side (codex → claude,
+ * claude → codex), or a fresh independent Claude context (ops/approvals.yaml id 36); the tests of
+ * an independent Claude call are reviewed by the orchestrator's Claude or another such call.
+ */
+export function specTestReviewers(tester: TaskFile['tester']): string[] {
+  if (tester === 'claude') return ['codex', 'claude-independent'];
+  if (tester === 'claude-independent') return ['claude', 'claude-independent'];
+  return ['claude', 'claude-independent'];
+}
+
 /** Validates one evidence document against the PR; returns the problems found. */
 export function evidenceProblems(
   doc: unknown,
@@ -594,14 +644,18 @@ export function evidenceProblems(
     });
     // CT-06r: declared red exemptions need the rule-test reviewer's confirmation on record.
     if (red.required && red.declared !== undefined && red.declared.count > 0) {
-      const reviewer = red.declared.tester === 'claude' ? 'codex' : 'claude';
+      const reviewers = specTestReviewers(red.declared.tester);
+      // The message names the usual side; an independent Claude confirmation is accepted too.
+      const reviewer = reviewers[0] ?? 'claude';
       const field = 'spec_test_review';
       const want = `the ledger declares ${red.declared.count} red exemption(s) (red_exempt, CT-06r): the rule-test reviewer (${reviewer}) must confirm them in ${field} (reviewer ${reviewer}, last_verdict pass, red_exempt_confirmed true)`;
       const review = doc[field];
       if (!isRecord(review)) {
         at(field, want);
       } else {
-        if (review['reviewer'] !== reviewer) at(`${field}.reviewer`, want);
+        if (!reviewers.includes(String(review['reviewer']))) at(`${field}.reviewer`, want);
+        const engine = engineProblem(review);
+        if (engine !== null) at(`${field}.engine`, engine);
         if (review['last_verdict'] !== 'pass') at(`${field}.last_verdict`, want);
         if (review['red_exempt_confirmed'] !== true) at(`${field}.red_exempt_confirmed`, want);
       }
@@ -707,7 +761,7 @@ export function evidenceProblems(
     const bound = reviews.filter(
       (r): r is Record<string, unknown> & { commit: string } =>
         isRecord(r) &&
-        r['reviewer'] === 'claude' &&
+        (r['reviewer'] === 'claude' || r['reviewer'] === 'claude-independent') &&
         r['review_type'] !== 'spec-test' &&
         typeof r['commit'] === 'string' &&
         COMMIT_ID.test(r['commit']) &&
@@ -722,6 +776,8 @@ export function evidenceProblems(
       );
     }
     for (const entry of bound) {
+      const engine = engineProblem(entry);
+      if (engine !== null) at('reviews.claude.engine', engine);
       if (entry['verdict'] !== 'pass') at('reviews.claude.verdict', 'must be pass');
       if (entry['open_s0_s1'] !== 0) at('reviews.claude.open_s0_s1', 'must be 0');
       if (entry['checklist_complete'] !== true) {
@@ -752,22 +808,54 @@ export function evidenceProblems(
           ? ['claude']
           : ['claude', 'codex'],
     );
+    // ops/approvals.yaml id 36: an independent Claude entry stands in for a required side that
+    // has no entry of its own (Codex not available); it is checked like a Codex entry.
+    const independent = reviews.filter(
+      (r): r is Record<string, unknown> => isRecord(r) && r['reviewer'] === 'claude-independent',
+    );
+    let standIns = 0;
     for (const reviewer of ['claude', 'codex']) {
       const entry = reviews.find((r) => isRecord(r) && r['reviewer'] === reviewer);
       if (!isRecord(entry)) {
         if (required.has(reviewer)) {
+          if (standIns < independent.length) {
+            standIns += 1;
+            continue;
+          }
           at(
             'reviews',
             `missing the ${reviewer} review (${why}; the side that did not ` +
-              'implement reviews, ops/approvals.yaml id 27, 规划/11 §3.2)',
+              'implement reviews, ops/approvals.yaml id 27, 规划/11 §3.2; when Codex is not ' +
+              'available an independent Claude review, reviewer "claude-independent", ' +
+              'stands in, ops/approvals.yaml id 36)',
           );
         }
         continue;
       }
+      const engine = engineProblem(entry);
+      if (engine !== null) at(`reviews.${reviewer}.engine`, engine);
       if (entry['verdict'] !== 'pass') at(`reviews.${reviewer}.verdict`, 'must be pass');
       if (entry['open_s0_s1'] !== 0) at(`reviews.${reviewer}.open_s0_s1`, 'must be 0');
       if (reviewer === 'codex' && entry['checklist_complete'] !== true) {
         at('reviews.codex.checklist_complete', 'must be true (资金评审清单必填, 规划/11 §3.3)');
+      }
+    }
+    if (required.size === 2 && standIns === 2) {
+      at(
+        'reviews',
+        'both sides are independent Claude entries: an unreadable ledger needs at least one ' +
+          'review of its own side (claude or codex) besides an independent Claude stand-in',
+      );
+    }
+    // Every independent Claude entry is checked, stand-in or not (an extra one may not fail).
+    for (const entry of independent) {
+      const field = 'reviews.claude-independent';
+      const engine = engineProblem(entry);
+      if (engine !== null) at(`${field}.engine`, engine);
+      if (entry['verdict'] !== 'pass') at(`${field}.verdict`, 'must be pass');
+      if (entry['open_s0_s1'] !== 0) at(`${field}.open_s0_s1`, 'must be 0');
+      if (entry['checklist_complete'] !== true) {
+        at(`${field}.checklist_complete`, 'must be true (资金评审清单必填, 规划/11 §3.3)');
       }
     }
   }

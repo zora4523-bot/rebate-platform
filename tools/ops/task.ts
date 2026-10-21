@@ -387,7 +387,9 @@ export function checkTask(id: string, opts: CheckOptions = {}): string[] {
         `impl: must be claude for a task written after the switch of 2026-10-05 (a Codex handover is recorded at run time, not in the ledger)`,
       );
     }
-    if (task.tester !== 'codex' && task.tester !== 'none') {
+    // claude-independent: a fresh Claude context writes the rule tests while Codex is not
+    // available (owner decision 2026-10-21, ops/approvals.yaml id 36).
+    if (task.tester !== 'codex' && task.tester !== 'claude-independent' && task.tester !== 'none') {
       problems.push(
         `tester: must be codex or none for a task written after the switch of 2026-10-05`,
       );
