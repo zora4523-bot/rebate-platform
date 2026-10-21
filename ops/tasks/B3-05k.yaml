@@ -1,0 +1,25 @@
+id: B3-05k
+repo: rebate-platform
+title: Orchestrator 结果集端口补追问链状态：ResultSetStore 增加会话当前链与链上最近生效条件、是否待回答的读写方法，内存实现同步；装饰器与续问改用端口，不再用进程内 WeakMap / Map
+type: impl
+# 2026-10-21 入账（agent-acct4）。B3-05g（#1074）换家评审 S2：链状态与每 run 调用计数只在进程内存、只增不减、不跨实例
+# （results/tools.ts 的 WeakMap / Map），下一轮落到另一实例或进程重启后，同一处价格可能被再追问一次。
+# 本任务把链状态放进 ResultSetStore 端口（PG 实现归 B3-09c，表归 B3-09d），每 run 计数改为随 run 结束清理（不跨 run 保留）。
+# 行为不变：B3-05g 的冻结规则测试 test/spec/agent/orchestrator-results/** 保持全绿。
+# 分工：Codex 写规则测试，Claude 新子代理过审，Opus 5.5 实现，Codex 评审。风险 RV1。
+refs: [BR-AI-05, BR-AI-08]
+refs_hash:
+  BR-AI-05: ee8fd647fd43
+  BR-AI-08: e932a052720f
+deps: [B3-05g]
+paths:
+  - 'apps/api/src/modules/agent/orchestrator/results/**'
+test_paths:
+  - 'test/spec/agent/orchestrator-results-chain/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/orchestrator-results-chain/**'
+status: todo
+pr: null

@@ -1,0 +1,34 @@
+id: B3-09d
+repo: rebate-platform
+title: 迁移 0067：Agent 结果集的服务端留痕三表——agent_result_deliveries（已下发卡片引用与回放卡、价格只在此服务端表）、agent_clarify_asks（同链同槽位只追问一次，主键去重）、agent_result_chains（会话追问链与链上最近生效条件），均只追加
+type: migration
+# 2026-10-21 入账（agent-acct4）。B3-09c 起草测试要点时发现：B3-05g 的 ResultSetStore 端口（save / recordDelivered / latestWithProducts / takeOnce）与
+# 现有表对不上——agent_result_sets 只存条件（无 session_id，经 agent_runs 关联），没有地方存已下发卡片引用与回放卡，也没有地方存 takeOnce 记录；
+# B3-05g 评审 S2 另指出追问链状态（会话当前链、链上最近生效条件、是否待回答）只在进程内存、不跨实例（端口扩展归 B3-05k）。
+# 三表（草案，测试作者与实现者按 04 §3.2 既有 agent 表的写法定稿）：
+#   agent_result_deliveries(app_id, session_id, result_set_id → agent_result_sets, position ≥ 1, card_id 格式检查, product_key, platform,
+#     final_price_fen bigint, card jsonb, created_at)，唯一 (app_id, session_id, card_id)；卡片价格只在这张服务端表，结果集仍只存条件（BR-AI-05）。
+#   agent_clarify_asks(app_id, session_id, chain_id, slot ∈ {reference, price, platform}, created_at)，主键 (app_id, session_id, chain_id, slot)，
+#     外键 (app_id, session_id) → agent_sessions；takeOnce = INSERT … ON CONFLICT DO NOTHING RETURNING（BR-AI-08 每槽位只追问一次）。
+#   agent_result_chains(app_id, session_id, chain_id, conditions jsonb, awaiting_answer bool, created_at)，只追加，取最新一行为当前链。
+# couli_app 只授 SELECT、INSERT（只追加）；授权写在建表的这条迁移里。迁移号 0067（notices 预占；落地前按主干最大 +1 核对）。
+# 两段式（db/AGENTS.md）：Opus 只写 SQL，编排者在测试机跑迁移与 db:snapshot 并提交生成物。规划 04 §3.2 的表清单同步由编排回写（followup）。
+# 分工：Codex 写规则测试（先红），Claude 新子代理过审，Opus 5.5 实现，Codex money 评审（db/** 为 RV2）。
+refs: [BR-AI-05, BR-AI-08]
+refs_hash:
+  BR-AI-05: ee8fd647fd43
+  BR-AI-08: e932a052720f
+deps: [B3-09a, B3-09b]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/agent-results/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/agent-results/**'
+status: todo
+pr: null
