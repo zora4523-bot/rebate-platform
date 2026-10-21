@@ -195,7 +195,8 @@ it('[AC-B3-05g#3][AC-B3-05g#11][BR-AI-08] 首次搜索即追问、未出卡，�
   );
   expect(out.result).toEqual({ kind: 'done', finishReason: 'stop' });
   expect(h.execute.mock.calls.map(([call]) => call.args)).toEqual([
-    { q: Q, price_min_fen: 5001, price_max_fen: 6000 },
+    // A valid new price restarts at page 1 (AC-B3-05k#9).
+    { q: Q, price_min_fen: 5001, price_max_fen: 6000, page: 1 },
   ]);
   expect(out.cards.map((card) => card.type)).toEqual(['product_list']);
   expect(noticeKeys(out.cards)).toEqual([]);
@@ -236,7 +237,8 @@ function emptySearch(spec: string | null): ToolOutcome {
 it.each([
   { conditions: { platform: 'taobao' }, changes: { platforms: ['taobao'] } },
   { conditions: { next_batch: true }, changes: { page: 3 } },
-  { conditions: { price_min_fen: 200 }, changes: { price_min_fen: 200 } },
+  // AC-B3-05k#9: a valid new price condition restarts at page 1.
+  { conditions: { price_min_fen: 200 }, changes: { price_min_fen: 200, page: 1 } },
 ])(
   '[AC-B3-05g#8][AC-B3-05g#11] 放宽出卡后跨轮续搜 %j 以实际生效条件为基准',
   async ({ conditions, changes }) => {
@@ -368,4 +370,76 @@ it('[AC-B3-05g#11] 尚未回答的价格追问遇到不同关键词也重开链'
   expect(next.kind === 'ok' ? next.suggestions : []).toHaveLength(3);
   expect(h.execute).not.toHaveBeenCalled();
   expect((await h.clarification.scope(req)).chainId).not.toBe(previous.chainId);
+});
+
+// B3-05k rule-test review S2: a store with the chain port but no chain appended yet (a session
+// from before the port) continues from the latest result set that delivered products.
+it.each([
+  { conditions: { next_batch: true }, args: { q: Q, platforms: ['jd'], page: 3 } },
+  { conditions: { platform: 'taobao' }, args: { q: Q, platforms: ['taobao'], page: 2 } },
+  {
+    conditions: { price_max_fen: 6000 },
+    args: { q: Q, platforms: ['jd'], price_max_fen: 6000, page: 1 },
+  },
+])(
+  '[AC-B3-05k#3][BR-AI-05] 端口从未追加过链时续搜 %j 回落到最近已下发商品的结果集条件',
+  async ({ conditions, args }) => {
+    const h = harness();
+    const legacy = {
+      q: Q,
+      platforms: ['jd'] as const,
+      page: 2,
+      chain_id: 'synthetic-legacy-chain',
+    };
+    await h.store.save({
+      id: 'synthetic-legacy-set',
+      appId: APP,
+      sessionId: SESSION,
+      runId: 'legacy-run',
+      conditions: { ...legacy, platforms: [...legacy.platforms] },
+    });
+    await h.store.recordDelivered('synthetic-legacy-set', [
+      {
+        card_id: 'c1',
+        product_key: 'jd:synthetic',
+        platform: 'jd',
+        final_price_fen: 2990,
+        card: productList('synthetic-legacy-set'),
+      },
+    ]);
+    expect(await h.store.currentChain?.(APP, SESSION)).toBeNull();
+    const out = await h.intent({ agent_intent: 'refine', conditions }, 'continue-run');
+    expect(noticeKeys(out.cards)).toEqual([]);
+    expect(out.cards.map((card) => card.type)).toEqual(['product_list']);
+    expect(h.execute.mock.calls.map(([call]) => call.args)).toEqual([args]);
+    expect(await h.store.currentChain?.(APP, SESSION)).toEqual({
+      chainId: legacy.chain_id,
+      status: 'has_products',
+      conditions: { ...args, chain_id: legacy.chain_id },
+    });
+  },
+);
+
+it('[AC-B3-05k#7][BR-AI-08] 端口从未追加过链但有已下发结果集时 scope 沿用该链，不新开链', async () => {
+  const h = harness();
+  await h.store.save({
+    id: 'synthetic-legacy-set',
+    appId: APP,
+    sessionId: SESSION,
+    runId: 'legacy-run',
+    conditions: { q: Q, chain_id: 'synthetic-legacy-chain' },
+  });
+  await h.store.recordDelivered('synthetic-legacy-set', [
+    {
+      card_id: 'c1',
+      product_key: 'jd:synthetic',
+      platform: 'jd',
+      final_price_fen: 2990,
+      card: productList('synthetic-legacy-set'),
+    },
+  ]);
+  const append = vi.spyOn(h.store, 'appendChain');
+  const scope = await h.clarification.scope(request({}, 'scope-run'));
+  expect(scope.chainId).toBe('synthetic-legacy-chain');
+  expect(append).not.toHaveBeenCalled();
 });

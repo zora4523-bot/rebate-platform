@@ -18,7 +18,6 @@ import {
   clarifyOptions,
   conditionsOf,
   currentChain,
-  domainKey,
   hasProducts,
   isRecord,
   listItems,
@@ -28,14 +27,12 @@ import {
   readSearchParams,
   resultKeys,
   setChain,
-  stateOf,
   suggestionItems,
   validPrice,
   withServerNotices,
   without,
   SERVER_CALL,
   type InternalToolCall,
-  type ResultsState,
   type SessionChain,
 } from './shared.ts';
 import { shiftCardReferences } from './references.ts';
@@ -71,13 +68,23 @@ function forward(call: OrchestratorToolCall, args: Args, step?: string): Orchest
   return { id: step === undefined ? call.id : `${call.id}:${step}`, name: call.name, args };
 }
 
-/** One per app/session/run budget shared by model calls and appended relaxation calls. */
-function budget(state: ResultsState, ctx: ToolContext, limit: number): () => boolean {
-  const key = domainKey(ctx.subject.appId, ctx.sessionId, ctx.runId);
+/** Tool calls per run (model calls and appended relaxation calls together). A run executes in
+ * one process and all its calls share one ctx.signal, so counts are grouped by that signal and go
+ * away with it once the run is over (garbage collection, not the abort event). */
+type RunCalls = WeakMap<AbortSignal, Map<string, number>>;
+
+function budget(calls: RunCalls, ctx: ToolContext, limit: number): () => boolean {
+  let perRun = calls.get(ctx.signal);
+  if (perRun === undefined) {
+    perRun = new Map();
+    calls.set(ctx.signal, perRun);
+  }
+  const counts = perRun;
+  const key = JSON.stringify([ctx.subject.appId, ctx.sessionId, ctx.runId]);
   return () => {
-    const used = state.calls.get(key) ?? 0;
+    const used = counts.get(key) ?? 0;
     if (used >= limit) return false;
-    state.calls.set(key, used + 1);
+    counts.set(key, used + 1);
     return true;
   };
 }
@@ -116,10 +123,10 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
     searchKeyword: (plan, ctx) => inner.searchKeyword(plan, ctx),
     execute: (call, ctx) => execute(call, ctx),
   };
-  const state = stateOf(tools);
+  const calls: RunCalls = new WeakMap();
 
   async function execute(call: InternalToolCall, ctx: ToolContext): Promise<ToolOutcome> {
-    const take = budget(state, ctx, deps.limits.toolCalls);
+    const take = budget(calls, ctx, deps.limits.toolCalls);
     if (!take()) return failedOutcome();
     const args = call.args;
     if (call.name !== 'search_products' || !isRecord(args) || typeof args['q'] !== 'string') {
@@ -136,7 +143,7 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
     q: unknown,
     serverChainId?: string,
   ): Promise<SessionChain> {
-    const current = await currentChain(state, deps.store, appId, sessionId);
+    const current = await currentChain(deps.store, appId, sessionId);
     if (
       current !== null &&
       (serverChainId === current.chainId ||
@@ -159,18 +166,23 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
     const server = call[SERVER_CALL];
     const previous = await searchChain(appId, ctx.sessionId, args['q'], server?.chainId);
     const chainId = previous.chainId;
-    const chain = { ...previous, conditions: conditionsOf(args, chainId) };
-    setChain(state, appId, ctx.sessionId, chain);
+    const chain: SessionChain = { ...previous, conditions: conditionsOf(args, chainId) };
+    // 再便宜点 is only an attempt: its conditions become the chain's only once it shows products,
+    // so a cheaper search without result leaves 换一批 / 换平台 on the conditions shown before.
+    const attempt = server?.kind !== 'cheaper';
+    if (attempt) await setChain(deps.store, appId, ctx.sessionId, chain);
     const scope = { appId, sessionId: ctx.sessionId, chainId };
     const notices: string[] = [];
     let requested: Args = args;
     let outcome: ToolOutcome;
 
-    const askPrice = () => {
-      setChain(state, appId, ctx.sessionId, {
-        ...chain,
-        status: chain.status === 'has_products' ? 'has_products' : 'awaiting_price',
-      });
+    const askPrice = async () => {
+      if (attempt) {
+        await setChain(deps.store, appId, ctx.sessionId, {
+          ...chain,
+          status: chain.status === 'has_products' ? 'has_products' : 'awaiting_price',
+        });
+      }
       return clarifyPrice(appId);
     };
 
@@ -308,7 +320,13 @@ export function createResultsTools(inner: OrchestratorTools, deps: ResultsDeps):
       }
     }
     // Continuations must start from the same effective conditions that produced these cards.
-    setChain(state, appId, ctx.sessionId, { chainId, conditions, status: 'has_products' });
+    if (conditions !== null) {
+      await setChain(deps.store, appId, ctx.sessionId, {
+        chainId,
+        conditions,
+        status: 'has_products',
+      });
+    }
     if (notices.length === 0 && deps.match === undefined) return outcome;
     const moved = shifted(ctx, outcome, notices.length);
     return {
