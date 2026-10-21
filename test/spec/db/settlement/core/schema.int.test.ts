@@ -2,7 +2,18 @@ import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
 import { expect, it } from 'vitest';
 
-import { TABLES, columns, harness, indexes, migrationSource, ready, type Table } from './kit.ts';
+import {
+  TABLES,
+  bill,
+  columns,
+  harness,
+  indexes,
+  insert,
+  migrationSource,
+  parents,
+  ready,
+  type Table,
+} from './kit.ts';
 
 const h = harness(createTestDatabase);
 
@@ -19,7 +30,18 @@ it('[AC-B2-04a#1] 八表保留规划 04 §3.2 字段，app_id 非空，金额为
       'started_at',
       'finished_at',
     ],
-    settle_bills: ['bill_id', 'generation_started_at', 'generated_at'],
+    // 规划 04 §3.2 只给出汇总含义；以下英文列名由本任务固定。
+    settle_bills: [
+      'bill_id',
+      'generation_started_at',
+      'generated_at',
+      'platform_order_counts',
+      'platform_settle_commission_totals',
+      'beneficiary_total_fen',
+      'platform_retained_fen',
+      'error_count',
+      'held_count',
+    ],
     settle_batches: [
       'batch_id',
       'bill_id',
@@ -118,6 +140,34 @@ it('[AC-B2-04a#1] 八表保留规划 04 §3.2 字段，app_id 非空，金额为
   expect(
     (await columns(h.app, 'beneficiary_credits')).filter((c) => c.name.endsWith('_fen')),
   ).toEqual([]);
+});
+
+it('[AC-B2-04a#25] 账单持久保存各平台及金额汇总、差错数和未进批次的暂缓数', async () => {
+  await ready(h.app);
+  const p = await parents(h.app);
+  // 分平台映射用 JSON；其中金额用整数字符串，避免 JSON 数字损失分值精度。
+  const platformOrders = { taobao: 3, jd: 2 };
+  const platformCommissions = { taobao: '9007199254740993', jd: '200' };
+  const totals = {
+    platform_order_counts: platformOrders,
+    platform_settle_commission_totals: platformCommissions,
+    beneficiary_total_fen: 9007199254740000n,
+    platform_retained_fen: 1193n,
+    error_count: 2,
+    held_count: 3,
+  };
+  await insert(h.app, 'settle_bills', bill(p, totals));
+  const stored = await sql`
+    SELECT platform_order_counts, platform_settle_commission_totals,
+      beneficiary_total_fen, platform_retained_fen,
+      error_count::integer AS error_count, held_count::integer AS held_count
+    FROM app.settle_bills WHERE app_id = ${p.appId} AND bill_id = '2032-06'
+  `.execute(h.app);
+  expect(stored.rows).toEqual([totals]);
+  // 此账单没有批次明细，暂缓数仍能读回，不能依赖明细推算。
+  const details = await sql`SELECT count(*)::integer AS count
+    FROM app.settle_batch_items WHERE app_id = ${p.appId}`.execute(h.app);
+  expect(details.rows).toEqual([{ count: 0 }]);
 });
 
 it('[AC-B2-04a#2] 未执行记录允许结果、确认、关闭信息为空；S8 标记为可空时间列', async () => {

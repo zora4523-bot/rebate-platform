@@ -121,6 +121,15 @@ it('[AC-B2-04a#15] 补差候选接受全部状态和平台空受益人行，并�
       h.app,
     );
   expect(stored.rows).toEqual([{ user_id: null, role: null, diff_fen: 9007199254740993n }]);
+  // 正差一路的平台差额可因取整为负，不能用 diff_fen > 0 限制候选。
+  const other = await parents(h.app, p.appId);
+  const negativePlatform = adjustment(other, ab, { user_id: null, role: null, diff_fen: -1n });
+  expect(await sqlState(insert(h.app, 'settle_adjustments', negativePlatform))).toBe('ok');
+  const negativeStored =
+    await sql`SELECT user_id, role, diff_fen FROM app.settle_adjustments WHERE id = ${negativePlatform['id']}`.execute(
+      h.app,
+    );
+  expect(negativeStored.rows).toEqual([{ user_id: null, role: null, diff_fen: -1n }]);
 });
 
 it('[AC-B2-04a#16] 明细类型和结果 CHECK 接受全部契约值，未执行结果可空', async () => {

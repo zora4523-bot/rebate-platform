@@ -7,6 +7,7 @@ import {
   LATER,
   TABLES,
   adjustment,
+  beneficiaryItem,
   columns,
   harness,
   insert,
@@ -39,7 +40,7 @@ const MUTABLE: Record<Table, string[]> = {
     'finished_at',
     'paused_by_switch_at',
   ],
-  settle_batch_items: ['result', 'skip_reason'],
+  settle_batch_items: ['amount_fen', 'result', 'skip_reason'],
   beneficiary_credits: ['status', 'closed_by', 'closed_ref', 'voucher_id', 'closed_at'],
   settle_adjust_batches: ['confirmed_by', 'confirmed_at'],
   settle_adjustments: ['status', 'approver', 'decided_at', 'reason'],
@@ -112,7 +113,7 @@ it('[AC-B2-04a#20] couli_app 只有 SELECT、INSERT 和所需列级 UPDATE，没
     const amounts = (await columns(h.app, table))
       .filter((c) => c.name.endsWith('_fen') || ['our_value', 'union_value'].includes(c.name))
       .map((c) => c.name);
-    // 按任务第 9 节：包括明细金额在内，金额列不授 UPDATE。
+    // 补记项金额在执行时写入；其余已定金额不授 UPDATE（规划 04 §3.2）。
     for (const column of [...MUTABLE[table], ...IMMUTABLE[table], ...amounts]) {
       const result =
         await sql`SELECT has_column_privilege('couli_app', ${`app.${table}`}, ${column}, 'UPDATE') AS granted`.execute(
@@ -255,7 +256,34 @@ it('[AC-B2-04a#22] 明细执行结果、补差决定与拒绝理由可存储，�
   ]);
 });
 
-it('[AC-B2-04a#23] 实际 UPDATE 金额与身份列被拒，DELETE、TRUNCATE、ALTER 被拒且数据保留', async () => {
+it('[AC-B2-04a#24] couli_app 执行受益人补记项时可写入金额并原样读回', async () => {
+  await ready(h.app);
+  const { p, b, c } = await scenario(h.app);
+  const detail = beneficiaryItem(p, b, c);
+  await insert(h.app, 'settle_batch_items', detail);
+  const before =
+    await sql`SELECT amount_fen FROM app.settle_batch_items WHERE id = ${detail['id']}`.execute(
+      h.app,
+    );
+  expect(before.rows).toEqual([{ amount_fen: null }]);
+  expect(
+    await sqlState(
+      update(
+        h.app,
+        'settle_batch_items',
+        { id: detail['id'] },
+        { amount_fen: 9007199254740993n, result: 'credited' },
+      ),
+    ),
+  ).toBe('ok');
+  const stored =
+    await sql`SELECT amount_fen, result FROM app.settle_batch_items WHERE id = ${detail['id']}`.execute(
+      h.app,
+    );
+  expect(stored.rows).toEqual([{ amount_fen: 9007199254740993n, result: 'credited' }]);
+});
+
+it('[AC-B2-04a#23] 实际 UPDATE 已定金额与身份列被拒，DELETE、TRUNCATE、ALTER 被拒且数据保留', async () => {
   await ready(h.app);
   const { p, b, ab } = await scenario(h.app);
   const rows: [Table, Row][] = [
@@ -273,6 +301,7 @@ it('[AC-B2-04a#23] 实际 UPDATE 金额与身份列被拒，DELETE、TRUNCATE、
     expect(before.rows).toHaveLength(1);
     const amounts = (await columns(h.app, table))
       .filter((c) => c.name.endsWith('_fen') || ['our_value', 'union_value'].includes(c.name))
+      .filter((c) => !MUTABLE[table].includes(c.name))
       .map((c) => c.name);
     for (const column of [...IMMUTABLE[table], ...amounts]) {
       expect(
