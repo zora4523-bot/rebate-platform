@@ -140,10 +140,22 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     expect(QUEUE_CATALOG[exportAt - 1]?.name).toBe('risk-scan');
     expect(QUEUE_CATALOG[exportAt + 1]?.name).toBe('dead-letter');
   }
+  // F1-09q：page-schedule（页面定时发布）有则钉死，F1-09p 合并后收紧。Exactly one standard entry with
+  // the defaults, right after pool-refresh and right before poster. Everything else stays exact.
+  const pageScheduleAt = QUEUE_CATALOG.findIndex((queue) => queue.name === 'page-schedule');
+  if (pageScheduleAt !== -1) {
+    expect(QUEUE_CATALOG.filter((queue) => queue.name === 'page-schedule')).toHaveLength(1);
+    expect(QUEUE_CATALOG[pageScheduleAt]).toStrictEqual({ name: 'page-schedule', ...DEFAULT });
+    expect(QUEUE_CATALOG[pageScheduleAt - 1]?.name).toBe('pool-refresh');
+    expect(QUEUE_CATALOG[pageScheduleAt + 1]?.name).toBe('poster');
+  }
   expect(
     QUEUE_CATALOG.filter(
       (queue) =>
-        queue.name !== 'risk-scan' && queue.name !== 'order-sync' && queue.name !== 'export',
+        queue.name !== 'risk-scan' &&
+        queue.name !== 'order-sync' &&
+        queue.name !== 'export' &&
+        queue.name !== 'page-schedule',
     ),
   ).toStrictEqual([
     { name: 'order-rescan', ...DEFAULT },
@@ -201,11 +213,28 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
       ENTRY_PLAN[entry].filter((work) => work.queue === 'export').map(() => entry),
     ),
   ).toStrictEqual([]);
+  // F1-09q：page-schedule（页面定时发布）有则钉死，F1-09p 合并后收紧。When planned, it is worker-only
+  // with concurrency 1 and the default polling, right after pool-refresh and right before poster.
+  const pageSchedules = ENTRY_PLAN.worker.filter((work) => work.queue === 'page-schedule');
+  if (pageSchedules.length > 0) {
+    expect(pageSchedules).toStrictEqual([w('page-schedule', 1)]);
+    const at = ENTRY_PLAN.worker.findIndex((work) => work.queue === 'page-schedule');
+    expect(ENTRY_PLAN.worker[at - 1]).toStrictEqual(w('pool-refresh', 1));
+    expect(ENTRY_PLAN.worker[at + 1]).toStrictEqual(w('poster', 2, 0.5));
+  }
+  expect(
+    (['api', 'stream', 'admin', 'payout'] as const).flatMap((entry) =>
+      ENTRY_PLAN[entry].filter((work) => work.queue === 'page-schedule').map(() => entry),
+    ),
+  ).toStrictEqual([]);
   expect({
     ...ENTRY_PLAN,
     worker: ENTRY_PLAN.worker.filter(
       (work) =>
-        work.queue !== 'risk-scan' && work.queue !== 'order-sync' && work.queue !== 'export',
+        work.queue !== 'risk-scan' &&
+        work.queue !== 'order-sync' &&
+        work.queue !== 'export' &&
+        work.queue !== 'page-schedule',
     ),
   }).toStrictEqual({
     api: [],
