@@ -84,7 +84,7 @@
 
 <!-- risk-table:end -->
 
-默认分工（负责人 2026-10-05，`ops/approvals.yaml` 第 19 条；规划/11 §1.1）：主实现一律是 Claude Opus 5.5 子代理（模型 `claude-opus-5-5`，在任务 worktree 里，不提交）；Codex 在实现前写规则 / 验收测试和只抛 `NotImplemented` 的骨架（经 `tools/agent/codex-run.sh impl`），先红由编排者在隔离容器里核对，再以新只读会话做对抗评审（模型 gpt-6-astra，推理档位默认 low）；2026-10-09 起（`ops/approvals.yaml` 第 27 条）各风险级的代码评审都只跑 Codex 这一家，RV2 不再另派 Claude 新子代理评审；Codex 写的规则测试仍由 Claude 新子代理过审。Codex 沙箱里只做不执行测试的静态检查，Codex 生成的任何可执行内容都不在宿主运行；实现子代理只经 `tools/ops/verify-container.sh <编号> --fast` 在容器里跑 `verify:fast`。派工细节见 `tools/agent/README.md`。
+默认分工（负责人 2026-10-05，`ops/approvals.yaml` 第 19 条；规划/11 §1.1）：主实现一律是 Claude Opus 5.5 子代理（模型 `claude-opus-5-5`，在任务 worktree 里，不提交）；Codex 在实现前写规则 / 验收测试和只抛 `NotImplemented` 的骨架（经 `tools/agent/codex-run.sh impl`），先红由编排者在隔离容器里核对，再以新只读会话做对抗评审（模型 gpt-6-astra，推理档位默认 low）；2026-10-09 起（`ops/approvals.yaml` 第 27 条）各风险级的代码评审都只跑 Codex 这一家，RV2 不再另派 Claude 新子代理评审；Codex 写的规则测试仍由 Claude 新子代理过审。2026-10-21 起（`ops/approvals.yaml` 第 36 条）Codex 不可用或额度不足时，写规则测试与对抗评审（含 money / contract / general / spec-test）改由无上下文的独立 Claude 子代理经 `tools/agent/claude-run.sh` 承担（每次 `claude -p` 新会话，与写实现的不是同一上下文；写测试前台账 `tester` 先改为 `claude-independent`），证据如实记为 `claude-independent`、不得记成 `codex`；Codex 能用时仍优先 Codex。Codex 沙箱里只做不执行测试的静态检查，Codex 生成的任何可执行内容都不在宿主运行；实现子代理只经 `tools/ops/verify-container.sh <编号> --fast` 在容器里跑 `verify:fast`。派工细节见 `tools/agent/README.md`。
 
 ## 4. 硬规则
 
@@ -98,7 +98,7 @@
 8. 生成文件从源文件改，不手改生成物（`db/schema.sql`、`**/*.gen.ts`、`packages/contracts-ts/src` 下的生成文件）。
 9. 不用 `@latest`，版本写精确值；实现任务不改锁文件，要装依赖在输出里写 `deps_needed`；要在沙箱外跑的命令（迁移、类型生成）写 `outside_needed`。
 10. 实现者不写自己的规则测试，也不评审自己；实现者只写单元测试。
-11. 资金与归属：实现方与规则测试作者不是同一家模型；实现方之外的那一家评审（`ops/approvals.yaml` 第 27 条：Opus 实现由 Codex 对抗评审，Codex 实现由 Claude 评审）无未关闭的 S0 / S1 才合并。评审方用不了就停，不降级。Codex 额度不设限制，不按额度停用或改派；只有失败类熔断（规划/11 §2.5）停任务。
+11. 资金与归属：实现方与规则测试作者不是同一家模型（第 36 条的独立 Claude 例外：不是同一上下文即可）；实现方之外的那一家评审（`ops/approvals.yaml` 第 27 条：Opus 实现由 Codex 对抗评审，Codex 实现由 Claude 评审）无未关闭的 S0 / S1 才合并。Codex 用不了或额度不足时按第 36 条由无上下文的独立 Claude 子代理（`claude-run.sh`，不是实现那个上下文）写测试与评审，结论门槛不变；独立 Claude 也用不了才停，不降级。Codex 额度不设限制，不按额度停用或改派；只有失败类熔断（规划/11 §2.5）停任务。
 
 ## 5. 保护路径（实现任务不能改）
 
@@ -137,7 +137,7 @@
 - 业务表在 schema `app`（Kysely 用 `.withSchema('app')`），队列表在 `pgboss`；扩展由超级用户在 `db/bootstrap/` 建，不写进迁移；迁移是 `db/migrations/NNNN_名字.sql`，授权写在建对象的那条迁移里。
 - `tools/` 下的脚本用 `node tools/<目录>/<名字>.ts` 直接运行，只依赖 Node 内置模块与 ajv；起门禁作用的 schema、提示词、守卫从可信副本读，不从任务 worktree 读。
 - 任务 worktree 放 `../couli-runs/worktrees/<任务编号>`，分支 `task/<任务编号>`；运行产物都在 `../couli-runs/`，不入库。
-- Codex 只经 `tools/agent/codex-run.sh` 调用，不直接运行 `codex exec`。
+- Codex 只经 `tools/agent/codex-run.sh` 调用，不直接运行 `codex exec`；写测试与评审用的独立 Claude 子代理只经 `tools/agent/claude-run.sh` 调用（第 36 条）。
 - 应用代码日志只走 pino（`console` 只允许出现在 `tools/**` 与 `**/scripts/**`）；Shell 脚本要兼容 macOS bash 3.2，路径一律加引号（仓库路径含中文）。
 - 嵌套规则文件 `<目录>/AGENTS.md`（≤60 行）与同目录只有一行 `@AGENTS.md` 的 `CLAUDE.md` 成对出现，不写数值和公式。
 - 还不能做的事写成 `TODO(规划/11 §<节>): <内容> — blocked on <原因>`，不留假装能用的文件。

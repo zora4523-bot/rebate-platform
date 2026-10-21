@@ -71,6 +71,7 @@ if [ -n "$LOG" ]; then
     if [ -e "$out" ]; then echo 'out_existed=1'; else echo 'out_existed=0'; fi
     printf 'pid=%s\n' "$$"
     printf 'ppid=%s\n' "$PPID"
+    printf 'cwd=%s\n' "$(pwd -P)"
   } >"$LOG/observed.txt"
 fi
 

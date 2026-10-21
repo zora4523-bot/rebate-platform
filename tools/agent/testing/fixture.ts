@@ -21,6 +21,8 @@ export const AGENT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const TOOLS_DIR = resolve(AGENT_DIR, '..');
 export const REPO = resolve(TOOLS_DIR, '..');
 export const FAKE_CODEX = join(AGENT_DIR, 'testing', 'couli-fake-codex.sh');
+/** Fake `claude` for claude-run.sh (ops/approvals.yaml id 36), selected through COULI_CLAUDE_BIN. */
+export const FAKE_CLAUDE = join(AGENT_DIR, 'testing', 'couli-fake-claude.sh');
 export const TASK = 'T1-01';
 
 export type Fixture = {
@@ -42,6 +44,8 @@ function baseEnv(): NodeJS.ProcessEnv {
   for (const [key, value] of Object.entries(process.env)) {
     if (key.startsWith('COULI_') || key.startsWith('FAKE_') || key.startsWith('GIT_')) continue;
     if (key === 'CODEX_HOME' || key === 'CODEX_REVIEW_EFFORT') continue;
+    if (key === 'CLAUDE_INDEPENDENT_CONFIG_DIR' || key === 'CLAUDE_CONFIG_DIR') continue;
+    if (key.startsWith('ANTHROPIC_')) continue;
     env[key] = value;
   }
   env['GIT_CONFIG_GLOBAL'] = '/dev/null';

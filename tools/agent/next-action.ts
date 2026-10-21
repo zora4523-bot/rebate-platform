@@ -148,7 +148,8 @@ export function nextAction(input: Input): Action {
   }
   if (exitCode !== 0) {
     return failed(input, 'no-usable-output', {
-      codex_exit: meta['codex_exit'] ?? null,
+      // claude-independent runs record `agent_exit` (ops/approvals.yaml id 36).
+      codex_exit: meta['codex_exit'] ?? meta['agent_exit'] ?? null,
       validation: meta['validation'] ?? null,
       counts_as_attempt: countsAsAttempt,
     });

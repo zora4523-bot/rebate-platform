@@ -5,6 +5,7 @@
 # id 19 本身就是 §7.3 的第 12 行（2026-10-05 的默认分工），row 填 12；spec_ref 随之推进到含该行的规划提交（第 0–9 行不变）。
 # id 27 是同一第 12 行的修订（2026-10-09 评审只用 Codex），row 同样填 12。
 # id 34 本身就是 §7.3 的第 16 行（2026-10-17 实现回到 Claude、Codex 只评审），row 填 16；它停用第 15 行（id 30）的默认分工：第 30 条保留、加 superseded_by: 34，第 31、33 条只对已开工的 Codex 任务继续有效。
+# id 36 是同一第 12 行的再次修订（2026-10-21 Codex 不可用时由独立 Claude 子代理写测试与评审），row 填 12；规划仓库 §7.3 尚未回写。
 # 保护路径（规划/11 §4.4 第三类）：改动须负责人确认。
 source: '规划/11_开发协作与自主推进.md §7.3'
 spec_ref: 'b89ca4e745ae935d30f9b850e4c99cc6d6f19b7e'
@@ -226,3 +227,9 @@ approvals:
     granted: true
     date: '2026-10-19'
     note: '负责人 2026-10-19 在对话里对编排会话选「加进例外（推荐）」（编排会话事先说明了与第 25、26 条同一做法，以及「等状态机生成器做好再接」的取舍）；起因 B1-11g（落地页发码风控）资金评审第 8 轮 Codex 判 S1「finishAttempt 经手写迁移表改 sms_send_attempts.status，未经生成的 transition()，approvals 未登记例外」；本条所在的 PR 由编排会话按负责人同一句授权加标签（先例第 20、25 条）'
+  - id: 36
+    row: 12
+    title: 'Codex 不可用或额度不足时，规则测试与对抗评审（含 money / contract / general / spec-test）可由新鲜上下文的独立 Claude 子代理承担；Codex 可用时优先 Codex；证据如实记录为独立 Claude，不得记成 codex。落实：tools/agent/claude-run.sh（与 codex-run.sh 同一命令行、超时、退出码、可信根与运行目录，每次 claude -p 新会话，模型 claude-opus-5-5，评审只读，写测试只写台账 test_paths 与骨架路径，meta.json 记 engine: claude-independent）；台账 tester 可写 claude-independent（写测试的上下文 ≠ 写实现的上下文）；证据 reviews 的 reviewer claude-independent 可顶替缺的那一家（同样要 pass、open_s0_s1 为 0、资金清单齐全），engine 与 reviewer 不符一律拒收；轮次计数不分引擎（3 次 / 2 轮 / 3 轮不变），失败熔断按引擎分开。本仓库保护路径第三类的相应改动（ops/approvals.yaml、AGENTS.md、tools/**、ops/evidence/README.md）'
+    granted: true
+    date: '2026-10-21'
+    note: '负责人原话「对抗review 可以使用Claude 的子代理 没有上下文的去对抗review 就像Claude 官方指南那样」；编排会话问「写规则测试要不要也允许改用无上下文的 Claude 子代理」时负责人选「也允许（推荐）：Codex 不可用或额度不足时，写测试也交给无上下文的 Claude 子代理（与写实现的不是同一个上下文，仍保持写测试的人 ≠ 写实现的人）；Codex 能用时仍优先 Codex」（2026-10-21，对话中给编排会话，经编排会话转达，编排裁定 D10-104）；起因：本机 Codex（ChatGPT 账号）一天三次撞用量上限，写测试与对抗评审全线停摆。row 填 12（同第 27 条，是默认分工的修订）；规划/11 §1.1、§7.3 的回写另开同步任务，本条不改规划仓库。执行口径（台账 tester 先改为 claude-independent 再跑 claude-run.sh impl、证据字段 engine、轮次共享与熔断分引擎、账号由 CLAUDE_INDEPENDENT_CONFIG_DIR 指定）由 ops 线按原话拟写，不是负责人原话；落在分支 chore/CT-06zc-claude-independent（ops/approvals.yaml；tools/agent/claude-run.sh、codex-run.sh、meta.ts、next-action.ts、testing/、README.md；tools/ci/evidence-check.ts；tools/lib/task-file.ts、glob.ts；tools/ops/state.ts、status.ts、task.ts、brief.ts；AGENTS.md；ops/evidence/README.md；各自的单元测试只增）；本条所在的 PR 由无上下文的独立 Claude 子代理对抗评审，按第 24 条由编排会话核对头提交后加标签'

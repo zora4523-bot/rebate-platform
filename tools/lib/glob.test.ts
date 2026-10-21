@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { globToRegExp, hasWildcard, matchesAny, splitTopLevelCommas } from './glob.ts';
+import {
+  expandBraces,
+  globToRegExp,
+  hasWildcard,
+  matchesAny,
+  splitTopLevelCommas,
+} from './glob.ts';
 
 function matches(glob: string, path: string): boolean {
   return globToRegExp(glob).test(path);
@@ -106,5 +112,43 @@ describe('helpers', () => {
     expect(hasWildcard('packages/money/**')).toBe(true);
     expect(hasWildcard('a/{b,c}')).toBe(true);
     expect(hasWildcard('a/b?.ts')).toBe(true);
+  });
+});
+
+describe('expandBraces (ops/approvals.yaml id 36: Claude permission rules have no alternatives)', () => {
+  it('expands every alternative, nested ones included, and leaves plain globs alone', () => {
+    expect(expandBraces('tools/ops/task{,.test}.ts')).toEqual([
+      'tools/ops/task.ts',
+      'tools/ops/task.test.ts',
+    ]);
+    expect(expandBraces('test/{spec,acceptance/{a,b}}/**')).toEqual([
+      'test/spec/**',
+      'test/acceptance/a/**',
+      'test/acceptance/b/**',
+    ]);
+    expect(expandBraces('a/{x,y}/{1,2}.ts')).toEqual([
+      'a/x/1.ts',
+      'a/x/2.ts',
+      'a/y/1.ts',
+      'a/y/2.ts',
+    ]);
+    expect(expandBraces('packages/money/**')).toEqual(['packages/money/**']);
+  });
+
+  it('every expansion matches exactly what the braced glob matches', () => {
+    const glob = 'test/{spec,properties}/x/*.{test,int.test}.ts';
+    const paths = [
+      'test/spec/x/a.test.ts',
+      'test/properties/x/b.int.test.ts',
+      'test/acceptance/x/a.test.ts',
+      'test/spec/x/a.ts',
+    ];
+    for (const path of paths) {
+      expect(matchesAny(path, expandBraces(glob)), path).toBe(globToRegExp(glob).test(path));
+    }
+  });
+
+  it('refuses an unbalanced brace', () => {
+    expect(() => expandBraces('a/{b,c')).toThrow('unbalanced');
   });
 });

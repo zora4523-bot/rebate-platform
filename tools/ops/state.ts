@@ -7,8 +7,10 @@
 //                                    [--implementer claude|codex|none]
 //   node tools/ops/state.ts claim <id> [--owner <session>] [--renew]
 //   node tools/ops/state.ts release <id> [--owner <session>]
-//   node tools/ops/state.ts bump-attempt <id> test|impl|handover
+//   node tools/ops/state.ts bump-attempt <id> test|impl|handover [--engine codex|claude-independent]
 //   node tools/ops/state.ts bump-attempt <id> review --review-type money|general|contract|spec-test
+//                                        [--engine codex|claude-independent]
+//   node tools/ops/state.ts breakers <id> [--engine codex|claude-independent]
 //   node tools/ops/state.ts settle <id> --meta <meta.json>
 //   node tools/ops/state.ts opus-run <id> --run-id <x> --outcome ok|no-output|timeout|capacity
 //                                         --risk RV0|RV1|RV2
@@ -53,6 +55,18 @@
 //   neither extends nor ends such a run.
 // Both are computed from the task's finished calls in <runs>/<id>/ (meta.<mode>.json and
 // attempts/<n>/meta.json); there is no daily cap and no quota tier.
+//
+// Engines (owner decision 2026-10-21, ops/approvals.yaml id 36): a call of tools/agent/
+// claude-run.sh (a fresh, independent Claude context standing in for Codex) records
+// `engine: "claude-independent"` in its meta.json; a meta.json without `engine` is a Codex call.
+// The rounds are the task's, whoever runs them: a rule-test attempt or a review round of either
+// engine uses the same counter and the same limits (3 / 2 / 3). The two failure breakers are
+// computed per engine (`taskCalls(id, engine)`, `bump-attempt --engine`): Codex calls that hit a
+// usage limit or failed say nothing about the Claude calls, and the other way round.
+// The engine a caller names to bump-attempt is its own claim; the runners therefore check their
+// own engine again before every call (`state.ts breakers <id> --engine <their AGENT_ENGINE>`,
+// exit 3 when one is open; codex-run.sh / claude-run.sh then refuse), so a round counted as
+// claude-independent cannot open a way past the Codex breakers.
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -109,9 +123,15 @@ export function reviewKind(type: ReviewType): AttemptKind {
   return type === 'spec-test' ? 'spec-test' : 'code';
 }
 
+/** Who ran a call (ops/approvals.yaml id 36); absent in a meta.json: codex. */
+export const ENGINES = ['codex', 'claude-independent'] as const;
+export type Engine = (typeof ENGINES)[number];
+
 /** A Codex call whose pre-counted round was taken back by `settle`. */
 export type UncountedCall = {
   kind: AttemptKind;
+  /** The engine of the call; absent in older files (codex). */
+  engine?: Engine;
   /** `started_at` of the call's meta.json; identifies the call, so settling is idempotent. */
   started_at: string;
   exit_code: number;
@@ -246,9 +266,10 @@ export function parseState(raw: unknown, file: string): TaskState {
       !(ATTEMPT_KINDS as readonly unknown[]).includes(e.kind) ||
       typeof e.started_at !== 'string' ||
       typeof e.exit_code !== 'number' ||
-      typeof e.reason !== 'string'
+      typeof e.reason !== 'string' ||
+      (e.engine !== undefined && !(ENGINES as readonly unknown[]).includes(e.engine))
     ) {
-      bad(`uncounted_calls[${i}] must be {kind, started_at, exit_code, reason}`);
+      bad(`uncounted_calls[${i}] must be {kind, started_at, exit_code, reason[, engine]}`);
     }
   });
   if (!(o.pid === null || isCount(o.pid))) bad('pid must be an integer or null');
@@ -353,8 +374,13 @@ export function updateState(id: string, patch: StatePatch, now: Date = new Date(
  * without a trace is still counted. Past the limit nothing is written. An open failure
  * breaker (`taskCalls`) refuses first, with BreakerError (exit 3).
  */
-export function bumpAttempt(id: string, kind: AttemptKind, now: Date = new Date()): TaskState {
-  const calls = taskCalls(id);
+export function bumpAttempt(
+  id: string,
+  kind: AttemptKind,
+  now: Date = new Date(),
+  engine: Engine = 'codex',
+): TaskState {
+  const calls = taskCalls(id, engine);
   if (calls.reasons.length > 0) {
     throw new BreakerError(calls.reasons.map((r) => r.message).join('\n'));
   }
@@ -452,9 +478,11 @@ export function recordOpusRun(
       };
 }
 
-/** The fields of a codex-run.sh meta.json that `settle` and `migrate` read. */
+/** The fields of a codex-run.sh / claude-run.sh meta.json that `settle` and `migrate` read. */
 export type CallMeta = {
   mode: 'impl' | 'review';
+  /** `engine` of the meta.json; absent or unknown: codex (the stricter default). */
+  engine?: Engine;
   review_type: ReviewType | null;
   /** impl mode only: `test` or `handover`; null for a meta.json written before 2026-10-05. */
   phase: ImplPhase | null;
@@ -480,6 +508,7 @@ export function parseCallMeta(raw: unknown): CallMeta | null {
     : null;
   return {
     mode: m.mode,
+    engine: m.engine === 'claude-independent' ? 'claude-independent' : 'codex',
     review_type: m.mode === 'review' ? type : null,
     phase: m.mode === 'impl' ? phase : null,
     started_at: m.started_at,
@@ -535,7 +564,10 @@ export function settleCall(id: string, meta: CallMeta, now: Date = new Date()): 
   if (prev === null) return { state: null, kind, counted: reason === null, changed: false };
   if (reason === null) return { state: prev, kind, counted: true, changed: false };
   const seen = prev.uncounted_calls.some(
-    (c) => c.kind === kind && c.started_at === meta.started_at,
+    (c) =>
+      c.kind === kind &&
+      c.started_at === meta.started_at &&
+      (c.engine ?? 'codex') === (meta.engine ?? 'codex'),
   );
   if (seen) return { state: prev, kind, counted: false, changed: false };
   const next: TaskState = {
@@ -543,7 +575,13 @@ export function settleCall(id: string, meta: CallMeta, now: Date = new Date()): 
     attempts: { ...prev.attempts, [kind]: Math.max(0, prev.attempts[kind] - 1) },
     uncounted_calls: [
       ...prev.uncounted_calls,
-      { kind, started_at: meta.started_at, exit_code: meta.exit_code, reason },
+      {
+        kind,
+        ...(meta.engine === 'claude-independent' ? { engine: meta.engine } : {}),
+        started_at: meta.started_at,
+        exit_code: meta.exit_code,
+        reason,
+      },
     ],
     updated_at: now.toISOString(),
   };
@@ -565,7 +603,7 @@ export function runCallMetas(runDir: string): CallMeta[] {
   for (const file of files) {
     if (!existsSync(file)) continue;
     const meta = parseCallMeta(readJsonFile(file));
-    if (meta !== null) metas.set(`${meta.mode}:${meta.started_at}`, meta);
+    if (meta !== null) metas.set(`${meta.engine ?? 'codex'}:${meta.mode}:${meta.started_at}`, meta);
   }
   return [...metas.values()].sort((a, b) => a.started_at.localeCompare(b.started_at));
 }
@@ -588,11 +626,13 @@ export type TaskCalls = {
 };
 
 /**
- * The failure breakers of one task, from its finished calls in <runs>/<id>/. They close as soon
- * as the next call would cross a limit: at 10 calls, at 3 consecutive calls without output.
+ * The failure breakers of one task and engine, from its finished calls in <runs>/<id>/. They
+ * close as soon as the next call would cross a limit: at 10 calls, at 3 consecutive calls without
+ * output. Each engine has its own (ops/approvals.yaml id 36); the default is Codex.
  */
-export function taskCalls(id: string): TaskCalls {
-  const metas = runCallMetas(join(runsDir(), id));
+export function taskCalls(id: string, engine: Engine = 'codex'): TaskCalls {
+  const metas = runCallMetas(join(runsDir(), id)).filter((m) => (m.engine ?? 'codex') === engine);
+  const independent = engine === 'claude-independent' ? '独立 Claude（claude-run.sh）' : '';
   let consecutive = 0;
   for (let i = metas.length - 1; i >= 0; i -= 1) {
     const meta = metas[i];
@@ -607,13 +647,13 @@ export function taskCalls(id: string): TaskCalls {
   if (metas.length >= MAX_CALLS_PER_TASK) {
     reasons.push({
       breaker: 'task_calls',
-      message: `${id}: 已累计调用 Codex ${metas.length} 次，达到每任务上限 ${MAX_CALLS_PER_TASK} 次（防失控循环，规划/11 §2.5）；停止该任务并报告：拆小任务或标 blocked`,
+      message: `${id}: 已累计调用 ${independent || 'Codex'} ${metas.length} 次，达到每任务上限 ${MAX_CALLS_PER_TASK} 次（防失控循环，规划/11 §2.5）；停止该任务并报告：拆小任务或标 blocked`,
     });
   }
   if (consecutive >= MAX_CONSECUTIVE_NO_OUTPUT) {
     reasons.push({
       breaker: 'no_output',
-      message: `${id}: 连续 ${consecutive} 次调用没有产出（规划/11 §2.5）；停止该任务并报告`,
+      message: `${id}: ${independent}连续 ${consecutive} 次调用没有产出（规划/11 §2.5）；停止该任务并报告`,
     });
   }
   return { task: id, calls: metas.length, consecutive_no_output: consecutive, reasons };
@@ -755,6 +795,7 @@ function main(argv: string[]): number {
       'run-id': { type: 'string' },
       risk: { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
+      engine: { type: 'string' },
     },
     allowPositionals: true,
   });
@@ -838,8 +879,24 @@ function main(argv: string[]): number {
         'bump-attempt <id> test|impl|handover | bump-attempt <id> review --review-type <type>',
       );
     }
-    const state = bumpAttempt(id, kind);
+    const engine = values.engine ?? 'codex';
+    if (!(ENGINES as readonly string[]).includes(engine)) {
+      throw new UsageError(`--engine must be ${ENGINES.join(' or ')}`);
+    }
+    const state = bumpAttempt(id, kind, new Date(), engine as Engine);
     console.log(JSON.stringify(state, null, 2));
+    return 0;
+  }
+  if (cmd === 'breakers') {
+    const engine = values.engine ?? 'codex';
+    if (!(ENGINES as readonly string[]).includes(engine)) {
+      throw new UsageError(`--engine must be ${ENGINES.join(' or ')}`);
+    }
+    const calls = taskCalls(id, engine as Engine);
+    console.log(JSON.stringify({ ...calls, engine }));
+    if (calls.reasons.length > 0) {
+      throw new BreakerError(calls.reasons.map((r) => r.message).join('\n'));
+    }
     return 0;
   }
   if (cmd === 'settle') {
@@ -892,7 +949,7 @@ function main(argv: string[]): number {
     return 0;
   }
   throw new UsageError(
-    'expected: get|set|claim|release|bump-attempt|settle|opus-run|migrate <id> ...',
+    'expected: get|set|claim|release|bump-attempt|breakers|settle|opus-run|migrate <id> ...',
   );
 }
 

@@ -348,7 +348,12 @@ export function renderBrief(input: BriefInput): string {
   const phaseText =
     phase === 'test' && task.tester === 'claude'
       ? PHASE_TEXT.test.replace('（Codex）', '（Claude 子代理）')
-      : PHASE_TEXT[phase];
+      : phase === 'test' && task.tester === 'claude-independent'
+        ? PHASE_TEXT.test.replace(
+            '（Codex）',
+            '（独立 Claude 上下文，ops/approvals.yaml 第 36 条）',
+          )
+        : PHASE_TEXT[phase];
   const out: string[] = [];
   out.push(`# 任务 ${task.id}：${task.title}`, '');
   out.push(`- 仓库：${task.repo}；分支：\`task/${task.id}\`；第 ${input.attempt} 次尝试`);

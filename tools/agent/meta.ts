@@ -4,10 +4,18 @@
 //                      [--str k=v]... [--num k=v]... [--bool k=true|false]... [--null k]...
 //                      [--list k=a,b,c]... [--lines k=<file>]... [--json k=<json text>]...
 //       Writes (with --new) or updates a flat JSON object atomically.
-//   node meta.ts events --events <file> [--err <file>]
+//   node meta.ts events [--engine codex|claude-independent] --events <file> [--err <file>]
 //       Prints shell-readable facts about a `codex exec --json` event stream:
 //       last_type=<type of the last non-empty line | none | invalid>, thread_id=<id or empty>,
 //       capacity=<0|1> (model capacity error reported by an error event or on stderr).
+//       claude-independent (ops/approvals.yaml id 36): a `claude -p --output-format stream-json`
+//       stream; last_type is result.success / result.error for its final `result` event (else
+//       the type of the last line), thread_id the session id, capacity also a usage limit.
+//   node meta.ts claude-output --events <file> --out <file>
+//       Writes the structured output of the final successful `result` event to <out>; nothing
+//       when there is none.
+//   node meta.ts edit-rules --globs <glob,glob>...
+//       Prints one Claude permission rule `Edit(/<glob>)` per glob, braces expanded.
 //   node meta.ts get --file <json> <key>
 //       Prints one scalar (empty line when missing or null); `a.b` reads a nested key. An array
 //       of scalars is printed comma-separated (empty line when it is empty).
@@ -17,8 +25,17 @@
 // Exit codes: 0 ok, 2 usage or internal error.
 import { existsSync, readFileSync } from 'node:fs';
 import { readJsonFile, writeFileAtomic } from '../lib/fsx.ts';
+import { expandBraces, splitTopLevelCommas } from '../lib/glob.ts';
 
 export const CAPACITY_TEXT = 'Selected model is at capacity';
+
+/**
+ * What a Claude run reports when the model is overloaded or the account is out of its usage
+ * window (claude-independent; mapped to exit 11 like Codex's capacity error). Matched only in the
+ * final `result` event's error text and on stderr, never in ordinary messages (file contents).
+ */
+export const CLAUDE_CAPACITY =
+  /usage limit|hit your limit|rate limit|rate_limit|overloaded|at capacity|try again (?:at|in)/i;
 
 export type EventFacts = { lastType: string; threadId: string; capacity: boolean };
 
@@ -58,6 +75,94 @@ export function eventFacts(eventsText: string, stderrText: string): EventFacts {
     }
   }
   return { lastType, threadId: threadId.replace(/[^A-Za-z0-9_-]/g, ''), capacity };
+}
+
+/** The final `result` event of a `claude -p --output-format stream-json` stream, if any. */
+function claudeResult(eventsText: string): JsonObject | null {
+  let result: JsonObject | null = null;
+  for (const line of eventsText.split('\n')) {
+    if (!line.includes('"result"')) continue;
+    try {
+      const event: unknown = JSON.parse(line);
+      if (isObject(event) && event['type'] === 'result') result = event;
+    } catch {
+      // A damaged line is no result.
+    }
+  }
+  return result;
+}
+
+/**
+ * Facts of a Claude event stream (claude-independent, ops/approvals.yaml id 36). Success is a
+ * final `result` event with subtype success and is_error false (`result.success`); a later
+ * bookkeeping line (`system`) does not change that. Capacity: a rate-limit event that rejected
+ * the call, an error result with HTTP 429 / 529 or a usage-limit text, or such a text on stderr.
+ */
+export function claudeEventFacts(eventsText: string, stderrText: string): EventFacts {
+  let lastType = 'none';
+  let threadId = '';
+  let capacity = CLAUDE_CAPACITY.test(stderrText);
+  for (const line of eventsText.split('\n')) {
+    if (line.trim() === '') continue;
+    let event: unknown;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      lastType = 'invalid';
+      continue;
+    }
+    if (!isObject(event) || typeof event['type'] !== 'string') {
+      lastType = 'invalid';
+      continue;
+    }
+    lastType = event['type'];
+    if (threadId === '' && typeof event['session_id'] === 'string') threadId = event['session_id'];
+    const info = event['rate_limit_info'];
+    if (lastType === 'rate_limit_event' && isObject(info) && info['status'] === 'rejected') {
+      capacity = true;
+    }
+  }
+  const result = claudeResult(eventsText);
+  if (result !== null) {
+    const ok = result['subtype'] === 'success' && result['is_error'] !== true;
+    lastType = ok ? 'result.success' : 'result.error';
+    const status = result['api_error_status'];
+    const text = typeof result['result'] === 'string' ? result['result'] : '';
+    if (!ok && (status === 429 || status === 529 || CLAUDE_CAPACITY.test(text))) capacity = true;
+  }
+  return { lastType, threadId: threadId.replace(/[^A-Za-z0-9_-]/g, ''), capacity };
+}
+
+/** The structured output of the final successful result event, or null. */
+export function claudeOutput(eventsText: string): JsonObject | null {
+  const result = claudeResult(eventsText);
+  if (result === null || result['subtype'] !== 'success' || result['is_error'] === true) {
+    return null;
+  }
+  const output = result['structured_output'];
+  return isObject(output) ? output : null;
+}
+
+/**
+ * Claude permission rules for the paths a test phase may write: `Edit(/<glob>)` (rooted at the
+ * working directory; Edit rules cover Write as well), braces expanded because the rule syntax has
+ * no alternatives. Globs with `..`, a leading `/` or nothing in them are refused.
+ */
+export function editRules(globLists: readonly string[]): string[] {
+  const rules: string[] = [];
+  for (const list of globLists) {
+    for (const glob of splitTopLevelCommas(list)) {
+      if (glob === '') continue;
+      if (glob.startsWith('/') || glob.split('/').includes('..')) {
+        throw new UsageError(`edit-rules: not a repository-relative glob: ${glob}`);
+      }
+      for (const one of expandBraces(glob)) {
+        const rule = `Edit(/${one})`;
+        if (!rules.includes(rule)) rules.push(rule);
+      }
+    }
+  }
+  return rules;
 }
 
 function splitPair(flag: string, raw: string | undefined): [string, string] {
@@ -175,17 +280,45 @@ function main(argv: readonly string[]): number {
     return 0;
   }
   if (command === 'events') {
+    const engine = takeOption(args, '--engine') ?? 'codex';
     const eventsFile = takeOption(args, '--events');
     const errFile = takeOption(args, '--err');
     requireEmpty(args);
     if (eventsFile === undefined) throw new UsageError('events needs --events');
+    if (engine !== 'codex' && engine !== 'claude-independent') {
+      throw new UsageError(`events: unknown engine ${engine}`);
+    }
     const read = (file: string | undefined): string =>
       file !== undefined && existsSync(file) ? readFileSync(file, 'utf8') : '';
-    const facts = eventFacts(read(eventsFile), read(errFile));
+    const facts = (engine === 'codex' ? eventFacts : claudeEventFacts)(
+      read(eventsFile),
+      read(errFile),
+    );
     const lastType = /^[A-Za-z0-9._-]+$/.test(facts.lastType) ? facts.lastType : 'invalid';
     process.stdout.write(
       `last_type=${lastType}\nthread_id=${facts.threadId}\ncapacity=${facts.capacity ? 1 : 0}\n`,
     );
+    return 0;
+  }
+  if (command === 'claude-output') {
+    const eventsFile = takeOption(args, '--events');
+    const out = takeOption(args, '--out');
+    requireEmpty(args);
+    if (eventsFile === undefined || out === undefined) {
+      throw new UsageError('claude-output needs --events and --out');
+    }
+    const output = existsSync(eventsFile) ? claudeOutput(readFileSync(eventsFile, 'utf8')) : null;
+    if (output !== null) writeFileAtomic(out, `${JSON.stringify(output, null, 2)}\n`);
+    return 0;
+  }
+  if (command === 'edit-rules') {
+    const lists: string[] = [];
+    for (let value = takeOption(args, '--globs'); value !== undefined;) {
+      lists.push(value);
+      value = takeOption(args, '--globs');
+    }
+    requireEmpty(args);
+    for (const rule of editRules(lists)) process.stdout.write(`${rule}\n`);
     return 0;
   }
   if (command === 'get') {
@@ -207,7 +340,7 @@ function main(argv: readonly string[]): number {
     process.stdout.write(`${JSON.stringify(doc)}\n`);
     return 0;
   }
-  throw new UsageError('usage: meta.ts merge|events|get|emit ...');
+  throw new UsageError('usage: meta.ts merge|events|claude-output|edit-rules|get|emit ...');
 }
 
 if (import.meta.main) {
