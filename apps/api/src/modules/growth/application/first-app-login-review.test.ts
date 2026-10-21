@@ -116,6 +116,7 @@ it('[AC-B1-11f#1] hit: lock, conditional update of the three columns, relation l
     'system',
     null,
     new Date(NOW),
+    new Date(NOW), // created_at = at (B1-11t)
   ]);
   expect(f.record).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
     app_id: APP,
