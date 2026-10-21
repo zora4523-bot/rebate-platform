@@ -1,0 +1,23 @@
+id: B3-01f
+repo: rebate-platform
+title: B3-01f：evals-replay 冻结用例里「未实现 forbid」的示例从 auto_redirect 换成 banned_word_in_text（为 B3-01e 实现 auto_redirect 判分让路）
+type: test-change
+# 2026-10-21 入账（agent-acct4）。起因：B3-01e 要在 packages/evals 实现 forbid=auto_redirect 的判分（B3-05j 的 T1 冒烟全过依赖它，
+# 见 ops/tasks/B3-01e.yaml 注释）。test/spec/evals-replay/grade-expectations.test.ts 有两条 B3-01b 冻结用例拿 auto_redirect 当「本段未实现的 forbid」示例：
+# ① it.each(['banned_word_in_text', 'auto_redirect'])「未实现 forbid=%s 标 coverage_gap」；② 「problems 全保留…」的 forbid: ['auto_redirect'] 与末行 ungraded_forbid 断言。
+# B3-01e 合并后 auto_redirect 不再是未实现项，两条会转红。
+# 做法：① 的列表去掉 'auto_redirect'（只留仍未实现的 banned_word_in_text）；② 的 forbid 改为 ['banned_word_in_text']。不改其他断言、不删用例、不动实现。
+# 改后在现行代码上仍全绿（banned_word_in_text 仍在 UNGRADED_FORBIDS），须先于 B3-01e 合并。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走
+# 非 task 分支（chore/test-change-B3-01f）、不带证据文件（先例 CT-06y #860）；Claude 实现、Codex 只读对抗评审。
+refs: []
+refs_hash: {}
+deps: [B3-01b]
+paths:
+  - 'test/spec/evals-replay/grade-expectations.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
