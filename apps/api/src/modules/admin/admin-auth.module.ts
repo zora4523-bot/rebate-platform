@@ -1,6 +1,7 @@
 // Admin console authentication (F1-06k; 08 BR-ID-34): the /admin/v1/auth routes, the admin
 // entry's request check (whitelist + admin_token) and the CORS policy bootstrap installs; and the
-// read-only admin accounts of the super admin (F1-06m, /admin/v1/admins, primary database only).
+// read-only admin accounts of the super admin (F1-06m, /admin/v1/admins, primary database only);
+// and the audit search of any signed-in account (B1-34a, /admin/v1/audit-logs, primary database).
 // Loaded on the admin entry only (app.module).
 //
 // Step-up and me/permissions (F1-06l) live here too: POST auth/step-up/sms-codes, POST
@@ -36,6 +37,7 @@ import {
   type AdminAccountsReader,
 } from './application/admin-accounts-read.ts';
 import { AdminOperationGuardImpl } from './application/admin-operation-guard.ts';
+import { createAuditLogsReader, type AuditLogsReader } from './application/audit-logs-read.ts';
 import { createAdminRequestCheck } from './application/admin-check.ts';
 import { createAdminAuthService, type AdminAuthService } from './application/admin-login.ts';
 import {
@@ -52,18 +54,27 @@ import {
 } from './application/permission-guard.ts';
 import {
   ADMIN_ACCOUNTS_READ,
+  ADMIN_AUDIT_LOGS_READ,
   ADMIN_AUTH,
   ADMIN_CHECK,
   ADMIN_HTTP_POLICY,
   ADMIN_STEP_UP,
 } from './application/tokens.ts';
+import type { ConfigPermissions } from './domain/audit-log-view.ts';
 import { createIpAllowlist } from './domain/login-policy.ts';
 import { createTotpVerifier } from './domain/totp.ts';
 import { AdminAccountsController } from './http/admin/admins.controller.ts';
+import { AdminAuditLogsController } from './http/admin/audit-logs.controller.ts';
 import { AdminAuthController } from './http/admin/auth.controller.ts';
 import { AdminStepUpController } from './http/admin/step-up.controller.ts';
 import { createAdminAccounts, type AdminAccounts } from './infra/admin-accounts.ts';
 import { createAdminDirectory } from './infra/admin-directory.ts';
+import {
+  createAuditLogIdCodec,
+  keyringAuditLogIdKey,
+  type AuditLogIdCodec,
+} from './infra/audit-log-id.ts';
+import { createAuditLogStore } from './infra/audit-log-store.ts';
 import { createAdminProfiles, type AdminProfiles } from './infra/admin-profiles.ts';
 import { createAdminSessions, type AdminSessions } from './infra/admin-sessions.ts';
 import { createLoginTickets } from './infra/login-tickets.ts';
@@ -78,6 +89,12 @@ export interface AdminAuthOptions {
    * 50001 and keeps neither the code nor the send slot.
    */
   readonly smsSender?: FactoryProvider<AdminSmsSender> & { readonly provide: symbol };
+  /**
+   * content's configuration registry as key → its one permission point, from which the audit
+   * search derives the point of config_item_change / config_item_rollback records. Absent: no
+   * configuration record derives a point (null, never matched by a permission filter).
+   */
+  readonly configPermissions?: ConfigPermissions;
 }
 
 /** What bootstrap needs to answer the console's CORS requests on the admin entry. */
@@ -143,7 +160,12 @@ export class AdminAuthModule {
       module: AdminAuthModule,
       // Global so business modules inject AdminOperationGuard without importing admin (F1-06u).
       global: true,
-      controllers: [AdminAuthController, AdminStepUpController, AdminAccountsController],
+      controllers: [
+        AdminAuthController,
+        AdminStepUpController,
+        AdminAccountsController,
+        AdminAuditLogsController,
+      ],
       providers: [
         ...(sender === undefined ? [] : [sender]),
         {
@@ -309,6 +331,31 @@ export class AdminAuthModule {
               clock,
               directory: createAdminDirectory({ db }),
               crypto,
+            });
+          },
+        },
+        {
+          provide: ADMIN_AUDIT_LOGS_READ,
+          // DB is the primary (couli_app), as for the accounts reads; reads only.
+          inject: [
+            { token: DB, optional: true },
+            { token: FIELD_CRYPTO, optional: true },
+          ],
+          useFactory: (db?: Kysely<Database>, crypto?: FieldCrypto): AuditLogsReader => {
+            if (db === undefined || crypto === undefined) {
+              const refuse = (): Promise<never> =>
+                Promise.reject(
+                  new Error('admin audit logs: needs the database and the field cipher'),
+                );
+              return { list: refuse, get: refuse };
+            }
+            // Derived on first use, not at startup: only the audit search touches the keyring.
+            let codec: AuditLogIdCodec | undefined;
+            return createAuditLogsReader({
+              store: createAuditLogStore({ db }),
+              profiles: createAdminProfiles({ db }),
+              ids: () => (codec ??= createAuditLogIdCodec(keyringAuditLogIdKey(crypto))),
+              configPermissions: options.configPermissions ?? new Map(),
             });
           },
         },

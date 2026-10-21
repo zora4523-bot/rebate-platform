@@ -16483,7 +16483,7 @@ export interface operations {
                      *       "data": {
                      *         "items": [
                      *           {
-                     *             "id": "aud_7Qm2Xv9KpL4sTn8R",
+                     *             "id": "aud_7Qm2Xv9KpL4sTn8RfY6cJa",
                      *             "actor_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
                      *             "actor_name": "ops01",
                      *             "action": "user_pii_reveal",
@@ -16494,20 +16494,31 @@ export interface operations {
                      *             "at": "2026-10-18T15:42:10+08:00"
                      *           },
                      *           {
-                     *             "id": "aud_3Hc6Wd1FzY5gBe0J",
+                     *             "id": "aud_3Hc6Wd1FzY5gBe0JkT2pQw",
                      *             "actor_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
                      *             "actor_name": "ops01",
-                     *             "action": "login",
+                     *             "action": "dict_items_save",
                      *             "target_type": null,
                      *             "target_id": null,
                      *             "permission": null,
-                     *             "ip": null,
+                     *             "ip": "203.0.113.8",
+                     *             "at": "2026-10-18T11:20:45+08:00"
+                     *           },
+                     *           {
+                     *             "id": "aud_5Lp8Ry3NcV7dWs1HmX4bZe",
+                     *             "actor_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "actor_name": "ops01",
+                     *             "action": "admin.login",
+                     *             "target_type": "admin_user",
+                     *             "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *             "permission": null,
+                     *             "ip": "203.0.113.8",
                      *             "at": "2026-10-18T09:00:03+08:00"
                      *           }
                      *         ],
                      *         "page": 1,
                      *         "page_size": 20,
-                     *         "total": 2
+                     *         "total": 3
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
                      *     }
@@ -16559,22 +16570,30 @@ export interface operations {
                      *       "code": 0,
                      *       "msg": "",
                      *       "data": {
-                     *         "id": "aud_9Nr4Ut2LxA8kVq6M",
+                     *         "id": "aud_9Nr4Ut2LxA8kVq6MbG3sPd",
                      *         "actor_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b00",
                      *         "actor_name": "owner",
-                     *         "action": "user_risk_ban",
+                     *         "action": "user_risk_state_change",
                      *         "target_type": "user",
                      *         "target_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
                      *         "permission": "risk.ban",
                      *         "ip": "203.0.113.8",
                      *         "at": "2026-10-18T16:05:00+08:00",
                      *         "before": {
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
                      *           "state": "normal",
+                     *           "reason_category": null,
+                     *           "reason": null,
+                     *           "frozen_until": null,
                      *           "row_version": 3
                      *         },
                      *         "after": {
+                     *           "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c02",
+                     *           "action": "ban",
                      *           "state": "banned",
                      *           "reason_category": "fraud",
+                     *           "reason": "order brushing",
+                     *           "frozen_until": null,
                      *           "row_version": 4
                      *         }
                      *       },
