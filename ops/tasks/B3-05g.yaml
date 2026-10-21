@@ -25,5 +25,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/orchestrator-results/**'
-status: todo
-pr: null
+status: done
+pr: 1074
