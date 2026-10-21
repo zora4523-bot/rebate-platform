@@ -49,6 +49,7 @@ import {
 import { sql, type Transaction } from 'kysely';
 import { appendRelationChange } from '../infra/change-logs.ts';
 import { lockRelationWrites } from '../infra/relation-lock.ts';
+import { qualifyAfterBind } from './invite-reward-hook.ts';
 import {
   DEFAULT_FAIL_LIMIT,
   FAIL_KEY_GRACE_SECONDS,
@@ -118,6 +119,7 @@ export type LandingInviteBinderDeps = Pick<
   | 'readRisk'
   | 'verifiedBirthDate'
   | 'readDeletionStage'
+  | 'inviteReward'
 >;
 
 // Two (count key, seen marker) pairs: for each, SET NX EX ARGV[1] on the marker first; a marker
@@ -332,6 +334,15 @@ export function createLandingInviteBinder(deps: LandingInviteBinderDeps): Landin
         source: 'landing',
         operator: `user:${userId}`,
         reason: null,
+        at,
+      });
+      // 5. BR-INV-24 ① (B1-35): the reward qualification in this transaction, at the bound instant.
+      await qualifyAfterBind(deps.inviteReward, logger, trx, {
+        app_id: appId,
+        invitee_id: userId,
+        inviter_id: inviter.id,
+        bind_source: 'landing',
+        client_ip: input.client_ip,
         at,
       });
       return { result: 'bound', parent_id: inviter.id, bound_at: at };

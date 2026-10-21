@@ -37,7 +37,11 @@ import {
   type HandlerResult,
   type Idempotency,
 } from '../../../platform/index.ts';
-import type { InviteBinder, InviteBindingResult } from '../../application/invite-binder.ts';
+import type {
+  InviteBindOptions,
+  InviteBinder,
+  InviteBindingResult,
+} from '../../application/invite-binder.ts';
 
 /** Nest token of growth's binding core for this route (null when it cannot be assembled). */
 export const INVITE_BACKFILL_BINDER = Symbol('GROWTH_INVITE_BACKFILL_BINDER');
@@ -66,6 +70,8 @@ export interface InviterHttpRequest extends CheckedRequest {
   readonly id: string;
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
   readonly body?: Schema<'BindInviterRequest'>;
+  /** Fastify's client address (the gateway-resolved IP); only for the invite reward (B1-35). */
+  readonly ip?: string;
 }
 
 /** What this controller writes on the Fastify reply. */
@@ -98,6 +104,18 @@ function answer(
     throw new Error('growth: 42901 without retry_after_seconds');
   }
   return { response, retryAfter: Math.max(1, Math.ceil(seconds)) };
+}
+
+/** The core's per-call options: the attempt key and the client IP, each only when present. */
+function bindOptions(
+  key: string | undefined,
+  ip: string | undefined,
+): InviteBindOptions | undefined {
+  if (key === undefined && typeof ip !== 'string') return undefined;
+  return {
+    ...(key === undefined ? {} : { attemptKey: key }),
+    ...(typeof ip === 'string' ? { clientIp: ip } : {}),
+  };
 }
 
 export class InviterController {
@@ -154,7 +172,8 @@ export class InviterController {
             },
             // The handler runs only with a well-formed key (the idempotency module answers 20001
             // otherwise): the daily 30401 count is de-duplicated per key (review r1 S1).
-            key === undefined ? undefined : { attemptKey: key },
+            // The client IP reaches only the invite reward qualification (B1-35, BR-INV-24 ①).
+            bindOptions(key, request.ip),
           ),
           traceId,
         );

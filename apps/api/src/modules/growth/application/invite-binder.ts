@@ -61,6 +61,7 @@ import type { Clock, FieldCrypto, RedisHandle, RootLogger } from '../../platform
 import type { RiskStateSnapshot } from '../../risk/index.ts';
 import { appendRelationChange } from '../infra/change-logs.ts';
 import { lockRelationWrites } from '../infra/relation-lock.ts';
+import { qualifyAfterBind, type InviteRewardQualifierPort } from './invite-reward-hook.ts';
 
 export interface InviteBindCommand {
   readonly channel: 'register' | 'backfill';
@@ -93,6 +94,8 @@ export interface InviteActivityReader {
 export interface RegistrationInviteInput extends InviteSubject {
   readonly invite_code: string;
   readonly device_id?: string;
+  /** RegistrationCommand.client_ip (B1-35): the invite reward's bind IP, never stored in clear. */
+  readonly client_ip?: string;
 }
 
 /** Structurally compatible with RegistrationOptions['bindInvite'], without importing Nest. */
@@ -141,6 +144,12 @@ export interface InviteBinderDeps {
     trx: Transaction<DB>,
     subject: InviteSubject,
   ) => Promise<InviteDeletionStage>;
+  /**
+   * BR-INV-24 ① (B1-35): growth's invite reward qualifier, called after a successful bind in the
+   * same transaction under its own savepoint (invite-reward-hook.ts). Omitted (unit tests, older
+   * assemblies): no qualification is written.
+   */
+  readonly inviteReward?: InviteRewardQualifierPort;
 }
 
 /** Structurally identity's DeletionStage (B1-15c), without importing identity. */
@@ -160,6 +169,11 @@ export interface InviteBindOptions {
    * day, so a retry after a rolled-back commit never counts twice. Omitted: every 30401 counts.
    */
   readonly attemptKey?: string;
+  /**
+   * The binding request's client IP (backfill: the controller's request.ip; register: the
+   * registration command's client_ip), handed to the invite reward qualification only (B1-35).
+   */
+  readonly clientIp?: string;
 }
 
 export interface InviteBinder {
@@ -231,7 +245,8 @@ function checkOptions(options: InviteBindOptions | undefined): void {
   if (
     typeof options !== 'object' ||
     options === null ||
-    (options.attemptKey !== undefined && !nonEmpty(options.attemptKey))
+    (options.attemptKey !== undefined && !nonEmpty(options.attemptKey)) ||
+    (options.clientIp !== undefined && typeof options.clientIp !== 'string')
   ) {
     throw new TypeError('growth: malformed invite bind options');
   }
@@ -599,22 +614,49 @@ export function createInviteBinder(deps: InviteBinderDeps): InviteBinder {
         reason: null,
         at,
       });
+      // BR-INV-24 ① (B1-35): the reward qualification in this transaction, at the bound instant.
+      await qualifyAfterBind(deps.inviteReward, logger, trx, {
+        app_id: appId,
+        invitee_id: userId,
+        inviter_id: inviter.id,
+        bind_source: channel,
+        client_ip: options?.clientIp ?? '',
+        at,
+      });
       return { result: 'bound', parent_id: inviter.id, bound_at: at };
     },
   };
 }
 
+/** Assembly options of the registration adapter (B1-35). */
+export interface RegistrationInviteBindingOptions {
+  /**
+   * Hand the registration's client IP to the binder as InviteBindOptions.clientIp, for the invite
+   * reward qualification only (BR-INV-24 ①). Off by default: the core is then called with exactly
+   * (trx, command), as before B1-35; app.module turns it on when it assembles the reward hook.
+   */
+  readonly forwardClientIp?: boolean;
+}
+
 /** Identity retains its SAVEPOINT; maps unexpected channel errors to 50001. */
-export function createRegistrationInviteBinding(binder: InviteBinder): RegistrationInviteBinding {
+export function createRegistrationInviteBinding(
+  binder: InviteBinder,
+  bindingOptions?: RegistrationInviteBindingOptions,
+): RegistrationInviteBinding {
+  const forward = bindingOptions?.forwardClientIp === true;
   return async (trx, input) => {
-    const answer = await binder.bind(trx, {
+    const command: InviteBindCommand = {
       channel: 'register',
       app_id: input.app_id,
       user_id: input.user_id,
       invite_code: input.invite_code,
       // A registration without a signature device is a caller bug: the binder refuses it.
       device_id: input.device_id ?? '',
-    });
+    };
+    const answer =
+      forward && typeof input.client_ip === 'string'
+        ? await binder.bind(trx, command, { clientIp: input.client_ip })
+        : await binder.bind(trx, command);
     if (answer.result === 'bound') return { result: 'bound', code: null };
     const code = REGISTER_CODES.has(answer.code) ? answer.code : 50001;
     return { result: 'failed', code: code as 30401 | 30403 | 30408 | 42901 | 50001 };

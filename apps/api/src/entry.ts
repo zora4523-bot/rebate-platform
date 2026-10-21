@@ -1,6 +1,11 @@
 // Shared runner behind the five `main.<entry>.ts` files.
 import { createHttpApp, createWorkerContext } from './bootstrap.ts';
 import { agentSweeperToken, type AgentSweeperRuntime } from './modules/agent/index.ts';
+import {
+  inviteRewardScannerToken,
+  startInviteRewardWorker,
+  type InviteRewardScanner,
+} from './modules/growth/index.ts';
 import { payoutVerifyRecheckToken, startPayoutVerifyRecheck } from './modules/identity/index.ts';
 import {
   type AppConfig,
@@ -127,6 +132,27 @@ function startOrderSync(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * growth's invite reward loop (B1-35): resolved and started only while no stop was requested.
+ * Optional like the order-sync runtime: a context without the provider, a null provider (no
+ * database, field cipher or event bus) or a value without tick → no loop, no crash, no log.
+ */
+function startInviteReward(
+  resolve: () => unknown,
+  logger: RootLogger,
+  stopping: () => boolean,
+): { stop(): Promise<void> } | undefined {
+  if (stopping()) return undefined;
+  let scanner: Partial<InviteRewardScanner> | null | undefined;
+  try {
+    scanner = resolve() as Partial<InviteRewardScanner> | null | undefined;
+  } catch {
+    return undefined;
+  }
+  if (stopping() || typeof scanner?.tick !== 'function') return undefined;
+  return startInviteRewardWorker({ scanner: scanner as InviteRewardScanner, logger });
 }
 
 /** A start step whose rejection marks the startup as failed before any cleanup runs. */
@@ -289,12 +315,23 @@ async function start(
         queue,
         () => signals.stopping(),
       );
+      // The invite reward scan (B1-35): payout every 60 seconds and the daily expiry, started once
+      // the queue runs; stopped first on shutdown, waiting for its round in flight.
+      const reward = startInviteReward(
+        () => context.get<unknown>(inviteRewardScannerToken(), { strict: false }),
+        logger,
+        () => signals.stopping(),
+      );
       const keepAlive = setInterval(() => undefined, KEEP_ALIVE_INTERVAL_MS);
       await signals.serve(
         async () => {
           try {
             try {
-              await recheck?.stop();
+              try {
+                await reward?.stop();
+              } finally {
+                await recheck?.stop();
+              }
             } finally {
               heal.stop();
               try {
