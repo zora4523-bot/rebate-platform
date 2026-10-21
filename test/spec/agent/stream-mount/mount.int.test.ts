@@ -680,6 +680,12 @@ async function heldStreamApp(
       forStream(options: AgentStreamModuleOptions): { providers?: unknown[] };
     };
   };
+  // Skeleton tree (no forStream yet): the unmodified stream entry, so the run reaches the mount
+  // skeleton's NotImplemented like the other entry tests. Orchestrator mechanical fix: no assertion
+  // changed; with forStream present the path below is unchanged.
+  if (typeof (AgentModule as { forStream?: unknown }).forStream !== 'function') {
+    return streamApp(clock);
+  }
   const original = AgentModule.forStream.bind(AgentModule);
   vi.spyOn(AgentModule, 'forStream').mockImplementation((options) => {
     const module = original(options);
