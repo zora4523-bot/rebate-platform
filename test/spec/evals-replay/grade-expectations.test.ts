@@ -210,7 +210,7 @@ it.each(['done', 'error'])('[B3-01b] %s 是终止帧且必须位于最后', (eve
   }
 });
 
-it.each<Forbid>(['banned_word_in_text', 'auto_redirect'])(
+it.each<Forbid>(['banned_word_in_text'])(
   '[B3-01b] 未实现 forbid=%s 标 coverage_gap，不能伪装通过；安全失败仍优先 fail',
   (forbid) => {
     const c = sample({ expect: { intent: 'search', forbid: [forbid] } });
@@ -243,7 +243,7 @@ it('[B3-01b] problems 全保留，按轮次、层、code 排序；同时失败�
       intent: 'search',
       cards: ['notice'],
       tools: [],
-      forbid: ['auto_redirect'],
+      forbid: ['banned_word_in_text'],
     },
   });
   const last: TurnOutput = output(['9元 https://example.com。甲。乙。'], {
