@@ -18,8 +18,10 @@
 #   ordinary 段只用 08 写明整组归普通的前缀，其余逐键列出，不用 external_page. 这类整前缀
 #   （external_page.product_unresolved 单列资金术语）。
 #
-# 08 列了、texts.default.json 里还没有的键（tag.rebate、btn.buy.no_rebate、btn.buy.rebate_suffix、jump_tip，普通段的
-# btn.buy、btn.buy.coupon）照 08 先归类；08「还没有取键名的资金文案」取键名后补进 fund_terms.keys。
+# 08 列了、texts.default.json 里还没有的键（jump_tip）照 08 先归类；08「还没有取键名的资金文案」取键名后补进 fund_terms.keys。
+# CT-16f：agent.earnings. 按 08 写作前缀归 fund_terms；08 未写归类的新键按认定规则归类：rebate_estimate、rebate_compare
+# （「以结算为准」是 08 列的比价区间后缀）、home.guest_value.login（「登录领返利」，拿不准按资金术语）归 fund_terms，
+# price_basis、price_basis.general、home.guest_value.desc 归 ordinary（编排者默认，待规划回写）。
 # P1 订阅提醒模板 watch.price_drop.* 进 notify_template_code 时归 fund_terms（BR-WATCH-14）。
 # invite.reward.tip 归 fund_terms、invite.post_login.optional_hint 归 ordinary（BR-TEXT-12 细则，2026-10-19）；
 # invite.reward.tip_inviter 08 未写归类，与 invite.reward.tip 同为带 {amount} 的奖励句，归 fund_terms（编排者默认，待规划回写）。
@@ -47,6 +49,7 @@ fund_terms:
     - auth_tips.
     - order_status_group.
     - jump_tip.
+    - agent.earnings.
     # BR-TEXT-25 后台字典（admin_dict.*，默认文案在 contracts/texts.admin.default.json）：提现、打款、调账、核销、
     # 差错单、月结类枚举整组归资金术语；其余枚举的键逐键列在 ordinary.keys。
     - admin_dict.admin_adjustments.status.
@@ -61,6 +64,9 @@ fund_terms:
     - admin_dict.withdrawals.review_mode.
     - admin_dict.withdrawals.risk_flags.
   keys:
+    - agent.guide.Wallet
+    - agent.guide.WithdrawRecords
+    - agent.guide.account.fund
     - btn.buy.no_rebate
     - btn.buy.rebate_suffix
     - claim_required
@@ -73,6 +79,7 @@ fund_terms:
     - error.44001
     - error.50301.not_launched
     - external_page.product_unresolved
+    - home.guest_value.login
     - invite.notice_inviter
     - invite.reward.tip
     - invite.reward.tip_inviter
@@ -86,7 +93,11 @@ fund_terms:
     - platform_coming_soon
     - platform_no_rebate
     - rebate_amount_unknown
+    - rebate_compare
+    - rebate_estimate
     - rebate_login_to_view
+    - share.est_promo
+    - share_hub.rule_note
     - tag.rebate
   notify_templates:
     - ORDER_TRACKED
@@ -169,6 +180,15 @@ ordinary:
     - agent.degraded
     - agent.degraded.empty
     - agent.disclaimer.commission
+    - agent.guide.AuthManage
+    - agent.guide.InviteShare
+    - agent.guide.Messages
+    - agent.guide.OrderList
+    - agent.guide.account.delete
+    - agent.guide.account.phone
+    - agent.guide.account.phone_off
+    - agent.guide.open
+    - agent.guide.unavailable
     - agent.match.matched
     - agent.match.relaxed
     - agent.match.spec_unconfirmed
@@ -205,12 +225,22 @@ ordinary:
     - ai_label
     - btn.buy
     - btn.buy.coupon
+    - btn.search_similar
     - buy.opening
     - buy.opening.cancel
     - buy.timeout
+    - claim.records.empty
+    - clipboard.consent.body
+    - clipboard.consent.enable
+    - clipboard.consent.not_now
+    - clipboard.consent.title
     - clipboard.invite_prompt
+    - clipboard.paste_hint
+    - clipboard.paste_hint.agent
     - clipboard.prompt
+    - cs.appeal_entry
     - cs.copy_link
+    - cs.copy_link.done
     - cs.go_help
     - cs.wechat_unavailable
     - download_guide.download
@@ -307,17 +337,47 @@ ordinary:
     - favorite.removed
     - favorites.empty
     - h5.load_failed
+    - home.guest_value.desc
+    - invite.auto_bind_failed
     - invite.before_buy_tip
+    - invite.bind_phone_guide.benefit
     - invite.bind_phone_guide.body
     - invite.bind_phone_guide.body_before_buy
+    - invite.bind_phone_guide.merge_hint
     - invite.bind_phone_guide.title
+    - invite.bound_toast
+    - invite.copy_code.done
+    - invite.copy_link.done
     - invite.post_login.optional_hint
+    - invite.post_login.skip
+    - invite.post_login.title
+    - invite_landing.open_in_app
     - jump.taobao_sdk_unavailable
     - link_landing.invalid
+    - login.agree.text
+    - login.agree.text_carrier
+    - login.agree.text_huawei
+    - login.agree_confirm.body
+    - login.agree_confirm.body_oauth
+    - login.agree_confirm.btn_disagree
+    - login.agree_confirm.btn_get_code
+    - login.agree_confirm.btn_login
+    - login.agree_confirm.title
+    - login.code.countdown
+    - login.code.help_entry
+    - login.code.resend_needed
     - login.help_entry
+    - login.last_method_tag
+    - login.network_retry
+    - login.pending_invite
+    - login.pending_invite.remove
+    - login.risk_blocked.desc
+    - login.risk_blocked.desc_send
     - login.wechat_unavailable
     - net.stale_data
+    - no_rebate.price_compare.help
     - no_rebate.price_compare.similar
+    - order_detail.copy.done
     - order_detail.view_product
     - order_list.empty
     - order_list.history_hint
@@ -342,6 +402,9 @@ ordinary:
     - pending_confirm.title
     - pending_track_card.desc
     - pending_track_card.title
+    - phone_change.risk_blocked.desc
+    - price_basis
+    - price_basis.general
     - price_trend.empty
     - price_trend.source
     - price_trend.source.general
@@ -356,14 +419,38 @@ ordinary:
     - settings.clear_cache.confirm_ok
     - settings.clear_cache.done
     - settings.clear_cache.size
+    - settings.clipboard_auto
+    - settings.clipboard_auto.desc
+    - settings.logout
+    - settings.logout.confirm
+    - settings.logout.confirm_cancel
+    - settings.logout.confirm_ok
     - share.copied
     - share.copy_full
     - share.copy_link_only
+    - share.copy_text
+    - share.copy_text.regen_confirm
     - share.copy_tpwd_only
+    - share.generate_failed
+    - share.include.coupon
+    - share.include.link
+    - share.include.pre_coupon
+    - share.include.price
+    - share.include.sale_price
+    - share.include.title
+    - share.include.tpwd
     - share.open_wechat
+    - share.retry
     - share.save_images
     - share.saved
+    - share.system_share
     - share.wechat_unavailable
+    - share_hub.favorites_empty
+    - share_hub.from_favorites
+    - share_hub.go_share
+    - share_hub.paste
+    - share_hub.paste_hint
+    - share_hub.title
     - share_page.copy_tpwd
     - share_page.copy_tpwd.done
     - share_page.open_in_app
@@ -404,3 +491,17 @@ exempt:
     reason: 通知权限的用途说明，同 perm.push.card_hint
   - key: privacy.basic_mode.notice
     reason: 说明开启完整功能后能登录、查返利，不说有没有返利
+  - key: home.guest_value.desc
+    reason: 只是请游客下单前先来查返利，不说金额、状态或有没有返利（同 clipboard.prompt）
+  - key: invite.bind_phone_guide.benefit
+    reason: 只说绑定手机号以后方便提现，不说金额，也不说提现处在什么状态（08 BR-TEXT-12 细则写明的例外理由）
+  - key: clipboard.paste_hint
+    reason: 粘贴入口的说明，只是请用户粘贴后去查返利，不说有没有返利（08 BR-TEXT-12 细则写明归普通）
+  - key: clipboard.paste_hint.agent
+    reason: AgentChat 粘贴胶囊的说明，只是请用户让 AI 查返利，不说有没有返利（08 BR-TEXT-12 细则写明归普通）
+  - key: clipboard.consent.title
+    reason: 剪贴板自动识别的用途说明标题，只问要不要开启自动查返利，不说有没有返利（08 BR-TEXT-12 细则写明归普通，另归 content.agreement）
+  - key: privacy.first_launch.summary
+    reason: 首启隐私摘要，说明收集信息的用途含发放返利，不说金额、状态或有没有返利（表 D 隐私文案，另归 content.agreement）
+  - key: privacy.second_notice.body
+    reason: 不同意隐私政策时的说明，只说基本模式下不能登录、拿不到返利，不说金额或某笔返利的状态（表 D 隐私文案，另归 content.agreement）
