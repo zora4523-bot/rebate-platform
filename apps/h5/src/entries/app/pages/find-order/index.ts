@@ -1,13 +1,5 @@
-import type { ReactElement } from 'react';
-import type { AppApiBridge } from '../../../../shared/api/app-api.ts';
+import { FindOrderPage } from './find-order-page.tsx';
 
-export interface FindOrderPageProps {
-  bridge?: AppApiBridge;
-}
-
-export function FindOrderPage(props: FindOrderPageProps): ReactElement {
-  void props;
-  throw new Error('NotImplemented: FindOrderPage');
-}
-
+export { FindOrderPage, type FindOrderPageProps } from './find-order-page.tsx';
+/** Route module shape (React Router `lazy`): the FindOrder route renders this page. */
 export { FindOrderPage as Component };

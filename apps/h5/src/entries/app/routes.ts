@@ -25,6 +25,7 @@ const pages: Readonly<Partial<Record<string, H5Route['lazy']>>> = {
   [bridge.routes.Notice.h5_path]: () => import('./pages/notices/index.ts'),
   [bridge.routes.Agreement.h5_path]: () => import('./pages/agreements/index.ts'),
   [bridge.routes.Ledger.h5_path]: () => import('./pages/ledger/index.ts'),
+  [bridge.routes.FindOrder.h5_path]: () => import('./pages/find-order/index.ts'),
 };
 
 /** Every route without its own page yet shares one lazily loaded placeholder chunk. */
