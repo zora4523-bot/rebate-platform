@@ -103,7 +103,9 @@ it('[AC-F1-09n#6] scheduled CHECK is validated and covers all four columns', asy
         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.num
         ORDER BY a.attname) AS columns
     FROM pg_constraint c
-    WHERE c.conrelid = to_regclass('app.pages') AND c.conname = 'pages_scheduled_check'`.execute(app);
+    WHERE c.conrelid = to_regclass('app.pages') AND c.conname = 'pages_scheduled_check'`.execute(
+    app,
+  );
   expect(result.rows).toEqual([{ validated: true, type: 'c', columns: [...SLOT_COLUMNS].sort() }]);
 });
 
@@ -165,7 +167,11 @@ it.each(['missing', 'other-app', 'other-page'] as const)(
       });
     }
     const invalid = { ...slot, scheduled_version: 9 };
-    await rejects(insert(app, 'pages', { ...page, ...invalid }), 'pages_scheduled_version_fkey', '23503');
+    await rejects(
+      insert(app, 'pages', { ...page, ...invalid }),
+      'pages_scheduled_version_fkey',
+      '23503',
+    );
     await insert(app, 'pages', { ...page, ...slot });
     await rejects(update(app, page, invalid), 'pages_scheduled_version_fkey', '23503');
   },
@@ -174,7 +180,11 @@ it.each(['missing', 'other-app', 'other-page'] as const)(
 it('[AC-F1-09n#9] nonexistent scheduling admin fails the named FK on INSERT and UPDATE', async () => {
   const { page, slot } = await seeded(app);
   const invalid = { ...slot, scheduled_by_admin_id: randomUUID() };
-  await rejects(insert(app, 'pages', { ...page, ...invalid }), 'pages_scheduled_by_admin_id_fkey', '23503');
+  await rejects(
+    insert(app, 'pages', { ...page, ...invalid }),
+    'pages_scheduled_by_admin_id_fkey',
+    '23503',
+  );
   await insert(app, 'pages', { ...page, ...slot });
   await rejects(update(app, page, invalid), 'pages_scheduled_by_admin_id_fkey', '23503');
 });
@@ -184,11 +194,15 @@ it('[AC-F1-09n#10] business-role deletes of referenced versions/admins are refus
   await insert(app, 'pages', { ...page, ...slot });
   // Business roles have no DELETE grant; do not grant privileges or use an owner connection.
   // #7 independently checks the actual FK delete action, so CASCADE/SET NULL cannot pass.
-  await expect(sql`DELETE FROM app.page_versions
+  await expect(
+    sql`DELETE FROM app.page_versions
     WHERE app_id = ${page.app_id} AND page_key = ${page.page_key}
-      AND version = ${slot.scheduled_version}`.execute(app)).rejects.toMatchObject({ code: '42501' });
-  await expect(sql`DELETE FROM app.admin_users
-    WHERE id = ${slot.scheduled_by_admin_id}`.execute(app)).rejects.toMatchObject({ code: '42501' });
+      AND version = ${slot.scheduled_version}`.execute(app),
+  ).rejects.toMatchObject({ code: '42501' });
+  await expect(
+    sql`DELETE FROM app.admin_users
+    WHERE id = ${slot.scheduled_by_admin_id}`.execute(app),
+  ).rejects.toMatchObject({ code: '42501' });
   const saved = await sql<Row>`SELECT * FROM app.pages
     WHERE app_id = ${page.app_id} AND page_key = ${page.page_key}`.execute(app);
   expect(saved.rows).toMatchObject([slot]);
@@ -201,18 +215,21 @@ it('[AC-F1-09n#10] business-role deletes of referenced versions/admins are refus
   expect(admin.rows).toEqual([{ id: slot.scheduled_by_admin_id }]);
 });
 
-it.each([1, 2])('[AC-F1-09n#11] slot may equal existing current/gray pointer %i', async (version) => {
-  const { page, slot } = await seeded(app);
-  const row = {
-    ...page,
-    ...slot,
-    current_version: 1,
-    gray_version: 2,
-    gray_percent: 10,
-    scheduled_version: version,
-  };
-  expect(await insert(app, 'pages', row)).toMatchObject(row);
-});
+it.each([1, 2])(
+  '[AC-F1-09n#11] slot may equal existing current/gray pointer %i',
+  async (version) => {
+    const { page, slot } = await seeded(app);
+    const row = {
+      ...page,
+      ...slot,
+      current_version: 1,
+      gray_version: 2,
+      gray_percent: 10,
+      scheduled_version: version,
+    };
+    expect(await insert(app, 'pages', row)).toMatchObject(row);
+  },
+);
 
 it.each([
   { current_version: 1, gray_version: 1, gray_percent: 10 },
@@ -233,7 +250,9 @@ it('[AC-F1-09n#13] app can set, replace, update each column and clear the slot w
   const replacement = { ...slot, scheduled_version: 2, scheduled_gray_percent: 100 };
   expect(await update(app, page, replacement)).toMatchObject({ ...replacement, ...live });
   for (const column of SLOT_COLUMNS) {
-    expect(await update(app, page, { [column]: slot[column as keyof typeof slot] })).toMatchObject(live);
+    expect(await update(app, page, { [column]: slot[column as keyof typeof slot] })).toMatchObject(
+      live,
+    );
   }
   expect(await update(app, page, EMPTY_SLOT)).toMatchObject({ ...EMPTY_SLOT, ...live });
   // Scheduling does not publish a draft early or rewrite its timestamp/publisher.
@@ -247,24 +266,41 @@ it('[AC-F1-09n#13] app can set, replace, update each column and clear the slot w
 it('[AC-F1-09n#14] grants remain column-level with no extra business-role or PUBLIC privileges', async () => {
   await ready(app);
   for (const role of ['couli_app', 'couli_readonly', 'couli_payout', 'couli_maint']) {
-    for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN']) {
-      const allowed = privilege === 'SELECT'
-        ? role === 'couli_app' || role === 'couli_readonly'
-        : privilege === 'INSERT' && role === 'couli_app';
+    for (const privilege of [
+      'SELECT',
+      'INSERT',
+      'UPDATE',
+      'DELETE',
+      'TRUNCATE',
+      'REFERENCES',
+      'TRIGGER',
+      'MAINTAIN',
+    ]) {
+      const allowed =
+        privilege === 'SELECT'
+          ? role === 'couli_app' || role === 'couli_readonly'
+          : privilege === 'INSERT' && role === 'couli_app';
       const result = await sql`SELECT
         has_table_privilege(${role}, 'app.pages', ${privilege}) AS allowed,
-        has_table_privilege(${role}, 'app.pages', ${`${privilege} WITH GRANT OPTION`}) AS grantable`.execute(app);
+        has_table_privilege(${role}, 'app.pages', ${`${privilege} WITH GRANT OPTION`}) AS grantable`.execute(
+        app,
+      );
       expect(result.rows, `${role} ${privilege}`).toEqual([{ allowed, grantable: false }]);
     }
     for (const column of SLOT_COLUMNS) {
       for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'REFERENCES']) {
-        const allowed = privilege === 'SELECT'
-          ? role === 'couli_app' || role === 'couli_readonly'
-          : role === 'couli_app' && (privilege === 'INSERT' || privilege === 'UPDATE');
+        const allowed =
+          privilege === 'SELECT'
+            ? role === 'couli_app' || role === 'couli_readonly'
+            : role === 'couli_app' && (privilege === 'INSERT' || privilege === 'UPDATE');
         const result = await sql`SELECT
           has_column_privilege(${role}, 'app.pages', ${column}, ${privilege}) AS allowed,
-          has_column_privilege(${role}, 'app.pages', ${column}, ${`${privilege} WITH GRANT OPTION`}) AS grantable`.execute(app);
-        expect(result.rows, `${role} ${column} ${privilege}`).toEqual([{ allowed, grantable: false }]);
+          has_column_privilege(${role}, 'app.pages', ${column}, ${`${privilege} WITH GRANT OPTION`}) AS grantable`.execute(
+          app,
+        );
+        expect(result.rows, `${role} ${column} ${privilege}`).toEqual([
+          { allowed, grantable: false },
+        ]);
       }
     }
   }
@@ -285,12 +321,15 @@ it('[AC-F1-09n#15] readonly reads the slot but cannot update; payout and maint c
     WHERE app_id = ${page.app_id} AND page_key = ${page.page_key}`.execute(readonly);
   expect(read.rows).toMatchObject([slot]);
   for (const column of SLOT_COLUMNS) {
-    await expect(update(readonly, page, { [column]: slot[column as keyof typeof slot] }))
-      .rejects.toMatchObject({ code: '42501' });
+    await expect(
+      update(readonly, page, { [column]: slot[column as keyof typeof slot] }),
+    ).rejects.toMatchObject({ code: '42501' });
   }
   for (const db of [payout, maint]) {
-    await expect(sql`SELECT scheduled_version FROM app.pages
-      WHERE app_id = ${page.app_id}`.execute(db)).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      sql`SELECT scheduled_version FROM app.pages
+      WHERE app_id = ${page.app_id}`.execute(db),
+    ).rejects.toMatchObject({ code: '42501' });
   }
   await expect(update(app, page, { app_id: page.app_id })).rejects.toMatchObject({ code: '42501' });
 });
@@ -307,5 +346,7 @@ it('[AC-F1-09n#17] scheduled_at stores the supplied instant without consulting S
   const { page, slot } = await seeded(app);
   expect(await insert(app, 'pages', { ...page, ...slot })).toMatchObject({ scheduled_at: AT });
   const changed = new Date('2027-01-01T01:23:45.000Z');
-  expect(await update(app, page, { scheduled_at: changed })).toMatchObject({ scheduled_at: changed });
+  expect(await update(app, page, { scheduled_at: changed })).toMatchObject({
+    scheduled_at: changed,
+  });
 });

@@ -43,9 +43,10 @@ export async function columns(db: Connection) {
 // Each test asserts readiness before issuing any SQL that names a new column.
 // Without migration 0068, every test fails an assertion rather than SQL 42703.
 export async function ready(db: Connection): Promise<void> {
-  expect((await columns(db)).map((c) => c.name), 'app.pages scheduled slot columns').toEqual(
-    [...SLOT_COLUMNS].sort(),
-  );
+  expect(
+    (await columns(db)).map((c) => c.name),
+    'app.pages scheduled slot columns',
+  ).toEqual([...SLOT_COLUMNS].sort());
 }
 
 export async function insert(db: Connection, table: Table, row: Row): Promise<Row> {
@@ -60,7 +61,10 @@ export async function insert(db: Connection, table: Table, row: Row): Promise<Ro
 export async function update(db: Connection, key: Row, changes: Row): Promise<Row> {
   const result = await sql<Row>`UPDATE app.pages
     SET ${sql.join(Object.entries(changes).map(([k, v]) => sql`${sql.ref(k)} = ${v}`))}
-    WHERE ${sql.join(Object.entries(key).map(([k, v]) => sql`${sql.ref(k)} = ${v}`), sql` AND `)}
+    WHERE ${sql.join(
+      Object.entries(key).map(([k, v]) => sql`${sql.ref(k)} = ${v}`),
+      sql` AND `,
+    )}
     RETURNING *`.execute(db);
   expect(result.rows).toHaveLength(1);
   return result.rows[0]!;
