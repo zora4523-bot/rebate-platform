@@ -34,6 +34,12 @@ const INVALID_ARGS = { error: 'invalid_args' } as const;
 /** Degrade reason for a model answer in an invalid format (see ports.ts header). */
 const INVALID_FORMAT_REASON: DegradeReason = 'models_failed';
 const PLATFORMS: readonly string[] = platformEnum;
+/** B3-05j: intent of the link branch (deterministic path or its empty fallback). */
+const LINK_INTENT = 'find_by_link';
+/** B3-05j default: a degraded run without a model intent is a keyword search (BR-AI-14). */
+const DEGRADED_INTENT = 'search';
+/** The tool the deterministic path reports, one start → end / failed pair per url link. */
+const QUOTE_TOOL = 'get_rebate_quote';
 
 type ToolStatus = OrchestratorTrace['tool_calls'][number]['status'];
 type CardSource = NonNullable<ToolTraceFragment['card_sources']>[number];
@@ -133,6 +139,8 @@ class AgentRun {
   private readonly toolTrace: OrchestratorTrace['tool_calls'][number][] = [];
   private readonly cardSources: CardSource[] = [];
   private readonly linkRegistrations: LinkRegistration[] = [];
+  /** Set once the trace is recorded: later path output never changes it. */
+  private traced = false;
 
   constructor(deps: AgentRunBodyDeps, input: RunBodyInput, ctx: RunContext) {
     this.deps = deps;
@@ -232,10 +240,11 @@ class AgentRun {
   }
 
   private async linkPath(proceed: InputProceed): Promise<RunBodyResult> {
+    this.intent = LINK_INTENT;
     const deterministic = this.deps.deterministic;
     if (deterministic !== undefined) {
       const result = await this.wait(
-        deterministic.run({ input: this.input, proceed }, this.out.context()),
+        deterministic.run({ input: this.input, proceed }, this.quoteObserver(proceed)),
       );
       return result === ABORTED ? done('stop') : this.final(result);
     }
@@ -252,7 +261,53 @@ class AgentRun {
     return this.final(done('fallback'));
   }
 
+  /**
+   * B3-05j: the guarded context for the deterministic path, observing its tool.status pairs.
+   * The n-th get_rebate_quote start belongs to the n-th url link (tokens run no tool); its end /
+   * failed records one call with args { link_index } (1-based position in proceed.links, never
+   * the raw link), masked like a model call. A start without its end (cancellation) is not
+   * recorded; nothing is recorded after the trace was written. Not counted in limits.toolCalls.
+   */
+  private quoteObserver(proceed: InputProceed): RunContext {
+    const ctx = this.out.context();
+    const urlIndexes: number[] = [];
+    proceed.links.forEach((link, i) => {
+      if (link.kind === 'url') urlIndexes.push(i + 1);
+    });
+    let started = 0;
+    let open: number | null = null;
+    const observe = (tool: string, phase: 'start' | 'end' | 'failed'): void => {
+      if (tool !== QUOTE_TOOL || this.traced || this.signal.aborted) return;
+      if (phase === 'start') {
+        open = urlIndexes[started] ?? null;
+        started += 1;
+        return;
+      }
+      if (open === null) return;
+      const linkIndex = open;
+      open = null;
+      this.traceCall(QUOTE_TOOL, { link_index: linkIndex }, phase === 'end' ? 'ok' : 'failed');
+    };
+    return {
+      runId: ctx.runId,
+      sessionId: ctx.sessionId,
+      signal: ctx.signal,
+      get cardsDelivered() {
+        return ctx.cardsDelivered;
+      },
+      text: (delta) => ctx.text(delta),
+      toolStatus: (tool, phase, display) => {
+        observe(tool, phase);
+        ctx.toolStatus(tool, phase, display);
+      },
+      card: (card) => ctx.card(card),
+      suggestions: (items) => ctx.suggestions(items),
+    };
+  }
+
   private async degrade(proceed: InputProceed, reason: DegradeReason): Promise<RunBodyResult> {
+    // An intent the model already gave is kept; otherwise the no-model keyword search's.
+    if (this.intent === null) this.intent = DEGRADED_INTENT;
     const result = await this.wait(
       this.deps.degraded.run({ reason, input: this.input, proceed }, this.out.context()),
     );
@@ -512,6 +567,7 @@ class AgentRun {
   }
 
   private recordTrace(): void {
+    this.traced = true;
     const sink = this.deps.trace;
     if (sink === undefined) return;
     const summary = this.guard?.summary();

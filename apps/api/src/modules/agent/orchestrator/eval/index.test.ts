@@ -337,7 +337,7 @@ it('[B3-05c r2 S1] 无模型降级：搜索的 card_sources / link_registrations
   expect(itemId).toBe('c2');
   expect(output.frames.at(-1)!.data).toEqual({ finish_reason: 'fallback', quota_left: 4 });
   expect(output.trace).toEqual({
-    intent: null,
+    intent: 'search',
     tool_calls: [],
     card_sources: searchTrace.card_sources,
     link_registrations: searchTrace.link_registrations,
@@ -354,7 +354,7 @@ it('[B3-05c r2 S1] 降级路径未接 trace 回调时，同一样例的卡片与
     evalInput,
     ports(async () => ok),
   );
-  expect(output.trace).toEqual({ intent: null, tool_calls: [] });
+  expect(output.trace).toEqual({ intent: 'search', tool_calls: [] });
   const facts = await computeFacts(output);
   expect(facts.card_values.unverified).toBe(1);
   expect(facts.attribution.unverified).toBe(1);
