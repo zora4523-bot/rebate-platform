@@ -93,9 +93,10 @@ it.each(['deterministic', 'degraded'] as const)(
           errorMsg: async () => '合成不可用',
           onTrace,
         });
+        const original = base.complete.getMockImplementation()!;
         const complete = vi
-          .fn(base.complete)
-          .mockImplementationOnce(base.complete)
+          .fn(original)
+          .mockImplementationOnce(original)
           .mockResolvedValue({ kind: 'degraded', reason: 'models_failed', attempts: [] });
         return {
           body: createAgentRunBody({

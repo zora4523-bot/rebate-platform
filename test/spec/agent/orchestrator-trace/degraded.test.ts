@@ -25,9 +25,10 @@ it.each(['route_no_model', 'models_failed', 'budget'] as const)(
       },
     );
     // 先通过真实录制完成一轮模型工具调用，再由路由端口报告降级。
+    const original = base.complete.getMockImplementation()!;
     const complete = vi
-      .fn(base.complete)
-      .mockImplementationOnce(base.complete)
+      .fn(original)
+      .mockImplementationOnce(original)
       .mockResolvedValue({ kind: 'degraded', reason, attempts: [] });
     const path = createDegradedPath({
       tools: base.deps.tools,
