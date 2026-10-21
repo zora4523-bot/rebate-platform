@@ -1,0 +1,22 @@
+id: F1-02zzf
+repo: rebate-platform
+title: 收紧测试改动：F1-02zzc（L24 min_version、L30 help_section 列）与 F1-02zzd（/v1/config invite eligibility_days）的过渡分支只留实现后一支
+type: test-change
+# 2026-10-21 入账（content-client 第五阶段收尾）。对应实现均已合并：F1-02zr #1038（L24）、F1-02zq #1025（L30 列）、F1-02zs #1047（L30 读写）、F1-02zze（/v1/config eligibility_days）。
+# 做法：每处「有或无 / 两态二选一」只留实现后的那一支，原严格断言不变；kit 里只为过渡存在的选择函数随之简化。不加 skip / only / retry。
+# 改既有规则测试属第一类保护路径：非 task 分支、台账同 PR，按 approvals #24 加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: [F1-02zzc, F1-02zzd, F1-02zr, F1-02zq, F1-02zs, F1-02zze]
+paths:
+  - 'test/spec/content/agreements-admin/agreements.int.test.ts'
+  - 'test/spec/db/content/dict-items/**'
+  - 'test/spec/content/config/delivery.int.test.ts'
+  - 'test/spec/content/config-invite-reward/delivery.int.test.ts'
+  - 'test/spec/content/invite-reward-eligibility/registry.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null

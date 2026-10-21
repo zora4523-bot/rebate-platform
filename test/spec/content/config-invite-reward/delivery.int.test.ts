@@ -11,13 +11,12 @@ import {
   type Values,
 } from './kit.ts';
 
-// F1-02zzd (test-change, transitional; F1-02zt tightens to "always present"): F1-02zze adds
-// invite.eligibility_days (BR-INV-18 / BR-INV-24 细则: missing row reads as 30). No case here
-// writes growth.invite_reward.eligibility_days, so when delivered it must be exactly 30; when
-// absent the invite object is returned untouched for the original exact comparison.
+// F1-02zzd: F1-02zze adds invite.eligibility_days (BR-INV-18 / BR-INV-24 细则: missing row reads
+// as 30). No case here writes growth.invite_reward.eligibility_days, so it must be exactly 30; the
+// rest is returned for the original exact comparison. F1-02zzf：过渡已收紧, the key must be delivered.
 function withoutEligibilityDays(invite: object): Record<string, unknown> {
   const all = invite as Record<string, unknown>;
-  if (!Object.hasOwn(all, 'eligibility_days')) return all;
+  expect(Object.hasOwn(all, 'eligibility_days'), 'invite.eligibility_days delivered').toBe(true);
   const { eligibility_days, ...rest } = all;
   expect(eligibility_days, 'invite.eligibility_days').toBe(30);
   return rest;
@@ -217,7 +216,7 @@ it('[AC-F1-02zp#13] 同名键和预算配置不能覆盖派生值，既有 invit
   };
   const id = h.configured({ ...poison, [ENABLED]: true, [AMOUNT]: 500 }, 999);
   const { data } = await success(h, id);
-  // F1-02zzd (transitional): the third key, when delivered, is checked and set aside.
+  // F1-02zzd: the third key is checked and set aside (F1-02zzf：过渡已收紧).
   expect(withoutEligibilityDays(data.invite)).toEqual({
     required: false,
     backfill_hours: 72,
