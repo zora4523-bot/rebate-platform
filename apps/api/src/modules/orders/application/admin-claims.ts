@@ -10,6 +10,7 @@ import {
   claimCounts,
   claimMatches,
   evidenceLinks,
+  isUuid,
   normalizeClaimQuery,
   type EvidenceMoment,
 } from '../domain/admin-claim-view.ts';
@@ -52,7 +53,10 @@ export interface AdminClaimsDeps extends AdminClaimPorts {
   readonly reads: AdminClaimReads;
 }
 
-/** A 20001 with data.fields (q, or claim_id for an unknown / foreign claim). */
+/**
+ * A 20001 with data.fields (q or a non-UUID user_id on the list; claim_id for a non-UUID, unknown
+ * or foreign claim).
+ */
 export class AdminClaimsFieldsError extends Error {
   readonly fields: readonly string[];
   constructor(fields: readonly string[]) {
@@ -77,12 +81,15 @@ export class AdminClaims {
   }
 
   async list(appId: string, query: AdminClaimListQuery): Promise<Schema<'AdminClaimPage'>> {
+    const refused: string[] = [];
     let q: string | undefined;
     if (query.q !== undefined) {
       const normalized = normalizeClaimQuery(query.q);
-      if (normalized === null) throw new AdminClaimsFieldsError(['q']);
-      q = normalized;
+      if (normalized === null) refused.push('q');
+      else q = normalized;
     }
+    if (query.user_id !== undefined && !isUuid(query.user_id)) refused.push('user_id');
+    if (refused.length > 0) throw new AdminClaimsFieldsError(refused);
     const deps = this.available();
     const page = query.page ?? 1;
     const pageSize = query.page_size ?? DEFAULT_PAGE_SIZE;
@@ -119,6 +126,8 @@ export class AdminClaims {
    * unknown one: 20001 [claim_id].
    */
   async detail(appId: string, claimId: string, userId: string | undefined): Promise<Detail> {
+    // A non-UUID claim_id names no claim: the same answer as an unknown one, before the database.
+    if (!isUuid(claimId)) throw new AdminClaimsFieldsError(['claim_id']);
     const deps = this.available();
     const row = await deps.reads.claim(appId, claimId);
     if (row === undefined || (userId !== undefined && row.user_id !== userId)) {

@@ -4,8 +4,7 @@
 // a migration task of its own).
 import type { DB } from '@couli/db';
 import { sql, type ExpressionBuilder, type Kysely } from 'kysely';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isUuid } from '../domain/admin-claim-view.ts';
 
 /** The list filters (q already normalised; status kept apart, it never limits the counts). */
 export interface AdminClaimFilter {
@@ -87,7 +86,7 @@ function where(eb: ClaimsScope, filter: AdminClaimFilter) {
       ),
     ];
     // claims.id is a uuid: only a UUID-shaped q can name a claim (no cast error, no prefix match).
-    if (UUID.test(q)) anyOf.push(eb('claims.id', '=', q.toLowerCase()));
+    if (isUuid(q)) anyOf.push(eb('claims.id', '=', q.toLowerCase()));
     conditions.push(eb.or(anyOf));
   }
   return eb.and(conditions);

@@ -31,6 +31,16 @@ export function normalizeClaimQuery(q: string): string | null {
   return length >= 1 && length <= ADMIN_CLAIM_QUERY_MAX ? value : null;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Whether a value is UUID-shaped (any case). user_id, claim_id and claims.id are uuid columns: a
+ * value that is not one is answered before the database, never cast there (22P02 would be a 500).
+ */
+export function isUuid(value: string): boolean {
+  return UUID.test(value);
+}
+
 /** Six zero-or-more counts from (status, n) rows; a status outside the enum is a broken database. */
 export function claimCounts(
   rows: readonly { readonly status: string; readonly n: number }[],

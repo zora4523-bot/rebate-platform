@@ -242,3 +242,36 @@ it('[AC-B1-10j] 无数据库时读取失败（50001），不伪装成空页', as
   await expect(claims.list(APP, {})).rejects.toThrow('database');
   await expect(claims.detail(APP, CLAIM, undefined)).rejects.toThrow('database');
 });
+
+it('[AC-B1-10j#17] 列表 user_id 非 UUID 在读库前报 user_id；与非法 q 同时出现时两者都报', async () => {
+  const { claims, calls } = build();
+  await expect(claims.list(APP, { user_id: 'not-a-uuid' })).rejects.toEqual(
+    new AdminClaimsFieldsError(['user_id']),
+  );
+  await expect(claims.list(APP, { user_id: `${USER}x` })).rejects.toEqual(
+    new AdminClaimsFieldsError(['user_id']),
+  );
+  await expect(claims.list(APP, { q: '  ', user_id: '' })).rejects.toEqual(
+    new AdminClaimsFieldsError(['q', 'user_id']),
+  );
+  await expect(new AdminClaims().list(APP, { user_id: 'not-a-uuid' })).rejects.toEqual(
+    new AdminClaimsFieldsError(['user_id']),
+  );
+  expect(calls.counts).toEqual([]);
+  expect(calls.pages).toEqual([]);
+  await claims.list(APP, { user_id: USER.toUpperCase() });
+  expect(calls.counts).toEqual([{ appId: APP, userId: USER.toUpperCase() }]);
+});
+
+it('[AC-B1-10j#6] 详情 claim_id 非 UUID 与未知 claim 同样报 claim_id，不读库', async () => {
+  const { claims, calls } = build({ claim: row(), items: [itemRow()] });
+  for (const id of ['not-a-uuid', `${CLAIM}0`, '', `'; select 1; --`]) {
+    await expect(claims.detail(APP, id, undefined)).rejects.toEqual(
+      new AdminClaimsFieldsError(['claim_id']),
+    );
+  }
+  await expect(new AdminClaims().detail(APP, 'not-a-uuid', undefined)).rejects.toEqual(
+    new AdminClaimsFieldsError(['claim_id']),
+  );
+  expect(calls.phones).toEqual([]);
+});

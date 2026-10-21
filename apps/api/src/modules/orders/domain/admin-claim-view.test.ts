@@ -3,6 +3,7 @@ import {
   claimCounts,
   claimMatches,
   evidenceLinks,
+  isUuid,
   normalizeClaimQuery,
   type ClaimMatchOrder,
 } from './admin-claim-view.ts';
@@ -126,4 +127,19 @@ it('[AC-B1-10j#20] 命中记录按时间倒序（同时间 id 大者先），保
   ]);
   expect(evidenceLinks(null, moments, scenes)).toEqual([]);
   expect(evidenceLinks([], moments, scenes)).toEqual([]);
+});
+
+it('[AC-B1-10j#17] isUuid 只认 8-4-4-4-12 位十六进制（不分大小写），其余一律不是', () => {
+  expect(isUuid('019c0000-0000-7000-8000-0000000000c1')).toBe(true);
+  expect(isUuid('019C0000-0000-7000-8000-0000000000C1')).toBe(true);
+  for (const v of [
+    '',
+    'not-a-uuid',
+    '019c0000-0000-7000-8000-0000000000c',
+    '019c0000-0000-7000-8000-0000000000c1 ',
+    '019c00000000700080000000000000c1',
+    '019c0000-0000-7000-8000-0000000000g1',
+  ]) {
+    expect(isUuid(v)).toBe(false);
+  }
 });
