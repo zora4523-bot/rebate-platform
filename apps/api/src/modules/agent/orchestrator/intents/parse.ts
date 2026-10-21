@@ -59,6 +59,13 @@ function refineConditions(
 ): Extract<IntentOutput, { agent_intent: 'refine' }>['conditions'] | null {
   if (!isPlainObject(value)) return null;
   const keys = Object.keys(value);
+  // B3-05g: 再便宜点 / 换一批 carry no number; each flag is the literal true and stands alone.
+  if (Object.hasOwn(value, 'cheaper')) {
+    return keys.length === 1 && value['cheaper'] === true ? { cheaper: true } : null;
+  }
+  if (Object.hasOwn(value, 'next_batch')) {
+    return keys.length === 1 && value['next_batch'] === true ? { next_batch: true } : null;
+  }
   if (keys.length === 0 || !onlyKeys(value, ['platform', 'price_min_fen', 'price_max_fen'])) {
     return null;
   }
