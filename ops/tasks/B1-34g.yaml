@@ -18,5 +18,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/state-machines/export-task/**'
-status: todo
-pr: null
+status: done
+pr: 1048
