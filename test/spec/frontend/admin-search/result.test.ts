@@ -70,12 +70,15 @@ async function placeholderHit(hit: Hit, query: string): Promise<void> {
   const before = mainElement().textContent;
   expect(before).toContain('订单查询');
   const crumbs = screen.getByRole('navigation', { name: '面包屑' }).textContent;
+  // The current page's own reads (e.g. the orders list once that page is live) happen before the
+  // search; activating the hit must not add any request through the shared users/page fixture.
+  const pageRequests = server.users.log.length;
   // Chosen allowed fallback: show the summary, and keep the current page on activation.
   await click(entries[0]!);
   await settled(server);
   expect(mainElement().textContent).toBe(before);
   expect(screen.getByRole('navigation', { name: '面包屑' }).textContent).toBe(crumbs);
-  expect(server.users.log).toHaveLength(0);
+  expect(server.users.log).toHaveLength(pageRequests);
 }
 
 async function multiplePlaceholderHit(
@@ -95,13 +98,15 @@ async function multiplePlaceholderHit(
   const before = mainElement().textContent;
   const crumbs = screen.getByRole('navigation', { name: '面包屑' }).textContent;
   expect(before).toContain('订单查询');
+  // As above: only requests added by the activation count, not the current page's own reads.
+  const pageRequests = server.users.log.length;
   // Use the same allowed fallback as single hits: activation keeps the current page.
   if (by === 'enter') await key('{Enter}');
   else await click(entries[0]!);
   await settled(server);
   expect(mainElement().textContent).toBe(before);
   expect(screen.getByRole('navigation', { name: '面包屑' }).textContent).toBe(crumbs);
-  expect(server.users.log).toHaveLength(0);
+  expect(server.users.log).toHaveLength(pageRequests);
   expect(server.log).toHaveLength(1);
 }
 

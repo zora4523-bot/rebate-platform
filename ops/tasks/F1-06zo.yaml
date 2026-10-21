@@ -1,0 +1,18 @@
+id: F1-06zo
+repo: rebate-platform
+title: F1-07h 规则测试同步（F1-07e 订单页上线前置）——admin-search result.test.ts 单 / 多命中「订单 / 提现停在原页」两个辅助函数里的 users.log 断言，由「整场为 0」改为「激活命中前后不新增请求」（订单页自身的列表读取发生在搜索之前，经同一假服务端计入该日志）；用例名、条数、其余断言不变
+type: test-change
+# 2026-10-21 入账（前端线 f1-frontend-7）。F1-07e（订单只读页）规则测试过审 r1 指出：订单页上线后，一框搜测试停在 /orders，订单页加载时的 GET /admin/v1/orders 经 search-fixtures 回落到 admin-users 假服务端并记入 server.users.log，
+# 原断言 toHaveLength(0) 必然变红；断言本意是「激活订单 / 提现命中不进入用户详情、不发新请求」，改为激活前后计数不变，含义不放宽（激活后任何新增请求仍会失败）。主干保持全绿。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件（approvals 第 12 条），第二家评审为本地 Codex 只读会话（编排 10-19 12:1x 裁定 B），合并需 #24 标签。
+refs: []
+refs_hash: {}
+deps: [F1-07h]
+paths:
+  - 'test/spec/frontend/admin-search/result.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
