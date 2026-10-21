@@ -25,6 +25,12 @@ export type {
   PrivacyConsentOptions,
   PrivacyConsentChecks,
 } from './application/privacy-consent.ts';
+export { createDeletionStageChecks, deletionStageRefusal } from './application/deletion-guard.ts';
+export type {
+  DeletionStageChecks,
+  DeletionStageChecksOptions,
+  DeletionStageRefusal,
+} from './application/deletion-guard.ts';
 export { lockUsersForUpdate } from './ports/lock-users.ts';
 export type { LockUsersInput } from './ports/lock-users.ts';
 export { createRealnameStatusBatchReader } from './ports/realname-status-batch.ts';
