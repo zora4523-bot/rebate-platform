@@ -2,7 +2,15 @@ import { expect, it } from 'vitest';
 import fc from 'fast-check';
 import { propParams } from '@couli/testing';
 import { priceRangeInvalidView } from '../../../../apps/api/src/modules/agent/tools/search/index.ts';
-import { cards, expectSafeModelView, fixture, noticeKeys, outcome, product, request } from './kit.ts';
+import {
+  cards,
+  expectSafeModelView,
+  fixture,
+  noticeKeys,
+  outcome,
+  product,
+  request,
+} from './kit.ts';
 
 it.each([
   { price_min_fen: 0 },

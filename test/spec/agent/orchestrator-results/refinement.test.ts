@@ -1,7 +1,15 @@
 import { expect, it, vi } from 'vitest';
 import { parseIntentOutput } from '../../../../apps/api/src/modules/agent/orchestrator/intents/index.ts';
 import { maxSearchPage } from '../../../../apps/api/src/modules/agent/tools/search/schema.ts';
-import { BASE, delivered, expectSafeModelView, fixture, noticeKeys, outcome, product } from './kit.ts';
+import {
+  BASE,
+  delivered,
+  expectSafeModelView,
+  fixture,
+  noticeKeys,
+  outcome,
+  product,
+} from './kit.ts';
 
 it.each(['cheaper', 'next_batch'] as const)(
   '[AC-B3-05g#8][BR-AI-05] refine.%s 只接受独立 true，禁止附加数字或其他键',
