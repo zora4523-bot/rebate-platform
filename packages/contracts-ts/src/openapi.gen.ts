@@ -12607,8 +12607,10 @@ export interface operations {
                  *     with any other category → 20001 `data.fields=[faq]`. faq=true only filters: it returns
                  *     only help articles whose current version has faq_rank set; order, page size limit and
                  *     cursor are exactly those of this operation without the filter (published_at DESC, id
-                 *     DESC, 04 §6.2), with no exception. The display order of the 「常见问题」 list is applied
-                 *     by the client, sorting by faq_rank ascending. faq=false or omitted = no filter. Until
+                 *     DESC, 04 §6.2), with no exception. The client reads every page (the largest `limit`,
+                 *     following `next_cursor` until it is null; the list is normally a single page) and only
+                 *     then shows the 「常见问题」 list sorted by faq_rank ascending, so the order never depends
+                 *     on which page an article falls on. faq=false or omitted = no filter. Until
                  *     its implementation is merged the server ignores this parameter.
                  */
                 faq?: boolean;
