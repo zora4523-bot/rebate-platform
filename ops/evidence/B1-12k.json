@@ -1,0 +1,133 @@
+{
+  "task": "B1-12k",
+  "spec_ref": "f41137533d254d4b78dc01ea95f474171c694485",
+  "spec_commit": "18795543568d5fa7a79d63d174b974cb3ee03c77",
+  "red_tests": [
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#9][BR-ID-10] HTTP列表分页与详情字段一致、未读数只含本人；静态unread-count和read路由可达",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#10][BR-ID-10] 不透明游标可继续翻页，任意字符串、截断游标和另一账号的游标均20001/cursor",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 两种同时带：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 两种都不带：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 空列表：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 超过100：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] all=false：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] all字符串不转换：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] id为空：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] id过长：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] id非字符串：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] id为null：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 伪造user_id：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 伪造app_id：路由按契约拒绝20001，fields与平台一致，消息不变",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#12] message_ids的1与100边界合法，100个重复id只标一次，合法长度非UUID静默跳过",
+    "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#13] 列表limit默认20且1/50可用；越界、非整数、非数字及过长cursor返回20001相应字段",
+    "test/spec/notification/message-list/route.test.ts > [AC-B1-12k#7] undefined，保留登录要求，并随契约生成路由schema",
+    "test/spec/notification/message-list/route.test.ts > [AC-B1-12k#7] undefined，保留登录要求，并随契约生成路由schema",
+    "test/spec/notification/message-list/route.test.ts > [AC-B1-12k#7] undefined，保留登录要求，并随契约生成路由schema",
+    "test/spec/notification/message-list/route.test.ts > [AC-B1-12k#8] API实际注册三个路由各一次并挂schema；三个操作未登录都回401/10001",
+    "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#1][BR-ID-10] 列表和未读数只含app_id、user_id双匹配，字段与详情相同，读取不改任何行",
+    "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#2] created_at微秒优先、完全同刻按message_id倒序；多种页长跨页不重不漏，末页无游标",
+    "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#3] 默认20、上限50；空账号为空列表、null游标和零未读",
+    "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#4][BR-ID-10] 指定id只改本人未读；重复、未知、他人的跳过，已读原值及其余列不变",
+    "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#5][BR-ID-10] all=true越过100条限制标全部本人未读；不同app与他人不动，再次调用标零条",
+    "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#6] 并发重复标同一消息合计只计一次，read_at与row_version只更新一次",
+    "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#14][BR-ID-10] 游标绑定app_id与user_id，换其中任一项均拒绝且不改消息"
+  ],
+  "risk_note": "RV2 by the gate (contract and generated route files beside notification, RV1). Implements the three planned inbox operations of CT-02t on the existing app.inbox_messages table (no migration): listMessages returns only the caller's messages (app_id and user_id), newest first by created_at then message_id, with an opaque cursor bound to the account and kept at microsecond precision (malformed, truncated or another account's cursor is 20001 fields=[cursor]); listing does not touch read_at. markMessagesRead marks with one UPDATE ... WHERE read_at IS NULL RETURNING inside a transaction (read_at = injected Clock, row_version + 1), so concurrent or repeated calls never double count; unknown and other accounts' ids are skipped silently (BR-ID-10: nothing about other accounts is revealed); it returns marked_count and the unread count left. getUnreadMessageCount counts the caller's unread rows. The static routes read and unread-count are matched before :message_id. Version gate and the h5 read-only scope come from the generated platform route tables. The planned flag is dropped from the three operations and the generated route schemas are regenerated. No money, no attribution.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "18795543568d5fa7a79d63d174b974cb3ee03c77",
+      "tree": "826ae3fefa501070ec715e456d2893cb8b81f198",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T12:35:58Z",
+      "finished_at": "2026-10-21T12:36:40Z",
+      "gate": {
+        "commit": "49c2a73277ddbbcc0288fe9db272ce395b99b1e2",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#9][BR-ID-10] HTTP列表分页与详情字段一致、未读数只含本人；静态unread-count和read路由可达",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#10][BR-ID-10] 不透明游标可继续翻页，任意字符串、截断游标和另一账号的游标均20001/cursor",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 两种同时带：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 两种都不带：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 空列表：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 超过100：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] all=false：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] all字符串不转换：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] id为空：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] id过长：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] id非字符串：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] id为null：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 伪造user_id：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#11] 伪造app_id：路由按契约拒绝20001，fields与平台一致，消息不变",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#12] message_ids的1与100边界合法，100个重复id只标一次，合法长度非UUID静默跳过",
+        "test/spec/notification/message-list/http.int.test.ts > [AC-B1-12k#13] 列表limit默认20且1/50可用；越界、非整数、非数字及过长cursor返回20001相应字段",
+        "test/spec/notification/message-list/route.test.ts > [AC-B1-12k#7] undefined，保留登录要求，并随契约生成路由schema",
+        "test/spec/notification/message-list/route.test.ts > [AC-B1-12k#7] undefined，保留登录要求，并随契约生成路由schema",
+        "test/spec/notification/message-list/route.test.ts > [AC-B1-12k#7] undefined，保留登录要求，并随契约生成路由schema",
+        "test/spec/notification/message-list/route.test.ts > [AC-B1-12k#8] API实际注册三个路由各一次并挂schema；三个操作未登录都回401/10001",
+        "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#1][BR-ID-10] 列表和未读数只含app_id、user_id双匹配，字段与详情相同，读取不改任何行",
+        "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#2] created_at微秒优先、完全同刻按message_id倒序；多种页长跨页不重不漏，末页无游标",
+        "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#3] 默认20、上限50；空账号为空列表、null游标和零未读",
+        "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#4][BR-ID-10] 指定id只改本人未读；重复、未知、他人的跳过，已读原值及其余列不变",
+        "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#5][BR-ID-10] all=true越过100条限制标全部本人未读；不同app与他人不动，再次调用标零条",
+        "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#6] 并发重复标同一消息合计只计一次，read_at与row_version只更新一次",
+        "test/spec/notification/message-list/service.int.test.ts > [AC-B1-12k#14][BR-ID-10] 游标绑定app_id与user_id，换其中任一项均拒绝且不改消息"
+      ],
+      "expected": [
+        "test/spec/notification/message-list/http.int.test.ts",
+        "test/spec/notification/message-list/route.test.ts",
+        "test/spec/notification/message-list/service.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "6361f2cdce525dda853623fe0ce294770171e44bd632c1a20f5a449224699297"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "239dbad80fb8042912f7b49069833ae92f9c368164e319fab00d769668e487a5"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings (the gate classifies the task RV2, so the money checklist was filled; no money paths are touched)",
+      "engine": "codex",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (run 1, 27 tests in 3 files red for the right reason on the test machine) reviewed by a fresh Claude subagent: pass with one S2 (the concurrent mark-read test relies on Promise.all interleaving, no deterministic sync point; recorded as a follow-up).",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "18549359ae3d67bf017beb212bfba5fe3de7e097",
+    "specs": "3c84b34e39aa6d9540cdb6c59afd21eb171cedce"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
