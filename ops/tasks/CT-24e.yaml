@@ -1,0 +1,28 @@
+id: CT-24e
+repo: rebate-platform
+title: 契约：后台用户详情补齐——GET /admin/v1/users/{user_id}/invitees（直推名单，页码分页）、POST /admin/v1/users/{user_id}/level（调等级，user.level，动态码，必填原因）、POST /admin/v1/users/{user_id}/inviter（改上级，user.inviter，动态码，必填原因，校验顺序按 BR-INV-10）；planned
+type: contract
+# 2026-10-21 入账（前端线 f1-frontend-7，编排 10-20 16:2x 派工：后台线暂停期间由本线补 CT-24 子契约；接手后台线 10-18 对 CT-24e 的预占）。依据 01 F-ADM-04、04 §6.6 users/{id}/invitees、§11.2 user.level / user.inviter（动态码档、填原因）、
+#   08 BR-INV-10（不可自改绑与后台改上级）、BR-INV-14（等级定义与默认等级）、BR-ID-33（脱敏）、BR-ID-34（step-up）、design/specs/admin-user-detail.md（负责人 2026-10-18 第 1 批定稿）。
+# 「调整余额」入口属资金类（fund.adjust、调账单与凭证 BR-FUND-24），不在本契约，另与资金线商量取号；按用户的余额流水 / 提现页签同理。订单 / 找回页签已可用 adminListOrders / adminListClaims 的 user_id 筛选。
+# 写操作只出形状：幂等、乐观锁（row_version / expected 值）与错误码按 04 / 08 与已合并后台写接口先例（CT-24l 子项审核）；改上级的环与深度等判定按 BR-INV-10 原文，不在契约里另定。
+refs: [BR-INV-10, BR-INV-14]
+refs_hash:
+  BR-INV-10: 409e844448ec
+  BR-INV-14: 7990610d6b60
+contract_sections: ['11.2']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
