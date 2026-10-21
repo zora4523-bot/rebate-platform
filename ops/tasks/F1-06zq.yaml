@@ -1,0 +1,18 @@
+id: F1-06zq
+repo: rebate-platform
+title: F1-07i 规则测试同步（F1-07g 前置，F1-06zp 补漏）——admin-users permission.test.ts 的 [AC-F1-07i-PERMISSION#3]「无 pii.reveal_phone 时没有查看按钮」把按钮名匹配从「含 查看」收窄为查看手机号入口本身（^查看(?:完整手机号)?$，与 [AC-F1-07j-NOPE#2] 同一写法）；用例名、条数、其余断言不变
+type: test-change
+# 2026-10-22 入账（前端线 f1-frontend-7）。F1-07g 规则测试过审 r1 指出：只持 user.list 的账号按契约 CT-24e 可看直推名单（adminListInvitees 权限 user.lookup 或 user.list），F1-07g 上线【查看直推名单】后，
+# PERMISSION#3 的 /查看/ 会把它当成查看手机号按钮而必然变红。本意是「无 pii.reveal_phone 不出现查看手机号入口」，收窄到该入口的名字，含义不放宽（查看 / 查看完整手机号仍禁止）。主干保持全绿。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件（approvals 第 12 条），第二家评审为本地 Codex 只读会话（不可用时无上下文 Claude 子代理，D10-104），合并需 #24 标签。
+refs: []
+refs_hash: {}
+deps: [F1-07i, CT-24e]
+paths:
+  - 'test/spec/frontend/admin-users/permission.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 1078
