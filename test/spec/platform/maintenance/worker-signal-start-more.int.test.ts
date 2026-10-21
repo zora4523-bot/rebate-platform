@@ -308,8 +308,21 @@ async function signalWhileBlocked(
       worker.atStopped.then(() => 'stopped'),
       worker.closed.then(() => 'closed'),
     ]);
+    // CT-06zd: pg's end() destroys a socket locally when the connection is still starting or a
+    // query is on it, so the worker's side is closed while PostgreSQL's backend is still tearing
+    // down (it notices the EOF a moment later; under a loaded full run this showed as 1 session,
+    // F1-02zs / CT-06o / B1-35 / B2-04g verify/1). The process stays paused (SIGSTOP) while we
+    // look: it cannot close anything now, so a session that goes away meanwhile was already
+    // closed by the worker, and one the worker still holds open stays and is counted. Bounded by
+    // the handles' 5 s close bound; the pause is not the worker's time (endsPromptly below).
+    let pausedMs = 0;
     if (first === 'stopped') {
-      sessionsAtStopped = await workerSessions(observer);
+      const pausedAt = performance.now();
+      await waitFor(async () => {
+        sessionsAtStopped = await workerSessions(observer);
+        return sessionsAtStopped === 0;
+      }, 5000);
+      pausedMs = performance.now() - pausedAt;
       worker.resume();
     }
     const end = await worker.closed;
@@ -329,7 +342,7 @@ async function signalWhileBlocked(
       stopped: linesOf(stdout, 'stopped'),
       done: linesOf(stdout, 'partition_maintenance_done'),
       stderr: worker.stderr(),
-      endsPromptly: end.at - releasedAt < 5000,
+      endsPromptly: end.at - releasedAt - pausedMs < 5000,
       sessionsAtStopped,
       sessionsLeft,
       text: `${stdout}\n${worker.stderr()}`,
