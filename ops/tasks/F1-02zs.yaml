@@ -20,5 +20,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/content/articles-help-section/**'
-status: todo
-pr: null
+status: done
+pr: 1047
