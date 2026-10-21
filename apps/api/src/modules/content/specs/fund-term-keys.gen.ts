@@ -428,13 +428,6 @@ export const FUND_TERM_KEYS = {
       "rank.notice",
       "rank.sales.neutral",
       "rank.sales.tb",
-      "real_name.consent.agree",
-      "real_name.consent.cancel",
-      "real_name.consent.continue",
-      "real_name.consent.point.1",
-      "real_name.consent.point.2",
-      "real_name.consent.point.3",
-      "real_name.consent.title",
       "reverify.desc",
       "reverify.heading",
       "reverify.id.fail_limit",
@@ -587,10 +580,6 @@ export const FUND_TERM_KEYS = {
     {
       "key": "privacy.second_notice.body",
       "reason": "不同意隐私政策时的说明，只说基本模式下不能登录、拿不到返利，不说金额或某笔返利的状态（表 D 隐私文案，另归 content.agreement）"
-    },
-    {
-      "key": "real_name.consent.point.1",
-      "reason": "实名认证单独同意的收集用途说明（用于提现前核验身份），不说金额，也不说提现处在什么状态（表 D 风格占位措辞）"
     }
   ]
 } as const;
