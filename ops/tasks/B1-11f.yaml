@@ -12,7 +12,7 @@ type: impl
 # 2026-10-18 补 paths：Codex r1 S1 并发登录死锁（短信路径先 consent 锁、OAuth 路径先 users 行锁），修法为 completeLogin 先取 users 行锁再取 consent 锁，需改 identity/application/login-completion.ts。
 refs: [BR-INV-09]
 refs_hash:
-  BR-INV-09: 2292628ed588
+  BR-INV-09: cdf1d4bafb0a
 deps: [B1-11d]
 paths:
   - 'apps/api/src/modules/growth/**'
