@@ -1,6 +1,8 @@
 // Public surface of the parsing module (规划/02 §4.1: parsing → union, catalog; never linking).
 // Other modules import only from this file. Task B1-07a: parse_input core (createParsing), the
-// link pattern classification (classifyParsingUrl) and the by-URL port for B1-06i (parseUrl).
+// link pattern classification (classifyParsingUrl) and the by-URL port for B1-06i (parseUrl);
+// task B3-04h: the official password port for Agent quotes (parseToken, rule tests
+// test/spec/parsing/token/**).
 // Rule tests: test/spec/parsing/core/**. Task B1-07b: the POST /v1/inputs/parse route
 // (ParseInputController, registered by ParsingModule), rule tests test/spec/parsing/http/**.
 export {
@@ -9,6 +11,7 @@ export {
   INTERNAL_FAILURE,
   OFF_SHELF,
   ParsingError,
+  parseToken,
   parseUrl,
   UNRECOGNIZED,
   UNSUPPORTED,

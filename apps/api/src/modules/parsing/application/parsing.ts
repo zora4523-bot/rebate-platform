@@ -330,6 +330,31 @@ export async function parseUrl(
   return product.value;
 }
 
+/**
+ * B3-04h port: the official password parse for Agent quotes (TokenParser of agent tools/quote).
+ * Same steps and error split as parseInput's tpwd branch: taobao only, the parse.tpwd.enabled
+ * switch read first (off: 30132 before any union call), then the governed resolveLink, key
+ * derivation and detail. Non-business faults are rethrown, as in parseUrl. No card, no dedup, no
+ * convert. Third-party password parsing is never used here (BR-AI-04: parse.third_party.enabled
+ * is not read).
+ * TODO(规划/11 §4.5): 真实口令识别 — blocked on 淘宝口令权限包与录制（followups F-31）
+ */
+export async function parseToken(
+  options: ParsingOptions,
+  raw: string,
+  context: CallCtx,
+): Promise<ParsedUrlProduct> {
+  const resolver = createResolver(options);
+  if (!(await resolver.tpwdEnabled(context.appId))) {
+    throw new ParsingError(UNRECOGNIZED, 'parsing: password parsing is off');
+  }
+  const identified = await resolver.identify(TPWD_PLATFORM, raw, context);
+  if (!identified.ok) throw new ParsingError(identified.code, 'parsing: password not resolved');
+  const product = await resolver.detail(identified.value, context);
+  if (!product.ok) throw new ParsingError(product.code, 'parsing: product detail not available');
+  return product.value;
+}
+
 /** Shared pure-code use case for the later HTTP and Agent entry points. */
 export function createParsing(options: ParsingOptions): ParsingService {
   const resolver = createResolver(options);
