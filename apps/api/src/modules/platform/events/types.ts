@@ -41,6 +41,10 @@ export const EVENT_NAMES: readonly string[] = Object.freeze([
   'order.attr_param_changed',
   'order.illegal_transition',
   'order.attr_binding_conflict',
+  // Alert of the commission snapshot compensation retry still failing after 24 hours, enqueued with
+  // the manual hand-off mark (B1-08u; last in 02 §11, after order.blacklist_hit_after_credit;
+  // D10-81, D10-105).
+  'order.snapshot_retry_exhausted',
 ]);
 
 export interface EventSubscription {

@@ -1,7 +1,8 @@
 import type { DB } from '@couli/db';
 import type { OrderPlatformState } from '@couli/domain';
 import type { Kysely } from 'kysely';
-import type { Clock, JobQueue, ReceivedJob } from '../../platform/index.ts';
+import type { Clock, EventBus, JobQueue, ReceivedJob } from '../../platform/index.ts';
+import { publishSnapshotRetryExhausted } from '../application/alert-events.ts';
 import type { CommissionSnapshotPort } from '../application/commission-snapshot-step.ts';
 import {
   logSnapshotRetryExhausted,
@@ -34,15 +35,17 @@ export const SNAPSHOT_RETRY_JOB = 'snapshot-retry';
 
 /** B1-08t：定时补偿的一轮；只扫描 payload.app_id，按订单串行并在锁内重读待处理行。
  * created_at 是未处置时长的起点，detected_at 刷新不延后升级。
- * 超过 24 小时仍失败：经现有日志端口告警 event=order.snapshot_retry_exhausted，
- * 按本轮审定转人工，后续自动补偿跳过；不约定内部处置标记的存储形式。
- * 每个子订单单独一个事务、第一句取与流水线同一把订单锁；单张失败（端口抛错）只回滚该单，记 error 后继续。
+ * 超过 24 小时仍失败：转人工（记标记），后续自动补偿跳过；B1-08u 起注入 events 时与标记同一事务入队
+ * order.snapshot_retry_exhausted，提交后另打一条同名 error 日志作冗余（未注入 events 时只打日志）。
+ * 每个子订单单独一个事务、第一句取与流水线同一把订单锁；单张失败（端口抛错、入队抛错）只回滚该单，记 error 后继续。
  */
 export interface SnapshotRetryDeps {
   readonly db: Kysely<DB>;
   readonly clock: Clock;
   readonly snapshots: CommissionSnapshotPort;
   readonly logger: SyncLogger;
+  /** B1-08u：耗尽告警事件的总线（worker 传 runtime 的 EVENT_BUS）；未注入 → 不入队，只打告警日志。 */
+  readonly events?: Pick<EventBus, 'publish'>;
 }
 
 type OneOutcome = 'created' | 'existing' | 'pending' | 'skipped' | 'failed';
@@ -83,6 +86,8 @@ interface Attempted {
 async function retryOne(deps: SnapshotRetryDeps, ref: SubOrderRef): Promise<OneOutcome> {
   const { db, clock, snapshots, logger } = deps;
   let exhaustedAt: { readonly orderId: string; readonly createdAt: Date } | null = null;
+  // 已走到转人工并入队：此后的失败（入队抛错、提交失败）不是快照端口失败，不另起标记事务，整单回滚留待下轮。
+  let handedOff = false;
   try {
     const result = await db.transaction().execute(async (trx): Promise<Attempted> => {
       await lockOrderKey(trx, ref.platform, ref.sub_order_id);
@@ -124,6 +129,10 @@ async function retryOne(deps: SnapshotRetryDeps, ref: SubOrderRef): Promise<OneO
         rows,
         logger,
       );
+      if (retried.alert !== null) {
+        handedOff = true;
+        await publishSnapshotRetryExhausted(deps.events, trx, retried.alert);
+      }
       return retried;
     });
     if (result.alert !== null) logSnapshotRetryExhausted(logger, result.alert);
@@ -140,14 +149,18 @@ async function retryOne(deps: SnapshotRetryDeps, ref: SubOrderRef): Promise<OneO
       'commission snapshot retry failed; order rolled back and kept pending',
     );
     const seen = exhaustedAt as { readonly orderId: string; readonly createdAt: Date } | null;
-    if (seen !== null && isSnapshotRetryExhausted(seen.createdAt, clock.now())) {
+    const published = handedOff as boolean;
+    if (!published && seen !== null && isSnapshotRetryExhausted(seen.createdAt, clock.now())) {
       await handoffAfterError(deps, ref, seen.orderId);
     }
     return 'failed';
   }
 }
 
-/** 满 24 小时后端口抛错：快照事务已回滚，另起事务（同一把锁、锁内重读）只记转人工标记并告警一次。 */
+/**
+ * 满 24 小时后端口抛错：快照事务已回滚，另起事务（同一把锁、锁内重读）只记转人工标记，并在同一事务入队
+ * order.snapshot_retry_exhausted（B1-08u）；入队抛错则标记一并回滚、记 error，下轮再试。提交后打一次告警日志。
+ */
 async function handoffAfterError(
   deps: SnapshotRetryDeps,
   ref: SubOrderRef,
@@ -161,7 +174,9 @@ async function handoffAfterError(
       if (earliest === undefined || isHandedOff(rows)) return null;
       if (!isSnapshotRetryExhausted(earliest.created_at, deps.clock.now())) return null;
       await markSnapshotHandoff(trx, ref);
-      return snapshotRetryAlert(ref, orderId, earliest);
+      const handoff = snapshotRetryAlert(ref, orderId, earliest);
+      await publishSnapshotRetryExhausted(deps.events, trx, handoff);
+      return handoff;
     });
     if (alert !== null) logSnapshotRetryExhausted(deps.logger, alert);
   } catch (error) {

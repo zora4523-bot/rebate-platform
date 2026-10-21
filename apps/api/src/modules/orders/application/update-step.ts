@@ -26,7 +26,8 @@
 //   change.snapshot 交 settlement。未注入时整步跳过，change 不带 snapshot 字段。整条不落 orders 的不判定。
 // - 快照补偿重试（B1-08t，application/snapshot-retry-step.ts）：注入 snapshots、本次写库成功、没有跨入资格但仍满足
 //   ⑥ 条件、库内有未转人工的 open 快照类待处理行 → 在同一位置重试一次；成功与处置待处理同事务，结果经
-//   change.snapshot 交 settlement；满 24 小时仍失败记转人工标记并打一次告警日志。
+//   change.snapshot 交 settlement；满 24 小时仍失败记转人工标记，紧接着同事务入队 order.snapshot_retry_exhausted
+//   （B1-08u，入队抛错整事务回滚），并打一次告警日志（与事件并存作冗余）。
 // - 返利状态、hold、order_rights、order_settlements 只由 settlement 经端口决定；本模块不写这些列。
 //   端口除 change / info 外另带本次报文的来源（映射事件与原始码），settlement 据此区分维权与处罚（P8）。
 // 日志只打平铺字段（platform、app_id、reason、outcome、rule、event），不打子订单号与买家参数。
@@ -74,6 +75,7 @@ import {
   publishBindingConflict,
   publishIllegalTransition,
   publishParamChanged,
+  publishSnapshotRetryExhausted,
   type OrderAttrParamColumn,
 } from './alert-events.ts';
 import { attributeOrderUser } from './attribute-user.ts';
@@ -549,6 +551,10 @@ export function createOrderUpdateStep(
           const retried = await runSnapshotRetry(trx, snapshots, retryPlan, stepContext, rows, log);
           snapshot = retried.outcome;
           retryAlert = retried.alert;
+          // B1-08u：转人工标记之后、同一事务入队耗尽告警；抛错不吞，标记与本次写库一并回滚。
+          if (retryAlert !== null) {
+            await publishSnapshotRetryExhausted(deps.events, trx, retryAlert);
+          }
         }
       } else {
         snapshot = 'none';

@@ -27,7 +27,8 @@
 //    member.registered, member.bound_parent, member.level_changed, wallet.withdrawal_changed,
 //    withdrawal.created, account.went_negative, settle.batch_done, risk.state_changed,
 //    appeal.resolved, agent.run_finished, order.attr_param_changed, order.illegal_transition,
-//    order.attr_binding_conflict (the last three: alert events of the order sync, B1-08i, D10-48).
+//    order.attr_binding_conflict (the last three: alert events of the order sync, B1-08i, D10-48),
+//    order.snapshot_retry_exhausted (alert of the commission snapshot retry, B1-08u; last in 02 §11).
 //    A frozen array. Publishing any other name is refused ('unknown_event'): a new event is added
 //    here, at its 02 §11 position, by the task that needs it (02 §11 also lists order.reassigned and
 //    order.blacklist_hit_after_credit, not registered until a task publishes them).
