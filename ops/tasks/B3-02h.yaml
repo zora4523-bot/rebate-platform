@@ -1,0 +1,26 @@
+id: B3-02h
+repo: rebate-platform
+title: ModelGateway SSE 失败用量：同一传输分块中有效 usage 后出现畸形事件，保留已解析累计用量，计量不受网络分块影响
+type: impl
+# 2026-10-08 codex-sse-20261008 独立后续，依据 B3-02b 协议失败用量与 B3-02e 网关计量口径。
+# 同一 push 先解析有效 usage、后遇畸形 JSON 时不得遗失该 usage；仍报 malformed，不返回部分成功。
+# 合成故障注入；无有效 usage 保持未知，不伪造零值；不改 gateway 的错误认领、不改 evals provenance。
+# Claude 先写新测试并容器先红，Codex 新会话过审，Codex wrapper 实现，两家新会话 money review。
+# B3-02 整行首发例外（approvals 23），完整验证和长跑看真实 CI；私有 Agent smoke 未就绪时保持 draft。
+refs: [BR-AI-14]
+refs_hash:
+  BR-AI-14: e8ed6052e898
+deps: [B3-02b, B3-02e]
+paths:
+  - 'apps/api/src/modules/agent/model-gateway/openai-compat/sse.ts'
+  - 'apps/api/src/modules/agent/model-gateway/openai-compat/transport.ts'
+  - 'apps/api/src/modules/agent/model-gateway/openai-compat/types.ts'
+test_paths:
+  - 'test/spec/agent/model-sse-metering/**'
+impl: codex
+tester: claude
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/model-sse-metering/**'
+status: todo
+pr: 321
