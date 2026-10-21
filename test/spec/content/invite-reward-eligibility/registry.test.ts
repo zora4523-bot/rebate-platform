@@ -67,7 +67,7 @@ it.each([
   expect(configValueFits(spec!, value)).toBe(false);
 });
 
-it('[AC-F1-02zx#5] 登记资格天数不扩大活动正数校验，也不增加客户端读取或下发（F1-02zzd 过渡：或读取并下发派生天数）', () => {
+it('[AC-F1-02zx#5] 登记资格天数不扩大活动正数校验，客户端读取并下发派生天数（F1-02zze；F1-02zzf 收紧）', () => {
   expect(configItemSpecOf(KEY)).toStrictEqual(SPEC);
   expect(INVITE_REWARD_POSITIVE_KEYS).toStrictEqual([AMOUNT, DAILY, TOTAL]);
   expect(inviteRewardGuardedKey(KEY)).toBe(false);
@@ -80,12 +80,9 @@ it('[AC-F1-02zx#5] 登记资格天数不扩大活动正数校验，也不增加�
       ]),
     ),
   ).toBe(false);
-  // F1-02zzd (test-change, transitional; F1-02zt tightens to "reads and delivers"): F1-02zze makes
-  // the client config read KEY and deliver invite.eligibility_days (missing row: BR-INV-24 细则 30).
-  // Either the old state (not read, not delivered) or the new one (read, delivered with the derived
-  // value); a half state (read without delivering, or delivering without reading) fails.
-  const delivers = (CLIENT_CONFIG_KEYS as readonly string[]).includes(KEY);
-  if (!delivers) expect(CLIENT_CONFIG_KEYS).not.toContain(KEY);
+  // F1-02zzd: F1-02zze makes the client config read KEY and deliver invite.eligibility_days
+  // (missing row: BR-INV-24 细则 30). F1-02zzf：过渡已收紧, it must read and deliver.
+  expect(CLIENT_CONFIG_KEYS).toContain(KEY);
   for (const days of [undefined, 45]) {
     const values = new Map<string, unknown>([
       [ENABLED, true],
@@ -124,8 +121,7 @@ it('[AC-F1-02zx#5] 登记资格天数不扩大活动正数校验，也不增加�
       reward_enabled: true,
       reward_amount_fen: 1000,
     };
-    if (!delivers) expect(config!.invite).toStrictEqual(invite);
-    else expect(config!.invite).toStrictEqual({ ...invite, eligibility_days: days ?? 30 });
+    expect(config!.invite).toStrictEqual({ ...invite, eligibility_days: days ?? 30 });
     expect(reports).toStrictEqual([]);
   }
 });

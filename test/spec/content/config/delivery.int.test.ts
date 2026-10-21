@@ -30,22 +30,19 @@ import {
 // 1000 分). F1-02zt：过渡已收紧, the pair must be delivered; the rest of invite is returned for the
 // original exact comparison.
 const INVITE_REWARD_DEFAULT = { reward_enabled: false, reward_amount_fen: 1000 };
-const INVITE_ELIGIBILITY_DAYS_DEFAULT = 30; // F1-02zzd (transitional)
+const INVITE_ELIGIBILITY_DAYS_DEFAULT = 30; // F1-02zzd
 function inviteOf<T extends object>(invite: T): T {
   const has = Object.keys(INVITE_REWARD_DEFAULT).map((key) => Object.hasOwn(invite, key));
   expect(has, 'reward_enabled / reward_amount_fen delivered').toStrictEqual([true, true]);
   const { reward_enabled, reward_amount_fen, ...rest } = invite as Record<string, unknown>;
   expect({ reward_enabled, reward_amount_fen }).toStrictEqual(INVITE_REWARD_DEFAULT);
-  // F1-02zzd (test-change, transitional; F1-02zt tightens to "always present"): F1-02zze adds
-  // invite.eligibility_days (BR-INV-18 / BR-INV-24 细则: missing row reads as 30). These cases
-  // write no growth.invite_reward.eligibility_days, so when delivered it must be exactly 30;
-  // when absent the rest is returned untouched.
-  if (Object.hasOwn(rest, 'eligibility_days')) {
-    const { eligibility_days, ...others } = rest;
-    expect(eligibility_days, 'invite.eligibility_days').toBe(INVITE_ELIGIBILITY_DAYS_DEFAULT);
-    return others as T;
-  }
-  return rest as T;
+  // F1-02zzd: F1-02zze adds invite.eligibility_days (BR-INV-18 / BR-INV-24 细则: missing row reads
+  // as 30). These cases write no growth.invite_reward.eligibility_days, so it must be exactly 30.
+  // F1-02zzf：过渡已收紧, the key must be delivered.
+  expect(Object.hasOwn(rest, 'eligibility_days'), 'invite.eligibility_days delivered').toBe(true);
+  const { eligibility_days, ...others } = rest;
+  expect(eligibility_days, 'invite.eligibility_days').toBe(INVITE_ELIGIBILITY_DAYS_DEFAULT);
+  return others as T;
 }
 
 let database: Awaited<ReturnType<(typeof import('@couli/db/testing'))['createTestDatabase']>>;
