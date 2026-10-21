@@ -1,0 +1,147 @@
+{
+  "red_tests": [
+    "test/spec/frontend/h5-ledger/ledger-links.test.ts > [AC-F1-04a-LINK#1] 订单流水点击经 nav.open 传 OrderDetail 和原始 order_id",
+    "test/spec/frontend/h5-ledger/ledger-links.test.ts > [AC-F1-04a-LINK#2] 提现流水点击经 nav.open 传 WithdrawRecords 和 withdrawal_id",
+    "test/spec/frontend/h5-ledger/ledger-links.test.ts > [AC-F1-04a-LINK#3] masked 和 REWARD 即使带 link 也不可跳转，普通无 link 行也不可点",
+    "test/spec/frontend/h5-ledger/ledger-links.test.ts > [AC-F1-04a-LINK#4] 分享收益按契约关联订单跳转，键盘也可激活",
+    "test/spec/frontend/h5-ledger/ledger-links.test.ts > [AC-F1-04a-LINK#5] 人工调账按 link_type 区分订单与提现单，不根据流水名称猜跳转",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#1] Ledger 路由懒加载真实余额流水页面",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#2] 应用级客户端取令牌后请求第一页，按会计月分组且不捏造订单尾号和时间",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#3] 邀请奖励名称与说明取契约字典，正金额和负的变动后余额均保留符号",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#4] 扣回和正负补差按接口金额显示符号，不以流水类型猜测正负",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#5] 注销放弃余额 ACCOUNT_CLOSED 对用户不可见",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#6] 提现汇总无正负号，手续费与个税标签对应金额，仅汇总行不显示余额",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-A11Y#1] 可点流水行的可访问名包含名称、正负金额与会计日期",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-A11Y#2] 不可点奖励行也有含字典名称、正金额和日期的可访问名",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#7] 自购、分享、扣回、部分退款、补差和提现名称按 BR-TEXT-19",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#8] 直推与间推各用 BR-TEXT-19 名称并显示邀请好友订单及变动后余额",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#9] ADMIN_ADJUST 四个可见原因码逐行匹配 BR-TEXT-19 名称与说明",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#10] 负余额核销显示规格占位说明与零余额",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#11] App 金额去尾零且不加千分位，ASCII 负号在人民币符号之前",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#12] 跨年会计日显示完整年月日且不伪造时分",
+    "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-A11Y#3] 出账流水的可访问名保留名称、负号与日期",
+    "test/spec/frontend/h5-ledger/ledger-paging.test.ts > [AC-F1-04a-PAGING#1] 滚到底携带原样游标追加下一页，在途不重复请求，到底不再请求",
+    "test/spec/frontend/h5-ledger/ledger-paging.test.ts > [AC-F1-04a-PAGING#2] 下拉刷新只重取第一页一次，丢弃旧页并使用新游标",
+    "test/spec/frontend/h5-ledger/ledger-source.test.ts > [AC-F1-04a-SOURCE#1] 页面调用应用级 API 与 money 格式化，使用现有基础组件，不绕过桥或客户端",
+    "test/spec/frontend/h5-ledger/ledger-source.test.ts > [AC-F1-04a-SOURCE#2] 中文文案集中在 texts/ledger.ts，颜色只用令牌且不写 CSS 系统色名",
+    "test/spec/frontend/h5-ledger/ledger-states.test.ts > [AC-F1-04a-STATES#1] 首屏请求在途显示加载态，完成后才显示流水",
+    "test/spec/frontend/h5-ledger/ledger-states.test.ts > [AC-F1-04a-STATES#2] 空列表显示画板空态两句且不出现错误态",
+    "test/spec/frontend/h5-ledger/ledger-states.test.ts > [AC-F1-04a-STATES#3] 首屏失败使用现有 H5 失败文案，点击重试只再请求一次",
+    "test/spec/frontend/h5-ledger/ledger-states.test.ts > [AC-F1-04a-STATES#4] 10405 显示错误态且请求只发一次，不自动重放",
+    "test/spec/frontend/h5-ledger/ledger.browser.test.ts > [AC-F1-04a-BROWSER#1] h5-ledger",
+    "test/spec/frontend/h5-ledger/ledger.browser.test.ts > [AC-F1-04a-BROWSER#2] h5-ledger-empty",
+    "test/spec/frontend/h5-ledger/ledger.browser.test.ts > [AC-F1-04a-BROWSER#3] h5-ledger-dark",
+    "test/spec/frontend/h5-ledger/ledger.browser.test.ts > [AC-F1-04a-BROWSER#4] 320 窄屏与两倍字号仍显示金额和说明且不横向溢出"
+  ],
+  "risk_note": "H5 wallet ledger page /ledger (apps/h5; read-only display of fund records, RV1). Contracts listWalletLedger and issueH5Token (implemented); visuals per design/specs/app-ledger.md. Month groups; names and hints from the dictionary and 08 BR-TEXT-19 (missing keys registered as package defaults); amounts per BR-TEXT-10 for in-app H5 (trailing zeros dropped, + for credits, ASCII - before ¥, integer math via @couli/money); dates per BR-TEXT-11; balance after may be negative; withdraw-paid summary with fee and tax lines; order / withdraw rows open via bridge nav.open, masked and REWARD rows not clickable, ACCOUNT_CLOSED hidden; pull-to-refresh reads only the first page, one request in flight at a time, refresh failure keeps rows with an error and retry, 10405 never replayed and all automatic refetches disabled. Rule tests by Codex in three calls plus one exception round (LIST#6 only); Claude spec-test review r3 pass; red on the test machine (red/3: 32 red, 0 problems). Implementation by Opus 5.5 in three rounds; test machine verify-fast/4 and browser/3 green. Review: Codex (approvals id 27 / 34 / 36). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 3,
+      "note": "round 1 fail (S1: a refresh failure with data shown had no error; S2: refresh and paging in flight together), round 2 fail (S1: reconnect refetch replayed after 10405), round 3 pass (1 S2 tracked in followups)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (4 S1: refresh refetching every page, fee and tax not paired, exact description match, no fixed clock for MM-DD), round 2 fail (1 S1: LIST#6 searched only inside the clickable row), round 3 quick re-check pass after the Codex exception round (1 S2 carried into the implementation constraints)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "F1-04a",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "ce9153ed202adefb13130403970942a16f987bfe",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ce9153ed202adefb13130403970942a16f987bfe",
+      "tree": "be0bdaff140092447abb0f2a804da525c322c3ab",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T21:33:03Z",
+      "finished_at": "2026-10-21T21:33:12Z",
+      "gate": {
+        "commit": "c5101d99084a22538a35790e50f25dd94799e6e6",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/h5-ledger/ledger-links.test.ts > [AC-F1-04a-LINK#1] 订单流水点击经 nav.open 传 OrderDetail 和原始 order_id",
+        "test/spec/frontend/h5-ledger/ledger-links.test.ts > [AC-F1-04a-LINK#2] 提现流水点击经 nav.open 传 WithdrawRecords 和 withdrawal_id",
+        "test/spec/frontend/h5-ledger/ledger-links.test.ts > [AC-F1-04a-LINK#3] masked 和 REWARD 即使带 link 也不可跳转，普通无 link 行也不可点",
+        "test/spec/frontend/h5-ledger/ledger-links.test.ts > [AC-F1-04a-LINK#4] 分享收益按契约关联订单跳转，键盘也可激活",
+        "test/spec/frontend/h5-ledger/ledger-links.test.ts > [AC-F1-04a-LINK#5] 人工调账按 link_type 区分订单与提现单，不根据流水名称猜跳转",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#1] Ledger 路由懒加载真实余额流水页面",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#2] 应用级客户端取令牌后请求第一页，按会计月分组且不捏造订单尾号和时间",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#3] 邀请奖励名称与说明取契约字典，正金额和负的变动后余额均保留符号",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#4] 扣回和正负补差按接口金额显示符号，不以流水类型猜测正负",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#5] 注销放弃余额 ACCOUNT_CLOSED 对用户不可见",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#6] 提现汇总无正负号，手续费与个税标签对应金额，仅汇总行不显示余额",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-A11Y#1] 可点流水行的可访问名包含名称、正负金额与会计日期",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-A11Y#2] 不可点奖励行也有含字典名称、正金额和日期的可访问名",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#7] 自购、分享、扣回、部分退款、补差和提现名称按 BR-TEXT-19",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#8] 直推与间推各用 BR-TEXT-19 名称并显示邀请好友订单及变动后余额",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#9] ADMIN_ADJUST 四个可见原因码逐行匹配 BR-TEXT-19 名称与说明",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#10] 负余额核销显示规格占位说明与零余额",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#11] App 金额去尾零且不加千分位，ASCII 负号在人民币符号之前",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-LIST#12] 跨年会计日显示完整年月日且不伪造时分",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts > [AC-F1-04a-A11Y#3] 出账流水的可访问名保留名称、负号与日期",
+        "test/spec/frontend/h5-ledger/ledger-paging.test.ts > [AC-F1-04a-PAGING#1] 滚到底携带原样游标追加下一页，在途不重复请求，到底不再请求",
+        "test/spec/frontend/h5-ledger/ledger-paging.test.ts > [AC-F1-04a-PAGING#2] 下拉刷新只重取第一页一次，丢弃旧页并使用新游标",
+        "test/spec/frontend/h5-ledger/ledger-source.test.ts > [AC-F1-04a-SOURCE#1] 页面调用应用级 API 与 money 格式化，使用现有基础组件，不绕过桥或客户端",
+        "test/spec/frontend/h5-ledger/ledger-source.test.ts > [AC-F1-04a-SOURCE#2] 中文文案集中在 texts/ledger.ts，颜色只用令牌且不写 CSS 系统色名",
+        "test/spec/frontend/h5-ledger/ledger-states.test.ts > [AC-F1-04a-STATES#1] 首屏请求在途显示加载态，完成后才显示流水",
+        "test/spec/frontend/h5-ledger/ledger-states.test.ts > [AC-F1-04a-STATES#2] 空列表显示画板空态两句且不出现错误态",
+        "test/spec/frontend/h5-ledger/ledger-states.test.ts > [AC-F1-04a-STATES#3] 首屏失败使用现有 H5 失败文案，点击重试只再请求一次",
+        "test/spec/frontend/h5-ledger/ledger-states.test.ts > [AC-F1-04a-STATES#4] 10405 显示错误态且请求只发一次，不自动重放",
+        "test/spec/frontend/h5-ledger/ledger.browser.test.ts > [AC-F1-04a-BROWSER#1] h5-ledger",
+        "test/spec/frontend/h5-ledger/ledger.browser.test.ts > [AC-F1-04a-BROWSER#2] h5-ledger-empty",
+        "test/spec/frontend/h5-ledger/ledger.browser.test.ts > [AC-F1-04a-BROWSER#3] h5-ledger-dark",
+        "test/spec/frontend/h5-ledger/ledger.browser.test.ts > [AC-F1-04a-BROWSER#4] 320 窄屏与两倍字号仍显示金额和说明且不横向溢出"
+      ],
+      "expected": [
+        "test/spec/frontend/h5-ledger/ledger-links.test.ts",
+        "test/spec/frontend/h5-ledger/ledger-list.test.ts",
+        "test/spec/frontend/h5-ledger/ledger-paging.test.ts",
+        "test/spec/frontend/h5-ledger/ledger-source.test.ts",
+        "test/spec/frontend/h5-ledger/ledger-states.test.ts",
+        "test/spec/frontend/h5-ledger/ledger.browser.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "7ef07699c7346d95ae9c1481de12a06650bfe9c0362a618b3dfbfacf15209290"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "1ec5b0ed800ca2b148cd1ff4d4f754f75da1be4cd7b7eea26fe46ddaac4b7fc8"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "7fd6a14acee294b3fbb7544f0241520bf0ecb107",
+    "specs": "0cc0089ce32602c3cb7b93c5b35912d4b3492aab"
+  }
+}
