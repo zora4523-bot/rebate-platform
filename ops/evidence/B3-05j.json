@@ -1,0 +1,107 @@
+{
+  "task": "B3-05j",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "4ef3162dd1e64afe68f555f6101c80859d4a0d2c",
+  "red_tests": [
+    "test/spec/agent/orchestrator-trace/degraded.test.ts > [AC-B3-05j#5][BR-AI-14] route_no_model 降级默认 search，保留此前模型工具调用且不伪造关键词工具调用",
+    "test/spec/agent/orchestrator-trace/degraded.test.ts > [AC-B3-05j#5][BR-AI-14] models_failed 降级默认 search，保留此前模型工具调用且不伪造关键词工具调用",
+    "test/spec/agent/orchestrator-trace/degraded.test.ts > [AC-B3-05j#5][BR-AI-14] budget 降级默认 search，保留此前模型工具调用且不伪造关键词工具调用",
+    "test/spec/agent/orchestrator-trace/degraded.test.ts > [AC-B3-05j#5][BR-AI-14] 无既有意图才补 search，模型给过 refine 则在降级后保留",
+    "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#1][BR-AI-21] 真确定性路径只记录一份无模型 trace，意图为 find_by_link",
+    "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#2][BR-AI-21] URL 顺序与完成状态入 trace，口令不计且序号仍按原链接位置",
+    "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#3][BR-AI-14] traceMask return：只接收合成序号与本轮占位表，脱敏结果原样或 null",
+    "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#3][BR-AI-14] traceMask throw：只接收合成序号与本轮占位表，脱敏结果原样或 null",
+    "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#4][BR-AI-21] 缺少确定性端口仍标记链接意图，空提示不虚构工具调用",
+    "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#6][BR-AI-21] start 后取消：已完成首条=false，只记完成对且迟到结果不改 trace",
+    "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#6][BR-AI-21] start 后取消：已完成首条=true，只记完成对且迟到结果不改 trace",
+    "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#7][BR-AI-21] deterministic 评测 trace 取核心意图和调用、片段依序只合并一次且不跨 run",
+    "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#7][BR-AI-21] degraded 评测 trace 取核心意图和调用、片段依序只合并一次且不跨 run",
+    "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#8][BR-AI-21] smoke-syn-t1-01：T1 原题回放 pass，无 L1/L3 问题、三项计数为零且无模型调用",
+    "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#8][BR-AI-21] smoke-syn-t1-02：T1 原题回放 pass，无 L1/L3 问题、三项计数为零且无模型调用",
+    "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#8][BR-AI-21] smoke-syn-t1-03：T1 原题回放 pass，无 L1/L3 问题、三项计数为零且无模型调用",
+    "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#8][BR-AI-21] smoke-syn-t1-04：T1 原题回放 pass，无 L1/L3 问题、三项计数为零且无模型调用"
+  ],
+  "risk_note": "RV1 by its paths (apps/api/src/modules/agent/orchestrator/core/**, eval/**); rule tests under test/** make the PR RV2. Codex wrote test/spec/agent/orchestrator-trace/** (container red 17 tests; one orchestrator mechanical fixture fix, no assertion changed); Claude spec-test review round 1 pass. Opus implemented once; Codex general review round 1 pass. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4ef3162dd1e64afe68f555f6101c80859d4a0d2c",
+      "tree": "68415e5b391ce986d12d844ef808edc22a654f13",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-21T17:55:38Z",
+      "finished_at": "2026-10-21T17:55:59Z",
+      "red_tests": [
+        "test/spec/agent/orchestrator-trace/degraded.test.ts > [AC-B3-05j#5][BR-AI-14] route_no_model 降级默认 search，保留此前模型工具调用且不伪造关键词工具调用",
+        "test/spec/agent/orchestrator-trace/degraded.test.ts > [AC-B3-05j#5][BR-AI-14] models_failed 降级默认 search，保留此前模型工具调用且不伪造关键词工具调用",
+        "test/spec/agent/orchestrator-trace/degraded.test.ts > [AC-B3-05j#5][BR-AI-14] budget 降级默认 search，保留此前模型工具调用且不伪造关键词工具调用",
+        "test/spec/agent/orchestrator-trace/degraded.test.ts > [AC-B3-05j#5][BR-AI-14] 无既有意图才补 search，模型给过 refine 则在降级后保留",
+        "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#1][BR-AI-21] 真确定性路径只记录一份无模型 trace，意图为 find_by_link",
+        "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#2][BR-AI-21] URL 顺序与完成状态入 trace，口令不计且序号仍按原链接位置",
+        "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#3][BR-AI-14] traceMask return：只接收合成序号与本轮占位表，脱敏结果原样或 null",
+        "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#3][BR-AI-14] traceMask throw：只接收合成序号与本轮占位表，脱敏结果原样或 null",
+        "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#4][BR-AI-21] 缺少确定性端口仍标记链接意图，空提示不虚构工具调用",
+        "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#6][BR-AI-21] start 后取消：已完成首条=false，只记完成对且迟到结果不改 trace",
+        "test/spec/agent/orchestrator-trace/deterministic.test.ts > [AC-B3-05j#6][BR-AI-21] start 后取消：已完成首条=true，只记完成对且迟到结果不改 trace",
+        "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#7][BR-AI-21] deterministic 评测 trace 取核心意图和调用、片段依序只合并一次且不跨 run",
+        "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#7][BR-AI-21] degraded 评测 trace 取核心意图和调用、片段依序只合并一次且不跨 run",
+        "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#8][BR-AI-21] smoke-syn-t1-01：T1 原题回放 pass，无 L1/L3 问题、三项计数为零且无模型调用",
+        "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#8][BR-AI-21] smoke-syn-t1-02：T1 原题回放 pass，无 L1/L3 问题、三项计数为零且无模型调用",
+        "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#8][BR-AI-21] smoke-syn-t1-03：T1 原题回放 pass，无 L1/L3 问题、三项计数为零且无模型调用",
+        "test/spec/agent/orchestrator-trace/eval.test.ts > [AC-B3-05j#8][BR-AI-21] smoke-syn-t1-04：T1 原题回放 pass，无 L1/L3 问题、三项计数为零且无模型调用"
+      ],
+      "expected": [
+        "test/spec/agent/orchestrator-trace/degraded.test.ts",
+        "test/spec/agent/orchestrator-trace/deterministic.test.ts",
+        "test/spec/agent/orchestrator-trace/eval.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "dae43de981cfa9ce23949b3d46858fc025bb1dfeb8348135fe84d67f9247e1f9"
+        }
+      ],
+      "gate": {
+        "commit": "0fcd76e381c8d19e4d148a5cca290b9f7d69709d",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass (couli-runs/B3-05j/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass, no findings (couli-runs/B3-05j/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "3f5219dd064894e9895829a6893e0995902d7772"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
