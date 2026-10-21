@@ -20,7 +20,7 @@ export function generateLinkCode(): string {
   return code;
 }
 
-/** The links table with lk (migration 0052); identical to DB now that db.gen.ts carries it. */
+/** The links table with lk (migration 0062); identical to DB now that db.gen.ts carries it. */
 export type LinkCodeDB = Omit<DB, 'links'> & {
   links: DB['links'] & { lk: string | null };
 };
