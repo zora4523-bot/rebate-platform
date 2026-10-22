@@ -89,7 +89,7 @@ export function success(result: SubmitResult) {
 }
 
 export function publicAppeal(value: unknown) {
-  expect(Object.keys(value as object).sort()).toEqual([
+  const keys = [
     'appeal_id',
     'closed_at',
     'content',
@@ -97,5 +97,9 @@ export function publicAppeal(value: unknown) {
     'status',
     'target_id',
     'target_type',
-  ]);
+  ];
+  // 为 CT-26e 让路：带 attempt_no 键时键集须再恰好多出 attempt_no 与 can_resubmit（两者同时出现），
+  // 否则保持原 7 个键；取值由调用方精确比对。CT-26e 合并后收紧为单态（固定 9 个键）。
+  if ('attempt_no' in (value as object)) keys.push('attempt_no', 'can_resubmit');
+  expect(Object.keys(value as object).sort()).toEqual(keys.sort());
 }
