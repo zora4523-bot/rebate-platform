@@ -233,6 +233,8 @@ it('[AC-B1-10j#5] 带 user_id 时他人 claim 与未知 claim 同样报 claim_id
     AdminClaimsFieldsError,
   );
   expect((await claims.detail(APP, CLAIM, USER)).claim_id).toBe(CLAIM);
+  // A uuid compares case-insensitively, as the list's filter does.
+  expect((await claims.detail(APP, CLAIM, USER.toUpperCase())).claim_id).toBe(CLAIM);
   expect(calls.names).toEqual([]);
   expect(calls.links).toEqual([]);
 });

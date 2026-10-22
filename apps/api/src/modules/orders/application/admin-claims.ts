@@ -130,7 +130,11 @@ export class AdminClaims {
     if (!isUuid(claimId)) throw new AdminClaimsFieldsError(['claim_id']);
     const deps = this.available();
     const row = await deps.reads.claim(appId, claimId);
-    if (row === undefined || (userId !== undefined && row.user_id !== userId)) {
+    // user_id is a uuid: compared case-insensitively, as the list's PostgreSQL uuid filter does.
+    if (
+      row === undefined ||
+      (userId !== undefined && row.user_id.toLowerCase() !== userId.toLowerCase())
+    ) {
       throw new AdminClaimsFieldsError(['claim_id']);
     }
     const items = await deps.reads.items(appId, claimId);

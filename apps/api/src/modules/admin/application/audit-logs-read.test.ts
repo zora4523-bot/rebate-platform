@@ -102,6 +102,40 @@ it('[AC-B1-34a] from later than to is refused; equal or one-sided bounds are not
   expect(auditRangeInvalid('2026-10-09T00:00:00Z', undefined)).toBe(false);
 });
 
+it('[AC-B1-34j] from / to compare to the microsecond; equal instants are not inverted', () => {
+  expect(auditRangeInvalid('2026-10-08T00:00:00.000500Z', '2026-10-08T00:00:00.000100Z')).toBe(
+    true,
+  );
+  expect(auditRangeInvalid('2026-10-08T08:00:00.0005+08:00', '2026-10-08T00:00:00.000500Z')).toBe(
+    false,
+  );
+  // Digits past the microsecond round as timestamptz reads them (half to even).
+  expect(auditRangeInvalid('2026-10-08T00:00:00.0000014Z', '2026-10-08T00:00:00.000001Z')).toBe(
+    false,
+  );
+  expect(auditRangeInvalid('2026-10-08T00:00:00.0000016Z', '2026-10-08T00:00:00.000001Z')).toBe(
+    true,
+  );
+  expect(auditRangeInvalid('2026-10-08T00:00:00.0000015Z', '2026-10-08T00:00:00.000002Z')).toBe(
+    false,
+  );
+});
+
+it('[AC-B1-34j] a non-UUID actor_id is the empty page without reading the store', async () => {
+  for (const ticked of [[], ['audit.view_all']]) {
+    const { reader, filters } = setup(ticked);
+    for (const actorId of ['not-a-uuid', `${ME}x`, '']) {
+      expect(await reader.list(caller, { ...query, actorId })).toEqual({
+        items: [],
+        page: 1,
+        pageSize: 20,
+        total: 0,
+      });
+    }
+    expect(filters).toEqual([]);
+  }
+});
+
 it('[AC-B1-34e] the export walk passes its fixed bound and continues by keyset after a cursor', async () => {
   const filters: AuditLogFilter[] = [];
   const calls: [number, number, bigint | undefined][] = [];
