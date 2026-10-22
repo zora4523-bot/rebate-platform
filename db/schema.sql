@@ -2661,6 +2661,22 @@ ALTER TABLE app.login_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: notification_settings; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.notification_settings (
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    service_push boolean NOT NULL,
+    subscription_push boolean NOT NULL,
+    marketing_push boolean NOT NULL,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: notify_logs; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -5066,6 +5082,14 @@ ALTER TABLE ONLY app.links
 
 ALTER TABLE ONLY app.login_logs
     ADD CONSTRAINT login_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_settings notification_settings_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.notification_settings
+    ADD CONSTRAINT notification_settings_pkey PRIMARY KEY (app_id, user_id);
 
 
 --
@@ -7621,6 +7645,14 @@ ALTER TABLE ONLY app.login_logs
 
 
 --
+-- Name: notification_settings notification_settings_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.notification_settings
+    ADD CONSTRAINT notification_settings_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
 -- Name: notify_logs notify_logs_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -10159,6 +10191,49 @@ GRANT SELECT ON TABLE app.links TO couli_readonly;
 
 GRANT SELECT,INSERT ON TABLE app.login_logs TO couli_app;
 GRANT SELECT ON TABLE app.login_logs TO couli_readonly;
+
+
+--
+-- Name: TABLE notification_settings; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.notification_settings TO couli_app;
+GRANT SELECT ON TABLE app.notification_settings TO couli_readonly;
+
+
+--
+-- Name: COLUMN notification_settings.service_push; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(service_push) ON TABLE app.notification_settings TO couli_app;
+
+
+--
+-- Name: COLUMN notification_settings.subscription_push; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(subscription_push) ON TABLE app.notification_settings TO couli_app;
+
+
+--
+-- Name: COLUMN notification_settings.marketing_push; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(marketing_push) ON TABLE app.notification_settings TO couli_app;
+
+
+--
+-- Name: COLUMN notification_settings.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.notification_settings TO couli_app;
+
+
+--
+-- Name: COLUMN notification_settings.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.notification_settings TO couli_app;
 
 
 --

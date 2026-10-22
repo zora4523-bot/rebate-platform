@@ -834,6 +834,17 @@ export interface LoginLogs {
   user_id: string;
 }
 
+export interface NotificationSettings {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  marketing_push: boolean;
+  row_version: Generated<number>;
+  service_push: boolean;
+  subscription_push: boolean;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+}
+
 export interface NotifyLogs {
   app_id: string;
   channel: string;
@@ -1606,6 +1617,7 @@ export interface DB {
   link_open_attempts: LinkOpenAttempts;
   links: Links;
   login_logs: LoginLogs;
+  notification_settings: NotificationSettings;
   notify_logs: NotifyLogs;
   notify_templates: NotifyTemplates;
   order_keys: OrderKeys;
