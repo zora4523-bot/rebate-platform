@@ -85,6 +85,8 @@ rules:
     review: claude+codex
   # payment: 收款基础设施（资金：收款分录与对账，规划/02 §4.1 payment 行、08 BR-PAY-07、规划/11 §1.1 资金行）为 RV2，分工同 ledger（B2-15g，2026-10-22）。
   - path: 'apps/api/src/modules/payment/**'
+  # payout: 提现单、冻结、打款与通道（资金，规划/02 §4.1 payout 行、规划/11 §1.1 资金行）为 RV2，分工同 ledger（B2-05a，2026-10-22）。
+  - path: 'apps/api/src/modules/payout/**'
     risk: RV2
     impl: claude
     tester: codex
