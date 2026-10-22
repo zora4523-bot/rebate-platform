@@ -184,11 +184,12 @@ jobs:
           fi
         env:
           REDIS_ID: ${{ job.services.redis.id }}
-      # PROP_RUNS (D10-210, CT-06zg): property cases inside the integration tests run 2000 times, the
-      # long-run tier of their design (PR 200 / long run 2000, e.g. test/spec/ledger/posting/
-      # properties.int.test.ts). Unset, they fell to the @couli/testing default of 10000, which
-      # was not a choice ([AC-B2-02f#23] alone took 783 s). verify-props and longrun-props keep
-      # their own run counts.
+      # PROP_RUNS (D10-210, CT-06zg): the property cases inside the integration tests read their run
+      # count from PROP_RUNS (some scale it, e.g. test/spec/agent/stream-finalize/model.prop.int.test.ts
+      # runs max(20, PROP_RUNS / 100)). 2000 is the long-run tier of their design (PR 200 / long run
+      # 2000, test/spec/ledger/posting/properties.int.test.ts). Unset, they fell to the
+      # @couli/testing default of 10000, which was not a choice ([AC-B2-02f#23] alone took 783 s).
+      # verify-props and longrun-props keep their own run counts.
       - run: pnpm test:int
         env:
           TEST_REDIS_URL: redis://127.0.0.1:6379/0
