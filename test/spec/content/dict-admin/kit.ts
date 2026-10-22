@@ -36,8 +36,10 @@ export type HistoryPage = Schema<'AdminDictItemVersionPage'>;
 export type Saved = Schema<'AdminDictSaveResult'>;
 export const ROOT = new URL('../../../../', import.meta.url);
 export const KEYS = {
-  general: 'about.copy_diagnostics',
-  second: 'about.copy_diagnostics.done',
+  // F1-02zzg：与 texts 内容解耦（CT-16i 新增 about.* 键）。general/second 须是 texts.default.json 里
+  // 归 general 的一对嵌套键，且整个 dict 只有这两个键（#1 按 dict 前缀、#8 按 general 前缀列默认全集）。
+  general: 'notify_settings.service_push',
+  second: 'notify_settings.service_push.desc',
   variable: 'agent.match.title_shows',
   fund: 'order_status_group.credited',
   agreement: 'privacy.btn.agree',
