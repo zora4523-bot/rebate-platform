@@ -1,0 +1,22 @@
+id: CT-02zc
+repo: rebate-platform
+title: 契约小修：loginBySms 与第三方登录（loginWithWechat / loginWithApple / loginWithHuawei 等现有 oauth 登录操作）的 x-error-codes 补 10007（data.stage=processing；BR-ID-27「status=deleting 的账号用任何方式登录都返回 10007」，实现已在 B1-02d / B1-15f）
+type: contract
+# 草稿 2026-10-22（身份与风控线 identity-lane）。编排 13:3x 派工 ④；B1-15f 实现与评审时发现契约缺口（followups）。04 §4.5 已列 10007 与 data.stage（§错误码表），只补 openapi 各登录操作的 x-error-codes，不改形状。占契约槽后做；评审 Codex contract（不可用按 #36 独立 Claude）。
+refs: []
+refs_hash: {}
+contract_sections: ['4.5']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
