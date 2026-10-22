@@ -2,8 +2,19 @@
 // reading of the rules that scripts/texts.ts enforces in `pnpm contracts:check`, plus the keys
 // the contract ledger rows b1-40, b2-27, b3-37, b4-31 and b5-28 name (CT-16e).
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { expect, it } from 'vitest';
 import { errorCodes } from './index.ts';
+
+// scripts/ is outside this package's rootDir, so it is loaded at run time (as in openapi.test.ts).
+const testRequire = createRequire(import.meta.url);
+const { checkErrorKeys, ERROR_SCENE_KEYS } = testRequire('../scripts/texts.ts') as {
+  checkErrorKeys(texts: Record<string, unknown>, codes: unknown): string[];
+  ERROR_SCENE_KEYS: Record<string, string>;
+};
+const { loadErrorCodes } = testRequire('../scripts/catalog.ts') as {
+  loadErrorCodes(): { codes: unknown };
+};
 
 type TextsFile = {
   version: number;
@@ -25,6 +36,17 @@ const SILENT = [10002, 10402, 30505, 44003];
  * (03 §9).
  */
 const ADMIN_ONLY = [10008, 10009, 30154, 30417, 44004];
+
+/**
+ * BR-TEXT-14 table B 场景子键 (08 12_TEXT l.835; rows l.853, l.855, l.875): picked by the client on
+ * one page, not a data.reason; each falls back to the key it maps to.
+ */
+const SCENE = {
+  'error.30101.auth_unavailable.auth_manage': 'error.30101.auth_unavailable',
+  'error.30102.auth_unavailable.auth_manage': 'error.30102.auth_unavailable',
+  'error.30151.auth_manage': 'error.30151',
+  'error.30411.phone_change': 'error.30411',
+} as Record<string, string>;
 
 it('[AC-CT-19c#1] withdraw_detail.net.actual 默认文案为实际到账 {net}', () => {
   expect(texts['withdraw_detail.net.actual']).toBe('实际到账 {net}');
@@ -79,11 +101,41 @@ it('every live MVP error code has error.<code>, silent codes have none', () => {
     if (def.deprecated) expect(texts[key]).toBeUndefined();
   }
   for (const key of Object.keys(texts).filter((k) => k.startsWith('error.'))) {
-    const [, code, reason] = key.split('.');
+    if (key in SCENE) continue;
+    const [, code, reason, extra] = key.split('.');
+    expect(extra, key).toBeUndefined();
     const def = errorCodes[Number(code) as keyof typeof errorCodes];
     expect(def, key).toBeDefined();
     if (reason !== undefined) expect(def.data, key).toHaveProperty('reason');
   }
+});
+
+it('[CT-16i] table B scene keys are 08 verbatim and fall back to a present key', () => {
+  expect(texts['error.30101.auth_unavailable.auth_manage']).toBe('淘宝授权暂时不可用，请稍后再试');
+  expect(texts['error.30102.auth_unavailable.auth_manage']).toBe('淘宝授权暂时不可用，请稍后再试');
+  expect(texts['error.30151.auth_manage']).toBe('这个淘宝账号暂时无法绑定到当前账号');
+  expect(texts['error.30411.phone_change']).toBe('该手机号已被其他凑狸账号使用，请换一个手机号');
+  for (const [key, base] of Object.entries(SCENE)) expect(texts[base], key).toBeTypeOf('string');
+});
+
+it('[CT-16i] the checker lets exactly the four scene keys through, not look-alikes', () => {
+  expect(ERROR_SCENE_KEYS).toEqual(SCENE);
+  const { codes } = loadErrorCodes();
+  expect(checkErrorKeys(texts, codes)).toEqual([]);
+  const lookAlikes = [
+    'error.30101.auth_unavailable.other_page',
+    'error.30102.sharer_auth_invalid.auth_manage',
+    'error.30151.phone_change',
+    'error.30411.auth_manage',
+    'error.30412.phone_change',
+    'error.30411.phone_change.extra',
+  ];
+  for (const key of lookAlikes) {
+    expect(checkErrorKeys({ ...texts, [key]: '文案' }, codes), key).toHaveLength(1);
+  }
+  const withoutBase: Record<string, string> = { ...texts };
+  delete withoutBase['error.30151'];
+  expect(checkErrorKeys(withoutBase, codes).join('\n')).toContain('error.30151.auth_manage');
 });
 
 it('covers the keys of contract ledger rows b1-40 … b5-28', () => {

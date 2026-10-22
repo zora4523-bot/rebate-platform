@@ -35,6 +35,19 @@ export const SILENT_CODES: readonly number[] = [10002, 10402, 30505, 44003];
  */
 export const ADMIN_ONLY_CODES: readonly number[] = [10008, 10009, 30154, 30417, 44004];
 
+/**
+ * BR-TEXT-14 table B 场景子键 (08 BR-TEXT-14 表 B 表头说明, 规划/08 12_TEXT l.835; rows l.853, l.855,
+ * l.875, 2026-10-21 W-15): not a server data.reason but picked by the client on one page, falling
+ * back to the key named here when missing. Only these exact keys are let through; every other key
+ * must still be error.<code> or error.<code>.<data.reason>. A new scene key needs a row in 08 first.
+ */
+export const ERROR_SCENE_KEYS: Readonly<Record<string, string>> = {
+  'error.30101.auth_unavailable.auth_manage': 'error.30101.auth_unavailable',
+  'error.30102.auth_unavailable.auth_manage': 'error.30102.auth_unavailable',
+  'error.30151.auth_manage': 'error.30151',
+  'error.30411.phone_change': 'error.30411',
+};
+
 type Obj = Record<string, unknown>;
 
 function isObj(v: unknown): v is Obj {
@@ -133,10 +146,48 @@ export function checkTexts(codes: readonly ErrorCodeDef[], file: string = textsF
     if (value === text) problems.push(`${at}: same as texts.${key}`);
   }
 
-  // error.<code> and error.<code>.<reason> against contracts/error-codes.yaml.
+  // error.<code>, error.<code>.<reason> and the scene keys against contracts/error-codes.yaml.
+  const byCode = new Map(codes.map((c) => [c.code, c]));
+  problems.push(...checkErrorKeys(texts, codes, where));
+  for (const silent of SILENT_CODES) {
+    if (!byCode.has(silent)) problems.push(`${where}: SILENT_CODES: ${silent} is not a code`);
+  }
+  for (const admin of ADMIN_ONLY_CODES) {
+    if (!byCode.has(admin)) problems.push(`${where}: ADMIN_ONLY_CODES: ${admin} is not a code`);
+  }
+  for (const c of codes) {
+    const has = `error.${c.code}` in texts;
+    if (SILENT_CODES.includes(c.code)) {
+      if (has) problems.push(`${where}: texts.error.${c.code}: code is silent (BR-TEXT-14 「—」)`);
+    } else if (ADMIN_ONLY_CODES.includes(c.code)) {
+      if (has) problems.push(`${where}: texts.error.${c.code}: admin-only code (规划/03 §9)`);
+    } else if (!c.deprecated && c.phase === null && !has) {
+      problems.push(`${where}: texts: missing error.${c.code}`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * The error.* keys of texts: error.<code> or error.<code>.<reason> with a live code and a listed
+ * data.reason, or one of ERROR_SCENE_KEYS whose fallback key is present.
+ */
+export function checkErrorKeys(
+  texts: Readonly<Record<string, unknown>>,
+  codes: readonly ErrorCodeDef[],
+  where = 'contracts/texts.default.json',
+): string[] {
+  const problems: string[] = [];
   const byCode = new Map(codes.map((c) => [c.code, c]));
   for (const key of Object.keys(texts)) {
     if (!key.startsWith('error.')) continue;
+    if (Object.hasOwn(ERROR_SCENE_KEYS, key)) {
+      const base = ERROR_SCENE_KEYS[key] ?? '';
+      if (!Object.hasOwn(texts, base)) {
+        problems.push(`${where}: texts.${key}: scene key without its fallback texts.${base}`);
+      }
+      continue;
+    }
     const m = /^error\.(\d{5})(?:\.([A-Za-z0-9_]+))?$/.exec(key);
     if (m === null) {
       problems.push(`${where}: texts.${key}: error keys are error.<code> or error.<code>.<reason>`);
@@ -154,22 +205,6 @@ export function checkTexts(codes: readonly ErrorCodeDef[], file: string = textsF
       if (!Array.isArray(reasons) || !reasons.includes(reason)) {
         problems.push(`${where}: texts.${key}: "${reason}" is not a listed data.reason value`);
       }
-    }
-  }
-  for (const silent of SILENT_CODES) {
-    if (!byCode.has(silent)) problems.push(`${where}: SILENT_CODES: ${silent} is not a code`);
-  }
-  for (const admin of ADMIN_ONLY_CODES) {
-    if (!byCode.has(admin)) problems.push(`${where}: ADMIN_ONLY_CODES: ${admin} is not a code`);
-  }
-  for (const c of codes) {
-    const has = `error.${c.code}` in texts;
-    if (SILENT_CODES.includes(c.code)) {
-      if (has) problems.push(`${where}: texts.error.${c.code}: code is silent (BR-TEXT-14 「—」)`);
-    } else if (ADMIN_ONLY_CODES.includes(c.code)) {
-      if (has) problems.push(`${where}: texts.error.${c.code}: admin-only code (规划/03 §9)`);
-    } else if (!c.deprecated && c.phase === null && !has) {
-      problems.push(`${where}: texts: missing error.${c.code}`);
     }
   }
   return problems;

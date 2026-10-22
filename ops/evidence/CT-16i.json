@@ -1,0 +1,37 @@
+{
+  "task": "CT-16i",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "spec_commit": "f49ac1cea9cb491bbbca6b892667cf90cf0d6598",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; user-side text keys, App hi-fi batch 3 'Me' second half, orchestrator 17:4x / D10-121 / D10-124, SPEC_REF ae516de). texts.default.json gains 102 keys copied verbatim from 08 BR-TEXT-14 tables C / D (deletion, phone change, step-up, help, customer service, about, network, web page) plus the four table B scenario sub-keys (error.30101 / 30102.auth_unavailable.auth_manage, error.30151.auth_manage, error.30411.phone_change, 08 l.835) admitted by an explicit whitelist ERROR_SCENE_KEYS in packages/contracts-ts/scripts/texts.ts (the general error-key shape rule is not widened; texts.test.ts asserts whitelisted keys pass and same-shape others fail) and a fallback for app_update.optional.title per 08 l.1091; fund-term-keys classifies each (unsure as fund terms). Keys pending legal text (deletion.notice.item.*) are not created. The H5 first-screen budget passes after F1-01t (#1162) trimmed the H5 dictionary. New keys only, not breaking. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "cc8a791d7e2c2208cc211a54159221a0dc8e6df5",
+    "specs": "8bdd14157b45b1ae9ef002ce4f11cb45e325b0c1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}

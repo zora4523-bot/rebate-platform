@@ -37,6 +37,13 @@
 # CT-16j：08 BR-TEXT-12 细则（2026-10-22 D10-135）写明：agent.tool_status.get_rebate_quote.* 单列归 fund_terms（整组写作前缀）；
 # agent.suggest.clarify.*、agent.tool_status.search_products.*、agent.tool_status.default.* 整组归 ordinary（写作前缀），
 # agent.notice.platform_unrecognized 逐键归 ordinary。
+# CT-16i：08 未写归类的第 3 批「我的」下半键按认定规则逐句复核：说余额、预估收益放弃与去提现的 deletion.funds.*、
+# 用到「待抵扣」的 deletion.negative.desc、说冷静期内不能提现的 deletion.cooling.readonly_note、说提现已暂停的
+# help.appeal.state_frozen 归 fund_terms；deletion. 其余键（含 .agree_hint、.pending.apply_blocked、.cooling.withdraw /
+# .withdraw_note，原句只说勾选与验证身份、不能重复申请、撤回注销，不说金额或提现）、bind_phone.、phone_change.、step_up.、
+# help.、cs.、about.、net.、web_page. 与表 B 场景子键 error.30101.auth_unavailable.auth_manage、
+# error.30102.auth_unavailable.auth_manage、error.30151.auth_manage（去掉了「无法获得返利」半句）、error.30411.phone_change
+# 逐键归 ordinary（任务书 9.2 默认经逐句复核，待规划回写）。
 fund_terms:
   prefixes:
     - order_status.
@@ -95,6 +102,12 @@ fund_terms:
     - claim.records.status.auto_tracked
     - claim.records.status.rejected
     - claim_required
+    - deletion.cooling.readonly_note
+    - deletion.funds.desc
+    - deletion.funds.desc_banned
+    - deletion.funds.go_withdraw
+    - deletion.funds.title
+    - deletion.negative.desc
     - error.30103
     - error.30121
     - error.30151
@@ -104,6 +117,7 @@ fund_terms:
     - error.44001
     - error.50301.not_launched
     - external_page.product_unresolved
+    - help.appeal.state_frozen
     - home.guest_value.login
     - invite.notice_inviter
     - invite.reward.tip
@@ -171,8 +185,11 @@ ordinary:
     - agent.tool_status.default.
   # 清单以外的现有键（08「普通：清单以外的现有键与模板」），逐键列出。
   keys:
+    - about.ai_filing.title
     - about.copy_diagnostics
+    - about.copy_diagnostics.desc
     - about.copy_diagnostics.done
+    - about.filing_no.label
     # BR-TEXT-25 后台字典的普通键（默认文案在 contracts/texts.admin.default.json，不在 texts.default.json）。
     # 下面两键的默认文案命中关键词核对，但 exempt 现只核对 texts.default.json 的键，故理由记在这里：
     # admin_dict.risk_state.frozen「冻结」说的是账号风控状态，不是资金或余额；
@@ -312,6 +329,11 @@ ordinary:
     - appeal.result.upheld
     - appeal.submit_entry
     - appeal.view_progress
+    - bind_phone.bound_toast
+    - bind_phone.merge.target
+    - bind_phone.merge.target_label
+    - bind_phone.merge.title
+    - bind_phone.risk_blocked.desc
     - btn.buy
     - btn.buy.coupon
     - btn.search_similar
@@ -335,7 +357,35 @@ ordinary:
     - cs.copy_link
     - cs.copy_link.done
     - cs.go_help
+    - cs.no_code_notice
+    - cs.open_failed.desc
+    - cs.open_failed.retry
+    - cs.open_failed.title
+    - cs.sheet.title
     - cs.wechat_unavailable
+    - deletion.agree_hint
+    - deletion.apply
+    - deletion.cooling.badge
+    - deletion.cooling.deadline
+    - deletion.cooling.title
+    - deletion.cooling.withdraw
+    - deletion.cooling.withdraw_note
+    - deletion.notice.full_link
+    - deletion.notice.title
+    - deletion.pending.abandon_note
+    - deletion.pending.action
+    - deletion.pending.action_label
+    - deletion.pending.apply_blocked
+    - deletion.pending.checked_label
+    - deletion.pending.no_repeat
+    - deletion.pending.submitted_at_label
+    - deletion.timeline.cooling
+    - deletion.timeline.cooling_desc
+    - deletion.timeline.processing
+    - deletion.timeline.processing_desc
+    - deletion.timeline.submitted
+    - deletion.top_notice
+    - deletion.withdrawn_toast
     - download_guide.download
     - download_guide.reopen
     - error.10001
@@ -363,8 +413,10 @@ ordinary:
     - error.20903
     - error.30101
     - error.30101.auth_unavailable
+    - error.30101.auth_unavailable.auth_manage
     - error.30102
     - error.30102.auth_unavailable
+    - error.30102.auth_unavailable.auth_manage
     - error.30104
     - error.30104.credential_invalid
     - error.30111
@@ -373,6 +425,7 @@ ordinary:
     - error.30141
     - error.30143
     - error.30144
+    - error.30151.auth_manage
     - error.30401
     - error.30402
     - error.30403
@@ -385,6 +438,7 @@ ordinary:
     - error.30410
     - error.30411
     - error.30411.mergeable
+    - error.30411.phone_change
     - error.30413
     - error.30414
     - error.30415
@@ -438,6 +492,33 @@ ordinary:
     - favorites.manage
     - favorites.select_all
     - h5.load_failed
+    - help.appeal.go_appeal
+    - help.appeal.state_pending
+    - help.article.more_help
+    - help.claim_guide.fig_note
+    - help.claim_guide.fig_order_no
+    - help.claim_guide.fig_paid_time
+    - help.claim_guide.go_claim
+    - help.claim_guide.order_no
+    - help.claim_guide.paid_date
+    - help.claim_guide.window
+    - help.claim_guide.window_desc
+    - help.contact_cs
+    - help.faq.title
+    - help.no_answer.desc
+    - help.no_answer.title
+    - help.section.account_privacy.desc
+    - help.section.account_privacy.name
+    - help.section.getting_started.desc
+    - help.section.getting_started.name
+    - help.section.invite.desc
+    - help.section.invite.name
+    - help.section.orders_claims.desc
+    - help.section.orders_claims.name
+    - help.section.rebate_settlement.desc
+    - help.section.rebate_settlement.name
+    - help.section.withdraw.desc
+    - help.section.withdraw.name
     - home.guest_value.desc
     - invite.auto_bind_failed
     - invite.backfill.placeholder
@@ -519,6 +600,8 @@ ordinary:
     - messages.read_all
     - messages.unread
     - net.stale_data
+    - net.unavailable
+    - net.unavailable.desc
     - no_rebate.price_compare.help
     - no_rebate.price_compare.similar
     - notice.no_more
@@ -552,7 +635,19 @@ ordinary:
     - pending_confirm.title
     - pending_track_card.desc
     - pending_track_card.title
+    - phone_change.current_label
+    - phone_change.done.desc
+    - phone_change.done.title
+    - phone_change.intro
+    - phone_change.new_hint
+    - phone_change.new_label
+    - phone_change.old_unavailable
+    - phone_change.pending.abandon_note
+    - phone_change.pending.no_repeat
     - phone_change.risk_blocked.desc
+    - phone_change.step1
+    - phone_change.step2
+    - phone_change.submit_hint
     - price_basis
     - price_basis.general
     - price_trend.empty
@@ -652,6 +747,13 @@ ordinary:
     - share_page.open_in_app
     - share_page.open_in_browser_hint
     - spec_min_price_note
+    - step_up.no_available_method
+    - step_up.oauth.action
+    - step_up.oauth.desc
+    - step_up.summary.deletion
+    - step_up.summary.phone_change
+    - web_page.back
+    - web_page.maintenance
   notify_templates:
     - SMS_CODE
     - UNION_AUTH_EXPIRING
@@ -715,3 +817,13 @@ exempt:
     reason: 消息中心空态说明，只列会收到哪类通知，不说金额、状态或有没有返利
   - key: notify_settings.service_push.desc
     reason: 通知开关的用途说明，只列推送哪类消息，不说金额、状态或有没有返利（同 perm.push.card_hint）
+  - key: help.section.rebate_settlement.name
+    reason: 帮助中心的分类名，只是进「返利与结算」类文章，不说金额、状态或有没有返利
+  - key: help.section.rebate_settlement.desc
+    reason: 帮助中心分类的一句介绍，只列这类文章讲什么（预估、结算与入账），不说金额、状态或有没有返利
+  - key: help.section.withdraw.name
+    reason: 帮助中心的分类名，只是进「提现」类文章，不说金额，也不说提现处在什么状态
+  - key: help.section.withdraw.desc
+    reason: 帮助中心分类的一句介绍，只列这类文章讲什么（收款账号与提现），不说金额，也不说提现处在什么状态
+  - key: privacy.system_permissions.push.desc
+    reason: 通知权限的用途说明，只列推送哪类消息，不说金额、状态或有没有返利（同 perm.push.card_hint；表 D 隐私文案，另归 content.agreement）
