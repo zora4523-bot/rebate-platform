@@ -1240,6 +1240,7 @@ export interface PayoutAccountChanges {
 export interface PayoutAccounts {
   alipay_hmac: string | null;
   alipay_logon_id_cipher: Buffer | null;
+  anonymized_at: Timestamp | null;
   app_id: string;
   bank_card_hmac: string | null;
   bank_card_no_cipher: Buffer | null;
@@ -1432,6 +1433,7 @@ export interface Realname {
   provider: string | null;
   row_version: Generated<number>;
   status: string;
+  tax_retained: Generated<boolean>;
   updated_at: Generated<Timestamp>;
   user_id: string;
   verified_at: Timestamp | null;
