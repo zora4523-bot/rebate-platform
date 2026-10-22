@@ -1,0 +1,17 @@
+id: B1-08z
+repo: rebate-platform
+title: test-change：[AC-B1-08n#1] 生产 worker 定时器数改为「平台数 + 补偿扫描（按 15 分钟周期认出，至多 1 个）」，主干未注入快照端口时不变，为 B1-08w 注入快照端口让路
+type: test-change
+# 2026-10-22 入账（W1）。依据：编排裁定 D10-146——只改 test/spec/orders/wiring/module.test.ts 第 44 行期望为「平台数 + （补偿扫描已注册 ? 1 : 0）」，且须同时认出多出来的正是 B1-08t 补偿扫描（按周期 15 分钟），不能只放宽计数；主干未注入时结果不变。
+# 做法：start() 前监视 setTimeout，按 15 分钟周期数出扫描（断言至多 1 个），总数 = 平台数 + 扫描数；其余断言不动。Codex 只读评审「不削弱」；按 approvals #24 由编排核对加标签；先于 B1-08w 合并。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/orders/wiring/module.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

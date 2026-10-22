@@ -36,18 +36,25 @@ it('[AC-B1-08n#1] worker 装配只注册一次 order-sync，零查询、零投�
       expect.objectContaining({ code: 'MISSING_STATUS_MAP' }),
     );
     await f.queue.start();
+    // B1-08t's compensation scan arms one 15-minute timer once a snapshot port is wired (B1-08w);
+    // count it by its period so the platform timers stay exactly one per platform (B1-08z
+    // test-change, ruling D10-146).
+    const armed = vi.spyOn(globalThis, 'setTimeout');
     const handle = r.start();
     try {
       await vi.advanceTimersByTimeAsync(0);
       expect(f.queue.send).not.toHaveBeenCalled();
       expect(f.queries).toEqual([]);
-      expect(vi.getTimerCount()).toBe(scheduledPlatforms().length);
+      const scans = armed.mock.calls.filter(([, ms]) => ms === 15 * 60_000).length;
+      expect(scans).toBeLessThanOrEqual(1);
+      expect(vi.getTimerCount()).toBe(scheduledPlatforms().length + scans);
       await vi.advanceTimersByTimeAsync(59_999);
       expect(f.queries).toEqual([]);
       await vi.advanceTimersByTimeAsync(1);
       expect(f.queries.some((q) => q.includes('union_accounts'))).toBe(true);
     } finally {
       await handle.stop();
+      armed.mockRestore();
     }
     expect(vi.getTimerCount()).toBe(0);
     expect(f.lines().filter((l) => l.msg === 'order_sync_disabled')).toEqual([]);
