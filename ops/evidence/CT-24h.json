@@ -1,0 +1,38 @@
+{
+  "legacy_no_red": true,
+  "red_tests": [],
+  "risk_note": "Contract task (contracts/openapi.yaml, enums/admin.yaml, error-codes.yaml, contracts-ts conformance and texts scripts, the regenerated contracts-ts and route tables): adds tag admin-unions with the admin union account and PID operations, all x-implementation planned, per 04 §6.6 / §3.2 / §11.2, BR-ID-24, BR-ATTR-02 and rulings D10-152 / 155 / 157 / 159 / 164 / 176. Union accounts: GET /admin/v1/union-accounts (unpaged; auth_status, auth_expires_estimated, reauth_mode, alert_phones_configured; no credential, no alert_stage); POST …/{union_account_id}/reauthorize opens an admin OAuth session (union.account_auth plus totp step-up), GET …/reauthorize/{session_id} polls it; the union redirects to the console page /unions/oauth-callback, which posts state and code (or error) with the admin token to POST /admin/v1/union-accounts/oauth/callback and gets the session result (no unauthenticated endpoint; D10-176 ①); a reauth_mode=manual account on the OAuth start is 20001 [union_account_id] with data.reason=manual_mode, none is 20001 without reason (D10-176 ④); PUT …/{union_account_id}/credential takes a hand-entered credential for manual accounts (kept by ruling D10-196; step-up; plaintext only encrypted into union_credentials, never logged, audited or returned; without expires_at the expiry is estimated from the platform's Key validity in the platform registry, not a fixed 90 days). Alert phones: GET / POST /admin/v1/union-accounts/alert-phones and DELETE …/alert-phones?phone_id=&expected_version= (D10-176 ②), masked numbers only, version conflicts 20902 config_item (D10-176 ③). PIDs: list, register, PATCH (pending only), activate (花卷云 ignore confirmation plus screenshot) and retire; another active PID of the same app × platform × scene is the new code 30155; 20902 gains resource union_pid. New enums union_auth_status, union_reauth_mode, admin_union_auth_session_status, union_pid_status; new unit test admin-unions.test.ts. Example UUIDs of auth_renewed_by use a low-entropy value (the original tripped gitleaks generic-api-key; scan rules unchanged). tester none; implementation by an Opus 5.5 subagent (two runs; test machine verify-fast/2 green), rebased onto CT-24f with both sides kept and regenerated. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 3,
+      "note": "round 1 fail (S1: alert-phone delete path differed from 04 at SPEC_REF eabcf00; closed by the SPEC_REF bump to 17b5fe5 carrying couli #181), round 2 pass, round 3 pass on the D10-196 increment (manual credential expiry from the platform Key validity), no findings"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "CT-24h",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "533c830cfc81414b4e7a67e4177a2d5a45fa402e",
+  "runs": [],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "b59f86ba9ca0394276c033c239eac9569777dabf",
+    "specs": "8bdd14157b45b1ae9ef002ce4f11cb45e325b0c1"
+  }
+}
