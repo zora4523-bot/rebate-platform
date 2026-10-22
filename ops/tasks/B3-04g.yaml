@@ -1,7 +1,8 @@
 id: B3-04g
 repo: rebate-platform
-title: 确定性路径的口令按出现顺序经 B3-04f 的 LinkQuoteRunner（TokenParser）报价，失败按单个处置
+title: 确定性路径的口令按出现顺序经 B3-04f 的 LinkQuoteRunner（TokenParser）报价，失败按单个处置；生产装配注入 parsing 的 parseToken
 type: impl
+# 标题按 ledger-overwrite 守卫保留原文；其中「生产装配注入 parsing 的 parseToken」已移出本任务（并入 B3-03j，编排裁定 D10-134），以下注释与 paths 为准。
 # 2026-10-21 入账（agent2-acct4）。deterministic/index.ts 遇口令直接出 30132（tokenErrorCode），不走报价；B3-04f 合并后口令可经同一 runner 报价。
 # 本任务：确定性路径把口令候选交 runner，结果决定成败（含 tool.status），失败仍出 error.30132 等单个提示。
 # 2026-10-22（agent2-acct4）收窄：B3-03f 合并后 stream 装配仍是最小可挂载（空工具、无确定性路径、no_model），生产注入 parseToken 没有落点，
