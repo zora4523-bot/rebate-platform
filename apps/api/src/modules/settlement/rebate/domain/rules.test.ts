@@ -113,15 +113,16 @@ it('[AC-B2-04j-UNIT#6] 已结算订单结算额调减（预估未变）→ R7 �
   ).toBe('recalc');
 });
 
-it('[AC-B2-04j-UNIT#7] 结算额不变仅预估变化 → 按 BR-FUND-03 / 07 豁免，只存档', () => {
+it('[AC-B2-04j-UNIT#7] 结算额不变仅预估变化 → 经端口确认有效基数未变后按 BR-FUND-03 / 07 豁免，只存档', () => {
   const change = commissionChangeOf({
     estBefore: 1000n,
     estAfter: 0n,
     settleCommissionFen: 800n,
     ...settled,
   });
-  expect(change).toBe('estimate_archived');
-  expect(commissionOutcome({ change, before: 900n, after: 0n, ...settled })).toBe('none');
+  // 预估变化不再跳过基数比较：仍归为 settle_recheck，由前后有效基数决定。
+  expect(change).toBe('settle_recheck');
+  expect(commissionOutcome({ change, before: 720n, after: 720n, ...settled })).toBe('none');
   // 无结算佣金时预估变化照常比较；定金期一律不动。
   expect(
     commissionChangeOf({
@@ -150,4 +151,26 @@ it('[AC-B2-04j-UNIT#7] 结算额不变仅预估变化 → 按 BR-FUND-03 / 07 �
       fromPlatformStatus: 'PAID',
     }),
   ).toBe('none');
+});
+
+it('[AC-B2-04j-UNIT#8] 同一报文同时调减预估与结算佣金（预估 1000→600、结算 800→500）→ R7 重算', () => {
+  const change = commissionChangeOf({
+    estBefore: 1000n,
+    estAfter: 600n,
+    settleCommissionFen: 500n,
+    ...settled,
+  });
+  expect(change).toBe('settle_recheck');
+  expect(commissionOutcome({ change, before: 720n, after: 450n, ...settled })).toBe('recalc');
+});
+
+it('[AC-B2-04j-UNIT#9] 同一报文同时把预估与结算佣金归零（1000→0、800→0）→ R6 作废', () => {
+  const change = commissionChangeOf({
+    estBefore: 1000n,
+    estAfter: 0n,
+    settleCommissionFen: 0n,
+    ...settled,
+  });
+  expect(change).toBe('settle_recheck');
+  expect(commissionOutcome({ change, before: 720n, after: 0n, ...settled })).toBe('void');
 });

@@ -356,8 +356,8 @@ export function createRebatePort(deps: RebateDependencies): RebatePort {
       advance(d, reverse);
       return finish(d, row.rebate_status);
     }
-    // BR-FUND-03 / 07：有效基数 = 有结算佣金用结算佣金、否则用预估；结算额首次到达或被修正都参与 R6 / R7，
-    // 只有「已有结算佣金、仅预估字段变化」按规则只存档。
+    // BR-FUND-03 / 07：有效基数 = 有结算佣金用结算佣金、否则用预估。本次报文后有结算佣金就一律经估值端口
+    // 比较前后有效基数（不凭预估是否变化跳过）；只有确认有效基数未变时，预估变化才按规则只存档。
     const commission = commissionChangeOf({
       estBefore: change.est_before,
       estAfter: change.est_after,
@@ -365,12 +365,7 @@ export function createRebatePort(deps: RebateDependencies): RebatePort {
       platformStatus: row.platform_status,
       fromPlatformStatus: change.from_status,
     });
-    if (commission === 'estimate_archived') {
-      logger.info(
-        { ...base, outcome: 'estimate_archived' },
-        'estimate changed after settle commission; archived only',
-      );
-    } else if (commission !== 'none') {
+    if (commission !== 'none') {
       const bases = await deps.estimates.bases(trx, {
         appId: change.app_id,
         orderId: change.order_id,
@@ -386,6 +381,12 @@ export function createRebatePort(deps: RebateDependencies): RebatePort {
         platformStatus: row.platform_status,
         fromPlatformStatus: change.from_status,
       });
+      if (outcome === 'none' && change.est_before !== change.est_after) {
+        logger.info(
+          { ...base, outcome: 'estimate_archived' },
+          'estimate changed while effective settle base unchanged; archived only',
+        );
+      }
       if (outcome === 'void') {
         advance(d, 'BASE_ZERO');
         return finish(d, row.rebate_status);

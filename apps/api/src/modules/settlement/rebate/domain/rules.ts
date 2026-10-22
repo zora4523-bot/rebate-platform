@@ -81,17 +81,15 @@ export function isBaseZero(input: {
 
 /**
  * 本次同步报文里有效联盟佣金（BR-FUND-03：结算佣金优先，否则预估）可能怎样变化：
- * - none：有效佣金没变（定金期一律 none，BR-FUND-07）。
+ * - none：有效佣金没变（定金期一律 none，BR-FUND-07；无结算佣金且预估未变）。
  * - estimate：无结算佣金、预估变化 → 按有效基数比较走 R6 / R7。
  * - settle_arrived：结算佣金本次首次写入（orders 只在平台已结算时写结算佣金，来源不是 SETTLED 即此前为空）→
  *   有效佣金由预估换成结算额，走 R6 / R7。
- * - settle_recheck：平台本来就已结算、预估未变，结算额可能被联盟修正（端口不给旧结算额）→ 取估值端口的
- *   前后有效基数，不同才走 R6 / R7。
- * - estimate_archived：平台本来就已结算、已有结算佣金、预估变化 → BR-FUND-03 / 07 豁免：只存档、不重算、
- *   不触发 COMMISSION_ZERO。
+ * - settle_recheck：平台本来就已结算、本次报文后有结算佣金 → 不论预估是否变化，一律取估值端口的前后有效
+ *   基数比较（端口不给旧结算额，结算额可能与预估同报文被修正）；只有前后有效基数相同才算「结算额未变」，
+ *   此时预估变化按 BR-FUND-03 / 07 豁免：只存档、不重算、不触发 COMMISSION_ZERO。
  */
-export type CommissionChange =
-  'none' | 'estimate' | 'settle_arrived' | 'settle_recheck' | 'estimate_archived';
+export type CommissionChange = 'none' | 'estimate' | 'settle_arrived' | 'settle_recheck';
 
 export function commissionChangeOf(input: {
   readonly estBefore: bigint | null;
@@ -101,10 +99,10 @@ export function commissionChangeOf(input: {
   readonly fromPlatformStatus: string;
 }): CommissionChange {
   if (input.platformStatus === 'DEPOSIT_PAID') return 'none';
-  const estChanged = input.estBefore !== input.estAfter;
-  if (input.settleCommissionFen === null) return estChanged ? 'estimate' : 'none';
-  if (input.fromPlatformStatus !== 'SETTLED') return 'settle_arrived';
-  return estChanged ? 'estimate_archived' : 'settle_recheck';
+  if (input.settleCommissionFen === null) {
+    return input.estBefore !== input.estAfter ? 'estimate' : 'none';
+  }
+  return input.fromPlatformStatus !== 'SETTLED' ? 'settle_arrived' : 'settle_recheck';
 }
 
 /**
@@ -118,7 +116,7 @@ export function commissionOutcome(input: {
   readonly platformStatus: string;
   readonly fromPlatformStatus: string | null;
 }): 'void' | 'recalc' | 'none' {
-  if (input.change === 'none' || input.change === 'estimate_archived') return 'none';
+  if (input.change === 'none') return 'none';
   if (isBaseZero(input)) return 'void';
   if (input.change === 'settle_recheck' && input.before === input.after) return 'none';
   return 'recalc';
