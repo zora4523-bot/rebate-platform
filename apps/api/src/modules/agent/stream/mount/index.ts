@@ -40,8 +40,9 @@
 //   body = B3-05b createAgentRunBody({tools: seams.tools ?? emptyOrchestratorTools(), inputCheck:
 //   seams.inputCheck ?? failClosedInputCheck(), degraded: B3-05c createDegradedPath over the same
 //   tools and texts, without onTrace (followup 31); no intents, no deterministic; review always
-//   answers timeout; the route is fixed to no_model; prompt always null; limits:
-//   orchestratorLimitsDefaults(); traceMask}); labels = createRunLabels over the same route and
+//   answers timeout (B3-03j: with deps.assembly, its tools / texts / deterministic / intents
+//   replace the minimal ones; seams.tools still wins); the route is fixed to no_model; prompt
+//   always null; limits: orchestratorLimitsDefaults(); traceMask}); labels = createRunLabels over the same route and
 //   prompt; sessions = createPgAgentSessionStore; ids = new UUIDv7 ids. No model transport is ever
 //   called. seams are test seams only (production passes none).
 //   close(): stops accepting (a message after close() started is refused and opens no run), waits
@@ -112,6 +113,18 @@ import {
 import { createAgentSwitchReader } from './config.ts';
 import { agentDefaultTexts, agentText } from './texts.ts';
 import type { AgentCallerReaderFactory } from './caller.ts';
+import type { AgentStreamAssemblyFactory, AgentStreamProvidedPorts } from './assembly.ts';
+import { agentStreamPortsToken } from './production.ts';
+export { createAgentStreamAssembly } from './assembly.ts';
+export type {
+  AgentStreamAssembly,
+  AgentStreamAssemblyContext,
+  AgentStreamAssemblyFactory,
+  AgentStreamAssemblyDeps,
+  AgentStreamBusinessPorts,
+  AgentStreamProvidedPorts,
+} from './assembly.ts';
+export { agentStreamPortsToken, createProductionStreamAssembly } from './production.ts';
 
 /** identity's createAiConsentReader (B1-02r), handed in by app.module (agent never imports it). */
 export type AgentConsentReaderFactory = (options: {
@@ -120,6 +133,7 @@ export type AgentConsentReaderFactory = (options: {
 }) => AgentConsentReader;
 
 export interface AgentStreamRuntimeDeps {
+  readonly assembly?: AgentStreamAssemblyFactory;
   readonly db: Kysely<Database>;
   readonly clock: Clock;
   readonly logger: RootLogger;
@@ -148,6 +162,10 @@ export interface AgentStreamRuntime {
 }
 
 export interface AgentStreamModuleOptions {
+  /** B3-03j: the business assembly (app.module passes createProductionStreamAssembly); absent,
+   * the minimal B3-03f mount. Called once per runtime with {db, clock, logger, scheduler} and the
+   * value of agentStreamPortsToken() when one is provided. */
+  readonly assembly?: AgentStreamAssemblyFactory;
   readonly consentReader: AgentConsentReaderFactory;
   readonly callerReader: AgentCallerReaderFactory;
 }
@@ -159,16 +177,23 @@ export function agentStreamToken(): symbol {
 }
 
 export function agentStreamProvider(
-  options: Pick<AgentStreamModuleOptions, 'consentReader'>,
+  options: Pick<AgentStreamModuleOptions, 'consentReader' | 'assembly'>,
 ): FactoryProvider {
   return {
     provide: agentStreamToken(),
-    inject: [CLOCK, ROOT_LOGGER, { token: DB, optional: true }, { token: REDIS, optional: true }],
+    inject: [
+      CLOCK,
+      ROOT_LOGGER,
+      { token: DB, optional: true },
+      { token: REDIS, optional: true },
+      { token: agentStreamPortsToken(), optional: true },
+    ],
     useFactory: (
       clock: Clock,
       logger: RootLogger,
       db?: Kysely<Database>,
       redis?: RedisHandle,
+      ports?: AgentStreamProvidedPorts | null,
     ): AgentStreamRuntime | null => {
       if (db == null) {
         logger.info('agent_stream_disabled');
@@ -189,11 +214,17 @@ export function agentStreamProvider(
                 return (await cache.get(runId)) === '1';
               },
             };
+      const factory = options.assembly;
+      const assembly: AgentStreamAssemblyFactory | undefined =
+        factory === undefined
+          ? undefined
+          : (context) => factory(ports == null ? context : { ...context, ports });
       return createAgentStreamRuntime({
         db,
         clock,
         logger,
         consentReader: options.consentReader,
+        ...(assembly === undefined ? {} : { assembly }),
         ...(signals === undefined ? {} : { signals }),
       });
     },
@@ -250,10 +281,12 @@ export function createAgentStreamRuntime(
       },
     },
   });
-  const tools = seams?.tools ?? emptyOrchestratorTools();
-  const runTexts: AgentRunTexts = {
+  // B3-03j: the business assembly is built once, with nothing running (no query, no timer).
+  const business = deps.assembly?.({ db: deps.db, clock, logger, scheduler });
+  const tools = seams?.tools ?? business?.tools ?? emptyOrchestratorTools();
+  const runTexts: AgentRunTexts = business?.texts ?? {
     text: async (_appId, key) => agentText(key),
-    // No model tools are registered in this mount.
+    // No model tools are registered in the minimal mount.
     toolDisplay: async () => {
       throw new Error('No model tool display in this runtime');
     },
@@ -274,6 +307,9 @@ export function createAgentStreamRuntime(
       texts: runTexts,
       errorMsg: async (_appId, code) => texts.errorMsg(code),
     }),
+    ...(business === undefined
+      ? {}
+      : { deterministic: business.deterministic, intents: business.intents }),
     model: {
       complete: async () => {
         await route();

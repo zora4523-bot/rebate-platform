@@ -29,3 +29,27 @@ export function agentText(key: string): string {
   if (typeof value !== 'string') throw new Error('Missing agent text');
   return value;
 }
+
+/** The copy for a key, or undefined when contracts/texts.default.json has none. */
+export function agentTextIfPresent(key: string): string | undefined {
+  const value = document.texts[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+// Platform display names: contracts/apps.json apps.<platform>.name (the same file linking reads).
+const apps = (
+  JSON.parse(
+    readFileSync(new URL('../../../../../../../contracts/apps.json', import.meta.url), 'utf8'),
+  ) as { apps?: Record<string, { name?: unknown; platform?: unknown } | undefined> }
+).apps;
+
+/** The platform's display name from contracts/apps.json, or undefined when none is declared. */
+export function platformDisplayName(platform: string): string | undefined {
+  if (apps === undefined) return undefined;
+  for (const entry of Object.values(apps)) {
+    if (entry?.platform === platform && typeof entry.name === 'string' && entry.name !== '') {
+      return entry.name;
+    }
+  }
+  return undefined;
+}

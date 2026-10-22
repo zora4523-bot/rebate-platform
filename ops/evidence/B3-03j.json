@@ -1,0 +1,128 @@
+{
+  "task": "B3-03j",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "spec_commit": "d338b1d6ebbe2bb4b8e5cda60e4cdd9cab7505ca",
+  "red_tests": [
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#12][BR-AI-04][BR-AI-14] 演示商品有效 URL 经确定性路径出报价卡；原文伪造价格不影响同次联盟快照",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#1][BR-AI-02][BR-AI-04] no_model 普通关键词经真实 stream runtime 出商品卡，价格来自 catalog 和报价器",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#2][BR-AI-04][BR-AI-14] URL 优先进入确定性解析；演示未知商品如实出 notice，不改做关键词搜索",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#3][BR-AI-04] TokenParser 接 parsing.parseToken：开关 false；开时调用演示 resolveLink，关时不调用，均如实 30132",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#3][BR-AI-04] TokenParser 接 parsing.parseToken：开关 true；开时调用演示 resolveLink，关时不调用，均如实 30132",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#4][BR-AI-02][BR-AI-03] 注册定义按独立开关下发 search=true quote=true，内部步骤及身份参数不暴露",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#4][BR-AI-02][BR-AI-03] 注册定义按独立开关下发 search=true quote=false，内部步骤及身份参数不暴露",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#4][BR-AI-02][BR-AI-03] 注册定义按独立开关下发 search=false quote=true，内部步骤及身份参数不暴露",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#4][BR-AI-02][BR-AI-03] 注册定义按独立开关下发 search=false quote=false，内部步骤及身份参数不暴露",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#5][BR-AI-03] 身份伪造字段整次拒绝并告警，不丢字段后搜索或登记",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#6][BR-AI-01][BR-AI-03] 连续不同主体/会话按调用现建登记，scene=agent 且绑定正确会话；原文身份无效",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#7][BR-AI-04][BR-AI-05] 报价按情境商品重新读取；同次数字一致、旧价/原文不补位，模型只有引用和展示白名单",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#8][BR-AI-01][BR-AI-02] 装配出的意图端口生成白名单页面引导；不读取商品或自动执行操作",
+    "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#9][BR-AI-04][BR-AI-05] 搜索结果经过 match，条件存入共享结果集，跨会话/应用不能读到",
+    "test/spec/agent/stream-assembly/mount.int.test.ts > [AC-B3-03j#10] 可选工厂缺省保持旧挂载；提供后 provider 必须使用同一 tools/intents/deterministic/texts",
+    "test/spec/agent/stream-assembly/mount.int.test.ts > [AC-B3-03j#11][BR-AI-02] 真实 stream AppModule + PG：生产 forStream 提供业务工厂并挂入 core，HTTP 路由仍可用",
+    "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#16][BR-AI-01][BR-AI-03] 生产 stream 工厂两会话出卡的 PG 登记逐次绑定会话，不串用 scene 或 runId",
+    "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#17][BR-AI-04] 生产 readProduct 在搜索后重新取数，两次报价均取演示适配器新价格并登记同次快照",
+    "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#18][BR-AI-04][BR-AI-14] 生产 TokenParser 调 parsing.parseToken，开关=false；只在开时尝试演示 resolveLink",
+    "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#18][BR-AI-04][BR-AI-14] 生产 TokenParser 调 parsing.parseToken，开关=true；只在开时尝试演示 resolveLink",
+    "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#19][BR-AI-01][BR-AI-02] 生产 routes.configured 读取 agent.page_guide.routes=Wallet，并与契约取交集",
+    "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#19][BR-AI-01][BR-AI-02] 生产 routes.configured 读取 agent.page_guide.routes=WithdrawRecords，并与契约取交集",
+    "test/spec/agent/stream-assembly/regressions.int.test.ts > [AC-B3-03j#13][BR-AI-01][BR-AI-03] quote 登记适配器逐次使用当前 sessionId；同一 runtime 两会话不串且不用 runId",
+    "test/spec/agent/stream-assembly/regressions.int.test.ts > [AC-B3-03j#13][BR-AI-01][BR-AI-03] deterministic 登记适配器逐次使用当前 sessionId；同一 runtime 两会话不串且不用 runId",
+    "test/spec/agent/stream-assembly/regressions.int.test.ts > [AC-B3-03j#14][BR-AI-05] search 经过 results/match 后模型仍仅见四个白名单字段，标题定界符已转义",
+    "test/spec/agent/stream-assembly/regressions.int.test.ts > [AC-B3-03j#15][BR-AI-01][BR-AI-02] 意图装配保留 routes.configured 的收窄：契约候选也不能绕过配置"
+  ],
+  "risk_note": "RV2 (app.module.ts is not on the risk-map whitelist): the stream entry assembles the real tools (registry with search_products and rebate_quote, result sets, match), the deterministic path (tokens through parsing.parseToken, B3-04g) and the intent port; stream-side union / catalog / linking / parsing ports with per-call link registration (scene agent, the session's id, register only, no convert) and fresh product reads (BR-AI-04); identity comes from the session (BR-AI-03); optional ports fall back to the B3-03f minimal mount. Input check / sentence review (B3-03m) and the model route (B3-03k) are not in this task. Tool status texts follow orchestrator ruling D10-151 (never a key shown; the .multi keys take effect when content merges them). Rule tests by Codex in 2 attempts; orchestrator mechanical fixture fix D10-140 (two sessions of one caller: createAgentSession reuses a run-less live session, 04 §6.5, agent/store/index.ts open; no assertion changed). Opus implementation 2 attempts. Full pnpm verify on the AWS test machine at f923ae46 (verify/5) exit 0. Codex money review r1 pass (S2 x2 in followups 46-47: no production recordDelivered, search cards do not write product_refs), r2 pass. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d338b1d6ebbe2bb4b8e5cda60e4cdd9cab7505ca",
+      "tree": "86fe003fef85ddc958ff8a9100d22eaee381abec",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T12:55:28Z",
+      "finished_at": "2026-10-22T12:55:40Z",
+      "red_tests": [
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#12][BR-AI-04][BR-AI-14] 演示商品有效 URL 经确定性路径出报价卡；原文伪造价格不影响同次联盟快照",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#1][BR-AI-02][BR-AI-04] no_model 普通关键词经真实 stream runtime 出商品卡，价格来自 catalog 和报价器",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#2][BR-AI-04][BR-AI-14] URL 优先进入确定性解析；演示未知商品如实出 notice，不改做关键词搜索",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#3][BR-AI-04] TokenParser 接 parsing.parseToken：开关 false；开时调用演示 resolveLink，关时不调用，均如实 30132",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#3][BR-AI-04] TokenParser 接 parsing.parseToken：开关 true；开时调用演示 resolveLink，关时不调用，均如实 30132",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#4][BR-AI-02][BR-AI-03] 注册定义按独立开关下发 search=true quote=true，内部步骤及身份参数不暴露",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#4][BR-AI-02][BR-AI-03] 注册定义按独立开关下发 search=true quote=false，内部步骤及身份参数不暴露",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#4][BR-AI-02][BR-AI-03] 注册定义按独立开关下发 search=false quote=true，内部步骤及身份参数不暴露",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#4][BR-AI-02][BR-AI-03] 注册定义按独立开关下发 search=false quote=false，内部步骤及身份参数不暴露",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#5][BR-AI-03] 身份伪造字段整次拒绝并告警，不丢字段后搜索或登记",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#6][BR-AI-01][BR-AI-03] 连续不同主体/会话按调用现建登记，scene=agent 且绑定正确会话；原文身份无效",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#7][BR-AI-04][BR-AI-05] 报价按情境商品重新读取；同次数字一致、旧价/原文不补位，模型只有引用和展示白名单",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#8][BR-AI-01][BR-AI-02] 装配出的意图端口生成白名单页面引导；不读取商品或自动执行操作",
+        "test/spec/agent/stream-assembly/assembly.int.test.ts > [AC-B3-03j#9][BR-AI-04][BR-AI-05] 搜索结果经过 match，条件存入共享结果集，跨会话/应用不能读到",
+        "test/spec/agent/stream-assembly/mount.int.test.ts > [AC-B3-03j#10] 可选工厂缺省保持旧挂载；提供后 provider 必须使用同一 tools/intents/deterministic/texts",
+        "test/spec/agent/stream-assembly/mount.int.test.ts > [AC-B3-03j#11][BR-AI-02] 真实 stream AppModule + PG：生产 forStream 提供业务工厂并挂入 core，HTTP 路由仍可用",
+        "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#16][BR-AI-01][BR-AI-03] 生产 stream 工厂两会话出卡的 PG 登记逐次绑定会话，不串用 scene 或 runId",
+        "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#17][BR-AI-04] 生产 readProduct 在搜索后重新取数，两次报价均取演示适配器新价格并登记同次快照",
+        "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#18][BR-AI-04][BR-AI-14] 生产 TokenParser 调 parsing.parseToken，开关=false；只在开时尝试演示 resolveLink",
+        "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#18][BR-AI-04][BR-AI-14] 生产 TokenParser 调 parsing.parseToken，开关=true；只在开时尝试演示 resolveLink",
+        "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#19][BR-AI-01][BR-AI-02] 生产 routes.configured 读取 agent.page_guide.routes=Wallet，并与契约取交集",
+        "test/spec/agent/stream-assembly/production-regressions.int.test.ts > [AC-B3-03j#19][BR-AI-01][BR-AI-02] 生产 routes.configured 读取 agent.page_guide.routes=WithdrawRecords，并与契约取交集",
+        "test/spec/agent/stream-assembly/regressions.int.test.ts > [AC-B3-03j#13][BR-AI-01][BR-AI-03] quote 登记适配器逐次使用当前 sessionId；同一 runtime 两会话不串且不用 runId",
+        "test/spec/agent/stream-assembly/regressions.int.test.ts > [AC-B3-03j#13][BR-AI-01][BR-AI-03] deterministic 登记适配器逐次使用当前 sessionId；同一 runtime 两会话不串且不用 runId",
+        "test/spec/agent/stream-assembly/regressions.int.test.ts > [AC-B3-03j#14][BR-AI-05] search 经过 results/match 后模型仍仅见四个白名单字段，标题定界符已转义",
+        "test/spec/agent/stream-assembly/regressions.int.test.ts > [AC-B3-03j#15][BR-AI-01][BR-AI-02] 意图装配保留 routes.configured 的收窄：契约候选也不能绕过配置"
+      ],
+      "expected": [
+        "test/spec/agent/stream-assembly/assembly.int.test.ts",
+        "test/spec/agent/stream-assembly/mount.int.test.ts",
+        "test/spec/agent/stream-assembly/production-regressions.int.test.ts",
+        "test/spec/agent/stream-assembly/regressions.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2d9f354cec431aa220ceb2a23b4d7844a96c432dbc4a1da227b062ca9348ce71"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "f619b8cf1c45a6df9d463ab9986a2b6642a566fa",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "round 1 pass (S2 x2 recorded), round 2 pass on f923ae46 (couli-runs/B3-03j/review-codex-money-r1.json, r2.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "independent Claude (claude-run.sh): round 1 fail (S1 x3 per-call registration scene/session, fresh readProduct and parseToken, assembly-level agentSessionId; S2 page_guide whitelist), fixed by Codex attempt 2; round 2 pass (couli-runs/B3-03j/review-claude-independent-spec-test-r1.json, r2.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "63ef9ec79cb0568bd415099c36c36930eb0b9220"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
