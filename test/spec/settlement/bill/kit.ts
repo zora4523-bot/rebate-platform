@@ -181,17 +181,29 @@ export async function order(
       attr_at: new Date(BEFORE),
     })
     .execute();
-  await h.db
-    .insertInto('commission_rule_versions')
-    .values({
-      app_id: h.appId,
-      rule_version_id: f.ruleVersionId,
-      status: 'published',
-      effective_from: f.ruleEffectiveFrom,
-      indirect_enabled: true,
-      created_at: new Date(BEFORE),
-    })
-    .execute();
+  // 同一 app 同一生效时间只能有一条已发布规则版本（唯一约束）：第二单起复用已有版本。
+  const published = await h.db
+    .selectFrom('commission_rule_versions')
+    .select('rule_version_id')
+    .where('app_id', '=', h.appId)
+    .where('status', '=', 'published')
+    .where('effective_from', '=', f.ruleEffectiveFrom)
+    .executeTakeFirst();
+  if (published) {
+    f.ruleVersionId = published.rule_version_id;
+  } else {
+    await h.db
+      .insertInto('commission_rule_versions')
+      .values({
+        app_id: h.appId,
+        rule_version_id: f.ruleVersionId,
+        status: 'published',
+        effective_from: f.ruleEffectiveFrom,
+        indirect_enabled: true,
+        created_at: new Date(BEFORE),
+      })
+      .execute();
+  }
   await h.db
     .insertInto('commission_splits')
     .values({
