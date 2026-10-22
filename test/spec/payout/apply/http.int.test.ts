@@ -294,6 +294,25 @@ it(
             { timeout: 10_000, interval: 20 },
           )
           .toBe(true);
+        // The handler waiting on users must share the idempotency transaction's backend.
+        expect(
+          (
+            await sql<{ same_backend: boolean }>`SELECT EXISTS (
+              SELECT 1 FROM pg_stat_activity AS activity
+              WHERE activity.datname = current_database()
+                AND ${holder}::int = ANY(pg_blocking_pids(activity.pid))
+                AND position('users' in activity.query) > 0
+                AND activity.query ~* 'for (no key )?update'
+                AND EXISTS (
+                  SELECT 1 FROM pg_locks AS locks
+                  WHERE locks.pid = activity.pid
+                    AND locks.locktype = 'advisory'
+                    AND locks.granted
+                    AND locks.objsubid = 2
+                )
+            ) AS same_backend`.execute(kit.db)
+          ).rows[0]!.same_backend,
+        ).toBe(true);
         // Use the application's real primitive, without replacing the controller or its trx.
         // The in-flight transaction holds K's advisory lock, so abandonment cannot win.
         const abandoned = await idempotency.abandon({
