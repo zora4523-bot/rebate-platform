@@ -19,7 +19,9 @@
 --   fixed at creation and never updated (BR-WDR-02 ⑤). status: withdrawal_status; transitions go
 --   through the generated transitionWithdrawal() with a CAS on status and row_version (BR-WDR-08);
 --   the CHECKs below only keep each row's fields consistent with its state. out_biz_no: ASCII
---   letters and digits, at most 32, unique per app and refused on UPDATE by trigger (BR-WDR-07).
+--   letters and digits, at most 32, unique per app and refused on any UPDATE of the column by trigger
+--   (BR-WDR-07; unconditional, the same value included). needs_manual only on PAYING or a terminal
+--   row (BR-WDR-08: set at T+24h in PAYING, kept through W10).
 --   review_mode / auto_decision / review_deadline: BR-WDR-30 / BR-WDR-26; reviewer, rejection,
 --   execution, manual-resolution, hold and blocked columns as 04 lists them; batch_id has no foreign
 --   key yet (payout_batches arrives with B2-06). channel_state / confirm_deadline /
@@ -134,6 +136,8 @@ CREATE TABLE app.withdrawals (
   CONSTRAINT withdrawals_paid_manual_check
     CHECK (status <> 'PAID_MANUAL' OR (manual_entry_by IS NOT NULL AND manual_confirm_by IS NOT NULL)),
   CONSTRAINT withdrawals_execute_seq_check CHECK (execute_seq >= 0),
+  CONSTRAINT withdrawals_needs_manual_check
+    CHECK (NOT needs_manual OR status IN ('PAYING', 'REJECTED', 'PAID_API', 'PAID_MANUAL', 'FAILED')),
   CONSTRAINT withdrawals_manual_resolution_check
     CHECK (manual_resolution IS NULL OR manual_resolution IN ('paid', 'failed')),
   CONSTRAINT withdrawals_resolver_ids_check
@@ -145,7 +149,6 @@ CREATE TABLE app.withdrawals (
     CHECK (blocked_reason IS NULL OR blocked_reason = 'NEGATIVE_BALANCE'),
   CONSTRAINT withdrawals_risk_flags_check
     CHECK (risk_flags IS NULL OR jsonb_typeof(risk_flags) = 'array'),
-  CONSTRAINT withdrawals_risk_flags_at_check CHECK ((risk_flags IS NULL) = (risk_flags_at IS NULL)),
   CONSTRAINT withdrawals_channel_order_id_check
     CHECK (channel_order_id IS NULL OR channel_order_id <> ''),
   CONSTRAINT withdrawals_row_version_check CHECK (row_version >= 0)
@@ -161,8 +164,7 @@ CREATE UNIQUE INDEX withdrawals_channel_order_id_key ON app.withdrawals (app_id,
 -- BR-WDR-07: out_biz_no is generated at insert and never changed (the trigger only refuses).
 CREATE TRIGGER withdrawals_out_biz_no_fixed
   BEFORE UPDATE OF out_biz_no ON app.withdrawals
-  FOR EACH ROW WHEN (OLD.out_biz_no IS DISTINCT FROM NEW.out_biz_no)
-  EXECUTE FUNCTION app.reject_update_delete();
+  FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
 
 CREATE TABLE app.withdraw_holds (
   id           uuid        NOT NULL,
