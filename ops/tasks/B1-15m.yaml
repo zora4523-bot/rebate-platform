@@ -1,0 +1,19 @@
+id: B1-15m
+repo: rebate-platform
+title: stream 入口接 ⑥ 注销守卫：app.module 的 streamRiskModule 传 beforeRateLimit = [deletion.postMiss]、beforeRateLimitGuards = [deletion.guard]（只装 ⑥，不带 ⑦ ⑧ ⑨，沿用 stream 不装 identity level / step-up 的口径），冷静期 / 处理中用户调 /v1/agent/* 带已验签令牌的写接口 10007，GET 与白名单放行
+type: impl
+# 草稿 2026-10-22（身份与风控线 identity-lane）。编排 13:3x 派工 ③；B1-15e（#1087）落地时 ⑥ 只装了 api 入口，stream 留 TODO（followups）。agent2 的 B3-03j 正把 /v1/agent 接成真实可用，⑥ 必须在 stream 生效；与 agent2 在 notices 对齐：本线先合，B3-03j 变基吸收。
+# 依据 BR-ID-01 ⑥（/v1/agent/* 通过 ①–⑦ 后改按 BR-AI-23）、BR-ID-27（冷静期调 Agent → 10007）。不改 identity / risk 模块实现，只改 app.module 的 stream 装配与其 TODO。RV2（app.module），评审 money 一家（Codex 优先，不可用按 approvals #36 独立 Claude）。
+refs: []
+refs_hash: {}
+deps: [B1-15e]
+paths:
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/identity/deletion-guard-stream/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/deletion-guard-stream/**'
+status: todo
