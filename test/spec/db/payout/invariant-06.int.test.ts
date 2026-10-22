@@ -58,7 +58,12 @@ async function scenario(
     const baseline = (
       await sql<{
         count: bigint;
-      }>`SELECT count(*) AS count FROM app.ledger_accounts WHERE owner_type = 'user'`.execute(h.app)
+      }>`SELECT count(*) AS count FROM (
+        SELECT app_id, owner_id FROM app.ledger_accounts WHERE owner_type = 'user'
+        UNION
+        SELECT app_id, user_id::text AS owner_id FROM app.withdrawals
+        WHERE status IN ('PENDING_REVIEW', 'APPROVED', 'PAYING')
+      ) users_to_check`.execute(h.app)
     ).rows[0]!.count;
     await run(
       h,
@@ -269,6 +274,49 @@ it(
       expect(rows[0]?.detail).toEqual(
         expect.objectContaining({ balance_present: false, frozen_fen: null }),
       );
+    });
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-05b#20] 06 有在途无账本账户仍报差异，并集按 app 与用户去重计数',
+  async () => {
+    await scenario(async (h, check, baseline) => {
+      const owner = await person(h.app);
+      for (const status of ['PENDING_REVIEW', 'APPROVED', 'PAYING']) {
+        await insert(h.app, 'withdrawals', withdrawal(owner, { status }));
+      }
+      const other = await person(h.app, owner.app_id);
+      await insert(h.app, 'withdrawals', withdrawal(other));
+      // A terminal-only user without an account is outside the union.
+      await insert(
+        h.app,
+        'withdrawals',
+        withdrawal(await person(h.app, owner.app_id), statusFields('FAILED')),
+      );
+      // An account in another tenant cannot hide either missing account.
+      await account(h.app, { app_id: `other-${randomUUID()}`, user_id: owner.user_id }, 0n);
+      const rows = await check();
+      expect(rows).toHaveLength(2);
+      for (const [userId, amount] of [
+        [owner.user_id, '3000'],
+        [other.user_id, '1000'],
+      ]) {
+        expect(rows).toContainEqual({
+          invariant: '06',
+          checked_rows: baseline + 3n,
+          scope: 'account',
+          app_id: owner.app_id,
+          account_id: null,
+          detail: {
+            user_id: userId,
+            balance_present: false,
+            frozen_fen: null,
+            open_amount_fen: amount,
+          },
+        });
+      }
     });
   },
   TIMEOUT,

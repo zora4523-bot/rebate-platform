@@ -178,7 +178,25 @@ it('[AC-B2-05b#15] app 可审核和冻结、payout 可写打款结果，禁止�
       expect(await stored(h.app, 'withdrawals', row['id'])).toEqual(before);
     }
   }
-  expect(await sqlState(update(h.app, 'withdrawals', row['id'], { paid_at: AT }))).toBe('42501');
+  const manualRow = withdrawal(await person(h.app), { status: 'PAYING', needs_manual: true });
+  await insert(h.app, 'withdrawals', manualRow);
+  const operatorId = randomUUID();
+  const resolution = {
+    status: 'PAID_MANUAL',
+    paid_at: AT,
+    channel_order_id: `manual-${randomUUID()}`,
+    fail_code: 'UNKNOWN_RESULT',
+    manual_resolution: 'paid',
+    resolver_ids: JSON.stringify([operatorId]),
+    proof_file: 'fixture-proof',
+    manual_entry_by: operatorId,
+    manual_confirm_by: operatorId,
+  };
+  expect(await sqlState(update(h.app, 'withdrawals', manualRow['id'], resolution))).toBe('ok');
+  expect((await stored(h.app, 'withdrawals', manualRow['id']))[0]).toMatchObject({
+    ...resolution,
+    resolver_ids: [operatorId],
+  });
   expect(
     await sqlState(update(h.roles.couli_payout, 'withdrawals', row['id'], { review_mode: 'auto' })),
   ).toBe('42501');
