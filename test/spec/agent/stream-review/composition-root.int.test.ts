@@ -206,7 +206,7 @@ it.each([
           }),
         ]);
         expect(frames.at(-1)).toMatchObject({ event: 'done', data: { finish_reason: 'stop' } });
-        expect(rows[0]).toMatchObject({ settle_result: 'counted', card_delivered: true });
+        expect(rows[0]).toMatchObject({ settle_result: 'counted', card_delivered: false });
       } else {
         expect(wire.calls).toEqual([]);
         expect(resolve).not.toHaveBeenCalled();

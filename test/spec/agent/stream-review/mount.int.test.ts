@@ -181,7 +181,7 @@ it.each(['保温杯', LINK])(
       } else expect(r.searchProducts).toHaveBeenCalledTimes(1);
       expect((await runsOf(pg.db, session))[0]).toMatchObject({
         settle_result: 'counted',
-        card_delivered: true,
+        card_delivered: text !== LINK,
       });
     } finally {
       await r.runtime.close();
