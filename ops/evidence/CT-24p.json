@@ -1,0 +1,37 @@
+{
+  "task": "CT-24p",
+  "spec_ref": "39ff3de4f9ada9377d64cab45fb07b40216d51f9",
+  "spec_commit": "f5b0ee422597407d8841e8d53faaee74e235fc10",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml and the regenerated contracts-ts and route tables): adds PATCH /admin/v1/users/{user_id}/profile (adminEditUserProfile), x-implementation planned, permission user.phone_change with TOTP-tier step-up, no Idempotency-Key. Transcribes 04 §6.6 users/{id}/profile and 08 BR-ID-06 detail 「客服代办换号」 / BR-ID-39 detail 「后台改昵称」: phone and nickname optional (at least one), reason 1–200 required; saved immediately without verifying the new phone; invalid phone 20001 [phone], blocklisted 44001, owned by another account 30411 without mergeable, nickname 20001 nickname_sensitive and not counted against the user's monthly limit. Fields equal to the current value after normalization are unchanged (no write, no session revocation, no moderation); every successful save writes one audit record (agent default, ledger #1183). Response is the admin user detail with the phone masked. No new error code or enum. tester none; implementation by an Opus 5.5 subagent in one run. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "7eda7de227a9ebcdb7c118864d2e7f4dc7f49eba",
+    "specs": "8bdd14157b45b1ae9ef002ce4f11cb45e325b0c1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
