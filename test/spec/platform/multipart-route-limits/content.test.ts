@@ -10,7 +10,7 @@ import { MEDIA_BASE, POPUP, kindPart, rejection, upload, withApp } from './http-
 it('[AC-F1-09t#2] content 删除内部钩子及临时 TODO 后仍接受两部分，缺 kind 和超限保持契约错误', async () => {
   await withApp('content', async (app) => {
     const bytes = lottie();
-    const file = filePart(bytes);
+    const file = filePart(Buffer.from(bytes));
     for (const parts of [
       [kindPart, file],
       [file, kindPart],
