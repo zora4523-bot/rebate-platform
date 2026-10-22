@@ -1,4 +1,17 @@
 export { createLedger } from './application/event-ledger.ts';
+export { createAssetSnapshot, getAssetSnapshotStatus } from './application/asset-snapshot.ts';
+export type {
+  PendingEarningsSource,
+  PendingEarningsTotals,
+  PendingUserEarnings,
+  AssetSnapshotDependencies,
+  AssetSnapshotInput,
+  AssetSnapshotLogger,
+  AssetSnapshotResult,
+  AssetSnapshotRunner,
+  AssetSnapshotSelection,
+  AssetSnapshotStatus,
+} from './application/asset-snapshot.ts';
 export { registerReconDiff, getReconDiffs } from './application/recon-diffs.ts';
 export type {
   RegisterReconDiffInput,
