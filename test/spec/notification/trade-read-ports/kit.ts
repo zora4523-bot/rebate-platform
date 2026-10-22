@@ -17,7 +17,8 @@ export const orders = (await import(
 };
 
 export const AT = new Date('2026-10-20T03:04:05.000Z');
-export const LONG_TITLE = '淘宝官方测试商品👨‍👩‍👧‍👦完整标题超过十二个字素，保留空格 与标点';
+export const LONG_TITLE =
+  '淘宝官方测试商品👨\u200D👩\u200D👧\u200D👦完整标题超过十二个字素，保留空格 与标点';
 
 // 建库工厂由 *.int.test.ts 传入：依赖规则只允许 int 测试导入 @couli/db/testing。
 export interface TestDatabaseHandle {
