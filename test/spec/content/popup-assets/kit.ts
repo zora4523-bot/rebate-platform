@@ -82,7 +82,7 @@ export function upload(
   const kind = options.kind === undefined ? 'lottie' : options.kind;
   const fields = kind === null ? [] : [{ name: 'kind', bytes: Buffer.from(kind) }];
   const file = {
-    ...filePart(bytes),
+    ...filePart(Buffer.from(bytes)),
     filename: options.filename ?? 'private-popup.png',
     mimetype: options.mimetype ?? 'image/png',
   };
