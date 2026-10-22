@@ -196,9 +196,11 @@ it('[AC-F1-09r#33] 500000 字节 PNG 超过 Lottie 限额但仍上传成功', as
   const f = await setup(h);
   const bytes = Buffer.concat([PNG, Buffer.alloc(500_000 - PNG.length)]);
   const sha256 = digest(bytes);
-  expect(
-    await success(await upload(f, bytes, { kind: 'image', filename: 'popup.png' })),
-  ).toEqual({ url: `${MEDIA_BASE}${sha256}.png`, sha256, bytes: 500_000 });
+  expect(await success(await upload(f, bytes, { kind: 'image', filename: 'popup.png' }))).toEqual({
+    url: `${MEDIA_BASE}${sha256}.png`,
+    sha256,
+    bytes: 500_000,
+  });
   expect(Buffer.from(f.media.get(sha256)!)).toEqual(bytes);
 });
 
