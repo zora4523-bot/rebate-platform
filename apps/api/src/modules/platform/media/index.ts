@@ -1,6 +1,7 @@
 // Media store port (F1-06z; 08 BR-TEXT-24 细则: OSS `media` bucket, file named by the content
 // SHA-256, long cache; the same digest travels in the payload). Files are content-addressed:
-// `<MEDIA_PUBLIC_BASE_URL>/<sha256>.<svg|png>`, so readers derive the URL with mediaUrlOf without
+// `<MEDIA_PUBLIC_BASE_URL>/<sha256>.<svg|png|json|jpg>` (json and jpg: the home popup's Lottie
+// animation and its fallback picture, F1-09r / BR-TEXT-26), so readers derive the URL with mediaUrlOf without
 // touching the store, and writing the same digest twice is a no-op returning the same URL.
 // local / test: in-process memory stand-in. staging / prod: until the OSS adapter lands (B1-30),
 // construction succeeds and every put fails per request (MediaStoreUnavailableError, a plain Error
@@ -12,8 +13,8 @@ import type { AppEnv } from '../config/index.ts';
 import { MEDIA_DEFAULT_LOCAL_BASE_URL } from '../config/media.ts';
 import type { RootLogger } from '../logging/index.ts';
 
-export type MediaContentType = 'image/svg+xml' | 'image/png';
-export type MediaFormat = 'svg' | 'png';
+export type MediaContentType = 'image/svg+xml' | 'image/png' | 'application/json' | 'image/jpeg';
+export type MediaFormat = 'svg' | 'png' | 'json' | 'jpg';
 
 export interface MediaPutInput {
   /** Lower-case hex SHA-256 of `bytes` (64 characters). */
@@ -35,7 +36,11 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
 const FORMAT_OF: Readonly<Record<MediaContentType, MediaFormat>> = Object.freeze({
   'image/svg+xml': 'svg',
   'image/png': 'png',
+  'application/json': 'json',
+  'image/jpeg': 'jpg',
 });
+
+const FORMATS: ReadonlySet<string> = new Set(Object.values(FORMAT_OF));
 
 /**
  * The media store has no usable backend in this environment (staging / prod without the OSS
@@ -57,7 +62,9 @@ function assertDigestFormat(sha256: string): void {
 
 function formatOf(contentType: MediaContentType): MediaFormat {
   if (!Object.hasOwn(FORMAT_OF, contentType)) {
-    throw new TypeError('media contentType must be image/svg+xml or image/png');
+    throw new TypeError(
+      'media contentType must be image/svg+xml, image/png, application/json or image/jpeg',
+    );
   }
   return FORMAT_OF[contentType];
 }
@@ -85,7 +92,7 @@ export function mediaUrlOf(
   format: MediaFormat,
 ): string {
   assertDigestFormat(sha256);
-  if (format !== 'svg' && format !== 'png') throw new TypeError('media format must be svg or png');
+  if (!FORMATS.has(format)) throw new TypeError('media format must be svg, png, json or jpg');
   const base = (baseUrl ?? '').replace(/\/+$/, '');
   if (base === '') throw new MediaStoreUnavailableError();
   return `${base}/${sha256}.${format}`;

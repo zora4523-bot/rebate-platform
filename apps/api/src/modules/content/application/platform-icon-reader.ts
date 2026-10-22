@@ -94,7 +94,7 @@ function pageParam(value: unknown, fallback: number, min: number, max: number): 
   return Number.isSafeInteger(number) && number >= min && number <= max ? number : null;
 }
 
-export function formatOf(format: string): MediaFormat {
+export function formatOf(format: string): Extract<MediaFormat, 'svg' | 'png'> {
   if (format !== 'svg' && format !== 'png') {
     throw new Error(`platform icon read: stored format ${format} is neither svg nor png`);
   }
