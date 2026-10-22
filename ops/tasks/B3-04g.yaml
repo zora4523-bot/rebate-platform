@@ -8,6 +8,7 @@ type: impl
 # 2026-10-22（agent2-acct4）收窄：B3-03f 合并后 stream 装配仍是最小可挂载（空工具、无确定性路径、no_model），生产注入 parseToken 没有落点，
 # 并入 stream 装配换真实实现的任务（notices 2026-10-22 11:1x 预占 B3-03j，待编排裁定）；本任务只改 deterministic/**，RV1，deps 去 B3-03f。
 # 冻结用例 [AC-B3-05e#13] 由 B3-04i（test-change）放宽，与本任务同批落地。
+# 2026-10-22：paths 加 orchestrator/core/run.ts——B3-05j 的 quoteObserver 把第 n 次报价 tool.status 对到第 n 个 URL（口令不跑工具的假设），口令也报价后要按全部链接的位置记 trace（第 1 次 Opus 实现在 verify-fast 中暴露，B3-04j 同时放宽 [AC-B3-05j#2]）。
 # 分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 评审（approvals #34、#27）。
 refs: [BR-AI-01, BR-AI-04]
 refs_hash:
@@ -16,6 +17,7 @@ refs_hash:
 deps: [B3-04f, B3-04h, B3-04i, B3-04j, B3-05e]
 paths:
   - 'apps/api/src/modules/agent/orchestrator/deterministic/**'
+  - 'apps/api/src/modules/agent/orchestrator/core/run.ts'
 test_paths:
   - 'test/spec/agent/orchestrator-deterministic-tpwd/**'
 impl: claude
