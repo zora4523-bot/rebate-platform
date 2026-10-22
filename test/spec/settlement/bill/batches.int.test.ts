@@ -99,19 +99,19 @@ it.each([
     pricing: { tlj: 0n, base: 850n, amounts: [425n, 85n, 42n], userTotal: 552n, retain: 298n },
     forfeitedAmounts: [425n, 0n, 42n],
     forfeitedUserTotal: 467n,
-    beneficiaryTotal: 1019n,
-    retainedTotal: 681n,
+    beneficiaryTotal: 1104n,
+    retainedTotal: 596n,
   },
   {
     label: '有淘礼金扣减',
     pricing: { tlj: 100n, base: 750n, amounts: [375n, 75n, 37n], userTotal: 487n, retain: 263n },
     forfeitedAmounts: [375n, 0n, 37n],
     forfeitedUserTotal: 412n,
-    beneficiaryTotal: 899n,
-    retainedTotal: 601n,
+    beneficiaryTotal: 974n,
+    retainedTotal: 526n,
   },
 ])(
-  '[AC-B2-04n#32] $label：账单合计按快照份额，被剥夺的直推份额归平台',
+  '[AC-B2-04n#32] $label：账单受益人合计含被剥夺份额，平台留存不含该份额',
   async ({ pricing, forfeitedAmounts, forfeitedUserTotal, beneficiaryTotal, retainedTotal }) => {
     const h = fixture(database.db);
     await snapshot(h);
@@ -134,8 +134,10 @@ it.each([
     await settlement(h, forfeited);
     await h.run();
     const s = await state(h);
-    // BR-FUND-04 ⑤ 的份额合计：850 时 552 + (425 + 42) = 1019，平台 298 + 383 = 681；
-    // 扣减后 750 时 487 + (375 + 37) = 899，平台 263 + 338 = 601；剥夺不改变联盟佣金合计。
+    // BR-FUND-04 ⑤、BR-FUND-05：受益人份额合计含被剥夺与暂缓份额，平台留存 = 基数 − 全部份额。
+    // 基数 850 时，受益人 (425 + 85 + 42) × 2 = 1104，平台 (850 − 552) × 2 = 596；
+    // 扣减后基数 750 时，受益人 (375 + 75 + 37) × 2 = 974，平台 (750 − 487) × 2 = 526。
+    // 被剥夺份额入账时另写平台 FORFEIT 凭证，不并入账单平台留存；联盟佣金合计仍为 2000。
     expect(s.bills).toEqual([
       expect.objectContaining({
         platform_order_counts: { taobao: 2 },
