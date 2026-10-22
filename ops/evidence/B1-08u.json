@@ -1,0 +1,127 @@
+{
+  "task": "B1-08u",
+  "spec_ref": "93ac832c03a5570ceb91c427baa4f9e4020b3328",
+  "spec_commit": "3f3a05a1d515266567d901f9fe7d0cfbc87f61fa",
+  "red_tests": [
+    "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts > [AC-B1-08u#5] 流水线 publish 抛错传出，订单更新、转人工标记和事件一起回滚，下次可重试",
+    "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts > [AC-B1-08u#6] 下游失败不能留下事件或转人工标记，恢复后原报文可重新告警",
+    "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts > [AC-B1-08u#7] 扫描 pending 首单入队失败只回滚该单，后一单仍提交，下轮首单可再试",
+    "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts > [AC-B1-08u#7] 扫描 port-error 首单入队失败只回滚该单，后一单仍提交，下轮首单可再试",
+    "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts > [AC-B1-08u#8] 流水线与扫描并发争同一订单锁，只发布和留痕一次",
+    "test/spec/orders/snapshot-retry-alert/contract.test.ts > [AC-B1-08u#1] 耗尽告警登记一次并位于规划事件清单末尾",
+    "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#9] pipeline 在23h59m仍不发，恰好24h才告警",
+    "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#9] scan 在23h59m仍不发，恰好24h才告警",
+    "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#9] error 在23h59m仍不发，恰好24h才告警",
+    "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#10] pipeline 满24h成功 created 或 existing 只处置，不发耗尽事件",
+    "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#10] scan 满24h成功 created 或 existing 只处置，不发耗尽事件",
+    "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#11] CLAWED_BACK 用有变化报文进入更新仍不重试、不告警，扫描也跳过",
+    "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#11] unattributed 用有变化报文进入更新仍不重试、不告警，扫描也跳过",
+    "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#12] 新原因插新行且 created_at=Clock，同键刷新不延后时间，耗尽仍定位最早原因",
+    "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#13] 未注入 events 的扫描沿用日志和转人工行为，重复扫描不再重试",
+    "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#14] 资料不可恢复的 skip 满24h也告警，载荷不加入 skip 细节",
+    "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#2] pipeline 在标记后以同一事务发四字段告警，重入不再发，保留冗余日志",
+    "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#2] scan 在标记后以同一事务发四字段告警，重入不再发，保留冗余日志",
+    "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#3] 满24小时端口写后抛错：原事务回滚，另起标记事务发一次事件",
+    "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#4] pipeline 真实 EventBus 提交才可见，同 eventId 重发 duplicate 且只一行",
+    "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#4] scan 真实 EventBus 提交才可见，同 eventId 重发 duplicate 且只一行",
+    "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#4] error 真实 EventBus 提交才可见，同 eventId 重发 duplicate 且只一行",
+    "test/spec/orders/snapshot-retry-alert/wiring.int.test.ts > [AC-B1-08u#15] worker 注册的 snapshot-retry 处理器使用 runtime 注入的 events"
+  ],
+  "risk_note": "RV2 (orders/**, platform/events/**). order.snapshot_retry_exhausted (02 §11 event 24, couli #163; rulings D10-81 / D10-105): registered after order.blacklist_hit_after_credit; enqueued through the orders alert events in the same transaction as the manual hand-off of a snapshot retry exhausted after 24 h on the pipeline, scan and port-error paths, exactly once (a replay of the same event id counts as a duplicate); an enqueue failure rolls back the pipeline, or only that scanned order. Payload order_id / pending_id / platform / reason only. The event bus reaches the scan through SnapshotRetryDeps and worker-runtime; without it behaviour is unchanged. The B1-08t error log stays as a redundant ops signal (agreed in D10-105). No money writes.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "3f3a05a1d515266567d901f9fe7d0cfbc87f61fa",
+      "tree": "b607104bd68a8dad8cb1758974fef75650cf17ee",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T07:07:26Z",
+      "finished_at": "2026-10-22T07:08:07Z",
+      "gate": {
+        "commit": "04976eb11ea43ff91f92f5c823f56254f430d101",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts > [AC-B1-08u#5] 流水线 publish 抛错传出，订单更新、转人工标记和事件一起回滚，下次可重试",
+        "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts > [AC-B1-08u#6] 下游失败不能留下事件或转人工标记，恢复后原报文可重新告警",
+        "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts > [AC-B1-08u#7] 扫描 pending 首单入队失败只回滚该单，后一单仍提交，下轮首单可再试",
+        "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts > [AC-B1-08u#7] 扫描 port-error 首单入队失败只回滚该单，后一单仍提交，下轮首单可再试",
+        "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts > [AC-B1-08u#8] 流水线与扫描并发争同一订单锁，只发布和留痕一次",
+        "test/spec/orders/snapshot-retry-alert/contract.test.ts > [AC-B1-08u#1] 耗尽告警登记一次并位于规划事件清单末尾",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#9] pipeline 在23h59m仍不发，恰好24h才告警",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#9] scan 在23h59m仍不发，恰好24h才告警",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#9] error 在23h59m仍不发，恰好24h才告警",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#10] pipeline 满24h成功 created 或 existing 只处置，不发耗尽事件",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#10] scan 满24h成功 created 或 existing 只处置，不发耗尽事件",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#11] CLAWED_BACK 用有变化报文进入更新仍不重试、不告警，扫描也跳过",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#11] unattributed 用有变化报文进入更新仍不重试、不告警，扫描也跳过",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#12] 新原因插新行且 created_at=Clock，同键刷新不延后时间，耗尽仍定位最早原因",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#13] 未注入 events 的扫描沿用日志和转人工行为，重复扫描不再重试",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts > [AC-B1-08u#14] 资料不可恢复的 skip 满24h也告警，载荷不加入 skip 细节",
+        "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#2] pipeline 在标记后以同一事务发四字段告警，重入不再发，保留冗余日志",
+        "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#2] scan 在标记后以同一事务发四字段告警，重入不再发，保留冗余日志",
+        "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#3] 满24小时端口写后抛错：原事务回滚，另起标记事务发一次事件",
+        "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#4] pipeline 真实 EventBus 提交才可见，同 eventId 重发 duplicate 且只一行",
+        "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#4] scan 真实 EventBus 提交才可见，同 eventId 重发 duplicate 且只一行",
+        "test/spec/orders/snapshot-retry-alert/publication.int.test.ts > [AC-B1-08u#4] error 真实 EventBus 提交才可见，同 eventId 重发 duplicate 且只一行",
+        "test/spec/orders/snapshot-retry-alert/wiring.int.test.ts > [AC-B1-08u#15] worker 注册的 snapshot-retry 处理器使用 runtime 注入的 events"
+      ],
+      "expected": [
+        "test/spec/orders/snapshot-retry-alert/atomicity.int.test.ts",
+        "test/spec/orders/snapshot-retry-alert/contract.test.ts",
+        "test/spec/orders/snapshot-retry-alert/eligibility.int.test.ts",
+        "test/spec/orders/snapshot-retry-alert/publication.int.test.ts",
+        "test/spec/orders/snapshot-retry-alert/wiring.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "c6b0e886fb873db88261aeea0bf8c6abb6f48c6199359138f7e8047acada631e"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "750d07f3f435a5c832ec83ef2035354ee16bf6e3a234f4bf4ab9618806640b02"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings (merge-base review base)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (1 run, 23 tests). Round 1 pass with no findings; the events contract kit was extended separately by test-change B1-08y (#1110)."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "127830816d3422b439127d7059283e2dc1f65b8e",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
