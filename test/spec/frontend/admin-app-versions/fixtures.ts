@@ -1,4 +1,5 @@
 import type { Schema } from '../../../../packages/contracts-ts/src/index.ts';
+import type { PermissionSnapshot } from '../../../../apps/admin/src/providers/access-control/index.ts';
 import { BASE_URL, TRACE_ID } from '../admin-data/fixtures.ts';
 
 export { BASE_URL };
@@ -11,6 +12,16 @@ export const VERIFY = '/admin/v1/auth/step-up';
 export const PRIMARY = 'demo_primary';
 export const LAGGING = ['demo_slow_a', 'demo_slow_b'];
 export const READY = 'demo_ready';
+export const PERMITTED: PermissionSnapshot = {
+  isSuper: false,
+  permissions: ['content.app_version'],
+  stepUp: {
+    'content.app_version': {
+      tier: null,
+      operations: { 'content.app_version.raise_min_supported_version': 'totp' },
+    },
+  },
+};
 
 export function item(patch: Partial<VersionRow> = {}): VersionRow {
   return {

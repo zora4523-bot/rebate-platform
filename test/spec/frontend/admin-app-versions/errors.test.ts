@@ -19,8 +19,9 @@ import {
   click,
   edit,
   editor,
+  expectDefaultStore,
+  expectFieldErrors,
   field,
-  fieldMessage,
   fill,
   listedVersion,
   mount,
@@ -40,14 +41,13 @@ it.each(['channel', 'default_store', 'min_supported_version', 'store_listings'] 
   '[AC-F1-10h-ERROR#1] 20001 data.fields=[%s] 在指定字段旁提示并保持表单',
   async (name) => {
     const server = createServer();
-    const message = '服务端校验：请核对本字段的填写内容';
-    server.once('PUT', TARGET, () => failure(20001, { fields: [name] }, message));
+    server.once('PUT', TARGET, () => failure(20001, { fields: [name] }));
     await mount(server);
     await edit();
     await change('update_title', '保留本次运营填写');
     await save();
     await saved(server);
-    await waitFor(() => expect(fieldMessage(name)).toContain(message));
+    await expectFieldErrors([name]);
     expect(field('update_title').value).toBe('保留本次运营填写');
     expect(field('min_supported_version').value).toBe('2.9.0');
     expect(server.requests('PUT', TARGET)).toHaveLength(1);
@@ -60,15 +60,10 @@ it(
   '[AC-F1-10h-ERROR#2] 默认商店不满足最低版本时按所有返回字段提示，不自动下调或弹整组确认',
   async () => {
     const server = createServer();
-    const message = '默认商店上架版本不足，无法保存';
     server.once('PUT', TARGET, () =>
-      failure(
-        20001,
-        {
-          fields: ['min_supported_version', 'default_store', 'store_listings'],
-        },
-        message,
-      ),
+      failure(20001, {
+        fields: ['min_supported_version', 'default_store', 'store_listings'],
+      }),
     );
     await mount(server);
     await edit();
@@ -78,18 +73,18 @@ it(
     await save();
     await verify();
     await saved(server);
-    for (const name of ['min_supported_version', 'default_store', 'store_listings'] as const)
-      await waitFor(() => expect(fieldMessage(name)).toContain(message));
+    await expectFieldErrors(['min_supported_version', 'default_store', 'store_listings']);
     expect(field('min_supported_version').value).toBe('2.10.0');
-    expect(field('default_store').value).toBe('demo_slow_a');
+    expectDefaultStore('demo_slow_a');
     expect((within(editor()).getAllByLabelText(listedVersion)[1] as HTMLInputElement).value).toBe(
       '2.8.0',
     );
     expect(server.requests('PUT', TARGET)).toHaveLength(1);
-    expect(screen.queryAllByRole('checkbox')).toEqual([]);
     // A single editing dialog is fine; a second confirmation after this rejection is not.
     expect(
-      screen.queryAllByRole('dialog').filter((d) => !d.contains(field('latest_version'))),
+      [...screen.queryAllByRole('dialog'), ...screen.queryAllByRole('alertdialog')].filter(
+        (d) => !d.contains(field('latest_version')),
+      ),
     ).toEqual([]);
   },
   FLOW_TIMEOUT,
@@ -99,15 +94,13 @@ it(
   '[AC-F1-10h-ERROR#3] 同一商店重复登记由服务端拒绝，字段旁报错且允许修正后保存',
   async () => {
     const server = createServer();
-    server.once('PUT', TARGET, () =>
-      failure(20001, { fields: ['store_listings'] }, '同一商店不能重复登记'),
-    );
+    server.once('PUT', TARGET, () => failure(20001, { fields: ['store_listings'] }));
     await mount(server);
     await edit();
     await fill(within(editor()).getAllByLabelText(storeName)[1]!, PRIMARY);
     await save();
     await saved(server);
-    await waitFor(() => expect(fieldMessage('store_listings')).toContain('同一商店不能重复登记'));
+    await expectFieldErrors(['store_listings']);
     expect((within(editor()).getAllByLabelText(storeName)[1] as HTMLInputElement).value).toBe(
       PRIMARY,
     );

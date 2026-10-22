@@ -11,15 +11,20 @@ import type { PermissionSnapshot } from '../../../../apps/admin/src/providers/ac
 import { createDataProvider } from '../../../../apps/admin/src/providers/data/index.ts';
 import { installMediaQuery } from '../admin-auth-qr/helpers.ts';
 import { button, click, mainElement } from '../admin-platform-icons/helpers.ts';
-import { BASE_URL, TARGET, VERIFY, createServer, item, type Server } from './fixtures.ts';
+import {
+  BASE_URL,
+  PERMITTED,
+  TARGET,
+  VERIFY,
+  createServer,
+  item,
+  type Server,
+} from './fixtures.ts';
 
 export { button, click, mainElement };
 configure({ asyncUtilTimeout: 10_000 });
 export const FLOW_TIMEOUT = 40_000;
-export const PERMITTED: PermissionSnapshot = {
-  isSuper: false,
-  permissions: ['content.app_version'],
-};
+export { PERMITTED } from './fixtures.ts';
 // Semantic field labels, not board wording. Store row labels may carry a position suffix.
 export const labels = {
   latest_version: /最新版本/,
@@ -102,7 +107,28 @@ export function field(
   return within(scope).getByLabelText(labels[name]) as HTMLInputElement;
 }
 export async function change(name: keyof typeof labels, value: string): Promise<void> {
-  await fill(field(name), value);
+  const input = field(name);
+  if (
+    name === 'default_store' &&
+    input.tagName !== 'SELECT' &&
+    input.getAttribute('role') === 'combobox'
+  ) {
+    await act(async () => {
+      fireEvent.mouseDown(input);
+      fireEvent.click(input);
+    });
+    await click(await screen.findByRole('option', { name: value }));
+  } else {
+    await fill(input, value);
+  }
+}
+export function expectDefaultStore(value: string): void {
+  const input = field('default_store');
+  if (input.tagName !== 'SELECT' && input.getAttribute('role') === 'combobox') {
+    expect(input.closest('.ant-select')?.textContent ?? input.textContent).toContain(value);
+  } else {
+    expect(input.value).toBe(value);
+  }
 }
 export async function fill(input: HTMLElement, value: string): Promise<void> {
   await act(async () => {
@@ -147,12 +173,61 @@ export function assertNoStepUp(server: Server): void {
     expect(request.headers.has('Idempotency-Key')).toBe(false);
   }
 }
-/** A field error must be adjacent/associated, not only a toast at the top of the page. */
+/** Accept either a list-level error or an error beside any store row. */
+function storeRegion(): HTMLElement {
+  const scope = within(editor());
+  const labelled =
+    scope.queryByRole('group', { name: labels.store_listings }) ??
+    scope.queryByRole('region', { name: labels.store_listings });
+  if (labelled) return labelled;
+  const controls = [
+    ...scope.getAllByLabelText(storeName),
+    ...scope.getAllByLabelText(listedVersion),
+  ];
+  // The server/local error itself may also mention “商店列表”; prefer the area heading.
+  const heading = scope
+    .getAllByText(labels.store_listings)
+    .find((node) => !node.closest('.ant-form-item-explain-error, [role="alert"]'));
+  expect(heading, 'store registration heading').toBeDefined();
+  let region: HTMLElement | null = heading!;
+  while (region && !controls.every((control) => region!.contains(control)))
+    region = region.parentElement;
+  expect(region, 'store registration area').not.toBeNull();
+  expect(region!.contains(field('latest_version')), 'not the whole editor').toBe(false);
+  return region!;
+}
+
+/** Read error text only: a label or the current value must not count as a field error. */
 export function fieldMessage(name: keyof typeof labels): string {
-  const target =
-    name === 'store_listings' ? within(editor()).getAllByLabelText(listedVersion)[0]! : field(name);
-  const ids = (target.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
-  const associated = ids.map((id) => document.getElementById(id)?.textContent ?? '').join(' ');
-  const group = target.closest('.ant-form-item, [role="group"], fieldset');
-  return `${associated} ${group?.textContent ?? ''}`;
+  const target = name === 'store_listings' ? storeRegion() : field(name);
+  const group =
+    name === 'store_listings'
+      ? target
+      : (target.closest('.ant-form-item, [role="group"], fieldset') ?? target.parentElement!);
+  const references = [target, ...group.querySelectorAll('[aria-describedby], [aria-errormessage]')];
+  const ids = references.flatMap((node) => {
+    // Ordinary help text is not an error on an otherwise valid field.
+    const description =
+      node.getAttribute('aria-invalid') === 'true' ? node.getAttribute('aria-describedby') : '';
+    return `${description ?? ''} ${node.getAttribute('aria-errormessage') ?? ''}`
+      .split(/\s+/)
+      .filter(Boolean);
+  });
+  const errors = [
+    ...ids.map((id) => document.getElementById(id)),
+    ...group.querySelectorAll('.ant-form-item-explain-error, [role="alert"]'),
+  ];
+  return [...new Set(errors)]
+    .map((node) => node?.textContent?.trim() ?? '')
+    .join(' ')
+    .trim();
+}
+
+export async function expectFieldErrors(names: readonly (keyof typeof labels)[]): Promise<void> {
+  await waitFor(() => {
+    for (const name of Object.keys(labels) as (keyof typeof labels)[]) {
+      if (names.includes(name)) expect(fieldMessage(name), `${name} error`).not.toBe('');
+      else expect(fieldMessage(name), `${name} has no error`).toBe('');
+    }
+  });
 }

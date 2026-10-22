@@ -92,9 +92,9 @@ it(
     let names = within(editor()).getAllByLabelText(storeName);
     await fill(names.at(-1)!, 'demo_added');
     await fill(within(editor()).getAllByLabelText(listedVersion).at(-1)!, '3.8.0');
-    await click(within(editor()).getAllByRole('button', { name: /上移/ }).at(-1)!);
+    await click(button(editor(), /上移.*demo_added|demo_added.*上移/));
     // Original second store is removed; the added store precedes demo_ready after the move.
-    await click(within(editor()).getAllByRole('button', { name: /删除商店|移除商店/ })[1]!);
+    await click(button(editor(), /(?:删除|移除).*demo_slow_a|demo_slow_a.*(?:删除|移除)/));
     names = within(editor()).getAllByLabelText(storeName);
     expect(names.map((node) => (node as HTMLInputElement).value)).toEqual([
       PRIMARY,
@@ -164,9 +164,9 @@ it(
   FLOW_TIMEOUT,
 );
 
-it(
-  '[AC-F1-10h-SAVE#5] 30701 表示未登记，可创建整行并发送 expected_row_version=null，设置最低版本先动态码',
-  async () => {
+it.each(['1.0.0', null])(
+  '[AC-F1-10h-SAVE#5] 30701 创建整行发送 expected_row_version=null，最低版本=%s，仅设置非空最低版本先动态码',
+  async (minimum) => {
     const server = createServer([]);
     await mount(server, { editor: true });
     await waitFor(() =>
@@ -177,23 +177,26 @@ it(
     expect(server.requests('GET', TARGET)).toHaveLength(1);
     expect(server.requests('GET', LIST)).toEqual([]);
     await change('latest_version', '1.2.0');
-    await change('min_supported_version', '1.0.0');
+    if (minimum !== null) await change('min_supported_version', minimum);
+    else expect(field('min_supported_version').value).toBe('');
     await change('recommended_version', '1.1.0');
     await change('update_title', '首次登记');
     await change('update_notes', '首次更新说明');
     await change('store_url', 'https://stores.example.test/first');
-    await change('default_store', PRIMARY);
     if (within(editor()).queryAllByLabelText(storeName).length === 0)
       await click(button(editor(), /新增商店|添加商店/));
     await fill(within(editor()).getAllByLabelText(storeName)[0]!, PRIMARY);
     await fill(within(editor()).getAllByLabelText(listedVersion)[0]!, '1.2.0');
+    await change('default_store', PRIMARY);
     await save();
-    expect(server.requests('PUT')).toEqual([]);
-    await verify();
+    if (minimum !== null) {
+      expect(server.requests('PUT')).toEqual([]);
+      await verify();
+    }
     await saved(server);
     expect(server.requests('PUT', TARGET)[0]!.body).toEqual({
       latest_version: '1.2.0',
-      min_supported_version: '1.0.0',
+      min_supported_version: minimum,
       recommended_version: '1.1.0',
       update_title: '首次登记',
       update_notes: '首次更新说明',
@@ -203,9 +206,11 @@ it(
       confirmed_stores: [],
       expected_row_version: null,
     });
-    expect(server.requests('PUT', TARGET)[0]!.headers.get('X-Step-Up-Token')).toBe(
-      'example-step-up',
-    );
+    if (minimum !== null)
+      expect(server.requests('PUT', TARGET)[0]!.headers.get('X-Step-Up-Token')).toBe(
+        'example-step-up',
+      );
+    else assertNoStepUp(server);
     expect(server.requests('PUT', TARGET)[0]!.headers.has('Idempotency-Key')).toBe(false);
   },
   FLOW_TIMEOUT,

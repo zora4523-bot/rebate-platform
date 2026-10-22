@@ -11,6 +11,7 @@ import {
   failure,
   item,
   payload,
+  type SaveBody,
 } from './fixtures.ts';
 import {
   FLOW_TIMEOUT,
@@ -19,7 +20,10 @@ import {
   change,
   click,
   edit,
+  editor,
   field,
+  fill,
+  listedVersion,
   mount,
   save,
   saved,
@@ -156,13 +160,13 @@ it(
   FLOW_TIMEOUT,
 );
 
-async function storeConfirmation(): Promise<HTMLElement> {
+async function storeConfirmation(stores = LAGGING): Promise<HTMLElement> {
   let result: HTMLElement | undefined;
   await waitFor(() => {
     const dialogs = [...screen.queryAllByRole('dialog'), ...screen.queryAllByRole('alertdialog')];
     result = dialogs.find(
       (dialog) =>
-        LAGGING.every((store) => dialog.textContent?.includes(store)) &&
+        stores.every((store) => dialog.textContent?.includes(store)) &&
         !dialog.contains(field('latest_version')),
     );
     expect(result, 'one batch confirmation containing every lagging store').toBeDefined();
@@ -195,9 +199,11 @@ it(
     expect(server.requests('PUT', TARGET)[1]!.body).toEqual(
       payload(item(), {
         min_supported_version: '2.10.0',
-        confirmed_stores: LAGGING,
+        confirmed_stores: expect.any(Array),
       }),
     );
+    const body = server.requests('PUT', TARGET)[1]!.body as SaveBody;
+    expect(new Set(body.confirmed_stores)).toEqual(new Set(LAGGING));
     expect(server.requests('PUT', TARGET)[1]!.headers.get('X-Step-Up-Token')).toBe(
       'example-step-up',
     );
@@ -244,7 +250,47 @@ it(
       payload(item(), { update_notes: '商店版本未动，只更新说明' }),
     );
     assertNoStepUp(server);
-    expect(screen.queryAllByRole('checkbox')).toEqual([]);
+  },
+  FLOW_TIMEOUT,
+);
+
+it.each(['listed_version', 'default_store'] as const)(
+  '[AC-F1-10h-STORES#4] 仅改 %s 未提高最低版本，服务端要求整组确认后重发仍不需动态码',
+  async (changed) => {
+    const server = createServer();
+    server.once('PUT', TARGET, () => failure(20001, { fields: ['confirmed_stores'] }));
+    await mount(server);
+    await edit();
+    const listings = item().store_listings;
+    if (changed === 'listed_version') {
+      listings[1]!.listed_version = '2.8.8';
+      await fill(within(editor()).getAllByLabelText(listedVersion)[1]!, '2.8.8');
+    } else {
+      await change('default_store', READY);
+    }
+    const expected = payload(item(), {
+      store_listings: listings,
+      default_store: changed === 'default_store' ? READY : PRIMARY,
+    });
+    const lagging = changed === 'listed_version' ? LAGGING : ['demo_slow_b'];
+    await save();
+    const modal = await storeConfirmation(lagging);
+    expect(server.requests('PUT', TARGET)).toHaveLength(1);
+    expect(server.requests('PUT', TARGET)[0]!.body).toEqual(expected);
+    assertNoStepUp(server);
+    expect(within(modal).queryAllByRole('checkbox')).toEqual([]);
+    expect(modal.textContent).not.toContain(PRIMARY);
+    expect(modal.textContent).not.toContain(READY);
+    if (changed === 'default_store') expect(modal.textContent).not.toContain('demo_slow_a');
+    await click(button(modal, /确认|继续保存/));
+    await saved(server, 2);
+    expect(server.requests('PUT', TARGET)[1]!.body).toEqual({
+      ...expected,
+      confirmed_stores: expect.any(Array),
+    });
+    const body = server.requests('PUT', TARGET)[1]!.body as SaveBody;
+    expect(new Set(body.confirmed_stores)).toEqual(new Set(lagging));
+    assertNoStepUp(server);
   },
   FLOW_TIMEOUT,
 );

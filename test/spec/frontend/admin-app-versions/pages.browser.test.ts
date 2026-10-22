@@ -7,6 +7,7 @@ import { createDataProvider } from '../../../../apps/admin/src/providers/data/in
 import {
   BASE_URL,
   LAGGING,
+  PERMITTED,
   PRIMARY,
   READY,
   TARGET,
@@ -14,6 +15,7 @@ import {
   failure,
   item,
   payload,
+  type SaveBody,
 } from './fixtures.ts';
 
 const FIRST = { timeout: 10_000 };
@@ -34,7 +36,7 @@ function show(server = createServer()): void {
     createAdminShell({
       router: 'memory',
       initialRoute: { menuId: 'app-versions' },
-      permissionsProvider: async () => ({ isSuper: false, permissions: ['content.app_version'] }),
+      permissionsProvider: async () => PERMITTED,
       account: { username: 'operator', displayName: '运营' },
       environment: 'test',
       onLogout: () => {},
@@ -112,7 +114,7 @@ it('[AC-F1-10h-BROWSER#2] 提高最低版本验证动态码，服务端核对后
       ).find(
         (node) =>
           LAGGING.every((store) => node.textContent?.includes(store)) &&
-          !node.querySelector('input'),
+          !node.contains(page.getByLabelText(/最新版本/).element()),
       );
       return confirmation !== undefined;
     }, FIRST)
@@ -129,7 +131,9 @@ it('[AC-F1-10h-BROWSER#2] 提高最低版本验证动态码，服务端核对后
   expect(server.requests('PUT', TARGET)[1]!.body).toEqual(
     payload(item(), {
       min_supported_version: '2.10.0',
-      confirmed_stores: LAGGING,
+      confirmed_stores: expect.any(Array),
     }),
   );
+  const body = server.requests('PUT', TARGET)[1]!.body as SaveBody;
+  expect(new Set(body.confirmed_stores)).toEqual(new Set(LAGGING));
 }, 40_000);
