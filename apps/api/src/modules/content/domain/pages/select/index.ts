@@ -20,6 +20,15 @@ export interface PagePointer {
   readonly grayVersion: number | null;
   /** Integer percent 0..100. */
   readonly grayPercent: number;
+  /**
+   * The pending scheduled publish (F1-09p; app.pages.scheduled_*), all four set or none. Optional
+   * so that stores without schedules keep working; pickPageVersion ignores them (the reader
+   * applies a due schedule first, ../schedule.ts).
+   */
+  readonly scheduledVersion?: number | null;
+  readonly scheduledGrayPercent?: number | null;
+  readonly scheduledAt?: Date | null;
+  readonly scheduledByAdminId?: string | null;
 }
 
 /** Bucket count per percent: h5Bucket has 10000 buckets. */

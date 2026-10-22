@@ -1,6 +1,7 @@
 // /admin/v1/pages* (F1-09f; contract adminListPageConfigs, adminGetPageConfig,
 // adminListPageConfigVersions, adminGetPageConfigVersion, adminCreatePageConfigVersion,
-// adminPublishPageConfig, adminUpdatePageConfigGray, adminRollbackPageConfig). 04 §11.2
+// adminPublishPageConfig, adminUpdatePageConfigGray, adminRollbackPageConfig; F1-09p
+// adminCancelPageConfigSchedule). 04 §11.2
 // content.page, no step-up: the four reads pass `readOnly: true`. The contract's route schema has
 // validated page_key, version, page, page_size and the bodies (20001) before a handler runs; each
 // handler runs inside platform's AdminOperationGuard, so no page table is queried before the
@@ -13,6 +14,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpException,
@@ -36,6 +38,7 @@ import {
   PageConflictError,
   PageFieldsError,
   PageNotFoundError,
+  PageScheduleNotFoundError,
   type PageActor,
   type PageListQuery,
 } from '../../application/page-config-admin.ts';
@@ -135,6 +138,17 @@ export class AdminPagesController {
     );
   }
 
+  /** adminCancelPageConfigSchedule (F1-09p). */
+  cancelSchedule(
+    request: PagesRequest,
+    key: string,
+    query: { expected_revision: number },
+  ): Promise<Schema<'AdminPageConfigResponse'>> {
+    return this.#run(request, false, (actor) =>
+      this.#pages.cancelSchedule(editorOf(actor, request), key, Number(query.expected_revision)),
+    );
+  }
+
   async #run<T>(
     request: PagesRequest,
     readOnly: boolean,
@@ -186,6 +200,9 @@ function refusal(error: unknown, traceId: string): unknown {
       409,
     );
   }
+  if (error instanceof PageScheduleNotFoundError) {
+    return new HttpException({ code: 30701, msg: '定时发布不存在', trace_id: traceId }, 404);
+  }
   if (error instanceof PageNotFoundError) {
     return new HttpException({ code: 30701, msg: '页面不存在', trace_id: traceId }, 404);
   }
@@ -209,6 +226,13 @@ function refusal(error: unknown, traceId: string): unknown {
     ['publish', 'Post', ':page_key/publish', 'adminPublishPageConfig', ['page_key', 'body']],
     ['gray', 'Post', ':page_key/gray', 'adminUpdatePageConfigGray', ['page_key', 'body']],
     ['rollback', 'Post', ':page_key/rollback', 'adminRollbackPageConfig', ['page_key', 'body']],
+    [
+      'cancelSchedule',
+      'Delete',
+      ':page_key/schedule',
+      'adminCancelPageConfigSchedule',
+      ['page_key', 'query'],
+    ],
   ] as const;
   Inject(AdminOperationGuard)(AdminPagesController, undefined, 0);
   Inject(PageConfigAdmin)(AdminPagesController, undefined, 1);
@@ -220,8 +244,12 @@ function refusal(error: unknown, traceId: string): unknown {
       else if (arg === 'body') Body()(prototype, name, index + 1);
       else Param(arg)(prototype, name, index + 1);
     });
-    (method === 'Get' ? Get(path) : Post(path))(prototype, name, descriptor);
-    if (method === 'Post') HttpCode(200)(prototype, name, descriptor);
+    (method === 'Get' ? Get(path) : method === 'Delete' ? Delete(path) : Post(path))(
+      prototype,
+      name,
+      descriptor,
+    );
+    if (method !== 'Get') HttpCode(200)(prototype, name, descriptor);
     RouteSchema(contractRouteSchema(operationId))(prototype, name, descriptor);
   }
   Controller('admin/v1/pages')(AdminPagesController);

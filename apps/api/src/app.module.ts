@@ -37,6 +37,7 @@ import {
 import {
   ContentAdminModule,
   ContentPublicModule,
+  ContentWorkerModule,
   createContentReader,
   type ContentReader,
   type PageAudienceReads,
@@ -1963,6 +1964,9 @@ export class AppModule {
         ...(options.entry === 'worker'
           ? [IdentityWorkerModule.forWorker({ payoutAccountConfig })]
           : []),
+        // Scheduled page publish due jobs (F1-09p): the page-schedule queue's handler, worked by the
+        // worker entry only; the admin entry's publish enqueues them in its write transaction.
+        ...(options.entry === 'worker' ? [ContentWorkerModule.forWorker()] : []),
         // The cooling-period expiry of deletion requests (B1-15f, BR-ID-27): worker entry only;
         // entry.ts starts its 60-second timer after the payout verification recheck.
         ...(options.entry === 'worker'

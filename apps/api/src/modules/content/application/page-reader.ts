@@ -6,6 +6,7 @@
 import type { Schema } from '@couli/contracts-ts';
 import type { Clock } from '../../platform/index.ts';
 import { CONTENT_CACHE_TTL_MS } from '../domain/cache-policy.ts';
+import { effectivePage, slotOf } from '../domain/pages/schedule.ts';
 import {
   neededAudienceFacts,
   pickPageVersion,
@@ -21,6 +22,7 @@ import { TtlCache } from './ttl-cache.ts';
 export const PAGE_TTL_SEC = 300;
 
 const PUBLISHED = 'published';
+const DRAFT = 'draft';
 
 export interface PageVersion {
   readonly status: string;
@@ -41,11 +43,13 @@ export class PageReader {
   readonly #pointers: TtlCache<PagePointer | null>;
   readonly #versions: TtlCache<PageVersion | null>;
   readonly #audience: PageAudienceFacts | null;
+  readonly #clock: Clock;
 
   /** `audience` null: a logged-in viewer's facts are unknown (only `any` matches them). */
   constructor(store: PageStore | null, clock: Clock, audience: PageAudienceFacts | null = null) {
     this.#store = store;
     this.#audience = audience;
+    this.#clock = clock;
     this.#pointers = new TtlCache(clock, CONTENT_CACHE_TTL_MS);
     this.#versions = new TtlCache(clock, CONTENT_CACHE_TTL_MS);
   }
@@ -69,19 +73,44 @@ export class PageReader {
       store.pointer(appId, pageKey),
     );
     if (pointer === null) return null;
+    // F1-09p Y6: the cached row is the stored one; a due schedule is applied on every request with
+    // the injected Clock, so it takes effect at its instant whether or not the due job has run.
+    const page = effectivePage(
+      {
+        currentVersion: pointer.currentVersion,
+        grayVersion: pointer.grayVersion,
+        grayPercent: pointer.grayPercent,
+        revision: 0,
+        updatedBy: null,
+        updatedAt: null,
+        slot: slotOf({
+          version: pointer.scheduledVersion,
+          grayPercent: pointer.scheduledGrayPercent,
+          at: pointer.scheduledAt,
+          by: pointer.scheduledByAdminId,
+        }),
+      },
+      this.#clock.now(),
+    );
     const chosen = pickPageVersion({
       appId,
       deviceId: deviceId === '' ? null : deviceId,
-      page: pointer,
+      page: {
+        currentVersion: page.currentVersion,
+        grayVersion: page.grayVersion,
+        grayPercent: page.grayPercent,
+      },
     });
     if (chosen === null) return null;
     const version = await this.#versions.get(cacheKey(appId, pageKey, chosen), () =>
       store.version(appId, pageKey, chosen),
     );
-    // Never fall back to another version: a pointer at a draft or rolled-back version serves none.
-    if (version === null || version.status !== PUBLISHED || !Array.isArray(version.sections)) {
-      return null;
-    }
+    // Never fall back to another version: a pointer at a draft or rolled-back version serves none,
+    // except the draft a due schedule names (published by time, the job may not have run yet).
+    if (version === null || !Array.isArray(version.sections)) return null;
+    const dueDraft =
+      version.status === DRAFT && page.applied !== null && page.applied.version === chosen;
+    if (version.status !== PUBLISHED && !dueDraft) return null;
     const audience = await this.#audienceOf(appId, userId, viewer, version.sections);
     return {
       page_key: pageKey,
