@@ -1,0 +1,95 @@
+{
+  "task": "B1-08w",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "spec_commit": "a702695f303f56c6482888349ab55d441e868123",
+  "red_tests": [
+    "test/spec/orders/snapshot-wiring/flow.int.test.ts > [AC-B1-08w#5] 生产 PAID 入库生成真实快照，直推 normal，历史取 paid_at",
+    "test/spec/orders/snapshot-wiring/flow.int.test.ts > [AC-B1-08w#6] 生产 PAID 入库生成真实快照，直推 deleted，历史取 paid_at",
+    "test/spec/orders/snapshot-wiring/flow.int.test.ts > [AC-B1-08w#7] 空规则库留下待处理，发布版本后生产 snapshot-retry 生成快照并关闭原行",
+    "test/spec/orders/snapshot-wiring/flow.int.test.ts > [AC-B1-08w#8] 生产更新步骤在规则恢复后使用真实快照端口处置 pending",
+    "test/spec/orders/snapshot-wiring/module.test.ts > [AC-B1-08w#1] worker 只建一次真实解析器，流水线、更新与补偿共享端口和注入资源",
+    "test/spec/orders/snapshot-wiring/module.test.ts > [AC-B1-08w#2] 缺资源的 worker 不构造快照解析器，其他入口不装配订单同步与补偿扫描",
+    "test/spec/orders/snapshot-wiring/scheduler.test.ts > [AC-B1-08w#3] 生产处理器识别 snapshot-retry 并查询待处理订单",
+    "test/spec/orders/snapshot-wiring/scheduler.test.ts > [AC-B1-08w#4] 生产补偿调度满十五分钟才扫描，停止后不再扫描或投递"
+  ],
+  "risk_note": "RV2 (orders/**, app.module.ts; money path wiring). The production worker builds the real commission snapshot port once (createCommissionSnapshot with the B2-03p beneficiary resolver over growth history and identity deletion status) and hands it to createOrderSyncRuntime as its own snapshots, so step ⑥ of the attribution pipeline, the update step and the B1-08t compensation scan share it and the scan registers. Without a database, queue or event bus the worker stays off and builds no resolver; non-worker entries assemble no order sync. Transactions, idempotency and app_id isolation of snapshot creation are those of B1-08k / B1-08t; this task only wires. The frozen [AC-B1-08n#1] timer count was adjusted separately by test-change B1-08z (#1164).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a702695f303f56c6482888349ab55d441e868123",
+      "tree": "9b0b8a6d8b6b3283102e72e01a86cf0753648c11",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T11:02:24Z",
+      "finished_at": "2026-10-22T11:03:04Z",
+      "gate": {
+        "commit": "40f343d301c025f720a68e41910ebfca85e5ecbb",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/orders/snapshot-wiring/flow.int.test.ts > [AC-B1-08w#5] 生产 PAID 入库生成真实快照，直推 normal，历史取 paid_at",
+        "test/spec/orders/snapshot-wiring/flow.int.test.ts > [AC-B1-08w#6] 生产 PAID 入库生成真实快照，直推 deleted，历史取 paid_at",
+        "test/spec/orders/snapshot-wiring/flow.int.test.ts > [AC-B1-08w#7] 空规则库留下待处理，发布版本后生产 snapshot-retry 生成快照并关闭原行",
+        "test/spec/orders/snapshot-wiring/flow.int.test.ts > [AC-B1-08w#8] 生产更新步骤在规则恢复后使用真实快照端口处置 pending",
+        "test/spec/orders/snapshot-wiring/module.test.ts > [AC-B1-08w#1] worker 只建一次真实解析器，流水线、更新与补偿共享端口和注入资源",
+        "test/spec/orders/snapshot-wiring/module.test.ts > [AC-B1-08w#2] 缺资源的 worker 不构造快照解析器，其他入口不装配订单同步与补偿扫描",
+        "test/spec/orders/snapshot-wiring/scheduler.test.ts > [AC-B1-08w#3] 生产处理器识别 snapshot-retry 并查询待处理订单",
+        "test/spec/orders/snapshot-wiring/scheduler.test.ts > [AC-B1-08w#4] 生产补偿调度满十五分钟才扫描，停止后不再扫描或投递"
+      ],
+      "expected": [
+        "test/spec/orders/snapshot-wiring/flow.int.test.ts",
+        "test/spec/orders/snapshot-wiring/module.test.ts",
+        "test/spec/orders/snapshot-wiring/scheduler.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "737223e0995a996b2a9208eee0e53d64bba11d5aa441c8656cb47745d8107fb0"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "30e0aaf8d95471c8ce7da39f273d3e366fa29fa1fb6e5642dea737fe56ae89ca"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings (merge-base review base)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (2 runs, 8 tests). Round 1 pass with one S2 ([AC-B1-08w#2] required non-worker entries never to build the resolver, which B1-10k / B1-10f may need on api); run 2 narrowed it to not assembling the order sync runtime / scan (D10-101); round 2 pass."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "ef02d601978a8c0bc34617c185b64940b491261d",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}

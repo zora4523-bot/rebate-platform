@@ -14,7 +14,8 @@
 //   (jobs/snapshot-retry.ts, with the runtime's events for its B1-08u exhausted alert), and start()
 //   also arms the scan's dispatch timer (every 15 minutes);
 //   stop() stops both and waits for the round in flight. Without it nothing of B1-08t runs: no
-//   routing, no query, no timer. Production does not inject it yet (B1-08w).
+//   routing, no query, no timer. B1-08w: the production worker injects it (OrdersModule.forWorker
+//   over app.module's commission snapshot port); a runtime built directly without it is unchanged.
 // Other modules' readers come in as ports from app.module (identity users, linking bindings, the
 // quota limiter, B1-08q's source backfill ports); union's are read through union/index.ts. orders
 // never imports linking, identity, catalog or content.

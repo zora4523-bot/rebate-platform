@@ -31,7 +31,9 @@ import {
 import {
   COMMISSION_QUOTE_CONFIG_KEYS,
   createCommissionRebateQuoter,
+  createCommissionSnapshot,
   createRuleSetReader,
+  createSnapshotBeneficiaryResolver,
   type RuleSetReader,
 } from './modules/commission/index.ts';
 import {
@@ -62,6 +64,7 @@ import {
   createMyInviteReader,
   createParentRelationReader,
   createRegistrationInviteBinding,
+  createGrowthHistory,
   type ParentRelationReader,
   type InviteBinder,
   type InviteBinderDeps,
@@ -174,6 +177,7 @@ import {
   createInviteRewardOrderFacts,
   type ClaimEvidenceFactory,
   createOrderSourcePorts,
+  type CommissionSnapshotPort,
   type OrderSourcePorts,
   type OrdersWorkerOptions,
 } from './modules/orders/index.ts';
@@ -1173,6 +1177,7 @@ function governedUnion(
  * memory quota bucket per platform for the worker's own governed adapters (the same capacity
  * and shares as the api's governedUnion; each process keeps its own bucket and breakers).
  * B1-08q: the source backfill ports (orderSourcePorts).
+ * B1-08w: commission's snapshot port (orderSnapshotPort) for step ⑥ and the compensation retry.
  */
 function orderSyncPorts(union: DynamicModule): OrdersWorkerOptions {
   return {
@@ -1185,6 +1190,28 @@ function orderSyncPorts(union: DynamicModule): OrdersWorkerOptions {
         scheduler,
       ),
     sources: (db, clock, logger) => orderSourcePorts(db, clock, logger),
+    snapshots: (db, clock, logger) => orderSnapshotPort(db, clock, logger),
+  };
+}
+
+/**
+ * B1-08w: orders' commission snapshot port (BR-ATTR-01 ⑥, BR-CALC-10) — commission's
+ * createCommissionSnapshot over the B2-03p beneficiary resolver (growth's level / parent history,
+ * identity's users.status deletion reader), with the worker's CLOCK and ROOT_LOGGER. The resolver
+ * and its two readers are built once here and shared by every call; building reads nothing, and
+ * every read runs on the caller's transaction (the order's lock transaction).
+ */
+function orderSnapshotPort(
+  db: Kysely<Database>,
+  clock: Clock,
+  logger: RootLogger,
+): CommissionSnapshotPort {
+  const beneficiaries = createSnapshotBeneficiaryResolver({
+    growth: createGrowthHistory({ logger }),
+    deletion: createUserDeletionStatusReader({ db }),
+  });
+  return {
+    create: (trx, input) => createCommissionSnapshot(trx, input, { clock, logger, beneficiaries }),
   };
 }
 
@@ -1994,7 +2021,8 @@ export class AppModule {
         ...(options.entry === 'worker' ? [inviteRewardWorkerModule()] : []),
         // Order sync (B1-08n): the order-sync handler and its scheduler, worked by the worker
         // entry only over its own governed union adapters; entry.ts starts the scheduler after
-        // the queue runs.
+        // the queue runs. B1-08w: with commission's snapshot port, so step ⑥ and the snapshot
+        // compensation retry (its 15-minute scan, started with the scheduler) run here.
         ...(options.entry === 'worker' && union !== undefined
           ? [OrdersModule.forWorker(orderSyncPorts(union))]
           : []),
