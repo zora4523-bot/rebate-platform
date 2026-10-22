@@ -2,11 +2,11 @@ import type { BridgeEvent, BridgeRequest, BridgeTransport } from '@couli/bridge-
 import { bridge } from '@couli/contracts-ts';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { createAppShell } from './app-shell.tsx';
+import { createAppShell } from '../../entries/app/app-shell.tsx';
 
-// 单元测试：路由换成两个夹具页（一个匿名、一个需登录），原生边界用假的 __REBATE_BRIDGE__，不联网。
+// 单元测试（壳层 app-shell.tsx 的换号行为，放在 shared/api 下）：路由换成两个夹具页（一个匿名、一个需登录），原生边界用假的 __REBATE_BRIDGE__，不联网。
 
-vi.mock('./routes.ts', () => ({
+vi.mock('../../entries/app/routes.ts', () => ({
   createAppRoutes: () => [
     {
       path: bridge.routes.Help.h5_path,
