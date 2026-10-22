@@ -5,6 +5,7 @@ type: contract
 # 2026-10-22 收款线入账（CT-plan/contract-delta.md §6.2 p-21、p-22、p-24、p-32；CT-21a #216 只做了权限点）。取值照 04 §2.4 / §2.5 / §7 与 08 BR-PAY 细则默认值；
 # 文案照 08 BR-TEXT-14（12_TEXT 第 822、823、836 行）一字不改；pay.yaml 进生成器文件清单与 packages/contracts-ts 生成物；catalog 测试的码段断言同 PR 同步。
 # 契约槽全局 1 个：排在 CT-16i 之后，就绪即在 notices 占槽。
+# 2026-10-23 paths 补 specs/fund-term-keys.yaml：contracts:codegen 要求 texts.default.json 的每个新键先在该清单归类（BR-TEXT-12），三条错误文案归 ordinary.keys（不带金额、无资金关键词）。
 refs: [BR-PAY-01, BR-PAY-02, BR-PAY-03, BR-PAY-04, BR-PAY-05, BR-PAY-06, BR-PAY-07]
 refs_hash:
   BR-PAY-01: 15ea5ac62c34
@@ -24,6 +25,7 @@ paths:
   - 'contracts/texts.admin.default.json'
   - 'contracts/README.md'
   - 'packages/contracts-ts/**'
+  - 'specs/fund-term-keys.yaml'
 test_paths:
   - 'test/spec/contracts/pay-enums/**'
 impl: claude
