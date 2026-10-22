@@ -187,18 +187,26 @@ const MOTION =
   /(?:^|\s)ant-(?:zoom|fade|move|slide)\b|-(?:appear|enter|leave)(?:-|\s|$)|-motion\b|-motion-/;
 
 /**
- * The final state of what is on screen: no request of the fake server under way, and every open
- * antd Modal / Drawer (panel and mask) past its enter animation. Waits use expect.element only.
+ * Every open antd Modal / Drawer (panel and mask) is past its enter animation. A click while a
+ * dialog still zooms or slides in can be lost (#7: 「确认发布」 clicked, no request).
  */
-async function settled(): Promise<void> {
-  await expect
-    .element(page.elementLocator(document.getElementById('pending-requests')!), FIRST)
-    .toHaveAttribute('data-pending', '0');
+async function still(): Promise<void> {
   const overlays = document.querySelectorAll(
     '.ant-modal, .ant-modal-mask, .ant-drawer-content-wrapper, .ant-drawer-mask',
   );
   for (const overlay of Array.from(overlays))
     await expect.element(page.elementLocator(overlay), FIRST).not.toHaveClass(MOTION);
+}
+
+/**
+ * The final state of what is on screen: no request of the fake server under way, and nothing
+ * moving. Waits use expect.element only.
+ */
+async function settled(): Promise<void> {
+  await expect
+    .element(page.elementLocator(document.getElementById('pending-requests')!), FIRST)
+    .toHaveAttribute('data-pending', '0');
+  await still();
 }
 
 async function shoot(name: string): Promise<void> {
@@ -223,6 +231,7 @@ async function openHistory(platform: string) {
   await page.getByRole('button', { name: `历史 ${platform}`, exact: true }).click();
   const drawer = dialogWith(new RegExp(`^版本历史 · ${platform}`));
   await expect.element(drawer, FIRST).toBeVisible();
+  await still();
   return drawer;
 }
 
@@ -345,6 +354,8 @@ it('[AC-F1-06zd-BROWSER#7] admin-platform-icons-published（AdmPlatformIconPubli
   const drawer = await openHistory('淘宝');
   await drawer.getByRole('button', { name: '发布 淘宝 版本 1', exact: true }).click();
   const modal = dialogWith(/^发布 淘宝 版本 1/);
+  await expect.element(modal, FIRST).toBeVisible();
+  await still();
   await modal.getByRole('button', { name: '确认发布', exact: true }).click();
   await expect.element(page.getByText(/淘宝 已发布版本 1，立即生效/), FIRST).toBeVisible();
   await expect
@@ -364,6 +375,8 @@ it('[AC-F1-06zd-BROWSER#8] admin-platform-icons-restored（AdmPlatformIconRestor
   await listShown();
   await page.getByRole('button', { name: '恢复内置 支付宝', exact: true }).click();
   const modal = dialogWith(/^支付宝 恢复内置图/);
+  await expect.element(modal, FIRST).toBeVisible();
+  await still();
   await modal.getByRole('button', { name: '确认恢复内置', exact: true }).click();
   await expect.element(page.getByText(/支付宝 已恢复内置图。/), FIRST).toBeVisible();
   await expect.element(modal).not.toBeInTheDocument();
@@ -387,6 +400,7 @@ it('[AC-F1-06zd-BROWSER#9] admin-platform-icons-conflict（AdmPlatformIconConfli
     updated_by: 'ops-er',
     updated_at: '2026-10-12T02:31:00Z',
   });
+  await still();
   await modal.getByRole('button', { name: '确认回滚', exact: true }).click();
   const alert = modal.getByRole('alert');
   await expect.element(alert, FIRST).toBeVisible();
