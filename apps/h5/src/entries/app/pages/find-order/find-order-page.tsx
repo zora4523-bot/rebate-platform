@@ -148,9 +148,15 @@ function FindOrderContent({
       ]);
       return parseClaimConfig(result.values);
     },
-    // 永不过期：挂载、回前台、重连都不重取，也没有定时重取（失败只由用户点重试）。
+    // 永不过期，且逐项关掉自动重取（不依赖共享 QueryClient 的默认值）：失败（含 10405）后没有数据也算过期，
+    // 重挂、回前台、断网恢复都不得再取令牌或配置；没有定时重取，失败只由用户点重试。
     staleTime: Infinity,
     retry: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
   });
 
   const [tab, setTab] = useState<Tab>('apply');

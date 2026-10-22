@@ -1,10 +1,10 @@
 import { on } from '@couli/bridge-sdk';
-import type { QueryClient } from '@tanstack/react-query';
+import { onlineManager, type QueryClient } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ApiProvider, type AppApiBridge } from '../../../../shared/api/app-api.ts';
-import type { H5ApiClient } from '../../../../shared/api/index.ts';
+import { ApiError, type H5ApiClient } from '../../../../shared/api/index.ts';
 import {
   clearAccountData,
   createQueryClient,
@@ -39,6 +39,7 @@ afterEach(() => {
   for (const client of clients.splice(0)) client.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  onlineManager.setOnline(true);
 });
 
 const CONFIG = {
@@ -98,19 +99,26 @@ function installNative() {
   };
 }
 
-function setup(signed: () => Promise<unknown> = () => Promise.resolve({}), shell = true) {
+function okToken(): Promise<unknown> {
+  return Promise.resolve({ token: 'h5-test', scope: 'read', expire_at: '2099-01-01T00:00:00Z' });
+}
+
+function setup(
+  signed: () => Promise<unknown> = () => Promise.resolve({}),
+  shell = true,
+  token: () => Promise<unknown> = okToken,
+) {
   const native = installNative();
-  const createH5TokenManager = vi.fn(() => ({
-    getToken: () =>
-      Promise.resolve({ token: 'h5-test', scope: 'read', expire_at: '2099-01-01T00:00:00Z' }),
-    invalidate: vi.fn(),
-  }));
+  const getToken = vi.fn(token);
+  const createH5TokenManager = vi.fn(() => ({ getToken, invalidate: vi.fn() }));
+  const call = vi.fn((cap: { method: string }) =>
+    cap.method === 'app.getConfig' ? Promise.resolve({ values: CONFIG }) : signed(),
+  );
   const bridge = {
     isInApp: () => true,
     has: (method: string) =>
       method === 'app.getConfig' || method === 'net.signedRequest' ? { method } : null,
-    call: (cap: { method: string }) =>
-      cap.method === 'app.getConfig' ? Promise.resolve({ values: CONFIG }) : signed(),
+    call,
     createH5TokenManager,
   } as unknown as AppApiBridge;
   const responses: Deferred<unknown>[] = [];
@@ -137,7 +145,7 @@ function setup(signed: () => Promise<unknown> = () => Promise.resolve({}), shell
       client,
     ),
   );
-  return { ...native, view, client, responses, createH5TokenManager };
+  return { ...native, view, client, responses, createH5TokenManager, getToken, call, api };
 }
 
 async function openRecords(): Promise<void> {
@@ -256,4 +264,55 @@ it('[AC-F1-04b-UNIT#19] 本页不自己订阅 auth.changed：不取消、不删�
   expect(cancel).not.toHaveBeenCalled();
   expect(remove).not.toHaveBeenCalled();
   expect(clear).not.toHaveBeenCalled();
+});
+
+/** 模拟手机断网再恢复（TanStack 的 onlineManager 恢复时会触发 refetchOnReconnect）。 */
+async function dropAndRestoreNetwork(): Promise<void> {
+  await act(async () => {
+    onlineManager.setOnline(false);
+    await Promise.resolve();
+  });
+  await act(async () => {
+    onlineManager.setOnline(true);
+    await new Promise((done) => setTimeout(done, 50));
+  });
+}
+
+function configCalls(call: ReturnType<typeof setup>['call']): number {
+  return call.mock.calls.filter(([cap]) => cap.method === 'app.getConfig').length;
+}
+
+it('[AC-F1-04b-UNIT#20] 进页取令牌返回 10405：断网再恢复不自动重取令牌、配置，也不发请求', async () => {
+  const { getToken, call, api } = setup(undefined, true, () =>
+    Promise.reject(new ApiError(10405, '')),
+  );
+  await screen.findByRole('button', { name: t('h5.retry') });
+  expect(getToken).toHaveBeenCalledTimes(1);
+  expect(configCalls(call)).toBe(1);
+
+  await dropAndRestoreNetwork();
+  expect(getToken).toHaveBeenCalledTimes(1);
+  expect(configCalls(call)).toBe(1);
+  expect(call).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(api.request)).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: t('h5.retry') })).toBeTruthy();
+});
+
+it('[AC-F1-04b-UNIT#21] 找回记录返回 10405：断网再恢复不自动重取记录，也不再取令牌、配置', async () => {
+  const { getToken, call, api, responses } = setup();
+  await openRecords();
+  await waitFor(() => expect(responses).toHaveLength(1));
+  await act(async () => {
+    responses[0]!.resolve(Promise.reject(new ApiError(10405, '')));
+  });
+  await screen.findByRole('button', { name: t('h5.retry') });
+  const tokens = getToken.mock.calls.length;
+  const calls = call.mock.calls.length;
+
+  await dropAndRestoreNetwork();
+  expect(vi.mocked(api.request)).toHaveBeenCalledTimes(1);
+  expect(responses).toHaveLength(1);
+  expect(getToken).toHaveBeenCalledTimes(tokens);
+  expect(call).toHaveBeenCalledTimes(calls);
+  expect(configCalls(call)).toBe(1);
 });

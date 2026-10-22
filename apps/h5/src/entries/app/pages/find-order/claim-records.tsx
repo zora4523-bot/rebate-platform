@@ -63,7 +63,10 @@ export function ClaimRecords({
       last.next_cursor === null || last.next_cursor === '' || last.next_cursor === lastCursor
         ? undefined
         : last.next_cursor,
+    // 逐项写明，不依赖共享 QueryClient 的默认值：只有进页签（挂载，属用户操作）才重取；
+    // 失败（含 10405）后断网恢复、回前台、定时都不重取。
     retry: false,
+    refetchOnMount: true,
     refetchOnReconnect: false,
     refetchOnWindowFocus: false,
     refetchInterval: false,
