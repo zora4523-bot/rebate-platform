@@ -108,6 +108,14 @@ export function ClaimForm({
   const [general, setGeneral] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
+  // 卸载后（含账号切换按代次重挂）迟到的提交结果不再写置灰、不再回调。
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const queryClient = useQueryClient();
   // 当天置灰：记录带上海日期，存在壳层缓存里（再进页仍在）；是否仍生效按当前时钟算，跨日即解除。
   const [block, setBlock] = useState<DailyBlock | null>(() => readDailyBlock(queryClient));
@@ -214,9 +222,9 @@ export function ClaimForm({
       outcome = { kind: 'general', message: t('buy.timeout') };
     } finally {
       inFlight.current = false;
-      setSubmitting(false);
+      if (alive.current) setSubmitting(false);
     }
-    apply(outcome, platform, order);
+    if (alive.current) apply(outcome, platform, order);
   }
 
   const orderHint =

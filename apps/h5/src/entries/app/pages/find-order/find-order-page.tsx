@@ -1,6 +1,6 @@
 import * as bridgeSdk from '@couli/bridge-sdk';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useId, useState, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Skeleton } from '../../../../components/base/index.ts';
 import { RetryPage } from '../../../../components/retry/index.ts';
 import { useApi, type AppApiBridge } from '../../../../shared/api/app-api.ts';
@@ -24,7 +24,9 @@ const DEFAULT_BRIDGE: AppApiBridge = {
   createH5TokenManager: bridgeSdk.createH5TokenManager,
 };
 
-const BOOT_KEY = ['find-order', 'boot'] as const;
+/** 本页自有缓存（启动配置、当天置灰）的公共前缀；账号切换时整组删掉。 */
+const PAGE_SCOPE = ['find-order'] as const;
+const BOOT_KEY = [...PAGE_SCOPE, 'boot'] as const;
 
 type Tab = 'apply' | 'records';
 
@@ -57,8 +59,12 @@ function FindOrderContent({
   const queryClient = useQueryClient();
   // 本页自己的令牌管理器只在内存里（BR-ID-32）；进页先取一次，取不到就显示加载失败，不自动重放。
   const [tokens] = useState(() => bridge.createH5TokenManager());
+  // 账号代次：桥事件 auth.changed（同一 WebView 里退出、换号）时加一。查询键带上代次，
+  // 表单与记录按代次重新挂载，切换前发出的请求结果只能落到已删除的旧键或已卸载的旧组件上。
+  const [generation, setGeneration] = useState(0);
+  const generationRef = useRef(0);
   const boot = useQuery({
-    queryKey: BOOT_KEY,
+    queryKey: [...BOOT_KEY, generation],
     queryFn: async () => {
       const getConfig = bridge.has('app.getConfig');
       if (getConfig === null) throw new Error('app.getConfig is not supported');
@@ -80,6 +86,23 @@ function FindOrderContent({
   const [tab, setTab] = useState<Tab>('apply');
   const [target, setTarget] = useState<LocateTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      bridgeSdk.on('auth.changed', () => {
+        generationRef.current += 1;
+        tokens.invalidate();
+        for (const queryKey of [PAGE_SCOPE, RECORDS_KEY]) {
+          void queryClient.cancelQueries({ queryKey });
+          queryClient.removeQueries({ queryKey });
+        }
+        setGeneration(generationRef.current);
+        setTarget(null);
+        setNotice(null);
+      }),
+    [queryClient, tokens],
+  );
+
   const ids = { apply: useId(), records: useId(), applyPanel: useId(), recordsPanel: useId() };
 
   function select(next: Tab): void {
@@ -96,11 +119,15 @@ function FindOrderContent({
     setTab('records');
   }
 
+  // 回调绑定渲染时的代次：切换账号前提交、切换后才返回的结果不再切页签或定位。
+  const bound = generation;
   function onCreated(claim: Claim): void {
+    if (bound !== generationRef.current) return;
     showRecords({ claimId: claim.claim_id }, null);
   }
 
   function onDuplicate(platform: ClaimPlatform, orderNo: string, message: string): void {
+    if (bound !== generationRef.current) return;
     showRecords({ platform, orderNo }, message);
   }
 
@@ -163,6 +190,7 @@ function FindOrderContent({
         className="flex flex-1 flex-col"
       >
         <ClaimForm
+          key={generation}
           bridge={bridge}
           config={config}
           onCreated={onCreated}
@@ -177,6 +205,8 @@ function FindOrderContent({
           className="flex flex-1 flex-col pb-couli-6"
         >
           <ClaimRecords
+            key={generation}
+            generation={generation}
             api={api}
             target={target}
             notice={notice}

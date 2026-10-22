@@ -15,7 +15,7 @@ import {
 } from './model.ts';
 import { CAPTION, CARD, FOCUS, FOOTNOTE, InfoIcon, SearchDocIcon, StatusTag } from './parts.tsx';
 
-/** 找回记录的查询键；提交成功后让它失效，切回记录页签时重取。 */
+/** 找回记录的查询键前缀（实际键再带账号代次）；提交成功后让它失效，切回记录页签时重取。 */
 export const RECORDS_KEY = ['orders', 'claims'] as const;
 /** 每页条数（契约上限 50）。 */
 const PAGE_LIMIT = 20;
@@ -28,6 +28,8 @@ export interface ClaimRecordsProps {
   /** 30205 的轻提示（页内文字）。 */
   notice: string | null;
   onLocated: () => void;
+  /** 账号代次（auth.changed 时加一）：并进查询键，旧账号的缓存与迟到响应不会出现在新账号下。 */
+  generation?: number;
 }
 
 function RecordSkeleton(): ReactElement {
@@ -45,9 +47,15 @@ function RecordSkeleton(): ReactElement {
  * 每行 PlatformBadge + 状态标签 + 订单号 + 付款日期与提交时间 + 说明句，多个子订单分行显示各自的决定；
  * 不显示认领方。请求只来自进页签、重试与翻页，关掉一切自动重取（10405 等不自动重放）。
  */
-export function ClaimRecords({ api, target, notice, onLocated }: ClaimRecordsProps): ReactElement {
+export function ClaimRecords({
+  api,
+  target,
+  notice,
+  onLocated,
+  generation = 0,
+}: ClaimRecordsProps): ReactElement {
   const list = useInfiniteQuery({
-    queryKey: RECORDS_KEY,
+    queryKey: [...RECORDS_KEY, generation],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
       api.request('GET', '/v1/orders/claims', {
