@@ -8,8 +8,8 @@
 // read (a submission late in December may reach into January).
 import type { Clock, RootLogger } from '../../platform/index.ts';
 import {
-  appealDeadline,
   appealLocalYear,
+  workingDayDeadline,
   type AppealCalendarYear,
 } from '../domain/appeal-deadline.ts';
 import type { RateLimitConfigReader } from './rate-limit.ts';
@@ -44,14 +44,18 @@ function datesOf(value: unknown, year: number): string[] | null {
   return dates;
 }
 
-async function readYear(
-  options: AppealCalendarOptions,
-  year: number,
-): Promise<AppealCalendarYear | null> {
+/** What the calendar reads need (AppealCalendarOptions and WorkingDayDeadlineOptions both fit). */
+interface CalendarSource {
+  readonly appId: string;
+  readonly config: WorkingDayCalendarReader;
+  readonly logger: Pick<RootLogger, 'warn'>;
+}
+
+async function readYear(source: CalendarSource, year: number): Promise<AppealCalendarYear | null> {
   try {
     const [holidays, makeup] = await Promise.all([
-      options.config.configValue(options.appId, `calendar.cn_holidays.${year}`),
-      options.config.configValue(options.appId, `calendar.cn_makeup_workdays.${year}`),
+      source.config.configValue(source.appId, `calendar.cn_holidays.${year}`),
+      source.config.configValue(source.appId, `calendar.cn_makeup_workdays.${year}`),
     ]);
     if (holidays === null || makeup === null) return null;
     const holidayDates = datesOf(holidays.value, year);
@@ -64,24 +68,31 @@ async function readYear(
   }
 }
 
-/** Read per-year configuration; unavailable/invalid calendars fall back with a private warning. */
-export async function resolveAppealDeadline(options: AppealCalendarOptions): Promise<Date> {
-  const submittedAt = options.clock.now();
-  const firstYear = appealLocalYear(submittedAt);
+/**
+ * The deadline `workingDays` working days after `from`, reading each +08:00 civil year it reaches
+ * once; a year that cannot be read counts weekends only and logs `unconfiguredKey` (app_id, year).
+ */
+async function resolveDeadline(
+  source: CalendarSource,
+  from: Date,
+  workingDays: number,
+  unconfiguredKey: string,
+): Promise<Date> {
+  const firstYear = appealLocalYear(from);
   const calendars: Record<number, AppealCalendarYear> = {};
   const read = new Set<number>();
   for (;;) {
     let added = false;
-    const deadline = appealDeadline(submittedAt, calendars);
+    const deadline = workingDayDeadline(from, calendars, workingDays);
     // The last working day counted is the civil day before the deadline instant.
     const lastYear = appealLocalYear(deadline, -1);
     for (let year = firstYear; year <= lastYear; year += 1) {
       if (read.has(year)) continue;
       read.add(year);
       added = true;
-      const calendar = await readYear(options, year);
+      const calendar = await readYear(source, year);
       if (calendar === null) {
-        options.logger.warn({ app_id: options.appId, year }, 'appeal_calendar_unconfigured');
+        source.logger.warn({ app_id: source.appId, year }, unconfiguredKey);
       } else {
         calendars[year] = calendar;
       }
@@ -89,4 +100,38 @@ export async function resolveAppealDeadline(options: AppealCalendarOptions): Pro
     // A newly read year may move the deadline into a later year: recompute until stable.
     if (!added) return deadline;
   }
+}
+
+/** Read per-year configuration; unavailable/invalid calendars fall back with a private warning. */
+export async function resolveAppealDeadline(options: AppealCalendarOptions): Promise<Date> {
+  return resolveDeadline(options, options.clock.now(), 3, 'appeal_calendar_unconfigured');
+}
+
+/** B1-15f: the configuration port of resolveWorkingDayDeadline (RateLimitConfigReader fits it). */
+export interface WorkingDayCalendarReader {
+  configValue(appId: string, key: string): Promise<{ readonly value: unknown } | null>;
+}
+
+export interface WorkingDayDeadlineOptions {
+  readonly appId: string;
+  /** The instant counted from (its +08:00 civil date is excluded). */
+  readonly from: Date;
+  readonly workingDays: number;
+  readonly config: WorkingDayCalendarReader;
+  readonly logger: Pick<RootLogger, 'warn'>;
+}
+
+/**
+ * B1-15f §9.2 #4: resolveAppealDeadline with `from` and the number of working days as parameters
+ * (resolveAppealDeadline becomes this with clock.now() and 3; its signature, behaviour and log key
+ * stay). Same calendar reads; an unconfigured year counts weekends only and logs one warn line
+ * `workday_calendar_unconfigured` with app_id and year (never a value or the error).
+ */
+export function resolveWorkingDayDeadline(options: WorkingDayDeadlineOptions): Promise<Date> {
+  return resolveDeadline(
+    options,
+    options.from,
+    options.workingDays,
+    'workday_calendar_unconfigured',
+  );
 }

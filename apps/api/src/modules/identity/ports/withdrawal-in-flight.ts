@@ -24,3 +24,14 @@ export interface WithdrawalInFlightInput {
 export interface WithdrawalInFlightReader {
   hasInFlight(trx: Transaction<DB>, input: WithdrawalInFlightInput): Promise<boolean>;
 }
+
+/**
+ * B1-15f (BR-ID-27 「进入 processing 前该用户所有提现必须已到终态」): true = the user has ANY withdrawal
+ * not in a terminal state, INCLUDING one frozen by hand because of a ban — a wider rule than
+ * hasInFlight. Same caller transaction, no writes, no logging. app.module's implementation of
+ * WithdrawalInFlightReader implements this method too (false until B2-05, which replaces both).
+ * Declared as its own interface so B1-15d's readers keep compiling.
+ */
+export interface WithdrawalNonTerminalReader {
+  hasNonTerminal(trx: Transaction<DB>, input: WithdrawalInFlightInput): Promise<boolean>;
+}
