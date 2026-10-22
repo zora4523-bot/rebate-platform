@@ -1,0 +1,18 @@
+id: F1-06zs
+repo: rebate-platform
+title: F1-06zd 规则测试同步（F1-10h 版本管理页上线前置）——admin-platform-icons menu.test.ts [AC-F1-06zd-MENU#4] 用来核对「其余菜单仍是占位页」的菜单由 app-versions 改为 reports（报表入口，F1-14b，契约未开、长期是占位页）；用例名、条数、其余断言不变
+type: test-change
+# 2026-10-23 入账（前端线 f1-frontend-7）。F1-10h（三端版本管理页）规则测试过审 r1 的 out_of_scope 指出：MENU#4 断言 app-versions 显示「尚未接入」，版本管理页接入后必然变红。
+# 断言本意是「平台标识默认页接线不影响其余菜单的占位页」，换一个仍是占位页的菜单，含义不放宽。主干保持全绿。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件（approvals 第 12 条），第二家评审为本地 Codex 只读会话（编排 10-19 12:1x 裁定 B，先例 F1-06zo），合并需 #24 标签。
+refs: []
+refs_hash: {}
+deps: [F1-06zd]
+paths:
+  - 'test/spec/frontend/admin-platform-icons/menu.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
