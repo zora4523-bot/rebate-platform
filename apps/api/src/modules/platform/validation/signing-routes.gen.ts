@@ -778,6 +778,21 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/risk-rules",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/risk-rules/:rule_id/enable",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/risk-rules/:rule_id/disable",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "signed": false
   },

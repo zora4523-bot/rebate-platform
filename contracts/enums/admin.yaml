@@ -1,6 +1,6 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
@@ -151,3 +151,17 @@ enums:
       admin: 后台操作
       claim: 找回
       system: 系统
+  risk_rule_status:
+    source: 规划/04 §3.2 risk_rules.status、§6.6 risk-rules；规划/08 BR-ID-36 细则「规则清单的启停」（CT-24f，代理补全的默认）
+    description: GET /admin/v1/risk-rules 列表项的 status；启停经 POST /admin/v1/risk-rules/{rule_id}/enable、…/disable；中文名取 BR-TEXT-25 admin_dict，本契约不补文案
+    values:
+      enabled: 启用（参与判定）
+      disabled: 停用（不参与判定、不写 risk_hits；已写的命中记录与申诉不受影响）
+  risk_action:
+    source: 规划/08 BR-ID-36；规划/04 §3.2 risk_rules / risk_hits.risk_action（CT-24f）
+    description: 风控规则命中后的动作，GET /admin/v1/risk-rules 列表项的 risk_action；取值与 risk_rules、risk_hits 的 CHECK 约束一致；中文名取 BR-TEXT-25 admin_dict（admin_dict.risk_action.*）
+    values:
+      pass: 通过（只记命中）
+      manual_review: 转人工
+      block: 拦截
+      void_commission: 作废佣金

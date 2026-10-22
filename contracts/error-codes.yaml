@@ -228,6 +228,7 @@ codes:
         - dict_item
         - claim_item
         - app_version
+        - risk_rule
     sources:
       - BR-FUND-01
       - BR-FUND-04

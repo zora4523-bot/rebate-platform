@@ -225,6 +225,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'claim_item',
     // CT-02v: admin app version save CAS (04 §6.6 app-versions, BR-ID-01).
     'app_version',
+    // CT-24f: admin risk rule enable / disable CAS (04 §6.6 risk-rules, BR-ID-36).
+    'risk_rule',
   ]);
 });
 

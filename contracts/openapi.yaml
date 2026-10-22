@@ -92,6 +92,8 @@ tags:
     description: Admin content operations; platform mark replacement images (permission point content.platform_icon, BR-TEXT-24).
   - name: admin-config
     description: Admin configuration center and emergency switches (permission points config.* and switch.*, 04 §10, §10.2, §11.2; F1-10).
+  - name: admin-risk
+    description: Admin risk rule list — every rule with its status and threshold configuration keys, and enable / disable (permission point config.risk, step-up for the writes; thresholds stay under /admin/v1/config-items; 04 §6.6 risk-rules, §11.2, BR-ID-36).
   - name: admin-dashboard
     description: Admin console workbench — to-do counts, yesterday's overview and system status, trimmed to the account's permission points (permission point dashboard.view, 01 F-ADM-26, 04 §6.6 dashboard, §11.1).
   - name: agent
@@ -13658,6 +13660,293 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/risk-rules:
+    get:
+      operationId: adminListRiskRules
+      tags:
+        - admin-risk
+      summary: The risk rule list (规则清单), not paged
+      description: |
+        Permission point `config.risk` (04 §11.2; read only, no step-up); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Every risk_rules row of the console's app (04 §3.2;
+        the rules are seeded with B1-03, BR-ID-36), ordered by `scene`, then `rule_id`; not paged
+        and not filtered (04 §6.6 risk-rules). Each row holds the fields of 04 §6.6 only:
+        `rule_id`, `scene` (the code the rule seed registered; no closed list in this contract),
+        `name` (display name), `risk_action` (BR-ID-36), `status` (enabled or disabled),
+        `threshold_keys`, `version` and `updated_at`. The condition JSON is not returned.
+        `threshold_keys` names the configuration items that hold the rule's thresholds (an empty
+        array for a rule without one). Their current values and allowed ranges are not returned
+        here: they are read and changed only through /admin/v1/config-items (PUT
+        /admin/v1/config-items/{key}, these keys being registered under `config.risk`), so each
+        value has one write path. `version` is what POST /admin/v1/risk-rules/{rule_id}/enable and
+        …/disable take as `expected_version`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: Every rule of the console's app, by scene, then rule_id.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRiskRuleListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - rule_id: SAME_DEVICE_MULTI_ACCOUNT
+                      scene: login
+                      name: 同设备多账号
+                      risk_action: manual_review
+                      status: enabled
+                      threshold_keys:
+                        - risk.device_login_accounts_limit
+                      version: 2
+                      updated_at: '2026-10-20T10:00:00+08:00'
+                    - rule_id: BLACKLIST_PHONE
+                      scene: register
+                      name: 手机号黑名单
+                      risk_action: block
+                      status: enabled
+                      threshold_keys: []
+                      version: 0
+                      updated_at: '2026-10-08T09:00:00+08:00'
+                    - rule_id: DEVICE_REGISTER_LIMIT
+                      scene: register
+                      name: 同设备注册上限
+                      risk_action: block
+                      status: disabled
+                      threshold_keys:
+                        - risk.device_register_limit
+                      version: 1
+                      updated_at: '2026-10-21T15:30:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/risk-rules/{rule_id}/enable:
+    post:
+      operationId: adminEnableRiskRule
+      tags:
+        - admin-risk
+      summary: Enable one risk rule
+      description: |
+        Permission point `config.risk` (04 §11.2); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+        totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Body checks (20001 with
+        `data.fields` naming the field): `expected_version` is required; `reason` is optional
+        (1–200 characters). An unknown `rule_id`, or one of another app, is 20001 with
+        `data.fields=[rule_id]`. CAS: `expected_version` is the rule's `version` as GET
+        /admin/v1/risk-rules listed it; a change sets `status` to enabled and adds 1, and a
+        mismatch → 20902 with `data.resource=risk_rule`, refresh and retry (04 §6.6). A rule
+        already enabled, with a matching version, succeeds unchanged: `version` stays the same and
+        it is not counted as a change, so no audit record is written (BR-ID-36 细则「规则清单的启停」).
+        A change writes an audit record (action risk_rule_enable, before and after `status`,
+        `reason`). Takes effect as for a configuration item change: the readers pick it up
+        within their cache period (04 §10); judgements already made are not redone. The response
+        is the rule's row as GET /admin/v1/risk-rules lists it now. No Idempotency-Key (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminRiskRuleIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminRiskRuleStatusChangeRequest'
+            example:
+              expected_version: 1
+              reason: 误拦已排查，恢复启用
+      responses:
+        '200':
+          description: The rule as it is now, enabled.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRiskRuleResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  rule_id: DEVICE_REGISTER_LIMIT
+                  scene: register
+                  name: 同设备注册上限
+                  risk_action: block
+                  status: enabled
+                  threshold_keys:
+                    - risk.device_register_limit
+                  version: 2
+                  updated_at: '2026-10-22T10:05:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                unknownRule:
+                  $ref: '#/components/examples/AdminRiskRuleIdInvalid'
+                reasonInvalid:
+                  $ref: '#/components/examples/AdminRiskRuleReasonInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminRiskRuleConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/risk-rules/{rule_id}/disable:
+    post:
+      operationId: adminDisableRiskRule
+      tags:
+        - admin-risk
+      summary: Disable one risk rule
+      description: |
+        Permission point `config.risk` (04 §11.2); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+        totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Body checks (20001 with
+        `data.fields` naming the field): `expected_version` is required; `reason` is optional
+        (1–200 characters). An unknown `rule_id`, or one of another app, is 20001 with
+        `data.fields=[rule_id]`. CAS: `expected_version` is the rule's `version` as GET
+        /admin/v1/risk-rules listed it; a change sets `status` to disabled and adds 1, and a
+        mismatch → 20902 with `data.resource=risk_rule`, refresh and retry (04 §6.6). A rule
+        already disabled, with a matching version, succeeds unchanged: `version` stays the same
+        and it is not counted as a change, so no audit record is written (BR-ID-36 细则「规则清单的启停」).
+        A disabled rule takes no part in judgements and writes no risk_hits; hits already
+        written and their appeals are not affected. A change writes an audit record (action
+        risk_rule_disable, before and after `status`, `reason`). Takes effect as for a
+        configuration item change: the readers pick it up within their cache period (04 §10);
+        judgements already made are not redone. The threshold configuration items keep their
+        values. The response is the rule's row as GET /admin/v1/risk-rules lists it now. No
+        Idempotency-Key (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminRiskRuleIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminRiskRuleStatusChangeRequest'
+            examples:
+              withReason:
+                summary: Disable with a reason
+                value:
+                  expected_version: 2
+                  reason: 活动期间同设备多人注册较多，先停用观察
+              withoutReason:
+                summary: Disable without a reason
+                value:
+                  expected_version: 2
+      responses:
+        '200':
+          description: The rule as it is now, disabled.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRiskRuleResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  rule_id: SAME_DEVICE_MULTI_ACCOUNT
+                  scene: login
+                  name: 同设备多账号
+                  risk_action: manual_review
+                  status: disabled
+                  threshold_keys:
+                    - risk.device_login_accounts_limit
+                  version: 3
+                  updated_at: '2026-10-22T10:10:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                unknownRule:
+                  $ref: '#/components/examples/AdminRiskRuleIdInvalid'
+                reasonInvalid:
+                  $ref: '#/components/examples/AdminRiskRuleReasonInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminRiskRuleConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/kill-switches:
     get:
       operationId: adminListKillSwitches
@@ -15500,6 +15789,15 @@ components:
         key → 20001 with data.fields=[key].
       schema:
         $ref: '#/components/schemas/AdminConfigKey'
+    AdminRiskRuleIdPath:
+      name: rule_id
+      in: path
+      required: true
+      description: |
+        rule_id of a risk rule of the console's app, as GET /admin/v1/risk-rules lists it; unknown
+        or of another app → 20001 with data.fields=[rule_id].
+      schema:
+        $ref: '#/components/schemas/AdminRiskRuleId'
     AdminStepUpToken:
       name: X-Step-Up-Token
       in: header
@@ -16619,6 +16917,32 @@ components:
         msg: 状态已变化，请刷新后重试
         data:
           resource: kill_switch
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminRiskRuleIdInvalid:
+      summary: 20001 unknown rule_id (or a rule of another app)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - rule_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminRiskRuleReasonInvalid:
+      summary: 20001 reason longer than 200 characters (or empty)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - reason
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminRiskRuleConflict:
+      summary: 20902 the rule was changed by someone else (version moved on)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: risk_rule
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     SearchProductsOk:
       summary: One page of taobao results
@@ -25457,6 +25781,147 @@ components:
           description: The switch's `version` as the console showed it; a mismatch is 20902.
         reason:
           $ref: '#/components/schemas/AdminConfigReason'
+    AdminRiskRuleId:
+      type: string
+      description: |
+        A risk rule's business code (risk_rules.rule_id, unique per app; 04 §3.2), as the rule seed
+        registered it (B1-03, BR-ID-36), for example `DEVICE_REGISTER_LIMIT` or `inv_08_self`.
+      minLength: 1
+      maxLength: 64
+      pattern: '^[A-Za-z][A-Za-z0-9_]*$'
+    AdminRiskRuleStatus:
+      type: string
+      description: |
+        contracts/enums/admin.yaml `risk_rule_status` (04 §3.2, §6.6; BR-ID-36 细则「规则清单的启停」):
+        enabled = the rule takes part in judgements; disabled = it does not and writes no
+        risk_hits.
+      enum:
+        - enabled
+        - disabled
+    AdminRiskAction:
+      type: string
+      description: contracts/enums/admin.yaml `risk_action` (BR-ID-36), what a hit of the rule does.
+      enum:
+        - pass
+        - manual_review
+        - block
+        - void_commission
+    AdminRiskRule:
+      type: object
+      description: |
+        One row of the risk rule list (04 §6.6 risk-rules, §3.2 risk_rules). The condition JSON
+        is not returned; threshold values are configuration items (/admin/v1/config-items).
+      additionalProperties: false
+      required:
+        - rule_id
+        - scene
+        - name
+        - risk_action
+        - status
+        - threshold_keys
+        - version
+        - updated_at
+      properties:
+        rule_id:
+          $ref: '#/components/schemas/AdminRiskRuleId'
+        scene:
+          type: string
+          description: |
+            The scene code the rule seed registered (risk_rules.scene, for example `register`,
+            `login`, `withdrawal`); open text, no closed list in 04 or this contract.
+          minLength: 1
+          maxLength: 64
+        name:
+          type: string
+          description: Display name of the rule (risk_rules.name, from the rule seed).
+          minLength: 1
+          maxLength: 64
+        risk_action:
+          $ref: '#/components/schemas/AdminRiskAction'
+        status:
+          $ref: '#/components/schemas/AdminRiskRuleStatus'
+        threshold_keys:
+          type: array
+          description: |
+            Keys of the configuration items holding the rule's thresholds (registered under
+            `config.risk`), read and changed only through /admin/v1/config-items; an empty array
+            for a rule without a threshold.
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/AdminConfigKey'
+        version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: |
+            The rule's compare-and-set value: plus 1 on every enable or disable that changes
+            `status`, unchanged when the rule already had the target status. The
+            `expected_version` of POST /admin/v1/risk-rules/{rule_id}/enable and …/disable.
+        updated_at:
+          type: string
+          format: date-time
+          description: When the row was last changed (+08:00).
+    AdminRiskRuleList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          description: Every rule of the console's app, by scene, then rule_id; not paged.
+          items:
+            $ref: '#/components/schemas/AdminRiskRule'
+    AdminRiskRuleListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminRiskRuleList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminRiskRuleResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminRiskRule'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminRiskRuleStatusChangeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_version
+      properties:
+        expected_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The rule's `version` as GET /admin/v1/risk-rules listed it; a mismatch is 20902.
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Optional free-text reason, kept in the audit record.
     AdminConfigItem:
       type: object
       description: A registered configuration item (04 §10) and its current value.

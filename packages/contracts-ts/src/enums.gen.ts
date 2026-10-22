@@ -203,6 +203,28 @@ export const admin_order_history_source = [
 export type AdminOrderHistorySource = (typeof admin_order_history_source)[number];
 
 /**
+ * GET /admin/v1/risk-rules 列表项的 status；启停经 POST /admin/v1/risk-rules/{rule_id}/enable、…/disable；中文名取 BR-TEXT-25 admin_dict，本契约不补文案
+ * Source: 规划/04 §3.2 risk_rules.status、§6.6 risk-rules；规划/08 BR-ID-36 细则「规则清单的启停」（CT-24f，代理补全的默认） (contracts/enums/admin.yaml).
+ */
+export const risk_rule_status = [
+  "enabled", // 启用（参与判定）
+  "disabled", // 停用（不参与判定、不写 risk_hits；已写的命中记录与申诉不受影响）
+] as const;
+export type RiskRuleStatus = (typeof risk_rule_status)[number];
+
+/**
+ * 风控规则命中后的动作，GET /admin/v1/risk-rules 列表项的 risk_action；取值与 risk_rules、risk_hits 的 CHECK 约束一致；中文名取 BR-TEXT-25 admin_dict（admin_dict.risk_action.*）
+ * Source: 规划/08 BR-ID-36；规划/04 §3.2 risk_rules / risk_hits.risk_action（CT-24f） (contracts/enums/admin.yaml).
+ */
+export const risk_action = [
+  "pass", // 通过（只记命中）
+  "manual_review", // 转人工
+  "block", // 拦截
+  "void_commission", // 作废佣金
+] as const;
+export type RiskAction = (typeof risk_action)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -1620,6 +1642,8 @@ export const enums = {
   admin_order_flag,
   admin_order_history_field,
   admin_order_history_source,
+  risk_rule_status,
+  risk_action,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,

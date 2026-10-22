@@ -89,6 +89,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminOrderLinkScene: 'scene',
   AdminOrderBeneficiaryRole: 'beneficiary_role',
   AdminOrderForfeitReason: 'forfeit_reason',
+  AdminRiskRuleStatus: 'risk_rule_status',
+  AdminRiskAction: 'risk_action',
   AdminInviteRewardStatus: 'invite_reward_status',
   AdminInviteRewardPartyResult: 'invite_reward_party_result',
   AdminInviteRewardSkipReason: 'invite_reward_skip_reason',

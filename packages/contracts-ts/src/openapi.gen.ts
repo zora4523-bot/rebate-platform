@@ -4635,6 +4635,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/risk-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The risk rule list (规则清单), not paged
+         * @description Permission point `config.risk` (04 §11.2; read only, no step-up); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Every risk_rules row of the console's app (04 §3.2;
+         *     the rules are seeded with B1-03, BR-ID-36), ordered by `scene`, then `rule_id`; not paged
+         *     and not filtered (04 §6.6 risk-rules). Each row holds the fields of 04 §6.6 only:
+         *     `rule_id`, `scene` (the code the rule seed registered; no closed list in this contract),
+         *     `name` (display name), `risk_action` (BR-ID-36), `status` (enabled or disabled),
+         *     `threshold_keys`, `version` and `updated_at`. The condition JSON is not returned.
+         *     `threshold_keys` names the configuration items that hold the rule's thresholds (an empty
+         *     array for a rule without one). Their current values and allowed ranges are not returned
+         *     here: they are read and changed only through /admin/v1/config-items (PUT
+         *     /admin/v1/config-items/{key}, these keys being registered under `config.risk`), so each
+         *     value has one write path. `version` is what POST /admin/v1/risk-rules/{rule_id}/enable and
+         *     …/disable take as `expected_version`.
+         */
+        get: operations["adminListRiskRules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/risk-rules/{rule_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable one risk rule
+         * @description Permission point `config.risk` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Body checks (20001 with
+         *     `data.fields` naming the field): `expected_version` is required; `reason` is optional
+         *     (1–200 characters). An unknown `rule_id`, or one of another app, is 20001 with
+         *     `data.fields=[rule_id]`. CAS: `expected_version` is the rule's `version` as GET
+         *     /admin/v1/risk-rules listed it; a change sets `status` to enabled and adds 1, and a
+         *     mismatch → 20902 with `data.resource=risk_rule`, refresh and retry (04 §6.6). A rule
+         *     already enabled, with a matching version, succeeds unchanged: `version` stays the same and
+         *     it is not counted as a change, so no audit record is written (BR-ID-36 细则「规则清单的启停」).
+         *     A change writes an audit record (action risk_rule_enable, before and after `status`,
+         *     `reason`). Takes effect as for a configuration item change: the readers pick it up
+         *     within their cache period (04 §10); judgements already made are not redone. The response
+         *     is the rule's row as GET /admin/v1/risk-rules lists it now. No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminEnableRiskRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/risk-rules/{rule_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable one risk rule
+         * @description Permission point `config.risk` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Body checks (20001 with
+         *     `data.fields` naming the field): `expected_version` is required; `reason` is optional
+         *     (1–200 characters). An unknown `rule_id`, or one of another app, is 20001 with
+         *     `data.fields=[rule_id]`. CAS: `expected_version` is the rule's `version` as GET
+         *     /admin/v1/risk-rules listed it; a change sets `status` to disabled and adds 1, and a
+         *     mismatch → 20902 with `data.resource=risk_rule`, refresh and retry (04 §6.6). A rule
+         *     already disabled, with a matching version, succeeds unchanged: `version` stays the same
+         *     and it is not counted as a change, so no audit record is written (BR-ID-36 细则「规则清单的启停」).
+         *     A disabled rule takes no part in judgements and writes no risk_hits; hits already
+         *     written and their appeals are not affected. A change writes an audit record (action
+         *     risk_rule_disable, before and after `status`, `reason`). Takes effect as for a
+         *     configuration item change: the readers pick it up within their cache period (04 §10);
+         *     judgements already made are not redone. The threshold configuration items keep their
+         *     values. The response is the rule's row as GET /admin/v1/risk-rules lists it now. No
+         *     Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminDisableRiskRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/kill-switches": {
         parameters: {
             query?: never;
@@ -9130,6 +9231,82 @@ export interface components {
             expected_version: components["schemas"]["AdminConfigVersionNumber"];
             reason?: components["schemas"]["AdminConfigReason"];
         };
+        /**
+         * @description A risk rule's business code (risk_rules.rule_id, unique per app; 04 §3.2), as the rule seed
+         *     registered it (B1-03, BR-ID-36), for example `DEVICE_REGISTER_LIMIT` or `inv_08_self`.
+         */
+        AdminRiskRuleId: string;
+        /**
+         * @description contracts/enums/admin.yaml `risk_rule_status` (04 §3.2, §6.6; BR-ID-36 细则「规则清单的启停」):
+         *     enabled = the rule takes part in judgements; disabled = it does not and writes no
+         *     risk_hits.
+         * @enum {string}
+         */
+        AdminRiskRuleStatus: "enabled" | "disabled";
+        /**
+         * @description contracts/enums/admin.yaml `risk_action` (BR-ID-36), what a hit of the rule does.
+         * @enum {string}
+         */
+        AdminRiskAction: "pass" | "manual_review" | "block" | "void_commission";
+        /**
+         * @description One row of the risk rule list (04 §6.6 risk-rules, §3.2 risk_rules). The condition JSON
+         *     is not returned; threshold values are configuration items (/admin/v1/config-items).
+         */
+        AdminRiskRule: {
+            rule_id: components["schemas"]["AdminRiskRuleId"];
+            /**
+             * @description The scene code the rule seed registered (risk_rules.scene, for example `register`,
+             *     `login`, `withdrawal`); open text, no closed list in 04 or this contract.
+             */
+            scene: string;
+            /** @description Display name of the rule (risk_rules.name, from the rule seed). */
+            name: string;
+            risk_action: components["schemas"]["AdminRiskAction"];
+            status: components["schemas"]["AdminRiskRuleStatus"];
+            /**
+             * @description Keys of the configuration items holding the rule's thresholds (registered under
+             *     `config.risk`), read and changed only through /admin/v1/config-items; an empty array
+             *     for a rule without a threshold.
+             */
+            threshold_keys: components["schemas"]["AdminConfigKey"][];
+            /**
+             * Format: int32
+             * @description The rule's compare-and-set value: plus 1 on every enable or disable that changes
+             *     `status`, unchanged when the rule already had the target status. The
+             *     `expected_version` of POST /admin/v1/risk-rules/{rule_id}/enable and …/disable.
+             */
+            version: number;
+            /**
+             * Format: date-time
+             * @description When the row was last changed (+08:00).
+             */
+            updated_at: string;
+        };
+        AdminRiskRuleList: {
+            /** @description Every rule of the console's app, by scene, then rule_id; not paged. */
+            items: components["schemas"]["AdminRiskRule"][];
+        };
+        AdminRiskRuleListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminRiskRuleList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminRiskRuleResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminRiskRule"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminRiskRuleStatusChangeRequest: {
+            /**
+             * Format: int32
+             * @description The rule's `version` as GET /admin/v1/risk-rules listed it; a mismatch is 20902.
+             */
+            expected_version: number;
+            /** @description Optional free-text reason, kept in the audit record. */
+            reason?: string;
+        };
         /** @description A registered configuration item (04 §10) and its current value. */
         AdminConfigItem: {
             key: components["schemas"]["AdminConfigKey"];
@@ -10823,6 +11000,11 @@ export interface components {
          *     key → 20001 with data.fields=[key].
          */
         ConfigKeyPath: components["schemas"]["AdminConfigKey"];
+        /**
+         * @description rule_id of a risk rule of the console's app, as GET /admin/v1/risk-rules lists it; unknown
+         *     or of another app → 20001 with data.fields=[rule_id].
+         */
+        AdminRiskRuleIdPath: components["schemas"]["AdminRiskRuleId"];
         /**
          * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
          *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
@@ -21707,6 +21889,237 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not saved (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListRiskRules: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every rule of the console's app, by scene, then rule_id. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "rule_id": "SAME_DEVICE_MULTI_ACCOUNT",
+                     *             "scene": "login",
+                     *             "name": "同设备多账号",
+                     *             "risk_action": "manual_review",
+                     *             "status": "enabled",
+                     *             "threshold_keys": [
+                     *               "risk.device_login_accounts_limit"
+                     *             ],
+                     *             "version": 2,
+                     *             "updated_at": "2026-10-20T10:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "rule_id": "BLACKLIST_PHONE",
+                     *             "scene": "register",
+                     *             "name": "手机号黑名单",
+                     *             "risk_action": "block",
+                     *             "status": "enabled",
+                     *             "threshold_keys": [],
+                     *             "version": 0,
+                     *             "updated_at": "2026-10-08T09:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "rule_id": "DEVICE_REGISTER_LIMIT",
+                     *             "scene": "register",
+                     *             "name": "同设备注册上限",
+                     *             "risk_action": "block",
+                     *             "status": "disabled",
+                     *             "threshold_keys": [
+                     *               "risk.device_register_limit"
+                     *             ],
+                     *             "version": 1,
+                     *             "updated_at": "2026-10-21T15:30:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminRiskRuleListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminEnableRiskRule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /**
+                 * @description rule_id of a risk rule of the console's app, as GET /admin/v1/risk-rules lists it; unknown
+                 *     or of another app → 20001 with data.fields=[rule_id].
+                 */
+                rule_id: components["parameters"]["AdminRiskRuleIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_version": 1,
+                 *       "reason": "误拦已排查，恢复启用"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminRiskRuleStatusChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description The rule as it is now, enabled. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "rule_id": "DEVICE_REGISTER_LIMIT",
+                     *         "scene": "register",
+                     *         "name": "同设备注册上限",
+                     *         "risk_action": "block",
+                     *         "status": "enabled",
+                     *         "threshold_keys": [
+                     *           "risk.device_register_limit"
+                     *         ],
+                     *         "version": 2,
+                     *         "updated_at": "2026-10-22T10:05:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminRiskRuleResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminDisableRiskRule: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /**
+                 * @description rule_id of a risk rule of the console's app, as GET /admin/v1/risk-rules lists it; unknown
+                 *     or of another app → 20001 with data.fields=[rule_id].
+                 */
+                rule_id: components["parameters"]["AdminRiskRuleIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminRiskRuleStatusChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description The rule as it is now, disabled. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "rule_id": "SAME_DEVICE_MULTI_ACCOUNT",
+                     *         "scene": "login",
+                     *         "name": "同设备多账号",
+                     *         "risk_action": "manual_review",
+                     *         "status": "disabled",
+                     *         "threshold_keys": [
+                     *           "risk.device_login_accounts_limit"
+                     *         ],
+                     *         "version": 3,
+                     *         "updated_at": "2026-10-22T10:10:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminRiskRuleResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];
