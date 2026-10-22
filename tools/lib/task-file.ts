@@ -54,7 +54,11 @@ export type TaskFile = {
    */
   tester: 'codex' | 'claude' | 'claude-independent' | 'none';
   accept: string[];
-  status: 'todo' | 'done';
+  /**
+   * `void` (D10-190, 2026-10-23): the task was cancelled — never implemented, no PR, no evidence.
+   * It is not dispatched, not counted as done, and does not satisfy a dependency.
+   */
+  status: 'todo' | 'done' | 'void';
   pr: number | null;
 };
 
@@ -88,7 +92,7 @@ export const TASK_TYPES = [
 ] as const;
 export const TASK_IMPLS = ['codex', 'claude'] as const;
 export const TASK_TESTERS = ['codex', 'claude', 'claude-independent', 'none'] as const;
-export const TASK_STATUSES = ['todo', 'done'] as const;
+export const TASK_STATUSES = ['todo', 'done', 'void'] as const;
 
 /** A section number of 规划/04 as written in its headings: "2", "6.1", "10.2". */
 export const CONTRACT_SECTION_PATTERN = /^[1-9][0-9]*(\.[1-9][0-9]*)*$/;

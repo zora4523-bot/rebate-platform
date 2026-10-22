@@ -38,7 +38,7 @@ export type BoardRow = {
   impl: string;
   tester: string;
   deps: { id: string; done: boolean }[];
-  status: 'todo' | 'done';
+  status: 'todo' | 'done' | 'void';
   state: string | null;
   attempts: TaskState['attempts'];
   pr: number | null;
@@ -62,6 +62,8 @@ export type Board = {
   remote: string | null;
   rows: BoardRow[];
   done_count: number;
+  /** Cancelled tasks (status void, D10-190): not dispatched, not counted as done. */
+  void_count: number;
   ready: string[];
   asks: AskItem[];
   stall: string | null;
@@ -226,6 +228,15 @@ export function collectBoard(opts: BoardOptions = {}): Board {
     }
   }
 
+  // A void task never completes (D10-190): a todo task that still depends on one is stuck.
+  for (const task of tasks.values()) {
+    if (task.status !== 'todo') continue;
+    for (const d of task.deps) {
+      if (tasks.get(d)?.status === 'void')
+        warnings.push(`${task.id} 依赖的 ${d} 已作废（void），改依赖或作废本任务`);
+    }
+  }
+
   for (const s of states.values()) {
     const task = tasks.get(s.id);
     if (!task) warnings.push(`${s.id} 有在途状态文件，但台账里没有这个任务`);
@@ -262,6 +273,7 @@ export function collectBoard(opts: BoardOptions = {}): Board {
     remote: facts.remote,
     rows,
     done_count: rows.filter((r) => r.status === 'done').length,
+    void_count: rows.filter((r) => r.status === 'void').length,
     ready,
     asks,
     stall,
@@ -346,6 +358,7 @@ export function renderBoard(b: Board): string {
   if (open.length === 0) out.push('| — | | 没有未完成的任务 | | | | | | |');
   out.push('');
   out.push(`已完成 ${b.done_count} 个（不列出）。`);
+  if (b.void_count > 0) out.push(`已作废 ${b.void_count} 个（不列出、不派工）。`);
   out.push(
     `就绪任务（依赖已完成、路径不与在途任务相交）：${b.ready.length === 0 ? '无' : b.ready.join('、')}`,
   );

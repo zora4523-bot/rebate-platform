@@ -4,7 +4,7 @@
 
 | 文件 | 是什么 | 谁能改 | 出处 |
 | --- | --- | --- | --- |
-| `tasks/<编号>.yaml` | 任务台账，一任务一文件，每个不超过 40 行。入库的 `status` 只有 `todo` 和 `done`；`done` 在该任务自己的 PR 里改。风险级不写在文件里，由 `tools/guard/risk-of-paths.ts` 按 `paths` 算。格式见规划仓库 `docs/templates/task-ledger.md` | 编排会话（Claude 主会话）。实现代理不能改 `ops/` 下任何文件 | 11 §2.1 |
+| `tasks/<编号>.yaml` | 任务台账，一任务一文件，每个不超过 40 行。入库的 `status` 只有 `todo`、`done` 和 `void`；`done` 在该任务自己的 PR 里改；`void` 表示作废（未实现、无 PR、无证据，不派工、不算完成，注释首行写作废原因；D10-190，CT-06zf）。风险级不写在文件里，由 `tools/guard/risk-of-paths.ts` 按 `paths` 算。格式见规划仓库 `docs/templates/task-ledger.md` | 编排会话（Claude 主会话）。实现代理不能改 `ops/` 下任何文件 | 11 §2.1 |
 | `tasks/archive/<年月>/` | `done` 满 30 天的任务文件移到这里；看板和开场必读不含归档 | 编排会话 | 11 §2.1 |
 | `evidence/<编号>.json` | 每个 PR 的证据文件：只记结论、哈希和测试编号。格式见 `evidence/README.md` | 只由脚本生成（生成器还没有） | 11 §3.2 |
 | `risk-map.yaml` | 路径 → 风险级与分工的白名单；没列到的路径一律 RV2。根 `AGENTS.md` 的分工表由它生成 | 保护路径第三类：改动要负责人看过中文前后对比并确认 | 11 §1.2、§4.4 |

@@ -70,6 +70,15 @@ describe('parseTaskFile', () => {
     expect(parseTaskFile(done, 'B2-02a.yaml')).toMatchObject({ status: 'done', pr: 37 });
   });
 
+  it('accepts status void (D10-190) and rejects other statuses', () => {
+    const voided = EXAMPLE.replace('status: todo', 'status: void');
+    expect(parseTaskFile(voided, 'B2-02a.yaml')).toMatchObject({ status: 'void', pr: null });
+    const unknown = EXAMPLE.replace('status: todo', 'status: cancelled');
+    expect(() => parseTaskFile(unknown, 'B2-02a.yaml')).toThrow(
+      'status: must be one of todo / done / void',
+    );
+  });
+
   it('accepts empty refs, deps and refs_hash', () => {
     const text = EXAMPLE.replace('refs: [BR-FUND-13, BR-FUND-16, BR-FUND-19]', 'refs: []')
       .replace(/refs_hash:\n(?: {2}BR-.*\n){3}/, 'refs_hash: {}\n')

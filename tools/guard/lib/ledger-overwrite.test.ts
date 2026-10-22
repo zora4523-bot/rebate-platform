@@ -116,6 +116,23 @@ describe('compareLedger', () => {
     ]);
   });
 
+  it('a done or todo task may be voided; a void task stays void (D10-190)', () => {
+    const voidedDone = replace(DONE, 'status: done\n', 'status: void\n');
+    expect(compareLedger(PATH, parse(DONE), parse(voidedDone))).toEqual([]);
+    const voidedTodo = replace(TODO, 'status: todo\n', 'status: void\n');
+    expect(compareLedger(PATH, parse(TODO), parse(voidedTodo))).toEqual([]);
+    for (const back of ['todo', 'done']) {
+      const revived = replace(voidedDone, 'status: void\n', `status: ${back}\n`);
+      expect(compareLedger(PATH, parse(voidedDone), parse(revived))).toEqual([
+        `${PATH}: F1-09i 已存在且为 void，新任务请换编号（status void → ${back}）`,
+      ]);
+    }
+    const retitled = replace(voidedDone, '去掉「暂未接入的人群条件不下发」部分', '改为别的事');
+    const [problem, ...rest] = compareLedger(PATH, parse(voidedDone), parse(retitled));
+    expect(rest).toEqual([]);
+    expect(problem).toContain(`${PATH}: F1-09i 已存在且为 void，新任务请换编号（title 「`);
+  });
+
   it('a todo task keeps its title and type too (a change of scope is a new id)', () => {
     const retitled = replace(TODO, '去掉「暂未接入的人群条件不下发」部分', '改为别的事');
     const [problem, ...rest] = compareLedger(PATH, parse(TODO), parse(retitled));
