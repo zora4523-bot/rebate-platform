@@ -1,10 +1,11 @@
 id: B3-09f
 repo: rebate-platform
-title: 迁移：Agent 注销清理的列级授权与单向改写——couli_app 对 agent_messages 文本列、agent_tool_calls.args、agent_cards.data / fallback_text、agent_runs.user_text / quota_subjects 开列级 UPDATE；相关触发器（含 reject_agent_run_rewrite）只放宽「自由文本 → NULL」与「quota_subjects 中 member 明文 uuid → 64 位小写十六进制哈希」两种单向改写，其余改写照旧拒绝、行骨架保留；不开 DELETE
+title: 迁移：Agent 注销清理的列级授权与单向改写——couli_app 对 agent_messages 文本列、agent_tool_calls.args、agent_cards.data / fallback_text、agent_runs.user_text / quota_subjects、agent_result_sets.conditions、agent_result_deliveries.card、agent_result_chains.conditions 开列级 UPDATE；相关触发器（含 reject_agent_run_rewrite）只放宽「自由文本 → NULL」与「quota_subjects 中 member 明文 uuid → 64 位小写十六进制哈希」两种单向改写，其余改写照旧拒绝、行骨架保留；不开 DELETE
 type: migration
 # 2026-10-22 入账（agent-acct4）。编排裁定 D10-175（取 B，Jev 0.88）：B3-09e purgeAgentDataForUser 按 BR-AI-22「立即删除」以「清空自由文本 + 用户编号换哈希」实现，
 # 不开 DELETE、不改 db/AGENTS.md「只追加的表不给 DELETE」。哈希与 agent_sessions.user_hash 同算法同密钥（AGENT_USER_HASH_KEY，B1-15o / D10-153）。
 # 授权写在本迁移；迁移号按 D10-116 占迁移槽、排在 B1-15o（0070）之后，取主干最大 +1。两段式（db/AGENTS.md）：Opus 只写 SQL，编排在测试机跑迁移与 db:snapshot。
+# 2026-10-22 D10-175 补充：B3-09c / B3-09d 三张结果表的 conditions / card 一并纳入，只允许「→ {}」（agent_result_chains.conditions 因 CHECK 要求保留 chain_id，取 {"chain_id": 本行 chain_id}）；agent_runs.final_event / end_draft 中的回答正文按同一原则纳入（只允许正文字段 → NULL，其余不变），已在 notices 报。
 # 分工：Codex 写规则测试（允许的两种改写成功、其余改写被拒、无 DELETE 权限），Claude 新子代理过审，Opus 5.5 实现，Codex money 评审（db/** RV2）。
 refs: [BR-AI-22]
 refs_hash:
