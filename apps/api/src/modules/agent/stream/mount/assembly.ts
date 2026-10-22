@@ -4,6 +4,7 @@
 // Token candidates reach the same quote runner as URLs (the deterministic path passes them, B3-04g).
 // Card entry creation is per call: linking receives scene=agent and the authenticated session.
 import { randomUUID } from 'node:crypto';
+import type { StreamReviewOptions, StreamReviewPorts } from './review.ts';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { CatalogCardEntry, CatalogConfigReader } from '../../../catalog/index.ts';
@@ -61,6 +62,8 @@ export interface AgentStreamProvidedPorts {
 }
 
 export interface AgentStreamAssemblyContext {
+  /** B3-03m: optional; old factories keep their fail-closed behavior. */
+  readonly safety?: StreamReviewOptions;
   readonly db: Kysely<DB>;
   readonly clock: Clock;
   readonly logger: RootLogger;
@@ -95,6 +98,8 @@ export interface AgentStreamAssemblyDeps extends Omit<
 }
 
 export interface AgentStreamAssembly {
+  /** B3-03m: consumed by the runtime; absent on legacy assemblies. */
+  readonly safety?: StreamReviewPorts;
   readonly tools: OrchestratorTools;
   readonly deterministic: DeterministicPath;
   readonly intents: IntentPort;

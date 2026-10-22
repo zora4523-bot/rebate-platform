@@ -51,3 +51,15 @@ export function findCredentialLikeEnvNames(
     .filter((name) => (env[name] ?? '') !== '')
     .sort();
 }
+
+/** Called by configuration assembly only; local/test must not read credential values.
+ * Missing/blank halves return undefined. No secrets in errors or diagnostics.
+ */
+export function readAgentReviewCredentials(
+  appEnv: 'local' | 'test' | 'staging' | 'prod',
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly accessKeyId: string; readonly accessKeySecret: string } | undefined {
+  void appEnv;
+  void env;
+  throw new Error('NotImplemented: readAgentReviewCredentials');
+}
