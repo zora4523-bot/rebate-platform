@@ -1,0 +1,32 @@
+id: CT-24o
+repo: rebate-platform
+title: 契约：后台账号管理写操作（CT-02f 扩）——新建普通账号（一次性初始密码只在响应里出现一次）、停用 / 启用、权限点整组保存、重置他人身份验证器、改显示名；验证手机号的本人登记 / 更换与超管代改（动态码档 + 向新号发码核验）；planned
+type: contract
+# 2026-10-22 入账（admin-backend，编排 10-19 20:4x 派工 ③ F1-10i 的契约前置；notices 预占 CT-24o / B1-34h / B1-34i）。依据：01 F-ADM-24、04 §6.6 admins 与 §11 引言（勾选、撤销与账号增停只限超管、需 step-up、写审计）、08 BR-ID-34 正文与细则「初始密码」「首次登录强制改密码」「重置身份验证器」「停用后台账号」「验证手机号的登记与更换」、BR-ID-33（手机号加密与脱敏）、design/specs/admins.md §7 与画板 AdmAdminCreate* / AdmAdminDisable / AdmAdminPermissions* / AdmAdminTotpReset / AdmAdminPhoneChangeBySuper、10 AC-S2-59。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：
+#   操作清单（路径由契约任务定，照现有 /admin/v1/admins 风格）：① 新建 POST /admin/v1/admins {login_name, display_name}——只建普通账号（超管不在页面创建，画板），不带权限点、不收验证手机号（画板「创建后登记」）；响应含 initial_password（只此一次，Cache-Control: no-store，不进日志与审计）且账号 password_must_change=true、TOTP 未绑定；login_name 与全部已有账号（含已停用）冲突时拒绝（细则「停用后台账号」账号名不复用），用 20001 [login_name] 还是新码由契约任务按 §13.11 定；创建结果未知时前端按列表查询定位（画板 AdmAdminCreateUnknown），故不设幂等键。② 停用 / 启用：停用必填原因、写审计，立即作废该账号全部 admin_token 与登录中间凭证，权限点保留，在跑导出（pending / running）一并取消并写审计（BR-ID-42、细则「停用后台账号」，经 B1-34e 的 cancelByCreator 端口）；启用恢复原权限点、不重发初始密码。③ 权限点保存：整组替换（PUT 全集），带 row_version 防覆盖（冲突用 20902），只接受 §11 已登记的权限点键，审计记 before / after 差异。④ 重置他人身份验证器：必填原因（写明怎样确认是本人），回到 TOTP 未绑定、作废其全部会话，写审计；不能重置自己（画板「超管只能重置他人的验证器」，自己的由另一超管或运维命令）。⑤ 改显示名（1–32 字，CT-02u 注释留的写接口）。⑥ 验证手机号：本人在「我的账号」发起（动态码档 step-up）→ 向新号发短信码 → 提交新号与码才生效；超管代改同流程另需原因、写审计；换号期间旧号一直有效、短信档仍发旧号；不核验新号的代改不允许；手机号加密存储、HMAC 去重口径照 BR-ID-33，响应只给脱敏号。
+#   权限与二次验证：①②③④⑥ 的超管代改都只限超管（x-auth: super）且需动态码档 step-up（04 §11 引言「勾选、撤销与账号增停只限超管、需 step-up」；画板这几处都标「动态码」；④ 细则未写档位，按画板取动态码）；⑤ 只限超管、不需 step-up；⑥ 本人登记 / 更换任何已登录账号都可做（不需权限点），需动态码档。超管账号本身在列表里「不可修改」：对 is_super 的目标做 ①–⑤ 一律拒绝（码由契约任务定）；不能停用或重置自己。
+#   错误码按 08 §13.11 分配规则在后台专用码段顺序分配并登记 contracts/error-codes.yaml 与 packages/contracts-ts/scripts/texts.ts 的 ADMIN_ONLY_CODES（同 CT-24k 30417 先例），需要回写 08 / 04 的在 PR 里列清并在 notices 请规划回写。AC-S2-59 两条断言（换号期间短信档用旧号、代改未过新号验证不生效）由 B1-34i 的规则测试承接。
+#   实现：B1-34h（①–⑤）、B1-34i（⑥），待 BR-ID-34 账号管理细则拆编号后入账（BR-ID-34 全文 19KB，带上任务书超限，同 BR-ID-42 先例）；前端页 F1-10i 归 fe。
+#   contract_sections 只填 11.1（04 §11 引言「勾选、撤销与账号增停只限超管，需 step-up 并写审计」不在小节内、§11 全节 17KB 带上超限）：编排者把 §11 引言与 §6.6 admins 一行逐字摘进第 9 节；refs 只留 BR-ID-34（契约任务书只列 BR 编号与标题），BR-ID-33 加密与脱敏口径同样摘进第 9 节。
+refs: [BR-ID-34]
+refs_hash:
+  BR-ID-34: b8577424167b
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
