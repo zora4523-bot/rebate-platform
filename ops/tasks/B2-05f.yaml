@@ -1,0 +1,31 @@
+id: B2-05f
+repo: rebate-platform
+title: payout 模块：本人提现记录 GET /v1/withdrawals（游标分页、最新在前）与 GET /v1/withdrawals/{id}（他人或不存在 30701，详情另带 channel_order_id）；列表查询函数由只读入口 payout/read.ts 导出且入口只放这一个函数（BR-AI-02 ④，D32）；主状态标题与副文案分支的展示判定（BR-TEXT-06、BR-WDR-25：reason_code、fail_action 只对账号类失败码、payout_channel_name 取该单通道、masked_account 取快照脱敏）；去掉 listWithdrawals / getWithdrawal 的 planned
+type: impl
+# 2026-10-22 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（含「接口响应与查询函数逐字段一致」用例，05 B2-05 验收列；这一项通过是 B3-16 的启动条件）、Codex money 评审。
+# 状态备注：等 B2-05b 合并；与 c / d / e 同改 payout/**，串行。
+# 展示判定是纯函数（domain/display.ts）：状态标题 BR-TEXT-06 映射、副文案分支按 BR-WDR-25 表自上而下取第一条；不新增状态；未知编码按「处理中」；响应字段形状只按契约 WithdrawalSummary / Withdrawal。
+refs: [BR-TEXT-06, BR-WDR-25, BR-WDR-08]
+refs_hash:
+  BR-TEXT-06: 983bc8aeccd8
+  BR-WDR-25: 3e5c675cef00
+  BR-WDR-08: 8c55a3ce6b57
+deps: [B2-05b]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/payout/records/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/records/**'
+status: todo
+pr: null

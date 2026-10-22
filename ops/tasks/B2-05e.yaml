@@ -1,0 +1,30 @@
+id: B2-05e
+repo: rebate-platform
+title: payout 模块：提现状态机命令（只经生成的 transitionWithdrawal，CAS 影响 0 行 → 20902 data.resource=withdrawal；W2 审核通过守卫 available ≥ 0 且 blocked_reason 为空；W3 驳回必填原因码、从 APPROVED 驳回须无 pending/success/unknown 尝试，同事务写 WITHDRAW_RETURN wd:{id}:RETURN）；withdraw_holds 新增 / 解除（先锁 users 行、记审计）；account.went_negative 消费者：无尝试记录的 PENDING_REVIEW / APPROVED 单系统 W3 NEGATIVE_BALANCE、有尝试的 APPROVED 单置 blocked_reason 并告警，回正清空；WithdrawalInFlightReader / NonTerminalReader 实现替换 app.module 注入
+type: impl
+# 2026-10-22 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（含属性测试：任意事件序列下 frozen 合计 = 非终态单金额合计）、Codex money 评审。
+# 状态备注：等 B2-05b 合并；与 c / d 同改 payout/**，串行。
+# 本任务只提供模块命令与 worker 消费者，不做后台接口（B2-09）、不做 EXECUTE / 通道结果（B2-06）。消费者经 platform/events 订阅表与队列目录登记事件队列（先例 B1-12g evt.notification-risk-state）。
+# hasInFlight（D10-97）：PENDING_REVIEW / APPROVED / PAYING 且用户没有生效的 withdraw_holds(reason=manual)（封禁人工冻结的单由财务在冷静期处理，不计在途）；hasNonTerminal：任一非终态单。替换后删除 app.module 的 TODO blocked on B2-05（funds followup 已记）。
+refs: [BR-WDR-08, BR-WDR-05, BR-WDR-09]
+refs_hash:
+  BR-WDR-08: 8c55a3ce6b57
+  BR-WDR-05: cd7130978c70
+  BR-WDR-09: 68225c9af85f
+deps: [B2-05b, B2-04k, B1-15d, B1-15f]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'apps/api/src/modules/platform/events/types.ts'
+test_paths:
+  - 'test/spec/payout/state/**'
+  - 'test/properties/domain/payout/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/state/**'
+  - 'test/properties/domain/payout/**'
+status: todo
+pr: null
