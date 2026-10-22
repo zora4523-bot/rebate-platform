@@ -1,0 +1,101 @@
+{
+  "task": "B1-22a",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "f4a112cb40fb41d731c47b7bae5bf5c181f6c62e",
+  "red_tests": [
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#1] estimated expiry is NOT NULL boolean, defaults false and is writable by couli_app",
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#2] reminder stages accept configurable days 1–999 and reject malformed values on insert/update",
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#3] sessions have the required columns, UUID primary key, no plaintext state or SQL-generated identity/time",
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#4] state_hash stores exactly 32 bytes and remains globally unique across accounts/apps",
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#5] sessions reference the account within app_id and the initiating admin, without cascading",
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#6] only pending/succeeded/failed/expired are accepted and every lifecycle null combination is checked",
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#7] lifecycle consistency applies to updates, and valid callback/expiry results can be persisted",
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#8] expiry must be strictly after creation on inserts and updates",
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#9] an index supports scanning pending sessions by expiry without fixing its name",
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#10] session grants allow only app reads/writes and readonly non-secret reads",
+    "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#11] couli_readonly reads every non-secret column but cannot select state_hash",
+    "test/spec/db/union/union-tables.int.test.ts > [AC-B1-19a#5] auth_status accepts exactly the specified CHECK domain",
+    "test/spec/db/union/union-tables.int.test.ts > [AC-B1-19a#6] alert_stage accepts exactly the specified CHECK domain"
+  ],
+  "risk_note": "RV2 (db/migrations: union_accounts.auth_expires_estimated, alert_stage CHECK rebuilt NOT VALID for none/expired/d<N> then validated, new admin_union_auth_sessions with grants; BR-ID-24, 12 §9 T-05). Codex wrote test/spec/db/union/auth-expiry/** and the alert_stage case of frozen [AC-B1-19a#6] (attempts 3; the orchestrator moved the d30/d999 and auth_expires_estimated checks into the loop body so red-check judges test by test). Opus implemented the migrations (impl 1); schema snapshot on the AWS runner. The constraint rebuild is registered in APPROVED_GUARD_CHANGES by B1-22e. Full verification is the required CI checks (ops/approvals.yaml id 21). Implementation model: Claude Opus 5.5.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f4a112cb40fb41d731c47b7bae5bf5c181f6c62e",
+      "tree": "46ca1f829c2647cb4c392c335f68b8d00983e278",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T23:34:43Z",
+      "finished_at": "2026-10-22T23:34:55Z",
+      "red_tests": [
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#1] estimated expiry is NOT NULL boolean, defaults false and is writable by couli_app",
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#2] reminder stages accept configurable days 1–999 and reject malformed values on insert/update",
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#3] sessions have the required columns, UUID primary key, no plaintext state or SQL-generated identity/time",
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#4] state_hash stores exactly 32 bytes and remains globally unique across accounts/apps",
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#5] sessions reference the account within app_id and the initiating admin, without cascading",
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#6] only pending/succeeded/failed/expired are accepted and every lifecycle null combination is checked",
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#7] lifecycle consistency applies to updates, and valid callback/expiry results can be persisted",
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#8] expiry must be strictly after creation on inserts and updates",
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#9] an index supports scanning pending sessions by expiry without fixing its name",
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#10] session grants allow only app reads/writes and readonly non-secret reads",
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts > [AC-B1-22a#11] couli_readonly reads every non-secret column but cannot select state_hash",
+        "test/spec/db/union/union-tables.int.test.ts > [AC-B1-19a#5] auth_status accepts exactly the specified CHECK domain",
+        "test/spec/db/union/union-tables.int.test.ts > [AC-B1-19a#6] alert_stage accepts exactly the specified CHECK domain"
+      ],
+      "expected": [
+        "test/spec/db/union/auth-expiry/auth-expiry.int.test.ts",
+        "test/spec/db/union/union-tables.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a4a58a21d109c2734805df5fbf3ca72af95346d37bc8ebf363cff61a9c1618bf"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "c3550ab4666639f21568f3f36575205f98d493a8",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "round 1 money pass with no findings (couli-runs/B1-22a/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "independent Claude (approvals #36) spec-test r1 verdict pass with 2 S2 but output rejected for key format (counted); tests revised (composite created_by FK, privilege matrix, pending with used_at); r2 pass, one S2 (the auth_status loop case now also requires the new column) recorded in couli-runs/UNION-lane/followups.md"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "f942cc50fc2f2a9a1e337a361c0d938dce2ff2a8",
+    "specs": "7f0df3605fc3664048553d6d5534aca96ca34032"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
