@@ -166,6 +166,13 @@ it('[AC-B1-13b#21] couli_readonly can read tombstones and cannot insert/update/d
 it('[AC-B1-13b#22] effective table and column grants exactly match the two-role matrix', async () => {
   await ready(h.app, 'realname');
   await ready(h.app, 'deleted_identities');
+  // Two-state check to make way for B1-15r (D10-186); tighten to a single state once it merges.
+  const taxRetained = await sql<{ found: number }>`SELECT 1 AS found FROM information_schema.columns
+    WHERE table_schema = 'app' AND table_name = 'realname' AND column_name = 'tax_retained'`.execute(
+    h.app,
+  );
+  const updateColumns =
+    taxRetained.rows.length > 0 ? [...UPDATE_COLUMNS, 'tax_retained'] : UPDATE_COLUMNS;
   for (const table of ['realname', 'deleted_identities'] as const) {
     for (const role of ['couli_app', 'couli_readonly', 'couli_payout', 'couli_maint']) {
       for (const privilege of [
@@ -193,7 +200,7 @@ it('[AC-B1-13b#22] effective table and column grants exactly match the two-role 
               ? ['SELECT', 'INSERT'].includes(privilege) ||
                 (table === 'realname' &&
                   privilege === 'UPDATE' &&
-                  UPDATE_COLUMNS.includes(column.name))
+                  updateColumns.includes(column.name))
               : role === 'couli_readonly' &&
                 privilege === 'SELECT' &&
                 (table === 'deleted_identities' || READ_COLUMNS.includes(column.name));
