@@ -1,0 +1,28 @@
+id: B1-34h
+repo: rebate-platform
+title: admin：后台账号管理写操作实现（CT-24o ①–⑤）——新建普通账号与一次性初始密码、重新生成初始密码、停用 / 启用（作废会话、取消在跑导出）、权限点整组保存（row_version）、重置他人身份验证器、改显示名；去掉对应接口 planned
+type: impl
+# 2026-10-22 入账（admin-backend，派工 ③ F1-10i 后端）。依据：契约 CT-24o 原文与台账注释、08 BR-ID-34 BR-ID-43（初始密码、重新生成初始密码、重置身份验证器、停用后台账号；2026-10-22 自 BR-ID-34 拆出，couli #175）、BR-ID-42（停用即取消导出）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：不加迁移（admin_users 已有 password_must_change / totp_* / status / display_name / row_version，admin_permissions 已有；如列级授权缺 UPDATE 再开迁移任务）；初始密码用 CSPRNG 生成、只存哈希、只在创建响应里出现一次，不进日志 / 审计；停用经 B1-34e 的 cancelByCreator 端口取消导出，会话作废复用现有 admin 会话存储；权限点键只收 specs/permissions.yaml 已登记的；所有写在同一事务内写 audit_logs。
+refs: [BR-ID-43]
+refs_hash:
+  BR-ID-43: 32187ba7b42f
+deps: [CT-24o]
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/admin/admins-write/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/admins-write/**'
+status: todo
+pr: null
