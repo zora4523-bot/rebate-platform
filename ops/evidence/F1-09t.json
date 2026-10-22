@@ -1,0 +1,72 @@
+{
+  "task": "F1-09t",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "6e868709fdbf8c3319d8e23f6935cdc1b628c8e2",
+  "red_tests": [
+    "test/spec/platform/multipart-route-limits/bootstrap.test.ts > [AC-F1-09t#1] bootstrap 只为 POST popup-assets 放宽到一文件一字段两分段，其余保持原上限",
+    "test/spec/platform/multipart-route-limits/content.test.ts > [AC-F1-09t#2] content 删除内部钩子及临时 TODO 后仍接受两部分，缺 kind 和超限保持契约错误"
+  ],
+  "risk_note": "RV2 (platform http + bootstrap; admin multipart limits per route, F1-09r #1133 follow-up). New platform/http/multipart-limits.ts holds a route table: the admin default stays 1 file / 0 fields / 1 part with fileSize = bodyLimit, POST /admin/v1/pages/popup-assets gets 1 file / 1 field / 2 parts. bootstrap registers @fastify/multipart with the default limits and, only for listed method + route pairs, passes the table's limits through the plugin's public per-request limits option (merged with the registration limits, so the file size cap stays). The F1-09r workaround in content/http/admin/popup-asset-parts.ts that used a plugin internal hook, and its TODO, are removed. Other admin upload routes behave as before. Rule tests by Codex with one mechanical test commit (Buffer.from for the Buffer<ArrayBuffer> type). Test-machine full verify passed. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6e868709fdbf8c3319d8e23f6935cdc1b628c8e2",
+      "tree": "d9eacc4c39eaba4845f0025972f37f1f2091df2d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T23:25:13Z",
+      "finished_at": "2026-10-22T23:25:20Z",
+      "red_tests": [
+        "test/spec/platform/multipart-route-limits/bootstrap.test.ts > [AC-F1-09t#1] bootstrap 只为 POST popup-assets 放宽到一文件一字段两分段，其余保持原上限",
+        "test/spec/platform/multipart-route-limits/content.test.ts > [AC-F1-09t#2] content 删除内部钩子及临时 TODO 后仍接受两部分，缺 kind 和超限保持契约错误"
+      ],
+      "expected": [
+        "test/spec/platform/multipart-route-limits/bootstrap.test.ts",
+        "test/spec/platform/multipart-route-limits/content.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "36d579c2e0f6c0ce779ef6b3ff0176f7a513cc74a70af18e729849032994fb68"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass (two S2 needing contrived inputs); the test machine showed every red test failing for the right reason"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "4a170b6e5700f3feb76d0530038772e4ff6100ee",
+    "specs": "7f0df3605fc3664048553d6d5534aca96ca34032"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
