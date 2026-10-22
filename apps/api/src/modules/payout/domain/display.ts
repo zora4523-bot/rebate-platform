@@ -61,7 +61,7 @@ const DELAY_AFTER_MS = 2 * 3_600_000;
 const ACCOUNT_FAILURE = /^PAYEE_/;
 
 export function statusTitle(status: string): string {
-  return STATUS_TITLES[status] ?? UNKNOWN_TITLE;
+  return Object.hasOwn(STATUS_TITLES, status) ? STATUS_TITLES[status]! : UNKNOWN_TITLE;
 }
 
 export function payoutChannelName(channel: 'alipay' | 'bank_card' | 'wechat'): string {
@@ -73,9 +73,15 @@ export function isAccountFailure(failCode: string | null): boolean {
   return failCode !== null && ACCOUNT_FAILURE.test(failCode);
 }
 
-/** The automatic path: decided auto, not pulled to manual, and not blocked at execution. */
+/**
+ * The automatic path: decided auto, not pulled to manual, not blocked at execution, and not a
+ * WeChat withdrawal (BR-WDR-25: the「预计几分钟内到账」promise never applies to 微信零钱, whose
+ * confirmation steps have their own rows).
+ */
 function onAutoPath(row: WithdrawalDisplayRow): boolean {
-  if (row.review_mode !== 'auto' || row.needs_manual) return false;
+  if (row.review_mode !== 'auto' || row.needs_manual || row.payout_channel === 'wechat') {
+    return false;
+  }
   return !(row.auto_decision !== null && 'execute_blocked' in row.auto_decision);
 }
 
