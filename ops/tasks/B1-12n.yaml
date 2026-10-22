@@ -4,6 +4,7 @@ title: 迁移：notify_logs.status 允许值加 suppressed，加可空列 suppre
 type: impl
 # 2026-10-22 入账（be-codex，编排派工①「推送发送链路读通知设置开关」）。08 BR-WATCH-15 要求用户关闭某类推送时该通道记 suppressed(push_disabled)，站内信照写；
 # 04 §3.2 notify_logs 状态集只有 queued / success / failed，无处记录。编排者技术决定：只增迁移补 suppressed 与 suppress_reason（先删旧 CHECK 再加新 CHECK，不改已有行），记 needs 交规划回写 04 §3.2。
+# B1-12e 冻结库表测试 send-log.int.test.ts 精确断言 notify_logs 列集合（约第 164 行），测试阶段由测试作者只加 suppress_reason 一列、其余断言不动（第一类保护路径，#24 标签由编排核对）。
 # 迁移号按 D10-116 迁移槽在落地时取主干最大 + 1。不在本任务：写入方（B1-12o 发送核心）。
 refs: [BR-WATCH-15]
 refs_hash:
@@ -15,6 +16,7 @@ paths:
   - 'packages/db/src/db.gen.ts'
 test_paths:
   - 'test/spec/db/notification/send-log-suppressed/**'
+  - 'test/spec/db/notification/send-log/send-log.int.test.ts'
 impl: claude
 tester: codex
 accept:
