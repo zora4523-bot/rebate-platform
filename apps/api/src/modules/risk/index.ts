@@ -1,4 +1,15 @@
 // Public surface of the risk module. Other modules import only from this file.
+export { createOrderBlocklistPorts } from './application/order-blocklist.ts';
+export type {
+  OrderBlocklistDimension,
+  OrderBlocklistQuery,
+  OrderBlocklistMatch,
+  OrderBlocklistHitInput,
+  ChannelBlocklistImport,
+  ChannelBlocklistImportResult,
+  OrderBlocklistPorts,
+  OrderBlocklistOptions,
+} from './application/order-blocklist.ts';
 export { createRiskStateBatchReader } from './application/risk-state-reader.ts';
 export type {
   RiskStateBatchInput,
