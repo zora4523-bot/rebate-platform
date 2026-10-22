@@ -23,5 +23,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/db/settlement/core/**'
-status: todo
-pr: null
+status: done
+pr: 1070

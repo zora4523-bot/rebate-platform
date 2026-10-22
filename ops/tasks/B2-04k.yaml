@@ -1,0 +1,26 @@
+id: B2-04k
+repo: rebate-platform
+title: ledger 命令：差错单登记 registerReconDiff(trx, …)（按唯一键 / dedupe_key 幂等）与只读查询；ledger.post 在 available 由 ≥0 变 <0 时同事务入队 account.went_negative（S21）
+type: impl
+# 2026-10-22 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.2 / §2.3）。分工：Codex / Opus。
+# 状态备注：可开（B2-04b、B2-04h 已合并；ledger 内与 w、y 串行）。S4、S21。
+refs: [BR-FUND-10, BR-FUND-19, BR-FUND-22, BR-WDR-05]
+refs_hash:
+  BR-FUND-10: 5dbb4715dec2
+  BR-FUND-19: 8d592a87d85c
+  BR-FUND-22: 022deb8da97d
+  BR-WDR-05: cd7130978c70
+deps: [B2-04b, B2-04h]
+paths:
+  - 'apps/api/src/modules/ledger/**'
+test_paths:
+  - 'test/spec/ledger/recon-diffs/**'
+  - 'test/spec/ledger/went-negative/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/recon-diffs/**'
+  - 'test/spec/ledger/went-negative/**'
+status: todo
+pr: null

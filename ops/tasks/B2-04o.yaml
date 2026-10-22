@@ -1,0 +1,21 @@
+id: B2-04o
+repo: rebate-platform
+title: settlement 批次命令（服务层，step-up 由 B2-09 HTTP 层做）：确认账单本轮全部 DRAFT（立即 / 定时，SB2）、撤销定时（SB3）、驳回（SB4）、继续执行（SB8）、手动开始（SB10 恒拒，S8）；CAS 冲突映射 20902 settle_batch
+type: impl
+# 2026-10-22 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.2 / §2.3）。分工：Codex / Opus。
+# 状态备注：可开（B2-04a、B2-04d 已合并）。S8。与 B2-04j 同模块，按合并先后变基。
+refs: [BR-FUND-04]
+refs_hash:
+  BR-FUND-04: 4b12018b0aaa
+deps: [B2-04a, B2-04d]
+paths:
+  - 'apps/api/src/modules/settlement/batch/commands/**'
+test_paths:
+  - 'test/spec/settlement/batch-commands/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/batch-commands/**'
+status: todo
+pr: null
