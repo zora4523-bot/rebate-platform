@@ -1,0 +1,22 @@
+id: F1-10h
+repo: rebate-platform
+title: 后台三端版本管理页（01 F-ADM-17）：按端与渠道列出最新 / 最低支持 / 推荐版本与默认商店；编辑页改版本号、更新文案（标题与说明）、商店登记与默认商店；保存时服务端一次性校验并按返回提示（不做逐家勾选对话框）；提高最低支持版本时要动态码；版本冲突提示刷新；空 / 加载 / 出错三态与 10403（需 content.app_version）
+type: impl
+# 2026-10-23 入账（前端线 f1-frontend-7，编排 03:50 派工 ③「契约已落地、台账未入账」）。05 F1-10h；契约 CT-02v（/admin/v1/app-versions 列表、/{platform}/{channel} 取与保存），后端 F1-02zc 已实现，不是 planned。
+# 无定稿页面规格，视觉沿用后台通用列表 / 表单与动态码组件；菜单项 app-versions 已在 resources/index.ts。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+refs: []
+refs_hash: {}
+deps: [CT-02v, F1-06zb]
+paths:
+  - 'apps/admin/src/pages/app-versions/**'
+  - 'apps/admin/src/texts/app-versions.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-app-versions/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-app-versions/**'
+status: todo
+pr: null
