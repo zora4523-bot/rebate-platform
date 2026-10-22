@@ -1,0 +1,26 @@
+id: CT-24f
+repo: rebate-platform
+title: 契约：后台风控规则清单——GET /admin/v1/risk-rules（规则清单，不分页，config.risk 只读）与启停 POST …/{rule_id}/enable|disable（config.risk + 动态码，expected_version CAS，已是目标状态照常成功）；阈值读写复用 adminUpdateConfigItem；planned
+type: contract
+# 2026-10-22 入账（前端线 f1-frontend-7，编排 18:2x / 22:xx 派工；接手后台线 10-18 对 CT-24f 的预占）。依据规划 04 §3.2 risk_rules（name、threshold_keys）、§6.6 risk-rules、§11.2 config.risk，08 BR-ID-36 细则「规则清单的启停」（代理补全的默认），couli #176（eabcf00）。
+# 新码不在 04 / 08 预造：20902 data.resource 新增 risk_rule 由本契约按 08 §13.11 分配。风控规则清单无页面规格，本契约只出接口形状。
+refs: [BR-ID-36]
+refs_hash:
+  BR-ID-36: e603060b62fe
+contract_sections: ['11.2']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
