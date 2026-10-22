@@ -7,10 +7,11 @@ type: impl
 # ⑥ HMAC 密钥：独立密钥，从环境变量读（各线不读值），staging 用开发密钥，正式环境由负责人配置；缺失时启动拒绝（不回退明文或固定值）。
 # 依赖 B1-15o（identity 迁移：agent_sessions 加用户哈希列；方案 §2 另写 agent_sessions.user_id 可空——若 B1-15o 不含则须补，否则无法断开 FK）。
 # 分工：Codex 写规则测试，Claude 新子代理过审，Opus 5.5 实现，Codex 评审。风险 RV1（agent/**）。排在 B3-09c、B3-01h、B3-05m 之后（编排顺序）。
+# 2026-10-22 agent-acct4：D10-175 取 B——清空自由文本 + 哈希替换（不删行），deps 加 B3-09f（列级授权与单向改写迁移）。
 refs: [BR-AI-22]
 refs_hash:
   BR-AI-22: 366a972d2ad3
-deps: [B1-15o, B3-09d]
+deps: [B1-15o, B3-09d, B3-09f]
 paths:
   - 'apps/api/src/modules/agent/deletion/**'
 test_paths:
