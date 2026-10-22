@@ -257,6 +257,32 @@ it('[AC-B3-08f#3][BR-TEXT-02] keyword 精确命中自购父/子单号时优先�
   expect(child.total).toBe(1);
 });
 
+it.each(['parent', 'child', 'fragment'] as const)(
+  '[AC-B3-08f#3][BR-TEXT-02][AC-S1-106②] keyword 为分享单的 %s 单号或片段时不命中',
+  async (kind) => {
+    const f = await setup();
+    const link = await f.link('jd:i_12345');
+    // Use a visible same-product share so title privacy cannot hide an incorrect number match.
+    const share = await f.seed({
+      buy_type: 'share',
+      link_id: link,
+      parent_order_id: `synthetic-p-${kind}`,
+      sub_order_id: `synthetic-c-${kind}`,
+    });
+    await f.seed();
+    const terms = {
+      parent: `synthetic-p-${kind}`,
+      child: share.sub_order_id,
+      fragment: 'p-frag',
+    };
+    const q = await queries(f.deps);
+    expect(await q.searchForAgent(f.subject, { ...day, keyword: terms[kind] })).toEqual({
+      orders: [],
+      total: 0,
+    });
+  },
+);
+
 it('[AC-B3-08f#2][BR-AI-07] platform 与日期及 keyword 取交集，total 只统计匹配项，空结果为零', async () => {
   const f = await setup();
   const pdd = await f.seed({ platform: 'pdd', title: 'Synthetic Match' });
@@ -388,26 +414,26 @@ it.each([
     const f = await setup();
     const share = await f.seed({
       buy_type: 'share',
-      parent_order_id: `synthetic-share-12345-${kind}`,
+      parent_order_id: `synthetic-share-${kind}-12345`,
       sub_order_id: `synthetic-share-child-${kind}`,
     });
-    await f.seed({ parent_order_id: `synthetic-self-67890-${kind}` });
+    await f.seed({ parent_order_id: `synthetic-self-${kind}-67890` });
     const stranger = await f.user();
     const other = await f.seed({ user_id: stranger });
     const otherAppUser = await f.user('synthetic-other-app');
     const otherApp = await f.seed({ app_id: 'synthetic-other-app', user_id: otherAppUser });
     const pool = await f.seed({ user_id: null, buy_type: null, rebate_status: 'UNATTRIBUTED' });
     const terms = {
-      'share-parent': `synthetic-share-12345-${kind}`,
+      'share-parent': `synthetic-share-${kind}-12345`,
       'share-child': share.sub_order_id,
       masked: 'synt****45',
-      fragment: 'share-123',
+      fragment: `share-${kind}-123`,
       missing: 'synthetic-no-such-order',
       'other-user': other.sub_order_id,
       'other-app': otherApp.sub_order_id,
       unattributed: pool.sub_order_id,
       'title-only': '9081726354',
-      'self-fragment': '67890',
+      'self-fragment': `self-${kind}-678`,
     };
     // A title fallback would turn every non-match into a privacy-leaking false positive.
     await f.seed({ title: `Synthetic title contains ${terms[kind]}` });
