@@ -15,4 +15,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/growth/detach-children/**'
-status: todo
+status: done
+pr: 1159
