@@ -181,9 +181,7 @@ it('[AC-B3-01h#2][BR-AI-21] runRecord 返回的模型与工具录制剥离嵌套
   expect(result.recordings.map((r) => r.kind)).toEqual(['model', 'tool']);
   for (const record of result.recordings) {
     expect(record.response).toEqual({
-      nested: [
-        { headers: { accept: 'application/json' }, keep: ['合成公开商品', 0, false, null] },
-      ],
+      nested: [{ headers: { accept: 'application/json' }, keep: ['合成公开商品', 0, false, null] }],
     });
   }
   const serialized = JSON.stringify(result.recordings);
