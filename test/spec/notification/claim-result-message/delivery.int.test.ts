@@ -265,3 +265,71 @@ it('[AC-B1-12r#19] 当前版本无本人份额不回退旧版本、不使用订�
     { user_id: f.userId, body: '订单找回成功，预估返 ¥0' },
   ]);
 });
+
+it('[AC-B1-12r#25] rejected 跳过排在前面的 cancelled 条目，取驳回条目的原因', async () => {
+  const f = await fixture(suite, 'rejected');
+  await seedItem(f.db, f.claim, {
+    decision: 'cancelled',
+    reject_reason: null,
+    decided_at: f.clock.now(),
+    created_at: new Date('2026-10-20T03:04:05.000Z'),
+  });
+  await seedItem(f.db, f.claim, {
+    decision: 'rejected',
+    reject_reason: 'NO_EVIDENCE',
+    decided_at: f.clock.now(),
+    created_at: new Date('2026-10-20T03:04:06.000Z'),
+  });
+  await f.deliver(f.event());
+  const rows = await f.rows();
+  expect(rows.inbox).toMatchObject([
+    {
+      user_id: f.userId,
+      code: 'CLAIM_RESULT',
+      body: '订单找回未通过：没有找到这笔订单经凑狸下单的记录',
+    },
+  ]);
+  expect(rows.logs).toMatchObject([
+    { user_id: f.userId, code: 'CLAIM_RESULT', channel: 'inbox', status: 'success' },
+  ]);
+});
+
+it('[AC-B1-12r#26] 多个驳回原因按 created_at、id 升序取第一条，不按插入顺序或仅按 id', async () => {
+  const f = await fixture(suite, 'rejected');
+  const ids: [string, string, string] = [randomUUID(), randomUUID(), randomUUID()];
+  ids.sort();
+  // 最小 id 的条目创建时间较晚；两个较早条目同一时刻创建，较小 id 最后插入。
+  await seedItem(f.db, f.claim, {
+    id: ids[0],
+    decision: 'rejected',
+    reject_reason: 'NOT_IN_POOL',
+    decided_at: f.clock.now(),
+    created_at: new Date('2026-10-20T03:04:06.000Z'),
+  });
+  await seedItem(f.db, f.claim, {
+    id: ids[2],
+    decision: 'rejected',
+    reject_reason: 'NOT_IN_POOL',
+    decided_at: f.clock.now(),
+    created_at: new Date('2026-10-20T03:04:05.000Z'),
+  });
+  await seedItem(f.db, f.claim, {
+    id: ids[1],
+    decision: 'rejected',
+    reject_reason: 'NO_EVIDENCE',
+    decided_at: f.clock.now(),
+    created_at: new Date('2026-10-20T03:04:05.000Z'),
+  });
+  await f.deliver(f.event());
+  const rows = await f.rows();
+  expect(rows.inbox).toMatchObject([
+    {
+      user_id: f.userId,
+      code: 'CLAIM_RESULT',
+      body: '订单找回未通过：没有找到这笔订单经凑狸下单的记录',
+    },
+  ]);
+  expect(rows.logs).toMatchObject([
+    { user_id: f.userId, code: 'CLAIM_RESULT', channel: 'inbox', status: 'success' },
+  ]);
+});
