@@ -75,7 +75,7 @@ tags:
   - name: admin-auth
     description: Admin console login (password, first password change, authenticator binding and code), step-up in two tiers and the signed-in account's permission points (04 §6.6 auth, BR-ID-34).
   - name: admin-accounts
-    description: Admin accounts, read-only for now; super admin only (04 §6.6 admins, §11).
+    description: Admin accounts and their management — create, disable and enable, permission points, authenticator reset, display name and verify phone; super admin only (04 §6.6 admins, §11).
   - name: admin-audit
     description: Admin audit log search and record detail; own records only without permission point audit.view_all (04 §6.6 audit-logs, §11.1; F-ADM-03).
   - name: admin-exports
@@ -6290,7 +6290,8 @@ paths:
         /admin/v1/auth/totp/bind). The ticket can call nothing but that step; its lifetime is set
         by the server and given in `ticket_expires_at`.
         Not decided by BR-ID-34 and not fixed here: how the initial password is handed out beyond
-        the rule itself, the reset of a lost authenticator (a super-admin action, later task).
+        the rule itself. The initial password comes from POST /admin/v1/admins; a lost
+        authenticator is reset by a super admin with POST /admin/v1/admins/{admin_id}/totp/reset.
       x-auth: none
       x-signed: false
       x-idempotent: false
@@ -6733,8 +6734,11 @@ paths:
         (BR-ID-34 短信档; template ADMIN_STEP_UP). An account without a registered verify phone is
         10003 with `data.tier=sms` and `data.reason=verify_phone_missing` and nothing is sent (the
         console greys out sms-tier buttons beforehand from `verify_phone_masked` of GET
-        /admin/v1/me/permissions). Sending too often is 42901 with Retry-After. The send limits and
-        the code validity are not fixed by BR-ID-34; the response states the values in force.
+        /admin/v1/me/permissions; the phone is registered or changed with POST
+        /admin/v1/me/verify-phone/sms-codes and PUT /admin/v1/me/verify-phone, and until such a
+        change succeeds codes keep going to the current phone). Sending too often is 42901 with
+        Retry-After. The send limits and the code validity are not fixed by BR-ID-34; the response
+        states the values in force.
       x-auth: admin
       x-signed: false
       x-idempotent: false
@@ -6988,6 +6992,173 @@ paths:
                   $ref: '#/components/examples/AdminIpNotAllowed'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/me/verify-phone/sms-codes:
+    post:
+      operationId: adminSendMyVerifyPhoneCode
+      tags:
+        - admin-auth
+      summary: Send a code to the new verify phone of the signed-in account (step-up)
+      description: |
+        First step of registering or changing the signed-in account's own verify phone on its
+        「我的账号」 page (BR-ID-34 细则「验证手机号的登记与更换」① ⑤). Any signed-in admin account,
+        super admins included (no permission point). Step-up: totp tier, checked here when the
+        change is started (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+        `data.tier=totp`).
+        `phone` is normalised (BR-ID-05 细则「手机号规范化」; not a mainland mobile number → 20001
+        with `data.fields=[phone]` and `data.reason=phone_invalid`); the account's current verify
+        phone is 20001 with `data.fields=[phone]`. The phone is not checked for uniqueness among
+        admin accounts (BR-ID-34 sets no such rule). A verification code is sent to that new
+        phone and submitted with PUT /admin/v1/me/verify-phone. Only the new phone and the
+        authenticator are verified: no code goes to the old phone, so losing it does not block
+        the change (②). Sending again replaces the earlier pending code. Until the change
+        succeeds the current verify phone stays valid and sms-tier step-up codes (POST
+        /admin/v1/auth/step-up/sms-codes) keep going to it. Sending too often is 42901 with
+        Retry-After; the send limits and the code validity are those of POST
+        /admin/v1/auth/step-up/sms-codes (not fixed by BR-ID-34), the response states the values
+        in force.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 42901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminVerifyPhoneCodeRequest'
+            example:
+              phone: '13800005678'
+      responses:
+        '200':
+          description: The provider accepted the SMS, or its outcome is unknown (counted as sent).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendSmsCodeResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  resend_after_sec: 60
+                  expires_in_sec: 300
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not sent (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                phoneInvalid:
+                  $ref: '#/components/examples/AdminUserLookupPhoneInvalid'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/me/verify-phone:
+    put:
+      operationId: adminChangeMyVerifyPhone
+      tags:
+        - admin-auth
+      summary: Register or change the signed-in account's verify phone with the new phone's code
+      description: |
+        Second step of the change started by POST /admin/v1/me/verify-phone/sms-codes (BR-ID-34
+        细则「验证手机号的登记与更换」①). Any signed-in admin account; the step-up was made when the
+        code was sent, so no step-up token is checked here. `phone` is normalised as for sending.
+        `code` must be the pending code sent to this `phone` for this account: a wrong code is
+        20002 without a reason; no pending code for this account and phone, an expired code or
+        one voided (by too many wrong tries, a newer send or a change that succeeded meanwhile,
+        including one made by a super admin) is 20003 and nothing changes. Only a verified new
+        phone takes effect: the verify phone is replaced (stored encrypted with its blind index,
+        BR-ID-33; `verify_phone_set_at` = now), the pending code is used up and every other
+        pending verify-phone code of the account is voided; sms-tier step-up codes go to the new
+        phone from then on and the sms-tier buttons become available (`verify_phone_masked` of
+        GET /admin/v1/me/permissions). Sessions are not revoked. Audit: action
+        admin_verify_phone_change with the masked phones before and after. The response carries
+        the masked phone only. No Idempotency-Key (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20002
+        - 20003
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminChangeMyVerifyPhoneRequest'
+            example:
+              phone: '13800005678'
+              code: '654321'
+      responses:
+        '200':
+          description: The new verify phone, masked.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminVerifyPhoneResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  verify_phone_masked: '138****5678'
+                  verify_phone_set_at: '2026-10-12T10:05:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                codeInvalid:
+                  $ref: '#/components/examples/AdminVerifyPhoneCodeInvalid'
+                codeExpired:
+                  $ref: '#/components/examples/AdminVerifyPhoneCodeExpired'
+                phoneInvalid:
+                  $ref: '#/components/examples/AdminUserLookupPhoneInvalid'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+                ipNotAllowed:
+                  $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/dashboard:
     get:
       operationId: adminGetDashboard
@@ -7143,8 +7314,9 @@ paths:
         §5). Super admin only — 「后台账号与权限」 is not a permission point and cannot be granted
         (04 §11, 拍板第二批 §8 ADD-04); any other account gets 10403 with
         `data.reason=admin_permission_denied`. Never returns the password, its hash, the TOTP secret
-        or the full verify phone. Creating, disabling and ticking permission points (super admin,
-        step-up, audit) come with a later task.
+        or the full verify phone. Creating, disabling and enabling, ticking permission points,
+        resetting the authenticator, renaming and the verify phone are the operations under
+        /admin/v1/admins (super admin; step-up and audit as each one states).
       x-auth: super
       x-error-codes:
         - 10001
@@ -7217,6 +7389,121 @@ paths:
                   $ref: '#/components/examples/AdminIpNotAllowed'
         5XX:
           $ref: '#/components/responses/ServerError'
+    post:
+      operationId: adminCreateAdmin
+      tags:
+        - admin-accounts
+      summary: Create an ordinary admin account with a one-time initial password (super admin, step-up)
+      description: |
+        Super admin only (04 §11 引言: creating and disabling accounts and ticking points are limited
+        to super admins, need step-up and write an audit record; any other account is 10403 with
+        `data.reason=admin_permission_denied`). Step-up: totp tier (without a valid totp-tier
+        `X-Step-Up-Token` → 10003 with `data.tier=totp`).
+        Creates an ordinary account only (`is_super=false`; super admins are not created here):
+        no permission point is ticked (they are ticked afterwards with PUT
+        /admin/v1/admins/{admin_id}/permissions), no verify phone is registered (registered
+        afterwards by the holder through PUT /admin/v1/me/verify-phone, or by a super admin
+        through PUT /admin/v1/admins/{admin_id}/verify-phone), the authenticator is not bound and
+        the account is on its initial password, so its first login goes through
+        `change_password` and then `bind_totp` (POST /admin/v1/auth/login).
+        `username` (the login name, cannot be changed later) must differ from every existing
+        account's, disabled accounts included (BR-ID-34 细则「停用后台账号」: a name is never
+        given out again); a taken name is 20001 with `data.fields=[username]`. `display_name` is
+        required here (1–32 characters after trimming, else 20001 with
+        `data.fields=[display_name]`). Composition rules of the login name beyond its length are
+        not fixed by BR-ID-34 and are left to the admin module task.
+        Initial password (BR-ID-34 细则「初始密码」): generated by the server and returned in
+        `initial_password` of this response only, once; it is never readable again, never written
+        to logs or to the audit record, and the response carries `Cache-Control: no-store`. The
+        super admin tells it to the holder face to face or in a WeChat Work private chat only. It
+        is valid for the first login only and stops working once replaced (POST
+        /admin/v1/auth/password).
+        No Idempotency-Key (04 §6.6): when the outcome is unknown the console looks the account
+        up in GET /admin/v1/admins instead of resending. There is no operation that issues a new
+        initial password (BR-ID-34 does not provide one): an account whose response was lost is
+        disabled and created again under another name.
+        Audit (BR-ID-34): action admin_account_create with the new account's id, username and
+        display_name (never the password).
+      x-auth: super
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCreateAdminRequest'
+            example:
+              username: cs.xiaoli
+              display_name: 客服小狸
+      responses:
+        '200':
+          description: The account was created; the initial password is shown this once.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+            Cache-Control:
+              required: true
+              description: Always no-store; the one-time initial password is not cached by any proxy or the browser.
+              schema:
+                type: string
+                enum:
+                  - no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCreatedAccountResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  account:
+                    admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b03
+                    username: cs.xiaoli
+                    display_name: 客服小狸
+                    is_super: false
+                    status: active
+                    totp_bound: false
+                    verify_phone_masked: null
+                    locked_until: null
+                    permissions: []
+                    created_at: '2026-10-12T10:00:00+08:00'
+                    row_version: 0
+                  initial_password: example-initial-password
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: No account created (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                usernameTaken:
+                  $ref: '#/components/examples/AdminUsernameTaken'
+                displayNameInvalid:
+                  $ref: '#/components/examples/AdminDisplayNameInvalid'
+                notSuper:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/admins/{admin_id}:
     get:
       operationId: adminGetAdmin
@@ -7281,6 +7568,681 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
                 ipNotAllowed:
                   $ref: '#/components/examples/AdminIpNotAllowed'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/admins/{admin_id}/disable:
+    post:
+      operationId: adminDisableAdmin
+      tags:
+        - admin-accounts
+      summary: Disable an ordinary admin account (super admin, step-up, reason)
+      description: |
+        Super admin only (04 §11 引言; otherwise 10403 with `data.reason=admin_permission_denied`).
+        Step-up: totp tier (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+        `data.tier=totp`). `reason` is required (1–200 characters, else 20001 with
+        `data.fields=[reason]`). An unknown `admin_id` is 20001 with `data.fields=[admin_id]`.
+        A super admin account cannot be disabled here (the console shows super admin rows as
+        「不可修改」), which also keeps the caller from disabling itself: a target with
+        `is_super=true` is 10403 with `data.reason=admin_permission_denied`.
+        Only an active account is disabled; an account already disabled is 20902 with
+        `data.resource=admin_account` (refresh and look again).
+        Effects (BR-ID-34 细则「停用后台账号」), in one transaction with the status change: every
+        admin_token, login ticket and step-up token of the account stops working at once (its
+        next request is 10001) and it cannot log in (10008 like a wrong password); its ticked
+        permission points are kept for a later enable; its past actions and audit records are
+        untouched; its username stays taken. Its export tasks in status pending or running are
+        cancelled (status cancelled, BR-ID-42; each cancellation writes its own audit record) and
+        can be neither downloaded nor retried. The response is the account as it is now
+        (`status=disabled`). Audit: action admin_account_disable with the reason and the
+        before / after status. No Idempotency-Key (04 §6.6).
+      x-auth: super
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminReasonRequest'
+            example:
+              reason: 该账号使用人已调岗，不再需要查询权限
+      responses:
+        '200':
+          description: The account, now disabled.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b04
+                  username: query.xiaoli
+                  display_name: 查询小狸
+                  is_super: false
+                  status: disabled
+                  totp_bound: true
+                  verify_phone_masked: '133****4455'
+                  locked_until: null
+                  permissions:
+                    - user.lookup
+                    - order.view
+                  created_at: '2026-09-20T09:00:00+08:00'
+                  row_version: 5
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not disabled (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                reasonMissing:
+                  $ref: '#/components/examples/AdminUserReasonInvalid'
+                unknownAdmin:
+                  $ref: '#/components/examples/AdminUnknownAdmin'
+                superTarget:
+                  $ref: '#/components/examples/AdminSuperTargetDenied'
+                alreadyDisabled:
+                  $ref: '#/components/examples/AdminAccountConflict'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/admins/{admin_id}/enable:
+    post:
+      operationId: adminEnableAdmin
+      tags:
+        - admin-accounts
+      summary: Enable a disabled admin account again (super admin, step-up)
+      description: |
+        Super admin only (04 §11 引言; otherwise 10403 with `data.reason=admin_permission_denied`).
+        Step-up: totp tier (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+        `data.tier=totp`). No request body. An unknown `admin_id` is 20001 with
+        `data.fields=[admin_id]`; a target with `is_super=true` is 10403 with
+        `data.reason=admin_permission_denied` (super admin rows are 「不可修改」).
+        Only a disabled account is enabled; an active one is 20902 with
+        `data.resource=admin_account`. The account gets back the permission points it had when
+        disabled; no new initial password is issued and the authenticator binding is kept as it
+        was (an account still on its initial password or without a bound authenticator goes
+        through those login steps as before). Export tasks cancelled by the disable stay
+        cancelled. The response is the account as it is now (`status=active`). Audit: action
+        admin_account_enable with the before / after status. No Idempotency-Key (04 §6.6).
+      x-auth: super
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      responses:
+        '200':
+          description: The account, active again.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b05
+                  username: ops.temp01
+                  display_name: 运营临时号
+                  is_super: false
+                  status: active
+                  totp_bound: true
+                  verify_phone_masked: '135****9012'
+                  locked_until: null
+                  permissions:
+                    - content.page
+                    - content.pool
+                    - content.article
+                  created_at: '2026-09-15T09:00:00+08:00'
+                  row_version: 3
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not enabled (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                unknownAdmin:
+                  $ref: '#/components/examples/AdminUnknownAdmin'
+                superTarget:
+                  $ref: '#/components/examples/AdminSuperTargetDenied'
+                alreadyActive:
+                  $ref: '#/components/examples/AdminAccountConflict'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/admins/{admin_id}/permissions:
+    put:
+      operationId: adminSaveAdminPermissions
+      tags:
+        - admin-accounts
+      summary: Replace the ticked permission points of an ordinary admin account (super admin, step-up)
+      description: |
+        Super admin only (04 §11 引言: ticking and unticking points is limited to super admins,
+        needs step-up and writes an audit record; otherwise 10403 with
+        `data.reason=admin_permission_denied`). Step-up: totp tier (without a valid totp-tier
+        `X-Step-Up-Token` → 10003 with `data.tier=totp`). An unknown `admin_id` is 20001 with
+        `data.fields=[admin_id]`; a target with `is_super=true` is 10403 with
+        `data.reason=admin_permission_denied` (a super admin holds every point and is not written
+        to admin_permissions, 04 §3.2). A disabled account can be edited; its points apply when
+        it is enabled again.
+        `permissions` is the whole set the account holds afterwards (an empty array unticks
+        everything): every key must be a value of contracts/enums/admin.yaml `admin_permission`
+        (04 §11.1, §11.2) and appear once, otherwise 20001 with `data.fields=[permissions]` and
+        nothing is written. There are no role templates (04 §11 引言).
+        CAS: `expected_row_version` is the account's `row_version` from GET
+        /admin/v1/admins/{admin_id} (or the list); any other value is 20902 with
+        `data.resource=admin_account` (another super admin changed the account meanwhile;
+        refresh and tick again).
+        The server checks the points on every request, so the change applies to the account's
+        next request; its console rebuilds the menu from GET /admin/v1/me/permissions. Audit:
+        action admin_permissions_save with the points before and after and the added and removed
+        keys. The response is the account as it is now (`row_version` + 1). No Idempotency-Key
+        (04 §6.6).
+      x-auth: super
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPermissionsSaveRequest'
+            example:
+              permissions:
+                - dashboard.view
+                - user.lookup
+                - fund.view
+                - fund.adjust
+                - fund.writeoff
+              expected_row_version: 7
+      responses:
+        '200':
+          description: The account with its new permission points.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                  username: finance.xiaoli
+                  display_name: 财务小狸
+                  is_super: false
+                  status: active
+                  totp_bound: true
+                  verify_phone_masked: '137****3366'
+                  locked_until: null
+                  permissions:
+                    - dashboard.view
+                    - user.lookup
+                    - fund.view
+                    - fund.adjust
+                    - fund.writeoff
+                  created_at: '2026-09-02T09:00:00+08:00'
+                  row_version: 8
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not saved (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                permissionsInvalid:
+                  $ref: '#/components/examples/AdminPermissionsInvalid'
+                unknownAdmin:
+                  $ref: '#/components/examples/AdminUnknownAdmin'
+                superTarget:
+                  $ref: '#/components/examples/AdminSuperTargetDenied'
+                conflict:
+                  $ref: '#/components/examples/AdminAccountConflict'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/admins/{admin_id}/totp/reset:
+    post:
+      operationId: adminResetAdminTotp
+      tags:
+        - admin-accounts
+      summary: Reset another admin account's authenticator (super admin, step-up, reason)
+      description: |
+        Super admin only (otherwise 10403 with `data.reason=admin_permission_denied`). Step-up:
+        totp tier (without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`).
+        `reason` is required and says how the holder was confirmed to be who they claim (1–200
+        characters, else 20001 with `data.fields=[reason]`; BR-ID-34 细则「重置身份验证器」). An
+        unknown `admin_id` is 20001 with `data.fields=[admin_id]`.
+        Target: any other account, another super admin included (a super admin who lost the
+        authenticator is reset by another super admin; with a single super admin the owner uses
+        the operations command on the server, which is not an HTTP operation). The caller's own
+        account is 10403 with `data.reason=admin_permission_denied`. A disabled account or one
+        without a bound authenticator is accepted as well.
+        Effects, in one transaction: the TOTP secret is discarded and the account is back to
+        not bound (`totp_bound=false`); every admin_token, login ticket and step-up token of the
+        account stops working at once; its next login binds a newly generated secret (`next`
+        bind_totp after the password, POST /admin/v1/auth/login). Permission points, status,
+        password and verify phone are unchanged. Audit: action admin_totp_reset with the reason.
+        The response is the account as it is now. No Idempotency-Key (04 §6.6).
+      x-auth: super
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminReasonRequest'
+            example:
+              reason: 本人换手机、旧验证器已不可用；已在企业微信视频通话里核对本人身份并确认
+      responses:
+        '200':
+          description: The account, with the authenticator no longer bound.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b04
+                  username: query.xiaoli
+                  display_name: 查询小狸
+                  is_super: false
+                  status: active
+                  totp_bound: false
+                  verify_phone_masked: '133****4455'
+                  locked_until: null
+                  permissions:
+                    - user.lookup
+                    - order.view
+                  created_at: '2026-09-20T09:00:00+08:00'
+                  row_version: 6
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not reset (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                reasonMissing:
+                  $ref: '#/components/examples/AdminUserReasonInvalid'
+                unknownAdmin:
+                  $ref: '#/components/examples/AdminUnknownAdmin'
+                ownAccount:
+                  $ref: '#/components/examples/AdminSelfTargetDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/admins/{admin_id}/display-name:
+    put:
+      operationId: adminUpdateAdminDisplayName
+      tags:
+        - admin-accounts
+      summary: Change the display name of an ordinary admin account (super admin)
+      description: |
+        Super admin only (otherwise 10403 with `data.reason=admin_permission_denied`); no
+        step-up. `display_name` is 1–32 characters after trimming (else 20001 with
+        `data.fields=[display_name]`; 04 §3.2 admin_users.display_name). An unknown `admin_id` is
+        20001 with `data.fields=[admin_id]`; a target with `is_super=true` is 10403 with
+        `data.reason=admin_permission_denied` (super admin rows are 「不可修改」). A disabled
+        account can be renamed. The login name (`username`) never changes. The new name shows
+        wherever the account is named (list, audit log `actor_name`, export `created_by_name`).
+        Audit: action admin_display_name_update with the name before and after. The response is
+        the account as it is now. No Idempotency-Key (04 §6.6).
+      x-auth: super
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminDisplayNameUpdateRequest'
+            example:
+              display_name: 财务小狸
+      responses:
+        '200':
+          description: The account with its new display name.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                  username: finance.xiaoli
+                  display_name: 财务小狸
+                  is_super: false
+                  status: active
+                  totp_bound: true
+                  verify_phone_masked: '137****3366'
+                  locked_until: null
+                  permissions:
+                    - fund.view
+                    - fund.adjust
+                  created_at: '2026-09-02T09:00:00+08:00'
+                  row_version: 9
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                displayNameInvalid:
+                  $ref: '#/components/examples/AdminDisplayNameInvalid'
+                unknownAdmin:
+                  $ref: '#/components/examples/AdminUnknownAdmin'
+                superTarget:
+                  $ref: '#/components/examples/AdminSuperTargetDenied'
+                notSuper:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/admins/{admin_id}/verify-phone/sms-codes:
+    post:
+      operationId: adminSendAdminVerifyPhoneCode
+      tags:
+        - admin-accounts
+      summary: Send a code to the new verify phone of another admin account (super admin, step-up)
+      description: |
+        First step of a super admin registering or changing another account's verify phone on
+        its holder's behalf (BR-ID-34 细则「验证手机号的登记与更换」③). Super admin only
+        (otherwise 10403 with `data.reason=admin_permission_denied`). Step-up: totp tier, checked
+        here when the change is started (without a valid totp-tier `X-Step-Up-Token` → 10003
+        with `data.tier=totp`). An unknown `admin_id` is 20001 with `data.fields=[admin_id]`.
+        Target: an ordinary account only. The caller's own account and every other super admin
+        are 10403 with `data.reason=admin_permission_denied`: a super admin changes its own phone
+        through POST /admin/v1/me/verify-phone/sms-codes (③), and super admin rows are
+        「不可修改」 on the accounts page.
+        `phone` is normalised (BR-ID-05 细则「手机号规范化」; not a mainland mobile number → 20001
+        with `data.fields=[phone]` and `data.reason=phone_invalid`); the account's current verify
+        phone is 20001 with `data.fields=[phone]`. The phone is not checked for uniqueness among
+        admin accounts (BR-ID-34 sets no such rule). A verification code is sent to that new
+        phone; the holder reads it to the super admin, who submits it with PUT
+        /admin/v1/admins/{admin_id}/verify-phone. A change without the new phone's code is not
+        possible. Sending again for the same account replaces the earlier pending code. Until the
+        change succeeds the current verify phone stays valid and sms-tier step-up codes keep
+        going to it. Sending too often is 42901 with Retry-After; the send limits and the code
+        validity are those of POST /admin/v1/auth/step-up/sms-codes (not fixed by BR-ID-34), the
+        response states the values in force. Audit: action admin_verify_phone_code_send with the
+        target and the masked new phone.
+      x-auth: super
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 42901
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminVerifyPhoneCodeRequest'
+            example:
+              phone: '13312344455'
+      responses:
+        '200':
+          description: The provider accepted the SMS, or its outcome is unknown (counted as sent).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendSmsCodeResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  resend_after_sec: 60
+                  expires_in_sec: 300
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not sent (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                phoneInvalid:
+                  $ref: '#/components/examples/AdminUserLookupPhoneInvalid'
+                unknownAdmin:
+                  $ref: '#/components/examples/AdminUnknownAdmin'
+                superTarget:
+                  $ref: '#/components/examples/AdminSuperTargetDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/admins/{admin_id}/verify-phone:
+    put:
+      operationId: adminChangeAdminVerifyPhone
+      tags:
+        - admin-accounts
+      summary: Register or change another admin account's verify phone with the new phone's code (super admin)
+      description: |
+        Second step of the change started by POST /admin/v1/admins/{admin_id}/verify-phone/sms-codes
+        (BR-ID-34 细则「验证手机号的登记与更换」③). Super admin only (otherwise 10403 with
+        `data.reason=admin_permission_denied`); the step-up was made when the code was sent, so
+        no step-up token is checked here. Targets as for sending: an unknown `admin_id` is 20001
+        with `data.fields=[admin_id]`, the caller's own account and other super admins are 10403
+        with `data.reason=admin_permission_denied`. `reason` is required (1–200 characters, else
+        20001 with `data.fields=[reason]`). `phone` is normalised as for sending.
+        `code` must be the pending code sent to this `phone` for this account: a wrong code is
+        20002 without a reason; no pending code for this account and phone, an expired code or
+        one voided (by too many wrong tries, a newer send or a change that succeeded meanwhile)
+        is 20003 and nothing changes. Only a verified new phone takes effect: the verify phone is
+        replaced (stored encrypted with its blind index, BR-ID-33; `verify_phone_set_at` = now),
+        the pending code is used up and every other pending verify-phone code of the account is
+        voided; the old phone stops receiving sms-tier codes from then on. Sessions are not
+        revoked. Audit: action admin_verify_phone_change with the reason, the masked phones before
+        and after and that a super admin made it. The response is the account as it is now
+        (masked phone only). No Idempotency-Key (04 §6.6).
+      x-auth: super
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20002
+        - 20003
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminChangeAdminVerifyPhoneRequest'
+            example:
+              phone: '13312344455'
+              code: '654321'
+              reason: 本人委托超管代改（自助更换也不需要旧号短信）；已在企业微信视频通话里核对本人身份
+      responses:
+        '200':
+          description: The account with its new verify phone (masked).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  admin_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b04
+                  username: query.xiaoli
+                  display_name: 查询小狸
+                  is_super: false
+                  status: active
+                  totp_bound: true
+                  verify_phone_masked: '133****4455'
+                  locked_until: null
+                  permissions:
+                    - user.lookup
+                    - order.view
+                  created_at: '2026-09-20T09:00:00+08:00'
+                  row_version: 7
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                codeInvalid:
+                  $ref: '#/components/examples/AdminVerifyPhoneCodeInvalid'
+                codeExpired:
+                  $ref: '#/components/examples/AdminVerifyPhoneCodeExpired'
+                reasonMissing:
+                  $ref: '#/components/examples/AdminUserReasonInvalid'
+                unknownAdmin:
+                  $ref: '#/components/examples/AdminUnknownAdmin'
+                superTarget:
+                  $ref: '#/components/examples/AdminSuperTargetDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
   /admin/v1/audit-logs:
@@ -17666,6 +18628,69 @@ components:
           fields:
             - admin_id
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUsernameTaken:
+      summary: 20001 the login name is taken by an existing account (disabled ones included)
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - username
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminDisplayNameInvalid:
+      summary: 20001 display name missing, empty after trimming or longer than 32 characters
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - display_name
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminPermissionsInvalid:
+      summary: 20001 a key that is not an admin_permission value, or a key given twice
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - permissions
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminSuperTargetDenied:
+      summary: 10403 the target is a super admin account, which cannot be changed here
+      value:
+        code: 10403
+        msg: 当前账号没有这项操作的权限，请联系超级管理员开通
+        data:
+          reason: admin_permission_denied
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminSelfTargetDenied:
+      summary: 10403 a super admin cannot reset its own authenticator
+      value:
+        code: 10403
+        msg: 当前账号没有这项操作的权限，请联系超级管理员开通
+        data:
+          reason: admin_permission_denied
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminAccountConflict:
+      summary: 20902 the account changed meanwhile (row_version moved on, or already in that status)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: admin_account
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminVerifyPhoneCodeInvalid:
+      summary: 20002 wrong code for the new verify phone (no reason)
+      value:
+        code: 20002
+        msg: 验证码错误，请重新输入
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminVerifyPhoneCodeExpired:
+      summary: 20003 no pending code for this phone, or the code expired or was voided
+      value:
+        code: 20003
+        msg: 验证码已失效，请重新获取
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminAuditTimeRangeInvalid:
       summary: 20001 audit-log search with from later than to
       value:
@@ -25553,7 +26578,7 @@ components:
           maxLength: 64
         display_name:
           type: string
-          description: Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). The operation that sets it comes with admin account management (F1-10i).
+          description: Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). Set by POST /admin/v1/admins and PUT /admin/v1/admins/{admin_id}/display-name.
           minLength: 1
           maxLength: 32
         is_super:
@@ -25785,7 +26810,7 @@ components:
           maxLength: 64
         display_name:
           type: string
-          description: Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). The operation that sets it comes with admin account management (F1-10i).
+          description: Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). Set by POST /admin/v1/admins and PUT /admin/v1/admins/{admin_id}/display-name.
           minLength: 1
           maxLength: 32
         is_super:
@@ -25815,6 +26840,13 @@ components:
         created_at:
           type: string
           format: date-time
+        row_version:
+          $ref: '#/components/schemas/AdminRowVersion'
+          description: |
+            CAS value of the account (plus 1 on every change made through the /admin/v1/admins
+            operations: status, display name, permission points, authenticator reset, verify
+            phone); PUT /admin/v1/admins/{admin_id}/permissions sends it back as
+            expected_row_version. Returned once admin account management ships (B1-34h).
     AdminAccountResponse:
       type: object
       additionalProperties: false
@@ -25873,6 +26905,155 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminAccountPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminDisplayName:
+      type: string
+      description: Admin display name (admin_users.display_name, 04 §3.2); trimmed by the server, 1–32 characters.
+      minLength: 1
+      maxLength: 32
+    AdminCreateAdminRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+        - display_name
+      properties:
+        username:
+          type: string
+          description: Login name; unique among all accounts, disabled ones included, and never changed (BR-ID-34).
+          minLength: 1
+          maxLength: 64
+        display_name:
+          $ref: '#/components/schemas/AdminDisplayName'
+    AdminCreatedAccount:
+      type: object
+      additionalProperties: false
+      required:
+        - account
+        - initial_password
+      properties:
+        account:
+          $ref: '#/components/schemas/AdminAccount'
+        initial_password:
+          type: string
+          description: |
+            One-time initial password generated by the server (BR-ID-34 细则「初始密码」); returned
+            only in this response, never logged, audited or readable again.
+          minLength: 1
+          maxLength: 128
+    AdminCreatedAccountResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminCreatedAccount'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminReasonRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - reason
+      properties:
+        reason:
+          $ref: '#/components/schemas/AdminUserReason'
+    AdminPermissionsSaveRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - permissions
+        - expected_row_version
+      properties:
+        permissions:
+          type: array
+          description: The whole set of ticked points afterwards (enum admin_permission); empty unticks all.
+          uniqueItems: true
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/AdminPermissionKey'
+        expected_row_version:
+          $ref: '#/components/schemas/AdminRowVersion'
+    AdminDisplayNameUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - display_name
+      properties:
+        display_name:
+          $ref: '#/components/schemas/AdminDisplayName'
+    AdminVerifyPhoneCodeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - phone
+      properties:
+        phone:
+          $ref: '#/components/schemas/Phone'
+    AdminChangeMyVerifyPhoneRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - phone
+        - code
+      properties:
+        phone:
+          $ref: '#/components/schemas/Phone'
+        code:
+          $ref: '#/components/schemas/AdminTotpCode'
+    AdminChangeAdminVerifyPhoneRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - phone
+        - code
+        - reason
+      properties:
+        phone:
+          $ref: '#/components/schemas/Phone'
+        code:
+          $ref: '#/components/schemas/AdminTotpCode'
+        reason:
+          $ref: '#/components/schemas/AdminUserReason'
+    AdminVerifyPhone:
+      type: object
+      additionalProperties: false
+      required:
+        - verify_phone_masked
+        - verify_phone_set_at
+      properties:
+        verify_phone_masked:
+          type: string
+          description: The new verify phone masked 3 + 4 (BR-ID-33).
+          minLength: 1
+          maxLength: 32
+        verify_phone_set_at:
+          type: string
+          format: date-time
+    AdminVerifyPhoneResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminVerifyPhone'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     PlatformIconKey:
@@ -28219,8 +29400,8 @@ components:
       format: int32
       minimum: 0
       description: |
-        row_version of the row as read (users' risk state, a union binding); plus 1 on every
-        change. The CAS value `expected_row_version` of the writes.
+        row_version of the row as read (users' risk state, a union binding, an admin account);
+        plus 1 on every change. The CAS value `expected_row_version` of the writes.
     AdminUserReason:
       type: string
       minLength: 1

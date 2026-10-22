@@ -2270,7 +2270,8 @@ export interface paths {
          *     /admin/v1/auth/totp/bind). The ticket can call nothing but that step; its lifetime is set
          *     by the server and given in `ticket_expires_at`.
          *     Not decided by BR-ID-34 and not fixed here: how the initial password is handed out beyond
-         *     the rule itself, the reset of a lost authenticator (a super-admin action, later task).
+         *     the rule itself. The initial password comes from POST /admin/v1/admins; a lost
+         *     authenticator is reset by a super admin with POST /admin/v1/admins/{admin_id}/totp/reset.
          */
         post: operations["adminLogin"];
         delete?: never;
@@ -2422,8 +2423,11 @@ export interface paths {
          *     (BR-ID-34 短信档; template ADMIN_STEP_UP). An account without a registered verify phone is
          *     10003 with `data.tier=sms` and `data.reason=verify_phone_missing` and nothing is sent (the
          *     console greys out sms-tier buttons beforehand from `verify_phone_masked` of GET
-         *     /admin/v1/me/permissions). Sending too often is 42901 with Retry-After. The send limits and
-         *     the code validity are not fixed by BR-ID-34; the response states the values in force.
+         *     /admin/v1/me/permissions; the phone is registered or changed with POST
+         *     /admin/v1/me/verify-phone/sms-codes and PUT /admin/v1/me/verify-phone, and until such a
+         *     change succeeds codes keep going to the current phone). Sending too often is 42901 with
+         *     Retry-After. The send limits and the code validity are not fixed by BR-ID-34; the response
+         *     states the values in force.
          */
         post: operations["adminSendStepUpSms"];
         delete?: never;
@@ -2487,6 +2491,75 @@ export interface paths {
          */
         get: operations["adminGetMyPermissions"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/me/verify-phone/sms-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a code to the new verify phone of the signed-in account (step-up)
+         * @description First step of registering or changing the signed-in account's own verify phone on its
+         *     「我的账号」 page (BR-ID-34 细则「验证手机号的登记与更换」① ⑤). Any signed-in admin account,
+         *     super admins included (no permission point). Step-up: totp tier, checked here when the
+         *     change is started (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+         *     `data.tier=totp`).
+         *     `phone` is normalised (BR-ID-05 细则「手机号规范化」; not a mainland mobile number → 20001
+         *     with `data.fields=[phone]` and `data.reason=phone_invalid`); the account's current verify
+         *     phone is 20001 with `data.fields=[phone]`. The phone is not checked for uniqueness among
+         *     admin accounts (BR-ID-34 sets no such rule). A verification code is sent to that new
+         *     phone and submitted with PUT /admin/v1/me/verify-phone. Only the new phone and the
+         *     authenticator are verified: no code goes to the old phone, so losing it does not block
+         *     the change (②). Sending again replaces the earlier pending code. Until the change
+         *     succeeds the current verify phone stays valid and sms-tier step-up codes (POST
+         *     /admin/v1/auth/step-up/sms-codes) keep going to it. Sending too often is 42901 with
+         *     Retry-After; the send limits and the code validity are those of POST
+         *     /admin/v1/auth/step-up/sms-codes (not fixed by BR-ID-34), the response states the values
+         *     in force.
+         */
+        post: operations["adminSendMyVerifyPhoneCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/me/verify-phone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Register or change the signed-in account's verify phone with the new phone's code
+         * @description Second step of the change started by POST /admin/v1/me/verify-phone/sms-codes (BR-ID-34
+         *     细则「验证手机号的登记与更换」①). Any signed-in admin account; the step-up was made when the
+         *     code was sent, so no step-up token is checked here. `phone` is normalised as for sending.
+         *     `code` must be the pending code sent to this `phone` for this account: a wrong code is
+         *     20002 without a reason; no pending code for this account and phone, an expired code or
+         *     one voided (by too many wrong tries, a newer send or a change that succeeded meanwhile,
+         *     including one made by a super admin) is 20003 and nothing changes. Only a verified new
+         *     phone takes effect: the verify phone is replaced (stored encrypted with its blind index,
+         *     BR-ID-33; `verify_phone_set_at` = now), the pending code is used up and every other
+         *     pending verify-phone code of the account is voided; sms-tier step-up codes go to the new
+         *     phone from then on and the sms-tier buttons become available (`verify_phone_masked` of
+         *     GET /admin/v1/me/permissions). Sessions are not revoked. Audit: action
+         *     admin_verify_phone_change with the masked phones before and after. The response carries
+         *     the masked phone only. No Idempotency-Key (04 §6.6).
+         */
+        put: operations["adminChangeMyVerifyPhone"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2560,12 +2633,45 @@ export interface paths {
          *     §5). Super admin only — 「后台账号与权限」 is not a permission point and cannot be granted
          *     (04 §11, 拍板第二批 §8 ADD-04); any other account gets 10403 with
          *     `data.reason=admin_permission_denied`. Never returns the password, its hash, the TOTP secret
-         *     or the full verify phone. Creating, disabling and ticking permission points (super admin,
-         *     step-up, audit) come with a later task.
+         *     or the full verify phone. Creating, disabling and enabling, ticking permission points,
+         *     resetting the authenticator, renaming and the verify phone are the operations under
+         *     /admin/v1/admins (super admin; step-up and audit as each one states).
          */
         get: operations["adminListAdmins"];
         put?: never;
-        post?: never;
+        /**
+         * Create an ordinary admin account with a one-time initial password (super admin, step-up)
+         * @description Super admin only (04 §11 引言: creating and disabling accounts and ticking points are limited
+         *     to super admins, need step-up and write an audit record; any other account is 10403 with
+         *     `data.reason=admin_permission_denied`). Step-up: totp tier (without a valid totp-tier
+         *     `X-Step-Up-Token` → 10003 with `data.tier=totp`).
+         *     Creates an ordinary account only (`is_super=false`; super admins are not created here):
+         *     no permission point is ticked (they are ticked afterwards with PUT
+         *     /admin/v1/admins/{admin_id}/permissions), no verify phone is registered (registered
+         *     afterwards by the holder through PUT /admin/v1/me/verify-phone, or by a super admin
+         *     through PUT /admin/v1/admins/{admin_id}/verify-phone), the authenticator is not bound and
+         *     the account is on its initial password, so its first login goes through
+         *     `change_password` and then `bind_totp` (POST /admin/v1/auth/login).
+         *     `username` (the login name, cannot be changed later) must differ from every existing
+         *     account's, disabled accounts included (BR-ID-34 细则「停用后台账号」: a name is never
+         *     given out again); a taken name is 20001 with `data.fields=[username]`. `display_name` is
+         *     required here (1–32 characters after trimming, else 20001 with
+         *     `data.fields=[display_name]`). Composition rules of the login name beyond its length are
+         *     not fixed by BR-ID-34 and are left to the admin module task.
+         *     Initial password (BR-ID-34 细则「初始密码」): generated by the server and returned in
+         *     `initial_password` of this response only, once; it is never readable again, never written
+         *     to logs or to the audit record, and the response carries `Cache-Control: no-store`. The
+         *     super admin tells it to the holder face to face or in a WeChat Work private chat only. It
+         *     is valid for the first login only and stops working once replaced (POST
+         *     /admin/v1/auth/password).
+         *     No Idempotency-Key (04 §6.6): when the outcome is unknown the console looks the account
+         *     up in GET /admin/v1/admins instead of resending. There is no operation that issues a new
+         *     initial password (BR-ID-34 does not provide one): an account whose response was lost is
+         *     disabled and created again under another name.
+         *     Audit (BR-ID-34): action admin_account_create with the new account's id, username and
+         *     display_name (never the password).
+         */
+        post: operations["adminCreateAdmin"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2587,6 +2693,253 @@ export interface paths {
          */
         get: operations["adminGetAdmin"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/admins/{admin_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable an ordinary admin account (super admin, step-up, reason)
+         * @description Super admin only (04 §11 引言; otherwise 10403 with `data.reason=admin_permission_denied`).
+         *     Step-up: totp tier (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+         *     `data.tier=totp`). `reason` is required (1–200 characters, else 20001 with
+         *     `data.fields=[reason]`). An unknown `admin_id` is 20001 with `data.fields=[admin_id]`.
+         *     A super admin account cannot be disabled here (the console shows super admin rows as
+         *     「不可修改」), which also keeps the caller from disabling itself: a target with
+         *     `is_super=true` is 10403 with `data.reason=admin_permission_denied`.
+         *     Only an active account is disabled; an account already disabled is 20902 with
+         *     `data.resource=admin_account` (refresh and look again).
+         *     Effects (BR-ID-34 细则「停用后台账号」), in one transaction with the status change: every
+         *     admin_token, login ticket and step-up token of the account stops working at once (its
+         *     next request is 10001) and it cannot log in (10008 like a wrong password); its ticked
+         *     permission points are kept for a later enable; its past actions and audit records are
+         *     untouched; its username stays taken. Its export tasks in status pending or running are
+         *     cancelled (status cancelled, BR-ID-42; each cancellation writes its own audit record) and
+         *     can be neither downloaded nor retried. The response is the account as it is now
+         *     (`status=disabled`). Audit: action admin_account_disable with the reason and the
+         *     before / after status. No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminDisableAdmin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/admins/{admin_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable a disabled admin account again (super admin, step-up)
+         * @description Super admin only (04 §11 引言; otherwise 10403 with `data.reason=admin_permission_denied`).
+         *     Step-up: totp tier (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+         *     `data.tier=totp`). No request body. An unknown `admin_id` is 20001 with
+         *     `data.fields=[admin_id]`; a target with `is_super=true` is 10403 with
+         *     `data.reason=admin_permission_denied` (super admin rows are 「不可修改」).
+         *     Only a disabled account is enabled; an active one is 20902 with
+         *     `data.resource=admin_account`. The account gets back the permission points it had when
+         *     disabled; no new initial password is issued and the authenticator binding is kept as it
+         *     was (an account still on its initial password or without a bound authenticator goes
+         *     through those login steps as before). Export tasks cancelled by the disable stay
+         *     cancelled. The response is the account as it is now (`status=active`). Audit: action
+         *     admin_account_enable with the before / after status. No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminEnableAdmin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/admins/{admin_id}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace the ticked permission points of an ordinary admin account (super admin, step-up)
+         * @description Super admin only (04 §11 引言: ticking and unticking points is limited to super admins,
+         *     needs step-up and writes an audit record; otherwise 10403 with
+         *     `data.reason=admin_permission_denied`). Step-up: totp tier (without a valid totp-tier
+         *     `X-Step-Up-Token` → 10003 with `data.tier=totp`). An unknown `admin_id` is 20001 with
+         *     `data.fields=[admin_id]`; a target with `is_super=true` is 10403 with
+         *     `data.reason=admin_permission_denied` (a super admin holds every point and is not written
+         *     to admin_permissions, 04 §3.2). A disabled account can be edited; its points apply when
+         *     it is enabled again.
+         *     `permissions` is the whole set the account holds afterwards (an empty array unticks
+         *     everything): every key must be a value of contracts/enums/admin.yaml `admin_permission`
+         *     (04 §11.1, §11.2) and appear once, otherwise 20001 with `data.fields=[permissions]` and
+         *     nothing is written. There are no role templates (04 §11 引言).
+         *     CAS: `expected_row_version` is the account's `row_version` from GET
+         *     /admin/v1/admins/{admin_id} (or the list); any other value is 20902 with
+         *     `data.resource=admin_account` (another super admin changed the account meanwhile;
+         *     refresh and tick again).
+         *     The server checks the points on every request, so the change applies to the account's
+         *     next request; its console rebuilds the menu from GET /admin/v1/me/permissions. Audit:
+         *     action admin_permissions_save with the points before and after and the added and removed
+         *     keys. The response is the account as it is now (`row_version` + 1). No Idempotency-Key
+         *     (04 §6.6).
+         */
+        put: operations["adminSaveAdminPermissions"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/admins/{admin_id}/totp/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset another admin account's authenticator (super admin, step-up, reason)
+         * @description Super admin only (otherwise 10403 with `data.reason=admin_permission_denied`). Step-up:
+         *     totp tier (without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`).
+         *     `reason` is required and says how the holder was confirmed to be who they claim (1–200
+         *     characters, else 20001 with `data.fields=[reason]`; BR-ID-34 细则「重置身份验证器」). An
+         *     unknown `admin_id` is 20001 with `data.fields=[admin_id]`.
+         *     Target: any other account, another super admin included (a super admin who lost the
+         *     authenticator is reset by another super admin; with a single super admin the owner uses
+         *     the operations command on the server, which is not an HTTP operation). The caller's own
+         *     account is 10403 with `data.reason=admin_permission_denied`. A disabled account or one
+         *     without a bound authenticator is accepted as well.
+         *     Effects, in one transaction: the TOTP secret is discarded and the account is back to
+         *     not bound (`totp_bound=false`); every admin_token, login ticket and step-up token of the
+         *     account stops working at once; its next login binds a newly generated secret (`next`
+         *     bind_totp after the password, POST /admin/v1/auth/login). Permission points, status,
+         *     password and verify phone are unchanged. Audit: action admin_totp_reset with the reason.
+         *     The response is the account as it is now. No Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminResetAdminTotp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/admins/{admin_id}/display-name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change the display name of an ordinary admin account (super admin)
+         * @description Super admin only (otherwise 10403 with `data.reason=admin_permission_denied`); no
+         *     step-up. `display_name` is 1–32 characters after trimming (else 20001 with
+         *     `data.fields=[display_name]`; 04 §3.2 admin_users.display_name). An unknown `admin_id` is
+         *     20001 with `data.fields=[admin_id]`; a target with `is_super=true` is 10403 with
+         *     `data.reason=admin_permission_denied` (super admin rows are 「不可修改」). A disabled
+         *     account can be renamed. The login name (`username`) never changes. The new name shows
+         *     wherever the account is named (list, audit log `actor_name`, export `created_by_name`).
+         *     Audit: action admin_display_name_update with the name before and after. The response is
+         *     the account as it is now. No Idempotency-Key (04 §6.6).
+         */
+        put: operations["adminUpdateAdminDisplayName"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/admins/{admin_id}/verify-phone/sms-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a code to the new verify phone of another admin account (super admin, step-up)
+         * @description First step of a super admin registering or changing another account's verify phone on
+         *     its holder's behalf (BR-ID-34 细则「验证手机号的登记与更换」③). Super admin only
+         *     (otherwise 10403 with `data.reason=admin_permission_denied`). Step-up: totp tier, checked
+         *     here when the change is started (without a valid totp-tier `X-Step-Up-Token` → 10003
+         *     with `data.tier=totp`). An unknown `admin_id` is 20001 with `data.fields=[admin_id]`.
+         *     Target: an ordinary account only. The caller's own account and every other super admin
+         *     are 10403 with `data.reason=admin_permission_denied`: a super admin changes its own phone
+         *     through POST /admin/v1/me/verify-phone/sms-codes (③), and super admin rows are
+         *     「不可修改」 on the accounts page.
+         *     `phone` is normalised (BR-ID-05 细则「手机号规范化」; not a mainland mobile number → 20001
+         *     with `data.fields=[phone]` and `data.reason=phone_invalid`); the account's current verify
+         *     phone is 20001 with `data.fields=[phone]`. The phone is not checked for uniqueness among
+         *     admin accounts (BR-ID-34 sets no such rule). A verification code is sent to that new
+         *     phone; the holder reads it to the super admin, who submits it with PUT
+         *     /admin/v1/admins/{admin_id}/verify-phone. A change without the new phone's code is not
+         *     possible. Sending again for the same account replaces the earlier pending code. Until the
+         *     change succeeds the current verify phone stays valid and sms-tier step-up codes keep
+         *     going to it. Sending too often is 42901 with Retry-After; the send limits and the code
+         *     validity are those of POST /admin/v1/auth/step-up/sms-codes (not fixed by BR-ID-34), the
+         *     response states the values in force. Audit: action admin_verify_phone_code_send with the
+         *     target and the masked new phone.
+         */
+        post: operations["adminSendAdminVerifyPhoneCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/admins/{admin_id}/verify-phone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Register or change another admin account's verify phone with the new phone's code (super admin)
+         * @description Second step of the change started by POST /admin/v1/admins/{admin_id}/verify-phone/sms-codes
+         *     (BR-ID-34 细则「验证手机号的登记与更换」③). Super admin only (otherwise 10403 with
+         *     `data.reason=admin_permission_denied`); the step-up was made when the code was sent, so
+         *     no step-up token is checked here. Targets as for sending: an unknown `admin_id` is 20001
+         *     with `data.fields=[admin_id]`, the caller's own account and other super admins are 10403
+         *     with `data.reason=admin_permission_denied`. `reason` is required (1–200 characters, else
+         *     20001 with `data.fields=[reason]`). `phone` is normalised as for sending.
+         *     `code` must be the pending code sent to this `phone` for this account: a wrong code is
+         *     20002 without a reason; no pending code for this account and phone, an expired code or
+         *     one voided (by too many wrong tries, a newer send or a change that succeeded meanwhile)
+         *     is 20003 and nothing changes. Only a verified new phone takes effect: the verify phone is
+         *     replaced (stored encrypted with its blind index, BR-ID-33; `verify_phone_set_at` = now),
+         *     the pending code is used up and every other pending verify-phone code of the account is
+         *     voided; the old phone stops receiving sms-tier codes from then on. Sessions are not
+         *     revoked. Audit: action admin_verify_phone_change with the reason, the masked phones before
+         *     and after and that a super admin made it. The response is the account as it is now
+         *     (masked phone only). No Idempotency-Key (04 §6.6).
+         */
+        put: operations["adminChangeAdminVerifyPhone"];
         post?: never;
         delete?: never;
         options?: never;
@@ -8806,7 +9159,7 @@ export interface components {
             admin_id: components["schemas"]["Id"];
             /** @description Account name (the login name); shown as the display name when display_name is empty. */
             username: string;
-            /** @description Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). The operation that sets it comes with admin account management (F1-10i). */
+            /** @description Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). Set by POST /admin/v1/admins and PUT /admin/v1/admins/{admin_id}/display-name. */
             display_name?: string;
             is_super: boolean;
             /** @description Masked verify phone (BR-ID-33); null = none registered, sms tier unavailable. */
@@ -8920,7 +9273,7 @@ export interface components {
         AdminAccount: {
             admin_id: components["schemas"]["Id"];
             username: string;
-            /** @description Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). The operation that sets it comes with admin account management (F1-10i). */
+            /** @description Admin display name (admin_users.display_name); omitted when empty, then clients show username (the login name). Set by POST /admin/v1/admins and PUT /admin/v1/admins/{admin_id}/display-name. */
             display_name?: string;
             is_super: boolean;
             status: components["schemas"]["AdminAccountStatus"];
@@ -8936,6 +9289,13 @@ export interface components {
             permissions: components["schemas"]["AdminPermissionKey"][];
             /** Format: date-time */
             created_at: string;
+            /**
+             * @description CAS value of the account (plus 1 on every change made through the /admin/v1/admins
+             *     operations: status, display name, permission points, authenticator reset, verify
+             *     phone); PUT /admin/v1/admins/{admin_id}/permissions sends it back as
+             *     expected_row_version. Returned once admin account management ships (B1-34h).
+             */
+            row_version?: components["schemas"]["AdminRowVersion"];
         };
         AdminAccountResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -8956,6 +9316,62 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["AdminAccountPage"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Admin display name (admin_users.display_name, 04 §3.2); trimmed by the server, 1–32 characters. */
+        AdminDisplayName: string;
+        AdminCreateAdminRequest: {
+            /** @description Login name; unique among all accounts, disabled ones included, and never changed (BR-ID-34). */
+            username: string;
+            display_name: components["schemas"]["AdminDisplayName"];
+        };
+        AdminCreatedAccount: {
+            account: components["schemas"]["AdminAccount"];
+            /**
+             * @description One-time initial password generated by the server (BR-ID-34 细则「初始密码」); returned
+             *     only in this response, never logged, audited or readable again.
+             */
+            initial_password: string;
+        };
+        AdminCreatedAccountResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminCreatedAccount"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminReasonRequest: {
+            reason: components["schemas"]["AdminUserReason"];
+        };
+        AdminPermissionsSaveRequest: {
+            /** @description The whole set of ticked points afterwards (enum admin_permission); empty unticks all. */
+            permissions: components["schemas"]["AdminPermissionKey"][];
+            expected_row_version: components["schemas"]["AdminRowVersion"];
+        };
+        AdminDisplayNameUpdateRequest: {
+            display_name: components["schemas"]["AdminDisplayName"];
+        };
+        AdminVerifyPhoneCodeRequest: {
+            phone: components["schemas"]["Phone"];
+        };
+        AdminChangeMyVerifyPhoneRequest: {
+            phone: components["schemas"]["Phone"];
+            code: components["schemas"]["AdminTotpCode"];
+        };
+        AdminChangeAdminVerifyPhoneRequest: {
+            phone: components["schemas"]["Phone"];
+            code: components["schemas"]["AdminTotpCode"];
+            reason: components["schemas"]["AdminUserReason"];
+        };
+        AdminVerifyPhone: {
+            /** @description The new verify phone masked 3 + 4 (BR-ID-33). */
+            verify_phone_masked: string;
+            /** Format: date-time */
+            verify_phone_set_at: string;
+        };
+        AdminVerifyPhoneResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminVerifyPhone"];
             trace_id: components["schemas"]["TraceId"];
         };
         /**
@@ -10070,8 +10486,8 @@ export interface components {
         AdminUnionBindingBlockedReason: "ban" | "admin_disable" | "deletion";
         /**
          * Format: int32
-         * @description row_version of the row as read (users' risk state, a union binding); plus 1 on every
-         *     change. The CAS value `expected_row_version` of the writes.
+         * @description row_version of the row as read (users' risk state, a union binding, an admin account);
+         *     plus 1 on every change. The CAS value `expected_row_version` of the writes.
          */
         AdminRowVersion: number;
         /** @description Required free-text reason, kept in the audit record. */
@@ -17804,6 +18220,126 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    adminSendMyVerifyPhoneCode: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13800005678"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminVerifyPhoneCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description The provider accepted the SMS, or its outcome is unknown (counted as sent). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "resend_after_sec": 60,
+                     *         "expires_in_sec": 300
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SendSmsCodeResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not sent (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminChangeMyVerifyPhone: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13800005678",
+                 *       "code": "654321"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminChangeMyVerifyPhoneRequest"];
+            };
+        };
+        responses: {
+            /** @description The new verify phone, masked. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "verify_phone_masked": "138****5678",
+                     *         "verify_phone_set_at": "2026-10-12T10:05:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminVerifyPhoneResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     adminGetDashboard: {
         parameters: {
             query?: never;
@@ -17920,6 +18456,84 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    adminCreateAdmin: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "username": "cs.xiaoli",
+                 *       "display_name": "客服小狸"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminCreateAdminRequest"];
+            };
+        };
+        responses: {
+            /** @description The account was created; the initial password is shown this once. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    /** @description Always no-store; the one-time initial password is not cached by any proxy or the browser. */
+                    "Cache-Control": "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "account": {
+                     *           "admin_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b03",
+                     *           "username": "cs.xiaoli",
+                     *           "display_name": "客服小狸",
+                     *           "is_super": false,
+                     *           "status": "active",
+                     *           "totp_bound": false,
+                     *           "verify_phone_masked": null,
+                     *           "locked_until": null,
+                     *           "permissions": [],
+                     *           "created_at": "2026-10-12T10:00:00+08:00",
+                     *           "row_version": 0
+                     *         },
+                     *         "initial_password": "example-initial-password"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminCreatedAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description No account created (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     adminGetAdmin: {
         parameters: {
             query?: never;
@@ -17965,6 +18579,530 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminDisableAdmin: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
+                admin_id: components["parameters"]["AdminIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "reason": "该账号使用人已调岗，不再需要查询权限"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description The account, now disabled. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "admin_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b04",
+                     *         "username": "query.xiaoli",
+                     *         "display_name": "查询小狸",
+                     *         "is_super": false,
+                     *         "status": "disabled",
+                     *         "totp_bound": true,
+                     *         "verify_phone_masked": "133****4455",
+                     *         "locked_until": null,
+                     *         "permissions": [
+                     *           "user.lookup",
+                     *           "order.view"
+                     *         ],
+                     *         "created_at": "2026-09-20T09:00:00+08:00",
+                     *         "row_version": 5
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not disabled (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminEnableAdmin: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
+                admin_id: components["parameters"]["AdminIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account, active again. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "admin_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b05",
+                     *         "username": "ops.temp01",
+                     *         "display_name": "运营临时号",
+                     *         "is_super": false,
+                     *         "status": "active",
+                     *         "totp_bound": true,
+                     *         "verify_phone_masked": "135****9012",
+                     *         "locked_until": null,
+                     *         "permissions": [
+                     *           "content.page",
+                     *           "content.pool",
+                     *           "content.article"
+                     *         ],
+                     *         "created_at": "2026-09-15T09:00:00+08:00",
+                     *         "row_version": 3
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not enabled (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminSaveAdminPermissions: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
+                admin_id: components["parameters"]["AdminIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "permissions": [
+                 *         "dashboard.view",
+                 *         "user.lookup",
+                 *         "fund.view",
+                 *         "fund.adjust",
+                 *         "fund.writeoff"
+                 *       ],
+                 *       "expected_row_version": 7
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminPermissionsSaveRequest"];
+            };
+        };
+        responses: {
+            /** @description The account with its new permission points. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "admin_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "username": "finance.xiaoli",
+                     *         "display_name": "财务小狸",
+                     *         "is_super": false,
+                     *         "status": "active",
+                     *         "totp_bound": true,
+                     *         "verify_phone_masked": "137****3366",
+                     *         "locked_until": null,
+                     *         "permissions": [
+                     *           "dashboard.view",
+                     *           "user.lookup",
+                     *           "fund.view",
+                     *           "fund.adjust",
+                     *           "fund.writeoff"
+                     *         ],
+                     *         "created_at": "2026-09-02T09:00:00+08:00",
+                     *         "row_version": 8
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not saved (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminResetAdminTotp: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
+                admin_id: components["parameters"]["AdminIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "reason": "本人换手机、旧验证器已不可用；已在企业微信视频通话里核对本人身份并确认"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description The account, with the authenticator no longer bound. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "admin_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b04",
+                     *         "username": "query.xiaoli",
+                     *         "display_name": "查询小狸",
+                     *         "is_super": false,
+                     *         "status": "active",
+                     *         "totp_bound": false,
+                     *         "verify_phone_masked": "133****4455",
+                     *         "locked_until": null,
+                     *         "permissions": [
+                     *           "user.lookup",
+                     *           "order.view"
+                     *         ],
+                     *         "created_at": "2026-09-20T09:00:00+08:00",
+                     *         "row_version": 6
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not reset (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUpdateAdminDisplayName: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
+                admin_id: components["parameters"]["AdminIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "display_name": "财务小狸"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminDisplayNameUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The account with its new display name. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "admin_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
+                     *         "username": "finance.xiaoli",
+                     *         "display_name": "财务小狸",
+                     *         "is_super": false,
+                     *         "status": "active",
+                     *         "totp_bound": true,
+                     *         "verify_phone_masked": "137****3366",
+                     *         "locked_until": null,
+                     *         "permissions": [
+                     *           "fund.view",
+                     *           "fund.adjust"
+                     *         ],
+                     *         "created_at": "2026-09-02T09:00:00+08:00",
+                     *         "row_version": 9
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminSendAdminVerifyPhoneCode: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
+                admin_id: components["parameters"]["AdminIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13312344455"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminVerifyPhoneCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description The provider accepted the SMS, or its outcome is unknown (counted as sent). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "resend_after_sec": 60,
+                     *         "expires_in_sec": 300
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SendSmsCodeResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not sent (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminChangeAdminVerifyPhone: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description Id of an admin account; unknown → 20001 with data.fields=[admin_id]. */
+                admin_id: components["parameters"]["AdminIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13312344455",
+                 *       "code": "654321",
+                 *       "reason": "本人委托超管代改（自助更换也不需要旧号短信）；已在企业微信视频通话里核对本人身份"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminChangeAdminVerifyPhoneRequest"];
+            };
+        };
+        responses: {
+            /** @description The account with its new verify phone (masked). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "admin_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b04",
+                     *         "username": "query.xiaoli",
+                     *         "display_name": "查询小狸",
+                     *         "is_super": false,
+                     *         "status": "active",
+                     *         "totp_bound": true,
+                     *         "verify_phone_masked": "133****4455",
+                     *         "locked_until": null,
+                     *         "permissions": [
+                     *           "user.lookup",
+                     *           "order.view"
+                     *         ],
+                     *         "created_at": "2026-09-20T09:00:00+08:00",
+                     *         "row_version": 7
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

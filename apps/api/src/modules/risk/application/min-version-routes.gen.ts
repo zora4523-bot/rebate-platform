@@ -933,6 +933,26 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminSendMyVerifyPhoneCode",
+    "method": "POST",
+    "path": "/admin/v1/me/verify-phone/sms-codes",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminChangeMyVerifyPhone",
+    "method": "PUT",
+    "path": "/admin/v1/me/verify-phone",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminGetDashboard",
     "method": "GET",
     "path": "/admin/v1/dashboard",
@@ -953,9 +973,89 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminCreateAdmin",
+    "method": "POST",
+    "path": "/admin/v1/admins",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminGetAdmin",
     "method": "GET",
     "path": "/admin/v1/admins/:admin_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminDisableAdmin",
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/disable",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminEnableAdmin",
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/enable",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminSaveAdminPermissions",
+    "method": "PUT",
+    "path": "/admin/v1/admins/:admin_id/permissions",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminResetAdminTotp",
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/totp/reset",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUpdateAdminDisplayName",
+    "method": "PUT",
+    "path": "/admin/v1/admins/:admin_id/display-name",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminSendAdminVerifyPhoneCode",
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/verify-phone/sms-codes",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminChangeAdminVerifyPhone",
+    "method": "PUT",
+    "path": "/admin/v1/admins/:admin_id/verify-phone",
     "gate": null,
     "sessionScopes": [
       "full"

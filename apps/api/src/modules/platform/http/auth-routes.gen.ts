@@ -457,6 +457,16 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "admin"
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/me/verify-phone/sms-codes",
+    "auth": "admin"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/me/verify-phone",
+    "auth": "admin"
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/dashboard",
     "auth": "admin"
@@ -467,8 +477,48 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "super"
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/admins",
+    "auth": "super"
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/admins/:admin_id",
+    "auth": "super"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/disable",
+    "auth": "super"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/enable",
+    "auth": "super"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/admins/:admin_id/permissions",
+    "auth": "super"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/totp/reset",
+    "auth": "super"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/admins/:admin_id/display-name",
+    "auth": "super"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/verify-phone/sms-codes",
+    "auth": "super"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/admins/:admin_id/verify-phone",
     "auth": "super"
   },
   {
