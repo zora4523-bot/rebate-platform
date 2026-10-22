@@ -22,7 +22,16 @@
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { fenToJsonNumber } from '@couli/money';
-import { Controller, Get, HttpException, Inject, Optional, Post, Req, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpException,
+  Inject,
+  Optional,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { RouteSchema } from '@nestjs/platform-fastify';
 import type { Kysely } from 'kysely';
 import {
@@ -74,12 +83,6 @@ export type WithdrawStepUp = (
   request: CreateWithdrawalHttpRequest,
   execute: () => Promise<IdempotentResponse>,
 ) => Promise<IdempotentResponse>;
-
-export interface WithdrawalRawReply {
-  code(status: number): WithdrawalRawReply;
-  type(contentType: string): WithdrawalRawReply;
-  send(body: string): unknown;
-}
 
 /** HTTP status and package default text of the chain's codes (contracts/error-codes.yaml, texts.default.json). */
 const APPLY_ERRORS: Readonly<Record<number, { readonly status: number; readonly msg: string }>> =
@@ -166,10 +169,14 @@ export class WithdrawalsController {
     this.#stepUp = stepUp ?? null;
   }
 
+  /**
+   * Takes only @Req() and answers the stored envelope: HTTP 200 as the return value, anything
+   * else thrown as HttpException for the global filter to write back unchanged (the deletion
+   * controller's convention, which identity's step-up fixtures rely on to swap the handler).
+   */
   async createWithdrawal(
     request: CreateWithdrawalHttpRequest,
-    reply: WithdrawalRawReply,
-  ): Promise<void> {
+  ): Promise<Schema<'WithdrawalResponse'>> {
     const actor = this.#actor(request);
     const apply = this.#apply;
     const idempotency = this.#idempotency;
@@ -206,7 +213,9 @@ export class WithdrawalsController {
         },
       ),
     );
-    reply.code(response.status).type('application/json; charset=utf-8').send(response.body);
+    const envelope = JSON.parse(response.body) as unknown;
+    if (response.status === 200) return envelope as Schema<'WithdrawalResponse'>;
+    throw new HttpException(envelope as Record<string, unknown>, response.status);
   }
 
   async getWithdrawRules(
@@ -249,8 +258,8 @@ export class WithdrawalsController {
   Get('rules')(prototype, 'getWithdrawRules', rules);
   RouteSchema(contractRouteSchema('getWithdrawRules'))(prototype, 'getWithdrawRules', rules);
   Req()(prototype, 'createWithdrawal', 0);
-  Res()(prototype, 'createWithdrawal', 1);
   Post()(prototype, 'createWithdrawal', create);
+  HttpCode(200)(prototype, 'createWithdrawal', create);
   RouteSchema(contractRouteSchema('createWithdrawal'))(prototype, 'createWithdrawal', create);
   Controller('v1/withdrawals')(WithdrawalsController);
 }
