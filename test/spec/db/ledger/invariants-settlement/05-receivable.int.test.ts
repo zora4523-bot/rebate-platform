@@ -396,3 +396,29 @@ it(
   },
   TIMEOUT,
 );
+
+it(
+  '[AC-B2-04z#26] ⑤ 核对日次日已入账的调整与当前booked金额一致时不报，少一分仍报',
+  async () => {
+    await scenario(createTestDatabase, '05', async ({ db, check }) => {
+      // BR-FUND-19⑤按订单booked金额复核；细则未定义历史booked快照。
+      // 模拟16日01:00核对15日：16日00:00至01:00的调整已提交，当前N=900、B=720。
+      // 保守保持同一读取快照的订单与凭证口径，不能仅将凭证截到15日再比当前booked。
+      const o = await order(db, { values: { booked_n_fen: 900n, booked_base_fen: 720n } });
+      await post(db, o, o.people[0]!, 400n, 'CREDIT', { date: '2032-06-15' });
+      await post(db, o, o.people[1]!, 80n, 'CREDIT', { date: '2032-06-15' });
+      await post(db, o, o.revenue, 520n, 'CREDIT', { date: '2032-06-15' });
+      await post(db, o, o.people[0]!, -40n, 'SETTLE_ADJUST', { date: '2032-06-16' });
+      await post(db, o, o.people[1]!, -8n, 'SETTLE_ADJUST', { date: '2032-06-16' });
+      await post(db, o, o.revenue, -52n, 'SETTLE_ADJUST', { date: '2032-06-16' });
+      clean(await check(1n, '2032-06-15'));
+      // 分录只追加：追加同会计日的一分负调整，制造次日净额少一分的破坏数据。
+      await post(db, o, o.revenue, -1n, 'SETTLE_ADJUST', { date: '2032-06-16' });
+      const rows = await check(1n, '2032-06-15');
+      differences(rows, 'global');
+      identifies(rows, o);
+      detailContains(rows, 899n, 900n);
+    });
+  },
+  TIMEOUT,
+);
