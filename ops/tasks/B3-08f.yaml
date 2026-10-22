@@ -1,0 +1,28 @@
+id: B3-08f
+repo: rebate-platform
+title: orders：给 B3-08 的订单查询补口（同一个 OrderQueries，不另写检索与投影）——按 +08:00 付款日闭区间、self 与 share 两个 scope 合并按付款时间倒序、返回 total；按单号只在本人自购单里精确匹配（父单号 / 子单号，不回退到标题匹配）；条目带 expected_credit_period
+type: impl
+# 2026-10-23 编排派工（B3-08 拆分，依据 couli-runs/B3-08/summary.md §2；main 6556b2e3）。05 B1-08 行「订单检索与分享单的字段裁剪做成与 B3-08 共用的一个查询函数」、B3-08 行「检索范围、匹配与分享单的投影不另写」。
+# 现状：B1-08l 的 OrderQueries.list(subject, filter) 只有 paid_month、单 scope、无 total；scope=self 的 q 先试单号、无命中回退标题匹配（列表口径对，explain_order 按单号查不对）；OrderSummary 不带 expected_credit_period（只在 OrderDetail）。
+# 本段在 OrderQueries 上加两个只读方法（名称由实现定，草拟 searchForAgent / findOwnByNumber），复用现有 #visible / #scoped / #views / summaryFields 投影与 visibleOrderStart、is_other_product 判定；HTTP 行为不变（test/spec/orders/list-detail/** 保持绿）。
+# 依据：BR-TEXT-02 细则「订单的检索范围与分享单的投影」（范围、按单号只匹配自购单、分享单 is_other_product=true 不参与标题匹配、投影在服务端裁掉）；BR-AI-07 细则「订单类工具契约」（date_from/date_to 闭区间、keyword 子串、platform、limit 1–8、total/truncated）。
+# 风险 RV2（orders/**）。分工：Codex 先写规则测试，Opus 实现，Codex 对抗评审。refs 连一跳超 24KB 时编排手工生成任务书，BR-TEXT-02 只摘上述一段与「订单号的显示」。
+refs: [BR-TEXT-02, BR-AI-07]
+refs_hash:
+  BR-TEXT-02: 312331179dcf
+  BR-AI-07: edd68aa327e3
+deps: [B1-08l]
+paths:
+  - 'apps/api/src/modules/orders/application/order-queries.ts'
+  - 'apps/api/src/modules/orders/domain/query-rules.ts'
+  - 'apps/api/src/modules/orders/index.ts'
+test_paths:
+  - 'test/spec/orders/agent-queries/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/agent-queries/**'
+  - 'test/spec/orders/list-detail/**'
+status: todo
+pr: null

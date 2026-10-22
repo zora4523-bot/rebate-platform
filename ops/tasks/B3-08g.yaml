@@ -1,0 +1,29 @@
+id: B3-08g
+repo: rebate-platform
+title: B3-08 接线：生产装配注册 handoff_to_human、prefill_claim、list_my_orders、explain_order（search_rules 待 B3-08b）进 ToolRegistry 与 specs/agent-tools.allowlist；app.module 经 agentStreamPortsToken 提供 OrderQueries 与 linking 外跳日志读口；card_id→order_id 会话内解析读 agent_cards、explain_order 按单号每日计数的生产实现；开关 agent.tools.<name>.enabled 种子
+type: impl
+# 2026-10-23 编排派工（B3-08 拆分，依据 couli-runs/B3-08/summary.md §4）。B3-03j（stream production assembly）先例：agent 不 import orders / linking 的 provider，由 app.module 组装后经端口注入。
+# 依据：BR-AI-02（注册表 = 已开启 ∩ 主体允许；allowlist 集合相等；denylist 两处扫描；③ 依赖规则：agent 只 import orders / linking index 的只读查询，不得 import createOrderClaim / openLink）；BR-AI-07 防试探计数（按 +08:00 自然日，默认 20）。
+# 计数存储（Redis INCR+到次日 0 点过期，或 PG）由实现定并写进 PR 说明；agent_cards 只读（agent 是写者，读本会话卡片无越权）。
+# 前置：B3-08h 先合（否则 [AC-B3-04a#4] 必红）。search_rules 等 B3-08b 合并后另开小段或在本段追加。风险 RV2（app.module、specs/**）。
+refs: [BR-AI-02]
+refs_hash:
+  BR-AI-02: 61014cc4d222
+deps: [B3-08a, B3-08c, B3-08d, B3-08h, B3-03j]
+paths:
+  - 'apps/api/src/modules/agent/stream/mount/assembly.ts'
+  - 'apps/api/src/modules/agent/stream/mount/production.ts'
+  - 'apps/api/src/modules/agent/tools/registry/**'
+  - 'apps/api/src/app.module.ts'
+  - 'specs/agent-tools.allowlist'
+  - 'db/seeds/**'
+test_paths:
+  - 'test/spec/agent/stream-assembly-orders/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-assembly-orders/**'
+  - 'test/spec/agent/tools-registry/**'
+status: todo
+pr: null

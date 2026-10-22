@@ -1,0 +1,27 @@
+id: B3-08a
+repo: rebate-platform
+title: Agent 订单两工具：list_my_orders（付款日区间、keyword、platform、limit≤8，≤8 张 order_status 卡、truncated 出 notice、0 笔出 handoff）与 explain_order（card_id | order_no 二选一；命中出 order_status 卡；按单号查不到一律 NOT_TRACKED + claim_draft 卡；每日按单号上限 rate_limited）；只下发已绑手机主体，调用 B3-08f 的同一个订单查询函数
+type: impl
+# 2026-10-23 编排派工（B3-08 拆分，依据 couli-runs/B3-08/summary.md；main 6556b2e3）。05 B3-08 行；验收 AC-S1-106 ②③④（Agent 部分）、05 「越权用例 0 通过」。
+# 依据：BR-AI-07 正文与细则「订单类工具契约」「explain_order 判定规则」1–6；BR-TEXT-02 细则「订单的检索范围与分享单的投影」（只引用，检索与投影一律调 orders 的 OrderQueries，不在 agent 里写 SQL 或裁字段）；
+#   BR-AI-01 主体过滤（audience=phone_bound）；BR-AI-03（身份只来自 ToolCallContext；order_id 只来自 context.order_id 或本会话 order_status 卡的 card_id，且须属于当前用户，否则与不存在相同）；BR-AI-05（模型只见 card_id / platform / <untrusted> 包裹的 title）。
+# 接入：orders index 导出的 OrderQueries（B1-08l：list(subject: OrderSubject, filter: OrderFilter)、get(subject, orderId)）+ B3-08f 新增的两个方法；claim_draft 卡用 B3-08d 的出卡函数、handoff 卡用 B3-08c 的。
+# card_id → order_id 的会话内解析、按单号每日计数（agent.explain_order.order_no_daily_max，默认 20）都做成 deps 端口，生产实现随 B3-08g 接线。
+# T5 模板文本由 B3-05f intents（TemplateCall）出，本段只在 outcome.trace 带 reason_code / display_status 摘要（不进 modelView）；trace.calls 生产仍空（followups 31），不在本段。
+# 不进 allowlist、不接线（B3-08g）。风险 RV1（agent/**）。分工：Codex 先写规则测试，Opus 实现，Codex 评审。
+refs: [BR-AI-07, BR-TEXT-02]
+refs_hash:
+  BR-AI-07: edd68aa327e3
+  BR-TEXT-02: 312331179dcf
+deps: [B3-04a, B3-05i, B1-08l, B3-08f, B3-08c, B3-08d]
+paths:
+  - 'apps/api/src/modules/agent/tools/orders/**'
+test_paths:
+  - 'test/spec/agent/tools-orders/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-orders/**'
+status: todo
+pr: null

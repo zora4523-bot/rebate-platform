@@ -1,0 +1,25 @@
+id: B3-08c
+repo: rebate-platform
+title: Agent 工具：handoff_to_human——无参数、只出 1 张 handoff 卡（entry 固定为发起页路由名、summary 取字典文案，不含模型文本与任何账号 / 订单标识）；导出出卡函数供 list_my_orders 0 笔与 search_rules 无命中复用
+type: impl
+# 2026-10-23 编排派工（B3-08 拆分，依据 couli-runs/B3-08/summary.md；main 6556b2e3，SPEC_REF eabcf007）。05 B3-08 行；01 F-AGENT-07。
+# 依据：BR-AI-01 A 级表「search_rules / handoff_to_human：模型选工具，只出卡」、B 级表「打开客服：handoff 卡 → 企业微信客服」（点击由客户端 cs.open 完成，Agent 服务不代为调用）；
+#   04 §8.3 handoff = {entry, summary}（contracts/agent-stream.schema.json card_handoff）；04 §9 cs.open：客服链接只带发起页路由名，不带 uid、订单号等任何标识；
+#   BR-AI-07：list_my_orders 0 笔出 1 张 handoff 卡、search_rules 无命中出 handoff 卡（故先做本段，B3-08a / B3-08b 复用出卡函数）。
+# 08 未给参数与 summary 取值：默认无参数（空 schema、additionalProperties=false，同 get_my_earnings 写法）、entry='AgentChat'（routes.json 固定路由名）、summary 取 agent.card.handoff.desc 的字典文案；见 B3-08c-notes-test.md「未知项与默认」。
+# 不进 allowlist、不接线：注册与 specs/agent-tools.allowlist 归 B3-08g。风险 RV1。分工：Codex 先写规则测试，Opus 实现，Codex 评审。
+refs: [BR-AI-01]
+refs_hash:
+  BR-AI-01: b624c86b4643
+deps: [B3-04a, B3-05i]
+paths:
+  - 'apps/api/src/modules/agent/tools/handoff/**'
+test_paths:
+  - 'test/spec/agent/tools-handoff/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-handoff/**'
+status: todo
+pr: null
