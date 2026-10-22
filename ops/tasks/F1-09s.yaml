@@ -1,0 +1,21 @@
+id: F1-09s
+repo: rebate-platform
+title: content：首页弹窗 Lottie 时长计算溢出防护——(op − ip) ÷ fr 或换算毫秒得到非有限值（Infinity / NaN）时按 too_long 拒收，不再返回 duration_ms=Infinity
+type: impl
+# 2026-10-23 入账（content-client followups；F1-09r #1133 Codex money 评审 S2：fr / op 取 1e308 等刻意构造输入时 frames*1000 溢出，校验通过却返回 duration_ms=Infinity，违反响应契约）。
+# 依据（SPEC_REF 17b5fe5）：08 BR-TEXT-26 细则「素材与校验」（时长须大于 0 且不超过 3 秒）；契约 adminUploadPopupAsset（duration_ms 为整数）。原文由编排者摘入任务书，refs 置空。
+# 要点：只改 content/domain/popup-asset.ts 的时长判定与单测；非有限的中间值一律 too_long（20001 fields=[file]），不改其他拒收原因与顺序。
+refs: []
+refs_hash: {}
+deps: [F1-09r]
+paths:
+  - 'apps/api/src/modules/content/**'
+test_paths:
+  - 'test/spec/content/popup-assets-overflow/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/popup-assets-overflow/**'
+status: todo
+pr: null
