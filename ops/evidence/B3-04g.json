@@ -1,0 +1,103 @@
+{
+  "task": "B3-04g",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "spec_commit": "50371a61073647f6c48d8463db5651decf338e61",
+  "red_tests": [
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#1] URL、口令、URL 按出现顺序串行交给同一 runner，原样出卡",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#2] 单口令成功使用 start/end 文案并透传同次报价卡",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 parse_error 30132 只产生一次对应 notice 和 failed，前后 URL 照常",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 parse_error 30131 只产生一次对应 notice 和 failed，前后 URL 照常",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 parse_error 30141 只产生一次对应 notice 和 failed，前后 URL 照常",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 parse_error 50301 只产生一次对应 notice 和 failed，前后 URL 照常",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 runner 抛错 只产生一次对应 notice 和 failed，前后 URL 照常",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 price_unavailable 只产生一次对应 notice 和 failed，前后 URL 照常",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 no_card 只产生一次对应 notice 和 failed，前后 URL 照常",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#4] 口令 runner 内取消后 success 不输出迟到结果，也不调用后续 URL 或口令",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#4] 口令 runner 内取消后 parse_error 不输出迟到结果，也不调用后续 URL 或口令",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#4] 口令 runner 内取消后 exception 不输出迟到结果，也不调用后续 URL 或口令",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#5] 口令成功卡写出后取消，后续 URL 与口令都不报价",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#6] URL/口令/URL：混合输入共用前三个名额，超限提示一次且不补取后续候选",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#6] 口令/URL/口令：混合输入共用前三个名额，超限提示一次且不补取后续候选",
+    "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#6] 失败口令仍占名额：混合输入共用前三个名额，超限提示一次且不补取后续候选"
+  ],
+  "risk_note": "RV1: apps/api/src/modules/agent/orchestrator/deterministic/** and orchestrator/core/run.ts. The deterministic path hands token candidates to the same LinkQuoteRunner as links, in message order (tool.status, single-failure notices, limits and cancellation shared); core's quoteObserver maps the n-th get_rebate_quote to the n-th link (tokens included). Frozen tests that asserted the opposite were relaxed beforehand by test-changes B3-04i (#1125, [AC-B3-05e#13]) and B3-04j (#1141, [AC-B3-05j#2]); this task's rule tests assert the token goes to the runner in order (orchestrator condition). Production injection of parseToken is B3-03j's (D10-134). Rule tests by Codex (1 attempt); Opus implementation 2 attempts (the first stopped at [AC-B3-05j#2] and the trace mapping). Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "50371a61073647f6c48d8463db5651decf338e61",
+      "tree": "7a26cd0b21a7468babb7840a6632c2e26443b059",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T10:39:13Z",
+      "finished_at": "2026-10-22T10:39:18Z",
+      "red_tests": [
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#1] URL、口令、URL 按出现顺序串行交给同一 runner，原样出卡",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#2] 单口令成功使用 start/end 文案并透传同次报价卡",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 parse_error 30132 只产生一次对应 notice 和 failed，前后 URL 照常",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 parse_error 30131 只产生一次对应 notice 和 failed，前后 URL 照常",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 parse_error 30141 只产生一次对应 notice 和 failed，前后 URL 照常",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 parse_error 50301 只产生一次对应 notice 和 failed，前后 URL 照常",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 runner 抛错 只产生一次对应 notice 和 failed，前后 URL 照常",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 price_unavailable 只产生一次对应 notice 和 failed，前后 URL 照常",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#3] 中间口令 no_card 只产生一次对应 notice 和 failed，前后 URL 照常",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#4] 口令 runner 内取消后 success 不输出迟到结果，也不调用后续 URL 或口令",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#4] 口令 runner 内取消后 parse_error 不输出迟到结果，也不调用后续 URL 或口令",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#4] 口令 runner 内取消后 exception 不输出迟到结果，也不调用后续 URL 或口令",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#5] 口令成功卡写出后取消，后续 URL 与口令都不报价",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#6] URL/口令/URL：混合输入共用前三个名额，超限提示一次且不补取后续候选",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#6] 口令/URL/口令：混合输入共用前三个名额，超限提示一次且不补取后续候选",
+        "test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts > [AC-B3-04g#6] 失败口令仍占名额：混合输入共用前三个名额，超限提示一次且不补取后续候选"
+      ],
+      "expected": ["test/spec/agent/orchestrator-deterministic-tpwd/path.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "da144b28a818fcca9c0df6fc14a6353c903ff8967a85cc4f15ee236ad526403a"
+        }
+      ],
+      "gate": {
+        "commit": "ed25ecd7e2935a5240ef8b3ee800e0d41bce5ac2",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass on both implementation commits (couli-runs/B3-04g/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "independent Claude (claude-run.sh) round 1 pass: every must-assert of the brief §9 kills its mutation (couli-runs/B3-04g/review-claude-independent-spec-test-r1.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "e85174e53a50a1e7ebffd6ce15f6e1fce0a0d66a",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
