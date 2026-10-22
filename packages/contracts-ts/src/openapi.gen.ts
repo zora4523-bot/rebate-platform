@@ -3669,8 +3669,10 @@ export interface paths {
          *     「未配置告警手机号」, BR-ID-24 ②) and `reauth_mode` (BR-ID-24 细则「后台告警手机号与重新授权会话」:
          *     `oauth` → POST …/{union_account_id}/reauthorize, `manual` → PUT
          *     …/{union_account_id}/credential, `none` → no renewal entry). `auth_expires_estimated` is
-         *     true when the union returned no expiry and the server estimated it as the authorization
-         *     time + 90 days (BR-ID-24 细则; the page marks it 「估算」). `auth_renewed_by` is null for an
+         *     true when the expiry is estimated (the page marks it 「估算」): for `oauth`, the union
+         *     returned no expiry and the server took the authorization time + 90 days; for `manual`,
+         *     the entry time + that platform's Key validity from the platform registry (BR-ID-24 细则
+         *     「none 与 manual 平台的到期、探测与提醒」, ruling D10-196). For `none`, `auth_expires_at` is null. `auth_renewed_by` is null for an
          *     automatic refresh (BR-ID-24 细则「后台联盟账号列表」). The reminder stage
          *     (union_accounts.alert_stage) and every credential (tokens, keys) are never returned.
          *     `status` is union_accounts.status as stored; its values are registered with B1-22 and
@@ -3830,7 +3832,10 @@ export interface paths {
          *     stored encrypted in union_credentials and is never logged, audited, echoed or returned.
          *     Effects, in one transaction (BR-ID-24 ③): the credential replaces the current one;
          *     auth_expires_at = `expires_at` with auth_expires_estimated = false, or, without
-         *     `expires_at`, now + 90 days with auth_expires_estimated = true (BR-ID-24 细则);
+         *     `expires_at`, now + that platform's Key validity with auth_expires_estimated = true —
+         *     the validity is read from the platform registry configuration, not fixed (documented
+         *     365 days for the JD 推客授权 Key, pending CAP-JD-12; BR-ID-24 细则「none 与 manual
+         *     平台的到期、探测与提醒」, ruling D10-196);
          *     auth_renewed_at = now, auth_renewed_by = the signed-in admin; auth_status and the
          *     reminder stage are recomputed from the new expiry (an account expired by a probe or
          *     call recovers, BR-ID-24 ④). The union is not called here; the next daily probe checks
@@ -11190,7 +11195,7 @@ export interface components {
              * @description When the current station-owner authorization expires; null when unknown.
              */
             auth_expires_at: string | null;
-            /** @description True when the expiry is estimated (authorization time + 90 days, BR-ID-24 细则). */
+            /** @description True when the expiry is estimated (oauth — authorization time + 90 days; manual — entry time + the platform's Key validity from the platform registry; BR-ID-24 细则). */
             auth_expires_estimated: boolean;
             auth_status: components["schemas"]["AdminUnionAuthStatus"];
             /** Format: date-time */
@@ -11269,7 +11274,7 @@ export interface components {
             credential: string;
             /**
              * Format: date-time
-             * @description Expiry shown by the union, later than now; absent → now + 90 days, marked estimated.
+             * @description Expiry shown by the union, later than now; absent → now + the platform's Key validity from the platform registry (not fixed), marked estimated.
              */
             expires_at?: string;
             reason?: components["schemas"]["AdminUnionOptionalReason"];
