@@ -48,6 +48,11 @@ export interface RootLoggerOptions {
   readonly entry: string;
   /** APP_ENV, bound to every line. */
   readonly appEnv: string;
+  /**
+   * The deployed image tag (B1-01zzg, 规划/02 §13; config `deployVersion`), bound to every line as
+   * `deployVersion`. Undefined or empty: the key is left out (never logged empty or undefined).
+   */
+  readonly deployVersion?: string | undefined;
 }
 
 /** Fastify Request getters must be read before copying; plain req records retain their shape. */
@@ -96,7 +101,12 @@ export function createRootLogger(
   });
   const loggerOptions: LoggerOptions = {
     level: options.level,
-    base: { entry: options.entry, env: options.appEnv, pid: process.pid },
+    base: {
+      entry: options.entry,
+      env: options.appEnv,
+      ...(options.deployVersion ? { deployVersion: options.deployVersion } : {}),
+      pid: process.pid,
+    },
     timestamp: pino.stdTimeFunctions.isoTime,
     // Pino's bigint fallback must not impose its default five-level/100-field truncation.
     depthLimit: 110,

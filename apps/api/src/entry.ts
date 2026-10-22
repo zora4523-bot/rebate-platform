@@ -507,7 +507,12 @@ export async function runEntry(entry: EntryName): Promise<void> {
     return;
   }
   if (config === undefined || connections === undefined) return;
-  const logger = createRootLogger({ level: config.logLevel, entry, appEnv: config.appEnv });
+  const logger = createRootLogger({
+    level: config.logLevel,
+    entry,
+    appEnv: config.appEnv,
+    deployVersion: config.deployVersion,
+  });
   let handles: DbHandles | undefined;
   let maintHandle: MaintDbHandle | null = null;
   // Installed before anything is created; removed only after a failed startup's cleanup, so a

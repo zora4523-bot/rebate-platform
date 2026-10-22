@@ -37,6 +37,8 @@ services:
     environment:
       # Not a secret; set here so no process depends on the node file for it.
       APP_ENV: staging
+      # B1-01zzg (规划/02 §13): the deployed image tag, bound to every log line as deployVersion.
+      COULI_DEPLOY_VERSION: '${COULI_API_TAG:?deploy.sh exports the image tag}'
       # Listen on the container interface so the 127.0.0.1-only host port reaches it.
       API_HOST: '0.0.0.0'
       # boot.mjs reads the access-token signing key (es256.pem, key-id) from this mounted
@@ -121,6 +123,8 @@ services:
     environment:
       # Not a secret; set here so no process depends on the node file for it.
       APP_ENV: staging
+      # B1-01zzg (规划/02 §13): the deployed image tag, bound to every log line as deployVersion.
+      COULI_DEPLOY_VERSION: '${COULI_API_TAG:?deploy.sh exports the image tag}'
       # Listen on the container interface so the 127.0.0.1-only host port reaches it.
       API_HOST: '0.0.0.0'
       # boot.mjs reads the access-token verification public key (es256.pub.pem, key-id) from
@@ -197,6 +201,8 @@ services:
     environment:
       # Not a secret; set here so no process depends on the node file for it.
       APP_ENV: staging
+      # B1-01zzg (规划/02 §13): the deployed image tag, bound to every log line as deployVersion.
+      COULI_DEPLOY_VERSION: '${COULI_API_TAG:?deploy.sh exports the image tag}'
     volumes:
       # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
       - type: bind
@@ -270,6 +276,8 @@ services:
     environment:
       # Not a secret; set here so no process depends on the node file for it.
       APP_ENV: staging
+      # B1-01zzg (规划/02 §13): the deployed image tag, bound to every log line as deployVersion.
+      COULI_DEPLOY_VERSION: '${COULI_API_TAG:?deploy.sh exports the image tag}'
       # Listen on the container interface so the 127.0.0.1-only host port reaches it.
       API_HOST: '0.0.0.0'
     ports:
@@ -335,6 +343,8 @@ services:
     environment:
       # Not a secret; set here so no process depends on the node file for it.
       APP_ENV: staging
+      # B1-01zzg (规划/02 §13): the deployed image tag, bound to every log line as deployVersion.
+      COULI_DEPLOY_VERSION: '${COULI_API_TAG:?deploy.sh exports the image tag}'
     volumes:
       # CA of the self-signed database certificate (sslmode=verify-ca&sslrootcert=/etc/pki/ca.crt)
       - type: bind
