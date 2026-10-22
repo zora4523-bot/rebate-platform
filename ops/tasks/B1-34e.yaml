@@ -7,7 +7,7 @@ type: impl
 #   并发上限：领取任务时按创建人 pg_advisory_xact_lock(创建人) 后计数 running 再 CAS pending→running（防两 job 同时超限）；明文任务生成后另写一条 export_unmasked 审计带 row_count（审计只追加，契约要求）；本期读主库（worker 无只读库，02 部署表「导出走只读库」待 B1-30 一并处理，notices 已登记）。CSV：UTF-8 BOM、RFC 4180 转义，单元格防公式注入（以 = + - @ 开头加前导单引号）。账号停用即取消的接入要等 admins 停用契约与实现（未入账），本任务只提供端口。
 refs: [BR-ID-42, BR-ID-33]
 refs_hash:
-  BR-ID-42: c0c9ee5e6809
+  BR-ID-42: 2f9cd1710ed3
   BR-ID-33: 01b25f773b29
 deps: [B1-34a, B1-34b, B1-34c, B1-34d, B1-34g]
 paths:

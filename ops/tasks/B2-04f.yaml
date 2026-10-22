@@ -6,7 +6,7 @@ type: impl
 # 状态备注：可先开（index.ts 与 e、g 按合并先后变基）。
 refs: [BR-FUND-04, BR-FUND-18]
 refs_hash:
-  BR-FUND-04: 4b12018b0aaa
+  BR-FUND-04: ae08abefb6da
   BR-FUND-18: c7ebd23ee75e
 deps: []
 paths:

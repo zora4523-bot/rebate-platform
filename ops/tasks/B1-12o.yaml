@@ -12,7 +12,7 @@ refs_hash:
   BR-WATCH-19: d14905e58b39
   BR-TEXT-09: 79da190ca728
   BR-ID-07: 4f2a4bdf0a2a
-  BR-ID-10: c52da301b6b2
+  BR-ID-10: e75a9c5ca39f
 deps: [B1-12n, B1-12m, B1-14c]
 paths:
   - 'apps/api/src/modules/notification/**'

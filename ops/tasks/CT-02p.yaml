@@ -11,8 +11,8 @@ type: contract
 refs: [BR-ID-20, BR-ID-31, BR-TEXT-23]
 refs_hash:
   BR-ID-20: 1ffd995f311a
-  BR-ID-31: ac2c03e8d41c
-  BR-TEXT-23: 44fab0c50841
+  BR-ID-31: 7976b65fe995
+  BR-TEXT-23: ada6981db849
 contract_sections: ['6.6']
 deps: []
 paths:

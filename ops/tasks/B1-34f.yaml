@@ -7,7 +7,7 @@ type: impl
 # refs 只引 BR-ID-42（导出链接口径已由 #148 / #157 写入 BR-ID-42；BR-ID-30 只剩留存期限，本任务不涉及，且带上任务书 26KB 超限）。
 refs: [BR-ID-42]
 refs_hash:
-  BR-ID-42: c0c9ee5e6809
+  BR-ID-42: 2f9cd1710ed3
 deps: [B1-34e]
 paths:
   - 'apps/api/src/modules/admin/**'
