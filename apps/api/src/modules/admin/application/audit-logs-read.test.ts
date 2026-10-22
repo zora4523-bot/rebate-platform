@@ -101,3 +101,37 @@ it('[AC-B1-34a] from later than to is refused; equal or one-sided bounds are not
   expect(auditRangeInvalid('2026-10-08T08:00:00+08:00', '2026-10-08T00:00:00Z')).toBe(false);
   expect(auditRangeInvalid('2026-10-09T00:00:00Z', undefined)).toBe(false);
 });
+
+it('[AC-B1-34e] the export walk passes its fixed bound and continues by keyset after a cursor', async () => {
+  const filters: AuditLogFilter[] = [];
+  const calls: [number, number, bigint | undefined][] = [];
+  const store: AuditLogStore = {
+    count: (filter) => {
+      filters.push(filter);
+      return Promise.resolve(0);
+    },
+    page: (_filter, offset, limit, after) => {
+      calls.push([offset, limit, after]);
+      return Promise.resolve([]);
+    },
+    byId: () => Promise.resolve(undefined),
+  };
+  const reader = createAuditLogsReader({
+    store,
+    profiles: { permissionKeys: () => Promise.resolve([]) },
+    ids: () => ids,
+    configPermissions: new Map(),
+  });
+  const upTo = new Date(Date.parse('2026-10-08T00:00:00Z'));
+  await reader.list(caller, { page: 3, pageSize: 50, upTo, to: '2026-10-09T00:00:00Z' });
+  await reader.list(caller, { page: 4, pageSize: 50, upTo, after: ids.encode(7n) });
+  expect(filters.map((filter) => filter.upTo)).toEqual([upTo, upTo]);
+  expect(filters[0]).toMatchObject({ to: '2026-10-09T00:00:00Z' });
+  expect(calls).toEqual([
+    [100, 50, undefined],
+    [0, 50, 7n],
+  ]);
+  await expect(
+    reader.list(caller, { page: 2, pageSize: 50, after: 'aud_AAAAAAAAAAAAAAAAAAAAAA' }),
+  ).rejects.toThrow(RangeError);
+});

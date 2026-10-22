@@ -24,5 +24,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/admin/export-worker/**'
-status: todo
-pr: null
+status: done
+pr: 1129

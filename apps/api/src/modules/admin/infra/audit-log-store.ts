@@ -33,13 +33,25 @@ export interface AuditLogFilter {
   /** Inclusive / exclusive bounds, ISO 8601 with offset (already validated). */
   readonly from?: string;
   readonly to?: string;
+  /** Inclusive upper bound on `at` (an export walk's fixed set; combines with `to`). */
+  readonly upTo?: Date;
   /** Each entry is an OR of conditions, entries combine with AND; [] in an entry matches none. */
   readonly derived: readonly (readonly AuditCondition[])[];
 }
 
 export interface AuditLogStore {
   count(filter: AuditLogFilter): Promise<number>;
-  page(filter: AuditLogFilter, offset: number, limit: number): Promise<AuditLogRow[]>;
+  /**
+   * One page, newest first. With `after` (the primary key of the previous page's last row) the
+   * page continues the keyset walk on (at, id) and `offset` must be 0; a cursor row that no
+   * longer exists in the app is an error (the walk fails closed rather than ending early).
+   */
+  page(
+    filter: AuditLogFilter,
+    offset: number,
+    limit: number,
+    after?: bigint,
+  ): Promise<AuditLogRow[]>;
   /** One record of the app (and of `actorId` when given); undefined when there is none. */
   byId(appId: string, id: bigint, actorId?: string): Promise<AuditLogRow | undefined>;
 }
@@ -83,6 +95,7 @@ function where(eb: Builder, filter: AuditLogFilter): Expression<SqlBool> {
     parts.push(sql<SqlBool>`l.at >= ${filter.from}::timestamptz`);
   }
   if (filter.to !== undefined) parts.push(sql<SqlBool>`l.at < ${filter.to}::timestamptz`);
+  if (filter.upTo !== undefined) parts.push(eb('l.at', '<=', filter.upTo));
   for (const any of filter.derived) {
     parts.push(
       any.length === 0 ? sql<SqlBool>`false` : eb.or(any.map((plan) => condition(eb, plan))),
@@ -137,8 +150,30 @@ export function createAuditLogStore(deps: { readonly db: Kysely<DB> }): AuditLog
       return Number(row.total);
     },
 
-    async page(filter, offset, limit) {
-      const found = await rows((eb) => where(eb, filter))
+    async page(filter, offset, limit, after) {
+      let cursor: { readonly at: string; readonly id: bigint } | undefined;
+      if (after !== undefined) {
+        // The cursor row's exact instant (microseconds kept as text; a Date would truncate).
+        const anchor = await db
+          .selectFrom('audit_logs as c')
+          .select(
+            sql<string>`to_char(c.at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as('at'),
+          )
+          .where('c.app_id', '=', filter.appId)
+          .where('c.id', '=', after)
+          .executeTakeFirst();
+        if (anchor === undefined) throw new RangeError('audit log store: cursor row not found');
+        cursor = { at: anchor.at, id: after };
+      }
+      const keyset = cursor;
+      const found = await rows((eb) =>
+        keyset === undefined
+          ? where(eb, filter)
+          : eb.and([
+              where(eb, filter),
+              sql<SqlBool>`(l.at, l.id) < (${keyset.at}::timestamptz, ${keyset.id}::bigint)`,
+            ]),
+      )
         .orderBy('l.at', 'desc')
         .orderBy('l.id', 'desc')
         .offset(offset)

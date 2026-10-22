@@ -25,6 +25,8 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
     'poster',
     'agent-trace',
     'risk-scan',
+    // Admin data exports (B1-34c / B1-34e): generate and delayed expire jobs of export_tasks.
+    'export',
   ].map((name): QueueSpec =>
     Object.freeze({
       ...defaults,
@@ -67,6 +69,7 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
     work('pool-refresh', 1),
     work('poster', 2, 0.5),
     work('agent-trace', 2),
+    work('export', 1),
     work('risk-scan', 1),
   ]),
   payout: Object.freeze([work('payout', 1)]),

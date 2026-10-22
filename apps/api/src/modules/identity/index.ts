@@ -1,4 +1,10 @@
 // Public surface of the identity module. Other modules import only from this file.
+export { createExportUsersReader } from './application/export-users.ts';
+export type {
+  ExportUsersReader,
+  ExportUsersQuery,
+  ExportUserRow,
+} from './application/export-users.ts';
 // B1-13g: the worker's scheduled takeover / recheck of the paid bank-card verification records.
 export {
   PAYOUT_VERIFY_RECHECK_INTERVAL_MS,

@@ -1,5 +1,11 @@
 // Public surface of the admin module. Other modules depend on the platform AUDIT_PORT, not on
 // this file (admin depends on every module; importing admin would close a cycle).
+export { createExportWorker } from './application/export-worker.ts';
+export type { ExportWorker, ExportWorkerOptions } from './application/export-worker.ts';
+// B1-34e: the worker entry's export queue handler (app.module hands in identity's and content's
+// readers); EXPORT_WORKER also carries the account-disable cancel port.
+export { EXPORT_WORKER, ExportWorkerModule } from './export-worker.module.ts';
+export type { ExportWorkerModuleOptions } from './export-worker.module.ts';
 export { AdminModule, TOTP_REPLAY_STORE } from './admin.module.ts';
 export { createAuditWriter } from './infra/audit-writer.ts';
 export {
