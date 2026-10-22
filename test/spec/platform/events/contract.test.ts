@@ -130,7 +130,10 @@ it('[规划/02 §11 事件清单] EVENT_NAMES 正好是 02 §11 的 18 个事件
       (name) => !PLAN_02_PENDING.has(name) || EVENT_NAMES.includes(name),
     ),
     namesFrozen: true,
-    subscriptions: [{ consumer: 'notification-risk-state', events: ['risk.state_changed'] }],
+    subscriptions: [
+      { consumer: 'notification-risk-state', events: ['risk.state_changed'] },
+      { consumer: 'notification-appeal-result', events: ['appeal.resolved'] },
+    ],
     subscriptionsFrozen: true,
     bounds: [4096, 128, 3, 999],
     pattern: true,

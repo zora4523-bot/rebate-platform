@@ -37,9 +37,16 @@ import {
   RISK_STATE_MESSAGE_CONSUMER,
   createRiskStateMessageHandler,
 } from './application/risk-state-message.ts';
+import {
+  APPEAL_RESULT_MESSAGE_CONSUMER,
+  createAppealResultMessageHandler,
+} from './application/appeal-result-message.ts';
 
 /** Nest token of the worker's registration of the risk state message consumer (B1-12g). */
 export const RISK_STATE_MESSAGE_CONSUMER_TOKEN = Symbol('RISK_STATE_MESSAGE_CONSUMER');
+
+/** Nest token of the worker's registration of the appeal result message consumer (B1-12p). */
+export const APPEAL_RESULT_MESSAGE_CONSUMER_TOKEN = Symbol('APPEAL_RESULT_MESSAGE_CONSUMER');
 
 /** Build on first read so module startup never touches the database handle. */
 function lazyMessageReader(db: Kysely<Database>): MessageReader {
@@ -143,6 +150,8 @@ export class NotificationModule {
    * `evt.notification-risk-state`. Registration runs no statement; the handler touches the
    * database only inside the consumer's transaction. Without a database handle or queue nothing
    * is registered and one info line `risk_state_message_disabled` is logged.
+   * B1-12p: likewise the appeal.resolved consumer on queue `evt.notification-appeal-result`
+   * (APPEAL_RESULT, BR-ID-36); disabled line `appeal_result_message_disabled`.
    */
   static forWorker(ports: {
     /** linking's read-only Taobao binding port, assembled by app.module (dependency inversion). */
@@ -177,6 +186,36 @@ export class NotificationModule {
                 clock,
                 taobaoReauthReader: ports.taobaoReauthReader,
               }),
+            });
+            return true;
+          },
+        },
+        {
+          provide: APPEAL_RESULT_MESSAGE_CONSUMER_TOKEN,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<Database>,
+            queue?: QueueRuntime,
+          ): boolean => {
+            if (db === undefined || queue === undefined) {
+              logger.info(
+                { consumer: APPEAL_RESULT_MESSAGE_CONSUMER },
+                'appeal_result_message_disabled',
+              );
+              return false;
+            }
+            registerEventConsumer(queue, {
+              consumer: APPEAL_RESULT_MESSAGE_CONSUMER,
+              db,
+              logger,
+              handler: createAppealResultMessageHandler({ clock }),
             });
             return true;
           },

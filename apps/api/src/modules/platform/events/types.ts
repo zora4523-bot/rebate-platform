@@ -54,12 +54,17 @@ export interface EventSubscription {
 
 /**
  * Production routing table (section 6). notification-risk-state: the RISK_STATE_CHANGED inbox
- * message of notification (B1-12g, BR-TEXT-23).
+ * message of notification (B1-12g, BR-TEXT-23). notification-appeal-result: the APPEAL_RESULT
+ * inbox message of notification (B1-12p, BR-TEXT-23 / BR-ID-36).
  */
 export const EVENT_SUBSCRIPTIONS: readonly EventSubscription[] = Object.freeze([
   Object.freeze({
     consumer: 'notification-risk-state',
     events: Object.freeze(['risk.state_changed']),
+  }),
+  Object.freeze({
+    consumer: 'notification-appeal-result',
+    events: Object.freeze(['appeal.resolved']),
   }),
 ]);
 
