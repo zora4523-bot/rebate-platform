@@ -100,4 +100,22 @@ it('[AC-B1-15o#15] incomplete detachment, invalid hashes, reassignment, hash rew
     await sqlState(update(h.app, 'agent_sessions', row['id'], { user_hash: 'f'.repeat(64) })),
   ).toBe('23001');
   expect(await read(h.app, 'agent_sessions', row['id'])).toEqual(detached);
+
+  // (f) A legitimately detached session must never acquire a non-NULL user again.
+  expect(
+    await sqlState(update(h.app, 'agent_sessions', row['id'], { user_id: otherUser['id'] })),
+  ).toBe('23001');
+  expect(await read(h.app, 'agent_sessions', row['id'])).toEqual(detached);
+
+  // (g) A session created as a guest must not acquire an existing user in its own tenant.
+  const guestFixture = await fixture(h.app, 'agent_sessions');
+  const guest = await insert(h.app, 'agent_sessions', { ...guestFixture, user_id: null });
+  expect(guest['user_id']).toBeNull();
+  expect(guest['user_hash']).toBeNull();
+  expect(
+    await sqlState(
+      update(h.app, 'agent_sessions', guest['id'], { user_id: guestFixture['user_id'] }),
+    ),
+  ).toBe('23001');
+  expect(await read(h.app, 'agent_sessions', guest['id'])).toEqual(guest);
 });
