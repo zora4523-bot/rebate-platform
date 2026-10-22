@@ -1,0 +1,38 @@
+{
+  "legacy_no_red": true,
+  "red_tests": [],
+  "risk_note": "Contract task (contracts/openapi.yaml, enums/admin.yaml, error-codes.yaml, contracts-ts conformance and the regenerated contracts-ts and route tables): adds GET /admin/v1/risk-rules (adminListRiskRules) and POST /admin/v1/risk-rules/{rule_id}/enable and /disable (adminEnableRiskRule / adminDisableRiskRule), all x-implementation planned, per 04 §6.6 / §3.2 / §11.2, BR-ID-36 and rulings D10-152 / 155 / 157 / 159 / 164. List needs config.risk, read-only, no step-up, unpaged; rows carry rule_id, scene, name, risk_action, status, threshold_keys (config item keys; thresholds are read and changed only through adminUpdateConfigItem), version, updated_at; condition JSON is not exposed. Enable / disable need config.risk plus step-up, body expected_version (required) and reason (optional, at most 200); already in the target state answers success with the version unchanged and no audit; version mismatch is 20902 with the new data.resource risk_rule; unknown rule_id is 20001 [rule_id]. New enums risk_rule_status and risk_action (matching the table check constraint); scene stays an open string. New unit test admin-risk-rules.test.ts; catalog.test.ts lists the new 20902 resource. Follow-ups outside this task: risk_rules lacks name / threshold_keys columns, and migration 0014 separates version from row_version (the implementation decides the mapping). tester none; implementation by an Opus 5.5 subagent (one run; test machine verify-fast/1 green). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "CT-24f",
+  "spec_ref": "eabcf0070723fd498425b2bd1ee106da06bedae2",
+  "spec_commit": "67f42c2c35200118941187a6452b6668dbbd2dc1",
+  "runs": [],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "916ef4a5186f784e453c54a21e0b5761aa09eda8",
+    "specs": "8bdd14157b45b1ae9ef002ce4f11cb45e325b0c1"
+  }
+}
