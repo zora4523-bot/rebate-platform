@@ -204,6 +204,7 @@ export interface AgentSessions {
   run_lock_run_id: string | null;
   started_at: Timestamp;
   updated_at: Generated<Timestamp>;
+  user_hash: string | null;
   user_id: string | null;
 }
 
@@ -588,10 +589,13 @@ export interface DeletedIdentities {
 
 export interface DeletionRequests {
   app_id: string;
+  apple_revoke_attempts: Generated<number>;
+  apple_revoke_result: string | null;
   apply_at: Timestamp;
   balance_snapshot_fen: ColumnType<bigint, bigint, bigint>;
   cancel_reason: string | null;
   cancelled_at: Timestamp | null;
+  cleaned_at: Timestamp | null;
   cooling_until: Timestamp;
   created_at: Generated<Timestamp>;
   id: string;
@@ -885,7 +889,7 @@ export interface LoginLogs {
   id: Generated<ColumnType<bigint, bigint, bigint>>;
   ip: string;
   method: string;
-  user_id: string;
+  user_id: string | null;
 }
 
 export interface NotificationSettings {

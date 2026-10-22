@@ -620,19 +620,29 @@ $$;
 CREATE FUNCTION app.reject_agent_session_rewrite() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$
+    AS $_$
 BEGIN
-  IF ROW(NEW.id, NEW.app_id, NEW.user_id, NEW.device_id, NEW.started_at, NEW.created_at)
+  IF ROW(NEW.id, NEW.app_id, NEW.device_id, NEW.started_at, NEW.created_at)
       IS DISTINCT FROM
-      ROW(OLD.id, OLD.app_id, OLD.user_id, OLD.device_id, OLD.started_at, OLD.created_at)
+      ROW(OLD.id, OLD.app_id, OLD.device_id, OLD.started_at, OLD.created_at)
     OR NEW.card_seq < OLD.card_seq
+    OR (
+      NEW.user_id IS DISTINCT FROM OLD.user_id
+      AND NOT (
+        OLD.user_id IS NOT NULL
+        AND NEW.user_id IS NULL
+        AND NEW.user_hash IS NOT NULL
+        AND NEW.user_hash ~ '^[0-9a-f]{64}$'
+      )
+    )
+    OR (OLD.user_id IS NULL AND NEW.user_hash IS DISTINCT FROM OLD.user_hash)
   THEN
-    RAISE EXCEPTION 'agent_sessions owner is immutable and card_seq never decreases'
+    RAISE EXCEPTION 'agent_sessions owner is immutable except one-way detachment with a user hash, and card_seq never decreases'
       USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
 END
-$$;
+$_$;
 
 
 --
@@ -1417,10 +1427,12 @@ CREATE TABLE app.agent_sessions (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     run_lock_run_id uuid,
     run_lock_expires_at timestamp with time zone,
+    user_hash text,
     CONSTRAINT agent_sessions_active_order_check CHECK ((last_active_at >= started_at)),
     CONSTRAINT agent_sessions_card_seq_check CHECK ((card_seq >= 0)),
     CONSTRAINT agent_sessions_expired_order_check CHECK ((expired_at > last_active_at)),
-    CONSTRAINT agent_sessions_run_lock_pair_check CHECK (((run_lock_run_id IS NULL) = (run_lock_expires_at IS NULL)))
+    CONSTRAINT agent_sessions_run_lock_pair_check CHECK (((run_lock_run_id IS NULL) = (run_lock_expires_at IS NULL))),
+    CONSTRAINT agent_sessions_user_hash_check CHECK ((user_hash ~ '^[0-9a-f]{64}$'::text))
 );
 
 
@@ -2148,6 +2160,11 @@ CREATE TABLE app.deletion_requests (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    cleaned_at timestamp with time zone,
+    apple_revoke_attempts smallint DEFAULT 0 NOT NULL,
+    apple_revoke_result text,
+    CONSTRAINT deletion_requests_apple_revoke_attempts_check CHECK (((apple_revoke_attempts >= 0) AND (apple_revoke_attempts <= 3))),
+    CONSTRAINT deletion_requests_apple_revoke_result_check CHECK ((apple_revoke_result = ANY (ARRAY['revoked'::text, 'failed'::text, 'not_applicable'::text]))),
     CONSTRAINT deletion_requests_balance_snapshot_fen_check CHECK ((balance_snapshot_fen >= 0)),
     CONSTRAINT deletion_requests_cancel_reason_check CHECK ((cancel_reason = ANY (ARRAY['user'::text, 'negative_balance'::text]))),
     CONSTRAINT deletion_requests_cancel_reason_pair_check CHECK (((status = 'cancelled'::text) = (cancel_reason IS NOT NULL))),
@@ -2737,7 +2754,7 @@ CREATE TABLE app.links (
 CREATE TABLE app.login_logs (
     id bigint NOT NULL,
     app_id text NOT NULL,
-    user_id uuid NOT NULL,
+    user_id uuid,
     device_id_hash text NOT NULL,
     ip inet NOT NULL,
     method text NOT NULL,
@@ -9718,6 +9735,13 @@ GRANT SELECT ON TABLE app.agent_sessions TO couli_readonly;
 
 
 --
+-- Name: COLUMN agent_sessions.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(user_id) ON TABLE app.agent_sessions TO couli_app;
+
+
+--
 -- Name: COLUMN agent_sessions.last_active_at; Type: ACL; Schema: app; Owner: -
 --
 
@@ -9764,6 +9788,13 @@ GRANT UPDATE(run_lock_run_id) ON TABLE app.agent_sessions TO couli_app;
 --
 
 GRANT UPDATE(run_lock_expires_at) ON TABLE app.agent_sessions TO couli_app;
+
+
+--
+-- Name: COLUMN agent_sessions.user_hash; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(user_hash) ON TABLE app.agent_sessions TO couli_app;
 
 
 --
@@ -10460,6 +10491,27 @@ GRANT UPDATE(updated_at) ON TABLE app.deletion_requests TO couli_app;
 
 
 --
+-- Name: COLUMN deletion_requests.cleaned_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(cleaned_at) ON TABLE app.deletion_requests TO couli_app;
+
+
+--
+-- Name: COLUMN deletion_requests.apple_revoke_attempts; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(apple_revoke_attempts) ON TABLE app.deletion_requests TO couli_app;
+
+
+--
+-- Name: COLUMN deletion_requests.apple_revoke_result; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(apple_revoke_result) ON TABLE app.deletion_requests TO couli_app;
+
+
+--
 -- Name: TABLE device_registrations; Type: ACL; Schema: app; Owner: -
 --
 
@@ -10980,6 +11032,13 @@ GRANT SELECT ON TABLE app.links TO couli_readonly;
 
 GRANT SELECT,INSERT ON TABLE app.login_logs TO couli_app;
 GRANT SELECT ON TABLE app.login_logs TO couli_readonly;
+
+
+--
+-- Name: COLUMN login_logs.user_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(user_id) ON TABLE app.login_logs TO couli_app;
 
 
 --
