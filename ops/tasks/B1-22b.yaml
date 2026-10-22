@@ -23,6 +23,43 @@ test_paths:
   - 'test/spec/platform/queue/contract.test.ts'
 impl: claude
 tester: codex
+red_exempt:
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[ADR-0001 §4.2 #14] 常量：pg-boss schema 名 pgboss、期望 schema 版本 42、负载上限 16384 字节；生产目录与入口计划可直接创建运行时且不连库'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项确切（待编排会话确认的默认值）：payout、settle 为 exclusive（risk-scan 若有亦然），其余 standard，死信队列 dead-letter'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 秒] 生产入口计划逐项确切：api / stream / admin 不执行任务，worker 六个队列，payout 只有 payout 并发 1'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[规划/02 §3.1; ADR-0001 §2 进程入口] 生产计划下每个入口只能为自己计划里的队列注册处理器：其余目录队列一律 not_in_entry'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[规划/02 §11 各自设置并发; contract §1–2 上下界] 目录或入口计划违反任一条规则时 createQueueRuntime 同步抛 invalid_catalog（固定文案、无 cause），且先于其他选项检查'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[contract §1–2 上下界] 处在上下界上的目录与计划被接受：重试 0 与 20 次、延迟 1 与 3600 秒、退避上限等于延迟与 86400、过期 1 与 86400、保留 60 与 2592000、并发 1 与 10、轮询 0.5 与 60、50 字符队列名'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[contract §9] createQueueRuntime 的其他选项错误一律同步抛 invalid_option：未知键、入口不是五个之一、stopTimeoutMs 不是 1..60000 的整数'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[规划/02 §11; ADR-0001 §4.2 #14、#19] send 的检查顺序与每条规则确切：队列 → 任务名 → 负载 → 大小 → 选项 → 运行状态；被拒的 send 不碰任何连接'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[contract §3d] 负载大小按 JSON.stringify 的 UTF-8 字节计：16384 字节放行（到运行状态检查），16385 字节 payload_too_large；多字节字符按字节计'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[contract §5] register 的检查顺序：目录 → 本入口计划 → 处理器是函数 → 未重复 → 未启动；api 入口不能注册任何队列；错误是同步抛出的 QueueError'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[contract §6] 未启动就 stop：立即以 undefined 解决、可以再调；之后 start 拒绝 already_started，register 抛 already_started，合规的 send 拒绝 not_running；全程不连库'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
+  - file: test/spec/platform/queue/contract.test.ts
+    test: '[ADR-0001 §2 业务代码只依赖 JobQueue; 规划/02 §16.3 不要绕过 JobQueue] apps/api/src 里只有 platform/queue 目录导入 pg-boss（且确实用它实现），该目录的非测试源码不读时钟、不读 process.env、不用 console'
+    reason: 冻结队列契约用例，只追加「union-auth 若在」的位置与取值段（只增），union-auth 必须存在由 test/spec/union/auth-probe/queue.test.ts 断言（B1-22b）
 accept:
   - 'pnpm verify'
   - 'test/spec/union/auth-probe/**'
