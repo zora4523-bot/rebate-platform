@@ -272,7 +272,7 @@ it.each(['frozen', 'banned', 'appealing'] as const)(
         changed_by: 'synthetic',
         reason_category: 'other',
       })
-      .onConflict((oc) => oc.columns(['app_id', 'user_id']).doUpdateSet({ state: risk }))
+      .onConflict((oc) => oc.column('user_id').doUpdateSet({ state: risk }))
       .execute();
     await h.db
       .withSchema('app')
