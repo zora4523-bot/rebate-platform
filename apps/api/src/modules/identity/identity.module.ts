@@ -92,6 +92,11 @@ import {
   type PrivacyConsentOptions,
 } from './application/privacy-consent.ts';
 import {
+  DELETION_STAGE_CHECKS,
+  createDeletionStageChecks,
+  deletionStageChecksWithoutDatabase,
+} from './application/deletion-guard.ts';
+import {
   createOauthAttemptService,
   type OauthAttemptService,
 } from './application/oauth-attempts.ts';
@@ -666,6 +671,16 @@ export class IdentityModule {
           inject: [REALNAME_STATUS_READER, { token: DB, optional: true }],
           useFactory: (realname: RealnameStatusReader, db?: Kysely<Database>) =>
             createIdentityLevelChecks({ db: db ?? null, realname }),
+        },
+        {
+          // Stage ⑥: the guard and the post-miss check app.module hands to RiskModule before ⑦.
+          // No database: the no-database test mode (deletion-guard.ts header), not judged.
+          provide: DELETION_STAGE_CHECKS,
+          inject: [{ token: DB, optional: true }],
+          useFactory: (db?: Kysely<Database>) =>
+            db === undefined
+              ? deletionStageChecksWithoutDatabase()
+              : createDeletionStageChecks({ db }),
         },
         options.privacyConsentConfig === undefined
           ? { provide: PRIVACY_CONSENT_CONFIG, useFactory: () => null }
@@ -1264,6 +1279,7 @@ export class IdentityModule {
         STEP_UP_CHECK,
         IDENTITY_LEVEL_CHECKS,
         PRIVACY_CONSENT_CHECKS,
+        DELETION_STAGE_CHECKS,
       ],
     };
   }

@@ -80,6 +80,7 @@ import {
   STEP_UP_CHECK,
   IDENTITY_LEVEL_CHECKS,
   PRIVACY_CONSENT_CHECKS,
+  DELETION_STAGE_CHECKS,
   createRealnameReader,
   createRealnameStatusReader,
   createSmsSender,
@@ -118,6 +119,7 @@ import {
   type UserLevelReader,
   type IdentityLevelChecks,
   type PrivacyConsentChecks,
+  type DeletionStageChecks,
   type PrivacyConsentOptions,
   type AccountAssetsPort,
   type AccountRiskPort,
@@ -1592,23 +1594,26 @@ function parsingPorts(): DynamicModule {
 function riskModule(identity: DynamicModule, contentReader: SharedContentReader): DynamicModule {
   return RiskModule.forRoot({
     imports: [identity],
-    // ⑦ privacy consent (B1-02zh), then ⑧ ⑨ identity level (B1-02za), before ⑫ step-up (B1-02y)
-    // on the idempotent path; the privacy and level guards, in that order, between ⑤ and ⑬ on the
-    // non-idempotent path. The list order is the decision order.
+    // ⑥ deletion cooling / processing (B1-15e), ⑦ privacy consent (B1-02zh), then ⑧ ⑨ identity
+    // level (B1-02za), before ⑫ step-up (B1-02y) on the idempotent path; the deletion, privacy and
+    // level guards, in that order, between ⑤ and ⑬ on the non-idempotent path. The list order is
+    // the decision order.
     beforeRateLimit: {
-      inject: [PRIVACY_CONSENT_CHECKS, IDENTITY_LEVEL_CHECKS, STEP_UP_CHECK],
+      inject: [DELETION_STAGE_CHECKS, PRIVACY_CONSENT_CHECKS, IDENTITY_LEVEL_CHECKS, STEP_UP_CHECK],
       useFactory: (
+        deletion: DeletionStageChecks,
         privacy: PrivacyConsentChecks,
         level: IdentityLevelChecks,
         stepUp: IdempotencyPostMissCheck,
-      ) => [privacy.postMiss, level.postMiss, stepUp],
+      ) => [deletion.postMiss, privacy.postMiss, level.postMiss, stepUp],
     },
     beforeRateLimitGuards: {
-      inject: [PRIVACY_CONSENT_CHECKS, IDENTITY_LEVEL_CHECKS],
-      useFactory: (privacy: PrivacyConsentChecks, level: IdentityLevelChecks) => [
-        privacy.guard,
-        level.guard,
-      ],
+      inject: [DELETION_STAGE_CHECKS, PRIVACY_CONSENT_CHECKS, IDENTITY_LEVEL_CHECKS],
+      useFactory: (
+        deletion: DeletionStageChecks,
+        privacy: PrivacyConsentChecks,
+        level: IdentityLevelChecks,
+      ) => [deletion.guard, privacy.guard, level.guard],
     },
     minimumVersions: {
       inject: [CLOCK, { token: DB, optional: true }],
@@ -1766,7 +1771,7 @@ export class AppModule {
           : riskModule(identity, contentReader);
     // Stage ⑦ (B1-02zh) is not assembled on stream: it judges only x-auth login / phone / realname
     // routes, and every /v1/agent/ route is optional.
-    // TODO(规划/11 §2.3): stream 入口装注销状态⑥守卫 — blocked on identity 实现并导出⑥（api 入口同样未装）
+    // TODO(规划/11 §4.5): stream 入口装 ⑥（B1-15e 只装 api 入口的检查列表） — blocked on 另开任务把 ⑥ 接进 stream 的检查列表
     // One module object per import: Nest builds union and linking once.
     const union =
       options.entry === 'api' || options.entry === 'worker' ? UnionModule.forRoot() : undefined;
