@@ -1,0 +1,40 @@
+id: B3-03j
+repo: rebate-platform
+title: stream 装配换真实实现（里程碑 2）：工具注册表与 search / quote / match、确定性路径（含 parsing.parseToken 作 TokenParser）、意图、结果集；stream 入口组装 union / catalog / linking / parsing 端口
+type: impl
+# 2026-10-22 入账（agent2-acct4，编排裁定 D10-134）。B3-03f（#768）按 B3-05-plan §3.3「最小可挂载」合并：stream/mount 的 tools = emptyOrchestratorTools()、
+# 无确定性路径、无意图、路由 no_model。本任务把已合并的实现换进生产装配（mount 现状与各构造函数见 couli-runs/B3-03j/survey.md）：
+# - tools = createResultsTools(createToolRegistry({handlers: search_products（B3-04b）、rebate_quote（B3-04c/f），switches，logger}) 覆盖 searchKeyword 为 createKeywordSearch，
+#   match = B3-04d）；quote 的 tokens = parsing.parseToken（B3-04h）；quote / search 注入 core 的 cardReference（followups 第 38 条）、registry 注入 logger（第 30 条）。
+# - deterministic = createDeterministicPath({quotes: createLinkQuoteRunner(同一 RebateQuoteDeps), texts})（B3-05e）。
+# - intents = createIntentPort（B3-05f；previousIntent 先回 null，留 TODO）；结果集 = 内存 ResultSetStore（PG 版 B3-09c 未合并前，单实例、只在 staging 用，TODO）。
+# - stream 入口复用 api 入口的联盟治理适配器、报价器、ParsingOptions、item_ref 服务；linking 登记按每次工具调用以 AgentCaller 现建（identityCaller 是 REQUEST 作用域）；
+#   agent 不 import identity，attrCodes 等由 app.module 经 AgentStreamModuleOptions 传入（同 consentReader 做法）。
+# - catalog 补导出候选检索出口（search-wiring 的 union 上游，或映射层）供 search_products 用（categoryId / sales 缺位按 B3-04b 端口约定处理）。
+# 新端口在 AgentStreamModuleOptions 里一律可选、缺省回落到现最小实现（B3-03f 冻结测试只传四项 deps）。输入检查与按句审核不在本任务（B3-03m）；模型路由与提示词不在本任务（B3-03k）。降级 trace（第 31 条）、recordDelivered 生产接线（第 44 条）留 TODO。
+# 文案：agentText 遇缺键抛错，texts.default.json 缺 agent.guest_login_to_view.*、agent.notice.platform_unrecognized、agent.suggest.clarify.* 等（B3-13 未入账），派发前须补齐（notices 2026-10-22 待编排裁定）。
+# 分工：Codex 写规则测试，Claude Opus 5.5 实现（高推理），Codex 资金类评审（RV2：app.module.ts 不在 risk-map 白名单）。approvals #34、#27。
+refs: [BR-AI-01, BR-AI-02, BR-AI-03, BR-AI-04, BR-AI-05, BR-AI-14]
+refs_hash:
+  BR-AI-01: b624c86b4643
+  BR-AI-02: 61014cc4d222
+  BR-AI-03: 2131432de5c6
+  BR-AI-04: a07587a282ba
+  BR-AI-05: ee8fd647fd43
+  BR-AI-14: e8ed6052e898
+deps: [B3-03f, B3-04a, B3-04b, B3-04c, B3-04d, B3-04e, B3-04f, B3-04h, B3-05e, B3-05f, B3-05g, B3-05i, B3-05j, B3-05k]
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/agent/agent.module.ts'
+  - 'apps/api/src/modules/agent/index.ts'
+  - 'apps/api/src/modules/agent/stream/mount/**'
+  - 'apps/api/src/modules/catalog/index.ts'
+test_paths:
+  - 'test/spec/agent/stream-assembly/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-assembly/**'
+status: todo
+pr: null
