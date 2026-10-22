@@ -1,0 +1,23 @@
+id: B2-05a
+repo: rebate-platform
+title: 门禁登记：risk-map 加 apps/api/src/modules/payout/** 为 RV2（同 ledger），重生成根 AGENTS.md 分工表，加 payout/AGENTS.md 与一行 CLAUDE.md，同步 risk.test 清单
+type: guard-change
+# 2026-10-22 提现线（withdraw-acct4，账号 4，模型 Claude Fable 5.1；编排 21:0x 新开三线）。先例 B2-04c（settlement）、B2-02a（ledger）。
+# 状态备注：可先开（第三类保护路径，只增属收紧：由编排按 approvals #24 核对后加 owner-approved 标签），先于 B2-05b 合并。
+# 规划/02 §4.1 payout 行：提现单、审核、自动到账判定、批量打款、PayoutChannel、结果查询与人工处置；拥有 withdrawals、withdraw_holds、payout_attempts、payout_batches、recon_channel、fee_rules、tax_ytd、fund_ledger；依赖 ledger、identity、risk。
+# lint-migrations 资金表前缀已含 withdraw / payout，本任务不改它；fee_rules / tax_ytd 建表时再登记。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'ops/risk-map.yaml'
+  - 'AGENTS.md'
+  - 'tools/guard/lib/risk.test.ts'
+  - 'apps/api/src/modules/payout/AGENTS.md'
+  - 'apps/api/src/modules/payout/CLAUDE.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

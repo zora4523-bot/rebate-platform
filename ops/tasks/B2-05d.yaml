@@ -1,0 +1,33 @@
+id: B2-05d
+repo: rebate-platform
+title: payout 模块：POST /v1/withdrawals 建单（幂等 executeInTransaction + step-up；BR-WDR-07 锁序 users → 余额行 → 收款账号 advisory 锁，锁内复核 ⑦⑧⑩⑪⑫，fee / tax 固化与 net_fen，插入 PENDING_REVIEW 并写 WITHDRAW_FREEZE 凭证 wd:{id}:FREEZE，out_biz_no 生成，自动到账总开关关时 review_mode=manual 与 review_deadline，同事务发 withdrawal.created / wallet.withdrawal_changed）；去掉 createWithdrawal 的 planned
+type: impl
+# 2026-10-22 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（连库并发用例：50 次同键只 1 单、20 个不同键冻结总额 ≤ 可用余额、同日并发 2 单恰好 1 单）、Codex money 评审。
+# 状态备注：等 B2-05c 合并（复用校验器）。
+# 建单只调 ledger.lockBalances / post（凭证模板 WITHDRAW:FREEZE，buildVouchers），不自写分录；分录与状态迁移同一事务；幂等记录 expire_at 由幂等模块按 POST /v1/withdrawals 置 infinity。
+# review_mode：withdraw.auto_payout.enabled（默认关，BR-WDR-30）关闭时建单即 manual 并按 BR-WDR-26 工作日 24 小时算 review_deadline（复用 risk 的工作日日历函数）；开启时留空由 B2-11 判定（契约「Null until decided」）。
+# 已知偏离（已报编排）：全局检查阶段把 step-up（10003）与实名（30304）排在处理器之前，与 BR-WDR-03 ①（30306 先于 ②）字面顺序不同；rules 接口内按原文顺序。
+refs: [BR-WDR-07, BR-WDR-09, BR-WDR-03]
+refs_hash:
+  BR-WDR-07: 3cf70e92c151
+  BR-WDR-09: 68225c9af85f
+  BR-WDR-03: 5d680ed295c4
+deps: [B2-05c, B2-02f, B1-02y]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/payout/apply/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/apply/**'
+status: todo
+pr: null

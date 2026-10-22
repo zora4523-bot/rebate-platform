@@ -1,0 +1,39 @@
+id: B2-05c
+repo: rebate-platform
+title: payout 模块：提现申请校验器（BR-WDR-03 固定顺序 ①–⑬ 与步内优先级、04 金额 / 次数限制与配置默认值、05 冻结与负余额、06 未成年月额度、31 劳务协议）与 GET /v1/withdrawals/rules（can_withdraw、block_code、block_reason、max_withdrawable_fen、剩余次数、估算）；去掉 getWithdrawRules 的 planned
+type: impl
+# 2026-10-22 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1（负责人要求难任务用高档模型；台账 impl 仍写 claude）。Codex 写规则测试、Codex money 评审。
+# 状态备注：等 B2-05b 合并（withdrawals / withdraw_holds 表）。
+# 校验器是纯应用层函数：输入由端口读（配置 withdraw.* 经 content 读取器在调用方句柄上读；风控状态与申诉前状态经 risk；实名、收款账号快照、劳务协议经 identity；余额经 ledger.getBalances；次数与冻结读本模块表），输出首个阻断码与 reason，rules 接口与 POST 建单（B2-05d）共用同一函数。
+# 新增三个只读端口（本线拟在本任务内加，已在 notices 告知 identity 线）：identity/ports/withdraw-subject.ts（当前收款账号快照 + 手机 / 证件 / 收款账号 HMAC + 设备哈希）、risk/ports/appeal-prev-state.ts（appealing 的 prev_risk_state）、risk 黑名单只读匹配（不写命中记录，命中记录由调用方在事务外补）。
+# 08 没写的取值按代理默认做成配置或开关：withdraw.enabled 缺失按开（30306 只在显式关闭时）；估算用 FeeTaxCalculator 端口，默认实现 fee 0 / tax 0（BR-WDR-19 MVP、BR-WDR-20 税率表到位前）；quick_amounts_fen 默认空数组。
+refs: [BR-WDR-03, BR-WDR-04, BR-WDR-05, BR-WDR-06, BR-WDR-31]
+refs_hash:
+  BR-WDR-03: 5d680ed295c4
+  BR-WDR-04: e64ad363f9a2
+  BR-WDR-05: cd7130978c70
+  BR-WDR-06: 2a30a20531c1
+  BR-WDR-31: f4e0bd46b140
+deps: [B2-05b, B1-13h, B1-13e, B1-02zf]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/modules/identity/ports/withdraw-subject.ts'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/modules/risk/ports/**'
+  - 'apps/api/src/modules/risk/index.ts'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/payout/rules/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/rules/**'
+status: todo
+pr: null

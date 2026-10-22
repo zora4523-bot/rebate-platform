@@ -1,0 +1,28 @@
+id: B2-05b
+repo: rebate-platform
+title: 迁移：建 app.withdrawals（金额、税费、收款人快照、状态机列、审核 / 执行 / 处置 / 冻结列、out_biz_no 唯一且禁 UPDATE 触发器、(user_id, created_at)、(payee_hmac, created_at) 索引）与 app.withdraw_holds（多原因叠加、逐条解除）；授权 couli_app / couli_payout；不变量 06（frozen_fen = Σ 非终态提现单 amount_fen）
+type: migration
+# 2026-10-22 提现线（withdraw-acct4，账号 4，模型 Claude Fable 5.1）。形状只按 04 §3.2 withdrawals / withdraw_holds 行与 §2.4 枚举，取值按 08；按 db/AGENTS.md 分两段：本线先写 SQL，测试机跑迁移、db:snapshot、db.gen.ts 后提交生成物。
+# 迁移号按 D10-116：落地前一刻 grep 主干最大号 + notices 预占，规则测试不写死迁移号；落地时占迁移槽，合并即放。
+# 状态备注：等 B2-05a 合并（risk-map 登记 payout 目录；本任务不建模块代码）。
+# 不变量 06 由规则测试作者（Codex）写在 db/invariants/ledger/06_*.sql（BR-FUND-14：frozen = Σ 非终态单金额），运行器按目录执行（ledger-plan D10）。
+refs: [BR-WDR-07, BR-WDR-08, BR-WDR-05]
+refs_hash:
+  BR-WDR-07: 3cf70e92c151
+  BR-WDR-08: 8c55a3ce6b57
+  BR-WDR-05: cd7130978c70
+deps: [B2-05a, B2-02f]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/payout/**'
+  - 'db/invariants/ledger/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/payout/**'
+status: todo
+pr: null
