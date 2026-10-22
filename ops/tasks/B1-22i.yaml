@@ -1,0 +1,26 @@
+id: B1-22i
+repo: rebate-platform
+title: 推广位同场景唯一（编排裁定 D10-221 A，对齐 D10-152 ⑦）：union_pids 加部分唯一索引「同 app × platform × pid_scene 至多一条 active」兜底，迁移先查已有重复 active、有则失败并列出、不自动改数据；pid 服务 setPidStatus 与命令行 union-pids.ts 启用时同场景已有 active（含其他联盟账号）即拒绝；B1-19d 冻结 [AC-B1-19d#4]「跨账号同场景只告警」改为拒绝
+type: impl
+# 2026-10-23 入账（union 线）。依据 08 BR-ATTR-02 细则「后台登记与启停」、04 §3.2 union_pids（D10-152 ⑦、D10-221）。union_pids 是归属表：索引建法过迁移门禁（不接受 squawk 例外），staging 先只读核对重复。迁移槽现序 B1-22a → B3-09f → B1-15r → B2-05b → B1-01zzg → B1-22i，落地时取主干最大 +1。
+# 冻结测试 test/spec/union/pids-by-account/activation.int.test.ts [AC-B1-19d#4] 只把「告警不拒绝」改为「拒绝、不改行」（第一类保护路径，独立 Claude 改 + 新鲜独立 Claude 复审，编排加标签）。
+refs: [BR-ATTR-02]
+refs_hash:
+  BR-ATTR-02: 55756dfde266
+deps: [B1-19d]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'apps/api/src/modules/union/pids/**'
+  - 'apps/api/scripts/union-pids.ts'
+test_paths:
+  - 'test/spec/db/union/pids-active-unique/**'
+  - 'test/spec/union/pids-by-account/activation.int.test.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/union/pids-active-unique/**'
+status: todo
+pr: null
