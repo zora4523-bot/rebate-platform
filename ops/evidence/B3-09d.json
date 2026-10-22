@@ -1,7 +1,7 @@
 {
   "task": "B3-09d",
-  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
-  "spec_commit": "47068ee9a42b1c87b7b09ff07c09a34e7c47893e",
+  "spec_ref": "93ac832c03a5570ceb91c427baa4f9e4020b3328",
+  "spec_commit": "b6fd39784681689da0b2e17057c43d71e22b9aa2",
   "red_tests": [
     "test/spec/db/agent-results/agent-results.int.test.ts > [AC-B3-09d#1][BR-AI-05][BR-AI-08] agent_result_deliveries has exactly the prescribed columns, nullability and defaults",
     "test/spec/db/agent-results/agent-results.int.test.ts > [AC-B3-09d#2][BR-AI-05][BR-AI-08] agent_result_deliveries has the ordered composite primary key and required indexes",
@@ -83,11 +83,11 @@
       "mode": "container",
       "script": "red",
       "exit_code": 0,
-      "commit": "47068ee9a42b1c87b7b09ff07c09a34e7c47893e",
-      "tree": "f1b897a7d128c6d14e6be113a17c53bfb3e12eb5",
+      "commit": "b6fd39784681689da0b2e17057c43d71e22b9aa2",
+      "tree": "050b798b49392dea55bd4b079135d6ce587b1dde",
       "prop_seed": 20261001,
-      "started_at": "2026-10-22T04:59:30Z",
-      "finished_at": "2026-10-22T04:59:40Z",
+      "started_at": "2026-10-22T07:13:36Z",
+      "finished_at": "2026-10-22T07:13:43Z",
       "red_tests": [
         "test/spec/db/agent-results/agent-results.int.test.ts > [AC-B3-09d#1][BR-AI-05][BR-AI-08] agent_result_deliveries has exactly the prescribed columns, nullability and defaults",
         "test/spec/db/agent-results/agent-results.int.test.ts > [AC-B3-09d#2][BR-AI-05][BR-AI-08] agent_result_deliveries has the ordered composite primary key and required indexes",
@@ -172,7 +172,7 @@
       ],
       "services": "host-ephemeral",
       "gate": {
-        "commit": "cc7e0c7e75c0acc77ca950e97a016198956f3dc2",
+        "commit": "5a281ae173f5284b5836c9155e33a4ff2cfd3986",
         "clean": true,
         "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
       }
@@ -203,7 +203,7 @@
     "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
     "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
     "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
-    "test/spec": "ff7d068641e608951070061a861f44f6e2b8c1b7"
+    "test/spec": "e6aa4ce5f465fb0f2ea2ff23d16774159276accc"
   },
   "longrun": {
     "runs": 1000000,
