@@ -8,7 +8,7 @@ import { fixture, at, NOW, RECEIVED, capture, noMoney, expectCas } from './kit.t
 let database: TestDatabase | undefined;
 let db: Kysely<DB>;
 beforeAll(async () => {
-  // Shared harness reads TEST_PG_ADMIN_URL; never executed in the Codex sandbox.
+  // The shared harness reads the admin database URL; never executed in the Codex sandbox.
   database = await createTestDatabase();
   db = createDb({ connectionString: database.urlFor('couli_app'), max: 8 });
 }, 180_000);
