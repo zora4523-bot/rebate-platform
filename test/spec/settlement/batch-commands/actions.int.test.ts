@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   FUTURE,
@@ -16,7 +17,7 @@ import {
   untouched,
 } from './kit.ts';
 
-const database = databaseFixture();
+const database = databaseFixture(createTestDatabase);
 
 it.each([null, new Date(PAST)])(
   '[AC-B2-04o#13] SB3 未开始的定时批次可撤销，包括因开关停住的批次 %s',

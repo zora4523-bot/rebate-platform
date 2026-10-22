@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import type { KyselyPlugin, QueryId } from 'kysely';
 import { expect, it } from 'vitest';
 import { createBatchCommandService } from '../../../../apps/api/src/modules/settlement/batch/commands/service.ts';
@@ -15,7 +16,7 @@ import {
   stored,
 } from './kit.ts';
 
-const database = databaseFixture();
+const database = databaseFixture(createTestDatabase);
 
 it('[AC-B2-04o#27] 整轮最后一个批次版本过期，返回 20902 settle_batch，前面批次也不能提交', async () => {
   const h = await fixture(database.db);

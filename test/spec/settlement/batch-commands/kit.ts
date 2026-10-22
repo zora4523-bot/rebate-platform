@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Insertable, Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, vi } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/clock.ts';
@@ -16,11 +15,14 @@ export const FUTURE = '2032-07-24T11:00:00+08:00';
 export const STATES = ['DRAFT', 'CONFIRMED', 'EXECUTING', 'PARTIAL', 'DONE', 'CANCELLED'] as const;
 export const CONFLICT = { code: 20902, data: { resource: 'settle_batch' } };
 
-export function databaseFixture() {
-  let database: TestDatabase;
+// The database factory comes from the *.int.test.ts caller (only those may import @couli/db/testing).
+type TestDatabaseLike = { urlFor(role: 'couli_app'): string; drop(): Promise<void> };
+
+export function databaseFixture(createTestDatabase: () => Promise<TestDatabaseLike>) {
+  let database: TestDatabaseLike;
   let db: Kysely<DB>;
   beforeAll(async () => {
-    // 标准入口由 globalSetup 读取 TEST_PG_ADMIN_URL；只在隔离容器运行。
+    // 标准入口由共用 globalSetup 读取管理库地址；只在隔离容器运行。
     database = await createTestDatabase();
     db = createDb({ connectionString: database.urlFor('couli_app'), max: 6 });
   }, 60_000);

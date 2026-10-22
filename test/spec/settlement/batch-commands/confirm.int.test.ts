@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   CONFLICT,
@@ -13,7 +14,7 @@ import {
   untouched,
 } from './kit.ts';
 
-const database = databaseFixture();
+const database = databaseFixture(createTestDatabase);
 
 // BR-FUND-04 ⑥、⑧ / SB2；接口仅是服务层，不承接 B2-09 step-up 或 B2-04p 执行。
 it('[AC-B2-04o#1] 默认立即确认本轮全部 DRAFT，跨平台逐批记同一人和 Clock 时刻，不执行明细', async () => {
