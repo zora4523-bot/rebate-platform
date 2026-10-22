@@ -22,6 +22,8 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
     // Event queue of notification's risk.state_changed consumer (B1-12g); events/types.ts.
     'evt.notification-risk-state',
     'pool-refresh',
+    // Scheduled page publish due jobs (F1-09p): content's ContentWorkerModule, worker only.
+    'page-schedule',
     'poster',
     'agent-trace',
     'risk-scan',
@@ -67,6 +69,7 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
     work('notify', 5),
     work('evt.notification-risk-state', 5),
     work('pool-refresh', 1),
+    work('page-schedule', 1),
     work('poster', 2, 0.5),
     work('agent-trace', 2),
     work('export', 1),

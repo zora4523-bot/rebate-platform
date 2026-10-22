@@ -8449,6 +8449,50 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminCancelPageConfigSchedule": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "page_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(home|custom:[a-z0-9_-]{1,57})$"
+        }
+      },
+      "required": [
+        "page_key"
+      ],
+      "additionalProperties": false
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "expected_revision": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "expected_revision"
+      ],
+      "additionalProperties": false
+    }
+  },
   "adminUpdatePageConfigGray": {
     "headers": {
       "type": "object",

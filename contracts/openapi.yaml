@@ -11788,7 +11788,6 @@ paths:
         page's `revision` the console showed, the cancel adds 1, and a mismatch → 20902 with
         `data.resource=page`. A page with no saved version → 30701. Written to the audit log.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403

@@ -35,9 +35,11 @@ import {
   APP_CONFIG,
   CLOCK,
   DB,
+  JOB_QUEUE,
   MEDIA_STORE,
   ROOT_LOGGER,
   type AppConfig,
+  type JobQueue,
   getLinkPatterns,
   newUuidV7,
   type AuditPort,
@@ -278,14 +280,31 @@ export class ContentAdminModule {
           // F1-09f /admin/v1/pages*: contracts/home-schema.json is read and compiled on the first
           // save or publish, so a broken contract file answers 50001 rather than stopping the entry.
           // F1-09r: a popup's props.lottie must name the media address of its sha256 (no fetch).
+          // F1-09p: a scheduled publish enqueues its due job (queue page-schedule) on JOB_QUEUE in
+          // the write transaction; the worker entry's ContentWorkerModule handles it.
           provide: PageConfigAdmin,
-          inject: [APP_CONFIG, CLOCK, { token: DB, optional: true }],
-          useFactory: (config: AppConfig, clock: Clock, db?: Kysely<Database>): PageConfigAdmin => {
+          inject: [
+            APP_CONFIG,
+            CLOCK,
+            { token: DB, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            config: AppConfig,
+            clock: Clock,
+            db?: Kysely<Database>,
+            queue?: JobQueue,
+          ): PageConfigAdmin => {
             let check: PageSectionsCheck | undefined;
             return new PageConfigAdmin(
               db === undefined
                 ? NO_DATABASE_PAGES
-                : createKyselyPageConfigStore(db, (trx) => options.auditWriter(trx, clock)),
+                : createKyselyPageConfigStore(
+                    db,
+                    (trx) => options.auditWriter(trx, clock),
+                    clock,
+                    queue,
+                  ),
               clock,
               (sections, unionHostBlock) =>
                 (check ??= createPageSectionsCheck(

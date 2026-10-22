@@ -5,6 +5,7 @@ import {
   PageConflictError,
   PageFieldsError,
   PageNotFoundError,
+  PageScheduleNotFoundError,
   type PageActor,
   type PageConfigStore,
   type PageConfigTx,
@@ -17,6 +18,7 @@ interface Version {
   status: string;
   sections: unknown;
   publishAt: Date | null;
+  publisher?: string | null;
 }
 
 class Clockwork implements Clock {
@@ -31,6 +33,7 @@ function memory(switchValue: unknown = undefined) {
   let versions: Version[] = [];
   const audits: AuditInput[] = [];
   const changes: { version: number; from: string; event: string; to: string }[] = [];
+  const enqueued: { key: string; delaySeconds: number }[] = [];
   let casMisses = 0;
   const view = (): PageView | undefined =>
     page === undefined || versions.length === 0
@@ -75,6 +78,7 @@ function memory(switchValue: unknown = undefined) {
         grayPercent: 0,
         revision: 0,
         updatedBy: null,
+        slot: null,
       };
     },
     lock: async () => (page === undefined ? undefined : { ...page }),
@@ -94,7 +98,11 @@ function memory(switchValue: unknown = undefined) {
       changes.push({ version: n, from: change.from, event: change.event, to: change.to });
       const row = find(n);
       if (row === undefined || row.status !== change.from || casMisses-- > 0) return false;
-      Object.assign(row, { status: change.to }, stamp === null ? {} : { publishAt: stamp.at });
+      Object.assign(
+        row,
+        { status: change.to },
+        stamp === null ? {} : { publishAt: stamp.at, publisher: stamp.publisher },
+      );
       return true;
     },
     successor: async (_a, _k, except) =>
@@ -102,24 +110,33 @@ function memory(switchValue: unknown = undefined) {
         .filter((v) => v.status === 'published' && v.version !== except)
         .sort((a, b) => b.publishAt!.getTime() - a.publishAt!.getTime() || b.version - a.version)[0]
         ?.version,
-    updatePage: async (_a, _k, p, revision, adminId) => {
-      page = { ...p, revision, updatedBy: adminId };
+    updatePage: async (_a, _k, p, revision, adminId, _at, slot) => {
+      page = { ...p, revision, updatedBy: adminId, slot: slot === undefined ? page!.slot : slot };
     },
     audit: async (input) => {
       audits.push(input);
+    },
+    enqueueScheduleDue: async (_a, key, delaySeconds) => {
+      enqueued.push({ key, delaySeconds });
     },
   };
   const store: PageConfigStore = {
     ...tx,
     // Rolls back on a throw, like the database transaction.
     async transaction(work) {
-      const saved = { page, versions: versions.map((v) => ({ ...v })), audits: audits.length };
+      const saved = {
+        page,
+        versions: versions.map((v) => ({ ...v })),
+        audits: audits.length,
+        enqueued: enqueued.length,
+      };
       try {
         return await work(tx);
       } catch (error) {
         page = saved.page;
         versions = saved.versions;
         audits.length = saved.audits;
+        enqueued.length = saved.enqueued;
         throw error;
       }
     },
@@ -128,6 +145,7 @@ function memory(switchValue: unknown = undefined) {
     store,
     audits,
     changes,
+    enqueued,
     state: () => ({ page, versions }),
     /** The next `n` status CASes miss, as if another writer changed the row first. */
     missCas: (n: number) => {
@@ -318,4 +336,137 @@ it('[F1-09f 裁定13#6] a missed status CAS on rollback is 20902 and changes not
   ).rejects.toBeInstanceOf(PageConflictError);
   expect(JSON.stringify(t.state())).toBe(before);
   expect(t.audits).toHaveLength(4);
+});
+
+const SECOND = 1000;
+const DAY = 86_400_000;
+
+async function withDraft() {
+  const t = setup();
+  await t.save(0);
+  await t.publish(1, 1);
+  await t.save(2);
+  const schedule = (rev: number, at: number, version = 2, gray_percent = 100) =>
+    t.admin.publish(ACTOR, 'home', {
+      version,
+      gray_percent,
+      expected_revision: rev,
+      publish_at: new Date(at).toISOString(),
+    });
+  return { ...t, schedule };
+}
+
+it('[AC-F1-09p#u1] scheduling writes the slot, audits it, enqueues the due job; version stays draft', async () => {
+  const t = await withDraft();
+  const at = t.clock.ms + 10 * SECOND + 1;
+  expect(await t.schedule(3, at)).toMatchObject({ current_version: 1, revision: 4 });
+  expect(t.state().page).toMatchObject({
+    currentVersion: 1,
+    revision: 4,
+    slot: { version: 2, grayPercent: 100, at: new Date(at), by: 'admin-1' },
+  });
+  expect(t.state().versions[1]).toMatchObject({ status: 'draft', publishAt: null });
+  expect(t.enqueued).toEqual([{ key: 'home', delaySeconds: 11 }]);
+  expect(t.audits.at(-1)).toMatchObject({
+    action: 'page_publish_schedule',
+    before: { revision: 3, scheduled: null },
+    after: {
+      revision: 4,
+      scheduled: { version: 2, gray_percent: 100, publish_at: new Date(at).toISOString() },
+    },
+  });
+});
+
+it('[AC-F1-09p#u2] publish_at must be in (now, now + 30 days]; version checks come first', async () => {
+  const t = await withDraft();
+  const now = t.clock.ms;
+  for (const at of [now, now - 1, now + 30 * DAY + 1]) {
+    await expect(t.schedule(3, at)).rejects.toEqual(new PageFieldsError(['publish_at']));
+  }
+  await expect(t.schedule(3, now, 1)).rejects.toEqual(new PageFieldsError(['version']));
+  expect(t.enqueued).toEqual([]);
+  expect(await t.schedule(3, now + 30 * DAY)).toMatchObject({ revision: 4 });
+  expect(t.enqueued).toEqual([{ key: 'home', delaySeconds: 2_592_000 }]);
+});
+
+it('[AC-F1-09p#u3] a pending slot refuses any publish; CAS is checked first', async () => {
+  const t = await withDraft();
+  await t.schedule(3, t.clock.ms + 60 * SECOND);
+  await expect(t.publish(3, 2)).rejects.toBeInstanceOf(PageConflictError);
+  await expect(t.publish(4, 2)).rejects.toEqual(new PageFieldsError(['publish_at']));
+  await expect(t.schedule(4, t.clock.ms + 90 * SECOND)).rejects.toEqual(
+    new PageFieldsError(['publish_at']),
+  );
+});
+
+it('[AC-F1-09p#u4] a due slot is applied before the CAS of the next write, by the scheduler at its time', async () => {
+  const t = await withDraft();
+  const at = t.clock.ms + 10 * SECOND;
+  await t.schedule(3, at);
+  t.clock.ms = at;
+  await expect(t.save(4)).rejects.toBeInstanceOf(PageConflictError);
+  expect(t.state().page).toMatchObject({ revision: 4, slot: { version: 2 } });
+  await t.save(5);
+  expect(t.state().page).toMatchObject({ currentVersion: 2, revision: 6, slot: null });
+  expect(t.state().versions[1]).toMatchObject({
+    status: 'published',
+    publishAt: new Date(at),
+    publisher: 'admin-1',
+  });
+  expect(t.changes.at(-1)).toEqual({
+    version: 2,
+    from: 'draft',
+    event: 'PUBLISH',
+    to: 'published',
+  });
+  // One audit row for the save; applying the slot writes none.
+  expect(t.audits.map((a) => a.action).slice(-2)).toEqual([
+    'page_publish_schedule',
+    'page_version_create',
+  ]);
+});
+
+it('[AC-F1-09p#u5] a gray slot keeps the full version and sets the gray pointer', async () => {
+  const t = await withDraft();
+  const at = t.clock.ms + 5 * SECOND;
+  await t.schedule(3, at, 2, 10);
+  t.clock.ms = at + SECOND;
+  expect(
+    await t.admin.gray(ACTOR, 'home', { gray_percent: 20, expected_revision: 5 }),
+  ).toMatchObject({ current_version: 1, gray_version: 2, gray_percent: 20, revision: 6 });
+});
+
+it('[AC-F1-09p#u6] cancel clears the slot; none or a due one is 30701 after the CAS', async () => {
+  const t = await withDraft();
+  await expect(t.admin.cancelSchedule(ACTOR, 'home', 3)).rejects.toBeInstanceOf(
+    PageScheduleNotFoundError,
+  );
+  const at = t.clock.ms + 10 * SECOND;
+  await t.schedule(3, at);
+  await expect(t.admin.cancelSchedule(ACTOR, 'home', 3)).rejects.toBeInstanceOf(PageConflictError);
+  expect(await t.admin.cancelSchedule(ACTOR, 'home', 4)).toMatchObject({ revision: 5 });
+  expect(t.state().page).toMatchObject({ revision: 5, slot: null, currentVersion: 1 });
+  expect(t.audits.at(-1)).toMatchObject({
+    action: 'page_schedule_cancel',
+    before: { scheduled: { version: 2 } },
+    after: { scheduled: null },
+  });
+  await t.schedule(5, at);
+  t.clock.ms = at;
+  await expect(t.admin.cancelSchedule(ACTOR, 'home', 7)).rejects.toBeInstanceOf(
+    PageScheduleNotFoundError,
+  );
+  // The refusal rolled the applied slot back with it.
+  expect(t.state().page).toMatchObject({ revision: 6, slot: { version: 2 } });
+});
+
+it('[AC-F1-09p#u7] a due slot whose version is no longer a draft throws and changes nothing', async () => {
+  const t = await withDraft();
+  const at = t.clock.ms + 10 * SECOND;
+  await t.schedule(3, at);
+  t.state().versions[1]!.status = 'published';
+  const before = JSON.stringify(t.state());
+  t.clock.ms = at;
+  await expect(t.save(4)).rejects.toThrow('no longer a draft');
+  expect(JSON.stringify(t.state())).toBe(before);
 });

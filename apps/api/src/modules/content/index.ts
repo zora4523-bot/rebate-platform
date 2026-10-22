@@ -21,6 +21,8 @@ export { SWITCH_CACHE_TTL_MS, switchCacheTtlMs } from './domain/cache-policy.ts'
 export type { AppVersionRow } from './domain/app-version.ts';
 // F1-06w: the admin console's platform mark reads, loaded by app.module on the admin entry only.
 export { ContentAdminModule } from './content-admin.module.ts';
+// F1-09p: scheduled page publish due jobs, loaded by app.module on the worker entry only.
+export { ContentWorkerModule } from './content-worker.module.ts';
 export { publishedPlatformIcons } from './application/published-platform-icons.ts';
 export type {
   PublishedPlatformIconOptions,
