@@ -1,0 +1,43 @@
+id: B1-01zzg
+repo: rebate-platform
+title: 死信按队列区分（<queue>.dead，迁移先建并改各队列 dead_letter）并由 worker 定时任务按 SQL 扫各 .dead 计数告警（不消费、不重放，order-sync.dead 按 data.platform 分组）；根日志加部署版本（镜像 tag，色标可选，缺省不输出）
+type: impl
+# 2026-10-23 入账（be-codex，编排 D10-183 ② R-01、D10-193 裁定：死信取 b、命名 <queue>.dead、发布先迁移再重启全部进程）。依据：规划 02 §7.1（重试耗尽进死信、只告警不重放）、§11（任一队列 failed>0 告警）、§13 日志行（带部署版本）；ADR-0001 §4.2 第 14、22 项。
+# 现状：catalog 默认 deadLetter 为全局 dead-letter、无消费者；validation.ts 禁止入口计划消费死信（规则不动）；启动时死信目标与目录不一致即 queue_mismatch 拒绝，故迁移须在 pgboss.queue 先建各 <q>.dead 再改现有队列 dead_letter。迁移号按 D10-116 迁移槽在落地时取主干最大 + 1。
+# 告警出口：本任务先打结构化 error 日志（队列、平台、数量），指标导出与告警规则在 B1-01zzh。02 §7.1「order-sync.<platform>.dead」与实现命名的差异记 followups 交 ops 回写（D10-193 ②）。
+# 冻结测试（第一类保护路径，#24 标签由编排核对）：只因死信目标由 dead-letter 改为 <queue>.dead 而改期望值，其余断言不动；列入 test_paths。
+refs: []
+refs_hash: {}
+deps: [B1-12o]
+paths:
+  - 'apps/api/src/modules/platform/queue/**'
+  - 'apps/api/src/modules/platform/logging/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/entry.ts'
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'infra/staging/compose.yaml'
+  - '.env.example'
+test_paths:
+  - 'test/spec/platform/dead-letter-scan/**'
+  - 'test/spec/platform/queue/contract.test.ts'
+  - 'test/spec/platform/queue/kit.ts'
+  - 'test/spec/platform/queue/int-kit.ts'
+  - 'test/spec/platform/queue/lifecycle.int.test.ts'
+  - 'test/spec/platform/queue/throughput.test.ts'
+  - 'test/spec/orders/sync/queue.test.ts'
+  - 'test/spec/admin/export-worker/queue.int.test.ts'
+  - 'test/spec/ledger/went-negative/kit.ts'
+  - 'test/spec/content/pages-schedule/contract.test.ts'
+red_exempt:
+  - file: test/spec/content/pages-schedule/contract.test.ts
+    test: '[AC-F1-09p#27] 撤销操作正式启用，content.page 不要求二次认证'
+    reason: 冻结 F1-09p 用例，测试体未改，只因同文件死信目标改名期望入列（D10-193）
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/dead-letter-scan/**'
+status: todo
