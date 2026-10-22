@@ -149,6 +149,26 @@ enums:
       processing: 通道处理中
       wait_user_confirm: 等用户在微信里确认收款
       canceling: 撤销中
+  withdrawal_sub_text_branch:
+    source: 规划/08 BR-WDR-25 细则「用户侧状态文案」分支表；CT-20b
+    description: 提现单副文案分支 key，由服务端按 BR-WDR-25 分支表自上而下取第一条匹配的行算出；分支条件与措辞只在 BR-WDR-25 与 /v1/dict 维护，这里只列 key；客户端遇未知值按 processing 显示
+    values:
+      processing: 分支表「PENDING_REVIEW 且自动判定尚未完成」行与「APPROVED（含 W9 退回）」行（两行副文案相同），也是没有命中任何行时的兜底
+      wechat_wait_confirm: 分支表微信零钱「等用户确认且未过确认截止时间」行（唯一显示去微信确认收款入口的行）
+      wechat_confirm_expired: 分支表微信零钱「等用户确认且已过确认截止时间」行
+      wechat_canceling: 分支表微信零钱「撤销中」行
+      wechat_processing: 分支表微信零钱「其余情况」行
+      auto_expected_soon: 分支表非微信零钱「自动到账路径」行
+      manual_review_pending: 分支表「PENDING_REVIEW（人工）且未到审核期限」行
+      manual_review_overdue: 分支表「PENDING_REVIEW（人工）且已过审核期限」行
+      channel_processing: 分支表「PAYING（未到延迟时点）」行，通道名按该单收款通道
+      paying_delayed: 分支表「PAYING（已到延迟时点或 needs_manual）」行
+      paid_api: 分支表 PAID_API / PAID_MANUAL 行中的 PAID_API（副文案按 BR-TEXT-06 分句）
+      paid_manual: 分支表 PAID_API / PAID_MANUAL 行中的 PAID_MANUAL（副文案按 BR-TEXT-06 分句）
+      rejected: 分支表 REJECTED 行
+      failed_account: 分支表「FAILED（W6，账号类失败码）」行
+      failed_other: 分支表「FAILED（W6，其他失败码）」行
+      failed_manual: 分支表「FAILED（W10）」行
   payout_attempt_kind:
     source: 规划/04 §2.4；BR-WDR-13、BR-WDR-33 ⑥
     description: payout_attempts.kind；cancel 只用于微信零钱单的撤销

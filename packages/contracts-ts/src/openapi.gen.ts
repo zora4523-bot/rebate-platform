@@ -1127,7 +1127,12 @@ export interface paths {
          * @description Status, review_mode (auto: the client says「预计几分钟内到账」, manual: within 24 working
          *     hours, 拍板第二批 OPS-17), amounts, payout channel and masked account, the reason code of a
          *     rejection or failure and fail_action for account-type failures (BR-TEXT-06, BR-TEXT-08).
-         *     channel_order_id is only in the detail.
+         *     channel_order_id is only in the detail. Every item also carries its time points
+         *     (review_deadline, executed_at, first_attempt_at, paid_at; wechat withdrawals also
+         *     channel_state and confirm_deadline) and sub_text_branch, the BR-WDR-25 sub-text branch the
+         *     server computed at response time, with hold_days for the failed_manual sub-text; the
+         *     client picks the sub-text from /v1/dict by sub_text_branch and does not evaluate the
+         *     branch conditions itself (CT-20b).
          */
         get: operations["listWithdrawals"];
         put?: never;
@@ -1150,7 +1155,8 @@ export interface paths {
          *     30304; BR-WDR-01 细则「位置与返回码」). 10010 is a 1xxxx code: no idempotency result is
          *     written and the step-up token is not consumed; after re-verifying on Reverify the user
          *     submits again with a new Idempotency-Key, nothing is replayed (BR-WDR-07).
-         *     Version gate: applied.
+         *     The response is the withdrawal as in GET /v1/withdrawals/{withdrawal_id}, time points and
+         *     sub_text_branch included (CT-20b). Version gate: applied.
          */
         post: operations["createWithdrawal"];
         delete?: never;
@@ -1170,7 +1176,7 @@ export interface paths {
          * One of my withdrawals
          * @description As the list item plus channel_order_id (the channel serial number, only in PAID_API /
          *     PAID_MANUAL when one was recorded, BR-WDR-25 细则「交易流水号」). Unknown or someone else's →
-         *     30701.
+         *     30701. The time points and sub_text_branch are as in the list (CT-20b).
          */
         get: operations["getWithdrawal"];
         put?: never;
@@ -8120,6 +8126,20 @@ export interface components {
          * @enum {string}
          */
         WithdrawalReviewMode: "auto" | "manual";
+        /**
+         * @description contracts/enums/fund.yaml withdrawal_channel_state (BR-WDR-33 ⑤).
+         * @enum {string}
+         */
+        WithdrawalChannelState: "processing" | "wait_user_confirm" | "canceling";
+        /**
+         * @description contracts/enums/fund.yaml withdrawal_sub_text_branch: the sub-text branch of the
+         *     withdrawal, computed by the server from the BR-WDR-25 细则 table (first matching row from
+         *     the top, at response time). The branch conditions and the wording live only in BR-WDR-25
+         *     and /v1/dict; the status title stays with status (BR-TEXT-06). A client meeting an unknown
+         *     value shows the processing sub-text.
+         * @enum {string}
+         */
+        WithdrawalSubTextBranch: "processing" | "wechat_wait_confirm" | "wechat_confirm_expired" | "wechat_canceling" | "wechat_processing" | "auto_expected_soon" | "manual_review_pending" | "manual_review_overdue" | "channel_processing" | "paying_delayed" | "paid_api" | "paid_manual" | "rejected" | "failed_account" | "failed_other" | "failed_manual";
         WalletSummary: {
             available_fen: components["schemas"]["Fen"];
             withdrawable_fen: components["schemas"]["Fen"];
@@ -8235,16 +8255,67 @@ export interface components {
              * @description contracts/enums/fund.yaml payout_method (withdrawals.payout_channel).
              * @enum {string}
              */
-            payout_channel: "alipay" | "bank_card";
+            payout_channel: "alipay" | "bank_card" | "wechat";
             payout_channel_name: string;
             /** @description Masked snapshot of the payee account (BR-ID-33 细则). */
             masked_account: string;
             /** @description reject_reason_code or fail_code of a rejected or failed withdrawal (BR-TEXT-06). */
             reason_code: string | null;
-            /** @description Action for account-type failures, e.g. change_payout_account (BR-TEXT-08). */
+            /**
+             * @description Action for account-type failures, e.g. change_payout_account (BR-TEXT-08). Null on
+             *     every other withdrawal, including a W10 failure (manual_resolution=failed,
+             *     sub_text_branch failed_manual): the needs_manual resolution (BR-WDR-15) does not offer
+             *     changing the payout account.
+             */
             fail_action: string | null;
             /** Format: date-time */
             created_at: string;
+            /**
+             * Format: date-time
+             * @description withdrawals.review_deadline, the manual-review deadline (BR-WDR-26); null when the
+             *     withdrawal has none. Interpolated by the manual_review_pending sub-text (BR-WDR-25).
+             */
+            review_deadline: string | null;
+            /**
+             * Format: date-time
+             * @description withdrawals.executed_at; null before execution and again after a W9 return to APPROVED
+             *     (BR-WDR-13).
+             */
+            executed_at: string | null;
+            /**
+             * Format: date-time
+             * @description Time of the first transfer attempt (payout_attempts kind=transfer) of this withdrawal;
+             *     null while there is none. T of the PAYING branches of BR-WDR-25 is first_attempt_at, or
+             *     executed_at when first_attempt_at is null; the server applies it in sub_text_branch.
+             */
+            first_attempt_at: string | null;
+            /**
+             * Format: date-time
+             * @description withdrawals.paid_at; set only in PAID_API / PAID_MANUAL, otherwise null.
+             */
+            paid_at: string | null;
+            /**
+             * @description withdrawals.channel_state (BR-WDR-33 ⑤); only a wechat withdrawal in PAYING has a
+             *     value, otherwise null. Not a withdrawal status.
+             */
+            channel_state: components["schemas"]["WithdrawalChannelState"] | null;
+            /**
+             * Format: date-time
+             * @description withdrawals.confirm_deadline, the latest time to confirm the transfer in WeChat
+             *     (BR-WDR-33 ⑥); only wechat withdrawals, otherwise null. Interpolated by the
+             *     wechat_wait_confirm sub-text (BR-WDR-25).
+             */
+            confirm_deadline: string | null;
+            sub_text_branch: components["schemas"]["WithdrawalSubTextBranch"];
+            /**
+             * Format: int32
+             * @description Days of the manual_failed_watch hold added with a W10 failure (BR-WDR-15; the hold
+             *     period of withdraw.manual_failed_hold_days at the time of the decision), interpolated by
+             *     the failed_manual sub-text (BR-WDR-25). Null on every other withdrawal and on a W10
+             *     failure without that hold (a wechat withdrawal proven cancelled, BR-WDR-33 ⑧): the
+             *     sub-text then leaves out the hold sentence.
+             */
+            hold_days: number | null;
         };
         /** @description A withdrawal with channel_order_id (detail and create response). */
         Withdrawal: {
@@ -8260,16 +8331,67 @@ export interface components {
              * @description contracts/enums/fund.yaml payout_method (withdrawals.payout_channel).
              * @enum {string}
              */
-            payout_channel: "alipay" | "bank_card";
+            payout_channel: "alipay" | "bank_card" | "wechat";
             payout_channel_name: string;
             /** @description Masked snapshot of the payee account (BR-ID-33 细则). */
             masked_account: string;
             /** @description reject_reason_code or fail_code of a rejected or failed withdrawal (BR-TEXT-06). */
             reason_code: string | null;
-            /** @description Action for account-type failures, e.g. change_payout_account (BR-TEXT-08). */
+            /**
+             * @description Action for account-type failures, e.g. change_payout_account (BR-TEXT-08). Null on
+             *     every other withdrawal, including a W10 failure (manual_resolution=failed,
+             *     sub_text_branch failed_manual): the needs_manual resolution (BR-WDR-15) does not offer
+             *     changing the payout account.
+             */
             fail_action: string | null;
             /** Format: date-time */
             created_at: string;
+            /**
+             * Format: date-time
+             * @description withdrawals.review_deadline, the manual-review deadline (BR-WDR-26); null when the
+             *     withdrawal has none. Interpolated by the manual_review_pending sub-text (BR-WDR-25).
+             */
+            review_deadline: string | null;
+            /**
+             * Format: date-time
+             * @description withdrawals.executed_at; null before execution and again after a W9 return to APPROVED
+             *     (BR-WDR-13).
+             */
+            executed_at: string | null;
+            /**
+             * Format: date-time
+             * @description Time of the first transfer attempt (payout_attempts kind=transfer) of this withdrawal;
+             *     null while there is none. T of the PAYING branches of BR-WDR-25 is first_attempt_at, or
+             *     executed_at when first_attempt_at is null; the server applies it in sub_text_branch.
+             */
+            first_attempt_at: string | null;
+            /**
+             * Format: date-time
+             * @description withdrawals.paid_at; set only in PAID_API / PAID_MANUAL, otherwise null.
+             */
+            paid_at: string | null;
+            /**
+             * @description withdrawals.channel_state (BR-WDR-33 ⑤); only a wechat withdrawal in PAYING has a
+             *     value, otherwise null. Not a withdrawal status.
+             */
+            channel_state: components["schemas"]["WithdrawalChannelState"] | null;
+            /**
+             * Format: date-time
+             * @description withdrawals.confirm_deadline, the latest time to confirm the transfer in WeChat
+             *     (BR-WDR-33 ⑥); only wechat withdrawals, otherwise null. Interpolated by the
+             *     wechat_wait_confirm sub-text (BR-WDR-25).
+             */
+            confirm_deadline: string | null;
+            sub_text_branch: components["schemas"]["WithdrawalSubTextBranch"];
+            /**
+             * Format: int32
+             * @description Days of the manual_failed_watch hold added with a W10 failure (BR-WDR-15; the hold
+             *     period of withdraw.manual_failed_hold_days at the time of the decision), interpolated by
+             *     the failed_manual sub-text (BR-WDR-25). Null on every other withdrawal and on a W10
+             *     failure without that hold (a wechat withdrawal proven cancelled, BR-WDR-33 ⑧): the
+             *     sub-text then leaves out the hold sentence.
+             */
+            hold_days: number | null;
             /** @description Channel serial number, only in PAID_API / PAID_MANUAL when recorded (BR-WDR-25 细则). */
             channel_order_id: string | null;
         };
@@ -15197,7 +15319,38 @@ export interface operations {
                      *             "masked_account": "138****5678",
                      *             "reason_code": null,
                      *             "fail_action": null,
-                     *             "created_at": "2026-10-02T09:30:00+08:00"
+                     *             "created_at": "2026-10-02T09:30:00+08:00",
+                     *             "review_deadline": "2026-10-09T09:30:00+08:00",
+                     *             "executed_at": null,
+                     *             "first_attempt_at": null,
+                     *             "paid_at": null,
+                     *             "channel_state": null,
+                     *             "confirm_deadline": null,
+                     *             "sub_text_branch": "manual_review_pending",
+                     *             "hold_days": null
+                     *           },
+                     *           {
+                     *             "withdrawal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a91",
+                     *             "status": "PAYING",
+                     *             "review_mode": "manual",
+                     *             "amount_fen": 5000,
+                     *             "fee_fen": 0,
+                     *             "tax_fen": 0,
+                     *             "net_fen": 5000,
+                     *             "payout_channel": "wechat",
+                     *             "payout_channel_name": "微信零钱",
+                     *             "masked_account": "**三",
+                     *             "reason_code": null,
+                     *             "fail_action": null,
+                     *             "created_at": "2026-09-28T10:00:00+08:00",
+                     *             "review_deadline": "2026-09-29T10:00:00+08:00",
+                     *             "executed_at": "2026-09-28T15:00:00+08:00",
+                     *             "first_attempt_at": "2026-09-28T15:00:05+08:00",
+                     *             "paid_at": null,
+                     *             "channel_state": "wait_user_confirm",
+                     *             "confirm_deadline": "2026-09-29T15:00:05+08:00",
+                     *             "sub_text_branch": "wechat_wait_confirm",
+                     *             "hold_days": null
                      *           }
                      *         ],
                      *         "next_cursor": null
@@ -15294,7 +15447,15 @@ export interface operations {
                      *         "reason_code": null,
                      *         "fail_action": null,
                      *         "created_at": "2026-10-02T09:30:00+08:00",
-                     *         "channel_order_id": null
+                     *         "channel_order_id": null,
+                     *         "review_deadline": "2026-10-09T09:30:00+08:00",
+                     *         "executed_at": null,
+                     *         "first_attempt_at": null,
+                     *         "paid_at": null,
+                     *         "channel_state": null,
+                     *         "confirm_deadline": null,
+                     *         "sub_text_branch": "manual_review_pending",
+                     *         "hold_days": null
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
                      *     }
@@ -15358,7 +15519,15 @@ export interface operations {
                      *         "reason_code": null,
                      *         "fail_action": null,
                      *         "created_at": "2026-10-02T09:30:00+08:00",
-                     *         "channel_order_id": "placeholder-channel-serial"
+                     *         "channel_order_id": "placeholder-channel-serial",
+                     *         "review_deadline": "2026-10-09T09:30:00+08:00",
+                     *         "executed_at": "2026-10-08T14:00:00+08:00",
+                     *         "first_attempt_at": "2026-10-08T14:00:02+08:00",
+                     *         "paid_at": "2026-10-08T14:01:10+08:00",
+                     *         "channel_state": null,
+                     *         "confirm_deadline": null,
+                     *         "sub_text_branch": "paid_api",
+                     *         "hold_days": null
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
                      *     }

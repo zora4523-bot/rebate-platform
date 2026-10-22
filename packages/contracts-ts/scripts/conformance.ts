@@ -44,6 +44,8 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   TipKey: 'tip_key',
   WithdrawalStatus: 'withdrawal_status',
   WithdrawalReviewMode: 'withdrawal_review_mode',
+  WithdrawalChannelState: 'withdrawal_channel_state',
+  WithdrawalSubTextBranch: 'withdrawal_sub_text_branch',
   DeletionStatus: 'deletion_status',
   DeletionCancelReason: 'deletion_cancel_reason',
   OrderStatusGroup: 'order_status_group',
