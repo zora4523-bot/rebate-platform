@@ -1,0 +1,22 @@
+id: F1-01u
+repo: rebate-platform
+title: F1-01u：logout-queued-refresh.test.tsx 渲染前先导入流水页模块、两处异步等待给 4 秒（修「翻页在途时排队的下拉刷新…」首屏 waitFor 偶发超时）
+type: test-change
+# 2026-10-22 入账（ops 线）。起因：apps/h5/src/shared/api/logout-queued-refresh.test.tsx 的「翻页在途时排队的下拉刷新，在退出登录后
+# 不取令牌、不发请求」在 #1141（run 39730461934 attempt 1）与 B1-34f verify 3 两次红，都在第 176 行首屏
+# waitFor(textContent 匹配 /1\.01/) 等满默认 1 秒，容器为空。原因：壳层在第一个懒加载路由模块加载完之前不画任何东西
+# （app-shell.tsx HydrateFallback 返回 null），冷启动的测试进程在负载下（那轮 jsdom 环境占 61% 时间）转换并导入
+# pages/ledger 超过 1 秒。做法：render 之前先 await import('../../entries/app/pages/ledger/index.ts')，让模块导入不计入
+# 首屏等待；本机满载连跑时还见过骨架已出、数据 1 秒内未到一次，所以两处异步 waitFor 另给 { timeout: 4_000 }（unit 测试整条
+# 5 秒预算之内）。不改断言、不删用例、不动实现。
+# 单元测试不属保护路径；按编排要求走 test-change（approvals #24，非 task 分支 chore/test-change-F1-01u，不带证据文件，先例 F1-06zr #1137）。
+refs: []
+refs_hash: {}
+deps: [F1-01s]
+paths:
+  - 'apps/h5/src/shared/api/logout-queued-refresh.test.tsx'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done

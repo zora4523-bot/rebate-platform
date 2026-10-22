@@ -11,6 +11,10 @@ import { clearAccountData, createQueryClient, createQueryProvider } from '../que
 // 场景（Codex r2 S1）：翻页在途时下拉刷新被排队，随后退出登录；取消查询让旧翻页结束并执行
 // 排队的刷新，这次刷新不得再取令牌、不得发请求。
 
+// Waits on the shell's own work (route module, token, fetch, render) get most of the 5 s unit
+// test budget: on a loaded runner the default 1 s was not enough (F1-01u).
+const SETTLE = { timeout: 4_000 };
+
 const observers = new Set<FakeObserver>();
 const releases: (() => void)[] = [];
 
@@ -171,15 +175,19 @@ it('翻页在途时排队的下拉刷新，在退出登录后不取令牌、不�
   const nextPage = held(page(202, null));
   const requests = wire((count) => (count === 1 ? page(101, 'c1') : nextPage.promise));
   window.history.replaceState(null, '', bridge.routes.Ledger.h5_path!);
+  // The shell draws nothing while its first lazy route module loads. A cold import of the ledger
+  // page under load took longer than waitFor's default budget (#1141, B1-34f verify 3: empty
+  // container at the first waitFor); load it before rendering so only the page itself is timed.
+  await import('../../entries/app/pages/ledger/index.ts');
   const view = render(createAppShell());
 
-  await waitFor(() => expect(view.container.textContent).toMatch(/1\.01/));
+  await waitFor(() => expect(view.container.textContent).toMatch(/1\.01/), SETTLE);
   expect(requests).toHaveLength(1);
   expect(native.tokenCalls()).toBe(1);
 
   // 翻页请求挂起，期间下拉刷新只会被排队。
   reachBottom();
-  await waitFor(() => expect(requests).toHaveLength(2));
+  await waitFor(() => expect(requests).toHaveLength(2), SETTLE);
   pullDown();
   await flush();
   expect(requests).toHaveLength(2);
