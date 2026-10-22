@@ -5,6 +5,14 @@
 // live in this public repository; real eval sets, prompts and recordings stay in private storage.
 export { canonicalJson, sha256Hex } from './canonical.ts';
 export {
+  fixedClock,
+  sequentialIds,
+  redactRecorded,
+  createRecordingWriter,
+  runRecord,
+} from './record.ts';
+export type { EvalClock, EvalIds, RecordingWriter } from './record.ts';
+export {
   EVAL_SETS,
   CATEGORIES,
   SPLITS,

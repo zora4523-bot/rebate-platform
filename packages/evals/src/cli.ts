@@ -44,6 +44,31 @@ import {
 import type { CaseFacts, EvalCase, Manifest, Problem, Report } from './index.ts';
 import { isMetricId, validateFacts } from './release.ts';
 import { validateReport } from './report.ts';
+import type { EvalClock, EvalIds } from './record.ts';
+import type { AgentPorts, AgentUnderTest, RunMeta } from './types.ts';
+
+export interface CliDeps {
+  agent?: (env: { clock: EvalClock; ids: EvalIds }) => AgentUnderTest;
+  livePorts?: () => AgentPorts | Promise<AgentPorts>;
+  clock?: EvalClock;
+  meta?: Pick<
+    RunMeta,
+    | 'vendor'
+    | 'model_snapshot'
+    | 'prompt_sha256'
+    | 'sampling'
+    | 'tool_schema_version'
+    | 'code_commit'
+    | 'grader_version'
+  >;
+}
+
+export function runCli(argv: string[], deps: CliDeps, io?: CliIo): Promise<number> {
+  void argv;
+  void deps;
+  void io;
+  throw new Error('NotImplemented: runCli');
+}
 
 export interface CliIo {
   out(text: string): void;
