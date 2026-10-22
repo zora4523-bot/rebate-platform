@@ -1,0 +1,71 @@
+{
+  "task": "F1-09s",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "d3ec220dca2703e04d42e580c7f0c4a02778262a",
+  "red_tests": [
+    "test/spec/content/popup-assets-overflow/inspection.test.ts > [AC-F1-09s#1] 合法时长在普通、极大及极小帧率下均返回准确的有限正整数毫秒",
+    "test/spec/content/popup-assets-overflow/inspection.test.ts > [AC-F1-09s#2] 帧差或秒数溢出以及超长动画均拒收 too_long，不能夹到 3000 ms",
+    "test/spec/content/popup-assets-overflow/inspection.test.ts > [AC-F1-09s#3] 溢出输入仍遵守 too_large → format → too_long → external_ref 的拒收顺序"
+  ],
+  "risk_note": "RV2 (content domain, popup asset validation; F1-09r #1133 Codex S2 follow-up, BR-TEXT-26). The Lottie duration check now computes frames = op - ip, then seconds = frames / fr, rejecting as too_long whenever an intermediate is not finite, not above 0 or above 3 seconds; duration_ms = round(seconds * 1000) is always a finite positive integer. It no longer computes 3 * fr or frames * 1000, which overflowed to Infinity for contrived inputs such as fr = op = 1e308. Rejection order and normal results unchanged; F1-09r rule tests stay green. Test-machine full verify passed. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d3ec220dca2703e04d42e580c7f0c4a02778262a",
+      "tree": "be9c4f333ae9e19d0acaab239a95c2eb8e06e748",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T23:09:12Z",
+      "finished_at": "2026-10-22T23:09:18Z",
+      "red_tests": [
+        "test/spec/content/popup-assets-overflow/inspection.test.ts > [AC-F1-09s#1] 合法时长在普通、极大及极小帧率下均返回准确的有限正整数毫秒",
+        "test/spec/content/popup-assets-overflow/inspection.test.ts > [AC-F1-09s#2] 帧差或秒数溢出以及超长动画均拒收 too_long，不能夹到 3000 ms",
+        "test/spec/content/popup-assets-overflow/inspection.test.ts > [AC-F1-09s#3] 溢出输入仍遵守 too_large → format → too_long → external_ref 的拒收顺序"
+      ],
+      "expected": ["test/spec/content/popup-assets-overflow/inspection.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "145f10f493ade863507fddfae338df103eeac3c5f34c43a063b542d3a5c7af74"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass (one S2 on a contrived op - ip overflow case); the test machine showed every red test failing for the right reason"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "57949e94d49b9535beb85c641d87260bff3c5748",
+    "specs": "7f0df3605fc3664048553d6d5534aca96ca34032"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
