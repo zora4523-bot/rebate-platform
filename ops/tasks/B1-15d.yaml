@@ -25,4 +25,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/deletion-request/**'
-status: todo
+status: done
+pr: 1084

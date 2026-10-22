@@ -24,4 +24,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/growth/relation-log-instant/**'
-status: todo
+status: done
+pr: 1116
