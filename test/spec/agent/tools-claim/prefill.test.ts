@@ -106,6 +106,61 @@ it('[AC-B3-08d#3][BR-AI-03][BR-AI-14] 本 run 占位符还原后去空格，保�
   expect(outcome.modelView).toEqual({});
 });
 
+it.each([false, true])(
+  '[AC-B3-08d#3][BR-AI-03][BR-AI-14] 嵌入单号的占位符按本 run 还原，原值不进模型视图（启用引用=%s）',
+  async (withReference) => {
+    const cardReference = vi.fn(() => 'synthetic-card-reference');
+    const f = setup(withReference ? { cardReference } : {});
+    // 任务书 §10：合成 pdd 单号仅长数字段被脱敏，前缀与连字符保留。
+    const outcome = await f.execute(
+      { platform: 'pdd', order_no: '231023-<num_1>' },
+      context({ placeholders: { '<num_1>': '123456789012345' } }),
+    );
+    expect(draftOf(outcome)).toMatchObject({
+      platform: 'pdd',
+      order_no: '231023-123456789012345',
+    });
+    expect(outcome.modelView).toEqual(
+      withReference ? { card_id: 'synthetic-card-reference' } : {},
+    );
+    expect(JSON.stringify(outcome.modelView)).not.toContain('123456789012345');
+    expect(JSON.stringify(outcome.modelView)).not.toContain('231023-123456789012345');
+  },
+);
+
+it('[AC-B3-08d#3][BR-AI-03][BR-AI-14] 嵌入的占位符不在本 run 表中时拒绝，不读外跳记录、不出卡', async () => {
+  const cardReference = vi.fn(() => 'synthetic-card-reference');
+  const f = setup({ cardReference });
+  const outcome = await f.execute(
+    { platform: 'pdd', order_no: '231023-<num_9>' },
+    context({ placeholders: { '<num_1>': '123456789012345' } }),
+  );
+  expect(outcome).toEqual(rejected);
+  expect(outcome).not.toHaveProperty('cards');
+  expect(f.read).not.toHaveBeenCalled();
+  expect(cardReference).not.toHaveBeenCalled();
+});
+
+it.each([
+  { value: '<num_1>', restored: '9'.repeat(65) },
+  { value: '231023-<num_1>', restored: '9'.repeat(58) },
+])(
+  '[AC-B3-08d#3][BR-AI-03][BR-AI-14] 还原后完整单号超过 64 位时拒绝，不读记录、不出卡 %#',
+  async ({ value, restored }) => {
+    const cardReference = vi.fn(() => 'synthetic-card-reference');
+    const f = setup({ cardReference });
+    // 任务书 §9、§10：64 位上限须在还原后检查，包含未被脱敏的前缀。
+    const outcome = await f.execute(
+      { platform: 'pdd', order_no: value },
+      context({ placeholders: { '<num_1>': restored } }),
+    );
+    expect(outcome).toEqual(rejected);
+    expect(outcome).not.toHaveProperty('cards');
+    expect(f.read).not.toHaveBeenCalled();
+    expect(cardReference).not.toHaveBeenCalled();
+  },
+);
+
 it.each<{ value: string; placeholders: Readonly<Record<string, string>> }>([
   { value: '<num_9>', placeholders: {} },
   { value: '<num_1>', placeholders: { '<num_1>': '   ' } },
