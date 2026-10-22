@@ -407,7 +407,7 @@ export function dueJob(f: Setup, key = 'home'): ReceivedJob {
   return {
     id: randomUUID(),
     queue: 'page-schedule',
-    name: 'page-schedule.due',
+    name: 'content.page_schedule_due',
     payload: { app_id: f.appId, page_key: key },
     attempt: 1,
   };

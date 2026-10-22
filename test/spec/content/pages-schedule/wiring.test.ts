@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import { expect, it, vi } from 'vitest';
 import { ContentWorkerModule } from '../../../../apps/api/src/modules/content/content-worker.module.ts';
 import {
@@ -50,7 +52,7 @@ it('[AC-F1-09p#29] ContentWorkerModule 为 page-schedule 注册一次处理器�
   const job = {
     id: 'job-id',
     queue: 'page-schedule',
-    name: 'page-schedule.due',
+    name: 'content.page_schedule_due',
     payload: { app_id: 'wiring', page_key: 'home' },
     attempt: 2,
   };
@@ -58,4 +60,46 @@ it('[AC-F1-09p#29] ContentWorkerModule 为 page-schedule 注册一次处理器�
   expect(
     vi.mocked(createPageScheduleJob).mock.results[0]!.value.handle,
   ).toHaveBeenCalledExactlyOnceWith(job);
+});
+
+it('[AC-F1-09p#33] app.module 仅在 worker 入口装配 ContentWorkerModule', () => {
+  const source = readFileSync(
+    new URL('../../../../apps/api/src/app.module.ts', import.meta.url),
+    'utf8',
+  );
+  const file = ts.createSourceFile('app.module.ts', source, ts.ScriptTarget.Latest, true);
+  const calls: ts.CallExpression[] = [];
+  function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.expression.getText(file) === 'ContentWorkerModule' &&
+      node.expression.name.text === 'forWorker'
+    ) {
+      calls.push(node);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(file);
+  expect(calls, '必须且只能装配一次 ContentWorkerModule.forWorker()').toHaveLength(1);
+  for (const call of calls) {
+    // 与 RiskScanModule 同样的 worker 条件展开；不导入或运行 AppModule。
+    const branch = call.parent;
+    expect(ts.isArrayLiteralExpression(branch)).toBe(true);
+    const conditional = branch.parent;
+    expect(ts.isConditionalExpression(conditional)).toBe(true);
+    if (!ts.isConditionalExpression(conditional)) continue;
+    expect(conditional.whenTrue).toBe(branch);
+    expect(conditional.condition.getText(file)).toMatch(/^options\.entry\s*===\s*['"]worker['"]$/);
+    expect(conditional.whenFalse.getText(file)).toMatch(/^\[\s*\]$/);
+    let spread = conditional.parent;
+    while (ts.isParenthesizedExpression(spread)) spread = spread.parent;
+    expect(ts.isSpreadElement(spread)).toBe(true);
+    const imports = spread.parent;
+    expect(ts.isArrayLiteralExpression(imports)).toBe(true);
+    expect(ts.isPropertyAssignment(imports.parent)).toBe(true);
+    if (ts.isPropertyAssignment(imports.parent)) {
+      expect(imports.parent.name.getText(file)).toBe('imports');
+    }
+  }
 });

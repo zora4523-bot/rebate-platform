@@ -229,7 +229,7 @@ it('[AC-F1-09p#13] 撤销后再定时，旧任务只能按最新槽位判定，�
   expect(await snapshot(h, f.appId)).toEqual(before);
   expect(enqueue).toHaveBeenCalledExactlyOnceWith(
     'page-schedule',
-    'page-schedule.due',
+    'content.page_schedule_due',
     { app_id: f.appId, page_key: 'home' },
     { trx: expect.objectContaining({ isTransaction: true }), delaySeconds: 60 },
   );

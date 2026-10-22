@@ -57,7 +57,7 @@ it('[AC-F1-09p#1] 定时全量只写槽位与一条审计，同事务入队且�
   expect(queued[0]).toMatchObject({
     name: 'page-schedule',
     delay: 11,
-    data: { name: 'page-schedule.due', payload: { app_id: f.appId, page_key: 'home' } },
+    data: { name: 'content.page_schedule_due', payload: { app_id: f.appId, page_key: 'home' } },
   });
 });
 
@@ -134,7 +134,7 @@ it('[AC-F1-09p#4] 提前收到任务按剩余时间向上取整再入队，页�
   await job.handle(dueJob(f));
   expect(enqueue).toHaveBeenCalledExactlyOnceWith(
     'page-schedule',
-    'page-schedule.due',
+    'content.page_schedule_due',
     { app_id: f.appId, page_key: 'home' },
     { trx: expect.objectContaining({ isTransaction: true }), delaySeconds: 2 },
   );
@@ -145,7 +145,7 @@ it('[AC-F1-09p#4] 提前收到任务按剩余时间向上取整再入队，页�
   await job.handle(dueJob(f));
   expect(enqueue).toHaveBeenCalledExactlyOnceWith(
     'page-schedule',
-    'page-schedule.due',
+    'content.page_schedule_due',
     { app_id: f.appId, page_key: 'home' },
     { trx: expect.objectContaining({ isTransaction: true }), delaySeconds: 1 },
   );

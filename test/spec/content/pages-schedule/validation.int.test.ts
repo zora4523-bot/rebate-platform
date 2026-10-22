@@ -56,7 +56,7 @@ async function block(f: Setup, value: boolean) {
     .execute();
 }
 
-it.each([0, -1, 30 * DAY + 1_000])(
+it.each([0, -1, 30 * DAY + 1, 30 * DAY + 1_000])(
   '[AC-F1-09p#14] publish_at 偏移 %s ms 拒绝且数据库、审计、队列不变',
   async (offset) => {
     const f = await prepared(h);
