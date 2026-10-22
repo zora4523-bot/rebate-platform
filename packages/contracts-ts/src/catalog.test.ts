@@ -146,6 +146,8 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     'icon_svg_unconvertible',
     // CT-22b: favorites over favorites.max_per_user (规划/01 F-PROD-12).
     'favorites_full',
+    // CT-24h: admin-only, a reauth_mode=manual union account cannot start OAuth (D10-176).
+    'manual_mode',
   ]);
   expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10']);
 });
@@ -227,6 +229,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'app_version',
     // CT-24f: admin risk rule enable / disable CAS (04 §6.6 risk-rules, BR-ID-36).
     'risk_rule',
+    // CT-24h: admin PID change / activate / retire CAS (04 §6.6 union-pids, BR-ATTR-02).
+    'union_pid',
   ]);
 });
 

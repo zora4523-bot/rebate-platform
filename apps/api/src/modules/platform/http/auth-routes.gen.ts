@@ -603,6 +603,71 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/union-accounts",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-accounts/:union_account_id/reauthorize",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/union-accounts/:union_account_id/reauthorize/:session_id",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-accounts/oauth/callback",
+    "auth": "admin"
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/union-accounts/:union_account_id/credential",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/union-accounts/alert-phones",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-accounts/alert-phones",
+    "auth": "admin"
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/v1/union-accounts/alert-phones",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/union-pids",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-pids",
+    "auth": "admin"
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/v1/union-pids/:pid_id",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-pids/:pid_id/activate",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-pids/:pid_id/retire",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/platform-icons",
     "auth": "admin"
   },

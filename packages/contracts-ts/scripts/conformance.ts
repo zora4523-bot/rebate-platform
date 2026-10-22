@@ -96,6 +96,11 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminInviteRewardSkipReason: 'invite_reward_skip_reason',
   AdminInviteRewardVoidReason: 'invite_reward_void_reason',
   AdminInviteRewardBindSource: 'invite_reward_bind_source',
+  AdminUnionAuthStatus: 'union_auth_status',
+  AdminUnionReauthMode: 'union_reauth_mode',
+  AdminUnionAuthSessionStatus: 'admin_union_auth_session_status',
+  AdminUnionPidStatus: 'union_pid_status',
+  AdminUnionPidScene: 'pid_scene',
 };
 
 /**

@@ -1223,6 +1223,136 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListUnionAccounts",
+    "method": "GET",
+    "path": "/admin/v1/union-accounts",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminStartUnionReauthorization",
+    "method": "POST",
+    "path": "/admin/v1/union-accounts/:union_account_id/reauthorize",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetUnionReauthorization",
+    "method": "GET",
+    "path": "/admin/v1/union-accounts/:union_account_id/reauthorize/:session_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCompleteUnionReauthorization",
+    "method": "POST",
+    "path": "/admin/v1/union-accounts/oauth/callback",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminPutUnionCredential",
+    "method": "PUT",
+    "path": "/admin/v1/union-accounts/:union_account_id/credential",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListUnionAlertPhones",
+    "method": "GET",
+    "path": "/admin/v1/union-accounts/alert-phones",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminAddUnionAlertPhone",
+    "method": "POST",
+    "path": "/admin/v1/union-accounts/alert-phones",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRemoveUnionAlertPhone",
+    "method": "DELETE",
+    "path": "/admin/v1/union-accounts/alert-phones",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListUnionPids",
+    "method": "GET",
+    "path": "/admin/v1/union-pids",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreateUnionPid",
+    "method": "POST",
+    "path": "/admin/v1/union-pids",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUpdateUnionPid",
+    "method": "PATCH",
+    "path": "/admin/v1/union-pids/:pid_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminActivateUnionPid",
+    "method": "POST",
+    "path": "/admin/v1/union-pids/:pid_id/activate",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminRetireUnionPid",
+    "method": "POST",
+    "path": "/admin/v1/union-pids/:pid_id/retire",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListPlatformIcons",
     "method": "GET",
     "path": "/admin/v1/platform-icons",

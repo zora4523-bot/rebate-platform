@@ -225,6 +225,51 @@ export const risk_action = [
 export type RiskAction = (typeof risk_action)[number];
 
 /**
+ * 站长联盟授权状态；GET /admin/v1/union-accounts 的 auth_status；提醒节点 alert_stage 不对外返回；中文名取 BR-TEXT-25 admin_dict.union_accounts.auth_status
+ * Source: 规划/04 §3.2 union_accounts.auth_status；规划/08 BR-ID-24（CT-24h） (contracts/enums/admin.yaml).
+ */
+export const union_auth_status = [
+  "active", // 有效
+  "expiring", // 即将到期（已到 union.auth_alert_days 的提醒节点）
+  "expired", // 已过期或探测 / 调用返回授权失效（BR-ID-24 ④）
+] as const;
+export type UnionAuthStatus = (typeof union_auth_status)[number];
+
+/**
+ * 该联盟账号站长凭据的更新方式，由服务端按平台登记表派生（不入库）；前端据此显示入口
+ * Source: 规划/04 §6.6 union-accounts；规划/08 BR-ID-24 细则「后台告警手机号与重新授权会话」（编排裁定 D10-159 及其补充，CT-24h） (contracts/enums/admin.yaml).
+ */
+export const union_reauth_mode = [
+  "oauth", // 走后台授权会话（POST …/reauthorize，回调后轮询结果）
+  "manual", // 站长凭据不是 OAuth、可在联盟后台重新取得（如京东推客授权 Key，CAP-JD-12），在后台录入新凭据（PUT …/credential）
+  "none", // 没有站长凭据可更新（按 规划/09 CAP-*-12 实测登记），不提供更新入口
+] as const;
+export type UnionReauthMode = (typeof union_reauth_mode)[number];
+
+/**
+ * 后台站长重新授权会话的状态；state 单次使用、10 分钟有效
+ * Source: 规划/04 §3.2 admin_union_auth_sessions.status；规划/08 BR-ID-24 细则（CT-24h） (contracts/enums/admin.yaml).
+ */
+export const admin_union_auth_session_status = [
+  "pending", // 已发起、回调未到
+  "succeeded", // 回调成功，凭据与到期时间已更新
+  "failed", // 回调失败（原因记在 error）
+  "expired", // 过期未用
+] as const;
+export type AdminUnionAuthSessionStatus = (typeof admin_union_auth_session_status)[number];
+
+/**
+ * 推广位状态；只有 pending→active（启用，须花卷云忽略确认与截图）、active→retired（停用）；三种状态都在白名单里，不可删除
+ * Source: 规划/04 §3.2 union_pids.status；规划/08 BR-ATTR-02 细则「后台登记与启停」（CT-24h） (contracts/enums/admin.yaml).
+ */
+export const union_pid_status = [
+  "pending", // 已登记、未启用（只有本状态可修改）
+  "active", // 启用中，可用于转链；同一 app × platform × pid_scene 至多一条
+  "retired", // 已停用，停止新转链，仍留在白名单
+] as const;
+export type UnionPidStatus = (typeof union_pid_status)[number];
+
+/**
  * 余额流水类型，共 13 种，细分只用 sub_type；用户侧名称见 BR-TEXT-19
  * Source: 规划/04 §2.4；BR-FUND-15；08 §13.4 (contracts/enums/fund.yaml).
  */
@@ -1644,6 +1689,10 @@ export const enums = {
   admin_order_history_source,
   risk_rule_status,
   risk_action,
+  union_auth_status,
+  union_reauth_mode,
+  admin_union_auth_session_status,
+  union_pid_status,
   ledger_type,
   referral_credit_sub_type,
   clawback_sub_type,

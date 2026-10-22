@@ -603,6 +603,71 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/union-accounts",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-accounts/:union_account_id/reauthorize",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/union-accounts/:union_account_id/reauthorize/:session_id",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-accounts/oauth/callback",
+    "signed": false
+  },
+  {
+    "method": "PUT",
+    "path": "/admin/v1/union-accounts/:union_account_id/credential",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/union-accounts/alert-phones",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-accounts/alert-phones",
+    "signed": false
+  },
+  {
+    "method": "DELETE",
+    "path": "/admin/v1/union-accounts/alert-phones",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/union-pids",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-pids",
+    "signed": false
+  },
+  {
+    "method": "PATCH",
+    "path": "/admin/v1/union-pids/:pid_id",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-pids/:pid_id/activate",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/union-pids/:pid_id/retire",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/platform-icons",
     "signed": false
   },

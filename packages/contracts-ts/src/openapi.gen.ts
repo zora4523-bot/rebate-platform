@@ -3650,6 +3650,418 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/union-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Station-owner union accounts with their authorization status (not paged)
+         * @description Permission point `union.account_auth` (04 §11.2; read only, no step-up, 01 F-ADM-16);
+         *     lacking it is 10403 with `data.reason=admin_permission_denied`. Every union account of
+         *     the console's app, not paged, ordered by platform then account_name (04 §6.6
+         *     union-accounts). Each row: `union_account_id`, `platform`, `account_name`, `status`,
+         *     `sync_start_at`, `auth_expires_at`, `auth_expires_estimated`, `auth_status`,
+         *     `auth_renewed_at`, `auth_renewed_by`, `last_probe_at`, `last_probe_ok`,
+         *     `last_probe_error`, and the derived `alert_phones_configured` (false → the page shows
+         *     「未配置告警手机号」, BR-ID-24 ②) and `reauth_mode` (BR-ID-24 细则「后台告警手机号与重新授权会话」:
+         *     `oauth` → POST …/{union_account_id}/reauthorize, `manual` → PUT
+         *     …/{union_account_id}/credential, `none` → no renewal entry). `auth_expires_estimated` is
+         *     true when the union returned no expiry and the server estimated it as the authorization
+         *     time + 90 days (BR-ID-24 细则; the page marks it 「估算」). `auth_renewed_by` is null for an
+         *     automatic refresh (BR-ID-24 细则「后台联盟账号列表」). The reminder stage
+         *     (union_accounts.alert_stage) and every credential (tokens, keys) are never returned.
+         *     `status` is union_accounts.status as stored; its values are registered with B1-22 and
+         *     are not an enum here yet.
+         */
+        get: operations["adminListUnionAccounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/union-accounts/{union_account_id}/reauthorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start an OAuth re-authorization of a station-owner union account
+         * @description Permission point `union.account_auth` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`; 01 F-ADM-16). The body holds
+         *     only an optional `reason` (1–200 characters, else 20001 with `data.fields=[reason]`;
+         *     BR-ID-24 细则「后台联盟账号列表」).
+         *     Only for an account whose `reauth_mode` is `oauth` (any platform whose station-owner
+         *     authorization is OAuth, BR-ID-24 细则「后台告警手机号与重新授权会话」, orchestrator ruling
+         *     D10-159). `reauth_mode=none` (no station-owner credential to renew, registered from
+         *     规划/09 CAP-*-12) is 20001 with `data.fields=[union_account_id]`, a fact of the platform
+         *     and not a policy refusal. A `reauth_mode=manual` account (such as the JD 推客授权 Key,
+         *     CAP-JD-12) is renewed through PUT /admin/v1/union-accounts/{union_account_id}/credential
+         *     instead; the console never offers this operation for it, and a call here is 20001 with
+         *     `data.fields=[union_account_id]` and `data.reason=manual_mode`, so it is told apart from
+         *     `reauth_mode=none` (no reason; orchestrator ruling D10-176). An
+         *     unknown `union_account_id`, or one of another app, is 20001 with
+         *     `data.fields=[union_account_id]`.
+         *     Each call creates one admin_union_auth_sessions row (union_account_id, created_by = the
+         *     signed-in admin, status pending, state stored as a hash only) and answers its
+         *     `session_id`, the union's authorization address `auth_url` and `expires_at`: the state is
+         *     single use and valid 10 minutes, the address as long (BR-ID-24 细则; the user-side
+         *     union_auth_sessions are not reused). Earlier pending sessions of the account are left to
+         *     expire. The console opens `auth_url`; the union sends the browser back to the console
+         *     page `<console origin>/unions/oauth-callback`, which posts what it received to POST
+         *     /admin/v1/union-accounts/oauth/callback and gets the result; a console window that did not
+         *     receive the callback polls GET
+         *     /admin/v1/union-accounts/{union_account_id}/reauthorize/{session_id} instead.
+         *     Writes an audit record (action union_account_reauthorize_start, reason). No
+         *     Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminStartUnionReauthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/union-accounts/{union_account_id}/reauthorize/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Result of one re-authorization session (polled by the console)
+         * @description Permission point `union.account_auth` (read only, no step-up); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. The console polls this while the authorization
+         *     window is open, or after the callback page reported back (04 §6.6 union-accounts, BR-ID-24
+         *     细则). `status`: `pending` (not finished; turns `expired` once `expires_at` has passed
+         *     without a callback), `succeeded` (the credential, auth_expires_at, auth_renewed_at and
+         *     auth_renewed_by were updated and audited, BR-ID-24 ③), `failed` (the callback came back
+         *     without a usable grant; `error` holds the recorded cause) or `expired`. `error` is a
+         *     short cause recorded by the server, never a token, code or credential; its values are
+         *     registered with B1-22 and are not an enum here yet. `finished_at` is set with the final
+         *     status. An unknown `union_account_id` is 20001 with `data.fields=[union_account_id]`; an
+         *     unknown `session_id`, or one of another union account, is 20001 with
+         *     `data.fields=[session_id]`.
+         */
+        get: operations["adminGetUnionReauthorization"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/union-accounts/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand the union's OAuth callback to the server and finish the session
+         * @description Finishes a station-owner authorization started by POST
+         *     /admin/v1/union-accounts/{union_account_id}/reauthorize (12 §9 T-08). The union's
+         *     redirect address is the console page `<console origin>/unions/oauth-callback` (a console
+         *     route, not an API path); that page posts the `state` and `code` (or the union's `error`)
+         *     it received here, with the signed-in admin_token, then shows the result. Permission point
+         *     `union.account_auth`; lacking it is 10403 with `data.reason=admin_permission_denied`. No
+         *     step-up: the start already required one, and the state is single use.
+         *     The session is found by the hash of `state` only (BR-ID-24 细则「后台告警手机号与重新授权会话」).
+         *     `state` missing, unknown, or of a session started by another admin account is 20001
+         *     with `data.fields=[state]`; neither or both of `code` and `error` is 20001 with
+         *     `data.fields=[code]`. A pending session within `expires_at` is marked used, the grant
+         *     (`code`) is exchanged with the union, and on success the credential is stored encrypted
+         *     in union_credentials and auth_expires_at (from the union, else authorization time + 90
+         *     days with auth_expires_estimated = true), auth_renewed_at, auth_renewed_by (the
+         *     session's created_by) and auth_status are updated and an audit record is written (action
+         *     union_account_reauthorize, BR-ID-24 ③); the session becomes succeeded. A missing
+         *     `code`, an `error` from the union or a failed exchange makes it failed with the cause in
+         *     `error`. A pending session past `expires_at` becomes expired. A session that is no
+         *     longer pending is answered as it is, nothing is exchanged again. The answer is always the
+         *     session as GET …/{union_account_id}/reauthorize/{session_id} returns it, so the page
+         *     needs no second call. `code` and the tokens are never logged or returned. Whether the
+         *     granted account is the same station-owner account as the session's union account is
+         *     checked where the union's grant names the account (B1-22, per platform registry in
+         *     specs/union). No Idempotency-Key.
+         */
+        post: operations["adminCompleteUnionReauthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/union-accounts/{union_account_id}/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Enter a new station-owner credential by hand (reauth_mode manual)
+         * @description Permission point `union.account_auth` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). For an account whose
+         *     `reauth_mode` is `manual` only: a station-owner credential that is not OAuth but that
+         *     the owner takes again from the union's own console, such as the JD 推客授权 Key
+         *     (CAP-JD-12; BR-ID-24 细则「后台告警手机号与重新授权会话」, orchestrator ruling D10-159 and
+         *     its supplement). Any other `reauth_mode`, an unknown `union_account_id` or one of
+         *     another app is 20001 with `data.fields=[union_account_id]`.
+         *     Body checks (20001 with `data.fields` naming the field): `credential` 1–512 characters
+         *     without surrounding whitespace; `expires_at`, when given, later than now; `reason`
+         *     optional, 1–200 characters. The plaintext `credential` only goes into encryption: it is
+         *     stored encrypted in union_credentials and is never logged, audited, echoed or returned.
+         *     Effects, in one transaction (BR-ID-24 ③): the credential replaces the current one;
+         *     auth_expires_at = `expires_at` with auth_expires_estimated = false, or, without
+         *     `expires_at`, now + 90 days with auth_expires_estimated = true (BR-ID-24 细则);
+         *     auth_renewed_at = now, auth_renewed_by = the signed-in admin; auth_status and the
+         *     reminder stage are recomputed from the new expiry (an account expired by a probe or
+         *     call recovers, BR-ID-24 ④). The union is not called here; the next daily probe checks
+         *     the new credential (BR-ID-24 ①). Writes an audit record (action
+         *     union_account_credential, reason; never the credential). The response is the account as
+         *     GET /admin/v1/union-accounts lists it now. No Idempotency-Key (04 §6.6).
+         */
+        put: operations["adminPutUnionCredential"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/union-accounts/alert-phones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Station-owner alert phone numbers (masked)
+         * @description Permission point `union.account_auth` (read only, no step-up); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. The numbers that get the station-owner
+         *     authorization SMS (BR-ID-24 ②). They are kept encrypted as one group in the
+         *     configuration key `union.auth_alert_phones` (04 §10.1; the general config-items
+         *     operations neither return nor accept that key), and are changed only through this
+         *     resource (orchestrator ruling D10-152). Each item has `phone_masked` (3 + 4, BR-ID-33)
+         *     and `phone_id`, the HMAC of the normalized number (BR-ID-05 细则), used to remove it;
+         *     the full number is never returned by any operation of this resource. `version` is the
+         *     version of the whole item, the `expected_version` of the writes (0 = never written).
+         *     At most 10 numbers (BR-ID-24 细则).
+         */
+        get: operations["adminListUnionAlertPhones"];
+        put?: never;
+        /**
+         * Add an alert phone number
+         * @description Permission point `union.account_auth` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`; 01 F-ADM-16). Order of
+         *     checks, the first hit is returned: permission, step-up → body (20001 with `data.fields`
+         *     naming the field; `reason` optional, 1–200 characters) → `phone` normalized by BR-ID-05
+         *     细则「手机号规范化」, not a mainland 11-digit number → 20001 with `data.fields=[phone]` and
+         *     `data.reason=phone_invalid` (as users/{user_id}/profile) → CAS: `expected_version` is
+         *     the `version` of GET /admin/v1/union-accounts/alert-phones; a mismatch → 20902 with
+         *     `data.resource=config_item`, refresh and retry → the same number already present →
+         *     success, nothing added and `version` unchanged → already 10 numbers → 20001 with
+         *     `data.fields=[phone]` without a reason (the console tells it apart by the count;
+         *     BR-ID-24 细则). Otherwise the number is added to the encrypted group and `version` goes
+         *     up by 1. Writes an audit record (action union_alert_phone_add, the masked number,
+         *     reason) for every accepted call. The response is the list as GET returns it now. No
+         *     Idempotency-Key (04 §6.6).
+         */
+        post: operations["adminAddUnionAlertPhone"];
+        /**
+         * Remove an alert phone number
+         * @description Permission point `union.account_auth` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). No body and no reason: the
+         *     query holds only the identifiers `phone_id` and `expected_version`, so no free text
+         *     reaches the URL or the access log (04 §6.6, orchestrator 2026-10-22). `phone_id` is a
+         *     query parameter here, not the path segment of 04 §6.6
+         *     (`/admin/v1/union-accounts/alert-phones/{phone_id}`): that path is ambiguous with
+         *     `/admin/v1/union-accounts/{union_account_id}/reauthorize` under the contract lint
+         *     (no-ambiguous-paths). `phone_id` or `expected_version` missing or malformed → 20001
+         *     with `data.fields` naming it; a mismatch with the group's current
+         *     `version` → 20902 with `data.resource=config_item`, refresh and retry; then a `phone_id`
+         *     not in the group → 20001 with `data.fields=[phone_id]`. Otherwise the number is removed
+         *     and `version` goes up by 1; removing the last one leaves the group empty (only console
+         *     alerts then, BR-ID-24 ②). Writes an audit record (action union_alert_phone_remove, the
+         *     masked number). The response is the list as GET returns it now. No Idempotency-Key.
+         */
+        delete: operations["adminRemoveUnionAlertPhone"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/union-pids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Registered PIDs (推广位) of the app (not paged)
+         * @description Permission point `union.pid` (04 §11.2; read only, no step-up); lacking it is 10403
+         *     with `data.reason=admin_permission_denied`. Every union_pids row of the console's app in
+         *     all three statuses, not paged, ordered by platform, pid_scene, then created_at. Rows are
+         *     never deleted (BR-ATTR-02): pending, active and retired all stay on the whitelist, and
+         *     the status only decides whether the PID is used for new links (pending → active →
+         *     retired, BR-ATTR-02 细则「后台登记与启停」). `hjy_ignore_evidence_path` is the private OSS
+         *     object path of the 花卷云 ignore screenshot (BR-ATTR-28), null until activation; viewing
+         *     the screenshot is not part of this contract.
+         */
+        get: operations["adminListUnionPids"];
+        put?: never;
+        /**
+         * Register a PID (always pending)
+         * @description Permission point `union.pid` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Body checks, each 20001
+         *     with `data.fields` naming the field (04 §6.6 union-pids): `platform` not in enum
+         *     platform; `union_account_id` unknown, of another app or of another platform;
+         *     `site_id` missing for taobao, or given (not null) for any other platform; `pid` or
+         *     `site_id` not 1–64 of [0-9A-Za-z_-]; `pid_scene` not in enum pid_scene; `reason`
+         *     optional, 1–200 characters; the same (app, platform, pid) already registered, in any
+         *     status → `data.fields=[pid]`. A new row is always pending (BR-ATTR-02 细则「后台登记与启停」);
+         *     registering the first PID of a union account writes that account's sync_start_at in the
+         *     same transaction, later registrations do not change it (BR-ATTR-02). Writes an audit
+         *     record (action union_pid_create, the new row, reason). The response is the new row. No
+         *     Idempotency-Key and no DELETE (BR-ATTR-02).
+         */
+        post: operations["adminCreateUnionPid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/union-pids/{pid_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change a pending PID
+         * @description Permission point `union.pid` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Only a pending row can be
+         *     changed (orchestrator ruling D10-159, BR-ATTR-02 细则「后台修改与启用的裁定」): any of
+         *     `platform`, `union_account_id`, `site_id`, `pid`, `pid_scene` (at least one, else
+         *     20001 with `data.fields=[body]`), with `expected_row_version` and an optional `reason`. An unknown `pid_id`, or one of another
+         *     app, is 20001 with `data.fields=[pid_id]`. The row after the change is checked as POST
+         *     /admin/v1/union-pids checks a new one (20001 with `data.fields` naming the field; the
+         *     same (app, platform, pid) on another row → `[pid]`). The row is not pending (active or
+         *     retired), or `expected_row_version` differs from its row_version → 20902 with
+         *     `data.resource=union_pid`, refresh. To replace an active PID, register a new one, finish
+         *     its 花卷云 ignore registration, then retire the old one and activate the new one at once
+         *     (BR-ATTR-02 细则). Changing a pending row never changes a sync_start_at already written;
+         *     moving it to a union account without one writes that account's sync_start_at at the time
+         *     of the change (BR-ATTR-02 细则). row_version goes up by 1. Writes an audit record (action
+         *     union_pid_update, before and after values, reason). The response is the row as it is
+         *     now. No Idempotency-Key.
+         */
+        patch: operations["adminUpdateUnionPid"];
+        trace?: never;
+    };
+    "/admin/v1/union-pids/{pid_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate a pending PID, with the 花卷云 ignore confirmation and screenshot
+         * @description Permission point `union.pid` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). `multipart/form-data` with
+         *     the parts `expected_row_version`, `hjy_ignore_confirmed_at` (when the 花卷云 ignore was
+         *     confirmed, not later than now), the screenshot file `hjy_ignore_evidence` (PNG or JPEG,
+         *     at most 5 MB) and an optional `reason` (1–200 characters) (BR-ATTR-02 细则「后台修改与启用的裁定」,
+         *     BR-ATTR-28, orchestrator ruling D10-152). Order of checks, the first hit is returned:
+         *     permission, step-up → an unknown `pid_id`, or one of another app, 20001 with
+         *     `data.fields=[pid_id]` → parts: the 花卷云 items missing → 20001 with `data.fields`
+         *     listing the missing ones (`[hjy_ignore_confirmed_at, hjy_ignore_evidence]` when both
+         *     are), the screenshot not PNG / JPEG or above 5 MB → 20001 with
+         *     `data.fields=[hjy_ignore_evidence]`, another part invalid → 20001 naming it → the row is
+         *     not pending, or `expected_row_version` differs → 20902 with `data.resource=union_pid` →
+         *     another PID of the same app × platform × pid_scene is active → 30155 (only one active
+         *     per scene; retire it first, BR-ATTR-02 细则). A request body above the global limit stays
+         *     413 with `data.fields=[body]`. Effects, in one transaction: the screenshot is stored in
+         *     the private OSS bucket and its path written to hjy_ignore_evidence_path, with
+         *     hjy_ignore_confirmed_at, status becomes active and row_version goes up by 1; from then
+         *     on links of that scene use this PID (BR-ATTR-02). The partial unique index on (app,
+         *     platform, pid_scene) for active rows is the last line against a concurrent second
+         *     activation, which also answers 30155. Writes an audit record (action union_pid_activate,
+         *     reason). The response is the row as it is now. No Idempotency-Key.
+         */
+        post: operations["adminActivateUnionPid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/v1/union-pids/{pid_id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retire an active PID (stays on the whitelist)
+         * @description Permission point `union.pid` (04 §11.2); lacking it is 10403 with
+         *     `data.reason=admin_permission_denied`. Step-up: totp tier on every call (without a valid
+         *     totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). Body `expected_row_version`
+         *     and an optional `reason` (1–200 characters; 20001 with `data.fields` naming a bad
+         *     field). An unknown `pid_id`, or one of another app, is 20001 with `data.fields=[pid_id]`.
+         *     Only active → retired (BR-ATTR-02 细则「后台登记与启停」): a pending or retired row, or an
+         *     `expected_row_version` that differs, is 20902 with `data.resource=union_pid`. There is no
+         *     pending → retired and no retired → active. A retired PID stays on the whitelist, so
+         *     orders from links already sent keep coming in (BR-ATTR-02 「为什么保留 retired」); new links
+         *     of the scene use the active PID, and until one is activated the scene has none.
+         *     row_version goes up by 1. Writes an audit record (action union_pid_retire, reason). The
+         *     response is the row as it is now. No Idempotency-Key.
+         */
+        post: operations["adminRetireUnionPid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/platform-icons": {
         parameters: {
             query?: never;
@@ -10729,6 +11141,257 @@ export interface components {
             /** @description Free text kept in agent_messages.report_reason; 08 has no reason set yet, so no enum. */
             reason: string;
         };
+        /**
+         * @description Station-owner authorization status (enum union_auth_status; 04 §3.2
+         *     union_accounts.auth_status, BR-ID-24).
+         * @enum {string}
+         */
+        AdminUnionAuthStatus: "active" | "expiring" | "expired";
+        /**
+         * @description How the station-owner credential of the account is renewed (enum union_reauth_mode;
+         *     BR-ID-24 细则「后台告警手机号与重新授权会话」, orchestrator ruling D10-159 and its supplement).
+         * @enum {string}
+         */
+        AdminUnionReauthMode: "oauth" | "manual" | "none";
+        /**
+         * @description Status of a console re-authorization session (enum admin_union_auth_session_status; 04 §3.2).
+         * @enum {string}
+         */
+        AdminUnionAuthSessionStatus: "pending" | "succeeded" | "failed" | "expired";
+        /**
+         * @description PID status (enum union_pid_status; BR-ATTR-02); pending → active → retired only.
+         * @enum {string}
+         */
+        AdminUnionPidStatus: "pending" | "active" | "retired";
+        /**
+         * @description PID scene (enum pid_scene; 04 §2.2, BR-ATTR-08).
+         * @enum {string}
+         */
+        AdminUnionPidScene: "self_buy" | "agent" | "share" | "taolijin" | "fallback" | "query";
+        /** @description Optional free-text reason, kept in the audit record (BR-ID-24 细则, BR-ATTR-02 细则). */
+        AdminUnionOptionalReason: string;
+        /**
+         * @description A station-owner union account (04 §3.2 union_accounts, §6.6 union-accounts). Never
+         *     carries alert_stage or any credential.
+         */
+        AdminUnionAccount: {
+            union_account_id: components["schemas"]["Id"];
+            platform: components["schemas"]["PlatformCode"];
+            account_name: string;
+            /** @description union_accounts.status as stored; values registered with B1-22 (not an enum yet). */
+            status: string;
+            /**
+             * Format: date-time
+             * @description Creation time of the app's first PID under this account (BR-ATTR-02); null before any.
+             */
+            sync_start_at: string | null;
+            /**
+             * Format: date-time
+             * @description When the current station-owner authorization expires; null when unknown.
+             */
+            auth_expires_at: string | null;
+            /** @description True when the expiry is estimated (authorization time + 90 days, BR-ID-24 细则). */
+            auth_expires_estimated: boolean;
+            auth_status: components["schemas"]["AdminUnionAuthStatus"];
+            /** Format: date-time */
+            auth_renewed_at: string | null;
+            /** @description The admin who renewed last; null for an automatic refresh or before any renewal. */
+            auth_renewed_by: components["schemas"]["Id"] | null;
+            /** Format: date-time */
+            last_probe_at: string | null;
+            last_probe_ok: boolean | null;
+            /** @description Cause recorded by the last failed probe (never a token); null when ok or never probed. */
+            last_probe_error: string | null;
+            /** @description False when union.auth_alert_phones is empty (BR-ID-24 ②「未配置告警手机号」). */
+            alert_phones_configured: boolean;
+            reauth_mode: components["schemas"]["AdminUnionReauthMode"];
+        };
+        AdminUnionAccountList: {
+            items: components["schemas"]["AdminUnionAccount"][];
+        };
+        AdminUnionAccountListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionAccountList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminUnionAccountResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionAccount"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Body of POST /admin/v1/union-accounts/{union_account_id}/reauthorize; may be empty. */
+        AdminUnionReauthorizeRequest: {
+            reason?: components["schemas"]["AdminUnionOptionalReason"];
+        };
+        /** @description A new console re-authorization session (04 §3.2 admin_union_auth_sessions). */
+        AdminUnionReauthSession: {
+            session_id: components["schemas"]["Id"];
+            /**
+             * Format: uri
+             * @description The union's authorization address, valid until expires_at; carries the state once.
+             */
+            auth_url: string;
+            /**
+             * Format: date-time
+             * @description 10 minutes after creation (BR-ID-24 细则).
+             */
+            expires_at: string;
+        };
+        AdminUnionReauthSessionResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionReauthSession"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description A re-authorization session as it is now; never the state, code or credential. */
+        AdminUnionReauthResult: {
+            session_id: components["schemas"]["Id"];
+            union_account_id: components["schemas"]["Id"];
+            status: components["schemas"]["AdminUnionAuthSessionStatus"];
+            /** @description Failure cause recorded by the server when failed; null otherwise (values registered with B1-22). */
+            error: string | null;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            finished_at: string | null;
+        };
+        AdminUnionReauthResultResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionReauthResult"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Body of PUT /admin/v1/union-accounts/{union_account_id}/credential (reauth_mode manual). */
+        AdminUnionCredentialRequest: {
+            /** @description The new station-owner credential in plaintext; only encrypted, never returned or logged. */
+            credential: string;
+            /**
+             * Format: date-time
+             * @description Expiry shown by the union, later than now; absent → now + 90 days, marked estimated.
+             */
+            expires_at?: string;
+            reason?: components["schemas"]["AdminUnionOptionalReason"];
+        };
+        /** @description Identifier of one alert phone, the HMAC of the normalized number as the server encodes it; opaque to the console. */
+        AdminUnionAlertPhoneId: string;
+        AdminUnionAlertPhone: {
+            phone_id: components["schemas"]["AdminUnionAlertPhoneId"];
+            /** @description The number masked 3 + 4 (`138****5678`, BR-ID-33); the full number is never returned. */
+            phone_masked: string;
+        };
+        AdminUnionAlertPhones: {
+            version: components["schemas"]["AdminConfigVersionNumber"];
+            items: components["schemas"]["AdminUnionAlertPhone"][];
+        };
+        AdminUnionAlertPhonesResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionAlertPhones"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Body of POST /admin/v1/union-accounts/alert-phones. */
+        AdminUnionAlertPhoneAddRequest: {
+            /** @description The number as entered; normalized by BR-ID-05 细则 before checking. */
+            phone: string;
+            /** @description The `version` of the list as the console showed it; a mismatch is 20902. */
+            expected_version: components["schemas"]["AdminConfigVersionNumber"];
+            reason?: components["schemas"]["AdminUnionOptionalReason"];
+        };
+        /** @description A union-side identifier (pid / adzone / positionId, or the taobao site_id) as the union shows it. */
+        AdminUnionPidCode: string;
+        /** @description A registered PID (04 §3.2 union_pids, §6.6 union-pids). */
+        AdminUnionPid: {
+            pid_id: components["schemas"]["Id"];
+            platform: components["schemas"]["PlatformCode"];
+            union_account_id: components["schemas"]["Id"];
+            /** @description Taobao site id; null on every other platform. */
+            site_id: components["schemas"]["AdminUnionPidCode"] | null;
+            pid: components["schemas"]["AdminUnionPidCode"];
+            pid_scene: components["schemas"]["AdminUnionPidScene"];
+            status: components["schemas"]["AdminUnionPidStatus"];
+            /**
+             * Format: date-time
+             * @description When the 花卷云 ignore was confirmed (BR-ATTR-28); null while pending.
+             */
+            hjy_ignore_confirmed_at: string | null;
+            /** @description Private OSS object path of the 花卷云 ignore screenshot; null while pending. */
+            hjy_ignore_evidence_path: string | null;
+            row_version: components["schemas"]["AdminRowVersion"];
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminUnionPidList: {
+            items: components["schemas"]["AdminUnionPid"][];
+        };
+        AdminUnionPidListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionPidList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        AdminUnionPidResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionPid"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /** @description Body of POST /admin/v1/union-pids; the new row is always pending. */
+        AdminUnionPidCreateRequest: {
+            platform: components["schemas"]["PlatformCode"];
+            union_account_id: components["schemas"]["Id"];
+            /** @description Required for taobao; absent or null on every other platform. */
+            site_id?: components["schemas"]["AdminUnionPidCode"] | null;
+            pid: components["schemas"]["AdminUnionPidCode"];
+            pid_scene: components["schemas"]["AdminUnionPidScene"];
+            reason?: components["schemas"]["AdminUnionOptionalReason"];
+        };
+        /**
+         * @description Body of PATCH /admin/v1/union-pids/{pid_id} (pending rows only): `expected_row_version`
+         *     plus at least one more field; a body that names none of the five fields (only
+         *     `expected_row_version` and `reason`) is 20001 with `data.fields=[body]`.
+         */
+        AdminUnionPidUpdateRequest: {
+            platform?: components["schemas"]["PlatformCode"];
+            union_account_id?: components["schemas"]["Id"];
+            /** @description The taobao site id; null clears it when the row moves to another platform. */
+            site_id?: components["schemas"]["AdminUnionPidCode"] | null;
+            pid?: components["schemas"]["AdminUnionPidCode"];
+            pid_scene?: components["schemas"]["AdminUnionPidScene"];
+            expected_row_version: components["schemas"]["AdminRowVersion"];
+            reason?: components["schemas"]["AdminUnionOptionalReason"];
+        };
+        /** @description multipart/form-data body of POST /admin/v1/union-pids/{pid_id}/activate. */
+        AdminUnionPidActivateRequest: {
+            expected_row_version: components["schemas"]["AdminRowVersion"];
+            /**
+             * Format: date-time
+             * @description When the 花卷云 ignore was confirmed; not later than now.
+             */
+            hjy_ignore_confirmed_at: string;
+            /** @description The screenshot, PNG or JPEG, at most 5 MB (BR-ATTR-02 细则). */
+            hjy_ignore_evidence: string;
+            reason?: components["schemas"]["AdminUnionOptionalReason"];
+        };
+        /** @description Body of POST /admin/v1/union-pids/{pid_id}/retire. */
+        AdminUnionPidRetireRequest: {
+            expected_row_version: components["schemas"]["AdminRowVersion"];
+            reason?: components["schemas"]["AdminUnionOptionalReason"];
+        };
+        /**
+         * @description Body of POST /admin/v1/union-accounts/oauth/callback: what the console callback page
+         *     received from the union, unchanged: `state` and exactly one of `code` or `error`
+         *     (neither or both → 20001 with `data.fields=[code]`).
+         */
+        AdminUnionOAuthCallbackRequest: {
+            /** @description The state the union echoed back; looked up by its hash. */
+            state: string;
+            /** @description The authorization code from the union; exchanged once, never logged or returned. */
+            code?: string;
+            /** @description The error the union sent instead of a code; kept as the session's failure cause. */
+            error?: string;
+        };
     };
     responses: {
         /** @description Same as ClientError, with Cache-Control no-store (share pages, BR-ATTR-10 细则). */
@@ -11021,6 +11684,12 @@ export interface components {
          *     session is not the caller's is 30504 either way (BR-AI-20).
          */
         AgentMessageId: components["schemas"]["Id"];
+        /** @description union_account_id from GET /admin/v1/union-accounts; unknown or of another app → 20001 with data.fields=[union_account_id]. */
+        AdminUnionAccountIdPath: components["schemas"]["Id"];
+        /** @description session_id from POST …/reauthorize or POST /admin/v1/union-accounts/oauth/callback; unknown or of another account → 20001 with data.fields=[session_id]. */
+        AdminUnionSessionIdPath: components["schemas"]["Id"];
+        /** @description pid_id from GET /admin/v1/union-pids; unknown or of another app → 20001 with data.fields=[pid_id]. */
+        AdminUnionPidIdPath: components["schemas"]["Id"];
     };
     requestBodies: never;
     headers: {
@@ -12698,7 +13367,7 @@ export interface operations {
                      *           "type": "privacy",
                      *           "version": 3,
                      *           "min_version": 2,
-                     *           "article_id": "0199a3b4-0000-7000-8000-000000000001",
+                     *           "article_id": "0199a3b4-0000-7000-8000-0000a0000b01",
                      *           "article_version": 3,
                      *           "text_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
                      *           "url": "https://cdn.example.test/legal/privacy-v3.html",
@@ -19380,6 +20049,887 @@ export interface operations {
             "5XX": components["responses"]["ServerError"];
         };
     };
+    adminListUnionAccounts: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All union accounts of the app. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01",
+                     *             "platform": "taobao",
+                     *             "account_name": "凑狸淘宝联盟",
+                     *             "status": "active",
+                     *             "sync_start_at": "2026-09-29T00:00:00+08:00",
+                     *             "auth_expires_at": "2026-12-30T00:00:00+08:00",
+                     *             "auth_expires_estimated": false,
+                     *             "auth_status": "active",
+                     *             "auth_renewed_at": "2026-10-01T10:00:00+08:00",
+                     *             "auth_renewed_by": "0199a3b4-0000-7000-8000-0000a0000b01",
+                     *             "last_probe_at": "2026-10-22T09:00:00+08:00",
+                     *             "last_probe_ok": true,
+                     *             "last_probe_error": null,
+                     *             "alert_phones_configured": true,
+                     *             "reauth_mode": "oauth"
+                     *           },
+                     *           {
+                     *             "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a02",
+                     *             "platform": "jd",
+                     *             "account_name": "凑狸京东联盟",
+                     *             "status": "active",
+                     *             "sync_start_at": "2026-09-29T00:00:00+08:00",
+                     *             "auth_expires_at": "2026-12-28T10:00:00+08:00",
+                     *             "auth_expires_estimated": true,
+                     *             "auth_status": "active",
+                     *             "auth_renewed_at": "2026-09-29T10:00:00+08:00",
+                     *             "auth_renewed_by": "0199a3b4-0000-7000-8000-0000a0000b01",
+                     *             "last_probe_at": "2026-10-22T09:00:00+08:00",
+                     *             "last_probe_ok": true,
+                     *             "last_probe_error": null,
+                     *             "alert_phones_configured": true,
+                     *             "reauth_mode": "manual"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionAccountListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminStartUnionReauthorization: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description union_account_id from GET /admin/v1/union-accounts; unknown or of another app → 20001 with data.fields=[union_account_id]. */
+                union_account_id: components["parameters"]["AdminUnionAccountIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUnionReauthorizeRequest"];
+            };
+        };
+        responses: {
+            /** @description The new session and the address to open. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "session_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6c01",
+                     *         "auth_url": "https://oauth.union.example.test/authorize?client_id=demo&state=opaque-state",
+                     *         "expires_at": "2026-10-22T10:10:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionReauthSessionResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not started (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminGetUnionReauthorization: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path: {
+                /** @description union_account_id from GET /admin/v1/union-accounts; unknown or of another app → 20001 with data.fields=[union_account_id]. */
+                union_account_id: components["parameters"]["AdminUnionAccountIdPath"];
+                /** @description session_id from POST …/reauthorize or POST /admin/v1/union-accounts/oauth/callback; unknown or of another account → 20001 with data.fields=[session_id]. */
+                session_id: components["parameters"]["AdminUnionSessionIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session as it is now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUnionReauthResultResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCompleteUnionReauthorization: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUnionOAuthCallbackRequest"];
+            };
+        };
+        responses: {
+            /** @description The session as it is now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUnionReauthResultResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not finished (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminPutUnionCredential: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description union_account_id from GET /admin/v1/union-accounts; unknown or of another app → 20001 with data.fields=[union_account_id]. */
+                union_account_id: components["parameters"]["AdminUnionAccountIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUnionCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description The account as it is now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a02",
+                     *         "platform": "jd",
+                     *         "account_name": "凑狸京东联盟",
+                     *         "status": "active",
+                     *         "sync_start_at": "2026-09-29T00:00:00+08:00",
+                     *         "auth_expires_at": "2027-01-20T00:00:00+08:00",
+                     *         "auth_expires_estimated": false,
+                     *         "auth_status": "active",
+                     *         "auth_renewed_at": "2026-10-22T10:00:00+08:00",
+                     *         "auth_renewed_by": "0199a3b4-0000-7000-8000-0000a0000b01",
+                     *         "last_probe_at": "2026-10-22T09:00:00+08:00",
+                     *         "last_probe_ok": true,
+                     *         "last_probe_error": null,
+                     *         "alert_phones_configured": true,
+                     *         "reauth_mode": "manual"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionAccountResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListUnionAlertPhones: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The alert phones and the version of the group. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "version": 3,
+                     *         "items": [
+                     *           {
+                     *             "phone_id": "hm-7c1e9a3f5b2d4e6a8c0b",
+                     *             "phone_masked": "138****5678"
+                     *           },
+                     *           {
+                     *             "phone_id": "hm-2a4c6e8b0d1f3a5c7e9b",
+                     *             "phone_masked": "139****1111"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionAlertPhonesResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminAddUnionAlertPhone: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "phone": "13900002222",
+                 *       "expected_version": 3,
+                 *       "reason": "新增值班运营手机号"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminUnionAlertPhoneAddRequest"];
+            };
+        };
+        responses: {
+            /** @description The alert phones as they are now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "version": 4,
+                     *         "items": [
+                     *           {
+                     *             "phone_id": "hm-7c1e9a3f5b2d4e6a8c0b",
+                     *             "phone_masked": "138****5678"
+                     *           },
+                     *           {
+                     *             "phone_id": "hm-2a4c6e8b0d1f3a5c7e9b",
+                     *             "phone_masked": "139****1111"
+                     *           },
+                     *           {
+                     *             "phone_id": "hm-5e7a9c1b3d5f7a9c1e3d",
+                     *             "phone_masked": "139****2222"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionAlertPhonesResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRemoveUnionAlertPhone: {
+        parameters: {
+            query: {
+                /** @description phone_id from GET /admin/v1/union-accounts/alert-phones; not in the group → 20001 with data.fields=[phone_id]. */
+                phone_id: components["schemas"]["AdminUnionAlertPhoneId"];
+                /** @description The `version` of GET /admin/v1/union-accounts/alert-phones; a mismatch is 20902. */
+                expected_version: components["schemas"]["AdminConfigVersionNumber"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The alert phones as they are now. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "version": 5,
+                     *         "items": [
+                     *           {
+                     *             "phone_id": "hm-7c1e9a3f5b2d4e6a8c0b",
+                     *             "phone_masked": "138****5678"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionAlertPhonesResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListUnionPids: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All PIDs of the app. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "pid_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d01",
+                     *             "platform": "taobao",
+                     *             "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01",
+                     *             "site_id": "3001",
+                     *             "pid": "2001",
+                     *             "pid_scene": "self_buy",
+                     *             "status": "active",
+                     *             "hjy_ignore_confirmed_at": "2026-09-28T15:00:00+08:00",
+                     *             "hjy_ignore_evidence_path": "union-pids/0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d01/hjy.png",
+                     *             "row_version": 1,
+                     *             "created_at": "2026-09-29T00:00:00+08:00"
+                     *           },
+                     *           {
+                     *             "pid_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d02",
+                     *             "platform": "jd",
+                     *             "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a02",
+                     *             "site_id": null,
+                     *             "pid": "4002",
+                     *             "pid_scene": "share",
+                     *             "status": "pending",
+                     *             "hjy_ignore_confirmed_at": null,
+                     *             "hjy_ignore_evidence_path": null,
+                     *             "row_version": 0,
+                     *             "created_at": "2026-10-20T11:00:00+08:00"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionPidListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminCreateUnionPid: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUnionPidCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The new row (pending). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "pid_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d03",
+                     *         "platform": "taobao",
+                     *         "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01",
+                     *         "site_id": "3001",
+                     *         "pid": "2002",
+                     *         "pid_scene": "share",
+                     *         "status": "pending",
+                     *         "hjy_ignore_confirmed_at": null,
+                     *         "hjy_ignore_evidence_path": null,
+                     *         "row_version": 0,
+                     *         "created_at": "2026-10-22T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionPidResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not registered (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminUpdateUnionPid: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description pid_id from GET /admin/v1/union-pids; unknown or of another app → 20001 with data.fields=[pid_id]. */
+                pid_id: components["parameters"]["AdminUnionPidIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "pid": "4003",
+                 *       "expected_row_version": 0,
+                 *       "reason": "登记时推广位填错"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminUnionPidUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The row as it is now (still pending). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "pid_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d02",
+                     *         "platform": "jd",
+                     *         "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a02",
+                     *         "site_id": null,
+                     *         "pid": "4003",
+                     *         "pid_scene": "share",
+                     *         "status": "pending",
+                     *         "hjy_ignore_confirmed_at": null,
+                     *         "hjy_ignore_evidence_path": null,
+                     *         "row_version": 1,
+                     *         "created_at": "2026-10-20T11:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionPidResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminActivateUnionPid: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description pid_id from GET /admin/v1/union-pids; unknown or of another app → 20001 with data.fields=[pid_id]. */
+                pid_id: components["parameters"]["AdminUnionPidIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AdminUnionPidActivateRequest"];
+            };
+        };
+        responses: {
+            /** @description The row as it is now (active). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "pid_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d03",
+                     *         "platform": "taobao",
+                     *         "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01",
+                     *         "site_id": "3001",
+                     *         "pid": "2002",
+                     *         "pid_scene": "share",
+                     *         "status": "active",
+                     *         "hjy_ignore_confirmed_at": "2026-10-22T09:30:00+08:00",
+                     *         "hjy_ignore_evidence_path": "union-pids/0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d03/hjy.png",
+                     *         "row_version": 1,
+                     *         "created_at": "2026-10-22T10:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionPidResponse"];
+                };
+            };
+            /** @description Request body above the global limit (20001 with data.fields=[body]). */
+            413: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 20001,
+                     *       "msg": "参数错误",
+                     *       "data": {
+                     *         "fields": [
+                     *           "body"
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not activated (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminRetireUnionPid: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description pid_id from GET /admin/v1/union-pids; unknown or of another app → 20001 with data.fields=[pid_id]. */
+                pid_id: components["parameters"]["AdminUnionPidIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "expected_row_version": 1,
+                 *       "reason": "更换分享位，随即启用新登记的一条"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AdminUnionPidRetireRequest"];
+            };
+        };
+        responses: {
+            /** @description The row as it is now (retired). */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "pid_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d01",
+                     *         "platform": "taobao",
+                     *         "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01",
+                     *         "site_id": "3001",
+                     *         "pid": "2001",
+                     *         "pid_scene": "self_buy",
+                     *         "status": "retired",
+                     *         "hjy_ignore_confirmed_at": "2026-09-28T15:00:00+08:00",
+                     *         "hjy_ignore_evidence_path": "union-pids/0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6d01/hjy.png",
+                     *         "row_version": 2,
+                     *         "created_at": "2026-09-29T00:00:00+08:00"
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionPidResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not retired (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
     adminListPlatformIcons: {
         parameters: {
             query?: never;
@@ -20830,7 +22380,7 @@ export interface operations {
                      *         "version": 3,
                      *         "min_version": 2,
                      *         "requires_resign": false,
-                     *         "article_id": "0199a3b4-0000-7000-8000-000000000001",
+                     *         "article_id": "0199a3b4-0000-7000-8000-0000a0000b01",
                      *         "article_version": 3,
                      *         "text_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
                      *         "url": "https://cdn.example.test/legal/privacy-v3.html",

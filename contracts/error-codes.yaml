@@ -157,8 +157,8 @@ codes:
   - code: 20001
     http: 400
     http_also: [413, 415]
-    meaning: 参数校验失败（data.fields；提醒目标价无效时 data.fields=[target_price]、data.reason=watch_target_invalid；昵称命中内容安全时 data.reason=nickname_sensitive；设备注册时 data.fields=[device_hash] 表示设备标识哈希格式不符或命中无效清单；后台登记或修改设备黑名单时 data.fields=[value]、data.reason=invalid_device_hash 表示该值命中无效设备哈希清单；手机号规范化后不是中国大陆 11 位手机号时 data.fields=[phone]、data.reason=phone_invalid，BR-ID-05 细则「手机号规范化」；后台上传平台标识被拒收时 data.fields=[file]、data.reason 为 icon_format_invalid（非 SVG / PNG、不能解析、PNG 边长不足 512px 或非透明底）、icon_too_large（超过 content.platform_icon.max_bytes）或 icon_svg_unconvertible（含样式表、复杂选择器、@ 规则、外部引用或超出转换上限，无法保真转换），后台发布缺来源登记的版本时 data.fields 列出所有缺的项（[source_url]、[downloaded_on]，两项都缺时为 [source_url, downloaded_on]），BR-TEXT-24 细则；加收藏时收藏数已达 favorites.max_per_user 为 data.reason=favorites_full，规划/01 F-PROD-12）
-    action: 在对应字段旁提示（带 reason 取子键文案）；device_hash 不向用户提示，客户端按 BR-ID-09 重新读取设备标识后再注册；invalid_device_hash 与 icon_format_invalid、icon_too_large、icon_svg_unconvertible 只出现在后台接口，后台在该字段旁显示后台文案（BR-ID-31、BR-TEXT-24 细则），不进用户侧字典；favorites_full 轻提示、不弹窗
+    meaning: 参数校验失败（data.fields；提醒目标价无效时 data.fields=[target_price]、data.reason=watch_target_invalid；昵称命中内容安全时 data.reason=nickname_sensitive；设备注册时 data.fields=[device_hash] 表示设备标识哈希格式不符或命中无效清单；后台登记或修改设备黑名单时 data.fields=[value]、data.reason=invalid_device_hash 表示该值命中无效设备哈希清单；手机号规范化后不是中国大陆 11 位手机号时 data.fields=[phone]、data.reason=phone_invalid，BR-ID-05 细则「手机号规范化」；后台上传平台标识被拒收时 data.fields=[file]、data.reason 为 icon_format_invalid（非 SVG / PNG、不能解析、PNG 边长不足 512px 或非透明底）、icon_too_large（超过 content.platform_icon.max_bytes）或 icon_svg_unconvertible（含样式表、复杂选择器、@ 规则、外部引用或超出转换上限，无法保真转换），后台发布缺来源登记的版本时 data.fields 列出所有缺的项（[source_url]、[downloaded_on]，两项都缺时为 [source_url, downloaded_on]），BR-TEXT-24 细则；加收藏时收藏数已达 favorites.max_per_user 为 data.reason=favorites_full，规划/01 F-PROD-12；后台对 reauth_mode=manual 的联盟账号发起 OAuth 重新授权时 data.fields=[union_account_id]、data.reason=manual_mode，表示该账号走手工录入凭据，与没有可更新站长凭据（不带 reason）区分，BR-ID-24 细则，编排裁定 D10-176）
+    action: 在对应字段旁提示（带 reason 取子键文案）；device_hash 不向用户提示，客户端按 BR-ID-09 重新读取设备标识后再注册；invalid_device_hash、manual_mode 与 icon_format_invalid、icon_too_large、icon_svg_unconvertible 只出现在后台接口，后台在该字段旁显示后台文案（BR-ID-31、BR-TEXT-24 细则），不进用户侧字典；favorites_full 轻提示、不弹窗
     retry: 否
     retry_kind: never
     data:
@@ -172,6 +172,7 @@ codes:
         - icon_too_large
         - icon_svg_unconvertible
         - favorites_full
+        - manual_mode
     sources: [BR-ID-05, BR-ID-09, BR-ID-25, BR-ID-39, BR-AI-23, BR-TEXT-13, BR-WDR-03, BR-WATCH-04]
   - code: 20002
     http: 400
@@ -229,6 +230,7 @@ codes:
         - claim_item
         - app_version
         - risk_rule
+        - union_pid
     sources:
       - BR-FUND-01
       - BR-FUND-04
@@ -241,6 +243,7 @@ codes:
       - BR-TEXT-13
       - BR-TEXT-12
       - BR-ID-01
+      - BR-ATTR-02
   - code: 20903
     http: 409
     meaning: 幂等键已作废（需要二次验证的四个操作中结果未知的一次提交已被用户放弃，作废接口在该键没有记录时写入作废记录；之后带同一个键的请求在幂等检查一步返回本码，不比较请求体、不执行业务；业务结果写入时发现该键已作废也整笔回滚并返回本码）
@@ -384,6 +387,13 @@ codes:
     retry: 否
     retry_kind: never
     sources: [BR-ID-20]
+  - code: 30155
+    http: 422
+    meaning: 同一平台同一推广位场景已有启用中的推广位（只出现在 /admin/v1 的 union-pids/{pid_id}/activate：同一 app × platform × pid_scene 至多一条 active，要换先停用原来那条再启用新的，BR-ATTR-02 细则「后台修改与启用的裁定」，编排裁定 D10-152；不带 data。码值按 08 §13.11 301 段顺序取号，CT-24h）
+    action: 后台：刷新推广位列表，提示先停用该场景当前启用的推广位
+    retry: 否
+    retry_kind: never
+    sources: [BR-ATTR-02]
   - code: 30201
     http: 404
     meaning: 订单不存在
