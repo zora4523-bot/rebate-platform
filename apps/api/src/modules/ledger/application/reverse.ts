@@ -2,12 +2,12 @@ import type { DB } from '@couli/db';
 import { uniqKey } from '@couli/domain';
 import { InvalidAmount, subFen } from '@couli/money';
 import type { Transaction } from 'kysely';
-import type { Clock } from '../../platform/index.ts';
 import { findVoucher, voucherEntries, type StoredEntry } from '../infra/store.ts';
 import { LedgerError } from './errors.ts';
 import {
   createPostingCore,
   type Ledger as PostingLedger,
+  type PostingCoreOptions,
   type PostingEntry,
   type PostingResult,
   type PostingVoucher,
@@ -87,7 +87,7 @@ function reversedEntry(row: StoredEntry): PostingEntry {
 }
 
 /** Composes the B2-02f posting service (one Clock snapshot and lock registry) with reverse. */
-export function createLedger(input: { readonly clock: Clock }): Ledger {
+export function createLedger(input: PostingCoreOptions): Ledger {
   const core = createPostingCore(input);
   return {
     ...core.ledger,

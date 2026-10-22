@@ -11,7 +11,7 @@ import {
 } from '@couli/domain';
 import { subFen } from '@couli/money';
 import type { Kysely, Transaction } from 'kysely';
-import type { Clock } from '../../platform/index.ts';
+import type { Clock, EventBus } from '../../platform/index.ts';
 import {
   USER_SUBJECT,
   ensurePlatformAccounts,
@@ -350,8 +350,23 @@ export interface PostingCore {
   postReversal(trx: Transaction<DB>, voucher: PostingVoucher): Promise<PostingResult>;
 }
 
-export function createPostingCore(input: { readonly clock: Clock }): PostingCore {
-  const { clock } = input;
+export interface PostingCoreOptions {
+  readonly clock: Clock;
+  /**
+   * The platform event bus (S21, BR-WDR-05 (a)): account.went_negative is published through it on
+   * the posting transaction. Optional like the EVENT_BUS provider (absent in entries without a
+   * database, where nothing can be posted); without it no event is published.
+   */
+  readonly eventBus?: EventBus;
+}
+
+/** True when a user account's available goes from >= 0 to < 0 by this voucher's net change. */
+function wentNegative(change: AccountWrite): boolean {
+  return change.before.available_fen >= 0n && change.after.available_fen < 0n;
+}
+
+export function createPostingCore(input: PostingCoreOptions): PostingCore {
+  const { clock, eventBus } = input;
   /** D2: the Clock is read once per transaction; its vouchers share booked_at and the day. */
   const instants = new WeakMap<Transaction<DB>, Date>();
 
@@ -461,6 +476,21 @@ export function createPostingCore(input: { readonly clock: Clock }): PostingCore
       });
       if (!written) {
         throw new LedgerError('BALANCE_CONFLICT', `account ${change.before.account_id} changed`);
+      }
+    }
+    // S21 / BR-WDR-05 (a): inside this savepoint, so a failed publish undoes the whole voucher
+    // (balances, entries and any event already published for another account) and the caller's
+    // transaction stays usable. Accounts in ascending account_id order; frozen never counts.
+    if (eventBus !== undefined) {
+      for (const change of [...writes.values()].sort((a, b) =>
+        a.before.account_id < b.before.account_id ? -1 : 1,
+      )) {
+        if (!wentNegative(change)) continue;
+        await eventBus.publish(trx, {
+          appId,
+          name: 'account.went_negative',
+          payload: { user_id: change.before.user_id },
+        });
       }
     }
     return { kind: 'posted', voucherId };

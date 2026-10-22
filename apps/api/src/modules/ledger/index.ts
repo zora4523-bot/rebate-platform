@@ -1,4 +1,10 @@
-export { createLedger } from './application/reverse.ts';
+export { createLedger } from './application/event-ledger.ts';
+export { registerReconDiff, getReconDiffs } from './application/recon-diffs.ts';
+export type {
+  RegisterReconDiffInput,
+  ReconDiffSelection,
+  ReconDiff,
+} from './application/recon-diffs.ts';
 export { openUserAccount } from './application/accounts.ts';
 export { getOrderNets } from './application/order-nets.ts';
 export type {
