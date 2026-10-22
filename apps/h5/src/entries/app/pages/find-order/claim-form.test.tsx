@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type { AppApiBridge } from '../../../../shared/api/app-api.ts';
 import { createQueryClient, createQueryProvider } from '../../../../shared/query.ts';
 import { t } from '../../../../shared/texts.ts';
@@ -11,6 +11,10 @@ import type { ClaimConfig } from './model.ts';
 
 const CONFIG: ClaimConfig = { platforms: ['taobao', 'jd', 'pdd'], windowDays: 17, guides: {} };
 
+// 提交结果的解析块在应用里由表单挂载时预取；这里先载入，断言不必等首次转换模块。
+beforeAll(async () => {
+  await import('./submit.ts');
+});
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
 });

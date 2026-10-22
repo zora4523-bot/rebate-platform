@@ -10,6 +10,7 @@ import {
   type ReactElement,
 } from 'react';
 import type { AppApiBridge } from '../../../../shared/api/app-api.ts';
+import { PRIMARY_BUTTON } from '../../../../components/base/styles.ts';
 import { t } from '../../../../shared/texts.ts';
 import { getPlatformName } from '../../../../texts/platform.ts';
 import { findOrderTexts } from '../../../../texts/find-order.ts';
@@ -17,27 +18,11 @@ import jdIcon from '../../../../components/platform/assets/jd.png?no-inline';
 import pddIcon from '../../../../components/platform/assets/pinduoduo.png?no-inline';
 import taobaoIcon from '../../../../components/platform/assets/taobao.png?no-inline';
 import { clearDailyBlock, readDailyBlock, writeDailyBlock } from './daily-block.ts';
-import {
-  activeBlockMessage,
-  msUntilNextShanghaiDay,
-  outcomeOfResponse,
-  shanghaiToday,
-  type DailyBlock,
-  type Claim,
-  type ClaimConfig,
-  type ClaimPlatform,
-  type SubmitOutcome,
-} from './model.ts';
-import {
-  CAPTION,
-  CARD,
-  ChevronIcon,
-  ClockIcon,
-  FOCUS,
-  FOOTNOTE,
-  InfoIcon,
-  WarningIcon,
-} from './parts.tsx';
+import { activeBlockMessage, msUntilNextShanghaiDay, shanghaiToday } from './dates.ts';
+import { ChevronIcon, ClockIcon, InfoIcon, WarningIcon } from './icons.tsx';
+import type { DailyBlock, Claim, ClaimConfig, ClaimPlatform } from './model.ts';
+import { CAPTION, CARD, FOCUS, FOOTNOTE } from './parts.tsx';
+import type { SubmitOutcome } from './submit.ts';
 
 /** 平台胶囊里的 16px 官方图标（与 PlatformBadge 同一批内置图）。 */
 const CAPSULE_ICONS: Readonly<Record<ClaimPlatform, string>> = {
@@ -47,6 +32,9 @@ const CAPSULE_ICONS: Readonly<Record<ClaimPlatform, string>> = {
 };
 
 const CLAIM_PATH = '/v1/orders/claims';
+
+/** 提交结果的解析单独成块：表单挂载时预取，请求发出后才等它（不推迟请求本身）。 */
+const loadSubmit = () => import('./submit.ts');
 
 export interface ClaimFormProps {
   bridge: AppApiBridge;
@@ -71,7 +59,8 @@ function inputClass(invalid: boolean): string {
   return `${INPUT} ${FOCUS} ${invalid ? 'border-couli-status-error-text' : 'border-couli-border-control'}`;
 }
 
-function FieldError({ id, message }: { id: string; message: string }): ReactElement {
+/** 字段下方与按钮上方的错误提示（读屏立即播报）。 */
+function FieldError({ id, message }: { id?: string; message: string }): ReactElement {
   return (
     <p
       id={id}
@@ -108,7 +97,7 @@ export function ClaimForm({
   const [general, setGeneral] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
-  // 卸载后（含账号切换按代次重挂）迟到的提交结果不再写置灰、不再回调。
+  // 卸载后（含账号切换时壳层重挂页面树）迟到的提交结果不再写置灰、不再回调。
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -131,6 +120,9 @@ export function ClaimForm({
     return () => clearTimeout(timer);
   }, [blocked, now]);
   useEffect(() => bridgeSdk.on('app.resume', () => setNow(Date.now())), []);
+  useEffect(() => {
+    loadSubmit().catch(() => undefined);
+  }, []);
   // 记录已过期（跨日）时从缓存删掉；组件里留着的旧记录按日期算出来已不生效。
   useEffect(() => {
     if (block !== null && blocked === null) clearDailyBlock(queryClient);
@@ -216,9 +208,10 @@ export function ClaimForm({
         path: CLAIM_PATH,
         body: { platform, order_no: order, paid_date: paidDate },
       });
+      const { outcomeOfResponse } = await loadSubmit();
       outcome = outcomeOfResponse(result.body);
     } catch {
-      // 桥或网络失败：结果未知，不自动重发；输入保留，用户可再次提交。
+      // 桥或网络失败（含解析块取不到）：结果未知，不自动重发；输入保留，用户可再次提交。
       outcome = { kind: 'general', message: t('buy.timeout') };
     } finally {
       inFlight.current = false;
@@ -374,19 +367,11 @@ export function ClaimForm({
           <InfoIcon className="mt-px size-couli-3 flex-none" />
           <span className="min-w-0">{t('claim.guide.caution')}</span>
         </p>
-        {footerMessage === null ? null : (
-          <p
-            role="alert"
-            className={`flex items-start gap-couli-1 text-couli-status-error-text ${FOOTNOTE} [overflow-wrap:anywhere]`}
-          >
-            <WarningIcon className="mt-0.5 size-couli-4 flex-none" />
-            <span className="min-w-0">{footerMessage}</span>
-          </p>
-        )}
+        {footerMessage === null ? null : <FieldError message={footerMessage} />}
         <button
           type="submit"
           disabled={submitting || blocked !== null || platform === null}
-          className={`${FOCUS} min-h-couli-component-button-min-height w-full cursor-pointer rounded-couli-button px-couli-component-button-padding-inline py-couli-component-button-padding-block text-couli-body leading-couli-body font-couli-semibold disabled:cursor-default disabled:bg-couli-button-primary-disabled-background disabled:text-couli-button-primary-disabled-text enabled:bg-couli-button-primary-default-background enabled:text-couli-button-primary-default-text enabled:active:bg-couli-button-primary-pressed-background enabled:active:text-couli-button-primary-pressed-text`}
+          className={`${PRIMARY_BUTTON} w-full disabled:cursor-default disabled:bg-couli-button-primary-disabled-background disabled:text-couli-button-primary-disabled-text`}
         >
           {findOrderTexts.submit}
         </button>

@@ -1,19 +1,17 @@
 import { expect, it } from 'vitest';
+import { activeBlockMessage, msUntilNextShanghaiDay } from './dates.ts';
+import { parseClaimConfig } from './config.ts';
+import type { Claim } from './model.ts';
 import {
-  formatPastTime,
-  formatPlainDate,
-  outcomeFor,
-  outcomeOfResponse,
-  parseClaimConfig,
-  activeBlockMessage,
   claimCompareValue,
   claimMatches,
+  formatPastTime,
+  formatPlainDate,
   LOCATE_MAX_PAGES,
   locateStep,
-  msUntilNextShanghaiDay,
   recordView,
-  type Claim,
-} from './model.ts';
+} from './records-model.ts';
+import { outcomeFor, outcomeOfResponse } from './submit.ts';
 
 const NOW = Date.parse('2026-10-22T12:00:00+08:00');
 

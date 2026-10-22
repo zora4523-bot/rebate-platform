@@ -1,14 +1,37 @@
+import { on } from '@couli/bridge-sdk';
+import type { QueryClient } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ApiProvider, type AppApiBridge } from '../../../../shared/api/app-api.ts';
 import type { H5ApiClient } from '../../../../shared/api/index.ts';
-import { createQueryClient, createQueryProvider } from '../../../../shared/query.ts';
+import {
+  clearAccountData,
+  createQueryClient,
+  createQueryProvider,
+} from '../../../../shared/query.ts';
 import { t } from '../../../../shared/texts.ts';
 import { findOrderTexts } from '../../../../texts/find-order.ts';
 import { FindOrderPage } from './find-order-page.tsx';
 import type { Claim } from './model.ts';
 
 // 单元测试：原生桥、API 客户端都是内存假实现（不联网、不 listen）；auth.changed 经桥传输层的订阅发出。
+// 账号切换的全局清理归壳层（F1-01s）：这里用与壳层同样的做法（clearAccountData + 按次数重挂页面树）
+// 包住本页，验证本页在壳层清理下不露出上一账号的数据、迟到结果不写进新账号；本页自己不再订阅该事件。
+
+/** 与 app-shell 的 AccountScope 同样的账号切换处理：清缓存、换 key 重挂子树。 */
+function AccountScope({ client, children }: { client: QueryClient; children: ReactNode }) {
+  const [epoch, setEpoch] = useState(0);
+  useEffect(
+    () =>
+      on('auth.changed', () => {
+        clearAccountData(client);
+        setEpoch((current) => current + 1);
+      }),
+    [client],
+  );
+  return <div key={epoch}>{children}</div>;
+}
 
 const clients: ReturnType<typeof createQueryClient>[] = [];
 afterEach(() => {
@@ -75,20 +98,20 @@ function installNative() {
   };
 }
 
-function setup(signed: () => Promise<unknown> = () => Promise.resolve({})) {
+function setup(signed: () => Promise<unknown> = () => Promise.resolve({}), shell = true) {
   const native = installNative();
-  const invalidate = vi.fn();
+  const createH5TokenManager = vi.fn(() => ({
+    getToken: () =>
+      Promise.resolve({ token: 'h5-test', scope: 'read', expire_at: '2099-01-01T00:00:00Z' }),
+    invalidate: vi.fn(),
+  }));
   const bridge = {
     isInApp: () => true,
     has: (method: string) =>
       method === 'app.getConfig' || method === 'net.signedRequest' ? { method } : null,
     call: (cap: { method: string }) =>
       cap.method === 'app.getConfig' ? Promise.resolve({ values: CONFIG }) : signed(),
-    createH5TokenManager: () => ({
-      getToken: () =>
-        Promise.resolve({ token: 'h5-test', scope: 'read', expire_at: '2099-01-01T00:00:00Z' }),
-      invalidate,
-    }),
+    createH5TokenManager,
   } as unknown as AppApiBridge;
   const responses: Deferred<unknown>[] = [];
   const api = {
@@ -103,12 +126,18 @@ function setup(signed: () => Promise<unknown> = () => Promise.resolve({})) {
   const view = render(
     createQueryProvider(
       <ApiProvider api={api}>
-        <FindOrderPage bridge={bridge} />
+        {shell ? (
+          <AccountScope client={client}>
+            <FindOrderPage bridge={bridge} />
+          </AccountScope>
+        ) : (
+          <FindOrderPage bridge={bridge} />
+        )}
       </ApiProvider>,
       client,
     ),
   );
-  return { ...native, view, client, responses, invalidate };
+  return { ...native, view, client, responses, createH5TokenManager };
 }
 
 async function openRecords(): Promise<void> {
@@ -119,20 +148,23 @@ function cachedRecordText(client: ReturnType<typeof createQueryClient>): string 
   return JSON.stringify(client.getQueriesData({ queryKey: ['orders', 'claims'] }));
 }
 
-it('[AC-F1-04b-UNIT#15] 账号切换：上一账号的找回记录立即消失、缓存删掉、令牌作废，新账号重新取记录', async () => {
-  const { view, client, responses, invalidate, switchAccount } = setup();
+it('[AC-F1-04b-UNIT#15] 壳层换号重挂：上一账号的找回记录立即消失、缓存删掉、本页换新令牌管理器，新账号重新取记录', async () => {
+  const { view, client, responses, createH5TokenManager, switchAccount } = setup();
   await openRecords();
   await waitFor(() => expect(responses).toHaveLength(1));
   await act(async () => {
     responses[0]!.resolve(page([claim('a-1', 'A111111111111')]));
   });
   await waitFor(() => expect(view.container.textContent).toContain('A111111111111'));
+  expect(createH5TokenManager).toHaveBeenCalledTimes(1);
 
   switchAccount();
   expect(view.container.textContent).not.toContain('A111111111111');
   expect(cachedRecordText(client)).not.toContain('A111111111111');
-  expect(invalidate).toHaveBeenCalledTimes(1);
+  expect(createH5TokenManager).toHaveBeenCalledTimes(2);
 
+  // 页面树重挂后回到默认页签；再进记录页签由新账号重新取。
+  await openRecords();
   await waitFor(() => expect(responses).toHaveLength(2));
   expect(view.container.textContent).not.toContain('A111111111111');
   await act(async () => {
@@ -148,6 +180,7 @@ it('[AC-F1-04b-UNIT#16] 账号切换前发出的记录请求切换后才返回�
   await waitFor(() => expect(responses).toHaveLength(1));
 
   switchAccount();
+  await openRecords();
   await waitFor(() => expect(responses).toHaveLength(2));
   await act(async () => {
     responses[0]!.resolve(page([claim('a-1', 'A111111111111')]));
@@ -210,4 +243,17 @@ it('[AC-F1-04b-UNIT#18] 切换前提交、切换后才返回的 30206 不让新�
   });
   expect(submitButton().disabled).toBe(false);
   expect(view.container.textContent).not.toContain(t('error.30206'));
+});
+
+it('[AC-F1-04b-UNIT#19] 本页不自己订阅 auth.changed：不取消、不删除查询（全局清理只由壳层做一次）', async () => {
+  const { client, responses, switchAccount } = setup(undefined, false);
+  await openRecords();
+  await waitFor(() => expect(responses).toHaveLength(1));
+  const cancel = vi.spyOn(client, 'cancelQueries');
+  const remove = vi.spyOn(client, 'removeQueries');
+  const clear = vi.spyOn(client, 'clear');
+  switchAccount();
+  expect(cancel).not.toHaveBeenCalled();
+  expect(remove).not.toHaveBeenCalled();
+  expect(clear).not.toHaveBeenCalled();
 });

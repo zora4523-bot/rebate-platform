@@ -1,26 +1,22 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useEffect, useEffectEvent, useRef, type ReactElement } from 'react';
 import { EmptyState, Skeleton } from '../../../../components/base/index.ts';
-import { PlatformBadge } from '../../../../components/platform/index.ts';
 import { RetryPage } from '../../../../components/retry/index.ts';
 import type { H5ApiClient } from '../../../../shared/api/index.ts';
 import { findOrderText, findOrderTexts } from '../../../../texts/find-order.ts';
+import { RECORDS_KEY, type LocateTarget } from './model.ts';
+import { CAPTION, CARD, FOCUS, FOOTNOTE } from './parts.tsx';
 import {
   claimMatches,
   locateStep,
   recordView,
   stateLabel,
-  type LocateTarget,
   type RecordView,
-} from './model.ts';
-import { CAPTION, CARD, FOCUS, FOOTNOTE, InfoIcon, SearchDocIcon, StatusTag } from './parts.tsx';
+} from './records-model.ts';
+import type { RecordParts } from './records-parts.tsx';
 
-/** 找回记录的查询键前缀（实际键再带账号代次）；提交成功后让它失效，切回记录页签时重取。 */
-export const RECORDS_KEY = ['orders', 'claims'] as const;
 /** 每页条数（契约上限 50）。 */
 const PAGE_LIMIT = 20;
-
-export type { LocateTarget } from './model.ts';
 
 export interface ClaimRecordsProps {
   api: H5ApiClient;
@@ -28,8 +24,8 @@ export interface ClaimRecordsProps {
   /** 30205 的轻提示（页内文字）。 */
   notice: string | null;
   onLocated: () => void;
-  /** 账号代次（auth.changed 时加一）：并进查询键，旧账号的缓存与迟到响应不会出现在新账号下。 */
-  generation?: number;
+  /** 记录行部件（平台标识 PlatformBadge、状态标签、空态插图；见 records-parts.tsx）。 */
+  parts: RecordParts;
 }
 
 function RecordSkeleton(): ReactElement {
@@ -52,10 +48,10 @@ export function ClaimRecords({
   target,
   notice,
   onLocated,
-  generation = 0,
+  parts,
 }: ClaimRecordsProps): ReactElement {
   const list = useInfiniteQuery({
-    queryKey: [...RECORDS_KEY, generation],
+    queryKey: RECORDS_KEY,
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
       api.request('GET', '/v1/orders/claims', {
@@ -117,7 +113,7 @@ export function ClaimRecords({
         role="status"
         className={`flex items-center gap-couli-2 rounded-couli-button bg-couli-background-surface px-couli-3 py-couli-3 ${FOOTNOTE} text-couli-text-primary`}
       >
-        <InfoIcon className="size-couli-4 flex-none text-couli-text-secondary" />
+        <parts.InfoIcon className="size-couli-4 flex-none text-couli-text-secondary" />
         <span className="min-w-0">{notice}</span>
       </p>
     );
@@ -141,7 +137,7 @@ export function ClaimRecords({
         {banner}
         <div className="flex justify-center pt-couli-12">
           <EmptyState
-            icon={<SearchDocIcon />}
+            icon={<parts.SearchDocIcon />}
             title={findOrderText('claim.records.empty')}
             description=""
           />
@@ -164,6 +160,7 @@ export function ClaimRecords({
                 if (element === null) cards.current.delete(claim.claim_id);
                 else cards.current.set(claim.claim_id, element);
               }}
+              parts={parts}
             />
           </li>
         ))}
@@ -191,9 +188,11 @@ export function ClaimRecords({
 function RecordCard({
   view,
   register,
+  parts: { Badge, StatusTag },
 }: {
   view: RecordView;
   register: (element: HTMLElement | null) => void;
+  parts: RecordParts;
 }): ReactElement {
   const single = view.lines.length === 1 && view.lines[0]?.subOrderId === null;
   return (
@@ -204,7 +203,7 @@ function RecordCard({
       className={`${CARD} ${FOCUS} flex flex-col gap-couli-1 p-couli-4`}
     >
       <div className="flex items-center justify-between gap-couli-2">
-        {view.platform === null ? <span /> : <PlatformBadge platform={view.platform} />}
+        {view.platform === null ? <span /> : <Badge platform={view.platform} />}
         <StatusTag state={view.state} label={stateLabel(view.state)} />
       </div>
       <p className="mt-couli-2 text-couli-footnote leading-couli-footnote font-couli-semibold tabular-nums [overflow-wrap:anywhere]">

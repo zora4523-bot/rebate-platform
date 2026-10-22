@@ -3,7 +3,9 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { H5ApiClient } from '../../../../shared/api/index.ts';
 import { createQueryClient, createQueryProvider } from '../../../../shared/query.ts';
 import { ClaimRecords } from './claim-records.tsx';
-import { LOCATE_MAX_PAGES, type Claim, type LocateTarget } from './model.ts';
+import type { Claim, LocateTarget } from './model.ts';
+import { recordParts } from './records-parts.tsx';
+import { LOCATE_MAX_PAGES } from './records-model.ts';
 
 // 单元测试：API 客户端是内存假实现（不联网、不 listen）。
 
@@ -56,7 +58,13 @@ function mount(api: H5ApiClient, target: LocateTarget, onLocated: () => void) {
   clients.push(client);
   return render(
     createQueryProvider(
-      <ClaimRecords api={api} target={target} notice={null} onLocated={onLocated} />,
+      <ClaimRecords
+        api={api}
+        target={target}
+        notice={null}
+        onLocated={onLocated}
+        parts={recordParts}
+      />,
       client,
     ),
   );
