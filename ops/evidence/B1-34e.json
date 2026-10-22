@@ -1,0 +1,129 @@
+{
+  "task": "B1-34e",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "93d4aee7415da49b2a128a14cbb5b1541d44b6a7",
+  "red_tests": [
+    "test/spec/admin/export-worker/queue.int.test.ts > [AC-B1-34e#26] export exists once after risk-scan in the catalog with B1-34c standard defaults",
+    "test/spec/admin/export-worker/queue.int.test.ts > [AC-B1-34e#27] only worker consumes export, between agent-trace and risk-scan, concurrency one",
+    "test/spec/admin/export-worker/users.int.test.ts > [AC-B1-34e#22] identity defaults to masked phone and whitelists only source-list columns",
+    "test/spec/admin/export-worker/users.int.test.ts > [AC-B1-34e#23] masked=false decrypts a whole batch in identity without per-user database reads",
+    "test/spec/admin/export-worker/users.int.test.ts > [AC-B1-34e#24] identity filters risk_state including implicit normal, paginates stably and isolates apps",
+    "test/spec/admin/export-worker/users.int.test.ts > [AC-B1-34e#25] a broken cipher fails closed rather than exporting cipher text or partial plaintext",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#1] pending → running → done uses generated transitions and the injected completion clock",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#2] CSV has BOM, RFC 4180 quoting and protects each formula prefix",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#3] masked tasks forward filters/app and never request plaintext or write unmasked audit",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#4] unmasked generation appends row_count to a new audit, preserving the creation reason without PII",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#5] max_rows override allows equality and rejects overflow without publishing truncated data",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#6] actual rows, not just a stale total estimate, enforce max_rows",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#7] empty source produces a downloadable header-only CSV",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#8] multiple pages advance bounded progress and preserve every source row once",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#9] creator advisory lock + CAS enforces configured capacity 1 across independent workers",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#9] creator advisory lock + CAS enforces configured capacity 2 across independent workers",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#10] a running export of another creator does not use this creator capacity",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#11] duplicate generate delivery claims once and never rewrites a terminal task",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#12] done and delayed expiry are one transaction; standard queue options omit singletonKey",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#13] enqueue failure cannot commit done or expose an un-expiring file",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#14] expiry respects the exact injected deadline, CASes once and deletes the object idempotently",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#15] failed object deletion can be retried without leaving a retained export behind",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#16] source/storage failure becomes failed with a safe reason and no expiry job",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#17] cancellation changes only creator pending/running tasks, with audit and idempotence",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#18] cancellation during object upload wins over completion and removes plaintext",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#19] forged app_id cannot generate, expire or cancel a foreign task",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#20] audit exports reuse the reader and force own records, including conflicting actor filters",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#21] audit.view_all widens only the current app, retaining the source-list filters",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#28] super audit export sees all creators but no foreign-app rows",
+    "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#29] expire delivery ignores non-done tasks, even with an old deadline"
+  ],
+  "risk_note": "RV2 (admin module, export of personal data): export queue worker for contract CT-24k / 08 BR-ID-42. generate: under the creator's advisory lock, first fail the creator's running tasks whose lease (updated_at heartbeat, default 600 s, admin.export.running_lease_seconds) expired, then count running against admin.export.max_running_per_admin (default 2) and CAS pending→running; at capacity the task stays pending and a 15 s delayed generate is re-sent. Every later write of a run (progress, running→done, running→failed) is a CAS on the row_version taken at claim, so a taken-over run writes nothing. Sources: users through an identity batch projection (masked phone by default, decrypt only for unmasked tasks) and audit_logs through the B1-34a reader with the creator's scope, both read by (created_at|at, id) keyset with the claim instant as the upper bound (Codex r1/r2). CSV with UTF-8 BOM, RFC 4180 escaping and formula-injection guard; row limit (default 50000) fails the task; done sets expires_at = generated + 24 h and sends the delayed expire job in the same transaction; expire deletes the object then CASes done→expired. cancelByCreator port (pending/running → cancelled, one audit per task, actor = creator). Every state change goes through the generated transitionExportTask(). Registered only in the worker entry (ExportWorkerModule.forWorker). No migration, no contract change.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "93d4aee7415da49b2a128a14cbb5b1541d44b6a7",
+      "tree": "17eac10902b3abf4fc5e9d16dedd64636e328ec4",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T03:45:57Z",
+      "finished_at": "2026-10-22T03:46:03Z",
+      "red_tests": [
+        "test/spec/admin/export-worker/queue.int.test.ts > [AC-B1-34e#26] export exists once after risk-scan in the catalog with B1-34c standard defaults",
+        "test/spec/admin/export-worker/queue.int.test.ts > [AC-B1-34e#27] only worker consumes export, between agent-trace and risk-scan, concurrency one",
+        "test/spec/admin/export-worker/users.int.test.ts > [AC-B1-34e#22] identity defaults to masked phone and whitelists only source-list columns",
+        "test/spec/admin/export-worker/users.int.test.ts > [AC-B1-34e#23] masked=false decrypts a whole batch in identity without per-user database reads",
+        "test/spec/admin/export-worker/users.int.test.ts > [AC-B1-34e#24] identity filters risk_state including implicit normal, paginates stably and isolates apps",
+        "test/spec/admin/export-worker/users.int.test.ts > [AC-B1-34e#25] a broken cipher fails closed rather than exporting cipher text or partial plaintext",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#1] pending → running → done uses generated transitions and the injected completion clock",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#2] CSV has BOM, RFC 4180 quoting and protects each formula prefix",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#3] masked tasks forward filters/app and never request plaintext or write unmasked audit",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#4] unmasked generation appends row_count to a new audit, preserving the creation reason without PII",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#5] max_rows override allows equality and rejects overflow without publishing truncated data",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#6] actual rows, not just a stale total estimate, enforce max_rows",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#7] empty source produces a downloadable header-only CSV",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#8] multiple pages advance bounded progress and preserve every source row once",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#9] creator advisory lock + CAS enforces configured capacity 1 across independent workers",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#9] creator advisory lock + CAS enforces configured capacity 2 across independent workers",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#10] a running export of another creator does not use this creator capacity",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#11] duplicate generate delivery claims once and never rewrites a terminal task",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#12] done and delayed expiry are one transaction; standard queue options omit singletonKey",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#13] enqueue failure cannot commit done or expose an un-expiring file",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#14] expiry respects the exact injected deadline, CASes once and deletes the object idempotently",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#15] failed object deletion can be retried without leaving a retained export behind",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#16] source/storage failure becomes failed with a safe reason and no expiry job",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#17] cancellation changes only creator pending/running tasks, with audit and idempotence",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#18] cancellation during object upload wins over completion and removes plaintext",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#19] forged app_id cannot generate, expire or cancel a foreign task",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#20] audit exports reuse the reader and force own records, including conflicting actor filters",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#21] audit.view_all widens only the current app, retaining the source-list filters",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#28] super audit export sees all creators but no foreign-app rows",
+        "test/spec/admin/export-worker/worker.int.test.ts > [AC-B1-34e#29] expire delivery ignores non-done tasks, even with an old deadline"
+      ],
+      "expected": [
+        "test/spec/admin/export-worker/queue.int.test.ts",
+        "test/spec/admin/export-worker/users.int.test.ts",
+        "test/spec/admin/export-worker/worker.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ec1952c9be20b19e004ca2f7207e5d3fa627c2b846ba7ca40ab2564f3a93dd9d"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "r1 fail (S1 a run crashed while running stayed running forever and held the creator's slot → lease with updated_at heartbeat and row_version fencing; S2 users OFFSET pagination → keyset with upper bound); r2 fail (S1 audit_logs source OFFSET pagination → keyset with the same upper bound); r3 pass with one S2 (after a retry entry exists, a taken-over run's late upload could overwrite the same object key) recorded as a follow-up for B1-34f"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "30 rule tests and two shells by Codex (second run only replaced a spyOn on the frozen FieldCrypto with a wrapper object so #22-#25 went red) reviewed by a fresh Claude subagent against BR-ID-42 / BR-ID-33: pass with S2 x9 handed to the implementer brief. After review the orchestrator made one mechanical change to kit.ts so the dependency rule holds: the database provisioner is passed in from the *.int.test.ts files instead of imported by the kit; no assertion changed"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "e3906df9a174d97ec957a10a991b9db7aee58923",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
