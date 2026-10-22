@@ -126,6 +126,20 @@ for (const [column, allowed] of [
 ] as const) {
   it(`[AC-B1-19a#${column === 'auth_status' ? '5' : '6'}] ${column} accepts exactly the specified CHECK domain`, async () => {
     await shape('union_accounts', column, ['text'], false);
+    // B1-22a: the estimated-expiry flag (BR-ID-24 细则「估算」) sits beside both status columns.
+    await shape('union_accounts', 'auth_expires_estimated', ['bool'], false);
+    // B1-22a / 12 §9 T-05: configurable reminder days must not freeze alert_stage to five literals.
+    if (column === 'alert_stage') {
+      for (const value of [...allowed, 'd30', 'd999'])
+        expect(await sqlState(insertRow(app, 'union_accounts', { [column]: value })), value).toBe(
+          'no error',
+        );
+      for (const value of ['d0', 'expiring', ''])
+        expect(await sqlState(insertRow(app, 'union_accounts', { [column]: value })), value).toBe(
+          '23514',
+        );
+      return;
+    }
     const checks = await sql<{ definition: string }>`
       SELECT pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c
       JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
