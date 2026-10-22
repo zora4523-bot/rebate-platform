@@ -52,10 +52,13 @@ const DEFAULT_BODIES: Readonly<Record<RiskMessageVariant, string>> = Object.free
   unbanned: '你的账号限制已解除。{need_reauth}',
 });
 
-/** BR-TEXT-23 原因类别 user wording. */
-/** BR-TEXT-23 {need_reauth} when the Taobao binding is invalid; otherwise the empty string. */
-const NEED_REAUTH_TEXT = '购物前需重新完成淘宝授权。';
+/**
+ * BR-TEXT-23 {need_reauth} when the Taobao binding is invalid; otherwise the empty string. Also the
+ * sentence appended to APPEAL_RESULT account_revoked when the event says need_reauth (B1-12p).
+ */
+export const NEED_REAUTH_TEXT = '购物前需重新完成淘宝授权。';
 
+/** BR-TEXT-23 原因类别 user wording. */
 const REASON_TEXT: Readonly<Record<RiskReasonCategory, string>> = Object.freeze({
   malicious_rights: '异常售后维权',
   fraud_invite: '异常邀请行为',
