@@ -16,6 +16,7 @@ deps: [B2-05c, B2-02f, B1-02y]
 paths:
   - 'apps/api/src/modules/payout/**'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/risk/risk.module.ts'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
