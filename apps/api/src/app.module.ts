@@ -167,6 +167,7 @@ import {
   createWithdrawHoldsReader,
   createWithdrawRules,
   createWithdrawSwitchCheck,
+  isWithdrawalApplication,
   createWithdrawUsageReader,
   generateOutBizNo,
   type ReverifyGatePort,
@@ -2046,13 +2047,22 @@ function riskModule(identity: DynamicModule, contentReader: SharedContentReader)
         privacy: PrivacyConsentChecks,
         level: IdentityLevelChecks,
         stepUp: IdempotencyPostMissCheck,
-      ) => [deletion.postMiss, privacy.postMiss, level.postMiss, stepUp],
+      ) => [
+        deletion.postMiss,
+        privacy.postMiss,
+        level.postMiss,
+        // The withdrawal application judged its step-up already (beforeRiskState below); judging
+        // it again here would try to reserve the same token twice and refuse with 10003.
+        (request) => (isWithdrawalApplication(request) ? Promise.resolve() : stepUp(request)),
+      ],
     },
-    // BR-WDR-03 ① (B2-05d): the withdraw switch answers 30306 (stored with the key) after ④a and
-    // before ⑤ (banned) and everything after, for POST /v1/withdrawals only; a no-op elsewhere.
+    // BR-WDR-03 ① ② ③ (B2-05d): for POST /v1/withdrawals only, the withdraw switch (30306, stored
+    // with the key) and then the step-up token (10003, identity's stage ⑫ check) are judged after
+    // ④a and before ⑤ (banned, 10006) — 08 orders ① ② ahead of ③ for withdrawals, where the global
+    // order (BR-ID-01) puts ⑤ before ⑫. Both are no-ops for every other operation.
     beforeRiskState: {
-      inject: [CLOCK, ROOT_LOGGER],
-      useFactory: (clock: Clock, logger: RootLogger) => [
+      inject: [CLOCK, ROOT_LOGGER, STEP_UP_CHECK],
+      useFactory: (clock: Clock, logger: RootLogger, stepUp: IdempotencyPostMissCheck) => [
         createWithdrawSwitchCheck({
           config: {
             configValue: (appId, key, handle) =>
@@ -2060,6 +2070,7 @@ function riskModule(identity: DynamicModule, contentReader: SharedContentReader)
           },
           logger: logger.child({ module: 'payout' }),
         }),
+        (request) => (isWithdrawalApplication(request) ? stepUp(request) : Promise.resolve()),
       ],
     },
     beforeRateLimitGuards: {
