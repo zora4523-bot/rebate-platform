@@ -31,6 +31,10 @@ test_paths:
   - 'test/spec/admin/export-worker/queue.int.test.ts'
   - 'test/spec/ledger/went-negative/kit.ts'
   - 'test/spec/content/pages-schedule/contract.test.ts'
+red_exempt:
+  - file: test/spec/content/pages-schedule/contract.test.ts
+    test: '[AC-F1-09p#27] 撤销操作正式启用，content.page 不要求二次认证'
+    reason: 冻结 F1-09p 用例，测试体未改，只因同文件死信目标改名期望入列（D10-193）
 impl: claude
 tester: codex
 accept:
