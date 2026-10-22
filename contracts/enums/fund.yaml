@@ -236,7 +236,7 @@ enums:
       forfeited: 已没收，或份额已由迁移 R9、R10 同事务归平台
       voided: 订单转 CLAWED_BACK 或改派时作废
   recon_diff_type:
-    source: 规划/04 §2.5；BR-FUND-01、BR-FUND-04、BR-FUND-19、BR-FUND-22、BR-FUND-23
+    source: 规划/04 §2.5；BR-FUND-01、BR-FUND-04、BR-FUND-19、BR-FUND-22、BR-FUND-23、BR-PAY-07
     values:
       union_mismatch: 联盟对账差异（R1）
       channel_mismatch: 通道对账差异（R2）
@@ -247,6 +247,8 @@ enums:
       settle_missing: 应结未结
       appeal_restore: 申诉撤销后恢复订单
       estimate_changed_after_credit: 入账后只有预估佣金变化（BR-FUND-01 R9b；开关关闭时不生成）
+      pay_mismatch: 收款对账不一致（R4）
+      pay_anomaly: 收款异常（R4）
   payout_batch_item_result:
     source: 规划/04 §2.4；BR-WDR-11、BR-WDR-12
     description: payout_batch_items.result；只插入不改，改挂到别的批次时原批次记一行 moved_out

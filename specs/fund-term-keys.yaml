@@ -458,6 +458,10 @@ ordinary:
     - error.30802
     - error.30803
     - error.30804
+    # CT-21b 收款错误码（BR-PAY-01 / 02 / 03；BR-TEXT-14 表 A）：不带金额、无资金关键词，归普通。
+    - error.30901
+    - error.30902
+    - error.50306
     - error.30805
     - error.30806
     - error.40901
