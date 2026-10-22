@@ -1,0 +1,19 @@
+id: F1-02zzg
+repo: rebate-platform
+title: 测试改动：dict-admin 规则测试的键对从 about.copy_diagnostics(.done) 换成 notify_settings.service_push(.desc)，与 texts.default.json 内容解耦（CT-16i 新增 about.* 键使 #1、#8 的前缀列表多出默认键）
+type: test-change
+# 2026-10-22 入账。原因：dict-items 列表返回默认全集按 key_prefix 过滤的结果（含未覆盖的默认键），#1 按 about. 前缀、#8 按 about.copy_diagnostics 前缀断言恰好两行 / total 2；CT-16i（#1177）新增 about.ai_filing.title、about.copy_diagnostics.desc、about.filing_no.label 后多出默认键，属测试与文案文件内容耦合，不是实现缺陷。
+# 做法：kit.ts 的 KEYS.general / KEYS.second 换成 notify_settings.service_push / notify_settings.service_push.desc（main 与 CT-16i 两版 texts 里该 dict 都只有这两个键、均归 general、无变量），#1 的 dict/code 期望与两处前缀字面量随之改；拆键、版本、历史、审计、分页断言不变，不删 it、不改标题。
+# 改既有规则测试属第一类保护路径：非 task 分支、台账同 PR，按 approvals #24 加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/content/dict-admin/kit.ts'
+  - 'test/spec/content/dict-admin/dict-items.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null

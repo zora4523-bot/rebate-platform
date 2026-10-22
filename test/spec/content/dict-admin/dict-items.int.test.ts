@@ -78,9 +78,10 @@ it('[AC-F1-02t#1] general 首存即发布：整数串版本、拆键、历史、
     { version: '1', keys: changes.map((x) => x.key) },
   );
   const state = await snapshot(h, f.appId);
+  // F1-02zzg：与 texts 内容解耦（CT-16i 新增 about.* 键）；键对见 kit.ts 的 KEYS。
   expect(state.items.map((x) => [x.dict, x.code, x.version, x.text, x.created_by])).toEqual([
-    ['about', 'copy_diagnostics', 1, '诊断入口甲', f.actor.id],
-    ['about', 'copy_diagnostics.done', 1, '复制完成甲', f.actor.id],
+    ['notify_settings', 'service_push', 1, '诊断入口甲', f.actor.id],
+    ['notify_settings', 'service_push.desc', 1, '复制完成甲', f.actor.id],
   ]);
   expect(state.items.every((x) => x.created_at.toISOString() === h.clock.now().toISOString())).toBe(
     true,
@@ -109,7 +110,10 @@ it('[AC-F1-02t#1] general 首存即发布：整数串版本、拆键、历史、
     changes.map((x) => change(x.key, null)),
     changes,
   );
-  const page = success<ItemPage>(await send(f, 'list', undefined, { query: '?key_prefix=about.' }));
+  // F1-02zzg：与 texts 内容解耦（CT-16i 新增 about.* 键）。
+  const page = success<ItemPage>(
+    await send(f, 'list', undefined, { query: '?key_prefix=notify_settings.' }),
+  );
   expect(page.dict_version).toBe('1');
   expect(page.items.map((x) => [x.key, x.text, x.version])).toEqual(
     changes.map((x) => [x.key, x.text, 1]),
@@ -542,9 +546,10 @@ it('[AC-F1-02t#8] 列表按默认全集/类别/前缀分页且只取已发布值
       true,
     );
   }
+  // F1-02zzg：与 texts 内容解耦（CT-16i 新增 about.* 键）。
   const prefix = success<ItemPage>(
     await send(f, 'list', undefined, {
-      query: '?class=general&key_prefix=about.copy_diagnostics&page_size=1&page=2',
+      query: '?class=general&key_prefix=notify_settings.service_push&page_size=1&page=2',
     }),
   );
   expect(prefix.total).toBe(2);
