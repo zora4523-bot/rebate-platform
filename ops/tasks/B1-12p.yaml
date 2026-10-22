@@ -9,7 +9,7 @@ type: impl
 refs: [BR-TEXT-23, BR-ID-36]
 refs_hash:
   BR-TEXT-23: ada6981db849
-  BR-ID-36: 5c69ed57f265
+  BR-ID-36: 4bb81d262347
 deps: [B1-12g]
 paths:
   - 'apps/api/src/modules/notification/**'
