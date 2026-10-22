@@ -227,6 +227,13 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     // Withdrawal tables (B2-05b): the withdraw* prefix covers both.
     'withdrawals',
     'withdraw_holds',
+    // B2-15a: payment core tables (pay_ prefix, B2-15g).
+    'pay_orders',
+    'pay_notifications',
+    'pay_query_attempts',
+    'pay_refunds',
+    'pay_anomalies',
+    'pay_fulfillments',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
