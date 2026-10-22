@@ -236,7 +236,9 @@ export async function openFixture(): Promise<Fixture> {
   // and has no contract request body, so swapping its body for the stub keeps every signal the
   // tests read. createWithdrawal has a contract request body the fixture body does not satisfy:
   // when it lands, this fixture needs its own test change instead of a silent swap.
-  const swappable: Record<OperationName, boolean> = { deletion: true, withdraw: false };
+  // B2-05i: createWithdrawal's real handler takes only @Req() too; the fixture body below is
+  // contract-valid for it (CreateWithdrawalRequest), so the swap keeps every signal the tests read.
+  const swappable: Record<OperationName, boolean> = { deletion: true, withdraw: true };
   const names = Object.keys(OPERATIONS) as OperationName[];
   const implemented = names.filter((name) =>
     Object.hasOwn(routes.CONTRACT_ROUTE_SCHEMAS, OPERATIONS[name].operationId),
@@ -557,7 +559,10 @@ export async function user(
     },
     send(operation, sendOptions) {
       const path = OPERATIONS[operation].path;
-      const raw = JSON.stringify(sendOptions.body ?? { fixture: operation });
+      const raw = JSON.stringify(
+        sendOptions.body ??
+          (operation === 'withdraw' ? { amount_fen: 100 } : { fixture: operation }),
+      );
       const timestamp = String(Math.floor(f.clock.now().getTime() / 1000));
       const nonce = randomBytes(16).toString('hex');
       const key = sendOptions.key === undefined ? randomUUID() : sendOptions.key;

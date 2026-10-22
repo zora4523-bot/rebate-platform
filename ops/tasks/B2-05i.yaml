@@ -1,0 +1,18 @@
+id: B2-05i
+repo: rebate-platform
+title: 过渡测试改动（B2-05d 前置）：identity step-up 夹具按 B1-15j 注释为已实现的 createWithdrawal 开放换入——swappable.withdraw 置 true、withdraw 操作的默认请求体改为合契约的 amount_fen=100（正整数分）；其余断言一字不动
+type: test-change
+# 2026-10-23 提现线（withdraw-acct4）。起因：B2-05d 把 createWithdrawal 的 planned 去掉后，test/spec/identity/step-up-verify/kit.ts 的 openFixture 按 B1-15j 注释断言「createWithdrawal 已实现：合契约的请求体与真实处理函数的参数需另开 test-change」（once / order / token 三个套件同红）。
+# 做法照 B2-05g / F1-09q：非 task 分支、台账同 PR；只改两处——swappable: { deletion: true, withdraw: true }，send() 的默认请求体对 withdraw 用 { amount_fen: 100 }（契约 CreateWithdrawalRequest：正整数分），deletion 仍是 { fixture: operation }。B2-05d 的真实处理函数已改为只取 @Req()（与 requestDeletion 同约定），夹具的换入机制无需改。
+# 改既有规则测试属第一类保护路径：按 approvals #24 由编排核对后加 owner-approved 标签；主干（createWithdrawal 仍 planned 时走桩路由）与 B2-05d 合并后都成立。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/identity/step-up-verify/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
