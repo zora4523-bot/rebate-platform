@@ -1,0 +1,37 @@
+{
+  "task": "CT-16h",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "245948daf212a403494c5d20cc294c084d9571e4",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; user-side text keys, App hi-fi batch 3 'Me' first half, orchestrator 17:4x / D10-121, SPEC_REF 8209d6e). texts.default.json gains 139 keys copied verbatim from 08 BR-TEXT-14 (inbox.title.* expanded with the default segment names, settings, risk notices, appeals results, invite poster and others); specs/fund-term-keys.yaml classifies each (unsure ones as fund terms, exceptions with reasons) and the generated file is regenerated. Keys 08 marks pending legal text are not created; no legal or consent-type keys outside the privacy. / perm. prefixes are created; the four table B scenario sub-keys move to CT-16i together with the key-shape check whitelist. New keys only, not breaking. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "1576f210c631af98ffb0bf6ec9168a0fb5062ed1",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
