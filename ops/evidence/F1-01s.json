@@ -1,0 +1,105 @@
+{
+  "red_tests": [
+    "test/spec/frontend/h5-account-switch/cache.test.ts > [AC-F1-01s-CACHE#1] 已显示 A 流水时先取消再清空壳层缓存，立即撤下 A，随后只显示 B",
+    "test/spec/frontend/h5-account-switch/cache.test.ts > [AC-F1-01s-CACHE#2] A 的流水响应晚于 B 返回时，不覆盖 B 的页面或新缓存",
+    "test/spec/frontend/h5-account-switch/cache.test.ts > [AC-F1-01s-CACHE#3] 离开流水页后换号，回来时不得短暂命中 A 的缓存",
+    "test/spec/frontend/h5-account-switch/cache.test.ts > [AC-F1-01s-CACHE#4] 换号后 B 尚未返回时到达的 A 响应也不能重新填充页面或缓存",
+    "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#1] 无业务页面时仍有唯一壳层订阅，页面卸载和路由切换不注销它",
+    "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#2] find-order 路由下壳层也清理账号数据，卸载后退订且事件不再触发清理",
+    "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#3] 退出登录立即撤下 A 流水并清缓存，不自动取令牌或请求，重新登录可显示 B",
+    "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#4] 退出时取消在途流水，迟到响应不复活 A，也不触发新请求",
+    "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#5] 无页面请求时退出也作废 API 令牌，事件本身不发请求",
+    "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#6] 退出清理账号缓存后，匿名帮助页仍能正常取数显示且不取令牌",
+    "test/spec/frontend/h5-account-switch/source.test.ts > [AC-F1-01s-SOURCE#1] 全局换号订阅只有壳层一处，页面不重复清空全局缓存，取数不绕过 API 客户端",
+    "test/spec/frontend/h5-account-switch/token.test.ts > [AC-F1-01s-TOKEN#1] 壳层换号后同一个应用 API 客户端重新取令牌，不复用 A 的令牌",
+    "test/spec/frontend/h5-account-switch/token.test.ts > [AC-F1-01s-TOKEN#2] 换号前在途取令牌晚到时，等待者和后续请求都不得使用旧令牌",
+    "test/spec/frontend/h5-account-switch/token.test.ts > [AC-F1-01s-TOKEN#3] 新账号取令牌不等待 A 的在途取令牌，旧结果也不能覆盖 B"
+  ],
+  "risk_note": "H5 shell account-switch isolation (apps/h5 shell, shared api and query; RV1). On the bridge event auth.changed the shell (single subscription via bridge-sdk on(), independent of page mounts) cancels and clears the React Query cache and remounts the page tree; the app API client keeps one token manager per account session so requests from an old session fail before acquiring a token, before sending and after the response, never re-acquiring or sending with the old token; queries run per account generation so old-generation query functions refetched after a clear (e.g. a refresh queued before logout) reject without a token or request; on logout anonymous routes (auth none) stay rendered while login-required pages are taken down without requests until the next login. Fixes the account-switch exposure found in the F1-04b review that also affected the merged /ledger page. Rule tests by Codex in two calls; Claude spec-test review r2 pass; red on the test machine (red/2: 14 red, 0 problems). Implementation by Opus 5.5 in three rounds; test machine verify-fast/4 and browser green. Review: Codex (approvals id 27 / 34 / 36). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 3,
+      "note": "round 1 fail (S1: anonymous page blanked on logout; S1: a pending token fetch re-acquired after logout), round 2 fail (S1: a refresh queued before logout ran through the new session), round 3 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 pass (3 S2) while the formal red run flagged one case red for a getBy throw, fixed with the S2s in Codex round 2; round 2 pass (2 S2)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "F1-01s",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "9292097e98a2208dd2cddf1a4aaae6a4925684e2",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "9292097e98a2208dd2cddf1a4aaae6a4925684e2",
+      "tree": "f06b0ca2d14c9764b39efcc0b851c0b856908362",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T03:35:40Z",
+      "finished_at": "2026-10-22T03:35:58Z",
+      "gate": {
+        "commit": "df6f284f94da5101f52481e270a61a10fd18ee5d",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/h5-account-switch/cache.test.ts > [AC-F1-01s-CACHE#1] 已显示 A 流水时先取消再清空壳层缓存，立即撤下 A，随后只显示 B",
+        "test/spec/frontend/h5-account-switch/cache.test.ts > [AC-F1-01s-CACHE#2] A 的流水响应晚于 B 返回时，不覆盖 B 的页面或新缓存",
+        "test/spec/frontend/h5-account-switch/cache.test.ts > [AC-F1-01s-CACHE#3] 离开流水页后换号，回来时不得短暂命中 A 的缓存",
+        "test/spec/frontend/h5-account-switch/cache.test.ts > [AC-F1-01s-CACHE#4] 换号后 B 尚未返回时到达的 A 响应也不能重新填充页面或缓存",
+        "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#1] 无业务页面时仍有唯一壳层订阅，页面卸载和路由切换不注销它",
+        "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#2] find-order 路由下壳层也清理账号数据，卸载后退订且事件不再触发清理",
+        "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#3] 退出登录立即撤下 A 流水并清缓存，不自动取令牌或请求，重新登录可显示 B",
+        "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#4] 退出时取消在途流水，迟到响应不复活 A，也不触发新请求",
+        "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#5] 无页面请求时退出也作废 API 令牌，事件本身不发请求",
+        "test/spec/frontend/h5-account-switch/shell.test.ts > [AC-F1-01s-SHELL#6] 退出清理账号缓存后，匿名帮助页仍能正常取数显示且不取令牌",
+        "test/spec/frontend/h5-account-switch/source.test.ts > [AC-F1-01s-SOURCE#1] 全局换号订阅只有壳层一处，页面不重复清空全局缓存，取数不绕过 API 客户端",
+        "test/spec/frontend/h5-account-switch/token.test.ts > [AC-F1-01s-TOKEN#1] 壳层换号后同一个应用 API 客户端重新取令牌，不复用 A 的令牌",
+        "test/spec/frontend/h5-account-switch/token.test.ts > [AC-F1-01s-TOKEN#2] 换号前在途取令牌晚到时，等待者和后续请求都不得使用旧令牌",
+        "test/spec/frontend/h5-account-switch/token.test.ts > [AC-F1-01s-TOKEN#3] 新账号取令牌不等待 A 的在途取令牌，旧结果也不能覆盖 B"
+      ],
+      "expected": [
+        "test/spec/frontend/h5-account-switch/cache.test.ts",
+        "test/spec/frontend/h5-account-switch/shell.test.ts",
+        "test/spec/frontend/h5-account-switch/source.test.ts",
+        "test/spec/frontend/h5-account-switch/token.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "705d98c15b899ab9547e2225ac339cf484208559b29a8b75f1d720c40ab17e7b"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "c98b41f87d943cc2127ce770e454e4ca4c0f8d33",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  }
+}
