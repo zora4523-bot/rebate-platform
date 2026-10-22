@@ -555,10 +555,36 @@ for (const table of TABLES) {
     // UPDATE 与单向改写触发器（只许清空）；DELETE / TRUNCATE 与表级权限照旧禁止，clarify_asks 不变。
     const purge = await sql<{ granted: boolean }>`SELECT has_column_privilege(
       'couli_app', 'app.agent_tool_calls', 'args', 'UPDATE') AS granted`.execute(app);
-    const purged =
-      purge.rows[0]?.granted === true &&
-      ['agent_result_deliveries', 'agent_result_chains'].includes(table);
+    const purgeColumn: string | undefined =
+      purge.rows[0]?.granted === true
+        ? (
+            { agent_result_deliveries: 'card', agent_result_chains: 'conditions' } as Record<
+              string,
+              string
+            >
+          )[table]
+        : undefined;
+    const purged = purgeColumn !== undefined;
     expect(privileges.rows).toEqual([{ forbidden: false, column_update: purged }]);
+    // 逐列核对：迁移后只有清单内那一列可 UPDATE，任何列都没有 REFERENCES。
+    const columns = await sql<{
+      column_name: string;
+      upd: boolean;
+      refs: boolean;
+    }>`SELECT column_name,
+      has_column_privilege('couli_app', ${`app.${table}`}, column_name, 'UPDATE') AS upd,
+      has_column_privilege('couli_app', ${`app.${table}`}, column_name, 'REFERENCES') AS refs
+      FROM information_schema.columns WHERE table_schema = 'app' AND table_name = ${table}`.execute(
+      app,
+    );
+    expect(columns.rows.length).toBeGreaterThan(0);
+    for (const column of columns.rows) {
+      expect(column, `${table}.${column.column_name}`).toEqual({
+        column_name: column.column_name,
+        upd: column.column_name === purgeColumn,
+        refs: false,
+      });
+    }
     const triggers = await sql`SELECT tgname FROM pg_trigger
       WHERE tgrelid = to_regclass(${`app.${table}`}) AND NOT tgisinternal`.execute(app);
     if (purged) expect(triggers.rows.length).toBeGreaterThan(0);
