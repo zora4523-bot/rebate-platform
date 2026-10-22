@@ -4,7 +4,7 @@ import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createPushSendCore } from '../../../../apps/api/src/modules/notification/application/push-send.ts';
 import { createPushSessionValidity } from '../../../../apps/api/src/modules/identity/ports/push-session-validity.ts';
-import { fixture, seedSession, seedUser, type Fixture } from './kit.ts';
+import { eventOf, fixture, seedSession, seedUser, type Fixture } from './kit.ts';
 
 let database: TestDatabase;
 let db: Kysely<DB>;
@@ -40,7 +40,7 @@ it.each(['ORDER_TRACKED', 'CREDITED', 'WD_SUCCESS', 'WD_FAILED'])(
   },
 );
 
-async function assertRecords(f: Fixture, status: 'success' | 'failed' | 'suppressed') {
+async function assertRecords(f: Fixture, status: 'queued' | 'success' | 'failed' | 'suppressed') {
   const { inbox, logs } = await f.rows();
   expect(inbox).toHaveLength(1);
   expect(inbox[0]).toMatchObject({
@@ -159,7 +159,7 @@ it('[AC-B1-12o#6] 设置同时按应用及收件人隔离，他人的关闭设�
   await assertRecords(f, 'success');
 });
 
-it('[AC-B1-12o#7] 推送载荷精确为站内信编号、标题、正文，发送前事务内已有站内信和成功日志', async () => {
+it('[AC-B1-12o#7] 推送载荷精确为站内信编号、标题、正文，调用通道前站内信和认领均已提交', async () => {
   const f = await fixture(db);
   await f.registration();
   const core = createPushSendCore({
@@ -167,33 +167,36 @@ it('[AC-B1-12o#7] 推送载荷精确为站内信编号、标题、正文，发�
     channel: f.channel,
     sessionValidity: f.sessionValidity,
   });
-  await db.transaction().execute(async (trx) => {
-    f.channel.send.mockImplementation(async (_targets, payload) => {
-      const inbox = await trx
-        .selectFrom('inbox_messages')
-        .selectAll()
-        .where('app_id', '=', f.app_id)
-        .where('user_id', '=', f.user_id)
-        .execute();
-      const logs = await trx
-        .selectFrom('notify_logs')
-        .selectAll()
-        .where('app_id', '=', f.app_id)
-        .where('dedupe_key', '=', f.input.eventKey)
-        .execute();
-      expect(inbox).toHaveLength(1);
-      expect(logs).toHaveLength(1);
-      expect(logs[0]).toMatchObject({ channel: 'inbox', status: 'success' });
-      expect(payload).toEqual({
-        message_id: inbox[0]!.message_id,
-        title: f.input.title,
-        body: f.input.body,
-      });
-      expect(inbox[0]!.route).toEqual(f.input.route);
-      return { status: 'accepted' };
+  f.channel.send.mockImplementation(async (_targets, payload) => {
+    const inbox = await db
+      .selectFrom('inbox_messages')
+      .selectAll()
+      .where('app_id', '=', f.app_id)
+      .where('user_id', '=', f.user_id)
+      .execute();
+    const logs = await db
+      .selectFrom('notify_logs')
+      .selectAll()
+      .where('app_id', '=', f.app_id)
+      .where('dedupe_key', '=', f.input.eventKey)
+      .execute();
+    expect(inbox).toHaveLength(1);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ channel: 'inbox', status: 'success' });
+    expect(payload).toEqual({
+      message_id: inbox[0]!.message_id,
+      title: f.input.title,
+      body: f.input.body,
     });
-    await core.send(trx, f.input);
+    expect(inbox[0]!.route).toEqual(f.input.route);
+    // A different pooled connection must see the claim before the external write starts.
+    const push = (await f.rows()).logs.find((row) => row.channel === 'push');
+    expect(push).toMatchObject({ status: 'queued', row_version: 1, sent_at: null });
+    return { status: 'accepted' };
   });
+  await db.transaction().execute((trx) => core.record(trx, f.input));
+  expect(f.channel.send).not.toHaveBeenCalled();
+  await core.dispatch(db, eventOf(f.input));
   const message = await assertRecords(f, 'success');
   expect(f.channel.send).toHaveBeenCalledTimes(1);
   expect(f.channel.send.mock.calls[0]![1]).toEqual({
@@ -426,7 +429,7 @@ it('[AC-B1-12o#18] 站内信写入失败时整个事务回滚且不调用通道'
     channel: f.channel,
     sessionValidity: f.sessionValidity,
   });
-  await expect(broken.transaction().execute((trx) => core.send(trx, f.input))).rejects.toBe(
+  await expect(broken.transaction().execute((trx) => core.record(trx, f.input))).rejects.toBe(
     failure,
   );
   expect(reached).toBe(true);
@@ -486,10 +489,13 @@ it('[AC-B1-12o#28] 同一核心发送不同事件时重读分类开关，关闭�
     channel: f.channel,
     sessionValidity: f.sessionValidity,
   });
-  await db.transaction().execute((trx) => core.send(trx, f.input));
+  await db.transaction().execute((trx) => core.record(trx, f.input));
+  await core.dispatch(db, eventOf(f.input));
   await f.settings(OFF);
   const nextKey = `${f.input.eventKey}:next`;
-  await db.transaction().execute((trx) => core.send(trx, { ...f.input, eventKey: nextKey }));
+  const nextInput = { ...f.input, eventKey: nextKey };
+  await db.transaction().execute((trx) => core.record(trx, nextInput));
+  await core.dispatch(db, eventOf(nextInput));
   const { inbox, logs } = await f.rows();
   expect(inbox).toHaveLength(2);
   expect(new Set(inbox.map((row) => row.message_id)).size).toBe(2);
@@ -508,4 +514,306 @@ it('[AC-B1-12o#28] 同一核心发送不同事件时重读分类开关，关闭�
     sent_at: null,
   });
   expect(f.channel.send).toHaveBeenCalledTimes(1);
+});
+
+it.each([true, false])(
+  '[AC-B1-12o#30] record 只原子落单不调用通道，分类开启=%s；重复落单不产生额外记录',
+  async (enabled) => {
+    const f = await fixture(db);
+    await f.registration();
+    await f.settings({ ...ON, service_push: enabled });
+    const core = createPushSendCore(f);
+    await db.transaction().execute(async (trx) => {
+      await core.record(trx, f.input);
+      expect(f.channel.send).not.toHaveBeenCalled();
+      const logs = await trx
+        .selectFrom('notify_logs')
+        .selectAll()
+        .where('app_id', '=', f.app_id)
+        .execute();
+      expect(logs).toHaveLength(2);
+      expect(logs.find((row) => row.channel === 'push')).toMatchObject({
+        status: enabled ? 'queued' : 'suppressed',
+        suppress_reason: enabled ? null : 'push_disabled',
+        row_version: 0,
+        sent_at: null,
+      });
+      // The caller still owns this transaction: nothing is visible on the root handle yet.
+      expect(await f.rows()).toEqual({ inbox: [], logs: [] });
+    });
+    await assertRecords(f, enabled ? 'queued' : 'suppressed');
+    const before = await f.rows();
+    await db.transaction().execute((trx) => core.record(trx, f.input));
+    expect(await f.rows()).toEqual(before);
+    expect(f.channel.send).not.toHaveBeenCalled();
+    expect(f.sessionValidity).not.toHaveBeenCalled();
+  },
+);
+
+it('[AC-B1-12o#31] record 后调用方回滚，三种记录均撤销，后续 dispatch 不发送幽灵消息', async () => {
+  const f = await fixture(db);
+  await f.registration();
+  const core = createPushSendCore(f);
+  const failure = new Error('fixture caller rollback');
+  await expect(
+    db.transaction().execute(async (trx) => {
+      await core.record(trx, f.input);
+      throw failure;
+    }),
+  ).rejects.toBe(failure);
+  expect(await f.rows()).toEqual({ inbox: [], logs: [] });
+  expect(await core.dispatch(db, eventOf(f.input))).toBe('skipped');
+  expect(await f.rows()).toEqual({ inbox: [], logs: [] });
+  expect(f.channel.send).not.toHaveBeenCalled();
+});
+
+it.each(
+  categories.flatMap((category) => [true, false].map((template) => ({ category, template }))),
+)(
+  '[AC-B1-12o#32] record 提交后关闭 $category（模板存在=$template），dispatch 复核为 suppressed',
+  async ({ category, template }) => {
+    const f = await fixture(db);
+    await f.registration();
+    if (template) await f.template(category);
+    const input = {
+      ...f.input,
+      category: template ? (category === 'service' ? 'marketing' : 'service') : category,
+    } as const;
+    const core = createPushSendCore(f);
+    await db.transaction().execute((trx) => core.record(trx, input));
+    await assertRecords(f, 'queued');
+    const before = await f.rows();
+    await f.settings({ ...ON, [`${category}_push`]: false });
+    expect(await core.dispatch(db, eventOf(input))).toBe('suppressed');
+    await assertRecords(f, 'suppressed');
+    const after = await f.rows();
+    expect(after.inbox).toEqual(before.inbox);
+    expect(after.logs.find((row) => row.channel === 'inbox')).toEqual(
+      before.logs.find((row) => row.channel === 'inbox'),
+    );
+    expect(after.logs.find((row) => row.channel === 'push')!.row_version).toBeGreaterThan(0);
+    expect(await createPushSendCore(f).dispatch(db, eventOf(input))).toBe('skipped');
+    expect(f.channel.send).not.toHaveBeenCalled();
+  },
+);
+
+it('[AC-B1-12o#33] dispatch 认领前校验失败不丢落单，重建核心再次 dispatch 可续发且只发一次', async () => {
+  const f = await fixture(db);
+  await f.registration();
+  const core = createPushSendCore(f);
+  await db.transaction().execute((trx) => core.record(trx, f.input));
+  const before = await f.rows();
+  const failure = new Error('fixture validity read failure');
+  f.sessionValidity.mockRejectedValueOnce(failure);
+  await expect(core.dispatch(db, eventOf(f.input))).rejects.toBe(failure);
+  expect(await f.rows()).toEqual(before);
+  expect((await f.rows()).logs.find((row) => row.channel === 'push')).toMatchObject({
+    status: 'queued',
+    row_version: 0,
+    sent_at: null,
+  });
+  expect(f.channel.send).not.toHaveBeenCalled();
+  const restarted = createPushSendCore(f);
+  expect(await restarted.dispatch(db, eventOf(f.input))).toBe('success');
+  expect(await restarted.dispatch(db, eventOf(f.input))).toBe('skipped');
+  expect(f.channel.send).toHaveBeenCalledTimes(1);
+  await assertRecords(f, 'success');
+});
+
+it.each([1, 2])(
+  '[AC-B1-12o#34] queued 但 row_version=%s 表示已认领，再 dispatch 不重发或重置日志',
+  async (version) => {
+    const f = await fixture(db);
+    await f.registration();
+    const core = createPushSendCore(f);
+    await db.transaction().execute((trx) => core.record(trx, f.input));
+    await db
+      .updateTable('notify_logs')
+      .set({ row_version: version })
+      .where('app_id', '=', f.app_id)
+      .where('dedupe_key', '=', `${f.input.eventKey}:push`)
+      .execute();
+    const before = await f.rows();
+    expect(await createPushSendCore(f).dispatch(db, eventOf(f.input))).toBe('skipped');
+    expect(await f.rows()).toEqual(before);
+    expect(f.channel.send).not.toHaveBeenCalled();
+  },
+);
+
+it('[AC-B1-12o#35] 已提交事件由两个独立核心并发 dispatch，只有一个认领成功且只调用一次通道', async () => {
+  const f = await fixture(db);
+  await f.registration();
+  const first = createPushSendCore(f);
+  const second = createPushSendCore(f);
+  await db.transaction().execute((trx) => first.record(trx, f.input));
+  const outcomes = await Promise.all([
+    first.dispatch(db, eventOf(f.input)),
+    second.dispatch(db, eventOf(f.input)),
+  ]);
+  expect(outcomes.sort()).toEqual(['skipped', 'success']);
+  expect(f.channel.send).toHaveBeenCalledTimes(1);
+  await assertRecords(f, 'success');
+});
+
+it('[AC-B1-12o#36] dispatch 拒绝事务句柄，不在调用方事务内发送或认领', async () => {
+  const f = await fixture(db);
+  await f.registration();
+  const core = createPushSendCore(f);
+  await db.transaction().execute((trx) => core.record(trx, f.input));
+  const before = await f.rows();
+  await db.transaction().execute(async (trx) => {
+    await expect(core.dispatch(trx, eventOf(f.input))).rejects.toThrow();
+  });
+  expect(await f.rows()).toEqual(before);
+  expect(f.channel.send).not.toHaveBeenCalled();
+  expect(await core.dispatch(db, eventOf(f.input))).toBe('success');
+  expect(f.channel.send).toHaveBeenCalledTimes(1);
+});
+
+it.each(['accepted', 'rejected'] as const)(
+  '[AC-B1-12o#37] 通道已返回 %s 但结果写入失败，认领保留且下次不重发',
+  async (status) => {
+    const f = await fixture(db);
+    await f.registration();
+    const core = createPushSendCore(f);
+    await db.transaction().execute((trx) => core.record(trx, f.input));
+    let delivered = false;
+    let reached = false;
+    f.channel.send.mockImplementation(async () => {
+      expect((await f.rows()).logs.find((row) => row.channel === 'push')).toMatchObject({
+        status: 'queued',
+        row_version: 1,
+        sent_at: null,
+      });
+      delivered = true;
+      return { status };
+    });
+    const broken = db.withPlugin({
+      transformQuery(args) {
+        if (delivered && args.node.kind === 'UpdateQueryNode') {
+          reached = true;
+          throw new Error('fixture result write failure');
+        }
+        return args.node;
+      },
+      async transformResult(args) {
+        return args.result;
+      },
+    });
+    expect(await core.dispatch(broken, eventOf(f.input))).toBe('unknown');
+    expect(reached).toBe(true);
+    await assertRecords(f, 'queued');
+    const before = await f.rows();
+    expect(before.logs.find((row) => row.channel === 'push')!.row_version).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(await createPushSendCore(f).dispatch(db, eventOf(f.input))).toBe('skipped');
+    expect(await f.rows()).toEqual(before);
+    expect(f.channel.send).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('[AC-B1-12o#38] 通道抛错结果未知，站内信和已提交认领保留，重复 record 和 dispatch 都不重发', async () => {
+  const f = await fixture(db);
+  await f.registration();
+  const core = createPushSendCore(f);
+  await db.transaction().execute((trx) => core.record(trx, f.input));
+  f.channel.send.mockRejectedValue(new Error('fixture delivery result unknown'));
+  expect(await core.dispatch(db, eventOf(f.input))).toBe('unknown');
+  await assertRecords(f, 'queued');
+  const before = await f.rows();
+  expect(before.logs.find((row) => row.channel === 'push')!.row_version).toBeGreaterThanOrEqual(1);
+  await f.send();
+  expect(await f.rows()).toEqual(before);
+  expect(f.channel.send).toHaveBeenCalledTimes(1);
+});
+
+it.each(['frozen', 'revoked', 'session-revoked', 'refresh-expired'] as const)(
+  '[AC-B1-12o#39] record 后令牌变为 %s，dispatch 重读最新状态，不推送并条件解绑',
+  async (change) => {
+    const f = await fixture(db);
+    const session = await seedSession(db, f);
+    const row = await f.registration({ device_id: session.device_id, bound_sid: session.sid });
+    const core = createPushSendCore({ ...f, sessionValidity: createPushSessionValidity(f.clock) });
+    await db.transaction().execute((trx) => core.record(trx, f.input));
+    await assertRecords(f, 'queued');
+    if (change === 'frozen' || change === 'revoked') {
+      await db
+        .updateTable('push_tokens')
+        .set(
+          change === 'frozen'
+            ? { frozen_until: new Date(f.clock.now().getTime() + 1) }
+            : { revoked_at: f.clock.now() },
+        )
+        .where('app_id', '=', f.app_id)
+        .where('id', '=', row.id)
+        .execute();
+    } else if (change === 'session-revoked') {
+      await db
+        .updateTable('sessions')
+        .set({ revoked_at: f.clock.now() })
+        .where('app_id', '=', f.app_id)
+        .where('sid', '=', session.sid)
+        .execute();
+    } else {
+      await db
+        .updateTable('refresh_tokens')
+        .set({ expire_at: f.clock.now() })
+        .where('app_id', '=', f.app_id)
+        .where('sid', '=', session.sid)
+        .execute();
+    }
+    expect(await core.dispatch(db, eventOf(f.input))).toBe('failed');
+    expect(f.channel.send).not.toHaveBeenCalled();
+    expect(await f.binding(row.id)).toMatchObject({
+      user_id: null,
+      bound_sid: null,
+      row_version: 1,
+    });
+    await assertRecords(f, 'failed');
+  },
+);
+
+it('[AC-B1-12o#40] 延迟 dispatch 使用派发时的 Clock，冻结已结束可推送且发送时间不沿用落单时间', async () => {
+  const f = await fixture(db);
+  const recordedAt = f.clock.now();
+  const row = await f.registration({ frozen_until: new Date(recordedAt.getTime() + 1) });
+  const core = createPushSendCore(f);
+  await db.transaction().execute((trx) => core.record(trx, f.input));
+  const before = await f.rows();
+  f.clock.advanceMs(2);
+  expect(await core.dispatch(db, eventOf(f.input))).toBe('success');
+  expect(f.channel.send).toHaveBeenCalledTimes(1);
+  expect(f.channel.send.mock.calls[0]![0]).toEqual([{ provider: row.provider, token: row.token }]);
+  const after = await f.rows();
+  expect(after.inbox).toEqual(before.inbox);
+  expect(after.logs).toHaveLength(2);
+  expect(after.logs.find((entry) => entry.channel === 'inbox')).toEqual(
+    before.logs.find((entry) => entry.channel === 'inbox'),
+  );
+  expect(after.logs.find((entry) => entry.channel === 'push')).toMatchObject({
+    status: 'success',
+    sent_at: f.clock.now(),
+    updated_at: f.clock.now(),
+    created_at: recordedAt,
+    planned_at: recordedAt,
+    suppress_reason: null,
+  });
+  expect(await f.binding(row.id)).toMatchObject({ user_id: f.user_id, bound_sid: row.bound_sid });
+});
+
+it('[AC-B1-12o#41] dispatch 查询限定 app_id，他应用相同事件键不能认领本应用的 queued 行', async () => {
+  const f = await fixture(db);
+  await f.registration();
+  const core = createPushSendCore(f);
+  await db.transaction().execute((trx) => core.record(trx, f.input));
+  const before = await f.rows();
+  expect(await core.dispatch(db, { ...eventOf(f.input), app_id: `${f.app_id}-other` })).toBe(
+    'skipped',
+  );
+  expect(await f.rows()).toEqual(before);
+  expect(f.channel.send).not.toHaveBeenCalled();
+  expect(await core.dispatch(db, eventOf(f.input))).toBe('success');
+  expect(f.channel.send).toHaveBeenCalledTimes(1);
+  await assertRecords(f, 'success');
 });

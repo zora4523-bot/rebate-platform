@@ -4,6 +4,7 @@ import type { Insertable, Kysely } from 'kysely';
 import { vi } from 'vitest';
 import {
   createPushSendCore,
+  type PushEvent,
   type PushSendInput,
 } from '../../../../apps/api/src/modules/notification/application/push-send.ts';
 import type { PushDeliveryChannel } from '../../../../apps/api/src/modules/notification/ports/push-delivery.ts';
@@ -11,6 +12,11 @@ import type { PushSessionValidity } from '../../../../apps/api/src/modules/ident
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 
 export const NOW = '2032-04-05T06:07:08.123Z';
+
+export function eventOf(input: PushSendInput): PushEvent {
+  const { app_id, user_id, code, variant, eventKey, category } = input;
+  return { app_id, user_id, code, variant, eventKey, category };
+}
 
 export async function seedUser(db: Kysely<DB>, app_id: string) {
   const id = randomUUID();
@@ -179,7 +185,9 @@ export async function fixture(db: Kysely<DB>, code = 'DEMO_NOTICE') {
     ) {
       // Deliberately create the skeleton inside each test's call, never in setup hooks.
       const core = createPushSendCore({ clock, channel, sessionValidity: reader });
-      await db.transaction().execute((trx) => core.send(trx, { ...input, ...overrides }));
+      const message = { ...input, ...overrides };
+      await db.transaction().execute((trx) => core.record(trx, message));
+      await core.dispatch(db, eventOf(message));
     },
     binding(id: string) {
       return db

@@ -18,6 +18,14 @@ export interface PushSendInput {
   readonly category: PushCategory;
 }
 
+/** Lookup information only; dispatch reads the committed message for its payload. */
+export type PushEvent = Pick<
+  PushSendInput,
+  'app_id' | 'user_id' | 'code' | 'variant' | 'eventKey' | 'category'
+>;
+
+export type PushDispatchOutcome = 'skipped' | 'suppressed' | 'success' | 'failed' | 'unknown';
+
 export interface PushSendOptions {
   readonly clock: Clock;
   readonly channel: PushDeliveryChannel;
@@ -30,13 +38,21 @@ export interface PushSendOptions {
 
 export interface PushSendCore {
   /**
-   * Caller transaction: dedupe by (app_id,eventKey), insert inbox + successful inbox log before
-   * push; push log uses eventKey + ':push'. Disabled category => suppressed(push_disabled).
-   * No eligible registration => failed, never suppressed. Invalid bindings are cleared using
-   * unbindPushTokensForSession with the observed user_id and bound_sid. All valid devices receive
-   * the same minimal payload in one channel call. Duplicate events never call the channel again.
+   * Caller transaction: dedupe by (app_id,eventKey), insert inbox + successful inbox log and
+   * push log (eventKey + ':push', queued, row_version=0; disabled => suppressed(push_disabled)).
+   * Never calls the channel. All three writes commit or roll back together.
    */
-  send(transaction: Transaction<DB>, input: PushSendInput): Promise<void>;
+  record(transaction: Transaction<DB>, input: PushSendInput): Promise<void>;
+  /**
+   * Root handle only, after record commits; reject transaction handles. Own transactions lock
+   * and recheck settings and eligible registrations. Disabled => suppressed(push_disabled);
+   * no eligible registration => failed. Invalid bindings are cleared using
+   * unbindPushTokensForSession with the observed user_id and bound_sid.
+   * Commit claim (queued row_version 0→1) before calling the channel once for all valid devices.
+   * Then persist accepted→success / rejected→failed. Unknown result or result-write failure
+   * leaves queued row_version>=1, never resent. Unclaimed queued rows may be dispatched again.
+   */
+  dispatch(db: Kysely<DB>, event: PushEvent): Promise<PushDispatchOutcome>;
 }
 
 export function createPushSendCore(options: PushSendOptions): PushSendCore {
