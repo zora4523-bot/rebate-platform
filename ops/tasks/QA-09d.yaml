@@ -10,7 +10,7 @@ type: impl
 # 另收 QA-09b 评审 S2：配置空值跨行取值、JSON 不加引号的数字盐、SEC1 / 无头私钥前缀、AOSP 新 entry flag 与空 span 被判损坏、大资源表上限（couli-runs/CODEX-IMPL/followups.md）。
 refs: [BR-ID-09]
 refs_hash:
-  BR-ID-09: f8c29aeda825
+  BR-ID-09: d54901c67242
 deps: [QA-09b]
 paths:
   - 'infra/release-scan/detect/**'
