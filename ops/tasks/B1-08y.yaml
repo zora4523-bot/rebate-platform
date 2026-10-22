@@ -1,0 +1,17 @@
+id: B1-08y
+repo: rebate-platform
+title: test-change：事件契约测试的 02 §11 名单（test/spec/platform/events/kit.ts 的 PLAN_02_EVENTS / PLAN_02_PENDING）末尾加 order.snapshot_retry_exhausted（couli #163，24 个事件），只增不改，为 B1-08u 登记该事件让路
+type: test-change
+# 2026-10-22 入账（W1）。依据：编排裁定 D10-105 ①b（10-21 15:0x）与 15:1x 条：规划 02 §11 已由 couli #163 加 order.snapshot_retry_exhausted（排在 order.blacklist_hit_after_credit 之后）；events kit 逐字列 02 §11 名单，新名须先加入，PENDING 里允许 EVENT_NAMES 暂缺直到 B1-08u 登记。
+# 只增两行（名单与 PENDING 各一）与注释一句，其余不动。按 approvals #24 由编排核对加标签；先于 B1-08u 合并。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/platform/events/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
