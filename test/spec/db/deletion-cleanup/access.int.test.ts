@@ -34,6 +34,7 @@ const writable: Record<Table, string[]> = {
     'updated_at',
     'run_lock_run_id',
     'run_lock_expires_at',
+    'user_id',
     'user_hash',
   ],
   deletion_requests: [
