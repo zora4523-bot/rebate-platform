@@ -31,8 +31,13 @@
 //     task failed by a takeover, retried, running or done under a later run) deletes and writes
 //     nothing; its orphan is overwritten by the next run of the key and is unreachable meanwhile
 //     (only done is downloadable). The put has a hard timeout of a third of the lease, started
-//     right after a heartbeat, so it is over before the lease can be reclaimed; a timed-out put
-//     fails the run on the still-held token.
+//     right after a heartbeat; a timed-out put fails the run on the still-held token. The store
+//     cannot abort an upload or write conditionally, so a timed-out put may still land later and
+//     overwrite the key: once it has landed, a late check locks the row and, if the task is done
+//     under another run (whose file the late write may have replaced), turns it done → expired and
+//     deletes the object before that commits (lateUploadAction). Remaining window: a crash before
+//     the late check, or a failing late check, leaves such a done task with a stale file until it
+//     expires; per-run keys with conditional writes are the follow-up (with the OSS adapter).
 //   - expire: at expires_at (injected Clock) done → expired once (CAS under the row lock) and the
 //     object is deleted in that transaction; early delivery re-sends a delayed expire job; any
 //     other status is ignored.
@@ -158,6 +163,21 @@ function shiftMs(instant: Date, ms: number): Date {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * What the late check does once a timed-out put of the execution holding `token` has landed:
+ * only a done task is downloadable, and a done row is necessarily another run's (this execution
+ * failed its own run on the timeout), whose file the late write may have replaced, so it expires.
+ * Failed / pending / running / cancelled / expired rows are left (not downloadable, or a later
+ * put of the running run overwrites the key).
+ */
+export function lateUploadAction(
+  row: { readonly status: string; readonly row_version: number } | undefined,
+  token: number,
+): 'expire' | 'none' {
+  if (row === undefined || row.status !== 'done' || row.row_version === token) return 'none';
+  return 'expire';
 }
 
 function errorName(error: unknown): string {
@@ -438,17 +458,65 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
   }
 
   /**
-   * store.put with a hard timeout of a third of the lease (the caller heartbeats right before),
-   * so the upload is given up before the lease can run out and be reclaimed.
+   * After a timed-out put of `lease` has landed anyway: under the task row lock, a task done
+   * under another run becomes expired and its object (possibly overwritten by the late write) is
+   * deleted before that commits (lateUploadAction). Never throws: the handler returned long ago.
    */
-  async function putWithin(leaseMs: number, input: Parameters<ExportStore['put']>[0]) {
+  async function lateUploadCheck(lease: Lease, key: string): Promise<void> {
+    const { task } = lease;
+    try {
+      const expired = await db.transaction().execute(async (trx) => {
+        const row = await lockTask(trx, task.app_id, task.id);
+        if (row === undefined || lateUploadAction(row, lease.token) !== 'expire') return false;
+        const step = transitionExportTask(row.status as ExportTaskState, 'EXPIRE');
+        if (!step.ok) return false;
+        // Still under the row lock: no download can be signed for this task after the commit.
+        await removeObject(key, task.id);
+        const result = await trx
+          .updateTable('export_tasks')
+          .set({ status: step.to, updated_at: clock.now(), row_version: row.row_version + 1 })
+          .where('id', '=', row.id)
+          .where('status', '=', 'done')
+          .where('row_version', '=', row.row_version)
+          .executeTakeFirst();
+        return result.numUpdatedRows > 0n;
+      });
+      if (expired) {
+        logger.warn(
+          { event: 'export_late_upload_expired', task_id: task.id },
+          'late export upload: the done task was expired',
+        );
+      }
+    } catch (error) {
+      logger.error(
+        { event: 'export_late_upload_check_failed', task_id: task.id, error: errorName(error) },
+        'late export upload could not be checked',
+      );
+    }
+  }
+
+  /**
+   * store.put with a hard timeout of a third of the lease (the caller heartbeats right before).
+   * A put given up on is not dropped: once it settles, a landed one gets the late check.
+   */
+  async function putWithin(
+    lease: Lease,
+    leaseMs: number,
+    input: Parameters<ExportStore['put']>[0],
+  ) {
     const put = store.put(input);
-    // A put given up on may still settle later; its outcome is dropped.
-    put.catch(() => undefined);
+    let timedOut = false;
+    void put.then(
+      () => (timedOut ? lateUploadCheck(lease, input.key) : undefined),
+      () => undefined,
+    );
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
-        () => reject(new ExportPutTimeoutError()),
+        () => {
+          timedOut = true;
+          reject(new ExportPutTimeoutError());
+        },
         Math.max(1, Math.floor(leaseMs / 3)),
       );
     });
@@ -725,7 +793,7 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
 
     const key = objectKey(task);
     try {
-      await putWithin(leaseSeconds * 1000, {
+      await putWithin(lease, leaseSeconds * 1000, {
         key,
         bytes: Buffer.concat([BOM, Buffer.from(chunks.join(''), 'utf8')]),
         contentType: 'text/csv',
