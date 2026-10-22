@@ -2,7 +2,6 @@ import type { DB } from '@couli/db';
 import { createTestDatabase } from '@couli/db/testing';
 import type { Kysely, Transaction } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { lockUsersForUpdate } from '../../../../apps/api/src/modules/identity/ports/lock-users.ts';
 import { bounded, voucher, waitBlocked } from '../../ledger/posting/kit.ts';
 import {
   close,
@@ -47,7 +46,6 @@ it.each(['debit_first', 'approve_first'] as const)(
     const debit = voucher(f.actor.appId, before.balances[0]!.account_id, 1n);
     async function deduct(trx: Transaction<DB>) {
       const who = { appId: f.actor.appId, userIds: [f.actor.userId] };
-      await lockUsersForUpdate(trx, who);
       await f.ledger.lockBalances(trx, who);
       await f.ledger.post(trx, {
         ...debit,
