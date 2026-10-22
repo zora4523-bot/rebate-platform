@@ -1,0 +1,33 @@
+id: CT-21b
+repo: rebate-platform
+title: 契约：收款枚举、错误码与文案——新建 contracts/enums/pay.yaml（pay_channel、pay_order_status、pay_refund_status、pay_ledger_type、pay_refund_reason、pay_refund_target_type、pay_query_attempt_kind、pay_unavailable_reason）；fund.yaml recon_diff_type 加 pay_mismatch、pay_anomaly（R4）；error-codes 新增 30901（data.reason）、30902（data.pay_order_id）、50306（data.pay_channel），20902 resource 加 pay_order、pay_refund，码段 309；texts.default error.30901 / 30902 / 50306，texts.admin 收款字典
+type: contract
+# 2026-10-22 收款线入账（CT-plan/contract-delta.md §6.2 p-21、p-22、p-24、p-32；CT-21a #216 只做了权限点）。取值照 04 §2.4 / §2.5 / §7 与 08 BR-PAY 细则默认值；
+# 文案照 08 BR-TEXT-14（12_TEXT 第 822、823、836 行）一字不改；pay.yaml 进生成器文件清单与 packages/contracts-ts 生成物；catalog 测试的码段断言同 PR 同步。
+# 契约槽全局 1 个：排在 CT-16i 之后，就绪即在 notices 占槽。
+refs: [BR-PAY-01, BR-PAY-02, BR-PAY-06, BR-PAY-07]
+refs_hash:
+  BR-PAY-01: 15ea5ac62c34
+  BR-PAY-02: f59e87a9a27b
+  BR-PAY-06: 102e1fb8839f
+  BR-PAY-07: a98350f4412a
+contract_sections: ['2.4', '2.5', '7']
+deps: [CT-21a]
+paths:
+  - 'contracts/enums/pay.yaml'
+  - 'contracts/enums/fund.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/texts.default.json'
+  - 'contracts/texts.admin.default.json'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+test_paths:
+  - 'test/spec/contracts/pay-enums/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+  - 'test/spec/contracts/pay-enums/**'
+status: todo
+pr: null

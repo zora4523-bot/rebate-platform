@@ -1,0 +1,28 @@
+id: B2-15k
+repo: rebate-platform
+title: 真实收款通道适配器（沙箱 / 测试商户）：WechatPayChannel（APIv3 签名与验签、APP 下单、调起参数签名、商户单号查单、关单、申请退款、退款查询、回调验签与 AES-256-GCM 解密、交易账单）与 AlipayPayChannel（alipay.trade.app.pay orderStr、trade.query、trade.close、trade.refund、trade.fastpay.refund.query、异步通知验签、bill.downloadurl.query）；移植 task/PAY-01 的 packages/pay-channels（结果只有 ok / unknown，验签不过或应答与请求不符一律 unknown）；凭据只读环境变量名、缺失 fail-close（下单 50306、通知不处理）；非生产只允许沙箱 / 测试商户网关
+type: impl
+# 2026-10-22 收款线入账（BR-PAY-03、04、08、09；规划/09 §5.7 CAP-X-16 / CAP-X-17 文档已确认未实测）。平台行为只引私有库 docs-mirror/wechat-pay/pages/*.txt、docs-mirror/alipay/app-pay/*.md 并在代码注释注出处；
+# 09 未验证的能力不得当事实；success_states 等清单的增改须附实测样例（BR-PAY-04 细则）。密钥只在 KMS / staging 配置（BR-PAY-08 ②），代码只读变量名；新增环境变量进 platform/config schema 与 .env.example。
+# PAY-01 第 3 轮评审（couli-runs/PAY/code-review-r3.md）的修改未复审，本任务 Codex money 评审须逐条核对。
+refs: [BR-PAY-03, BR-PAY-04, BR-PAY-08, BR-PAY-09]
+refs_hash:
+  BR-PAY-03: d8433c7a1556
+  BR-PAY-04: 6763ec22c098
+  BR-PAY-08: 515dd9fe21c1
+  BR-PAY-09: 5e127a301d07
+deps: [B2-15c]
+paths:
+  - 'apps/api/src/modules/payment/infra/channels/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/app.module.ts'
+  - '.env.example'
+test_paths:
+  - 'test/spec/payment/channels/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/channels/**'
+status: todo
+pr: null

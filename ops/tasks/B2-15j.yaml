@@ -1,0 +1,32 @@
+id: B2-15j
+repo: rebate-platform
+title: T+1 收款对账与差错单：按渠道交易账单逐笔核对 out_trade_no / out_refund_no 的金额与状态（渠道有而我方无或非 PAID、我方 PAID 而渠道无、金额不一致、退款不一致 → recon_diffs source R4、type pay_mismatch / pay_anomaly，经 ledger 登记，告警）；终态支付单不改状态；PAY_FEE 分录按（渠道、账单日）一张（借 PAY_CHANNEL_FEE / 贷 CASH_PAY:{pay_channel}）；处置只有补查后正常结束、登记异常收款并退款、人工关闭三种；账务不变量 db/invariants/pay/**（支付类凭证不含 USER_BALANCE、PAID 单恰一张 PAY_RECEIPT、SUCCESS 退款恰一张 PAY_REFUND 或反向 PAY_ANOMALY、PAY_SUSPENSE 余额 = 未退完异常收款合计）接入日终运行器；后台对账差错数据接口（pay.view）
+type: impl
+# 2026-10-22 收款线入账（BR-PAY-07 全文与细则；BR-WDR-23 同一做法但不套用 R2：不冻结提现、不做余额调账）。账单下载接口在 PayChannel 上（FakePayChannel 用夹具账单；真实通道 B2-15k）。
+# 不变量 SQL 由规则测试作者（Codex）写，各配破坏数据、输出检查行数（11 §4.2）。
+refs: [BR-PAY-07, BR-PAY-05]
+refs_hash:
+  BR-PAY-07: a98350f4412a
+  BR-PAY-05: cc6a654d316e
+deps: [B2-15e, B2-15f]
+paths:
+  - 'apps/api/src/modules/payment/**'
+  - 'apps/api/src/app.module.ts'
+  - 'db/invariants/pay/**'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/payment/recon/**'
+  - 'test/spec/db/pay/invariants/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/recon/**'
+  - 'test/spec/db/pay/invariants/**'
+status: todo
+pr: null

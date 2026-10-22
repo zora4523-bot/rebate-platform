@@ -1,0 +1,34 @@
+id: CT-21c
+repo: rebate-platform
+title: 契约：openapi.yaml 用户侧支付单四接口（planned）——POST /v1/pay/orders（请求体 biz_type、biz_ref、pay_channel，不含金额，Idempotency-Key，响应支付单 + 按渠道分支的调起参数，标「待实测」与不进日志）、GET /v1/pay/orders/{id}、POST …/{id}/returned、POST …/{id}/cancel；x-min-version-gate、x-session-scopes 按 CT-17a 约定；bridge.schema.json 与 Agent 工具注册表不含 /v1/pay/（CI 检查）
+type: contract
+# 2026-10-22 收款线入账（contract-delta p-25、p-26；04 §6.4 两行；BR-PAY-01 ② 入口只限原生 App）。接口全部 x-implementation: planned，由 B2-15b 实现时去 planned。
+# 调起参数字段按官方文档写并标「待实测」（规划/09 §5.7、CAP-X-16 / CAP-X-17；P-S4）：微信 appid / partnerid / prepayid / package / noncestr / timestamp / sign；支付宝 order_str。
+# 契约槽：排在 CT-21b 之后。
+refs: [BR-PAY-01, BR-PAY-02, BR-PAY-03, BR-PAY-04, BR-PAY-05]
+refs_hash:
+  BR-PAY-01: 15ea5ac62c34
+  BR-PAY-02: f59e87a9a27b
+  BR-PAY-03: d8433c7a1556
+  BR-PAY-04: 6763ec22c098
+  BR-PAY-05: cc6a654d316e
+contract_sections: ['6.4']
+deps: [CT-21b, CT-17a]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/contracts/pay-http/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+  - 'test/spec/contracts/pay-http/**'
+status: todo
+pr: null

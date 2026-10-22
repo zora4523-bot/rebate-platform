@@ -1,0 +1,29 @@
+id: B2-15g
+repo: rebate-platform
+title: 门禁登记新模块 payment：ops/risk-map.yaml 加 apps/api/src/modules/payment/** 为 RV2（同 ledger），重生成根 AGENTS.md 分工表，同步 tools/guard/lib/risk.test.ts 与 guard-cli.test.ts，加 payment/AGENTS.md 与一行 @AGENTS.md 的 CLAUDE.md；tools/ci/lint-migrations.ts FUNDS_TABLE_PREFIXES 加 pay_（锁定测试同步）；tools/ci/evidence-check.ts MONEY_PATHS 加 payment（测试同步）
+type: guard-change
+# 2026-10-22 收款线 pay-acct4 入账（方案 couli-runs/PAY-lane/plan.md §2；先例 B2-02a #602、B2-02b #611、B2-03e #520）。
+# 收紧门禁：未登记路径本就 RV2，payment 是资金模块（BR-PAY-07 写收款分录），须自带 AGENTS.md（≤60 行、不写数值与公式：
+# 不读写用户余额、支付结果只认验签通知与查询、状态只经 transition()、金额只经 @couli/money、密钥只读环境变量名）。
+# pay_orders / pay_refunds / pay_anomalies / pay_notifications / pay_query_attempts 现有前缀 payout 匹配不到 pay_，须加前缀；
+# evidence-check 的 MONEY_PATHS 现无 payment，加上后负责人豁免对碰 payment 的 PR 不再生效。第三类保护路径，合并需编排按 #24 加标签。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'ops/risk-map.yaml'
+  - 'AGENTS.md'
+  - 'tools/guard/lib/risk.test.ts'
+  - 'tools/guard/guard-cli.test.ts'
+  - 'tools/ci/lint-migrations.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+  - 'tools/ci/evidence-check.ts'
+  - 'tools/ci/evidence-check.test.ts'
+  - 'apps/api/src/modules/payment/AGENTS.md'
+  - 'apps/api/src/modules/payment/CLAUDE.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

@@ -1,0 +1,32 @@
+id: B2-15a
+repo: rebate-platform
+title: 迁移：收款五表 pay_orders（唯一 (app_id, out_trade_no)，out_trade_no / amount_fen 禁止 UPDATE，部分唯一 (app_id, biz_type, biz_ref) WHERE status IN (PENDING, PAID)）、pay_notifications（只插入，唯一 (app_id, pay_channel, notify_id)）、pay_query_attempts（只插入）、pay_refunds（唯一 (app_id, out_refund_no)，单号与金额禁止 UPDATE）、pay_anomalies（唯一 (app_id, pay_channel, channel_trade_no)）；约束索引具名；授权只给 couli_app
+type: migration
+# 2026-10-22 收款线入账（PAY-lane/plan.md §2）。列按 04 §3.2 五行：pay_orders（user_id、biz_type、biz_ref、pay_channel、amount_fen、refunded_fen、status、
+# out_trade_no、channel_trade_no、expire_at、launch_issued_at、closing、needs_manual、paid_at、closed_at、close_reason）；pay_notifications（pay_channel、
+# 渠道通知标识、out_trade_no 或 out_refund_no、原文密文、验签结果、处理结果、received_at）；pay_query_attempts（pay_order_id 或 pay_refund_id、kind、
+# request、response、result、at）；pay_anomalies（pay_channel、channel_trade_no、out_trade_no 可空、pay_order_id 可空、amount_fen、refunded_fen、evidence、status）；
+# pay_refunds（target_type、target_id、idempotency_key、out_refund_no、amount_fen、reason_code、status、channel_refund_no、operator、created_at、succeeded_at）。
+# 枚举取值照 CT-21b 的 pay.yaml 写 CHECK；首版不分区（contract-delta P-D3）。迁移号按落地时主干最大 +1，先在 notices 占迁移槽；两段式（db/AGENTS.md）。
+# 依赖 B2-15g：pay_ 前缀登记为资金表后，锁定清单测试要同 PR 加五表（先例 B2-02c）。04 §3.2 若裁定加 pay_fulfillments（notices 21:3x ①）随本迁移一并建。
+refs: [BR-PAY-02, BR-PAY-04, BR-PAY-05, BR-PAY-06]
+refs_hash:
+  BR-PAY-02: f59e87a9a27b
+  BR-PAY-04: 6763ec22c098
+  BR-PAY-05: cc6a654d316e
+  BR-PAY-06: 102e1fb8839f
+deps: [B2-15g]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
+test_paths:
+  - 'test/spec/db/pay/core/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/pay/core/**'
+status: todo
+pr: null

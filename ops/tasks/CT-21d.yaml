@@ -1,0 +1,32 @@
+id: CT-21d
+repo: rebate-platform
+title: 支付状态机与通知入口说明：specs/state-machines/pay-order.yaml（PO1 创建→PENDING、PO2 PENDING→PAID、PO3 PENDING→CLOSED；守卫引 BR-PAY-02 / 04 / 05；并发冲突 20902 resource=pay_order）、pay-refund.yaml（PROCESSING→SUCCESS / FAILED，BR-PAY-06）及 packages/domain 生成物；specs/pay-notify.md（通知入口路径、验签要求、核对项、应答表；渠道字段待实测）
+type: impl
+# 2026-10-22 收款线入账（contract-delta p-28、p-29；04 §4.9；PAY-lane/plan.md D-PAY-3：退款单也经生成的 transition()）。生成：node packages/domain/scripts/state-machines.ts。
+# 规则测试照 11 §4.2「状态机双份盲录」：Codex 只拿 08 原文独立写 test/spec/state-machines/pay-order 的 expected.csv 与迁移表测试（SM 测试 ID 前缀 08 §13 未登记，用 [AC-CT-21d#n]）。
+# specs/pay-notify.md 渠道侧字段按 P-D4 实测前只写我方处理与 BR-PAY-04 细则「通知应答」表。不占契约槽（不改 contracts/）。
+refs: [BR-PAY-02, BR-PAY-04, BR-PAY-05, BR-PAY-06]
+refs_hash:
+  BR-PAY-02: f59e87a9a27b
+  BR-PAY-04: 6763ec22c098
+  BR-PAY-05: cc6a654d316e
+  BR-PAY-06: 102e1fb8839f
+deps: [CT-21b]
+paths:
+  - 'specs/state-machines/pay-order.yaml'
+  - 'specs/state-machines/pay-refund.yaml'
+  - 'specs/pay-notify.md'
+  - 'packages/domain/src/state-machines/pay-order.gen.ts'
+  - 'packages/domain/src/state-machines/pay-refund.gen.ts'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/state-machines/pay-order/**'
+  - 'test/spec/state-machines/pay-refund/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/state-machines/pay-order/**'
+  - 'test/spec/state-machines/pay-refund/**'
+status: todo
+pr: null
