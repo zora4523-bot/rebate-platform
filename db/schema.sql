@@ -4701,6 +4701,7 @@ CREATE TABLE app.withdrawals (
     CONSTRAINT withdrawals_hold_reason_check CHECK (((hold_reason IS NULL) OR (hold_reason = ANY (ARRAY['payout_disabled'::text, 'queue_paused'::text, 'channel_disabled'::text, 'member_blocked'::text, 'single_cap'::text, 'daily_cap'::text, 'payer_side_after_transfer'::text])))),
     CONSTRAINT withdrawals_income_type_check CHECK ((income_type = 'SERVICE_FEE'::text)),
     CONSTRAINT withdrawals_manual_resolution_check CHECK (((manual_resolution IS NULL) OR (manual_resolution = ANY (ARRAY['paid'::text, 'failed'::text])))),
+    CONSTRAINT withdrawals_needs_manual_check CHECK (((NOT needs_manual) OR (status = ANY (ARRAY['PAYING'::text, 'REJECTED'::text, 'PAID_API'::text, 'PAID_MANUAL'::text, 'FAILED'::text])))),
     CONSTRAINT withdrawals_net_check CHECK (((net_fen >= 0) AND (net_fen = ((amount_fen - fee_fen) - tax_fen)))),
     CONSTRAINT withdrawals_out_biz_no_check CHECK ((out_biz_no ~ '^[A-Za-z0-9]{1,32}$'::text)),
     CONSTRAINT withdrawals_paid_check CHECK (((status <> ALL (ARRAY['PAID_API'::text, 'PAID_MANUAL'::text])) OR (paid_at IS NOT NULL))),
@@ -4713,7 +4714,6 @@ CREATE TABLE app.withdrawals (
     CONSTRAINT withdrawals_rejected_check CHECK (((status <> 'REJECTED'::text) OR (reject_reason_code IS NOT NULL))),
     CONSTRAINT withdrawals_resolver_ids_check CHECK (((resolver_ids IS NULL) OR (jsonb_typeof(resolver_ids) = 'array'::text))),
     CONSTRAINT withdrawals_review_mode_check CHECK (((review_mode IS NULL) OR (review_mode = ANY (ARRAY['auto'::text, 'manual'::text])))),
-    CONSTRAINT withdrawals_risk_flags_at_check CHECK (((risk_flags IS NULL) = (risk_flags_at IS NULL))),
     CONSTRAINT withdrawals_risk_flags_check CHECK (((risk_flags IS NULL) OR (jsonb_typeof(risk_flags) = 'array'::text))),
     CONSTRAINT withdrawals_row_version_check CHECK ((row_version >= 0)),
     CONSTRAINT withdrawals_status_check CHECK ((status = ANY (ARRAY['PENDING_REVIEW'::text, 'APPROVED'::text, 'REJECTED'::text, 'PAYING'::text, 'PAID_API'::text, 'PAID_MANUAL'::text, 'FAILED'::text]))),
@@ -8102,7 +8102,7 @@ CREATE TRIGGER union_raw_payloads_append_only BEFORE DELETE OR UPDATE ON app.uni
 -- Name: withdrawals withdrawals_out_biz_no_fixed; Type: TRIGGER; Schema: app; Owner: -
 --
 
-CREATE TRIGGER withdrawals_out_biz_no_fixed BEFORE UPDATE OF out_biz_no ON app.withdrawals FOR EACH ROW WHEN ((old.out_biz_no IS DISTINCT FROM new.out_biz_no)) EXECUTE FUNCTION app.reject_update_delete();
+CREATE TRIGGER withdrawals_out_biz_no_fixed BEFORE UPDATE OF out_biz_no ON app.withdrawals FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
 
 
 --
