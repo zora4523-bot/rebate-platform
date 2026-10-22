@@ -1,0 +1,22 @@
+id: F1-01s
+repo: rebate-platform
+title: H5 壳层换号隔离：收到桥事件 auth.changed 时，作废应用级 API 客户端（createAppApi）持有的 H5 令牌与在途取令牌，清空壳层 QueryClient（queryClient.clear()）并让在途请求结果不再写入；壳层常驻订阅，不依赖页面是否挂载；覆盖已上线的 /ledger 与 /find-order 等所有页面
+type: impl
+# 2026-10-22 入账（前端线 f1-frontend-7）。F1-04b Codex 评审 r2 / r3 的 S0：同一 WebView 内退出 A 登录 B（原生发 auth.changed）后，壳层令牌与 React Query 缓存都未隔离，B 可能看到 A 的余额流水 / 找回记录（F1-04a #1113 已合并同样受影响）。
+# 页面内的按代次隔离（F1-04b r3）保留；本任务做壳层统一兜底。bridge-sdk 已有 invalidate()（packages/bridge-sdk/src/token.ts），按其用法接线。approvals 第 34 / 36 条。
+refs: []
+refs_hash: {}
+deps: [F1-01q, F1-04a]
+paths:
+  - 'apps/h5/src/entries/app/app-shell.tsx'
+  - 'apps/h5/src/shared/api/**'
+  - 'apps/h5/src/shared/query.ts'
+test_paths:
+  - 'test/spec/frontend/h5-account-switch/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-account-switch/**'
+status: todo
+pr: null
