@@ -7,6 +7,7 @@ import {
   ADMIN_CHECK,
   AdminAuthModule,
   AdminModule,
+  ExportWorkerModule,
   createAdminDisplayNameReader,
   createAuditWriter,
 } from './modules/admin/index.ts';
@@ -70,6 +71,7 @@ import {
 import {
   IdentityAdminModule,
   IdentityModule,
+  createExportUsersReader,
   IdentityWorkerModule,
   ME_READ_PORTS,
   createMaskedPhoneReader,
@@ -1902,6 +1904,17 @@ export class AppModule {
               // risk.state_changed → RISK_STATE_CHANGED inbox message (B1-12g, BR-TEXT-23).
               // Its unbanned {need_reauth} reads linking's Taobao binding port (SELECT only).
               NotificationModule.forWorker({ taobaoReauthReader: needsTaobaoReauth }),
+              // Admin data exports (B1-34e, BR-ID-42): the export queue's generate / expire
+              // handler over identity's batch users projection (decrypted and masked there) and
+              // content's configuration reader (admin.export.* overrides of the code defaults).
+              // Nothing is seeded: jobs come from the creating and the done transactions.
+              ExportWorkerModule.forWorker({
+                users: (db, crypto) => createExportUsersReader({ db, crypto }),
+                config: (db, clock) => createContentReader({ db, clock }),
+                configPermissions: new Map(
+                  configRegistry().map((item) => [item.key, item.permission]),
+                ),
+              }),
             ]
           : []),
         // The scheduled takeover / recheck of the paid bank-card verification records (B1-13g,
