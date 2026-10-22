@@ -8,7 +8,7 @@
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import type { AppEnv, Clock } from '../../platform/index.ts';
+import { SystemClock, type AppEnv, type Clock } from '../../platform/index.ts';
 import type { UnionPidService } from '../../union/index.ts';
 import type { LinkingConfigReader } from '../ports.ts';
 
@@ -80,6 +80,8 @@ export interface UnionAuthReads {
 
 export function createUnionAuthReads(options: UnionAuthReadsOptions): UnionAuthReads {
   const { db, config, appEnv, pids } = options;
+  // B1-22b: the request-side time guard reads the injected Clock (app.module always passes it).
+  const clock = options.clock ?? new SystemClock();
 
   return {
     async binding(appId, userId, platform) {
@@ -150,12 +152,15 @@ export function createUnionAuthReads(options: UnionAuthReadsOptions): UnionAuthR
       if (accountId === null) return false;
       const row = await db
         .selectFrom('union_accounts')
-        .select('auth_status')
+        .select(['auth_status', 'auth_expires_at'])
         .where('app_id', '=', appId)
         .where('platform', '=', platform)
         .where('id', '=', accountId)
         .executeTakeFirst();
-      return row !== undefined && row.auth_status !== 'expired';
+      // B1-22b (BR-ID-24 ④, 12 §7.2): from the instant auth_expires_at is reached the site
+      // authorization counts as expired, before the expiry job writes the status column.
+      if (row === undefined || row.auth_status === 'expired') return false;
+      return row.auth_expires_at === null || row.auth_expires_at > clock.now();
     },
 
     async configuredMethods(appId, client) {

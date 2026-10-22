@@ -1,5 +1,11 @@
 // Public surface of the notification module. Other modules import only from this file.
-export { createSiteAuthAlertPort, createFakeTemplateSmsSender } from './site-auth-alert/service.ts';
+// B1-22b: site union authorization alerts (BR-ID-24 ②, BR-TEXT-20): union's monitor plans them on
+// its own transaction; the worker's union-auth queue delivers them.
+export {
+  createSiteAuthAlertPort,
+  createFakeTemplateSmsSender,
+  createTemplateSmsSender,
+} from './site-auth-alert/service.ts';
 export type {
   SiteAuthAlertPlan,
   SiteAuthAlertPort,
@@ -8,6 +14,7 @@ export type {
   TemplateSmsMessage,
   TemplateSmsResult,
   FakeTemplateSmsSender,
+  SiteAuthPendingAlerts,
 } from './site-auth-alert/service.ts';
 // B1-12b: the push token commands of a session's start and end (BR-ID-07). identity never imports
 // them: app.module hands them to identity's push token port (dependency inversion).
