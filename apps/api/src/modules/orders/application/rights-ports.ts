@@ -51,6 +51,10 @@ export interface OrderRightsPorts {
   readonly rebate?: Partial<RebateAdminCommandPort>;
 }
 
+function unavailable(port: string): Error {
+  return new Error(`ORDERS_RIGHTS_PORT_UNAVAILABLE: ${port}`);
+}
+
 /**
  * Thin injection points, not transaction owners: no queries, writes, retries or fund guards.
  * Missing method throws ORDERS_RIGHTS_PORT_UNAVAILABLE: <port name> before any side effect.
@@ -61,10 +65,12 @@ export async function recordOrderRights(
   ports: OrderRightsPorts | undefined,
   input: RightsRecordInput,
 ): Promise<RightsRecordResult> {
-  void trx;
-  void ports;
-  void input;
-  throw new Error('NotImplemented: recordOrderRights');
+  const rights = ports?.rights;
+  if (rights === undefined || typeof rights.record !== 'function') {
+    throw unavailable('rights.record');
+  }
+  // Called as a method so the settlement instance keeps its `this`; result passes through intact.
+  return await rights.record(trx, input);
 }
 
 export async function adminHoldOrder(
@@ -72,10 +78,11 @@ export async function adminHoldOrder(
   ports: OrderRightsPorts | undefined,
   input: AdminHoldInput,
 ): Promise<AdminHoldResult> {
-  void trx;
-  void ports;
-  void input;
-  throw new Error('NotImplemented: adminHoldOrder');
+  const rebate = ports?.rebate;
+  if (rebate === undefined || typeof rebate.adminHold !== 'function') {
+    throw unavailable('rebate.adminHold');
+  }
+  return await rebate.adminHold(trx, input);
 }
 
 export async function adminUnholdOrder(
@@ -83,8 +90,9 @@ export async function adminUnholdOrder(
   ports: OrderRightsPorts | undefined,
   input: AdminHoldInput,
 ): Promise<AdminHoldResult> {
-  void trx;
-  void ports;
-  void input;
-  throw new Error('NotImplemented: adminUnholdOrder');
+  const rebate = ports?.rebate;
+  if (rebate === undefined || typeof rebate.adminUnhold !== 'function') {
+    throw unavailable('rebate.adminUnhold');
+  }
+  return await rebate.adminUnhold(trx, input);
 }

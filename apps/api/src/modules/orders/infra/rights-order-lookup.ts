@@ -23,7 +23,29 @@ export async function findOrderForRights(
   db: Kysely<DB>,
   input: RightsOrderLookupInput,
 ): Promise<RightsOrderLookupResult> {
-  void db;
-  void input;
-  throw new Error('NotImplemented: findOrderForRights');
+  // PDD order numbers are stored without hyphens; other platforms keep the number verbatim.
+  const no =
+    input.platform === 'pdd'
+      ? input.platform_order_no.replaceAll('-', '')
+      : input.platform_order_no;
+  const order = await db
+    .withSchema('app')
+    .selectFrom('orders')
+    .selectAll()
+    .where('app_id', '=', input.app_id)
+    .where('platform', '=', input.platform)
+    .where('sub_order_id', '=', no)
+    .executeTakeFirst();
+  if (order !== undefined) return { kind: 'found', order };
+  // Diagnostic probe only: a parent hit is reported, never expanded to its children.
+  const parent = await db
+    .withSchema('app')
+    .selectFrom('orders')
+    .select('sub_order_id')
+    .where('app_id', '=', input.app_id)
+    .where('platform', '=', input.platform)
+    .where('parent_order_id', '=', no)
+    .limit(1)
+    .executeTakeFirst();
+  return parent === undefined ? { kind: 'not_found' } : { kind: 'sub_order_no_missing' };
 }
