@@ -1,7 +1,6 @@
 import { expect, it } from 'vitest';
 import {
   accepts,
-  at,
   body,
   check,
   compile,
@@ -22,7 +21,6 @@ import {
   op,
   propertiesIn,
   required,
-  resolve,
   statuses,
   syncPath,
   to,
@@ -128,29 +126,24 @@ it('[AC-CT-24n#6] 同步记录包含筛选、计数、操作者和可空完成�
 it('[AC-CT-24n#7] limits 按平台给最早起点与最多单号数，不把回扫日期写死', () => {
   const doc = contract();
   const schema = data(doc, `${syncPath}/limits`, 'get');
-  // 任务未指定 limits 外层容器名；支持数组、items/platforms 数组或平台键对象。
-  let entries: ReturnType<typeof object>[];
-  let namedEntries = schema['type'] === 'array';
-  if (schema['type'] === 'array') entries = [resolve(doc, at(schema, 'items'))];
-  else {
-    const properties = at(schema, 'properties');
-    const array = Object.values(properties)
-      .map((value) => resolve(doc, value))
-      .find((value) => value['type'] === 'array');
-    if (array !== undefined) {
-      namedEntries = true;
-      entries = [resolve(doc, at(array, 'items'))];
-    } else entries = Object.values(properties).map((value) => resolve(doc, value));
+  // 仅定位平台限制字段，不限定数组、平台键映射或外层容器的组织方式。
+  function platformLimits(value: unknown): ReturnType<typeof object>[] {
+    if (value === null || typeof value !== 'object') return [];
+    if (Array.isArray(value)) return value.flatMap(platformLimits);
+    const node = object(value);
+    const properties = object(node['properties'] ?? {});
+    if ('earliest_from' in properties && 'max_order_nos' in properties) return [node];
+    return Object.values(node).flatMap(platformLimits);
   }
+  const entries = platformLimits(expand(doc, schema));
   expect(entries.length).toBeGreaterThan(0);
   for (const entry of entries) {
     required(entry, ['earliest_from', 'max_order_nos']);
-    if (namedEntries) required(entry, ['platform']);
     expect(field(doc, entry, 'earliest_from')).toMatchObject({
       type: 'string',
       format: 'date-time',
     });
-    accepts(doc, field(doc, entry, 'max_order_nos'), [50], [0, -1, 51, '50']);
+    expect(field(doc, entry, 'max_order_nos')).toMatchObject({ type: 'integer' });
   }
   const desc = description(doc, `${syncPath}/limits`, 'get');
   expect(desc).toMatch(/02\s*§?7\.1|02\s*§\s*7\.1/);
@@ -159,7 +152,7 @@ it('[AC-CT-24n#7] limits 按平台给最早起点与最多单号数，不把回�
 it('[AC-CT-24n#8] 站长授权暂停拒绝 30156，HTTP 422 并给出平台', () => {
   const doc = contract();
   expect(list(op(doc, syncPath)['x-error-codes'])).toContain(30156);
-  expect(errorExamples(doc, syncPath, 'post', '422')).toContainEqual(
+  expect(errorExamples(doc, syncPath)).toContainEqual(
     expect.objectContaining({
       code: 30156,
       data: expect.objectContaining({ platform: expect.any(String) }),

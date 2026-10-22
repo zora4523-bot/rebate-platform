@@ -20,7 +20,7 @@ import {
   required,
 } from './kit.ts';
 
-it.each(['hold', 'unhold'])('[AC-CT-24n#14] %s 要求说明与 CAS 版本，原因码取现有枚举', (action) => {
+it.each(['hold', 'unhold'])('[AC-CT-24n#14] %s 必填说明与版本，原因码只收 RISK、CS', (action) => {
   const doc = contract();
   const path = `${orderPath}/${action}`;
   const schema = body(doc, path);
@@ -41,13 +41,13 @@ it.each(['hold', 'unhold'])('[AC-CT-24n#14] %s 要求说明与 CAS 版本，原�
     { expected_row_version: '1' },
     { expected_row_version: null },
     { reason_code: 'OTHER' },
+    { reason_code: 'UNMAPPED_STATUS' },
     { reason_code: null },
     { app_id: id },
     { step_up_token: 'unexpected' },
   ])
     check(validate, { ...request, ...patch }, false);
-  for (const reason_code of ['RISK', 'CS', 'UNMAPPED_STATUS'])
-    check(validate, { ...request, reason_code }, true);
+  for (const reason_code of ['RISK', 'CS']) check(validate, { ...request, reason_code }, true);
   if (action === 'hold') check(validate, { note: request.note, expected_row_version: 0 }, true);
   expect(list(op(doc, path)['x-error-codes'])).toEqual(expect.arrayContaining([20001, 20902]));
   errorWith(doc, path, 20902, { resource: 'order' });

@@ -107,7 +107,7 @@ it('[AC-CT-24n#11] 上传限制 xlsx / 万行，过大 HTTP 413 + 20001，重复
   expect(errorExamples(doc, importPath, 'post', '413')).toContainEqual(
     expect.objectContaining({
       code: 20001,
-      data: expect.objectContaining({ fields: ['file'] }),
+      data: expect.objectContaining({ fields: ['body'] }),
     }),
   );
   const created = data(doc, importPath);
