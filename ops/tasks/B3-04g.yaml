@@ -2,21 +2,20 @@ id: B3-04g
 repo: rebate-platform
 title: 确定性路径的口令按出现顺序经 B3-04f 的 LinkQuoteRunner（TokenParser）报价，失败按单个处置；生产装配注入 parsing 的 parseToken
 type: impl
+# 标题按 ledger-overwrite 守卫保留原文；其中「生产装配注入 parsing 的 parseToken」已移出本任务（并入 B3-03j，编排裁定 D10-134），以下注释与 paths 为准。
 # 2026-10-21 入账（agent2-acct4）。deterministic/index.ts 遇口令直接出 30132（tokenErrorCode），不走报价；B3-04f 合并后口令可经同一 runner 报价。
 # 本任务：确定性路径把口令候选交 runner，结果决定成败（含 tool.status），失败仍出 error.30132 等单个提示。
-# 生产装配（agent.module.ts / stream/mount 注入 B3-04h 的 parseToken 作 TokenParser）依赖 B3-03f 把 AgentModule 挂到 stream（#768）；
-# 装配文件不在 risk-map 白名单，按 RV2 处理（两家评审）。冻结用例 [AC-B3-05e#13] 由 B3-04i（test-change）先放宽。
-# 分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 评审（approvals #34、#27）。派发前按 B3-03f 合并后的装配重新核对 paths。
+# 2026-10-22（agent2-acct4）收窄：B3-03f 合并后 stream 装配仍是最小可挂载（空工具、无确定性路径、no_model），生产注入 parseToken 没有落点，
+# 并入 stream 装配换真实实现的任务（notices 2026-10-22 11:1x 预占 B3-03j，待编排裁定）；本任务只改 deterministic/**，RV1，deps 去 B3-03f。
+# 冻结用例 [AC-B3-05e#13] 由 B3-04i（test-change）放宽，与本任务同批落地。
+# 分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 评审（approvals #34、#27）。
 refs: [BR-AI-01, BR-AI-04]
 refs_hash:
   BR-AI-01: b624c86b4643
   BR-AI-04: a07587a282ba
-deps: [B3-04f, B3-04h, B3-04i, B3-05e, B3-03f]
+deps: [B3-04f, B3-04h, B3-04i, B3-05e]
 paths:
   - 'apps/api/src/modules/agent/orchestrator/deterministic/**'
-  - 'apps/api/src/modules/agent/agent.module.ts'
-  - 'apps/api/src/modules/agent/stream/mount/**'
-  - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/agent/orchestrator-deterministic-tpwd/**'
 impl: claude
