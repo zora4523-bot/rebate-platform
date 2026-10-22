@@ -1,0 +1,109 @@
+{
+  "red_tests": [
+    "test/spec/db/deletion-cleanup/access.int.test.ts > [AC-B1-15o#11] login_logs permits exactly the original update columns plus cleanup columns; other roles gain no writes",
+    "test/spec/db/deletion-cleanup/access.int.test.ts > [AC-B1-15o#12] agent_sessions permits exactly the original update columns plus cleanup columns; other roles gain no writes",
+    "test/spec/db/deletion-cleanup/access.int.test.ts > [AC-B1-15o#13] deletion_requests permits exactly the original update columns plus cleanup columns; other roles gain no writes",
+    "test/spec/db/deletion-cleanup/agent-session-detachment.int.test.ts > [AC-B1-15o#14] couli_app detaches a session and writes its valid user hash in one UPDATE",
+    "test/spec/db/deletion-cleanup/agent-session-detachment.int.test.ts > [AC-B1-15o#15] incomplete detachment, invalid hashes, reassignment, hash rewriting and card_seq rollback are rejected",
+    "test/spec/db/deletion-cleanup/agent-sessions.int.test.ts > [AC-B1-15o#4] user_hash is nullable text without a default or index; the original user column and FK remain",
+    "test/spec/db/deletion-cleanup/agent-sessions.int.test.ts > [AC-B1-15o#5] existing insert shape defaults hash to null; app writes supplied lowercase hashes without changing ownership",
+    "test/spec/db/deletion-cleanup/agent-sessions.int.test.ts > [AC-B1-15o#6] hash CHECK rejects raw identifiers, wrong length, case and non-hex characters on insert and update",
+    "test/spec/db/deletion-cleanup/deletion-requests.int.test.ts > [AC-B1-15o#7] cleanup columns have specified types and defaults; old insert shape remains valid",
+    "test/spec/db/deletion-cleanup/deletion-requests.int.test.ts > [AC-B1-15o#8] app stores all attempt boundaries and result values without implicitly finishing cleanup",
+    "test/spec/db/deletion-cleanup/deletion-requests.int.test.ts > [AC-B1-15o#9] CHECK and NOT NULL reject invalid attempt counts and result values on insert and update",
+    "test/spec/db/deletion-cleanup/deletion-requests.int.test.ts > [AC-B1-15o#10] cleanup timestamp round-trips independently of processed_at; failed Apple revocation can coexist with done",
+    "test/spec/db/deletion-cleanup/login-logs.int.test.ts > [AC-B1-15o#1] login user_id is nullable and retains the tenant-qualified NO ACTION foreign key",
+    "test/spec/db/deletion-cleanup/login-logs.int.test.ts > [AC-B1-15o#2] app can detach a log repeatedly while retaining every other field and other users logs",
+    "test/spec/db/deletion-cleanup/login-logs.int.test.ts > [AC-B1-15o#3] null can be inserted but non-null users still require a matching tenant on insert and update"
+  ],
+  "risk_note": "RV2 (db). D10-137 / BR-ID-28, BR-AI-22, BR-ID-27: migration 0070 makes login_logs.user_id nullable (foreign key kept; squawk ban-drop-not-null ignored with a reason per db/AGENTS.md: not a funds or attribution table), adds agent_sessions.user_hash (64 lower-case hex, named CHECK, no index) and, per D10-153, replaces app.reject_agent_session_rewrite so user_id may change only from non-NULL to NULL in the same statement that writes a valid user_hash (a detached or guest session can neither regain a user nor change its hash; every other 0021 condition kept), couli_app UPDATE (user_id, user_hash) and deletion_requests.cleaned_at / apple_revoke_attempts (smallint default 0, CHECK 0-3) / apple_revoke_result (CHECK revoked | failed | not_applicable); couli_app gets column UPDATE on exactly these columns, nothing else widened. The frozen [AC-B1-15a#1] column list gains the three deletion_requests columns and the frozen [AC-B3-09a#51] agent_sessions updatable columns gain user_id in this PR (independent Claude test-change author, fresh independent Claude review pass; couli-runs/B1-15o/review-claude-testchange.md). Generated schema.sql / db.gen.ts rebuilt on the test machine. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 pass; round 2 after the D10-153 migration change: pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 4,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex in 4 attempts plus one D10-153 continuation (red/2 for the first 13; the D10-153 cases added after the implementation), reviewed through claude-run.sh: r1 fail (identity column 428C9), r2 pass, r3 (D10-153 additions) fail S1 (re-attaching a detached or guest session not covered), r4 pass with 1 S2; red_exempt (108) confirmed by a fresh independent Claude review (couli-runs/B1-15o/review-red-exempt.md)",
+    "red_exempt_confirmed": true
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "a2a78e28e7ee492cfb2a21921d0045e431427d6a",
+    "specs": "8bdd14157b45b1ae9ef002ce4f11cb45e325b0c1"
+  },
+  "task": "B1-15o",
+  "spec_commit": "4c650593036c0d675719dc806c01b38dbd9b998c",
+  "spec_ref": "39ff3de4f9ada9377d64cab45fb07b40216d51f9",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "4c650593036c0d675719dc806c01b38dbd9b998c",
+      "tree": "ca8f333d0efaf5d46f61dfb19ecf4100a62670cd",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T17:09:53Z",
+      "finished_at": "2026-10-22T17:10:04Z",
+      "red_tests": [
+        "test/spec/db/deletion-cleanup/access.int.test.ts > [AC-B1-15o#11] login_logs permits exactly the original update columns plus cleanup columns; other roles gain no writes",
+        "test/spec/db/deletion-cleanup/access.int.test.ts > [AC-B1-15o#12] agent_sessions permits exactly the original update columns plus cleanup columns; other roles gain no writes",
+        "test/spec/db/deletion-cleanup/access.int.test.ts > [AC-B1-15o#13] deletion_requests permits exactly the original update columns plus cleanup columns; other roles gain no writes",
+        "test/spec/db/deletion-cleanup/agent-session-detachment.int.test.ts > [AC-B1-15o#14] couli_app detaches a session and writes its valid user hash in one UPDATE",
+        "test/spec/db/deletion-cleanup/agent-session-detachment.int.test.ts > [AC-B1-15o#15] incomplete detachment, invalid hashes, reassignment, hash rewriting and card_seq rollback are rejected",
+        "test/spec/db/deletion-cleanup/agent-sessions.int.test.ts > [AC-B1-15o#4] user_hash is nullable text without a default or index; the original user column and FK remain",
+        "test/spec/db/deletion-cleanup/agent-sessions.int.test.ts > [AC-B1-15o#5] existing insert shape defaults hash to null; app writes supplied lowercase hashes without changing ownership",
+        "test/spec/db/deletion-cleanup/agent-sessions.int.test.ts > [AC-B1-15o#6] hash CHECK rejects raw identifiers, wrong length, case and non-hex characters on insert and update",
+        "test/spec/db/deletion-cleanup/deletion-requests.int.test.ts > [AC-B1-15o#7] cleanup columns have specified types and defaults; old insert shape remains valid",
+        "test/spec/db/deletion-cleanup/deletion-requests.int.test.ts > [AC-B1-15o#8] app stores all attempt boundaries and result values without implicitly finishing cleanup",
+        "test/spec/db/deletion-cleanup/deletion-requests.int.test.ts > [AC-B1-15o#9] CHECK and NOT NULL reject invalid attempt counts and result values on insert and update",
+        "test/spec/db/deletion-cleanup/deletion-requests.int.test.ts > [AC-B1-15o#10] cleanup timestamp round-trips independently of processed_at; failed Apple revocation can coexist with done",
+        "test/spec/db/deletion-cleanup/login-logs.int.test.ts > [AC-B1-15o#1] login user_id is nullable and retains the tenant-qualified NO ACTION foreign key",
+        "test/spec/db/deletion-cleanup/login-logs.int.test.ts > [AC-B1-15o#2] app can detach a log repeatedly while retaining every other field and other users logs",
+        "test/spec/db/deletion-cleanup/login-logs.int.test.ts > [AC-B1-15o#3] null can be inserted but non-null users still require a matching tenant on insert and update"
+      ],
+      "expected": [
+        "test/spec/db/deletion-cleanup/access.int.test.ts",
+        "test/spec/db/deletion-cleanup/agent-session-detachment.int.test.ts",
+        "test/spec/db/deletion-cleanup/agent-sessions.int.test.ts",
+        "test/spec/db/deletion-cleanup/deletion-requests.int.test.ts",
+        "test/spec/db/deletion-cleanup/login-logs.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "9f53a11f693ce55944841610f722e57e371899f04db263220c9c30ad4e8cc626"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "5039e54b3c848c72166784ef345d7c081f0beb31",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ]
+}
