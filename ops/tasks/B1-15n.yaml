@@ -1,0 +1,18 @@
+id: B1-15n
+repo: rebate-platform
+title: growth 导出 detachChildrenOfDeleted(trx, {appId, userId, at})：注销用户的直属下级 parent_id 置空并逐个写 relation_change_logs（source parent_deleted、operator system、to_parent_id null，created_at = at），可重入；B1-15g 清理事务调用
+type: impl
+# 草稿 2026-10-22（身份与风控线 identity-lane）。编排裁定 D10-137（B1-15g 分派）。依据 BR-ID-28（直属下级上级置空）、BR-INV-11（关系只由日志回放；闭包表内测不建）、D10-118（写入时 created_at = at）。锁顺序与 growth 现有写入一致（先 users）。RV2（growth 归属），money 评审。
+refs: []
+refs_hash: {}
+deps: [B1-11t]
+paths:
+  - 'apps/api/src/modules/growth/**'
+test_paths:
+  - 'test/spec/growth/detach-children/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/growth/detach-children/**'
+status: todo

@@ -1,0 +1,20 @@
+id: B1-15g
+repo: rebate-platform
+title: 注销 processing 清理与置 done：identity 编排器挂 B1-15f 的 60 秒定时器，每单三步——清理事务（吊销会话与设备、实名 / 收款账号 / 登录日志 / 昵称头像自有清理，经端口调 linking / growth / notification / agent / catalog，未合并端口装「未上线」实现留 TODO）、Apple 撤销（事务外、按轮重试、第 3 次失败告警不阻塞，端口假实现）、完成事务（删 user_oauth、手机号与设备标识进 deleted_identities 留 180 天、users 墓碑 status=deleted、transition COMPLETE 到 done）；余额 > 0 且调账单未批准时不置 done 并告警（D10-137 ①）
+type: impl
+# 草稿 2026-10-22（身份与风控线 identity-lane）。编排裁定 D10-137：分派与待定项默认值（① 余额 > 0 不放行 done；② 有过成功提现的保留实名密文并标 tax_retained，否则清空；③ 吊销设备只断本账号；④ payout_account_changes 账号哈希保留 180 天后清；⑤ 停用返利的绑定保留原因；⑥ Agent 用户哈希独立 HMAC 密钥从环境变量读）。依据 BR-ID-27/28、BR-ID-20、BR-ID-04（Apple 撤销）、BR-INV-11、BR-FUND-24 ⑧。方案 couli-runs/B1-15g/plan.md。规则测试独立作者（D10-137：B1-15g-AC）。RV2，money 评审。
+refs: []
+refs_hash: {}
+deps: [B1-15f, B1-15o, B1-15n]
+paths:
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/identity/deletion-processing/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/deletion-processing/**'
+status: todo
