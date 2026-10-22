@@ -2794,10 +2794,13 @@ CREATE TABLE app.notify_logs (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    suppress_reason text,
     CONSTRAINT notify_logs_channel_check CHECK ((channel = ANY (ARRAY['inbox'::text, 'push'::text, 'sms'::text]))),
     CONSTRAINT notify_logs_dedupe_key_check CHECK ((dedupe_key <> ''::text)),
     CONSTRAINT notify_logs_sent_at_check CHECK ((((status <> 'success'::text) OR (sent_at IS NOT NULL)) AND ((status <> 'queued'::text) OR (sent_at IS NULL)))),
-    CONSTRAINT notify_logs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'success'::text, 'failed'::text])))
+    CONSTRAINT notify_logs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'success'::text, 'failed'::text, 'suppressed'::text]))),
+    CONSTRAINT notify_logs_suppress_reason_check CHECK (((suppress_reason IS NULL) OR (suppress_reason = 'push_disabled'::text))),
+    CONSTRAINT notify_logs_suppressed_check CHECK ((((status = 'suppressed'::text) = (suppress_reason IS NOT NULL)) AND ((status <> 'suppressed'::text) OR (sent_at IS NULL))))
 );
 
 
