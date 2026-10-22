@@ -37,6 +37,9 @@ export type { ExportStoreConfig } from './export-store.ts';
 // Pinduoduo live adapter credentials (B1-04t): staging reads the secret file once at startup.
 export { readPddConfig } from './pdd.ts';
 export type { PddClientConfig } from './pdd.ts';
+// Agent content safety review (B3-03m): Aliyun AccessKey pair and endpoint, staging / prod only.
+export { AGENT_REVIEW_ENDPOINT_ENV, readAgentReviewConfig } from './agent-review.ts';
+export type { AgentReviewConfig } from './agent-review.ts';
 // Pinduoduo query identity custom_parameters (B1-04x): optional server setting, not a credential.
 export {
   PDD_QUERY_CUSTOM_PARAMETERS_ENV,

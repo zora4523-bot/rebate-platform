@@ -227,7 +227,6 @@ import {
   isContractSignedRoute,
   isHttpEntry,
 } from './modules/platform/index.ts';
-import { readAgentReviewCredentials } from './modules/platform/config/credential-env.ts';
 import {
   RiskAdminModule,
   RiskModule,
@@ -1682,28 +1681,19 @@ const AGENT_SEARCH_PAGE_SIZE = 20;
 @Module({})
 class AgentStreamPortsModule {}
 
-/** The Aliyun content safety endpoint of the Agent review (a server setting, not a credential). */
-const AGENT_REVIEW_ENDPOINT_ENV = 'AGENT_REVIEW_ALIYUN_ENDPOINT';
-
 /**
- * B3-03m (BR-AI-18; owner D10-135 ②): the stream entry's content safety review configuration.
- * Only staging / prod read the AccessKey pair and the endpoint; local / test hand over the
- * environment alone, so their review stays fail-closed with no network request (loadConfig already
- * refuses to start them when either credential name is set). A missing half or endpoint is
- * fail-closed too (createStreamReview). Values are never logged.
+ * B3-03m (BR-AI-18; owner D10-135 ②): the stream entry's content safety review configuration,
+ * read by loadConfig (platform/config/agent-review.ts). Only staging / prod carry the AccessKey
+ * pair and the endpoint; local / test, or no configuration, hand over the environment alone, so
+ * the review stays fail-closed with no network request. Values are never logged.
  * TODO(规划/11 §6): 真实调用验证 — blocked on 负责人在 staging 放入阿里云内容安全 Key
- * TODO(规划/11 §2.3): 审核凭据与 endpoint 并入 loadConfig（AppConfig 字段 + 配置测试） — blocked on platform/config/config.ts 不在 B3-03m 可改路径，暂由组合根读进程环境
  */
-function agentStreamSafety(
-  appEnv: PlatformOptions['config']['appEnv'],
-  env: Readonly<Record<string, string | undefined>>,
-): StreamReviewOptions {
-  if (appEnv !== 'staging' && appEnv !== 'prod') return { appEnv };
-  return {
-    appEnv,
-    credentials: readAgentReviewCredentials(appEnv, env),
-    endpoint: env[AGENT_REVIEW_ENDPOINT_ENV],
-  };
+function agentStreamSafety(config: AppConfig): StreamReviewOptions {
+  const review = config.agentReview ?? null;
+  if (review === null || (config.appEnv !== 'staging' && config.appEnv !== 'prod')) {
+    return { appEnv: config.appEnv };
+  }
+  return { appEnv: config.appEnv, credentials: review.credentials, endpoint: review.endpoint };
 }
 
 function agentStreamPorts(union: DynamicModule): DynamicModule {
@@ -2261,7 +2251,7 @@ export class AppModule {
                 consentReader: createAiConsentReader,
                 callerReader: createAgentCallerReader,
                 assembly: createProductionStreamAssembly,
-                safety: agentStreamSafety(options.config.appEnv, process.env),
+                safety: agentStreamSafety(options.config),
               }),
             ]
           : []),

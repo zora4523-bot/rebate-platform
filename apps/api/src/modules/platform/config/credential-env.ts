@@ -66,7 +66,7 @@ export function findCredentialLikeEnvNames(
 }
 
 /**
- * The Agent review's AccessKey pair, for the composition root only (B3-03m). local / test never
+ * The Agent review's AccessKey pair, read by ./agent-review.ts for loadConfig (B3-03m). local / test never
  * read the values (their review stays fail-closed, and loadConfig already refuses to start when
  * either name is set there). staging / prod: both halves set and non-blank, else undefined. The
  * values are returned as set; nothing is logged and no error carries them.

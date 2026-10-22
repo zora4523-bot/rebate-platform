@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { APP_ENVS, type AppEnv } from './app-env.ts';
 import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
+import { readAgentReviewConfig, type AgentReviewConfig } from './agent-review.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
 import { JWT_ENV_NAMES, readJwtKeyConfig, type JwtKeyConfig } from './jwt.ts';
 import { readKeyringConfig, type KeyringConfig } from './keyring.ts';
@@ -104,6 +105,13 @@ export interface AppConfig {
    * hand-built config without it counts as null.
    */
   readonly unionEndpointOverrideDir?: string | null;
+  /**
+   * AGENT_REVIEW_ALIYUN_ACCESS_KEY_ID / _SECRET / AGENT_REVIEW_ALIYUN_ENDPOINT (./agent-review.ts,
+   * B3-03m): staging / prod only, the stream entry's content safety review. Absent (the key is
+   * left out of loadConfig's result) or null: the review fails closed. A hand-built config without
+   * it counts as null.
+   */
+  readonly agentReview?: AgentReviewConfig | null;
 }
 
 /** Thrown by `loadConfig`; `problems` lists every finding. Messages never contain values. */
@@ -215,6 +223,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     env,
   );
   violations.push(...overrideProblems);
+  const { agentReview, problems: agentReviewProblems } = readAgentReviewConfig(values.APP_ENV, env);
+  violations.push(...agentReviewProblems);
   if (violations.length > 0) throw new ConfigError(violations);
 
   return {
@@ -236,5 +246,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     pdd,
     pddQueryCustomParameters,
     unionEndpointOverrideDir,
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(agentReview === null ? {} : { agentReview }),
   };
 }
