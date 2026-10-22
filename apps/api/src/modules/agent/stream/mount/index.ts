@@ -37,7 +37,9 @@
 //   request 5 s later and ends a live run within 10 s); other keys keep content's reader.
 //   redactor = B3-05a createAgentRedactor(); traceMask(args, table) =
 //   maskForTrace(restorePlaceholders(args, table)) (followup 22), also runtime.traceMask.
-//   body = B3-05b createAgentRunBody({tools: seams.tools ?? emptyOrchestratorTools(), inputCheck:
+//   body, labels and traceMask come from the shared createAgentBodyAssembly (./body.ts, B3-05m;
+//   the local evaluation uses the same one): body = B3-05b createAgentRunBody({tools: seams.tools
+//   ?? emptyOrchestratorTools(), inputCheck:
 //   seams.inputCheck ?? failClosedInputCheck(), degraded: B3-05c createDegradedPath over the same
 //   tools and texts, without onTrace (followup 31); no intents, no deterministic; review always
 //   answers timeout (B3-03j: with deps.assembly, its tools / texts / deterministic / intents
@@ -72,22 +74,14 @@ import {
 } from '../../../platform/index.ts';
 import { agentHttpDefaults, createAgentHttp, type AgentHttp } from '../../http/index.ts';
 import {
-  createAgentRunBody,
-  createRunLabels,
   emptyOrchestratorTools,
   failClosedInputCheck,
-  orchestratorLimitsDefaults,
   type InputCheckPort,
   type OrchestratorTools,
   type AgentRunTexts,
 } from '../../orchestrator/index.ts';
-import { createDegradedPath } from '../../orchestrator/degraded/index.ts';
 import { createRunModelClock, type ResolvedRoute } from '../../model-gateway/routing/index.ts';
-import {
-  createAgentRedactor,
-  maskForTrace,
-  restorePlaceholders,
-} from '../../preprocess/redact/index.ts';
+import { createAgentRedactor } from '../../preprocess/redact/index.ts';
 import { agentSessionDefaults, createPgAgentSessionStore } from '../../store/index.ts';
 import {
   createAgentAccessPort,
@@ -118,6 +112,7 @@ import type { AgentCallerReaderFactory } from './caller.ts';
 import type { AgentStreamAssemblyFactory, AgentStreamProvidedPorts } from './assembly.ts';
 import { agentStreamPortsToken } from './production.ts';
 import type { StreamReviewOptions } from './review.ts';
+import { createAgentBodyAssembly } from './body.ts';
 export { createAgentStreamAssembly } from './assembly.ts';
 export type {
   AgentStreamAssembly,
@@ -314,16 +309,10 @@ export function createAgentStreamRuntime(
     dropped: [],
   });
   const prompt = { current: async () => null };
-  const traceMask = (args: unknown, table: Readonly<Record<string, string>>): unknown =>
-    maskForTrace(restorePlaceholders(args, table));
-  const body = createAgentRunBody({
+  const { body, traceMask, labels } = createAgentBodyAssembly({
     tools,
     inputCheck: seams?.inputCheck ?? business?.safety?.inputCheck ?? failClosedInputCheck(),
-    degraded: createDegradedPath({
-      tools,
-      texts: runTexts,
-      errorMsg: async (_appId, code) => texts.errorMsg(code),
-    }),
+    errorMsg: async (_appId, code) => texts.errorMsg(code),
     ...(business === undefined
       ? {}
       : { deterministic: business.deterministic, intents: business.intents }),
@@ -337,8 +326,7 @@ export function createAgentStreamRuntime(
     review: business?.safety?.review ?? { review: async () => 'timeout' },
     texts: runTexts,
     prompt,
-    limits: orchestratorLimitsDefaults(),
-    traceMask,
+    route,
   });
 
   let stopping = false;
@@ -361,14 +349,7 @@ export function createAgentStreamRuntime(
     limits,
     body,
     redactor: createAgentRedactor(),
-    labels: createRunLabels({
-      route,
-      prompt,
-      // The fixed no_model route still needs a nonempty meta.model_label. An empty label
-      // fails frame validation before meta is written or the body/settlement can run.
-      modelLabel: async () => '未调用模型',
-      aiLabel: async () => agentText('ai_label'),
-    }),
+    labels,
     settings: agentHttpDefaults(),
     texts,
     ids: () => newUuidV7(clock.now()),
