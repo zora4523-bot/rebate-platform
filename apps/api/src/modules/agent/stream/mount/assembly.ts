@@ -1,18 +1,13 @@
 // B3-03j: production composition contract. No model transport or review service is added here.
 // The implementation composes registry + keyword search + results/match, shares one result store
 // with references/clarification/refinement, and binds parsing.parseUrl AND parsing.parseToken.
-// Token candidates must reach the same quote runner (the older deterministic path skips them).
+// Token candidates reach the same quote runner as URLs (the deterministic path passes them, B3-04g).
 // Card entry creation is per call: linking receives scene=agent and the authenticated session.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import type { CatalogCardEntry, CatalogConfigReader } from '../../../catalog/index.ts';
-import {
-  parseToken,
-  parseUrl,
-  type Candidate,
-  type ParsingOptions,
-} from '../../../parsing/index.ts';
+import { parseToken, parseUrl, type ParsingOptions } from '../../../parsing/index.ts';
 import type { Clock, RootLogger, Scheduler } from '../../../platform/index.ts';
 import {
   orchestratorLimitsDefaults,
@@ -147,30 +142,16 @@ function productView(tools: OrchestratorTools): OrchestratorTools {
 }
 
 /**
- * Token candidates go through the same quote runner as URLs (parsing.parseToken inside it); the
- * deterministic path itself only quotes URL candidates, so a token is handed to it as a stand-in
- * URL candidate that the runner maps back to the original before parsing.
+ * URL and token candidates go, in order, through the same quote runner (parsing.parseUrl /
+ * parsing.parseToken inside it); since B3-04g the deterministic path hands each candidate over
+ * unchanged, so the runner is passed as is.
  */
-function tokenAwarePath(runner: LinkQuoteRunner, texts: AgentRunTexts): DeterministicPath {
-  const originals = new WeakMap<Candidate, Candidate>();
-  const path = createDeterministicPath({
-    quotes: {
-      run: (candidate, ctx) => runner.run(originals.get(candidate) ?? candidate, ctx),
-    },
+function linkPath(runner: LinkQuoteRunner, texts: AgentRunTexts): DeterministicPath {
+  return createDeterministicPath({
+    quotes: runner,
     texts,
     // TODO(规划/11 §2.3): 确定性路径的登记 trace（onTrace）进运行 trace — blocked on followups 第 31 条（生产没有 RunTraceSink）
   });
-  return {
-    run(request, ctx) {
-      const links = request.proceed.links.map((link) => {
-        if (link.kind === 'url') return link;
-        const standIn: Candidate = { ...link, kind: 'url' };
-        originals.set(standIn, link);
-        return standIn;
-      });
-      return path.run({ ...request, proceed: { ...request.proceed, links } }, ctx);
-    },
-  };
 }
 
 export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentStreamAssembly {
@@ -255,7 +236,7 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
   // TODO(规划/11 §2.3): 出卡回执写结果集（recordDelivered） — blocked on followups 第 44 条（core 投递回执接线）
   return {
     tools: productView(results),
-    deterministic: tokenAwarePath(createLinkQuoteRunner(runnerDeps), texts),
+    deterministic: linkPath(createLinkQuoteRunner(runnerDeps), texts),
     intents,
     results: store,
     texts,

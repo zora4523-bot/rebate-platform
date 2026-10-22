@@ -18,7 +18,8 @@ import {
   type AgentStreamAssembly,
   type AgentStreamAssemblyContext,
 } from './assembly.ts';
-import { agentDefaultTexts, agentText } from './texts.ts';
+import { agentDefaultTexts, agentText, agentTextIfPresent, platformDisplayName } from './texts.ts';
+import { createToolStatusDisplay, type ToolStatusTextsDeps } from './tool-status.ts';
 
 const PORTS = Symbol('AGENT_STREAM_PORTS');
 
@@ -32,10 +33,13 @@ const PAGE_GUIDE_ROUTES = 'agent.page_guide.routes';
 /**
  * Copy from contracts/texts.default.json. An error key without its own text takes the error
  * message (errorMsg); any other missing key shows the key itself, as the search card's
- * fallback_text does.
- * TODO(规划/11 §2.3): Agent 草稿键与工具状态文案（agent.suggest.clarify.*、agent.notice.platform_unrecognized、agent.guest_login_to_view.*、agent.tool.<工具>.<阶段>）进字典 — blocked on content 文案线 B3-13（D10-135）
+ * fallback_text does. Tool status texts never show a key (tool-status.ts, D10-151).
+ * TODO(规划/11 §2.3): Agent 草稿键与多平台工具状态文案（agent.suggest.clarify.*、agent.notice.platform_unrecognized、agent.guest_login_to_view.*、agent.tool_status.search_products.<阶段>.multi）进字典 — blocked on content 文案线 B3-13（D10-135）
  */
-function productionTexts(): AgentRunTexts {
+function productionTexts(
+  searchPlatforms: ToolStatusTextsDeps['searchPlatforms'],
+  logger: ToolStatusTextsDeps['logger'],
+): AgentRunTexts {
   const errors = agentDefaultTexts();
   const lookup = (key: string): string => {
     try {
@@ -47,7 +51,12 @@ function productionTexts(): AgentRunTexts {
   };
   return {
     text: async (_appId, key) => lookup(key),
-    toolDisplay: async (_appId, tool, phase) => lookup(`agent.tool.${tool}.${phase}`),
+    toolDisplay: createToolStatusDisplay({
+      text: agentTextIfPresent,
+      searchPlatforms,
+      platformName: platformDisplayName,
+      logger,
+    }),
   };
 }
 
@@ -58,13 +67,27 @@ export function createProductionStreamAssembly(
   if (ports === undefined) throw new Error('Agent stream business ports are not provided');
   const config = createContentReader({ db: context.db.withSchema('app'), clock: context.clock });
   const keywords = createKeywordMatcher(inputKeywordLists());
+  // BR-PROD-10, the same switches search_products queries with: explicit true only; missing or
+  // unreadable is off.
+  const searchPlatforms = async (appId: string): Promise<readonly string[]> => {
+    const flags = await Promise.all(
+      ports.platforms.map(async (platform) => {
+        try {
+          return (await config.configValue(appId, `search.enabled.${platform}`))?.value === true;
+        } catch {
+          return false;
+        }
+      }),
+    );
+    return ports.platforms.filter((_, index) => flags[index]);
+  };
   return createAgentStreamAssembly({
     db: context.db,
     clock: context.clock,
     logger: context.logger,
     config,
     scheduler: context.scheduler ?? systemScheduler(),
-    texts: productionTexts(),
+    texts: productionTexts(searchPlatforms, context.logger),
     routes: {
       // BR-AI-01 页面引导: only the configured whitelist (intersected with the contract's routes by
       // the intent port); unreadable or malformed configuration is no route at all.
