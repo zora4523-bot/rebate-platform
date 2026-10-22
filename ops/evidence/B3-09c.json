@@ -1,0 +1,131 @@
+{
+  "task": "B3-09c",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "spec_commit": "1f95b25db946f914bcff021f52ee13dbf4bca2ea",
+  "red_tests": [
+    "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#5][BR-AI-05] 七方法端口含链读写，未追加时不回落到已投递集",
+    "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#5][BR-AI-05] 六步链追加均保存历史，当前取最后追加值且重建实例可读",
+    "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#5][BR-AI-05] 当前链按 app 与会话隔离，异域追加互不覆盖",
+    "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#6][BR-AI-05] 拒绝非法链 {\"chainId\":\"synthetic-invalid\",\"status\":\"has_products\",\"conditions\":null}，不追加行且当前链不变",
+    "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#6][BR-AI-05] 拒绝非法链 {\"chainId\":\"synthetic-invalid\",\"status\":\"has_products\",\"conditions\":{\"q\":\"合成牛奶\",\"chain_id\":\"synthetic-mismatch\"}}，不追加行且当前链不变",
+    "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#6][BR-AI-05] 拒绝非法链 {\"chainId\":\"synthetic-invalid\",\"status\":\"searching\",\"conditions\":{\"q\":\"合成牛奶\",\"chain_id\":\"synthetic-mismatch\"}}，不追加行且当前链不变",
+    "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#6][BR-AI-05] 拒绝非法链 {\"chainId\":\"synthetic-invalid\",\"status\":\"awaiting_price\",\"conditions\":{\"q\":\"合成牛奶\",\"chain_id\":\"synthetic-mismatch\"}}，不追加行且当前链不变",
+    "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#6][BR-AI-05] 两实例并发追加全部成功，seq 连续且最大 seq 是当前链",
+    "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#7][BR-AI-05] 同一操作序列逐步比较 PG 与内存版全部读结果",
+    "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#1][BR-AI-05] save 原样存条件，重复不增行，未投递结果不可见",
+    "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#1][BR-AI-05] save 拒绝不存在、他会话和他 app 的 run，失败不落行",
+    "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#2][BR-AI-05] 投递归属来自结果集，按投递序持久化原卡且重复并发不增行",
+    "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#2][BR-AI-05] 未知或非 UUID 结果集投递被忽略",
+    "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#3][BR-AI-05] 最近已投递集跳过空集，早轮卡可查，异域同卡号独立且不遮蔽",
+    "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#3][BR-AI-05] 最近按结果集 created_at 降序，同刻按 id 降序，不按投递时间",
+    "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#4][BR-AI-08] takeOnce 并发八次仅一胜者，重建实例仍去重，各维度独立",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23] 卡片与工具调用并发及重试不重复，所有输入列原样留痕",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23] 卡片 link_id 只从 data 顶层字符串取，其他形状为 null",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23] 错误会话、app 或不存在的 run 被拒绝且不留痕",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"c0\" 被拒绝且不写入",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"c01\" 被拒绝且不写入",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"C1\" 被拒绝且不写入",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"1\" 被拒绝且不写入",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"c-1\" 被拒绝且不写入",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"c1.5\" 被拒绝且不写入",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"\" 被拒绝且不写入",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"c1\\n\" 被拒绝且不写入",
+    "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23] 留痕幂等键不串会话、app 或不同 run 的工具序号"
+  ],
+  "risk_note": "RV1 by its paths (apps/api/src/modules/agent/store/results/**); rule tests under test/** make the PR RV2. Codex wrote test/spec/agent/store-results/** (28 integration tests, container red; one orchestrator mechanical kit fix, no assertion changed); Claude spec-test review round 1 pass. Opus implemented once (session interrupted, continued by a takeover subagent); container full verify green; Codex general review round 1 pass. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "1f95b25db946f914bcff021f52ee13dbf4bca2ea",
+      "tree": "3076798031856dd040ac0195d7b48e22a748546d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T10:39:03Z",
+      "finished_at": "2026-10-22T10:39:38Z",
+      "red_tests": [
+        "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#5][BR-AI-05] 七方法端口含链读写，未追加时不回落到已投递集",
+        "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#5][BR-AI-05] 六步链追加均保存历史，当前取最后追加值且重建实例可读",
+        "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#5][BR-AI-05] 当前链按 app 与会话隔离，异域追加互不覆盖",
+        "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#6][BR-AI-05] 拒绝非法链 {\"chainId\":\"synthetic-invalid\",\"status\":\"has_products\",\"conditions\":null}，不追加行且当前链不变",
+        "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#6][BR-AI-05] 拒绝非法链 {\"chainId\":\"synthetic-invalid\",\"status\":\"has_products\",\"conditions\":{\"q\":\"合成牛奶\",\"chain_id\":\"synthetic-mismatch\"}}，不追加行且当前链不变",
+        "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#6][BR-AI-05] 拒绝非法链 {\"chainId\":\"synthetic-invalid\",\"status\":\"searching\",\"conditions\":{\"q\":\"合成牛奶\",\"chain_id\":\"synthetic-mismatch\"}}，不追加行且当前链不变",
+        "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#6][BR-AI-05] 拒绝非法链 {\"chainId\":\"synthetic-invalid\",\"status\":\"awaiting_price\",\"conditions\":{\"q\":\"合成牛奶\",\"chain_id\":\"synthetic-mismatch\"}}，不追加行且当前链不变",
+        "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#6][BR-AI-05] 两实例并发追加全部成功，seq 连续且最大 seq 是当前链",
+        "test/spec/agent/store-results/chains.int.test.ts > [AC-B3-09c#7][BR-AI-05] 同一操作序列逐步比较 PG 与内存版全部读结果",
+        "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#1][BR-AI-05] save 原样存条件，重复不增行，未投递结果不可见",
+        "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#1][BR-AI-05] save 拒绝不存在、他会话和他 app 的 run，失败不落行",
+        "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#2][BR-AI-05] 投递归属来自结果集，按投递序持久化原卡且重复并发不增行",
+        "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#2][BR-AI-05] 未知或非 UUID 结果集投递被忽略",
+        "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#3][BR-AI-05] 最近已投递集跳过空集，早轮卡可查，异域同卡号独立且不遮蔽",
+        "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#3][BR-AI-05] 最近按结果集 created_at 降序，同刻按 id 降序，不按投递时间",
+        "test/spec/agent/store-results/results.int.test.ts > [AC-B3-09c#4][BR-AI-08] takeOnce 并发八次仅一胜者，重建实例仍去重，各维度独立",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23] 卡片与工具调用并发及重试不重复，所有输入列原样留痕",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23] 卡片 link_id 只从 data 顶层字符串取，其他形状为 null",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23] 错误会话、app 或不存在的 run 被拒绝且不留痕",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"c0\" 被拒绝且不写入",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"c01\" 被拒绝且不写入",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"C1\" 被拒绝且不写入",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"1\" 被拒绝且不写入",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"c-1\" 被拒绝且不写入",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"c1.5\" 被拒绝且不写入",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"\" 被拒绝且不写入",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23][BR-AI-05] 非法 card_id \"c1\\n\" 被拒绝且不写入",
+        "test/spec/agent/store-results/traces.int.test.ts > [AC-B3-09c#8][BR-AI-23] 留痕幂等键不串会话、app 或不同 run 的工具序号"
+      ],
+      "expected": [
+        "test/spec/agent/store-results/chains.int.test.ts",
+        "test/spec/agent/store-results/results.int.test.ts",
+        "test/spec/agent/store-results/traces.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "10ab1c1c2b7faef528bad6fd342a99817ae7898bdf27ab4fc6bd3cd92a4dcc2d"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "ed25ecd7e2935a5240ef8b3ee800e0d41bce5ac2",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass (couli-runs/B3-09c/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass, one S2 folded into the implementation notes (couli-runs/B3-09c/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "1b060d1459640ded5561a4b43ba579ee02940c44",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
