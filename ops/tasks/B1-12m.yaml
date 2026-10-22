@@ -26,4 +26,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/notification/settings/**'
-status: todo
+status: done
+pr: 1126
