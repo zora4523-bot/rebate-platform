@@ -1,4 +1,19 @@
 // Public surface of the orders module (规划/02 §4.1); other modules import only from this file.
+export { recordOrderRights, adminHoldOrder, adminUnholdOrder } from './application/rights-ports.ts';
+export type {
+  RightsRecordResult,
+  AdminHoldResult,
+  RightsRecordInput,
+  AdminHoldInput,
+  RightsCommandPort,
+  RebateAdminCommandPort,
+  OrderRightsPorts,
+} from './application/rights-ports.ts';
+export { findOrderForRights } from './infra/rights-order-lookup.ts';
+export type {
+  RightsOrderLookupInput,
+  RightsOrderLookupResult,
+} from './infra/rights-order-lookup.ts';
 export { claimEntryPinned } from './domain/claim-entry.ts';
 export type { ClaimEntryInput } from './domain/claim-entry.ts';
 export { createInviteRewardOrderFacts } from './ports/invite-reward.ts';
