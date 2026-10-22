@@ -1,0 +1,18 @@
+id: B2-05g
+repo: rebate-platform
+title: 过渡测试改动（B2-05b 前置）：日终校验冻结测试 [AC-B2-02j#7] 的账户级差异断言只数不变量 01 的两条——新增不变量 06「frozen = Σ 非终态提现单」后，该夹具 frozen=1 且无提现单会多报一条 06 差异；断言意图不变、只收窄到 01，主干与 B2-05b 合并前后都成立
+type: test-change
+# 2026-10-23 提现线（withdraw-acct4）。起因：B2-05b 测试机完整 verify/2 唯一红 = [AC-B2-02j#7] expected length 2 got 3（第三条是新不变量 06 的账户级差异，db/invariants/ledger/06_frozen-equals-open-withdrawals.sql，Codex 写、Claude 过审 r2 pass）。
+# 做法照 F1-09q / D10-92 先例：非 task 分支、台账同 PR；只改一处——accountDifferences 先按 invariant === '01' 过滤再断言长度 2，arrayContaining 的两条 01 断言、globalDifferences 与其余断言一字不动；不改夹具、不加 skip / only / retry。
+# 改既有规则测试属第一类保护路径：按 approvals #24 由编排核对后加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/ledger/daily-check/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
