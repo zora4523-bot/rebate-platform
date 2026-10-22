@@ -18,5 +18,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/tools-quote-tpwd/**'
-status: todo
-pr: null
+status: done
+pr: 1069
