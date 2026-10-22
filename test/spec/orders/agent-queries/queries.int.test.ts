@@ -5,7 +5,6 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { AgentOrderItem } from '../../../../apps/api/src/modules/orders/index.ts';
 import { at, fixture, queries } from '../list-detail/kit.ts';
 
-// TEST_PG_ADMIN_URL is consumed by the existing global setup/createTestDatabase kit.
 // Never run this file on the host: the orchestrator runs the red check in its container.
 let database: TestDatabase | undefined;
 let db: Kysely<DB>;
