@@ -5,13 +5,12 @@ type: contract
 # 2026-10-22 入账草稿（W1 线；编排 10-22 21:3x 改派「CT-24n 由 W1 起草」）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §3；参考 fe 的 CT-24-shapes/proposal.md §三、orders-actions-draft-notes.md。
 # 依据（SPEC_REF eabcf00，原文由补充摘录）：04 §3.2 order_sync_requests / rights_imports 行、§6.6 orders/{id}/reassign、hold、unhold、order-syncs、rights-imports 段、§11.2 order.view / order.claim / order.hold / order.assign；
 #   08 BR-FUND-06 细则「后台 hold / unhold」「维权导入任务」、BR-ATTR-26 细则「渠道单导入」、BR-ATTR-31 细则「改归属的目标用户」、BR-TEXT-25 订单相关 6 行；编排裁定 D10-152 ①②③⑨⑩、D10-155、D10-157。
-# refs 清空：上列细则合计远超任务书 24KB 上限（B1-08s / t 先例），由编排者补充逐字摘录。
+# refs 清空、不设 contract_sections：上列细则与 04 §5 合计远超任务书 24KB 上限（B1-08s / t、CT-04e 先例），04 §6.6 订单段、§3.2 两行、§5 相关行与 §11.2 订单行由编排者补充逐字摘录。
 # 只转写 04 / 08 已定形状，不改订单归属与金额规则。待编排裁定 K-4（授权暂停新码，默认 301 段下一个未用号、后台专用、HTTP 422、data.platform）、K-6（status_filter 只收已登记值）、K-9（目标拒绝 20001 + data.reason ∈ target_banned / target_deleting / target_deleted）。
 # 技术取舍：后台写接口不带 Idempotency-Key；channel 的双权限点与整份一次动态码写进 description、由处理器判定（不设操作级 x-step-up，落地时核对生成器）；20902 不加新 resource；路径参数沿用 CT-24m 的 {order_id}。
 # 新码与 target_* 合并后由编排开规划同步回写 08 §13.11（先例 CT-02j）。排在 fe 的 CT-24f → CT-24h 之后占契约槽。
 refs: []
 refs_hash: {}
-contract_sections: ['5']
 deps: [CT-24m]
 paths:
   - 'contracts/openapi.yaml'
