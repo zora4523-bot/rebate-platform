@@ -1,0 +1,21 @@
+id: B3-05l
+repo: rebate-platform
+title: B3-05l：AC-B3-05k#5 属性测试显式时限 120 秒（避免 15 秒默认超时偶发红）
+type: test-change
+# 2026-10-22 入账（agent-acct4）。起因：identity-lane 08:36 报 #1115 头 5d810372 的 verify-props 红在
+# test/spec/agent/orchestrator-results-chain/budget.test.ts 的 [AC-B3-05k#5]「属性：N 个 run 用满后…」：Test timed out in 15000ms，
+# 同头上一次 run 39692720403 是绿的——verify-props 两轮各 100000 次（PROP_RUNS），每次 run 走装饰器与内存 store，CI 上接近 15 秒默认时限。
+# 做法：只给该 it 加第三参数 120_000（先例 CT-06y #860、B2-04ea #1021 的显式时限），不改断言、生成器、propParams() / PROP_RUNS / 种子，不删用例，不动实现。
+# 改既有规则测试属第一类保护路径，合并要 owner-approved-<头提交前 12 位>（approvals #24，由编排核对后加），
+# 非 task 分支（chore/test-change-B3-05l）、不带证据文件；Claude 实现、Codex 只读对抗评审。
+refs: []
+refs_hash: {}
+deps: [B3-05k]
+paths:
+  - 'test/spec/agent/orchestrator-results-chain/budget.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
