@@ -594,6 +594,28 @@ export interface EventLog {
   payload: Json;
 }
 
+export interface ExportTasks {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  expires_at: Timestamp | null;
+  failure_reason: string | null;
+  file_name: string | null;
+  filters: Json;
+  filters_summary: string;
+  generated_at: Timestamp | null;
+  id: string;
+  masked: boolean;
+  object_key: string | null;
+  progress: number | null;
+  public_id: string;
+  resource: string;
+  row_count: number | null;
+  row_version: Generated<number>;
+  status: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Favorites {
   app_id: string;
   created_at: Generated<Timestamp>;
@@ -1569,6 +1591,7 @@ export interface DB {
   devices: Devices;
   dict_items: DictItems;
   event_log: EventLog;
+  export_tasks: ExportTasks;
   favorites: Favorites;
   idempotency_keys: IdempotencyKeys;
   inbox_messages: InboxMessages;

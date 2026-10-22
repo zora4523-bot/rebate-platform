@@ -2162,6 +2162,38 @@ ALTER TABLE app.event_log ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: export_tasks; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.export_tasks (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    public_id text NOT NULL,
+    resource text NOT NULL,
+    filters jsonb NOT NULL,
+    filters_summary text NOT NULL,
+    masked boolean NOT NULL,
+    created_by uuid NOT NULL,
+    status text NOT NULL,
+    progress integer,
+    failure_reason text,
+    file_name text,
+    object_key text,
+    row_count integer,
+    generated_at timestamp with time zone,
+    expires_at timestamp with time zone,
+    row_version integer DEFAULT 1 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT export_tasks_audit_masked_check CHECK (((resource <> 'audit_logs'::text) OR masked)),
+    CONSTRAINT export_tasks_progress_check CHECK (((progress IS NULL) OR ((progress >= 0) AND (progress <= 100)))),
+    CONSTRAINT export_tasks_resource_check CHECK ((resource = ANY (ARRAY['users'::text, 'audit_logs'::text]))),
+    CONSTRAINT export_tasks_row_count_check CHECK (((row_count IS NULL) OR (row_count >= 0))),
+    CONSTRAINT export_tasks_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'done'::text, 'failed'::text, 'expired'::text, 'cancelled'::text])))
+);
+
+
+--
 -- Name: favorites; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4829,6 +4861,22 @@ ALTER TABLE ONLY app.event_log_default
 
 
 --
+-- Name: export_tasks export_tasks_app_id_public_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.export_tasks
+    ADD CONSTRAINT export_tasks_app_id_public_id_key UNIQUE (app_id, public_id);
+
+
+--
+-- Name: export_tasks export_tasks_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.export_tasks
+    ADD CONSTRAINT export_tasks_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: favorites favorites_app_id_user_id_platform_product_key_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -6096,6 +6144,34 @@ CREATE INDEX event_log_event_id_idx ON ONLY app.event_log USING btree (event_id)
 --
 
 CREATE INDEX event_log_default_event_id_idx ON app.event_log_default USING btree (event_id);
+
+
+--
+-- Name: export_tasks_app_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX export_tasks_app_created_idx ON app.export_tasks USING btree (app_id, created_at);
+
+
+--
+-- Name: export_tasks_creator_active_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX export_tasks_creator_active_idx ON app.export_tasks USING btree (app_id, created_by, created_at) WHERE (status = ANY (ARRAY['pending'::text, 'running'::text]));
+
+
+--
+-- Name: export_tasks_creator_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX export_tasks_creator_created_idx ON app.export_tasks USING btree (app_id, created_by, created_at);
+
+
+--
+-- Name: export_tasks_done_expires_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX export_tasks_done_expires_idx ON app.export_tasks USING btree (app_id, expires_at) WHERE (status = 'done'::text);
 
 
 --
@@ -7398,6 +7474,14 @@ ALTER TABLE ONLY app.devices
 
 ALTER TABLE ONLY app.dict_items
     ADD CONSTRAINT dict_items_created_by_fkey FOREIGN KEY (created_by) REFERENCES app.admin_users(id);
+
+
+--
+-- Name: export_tasks export_tasks_created_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.export_tasks
+    ADD CONSTRAINT export_tasks_created_by_fkey FOREIGN KEY (app_id, created_by) REFERENCES app.admin_users(app_id, id);
 
 
 --
@@ -9717,6 +9801,84 @@ GRANT SELECT ON TABLE app.dict_items TO couli_readonly;
 GRANT SELECT,INSERT ON TABLE app.event_log TO couli_app;
 GRANT SELECT,INSERT ON TABLE app.event_log TO couli_payout;
 GRANT SELECT ON TABLE app.event_log TO couli_readonly;
+
+
+--
+-- Name: TABLE export_tasks; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.export_tasks TO couli_app;
+GRANT SELECT ON TABLE app.export_tasks TO couli_readonly;
+
+
+--
+-- Name: COLUMN export_tasks.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.export_tasks TO couli_app;
+
+
+--
+-- Name: COLUMN export_tasks.progress; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(progress) ON TABLE app.export_tasks TO couli_app;
+
+
+--
+-- Name: COLUMN export_tasks.failure_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(failure_reason) ON TABLE app.export_tasks TO couli_app;
+
+
+--
+-- Name: COLUMN export_tasks.file_name; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(file_name) ON TABLE app.export_tasks TO couli_app;
+
+
+--
+-- Name: COLUMN export_tasks.object_key; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(object_key) ON TABLE app.export_tasks TO couli_app;
+
+
+--
+-- Name: COLUMN export_tasks.row_count; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_count) ON TABLE app.export_tasks TO couli_app;
+
+
+--
+-- Name: COLUMN export_tasks.generated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(generated_at) ON TABLE app.export_tasks TO couli_app;
+
+
+--
+-- Name: COLUMN export_tasks.expires_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(expires_at) ON TABLE app.export_tasks TO couli_app;
+
+
+--
+-- Name: COLUMN export_tasks.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.export_tasks TO couli_app;
+
+
+--
+-- Name: COLUMN export_tasks.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.export_tasks TO couli_app;
 
 
 --
