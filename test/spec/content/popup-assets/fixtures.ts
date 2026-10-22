@@ -59,14 +59,24 @@ export const INVALID_LOTTIE = [
     'img/a.png',
     '/a.png',
     '../a.png',
-  ].flatMap((value) =>
-    ['p', 'u'].map((key) => ({
-      name: `外部引用 ${key}=${value}`,
-      bytes: lottie({ assets: [{ id: 'image_0', [key]: value }] }),
-      reason: 'external_ref' as const,
-    })),
-  ),
+  ].map((value) => ({
+    name: `外部引用 p=${value}`,
+    bytes: lottie({ assets: [{ id: 'image_0', p: value }] }),
+    reason: 'external_ref' as const,
+  })),
 ] as const;
+
+export const U_ONLY_LOTTIE = [
+  'https://outside.test/a.png',
+  'http://outside.test/a.png',
+  '//outside.test/a.png',
+  'img/a.png',
+  '/a.png',
+  '../a.png',
+].map((u) => ({
+  name: `无 p 的 asset 不算引用 u=${u}`,
+  bytes: lottie({ assets: [{ id: 'image_0', u }] }),
+}));
 
 export const INVALID_IMAGES = [
   { name: 'GIF 冒充 PNG', bytes: Buffer.from('GIF89a') },

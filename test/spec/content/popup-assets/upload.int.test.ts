@@ -2,7 +2,15 @@ import { expect, it, vi } from 'vitest';
 import { useHarness } from '../../admin/auth/kit.ts';
 import { BODY_LIMIT } from '../../platform/multipart/http-kit.ts';
 import { save, sections } from '../pages-admin/kit.ts';
-import { digest, INVALID_IMAGES, INVALID_LOTTIE, JPEG, lottie, PNG } from './fixtures.ts';
+import {
+  digest,
+  INVALID_IMAGES,
+  INVALID_LOTTIE,
+  JPEG,
+  lottie,
+  PNG,
+  U_ONLY_LOTTIE,
+} from './fixtures.ts';
 import { MEDIA_BASE, rejected, setup, snapshot, success, upload } from './kit.ts';
 
 const h = useHarness();
@@ -77,6 +85,7 @@ it.each(INVALID_LOTTIE)(
 
 it.each([
   { name: '300 KiB 含边界', bytes: lottie({}, 307_200) },
+  ...U_ONLY_LOTTIE,
   {
     name: '内嵌 data URI',
     bytes: lottie({ assets: [{ p: `data:image/png;base64,${PNG.toString('base64')}` }] }),
