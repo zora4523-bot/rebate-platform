@@ -1,10 +1,49 @@
+// B2-05d: the withdrawal application use case (POST /v1/withdrawals, 规划/08 BR-WDR-07 正文 ①–⑧ with
+// BR-WDR-09 W1 and BR-WDR-03). The caller owns the transaction (production: the idempotency
+// module's executeInTransaction, so the key's result commits with the withdrawal, BR-WDR-07 ⑧).
+// Order inside apply():
+//   first pass   the full BR-WDR-03 chain over fresh reads (B2-05c's validator, no locks taken);
+//   locks        ① identity's users row lock → ② ledger.lockBalances (the member's balance row) →
+//                ③ pg_advisory_xact_lock(hashtext(app_id || ':' || payee_hmac)::bigint) on the
+//                payee HMAC of the snapshot (BR-WDR-07 ③);
+//   re-check     ④ BR-WDR-03 ⑦⑧⑩⑪⑫ again over reads made under the locks (validateLockedWithdrawal);
+//   amounts      ⑤ fee_fen / tax_fen from the FeeTaxCalculator (fee_rule_id / tax_rule_version
+//                fixed with them), net_fen = amount − fee − tax (@couli/money);
+//   insert       ⑥ PENDING_REVIEW with the payee snapshot, income_type SERVICE_FEE, out_biz_no
+//                (W + 20 [A-Z0-9]; a unique-key collision regenerates at most three times, in a
+//                savepoint so the transaction stays usable), review_mode / review_deadline
+//                (D-W03: auto_payout off → manual + 24 working hours, BR-WDR-26; on → null);
+//   voucher      ⑦ WITHDRAW_FREEZE `wd:{id}:FREEZE` through ledger.post (template WITHDRAW:FREEZE,
+//                available −amount / frozen +amount); the idempotency result is the caller's ⑧.
+//   events       wallet.withdrawal_changed and withdrawal.created on the same transaction (ids,
+//                status and an integer amount only; no payee data), when a bus is wired.
+// Answers (not exceptions) for the chain's refusals, so the caller stores 3xxxx with the key;
+// infrastructure failures throw and roll everything back. Nothing of the payee (name, account,
+// cipher, HMAC) is logged.
+//
+// Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
+// relative imports with `.ts`.
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import type { Kysely, Transaction } from 'kysely';
-import type { Ledger } from '../../ledger/index.ts';
-import type { EventBus } from '../../platform/index.ts';
-import type { WithdrawBlock } from '../domain/withdraw-rules.ts';
-import type { WithdrawActor, WithdrawRulesOptions } from './withdraw-rules.ts';
+import { buildVouchers } from '@couli/domain';
+import { fenToJsonNumber, subFen } from '@couli/money';
+import { sql, type Insertable, type Kysely, type Transaction } from 'kysely';
+import type { Ledger, PostingEntry } from '../../ledger/index.ts';
+import { newUuidV7, type EventBus } from '../../platform/index.ts';
+import { maskPayeeAccount, payoutChannelName } from '../domain/mask-payee.ts';
+import {
+  civilYearOfDay,
+  reviewDeadline,
+  reviewDeadlineDays,
+  type WorkdayCalendarYear,
+} from '../domain/review-deadline.ts';
+import { validateLockedWithdrawal } from '../domain/withdraw-locked.ts';
+import { validateWithdrawal, type WithdrawBlock } from '../domain/withdraw-rules.ts';
+import {
+  readWithdrawInput,
+  type WithdrawActor,
+  type WithdrawRulesOptions,
+} from './withdraw-rules.ts';
 
 /** Identity supplies the current, encrypted payee snapshot on the caller's handle. */
 export interface WithdrawPayeeSnapshot {
@@ -38,14 +77,279 @@ export interface WithdrawApplyCommand extends WithdrawActor {
   stepUpValid: boolean;
 }
 
-export type WithdrawApplyResult = { code: 0; data: Schema<'Withdrawal'> } | WithdrawBlock;
+export interface WithdrawAccepted {
+  code: 0;
+  data: Schema<'Withdrawal'>;
+}
+
+export type WithdrawApplyResult = WithdrawAccepted | WithdrawBlock;
+
+/** Narrows the result: code 0 carries the contract's Withdrawal, anything else a refusal. */
+export function isWithdrawAccepted(result: WithdrawApplyResult): result is WithdrawAccepted {
+  return result.code === 0;
+}
 
 export interface WithdrawApplyService {
   /** Caller owns the transaction (production: idempotency.executeInTransaction). */
   apply(trx: Transaction<DB>, command: WithdrawApplyCommand): Promise<WithdrawApplyResult>;
 }
 
+/** BR-WDR-30 总开关 (default off): decides review_mode at creation (D-W03). */
+export const AUTO_PAYOUT_KEY = 'withdraw.auto_payout.enabled';
+/** The console's working-day calendar, per +08:00 civil year (as risk's appeal calendar). */
+export const CALENDAR_KEYS = {
+  holidays: (year: number) => `calendar.cn_holidays.${year}`,
+  makeupWorkdays: (year: number) => `calendar.cn_makeup_workdays.${year}`,
+} as const;
+const UNIQUE_VIOLATION = '23505';
+const OUT_BIZ_NO_KEY = 'withdrawals_out_biz_no_key';
+/** The initial candidate plus at most three regenerated ones (BR-WDR-07 out_biz_no). */
+const OUT_BIZ_NO_ATTEMPTS = 4;
+const SAVEPOINT = sql.raw('payout_withdrawal_insert');
+const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function isOutBizNoCollision(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === UNIQUE_VIOLATION &&
+    (error as { constraint?: unknown }).constraint === OUT_BIZ_NO_KEY
+  );
+}
+
+function switchOn(value: unknown): boolean {
+  return value === true || value === 'on' || value === 'true';
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 29 : 28;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+}
+
+/** An array of real `YYYY-MM-DD` dates of `year`; anything else is null (invalid). */
+function datesOf(value: unknown, year: number): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const dates: string[] = [];
+  for (const entry of value as unknown[]) {
+    if (typeof entry !== 'string') return null;
+    const match = DATE.exec(entry);
+    if (match === null || Number(match[1]) !== year) return null;
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
+    dates.push(entry);
+  }
+  return dates;
+}
+
 export function createWithdrawApply(options: WithdrawApplyOptions): WithdrawApplyService {
-  void options;
-  throw new Error('NotImplemented: createWithdrawApply');
+  const { rules, ledger } = options;
+  const { clock, logger } = rules;
+
+  /** The calendar years a deadline from `from` may reach; an unreadable year counts weekends only. */
+  async function calendars(
+    handle: Kysely<DB>,
+    appId: string,
+    from: Date,
+  ): Promise<Record<number, WorkdayCalendarYear>> {
+    const { first, last } = reviewDeadlineDays(from);
+    const years = new Set<number>([civilYearOfDay(from, first), civilYearOfDay(from, last)]);
+    const result: Record<number, WorkdayCalendarYear> = {};
+    for (const year of years) {
+      let read: WorkdayCalendarYear | null = null;
+      try {
+        const holidays = await rules.config.configValue(
+          appId,
+          CALENDAR_KEYS.holidays(year),
+          handle,
+        );
+        const makeup = await rules.config.configValue(
+          appId,
+          CALENDAR_KEYS.makeupWorkdays(year),
+          handle,
+        );
+        const holidayDates = holidays === null ? null : datesOf(holidays.value, year);
+        const makeupDates = makeup === null ? null : datesOf(makeup.value, year);
+        if (holidayDates !== null && makeupDates !== null) {
+          read = { holidays: holidayDates, makeupWorkdays: makeupDates };
+        }
+      } catch {
+        // The error may carry configuration values or driver details: never logged.
+        read = null;
+      }
+      if (read === null) {
+        logger.warn({ app_id: appId, year }, 'workday_calendar_unconfigured');
+        continue;
+      }
+      result[year] = read;
+    }
+    return result;
+  }
+
+  async function reviewFields(
+    trx: Transaction<DB>,
+    appId: string,
+    now: Date,
+  ): Promise<{ review_mode: 'manual' | null; review_deadline: Date | null }> {
+    const row = await rules.config.configValue(appId, AUTO_PAYOUT_KEY, trx);
+    if (row !== null && switchOn(row.value)) return { review_mode: null, review_deadline: null };
+    return {
+      review_mode: 'manual',
+      review_deadline: reviewDeadline(now, await calendars(trx, appId, now)),
+    };
+  }
+
+  /** INSERT in a savepoint: an out_biz_no collision regenerates, anything else propagates. */
+  async function insertWithdrawal(
+    trx: Transaction<DB>,
+    row: Omit<Insertable<DB['withdrawals']>, 'out_biz_no'>,
+  ): Promise<void> {
+    for (let attempt = 1; ; attempt += 1) {
+      const outBizNo = options.outBizNo();
+      await sql`SAVEPOINT ${SAVEPOINT}`.execute(trx);
+      try {
+        await trx
+          .withSchema('app')
+          .insertInto('withdrawals')
+          .values({ ...row, out_biz_no: outBizNo })
+          .execute();
+        await sql`RELEASE SAVEPOINT ${SAVEPOINT}`.execute(trx);
+        return;
+      } catch (error) {
+        await sql`ROLLBACK TO SAVEPOINT ${SAVEPOINT}`.execute(trx);
+        if (!isOutBizNoCollision(error) || attempt >= OUT_BIZ_NO_ATTEMPTS) throw error;
+      }
+    }
+  }
+
+  return {
+    async apply(trx, command) {
+      const actor: WithdrawActor = {
+        appId: command.appId,
+        userId: command.userId,
+        deviceId: command.deviceId,
+      };
+      const amount = command.amountFen;
+      // First pass: the whole chain, no locks (a refusal here never touches a row).
+      const first = await readWithdrawInput(trx, actor, command.stepUpValid, rules);
+      const quote = await rules.feeTax.calculate(trx, {
+        ...actor,
+        amountFen: amount,
+        now: clock.now(),
+      });
+      const fee = quote.fee_fen;
+      const tax = quote.tax_fen;
+      const net = subFen(subFen(amount, fee), tax);
+      const refused = validateWithdrawal(first, amount, net);
+      if (refused !== null) return refused;
+      // Locks in the fixed order (BR-WDR-07 ①②③), then the snapshot and the locked re-check ④.
+      await options.lockUsersForUpdate(trx, { appId: actor.appId, userIds: [actor.userId] });
+      const balances = await ledger.lockBalances(trx, {
+        appId: actor.appId,
+        userIds: [actor.userId],
+      });
+      const balance = balances.find((row) => row.user_id === actor.userId);
+      // No ledger account means no balance: the first pass already refused (available 0 < amount).
+      if (balance === undefined) return { code: 30301, data: {} };
+      const snapshot = await options.snapshot.read(trx, actor);
+      if (snapshot === null) return { code: 30305, data: {} };
+      await sql`SELECT pg_advisory_xact_lock(hashtext(${`${actor.appId}:${snapshot.payee_hmac}`})::bigint)`.execute(
+        trx,
+      );
+      const locked = await readWithdrawInput(trx, actor, command.stepUpValid, rules);
+      const again = validateLockedWithdrawal(locked, amount);
+      if (again !== null) return again;
+      // Build the row.
+      const now = clock.now();
+      const id = newUuidV7(now);
+      const review = await reviewFields(trx, actor.appId, now);
+      await insertWithdrawal(trx, {
+        id,
+        app_id: actor.appId,
+        user_id: actor.userId,
+        amount_fen: amount,
+        fee_fen: fee,
+        tax_fen: tax,
+        net_fen: net,
+        income_type: 'SERVICE_FEE',
+        fee_rule_id: quote.fee_rule_id ?? null,
+        tax_rule_version: quote.tax_rule_version ?? null,
+        payout_method: snapshot.payout_method,
+        payee_name: snapshot.payee_name,
+        payee_account_cipher: snapshot.payee_account_cipher,
+        payee_hmac: snapshot.payee_hmac,
+        bank_name: snapshot.bank_name,
+        status: 'PENDING_REVIEW',
+        review_mode: review.review_mode,
+        review_deadline: review.review_deadline,
+        payout_channel: snapshot.payout_method,
+        created_at: now,
+        updated_at: now,
+      });
+      // W1: the freeze voucher (BR-WDR-09), same transaction, under this transaction's balance lock.
+      const [voucher] = buildVouchers('WITHDRAW:FREEZE', {
+        withdrawal_id: id,
+        user_id: actor.userId,
+        withdraw_fen: amount,
+      });
+      if (voucher === undefined) throw new Error('payout: WITHDRAW:FREEZE built no voucher');
+      const entries: PostingEntry[] = voucher.entries.map((entry) => ({
+        account: { ownerType: 'user', accountId: balance.account_id },
+        sub_account: entry.sub_account === 'frozen' ? 'frozen' : 'available',
+        amount_fen: entry.amount_fen,
+        ledger_type: entry.ledger_type,
+        sub_type: entry.sub_type,
+        income_type: null,
+      }));
+      await ledger.post(trx, {
+        appId: actor.appId,
+        uniqKey: voucher.uniq_key,
+        bizType: 'withdrawal',
+        bizId: id,
+        operator: `user:${actor.userId}`,
+        memo: null,
+        orderKey: null,
+        beneficiaryUserId: null,
+        role: null,
+        voucherKind: null,
+        entries,
+      });
+      if (options.eventBus !== undefined) {
+        await options.eventBus.publish(trx, {
+          appId: actor.appId,
+          name: 'wallet.withdrawal_changed',
+          payload: { withdrawal_id: id, user_id: actor.userId, status: 'PENDING_REVIEW' },
+        });
+        await options.eventBus.publish(trx, {
+          appId: actor.appId,
+          name: 'withdrawal.created',
+          payload: {
+            withdrawal_id: id,
+            user_id: actor.userId,
+            amount_fen: fenToJsonNumber(amount),
+            review_mode: review.review_mode,
+          },
+        });
+      }
+      return {
+        code: 0,
+        data: {
+          withdrawal_id: id,
+          status: 'PENDING_REVIEW',
+          review_mode: review.review_mode,
+          amount_fen: fenToJsonNumber(amount),
+          fee_fen: fenToJsonNumber(fee),
+          tax_fen: fenToJsonNumber(tax),
+          net_fen: fenToJsonNumber(net),
+          payout_channel: snapshot.payout_method,
+          payout_channel_name: payoutChannelName(snapshot.payout_method),
+          masked_account: maskPayeeAccount(snapshot.payout_method, snapshot.account),
+          reason_code: null,
+          fail_action: null,
+          created_at: now.toISOString(),
+          channel_order_id: null,
+        },
+      };
+    },
+  };
 }

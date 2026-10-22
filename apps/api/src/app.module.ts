@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { type DynamicModule, type Provider, HttpException, Module, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
@@ -108,6 +109,9 @@ import {
   PRIVACY_CONSENT_CHECKS,
   DELETION_STAGE_CHECKS,
   createRealnameReader,
+  createWithdrawPayeeSnapshotReader,
+  lockUsersForUpdate,
+  withStepUp,
   createRealnameStatusReader,
   createSmsSender,
   createThirdPartyIdentity,
@@ -159,10 +163,13 @@ import { LedgerModule, createLedger, getOrderNets } from './modules/ledger/index
 import {
   PayoutModule,
   createDefaultFeeTaxCalculator,
+  createWithdrawApply,
   createWithdrawHoldsReader,
   createWithdrawRules,
   createWithdrawUsageReader,
+  generateOutBizNo,
   type ReverifyGatePort,
+  type WithdrawApplyService,
   type WithdrawRulesOptions,
   type WithdrawRulesService,
 } from './modules/payout/index.ts';
@@ -2252,6 +2259,38 @@ function selfPurchasePort(): WithdrawRulesOptions['selfPurchase'] {
   };
 }
 
+/** The ports of the withdrawal rules chain (B2-05c), shared by the rules and the application use case. */
+function withdrawRuleOptions(
+  clock: Clock,
+  logger: RootLogger,
+  db: Kysely<Database>,
+  crypto: FieldCrypto,
+): WithdrawRulesOptions {
+  // TODO(规划/11 §2.3): 待加验判定（BR-WDR-03 ③b）接 identity 的加验端口 — blocked on CT-26c
+  const reverify: ReverifyGatePort = { check: () => Promise.resolve(null) };
+  const realname = createRealnameReader(crypto);
+  return {
+    clock,
+    logger: logger.child({ module: 'payout' }),
+    config: {
+      configValue: (appId, key, handle) =>
+        createContentReader({ db: handle, clock }).configValue(appId, key),
+    },
+    risk: createRiskStateBatchReader({ db }),
+    appeal: createAppealPrevStateReader(),
+    blocklist: createBlocklistMatchReader(),
+    reverify,
+    realname: { read: realname.read, verified: realname.verified },
+    subject: createWithdrawSubjectReader(),
+    laborAgreementSigned,
+    ledger: createLedger({ clock }),
+    holds: createWithdrawHoldsReader(),
+    usage: createWithdrawUsageReader(),
+    selfPurchase: selfPurchasePort(),
+    feeTax: createDefaultFeeTaxCalculator(),
+  };
+}
+
 function payoutModule(): DynamicModule {
   return PayoutModule.forRoot({
     rules: {
@@ -2268,28 +2307,37 @@ function payoutModule(): DynamicModule {
         crypto?: FieldCrypto,
       ): WithdrawRulesService | null => {
         if (db === undefined || crypto === undefined) return null;
-        // TODO(规划/11 §2.3): 待加验判定（BR-WDR-03 ③b）接 identity 的加验端口 — blocked on CT-26c
-        const reverify: ReverifyGatePort = { check: () => Promise.resolve(null) };
-        const realname = createRealnameReader(crypto);
-        return createWithdrawRules({
-          clock,
-          logger: logger.child({ module: 'payout' }),
-          config: {
-            configValue: (appId, key, handle) =>
-              createContentReader({ db: handle, clock }).configValue(appId, key),
-          },
-          risk: createRiskStateBatchReader({ db }),
-          appeal: createAppealPrevStateReader(),
-          blocklist: createBlocklistMatchReader(),
-          reverify,
-          realname: { read: realname.read, verified: realname.verified },
-          subject: createWithdrawSubjectReader(),
-          laborAgreementSigned,
-          ledger: createLedger({ clock }),
-          holds: createWithdrawHoldsReader(),
-          usage: createWithdrawUsageReader(),
-          selfPurchase: selfPurchasePort(),
-          feeTax: createDefaultFeeTaxCalculator(),
+        return createWithdrawRules(withdrawRuleOptions(clock, logger, db, crypto));
+      },
+    },
+    // B2-05d: identity's step-up wrapper (stage ⑫ context, token consumed on code 0) is handed
+    // in here so payout never imports identity's barrel (Nest controllers) into the test project.
+    stepUp: withStepUp,
+    // The application use case runs on the idempotency claim's transaction (the controller's
+    // executeInTransaction); the freeze voucher and the two events share it.
+    apply: {
+      inject: [
+        CLOCK,
+        ROOT_LOGGER,
+        { token: DB, optional: true },
+        { token: FIELD_CRYPTO, optional: true },
+        { token: EVENT_BUS, optional: true },
+      ],
+      useFactory: (
+        clock: Clock,
+        logger: RootLogger,
+        db?: Kysely<Database>,
+        crypto?: FieldCrypto,
+        eventBus?: EventBus,
+      ): WithdrawApplyService | null => {
+        if (db === undefined || crypto === undefined) return null;
+        return createWithdrawApply({
+          rules: withdrawRuleOptions(clock, logger, db, crypto),
+          ledger: createLedger(eventBus === undefined ? { clock } : { clock, eventBus }),
+          lockUsersForUpdate,
+          snapshot: createWithdrawPayeeSnapshotReader(crypto),
+          outBizNo: () => generateOutBizNo(randomBytes),
+          ...(eventBus === undefined ? {} : { eventBus }),
         });
       },
     },
