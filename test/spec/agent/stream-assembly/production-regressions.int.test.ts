@@ -35,10 +35,14 @@ it('[AC-B3-03j#16][BR-AI-01][BR-AI-03] 生产 stream 工厂两会话出卡的 PG
   const convert = vi.spyOn(DemoUnionAdapter.prototype, 'convert');
   const r = await production(pg.db);
   try {
-    const sessions = [await openSession(r, r.caller), await openSession(r, r.caller)];
-    expect(new Set(sessions).size).toBe(2);
+    // D10-140 fixture order: createAgentSession reuses the caller's newest live session while it
+    // has no run (04 §6.5, agent/store/index.ts open), so each session is opened after the
+    // previous one ran its search. No assertion changed.
+    const sessions: string[] = [];
     const issued: string[] = [];
-    for (const sessionId of sessions) {
+    for (let i = 0; i < 2; i += 1) {
+      const sessionId = await openSession(r, r.caller);
+      sessions.push(sessionId);
       const items = await search(r, sessionId);
       const rows = await pg.db
         .selectFrom('links')
@@ -69,6 +73,7 @@ it('[AC-B3-03j#16][BR-AI-01][BR-AI-03] 生产 stream 工厂两会话出卡的 PG
         issued.push(item['link_id'] as string);
       }
     }
+    expect(new Set(sessions).size).toBe(2);
     expect(new Set(issued).size).toBe(issued.length);
     expect(convert).not.toHaveBeenCalled();
   } finally {

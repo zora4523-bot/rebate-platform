@@ -1,6 +1,7 @@
 // B3-03j second review: append-only coverage for the assembly's per-call adapters.
 import { randomUUID } from 'node:crypto';
 import { createTestDatabase } from '@couli/db/testing';
+import { sql } from 'kysely';
 import { afterEach, expect, it, vi } from 'vitest';
 import { framesOf, message, openSession, send, usePgEach, type Row } from '../stream-mount/kit.ts';
 import { APP, fixture, output, request } from './kit.ts';
@@ -16,7 +17,12 @@ it.each(['quote', 'deterministic'] as const)(
     const assembly = f.build();
     const r = f.mount(assembly);
     try {
-      const sessions = [await openSession(r, f.caller), await openSession(r, f.caller)];
+      // D10-140 fixture: createAgentSession reuses the caller's newest live session while it has
+      // no run (04 §6.5, agent/store/index.ts open); a finished, refunded run on the first session
+      // lets the second open create a new one. No assertion changed.
+      const first = await openSession(r, f.caller);
+      await insertFinishedRun(first);
+      const sessions = [first, await openSession(r, f.caller)];
       expect(new Set(sessions).size).toBe(2);
       const sample = await f.demo.searchItems(
         { keyword: '演示商品' },
@@ -140,3 +146,34 @@ it('[AC-B3-03j#15][BR-AI-01][BR-AI-02] 意图装配保留 routes.configured 的�
   expect(f.readProduct).not.toHaveBeenCalled();
   expect(f.cards).not.toHaveBeenCalled();
 }, 120_000);
+
+/** A finished, refunded run on `sessionId` (within every agent_runs constraint; its quota subject is
+ * a fixture key, so it counts against no caller). */
+async function insertFinishedRun(sessionId: string): Promise<void> {
+  const session = await pg.db
+    .selectFrom('agent_sessions')
+    .select('started_at')
+    .where('id', '=', sessionId)
+    .executeTakeFirstOrThrow();
+  const at = new Date(session.started_at);
+  const hex = randomUUID().replace(/-/g, '');
+  const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-7${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  await pg.db
+    .insertInto('agent_runs')
+    .values({
+      id,
+      app_id: APP,
+      session_id: sessionId,
+      prompt_version: 'none',
+      accepted_at: at,
+      deadline_at: new Date(at.getTime() + 20_000),
+      quota_subjects: [`fixture:${sessionId}`],
+      end_reason: 'stop',
+      finish_reason: 'stop',
+      settle_result: 'refunded',
+      settled_at: at,
+      final_event: sql`${JSON.stringify({ type: 'done', data: { finish_reason: 'stop' } })}::jsonb`,
+      ended_at: at,
+    })
+    .execute();
+}
