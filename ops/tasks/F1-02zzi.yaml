@@ -1,0 +1,21 @@
+id: F1-02zzi
+repo: rebate-platform
+title: content：文案键分类把 real_name.consent.* 归需法务确认类（agreement，权限点 content.agreement），使仅有 config.general 的账号无法修改实名同意书文案；之后由 CT-16 续段建这些键
+type: impl
+# 2026-10-23 入账（content-client followups；CT-16g #1118 Codex 契约评审 S0：real_name.consent.* 若建键会归普通，classifyTextKey 只把 privacy. / perm. 识别为 agreement）。
+# 依据（SPEC_REF 17b5fe5）：08 BR-TEXT-12 细则 l.689「BR-TEXT-14 表 D 的隐私与权限文案键另归 content.agreement」；real_name.consent.* 在表 C（l.1127，.body 待法务），规划未写归类。
+# 【待编排裁定 / 待规划回写】默认：real_name.consent.* 与隐私权限文案同归 content.agreement（需法务确认），回写 08 l.689 与 04 §11.2 content.agreement 范围；回写进 SPEC_REF 前不开工。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/content/**'
+test_paths:
+  - 'test/spec/content/dict-agreement-real-name/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/content/dict-agreement-real-name/**'
+status: todo
+pr: null

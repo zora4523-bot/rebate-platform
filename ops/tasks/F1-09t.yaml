@@ -1,0 +1,23 @@
+id: F1-09t
+repo: rebate-platform
+title: platform：后台 multipart 上限改由 bootstrap 按路由设置（POST /admin/v1/pages/popup-assets 1 文件 + 1 字段 + 2 分段，其余路由保持 0 字段 1 分段），去掉 F1-09r 在 content 控制器里的临时绕法
+type: impl
+# 2026-10-23 入账（content-client followups；F1-09r #1133 实现时 bootstrap.ts:277 全局 limits {files:1, fields:0, parts:1} 挡住 kind + file 两段，
+#   在 content/http/admin/popup-asset-parts.ts 用插件内部钩子临时放宽，并留 TODO(规划/11 §3.2)）。
+# 依据：契约 adminUploadPopupAsset（multipart：kind + file）；ADR-0001 请求校验。要点：按路由的上限表放在 platform（bootstrap 读取），其余后台上传路由行为不变；删除临时绕法与其 TODO。
+refs: []
+refs_hash: {}
+deps: [F1-09r]
+paths:
+  - 'apps/api/src/bootstrap.ts'
+  - 'apps/api/src/modules/platform/http/**'
+  - 'apps/api/src/modules/content/http/admin/**'
+test_paths:
+  - 'test/spec/platform/multipart-route-limits/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/multipart-route-limits/**'
+status: todo
+pr: null
