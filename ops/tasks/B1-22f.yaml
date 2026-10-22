@@ -1,0 +1,18 @@
+id: B1-22f
+repo: rebate-platform
+title: 测试修改：冻结夹具 test/spec/union/pids-cli/kit.ts 的 accountRow() 改为类型断言（as UnionAccountRow），为 B1-22a（union_accounts 新列 auth_expires_estimated）让路；字段与取值一字不改，其余断言不变
+type: test-change
+# 2026-10-22 入账（union 线）。B1-22a 加列后 Selectable<union_accounts> 多一个必填字段，该夹具的字面量少一列致 tsc 失败；在任务分支改夹具会让引用它的 pids-cli 三个文件约 28 条本就绿的用例整文件入列，超过 red_exempt 上限 20，照 B1-15p（#1194）/ D10-92 先例拆成非任务分支 test-change 先合。改法在加列前后都能编译、运行时行为不变。
+# 编排机械修正（一行类型断言 + 注释），新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。
+refs: []
+refs_hash: {}
+deps: [B1-19c]
+paths:
+  - 'test/spec/union/pids-cli/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/pids-cli/**'
+status: todo
+pr: null

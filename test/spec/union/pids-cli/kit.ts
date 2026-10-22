@@ -32,7 +32,9 @@ export function accountRow(): UnionAccountRow {
     row_version: 0,
     created_at: new Date(START),
     updated_at: new Date(START),
-  };
+    // B1-22f: asserted so union_accounts columns added later (B1-22a auth_expires_estimated) do not
+    // break this fixture; the CLI paths under test never read them.
+  } as UnionAccountRow;
 }
 
 export function pidRow(): UnionPidRow {
