@@ -136,3 +136,78 @@ it('[AC-S1-64#33] 到期任务与调用失效并发，持久层每号只有一�
   await monitor.deliverAlerts(h.appId, a.id);
   expect(send).toHaveBeenCalledTimes(2);
 });
+
+it('[AC-S1-65#5] 探测失效恢复后真正到期再次逐号登记 EXPIRED，同一次失效重跑不重复', async () => {
+  const enteredAt = '2026-11-20T01:00:00.000Z';
+  const h = harness(database(), enteredAt);
+  const a = await account(h);
+  const send = vi.fn<TemplateSmsSender['send']>(async () => 'accepted');
+  const alerts = createSiteAuthAlertPort({
+    db: h.db,
+    clock: h.clock,
+    logger: h.logger,
+    sms: { send },
+  });
+  const monitor = createSiteAuthMonitor({ ...h.options, alerts });
+  const keys = (at: string) =>
+    PHONES.map(
+      (phone) =>
+        `union_auth:${a.id}:${EXPIRES}:expired:${h.crypto.blindIndex(phone, 'union.auth_alert_phones')}:${at}`,
+    ).sort();
+
+  h.probe.mockResolvedValue({ kind: 'auth_invalid', error: 'classified-invalid' });
+  await monitor.dailyCheck();
+  h.clock.advanceMs(60_000);
+  await monitor.dailyCheck();
+  expect(await stored(h, a.id)).toMatchObject({ auth_status: 'expired', alert_stage: 'expired' });
+  const first = await notifications(h.db, h.appId);
+  expect(first.map((row) => row.dedupe_key).sort()).toEqual(keys(enteredAt));
+  for (const row of first)
+    expect(row).toMatchObject({
+      code: 'UNION_AUTH_EXPIRED',
+      status: 'queued',
+      planned_at: new Date(enteredAt),
+    });
+  await monitor.deliverAlerts(h.appId, a.id);
+  await monitor.deliverAlerts(h.appId, a.id);
+  expect(send.mock.calls.map(([m]) => [m.phone, m.template]).sort()).toEqual(
+    PHONES.map((phone) => [phone, 'UNION_AUTH_EXPIRED']).sort(),
+  );
+  const delivered = await notifications(h.db, h.appId);
+  expect(delivered.map((row) => row.status)).toEqual(['success', 'success']);
+
+  h.clock.advanceMs(60_000);
+  h.probe.mockResolvedValue({ kind: 'ok' });
+  await monitor.dailyCheck();
+  expect(await stored(h, a.id)).toMatchObject({ auth_status: 'active', alert_stage: 'none' });
+  expect(await notifications(h.db, h.appId)).toEqual(delivered);
+
+  h.clock.set(EXPIRES);
+  await monitor.expiryDue(h.appId, a.id, EXPIRES);
+  h.clock.advanceMs(60_000);
+  await monitor.expiryDue(h.appId, a.id, EXPIRES);
+  await monitor.dailyCheck();
+  expect(await stored(h, a.id)).toMatchObject({ auth_status: 'expired', alert_stage: 'expired' });
+  const second = await notifications(h.db, h.appId);
+  expect(second.map((row) => row.dedupe_key).sort()).toEqual(
+    [...keys(enteredAt), ...keys(EXPIRES)].sort(),
+  );
+  expect(second.filter((row) => keys(enteredAt).includes(row.dedupe_key))).toEqual(delivered);
+  for (const row of second.filter((row) => keys(EXPIRES).includes(row.dedupe_key)))
+    expect(row).toMatchObject({
+      code: 'UNION_AUTH_EXPIRED',
+      status: 'queued',
+      planned_at: new Date(EXPIRES),
+    });
+  await monitor.deliverAlerts(h.appId, a.id);
+  await monitor.deliverAlerts(h.appId, a.id);
+  expect(send.mock.calls.map(([m]) => [m.phone, m.template]).sort()).toEqual(
+    [...PHONES, ...PHONES].map((phone) => [phone, 'UNION_AUTH_EXPIRED']).sort(),
+  );
+  expect((await notifications(h.db, h.appId)).map((row) => row.status)).toEqual([
+    'success',
+    'success',
+    'success',
+    'success',
+  ]);
+});

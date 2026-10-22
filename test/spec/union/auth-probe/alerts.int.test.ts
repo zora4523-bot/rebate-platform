@@ -109,7 +109,9 @@ it('[AC-S1-64#22] 计划随调用方事务回滚；auth_expires_at 空用 none �
   expect(await notifications(h.db, h.appId)).toEqual([]);
   await h.db.transaction().execute((trx) => h.port.plan(trx, plan));
   expect((await notifications(h.db, h.appId)).map((r) => r.dedupe_key).sort()).toEqual(
-    h.phones.map((p) => `union_auth:${h.plan.unionAccountId}:none:expired:${p.phoneId}`).sort(),
+    h.phones
+      .map((p) => `union_auth:${h.plan.unionAccountId}:none:expired:${p.phoneId}:${NOW}`)
+      .sort(),
   );
 });
 

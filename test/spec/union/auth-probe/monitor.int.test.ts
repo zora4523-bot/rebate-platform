@@ -8,6 +8,49 @@ import { account, EXPIRES, harness, jobs, logs, NOW, PHONES, plans, stored } fro
 
 const database = databaseFixture(createTestDatabase);
 
+async function activeBinding(h: ReturnType<typeof harness>, unionAccountId: string) {
+  const userId = randomUUID();
+  await h.db
+    .insertInto('users')
+    .values({
+      id: userId,
+      app_id: h.appId,
+      nickname: '合成用户',
+      avatar: 'https://example.test/avatar',
+      invite_code: 'probe001',
+      attr_code: 'probe001',
+      level: 'T1',
+      register_method: 'synthetic',
+      created_at: h.clock.now(),
+      updated_at: h.clock.now(),
+    })
+    .execute();
+  await h.db
+    .insertInto('union_bindings')
+    .values({
+      id: randomUUID(),
+      app_id: h.appId,
+      user_id: userId,
+      platform: 'taobao',
+      union_account_id: unionAccountId,
+      relation_id: `synthetic-${userId}`,
+      status: 'active',
+      bound_at: h.clock.now(),
+      row_version: 7,
+      created_at: h.clock.now(),
+      updated_at: h.clock.now(),
+    })
+    .execute();
+  return () =>
+    h.db
+      .selectFrom('union_bindings')
+      .selectAll()
+      .where('app_id', '=', h.appId)
+      .where('union_account_id', '=', unionAccountId)
+      .orderBy('id')
+      .execute();
+}
+
 it('[AC-S1-64#15] 改节点不倒退已发阶段，提前续期后按新到期时间重新提醒', async () => {
   const h = harness(database());
   const a = await account(h, { alert_stage: 'd7', auth_status: 'expiring' });
@@ -213,7 +256,10 @@ it('[AC-S1-64#7] unsupported 不写探测字段，仍按到期日提醒', async 
 for (const error of ['timeout', 'rate-limit']) {
   it(`[AC-S1-64#8] ${error} 30 分钟后重试一次，仍失败只后台告警，不改状态或短信`, async () => {
     const h = harness(database());
-    const a = await account(h, { auth_status: 'active' });
+    const a = await account(h, {
+      auth_status: 'active',
+      auth_expires_at: '2027-01-30T00:00:00+08:00',
+    });
     h.probe.mockResolvedValue({ kind: 'transient', error });
     await h.monitor.dailyCheck();
     expect(await stored(h, a.id)).toMatchObject({
@@ -274,6 +320,8 @@ for (const expiresAt of ['2027-02-01T00:00:00Z', null]) {
   it(`[AC-S1-65#1] 探测授权失效立即 expired，空到期时间也只靠探测（${expiresAt}）`, async () => {
     const h = harness(database());
     const a = await account(h, { auth_expires_at: expiresAt });
+    const bindings = await activeBinding(h, a.id);
+    const before = await bindings();
     h.probe.mockResolvedValue({ kind: 'auth_invalid', error: 'classified-invalid' });
     await h.monitor.dailyCheck();
     await h.monitor.dailyCheck();
@@ -286,6 +334,7 @@ for (const expiresAt of ['2027-02-01T00:00:00Z', null]) {
     });
     expect(plans(h).map((p) => p.code)).toEqual(['UNION_AUTH_EXPIRED']);
     expect(logs(h, 'union_auth_expired')).toEqual([expect.objectContaining({ cause: 'probe' })]);
+    expect(await bindings()).toEqual(before);
   });
 }
 
@@ -293,6 +342,8 @@ it('[AC-S1-65#2] 任一联盟调用失效立即置位，不写 last_probe，账�
   const h = harness(database());
   const a = await account(h);
   const other = await account(h, { platform: 'jd' });
+  const bindings = await activeBinding(h, a.id);
+  const before = await bindings();
   const failure = {
     appId: h.appId,
     platform: 'taobao' as const,
@@ -315,15 +366,17 @@ it('[AC-S1-65#2] 任一联盟调用失效立即置位，不写 last_probe，账�
   expect(plans(h)).toHaveLength(1);
   expect(logs(h, 'union_auth_expired')).toEqual([expect.objectContaining({ cause: 'call' })]);
   expect(h.probe).not.toHaveBeenCalled();
+  expect(await bindings()).toEqual(before);
 });
 
 for (const [expiry, status, stage] of [
+  [null, 'active', 'none'],
   ['2027-03-01T00:00:00Z', 'active', 'none'],
   [EXPIRES, 'expiring', 'd14'],
   ['2026-12-20T00:00:00Z', 'expiring', 'd7'],
   ['2026-12-17T00:00:00Z', 'expiring', 'd1'],
 ] as const) {
-  it(`[AC-S1-65#3] 未到期误判失效探测成功恢复 ${status}/${stage}，不补发已过节点`, async () => {
+  it(`[AC-S1-65#3] 到期时间 ${expiry} 未到期误判失效探测成功恢复 ${status}/${stage}，不补发已过节点`, async () => {
     const h = harness(database());
     const a = await account(h, {
       auth_status: 'expired',
@@ -340,6 +393,8 @@ for (const [expiry, status, stage] of [
 it('[AC-S1-65#4] 已到期即 expired，不探测也不刷新，即使端口预设超时', async () => {
   const h = harness(database(), EXPIRES);
   const a = await account(h);
+  const bindings = await activeBinding(h, a.id);
+  const before = await bindings();
   h.probe.mockResolvedValue({ kind: 'transient', error: 'timeout' });
   const monitor = createSiteAuthMonitor({ ...h.options, refresher: { refresh: h.refresh } });
   await monitor.dailyCheck();
@@ -348,12 +403,15 @@ it('[AC-S1-65#4] 已到期即 expired，不探测也不刷新，即使端口预�
   expect(h.refresh.mock.calls.filter(([p]) => p.unionAccountId === a.id)).toEqual([]);
   expect(await stored(h, a.id)).toMatchObject({ auth_status: 'expired', alert_stage: 'expired' });
   expect(plans(h).map((p) => p.stage)).toEqual(['expired']);
+  expect(await bindings()).toEqual(before);
 });
 
 it('[AC-S1-64#10] 当天巡检后到期，任务延迟到精确时刻，重复执行只登记一次', async () => {
   const h = harness(database());
   const expiry = '2026-12-16T02:00:00.000Z';
   const a = await account(h, { auth_expires_at: expiry });
+  const bindings = await activeBinding(h, a.id);
+  const before = await bindings();
   await h.monitor.dailyCheck();
   const due = jobs(h, a.id).filter(([, , , o]) => o.delaySeconds === 3600);
   expect(due).toHaveLength(1);
@@ -366,6 +424,7 @@ it('[AC-S1-64#10] 当天巡检后到期，任务延迟到精确时刻，重复�
   await h.monitor.expiryDue(h.appId, a.id, expiry);
   expect(await stored(h, a.id)).toMatchObject({ auth_status: 'expired', alert_stage: 'expired' });
   expect(plans(h).filter((p) => p.code === 'UNION_AUTH_EXPIRED')).toHaveLength(1);
+  expect(await bindings()).toEqual(before);
 });
 
 it('[AC-S1-64#11] 旧到期任务在重新授权后失效，跨 app 任务不能动账号', async () => {
