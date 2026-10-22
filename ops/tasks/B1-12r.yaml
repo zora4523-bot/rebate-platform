@@ -1,0 +1,28 @@
+id: B1-12r
+repo: rebate-platform
+title: notification：订阅 claim.resolved，按 BR-TEXT-09 给找回申请人发站内信 CLAIM_RESULT（approved「订单找回成功，预估返 {rebate}」、rejected「订单找回未通过：{reason}」，cancelled 不发；category=service、只站内）；同一事务写 inbox_messages 与 notify_logs，按事件编号去重；文案取包内默认并应用 notify_templates 覆盖
+type: impl
+# 2026-10-23 入账（be-codex，编排裁定 D10-142：先 B1-12j 读口，再 B1-12r）。事件 claim.resolved 由 orders claim-review 在结案事务发（载荷 {claim_id, app_id, user_id, status}）；本任务只消费。
+# {rebate}：经 B1-12j 的 orders readNotifyClaimFacts 取通过条目对应订单，经 commission readNotifyBeneficiaries 取申请人本人份额 amount_fen 求和，按 BR-TEXT-10 格式化；{reason}：取驳回条目的 reject_reason 编码对应字典 claim_reject_reason.<CODE>.title（BR-TEXT-09 细则，编码表归 BR-ATTR）。
+# B1-12j 评审 S2：readNotifyClaimFacts 两条 SELECT 非同一快照——本任务在可重复读事务内读或改为一条 LEFT JOIN（改 orders 端口文件，已列 paths）。
+# 接线照 B1-12g / B1-12p：EVENT_SUBSCRIPTIONS 加订阅、queue/catalog.ts 加 evt.<consumer> 队列与 ENTRY_PLAN；两份平台冻结契约测试只加本任务条目（第一类保护路径，#24 标签由编排核对）。
+refs: [BR-TEXT-09]
+refs_hash:
+  BR-TEXT-09: 79da190ca728
+deps: [B1-12j, B1-12g]
+paths:
+  - 'apps/api/src/modules/notification/**'
+  - 'apps/api/src/modules/platform/events/types.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'apps/api/src/modules/orders/ports/notify-order-facts.ts'
+  - 'apps/api/src/modules/orders/ports/notify-order-facts.test.ts'
+test_paths:
+  - 'test/spec/notification/claim-result-message/**'
+  - 'test/spec/platform/events/contract.test.ts'
+  - 'test/spec/platform/queue/contract.test.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/claim-result-message/**'
+status: todo
