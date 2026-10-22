@@ -393,6 +393,7 @@ export const FUND_TERM_KEYS = {
       "error.30413",
       "error.30414",
       "error.30415",
+      "error.30418",
       "error.30501",
       "error.30502",
       "error.30503",

@@ -17,7 +17,11 @@
 // - union_bindings taobao then pdd through MeUnionBindingsPort (linking's binding projection).
 // - need_reconsent per BR-ID-12: the user-level current state of privacy or agreement is not
 //   accepted, or its version is below legal.privacy.version / legal.agreement.version.
-// - risk: risk's readRiskState snapshot.
+// - risk: risk's readRiskState snapshot. prev_risk_state (CT-26e, 04 §6.1, BR-ID-36 细则) only
+//   when the state is appealing: the prev_risk_state of the caller's processing account appeal
+//   (at most one, unique index appeals_processing_target_key), read-only from app.appeals (risk
+//   is its single writer; never written here); null otherwise, and null when there is no
+//   processing account appeal (a value outside frozen / banned is a broken row and also null).
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -80,6 +84,26 @@ const INVITER_MIN_AGE = 18;
 
 /** Ports assembled outside identity; risk uses the same instance as the request guard. */
 export type MeReadPorts = Pick<MeServiceOptions, 'risk' | 'balance' | 'unionBindings' | 'activity'>;
+
+/** The penalty before the caller's processing account appeal (read-only; risk writes app.appeals). */
+export async function accountAppealPrevState(
+  db: Kysely<DB>,
+  subject: MeSubject,
+): Promise<'frozen' | 'banned' | null> {
+  const row = await db
+    .withSchema('app')
+    .selectFrom('appeals')
+    .select('prev_risk_state')
+    .where('app_id', '=', subject.appId)
+    .where('user_id', '=', subject.userId)
+    .where('target_type', '=', 'account')
+    .where('target_id', '=', subject.userId)
+    .where('status', '=', 'processing')
+    .limit(1)
+    .executeTakeFirst();
+  const value = row?.prev_risk_state ?? null;
+  return value === 'frozen' || value === 'banned' ? value : null;
+}
 
 function configuredNumber(value: unknown, key: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
@@ -159,6 +183,8 @@ export function createMeService(options: MeServiceOptions): MeService {
           : null;
       const stage = stages.get(subject.userId) ?? 'none';
       const deletionStatus = stage === 'none' ? null : stage;
+      const prevRiskState =
+        snapshot.state === 'appealing' ? await accountAppealPrevState(db, subject) : null;
       const cannotInvite = inviterUnavailable({
         risk_state: snapshot.state,
         deletion_status: deletionStatus,
@@ -202,6 +228,7 @@ export function createMeService(options: MeServiceOptions): MeService {
           state: snapshot.state,
           reason_category: snapshot.reason_category,
           frozen_until: snapshot.frozen_until?.toISOString() ?? null,
+          prev_risk_state: prevRiskState,
         },
       };
     },

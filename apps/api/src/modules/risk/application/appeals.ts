@@ -17,8 +17,23 @@
 // - target_type=order: the order module is not there yet, so a voided rebate cannot be checked:
 //   20001, nothing written (task ruling §9.3 #3).
 //   TODO(规划/11 §4.5): 订单申诉受理与 30701 — blocked on B1-08 / B1-09 订单模块
-// The cumulative limit of three appeals per target is not applied (no contract code yet).
-// TODO(规划/11 §4.5): 同一对象累计 3 次申诉上限 — blocked on 契约线分配拒绝码（08 §13.11）
+// The cumulative limit of three appeals per target (30418, CT-26e) is not enforced on submit yet:
+// the controller maps every refusal to 20001 and is outside this task.
+// TODO(规划/11 §4.5): 提交时第 4 次申诉返回 30418 — blocked on risk/http 控制器映射 30418（另开任务）
+//
+// attempt_no / can_resubmit (BR-ID-36 细则; CT-26e) are computed from the caller's own appeal
+// history on the same target (account: target_id = user_id; order: the order_id), oldest first.
+// There is no penalty column yet (04 §3.2 suggests penalty_started_at), so a "penalty" is
+// approximated from the appeals alone: a new one starts at the first appeal on a target, after a
+// revoked appeal (the penalty was lifted), and for the account when a freeze was escalated to a
+// ban (frozen → banned is a new penalty, D10-147; banned → frozen is not, so it keeps counting).
+// A penalty lifted and imposed again without an appeal in between is not seen and keeps counting.
+// TODO(规划/11 §4.5): 按「同一处罚」精确计次 — blocked on 处罚分组字段（db / risk 任务）
+// can_resubmit and the 30418 check share one rule, nextAppealAttempt: the attempt number the next
+// appeal on the target would get. can_resubmit is true only for the latest appeal on its target,
+// upheld, the target still restricted (account frozen with no past frozen_until, or banned), and
+// nextAppealAttempt ≤ 3; so after the third upheld appeal of one penalty it is false. An order
+// appeal is false until the order module can tell whether the order is still voided.
 //
 // list reads the caller's own account and order appeals (never blocked_request), newest first
 // (created_at, then id, descending), keyset-paginated by an opaque cursor; deadline_at,
@@ -80,9 +95,12 @@ export class AppealQueryError extends Error {
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 const REFUSED: SubmitAppealResult = Object.freeze({ code: 20001 });
+const NO_ATTEMPT: AppealAttempt = Object.freeze({ attempt_no: 1, can_resubmit: false });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Microsecond UTC instant as the cursor carries it (timestamptz keeps microseconds). */
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
+/** BR-ID-36: at most three appeals per target and penalty, the first included. */
+export const MAX_APPEAL_ATTEMPTS = 3;
 
 interface AppealRow {
   readonly id: string;
@@ -94,7 +112,94 @@ interface AppealRow {
   readonly closed_at: Date | null;
 }
 
-function publicAppeal(row: AppealRow): Schema<'Appeal'> {
+/** One appeal of the history used for attempt_no / can_resubmit. */
+export interface AppealHistoryRow {
+  readonly id: string;
+  readonly target_type: string;
+  readonly target_id: string;
+  readonly status: string;
+  readonly prev_risk_state: string | null;
+  readonly created_at: Date;
+}
+
+/** The account's current restriction, for can_resubmit of account appeals. */
+export interface AccountRestriction {
+  readonly state: 'normal' | 'frozen' | 'appealing' | 'banned';
+  readonly frozen_until: Date | null;
+}
+
+export interface AppealAttempt {
+  readonly attempt_no: number;
+  readonly can_resubmit: boolean;
+}
+
+/** frozen → banned is a new penalty (D10-147); any other pair is the same penalty. */
+function escalated(before: string | null, after: string | null): boolean {
+  return before === 'frozen' && after === 'banned';
+}
+
+/**
+ * The attempt number the next appeal on a target would get (BR-ID-36; the 30418 rule: above
+ * MAX_APPEAL_ATTEMPTS means used up). `latest` is the target's latest appeal with its attempt_no;
+ * `penalty` is the penalty the new appeal would be on (for the account, its current risk state;
+ * null for an order).
+ */
+export function nextAppealAttempt(
+  latest: { readonly status: string; readonly prev_risk_state: string | null } | undefined,
+  latestAttempt: number,
+  penalty: string | null,
+): number {
+  if (latest === undefined || latest.status === 'revoked') return 1;
+  if (escalated(latest.prev_risk_state, penalty)) return 1;
+  return latestAttempt + 1;
+}
+
+function targetKey(row: { readonly target_type: string; readonly target_id: string }): string {
+  return `${row.target_type}:${row.target_id}`;
+}
+
+/**
+ * attempt_no and can_resubmit for every appeal in `history` (BR-ID-36 细则), keyed by appeal id.
+ * `account` is the caller's current risk state, read only when an account appeal needs it.
+ */
+export function appealAttempts(
+  history: readonly AppealHistoryRow[],
+  account: AccountRestriction | null,
+  now: Date,
+): ReadonlyMap<string, AppealAttempt> {
+  const sorted = [...history].sort(
+    (a, b) =>
+      a.created_at.getTime() - b.created_at.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  const previous = new Map<string, { row: AppealHistoryRow; attempt: number }>();
+  const attempts = new Map<string, number>();
+  for (const row of sorted) {
+    const key = targetKey(row);
+    const before = previous.get(key);
+    const attempt = nextAppealAttempt(before?.row, before?.attempt ?? 0, row.prev_risk_state);
+    attempts.set(row.id, attempt);
+    previous.set(key, { row, attempt });
+  }
+  const result = new Map<string, AppealAttempt>();
+  for (const row of sorted) {
+    const attempt = attempts.get(row.id)!;
+    const latest = previous.get(targetKey(row))!.row.id === row.id;
+    let canResubmit = false;
+    if (latest && row.status === 'upheld' && row.target_type === 'account' && account !== null) {
+      const restricted =
+        account.state === 'banned' ||
+        (account.state === 'frozen' &&
+          (account.frozen_until === null || account.frozen_until.getTime() > now.getTime()));
+      // Same rule as 30418: the next appeal on the current penalty must still be within the cap.
+      canResubmit =
+        restricted && nextAppealAttempt(row, attempt, account.state) <= MAX_APPEAL_ATTEMPTS;
+    }
+    result.set(row.id, { attempt_no: attempt, can_resubmit: canResubmit });
+  }
+  return result;
+}
+
+function publicAppeal(row: AppealRow, attempt: AppealAttempt): Schema<'Appeal'> {
   return {
     appeal_id: row.id,
     target_type: row.target_type as Schema<'Appeal'>['target_type'],
@@ -103,8 +208,19 @@ function publicAppeal(row: AppealRow): Schema<'Appeal'> {
     content: row.content,
     created_at: row.created_at.toISOString(),
     closed_at: row.closed_at === null ? null : row.closed_at.toISOString(),
+    attempt_no: attempt.attempt_no,
+    can_resubmit: attempt.can_resubmit,
   };
 }
+
+const HISTORY_COLUMNS = [
+  'id',
+  'target_type',
+  'target_id',
+  'status',
+  'prev_risk_state',
+  'created_at',
+] as const;
 
 const APPEAL_COLUMNS = [
   'id',
@@ -158,6 +274,38 @@ export function createAppealsService(options: AppealsOptions): AppealsService {
     }
   }
 
+  /** The caller's own account and order appeals (never blocked_request), on `executor`. */
+  async function history(
+    executor: Kysely<DB> | Transaction<DB>,
+    subject: RiskSubject,
+    target?: { readonly target_type: string; readonly target_id: string },
+  ): Promise<AppealHistoryRow[]> {
+    let select = executor
+      .withSchema('app')
+      .selectFrom('appeals')
+      .select(HISTORY_COLUMNS)
+      .where('app_id', '=', subject.app_id)
+      .where('user_id', '=', subject.user_id)
+      .where('target_type', 'in', ['account', 'order']);
+    if (target !== undefined) {
+      select = select
+        .where('target_type', '=', target.target_type)
+        .where('target_id', '=', target.target_id);
+    }
+    return select.execute();
+  }
+
+  /** attempt_no / can_resubmit of `row`; a processing appeal never offers a resubmission. */
+  async function attemptOf(
+    trx: Transaction<DB>,
+    subject: RiskSubject,
+    row: AppealRow,
+  ): Promise<AppealAttempt> {
+    // Read on the caller's transaction, so a just-inserted appeal is part of its own history.
+    const rows = await history(trx, subject, row);
+    return appealAttempts(rows, null, clock.now()).get(row.id) ?? NO_ATTEMPT;
+  }
+
   async function processingAccountAppeal(
     trx: Transaction<DB>,
     subject: RiskSubject,
@@ -188,7 +336,9 @@ export function createAppealsService(options: AppealsOptions): AppealsService {
       const state = current.state;
       if (state !== 'banned' && state !== 'frozen' && state !== 'appealing') return REFUSED;
       const existing = await processingAccountAppeal(trx, subject);
-      if (existing !== undefined) return { code: 0, data: publicAppeal(existing) };
+      if (existing !== undefined) {
+        return { code: 0, data: publicAppeal(existing, await attemptOf(trx, subject, existing)) };
+      }
       if (state === 'appealing') return REFUSED;
 
       const deadline = await deadlineOn(trx, subject.app_id);
@@ -225,7 +375,8 @@ export function createAppealsService(options: AppealsOptions): AppealsService {
         frozen_until: current.frozen_until,
         changed_by: `user:${subject.user_id}`,
       });
-      return { code: 0, data: publicAppeal(row) };
+      const attempt = await attemptOf(trx, subject, row);
+      return { code: 0, data: publicAppeal(row, attempt) };
     },
 
     async list(subject, query) {
@@ -258,8 +409,16 @@ export function createAppealsService(options: AppealsOptions): AppealsService {
         .execute();
       const page = rows.slice(0, limit);
       const last = page.at(-1);
+      const all = page.length === 0 ? [] : await history(db, subject);
+      const now = clock.now();
+      // The account's current state matters only to an upheld account appeal (can_resubmit).
+      const needsAccount = all.some(
+        (row) => row.target_type === 'account' && row.status === 'upheld',
+      );
+      const account = needsAccount ? await riskState.readRiskState(subject, { fresh: true }) : null;
+      const attempts = appealAttempts(all, account, now);
       return {
-        items: page.map(publicAppeal),
+        items: page.map((row) => publicAppeal(row, attempts.get(row.id) ?? NO_ATTEMPT)),
         next_cursor:
           rows.length > limit && last !== undefined ? encodeCursor(last.cursor_at, last.id) : null,
       };

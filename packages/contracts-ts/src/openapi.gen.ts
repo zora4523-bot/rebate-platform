@@ -97,7 +97,8 @@ export interface paths {
         put?: never;
         /**
          * Send an SMS verification code
-         * @description Order of checks: signature 10401 / 10402 → 20001 → 44001 → 44003 → 42901 (BR-ID-05). Limits per
+         * @description Order of checks: signature 10401 / 10402 → 30414 (purpose=step_up, action=phone_change, phone
+         *     change switch off; no SMS, no limit counted) → 20001 → 44001 → 44003 → 42901 (BR-ID-05). Limits per
          *     phone: 1 per 60 s, 5 per natural hour (+08:00), 10 per natural day (+08:00); a code is 6 digits
          *     and valid 5 minutes.
          *     `phone` is normalised by the server (BR-ID-05 细则「手机号规范化」); when the result is not
@@ -322,6 +323,9 @@ export interface paths {
          *     Version gate (conditional): not applied when action=account_deletion; applied otherwise.
          *     Session scopes: a deletion_only session is accepted only for action=account_deletion. Both
          *     per BR-ID-01 细则, which wins on any difference.
+         *     When action=phone_change and the phone change switch is off, 30414 is returned early: after
+         *     10405 and before the SMS code (or third-party credential) is checked (BR-ID-06 细则); the
+         *     30414 of the phone change operation itself stays the final check.
          */
         post: operations["stepUp"];
         delete?: never;
@@ -1680,7 +1684,8 @@ export interface paths {
          *     processing time limit is internal only and not shown to users (BR-ID-36 细则, BR-TEXT-23
          *     细则). Only account and order appeals are listed: a blocked_request appeal is registered
          *     by customer service in the admin console and its result is told in the WeCom (企业微信)
-         *     conversation, not here (04 §6.1; BR-ID-36 细则「被拦截请求申诉」).
+         *     conversation, not here (04 §6.1; BR-ID-36 细则「被拦截请求申诉」). Each item carries
+         *     `attempt_no` and `can_resubmit`, both computed by the server (BR-ID-36 细则).
          */
         get: operations["listAppeals"];
         put?: never;
@@ -1700,6 +1705,9 @@ export interface paths {
          *     deadline (appeals.deadline_at) and the handler are never returned: the processing time
          *     limit is internal only and not shown to users (BR-ID-36 细则, BR-TEXT-23 细则). The result
          *     reaches the user as the inbox message APPEAL_RESULT (BR-TEXT-23). Version gate: applied.
+         *     Order of checks: 20001 / 30701 (target checks) → a processing appeal on the same target
+         *     returns that original appeal (never 30418) → appeal count for the target used up → 30418
+         *     (BR-ID-36) → create the appeal.
          */
         post: operations["submitAppeal"];
         delete?: never;
@@ -6751,6 +6759,19 @@ export interface components {
              * @description When the appeal was closed (upheld or revoked); null while processing.
              */
             closed_at: string | null;
+            /**
+             * Format: int32
+             * @description Which appeal this is for the same target under its current penalty, counting the first
+             *     one (starts at 1); the cap is set by BR-ID-36 and is not sent to the client.
+             */
+            attempt_no: number;
+            /**
+             * @description Computed by the server (BR-ID-36 细则): true only when this is the latest appeal for the
+             *     target, it was upheld, the appeal count for the target's current penalty is not used up
+             *     (same rule as 30418), and the target is still restricted (account still frozen or
+             *     banned, order still voided); false otherwise.
+             */
+            can_resubmit: boolean;
         };
         AppealResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -7645,6 +7666,13 @@ export interface components {
             reason_category: string | null;
             /** Format: date-time */
             frozen_until: string | null;
+            /**
+             * @description When state=appealing, the penalty in force before the appeal (frozen or banned); null
+             *     otherwise. While appealing, reason_category and frozen_until keep the values of that
+             *     original penalty (BR-ID-36 细则).
+             * @enum {string|null}
+             */
+            prev_risk_state: "frozen" | "banned" | null;
         };
         Me: {
             user_id: components["schemas"]["Id"];
@@ -7711,6 +7739,8 @@ export interface components {
              *     recognition by e-commerce platform; clipboard.auto_read.<client> (client is ios, android
              *     or harmony) turns off automatic clipboard reading on that client. A missing key counts
              *     as on; these keys can only turn a feature off, never turn on what the user turned off.
+             *     account.phone_change_enabled: client copy of the phone change switch, for display only
+             *     (a missing key counts as on); the server still decides on every request (BR-ID-06 细则).
              */
             flags: {
                 [key: string]: boolean;
@@ -14704,7 +14734,8 @@ export interface operations {
                      *         "risk": {
                      *           "state": "normal",
                      *           "reason_category": null,
-                     *           "frozen_until": null
+                     *           "frozen_until": null,
+                     *           "prev_risk_state": null
                      *         }
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
@@ -15898,7 +15929,9 @@ export interface operations {
                      *             "status": "processing",
                      *             "content": "订单返利被作废，请核查。",
                      *             "created_at": "2026-10-05T09:30:00+08:00",
-                     *             "closed_at": null
+                     *             "closed_at": null,
+                     *             "attempt_no": 1,
+                     *             "can_resubmit": false
                      *           },
                      *           {
                      *             "appeal_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a92",
@@ -15907,7 +15940,9 @@ export interface operations {
                      *             "status": "revoked",
                      *             "content": "另一笔订单返利被作废，请核查。",
                      *             "created_at": "2026-09-28T15:00:00+08:00",
-                     *             "closed_at": "2026-09-30T11:00:00+08:00"
+                     *             "closed_at": "2026-09-30T11:00:00+08:00",
+                     *             "attempt_no": 1,
+                     *             "can_resubmit": false
                      *           }
                      *         ],
                      *         "next_cursor": null
@@ -15983,7 +16018,9 @@ export interface operations {
                      *         "status": "processing",
                      *         "content": "订单返利被作废，请核查。",
                      *         "created_at": "2026-10-05T09:30:00+08:00",
-                     *         "closed_at": null
+                     *         "closed_at": null,
+                     *         "attempt_no": 1,
+                     *         "can_resubmit": false
                      *       },
                      *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
                      *     }
