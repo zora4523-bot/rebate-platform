@@ -1,0 +1,20 @@
+id: B1-35c
+repo: rebate-platform
+title: 邀请奖励扫描的当天过期扫描失败可重试：tick 只在 expiryPass 成功后才记当天已扫（expiredDay），过期扫描抛错时当天后续 tick 重试，应释放的资格预算不拖到次日（B1-35 money r1 S2）
+type: impl
+# 草稿 2026-10-23（身份与风控线 identity-lane）。来源 B1-35 Codex money r1 S2（invite-reward.ts tick 先置 expiredDay 再跑 expiryPass，短暂断库即当天跳过）。只改标记时机与失败日志，不改扫描与发放逻辑。
+# 规则测试（Codex，单元级，注入会失败一次的 expiryPass 依赖）：首次 tick 过期扫描抛错 → 同日下一次 tick 再跑一次；成功后同日不再跑；跨会计日照常跑一次；payoutPass 不因过期扫描失败被跳过与否按现有行为保持并写明。
+refs: []
+refs_hash: {}
+deps: [B1-35]
+paths:
+  - 'apps/api/src/modules/growth/application/invite-reward.ts'
+  - 'apps/api/src/modules/growth/application/invite-reward.test.ts'
+test_paths:
+  - 'test/spec/growth/invite-reward-expiry-retry/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/growth/invite-reward-expiry-retry/**'
+status: todo
