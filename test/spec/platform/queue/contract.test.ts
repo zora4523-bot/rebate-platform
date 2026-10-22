@@ -149,6 +149,10 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     expect(QUEUE_CATALOG[pageScheduleAt - 1]?.name).toBe('pool-refresh');
     expect(QUEUE_CATALOG[pageScheduleAt + 1]?.name).toBe('poster');
   }
+  // B2-05h 两态过渡（D10-208）：B2-05e 合并后由收紧任务 B2-05j 改回单态。Without
+  // evt.payout-went-negative the list below is exactly the original one; with it, the entry sits
+  // right after evt.notification-appeal-result with the defaults.
+  const hasPayoutWentNegative = QUEUE_CATALOG.some((q) => q.name === 'evt.payout-went-negative');
   expect(
     QUEUE_CATALOG.filter(
       (queue) =>
@@ -164,6 +168,7 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
     { name: 'notify', ...DEFAULT },
     { name: 'evt.notification-risk-state', ...DEFAULT },
     { name: 'evt.notification-appeal-result', ...DEFAULT },
+    ...(hasPayoutWentNegative ? [{ name: 'evt.payout-went-negative', ...DEFAULT }] : []),
     { name: 'pool-refresh', ...DEFAULT },
     { name: 'poster', ...DEFAULT },
     { name: 'agent-trace', ...DEFAULT },
@@ -228,6 +233,12 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
       ENTRY_PLAN[entry].filter((work) => work.queue === 'page-schedule').map(() => entry),
     ),
   ).toStrictEqual([]);
+  // B2-05h 两态过渡（D10-208）：B2-05e 合并后由收紧任务 B2-05j 改回单态。Without
+  // evt.payout-went-negative the plan below is exactly the original one; with it, the worker runs it
+  // with concurrency 1 right after evt.notification-appeal-result.
+  const plansPayoutWentNegative = ENTRY_PLAN.worker.some(
+    (work) => work.queue === 'evt.payout-went-negative',
+  );
   expect({
     ...ENTRY_PLAN,
     worker: ENTRY_PLAN.worker.filter(
@@ -247,6 +258,7 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
       w('notify', 5),
       w('evt.notification-risk-state', 5),
       w('evt.notification-appeal-result', 5),
+      ...(plansPayoutWentNegative ? [w('evt.payout-went-negative', 1)] : []),
       w('pool-refresh', 1),
       w('poster', 2, 0.5),
       w('agent-trace', 2),

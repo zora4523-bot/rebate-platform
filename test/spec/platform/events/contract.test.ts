@@ -113,6 +113,16 @@ async function refused(
 const CLEAN = { problems: [], trx: [], sends: 0, reads: 0 };
 
 it('[规划/02 §11 事件清单] EVENT_NAMES 正好是 02 §11 的 18 个事件名（同序、冻结）；EVENT_SUBSCRIPTIONS 是冻结的空数组；上下界常量正好是 4096 字节、128 个码元、3 层、版本 999', () => {
+  // B2-05h 两态过渡（D10-208）：B2-05e 合并后由收紧任务 B2-05j 改回单态。Without the
+  // payout-went-negative consumer the subscriptions are exactly the original two; with it, it comes
+  // last, subscribed to account.went_negative only.
+  const expectedSubscriptions = [
+    { consumer: 'notification-risk-state', events: ['risk.state_changed'] },
+    { consumer: 'notification-appeal-result', events: ['appeal.resolved'] },
+    ...(EVENT_SUBSCRIPTIONS.some((s) => s.consumer === 'payout-went-negative')
+      ? [{ consumer: 'payout-went-negative', events: ['account.went_negative'] }]
+      : []),
+  ];
   expect({
     names: [...EVENT_NAMES],
     namesFrozen: Object.isFrozen(EVENT_NAMES),
@@ -130,10 +140,7 @@ it('[规划/02 §11 事件清单] EVENT_NAMES 正好是 02 §11 的 18 个事件
       (name) => !PLAN_02_PENDING.has(name) || EVENT_NAMES.includes(name),
     ),
     namesFrozen: true,
-    subscriptions: [
-      { consumer: 'notification-risk-state', events: ['risk.state_changed'] },
-      { consumer: 'notification-appeal-result', events: ['appeal.resolved'] },
-    ],
+    subscriptions: expectedSubscriptions,
     subscriptionsFrozen: true,
     bounds: [4096, 128, 3, 999],
     pattern: true,

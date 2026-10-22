@@ -1,0 +1,19 @@
+id: B2-05h
+repo: rebate-platform
+title: 过渡测试改动（B2-05e 前置）：平台队列目录与事件订阅表的冻结契约测试（目录、入口计划、订阅表三条断言）两态过渡（D10-208）：实际表里没有 payout 负余额消费者时期望与原精确清单相同，有时期望为原清单加该条（evt.payout-went-negative / payout-went-negative ← account.went_negative）；其余断言一字不动，B2-05e 合并后由 B2-05j 收紧回单态
+type: test-change
+# 2026-10-23 提现线（withdraw-acct4）。起因：B2-05e 的规则测试 [AC-B2-05e#41]（Codex 写、独立 Claude 过审）要求队列目录与订阅表含该消费者，而 test/spec/platform/queue/contract.test.ts 与 test/spec/platform/events/contract.test.ts 把两张表钉成精确清单（subscriptionsFrozen），两者必有一红。
+# 做法按 D10-208（先例 B1-15p / D10-173、CT-26f）：非 task 分支、台账同 PR；三处断言各先看实际表（QUEUE_CATALOG / ENTRY_PLAN.worker / EVENT_SUBSCRIPTIONS）里有没有该条，没有时期望与原精确清单完全相同，有时在对应位置加该条（仍 toStrictEqual）；由独立 Claude 改、另一新鲜独立 Claude 复审不削弱。不改夹具、不加 skip / only / retry。
+# 改既有规则测试属第一类保护路径：按 approvals #24 由编排核对后加 owner-approved 标签；主干（无该队列）与 B2-05e 合并后（有该队列）都绿：本线分别在两种树上跑过两份测试各 30 条。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/platform/queue/**'
+  - 'test/spec/platform/events/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
