@@ -1,12 +1,13 @@
 id: CT-06zf
 repo: rebate-platform
-title: CT-06zf：台账 status 加 void（作废）——task-file 认 void，看板不计完成、不派工，ledger-overwrite 视同 done 为终态；B1-09f 改为 void
+title: CT-06zf：台账 status 加 void（作废）——task-file 认 void，看板不计完成、不派工，ledger-overwrite 视同 done 为终态
 type: guard-change
 # 2026-10-23 入账（ops 线，编排裁定 D10-190，2026-10-23 03:20 派工）。起因：B1-09f 被 D10-178 取代、从未实现，D10-190 时只能临时写成
 # status done 加注释「作废」，看板把它算进已完成。做法：tools/lib/task-file.ts 的 TASK_STATUSES 加 void；tools/ops/status.ts
 # 的已完成数不含 void、另计作废数，void 不派工、不算依赖已完成，todo 任务依赖了 void 任务时给警告；tools/guard/lib/ledger-overwrite.ts
 # 把 void 当作和 done 一样的终态（done → void 可以，void 不能再改成别的状态，三个冻结字段照旧不能改，文件不能删）。
-# void 不要求 PR 与证据（task.ts check 本来就不按 status 要求 pr）。B1-09f 改为 status: void，注释保留。
+# void 不要求 PR 与证据（task.ts check 本来就不按 status 要求 pr）。B1-09f 改为 void 不在本 PR：guard-git 用主干上的旧守卫
+# 解析改后的台账，旧版不认 void（「改后的台账无法解析」，标签豁免不了），所以本 PR 合并后另开台账 PR 改。
 # 规划仓库 scripts/kanban.py 的台账统计另开 couli PR。改 tools/** 属第三类保护路径，按 approvals #24 由编排核对后加标签；
 # 非 task 分支 chore/guard-change-CT-06zf，不带证据文件（先例 CT-06ze #1214、CT-06zc #1046）。
 refs: []
@@ -16,7 +17,6 @@ paths:
   - 'tools/lib/task-file{,.test}.ts'
   - 'tools/ops/status{,.test}.ts'
   - 'tools/guard/lib/ledger-overwrite{,.test}.ts'
-  - 'ops/tasks/B1-09f.yaml'
   - 'ops/README.md'
   - 'ops/tasks/CT-06zf.yaml'
 impl: claude
