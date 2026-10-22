@@ -105,6 +105,10 @@ export const APPROVED_GUARD_CHANGES: Readonly<Record<string, string>> = {
   // in 0058); Codex money review and Claude review passed. F1-02zy.
   '0057_invite-rewards-eligibility.sql':
     '261a84f2a55dc9e8a65866c6767573d5de027c6bbe4cea3aee6ca3045e41ec89',
+  // B1-22a (BR-ID-24; 12 §9 T-05): rebuilds union_accounts_alert_stage_check NOT VALID with
+  // none / expired / d<N> (N 1–999) in place of the five fixed stages (validated in 0072); Codex money
+  // review passed. B1-22e.
+  '0071_union-alert-stages.sql': 'b1aafb940438ea1d5a49722e1e759e14beffa9b46a889ca9fda978e790045a22',
 };
 /** Extensions node-pg-migrate would run from db/migrations besides SQL. */
 const SCRIPT_MIGRATION = /\.(?:js|cjs|mjs|ts|cts|mts|jsx|tsx)$/;
