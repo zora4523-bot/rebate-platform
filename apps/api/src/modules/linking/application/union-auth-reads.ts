@@ -8,7 +8,7 @@
 import type { components } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import type { AppEnv } from '../../platform/index.ts';
+import type { AppEnv, Clock } from '../../platform/index.ts';
 import type { UnionPidService } from '../../union/index.ts';
 import type { LinkingConfigReader } from '../ports.ts';
 
@@ -49,6 +49,7 @@ function parseMethods(value: unknown): readonly UnionAuthMethod[] {
 }
 
 export interface UnionAuthReadsOptions {
+  readonly clock?: Clock;
   readonly db: Kysely<DB>;
   readonly config: LinkingConfigReader;
   readonly appEnv: AppEnv;

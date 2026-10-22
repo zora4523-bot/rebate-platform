@@ -17,7 +17,7 @@
 // Logs carry flat fields only (platform, reason, rows); never credentials or order data.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import type { RootLogger } from '../../platform/index.ts';
+import type { Clock, RootLogger } from '../../platform/index.ts';
 import {
   REGISTERED_PLATFORMS,
   isRegisteredPlatform,
@@ -44,6 +44,7 @@ export interface UnionSyncAccess {
 }
 
 export interface UnionSyncAccessOptions {
+  readonly clock?: Clock;
   readonly db: Kysely<DB>;
   readonly endpoints: readonly UnionEndpoint[];
   readonly breaker: (platform: RegisteredPlatform) => 'closed' | 'open';

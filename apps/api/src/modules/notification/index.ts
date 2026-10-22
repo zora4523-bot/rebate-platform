@@ -1,4 +1,14 @@
 // Public surface of the notification module. Other modules import only from this file.
+export { createSiteAuthAlertPort, createFakeTemplateSmsSender } from './site-auth-alert/service.ts';
+export type {
+  SiteAuthAlertPlan,
+  SiteAuthAlertPort,
+  SiteAuthAlertOptions,
+  TemplateSmsSender,
+  TemplateSmsMessage,
+  TemplateSmsResult,
+  FakeTemplateSmsSender,
+} from './site-auth-alert/service.ts';
 // B1-12b: the push token commands of a session's start and end (BR-ID-07). identity never imports
 // them: app.module hands them to identity's push token port (dependency inversion).
 export {

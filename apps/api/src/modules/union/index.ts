@@ -8,6 +8,21 @@ export type {
   SiteReauthOptions,
 } from './auth-expiry/reauth.ts';
 export {
+  createSiteAuthMonitor,
+  encodeAlertPhones,
+  decodeAlertPhones,
+  alertPhoneId,
+} from './auth-expiry/service.ts';
+export type {
+  SiteAuthAccount,
+  SiteAuthProbeResult,
+  SiteAuthProbe,
+  SiteAuthRefresher,
+  SiteAuthMonitorOptions,
+  SiteAuthMonitor,
+  UnionAuthQueue,
+} from './auth-expiry/service.ts';
+export {
   REGISTERED_PLATFORMS,
   UnionError,
   UnionIdentity,

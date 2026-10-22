@@ -153,12 +153,24 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
   // evt.payout-went-negative the list below is exactly the original one; with it, the entry sits
   // right after evt.notification-appeal-result with the defaults.
   const hasPayoutWentNegative = QUEUE_CATALOG.some((q) => q.name === 'evt.payout-went-negative');
+  // B1-22b: union-auth must appear exactly once, exclusive with directory defaults, between
+  // notify and evt.notification-risk-state.
+  const unionAuthAt = QUEUE_CATALOG.findIndex((queue) => queue.name === 'union-auth');
+  expect(QUEUE_CATALOG.filter((queue) => queue.name === 'union-auth')).toHaveLength(1);
+  expect(QUEUE_CATALOG[unionAuthAt]).toStrictEqual({
+    name: 'union-auth',
+    ...DEFAULT,
+    policy: 'exclusive',
+  });
+  expect(QUEUE_CATALOG[unionAuthAt - 1]?.name).toBe('notify');
+  expect(QUEUE_CATALOG[unionAuthAt + 1]?.name).toBe('evt.notification-risk-state');
   expect(
     QUEUE_CATALOG.filter(
       (queue) =>
         queue.name !== 'risk-scan' &&
         queue.name !== 'order-sync' &&
         queue.name !== 'export' &&
+        queue.name !== 'union-auth' &&
         queue.name !== 'page-schedule',
     ),
   ).toStrictEqual([
@@ -240,6 +252,17 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
   const plansPayoutWentNegative = ENTRY_PLAN.worker.some(
     (work) => work.queue === 'evt.payout-went-negative',
   );
+  // B1-22b: union-auth is worker-only, between notify and evt.notification-risk-state.
+  const unionAuth = ENTRY_PLAN.worker.filter((work) => work.queue === 'union-auth');
+  expect(unionAuth).toStrictEqual([w('union-auth', 1)]);
+  const at = ENTRY_PLAN.worker.findIndex((work) => work.queue === 'union-auth');
+  expect(ENTRY_PLAN.worker[at - 1]).toStrictEqual(w('notify', 5));
+  expect(ENTRY_PLAN.worker[at + 1]).toStrictEqual(w('evt.notification-risk-state', 5));
+  expect(
+    (['api', 'stream', 'admin', 'payout'] as const).flatMap((entry) =>
+      ENTRY_PLAN[entry].filter((work) => work.queue === 'union-auth').map(() => entry),
+    ),
+  ).toStrictEqual([]);
   expect({
     ...ENTRY_PLAN,
     worker: ENTRY_PLAN.worker.filter(
@@ -247,6 +270,7 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
         work.queue !== 'risk-scan' &&
         work.queue !== 'order-sync' &&
         work.queue !== 'export' &&
+        work.queue !== 'union-auth' &&
         work.queue !== 'page-schedule',
     ),
   }).toStrictEqual({
