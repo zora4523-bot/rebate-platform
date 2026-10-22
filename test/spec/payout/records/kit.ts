@@ -21,6 +21,7 @@ export async function client(kit: Kit, appId?: string) {
   expect(kit.document.paths[DETAIL_PATH]!['get']).not.toHaveProperty('x-implementation');
   const owner = await fixture(kit, appId === undefined ? {} : { appId });
   const headers = {
+    'content-type': 'application/json',
     'x-app-id': owner.appId,
     'x-platform': 'ios',
     'x-channel': 'appstore',
