@@ -4,7 +4,8 @@
 // parameter (BR-AI-03); the query string is already checked by contractRouteSchema. A cursor the
 // queries cannot read is 20001 with data.fields; a detail that is missing, someone else's, another
 // app's, unattributed or outside the visible range is the same 404 / 30701. Logs carry flat fields
-// only (app_id, scope, outcome, count): never q, a title or an order number.
+// only (app_id, scope, outcome, count, and claim_entry_pinned when present): never q, a title, an
+// order number or a link_log id.
 //
 // Nest's decorators are applied as plain calls (erasable syntax, as in the notification module).
 import type { Schema } from '@couli/contracts-ts';
@@ -70,6 +71,9 @@ export class OrdersController {
           scope: filter.scope,
           outcome: 'ok',
           count: data.items.length,
+          ...(data.claim_entry_pinned === undefined
+            ? {}
+            : { claim_entry_pinned: data.claim_entry_pinned }),
         },
         'orders.list',
       );

@@ -101,11 +101,16 @@ it('[AC-B1-08l#41] 生产装配保留 OrderQueries 与 linking 端口，HTTP 返
     f.subject,
     async (send) => {
       // Independent direct caller of the B3-08 surface, with the same real readers as production.
+      // Production also wires the claim-entry reader (B1-10h); the direct caller gets the same real
+      // reader (mechanical fixture fix, ruling D10-127; assertions unchanged).
+      const { createClaimEntryReader } =
+        await import('../../../../apps/api/src/modules/linking/index.ts');
       const q = await queries({
         db,
         clock: f.clock,
         config: createContentReader({ db, clock: f.clock }),
         links: createOrderLinkReader(db),
+        claimEntry: createClaimEntryReader(db),
       });
       for (const scope of ['self', 'share'] as const) {
         const response = await send(`/v1/orders?scope=${scope}`);

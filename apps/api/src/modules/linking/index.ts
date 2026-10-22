@@ -1,4 +1,12 @@
 // Public surface of the linking module (规划/02 §4.1); other modules import only from this file.
+export { createClaimEntryReader } from './application/claim-entry-reader.ts';
+export type {
+  ClaimEntryScope,
+  ClaimEntryLog,
+  ClaimEntryBinding,
+  ClaimEntryFacts,
+  ClaimEntryReader,
+} from './application/claim-entry-reader.ts';
 export { createClaimEvidenceReader } from './application/claim-evidence-reader.ts';
 export type {
   ClaimEvidenceScope,

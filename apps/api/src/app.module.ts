@@ -138,6 +138,7 @@ import {
   LinkingAdminModule,
   LinkingModule,
   createOrderBindingReader,
+  createClaimEntryReader,
   createClaimEvidenceReader,
   createLinkLogMomentReader,
   createOrderSourceReader,
@@ -1914,9 +1915,12 @@ export class AppModule {
               // GET /v1/orders/pending-tracks and its dismiss (B1-08m) over linking's open
               // attempts port. POST /v1/orders/claims settles claim evidence (B1-10c) over
               // linking's raw reads and catalog's platforms on its acceptance transaction.
+              // GET /v1/orders?scope=self's claim_entry_pinned (B1-10h, BR-ATTR-17) over linking's
+              // claim-entry reader (link_logs jump-outs, union_bindings).
               OrdersModule.forRoot({
                 config: (db, clock) => createContentReader({ db, clock }),
                 links: (db) => createOrderLinkReader(db),
+                claimEntry: (db) => createClaimEntryReader(db),
                 attempts: (db) => createPendingAttemptStore(db),
                 evidence: claimEvidencePorts,
               }),
