@@ -8,10 +8,11 @@
 //   re-entry alerts again, a rerun of the same entry does not). ON CONFLICT (app_id, dedupe_key)
 //   DO NOTHING: a repeat or a concurrent plan adds nothing; the count of new rows is returned.
 // - deliver(appId, unionAccountId, phones): the queued rows of exactly that account and app, one
-//   transaction per row with FOR UPDATE SKIP LOCKED (two deliveries never send one row twice).
-//   The phone is looked up by its id in the current list handed in; an id no longer configured
-//   is failed. rejected → failed; accepted / unknown → success with sent_at. A failed row is never
-//   sent again. Operational alerts: no user switch, no quiet hours (BR-TEXT-20).
+//   claim per row (FOR UPDATE SKIP LOCKED, queued → failed with sent_at null, committed before
+//   the send: at most once, never twice). The phone is looked up by its id in the current list
+//   handed in; an id no longer configured stays failed. rejected or a throwing sender → failed;
+//   accepted / unknown → success with sent_at. A failed row is never sent again. Operational
+//   alerts: no user switch, no quiet hours (BR-TEXT-20).
 // - Phones never reach notify_logs or the logs: a failure line carries the masked form only.
 // - createFakeTemplateSmsSender: local / test only; renders the BR-TEXT-20 text strictly.
 //   createTemplateSmsSender: the fake in local / test; elsewhere, until the provider adapter
@@ -53,6 +54,8 @@ export interface TemplateSmsMessage {
   phone: string;
   template: string;
   params: Record<string, string>;
+  /** Stable id of this alert (its notify_logs dedupe_key), for a provider's own dedupe. */
+  outId?: string;
 }
 export interface TemplateSmsSender {
   send(m: TemplateSmsMessage): Promise<TemplateSmsResult>;
@@ -140,6 +143,14 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
   const { clock, sms, logger } = o;
   const db = o.db.withSchema('app');
 
+  /**
+   * Claim, then send (at most once): the row is locked and moved queued → failed with sent_at null
+   * ("attempted, outcome unconfirmed", allowed by notify_logs' CHECKs) and that commits first;
+   * only then is the sender called, with the dedupe key as a stable id (outId). accepted / unknown
+   * → success with sent_at; rejected stays failed with an error line; a throwing sender stays
+   * failed with an error line and is not rethrown. A crash after the claim leaves the row failed:
+   * it is never sent again automatically (no duplicate alert); no row is ever sent twice.
+   */
   async function deliverRow(
     appId: string,
     unionAccountId: string,
@@ -147,7 +158,7 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
     platform: string | null,
     phones: ReadonlyMap<string, string>,
   ): Promise<void> {
-    await o.db.transaction().execute(async (trx) => {
+    const claimed = await o.db.transaction().execute(async (trx) => {
       const t = trx.withSchema('app');
       const row = await t
         .selectFrom('notify_logs')
@@ -158,62 +169,89 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
         .forUpdate()
         .skipLocked()
         .executeTakeFirst();
-      if (row === undefined) return;
-      const parsed = parseKey(row.dedupe_key);
-      const phone = parsed === null ? undefined : phones.get(parsed.phoneId);
-      const name = platform === null ? undefined : PLATFORM_NAMES[platform];
-      const now = clock.now();
-      const fields = {
-        app_id: appId,
-        union_account_id: unionAccountId,
-        platform,
-        code: row.code,
-        stage: parsed?.stage ?? null,
-      };
-      if (parsed === null || phone === undefined || name === undefined) {
-        // The phone was removed meanwhile (or the row cannot be rendered): failed, never resent.
-        await t
-          .updateTable('notify_logs')
-          .set({
-            status: 'failed',
-            updated_at: now,
-            row_version: sql<number>`row_version + 1`,
-          })
-          .where('id', '=', row.id)
-          .execute();
-        logger.error(
-          {
-            ...fields,
-            reason:
-              parsed !== null && phone === undefined ? 'phone_not_configured' : 'unrenderable',
-          },
-          'union_auth_sms_failed',
-        );
-        return;
-      }
-      const params: Record<string, string> = { platform_name: name };
-      if (row.code === 'UNION_AUTH_EXPIRING' && parsed.expiresAt !== null) {
-        params['expires_at'] = beijingMinute(parsed.expiresAt, now);
-      }
-      const result = await sms.send({ appId, phone, template: row.code, params });
-      const ok = result !== 'rejected';
+      if (row === undefined) return null;
       await t
         .updateTable('notify_logs')
         .set({
-          status: ok ? 'success' : 'failed',
-          sent_at: ok ? now : null,
-          updated_at: now,
+          status: 'failed',
+          sent_at: null,
+          updated_at: clock.now(),
           row_version: sql<number>`row_version + 1`,
         })
+        .where('app_id', '=', appId)
         .where('id', '=', row.id)
+        .where('status', '=', 'queued')
         .execute();
-      if (!ok) {
-        logger.error(
-          { ...fields, phone_masked: maskPhone(phone), reason: 'rejected' },
-          'union_auth_sms_failed',
-        );
-      }
+      return row;
     });
+    if (claimed === null) return;
+    const parsed = parseKey(claimed.dedupe_key);
+    const phone = parsed === null ? undefined : phones.get(parsed.phoneId);
+    const name = platform === null ? undefined : PLATFORM_NAMES[platform];
+    const fields = {
+      app_id: appId,
+      union_account_id: unionAccountId,
+      platform,
+      code: claimed.code,
+      stage: parsed?.stage ?? null,
+    };
+    if (parsed === null || phone === undefined || name === undefined) {
+      // The phone was removed meanwhile (or the row cannot be rendered): failed, never resent.
+      logger.error(
+        {
+          ...fields,
+          reason: parsed !== null && phone === undefined ? 'phone_not_configured' : 'unrenderable',
+        },
+        'union_auth_sms_failed',
+      );
+      return;
+    }
+    const params: Record<string, string> = { platform_name: name };
+    if (claimed.code === 'UNION_AUTH_EXPIRING' && parsed.expiresAt !== null) {
+      params['expires_at'] = beijingMinute(parsed.expiresAt, clock.now());
+    }
+    let result: TemplateSmsResult;
+    try {
+      result = await sms.send({
+        appId,
+        phone,
+        template: claimed.code,
+        params,
+        outId: claimed.dedupe_key,
+      });
+    } catch (error) {
+      logger.error(
+        {
+          ...fields,
+          phone_masked: maskPhone(phone),
+          reason: 'send_error',
+          error_name: error instanceof Error ? error.name : typeof error,
+        },
+        'union_auth_sms_failed',
+      );
+      return;
+    }
+    if (result === 'rejected') {
+      logger.error(
+        { ...fields, phone_masked: maskPhone(phone), reason: 'rejected' },
+        'union_auth_sms_failed',
+      );
+      return;
+    }
+    const sentAt = clock.now();
+    await db
+      .updateTable('notify_logs')
+      .set({
+        status: 'success',
+        sent_at: sentAt,
+        updated_at: sentAt,
+        row_version: sql<number>`row_version + 1`,
+      })
+      .where('app_id', '=', appId)
+      .where('id', '=', claimed.id)
+      .where('status', '=', 'failed')
+      .where('sent_at', 'is', null)
+      .execute();
   }
 
   return {

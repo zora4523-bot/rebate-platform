@@ -162,6 +162,8 @@ interface AccountRow {
   readonly auth_status: string;
   readonly auth_expires_at: Date | null;
   readonly alert_stage: string;
+  readonly auth_renewed_at: Date | null;
+  readonly row_version: number;
 }
 
 interface AlertPhone {
@@ -184,7 +186,23 @@ const ACCOUNT_COLUMNS = [
   'auth_status',
   'auth_expires_at',
   'alert_stage',
+  'auth_renewed_at',
+  'row_version',
 ] as const;
+
+/**
+ * The authorization version of a row: a probe answered for one version is applied only to the
+ * same version (a reauthorization, refresh or any other write meanwhile makes it stale).
+ */
+function authVersion(row: AccountRow): string {
+  return [
+    row.row_version,
+    row.auth_status,
+    iso(row.auth_expires_at),
+    iso(row.auth_renewed_at),
+    row.alert_stage,
+  ].join('|');
+}
 
 // ——— Alert phones (also used by B1-22d's writer) ———
 
@@ -526,11 +544,16 @@ export function createSiteAuthMonitor(options: SiteAuthMonitorOptions): SiteAuth
 
   // ——— The per-account check ———
 
-  async function scheduleExpiry(row: AccountRow, now: Date): Promise<void> {
+  /** Reads the Clock again: already due (e.g. during a slow probe) → expired at once. */
+  async function scheduleExpiry(ctx: AppContext, row: AccountRow): Promise<void> {
     const expires = row.auth_expires_at;
     if (expires === null) return;
-    const left = expires.getTime() - now.getTime();
-    if (left <= 0 || left > DUE_WINDOW_MS) return;
+    const left = expires.getTime() - clock.now().getTime();
+    if (left > DUE_WINDOW_MS) return;
+    if (left <= 0) {
+      await expireByTime(ctx, row);
+      return;
+    }
     try {
       await queue.send(
         UNION_AUTH_QUEUE,
@@ -578,41 +601,71 @@ export function createSiteAuthMonitor(options: SiteAuthMonitorOptions): SiteAuth
     ) {
       await refresh(account, seen, now);
     }
-    const result = await probe.probe(account);
+    // The version the probe answers for, read after any refresh above.
+    const before = await db
+      .selectFrom('union_accounts')
+      .select(ACCOUNT_COLUMNS)
+      .where('app_id', '=', seen.app_id)
+      .where('id', '=', seen.id)
+      .executeTakeFirst();
+    if (before === undefined) return;
+    const answered = await probe.probe(account);
     const checked = await onRow(
       seen.app_id,
       seen.id,
       undefined,
       async (trx, row, patch, effects) => {
+        // The probe took time: judge expiry and alerts at the Clock read again here, under the lock.
+        const judgedAt = clock.now();
+        const judgedMs = judgedAt.getTime();
+        // Stale probe (the row changed while it ran: reauthorized, refreshed, judged by a call or
+        // the expiry job): its result is dropped entirely — no last_probe_* (they would describe
+        // the old authorization), no status change, no alert, no retry; the expiry check of this
+        // run still applies to the current row and the next run probes the new authorization.
+        const stale = authVersion(row) !== authVersion(before);
+        const result: SiteAuthProbeResult = stale ? { kind: 'unsupported' } : answered;
+        if (stale && answered.kind !== 'unsupported') {
+          effects.push(() =>
+            logger.info(
+              {
+                app_id: row.app_id,
+                platform: row.platform,
+                union_account_id: row.id,
+                probe_kind: answered.kind,
+              },
+              'union_auth_probe_discarded',
+            ),
+          );
+        }
         if (result.kind !== 'unsupported') {
-          patch.last_probe_at = now;
+          patch.last_probe_at = judgedAt;
           patch.last_probe_ok = result.kind === 'ok';
           patch.last_probe_error = result.kind === 'ok' ? null : clip(result.error);
         }
         const expires = managed ? row.auth_expires_at : null;
         if (!managed) {
           // reauth_mode none: the probe result is recorded only.
-        } else if (expires !== null && nowMs >= expires.getTime()) {
-          await expire(trx, ctx, row, 'time', patch, effects, now);
+        } else if (expires !== null && judgedMs >= expires.getTime()) {
+          await expire(trx, ctx, row, 'time', patch, effects, judgedAt);
         } else if (result.kind === 'auth_invalid') {
-          await expire(trx, ctx, row, 'probe', patch, effects, now);
+          await expire(trx, ctx, row, 'probe', patch, effects, judgedAt);
         } else if (row.auth_status === 'expired') {
           if (result.kind === 'ok') {
             // Judged invalid before its expiry, now valid again: no alert, no node resent.
             const left =
-              expires === null ? null : remainingDays(expires.getTime(), nowMs, ctx.probeTime);
+              expires === null ? null : remainingDays(expires.getTime(), judgedMs, ctx.probeTime);
             const node = left === null ? null : reachedNode(left, ctx.nodes);
             patch.auth_status = left === null ? 'active' : statusFor(left, ctx.nodes);
             patch.alert_stage = node === null ? 'none' : `d${node}`;
           }
         } else if (expires !== null) {
-          const left = remainingDays(expires.getTime(), nowMs, ctx.probeTime);
+          const left = remainingDays(expires.getTime(), judgedMs, ctx.probeTime);
           const status = statusFor(left, ctx.nodes);
           if (status !== row.auth_status) patch.auth_status = status;
           const node = dueNode(left, ctx.nodes, row.alert_stage);
           if (node !== null) {
             patch.alert_stage = `d${node}`;
-            await alert(trx, ctx, row, `d${node}`, expires, null, effects, now);
+            await alert(trx, ctx, row, `d${node}`, expires, null, effects, judgedAt);
           }
         }
         if (result.kind === 'transient') {
@@ -623,7 +676,7 @@ export function createSiteAuthMonitor(options: SiteAuthMonitorOptions): SiteAuth
               { app_id: row.app_id, union_account_id: row.id },
               {
                 trx,
-                singletonKey: `union-auth:retry:${row.id}:${nowMs}`,
+                singletonKey: `union-auth:retry:${row.id}:${judgedMs}`,
                 delaySeconds: RETRY_DELAY_SECONDS,
               },
             );
@@ -644,7 +697,7 @@ export function createSiteAuthMonitor(options: SiteAuthMonitorOptions): SiteAuth
         return { ...row, auth_expires_at: expires };
       },
     );
-    if (mode === 'daily' && checked !== undefined) await scheduleExpiry(checked, now);
+    if (mode === 'daily' && checked !== undefined) await scheduleExpiry(ctx, checked);
   }
 
   async function accountsOf(appId: string): Promise<AccountRow[]> {
