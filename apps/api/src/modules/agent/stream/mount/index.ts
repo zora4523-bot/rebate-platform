@@ -131,6 +131,9 @@ export { agentStreamPortsToken, createProductionStreamAssembly } from './product
 export { createStreamReview } from './review.ts';
 export type { StreamReviewOptions, StreamReviewPorts } from './review.ts';
 
+export { createAgentBodyAssembly } from './body.ts';
+export type { AgentBodyAssembly, AgentBodyAssemblyDeps } from './body.ts';
+
 /** identity's createAiConsentReader (B1-02r), handed in by app.module (agent never imports it). */
 export type AgentConsentReaderFactory = (options: {
   readonly db: Kysely<Database>;

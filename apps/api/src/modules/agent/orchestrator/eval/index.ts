@@ -10,6 +10,15 @@ import { StreamWriter } from '../../stream/writer/index.ts';
 import type { MetaData, StreamEvent, StreamEventInput } from '../../stream/writer/index.ts';
 import type { OrchestratorTrace, RunTraceSink, ToolTraceFragment } from '../core/ports.ts';
 
+export { createLocalEvalAgent, createPortTools, decodeToolOutcome, runLocalEval } from './local.ts';
+export type {
+  EvalToolCatalog,
+  LocalEvalAgentDeps,
+  LocalEvalCliDeps,
+  LocalEvalIo,
+  RunLocalEvalDeps,
+} from './local.ts';
+
 // Structural equivalents of evals' public shapes; no runtime/package dependency on evals.
 export interface EvalInput {
   case_id: string;
