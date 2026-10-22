@@ -49,3 +49,19 @@ export {
   isWithdrawalApplication,
 } from './application/withdraw-switch-check.ts';
 export type { WithdrawSwitchCheckOptions } from './application/withdraw-switch-check.ts';
+export {
+  createWithdrawalCommands,
+  WithdrawalConflictError,
+} from './application/withdrawal-commands.ts';
+export type {
+  WithdrawalAttemptsPort,
+  WithdrawalCommands,
+  WithdrawalCommandsOptions,
+  WithdrawalCommand,
+  RejectWithdrawalCommand,
+  WithdrawalCommandResult,
+} from './application/withdrawal-commands.ts';
+export { createWithdrawHolds } from './application/withdraw-holds.ts';
+export { createWithdrawalInFlightReader } from './application/withdrawal-in-flight.ts';
+export { createWentNegativeConsumer } from './application/went-negative.ts';
+// TODO(规划/11 §2.3): payout_attempts 读取 — blocked on B2-06
