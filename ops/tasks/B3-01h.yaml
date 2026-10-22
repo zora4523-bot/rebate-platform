@@ -1,0 +1,26 @@
+id: B3-01h
+repo: rebate-platform
+title: 评测框架录制写入：真实模型与工具调用经可注入写入器落成录制文件（recording.schema.json），CLI 增加 record / replay 子命令（只回写通过或失败）；固定时钟与 id 使回放请求可匹配
+type: impl
+# 2026-10-22 入账（agent-acct4，编排裁定 D10-130 a）。私有 Agent 冒烟（BR-AI-21）要先真实录制一次、之后只回放，
+# 现 packages/evals 只能读录制（RecordingStore、replay），没有写录制的写入器与 record 子命令；调研见 couli-runs/B3-02h/smoke-recording-research.md。
+# 本任务只做公开仓库的通用机制（不含私有内容、不持有私有存储凭据、CI 不调真实模型）：录制写入器（包住模型与工具端口，按请求内容键写入，
+# 去掉鉴权头与身份字段）、record / replay CLI（私有用例目录与录制目录由参数给出，只在本机运行，输出只含通过或失败与问题码）。
+# 真实录制须先在 ops/approvals.yaml 登记用途、调用上限、机器与执行人（D10-130），不在本任务。
+# 分工：Codex 写规则测试，Claude 新子代理过审，Opus 5.5 实现，Codex 评审。风险 RV1。排在 B3-09c 之后。
+refs: [BR-AI-21]
+refs_hash:
+  BR-AI-21: 7e5eb4e48745
+deps: [B3-01b, B3-01d]
+paths:
+  - 'packages/evals/src/**'
+  - 'packages/evals/schema/recording.schema.json'
+test_paths:
+  - 'test/spec/evals-record/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/evals-record/**'
+status: todo
+pr: null

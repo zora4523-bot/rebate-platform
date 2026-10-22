@@ -1,0 +1,24 @@
+id: B3-05m
+repo: rebate-platform
+title: 评测装配与本机入口：用生产 createRun 装配 AgentUnderTest（工具调用适配、输入审核替身、固定时钟与 id），把私有用例 + 录制 + 被测 Agent 串起来跑出 report.json 交 smoke-gate（只在本机）
+type: impl
+# 2026-10-22 入账（agent-acct4，编排裁定 D10-130 a）。现 apps/api 的 createEvalAgent 只在测试夹具里有 createRun，
+# 没有把私有冒烟集、录制与 AgentUnderTest 串起来产出 report 的本机入口（smoke-gate 只判现成 report）。
+# 依赖 B3-01h（录制写入 / 回放 CLI）与 B3-03f（流式入口挂载后的生产装配）。私有内容只在本机，公开 CI 不读私有存储。
+# 分工：Codex 写规则测试，Claude 新子代理过审，Opus 5.5 实现，Codex 评审。风险 RV1。排在 B3-09c、B3-01h 之后。
+refs: [BR-AI-21, BR-AI-14]
+refs_hash:
+  BR-AI-21: 7e5eb4e48745
+  BR-AI-14: e8ed6052e898
+deps: [B3-01h, B3-03f]
+paths:
+  - 'apps/api/src/modules/agent/orchestrator/eval/**'
+test_paths:
+  - 'test/spec/agent/orchestrator-eval-local/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/orchestrator-eval-local/**'
+status: todo
+pr: null
