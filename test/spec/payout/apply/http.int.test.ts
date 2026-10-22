@@ -21,6 +21,9 @@ import {
 } from '../../identity/payout-account/kit.ts';
 import { assertContract } from '../rules/http-kit.ts';
 import { fund, PATH, TIMEOUT } from './kit.ts';
+import { lockUsersForUpdate } from '../../../../apps/api/src/modules/identity/ports/lock-users.ts';
+import type { Idempotency } from '../../../../apps/api/src/modules/platform/idempotency/index.ts';
+import { IDEMPOTENCY } from '../../../../apps/api/src/modules/platform/idempotency/token.ts';
 
 let database: TestDatabase;
 let redis: TestRedis;
@@ -258,3 +261,163 @@ it('[AC-B2-05d#55] HTTP 30301 文案来自默认契约、缓存原错误且释�
   expect((await c.post({ step })).json()).toMatchObject({ code: 0 });
   expect((await c.state()).withdrawals).toHaveLength(1);
 });
+
+it(
+  '[AC-B2-05d#56] POST 等待 users 行锁时作废同键 → 40901，放锁后建单冻结一次，完成后作废返回原结果且同键原样重放',
+  async () => {
+    const c = await client();
+    const key = randomUUID();
+    const before = await c.state();
+    const idempotency = kit.app.get<Idempotency>(IDEMPOTENCY);
+    let pending: ReturnType<typeof c.post> | undefined;
+    try {
+      await kit.db.transaction().execute(async (trx) => {
+        await lockUsersForUpdate(trx, { appId: c.f.appId, userIds: [c.f.uid] });
+        const holder = (await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx))
+          .rows[0]!.pid;
+        pending = c.post({ key, step: await c.stepUp() });
+        // Observe the actual PG wait edge before abandoning; elapsed time alone is no barrier.
+        // Keep a rejection handled while polling, then await the original promise after unlock.
+        void pending.catch(() => undefined);
+        await expect
+          .poll(
+            async () =>
+              (
+                await sql<{ blocked: boolean }>`SELECT EXISTS (
+                  SELECT 1 FROM pg_stat_activity
+                  WHERE datname = current_database()
+                    AND ${holder}::int = ANY(pg_blocking_pids(pid))
+                    AND position('users' in query) > 0
+                    AND query ~* 'for (no key )?update'
+                ) AS blocked`.execute(kit.db)
+              ).rows[0]!.blocked,
+            { timeout: 10_000, interval: 20 },
+          )
+          .toBe(true);
+        // Use the application's real primitive, without replacing the controller or its trx.
+        // The in-flight transaction holds K's advisory lock, so abandonment cannot win.
+        const abandoned = await idempotency.abandon({
+          appId: c.f.appId,
+          userId: c.f.uid,
+          action: 'withdraw',
+          key,
+          traceId: randomUUID(),
+        });
+        expect(abandoned.status).toBe(409);
+        expect(JSON.parse(abandoned.body)).toMatchObject({ code: 40901 });
+        const during = await c.state();
+        expect(during.keys.filter((row) => row.key === key && row.status === 'abandoned')).toEqual(
+          [],
+        );
+        expect(during.withdrawals).toEqual(before.withdrawals);
+        expect(during.balances).toEqual(before.balances);
+      });
+    } finally {
+      // Release the observer's lock even on assertion failure, then drain the HTTP request.
+      if (pending !== undefined) await pending;
+    }
+    expect(pending).toBeDefined();
+    const response = (await pending)!;
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ code: 0 });
+    const after = await c.state();
+    expect(after.withdrawals).toHaveLength(1);
+    expect(after.withdrawals[0]).toMatchObject({
+      user_id: c.f.uid,
+      status: 'PENDING_REVIEW',
+      amount_fen: 1000n,
+    });
+    expect(after.balances).toEqual([
+      expect.objectContaining({ available_fen: 9000n, frozen_fen: 1000n }),
+    ]);
+    const vouchers = () =>
+      kit.db
+        .withSchema('app')
+        .selectFrom('ledger_vouchers')
+        .selectAll()
+        .where('app_id', '=', c.f.appId)
+        .where('biz_type', '=', 'withdrawal')
+        .execute();
+    const frozen = await vouchers();
+    expect(frozen).toEqual([
+      expect.objectContaining({
+        uniq_key: `wd:${after.withdrawals[0]!.id}:FREEZE`,
+        biz_id: after.withdrawals[0]!.id,
+        operator: `user:${c.f.uid}`,
+      }),
+    ]);
+    expect(after.keys).toEqual([
+      expect.objectContaining({
+        key,
+        method: 'POST',
+        path: PATH,
+        user_id: c.f.uid,
+        status: 'completed',
+        response: { status: response.statusCode, body: response.body },
+      }),
+    ]);
+    const completed = await idempotency.abandon({
+      appId: c.f.appId,
+      userId: c.f.uid,
+      action: 'withdraw',
+      key,
+      traceId: randomUUID(),
+    });
+    const original = response.json<{ code: number; msg: string; data: unknown }>();
+    expect(completed.status).toBe(200);
+    expect(JSON.parse(completed.body)).toMatchObject({
+      code: 0,
+      data: {
+        outcome: 'completed',
+        original: { code: original.code, msg: original.msg, data: original.data },
+      },
+    });
+    expect(await c.state()).toEqual(after);
+    const replay = await c.post({ key, step: null });
+    expect(replay.statusCode).toBe(response.statusCode);
+    expect(replay.body).toBe(response.body);
+    expect(await c.state()).toEqual(after);
+    expect(await vouchers()).toEqual(frozen);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-05d#57] 提现开关关闭后旧键无需 step-up 原样重放成功，新键返回 30306',
+  async () => {
+    const c = await client();
+    const key = randomUUID();
+    const first = await c.post({ key });
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toMatchObject({ code: 0 });
+    const before = await c.state();
+    await config(kit, c.f, 'withdraw.enabled', false);
+    const replay = await c.post({ key, step: null });
+    expect(replay.statusCode).toBe(first.statusCode);
+    expect(replay.body).toBe(first.body);
+    expect(await c.state()).toEqual(before);
+    // source is internal, not an HTTP field: inspect the real persisted key through the
+    // primitive as well, with a handler that must never run. The HTTP replay above is real.
+    expect(
+      await kit.app.get<Idempotency>(IDEMPOTENCY).executeInTransaction(
+        {
+          appId: c.f.appId,
+          actor: { userId: c.f.uid, deviceId: c.principal.device_id, phoneHmac: null },
+          method: 'POST',
+          path: PATH,
+          key,
+          body: { amount_fen: 1000 },
+          traceId: randomUUID(),
+        },
+        async () => expect.fail('completed withdrawal key must replay before business checks'),
+      ),
+    ).toEqual({ status: first.statusCode, body: first.body, source: 'replay' });
+    const fresh = await c.post({ key: randomUUID() });
+    expect(fresh.statusCode).toBe(422);
+    expect(fresh.json()).toMatchObject({ code: 30306 });
+    const after = await c.state();
+    expect(after.withdrawals).toEqual(before.withdrawals);
+    expect(after.balances).toEqual(before.balances);
+  },
+  TIMEOUT,
+);
