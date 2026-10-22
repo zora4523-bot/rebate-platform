@@ -1,0 +1,23 @@
+id: CT-16j
+repo: rebate-platform
+title: 文案（CT-16 续，Agent 键段）：texts.default.json 补 08 BR-TEXT-22 新登记的 Agent 草稿文案键——agent.notice.platform_unrecognized、agent.suggest.clarify.{reference,price,platform}.1–3、agent.tool_status.<tool>.<phase>[.<platform>] 模板；fund-term-keys 归类
+type: contract
+# 2026-10-22 入账（content-client；编排 16:5x：B3-03j #1156 只差 Agent 文案键，先于 CT-16i 单开此段）。
+# 依据（SPEC_REF ae516de，含 couli #172 / D10-135 / D10-136）：08 12_TEXT BR-TEXT-22 表 l.1469–1496（键与原文、例外说明）、l.675–678（资金术语归类：agent.tool_status.get_rebate_quote.* 归资金段，其余 Agent 新键归普通）、l.891（{platform_name}暂时查不到 两处同句）。原文由编排者摘入任务书第 9 节，refs 置空。
+# 默认（【待编排裁定】）：agent.tool_status.* 多平台合并显示——平台名按 BR-TEXT-24 顺序以「、」连接后套入同一模板（契约线定，D10-136 交 CT-16 续段）；guest_login_to_view 是开关不是文案键，不建。
+# 不建协议 / 授权类键；文案逐字照 08。H5 首屏包体积若超（F1-01t 未合并时），在 notices 报编排。
+refs: []
+refs_hash: {}
+deps: [CT-16h]
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
