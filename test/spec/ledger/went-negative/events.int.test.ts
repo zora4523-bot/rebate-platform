@@ -233,7 +233,7 @@ it('[AC-B2-04k#18] 第二个账户入队失败时整体回滚，含第一个任�
   expect(await jobs(h.db, appId)).toHaveLength(2);
 });
 
-it('[AC-B2-04k#21] 生产 LedgerModule 的 LEDGER 工厂注入平台事件总线并发布扣负事件', async () => {
+it('[AC-B2-04k#21] 连库装配的 LEDGER 工厂使用同一平台事件总线并在记账事务内发布扣负事件', async () => {
   const f = context(h);
   const definition = LedgerModule.forRoot().providers?.find(
     (provider) =>
@@ -247,14 +247,35 @@ it('[AC-B2-04k#21] 生产 LedgerModule 的 LEDGER 工厂注入平台事件总线
     inject: readonly unknown[];
     useFactory: (...args: unknown[]) => Ledger;
   };
-  expect(provider.inject).toEqual(expect.arrayContaining([CLOCK, EVENT_BUS]));
+  const tokens = provider.inject.map((dependency) =>
+    typeof dependency === 'object' && dependency !== null && 'token' in dependency
+      ? dependency.token
+      : dependency,
+  );
+  expect(tokens).toEqual(expect.arrayContaining([CLOCK, EVENT_BUS]));
   const dependencies = new Map<unknown, unknown>([
     [CLOCK, f.clock],
     [EVENT_BUS, { publish: f.publish }],
   ]);
-  const ledger = provider.useFactory(...provider.inject.map((token) => dependencies.get(token)));
+  const ledger = provider.useFactory(...tokens.map((token) => dependencies.get(token)));
   const a = await account(h.db, ledger, f.appId);
-  await post(h.db, ledger, [a.user_id], change(f.appId, a.account_id, 1n));
+  await h.db.transaction().execute(async (trx) => {
+    await ledger.lockBalances(trx, { appId: f.appId, userIds: [a.user_id] });
+    await ledger.post(trx, change(f.appId, a.account_id, 1n));
+    expect(f.publish).toHaveBeenCalledTimes(1);
+    expect(f.publish.mock.calls[0]?.[0]).toBe(trx);
+    expect(f.publish.mock.calls[0]?.[1]).toMatchObject({
+      appId: f.appId,
+      name: 'account.went_negative',
+      payload: { user_id: a.user_id },
+    });
+    expect(f.send).toHaveBeenCalledTimes(1);
+    expect(f.send.mock.calls[0]?.[3].trx).toBe(trx);
+    expect(await events(trx, f.appId)).toHaveLength(1);
+    expect(await jobs(trx, f.appId)).toHaveLength(1);
+    expect(await events(h.right, f.appId)).toEqual([]);
+    expect(await jobs(h.right, f.appId)).toEqual([]);
+  });
   expect(f.publish).toHaveBeenCalledTimes(1);
   expect(await events(h.db, f.appId)).toHaveLength(1);
   expect(await jobs(h.db, f.appId)).toHaveLength(1);
