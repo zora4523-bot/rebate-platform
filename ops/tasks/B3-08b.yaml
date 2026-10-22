@@ -1,0 +1,25 @@
+id: B3-08b
+repo: rebate-platform
+title: Agent 工具：search_rules——在 rule_chunks（本 app、status=active）按字二元组相似度检索问句，得分 ≥ agent.rag.min_score 的前 3 条各出 1 张 rule_ref 卡（chunk_id、title、excerpt=块正文、published_version、action=Help{article_id}），无命中出 handoff 卡；模型只见 card_id 与 <untrusted> 包裹的标题；不调外部嵌入模型（D10-194）
+type: impl
+# 2026-10-23 agent 线入账（D10-194 取 C：MVP 用 PostgreSQL 内数据 + 应用层打分，不调外部嵌入模型、不加供应商，用户问句不外发，BR-AI-14 不触发；pgvector 语义检索后续另开）。拆分依据 couli-runs/B3-08/summary.md。
+# 依据：BR-AI-07 正文与细则「T6 与其他」（前 3 条、相似度 ≥ agent.rag.min_score、一律出 rule_ref 不判断含不含数字、无命中出 handoff 卡与 agent.rule.not_found、模型文本不下发由模板替换）；BR-AI-01 A 级表「只出卡」；BR-AI-04「规则答复：rule_chunks（CMS 已发布版本）」；BR-AI-05（模型只见 card_id 与包裹的标题）。
+# 打分选型（D10-194 要求写进台账）：问句与「块标题 + 正文」各做规范化（NFKC、转小写、去空白与标点），取字二元组集合，得分 = Dice 系数 2|A∩B|/(|A|+|B|)，范围 0–1；按得分降序、同分按 chunk_id 升序，取前 3。候选为本 app 全部 active 块（文章量小，MVP 不建检索索引）。
+# agent.rag.min_score：08 未给默认值，本段技术默认 0.2（可配置，读不到或不在 0–1 内回落默认），已报编排；后续接语义检索时随模型重标定。
+# 出卡：rule_ref 卡结构以 contracts/agent-stream.schema.json 为准；handoff 卡用 B3-08c 的 handoffCard。模板文本由 intents（TemplateCall {name:'search_rules', matched}）出，本段在 outcome.trace 带 matched 条数。
+# 不进 allowlist、不接线（B3-08g）。风险 RV1（agent/**）。分工：Codex 先写规则测试，Opus 实现，Codex 评审。
+refs: [BR-AI-07]
+refs_hash:
+  BR-AI-07: edd68aa327e3
+deps: [B3-04a, B3-05i, B3-08c, B3-08e]
+paths:
+  - 'apps/api/src/modules/agent/tools/rules/**'
+test_paths:
+  - 'test/spec/agent/tools-rules/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-rules/**'
+status: todo
+pr: null

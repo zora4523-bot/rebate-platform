@@ -1,0 +1,28 @@
+id: B3-08i
+repo: rebate-platform
+title: 规则知识块同步：把各 app 当前已发布的 help / rule 文章（每篇取最高已发布版本）切块写入 rule_chunks，旧版本与已下线 / 非发布文章的块置 retired；幂等、可重复执行（至少一次投递）；content 加只读入口列出已发布 help / rule 文章；不做向量化（D10-194）
+type: impl
+# 2026-10-23 agent 线入账（D10-194 取 C：MVP 不调外部嵌入模型，故本段只切块不向量化；向量化与嵌入端口等负责人定模型后另开）。拆分依据 couli-runs/B3-08/summary.md。
+# 依据：02 §9.2 规则 RAG「帮助中心与返利规则在 CMS 发布时切块……写入 rule_chunks」（向量化部分按 D10-194 推后）；04 §3.2 rule_chunks 写者 agent、只来自已发布文章；BR-AI-04 规则答复数据源；BR-AI-07 T6 rule_ref excerpt ≤200 字。
+# 切块：按段落切，单块正文 ≤200 字（与 rule_ref excerpt 上限一致，卡片原样展示块正文、不再截断），超长段落按句号 / 换行再切、仍超长硬切；块标题取文章标题；seq 从 0 递增。
+# 触发：同步函数 syncRuleChunks(appId) 比对「已发布文章的 (article_id, version)」与「active 块」，缺的插入、多的置 retired，重复执行结果不变；由 agent worker 定时任务调用（周期配置 agent.rag.sync_interval_seconds，默认 300，接线随 B3-08g）。唯一键冲突视为已写入（at-least-once 去重落在 PG 唯一约束）。
+# content 模块目前不导出文章读取：本段在 content 加只读入口 published-articles.ts（只读 app.articles，category ∈ help/rule、status=published，返回 id、app_id、version、title、body、published_at），经 content index 导出；agent 不直接查 articles 表。
+# 不涉及用户问句外发与新供应商（BR-AI-14 不触发）。风险 RV2（content/**）。分工：Codex 先写规则测试，Opus 实现，Codex 评审。
+refs: [BR-AI-07, BR-AI-04]
+refs_hash:
+  BR-AI-07: edd68aa327e3
+  BR-AI-04: a07587a282ba
+deps: [B3-08e]
+paths:
+  - 'apps/api/src/modules/agent/rag/chunks/**'
+  - 'apps/api/src/modules/content/index.ts'
+  - 'apps/api/src/modules/content/application/published-articles.ts'
+test_paths:
+  - 'test/spec/agent/rag-chunks/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/rag-chunks/**'
+status: todo
+pr: null
