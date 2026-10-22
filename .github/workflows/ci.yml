@@ -103,7 +103,9 @@ jobs:
     runs-on: ubuntu-latest
     # 30 → 45 (2026-10-19, CT-06z): green in the 30 latest ci runs 17m05s–29m16s, p90 29m05s
     # (97% of the cap); 45 is the maximum with a 1.5× margin, rounded up to a multiple of 5.
-    timeout-minutes: 45
+    # 45 → 60 (2026-10-22, CT-06ze): #1173, #1190 and #1167 hit 45 minutes in the browser install
+    # step after test:int had passed; the install now runs first and is cached (below).
+    timeout-minutes: 60
     services:
       redis:
         image: redis:7.4.11-alpine
@@ -126,6 +128,39 @@ jobs:
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # Browser tests (F1-01j, test/vitest.browser.config.ts): the Chromium of the playwright the
+      # lockfile pins (the test package's own CLI, so the version follows pnpm-lock.yaml) with its
+      # system libraries, and the Noto CJK fonts the verify image has, so Chinese text renders
+      # with the same glyphs as in tools/ops/verify-container.sh. Installed before test:int
+      # (CT-06ze, 2026-10-22) so a slow install fails fast instead of after the integration
+      # tests; the browser download is cached per playwright version, the system libraries and
+      # fonts still come from apt on every run.
+      - name: Read the pinned playwright version
+        id: playwright
+        run: |
+          version="$(pnpm --filter @couli/spec-tests exec playwright --version | awk '{print $2}')"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::unexpected playwright --version output: ${version}"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - name: Cache the playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+      - name: Install Chromium and the CJK fonts for the browser tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          if [ "$CACHE_HIT" = true ]; then
+            pnpm --filter @couli/spec-tests exec playwright install-deps chromium
+          else
+            pnpm --filter @couli/spec-tests exec playwright install --with-deps chromium
+          fi
+        env:
+          CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
       # A service container takes no command, so the redis-server settings of
       # infra/local/compose.yaml (no RDB, no AOF, noeviction with an explicit limit;
       # ADR-0001 §4.2 #17) are applied at run time.
@@ -152,15 +187,6 @@ jobs:
       - run: pnpm test:int
         env:
           TEST_REDIS_URL: redis://127.0.0.1:6379/0
-      # Browser tests (F1-01j, test/vitest.browser.config.ts): the Chromium of the playwright the
-      # lockfile pins (the test package's own CLI, so the version follows pnpm-lock.yaml) with its
-      # system libraries, and the Noto CJK fonts the verify image has, so Chinese text renders
-      # with the same glyphs as in tools/ops/verify-container.sh.
-      - name: Install Chromium and the CJK fonts for the browser tests
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
-          pnpm --filter @couli/spec-tests exec playwright install --with-deps chromium
       - run: pnpm --filter @couli/spec-tests run test:browser
       # Build smoke (F1-01k, test/vitest.build-smoke.config.ts): builds the H5 entries (APP_ENV=test)
       # and the admin console into a temporary directory, serves each on 127.0.0.1 and opens it in
