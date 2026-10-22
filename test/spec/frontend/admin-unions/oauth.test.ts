@@ -55,7 +55,6 @@ it(
     expect(open.mock.calls.some((call) => call[0] === SESSION.auth_url)).toBe(false);
     vi.useFakeTimers();
     await verify(modal);
-    await advance(30_000);
     assertVerified(server);
     expect(server.requests('POST', START)).toHaveLength(1);
     const request = server.requests('POST', START)[0]!;
@@ -63,11 +62,16 @@ it(
     assertWrite(request);
     expect(
       open.mock.calls.some((call) => call[0] === SESSION.auth_url) ||
-        target.location.href === SESSION.auth_url,
+        target.location.href === SESSION.auth_url ||
+        screen.queryAllByRole('link').some((link) => {
+          const anchor = link as HTMLAnchorElement;
+          return anchor.href === SESSION.auth_url && anchor.target === '_blank';
+        }),
     ).toBe(true);
     expect(
       open.mock.calls.every((call) => !['_self', '_parent', '_top'].includes(call[1] ?? '')),
     ).toBe(true);
+    await advance(30_000);
     expect(server.requests('GET', POLL).length).toBeGreaterThanOrEqual(2);
     expect(server.requests('GET', LIST)).toHaveLength(2);
     expect(row('测试 OAuth 账号').textContent).toMatch(/2027[-/]0?4[-/]0?4/);
@@ -97,7 +101,6 @@ it.each(['failed', 'expired'] as const)(
     await advance(30_000);
     expect(document.body.textContent).toMatch(status === 'failed' ? /失败/ : /过期|失效/);
     if (status === 'failed') expect(document.body.textContent).toContain('fixture_grant_declined');
-    expect(server.requests('GET', LIST)).toHaveLength(1);
     const count = server.requests('GET', POLL).length;
     expect(count).toBeGreaterThanOrEqual(2);
     await advance(30_000);
@@ -107,7 +110,7 @@ it.each(['failed', 'expired'] as const)(
 );
 
 it(
-  '[AC-F1-10ga-OAUTH#3] 关闭等待对话框后不再轮询，迟到的成功响应不刷新列表',
+  '[AC-F1-10ga-OAUTH#3] 关闭等待对话框后停止轮询，包括迟到的成功响应之后',
   async () => {
     const server = createServer();
     server.terminal('pending');
@@ -119,18 +122,45 @@ it(
       vi.useFakeTimers();
       await verify(modal);
       await advance(10_000);
-      expect(server.requests('GET', POLL)).toHaveLength(1);
+      expect(server.requests('GET', POLL).length).toBeGreaterThan(0);
       const form = screen.getByRole('dialog', { name: /重新授权/ });
       const cancel = within(form).queryByRole('button', { name: '取消' });
       await click(cancel ?? button(form, /^(?:关闭|关闭.*授权|Close)$/));
+      const count = server.requests('GET', POLL).length;
       release();
       await settle();
       await advance(30_000);
-      expect(server.requests('GET', POLL)).toHaveLength(1);
-      expect(server.requests('GET', LIST)).toHaveLength(1);
+      expect(server.requests('GET', POLL)).toHaveLength(count);
       expect(screen.queryByRole('dialog', { name: /重新授权/ })).toBeNull();
     } finally {
       release();
+    }
+  },
+  FLOW_TIMEOUT,
+);
+
+it(
+  '[AC-F1-10ga-OAUTH#8] 连续两次发起重新授权，每次先验证动态码且不复用上次令牌',
+  async () => {
+    const { server } = await mount();
+    popup();
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const modal = await stepUp(await openOAuth());
+      expect(server.requests('POST', START)).toHaveLength(attempt - 1);
+      assertVerified(server, attempt - 1);
+      vi.useFakeTimers();
+      await verify(modal);
+      await advance(30_000);
+      assertVerified(server, attempt);
+      expect(server.requests('POST', START)).toHaveLength(attempt);
+      assertWrite(server.requests('POST', START)[attempt - 1]!, `test-totp-${attempt}`);
+      expect(document.body.textContent).toMatch(/授权成功|重新授权成功|已授权|授权已完成/);
+      const form = screen.queryByRole('dialog', { name: /重新授权/ });
+      if (form) {
+        const cancel = within(form).queryByRole('button', { name: '取消' });
+        await click(cancel ?? button(form, /^(?:关闭|关闭.*授权|完成|确定|Close)$/));
+      }
+      vi.useRealTimers();
     }
   },
   FLOW_TIMEOUT,

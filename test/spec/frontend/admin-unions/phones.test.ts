@@ -6,6 +6,8 @@ import {
   FLOW_TIMEOUT,
   assertVerified,
   assertWrite,
+  button,
+  click,
   fieldError,
   fill,
   mount,
@@ -23,6 +25,13 @@ afterEach(() => {
 });
 function noFullPhone(): void {
   expect(document.body.textContent).not.toContain(PHONE);
+}
+function noPhoneInput(): void {
+  noFullPhone();
+  for (const input of document.querySelectorAll<HTMLInputElement>('input'))
+    expect(input.value).not.toContain(PHONE);
+  for (const input of screen.queryAllByLabelText(/^(?:告警)?手机号$/, { selector: 'input' }))
+    expect((input as HTMLInputElement).value).toBe('');
 }
 
 it('[AC-F1-10ga-PHONES#1] 手机列表只有脱敏号，读取不要求动态码', async () => {
@@ -53,7 +62,16 @@ it(
     expect(added.query).toEqual({});
     assertWrite(added);
     assertVerified(server);
-    noFullPhone();
+    await waitFor(noPhoneInput);
+    // Implementations may keep the now-empty form open or close it after success.
+    const remaining = screen.queryByRole('dialog', { name: /新增.*手机|添加.*手机/ });
+    if (remaining) await click(button(remaining, /^(?:取消|关闭|完成|确定)$/));
+    const reopened = await openAdd(server);
+    expect((within(reopened).getByLabelText(/^(?:告警)?手机号$/) as HTMLInputElement).value).toBe(
+      '',
+    );
+    noPhoneInput();
+    await click(button(reopened, /^(?:取消|关闭)$/));
     const remove = await openRemove(server, '139****2222');
     expect(remove.textContent).toContain('139****2222');
     noFullPhone();

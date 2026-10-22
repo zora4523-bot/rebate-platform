@@ -31,7 +31,7 @@ function noSecret(): void {
 }
 
 it(
-  '[AC-F1-10ga-MANUAL#1] 密码输入，动态码后仅 PUT 凭据；省略到期时间由响应更新行并保留估算标记',
+  '[AC-F1-10ga-MANUAL#1] 密码输入，两次录入各验证动态码后 PUT；省略到期时间由响应更新行并保留估算标记',
   async () => {
     const { server } = await mount();
     const form = await openManual();
@@ -50,6 +50,16 @@ it(
     noSecret();
     const reopened = await openManual();
     expect(credential(reopened).value).toBe('');
+    await fill(credential(reopened), SECRET);
+    const second = await stepUp(reopened);
+    expect(server.requests('PUT', CREDENTIAL)).toHaveLength(1);
+    assertVerified(server);
+    await verify(second);
+    await waitFor(() => expect(server.requests('PUT', CREDENTIAL)).toHaveLength(2));
+    assertVerified(server, 2);
+    expect(server.requests('PUT', CREDENTIAL)[1]!.body).toEqual({ credential: SECRET });
+    assertWrite(server.requests('PUT', CREDENTIAL)[1]!, 'test-totp-2');
+    await waitFor(noSecret);
   },
   FLOW_TIMEOUT,
 );

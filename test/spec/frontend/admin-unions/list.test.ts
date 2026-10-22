@@ -4,6 +4,18 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { ADMIN_ID, LIST, PHONES, createServer, failure, rows } from './fixtures.ts';
 import { button, click, loaded, main, mount, row } from './helpers.ts';
 
+vi.mock('../../../../contracts/texts.admin.default.json', async (importOriginal) => {
+  const actual = await importOriginal<{ default: { texts: Record<string, string> } }>();
+  const texts: Record<string, string> = {
+    ...actual.default.texts,
+    'admin_dict.union_accounts.auth_status.active': '测试字典：授权可用',
+  };
+  // Exercise missing entries as well as an injected value unlike the bundled wording.
+  delete texts['admin_dict.union_accounts.auth_status.expiring'];
+  delete texts['admin_dict.union_accounts.last_probe_ok.true'];
+  return { ...actual, texts, default: { ...actual.default, texts } };
+});
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -32,10 +44,13 @@ it('[AC-F1-10ga-LIST#1] 全量只读列表：北京时间、估算、更新人�
       ),
     );
     const label = dictionary[`admin_dict.union_accounts.auth_status.${account.auth_status}`];
-    expect(
-      current.textContent?.includes(account.auth_status) ||
-        (label !== undefined && current.textContent?.includes(label)),
-    ).toBe(true);
+    expect(current.textContent).toContain(label ?? account.auth_status);
+    if (account.last_probe_ok !== null) {
+      const code = String(account.last_probe_ok);
+      expect(current.textContent).toContain(
+        dictionary[`admin_dict.union_accounts.last_probe_ok.${code}`] ?? code,
+      );
+    }
     expect(current.textContent?.includes('估算')).toBe(account.auth_expires_estimated);
   }
   const oauth = row('测试 OAuth 账号');
@@ -46,8 +61,6 @@ it('[AC-F1-10ga-LIST#1] 全量只读列表：北京时间、估算、更新人�
   expect(oauth.textContent).toContain(ADMIN_ID);
   expect(oauth.textContent).toMatch(/2026[-/]10[-/]23/);
   expect(oauth.textContent).toContain('01:10');
-  expect(oauth.textContent).toMatch(/成功|正常|通过/);
-  expect(row('测试手工账号').textContent).toMatch(/失败|异常/);
   expect(row('测试手工账号').textContent).toContain('fixture_probe_rejected');
   expect(row('测试免授权账号').textContent).not.toContain(ADMIN_ID);
   expect(row('测试免授权账号').textContent).not.toMatch(/Invalid Date|1970|2026[-/]12[-/]31/);
@@ -69,9 +82,9 @@ it('[AC-F1-10ga-LIST#2] 按 reauth_mode 决定入口，账号和推广位页签�
   expect(within(row('测试 OAuth 账号')).queryByRole('button', { name: '录入新凭据' })).toBeNull();
   expect(button(row('测试手工账号'), '录入新凭据')).toBeDefined();
   expect(within(row('测试手工账号')).queryByRole('button', { name: '重新授权' })).toBeNull();
-  expect(
-    within(row('测试免授权账号')).queryAllByRole('button', { name: /授权|凭据|更新/ }),
-  ).toEqual([]);
+  const none = within(row('测试免授权账号'));
+  expect(none.queryAllByRole('button')).toEqual([]);
+  expect(none.queryAllByRole('link')).toEqual([]);
 });
 
 it('[AC-F1-10ga-LIST#3] 已配置告警手机时不显示缺配警告', async () => {
@@ -131,4 +144,15 @@ it('[AC-F1-10ga-LIST#8] 默认 App 的 /unions 接入账号列表，不依赖 re
   await loaded();
   expect(server.requests('GET', LIST)).toHaveLength(1);
   expect(main().textContent).not.toMatch(/页面建设中|待接入/);
+});
+
+it('[AC-F1-10ga-LIST#9] 授权状态使用注入的后台字典值，缺键的状态与探测结果显示编码', async () => {
+  await mount();
+  await loaded();
+  expect(row('测试 OAuth 账号').textContent).toContain('测试字典：授权可用');
+  expect(row('测试免授权账号').textContent).toContain('expiring');
+  expect(row('测试 OAuth 账号').textContent).toContain('true');
+  expect(row('测试手工账号').textContent).toContain(
+    dictionary['admin_dict.union_accounts.last_probe_ok.false'] ?? 'false',
+  );
 });
