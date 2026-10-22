@@ -181,6 +181,7 @@ import {
   isWithdrawalApplication,
   createWithdrawUsageReader,
   generateOutBizNo,
+  type DecryptWithdrawalAccount,
   type ReverifyGatePort,
   type WithdrawApplyService,
   type WithdrawRulesOptions,
@@ -275,6 +276,7 @@ import {
   isHttpEntry,
 } from './modules/platform/index.ts';
 import {
+  blocklistHmacContexts,
   createBlocklistMatchReader,
   createAppealPrevStateReader,
   createRiskStateBatchReader,
@@ -2491,6 +2493,25 @@ function payoutModule(): DynamicModule {
     // B2-05d: identity's step-up wrapper (stage ⑫ context, token consumed on code 0) is handed
     // in here so payout never imports identity's barrel (Nest controllers) into the test project.
     stepUp: withStepUp,
+    // B2-05f: the snapshot decryption of the records (payout_accounts.* cipher contexts, the same
+    // the binding used); registered once for read.ts, used by the two GET handlers.
+    reads: {
+      inject: [{ token: FIELD_CRYPTO, optional: true }],
+      useFactory: (crypto?: FieldCrypto): DecryptWithdrawalAccount | null => {
+        if (crypto === undefined) return null;
+        const contexts = blocklistHmacContexts();
+        return (cipher, method) => {
+          const context =
+            method === 'alipay'
+              ? contexts.alipay
+              : method === 'bank_card'
+                ? contexts.bank_card
+                : null;
+          if (context === null) throw new Error('payout: no cipher context for the payout method');
+          return crypto.decrypt(cipher.toString('utf8'), context);
+        };
+      },
+    },
     // The application use case runs on the idempotency claim's transaction (the controller's
     // executeInTransaction); the freeze voucher and the two events share it.
     apply: {

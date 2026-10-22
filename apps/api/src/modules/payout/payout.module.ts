@@ -24,6 +24,10 @@ import {
 import { WENT_NEGATIVE_CONSUMER, createWentNegativeConsumer } from './application/went-negative.ts';
 import type { WithdrawalAttemptsPort } from './application/withdrawal-commands.ts';
 import type { WithdrawApplyOptions, WithdrawApplyService } from './application/withdraw-apply.ts';
+import {
+  registerWithdrawalAccountDecrypt,
+  type DecryptWithdrawalAccount,
+} from './application/withdrawal-reads.ts';
 import type { WithdrawRulesService } from './application/withdraw-rules.ts';
 import {
   WithdrawalsController,
@@ -32,6 +36,7 @@ import {
 import {
   WITHDRAW_APPLY,
   WITHDRAW_RULES,
+  WITHDRAW_READS,
   WITHDRAW_RULES_HANDLE,
   WITHDRAW_STEP_UP,
 } from './tokens.ts';
@@ -44,6 +49,11 @@ export interface PayoutModuleOptions {
   apply?: WithdrawApplyService | Factory<WithdrawApplyService>;
   /** identity's withStepUp (app.module); without it POST /v1/withdrawals refuses with 50001. */
   stepUp?: WithdrawStepUp;
+  /**
+   * B2-05f: the process's snapshot decryption for the records (a factory over the entry's field
+   * cipher, app.module); registered once for read.ts and used by the two GET handlers.
+   */
+  reads?: Factory<DecryptWithdrawalAccount>;
   handle?: Kysely<DB>;
 }
 
@@ -138,6 +148,19 @@ export class PayoutModule {
     const rulesProvider = provider(WITHDRAW_RULES, options?.rules, isRulesService);
     const applyProvider = provider(WITHDRAW_APPLY, options?.apply, isApplyService);
     const stepUpProvider = { provide: WITHDRAW_STEP_UP, useValue: options?.stepUp ?? null };
+    const reads = options?.reads;
+    const readsProvider =
+      reads === undefined
+        ? { provide: WITHDRAW_READS, useValue: null }
+        : {
+            provide: WITHDRAW_READS,
+            inject: reads.inject ?? [],
+            useFactory: async (...deps: unknown[]): Promise<DecryptWithdrawalAccount | null> => {
+              const decrypt = await reads.useFactory(...deps);
+              if (decrypt !== null) registerWithdrawalAccountDecrypt(decrypt);
+              return decrypt;
+            },
+          };
     const handleProvider =
       options?.handle === undefined
         ? {
@@ -149,7 +172,7 @@ export class PayoutModule {
     return {
       module: PayoutModule,
       controllers: [WithdrawalsController],
-      providers: [rulesProvider, applyProvider, stepUpProvider, handleProvider],
+      providers: [rulesProvider, applyProvider, stepUpProvider, readsProvider, handleProvider],
       exports: [WITHDRAW_RULES, WITHDRAW_APPLY],
     };
   }

@@ -3038,7 +3038,6 @@ paths:
       x-auth: login
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes: []
       security:
         - bearerAuth: []
@@ -3241,7 +3240,6 @@ paths:
       x-auth: login
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes:
         - 30701
       security:
