@@ -1,0 +1,24 @@
+id: B2-04dc
+repo: rebate-platform
+title: 状态机 settle-job.yaml（settle_jobs.status：入库首态 running → done / failed，S7 取最少三态、代理自定）与生成的 transition()
+type: impl
+# 2026-10-23 资金线（编排 D10-93 S7 选 A：settle_jobs.status 取最少的运行 / 完成 / 失败三态并注明代理自定；B2-04d 当时只做了另三份，本份遗漏）。分工：Codex / Opus；先例 B2-04d、B2-03j。
+# 状态备注：可开；B2-04n（账单日任务）第 2 轮改用本状态机的 transition()，须先合并。取值与 db/schema.sql 的 settle_jobs_status_check 一致（running、done、failed）。
+refs: [BR-FUND-04]
+refs_hash:
+  BR-FUND-04: ae08abefb6da
+deps: [B2-04d]
+paths:
+  - 'specs/state-machines/settle-job.yaml'
+  - 'packages/domain/src/state-machines/*.gen.ts'
+  - 'packages/domain/src/state-machines/index.ts'
+  - 'packages/domain/src/index.ts'
+test_paths:
+  - 'test/spec/domain/state-machines/settle-job/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/domain/state-machines/settle-job/**'
+status: todo
+pr: null
