@@ -128,8 +128,9 @@ export class MemoryExportStore implements ExportStore {
   put(input: ExportPutInput): Promise<void> {
     try {
       checkPut(input);
-      // Copies only the view's own bytes (byteOffset / byteLength), never the backing buffer.
-      this.#files.set(input.key, input.bytes.slice());
+      // A fresh copy of only the view's own bytes (byteOffset / byteLength): `slice()` on a Node
+      // Buffer would share its memory, so later changes by the caller would reach the file.
+      this.#files.set(input.key, new Uint8Array(input.bytes));
       this.#logger.debug({ event: 'export_store_put', key: input.key }, 'export stored');
       return Promise.resolve();
     } catch (error) {
@@ -168,7 +169,10 @@ export class MemoryExportStore implements ExportStore {
 
   get(key: string): { readonly bytes: Uint8Array; readonly contentType: 'text/csv' } | undefined {
     const bytes = this.#files.get(key);
-    return bytes === undefined ? undefined : { bytes: bytes.slice(), contentType: CONTENT_TYPE };
+    // A fresh copy per read: changing what one read returned never reaches the stored file.
+    return bytes === undefined
+      ? undefined
+      : { bytes: new Uint8Array(bytes), contentType: CONTENT_TYPE };
   }
 
   verify(url: string, now: Date): boolean {

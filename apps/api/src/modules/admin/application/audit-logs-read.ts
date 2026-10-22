@@ -80,9 +80,42 @@ export interface AuditLogsReader {
   get(caller: AuditCaller, id: string): Promise<AuditLogDetailView | undefined>;
 }
 
-/** `from` later than `to` (both given): the contract's 20001 [from, to]. */
+/** Shape of an admin id; any other `actor_id` names no account (the column is a uuid). */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** RFC 3339 date-time (the contract's `format: date-time`): date, time, fraction, offset. */
+const DATE_TIME = /^(\d{4}-\d{2}-\d{2})[Tt ](\d{2}:\d{2}:\d{2})(?:\.(\d+))?([Zz]|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Microseconds since the epoch of an RFC 3339 instant, as PostgreSQL's timestamptz reads it
+ * (fraction rounded to the microsecond, half to even); undefined when it is not one. Integer
+ * arithmetic throughout: a Date would drop everything below the millisecond.
+ */
+function epochMicros(text: string): bigint | undefined {
+  const match = DATE_TIME.exec(text);
+  if (match === null) return undefined;
+  const [, date, time, fraction = '', offset] = match;
+  const seconds = Date.parse(`${date}T${time}${offset!.toUpperCase()}`);
+  if (Number.isNaN(seconds)) return undefined;
+  let micros = BigInt(fraction.padEnd(6, '0').slice(0, 6));
+  const rest = fraction.slice(6);
+  if (rest !== '') {
+    const half = '5'.padEnd(rest.length, '0');
+    if (rest > half || (rest === half && micros % 2n === 1n)) micros += 1n;
+  }
+  return BigInt(seconds) * 1000n + micros;
+}
+
+/**
+ * `from` later than `to` (both given), compared to the microsecond: the contract's 20001
+ * [from, to]. Equal instants are not inverted (an empty window, not an error).
+ */
 export function auditRangeInvalid(from: string | undefined, to: string | undefined): boolean {
-  return from !== undefined && to !== undefined && Date.parse(from) > Date.parse(to);
+  if (from === undefined || to === undefined) return false;
+  const start = epochMicros(from);
+  const end = epochMicros(to);
+  if (start === undefined || end === undefined) return Date.parse(from) > Date.parse(to);
+  return start > end;
 }
 
 export function createAuditLogsReader(deps: {
@@ -118,6 +151,8 @@ export function createAuditLogsReader(deps: {
     async list(caller, query) {
       const all = await viewsAll(caller);
       const empty = { items: [], page: query.page, pageSize: query.pageSize, total: 0 };
+      // A non-UUID actor_id names no account: the empty page, never a uuid cast error.
+      if (query.actorId !== undefined && !UUID.test(query.actorId)) return empty;
       let actorId = query.actorId?.toLowerCase();
       if (!all) {
         if (actorId !== undefined && actorId !== caller.adminId.toLowerCase()) return empty;
