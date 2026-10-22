@@ -1,0 +1,23 @@
+id: B2-04x
+repo: rebate-platform
+title: settlement 预估类读取（实现 ledger 的 PendingEarningsSource 端口）：按用户的 estimated / pending / paused 份额、next_credit_period、credit_overdue；按 app 的 waiting / estimated 合计；份额按有效联盟佣金换算
+type: impl
+# 2026-10-22 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.2 / §2.3）。分工：Codex / Opus。
+# 状态备注：可开（B2-04f、B2-04i、B2-04j 已合并）。S3：端口类型在 ledger 声明（B2-04w），本任务实现；若 w 未合并先按方案签名实现并在输出写明。
+refs: [BR-CALC-02, BR-FUND-04, BR-FUND-18]
+refs_hash:
+  BR-CALC-02: 0ffe8a4d0b65
+  BR-FUND-04: 4b12018b0aaa
+  BR-FUND-18: c7ebd23ee75e
+deps: [B2-04f, B2-04i, B2-04j]
+paths:
+  - 'apps/api/src/modules/settlement/reads/**'
+test_paths:
+  - 'test/spec/settlement/pending-earnings/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/pending-earnings/**'
+status: todo
+pr: null

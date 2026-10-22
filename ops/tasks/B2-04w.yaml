@@ -1,0 +1,22 @@
+id: B2-04w
+repo: rebate-platform
+title: 资产日快照任务（ledger）：D+1 名义时刻写 D 日，余额类按 accounting_date ≤ D 的分录汇总、UNION_RECEIVABLE 按平台（子表 asset_snapshot_receivables）；waiting / estimated 经 ledger 声明的 PendingEarningsSource 端口取（S3）；超时告警并标 waiting_comparable；导出「当日快照是否完成或超时」读口
+type: impl
+# 2026-10-22 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.2 / §2.3）。分工：Codex / Opus。
+# 状态备注：可开（B2-04b、B2-04k 已合并；ledger 内与 y 串行）。S3、S15；端口由 B2-04x 在 settlement 实现，本任务只声明端口并用替身测。
+refs: [BR-FUND-18, BR-FUND-20]
+refs_hash:
+  BR-FUND-18: c7ebd23ee75e
+  BR-FUND-20: 01dc2440638f
+deps: [B2-04b, B2-04k]
+paths:
+  - 'apps/api/src/modules/ledger/**'
+test_paths:
+  - 'test/spec/ledger/asset-snapshot/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/asset-snapshot/**'
+status: todo
+pr: null
