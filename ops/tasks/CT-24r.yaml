@@ -1,0 +1,29 @@
+id: CT-24r
+repo: rebate-platform
+title: 契约：后台申诉处理——/admin/v1/appeals 列表（四个计数、超时筛选）/ 详情（命中记录、被拦请求）/ 认领 / 结案 / 代为登记，与被拦请求查找 /admin/v1/blocked-requests；risk.appeal，撤销封禁 / 解除冻结 / 撤销名单造成的被拦请求另需 risk.ban / risk.freeze / risk.blocklist 与动态码；planned
+type: contract
+# 2026-10-23 入账（admin-backend，编排裁定 D10-141 ②：后台申诉接口归 admin，形状已由 couli #177 回写 04，SPEC_REF 17b5fe5 已含）。依据：04 §6.6 `appeals`、§3.2 `appeals`、§11.2 `risk.appeal`；08 BR-ID-36（含细则「被拦截请求申诉」「权限」「维持后再申诉」）、BR-ID-31；编排裁定 D10-154（撤销名单造成的被拦请求另需 risk.blocklist + 动态码）、D10-158（认领只标记不排他）；画板 AdmRiskAppeals / AdmRiskAppealDetail / AdmRiskAppealRegister*（design-hifi/project）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：照 04 §6.6 `appeals` 原文写形状，不另取值——认领与结案带期望 row_version、状态或版本不符 20902（data.resource=appeal，error-codes.yaml 与 catalog.test.ts 补，04 §7 由规划回写）；代为登记申诉人由服务端从对象推出、带 user_id 不符 20001；同对象处理中返回原单、次数用完 30418；被拦请求按完整手机号 / UID / 拦截请求编号查找，按完整手机号命中写审计；列表与详情手机号一律脱敏；结案经 risk 模块服务写入（`appeal.resolved` 同事务入队），后台接口只调用。对外编号用 appeals.id。拒绝码与 data.reason 新值优先复用已登记码，确需新码先请规划登记。实现 B1-27d 待 identity / risk 的结案与登记服务就绪后入账。
+# contract_sections 只填 11.1：§6.6 / §11.2 全节带上超限，编排者把 04 §6.6 `appeals` 段、§3.2 `appeals` 行、§11.2 `risk.appeal` 行原文逐字摘进第 9 节。
+refs: [BR-ID-36, BR-ID-31]
+refs_hash:
+  BR-ID-36: 4bb81d262347
+  BR-ID-31: 7976b65fe995
+contract_sections: ['11.1']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
