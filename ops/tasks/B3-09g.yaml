@@ -1,0 +1,22 @@
+id: B3-09g
+repo: rebate-platform
+title: B3-09g：两条冻结库表用例按 B3-09f 迁移状态两态判定（[AC-B3-09a#51] 可更新列清单、[AC-B3-09d#6] 结果表只追加与无触发器），为 D10-175 的列级授权让路
+type: test-change
+# 2026-10-23 入账（agent-acct4）。起因：B3-09f（D10-175，Agent 注销清理）给 couli_app 开 agent_runs.quota_subjects、agent_tool_calls.args、agent_cards.data / fallback_text、
+# agent_result_sets.conditions、agent_result_deliveries.card、agent_result_chains.conditions 的列级 UPDATE 并加单向改写触发器，
+# 冻结用例 test/spec/db/agent/agent-tables.int.test.ts [AC-B3-09a#51] 与 test/spec/db/agent-results/agent-results.int.test.ts [AC-B3-09d#6] 会转红。
+# 做法（先例 B1-15p 两态判定）：以 couli_app 是否已有 agent_tool_calls.args 的 UPDATE 为标志——迁移前断言不变；迁移后只额外允许上列，
+# deliveries / chains 可有触发器，DELETE / TRUNCATE / 表级权限 / 其余列照旧禁止，clarify_asks 不变。迁移合并后可收紧为单态。不改其他断言、不删用例。
+# 第一类保护路径：合并要 owner-approved-<头 12 位>（approvals #24，编排核对后加）；非 task 分支、无证据文件；Claude 实现、Codex 只读评审。须先于 B3-09f 合并。
+refs: []
+refs_hash: {}
+deps: [B3-09a, B3-09d]
+paths:
+  - 'test/spec/db/agent/agent-tables.int.test.ts'
+  - 'test/spec/db/agent-results/agent-results.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

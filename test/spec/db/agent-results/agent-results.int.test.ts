@@ -551,10 +551,18 @@ for (const table of TABLES) {
       has_any_column_privilege('couli_app', ${`app.${table}`}, 'UPDATE,REFERENCES') AS column_update`.execute(
       app,
     );
-    expect(privileges.rows).toEqual([{ forbidden: false, column_update: false }]);
+    // 两态判定，为 B3-09f（D10-175）让路：迁移后 deliveries.card / chains.conditions 有列级
+    // UPDATE 与单向改写触发器（只许清空）；DELETE / TRUNCATE 与表级权限照旧禁止，clarify_asks 不变。
+    const purge = await sql<{ granted: boolean }>`SELECT has_column_privilege(
+      'couli_app', 'app.agent_tool_calls', 'args', 'UPDATE') AS granted`.execute(app);
+    const purged =
+      purge.rows[0]?.granted === true &&
+      ['agent_result_deliveries', 'agent_result_chains'].includes(table);
+    expect(privileges.rows).toEqual([{ forbidden: false, column_update: purged }]);
     const triggers = await sql`SELECT tgname FROM pg_trigger
       WHERE tgrelid = to_regclass(${`app.${table}`}) AND NOT tgisinternal`.execute(app);
-    expect(triggers.rows).toEqual([]);
+    if (purged) expect(triggers.rows.length).toBeGreaterThan(0);
+    else expect(triggers.rows).toEqual([]);
     const after = await sql<Row>`SELECT * FROM ${sql.table(`app.${table}`)}
       WHERE app_id = ${row['app_id']} AND session_id = ${row['session_id']}`.execute(app);
     expect(after.rows).toEqual(stored.rows);
