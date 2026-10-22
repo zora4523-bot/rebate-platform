@@ -5,7 +5,7 @@ type: impl
 # 草稿 2026-10-23（身份与风控线 identity-lane）。编排裁定 D10-186：payout_accounts 不开 DELETE，改匿名化（清空可识别列、保留行骨架，withdrawals 引用不断，同 D10-175 原则）；realname 加 tax_retained（D10-137 ②，有成功提现即保留实名密文并标记，仅限查询权限；B2-05 前分支走不到，列先建）。迁移号落地时按 D10-116 占迁移槽取主干最大 +1（排队：B1-22a → B3-09f → B1-15r）。冻结测试若钉死 payout_accounts / realname 的列或约束，按 B1-15p 先例先拆两态 test-change。RV2（db/**），Codex 测试优先 + money 评审。
 refs: []
 refs_hash: {}
-deps: [B1-13a, B1-15o]
+deps: [B1-13a, B1-15o, B1-15s, B1-15t]
 paths:
   - 'db/migrations/**'
   - 'db/schema.sql'

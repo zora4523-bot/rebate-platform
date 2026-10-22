@@ -1,0 +1,19 @@
+id: CT-26f
+repo: rebate-platform
+title: 测试修改：两份冻结集成测试按响应是否带 CT-26e 新必返字段两态判定，为 CT-26e 让路——test/spec/identity/me/me.int.test.ts 的 risk 带 prev_risk_state 时按 BR-ID-36 期望其取值（未申诉时为空），否则保持原形状；test/spec/risk/appeals/list.int.test.ts 的 items 带 attempt_no / can_resubmit 时按 BR-ID-36 期望其取值，否则保持原形状；其余断言不变
+type: test-change
+# 草稿 2026-10-23（身份与风控线 identity-lane）。CT-26e 给 RiskInfo、Appeal 加必返字段后这两份冻结测试的精确比对会红；照 B1-15p 先例拆非任务分支 test-change 先合，主干现状与叠 CT-26e 都绿。
+# 独立 Claude 改（approvals #36），新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。CT-26e 合并后另开收紧任务改成单态。
+refs: []
+refs_hash: {}
+deps: [CT-26a]
+paths:
+  - 'test/spec/identity/me/me.int.test.ts'
+  - 'test/spec/risk/appeals/list.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/me/**'
+  - 'test/spec/risk/appeals/**'
+status: todo
