@@ -6906,6 +6906,276 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "adminListExports": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        },
+        "status": {
+          "type": "string",
+          "description": "Status of an export task (enum export_status; BR-ID-34 细则「后台导出任务」; names from\nBR-TEXT-25 admin_dict.export_status). pending → running → done or failed; done → expired\n24 hours after the file was generated; pending or running → cancelled when the creator's\naccount is disabled; failed → pending by a retry.\n",
+          "enum": [
+            "pending",
+            "running",
+            "done",
+            "failed",
+            "expired",
+            "cancelled"
+          ]
+        },
+        "resource": {
+          "type": "string",
+          "description": "Source list of an export task (enum export_resource): users = GET /admin/v1/users\n(needs user.list), audit_logs = GET /admin/v1/audit-logs (signed in is enough; own\nrecords only without audit.view_all).\n",
+          "enum": [
+            "users",
+            "audit_logs"
+          ]
+        },
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminCreateExport": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "body": {
+      "description": "One branch per source list (enum export_resource), told apart by `resource`; `filters`\nfollows that list's query parameters.\n",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "Export of the users list. unmasked true asks for the full phone numbers (pii.reveal_phone,\ntotp step-up and reason required); reason is only accepted together with unmasked true.\n",
+          "additionalProperties": false,
+          "required": [
+            "resource",
+            "filters"
+          ],
+          "properties": {
+            "resource": {
+              "type": "string",
+              "enum": [
+                "users"
+              ]
+            },
+            "filters": {
+              "type": "object",
+              "description": "Filters of a users export, the query parameters of GET /admin/v1/users without paging.",
+              "additionalProperties": false,
+              "properties": {
+                "risk_state": {
+                  "type": "string",
+                  "description": "Risk state of a user (enum risk_state; BR-ID-31, BR-ID-36).",
+                  "enum": [
+                    "normal",
+                    "frozen",
+                    "appealing",
+                    "banned"
+                  ]
+                }
+              }
+            },
+            "unmasked": {
+              "type": "boolean",
+              "default": false,
+              "description": "true = full values instead of the masked ones; absent or false = masked."
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Required free-text reason, kept in the audit record."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "Export of the audit log; always masked (audit values are stored masked), no reason.",
+          "additionalProperties": false,
+          "required": [
+            "resource",
+            "filters"
+          ],
+          "properties": {
+            "resource": {
+              "type": "string",
+              "enum": [
+                "audit_logs"
+              ]
+            },
+            "filters": {
+              "type": "object",
+              "description": "Filters of an audit_logs export, the query parameters of GET /admin/v1/audit-logs without\npaging, judged the same way (without audit.view_all actor_id is forced to the creator).\n",
+              "additionalProperties": false,
+              "properties": {
+                "actor_id": {
+                  "type": "string",
+                  "description": "Entity id, a UUIDv7 string (04 §5).",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "target_type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "target_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "permission": {
+                  "type": "string",
+                  "description": "A value of contracts/enums/admin.yaml `admin_permission` (04 §11). Kept a string here so the\nlist lives in one place; clients ignore keys they do not know.\n",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-z_]*(\\.[a-z_]+)*$"
+                },
+                "from": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "Earliest record time, inclusive."
+                },
+                "to": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "Latest record time, exclusive."
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "adminDownloadExport": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Opaque identifier of an export task (04 §5, ids are strings). It is not the database\nprimary key (ADR-0001: internal auto-increment keys are never exposed); clients must not\nparse it, compare it for order or derive anything from it. Generated by the server and\nstable for the life of the task, retries included; how it is generated is up to the\nimplementation.\n",
+          "minLength": 16,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]{16,64}$"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "adminRetryExport": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Opaque identifier of an export task (04 §5, ids are strings). It is not the database\nprimary key (ADR-0001: internal auto-increment keys are never exposed); clients must not\nparse it, compare it for order or derive anything from it. Generated by the server and\nstable for the life of the task, retries included; how it is generated is up to the\nimplementation.\n",
+          "minLength": 16,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]{16,64}$"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Empty for a masked task. For an unmasked task (masked false) reason is required, with a\nnew totp-tier X-Step-Up-Token; for a masked task reason is 20001.\n",
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Required free-text reason, kept in the audit record."
+        }
+      }
+    }
+  },
   "adminListUsers": {
     "headers": {
       "type": "object",

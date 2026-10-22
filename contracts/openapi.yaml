@@ -7517,7 +7517,6 @@ paths:
         audit record); failed → pending by POST /admin/v1/exports/{id}/retry. There is no cancel
         operation.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -7629,7 +7628,6 @@ paths:
         Rows never carry the download link; status names come from BR-TEXT-25
         admin_dict.export_status. Listing does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7770,7 +7768,6 @@ paths:
         id, resource, masked; never the link) before the response is sent. The response carries
         `Cache-Control: no-store`.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -7853,7 +7850,6 @@ paths:
         task its own record with the new reason (action export_unmasked). No Idempotency-Key
         (04 §6.6): a second call while the task is pending again is 30417.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003

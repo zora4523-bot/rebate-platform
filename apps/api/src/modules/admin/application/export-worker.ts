@@ -19,10 +19,16 @@
 //     of that execution (progress, done, failed) is a CAS on the token it holds. Under the creator
 //     lock, before counting capacity (and on any generate delivery), the creator's running tasks
 //     whose updated_at is older than now − admin.export.running_lease_seconds become failed
-//     (interrupted) and their object is deleted; the stale execution's writes then all miss, and it
-//     discards its own object unless a later run of the retried task may own the key. A running
-//     task with a live lease is a duplicate delivery; a delayed generate re-checks it after the
-//     lease could have run out, so a crash is recovered even if the creator never exports again.
+//     (interrupted) and their object is deleted; the stale execution's writes then all miss. A
+//     running task with a live lease is a duplicate delivery; a delayed generate re-checks it after
+//     the lease could have run out, so a crash is recovered even if the creator never exports again.
+//     Same object key for every run of a task (B1-34f, without changing the key): the upload keeps
+//     the lease alive (a heartbeat every third of the lease while the put is in flight), so a live
+//     execution is not taken over mid-upload; an execution that still finds the task no longer its
+//     own after its upload (complete misses, or the put failed) treats its write as one that may
+//     have replaced a later run's file: a later run still running is failed (CAS on its token,
+//     retryable), a later run already done is expired at once (done can only expire), and the
+//     object is deleted in both cases; only the execution's own completed done row keeps it.
 //   - expire: at expires_at (injected Clock) done → expired once (CAS under the row lock) and the
 //     object is deleted in that transaction; early delivery re-sends a delayed expire job; any
 //     other status is ignored.
@@ -101,6 +107,7 @@ const REASON_SOURCE = '读取导出数据失败，请稍后重试';
 const REASON_STORAGE = '导出文件写入失败，请稍后重试';
 const REASON_COMPLETE = '导出文件生成失败，请稍后重试';
 const REASON_INTERRUPTED = '导出执行中断，请重新发起';
+const REASON_SUPERSEDED = '导出文件写入冲突，请重试';
 
 type TaskRow = Selectable<DB['export_tasks']>;
 
@@ -375,20 +382,87 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
   }
 
   /**
-   * Removes an object this execution wrote unless it may belong to a later run of the same task
-   * (a retried task running again under another token, or done): the key is per task, not per run.
+   * After a write of this execution that did not end in its own done row (cancelled meanwhile,
+   * taken over, complete rolled back, or the put failed): the object goes, and a later run of the
+   * same task (the key is per task, not per run) that may now hold this stale write is closed —
+   * running under another token → failed (retryable), done → expired at once. Only the
+   * execution's own done row (complete committed, its answer lost) keeps the object.
    */
   async function discard(lease: Lease, key: string): Promise<void> {
-    const row = await db
-      .selectFrom('export_tasks')
-      .select(['status', 'row_version'])
-      .where('app_id', '=', lease.task.app_id)
-      .where('id', '=', lease.task.id)
-      .executeTakeFirst();
-    const ours = row?.status === 'running' && row.row_version === lease.token;
-    if (ours || (row?.status !== 'running' && row?.status !== 'done')) {
-      await removeObject(key, lease.task.id);
+    const { task } = lease;
+    const superseded = await db.transaction().execute(async (trx) => {
+      const row = await lockTask(trx, task.app_id, task.id);
+      if (row === undefined) return null;
+      if (row.status === 'done' && row.row_version === lease.token + 1) return 'own';
+      const later =
+        (row.status === 'running' && row.row_version !== lease.token) || row.status === 'done';
+      if (!later) return null;
+      const step = transitionExportTask(
+        row.status as ExportTaskState,
+        row.status === 'done' ? 'EXPIRE' : 'FAIL',
+      );
+      if (!step.ok) return null;
+      const now = clock.now();
+      const result = await trx
+        .updateTable('export_tasks')
+        .set({
+          status: step.to,
+          ...(step.to === 'failed' ? { failure_reason: REASON_SUPERSEDED } : {}),
+          updated_at: now,
+          row_version: row.row_version + 1,
+        })
+        .where('id', '=', row.id)
+        .where('status', '=', row.status)
+        .where('row_version', '=', row.row_version)
+        .executeTakeFirst();
+      return result.numUpdatedRows > 0n ? step.to : null;
+    });
+    if (superseded === 'own') return;
+    if (superseded !== null) {
+      logger.warn(
+        { event: 'export_superseded', task_id: task.id, status: superseded },
+        'stale export upload closed a later run of the task',
+      );
     }
+    await removeObject(key, task.id);
+  }
+
+  /**
+   * store.put with the lease kept alive while it is in flight (heartbeat every third of the
+   * lease); false when the lease was lost meanwhile (the caller then never completes).
+   */
+  async function putKeepingLease(
+    lease: Lease,
+    percent: number,
+    leaseMs: number,
+    input: Parameters<ExportStore['put']>[0],
+  ): Promise<boolean> {
+    let held = true;
+    let beating: Promise<void> = Promise.resolve();
+    const timer = setInterval(
+      () => {
+        beating = beating.then(async () => {
+          if (!held) return;
+          try {
+            held = await heartbeat(lease, percent);
+          } catch (error) {
+            // A missed beat is retried on the next tick; the lease only runs out after several.
+            logger.warn(
+              { event: 'export_heartbeat_failed', task_id: lease.task.id, error: errorName(error) },
+              'export heartbeat failed',
+            );
+          }
+        });
+      },
+      Math.max(1000, Math.floor(leaseMs / 3)),
+    );
+    try {
+      await store.put(input);
+    } finally {
+      clearInterval(timer);
+      await beating;
+    }
+    return held;
   }
 
   async function sourceOf(task: TaskRow, startedAt: Date): Promise<Source> {
@@ -657,8 +731,9 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
     if (!(await heartbeat(lease, percent))) return;
 
     const key = objectKey(task);
+    let held: boolean;
     try {
-      await store.put({
+      held = await putKeepingLease(lease, percent, leaseSeconds * 1000, {
         key,
         bytes: Buffer.concat([BOM, Buffer.from(chunks.join(''), 'utf8')]),
         contentType: 'text/csv',
@@ -670,6 +745,11 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
       );
       await discard(lease, key);
       await fail(lease, REASON_STORAGE);
+      return;
+    }
+    if (!held) {
+      // Taken over or cancelled while uploading: this write may have replaced a later run's file.
+      await discard(lease, key);
       return;
     }
 

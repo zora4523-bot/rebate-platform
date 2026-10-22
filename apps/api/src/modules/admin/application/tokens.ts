@@ -13,3 +13,5 @@ export const ADMIN_STEP_UP = Symbol('ADMIN_STEP_UP');
 export const ADMIN_ACCOUNTS_READ = Symbol('ADMIN_ACCOUNTS_READ');
 /** AuditLogsReader (./audit-logs-read.ts; B1-34a, admin entry only). */
 export const ADMIN_AUDIT_LOGS_READ = Symbol('ADMIN_AUDIT_LOGS_READ');
+/** AdminExports (./admin-exports.ts; B1-34f, admin entry only). */
+export const ADMIN_EXPORTS = Symbol('ADMIN_EXPORTS');
