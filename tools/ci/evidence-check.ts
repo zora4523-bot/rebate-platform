@@ -107,7 +107,7 @@ import type { RiskLevel } from '../guard/lib/risk.ts';
 export const MONEY_PATHS: readonly string[] = [
   'packages/money/src/**',
   'packages/domain/src/**',
-  'apps/api/src/modules/{ledger,commission,settlement,payout,withdrawals,reconciliation,orders,linking,union}/**',
+  'apps/api/src/modules/{ledger,commission,settlement,payout,withdrawals,reconciliation,orders,linking,union,payment}/**',
   'db/migrations/**',
 ];
 
