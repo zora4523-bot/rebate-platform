@@ -5,13 +5,15 @@
 //     running tasks, then CAS; at capacity the task stays pending and a delayed generate job is
 //     sent in the same transaction), read the source list page by page (users through identity's
 //     batch projection, masked unless the persisted task says otherwise; audit_logs through
-//     B1-34a's reader with its own-records rule), write progress, enforce admin.export.max_rows
-//     on the rows actually read, build one CSV (UTF-8 BOM, RFC 4180, formula guard), put it into
-//     the private export store, then running → done in one transaction with expires_at =
-//     generated + 24 h, the export_unmasked row-count audit of an unmasked task and the delayed
-//     expire job (no singletonKey: export is a standard queue). A source / storage failure or the
-//     row limit is running → failed with a short safe reason; an object whose task did not reach
-//     done (cancelled meanwhile, or the done transaction rolled back) is deleted again.
+//     B1-34a's reader with its own-records rule; both are keyset walks over the set fixed at the
+//     claim's Clock instant, count and rows under the same bound), write progress, enforce
+//     admin.export.max_rows on the rows actually read, build one CSV (UTF-8 BOM, RFC 4180,
+//     formula guard), put it into the private export store, then running → done in one
+//     transaction with expires_at = generated + 24 h, the export_unmasked row-count audit of an
+//     unmasked task and the delayed expire job (no singletonKey: export is a standard queue).
+//     A source / storage failure or the row limit is running → failed with a short safe reason;
+//     an object whose task did not reach done (cancelled meanwhile, or the done transaction
+//     rolled back) is deleted again.
 //     Running lease (no extra column): updated_at is the heartbeat, row_version the fencing token.
 //     The claim and every progress write refresh updated_at and bump row_version; every later write
 //     of that execution (progress, done, failed) is a CAS on the token it holds. Under the creator
@@ -457,6 +459,8 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
       const profile = await profiles.byId(task.app_id, task.created_by);
       if (profile === undefined) throw new Error('export: the creator account is unknown');
       const caller = { appId: task.app_id, adminId: task.created_by, isSuper: profile.isSuper };
+      // Keyset walk (at, id) over the records at or before the task's start (later ones excluded).
+      let after: string | undefined;
       return {
         header: [
           'id',
@@ -471,7 +475,16 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
         ],
         pageSize: AUDIT_PAGE_SIZE,
         async page(page, pageSize) {
-          const result = await auditLogs.list(caller, { ...query, page, pageSize });
+          // Same bound for the count and the rows of every page; keyset after the first page.
+          const result = await auditLogs.list(caller, {
+            ...query,
+            page,
+            pageSize,
+            upTo: startedAt,
+            ...(after === undefined ? {} : { after }),
+          });
+          const last = result.items.at(-1);
+          if (last !== undefined) after = last.id;
           return {
             total: result.total,
             rows: result.items.map((item) => [

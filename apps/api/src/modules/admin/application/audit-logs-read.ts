@@ -38,6 +38,16 @@ export interface AuditQuery {
   readonly permission?: string;
   readonly from?: string;
   readonly to?: string;
+  /**
+   * Export walk only (not an HTTP parameter): records at or before this instant, so the set is
+   * fixed for the whole walk; combines with `to` (the earlier bound wins).
+   */
+  readonly upTo?: Date;
+  /**
+   * Export walk only: the `id` of the previous page's last item; the page continues the keyset
+   * walk on (at, id) and `page` no longer offsets. A value this codec did not issue is an error.
+   */
+  readonly after?: string;
 }
 
 export interface AuditLogItemView {
@@ -121,15 +131,26 @@ export function createAuditLogsReader(deps: {
       }
       // A filter that can match no row answers the empty page without a query.
       if (derived.some((any) => any.length === 0)) return empty;
+      if (query.upTo !== undefined && Number.isNaN(query.upTo.getTime())) {
+        throw new RangeError('audit logs: upper bound must be a valid instant');
+      }
+      const after = query.after === undefined ? undefined : deps.ids().decode(query.after);
+      if (query.after !== undefined && after === undefined) {
+        throw new RangeError('audit logs: cursor is invalid');
+      }
       const filter = {
         appId: caller.appId,
         ...(actorId === undefined ? {} : { actorId }),
         ...(query.from === undefined ? {} : { from: query.from }),
         ...(query.to === undefined ? {} : { to: query.to }),
+        ...(query.upTo === undefined ? {} : { upTo: query.upTo }),
         derived,
       };
       const total = await store.count(filter);
-      const rows = await store.page(filter, (query.page - 1) * query.pageSize, query.pageSize);
+      const rows =
+        after === undefined
+          ? await store.page(filter, (query.page - 1) * query.pageSize, query.pageSize)
+          : await store.page(filter, 0, query.pageSize, after);
       return { items: rows.map(item), page: query.page, pageSize: query.pageSize, total };
     },
 
