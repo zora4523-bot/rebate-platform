@@ -30,20 +30,55 @@
 // package (in the repository), so the grader's list cannot drift from BR-AI-03 unnoticed. Only
 // ENOENT skips it; an entry there that cannot be read, or a path that cannot be inspected
 // (EACCES…), is an `io` load problem (exit 2).
-import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   checkDuplicateIds,
   checkIdentityFieldsFile,
+  checkManifest,
   checkReleaseGate,
   checkSmokeGate,
   compareReports,
   parseJsonl,
+  validateManifest,
 } from './index.ts';
 import type { CaseFacts, EvalCase, Manifest, Problem, Report } from './index.ts';
 import { isMetricId, validateFacts } from './release.ts';
 import { validateReport } from './report.ts';
+import {
+  fixedClock,
+  recordingsDigest,
+  recordingsJsonl,
+  runRecord,
+  sequentialIds,
+} from './record.ts';
+import type { EvalClock, EvalIds } from './record.ts';
+import { loadRecordings, runReplay } from './replay.ts';
+import type { AgentPorts, AgentUnderTest, Recording, ResultCounts, RunMeta } from './types.ts';
+
+export interface CliDeps {
+  agent?: (env: { clock: EvalClock; ids: EvalIds }) => AgentUnderTest;
+  livePorts?: () => AgentPorts | Promise<AgentPorts>;
+  clock?: EvalClock;
+  meta?: Pick<
+    RunMeta,
+    | 'vendor'
+    | 'model_snapshot'
+    | 'prompt_sha256'
+    | 'sampling'
+    | 'tool_schema_version'
+    | 'code_commit'
+    | 'grader_version'
+  >;
+}
 
 export interface CliIo {
   out(text: string): void;
@@ -63,7 +98,9 @@ const USAGE =
   'usage: cli.ts smoke-gate --cases <dir> --manifest <file> --report <file>\n' +
   '       cli.ts release-gate --cases <dir> --manifest <file> --report <file> --facts <file>\n' +
   '       cli.ts compare --a <report> --b <report> [--min-sample <n>]\n' +
-  '       cli.ts identity-fields [--file <path>]\n';
+  '       cli.ts identity-fields [--file <path>]\n' +
+  '       record --cases <dir> --manifest <file> --out <dir>      (runCli with an injected agent)\n' +
+  '       replay --cases <dir> --manifest <file> --recordings <dir> --report <file>  (runCli)\n';
 
 const DEFAULT_IDENTITY_FILE = fileURLToPath(
   new URL('../../../specs/agent-identity-fields.txt', import.meta.url),
@@ -349,10 +386,282 @@ export function main(argv: string[], io: CliIo = processIo): number {
     if (command === 'release-gate') return releaseGate(rest, io);
     if (command === 'compare') return compare(rest, io);
     if (command === 'identity-fields') return identityFields(rest, io);
+    // record / replay need an agent (and live ports) injected through runCli; the bare process
+    // entry has none, so it can never write back a pass.
+    if (command === 'record' || command === 'replay') {
+      io.err('no_agent 1\n');
+      return 2;
+    }
     io.err(USAGE);
     return 2;
   } catch {
     io.err('internal -:-\n');
+    return 2;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// record / replay (B3-01h). Only reachable through runCli, which takes the agent factory, the
+// live ports and the clock from code (never from the environment). Output is what BR-AI-21 lets
+// a local run write back: one JSON line of counts on stdout and, on stderr, one `<code> <count>`
+// line per problem code in code order; never a case id, case text, model output or path.
+
+const DEFAULT_INSTANT = '2000-01-01T00:00:00.000Z';
+const ID_PREFIX = 'eval';
+const CODE_PATTERN = /^[a-z][a-z0-9_]*$/;
+
+/** One `<code> <count>` line per code, ordered by code; codes that do not look like one are
+ * counted as `invalid_code` so no free text slips through. */
+function printCodes(io: CliIo, codes: readonly string[]): void {
+  const counts = new Map<string, number>();
+  for (const code of codes) {
+    const shown = CODE_PATTERN.test(code) ? code : 'invalid_code';
+    counts.set(shown, (counts.get(shown) ?? 0) + 1);
+  }
+  for (const code of [...counts.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+    io.err(`${code} ${counts.get(code) ?? 0}\n`);
+  }
+}
+
+/** Cases and their manifest (checked against them); load problems as codes only. */
+function loadCaseSet(
+  casesDir: string,
+  manifestPath: string,
+): { cases: EvalCase[]; manifest: Manifest } | { problems: Problem[] } {
+  const loaded = loadCases(casesDir);
+  const problems: Problem[] = [...loaded.problems];
+  const manifest = readChecked(manifestPath, validateManifest);
+  if ('problem' in manifest) problems.push(manifest.problem);
+  if (problems.length > 0 || 'problem' in manifest) return { problems };
+  const value = manifest.value as Manifest;
+  const mismatch = checkManifest(value, loaded.cases);
+  if (mismatch.length > 0) return { problems: mismatch };
+  return { cases: loaded.cases, manifest: value };
+}
+
+function runMeta(
+  mode: RunMeta['mode'],
+  deps: CliDeps,
+  manifest: Manifest,
+  clock: EvalClock,
+  recordingsSha256: string | null,
+): RunMeta {
+  const given = deps.meta;
+  const at = clock.now().toISOString();
+  return {
+    mode,
+    vendor: given?.vendor ?? 'unspecified',
+    model_snapshot: given?.model_snapshot ?? 'unspecified',
+    prompt_sha256: given?.prompt_sha256 ?? '0'.repeat(64),
+    sampling: { ...(given?.sampling ?? {}) },
+    eval_set: {
+      set: manifest.set,
+      version: manifest.version,
+      content_sha256: manifest.content_sha256,
+      split_sha256: manifest.split_sha256,
+    },
+    tool_schema_version: given?.tool_schema_version ?? 'unspecified',
+    code_commit: given?.code_commit ?? 'unspecified',
+    grader_version: given?.grader_version ?? 'unspecified',
+    recordings_sha256: recordingsSha256,
+    unused_recordings: 0,
+    started_at: at,
+    finished_at: at,
+  };
+}
+
+/** The agent of one run: the factory is called once per case with a fresh id sequence (ids
+ * restart at `eval-1` in every case, so one case replays on its own) and the run's clock. */
+function perCaseAgent(factory: NonNullable<CliDeps['agent']>, clock: EvalClock): AgentUnderTest {
+  const agents = new Map<string, AgentUnderTest>();
+  return (input, ports) => {
+    let agent = agents.get(input.case_id);
+    if (agent === undefined) {
+      agent = factory({ clock, ids: sequentialIds(ID_PREFIX) });
+      agents.set(input.case_id, agent);
+    }
+    return agent(input, ports);
+  };
+}
+
+/** Counts on stdout; exit 0 only when every case passed and nothing else went wrong. */
+function finish(io: CliIo, summary: ResultCounts, codes: string[]): number {
+  const passed =
+    summary.total > 0 &&
+    summary.pass === summary.total &&
+    summary.fail === 0 &&
+    summary.coverage_gap === 0 &&
+    summary.error === 0 &&
+    codes.length === 0;
+  const verdict = {
+    passed,
+    total: summary.total,
+    pass: summary.pass,
+    fail: summary.fail,
+    coverage_gap: summary.coverage_gap,
+    error: summary.error,
+  };
+  io.out(`${JSON.stringify(verdict)}\n`);
+  if (passed) return 0;
+  printCodes(io, codes.length > 0 || summary.total > 0 ? codes : ['no_cases']);
+  return 1;
+}
+
+function writeOut(path: string, text: string): boolean {
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function record(args: string[], deps: CliDeps, io: CliIo): Promise<number> {
+  const flags = parseFlags(args, ['--cases', '--manifest', '--out']);
+  const casesDir = flags?.get('--cases');
+  const manifestPath = flags?.get('--manifest');
+  const outDir = flags?.get('--out');
+  if (casesDir === undefined || manifestPath === undefined || outDir === undefined) {
+    printCodes(io, ['usage']);
+    return 2;
+  }
+  if (deps.agent === undefined) {
+    printCodes(io, ['no_agent']);
+    return 2;
+  }
+  if (deps.livePorts === undefined) {
+    printCodes(io, ['no_live_ports']);
+    return 2;
+  }
+  const set = loadCaseSet(casesDir, manifestPath);
+  if ('problems' in set) {
+    printCodes(
+      io,
+      set.problems.map((problem) => problem.code),
+    );
+    return 2;
+  }
+  const clock = deps.clock ?? fixedClock(DEFAULT_INSTANT);
+  const live = await deps.livePorts();
+  const result = await runRecord({
+    cases: set.cases,
+    agent: perCaseAgent(deps.agent, clock),
+    live,
+    meta: runMeta('integration', deps, set.manifest, clock, null),
+    clock,
+  });
+  const wrote =
+    writeOut(join(outDir, 'recordings.jsonl'), recordingsJsonl(result.recordings)) &&
+    writeOut(join(outDir, 'report.json'), `${JSON.stringify(result.report)}\n`);
+  if (!wrote) {
+    printCodes(io, ['io']);
+    return 2;
+  }
+  const codes = [
+    ...result.report.cases.flatMap((item) => item.problems.map((problem) => problem.code)),
+    ...result.problems.map((problem) => problem.code),
+  ];
+  return finish(io, result.report.summary, codes);
+}
+
+/** Every *.jsonl in `dir` as one recording set, so a conflict across files is found too. */
+function loadRecordingDir(
+  dir: string,
+): { text: string; lines: Recording[] } | { problems: Problem[] } {
+  let names: string[];
+  try {
+    names = readdirSync(dir)
+      .filter((name) => name.endsWith('.jsonl'))
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  } catch {
+    return { problems: [{ code: 'io', file: basename(dir), message: 'cannot read' }] };
+  }
+  const texts: string[] = [];
+  const problems: Problem[] = [];
+  for (const name of names) {
+    const read = readText(join(dir, name));
+    if ('problem' in read) problems.push(read.problem);
+    else texts.push(read.text);
+  }
+  if (problems.length > 0) return { problems };
+  const text = texts.join('\n');
+  const loaded = loadRecordings(text, 'recordings');
+  if (loaded.problems.length > 0) return { problems: loaded.problems };
+  // loadRecordings accepted every non-blank line, so each one parses as a recording.
+  const lines = text
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line) as Recording);
+  return { text, lines };
+}
+
+async function replay(args: string[], deps: CliDeps, io: CliIo): Promise<number> {
+  const flags = parseFlags(args, ['--cases', '--manifest', '--recordings', '--report']);
+  const casesDir = flags?.get('--cases');
+  const manifestPath = flags?.get('--manifest');
+  const recordingsDir = flags?.get('--recordings');
+  const reportPath = flags?.get('--report');
+  if (
+    casesDir === undefined ||
+    manifestPath === undefined ||
+    recordingsDir === undefined ||
+    reportPath === undefined
+  ) {
+    printCodes(io, ['usage']);
+    return 2;
+  }
+  if (deps.agent === undefined) {
+    printCodes(io, ['no_agent']);
+    return 2;
+  }
+  const set = loadCaseSet(casesDir, manifestPath);
+  const recordings = loadRecordingDir(recordingsDir);
+  const problems = [
+    ...('problems' in set ? set.problems : []),
+    ...('problems' in recordings ? recordings.problems : []),
+  ];
+  if ('problems' in set || 'problems' in recordings) {
+    printCodes(
+      io,
+      problems.map((problem) => problem.code),
+    );
+    return 2;
+  }
+  const clock = deps.clock ?? fixedClock(DEFAULT_INSTANT);
+  const { store } = loadRecordings(recordings.text, 'recordings');
+  const report = await runReplay({
+    cases: set.cases,
+    agent: perCaseAgent(deps.agent, clock),
+    store,
+    meta: runMeta('A', deps, set.manifest, clock, recordingsDigest(recordings.lines)),
+  });
+  if (!writeOut(reportPath, `${JSON.stringify(report)}\n`)) {
+    printCodes(io, ['io']);
+    return 2;
+  }
+  const codes = report.cases.flatMap((item) => item.problems.map((problem) => problem.code));
+  return finish(io, report.summary, codes);
+}
+
+/**
+ * The command line with injected dependencies: `record` and `replay` (B3-01h) run here, every
+ * other command goes to `main`. Exit 0 all cases passed; 1 a case failed, had a coverage gap or
+ * an error, or a recording conflicted; 2 bad arguments, missing agent or live ports, load
+ * problems or an unexpected exception (`internal` only).
+ */
+export async function runCli(
+  argv: string[],
+  deps: CliDeps,
+  io: CliIo = processIo,
+): Promise<number> {
+  try {
+    const [command, ...rest] = argv;
+    if (command === 'record') return await record(rest, deps, io);
+    if (command === 'replay') return await replay(rest, deps, io);
+    return main(argv, io);
+  } catch {
+    io.err('internal 1\n');
     return 2;
   }
 }
