@@ -1,6 +1,7 @@
 import type { DB } from '@couli/db';
 import {
   SETTLE_BATCH_STATES,
+  accountingDate,
   canScheduleSettlement,
   transitionSettleBatch,
   type SettleBatchEvent,
@@ -126,6 +127,9 @@ export class BatchCommandRejectedError extends Error implements BatchCommandReje
   }
 }
 
+/** SB8 等待期间连续跨会计日的重查上限；超过即保守拒绝，批次保持 PARTIAL。 */
+const MAX_DAY_RECHECKS = 2;
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function stateOf(status: string): SettleBatchState {
@@ -201,8 +205,8 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
 
   return {
     async confirmBill(input) {
-      const now = clock.now();
-      const { mode, scheduledAt } = settleMode(input, now);
+      // 事务前先按当前时刻快速拒绝明显无效的结算方式；锁后再按锁后时刻复核（见下）。
+      settleMode(input, clock.now());
       await db.transaction().execute(async (trx) => {
         // 账单行锁串行化同一账单的整轮确认；生成未完成不得确认（防止只确认部分批次）。
         const bill = await trx
@@ -254,6 +258,9 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
           seen.add(expected.batchId);
         }
         if (seen.size !== drafts.size) throw new BatchConflictError();
+        // 确认时刻取在全部行锁之后：等待连接或行锁期间时钟前进，定时守卫与 confirmed_at 都按锁后时刻。
+        const now = clock.now();
+        const { mode, scheduledAt } = settleMode(input, now);
         for (const draft of drafts.values()) {
           const to = nextState(draft.status, 'CONFIRM');
           await casUpdate(
@@ -315,17 +322,25 @@ export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandS
     },
 
     async resumeBatch(input) {
-      const now = clock.now();
       await db.transaction().execute(async (trx) => {
         const row = await lockBatch(trx, input);
         const to = nextState(row.status, 'RESUME');
-        const ready = await deps.readiness({ appId: input.appId, platform: row.platform, at: now });
-        // SB8 守卫：两个开关都为 on；当日快照已完成或已超时。
-        if (!ready.autoEnabled || !ready.creditEnabled) {
-          throw new BatchCommandRejectedError('switches_off');
-        }
-        if (!ready.snapshotCompleted && !ready.snapshotTimedOut) {
-          throw new BatchCommandRejectedError('snapshot_pending');
+        // 时刻取在行锁之后：等待连接或行锁跨过午夜时，按新会计日的快照判定，不沿用等待前的日期。
+        let at = clock.now();
+        for (let recheck = 0; ; recheck += 1) {
+          const ready = await deps.readiness({ appId: input.appId, platform: row.platform, at });
+          // SB8 守卫：两个开关都为 on；当日快照已完成或已超时。
+          if (!ready.autoEnabled || !ready.creditEnabled) {
+            throw new BatchCommandRejectedError('switches_off');
+          }
+          if (!ready.snapshotCompleted && !ready.snapshotTimedOut) {
+            throw new BatchCommandRejectedError('snapshot_pending');
+          }
+          // 查询期间跨会计日：昨日快照结论作废，按新日期重新校验；不满足即拒绝，批次保持 PARTIAL。
+          const after = clock.now();
+          if (accountingDate(after) === accountingDate(at)) break;
+          if (recheck >= MAX_DAY_RECHECKS) throw new BatchCommandRejectedError('snapshot_pending');
+          at = after;
         }
         // 只迁移批次；明细由执行器（B2-04p）续跑。
         await casUpdate(trx, input, row.status, { status: to });
