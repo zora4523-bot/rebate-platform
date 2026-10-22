@@ -1,0 +1,24 @@
+id: CT-26e
+repo: rebate-platform
+title: 契约（App 高保真定稿缺口，identity）：RiskInfo 加 prev_risk_state（申诉中带原处罚）；Appeal 加 attempt_no / can_resubmit，第 4 次申诉被拒新码 30418；features 下发换手机号开关 account.phone_change_enabled，发码（step_up / phone_change）与二次验证时提前返回 30414
+type: contract
+# 草稿 2026-10-23（身份与风控线 identity-lane）。编排 17:4x 分派、13:3x 派工 ①；形状经 couli #174 回写 04（SPEC_REF 39ff3de4）。形状稿 couli-runs/CT-26e/shape.md；摘录以 SPEC_REF 的 04 为准。占契约槽后做；评审 Codex contract（不可用按 #36 独立 Claude）。error.30418 文案键归 content（BR-TEXT-14 表 A）。
+refs: []
+refs_hash: {}
+contract_sections: ['5']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/**'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo

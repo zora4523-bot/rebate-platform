@@ -1,0 +1,25 @@
+id: CT-26c
+repo: rebate-platform
+title: 契约（App 高保真定稿缺口，identity 主写、funds 评审）：核实身份（旧号加验）——新码 10010（待加验，data.method）与 20005（核实未通过，data.fail_limit）、枚举 reverify_method、GET /v1/me/reverify、POST /v1/me/reverify/id-number、POST /v1/me/reverify/oauth、路由 Reverify；五个资金 / 身份敏感接口 x-error-codes 加 10010；二次验证绑定业务摘要（短信二次验证请求体 summary，提现与收款账号变更）
+type: contract
+# 草稿 2026-10-23（身份与风控线 identity-lane）。编排 17:4x 分派、13:3x 派工 ②；形状经 couli #174 回写 04（SPEC_REF 39ff3de4，含 D10-148 / D10-149 裁定）。形状稿 couli-runs/CT-26c/shape.md；摘录以 SPEC_REF 的 04 / 08 BR-WDR-01 / BR-ID-08 为准。占契约槽后做；评审 Codex contract（不可用按 #36 独立 Claude），funds 评审资金接口部分。
+refs: []
+refs_hash: {}
+contract_sections: ['5']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'contracts/enums/**'
+  - 'contracts/routes.json'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
