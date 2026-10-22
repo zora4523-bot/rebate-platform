@@ -11,7 +11,7 @@ type: contract
 # 新码与 target_* 合并后由编排开规划同步回写 08 §13.11（先例 CT-02j）。排在 fe 的 CT-24f → CT-24h 之后占契约槽。
 refs: []
 refs_hash: {}
-deps: [CT-24m]
+deps: [CT-24m, CT-24nz]
 paths:
   - 'contracts/openapi.yaml'
   - 'contracts/error-codes.yaml'
