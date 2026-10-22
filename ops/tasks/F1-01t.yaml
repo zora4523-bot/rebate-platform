@@ -1,0 +1,24 @@
+id: F1-01t
+repo: rebate-platform
+title: H5 字典按引用裁剪：构建期只把 H5 源码实际引用的 contracts/texts.default.json 键（字面键 + 源码中显式登记的动态键前缀）打进各入口，未引用的键不进包；运行时 t() 的取值顺序与结果不变；保证首屏 + 路由 JS gzip 预算（冻结 [AC-F1-01c-BUILD#1]，不改）在字典增长时长期可过
+type: impl
+# 2026-10-22 入账（前端线 f1-frontend-7，编排裁定 D10-124 选 A：不动预算，fe 开 H5 小任务）。根因：apps/h5/src/shared/texts.ts 用 import.meta.glob 把整份 texts.default.json（约 50KB）打进 H5 入口，
+# content 的 CT-16i（字典补键）因此会把 H5 首屏 + 路由包顶破 150KiB；F1-04b 已压线（149740）。本任务做构建期裁剪（Vite 插件 / 虚拟模块，或按路由拆分 / 懒加载，二选一由实现定），合并后 CT-16i 变基落地。
+# 动态键（如 ledger_type.<CODE>.name、error.<code>）必须有显式登记机制，漏登记要在构建或测试时失败，不能静默丢文案。approvals 第 34 / 36 条。
+refs: []
+refs_hash: {}
+deps: [F1-04b]
+paths:
+  - 'apps/h5/vite.config.ts'
+  - 'apps/h5/build/**'
+  - 'apps/h5/src/shared/texts.ts'
+  - 'apps/h5/src/texts/**'
+test_paths:
+  - 'test/spec/frontend/h5-texts-trim/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/h5-texts-trim/**'
+status: todo
+pr: null
