@@ -6,6 +6,7 @@ type: impl
 # 分工：订单归属 / 找回属 approvals 30 留 Claude 的范围 → impl claude、tester codex（D10-15）。用户侧、不涉资金；不碰同步流水线（pipeline-port / update-step），与 B1-08i～k 不冲突。
 # 字段已由 CT-04f 加在 listOrders 响应（可选布尔，D10-54），本任务不改契约；只在本人自购视图计算。linking 只读端口同 B1-10c。
 # 2026-10-22 补 paths（W1 D10-97）：置顶判定读口须在生产装配接上（先例 B1-10c）。
+# 2026-10-22（W1 D10-127）：冻结 [AC-B1-08l#41] 的直调实例须注入同一个真实置顶读口（只改夹具准备、断言不动），该文件入 test_paths；同文件其余 4 个冻结用例测试体未改，按 CT-06r 逐条 red_exempt。
 refs: []
 refs_hash: {}
 deps: [B1-10b, B1-08l]
@@ -15,8 +16,22 @@ paths:
   - 'apps/api/src/app.module.ts'
 test_paths:
   - 'test/spec/orders/claim-entry/**'
+  - 'test/spec/orders/list-detail/review-regressions.int.test.ts'
 impl: claude
 tester: codex
+red_exempt:
+  - file: test/spec/orders/list-detail/review-regressions.int.test.ts
+    test: '[AC-B1-08l#40] linking 真实读端口按 app_id 读取链接商品，驱动分享投影和检索'
+    reason: 冻结 B1-08l 用例，测试体未改，只因同文件 #41 夹具修正入列（D10-127）
+  - file: test/spec/orders/list-detail/review-regressions.int.test.ts
+    test: '[AC-B1-08l#42] 分享单无父单号时列表和详情只给子单号 3712345678901234567 的脱敏值 3712****67'
+    reason: 冻结 B1-08l 用例，测试体未改，只因同文件 #41 夹具修正入列（D10-127）
+  - file: test/spec/orders/list-detail/review-regressions.int.test.ts
+    test: '[AC-B1-08l#42] 分享单无父单号时列表和详情只给子单号 12345678 的脱敏值 ****78'
+    reason: 冻结 B1-08l 用例，测试体未改，只因同文件 #41 夹具修正入列（D10-127）
+  - file: test/spec/orders/list-detail/review-regressions.int.test.ts
+    test: '[AC-B1-08l#43] 扣回节点取同单 rebate/CLAWED_BACK 最近历史，排除其他状态、字段和订单'
+    reason: 冻结 B1-08l 用例，测试体未改，只因同文件 #41 夹具修正入列（D10-127）
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/claim-entry/**'
