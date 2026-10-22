@@ -104,10 +104,12 @@ it('[AC-B1-08w#1] worker 只建一次真实解析器，流水线、更新与补�
   }
 });
 
-it('[AC-B1-08w#2] 仅完整 worker 构造快照解析器；缺资源仍禁用，其他入口不装配', async () => {
+it('[AC-B1-08w#2] 缺资源的 worker 不构造快照解析器，其他入口不装配订单同步与补偿扫描', async () => {
   const key = await token();
   for (const entry of ['worker-no-db', 'worker-no-queue', 'api', 'stream', 'admin', 'payout']) {
     const makeResolver = vi.spyOn(resolver, 'createSnapshotBeneficiaryResolver');
+    const makeRuntime = vi.spyOn(worker, 'createOrderSyncRuntime');
+    const makeRetryScheduler = vi.spyOn(retry, 'createSnapshotRetryScheduler');
     const isWorker = entry.startsWith('worker');
     const f = await built(() =>
       contextOf(
@@ -118,8 +120,8 @@ it('[AC-B1-08w#2] 仅完整 worker 构造快照解析器；缺资源仍禁用，
       ),
     );
     try {
-      expect(makeResolver).not.toHaveBeenCalled();
       if (isWorker) {
+        expect(makeResolver).not.toHaveBeenCalled();
         expect(f.context.get(key, { strict: false })).toBeNull();
         expect(f.lines().filter((l) => l.msg === 'order_sync_disabled')).toEqual([
           expect.objectContaining({ level: 30 }),
@@ -128,6 +130,8 @@ it('[AC-B1-08w#2] 仅完整 worker 构造快照解析器；缺资源仍禁用，
         expect(f.queue.send).not.toHaveBeenCalled();
       } else {
         expect(() => f.context.get(key, { strict: false })).toThrow();
+        expect(makeRuntime).not.toHaveBeenCalled();
+        expect(makeRetryScheduler).not.toHaveBeenCalled();
       }
       expect(f.queue.register.mock.calls.filter(([name]) => name === 'order-sync')).toEqual([]);
     } finally {
