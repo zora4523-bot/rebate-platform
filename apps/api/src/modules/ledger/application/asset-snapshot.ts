@@ -4,19 +4,33 @@
 // time. A snapshot row is its own completion mark; lateness is judged against D+1 00:30 +08:00.
 import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
-import { addFen } from '@couli/money';
 import type { Kysely } from 'kysely';
 import type { Clock } from '../../platform/index.ts';
 import {
   findSnapshot,
   insertReceivables,
   insertSnapshotIfAbsent,
+  markNotComparable,
   sumReceivables,
   sumUserBalances,
-  type PlatformReceivable,
 } from '../infra/asset-snapshot-store.ts';
 import { isPastDeadline, snapshotDayOf, snapshotDeadlineMs } from './asset-snapshot-days.ts';
+import {
+  writeSnapshotDay,
+  type AssetSnapshotAlert,
+  type AssetSnapshotAlertQueue,
+  type SnapshotReads,
+  type SnapshotWriteContext,
+  type SnapshotWriteOutcome,
+  type SnapshotWriteStore,
+} from './asset-snapshot-write.ts';
 import { LedgerError } from './errors.ts';
+
+export type {
+  AssetSnapshotAlert,
+  AssetSnapshotAlertKind,
+  AssetSnapshotAlertQueue,
+} from './asset-snapshot-write.ts';
 
 export interface PendingEarningsTotals {
   readonly total_waiting_fen: bigint;
@@ -33,7 +47,8 @@ export interface PendingUserEarnings {
 
 /** S3: declared by ledger, implemented by settlement and injected at assembly time.
  * Reads current order state, including beneficiaries without a ledger account.
- * The supplied database may be the caller's transaction; no historical date filter.
+ * The supplied database is the snapshot's read-only REPEATABLE READ transaction: read through it,
+ * so the totals share one consistent view with the ledger sums. No historical date filter.
  */
 export interface PendingEarningsSource {
   readAppTotals(db: Kysely<DB>, input: { readonly appId: string }): Promise<PendingEarningsTotals>;
@@ -59,6 +74,11 @@ export interface AssetSnapshotDependencies {
   readonly logger: AssetSnapshotLogger;
   /** Reads ledger.advance_alert_fen for this app; null means not configured. */
   getAdvanceAlertFen(appId: string): Promise<bigint | null>;
+  /**
+   * Durable alerts, enqueued on the snapshot's write transaction (BR-FUND-20 once per app per
+   * day; BR-FUND-18 timeout). Optional like EVENT_BUS; without it alerts are log lines only.
+   */
+  readonly alertQueue?: AssetSnapshotAlertQueue;
 }
 
 export interface AssetSnapshotInput {
@@ -89,70 +109,72 @@ export interface AssetSnapshotStatus {
   readonly waitingComparable: boolean | null;
 }
 
-interface WriteOutcome {
-  readonly snapshotId: string;
-  /** False when another delivery committed the day first (nothing was written by this call). */
-  readonly inserted: boolean;
-  readonly waitingComparable: boolean;
-  readonly receivables: readonly PlatformReceivable[];
-}
+const STORE: SnapshotWriteStore = {
+  insertSnapshotIfAbsent,
+  insertReceivables,
+  markNotComparable,
+  findSnapshot,
+};
+
+/** Bounded retries of the read snapshot on a serialization failure (SQLSTATE 40001). */
+const READ_ATTEMPTS = 3;
 
 // TODO(规划/11 §4.2): worker 在会计日 D+1 00:01 +08:00 按 app 调度本运行器 — blocked on B2-04zb（调度接线，本任务路径之外）
 export function createAssetSnapshot(dependencies: AssetSnapshotDependencies): AssetSnapshotRunner {
   const { clock, pendingEarnings, logger } = dependencies;
+  const context: SnapshotWriteContext = {
+    store: STORE,
+    clock,
+    newId: randomUUID,
+    ...(dependencies.alertQueue === undefined ? {} : { alertQueue: dependencies.alertQueue }),
+  };
+
+  /** One read-only REPEATABLE READ transaction: balances, receivables and pending share a view. */
+  async function readDay(db: Kysely<DB>, appId: string, day: string): Promise<SnapshotReads> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await db
+          .transaction()
+          .setIsolationLevel('repeatable read')
+          .setAccessMode('read only')
+          .execute(async (trx) => {
+            const balances = await sumUserBalances(trx, appId, day);
+            const receivables = await sumReceivables(trx, appId, day);
+            // Run-time order state (BR-FUND-18): no D cutoff on waiting / estimated.
+            const pending = await pendingEarnings.readAppTotals(trx, { appId });
+            return {
+              balances,
+              receivables,
+              totalWaitingFen: pending.total_waiting_fen,
+              totalEstimatedFen: pending.total_estimated_fen,
+              readAt: clock.now(),
+            };
+          });
+      } catch (error) {
+        if (attempt >= READ_ATTEMPTS || !isSerializationFailure(error)) throw error;
+      }
+    }
+  }
+
   return {
     async run(db, input) {
       const appId = validAppId(input.appId);
       const day = snapshotDayOf(input.nominalRunAt);
       const result = { accountingDate: day };
 
-      let outcome: WriteOutcome;
-      let threshold: bigint | null;
+      let outcome: SnapshotWriteOutcome;
       try {
-        // Replay of a completed day: same snapshot, no source read, no alert (idempotent on
-        // (app_id, snapshot_date)).
+        // Replay of a completed day: same snapshot, no source read, no alert. Its alerts, if any,
+        // were enqueued on the transaction that committed the row, so none can be missing.
         const existing = await findSnapshot(db, appId, day);
         if (existing !== undefined) return { ...result, snapshotId: existing.id };
-        // Read before writing: a failing config read must not leave a committed day whose
-        // exposure alert can never be sent again.
-        threshold = await dependencies.getAdvanceAlertFen(appId);
+        const threshold = await dependencies.getAdvanceAlertFen(appId);
+        const reads = await readDay(db, appId, day);
+        // READ COMMITTED: the platform event bus refuses to publish under a snapshot isolation.
         outcome = await db
           .transaction()
           .setIsolationLevel('read committed')
-          .execute(async (trx) => {
-            const balances = await sumUserBalances(trx, appId, day);
-            const receivables = await sumReceivables(trx, appId, day);
-            // Run-time order state (BR-FUND-18): no D cutoff on waiting / estimated.
-            const pending = await pendingEarnings.readAppTotals(trx, { appId });
-            const at = clock.now();
-            const waitingComparable = !isPastDeadline(at, day);
-            const id = randomUUID();
-            const inserted = await insertSnapshotIfAbsent(trx, {
-              id,
-              app_id: appId,
-              snapshot_date: day,
-              ...balances,
-              total_waiting_fen: pending.total_waiting_fen,
-              total_estimated_fen: pending.total_estimated_fen,
-              waiting_comparable: waitingComparable,
-              at,
-            });
-            if (!inserted) {
-              // A concurrent delivery committed first; its row is the day's snapshot.
-              const winner = await findSnapshot(trx, appId, day);
-              if (winner === undefined) {
-                throw new Error(`asset snapshot ${appId} ${day} conflicted but is not visible`);
-              }
-              return {
-                snapshotId: winner.id,
-                inserted: false,
-                waitingComparable: winner.waiting_comparable,
-                receivables,
-              };
-            }
-            await insertReceivables(trx, appId, id, receivables);
-            return { snapshotId: id, inserted: true, waitingComparable, receivables };
-          });
+          .execute((trx) => writeSnapshotDay(trx, context, { appId, day, reads, threshold }));
       } catch (error) {
         // Still not complete at or after the deadline: waiters learn it from the status read,
         // finance from this alert. No placeholder row is written.
@@ -165,22 +187,8 @@ export function createAssetSnapshot(dependencies: AssetSnapshotDependencies): As
         throw error;
       }
 
-      // Alerts only after commit and only by the delivery that wrote the day: one per app per D.
-      if (outcome.inserted) {
-        if (!outcome.waitingComparable) {
-          logger.warn(
-            {
-              event: 'asset_snapshot_timeout',
-              app_id: appId,
-              accounting_date: day,
-              step: 'completed_late',
-              waiting_comparable: false,
-            },
-            'asset snapshot completed after its deadline',
-          );
-        }
-        alertExposure(logger, appId, day, outcome.receivables, threshold);
-      }
+      // Log lines after commit, only by the delivery that wrote the day: one per app per D.
+      for (const alert of outcome.alerts) logAlert(logger, alert);
       return { ...result, snapshotId: outcome.snapshotId };
     },
   };
@@ -203,27 +211,18 @@ export async function getAssetSnapshotStatus(
   return { state, snapshotId: null, waitingComparable: null };
 }
 
-/** BR-FUND-20: total over platforms (negative nets included) strictly above the threshold. */
-function alertExposure(
-  logger: AssetSnapshotLogger,
-  appId: string,
-  day: string,
-  receivables: readonly PlatformReceivable[],
-  threshold: bigint | null,
-): void {
-  if (threshold === null) return;
-  let total = 0n;
-  for (const row of receivables) total = addFen(total, row.union_receivable_fen);
-  if (total <= threshold) return;
-  logger.warn(
-    {
-      event: 'ledger_advance_exposure',
-      app_id: appId,
-      accounting_date: day,
-      union_receivable_fen: total.toString(),
-      advance_alert_fen: threshold.toString(),
-    },
-    'union receivable exposure above ledger.advance_alert_fen',
+function logAlert(logger: AssetSnapshotLogger, alert: AssetSnapshotAlert): void {
+  const fields = { event: alert.kind, ...alert.payload };
+  if (alert.kind === 'asset_snapshot_timeout') {
+    logger.warn(fields, 'asset snapshot completed after its deadline');
+  } else {
+    logger.warn(fields, 'union receivable exposure above ledger.advance_alert_fen');
+  }
+}
+
+function isSerializationFailure(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '40001'
   );
 }
 

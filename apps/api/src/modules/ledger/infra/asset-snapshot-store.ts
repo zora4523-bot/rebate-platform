@@ -166,3 +166,22 @@ export async function insertReceivables(
     )
     .execute();
 }
+
+/**
+ * The write transaction's own row turned late after every write (BR-FUND-18): only ever true →
+ * false, on the row this transaction inserted.
+ */
+export async function markNotComparable(
+  trx: Transaction<DB>,
+  appId: string,
+  snapshotId: string,
+  at: Date,
+): Promise<void> {
+  await trx
+    .withSchema('app')
+    .updateTable('asset_snapshots')
+    .set({ waiting_comparable: false, updated_at: at })
+    .where('app_id', '=', appId)
+    .where('id', '=', snapshotId)
+    .execute();
+}
