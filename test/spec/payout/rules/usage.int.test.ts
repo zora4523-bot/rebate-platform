@@ -1,5 +1,5 @@
-// Only the container/CI integration project executes this file. Its globalSetup reads
-// TEST_PG_ADMIN_URL and creates the migrated disposable template; never a production DB.
+// Only the container/CI integration project executes this file. Its globalSetup owns the admin
+// connection and creates the migrated disposable template; never a production DB.
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase } from '@couli/db/testing';
