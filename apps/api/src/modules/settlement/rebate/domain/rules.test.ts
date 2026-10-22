@@ -1,0 +1,69 @@
+import { expect, it } from 'vitest';
+import {
+  isBaseZero,
+  isCreditablePlatform,
+  periodBasisSupported,
+  reverseEventOf,
+  step,
+  unmappedHoldEnabled,
+  voidReasonOf,
+} from './rules.ts';
+
+const zero = {
+  settleCommissionFen: null,
+  platformStatus: 'PAID',
+  fromPlatformStatus: 'PAID',
+} as const;
+
+it('[AC-B2-04j-UNIT#1] 基数只有正数变 0 才归零；null 是未知、结算佣金已到或定金期不触发', () => {
+  expect(isBaseZero({ ...zero, before: 1n, after: 0n })).toBe(true);
+  expect(isBaseZero({ ...zero, before: 0n, after: 0n })).toBe(false);
+  expect(isBaseZero({ ...zero, before: null, after: 0n })).toBe(false);
+  expect(isBaseZero({ ...zero, before: 900n, after: null })).toBe(false);
+  expect(isBaseZero({ ...zero, before: 900n, after: 0n, settleCommissionFen: 800n })).toBe(false);
+  expect(isBaseZero({ ...zero, before: 900n, after: 0n, platformStatus: 'DEPOSIT_PAID' })).toBe(
+    false,
+  );
+  expect(isBaseZero({ ...zero, before: 900n, after: 0n, fromPlatformStatus: 'DEPOSIT_PAID' })).toBe(
+    false,
+  );
+});
+
+it('[AC-B2-04j-UNIT#2] R6 事件的原因码与平台事件映射', () => {
+  expect(voidReasonOf('PLATFORM_INVALID')).toBe('REFUND');
+  expect(voidReasonOf('RIGHTS_FULL')).toBe('RIGHTS');
+  expect(voidReasonOf('PUNISH')).toBe('PUNISH');
+  expect(voidReasonOf('BLACKLIST_HIT')).toBe('BLACKLIST');
+  expect(voidReasonOf('BASE_ZERO')).toBe('COMMISSION_ZERO');
+  expect(voidReasonOf('PARTIAL_REFUND')).toBeNull();
+  expect(reverseEventOf('PLATFORM_INVALID', 'SETTLED')).toBe('PLATFORM_INVALID');
+  expect(reverseEventOf('PLATFORM_PUNISH', 'PAID')).toBe('PUNISH');
+  expect(reverseEventOf('PLATFORM_RIGHTS', 'PAID')).toBeNull();
+  expect(reverseEventOf(null, 'PAID')).toBeNull();
+});
+
+it('[AC-B2-04j-UNIT#3] 迁移只经生成的 transition()：终态与表外事件返回 null', () => {
+  expect(step(null, 'IMPORT_ATTRIBUTED')).toEqual({
+    from: null,
+    event: 'IMPORT_ATTRIBUTED',
+    to: 'ESTIMATED',
+  });
+  expect(step('WAITING', 'PARTIAL_REFUND')).toEqual({
+    from: 'WAITING',
+    event: 'PARTIAL_REFUND',
+    to: 'WAITING',
+  });
+  expect(step('VOID', 'PARTIAL_REFUND')).toBeNull();
+  expect(step('UNATTRIBUTED', 'PLATFORM_RECEIVED_OR_SETTLED')).toBeNull();
+});
+
+it('[AC-B2-04j-UNIT#4] 可入账平台、结算周期取法与未映射状态 hold 开关', () => {
+  expect(['taobao', 'jd', 'pdd', 'meituan'].every(isCreditablePlatform)).toBe(true);
+  expect(['vip', 'douyin', 'eleme'].some(isCreditablePlatform)).toBe(false);
+  expect(periodBasisSupported(undefined)).toBe(true);
+  expect(periodBasisSupported('received_at')).toBe(true);
+  expect(periodBasisSupported('settled_at')).toBe(false);
+  expect(unmappedHoldEnabled(undefined)).toBe(true);
+  expect(unmappedHoldEnabled(true)).toBe(true);
+  expect(unmappedHoldEnabled(false)).toBe(false);
+});

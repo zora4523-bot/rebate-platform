@@ -1,7 +1,42 @@
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
-import type { OrderPipelineDeps, OrderUpdateDeps } from '../../../orders/index.ts';
+import type { OrderRebateEvent, OrderRebateState } from '@couli/domain';
+import { chinaMonth } from '@couli/domain';
+import type {
+  ImportedOrder,
+  OrderPipelineDeps,
+  OrderStatusSource,
+  OrderUpdateChange,
+  OrderUpdateDeps,
+  UnmappedOrderInfo,
+} from '../../../orders/index.ts';
 import type { Clock, EventBus, RootLogger } from '../../../platform/index.ts';
+import {
+  hasEstimate,
+  isBaseZero,
+  isCreditablePlatform,
+  isHoldable,
+  isLocked,
+  isPrecredit,
+  isReceivedOrSettled,
+  isRebateState,
+  periodBasisSupported,
+  reverseEventOf,
+  step,
+  unmappedHoldEnabled,
+  voidReasonOf,
+  type RebateStep,
+  type VoidReason,
+} from '../domain/rules.ts';
+import {
+  casUpdateRebate,
+  insertRebateHistory,
+  readRebateOrder,
+  type OrderRow,
+  type RebateCasGuards,
+  type RebateSet,
+} from '../infra/rebate-store.ts';
+import { IllegalTransition, RebateError } from './errors.ts';
 
 export interface RebateOrderRef {
   readonly appId: string;
@@ -75,7 +110,424 @@ export interface RebateDependencies {
   };
 }
 
+type MutableSet = { -readonly [K in keyof RebateSet]: RebateSet[K] };
+
+/** 一次判定的结果：先在内存里按迁移表走完，再一条 CAS 写库（判定先于写库，BR-FUND-01）。 */
+interface Draft {
+  state: OrderRebateState | null;
+  readonly steps: RebateStep[];
+  readonly set: MutableSet;
+  readonly guards: { unheld?: boolean; unlocked?: boolean };
+  refresh: boolean;
+  invalidated: VoidReason | null;
+  audit: RebateHoldAudit | null;
+}
+
+interface Plan {
+  readonly steps: readonly RebateStep[];
+  /** false：库内值不变（只有 R1 历史，或只重算预估）。 */
+  readonly write: boolean;
+  readonly set: RebateSet;
+  readonly guards: RebateCasGuards;
+  readonly refresh: boolean;
+  readonly invalidated: VoidReason | null;
+  readonly audit: RebateHoldAudit | null;
+}
+
+function draft(state: OrderRebateState | null): Draft {
+  return {
+    state,
+    steps: [],
+    set: {},
+    guards: {},
+    refresh: false,
+    invalidated: null,
+    audit: null,
+  };
+}
+
+/** 按生成的 transition() 走一步；调用方已判定合法，表外即编码错误。 */
+function advance(d: Draft, event: OrderRebateEvent): void {
+  const next = step(d.state, event);
+  if (next === null) throw new IllegalTransition(d.state ?? '—', event);
+  d.steps.push(next);
+  d.state = next.to;
+  const reason = voidReasonOf(event);
+  if (next.to === 'VOID' && reason !== null) {
+    d.set.reason = reason;
+    d.invalidated = reason;
+    d.refresh = false;
+  }
+}
+
+function finish(d: Draft, stored: string): Plan | null {
+  const write =
+    d.steps.length > 0 &&
+    !(d.steps.length === 1 && d.steps[0]?.from === null && d.state === stored);
+  if (d.steps.length === 0 && !d.refresh) return null;
+  const set: RebateSet = write && d.state !== null ? { ...d.set, rebate_status: d.state } : d.set;
+  return {
+    steps: d.steps,
+    write,
+    set,
+    guards: d.guards,
+    refresh: d.refresh,
+    invalidated: d.invalidated,
+    audit: d.audit,
+  };
+}
+
+function refOf(order: { app_id: string; order_id: string; attr_at: Date }): RebateOrderRef {
+  return { appId: order.app_id, orderId: order.order_id, attrAt: order.attr_at };
+}
+
 export function createRebatePort(deps: RebateDependencies): RebatePort {
-  void deps;
-  throw new Error('NotImplemented: createRebatePort');
+  const { logger } = deps;
+
+  /**
+   * 重读 → 判定 → CAS；CAS 0 行重读一次再判定（02 §18），仍 0 行抛 ORDER_CAS_CONFLICT。
+   * 写库成功后同事务写历史、入队 order.invalidated、重算预估、写系统审计；任何一步抛错整事务回滚。
+   */
+  async function execute(
+    trx: Transaction<DB>,
+    ref: RebateOrderRef,
+    source: 'sync' | 'system',
+    decide: (row: OrderRow, now: Date) => Promise<Plan | null>,
+  ): Promise<void> {
+    const now = deps.clock.now();
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const row = await readRebateOrder(trx, ref);
+      if (row === undefined) {
+        logger.warn({ app_id: ref.appId, outcome: 'order_not_found' }, 'rebate order not found');
+        throw new RebateError('ORDER_NOT_FOUND', 'order not found for app_id/order_id/attr_at');
+      }
+      const plan = await decide(row, now);
+      if (plan === null) return;
+      if (plan.write) {
+        const hit = await casUpdateRebate(trx, row, plan.set, plan.guards, now);
+        if (!hit) {
+          logger.info(
+            { app_id: row.app_id, platform: row.platform, outcome: 'cas_retry' },
+            'rebate CAS matched no row; re-reading',
+          );
+          continue;
+        }
+      }
+      await insertRebateHistory(trx, row, plan.steps, source, now);
+      if (plan.invalidated !== null) {
+        await deps.events.publish(trx, {
+          appId: row.app_id,
+          name: 'order.invalidated',
+          payload: { order_id: row.order_id, platform: row.platform, reason: plan.invalidated },
+        });
+      }
+      if (plan.refresh) await deps.estimates.refresh(trx, ref);
+      if (plan.audit !== null) await deps.audit.append(trx, plan.audit);
+      const last = plan.steps.at(-1);
+      logger.info(
+        {
+          app_id: row.app_id,
+          platform: row.platform,
+          event: last?.event ?? null,
+          rebate_status: last?.to ?? row.rebate_status,
+          outcome: plan.write ? 'transitioned' : 'recorded',
+        },
+        'rebate status processed',
+      );
+      return;
+    }
+    throw new RebateError('ORDER_CAS_CONFLICT', 'order changed concurrently twice');
+  }
+
+  function illegal(row: OrderRow, event: string, detail?: string): IllegalTransition {
+    logger.warn(
+      {
+        app_id: row.app_id,
+        platform: row.platform,
+        rebate_status: row.rebate_status,
+        event,
+        alert: 'rebate_illegal_transition',
+        outcome: 'rejected',
+      },
+      'rebate event outside the transition table',
+    );
+    return new IllegalTransition(row.rebate_status, event, detail);
+  }
+
+  function currentState(row: OrderRow, event: string): OrderRebateState {
+    if (!isRebateState(row.rebate_status))
+      throw illegal(row, event, 'unknown stored rebate_status');
+    return row.rebate_status;
+  }
+
+  /** R4（BR-FUND-04 ②）：ESTIMATED 且平台已收货 / 结算；守卫不过只不迁移，不抛错。 */
+  async function tryReceive(d: Draft, row: OrderRow, now: Date): Promise<void> {
+    if (d.state !== 'ESTIMATED' || !isReceivedOrSettled(row.platform_status)) return;
+    const base = { app_id: row.app_id, platform: row.platform, rebate_status: d.state };
+    if (row.received_at === null) {
+      logger.info({ ...base, reason: 'NO_RECEIVED_AT', outcome: 'r4_guard' }, 'waiting held back');
+      return;
+    }
+    if (!isCreditablePlatform(row.platform)) {
+      logger.info(
+        { ...base, reason: 'NO_CREDITABLE_EVENT', outcome: 'r4_guard' },
+        'platform has no registered creditable event',
+      );
+      return;
+    }
+    const basis = await deps.config.get(row.app_id, `settle.period_basis.${row.platform}`);
+    if (!periodBasisSupported(basis)) {
+      logger.error(
+        { ...base, reason: 'PERIOD_BASIS_UNSUPPORTED', outcome: 'r4_guard' },
+        'unsupported settle.period_basis; order kept ESTIMATED',
+      );
+      return;
+    }
+    advance(d, 'PLATFORM_RECEIVED_OR_SETTLED');
+    // BR-FUND-04 ②：settle_period 写入后不重算；received_synced_at 取注入的 Clock，已有值不覆写。
+    if (row.settle_period === null) d.set.settle_period = chinaMonth(row.received_at);
+    if (row.received_synced_at === null) d.set.received_synced_at = now;
+  }
+
+  async function decideImport(row: OrderRow, now: Date): Promise<Plan | null> {
+    const attributed = row.user_id !== null;
+    const event = attributed ? 'IMPORT_ATTRIBUTED' : 'IMPORT_UNATTRIBUTED';
+    // 入库时库内是存储默认值 UNATTRIBUTED；逻辑上的来源是「—」（R1 / R2 的 from 为 null）。
+    if (row.rebate_status !== 'UNATTRIBUTED') throw illegal(row, event, 'order already imported');
+    const d = draft(null);
+    advance(d, event);
+    if (row.platform_status === 'INVALID') {
+      // P13：R1 / R2 后同事务按 R6 置 VOID，不生成预估。
+      advance(d, 'PLATFORM_INVALID');
+    } else if (attributed) {
+      if (hasEstimate(row.platform_status)) d.refresh = true;
+      await tryReceive(d, row, now);
+    }
+    return finish(d, row.rebate_status);
+  }
+
+  async function decideUpdate(
+    trx: Transaction<DB>,
+    row: OrderRow,
+    change: OrderUpdateChange,
+    source: OrderStatusSource,
+    now: Date,
+  ): Promise<Plan | null> {
+    const state = currentState(row, source.event ?? 'SYNC');
+    const base = {
+      app_id: row.app_id,
+      platform: row.platform,
+      rebate_status: state,
+      rule: change.rule,
+      event: source.event,
+    };
+    if (state === 'CREDITED') {
+      // TODO(规划/11 §4.2): 入账后扣回 / 补差路由 — blocked on B2-04s / B2-04t。
+      logger.info({ ...base, outcome: 'credited_noop' }, 'credited order update not routed yet');
+      return null;
+    }
+    if (isLocked(state)) {
+      if (change.rule === 'P9') {
+        // TODO(规划/11 §4.2): P9 差错单登记 — blocked on B2-04k。
+        logger.warn(
+          { ...base, alert: 'rebate_void_recovered', outcome: 'status_kept' },
+          'invalid order reported active again; rebate status kept',
+        );
+      } else {
+        logger.info({ ...base, outcome: 'locked_noop' }, 'locked order update ignored');
+      }
+      return null;
+    }
+    const d = draft(state);
+    if (state === 'UNATTRIBUTED' && change.attributed_now) {
+      if (row.locked || row.user_id === null) {
+        throw illegal(row, 'SYNC_ATTRIBUTED', 'orders.locked=true or user_id empty');
+      }
+      advance(d, 'SYNC_ATTRIBUTED');
+      d.guards.unlocked = true;
+      if (hasEstimate(row.platform_status)) d.refresh = true;
+    }
+    const reverse = reverseEventOf(source.event, row.platform_status);
+    if (reverse !== null) {
+      advance(d, reverse);
+      return finish(d, row.rebate_status);
+    }
+    if (
+      change.est_before !== change.est_after &&
+      change.settle_commission_fen === null &&
+      row.platform_status !== 'DEPOSIT_PAID'
+    ) {
+      const bases = await deps.estimates.bases(trx, {
+        appId: change.app_id,
+        orderId: change.order_id,
+        attrAt: change.attr_at,
+        estBefore: change.est_before,
+        estAfter: change.est_after,
+        settleCommissionFen: change.settle_commission_fen,
+      });
+      if (
+        isBaseZero({
+          before: bases.before,
+          after: bases.after,
+          settleCommissionFen: change.settle_commission_fen,
+          platformStatus: row.platform_status,
+          fromPlatformStatus: change.from_status,
+        })
+      ) {
+        advance(d, 'BASE_ZERO');
+        return finish(d, row.rebate_status);
+      }
+      if (d.state === 'ESTIMATED' || d.state === 'WAITING') {
+        advance(d, 'COMMISSION_CHANGED');
+        d.refresh = true;
+      }
+    }
+    if (
+      change.from_status === 'DEPOSIT_PAID' &&
+      hasEstimate(row.platform_status) &&
+      (d.state === 'ESTIMATED' || d.state === 'WAITING')
+    ) {
+      // P2 / P14：进入付款时的预估视为首次预估（BR-FUND-03 / 07）。
+      d.refresh = true;
+    }
+    await tryReceive(d, row, now);
+    return finish(d, row.rebate_status);
+  }
+
+  async function decideApply(
+    trx: Transaction<DB>,
+    row: OrderRow,
+    input: RebateChangeInput,
+    event: PrecreditEvent,
+  ): Promise<Plan | null> {
+    const state = currentState(row, event);
+    if (state === 'CREDITED') {
+      // TODO(规划/11 §4.2): R8 / R9 入账后扣回 — blocked on B2-04s / B2-04t。
+      logger.warn(
+        {
+          app_id: row.app_id,
+          platform: row.platform,
+          rebate_status: state,
+          event,
+          outcome: 'credited_noop',
+        },
+        'credited order command not routed yet',
+      );
+      return null;
+    }
+    if (step(state, event) === null) throw illegal(row, event);
+    const d = draft(state);
+    if (voidReasonOf(event) !== null) {
+      advance(d, event);
+      return finish(d, row.rebate_status);
+    }
+    const bases = await deps.estimates.bases(trx, input);
+    if (
+      isPrecredit(state) &&
+      isBaseZero({
+        before: bases.before,
+        after: bases.after,
+        settleCommissionFen: input.settleCommissionFen,
+        platformStatus: row.platform_status,
+        fromPlatformStatus: null,
+      })
+    ) {
+      advance(d, 'BASE_ZERO');
+      return finish(d, row.rebate_status);
+    }
+    advance(d, event);
+    if (row.platform_status !== 'DEPOSIT_PAID') d.refresh = true;
+    return finish(d, row.rebate_status);
+  }
+
+  function decideHold(row: OrderRow, ref: RebateOrderRef, now: Date): Plan | null {
+    const base = { app_id: row.app_id, platform: row.platform, rebate_status: row.rebate_status };
+    if (!isHoldable(row.rebate_status)) {
+      // BR-FUND-02：已入账、未归因与终态订单不能 hold，只告警（待处理表由 orders 写）。
+      logger.warn(
+        {
+          ...base,
+          reason: 'UNMAPPED_STATUS',
+          alert: 'rebate_unmapped_status',
+          outcome: 'not_holdable',
+        },
+        'unmapped platform status on an order that cannot be held',
+      );
+      return null;
+    }
+    if (row.hold) {
+      logger.info(
+        { ...base, reason: 'UNMAPPED_STATUS', outcome: 'already_held' },
+        'order already held',
+      );
+      return null;
+    }
+    const d = draft(row.rebate_status);
+    advance(d, 'HOLD');
+    d.set.hold = true;
+    d.set.hold_reason = 'UNMAPPED_STATUS';
+    d.guards.unheld = true;
+    d.audit = {
+      ...ref,
+      actor: 'system:risk',
+      reason: 'UNMAPPED_STATUS',
+      before: { hold: false, holdReason: row.hold_reason },
+      after: { hold: true, holdReason: 'UNMAPPED_STATUS' },
+      at: now,
+    };
+    return finish(d, row.rebate_status);
+  }
+
+  return {
+    async onImported(trx: Transaction<DB>, order: ImportedOrder): Promise<void> {
+      await execute(trx, refOf(order), 'sync', (row, now) => decideImport(row, now));
+    },
+
+    async onUpdated(
+      trx: Transaction<DB>,
+      change: OrderUpdateChange,
+      source: OrderStatusSource,
+    ): Promise<void> {
+      await execute(trx, refOf(change), 'sync', (row, now) =>
+        decideUpdate(trx, row, change, source, now),
+      );
+    },
+
+    async onUnmappedStatus(
+      trx: Transaction<DB>,
+      info: UnmappedOrderInfo,
+      source: OrderStatusSource,
+    ): Promise<void> {
+      void source;
+      const enabled = await deps.config.get(info.app_id, 'order_sync.unmapped_status_hold.enabled');
+      if (!unmappedHoldEnabled(enabled)) {
+        logger.warn(
+          {
+            app_id: info.app_id,
+            reason: 'UNMAPPED_STATUS',
+            alert: 'rebate_unmapped_status',
+            outcome: 'hold_disabled',
+          },
+          'unmapped platform status; system hold disabled',
+        );
+        return;
+      }
+      const ref = refOf(info);
+      // 以库内现态为准，info.rebate_status 只是调用时的提示（可能已过期）。
+      await execute(trx, ref, 'system', async (row, now) => decideHold(row, ref, now));
+    },
+
+    async apply(
+      trx: Transaction<DB>,
+      order: RebateChangeInput,
+      event: PrecreditEvent,
+    ): Promise<void> {
+      const ref: RebateOrderRef = {
+        appId: order.appId,
+        orderId: order.orderId,
+        attrAt: order.attrAt,
+      };
+      await execute(trx, ref, 'system', (row) => decideApply(trx, row, order, event));
+    },
+  };
 }
