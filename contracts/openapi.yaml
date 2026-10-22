@@ -4305,7 +4305,6 @@ paths:
       x-auth: login
       x-signed: false
       x-idempotent: false
-      x-implementation: planned
       x-error-codes: []
       security:
         - bearerAuth: []
@@ -4360,7 +4359,6 @@ paths:
       x-signed: false
       x-idempotent: false
       x-min-version-gate: true
-      x-implementation: planned
       x-error-codes:
         - 20001
         - 10405
