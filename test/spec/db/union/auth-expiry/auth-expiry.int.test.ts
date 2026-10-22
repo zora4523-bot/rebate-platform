@@ -287,10 +287,10 @@ it('[AC-B1-22a#5] sessions reference the account within app_id and the initiatin
         validated: true,
       }),
       expect.objectContaining({
-        columns: ['created_by'],
+        columns: ['app_id', 'created_by'],
         targetSchema: 'app',
         target: 'admin_users',
-        targetColumns: ['id'],
+        targetColumns: ['app_id', 'id'],
         validated: true,
       }),
     ]),
@@ -302,11 +302,19 @@ it('[AC-B1-22a#5] sessions reference the account within app_id and the initiatin
   const row = await fixture();
   expect((await insertSession(row)).rows).toEqual([row]);
   const other = await insertRow(app, 'union_accounts', { app_id: 'other-app' });
+  const otherAdminId = id();
+  await sql`
+    INSERT INTO app.admin_users
+      (id, app_id, login_name, password_hash, is_super, status, created_at, updated_at)
+    VALUES (${otherAdminId}, 'other-app', ${`auth-expiry-${otherAdminId}`}, 'synthetic-hash', false,
+      'active', ${CREATED}, ${CREATED})
+  `.execute(app);
   for (const values of [
     { union_account_id: id() },
     { created_by: id() },
     { app_id: 'other-app' },
     { union_account_id: other['id'] },
+    { created_by: otherAdminId },
   ]) {
     expect(
       await sqlState(
@@ -325,6 +333,7 @@ it('[AC-B1-22a#5] sessions reference the account within app_id and the initiatin
 it('[AC-B1-22a#6] only pending/succeeded/failed/expired are accepted and every lifecycle null combination is checked', async () => {
   const base = await fixture();
   // Full truth table catches OR/NULL mistakes, including missing fields in callback failures.
+  // Pending may already be claimed by a callback; only finished_at and error must stay null.
   // Expired does not constrain error: it may retain an expiry reason.
   for (const status of ['pending', 'succeeded', 'failed', 'expired']) {
     for (const used of [false, true]) {
@@ -332,7 +341,7 @@ it('[AC-B1-22a#6] only pending/succeeded/failed/expired are accepted and every l
         for (const error of [false, true]) {
           const valid =
             status === 'pending'
-              ? !used && !finished && !error
+              ? !finished && !error
               : status === 'succeeded'
                 ? used && finished && !error
                 : status === 'failed'
@@ -357,6 +366,12 @@ it('[AC-B1-22a#6] only pending/succeeded/failed/expired are accepted and every l
   }
   for (const status of ['', 'PENDING', 'cancelled', 'active'])
     expect(await sqlState(insertSession({ ...base, status })), status).toBe('23514');
+  expect((await insertSession(base)).rows).toEqual([base]);
+  expect((await updateSession(base['id'], { used_at: FINISHED })).rows).toEqual([
+    { ...base, used_at: FINISHED },
+  ]);
+  for (const values of [{ finished_at: FINISHED }, { error: 'synthetic-callback-failure' }])
+    expect(await sqlState(updateSession(base['id'], values))).toBe('23514');
 });
 
 it('[AC-B1-22a#7] lifecycle consistency applies to updates, and valid callback/expiry results can be persisted', async () => {
@@ -428,8 +443,32 @@ it('[AC-B1-22a#9] an index supports scanning pending sessions by expiry without 
   ).toBe(true);
 });
 
-it('[AC-B1-22a#10] couli_app can select/insert/update sessions but cannot delete them', async () => {
+it('[AC-B1-22a#10] session grants allow only app reads/writes and readonly non-secret reads', async () => {
   const row = await fixture();
+  for (const role of ['couli_app', 'couli_readonly', 'couli_payout', 'couli_maint']) {
+    for (const privilege of [
+      'SELECT',
+      'INSERT',
+      'UPDATE',
+      'DELETE',
+      'TRUNCATE',
+      'TRIGGER',
+      'REFERENCES',
+    ]) {
+      // Include column grants so narrow grants cannot hide forbidden privileges.
+      const columnGrant = ['SELECT', 'INSERT', 'UPDATE', 'REFERENCES'].includes(privilege)
+        ? sql<boolean>`has_any_column_privilege(${role}, ${`app.${TABLE}`}, ${privilege})`
+        : sql<boolean>`false`;
+      const result = await sql<{ allowed: boolean }>`
+        SELECT has_table_privilege(${role}, ${`app.${TABLE}`}, ${privilege})
+          OR ${columnGrant} AS allowed
+      `.execute(app);
+      const expected =
+        (role === 'couli_app' && ['SELECT', 'INSERT', 'UPDATE'].includes(privilege)) ||
+        (role === 'couli_readonly' && privilege === 'SELECT');
+      expect(result.rows[0]?.allowed, `${role} ${TABLE} ${privilege}`).toBe(expected);
+    }
+  }
   expect((await insertSession(row)).rows).toEqual([row]);
   expect(
     (
@@ -448,6 +487,7 @@ it('[AC-B1-22a#10] couli_app can select/insert/update sessions but cannot delete
   `.execute(app),
     ),
   ).toBe('42501');
+  expect(await sqlState(sql`TRUNCATE app.admin_union_auth_sessions`.execute(app))).toBe('42501');
   expect(
     (
       await sql<{ id: string }>`
