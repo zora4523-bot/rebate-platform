@@ -51,6 +51,42 @@ export interface OrderFilter {
   limit?: number;
 }
 
+/** BR-AI-07: local +08:00 payment dates, inclusive, across self and share. */
+export interface AgentOrderSearch {
+  date_from: string;
+  date_to: string;
+  keyword?: string;
+  platform?: Schema<'PlatformCode'>;
+  limit?: number;
+}
+
+export interface OwnOrderNumberQuery {
+  order_no: string;
+  platform?: Schema<'PlatformCode'>;
+}
+
+/** contracts/agent-stream.schema.json#/$defs/card_order_status (the eight fields only). */
+export type AgentOrderItem = Pick<
+  Schema<'OrderDetail'>,
+  | 'order_id'
+  | 'platform'
+  | 'title'
+  | 'is_other_product'
+  | 'display_status'
+  | 'reason'
+  | 'est_rebate_fen'
+  | 'expected_credit_period'
+>;
+
+export interface AgentOrderSearchResult {
+  orders: AgentOrderItem[];
+  total: number;
+}
+
+/** The factory guarantees the new methods; legacy HTTP-only injected readers need not. */
+export type AgentCapableOrderQueries = OrderQueries &
+  Required<Pick<OrderQueries, 'searchForAgent' | 'findOwnByNumber'>>;
+
 export interface OrderFigures {
   b_est: bigint | null;
   est_rebate_fen: bigint | null;
@@ -312,6 +348,23 @@ function toSummary(view: OrderView): Schema<'OrderSummary'> {
  * base answers only when no database is wired (it rejects); createOrderQueries builds the real one.
  */
 export class OrderQueries {
+  /** Same visibility and projection as list/get; total is counted before limit. */
+  searchForAgent?(
+    subject: OrderSubject,
+    filter: AgentOrderSearch,
+  ): Promise<AgentOrderSearchResult> {
+    void subject;
+    void filter;
+    throw new Error('NotImplemented: searchForAgent');
+  }
+
+  /** Exact parent/child number on self purchases only; never falls back to title. */
+  findOwnByNumber?(subject: OrderSubject, query: OwnOrderNumberQuery): Promise<AgentOrderItem[]> {
+    void subject;
+    void query;
+    throw new Error('NotImplemented: findOwnByNumber');
+  }
+
   list(subject: OrderSubject, filter: OrderFilter): Promise<Schema<'OrderListData'>> {
     void subject;
     void filter;
@@ -329,6 +382,24 @@ export class OrderQueries {
 class DbOrderQueries extends OrderQueries {
   readonly #deps: OrderQueryDeps;
   readonly #figures: OrderFiguresReader;
+
+  override searchForAgent(
+    subject: OrderSubject,
+    filter: AgentOrderSearch,
+  ): Promise<AgentOrderSearchResult> {
+    void subject;
+    void filter;
+    throw new Error('NotImplemented: searchForAgent');
+  }
+
+  override findOwnByNumber(
+    subject: OrderSubject,
+    query: OwnOrderNumberQuery,
+  ): Promise<AgentOrderItem[]> {
+    void subject;
+    void query;
+    throw new Error('NotImplemented: findOwnByNumber');
+  }
 
   constructor(deps: OrderQueryDeps) {
     super();
@@ -643,6 +714,6 @@ function sameProduct(row: OrderRow, products: ReadonlyMap<string, string | null>
   return linked !== null && linked === row.product_key;
 }
 
-export function createOrderQueries(deps: OrderQueryDeps): OrderQueries {
+export function createOrderQueries(deps: OrderQueryDeps): AgentCapableOrderQueries {
   return new DbOrderQueries(deps);
 }
