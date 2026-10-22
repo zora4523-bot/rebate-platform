@@ -1,4 +1,5 @@
 import { on } from '@couli/bridge-sdk';
+import { bridge } from '@couli/contracts-ts';
 import type { QueryClient } from '@tanstack/react-query';
 import { useEffect, useState, useSyncExternalStore, type ReactElement } from 'react';
 import { createBrowserRouter } from 'react-router';
@@ -13,6 +14,19 @@ type RouterLocation = AppRouter['state']['location'];
 /** Nothing is drawn while the first lazy route loads; native shows its own loading state. */
 function HydrateFallback() {
   return null;
+}
+
+/** H5 paths whose contract route needs no login (auth none): help, rules, notice, agreement. */
+const ANONYMOUS_PATHS: ReadonlySet<string> = new Set(
+  Object.values(bridge.routes).flatMap((route) =>
+    route.kind === 'h5' && route.h5_path !== null && route.auth === 'none' ? [route.h5_path] : [],
+  ),
+);
+
+/** Whether the page on screen is an anonymous contract route (unknown routes count as login). */
+function onAnonymousPage(router: AppRouter): boolean {
+  const page = router.state.matches.at(-1);
+  return page?.route.path !== undefined && ANONYMOUS_PATHS.has(page.route.path);
 }
 
 interface AccountSession {
@@ -33,8 +47,9 @@ interface AccountScopeProps {
  * mounted with the shell and independent of any page. On each event: drop the H5 token and any
  * acquisition in flight, cancel and clear the whole query cache, and remount the page tree so no
  * page keeps showing the previous account's data. A new login remounts at once and the page
- * fetches again with a new token; a logout leaves the page tree down (no automatic request or
- * token call) until native navigates elsewhere or signs in again.
+ * fetches again with a new token. On a logout an anonymous page (contract auth none) is remounted
+ * and keeps working without a token; any other page is taken down (no automatic request or token
+ * call) until native navigates elsewhere or signs in again.
  */
 function AccountScope({ router, api, client }: AccountScopeProps): ReactElement | null {
   const [session, setSession] = useState<AccountSession>({ epoch: 0, parkedAt: null });
@@ -43,7 +58,7 @@ function AccountScope({ router, api, client }: AccountScopeProps): ReactElement 
       on('auth.changed', ({ logged_in: loggedIn }) => {
         api?.invalidateToken();
         clearAccountData(client);
-        const parkedAt = loggedIn ? null : router.state.location;
+        const parkedAt = loggedIn || onAnonymousPage(router) ? null : router.state.location;
         setSession((current) => ({ epoch: current.epoch + 1, parkedAt }));
       }),
     [api, client, router],
