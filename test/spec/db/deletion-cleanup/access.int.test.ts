@@ -92,7 +92,16 @@ for (const [index, table] of (
         ).toEqual([{ allowed }]);
       }
     }
+    const identityColumns = (
+      await sql<{ name: string }>`SELECT column_name AS name
+        FROM information_schema.columns
+        WHERE table_schema = 'app' AND table_name = ${table}
+          AND is_identity = 'YES'`.execute(h.app)
+    ).rows.map((column) => column.name);
     for (const name of names) {
+      // Identity assignments fail with 428C9 before privilege checks; covered above
+      // by has_column_privilege for every role instead.
+      if (identityColumns.includes(name)) continue;
       // No-op values isolate permissions from CHECKs and immutable-owner triggers.
       const statement = sql`UPDATE ${sql.table(`app.${table}`)} SET ${sql.ref(name)} = ${sql.ref(name)} WHERE id = ${row['id']}`;
       expect(await sqlState(statement.execute(h.app)), `${table}/${name}`).toBe(
