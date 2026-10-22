@@ -1,0 +1,19 @@
+id: B1-15p
+repo: rebate-platform
+title: 测试修改：两份冻结测试按迁移状态两态判定，为 B1-15o（注销清理迁移 0070，D10-137 / D10-153）让路——[AC-B3-09a#51]（test/spec/db/agent/agent-tables.int.test.ts）agent_sessions 已有 user_hash 列时期望 user_id 可更新，否则保持不可更新；[AC-B1-15a#1]（test/spec/db/deletion-requests/schema.int.test.ts）deletion_requests 已有 cleaned_at 列时期望 16 列（追加 cleaned_at / apple_revoke_attempts / apple_revoke_result），否则保持原 13 列；其余断言不变
+type: test-change
+# 草稿 2026-10-22（身份与风控线 identity-lane）。B1-15o 把这两处改动放在任务分支时，先红把两份冻结文件整文件入列，其余 108 条用例本就绿，red_exempt 上限 20 条声明不了；照 D10-92 先例拆成非任务分支 test-change 先合，主干现状与叠 B1-15o 都绿（两态判定，先例 B1-13j / B1-15j）。
+# 独立 Claude 改（approvals #36），新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。合并后 B1-15o 去掉自带的两处冻结测试提交再落地。
+refs: []
+refs_hash: {}
+deps: [B1-15a, B3-09a]
+paths:
+  - 'test/spec/db/agent/agent-tables.int.test.ts'
+  - 'test/spec/db/deletion-requests/schema.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/agent/**'
+  - 'test/spec/db/deletion-requests/**'
+status: todo
