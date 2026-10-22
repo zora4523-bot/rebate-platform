@@ -19,5 +19,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/admin/read-hardening/**'
-status: todo
-pr: null
+status: done
+pr: 1261
