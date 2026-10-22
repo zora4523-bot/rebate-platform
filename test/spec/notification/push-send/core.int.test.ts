@@ -741,6 +741,8 @@ it.each(['frozen', 'revoked', 'session-revoked', 'refresh-expired'] as const)(
     const core = createPushSendCore({ ...f, sessionValidity: createPushSessionValidity(f.clock) });
     await db.transaction().execute((trx) => core.record(trx, f.input));
     await assertRecords(f, 'queued');
+    const recordedAt = f.clock.now();
+    const before = await f.rows();
     if (change === 'frozen' || change === 'revoked') {
       await db
         .updateTable('push_tokens')
@@ -769,7 +771,24 @@ it.each(['frozen', 'revoked', 'session-revoked', 'refresh-expired'] as const)(
       bound_sid: null,
       row_version: 1,
     });
-    await assertRecords(f, 'failed');
+    if (change === 'refresh-expired') {
+      const after = await f.rows();
+      expect(after.inbox).toEqual(before.inbox);
+      expect(after.logs).toHaveLength(2);
+      expect(after.logs.find((entry) => entry.channel === 'inbox')).toEqual(
+        before.logs.find((entry) => entry.channel === 'inbox'),
+      );
+      expect(after.logs.find((entry) => entry.channel === 'push')).toMatchObject({
+        status: 'failed',
+        sent_at: null,
+        suppress_reason: null,
+        updated_at: f.clock.now(),
+        created_at: recordedAt,
+        planned_at: recordedAt,
+      });
+    } else {
+      await assertRecords(f, 'failed');
+    }
   },
 );
 
