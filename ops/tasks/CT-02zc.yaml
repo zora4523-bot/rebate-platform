@@ -5,7 +5,7 @@ type: contract
 # 草稿 2026-10-22（身份与风控线 identity-lane）。编排 13:3x 派工 ④；B1-15f 实现与评审时发现契约缺口（followups）。04 §4.5 已列 10007 与 data.stage（§错误码表），只补 openapi 各登录操作的 x-error-codes，不改形状。占契约槽后做；评审 Codex contract（不可用按 #36 独立 Claude）。
 refs: []
 refs_hash: {}
-contract_sections: ['6.1']
+contract_sections: ['5']
 deps: []
 paths:
   - 'contracts/openapi.yaml'
