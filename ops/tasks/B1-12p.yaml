@@ -1,0 +1,27 @@
+id: B1-12p
+repo: rebate-platform
+title: notification：订阅 appeal.resolved，按 BR-TEXT-23 发站内信 APPEAL_RESULT（account_revoked / order_revoked / upheld，category=service、只站内）；account_revoked 且载荷 need_reauth=true 时附淘宝重新授权提示；blocked_request 不发；同一事务写 inbox_messages 与 notify_logs，按事件编号去重；文案取包内默认并应用 notify_templates 覆盖
+type: impl
+# 2026-10-22 入账（be-codex，编排派工③与裁定 D10-141）。事件 appeal.resolved 由 risk 在结案事务发（结案服务归 identity 线，尚未实现）：载荷 {app_id, appeal_id, user_id, target_type, target_id, status, need_reauth}，维持与撤销都发；
+# 本任务先只做消费端与规则测试（以直接发布事件为夹具），可先合。变体：status=revoked 且 target_type=account → account_revoked；revoked 且 order → order_revoked；upheld → upheld；target_type=blocked_request 不发。
+# 申诉撤销封禁只发这一条（不另发 RISK_STATE_CHANGED unbanned）；need_reauth 时附上 unbanned 那句淘宝重新授权提示（复用同一文案）。标题取 inbox.title.APPEAL_RESULT。依据 BR-TEXT-23 细则模板、BR-ID-36 结案段，由编排者摘入任务书。
+# 接线照 B1-12g：EVENT_SUBSCRIPTIONS 加订阅、queue/catalog.ts 加 evt.<consumer> 队列与 ENTRY_PLAN；两份平台冻结契约测试由测试作者在同一 PR 只加本任务条目（第一类保护路径，#24 标签由编排核对）。
+refs: [BR-TEXT-23, BR-ID-36]
+refs_hash:
+  BR-TEXT-23: 44fab0c50841
+  BR-ID-36: 639d610577bc
+deps: [B1-12g]
+paths:
+  - 'apps/api/src/modules/notification/**'
+  - 'apps/api/src/modules/platform/events/types.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+test_paths:
+  - 'test/spec/notification/appeal-result-message/**'
+  - 'test/spec/platform/events/contract.test.ts'
+  - 'test/spec/platform/queue/contract.test.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/appeal-result-message/**'
+status: todo
