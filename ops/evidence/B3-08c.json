@@ -1,0 +1,114 @@
+{
+  "task": "B3-08c",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "190af2bfb57bf00e1b828ba2ca1d2b1632b9b493",
+  "red_tests": [
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#1][BR-AI-02][BR-AI-03] 空参数定义可注册且最终 JSON 不命中 denylist",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#2][BR-AI-01] 游客 只在开关明确为 true 时收到工具定义",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#2][BR-AI-01] 未绑手机 只在开关明确为 true 时收到工具定义",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#2][BR-AI-01] 已绑手机 只在开关明确为 true 时收到工具定义",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#3][BR-AI-01] 空参数经注册表只出一张符合契约的 handoff 卡",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#4][BR-AI-01][BR-AI-03] 游客 的入口固定且卡片不含身份、订单、模型理由",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#4][BR-AI-01][BR-AI-03] 未绑手机 的入口固定且卡片不含身份、订单、模型理由",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#4][BR-AI-01][BR-AI-03] 已绑手机 的入口固定且卡片不含身份、订单、模型理由",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#5][BR-AI-05] 注入引用=true 时模型只见引用或空对象，不见文案和数字",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#5][BR-AI-05] 注入引用=false 时模型只见引用或空对象，不见文案和数字",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#6][BR-AI-03] 身份参数 被注册表拒绝，不进入 handler，仅身份参数告警",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#6][BR-AI-03] 模型理由 被注册表拒绝，不进入 handler，仅身份参数告警",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] synthetic-app-a 的 summary 与 fallback 分别取本应用的 desc/title",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] synthetic-app-b 的 summary 与 fallback 分别取本应用的 desc/title",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 不注入 时逐键回退，handler 与共享函数均正常出卡",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 两个键空串 时逐键回退，handler 与共享函数均正常出卡",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 两个键抛错 时逐键回退，handler 与共享函数均正常出卡",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 仅 desc 空串 时逐键回退，handler 与共享函数均正常出卡",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 仅 title 空串 时逐键回退，handler 与共享函数均正常出卡",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 仅 desc 抛错 时逐键回退，handler 与共享函数均正常出卡",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 仅 title 抛错 时逐键回退，handler 与共享函数均正常出卡",
+    "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#8][BR-AI-01] 复用出卡函数与 handler 的卡逐字段相等且不申请模型引用"
+  ],
+  "risk_note": "RV1 agent/**；只读出卡，无资金与身份写",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "190af2bfb57bf00e1b828ba2ca1d2b1632b9b493",
+      "tree": "8cf64843f44695db1b89c605634578a9ac3e3c0c",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T22:04:17Z",
+      "finished_at": "2026-10-22T22:04:28Z",
+      "red_tests": [
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#1][BR-AI-02][BR-AI-03] 空参数定义可注册且最终 JSON 不命中 denylist",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#2][BR-AI-01] 游客 只在开关明确为 true 时收到工具定义",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#2][BR-AI-01] 未绑手机 只在开关明确为 true 时收到工具定义",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#2][BR-AI-01] 已绑手机 只在开关明确为 true 时收到工具定义",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#3][BR-AI-01] 空参数经注册表只出一张符合契约的 handoff 卡",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#4][BR-AI-01][BR-AI-03] 游客 的入口固定且卡片不含身份、订单、模型理由",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#4][BR-AI-01][BR-AI-03] 未绑手机 的入口固定且卡片不含身份、订单、模型理由",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#4][BR-AI-01][BR-AI-03] 已绑手机 的入口固定且卡片不含身份、订单、模型理由",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#5][BR-AI-05] 注入引用=true 时模型只见引用或空对象，不见文案和数字",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#5][BR-AI-05] 注入引用=false 时模型只见引用或空对象，不见文案和数字",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#6][BR-AI-03] 身份参数 被注册表拒绝，不进入 handler，仅身份参数告警",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#6][BR-AI-03] 模型理由 被注册表拒绝，不进入 handler，仅身份参数告警",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] synthetic-app-a 的 summary 与 fallback 分别取本应用的 desc/title",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] synthetic-app-b 的 summary 与 fallback 分别取本应用的 desc/title",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 不注入 时逐键回退，handler 与共享函数均正常出卡",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 两个键空串 时逐键回退，handler 与共享函数均正常出卡",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 两个键抛错 时逐键回退，handler 与共享函数均正常出卡",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 仅 desc 空串 时逐键回退，handler 与共享函数均正常出卡",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 仅 title 空串 时逐键回退，handler 与共享函数均正常出卡",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 仅 desc 抛错 时逐键回退，handler 与共享函数均正常出卡",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#7][BR-AI-01][BR-AI-05] 字典 仅 title 抛错 时逐键回退，handler 与共享函数均正常出卡",
+        "test/spec/agent/tools-handoff/handoff.test.ts > [AC-B3-08c#8][BR-AI-01] 复用出卡函数与 handler 的卡逐字段相等且不申请模型引用"
+      ],
+      "expected": ["test/spec/agent/tools-handoff/handoff.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "bf73f2d84e9ab9316c914eeff95edd20321d7d12fe4bf77e4199a0de8873aec2"
+        }
+      ],
+      "gate": {
+        "commit": "88ede3a4e5bc124e876c0afdc7888fecb7d56cf5",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass (couli-runs/B3-08c/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "spec-test r1 pass (independent Claude, 0 findings)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "c3e737df5d2f55d1ea0ce2ba6619f3e3b5cef396",
+    "specs": "7f0df3605fc3664048553d6d5534aca96ca34032"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
