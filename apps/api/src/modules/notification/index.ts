@@ -33,3 +33,13 @@ export type {
 export { MessagesController } from './http/public/messages.controller.ts';
 export type { MessageHttpRequest } from './http/public/messages.controller.ts';
 export { NotificationModule } from './notification.module.ts';
+// B1-12m: GET / PUT /v1/me/notification-settings (getNotificationSettings /
+// updateNotificationSettings): the caller's push switches per category (BR-WATCH-19 ③).
+export { createNotificationSettings } from './application/notification-settings.ts';
+export type {
+  NotificationSettingsOptions,
+  NotificationSettingsOwner,
+  NotificationSettingsService,
+} from './application/notification-settings.ts';
+export { NotificationSettingsController } from './http/public/notification-settings.controller.ts';
+export type { NotificationSettingsHttpRequest } from './http/public/notification-settings.controller.ts';

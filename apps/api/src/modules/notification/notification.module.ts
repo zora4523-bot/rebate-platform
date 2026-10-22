@@ -24,6 +24,14 @@ import {
   MessagesController,
 } from './http/public/messages.controller.ts';
 import { createInboxMessages, type InboxMessages } from './application/inbox-messages.ts';
+import {
+  createNotificationSettings,
+  type NotificationSettingsService,
+} from './application/notification-settings.ts';
+import {
+  NOTIFICATION_SETTINGS,
+  NotificationSettingsController,
+} from './http/public/notification-settings.controller.ts';
 import type { TaobaoReauthReader } from '../linking/index.ts';
 import {
   RISK_STATE_MESSAGE_CONSUMER,
@@ -55,6 +63,17 @@ function lazyInboxMessages(db: Kysely<Database>, clock: Clock): InboxMessages {
   };
 }
 
+/** B1-12m: build on first call so module startup never touches the database handle. */
+function lazyNotificationSettings(db: Kysely<Database>, clock: Clock): NotificationSettingsService {
+  let settings: NotificationSettingsService | undefined;
+  const get = (): NotificationSettingsService =>
+    (settings ??= createNotificationSettings({ db, clock }));
+  return {
+    get: async (owner) => get().get(owner),
+    update: async (owner, values) => get().update(owner, values),
+  };
+}
+
 /** API-only assembly; content implements the configuration port in app.module. */
 export class NotificationModule {
   static forApi(
@@ -62,7 +81,7 @@ export class NotificationModule {
   ): DynamicModule {
     return {
       module: NotificationModule,
-      controllers: [PushTokenController, MessagesController],
+      controllers: [PushTokenController, MessagesController, NotificationSettingsController],
       providers: [
         {
           provide: MESSAGE_READER,
@@ -83,6 +102,16 @@ export class NotificationModule {
             const missing = (): Promise<never> =>
               Promise.reject(new Error('notification: inbox messages need the database'));
             return { list: missing, markRead: missing, unreadCount: missing };
+          },
+        },
+        {
+          provide: NOTIFICATION_SETTINGS,
+          inject: [CLOCK, { token: DB, optional: true }],
+          useFactory: (clock: Clock, db?: Kysely<Database>): NotificationSettingsService => {
+            if (db !== undefined) return lazyNotificationSettings(db, clock);
+            const missing = (): Promise<never> =>
+              Promise.reject(new Error('notification: notification settings need the database'));
+            return { get: missing, update: missing };
           },
         },
         {
