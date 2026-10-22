@@ -80,6 +80,68 @@ it.each(['sync', 'async'] as const)(
   },
 );
 
+it('[AC-B3-01h#2][AC-B3-01h#6][BR-AI-21] record 写出的模型与工具录制递归剥离身份和鉴权字段，保留其他字段', async () => {
+  await withFiles(async (p) => {
+    const response = {
+      user_id: 'SYNTHETIC-CLI-USER-SECRET',
+      nested: [
+        {
+          device_id: 'SYNTHETIC-CLI-DEVICE-SECRET',
+          headers: {
+            authorization: 'Bearer sk-SYNTHETIC-CLI-AUTH',
+            'x-api-key': 'sk-SYNTHETIC-CLI-API',
+            cookie: 'SYNTHETIC-CLI-COOKIE-SECRET',
+            accept: 'application/json',
+          },
+          keep: ['合成公开商品', 0, false, null],
+        },
+      ],
+    };
+    const before = structuredClone(response);
+    const model = vi.fn(async () => response);
+    const tool = vi.fn(async () => response);
+    const agent: AgentUnderTest = async (_input, ports) => {
+      await ports.model(request());
+      await ports.tool(call());
+      return output();
+    };
+    const got = await invoke(
+      recordArgs(p),
+      deps({ agent: () => agent, livePorts: () => ({ model, tool }) }),
+    );
+    expect(got.code).toBe(0);
+    expectVerdict(got.stdout, passCounts, true);
+    expect(model).toHaveBeenCalledTimes(1);
+    expect(tool).toHaveBeenCalledTimes(1);
+    const records = readLines(join(p.out, 'recordings.jsonl'));
+    expect(records.map((r) => r.kind)).toEqual(['model', 'tool']);
+    for (const record of records) {
+      expect(record.response).toEqual({
+        nested: [
+          { headers: { accept: 'application/json' }, keep: ['合成公开商品', 0, false, null] },
+        ],
+      });
+    }
+    const serialized = readFileSync(join(p.out, 'recordings.jsonl'), 'utf8');
+    for (const secret of [
+      'user_id',
+      'device_id',
+      'authorization',
+      'x-api-key',
+      'cookie',
+      response.user_id,
+      response.nested[0]!.device_id,
+      response.nested[0]!.headers.authorization,
+      response.nested[0]!.headers['x-api-key'],
+      response.nested[0]!.headers.cookie,
+    ]) {
+      expect(serialized + got.stdout + got.stderr).not.toContain(secret);
+    }
+    expect(response).toEqual(before);
+    expectPrivateOutputAbsent(got, p);
+  });
+});
+
 it.each(['fail', 'coverage_gap', 'error', 'conflict'] as const)(
   '[AC-B3-01h#6][AC-B3-01h#8][BR-AI-21] record %s 退出 1，即使冲突时题目全过也不能回写通过',
   async (kind) => {
@@ -239,6 +301,47 @@ it('[AC-B3-01h#7][AC-B3-01h#8][BR-AI-21] replay 读取目录全部 jsonl、忽�
     expectPrivateOutputAbsent(got, p);
   });
 });
+
+it.each(['fail', 'error'] as const)(
+  '[AC-B3-01h#7][AC-B3-01h#8][BR-AI-21] replay 录制全部命中但题目为 %s 时退出 1，不能回写通过',
+  async (result) => {
+    await withFiles(async (p) => {
+      const { records, agent: consumeRecordings } = replayFixture();
+      writeFileSync(join(p.recordings, 'synthetic.jsonl'), jsonl(records));
+      const agent: AgentUnderTest = async (input, ports) => {
+        await consumeRecordings(input, ports);
+        if (result === 'error') throw new Error(`${p.root} ${input.case_id} ${MODEL_TEXT}`);
+        return output([], { trace: { intent: 'refine', tool_calls: [] } });
+      };
+      const got = await invoke(replayArgs(p), deps({ agent: () => agent }));
+      expect(got.code).toBe(1);
+      const counts = {
+        total: 1,
+        pass: 0,
+        fail: result === 'fail' ? 1 : 0,
+        coverage_gap: 0,
+        error: result === 'error' ? 1 : 0,
+      };
+      expectVerdict(got.stdout, counts, false);
+      const report = readReport(p.report);
+      expect(report.summary).toMatchObject(counts);
+      expect(report.meta).toMatchObject({ mode: 'A', unused_recordings: 0 });
+      expect(report.cases.map((c) => c.result)).toEqual([result]);
+      const code = result === 'fail' ? 'intent_mismatch' : 'agent_error';
+      expect(report.cases[0]?.problems).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code, layer: result === 'fail' ? 'L3' : null }),
+        ]),
+      );
+      expect(report.cases.flatMap((c) => c.problems).map((problem) => problem.code)).not.toContain(
+        'recording_miss',
+      );
+      expect(got.stderr).toContain(code);
+      expect(got.stderr).not.toContain('recording_miss');
+      expectPrivateOutputAbsent(got, p);
+    });
+  },
+);
 
 it('[AC-B3-01h#7][AC-B3-01h#8][BR-AI-21] replay 未命中退出 1、记录 coverage_gap，只回写 recording_miss 与汇总', async () => {
   await withFiles(async (p) => {

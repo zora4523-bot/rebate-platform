@@ -142,6 +142,68 @@ it.each([undefined, 'real_link_sample'] as const)(
   },
 );
 
+it('[AC-B3-01h#2][BR-AI-21] runRecord 返回的模型与工具录制剥离嵌套身份和鉴权字段，其余原样', async () => {
+  const cases = [sample()];
+  const response = {
+    user_id: 'SYNTHETIC-RUNNER-USER-SECRET',
+    nested: [
+      {
+        device_id: 'SYNTHETIC-RUNNER-DEVICE-SECRET',
+        headers: {
+          authorization: 'Bearer sk-SYNTHETIC-RUNNER-AUTH',
+          'x-api-key': 'sk-SYNTHETIC-RUNNER-API',
+          cookie: 'SYNTHETIC-RUNNER-COOKIE-SECRET',
+          accept: 'application/json',
+        },
+        keep: ['合成公开商品', 0, false, null],
+      },
+    ],
+  };
+  const before = structuredClone(response);
+  const model = vi.fn(async () => response);
+  const tool = vi.fn(async () => response);
+  const agent: AgentUnderTest = async (_input, ports) => {
+    await ports.model(request());
+    await ports.tool(call());
+    return output();
+  };
+  const result = await runRecord({
+    cases,
+    agent,
+    live: { model, tool },
+    meta: runMeta(cases),
+    clock,
+  });
+  expect(result.report.cases.map((c) => c.result)).toEqual(['pass']);
+  expect(result.problems).toEqual([]);
+  expect(model).toHaveBeenCalledTimes(1);
+  expect(tool).toHaveBeenCalledTimes(1);
+  expect(result.recordings.map((r) => r.kind)).toEqual(['model', 'tool']);
+  for (const record of result.recordings) {
+    expect(record.response).toEqual({
+      nested: [
+        { headers: { accept: 'application/json' }, keep: ['合成公开商品', 0, false, null] },
+      ],
+    });
+  }
+  const serialized = JSON.stringify(result.recordings);
+  for (const secret of [
+    'user_id',
+    'device_id',
+    'authorization',
+    'x-api-key',
+    'cookie',
+    response.user_id,
+    response.nested[0]!.device_id,
+    response.nested[0]!.headers.authorization,
+    response.nested[0]!.headers['x-api-key'],
+    response.nested[0]!.headers.cookie,
+  ]) {
+    expect(serialized).not.toContain(secret);
+  }
+  expect(response).toEqual(before);
+});
+
 it('[AC-B3-01h#4][BR-AI-21] runRecord 汇总冲突且 live 错误仍可被 agent 捕获', async () => {
   const cases = [sample()];
   const failure = new Error('合成工具失败');

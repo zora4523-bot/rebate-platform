@@ -209,6 +209,38 @@ it.each(['model', 'tool'] as const)(
 );
 
 it.each(['model', 'tool'] as const)(
+  '[AC-B3-01h#2][AC-B3-01h#4][BR-AI-21] %s 同键响应仅身份字段不同，按剥离后的副本去重且不报冲突',
+  async (kind) => {
+    const writer = createRecordingWriter({ clock });
+    const live = vi
+      .fn()
+      .mockResolvedValueOnce({
+        user_id: 'SYNTHETIC-USER-FIRST',
+        nested: [{ device_id: 'SYNTHETIC-DEVICE-FIRST', title: '合成相同商品' }],
+      })
+      .mockResolvedValueOnce({
+        user_id: 'SYNTHETIC-USER-SECOND',
+        nested: [{ device_id: 'SYNTHETIC-DEVICE-SECOND', title: '合成相同商品' }],
+      });
+    const ports = writer.wrap({ model: live, tool: live });
+    const invoke = () => (kind === 'model' ? ports.model(request()) : ports.tool(call()));
+    await invoke();
+    const firstJsonl = writer.toJsonl();
+    await invoke();
+    expect(live).toHaveBeenCalledTimes(2);
+    expect(writer.problems()).toEqual([]);
+    expect(writer.lines()).toHaveLength(1);
+    expect(writer.lines()[0]?.response).toEqual({ nested: [{ title: '合成相同商品' }] });
+    expect(writer.toJsonl()).toBe(firstJsonl);
+    expect(writer.toJsonl().trim().split('\n')).toHaveLength(1);
+    const loaded = loadRecordings(writer.toJsonl(), 'synthetic.jsonl');
+    expect(loaded.problems).toEqual([]);
+    const value = kind === 'model' ? loaded.store.model(request()) : loaded.store.tool(call());
+    expect(value).toEqual({ nested: [{ title: '合成相同商品' }] });
+  },
+);
+
+it.each(['model', 'tool'] as const)(
   '[AC-B3-01h#4][BR-AI-21] %s live 抛错保持同一错误、不写行，下一次成功可录制',
   async (kind) => {
     const writer = createRecordingWriter({ clock });
