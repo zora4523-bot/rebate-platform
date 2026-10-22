@@ -70,9 +70,21 @@ it('[AC-B3-04a#3][BR-AI-02] 不同 app 的工具开关互不串用，全部关�
 });
 
 it('[AC-B3-04a#4][BR-AI-02] 注册名和本段 allowlist 精确相等，禁止工具与意图不混入', async () => {
-  // 台账明确本段仅商品搜索/报价；以后由各 handler 任务同步扩展。
-  const handlers = [handler(), handler('get_rebate_quote')];
-  const names = registeredToolNames(handlers); // 必须先调用骨架，再读文件。
+  // B3-08h：不再写死注册集合；allowlist 须是 BR-AI-02 模型工具集合（8 个 + P1 3 个）的子集，
+  // 且至少含商品搜索 / 报价两个，handler 按 allowlist 构造后与注册名精确相等。
+  const BR_AI_02_TOOLS = [
+    'search_products',
+    'get_rebate_quote',
+    'list_my_orders',
+    'explain_order',
+    'prefill_claim',
+    'search_rules',
+    'handoff_to_human',
+    'get_my_earnings',
+    'create_watch',
+    'list_watches',
+    'cancel_watch',
+  ];
   const raw = readFileSync(
     new URL('../../../../specs/agent-tools.allowlist', import.meta.url),
     'utf8',
@@ -81,7 +93,10 @@ it('[AC-B3-04a#4][BR-AI-02] 注册名和本段 allowlist 精确相等，禁止�
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter(Boolean);
-  expect([...names].sort()).toEqual(['get_rebate_quote', 'search_products']);
+  for (const name of allowlist) expect(BR_AI_02_TOOLS, name).toContain(name);
+  expect(allowlist).toEqual(expect.arrayContaining(['search_products', 'get_rebate_quote']));
+  const handlers = allowlist.map((name) => handler(name));
+  const names = registeredToolNames(handlers);
   expect([...allowlist].sort()).toEqual([...names].sort());
   expect(new Set(names).size).toBe(names.length);
   expect(new Set(allowlist).size).toBe(allowlist.length);
