@@ -263,24 +263,21 @@ class AgentRun {
 
   /**
    * B3-05j: the guarded context for the deterministic path, observing its tool.status pairs.
-   * The n-th get_rebate_quote start belongs to the n-th url link (tokens run no tool); its end /
-   * failed records one call with args { link_index } (1-based position in proceed.links, never
-   * the raw link), masked like a model call. A start without its end (cancellation) is not
+   * The n-th get_rebate_quote start belongs to the n-th link of proceed.links (B3-04g: urls and
+   * tokens alike are quoted in order, one start each); its end / failed records one call with
+   * args { link_index } (that 1-based position, never the raw link), masked like a model call. A start without its end (cancellation) is not
    * recorded; nothing is recorded after the trace was written. Not counted in limits.toolCalls.
    */
   private quoteObserver(proceed: InputProceed): RunContext {
     const ctx = this.out.context();
-    const urlIndexes: number[] = [];
-    proceed.links.forEach((link, i) => {
-      if (link.kind === 'url') urlIndexes.push(i + 1);
-    });
+    const linkCount = proceed.links.length;
     let started = 0;
     let open: number | null = null;
     const observe = (tool: string, phase: 'start' | 'end' | 'failed'): void => {
       if (tool !== QUOTE_TOOL || this.traced || this.signal.aborted) return;
       if (phase === 'start') {
-        open = urlIndexes[started] ?? null;
         started += 1;
+        open = started <= linkCount ? started : null;
         return;
       }
       if (open === null) return;
