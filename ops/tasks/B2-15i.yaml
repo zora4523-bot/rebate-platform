@@ -1,9 +1,10 @@
 id: B2-15i
 repo: rebate-platform
-title: 迁移：ledger_entries_ledger_type_check 同名重建，取值加收款凭证类型 PAY_RECEIPT、PAY_REFUND、PAY_ANOMALY、PAY_FEE（BR-PAY-07 pay_ledger_type，只用于平台科目）
+title: 迁移：ledger_entries_ledger_type_check 同名重建，取值加收款凭证类型 PAY_RECEIPT、PAY_REFUND、PAY_ANOMALY、PAY_FEE（BR-PAY-07 pay_ledger_type，只用于平台科目）；recon_diffs_type_check 同名重建，取值加 pay_mismatch、pay_anomaly（R4 收款对账）
 type: migration
 # 2026-10-22 收款线入账（PAY-lane/plan.md D-PAY-2）。0037 把 ledger_type 写死为 fund.yaml 的 13 值；收款分录按 BR-PAY-07 用 pay_ledger_type。
 # 按 db/AGENTS.md 第 11 条：同一迁移内 DROP CONSTRAINT 后 ADD CONSTRAINT 同名、NOT VALID + VALIDATE 两步，不加 squawk-ignore；文件 sha256 须先由 B2-15h 登记。
+# recon_diffs_type_check（0060）同样写死 9 值，B2-15c 异常收款差错单与 B2-15j R4 差错单会被拒：同一迁移同名重建加 pay_mismatch、pay_anomaly（独立复核 S1-1）。
 # 用户流水接口（BR-FUND-15 的 13 种）照旧只按 fund.yaml 过滤，收款凭证不出现在任何用户流水接口。迁移号按落地时主干最大 +1，先占迁移槽；两段式。
 refs: [BR-PAY-07, BR-FUND-15]
 refs_hash:

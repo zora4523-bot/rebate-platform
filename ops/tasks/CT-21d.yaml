@@ -18,6 +18,7 @@ paths:
   - 'specs/pay-notify.md'
   - 'packages/domain/src/state-machines/pay-order.gen.ts'
   - 'packages/domain/src/state-machines/pay-refund.gen.ts'
+  - 'packages/domain/src/state-machines/index.ts'
   - 'packages/domain/src/index.ts'
 test_paths:
   - 'test/spec/state-machines/pay-order/**'

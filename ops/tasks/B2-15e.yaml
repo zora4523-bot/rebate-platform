@@ -3,6 +3,7 @@ repo: rebate-platform
 title: 后台原路退款（不设二次验证，审计，必选原因码）：对象为 PAID 支付单或异常收款；Idempotency-Key 同键同体返原退款单、同键不同体 20901；幂等记录、退款单、额度占用同一事务；业务对象级锁后校验「已成功 + 处理中」合计 + 本次 ≤ 可退金额；out_refund_no 创建生成不可改；渠道退款结果只有 ok / unknown；退款通知与主动查询走同一处理器（核对应用商户标识、退款单号、原单一致、渠道一致、金额相等、状态 ∈ refund_success_states → SUCCESS / refund_fail_states → FAILED，否则不迁移继续占额并告警）；SUCCESS 同事务 CAS + refunded_fen + PAY_REFUND（或反向 PAY_ANOMALY）分录 + 回收任务入队；FAILED 释放额度；未知只查询、不重提；事件 pay.refund.succeeded
 type: impl
 # 2026-10-22 收款线入账（BR-PAY-06 全文与细则、BR-PAY-07 分录；负责人 2026-10-05 原路退款不设二次验证）。refund_fail_states 验证前为空（退款失败按未知处理、继续占额）。
+# 事件名 pay.refund.succeeded 要进 EVENT_NAMES；后台账号的幂等 subject（a:<admin_user_id>，待裁定）要改 platform/idempotency（现只按 userId 推导）（独立复核 S1-3 / S1-4）。AC-S2-82 ⑮：开通失败 → 全额退款成功 → 旧开通任务重试后权益仍为退款后的结果。
 # 并发：同键提交两次只一张退款单；并发两笔部分退款只成功一笔、合计不超可退（AC-S2-82 ⑭）；退款通知与查询并发只生效一次。幂等 subject 按编排裁定（notices 21:3x ②）。实现用 Fable 5.1 高推理。
 refs: [BR-PAY-06, BR-PAY-07]
 refs_hash:
@@ -12,6 +13,8 @@ deps: [CT-21e, B2-15c]
 paths:
   - 'apps/api/src/modules/payment/**'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/events/**'
+  - 'apps/api/src/modules/platform/idempotency/**'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/src/openapi.gen.ts'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'

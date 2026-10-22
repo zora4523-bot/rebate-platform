@@ -1,6 +1,6 @@
 id: B2-15h
 repo: rebate-platform
-title: 门禁：tools/ci/lint-migrations.ts APPROVED_GUARD_CHANGES 登记 B2-15i 的迁移（ledger_entries_ledger_type_check 同名重建加 pay_ledger_type 四值；文件名 + sha256），[AC-CT-06d#1] 期望同步
+title: 门禁：tools/ci/lint-migrations.ts APPROVED_GUARD_CHANGES 登记 B2-15i 的迁移（ledger_entries_ledger_type_check 加 pay_ledger_type 四值、recon_diffs_type_check 加 pay_mismatch / pay_anomaly；文件名 + sha256），[AC-CT-06d#1] 期望同步
 type: guard-change
 # 2026-10-22 收款线入账（PAY-lane/plan.md D-PAY-2；先例 CT-25d：#1002 白名单先合、#1007 迁移后合）。资金表守卫变更，已在 notices 21:3x 请编排裁定；
 # 迁移号以 B2-15i 落地时主干最大 +1 为准，本任务在该文件内容定稿后登记。第三类保护路径，合并需编排按 #24 加标签。

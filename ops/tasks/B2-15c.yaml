@@ -4,6 +4,7 @@ title: 支付结果判定：通知入口 POST /notify/pay/wechat、/notify/pay/a
 type: impl
 # 2026-10-22 收款线入账（BR-PAY-04 全文与细则「通知应答」、BR-PAY-05 ④、BR-PAY-07 分录）。记账只经 ledger.post（硬规则 2），凭证唯一键 = 类型 + 支付单；
 # 分录不含 USER_BALANCE。success_states 验证前只含文档写明的成功状态（微信 SUCCESS、支付宝 TRADE_SUCCESS，docs-mirror 出处写进代码注释），其余一律不算成功并告警。
+# 事件名 pay.order.paid 要进 platform/events EVENT_NAMES 白名单；通知原文个人信息脱敏规则在 platform/logging；收款凭证模板登记进 specs/ledger-rules.md 与 ledger-templates.csv（独立复核 S1-3 / S2）。pay_query_attempts 由本任务（query）与 B2-15b（下单尝试）、B2-15d（close）、B2-15e（refund / refund_query）各自写。
 # 并发：通知重复、通知与查询并发只生效一次（真实 PG 两连接 + 咨询锁栅栏，11 §4.2）。依赖 B2-15i（ledger_type CHECK 含 PAY_*）。实现用 Fable 5.1 高推理。
 refs: [BR-PAY-04, BR-PAY-05, BR-PAY-07]
 refs_hash:
@@ -14,6 +15,10 @@ deps: [B2-15b, B2-15i]
 paths:
   - 'apps/api/src/modules/payment/**'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/events/**'
+  - 'apps/api/src/modules/platform/logging/**'
+  - 'specs/ledger-rules.md'
+  - 'specs/ledger-templates.csv'
 test_paths:
   - 'test/spec/payment/result/**'
 impl: claude
