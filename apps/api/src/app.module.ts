@@ -86,6 +86,8 @@ import {
   createIdentityAttrCodeReader,
   isRecordConsentRoute,
   createIdentityCallerContext,
+  createAiConsentReader,
+  createAgentCallerReader,
   createIdentityViewerContext,
   createSameDeviceLoginReader,
   createUserLevelReader,
@@ -249,9 +251,9 @@ import {
  * On the `admin` entry (F1-06k) the only check is admin's: the whitelist on every /admin/v1
  * route, then the admin_token on the contract admin / super routes (BR-ID-34); it reads headers
  * and the client address only, so no body is buffered.
- * The stream entry has no check, so bootstrap refuses on it an x-signed route and a route that
- * takes a token (contract x-auth other than none); the admin entry refuses those too, except the
- * admin levels its check covers.
+ * The stream pre-parsing plan installs identity's token stages ② ③: Agent routes are unsigned
+ * and x-auth optional. Risk's ordered guards run afterwards, as on api, including minimum
+ * versions, restricted sessions and bans. The admin entry covers its levels through its check.
  */
 function requestChecks(options: PlatformOptions): Provider {
   if (options.entry === 'api') {
@@ -283,7 +285,70 @@ function requestChecks(options: PlatformOptions): Provider {
       }),
     };
   }
+  if (options.entry === 'stream') {
+    return {
+      provide: REQUEST_CHECKS,
+      inject: [TOKEN_CHECK],
+      useFactory: (token: RequestCheck): RequestCheckPlan => ({
+        checks: [token],
+        bufferWhen: () => false,
+      }),
+    };
+  }
   return { provide: REQUEST_CHECKS, useValue: { checks: [] } satisfies RequestCheckPlan };
+}
+
+/** Identity services and checks without its /v1 routes, which belong to api. */
+function streamIdentityModule(): DynamicModule {
+  return {
+    ...IdentityModule.forRoot({
+      config: {
+        inject: [CLOCK, { token: DB, optional: true }],
+        useFactory: (clock: Clock, db?: Kysely<Database>): IdentityConfigReader | null =>
+          db === undefined ? null : createContentReader({ db, clock }),
+      },
+    }),
+    controllers: [],
+  };
+}
+
+/**
+ * Stream shares api's minimum-version / restricted-session and ban guards, without risk's
+ * appeals routes. Agent owns admission and rate limits (BR-AI-23); no api rate-limit mapping or
+ * identity level / step-up checks are supplied to this entry.
+ */
+function streamRiskModule(
+  identity: DynamicModule,
+  contentReader: SharedContentReader,
+): DynamicModule {
+  const noRateLimits = {
+    groupFor: async () => null,
+    rules: async () => [],
+  };
+  return {
+    ...RiskModule.forRoot({
+      imports: [identity],
+      minimumVersions: {
+        inject: [CLOCK, { token: DB, optional: true }],
+        useFactory: (clock: Clock, db?: Kysely<Database>): MinimumVersionReaders | null =>
+          db === undefined
+            ? null
+            : {
+                pooled: contentReader(db, clock),
+                on: (handle) => createContentReader({ db: handle, clock }),
+              },
+      },
+      rateLimit: {
+        thresholds: {
+          useFactory: (): RateLimitThresholdReaders => ({
+            pooled: noRateLimits,
+            on: () => noRateLimits,
+          }),
+        },
+      },
+    }),
+    controllers: [],
+  };
 }
 
 /**
@@ -1614,7 +1679,9 @@ function adminAuthModule(): DynamicModule {
  * Root module, assembled per process entry. Every HTTP entry serves the health probe; the `api`
  * entry also serves the /v1 identity routes, the risk module's request signature check, whose
  * device port identity implements, identity's token check, and the risk module's stage ④a gate
- * (minimum supported version and restricted session, 10405; B1-03c) on this entry only. The union module (adapter registry
+ * (minimum supported version and restricted session, 10405; B1-03c). The stream entry shares
+ * identity's checks and risk's guards without their public routes or the signature check.
+ * The union module (adapter registry
  * and endpoint configuration) loads where union platforms are called: `api` (search, linking) and `worker` (order sync); the
  * other worker entries load only the platform and admin modules.
  * The admin module provides the platform audit port on every entry (F1-06b).
@@ -1683,9 +1750,21 @@ export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
     const contentReader = sharedContentReader();
     // One module object for both imports, so Nest builds the identity module once.
-    // TODO(规划/11 §2.3): stream 入口装 ⑦ — blocked on B3 线给 stream 装配 identity / risk 与流式路由
-    const identity = options.entry === 'api' ? identityModule(contentReader) : undefined;
-    const risk = identity === undefined ? undefined : riskModule(identity, contentReader);
+    const identity =
+      options.entry === 'api'
+        ? identityModule(contentReader)
+        : options.entry === 'stream'
+          ? streamIdentityModule()
+          : undefined;
+    const risk =
+      identity === undefined
+        ? undefined
+        : options.entry === 'stream'
+          ? streamRiskModule(identity, contentReader)
+          : riskModule(identity, contentReader);
+    // Stage ⑦ (B1-02zh) is not assembled on stream: it judges only x-auth login / phone / realname
+    // routes, and every /v1/agent/ route is optional.
+    // TODO(规划/11 §2.3): stream 入口装注销状态⑥守卫 — blocked on identity 实现并导出⑥（api 入口同样未装）
     // One module object per import: Nest builds union and linking once.
     const union =
       options.entry === 'api' || options.entry === 'worker' ? UnionModule.forRoot() : undefined;
@@ -1805,9 +1884,8 @@ export class AppModule {
               }),
             ]
           : []),
-        ...(identity === undefined || risk === undefined
-          ? []
-          : [identity, risk, identityMePorts(risk)]),
+        ...(identity === undefined || risk === undefined ? [] : [identity, risk]),
+        ...(options.entry === 'api' && risk !== undefined ? [identityMePorts(risk)] : []),
         // growth's POST /v1/me/inviter (B1-11e): on the api entry, beside identity and risk, whose
         // global guard and idempotency post-miss hooks run stages ①–⑧ before it.
         ...(options.entry === 'api' ? [growthModule()] : []),
@@ -1840,6 +1918,14 @@ export class AppModule {
         // the queue runs.
         ...(options.entry === 'worker' && union !== undefined
           ? [OrdersModule.forWorker(orderSyncPorts(union))]
+          : []),
+        ...(options.entry === 'stream'
+          ? [
+              AgentModule.forStream({
+                consentReader: createAiConsentReader,
+                callerReader: createAgentCallerReader,
+              }),
+            ]
           : []),
         ...(options.entry === 'api' && union !== undefined && linking !== undefined
           ? [

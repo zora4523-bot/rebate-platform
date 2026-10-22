@@ -31,7 +31,8 @@ it.each(endpoints)(
     expect(op['security']).toEqual([{}, { bearerAuth: [] }]);
     expect(op['x-signed']).toBe(false);
     expect(op['x-idempotent']).toBe(false);
-    expect(op['x-implementation']).toBe('planned');
+    // B3-03f implements the four session / message operations (planned removed, approvals #31).
+    expect(op).not.toHaveProperty('x-implementation');
     expect(op).not.toHaveProperty('x-session-scopes');
     if (method === 'post') {
       expect(op['x-min-version-gate']).toBe(true);

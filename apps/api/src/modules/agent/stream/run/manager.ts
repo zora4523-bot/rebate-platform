@@ -179,7 +179,8 @@ async function run(
         if (!live() || !connected) return;
         const numbered = numberCard(snapshot.card, first);
         if (!write('card', numbered.card)) return;
-        cardsDelivered += 1;
+        // Notices are delivered as card frames but do not count toward quota refund eligibility.
+        if (numbered.card.type !== 'notice') cardsDelivered += 1;
         // B3-05i: the receipt, only for a frame actually written.
         delivered?.(numbered.card.card_id);
         const facts = { ending: null, cardsDelivered };

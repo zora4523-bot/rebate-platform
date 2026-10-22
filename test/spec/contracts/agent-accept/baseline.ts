@@ -42,7 +42,8 @@ export function commonShape(doc: Obj, path: string, operationId: string, pathNam
   const item = at(doc, 'paths', path);
   const op = at(item, 'post');
   expect(op['operationId']).toBe(operationId);
-  expect(op['x-implementation']).toBe('planned');
+  // B3-03f implements the four session / message operations (planned removed, approvals #31).
+  expect(op).not.toHaveProperty('x-implementation');
   expect(op['x-auth']).toBe('optional');
   expect(op['security']).toEqual([{}, { bearerAuth: [] }]);
   expect(op['x-min-version-gate']).toBe(true);

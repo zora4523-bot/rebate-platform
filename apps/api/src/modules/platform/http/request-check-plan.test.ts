@@ -61,7 +61,7 @@ class LoginProbeController {
 }
 
 for (const entry of ['stream', 'admin'] as const) {
-  it(`[BR-ID-01] the ${entry} entry has no token check and refuses a contract route that takes a token at registration`, async () => {
+  it(`[BR-ID-01] the ${entry} entry ${entry === 'stream' ? 'runs the token check and registers' : 'has no token check and refuses'} a contract route that takes a token at registration`, async () => {
     const login = unsignedWith('login');
     const optional = unsignedWith('optional');
     const none = unsignedWith('none');
@@ -69,11 +69,17 @@ for (const entry of ['stream', 'admin'] as const) {
     app = await createHttpApp(entry, overrides(entry));
     const server = app.getHttpAdapter().getInstance();
     for (const route of [login!, optional!]) {
-      expect(() =>
-        server.route({ method: route.method, url: route.path, handler: () => ({}) }),
-      ).toThrow(
-        `the ${entry} entry does not run the token check (BR-ID-01 ②) on this contract route that takes a token: ${route.method} ${route.path}`,
-      );
+      if (entry === 'stream') {
+        expect(() =>
+          server.route({ method: route.method, url: route.path, handler: () => ({}) }),
+        ).not.toThrow();
+      } else {
+        expect(() =>
+          server.route({ method: route.method, url: route.path, handler: () => ({}) }),
+        ).toThrow(
+          `the ${entry} entry does not run the token check (BR-ID-01 ②) on this contract route that takes a token: ${route.method} ${route.path}`,
+        );
+      }
     }
     // x-auth none and a route outside the contract register as before; the entry starts.
     expect(() =>
@@ -85,16 +91,19 @@ for (const entry of ['stream', 'admin'] as const) {
   });
 }
 
-it('[BR-ID-01] a Nest controller on a login template keeps the stream entry from starting', async () => {
+it('[BR-ID-01] a Nest controller on a login template registers on the stream entry with its token check', async () => {
   const original = AppModule.forEntry;
   vi.spyOn(AppModule, 'forEntry').mockImplementationOnce((options) => ({
     ...original(options),
     controllers: [LoginProbeController],
   }));
   app = await createHttpApp('stream', overrides('stream'));
-  await expect(app.init()).rejects.toThrow(
-    'the stream entry does not run the token check (BR-ID-01 ②) on this contract route that takes a token: POST /v1/auth/logout',
-  );
+  await expect(app.init()).resolves.toBe(app);
+  expect(
+    app.getHttpAdapter().getInstance().hasRoute({ method: 'POST', url: '/v1/auth/logout' }),
+  ).toBe(true);
+  const response = await app.inject({ method: 'POST', url: '/v1/auth/logout' });
+  expect(response.json()).toMatchObject({ code: 10001 });
 });
 
 for (const entry of ['api', 'stream'] as const) {

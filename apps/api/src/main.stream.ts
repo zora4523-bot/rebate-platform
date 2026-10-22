@@ -1,6 +1,7 @@
 // Entry `stream`: Agent SSE streaming endpoint. Listens on API_HOST:STREAM_PORT.
-// STUB (ADR-0001 §2 进程入口): the process starts and serves only GET /healthz. The streaming
-// routes arrive with the agent tasks (B3 line); nothing here pretends to stream.
+// AppModule mounts AgentModule.forStream, identity's token checks and risk's ordered guards.
+// Nest's destroy hook waits for the agent runtime before platform closes its stores;
+// only worker starts the sweeper.
 import 'reflect-metadata';
 import { runEntry } from './entry.ts';
 
