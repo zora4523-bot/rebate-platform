@@ -1,0 +1,126 @@
+{
+  "task": "B2-04z",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "spec_commit": "814cce79fa676b0e5f49bcba4d1324914e711dce",
+  "red_tests": [
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#1] ⑤ 预留不为零：应收1000而非基数800；一分少记、跨日重复核对都报全局差异",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#2] ⑤ 暂缓首次入账：400不写凭证，应收600正常；再少一分必须报",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#3] ⑤ 暂缓期间N降至900、B降至720，按booked基数而非原快照重算360",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#4] ⑤ done、forfeited、voided义务不再扣缺口，held标记本身不构成义务",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#5] ⑤ 已补360且义务关闭、全额扣回恢复再扣回的历史均正常",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#6] ⑤ 同一用户不同角色分别截零再求和，超额50不能抵销另一角色缺口60",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#7] ⑤ 两个未履约受益人都参与待补记，未入账人不能被分录内连接丢掉",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#8] ⑤ 应收等式独立于净额上限；跨两人合计801超过B800一分必须报",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#9] ⑤ 缺凭证也要检查；非CREDITED和非CLAWED_BACK不进入检查行数",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#10] ⑤ 只认订单类凭证与应收科目，RECON_FIX、奖励及非应收对方不能填平一分",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#11] ⑤ 坏账扣回减少受益人净额，归平台正差不增加受益人净额",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#12] ⑤ app_id、平台和子订单隔离，另一单相反差额不能冲抵",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#13] ⑤ 大于2^53金额的一分差与按快照比例向下取整的尾分均精确",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#14] ⑤ 改派红冲与改派入账计入净额，不把历史旧收款人重复计入上限",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#22] ⑤ 外应用相同order_key的凭证不能填平本应用缺口",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#23] ⑤ 同受益人在另一订单的open义务不能替本单减待补记",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#24] ⑤ 大整数待补记乘比例不能溢出bigint或经浮点丢一分",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#25] ⑤ 正常空集合返回零检查哨兵行",
+    "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#26] ⑤ 核对日次日已入账的调整与当前booked金额一致时不报，少一分仍报",
+    "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#15] ⑧ INVALID仍CREDITED即报账户级差异，定位全部受益人且检查数按子订单",
+    "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#16] ⑧ 平台仍SETTLED但存在成功INVALID_AFTER_SETTLE同样报，重复维权不倍增",
+    "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#17] ⑧ 处理中、待佣金、失败及其他类型成功维权都不误报，不能用rights_pending替代",
+    "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#18] ⑧ INVALID与成功维权均存在时也不重复；同用户多角色只定位一个账户",
+    "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#19] ⑧ 失效或成功维权但已CLAWED_BACK、VOID等非CREDITED不误报也不计入候选数",
+    "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#20] ⑧ 另一应用另一平台的失效维权不会污染正常订单，差异保留正确app_id",
+    "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#21] ⑧ 正常空集合返回零检查哨兵行"
+  ],
+  "risk_note": "RV2 ledger invariants (settlement-plan B2-04z, BR-FUND-19 ⑤⑧; S13). Adds two read-only single-SELECT files under db/invariants/ledger/ run by the existing daily-check runner: 05_union-receivable.sql (UNION_RECEIVABLE net per order against pending beneficiary credits, and the sum of beneficiary nets capped by the settlement base) and 08_invalid-still-credited.sql (orders INVALID, or with a succeeded INVALID_AFTER_SETTLE right, still CREDITED). Existing invariant files, superseded.json and the runner are unchanged (db/invariants is add-only). Cross-module read-only SQL is the single exception approved in S13. ⑥ stays with B2-05.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "814cce79fa676b0e5f49bcba4d1324914e711dce",
+      "tree": "5388dcbe80f5f3c68191e7dd24c32eb79ef9343f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T09:27:01Z",
+      "finished_at": "2026-10-22T09:27:35Z",
+      "gate": {
+        "commit": "78912ec4cca7fda89bcabcadc577ac109066918d",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#1] ⑤ 预留不为零：应收1000而非基数800；一分少记、跨日重复核对都报全局差异",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#2] ⑤ 暂缓首次入账：400不写凭证，应收600正常；再少一分必须报",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#3] ⑤ 暂缓期间N降至900、B降至720，按booked基数而非原快照重算360",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#4] ⑤ done、forfeited、voided义务不再扣缺口，held标记本身不构成义务",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#5] ⑤ 已补360且义务关闭、全额扣回恢复再扣回的历史均正常",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#6] ⑤ 同一用户不同角色分别截零再求和，超额50不能抵销另一角色缺口60",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#7] ⑤ 两个未履约受益人都参与待补记，未入账人不能被分录内连接丢掉",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#8] ⑤ 应收等式独立于净额上限；跨两人合计801超过B800一分必须报",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#9] ⑤ 缺凭证也要检查；非CREDITED和非CLAWED_BACK不进入检查行数",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#10] ⑤ 只认订单类凭证与应收科目，RECON_FIX、奖励及非应收对方不能填平一分",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#11] ⑤ 坏账扣回减少受益人净额，归平台正差不增加受益人净额",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#12] ⑤ app_id、平台和子订单隔离，另一单相反差额不能冲抵",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#13] ⑤ 大于2^53金额的一分差与按快照比例向下取整的尾分均精确",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#14] ⑤ 改派红冲与改派入账计入净额，不把历史旧收款人重复计入上限",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#22] ⑤ 外应用相同order_key的凭证不能填平本应用缺口",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#23] ⑤ 同受益人在另一订单的open义务不能替本单减待补记",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#24] ⑤ 大整数待补记乘比例不能溢出bigint或经浮点丢一分",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#25] ⑤ 正常空集合返回零检查哨兵行",
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts > [AC-B2-04z#26] ⑤ 核对日次日已入账的调整与当前booked金额一致时不报，少一分仍报",
+        "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#15] ⑧ INVALID仍CREDITED即报账户级差异，定位全部受益人且检查数按子订单",
+        "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#16] ⑧ 平台仍SETTLED但存在成功INVALID_AFTER_SETTLE同样报，重复维权不倍增",
+        "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#17] ⑧ 处理中、待佣金、失败及其他类型成功维权都不误报，不能用rights_pending替代",
+        "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#18] ⑧ INVALID与成功维权均存在时也不重复；同用户多角色只定位一个账户",
+        "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#19] ⑧ 失效或成功维权但已CLAWED_BACK、VOID等非CREDITED不误报也不计入候选数",
+        "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#20] ⑧ 另一应用另一平台的失效维权不会污染正常订单，差异保留正确app_id",
+        "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts > [AC-B2-04z#21] ⑧ 正常空集合返回零检查哨兵行"
+      ],
+      "expected": [
+        "test/spec/db/ledger/invariants-settlement/05-receivable.int.test.ts",
+        "test/spec/db/ledger/invariants-settlement/08-invalid-credited.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "39ae1c92b37c5ebdde54666a1bea59078a8a4319e64cc6bda527d8c87370fc53"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "one S2 (⑧ reports global when no beneficiary has a USER_BALANCE account; abnormal data only) recorded as a follow-up",
+      "engine": "codex",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 2 runs; round 1 fail (S1: ⑤ lacked a voucher dated after the check date), round 2 pass",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "3b9f88ecb8c54516605b0a0d7b112eeaf73bfb8e",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
