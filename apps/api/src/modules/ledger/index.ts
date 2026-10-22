@@ -62,3 +62,11 @@ export type {
   LedgerInvariantFile,
   LedgerInvariantSource,
 } from './application/daily-check.ts';
+// B2-04y: GET /v1/wallet/summary (the query itself is exported only by read.ts, BR-AI-02 ④).
+export { WalletSummaryModule } from './wallet-summary.module.ts';
+export type { WalletSummaryModuleOptions } from './wallet-summary.module.ts';
+export type {
+  WalletSubject,
+  WalletSummaryDependencies,
+  WalletSummaryQuery,
+} from './application/wallet-summary.ts';
