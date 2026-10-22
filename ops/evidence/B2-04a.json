@@ -1,0 +1,126 @@
+{
+  "task": "B2-04a",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "3fa5109ae9a4e85993800065187b49a93cecdc6c",
+  "red_tests": [
+    "test/spec/db/settlement/core/access.int.test.ts > [AC-B2-04a#20] couli_app 只有 SELECT、INSERT 和所需列级 UPDATE，没有整表改删或管理权限",
+    "test/spec/db/settlement/core/access.int.test.ts > [AC-B2-04a#21] 任务进度、批次确认和 S8 停住时刻可以持久化并清除",
+    "test/spec/db/settlement/core/access.int.test.ts > [AC-B2-04a#22] 明细执行结果、补差决定与拒绝理由可存储，候选金额和 seq 保留",
+    "test/spec/db/settlement/core/access.int.test.ts > [AC-B2-04a#24] couli_app 执行受益人补记项时可写入金额并原样读回",
+    "test/spec/db/settlement/core/access.int.test.ts > [AC-B2-04a#23] 实际 UPDATE 已定金额与身份列被拒，DELETE、TRUNCATE、ALTER 被拒且数据保留",
+    "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#1] 八表保留规划 04 §3.2 字段，app_id 非空，金额为 bigint",
+    "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#25] couli_app 出账完成时回填六个账单汇总列与完成时刻并原样读回",
+    "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#2] 未执行记录允许结果、确认、关闭信息为空；S8 标记为可空时间列",
+    "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#3] 名义任务和账单唯一，明细两条部分唯一、open 义务部分唯一",
+    "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#4] 同一迁移创建并授权八表，约束与独立索引具名，不创建打款明细",
+    "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#5] 订单引用指 order_keys，明细连接账单批次及义务，所有外键不级联",
+    "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#6] 同一名义任务只存一次，app、job、platform、run_at 各自隔离",
+    "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#7] 月账单按 app 与账单月去重，出账开始可先登记、完成时补 generated_at",
+    "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#8] 子订单明细同批不能重复；可跨批、且与该单多个受益人补记项并存",
+    "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#9] 补记明细按义务身份同批唯一；跨批仍引用同一个 beneficiary_credit_id",
+    "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#10] open 义务同订单受益人角色只一条，关闭后新 ID 可重新开立",
+    "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#11] 并发创建相同 open 义务只能一个成功，PG 唯一约束兜底",
+    "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#12] 两类明细不能用 NULL 或混用受益人字段绕过部分唯一",
+    "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#13] 批次状态与结算方式接受 fund.yaml 全值，拒绝未知值和错误大小写",
+    "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#14] 义务 kind、status、role 接受契约全值，拒绝表外取值",
+    "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#15] 补差候选接受全部状态和平台空受益人行，并保留原 seq 与差额",
+    "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#16] 明细类型和结果 CHECK 接受全部契约值，未执行结果可空",
+    "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#17] S7 任务仅运行完成失败三态，job 不含旧 credit、clawback 或批次执行",
+    "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#18] 订单外键拒绝缺单与跨 app 引用，批次及义务不能串 app",
+    "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#19] 联盟对账保留带符号差额与 bigint 精度，支持我方无单的原始业务键"
+  ],
+  "risk_note": "RV2 migration (data model only; settlement-plan B2-04a, BR-FUND-04 / 09, BR-CALC-23; S7, S8, S14; decisions 36, 41, 42). One new migration creates the settlement core tables settle_jobs, settle_bills, settle_batches (with the S8 paused-by-switch marker), settle_batch_items (two partial uniques), beneficiary_credits (status=open partial unique), settle_adjust_batches, settle_adjustments and recon_union: status CHECKs from contracts/enums/fund.yaml matching the B2-04d state machines (settle_jobs three states, S7), named constraints and indexes, foreign keys to order_keys without cascade, row_version on the four status tables for CAS (money round 1). Grants: couli_app SELECT / INSERT plus column-level UPDATE only where the flow writes later — settle_batch_items.amount_fen at supplementary execution (decision 41), settle_bills' six summary columns and generated_at backfilled after generation (decision 42), status / row_version / timestamps — other amounts stay non-updatable; couli_readonly SELECT. payout_batch_items is not here (S14, B2-06). Two SET LOCAL timeouts; no DO block. db/schema.sql and db.gen.ts regenerated on the test machine; tools/ci/lint-migrations.test.ts lists the eight new funds tables (additions only).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "3fa5109ae9a4e85993800065187b49a93cecdc6c",
+      "tree": "66cc3885ef5c0d26db463a000045c62183212b17",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T03:30:12Z",
+      "finished_at": "2026-10-22T03:30:49Z",
+      "gate": {
+        "commit": "df6f284f94da5101f52481e270a61a10fd18ee5d",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/settlement/core/access.int.test.ts > [AC-B2-04a#20] couli_app 只有 SELECT、INSERT 和所需列级 UPDATE，没有整表改删或管理权限",
+        "test/spec/db/settlement/core/access.int.test.ts > [AC-B2-04a#21] 任务进度、批次确认和 S8 停住时刻可以持久化并清除",
+        "test/spec/db/settlement/core/access.int.test.ts > [AC-B2-04a#22] 明细执行结果、补差决定与拒绝理由可存储，候选金额和 seq 保留",
+        "test/spec/db/settlement/core/access.int.test.ts > [AC-B2-04a#24] couli_app 执行受益人补记项时可写入金额并原样读回",
+        "test/spec/db/settlement/core/access.int.test.ts > [AC-B2-04a#23] 实际 UPDATE 已定金额与身份列被拒，DELETE、TRUNCATE、ALTER 被拒且数据保留",
+        "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#1] 八表保留规划 04 §3.2 字段，app_id 非空，金额为 bigint",
+        "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#25] couli_app 出账完成时回填六个账单汇总列与完成时刻并原样读回",
+        "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#2] 未执行记录允许结果、确认、关闭信息为空；S8 标记为可空时间列",
+        "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#3] 名义任务和账单唯一，明细两条部分唯一、open 义务部分唯一",
+        "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#4] 同一迁移创建并授权八表，约束与独立索引具名，不创建打款明细",
+        "test/spec/db/settlement/core/schema.int.test.ts > [AC-B2-04a#5] 订单引用指 order_keys，明细连接账单批次及义务，所有外键不级联",
+        "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#6] 同一名义任务只存一次，app、job、platform、run_at 各自隔离",
+        "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#7] 月账单按 app 与账单月去重，出账开始可先登记、完成时补 generated_at",
+        "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#8] 子订单明细同批不能重复；可跨批、且与该单多个受益人补记项并存",
+        "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#9] 补记明细按义务身份同批唯一；跨批仍引用同一个 beneficiary_credit_id",
+        "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#10] open 义务同订单受益人角色只一条，关闭后新 ID 可重新开立",
+        "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#11] 并发创建相同 open 义务只能一个成功，PG 唯一约束兜底",
+        "test/spec/db/settlement/core/uniqueness.int.test.ts > [AC-B2-04a#12] 两类明细不能用 NULL 或混用受益人字段绕过部分唯一",
+        "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#13] 批次状态与结算方式接受 fund.yaml 全值，拒绝未知值和错误大小写",
+        "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#14] 义务 kind、status、role 接受契约全值，拒绝表外取值",
+        "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#15] 补差候选接受全部状态和平台空受益人行，并保留原 seq 与差额",
+        "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#16] 明细类型和结果 CHECK 接受全部契约值，未执行结果可空",
+        "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#17] S7 任务仅运行完成失败三态，job 不含旧 credit、clawback 或批次执行",
+        "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#18] 订单外键拒绝缺单与跨 app 引用，批次及义务不能串 app",
+        "test/spec/db/settlement/core/values.int.test.ts > [AC-B2-04a#19] 联盟对账保留带符号差额与 bigint 精度，支持我方无单的原始业务键"
+      ],
+      "expected": [
+        "test/spec/db/settlement/core/access.int.test.ts",
+        "test/spec/db/settlement/core/schema.int.test.ts",
+        "test/spec/db/settlement/core/uniqueness.int.test.ts",
+        "test/spec/db/settlement/core/values.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a8cd076d157e15c8f6056f115f052aebfd7b00cf6745fdf01696bb5bed5a3e39"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1: settle_batches lacked row_version for CAS); round 2 pass after row_version on settle_batches, beneficiary_credits, settle_adjustments and settle_jobs",
+      "engine": "codex",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 3,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 3 runs; round 1 fail (3 S1: amount_fen written at execution per 04, bill summary columns untested, negative platform difference), round 2 fail (S1: bill summaries must be backfillable), round 3 pass",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "f3a72b8b7a01dae63817fa091b4b1d78a77c283e",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}

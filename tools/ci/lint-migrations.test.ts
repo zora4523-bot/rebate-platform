@@ -208,6 +208,15 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'recon_diffs',
     'asset_snapshots',
     'asset_snapshot_receivables',
+    // B2-04a: settlement core tables.
+    'settle_jobs',
+    'settle_bills',
+    'settle_batches',
+    'settle_batch_items',
+    'beneficiary_credits',
+    'settle_adjust_batches',
+    'settle_adjustments',
+    'recon_union',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
