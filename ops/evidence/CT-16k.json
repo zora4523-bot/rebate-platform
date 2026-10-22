@@ -1,0 +1,37 @@
+{
+  "task": "CT-16k",
+  "spec_ref": "39ff3de4f9ada9377d64cab45fb07b40216d51f9",
+  "spec_commit": "5039e54b3c848c72166784ef345d7c081f0beb31",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; D10-151 written back by couli #175, SPEC_REF 39ff3de). texts.default.json gains agent.tool_status.search_products.{start,end,failed}.multi with {platform_names} (Taobao, JD, Pinduoduo in fixed order joined by the Chinese enumeration comma): 正在查询{platform_names}商品 / 已查询{platform_names}商品 / {platform_names}暂时查不到. They fall under the ordinary agent.tool_status.search_products. prefix, so fund-term-keys is unchanged; 08 gives no missing-variable wording, so no fallback. New keys only, not breaking. Unblocks B3-03j #1156. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "7eda7de227a9ebcdb7c118864d2e7f4dc7f49eba",
+    "specs": "8bdd14157b45b1ae9ef002ce4f11cb45e325b0c1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
