@@ -475,28 +475,40 @@ it.each(['VOID', 'CLAWED_BACK'])(
   },
 );
 
-it.each(['VOID', 'CLAWED_BACK'])(
-  '[AC-B2-04j#23] %s 平台恢复或佣金回升不自动复活',
+it.each(['VOID', 'CREDITED', 'CLAWED_BACK'])(
+  '[AC-B2-04j#23] %s 平台正向推进或重复上报不抛错、不改变返利，只记日志',
   async (state) => {
-    const f = await fixture(db, {
-      rebate_status: state,
-      platform_status: 'RECEIVED',
-      received_at: at(RECEIVED),
-    });
-    expect(
-      await capture(() =>
-        f.update(
-          { from_status: 'PAID', est_before: 0n, est_after: 1000n },
-          { event: 'PLATFORM_RECEIVED', raw_status: 'synthetic' },
+    for (const [rule, from, to, event] of [
+      ['P2', 'DEPOSIT_PAID', 'PAID', 'PLATFORM_PAID'],
+      ['P3', 'PAID', 'RECEIVED', 'PLATFORM_RECEIVED'],
+      ['P4', 'RECEIVED', 'SETTLED', 'PLATFORM_SETTLED'],
+      ['P5', 'PAID', 'SETTLED', 'PLATFORM_SETTLED'],
+      ['P14', 'DEPOSIT_PAID', 'RECEIVED', 'PLATFORM_RECEIVED'],
+      ['P15', 'RECEIVED', 'RECEIVED', 'PLATFORM_RECEIVED'],
+    ] as const) {
+      // orders has already applied the platform update before calling this port.
+      const f = await fixture(db, {
+        rebate_status: state,
+        platform_status: to,
+        received_at: at(RECEIVED),
+      });
+      expect(
+        await capture(() =>
+          f.update(
+            { rule, from_status: from, est_before: 0n, est_after: 1000n },
+            { event, raw_status: 'synthetic' },
+          ),
         ),
-      ),
-    ).toMatchObject({
-      ok: false,
-      error: { name: 'IllegalTransition' },
-    });
-    expect(await f.read()).toEqual(f.initial);
-    expect(f.refresh).not.toHaveBeenCalled();
-    await noMoney(db, f);
+        rule,
+      ).toEqual({ ok: true });
+      expect(await f.read()).toEqual(f.initial);
+      expect(await f.history()).toEqual([]);
+      expect(await f.events()).toEqual([]);
+      expect(f.refresh).not.toHaveBeenCalled();
+      expect(f.publish).not.toHaveBeenCalled();
+      expect(f.logs.length).toBeGreaterThan(0);
+      await noMoney(db, f);
+    }
   },
 );
 
@@ -540,3 +552,199 @@ it('[AC-B2-04j#25] 收货与有效基数归零同报文时不能漏掉 R6，最�
   expect(f.publish).toHaveBeenCalledTimes(1);
   await noMoney(db, f);
 });
+
+it('[AC-B2-04j#41] P13 未归因首次失效同事务 R1→R6，不停留在 UNATTRIBUTED', async () => {
+  const f = await fixture(db, {
+    user_id: null,
+    user_basis: null,
+    platform_status: 'INVALID',
+    paid_at: at('2026-12-15T04:00:00Z'),
+  });
+  await f.run((trx, api) => api.onImported(trx, { ...f.imported, snapshot: 'none' }));
+  expect(await f.read()).toMatchObject({
+    user_id: null,
+    rebate_status: 'VOID',
+    reason: 'REFUND',
+    settle_period: null,
+    received_synced_at: null,
+  });
+  expect((await f.history()).map((h) => [h.from_status, h.event, h.to_status])).toEqual([
+    [null, 'IMPORT_UNATTRIBUTED', 'UNATTRIBUTED'],
+    ['UNATTRIBUTED', 'PLATFORM_INVALID', 'VOID'],
+  ]);
+  expect(f.refresh).not.toHaveBeenCalled();
+  expect(f.publish).toHaveBeenCalledExactlyOnceWith(
+    f.transactions[0],
+    expect.objectContaining({
+      appId: f.appId,
+      name: 'order.invalidated',
+      payload: expect.objectContaining({ order_id: f.orderId }),
+    }),
+  );
+  expect(await f.events()).toEqual([expect.objectContaining({ name: 'order.invalidated' })]);
+  expectCas(f);
+  await noMoney(db, f);
+});
+
+it.each([
+  ['ESTIMATED', 'PAID'],
+  ['WAITING', 'RECEIVED'],
+] as const)(
+  '[AC-B2-04j#42] P6 入账前 %s 订单从 %s 退款，onUpdated 按 R6 作废',
+  async (state, from) => {
+    const f = await fixture(db, { rebate_status: state, platform_status: 'INVALID' });
+    await f.update(
+      { from_status: from, rule: 'P6' },
+      { event: 'PLATFORM_INVALID', raw_status: 'synthetic-invalid' },
+    );
+    expect(await f.read()).toMatchObject({
+      rebate_status: 'VOID',
+      reason: 'REFUND',
+      platform_status: 'INVALID',
+    });
+    expect(await f.history()).toEqual([
+      expect.objectContaining({
+        field: 'rebate',
+        from_status: state,
+        event: 'PLATFORM_INVALID',
+        to_status: 'VOID',
+        at: at(NOW),
+      }),
+    ]);
+    expect(f.publish).toHaveBeenCalledExactlyOnceWith(
+      f.transactions[0],
+      expect.objectContaining({
+        appId: f.appId,
+        name: 'order.invalidated',
+        payload: expect.objectContaining({ order_id: f.orderId }),
+      }),
+    );
+    expect(await f.events()).toEqual([expect.objectContaining({ name: 'order.invalidated' })]);
+    expectCas(f);
+    await noMoney(db, f);
+  },
+);
+
+it.each([
+  ['PAID', 'RECEIVED', 'P3', 'PLATFORM_RECEIVED', 1000n],
+  ['RECEIVED', 'SETTLED', 'P4', 'PLATFORM_SETTLED', 1000n],
+  ['PAID', 'PAID', 'P15', 'PLATFORM_PAID', 800n],
+] as const)(
+  '[AC-B2-04j#43] 未归因订单 %s→%s（%s）收货、结算或非零佣金变化不进 WAITING、不抛错',
+  async (from, to, rule, event, commission) => {
+    const f = await fixture(db, {
+      user_id: null,
+      user_basis: null,
+      platform_status: to,
+      received_at: to === 'PAID' ? null : at(RECEIVED),
+      est_commission_fen: commission,
+    });
+    expect(
+      await capture(() =>
+        f.update(
+          { from_status: from, rule, est_before: 1000n, est_after: commission, snapshot: 'none' },
+          { event, raw_status: 'synthetic' },
+        ),
+      ),
+    ).toEqual({ ok: true });
+    expect(await f.read()).toEqual(f.initial);
+    expect(await f.read()).toMatchObject({
+      rebate_status: 'UNATTRIBUTED',
+      settle_period: null,
+      received_synced_at: null,
+    });
+    expect(await f.history()).toEqual([]);
+    expect(await f.events()).toEqual([]);
+    expect(f.refresh).not.toHaveBeenCalled();
+    expect(f.publish).not.toHaveBeenCalled();
+    await noMoney(db, f);
+  },
+);
+
+it.each([
+  [true, false],
+  [false, true],
+  [true, true],
+] as const)(
+  '[AC-B2-04j#44] hold=%s、rights_pending=%s 的收货单仍按 R4 进 WAITING',
+  async (hold, rightsPending) => {
+    const f = await fixture(db, {
+      rebate_status: 'ESTIMATED',
+      platform_status: 'RECEIVED',
+      received_at: at(RECEIVED),
+      hold,
+      hold_reason: hold ? 'RISK' : null,
+      rights_pending: rightsPending,
+    });
+    await f.update(
+      { from_status: 'PAID', rule: 'P3' },
+      { event: 'PLATFORM_RECEIVED', raw_status: 'synthetic-received' },
+    );
+    expect(await f.read()).toMatchObject({
+      rebate_status: 'WAITING',
+      settle_period: '2027-01',
+      received_synced_at: at(NOW),
+      hold,
+      hold_reason: hold ? 'RISK' : null,
+      rights_pending: rightsPending,
+    });
+    expect(await f.history()).toEqual([
+      expect.objectContaining({
+        field: 'rebate',
+        from_status: 'ESTIMATED',
+        event: 'PLATFORM_RECEIVED_OR_SETTLED',
+        to_status: 'WAITING',
+      }),
+    ]);
+    expectCas(f);
+    await noMoney(db, f);
+  },
+);
+
+it.each(['PAID', 'RECEIVED', 'SETTLED'] as const)(
+  '[AC-B2-04j#45] 导入 %s 缺平台收货时间只走 R2，不能用同步时间进入 WAITING',
+  async (platform) => {
+    // P11 missing-time fallback is PAID; also exercise R4's guard directly on later states.
+    const f = await fixture(db, { platform_status: platform, received_at: null });
+    await f.run((trx, api) => api.onImported(trx, f.imported));
+    expect(await f.read()).toMatchObject({
+      rebate_status: 'ESTIMATED',
+      received_at: null,
+      settle_period: null,
+      received_synced_at: null,
+    });
+    expect((await f.history()).map((h) => [h.from_status, h.event, h.to_status])).toEqual([
+      [null, 'IMPORT_ATTRIBUTED', 'ESTIMATED'],
+    ]);
+    expect(f.publish).not.toHaveBeenCalled();
+    await noMoney(db, f);
+  },
+);
+
+it.each([
+  ['PAID', 'PLATFORM_PAID'],
+  ['RECEIVED', 'PLATFORM_RECEIVED'],
+  ['SETTLED', 'PLATFORM_SETTLED'],
+] as const)(
+  '[AC-B2-04j#46] VOID 上 P9 平台恢复到 %s 不自动复活，也不抛错回滚同步',
+  async (platform, event) => {
+    const f = await fixture(db, {
+      rebate_status: 'VOID',
+      reason: 'REFUND',
+      platform_status: platform,
+      received_at: platform === 'PAID' ? null : at(RECEIVED),
+    });
+    expect(
+      await capture(() =>
+        f.update(
+          { rule: 'P9', from_status: 'INVALID', est_before: 0n, est_after: 1000n },
+          { event, raw_status: 'synthetic-recovered' },
+        ),
+      ),
+    ).toEqual({ ok: true });
+    expect(await f.read()).toEqual(f.initial);
+    expect(await f.history()).toEqual([]);
+    expect(f.refresh).not.toHaveBeenCalled();
+    await noMoney(db, f);
+  },
+);
