@@ -1,7 +1,8 @@
 // Admin console authentication (F1-06k; 08 BR-ID-34): the /admin/v1/auth routes, the admin
 // entry's request check (whitelist + admin_token) and the CORS policy bootstrap installs; and the
 // read-only admin accounts of the super admin (F1-06m, /admin/v1/admins, primary database only);
-// and the audit search of any signed-in account (B1-34a, /admin/v1/audit-logs, primary database).
+// and the audit search of any signed-in account (B1-34a, /admin/v1/audit-logs, primary database);
+// and the export tasks (B1-34f, /admin/v1/exports: create, list, download, retry; primary database).
 // Loaded on the admin entry only (app.module).
 //
 // Step-up and me/permissions (F1-06l) live here too: POST auth/step-up/sms-codes, POST
@@ -21,13 +22,17 @@ import {
   APP_CONFIG,
   CLOCK,
   DB,
+  EXPORT_STORE,
   FIELD_CRYPTO,
+  JOB_QUEUE,
   REDIS,
   SENSITIVE_KEYS,
   type AdminAuthConfig,
   type AppConfig,
   type Clock,
+  type ExportStore,
   type FieldCrypto,
+  type JobQueue,
   type RedisHandle,
   type RedisNamespace,
   type RequestCheck,
@@ -36,6 +41,7 @@ import {
   createAdminAccountsReader,
   type AdminAccountsReader,
 } from './application/admin-accounts-read.ts';
+import { createAdminExports, type AdminExports } from './application/admin-exports.ts';
 import { AdminOperationGuardImpl } from './application/admin-operation-guard.ts';
 import { createAuditLogsReader, type AuditLogsReader } from './application/audit-logs-read.ts';
 import { createAdminRequestCheck } from './application/admin-check.ts';
@@ -57,6 +63,7 @@ import {
   ADMIN_AUDIT_LOGS_READ,
   ADMIN_AUTH,
   ADMIN_CHECK,
+  ADMIN_EXPORTS,
   ADMIN_HTTP_POLICY,
   ADMIN_STEP_UP,
 } from './application/tokens.ts';
@@ -66,9 +73,11 @@ import { createTotpVerifier } from './domain/totp.ts';
 import { AdminAccountsController } from './http/admin/admins.controller.ts';
 import { AdminAuditLogsController } from './http/admin/audit-logs.controller.ts';
 import { AdminAuthController } from './http/admin/auth.controller.ts';
+import { AdminExportsController } from './http/admin/exports.controller.ts';
 import { AdminStepUpController } from './http/admin/step-up.controller.ts';
 import { createAdminAccounts, type AdminAccounts } from './infra/admin-accounts.ts';
 import { createAdminDirectory } from './infra/admin-directory.ts';
+import { createAdminDisplayNameReader } from './infra/admin-display-names.ts';
 import {
   createAuditLogIdCodec,
   keyringAuditLogIdKey,
@@ -165,6 +174,7 @@ export class AdminAuthModule {
         AdminStepUpController,
         AdminAccountsController,
         AdminAuditLogsController,
+        AdminExportsController,
       ],
       providers: [
         ...(sender === undefined ? [] : [sender]),
@@ -356,6 +366,45 @@ export class AdminAuthModule {
               profiles: createAdminProfiles({ db }),
               ids: () => (codec ??= createAuditLogIdCodec(keyringAuditLogIdKey(crypto))),
               configPermissions: options.configPermissions ?? new Map(),
+            });
+          },
+        },
+        {
+          provide: ADMIN_EXPORTS,
+          // B1-34f: the export tasks on the primary database; the generate job goes to JOB_QUEUE
+          // in the creating transaction, links come from the private EXPORT_STORE.
+          inject: [
+            CLOCK,
+            EXPORT_STORE,
+            { token: DB, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            store: ExportStore,
+            db?: Kysely<Database>,
+            queue?: JobQueue,
+          ): AdminExports => {
+            if (db === undefined || queue === undefined) {
+              const refuse = (): Promise<never> =>
+                Promise.reject(new Error('admin exports: needs the database and the job queue'));
+              return {
+                checkCreate: refuse,
+                create: refuse,
+                list: refuse,
+                download: refuse,
+                checkRetry: refuse,
+                retry: refuse,
+              };
+            }
+            return createAdminExports({
+              db,
+              clock,
+              queue,
+              store,
+              profiles: createAdminProfiles({ db }),
+              names: createAdminDisplayNameReader(db),
+              sensitiveKeys: SENSITIVE_KEYS,
             });
           },
         },

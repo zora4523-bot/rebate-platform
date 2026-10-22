@@ -13,16 +13,31 @@
 //     unmasked task and the delayed expire job (no singletonKey: export is a standard queue).
 //     A source / storage failure or the row limit is running → failed with a short safe reason;
 //     an object whose task did not reach done (cancelled meanwhile, or the done transaction
-//     rolled back) is deleted again.
+//     rolled back) is deleted again — only under the task's row lock (below).
 //     Running lease (no extra column): updated_at is the heartbeat, row_version the fencing token.
 //     The claim and every progress write refresh updated_at and bump row_version; every later write
 //     of that execution (progress, done, failed) is a CAS on the token it holds. Under the creator
 //     lock, before counting capacity (and on any generate delivery), the creator's running tasks
 //     whose updated_at is older than now − admin.export.running_lease_seconds become failed
-//     (interrupted) and their object is deleted; the stale execution's writes then all miss, and it
-//     discards its own object unless a later run of the retried task may own the key. A running
-//     task with a live lease is a duplicate delivery; a delayed generate re-checks it after the
-//     lease could have run out, so a crash is recovered even if the creator never exports again.
+//     (interrupted), their object deleted under the row lock before that commits; the stale
+//     execution's writes then all miss. A running task with a live lease is a duplicate delivery; a
+//     delayed generate re-checks it after the lease could have run out, so a crash is recovered even
+//     if the creator never exports again.
+//     Same object key for every run of a task (B1-34f, without changing the key): the object is
+//     deleted only inside a transaction holding the task row FOR UPDATE that has just confirmed the
+//     delete is allowed, and that transaction commits only after the delete — while the row is
+//     running under this execution's token (its own rollback / failure), or cancelled (terminal: no
+//     later run can ever write the key). An execution that lost its lease (token CAS missed: the
+//     task failed by a takeover, retried, running or done under a later run) deletes and writes
+//     nothing; its orphan is overwritten by the next run of the key and is unreachable meanwhile
+//     (only done is downloadable). The put has a hard timeout of a third of the lease, started
+//     right after a heartbeat; a timed-out put fails the run on the still-held token. The store
+//     cannot abort an upload or write conditionally, so a timed-out put may still land later and
+//     overwrite the key: once it has landed, a late check locks the row and, if the task is done
+//     under another run (whose file the late write may have replaced), turns it done → expired and
+//     deletes the object before that commits (lateUploadAction). Remaining window: a crash before
+//     the late check, or a failing late check, leaves such a done task with a stale file until it
+//     expires; per-run keys with conditional writes are the follow-up (with the OSS adapter).
 //   - expire: at expires_at (injected Clock) done → expired once (CAS under the row lock) and the
 //     object is deleted in that transaction; early delivery re-sends a delayed expire job; any
 //     other status is ignored.
@@ -125,6 +140,13 @@ interface Source {
   page(page: number, pageSize: number): Promise<SourcePage>;
 }
 
+class ExportPutTimeoutError extends Error {
+  constructor() {
+    super('export: the object upload timed out');
+    this.name = 'ExportPutTimeoutError';
+  }
+}
+
 class SourceFiltersError extends Error {
   constructor() {
     super('export: task filters are invalid');
@@ -141,6 +163,21 @@ function shiftMs(instant: Date, ms: number): Date {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * What the late check does once a timed-out put of the execution holding `token` has landed:
+ * only a done task is downloadable, and a done row is necessarily another run's (this execution
+ * failed its own run on the timeout), whose file the late write may have replaced, so it expires.
+ * Failed / pending / running / cancelled / expired rows are left (not downloadable, or a later
+ * put of the running run overwrites the key).
+ */
+export function lateUploadAction(
+  row: { readonly status: string; readonly row_version: number } | undefined,
+  token: number,
+): 'expire' | 'none' {
+  if (row === undefined || row.status !== 'done' || row.row_version === token) return 'none';
+  return 'expire';
 }
 
 function errorName(error: unknown): string {
@@ -243,7 +280,11 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
         .where('status', '=', 'running')
         .where('row_version', '=', row.row_version)
         .executeTakeFirst();
-      if (result.numUpdatedRows > 0n) failed.push(row);
+      if (result.numUpdatedRows === 0n) continue;
+      // Still under the row lock (no retry or later run can start before this commits); the
+      // stale put is over, its hard timeout being a third of the lease that has now run out.
+      await removeObject(objectKey(row), row.id);
+      failed.push(row);
     }
     return failed;
   }
@@ -375,19 +416,114 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
   }
 
   /**
-   * Removes an object this execution wrote unless it may belong to a later run of the same task
-   * (a retried task running again under another token, or done): the key is per task, not per run.
+   * After this execution's put did not end in its own done row (the put failed or timed out, the
+   * done transaction rolled back, or complete missed): under the task row lock, the object is
+   * deleted only while the row is still running under this execution's token (then, with a
+   * reason, running → failed in the same transaction) or cancelled (terminal, no later run). Any
+   * other state means the lease was lost: a later run may own the key, so nothing is deleted or
+   * written. The transaction commits only after the delete.
    */
-  async function discard(lease: Lease, key: string): Promise<void> {
-    const row = await db
-      .selectFrom('export_tasks')
-      .select(['status', 'row_version'])
-      .where('app_id', '=', lease.task.app_id)
-      .where('id', '=', lease.task.id)
-      .executeTakeFirst();
-    const ours = row?.status === 'running' && row.row_version === lease.token;
-    if (ours || (row?.status !== 'running' && row?.status !== 'done')) {
-      await removeObject(key, lease.task.id);
+  async function settle(lease: Lease, key: string, reason: string | null): Promise<void> {
+    const { task } = lease;
+    const failed = await db.transaction().execute(async (trx) => {
+      const row = await lockTask(trx, task.app_id, task.id);
+      if (row === undefined) return false;
+      if (row.status === 'cancelled') {
+        await removeObject(key, task.id);
+        return false;
+      }
+      if (row.status !== 'running' || row.row_version !== lease.token) return false;
+      await removeObject(key, task.id);
+      if (reason === null) return false;
+      const step = transitionExportTask(row.status as ExportTaskState, 'FAIL');
+      if (!step.ok) return false;
+      const result = await trx
+        .updateTable('export_tasks')
+        .set({
+          status: step.to,
+          failure_reason: Array.from(reason).slice(0, FAILURE_REASON_MAX).join(''),
+          updated_at: clock.now(),
+          row_version: lease.token + 1,
+        })
+        .where('id', '=', row.id)
+        .where('status', '=', 'running')
+        .where('row_version', '=', lease.token)
+        .executeTakeFirst();
+      return result.numUpdatedRows > 0n;
+    });
+    if (failed) {
+      lease.token += 1;
+      logger.info({ event: 'export_failed', task_id: task.id }, 'export task failed');
+    }
+  }
+
+  /**
+   * After a timed-out put of `lease` has landed anyway: under the task row lock, a task done
+   * under another run becomes expired and its object (possibly overwritten by the late write) is
+   * deleted before that commits (lateUploadAction). Never throws: the handler returned long ago.
+   */
+  async function lateUploadCheck(lease: Lease, key: string): Promise<void> {
+    const { task } = lease;
+    try {
+      const expired = await db.transaction().execute(async (trx) => {
+        const row = await lockTask(trx, task.app_id, task.id);
+        if (row === undefined || lateUploadAction(row, lease.token) !== 'expire') return false;
+        const step = transitionExportTask(row.status as ExportTaskState, 'EXPIRE');
+        if (!step.ok) return false;
+        // Still under the row lock: no download can be signed for this task after the commit.
+        await removeObject(key, task.id);
+        const result = await trx
+          .updateTable('export_tasks')
+          .set({ status: step.to, updated_at: clock.now(), row_version: row.row_version + 1 })
+          .where('id', '=', row.id)
+          .where('status', '=', 'done')
+          .where('row_version', '=', row.row_version)
+          .executeTakeFirst();
+        return result.numUpdatedRows > 0n;
+      });
+      if (expired) {
+        logger.warn(
+          { event: 'export_late_upload_expired', task_id: task.id },
+          'late export upload: the done task was expired',
+        );
+      }
+    } catch (error) {
+      logger.error(
+        { event: 'export_late_upload_check_failed', task_id: task.id, error: errorName(error) },
+        'late export upload could not be checked',
+      );
+    }
+  }
+
+  /**
+   * store.put with a hard timeout of a third of the lease (the caller heartbeats right before).
+   * A put given up on is not dropped: once it settles, a landed one gets the late check.
+   */
+  async function putWithin(
+    lease: Lease,
+    leaseMs: number,
+    input: Parameters<ExportStore['put']>[0],
+  ) {
+    const put = store.put(input);
+    let timedOut = false;
+    void put.then(
+      () => (timedOut ? lateUploadCheck(lease, input.key) : undefined),
+      () => undefined,
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => {
+          timedOut = true;
+          reject(new ExportPutTimeoutError());
+        },
+        Math.max(1, Math.floor(leaseMs / 3)),
+      );
+    });
+    try {
+      await Promise.race([put, timeout]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -600,9 +736,8 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
     );
     const { outcome, stale } = await claim(appId, taskId, maxRunning, leaseSeconds * 1000);
     for (const row of stale) {
-      // The interrupted execution never reached done; a file it may have left is removed.
+      // Failed, its object removed, under the row lock in the claim transaction.
       logger.warn({ event: 'export_interrupted', task_id: row.id }, 'export lease ran out');
-      await removeObject(objectKey(row), row.id);
     }
     if (outcome === null) return;
     if (outcome === 'deferred') {
@@ -658,7 +793,7 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
 
     const key = objectKey(task);
     try {
-      await store.put({
+      await putWithin(lease, leaseSeconds * 1000, {
         key,
         bytes: Buffer.concat([BOM, Buffer.from(chunks.join(''), 'utf8')]),
         contentType: 'text/csv',
@@ -668,8 +803,7 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
         { event: 'export_store_failed', task_id: task.id, error: errorName(error) },
         'export object could not be stored',
       );
-      await discard(lease, key);
-      await fail(lease, REASON_STORAGE);
+      await settle(lease, key, REASON_STORAGE);
       return;
     }
 
@@ -682,13 +816,12 @@ export function createExportWorker(options: ExportWorkerOptions): ExportWorker {
         { event: 'export_complete_failed', task_id: task.id, error: errorName(error) },
         'export task could not be completed',
       );
-      await discard(lease, key);
-      await fail(lease, REASON_COMPLETE);
+      await settle(lease, key, REASON_COMPLETE);
       return;
     }
     if (!done) {
-      // Cancelled or taken over while the file was written: the file must not outlive the task.
-      await discard(lease, key);
+      // Cancelled meanwhile: the file goes (under the lock); taken over: left to the later run.
+      await settle(lease, key, null);
       return;
     }
     logger.info({ event: 'export_done', task_id: task.id, row_count: rowCount }, 'export done');
