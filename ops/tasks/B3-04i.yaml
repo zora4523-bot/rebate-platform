@@ -1,11 +1,12 @@
 id: B3-04i
 repo: rebate-platform
-title: B3-04i：确定性路径冻结用例 [AC-B3-05e#13]「口令不调用 runner」放宽为口令也按出现顺序交同一 runner（为 B3-04g 让路）
+title: B3-04i：确定性路径冻结用例 [AC-B3-05e#13] 不再断言「口令不调用 runner」，改为替身 runner 对口令回 30132、只核对输出与 URL 调用（为 B3-04g 让路）
 type: test-change
 # 2026-10-21 入账（agent2-acct4）。test/spec/agent/orchestrator-deterministic/path.test.ts 的 [AC-B3-05e#13] 断言口令只出 30132 提示、
 # runner 只收到前后两个 URL。B3-04g 让口令也经 B3-04f 的 LinkQuoteRunner（TokenParser）报价，这条会转红。
-# 做法：口令候选按出现顺序也交给 runner（runner.run 的调用顺序为 url1、口令、url3）；runner 对口令回失败时仍出 error.30132 提示、前后 URL 照常。
-# 不改其他断言、不删用例、不动实现；须与 B3-04g 同批落地（先例 B3-01f / B3-01e）。
+# 做法（2026-10-22 改）：替身 runner 对口令候选回 parse_error 30132；断言输出帧不变（url1 卡、error.30132 notice、url3 卡）与 runner 收到的 URL 候选按序为 url1、url3（只看 kind url 的调用），
+# 不再断言口令是否交给 runner。现行代码（口令不交 runner，自出 30132）与 B3-04g 实现（口令交 runner，runner 回 30132）下都绿，可先于 B3-04g 合并（先例 B3-01f / B3-01e）；
+# 「口令按序交 runner」的正向断言写在 B3-04g 的 test_paths。不删用例、不动实现。
 # 改既有规则测试属第一类保护路径，合并要负责人标签（approvals #24，由编排核对后加，D10-110）；非 task 分支、不带证据文件（先例 CT-06y #860）；Claude 实现、Codex 只读对抗评审。
 refs: []
 refs_hash: {}
