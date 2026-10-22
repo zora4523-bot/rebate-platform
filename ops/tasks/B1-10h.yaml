@@ -35,5 +35,5 @@ red_exempt:
 accept:
   - 'pnpm verify'
   - 'test/spec/orders/claim-entry/**'
-status: todo
-pr: null
+status: done
+pr: 1128
