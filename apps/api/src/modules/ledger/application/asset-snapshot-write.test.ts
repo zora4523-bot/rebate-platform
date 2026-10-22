@@ -5,10 +5,12 @@ import { FixedClock } from '../../platform/index.ts';
 import type { SnapshotInsert } from '../infra/asset-snapshot-store.ts';
 import {
   alertEventId,
+  recheckCommittedDay,
   writeSnapshotDay,
   type AssetSnapshotAlertQueue,
   type SnapshotReads,
   type SnapshotWriteStore,
+  type Transact,
 } from './asset-snapshot-write.ts';
 
 const DAY = '2032-06-15';
@@ -28,9 +30,7 @@ function fixture(now: string, inserted = true) {
     insertReceivables: vi
       .fn<SnapshotWriteStore['insertReceivables']>()
       .mockResolvedValue(undefined),
-    markNotComparable: vi
-      .fn<SnapshotWriteStore['markNotComparable']>()
-      .mockResolvedValue(undefined),
+    markNotComparable: vi.fn<SnapshotWriteStore['markNotComparable']>().mockResolvedValue(true),
     findSnapshot: vi
       .fn<SnapshotWriteStore['findSnapshot']>()
       .mockResolvedValue({ id: 'winner', waiting_comparable: true }),
@@ -143,4 +143,77 @@ it('[AC-B2-04w-UNIT#8] 告警幂等键 (app_id, 会计日, 类型) 决定确定�
   ]);
   expect(ids.size).toBe(4);
   for (const id of ids) expect(id).toMatch(UUID);
+});
+
+/** A pass-through transaction that records how often a new transaction was opened. */
+function transaction() {
+  const opened = vi.fn();
+  const transact: Transact = (work) => {
+    opened();
+    return work(TRX);
+  };
+  return { opened, transact };
+}
+
+it('[AC-B2-04w-UNIT#9] COMMIT 期间跨过 00:30：提交后另起事务改为不可比并按原键入队超时告警', async () => {
+  const { clock, store, enqueue, reads, context } = fixture(BEFORE);
+  const outcome = await writeSnapshotDay(TRX, context, {
+    appId: 'app-a',
+    day: DAY,
+    reads,
+    threshold: null,
+  });
+  expect(outcome.waitingComparable).toBe(true);
+  expect(store.markNotComparable).not.toHaveBeenCalled();
+  // The write transaction's COMMIT returns only at the deadline.
+  clock.set(DEADLINE);
+  const { opened, transact } = transaction();
+  const late = await recheckCommittedDay(transact, context, {
+    appId: 'app-a',
+    day: DAY,
+    snapshotId: outcome.snapshotId,
+    waitingComparable: outcome.waitingComparable,
+  });
+  expect(opened).toHaveBeenCalledTimes(1);
+  expect(store.markNotComparable).toHaveBeenCalledWith(TRX, 'app-a', 'snap-1', clock.now());
+  expect(late.map((a) => a.kind)).toEqual(['asset_snapshot_timeout']);
+  expect(enqueue).toHaveBeenCalledTimes(1);
+  expect(enqueue.mock.calls[0]?.[1]).toMatchObject({
+    kind: 'asset_snapshot_timeout',
+    appId: 'app-a',
+    accountingDate: DAY,
+    eventId: alertEventId(JSON.stringify(['app-a', DAY, 'asset_snapshot_timeout'])),
+    payload: { app_id: 'app-a', accounting_date: DAY, waiting_comparable: false },
+  });
+});
+
+it('[AC-B2-04w-UNIT#10] 提交结果不确定后读回本次的可比行复核：已改过则不重复入队', async () => {
+  const { store, enqueue, context } = fixture(DEADLINE);
+  const row = { appId: 'app-a', day: DAY, snapshotId: 'snap-1', waitingComparable: true };
+  const first = await recheckCommittedDay(transaction().transact, context, row);
+  expect(first.map((a) => a.kind)).toEqual(['asset_snapshot_timeout']);
+  // A second recheck finds the row already false: the guarded UPDATE changes nothing.
+  store.markNotComparable.mockResolvedValue(false);
+  const again = await recheckCommittedDay(transaction().transact, context, row);
+  expect(again).toEqual([]);
+  expect(store.markNotComparable).toHaveBeenCalledTimes(2);
+  expect(enqueue).toHaveBeenCalledTimes(1);
+});
+
+it('[AC-B2-04w-UNIT#11] 提交后仍在 00:30 前或本已不可比：不开事务、不改行、不告警', async () => {
+  const before = fixture(BEFORE);
+  const notLate = transaction();
+  const row = { appId: 'app-a', day: DAY, snapshotId: 'snap-1', waitingComparable: true };
+  expect(await recheckCommittedDay(notLate.transact, before.context, row)).toEqual([]);
+  expect(notLate.opened).not.toHaveBeenCalled();
+  expect(before.store.markNotComparable).not.toHaveBeenCalled();
+  expect(before.enqueue).not.toHaveBeenCalled();
+
+  const after = fixture(DEADLINE);
+  const already = transaction();
+  const late = { ...row, waitingComparable: false };
+  expect(await recheckCommittedDay(already.transact, after.context, late)).toEqual([]);
+  expect(already.opened).not.toHaveBeenCalled();
+  expect(after.store.markNotComparable).not.toHaveBeenCalled();
+  expect(after.enqueue).not.toHaveBeenCalled();
 });

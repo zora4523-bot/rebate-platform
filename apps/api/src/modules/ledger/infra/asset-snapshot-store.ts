@@ -168,20 +168,22 @@ export async function insertReceivables(
 }
 
 /**
- * The write transaction's own row turned late after every write (BR-FUND-18): only ever true →
- * false, on the row this transaction inserted.
+ * The day's row turned late (BR-FUND-18), on the write transaction after its writes or in a new
+ * transaction after COMMIT: only ever true → false. True when this statement changed the row.
  */
 export async function markNotComparable(
   trx: Transaction<DB>,
   appId: string,
   snapshotId: string,
   at: Date,
-): Promise<void> {
-  await trx
+): Promise<boolean> {
+  const result = await trx
     .withSchema('app')
     .updateTable('asset_snapshots')
     .set({ waiting_comparable: false, updated_at: at })
     .where('app_id', '=', appId)
     .where('id', '=', snapshotId)
-    .execute();
+    .where('waiting_comparable', '=', true)
+    .executeTakeFirst();
+  return result.numUpdatedRows > 0n;
 }

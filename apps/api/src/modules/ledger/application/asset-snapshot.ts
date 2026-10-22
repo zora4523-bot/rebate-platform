@@ -16,6 +16,7 @@ import {
 } from '../infra/asset-snapshot-store.ts';
 import { isPastDeadline, snapshotDayOf, snapshotDeadlineMs } from './asset-snapshot-days.ts';
 import {
+  recheckCommittedDay,
   writeSnapshotDay,
   type AssetSnapshotAlert,
   type AssetSnapshotAlertQueue,
@@ -23,6 +24,7 @@ import {
   type SnapshotWriteContext,
   type SnapshotWriteOutcome,
   type SnapshotWriteStore,
+  type Transact,
 } from './asset-snapshot-write.ts';
 import { LedgerError } from './errors.ts';
 
@@ -161,21 +163,30 @@ export function createAssetSnapshot(dependencies: AssetSnapshotDependencies): As
       const appId = validAppId(input.appId);
       const day = snapshotDayOf(input.nominalRunAt);
       const result = { accountingDate: day };
+      const transact = readCommitted(db);
+      // This delivery's row id, known before the write so an uncertain commit can be recognised.
+      const id = randomUUID();
+      const write: SnapshotWriteContext = { ...context, newId: () => id };
 
       let outcome: SnapshotWriteOutcome;
+      let writing = false;
       try {
         // Replay of a completed day: same snapshot, no source read, no alert. Its alerts, if any,
-        // were enqueued on the transaction that committed the row, so none can be missing.
+        // were enqueued on the transaction that committed the row, so none can be missing. A
+        // comparable row is not rechecked here: a late duplicate delivery must leave it as is
+        // (frozen AC-B2-04w#7, #15); the commit boundary is rechecked by the delivery that wrote it.
         const existing = await findSnapshot(db, appId, day);
         if (existing !== undefined) return { ...result, snapshotId: existing.id };
         const threshold = await dependencies.getAdvanceAlertFen(appId);
         const reads = await readDay(db, appId, day);
-        // READ COMMITTED: the platform event bus refuses to publish under a snapshot isolation.
-        outcome = await db
-          .transaction()
-          .setIsolationLevel('read committed')
-          .execute((trx) => writeSnapshotDay(trx, context, { appId, day, reads, threshold }));
+        writing = true;
+        outcome = await transact((trx) =>
+          writeSnapshotDay(trx, write, { appId, day, reads, threshold }),
+        );
       } catch (error) {
+        // An error from the write transaction may still have committed (e.g. lost connection on
+        // COMMIT): if this delivery's row is there, recheck it against the deadline now.
+        if (writing) await recheckUncertainCommit(db, transact, appId, day, id);
         // Still not complete at or after the deadline: waiters learn it from the status read,
         // finance from this alert. No placeholder row is written.
         if (isPastDeadline(clock.now(), day)) {
@@ -189,9 +200,55 @@ export function createAssetSnapshot(dependencies: AssetSnapshotDependencies): As
 
       // Log lines after commit, only by the delivery that wrote the day: one per app per D.
       for (const alert of outcome.alerts) logAlert(logger, alert);
+      // BR-FUND-18 on the commit boundary: waiters see the row only from COMMIT on.
+      if (outcome.inserted) {
+        const late = await recheckCommittedDay(transact, context, {
+          appId,
+          day,
+          snapshotId: outcome.snapshotId,
+          waitingComparable: outcome.waitingComparable,
+        });
+        for (const alert of late) logAlert(logger, alert);
+      }
       return { ...result, snapshotId: outcome.snapshotId };
     },
   };
+
+  /** Never masks the write error: a failure here is logged and the original error is rethrown. */
+  async function recheckUncertainCommit(
+    db: Kysely<DB>,
+    transact: Transact,
+    appId: string,
+    day: string,
+    id: string,
+  ): Promise<void> {
+    try {
+      const row = await findSnapshot(db, appId, day);
+      if (row?.id !== id) return;
+      const late = await recheckCommittedDay(transact, context, {
+        appId,
+        day,
+        snapshotId: row.id,
+        waitingComparable: row.waiting_comparable,
+      });
+      for (const alert of late) logAlert(logger, alert);
+    } catch (recheckError) {
+      logger.error(
+        {
+          event: 'asset_snapshot_recheck_failed',
+          app_id: appId,
+          accounting_date: day,
+          error: recheckError instanceof Error ? recheckError.message : String(recheckError),
+        },
+        'asset snapshot commit could not be rechecked against its deadline',
+      );
+    }
+  }
+}
+
+/** READ COMMITTED: the platform event bus refuses to publish under a snapshot isolation. */
+function readCommitted(db: Kysely<DB>): Transact {
+  return (work) => db.transaction().setIsolationLevel('read committed').execute(work);
 }
 
 /** S15: read-only, no settle_jobs, no source calls, no placeholder snapshot on timeout. */
