@@ -1,0 +1,37 @@
+{
+  "task": "CT-16j",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "spec_commit": "520810e4055fe1b674c9a2e0a6ce8171e909aedb",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; Agent text keys for B3-03j, 08 BR-TEXT-22 at SPEC_REF ae516de with couli #172 / D10-135 / D10-136). texts.default.json gains 28 keys copied verbatim from 08: agent.notice.platform_unrecognized, agent.suggest.clarify.{reference,price,platform}.1-3, agent.tool_status.search_products.{start,end,failed} with taobao / jd / pdd suffixes, agent.tool_status.get_rebate_quote.* and agent.tool_status.default.*; fund-term-keys classifies get_rebate_quote as fund terms and the rest as ordinary (08 l.675-678), generated file regenerated. Multi-platform searches use the generic key without a platform suffix (contract-line decision handed over by D10-136; no merged template key). New keys only, not breaking. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "f958c3e442e2a0ac68746227f29f02c76a403656",
+    "specs": "50f74d8c86c6ea16999978a6dfc4a2cca76369f6"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
