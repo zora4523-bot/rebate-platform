@@ -133,6 +133,7 @@ it('[规划/02 §11 事件清单] EVENT_NAMES 正好是 02 §11 的 18 个事件
     subscriptions: [
       { consumer: 'notification-risk-state', events: ['risk.state_changed'] },
       { consumer: 'notification-appeal-result', events: ['appeal.resolved'] },
+      { consumer: 'payout-went-negative', events: ['account.went_negative'] },
     ],
     subscriptionsFrozen: true,
     bounds: [4096, 128, 3, 999],
