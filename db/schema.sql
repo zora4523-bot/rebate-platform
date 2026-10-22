@@ -3220,10 +3220,15 @@ CREATE TABLE app.pages (
     updated_by_admin_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    scheduled_version integer,
+    scheduled_gray_percent smallint,
+    scheduled_at timestamp with time zone,
+    scheduled_by_admin_id uuid,
     CONSTRAINT pages_gray_check CHECK ((((gray_version IS NULL) AND (gray_percent = 0)) OR ((gray_version IS NOT NULL) AND ((gray_percent >= 1) AND (gray_percent <= 99)) AND (current_version IS NOT NULL) AND (gray_version <> current_version)))),
     CONSTRAINT pages_gray_percent_check CHECK (((gray_percent >= 0) AND (gray_percent <= 100))),
     CONSTRAINT pages_page_key_check CHECK ((page_key ~ '^(home|custom:[a-z0-9_-]{1,57})$'::text)),
-    CONSTRAINT pages_revision_check CHECK ((revision >= 0))
+    CONSTRAINT pages_revision_check CHECK ((revision >= 0)),
+    CONSTRAINT pages_scheduled_check CHECK ((((scheduled_version IS NULL) AND (scheduled_gray_percent IS NULL) AND (scheduled_at IS NULL) AND (scheduled_by_admin_id IS NULL)) OR ((scheduled_version IS NOT NULL) AND (scheduled_gray_percent IS NOT NULL) AND (scheduled_at IS NOT NULL) AND (scheduled_by_admin_id IS NOT NULL) AND ((scheduled_gray_percent >= 1) AND (scheduled_gray_percent <= 100)))))
 );
 
 
@@ -8179,6 +8184,22 @@ ALTER TABLE ONLY app.pages
 
 
 --
+-- Name: pages pages_scheduled_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pages
+    ADD CONSTRAINT pages_scheduled_by_admin_id_fkey FOREIGN KEY (scheduled_by_admin_id) REFERENCES app.admin_users(id);
+
+
+--
+-- Name: pages pages_scheduled_version_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.pages
+    ADD CONSTRAINT pages_scheduled_version_fkey FOREIGN KEY (app_id, page_key, scheduled_version) REFERENCES app.page_versions(app_id, page_key, version);
+
+
+--
 -- Name: pages pages_updated_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -10981,6 +11002,34 @@ GRANT UPDATE(updated_by_admin_id) ON TABLE app.pages TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.pages TO couli_app;
+
+
+--
+-- Name: COLUMN pages.scheduled_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(scheduled_version) ON TABLE app.pages TO couli_app;
+
+
+--
+-- Name: COLUMN pages.scheduled_gray_percent; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(scheduled_gray_percent) ON TABLE app.pages TO couli_app;
+
+
+--
+-- Name: COLUMN pages.scheduled_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(scheduled_at) ON TABLE app.pages TO couli_app;
+
+
+--
+-- Name: COLUMN pages.scheduled_by_admin_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(scheduled_by_admin_id) ON TABLE app.pages TO couli_app;
 
 
 --

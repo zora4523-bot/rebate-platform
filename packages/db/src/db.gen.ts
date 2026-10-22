@@ -1086,6 +1086,10 @@ export interface Pages {
   gray_version: number | null;
   page_key: string;
   revision: Generated<number>;
+  scheduled_at: Timestamp | null;
+  scheduled_by_admin_id: string | null;
+  scheduled_gray_percent: number | null;
+  scheduled_version: number | null;
   updated_at: Generated<Timestamp>;
   updated_by_admin_id: string | null;
 }
