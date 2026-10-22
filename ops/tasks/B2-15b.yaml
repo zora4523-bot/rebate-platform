@@ -1,0 +1,35 @@
+id: B2-15b
+repo: rebate-platform
+title: payment 模块骨架与支付单用例：业务类型登记（编码、服务端定价、可售端、开通 / 回收处理者；非生产测试类型 test_item 1 分，生产不登记）、PayChannel 接口与 FakePayChannel、创建支付单（pay.enabled / channel_enabled / 可售端 → 30901；业务对象级锁；同渠道返原单、换渠道须先关单；已 PAID → 30902；Idempotency-Key；out_trade_no ASCII ≤32 全局唯一；渠道下单失败 50306 保持 PENDING；launch_issued_at；调起参数不进日志）、详情、returned（入队一次立即查询）、cancel（PENDING 置 closing 入队关单）；队列 pay 登记；路由去 planned
+type: impl
+# 2026-10-22 收款线入账（PAY-lane/plan.md §2、D-PAY-4～D-PAY-7）。只有原生 App 可调（BR-PAY-01 ②：access_token、请求签名、Idempotency-Key；H5 / JSBridge / Agent 拒绝）；
+# 不读写用户余额（BR-PAY-01 ③、07）。开关只有显式 true 才算 on；配置键默认值在代码常量、config_items 覆盖（经 content ContentReader）。
+# AC-S2-82 ⑫ 同一业务对象并发两渠道下单只生成一张单；⑩ 请求体带金额字段按契约 additionalProperties false 返回 20001；expire_at = 创建时刻 + pay.order_ttl_minutes（默认 15）并传渠道作支付截止；pay.biz.<biz_type>.platforms 为可售端键。
+# 本任务不写分录、不处理通知与查询结果（B2-15c），不做关单的渠道侧流程（B2-15d）：cancel 只置 closing 并入队。实现用 Fable 5.1 高推理（approvals #34 困难任务），Codex 写测试 + money 评审。
+refs: [BR-PAY-01, BR-PAY-02, BR-PAY-03, BR-PAY-04, BR-PAY-05]
+refs_hash:
+  BR-PAY-01: 15ea5ac62c34
+  BR-PAY-02: f59e87a9a27b
+  BR-PAY-03: d8433c7a1556
+  BR-PAY-04: 6763ec22c098
+  BR-PAY-05: cc6a654d316e
+deps: [B2-15a, B2-15g, CT-21c, CT-21d]
+paths:
+  - 'apps/api/src/modules/payment/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/payment/orders/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/orders/**'
+status: todo
+pr: null

@@ -1,0 +1,31 @@
+id: CT-21e
+repo: rebate-platform
+title: 契约：openapi.yaml 后台 /admin/v1/pay-orders 资源（planned）——支付单列表 / 详情（pay.view）、needs_manual 处置【立即查询】与结束（pay.resolve，step-up 动态码，凭证为查询响应）、原路退款（pay.refund，Idempotency-Key，不设二次验证，必选原因码）、退款单列表、异常收款列表与对其退款、收款对账差错单列表（R4）；错误码 20901 / 20902（resource pay_order / pay_refund）
+type: contract
+# 2026-10-22 收款线入账（contract-delta p-27；04 §6.6 pay-orders 行、§11.2 pay.view / pay.refund（step-up –）/ pay.resolve（动态码）；BR-PAY-05 ③④、06、07）。
+# 全部 x-implementation: planned，由 B2-15e / B2-15f / B2-15j 实现时去 planned。退款请求的幂等 subject 待编排裁定（notices 21:3x ②）。契约槽：排在 CT-21c 之后。
+refs: [BR-PAY-05, BR-PAY-06, BR-PAY-07]
+refs_hash:
+  BR-PAY-05: cc6a654d316e
+  BR-PAY-06: 102e1fb8839f
+  BR-PAY-07: a98350f4412a
+contract_sections: ['6.6', '11.2']
+deps: [CT-21b]
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/README.md'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/contracts/pay-admin-http/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+  - 'test/spec/contracts/pay-admin-http/**'
+status: todo
+pr: null

@@ -1,0 +1,24 @@
+id: B2-15d
+repo: rebate-platform
+title: 关单与过期处理：到 expire_at 未支付 / 用户取消 / 换渠道进入关单流程（closing）；从未下单且未返回调起参数的单直接 PO3；其余先查询——渠道已支付走 PO2，否则调关单接口，只有渠道明确「已关闭」才 PO3；「单据不存在」要过 expire_at + pay.close_grace_minutes 再次查询仍不存在才 PO3；过期后每 pay.close_retry_minutes 重做；到 expire_at + pay.close_wait_minutes 仍无结果置 needs_manual、告警、停自动处理；关单与过期任务持久化、进程重启后继续；取参数与关单在同一业务对象锁内互斥
+type: impl
+# 2026-10-22 收款线入账（BR-PAY-05 ①②③ 与细则、BR-PAY-02 换渠道、BR-PAY-03 closing 后不再返回调起参数）。默认值 close_grace 10 / close_retry 5 / close_wait 60 在代码常量、config_items 覆盖。
+# 后台处置接口（【立即查询】后 PO2 / PO3）归 B2-15f。关单与支付并发：只有一个结果生效、凭证恰一张（AC-S2-82 ⑬）。实现用 Fable 5.1 高推理。
+refs: [BR-PAY-05, BR-PAY-02, BR-PAY-03]
+refs_hash:
+  BR-PAY-05: cc6a654d316e
+  BR-PAY-02: f59e87a9a27b
+  BR-PAY-03: d8433c7a1556
+deps: [B2-15c]
+paths:
+  - 'apps/api/src/modules/payment/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payment/close/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/close/**'
+status: todo
+pr: null

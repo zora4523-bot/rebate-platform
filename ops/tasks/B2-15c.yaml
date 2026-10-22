@@ -1,0 +1,30 @@
+id: B2-15c
+repo: rebate-platform
+title: 支付结果判定：通知入口 POST /notify/pay/wechat、/notify/pay/alipay（不进客户端契约；验签与解密交 PayChannel；验签失败或应用 / 商户标识不符一律拒绝、计数告警、不留业务痕迹；限流；不返回业务信息）；pay_notifications 只插入、按 (pay_channel, 通知标识) 去重；核对表（我方应用与商户标识、商户单号、金额 = amount_fen、状态 ∈ pay.<pay_channel>.success_states）；通过后同事务 PO2（CAS）+ PAY_RECEIPT 分录（借 CASH_PAY:{pay_channel} / 贷 PAY_RECEIPTS:{biz_type}）+ 开通任务入队（按业务对象串行、按当前支付与退款事实重算权益）；主动查询走同一处理器；查询节奏 pay.query_schedule 持久化任务；应答表；CLOSED 单或找不到支付单的收款 → 登记异常收款 + PAY_ANOMALY 分录 + 差错单 + 告警；事件 pay.order.paid
+type: impl
+# 2026-10-22 收款线入账（BR-PAY-04 全文与细则「通知应答」、BR-PAY-05 ④、BR-PAY-07 分录）。记账只经 ledger.post（硬规则 2），凭证唯一键 = 类型 + 支付单；
+# 分录不含 USER_BALANCE。success_states 验证前只含文档写明的成功状态（微信 SUCCESS、支付宝 TRADE_SUCCESS，docs-mirror 出处写进代码注释），其余一律不算成功并告警。
+# 事件名 pay.order.paid 要进 platform/events EVENT_NAMES 白名单；通知原文个人信息脱敏规则在 platform/logging；收款凭证模板登记进 specs/ledger-rules.md 与 ledger-templates.csv（独立复核 S1-3 / S2）。pay_query_attempts 由本任务（query）与 B2-15b（下单尝试）、B2-15d（close）、B2-15e（refund / refund_query）各自写。
+# 并发：通知重复、通知与查询并发只生效一次（真实 PG 两连接 + 咨询锁栅栏，11 §4.2）。依赖 B2-15i（ledger_type CHECK 含 PAY_*）。实现用 Fable 5.1 高推理。
+refs: [BR-PAY-04, BR-PAY-05, BR-PAY-07]
+refs_hash:
+  BR-PAY-04: 6763ec22c098
+  BR-PAY-05: cc6a654d316e
+  BR-PAY-07: a98350f4412a
+deps: [B2-15b, B2-15i]
+paths:
+  - 'apps/api/src/modules/payment/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/events/**'
+  - 'apps/api/src/modules/platform/logging/**'
+  - 'specs/ledger-rules.md'
+  - 'specs/ledger-templates.csv'
+test_paths:
+  - 'test/spec/payment/result/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/result/**'
+status: todo
+pr: null

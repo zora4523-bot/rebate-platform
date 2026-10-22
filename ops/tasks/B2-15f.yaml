@@ -1,0 +1,30 @@
+id: B2-15f
+repo: rebate-platform
+title: 后台支付单查询与处置：支付单列表 / 详情（pay.view，不返回渠道侧用户标识）、needs_manual 支付单处置（pay.resolve，step-up 动态码：【立即查询】后按渠道结果结束——已支付 PO2，已关闭或符合「不存在」条件 PO3；写审计，凭证为查询响应）、异常收款列表
+type: impl
+# 2026-10-22 收款线入账（BR-PAY-05 ③④、BR-PAY-07「后台 支付单查询与对账页」、BR-PAY-08 ④；04 §6.6 pay-orders、§11.2）。后台接口照 CT-21e，去 planned。
+# 处置复用 B2-15c / B2-15d 的查询处理器与关单判定，不另写一套迁移逻辑。
+refs: [BR-PAY-05, BR-PAY-07, BR-PAY-08]
+refs_hash:
+  BR-PAY-05: cc6a654d316e
+  BR-PAY-07: a98350f4412a
+  BR-PAY-08: 515dd9fe21c1
+deps: [CT-21e, B2-15d]
+paths:
+  - 'apps/api/src/modules/payment/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/payment/admin/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payment/admin/**'
+status: todo
+pr: null
