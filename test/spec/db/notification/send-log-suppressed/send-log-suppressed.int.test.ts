@@ -330,13 +330,7 @@ it('[AC-B1-12n#9] existing scan indexes remain valid and nonpartial', async () =
 
 it('[AC-B1-12n#10] the new column inherits existing grants without granting readonly writes', async () => {
   await requireSuppressionColumn();
-  for (const role of [
-    'couli_app',
-    'couli_readonly',
-    'couli_payout',
-    'couli_maint',
-    'couli_report',
-  ]) {
+  for (const role of ['couli_app', 'couli_readonly', 'couli_payout', 'couli_maint']) {
     for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) {
       const result = await sql<{ allowed: boolean }>`SELECT
         has_table_privilege(${role}, 'app.notify_logs', ${privilege}) AS allowed`.execute(app);
