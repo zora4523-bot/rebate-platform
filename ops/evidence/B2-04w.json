@@ -1,0 +1,119 @@
+{
+  "task": "B2-04w",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "d66d3ca3719c2ebae0153ac53502b5d28c61fb10",
+  "red_tests": [
+    "test/spec/ledger/asset-snapshot/alerts.int.test.ts > [AC-B2-04w#16] 垫资告警按平台合计严格大于阈值，每 app 每日一次，并发和新实例重跑不重复",
+    "test/spec/ledger/asset-snapshot/alerts.int.test.ts > [AC-B2-04w#17] 未配置、低于或等于阈值不告警，仍保存资产快照；负平台净额须参与合计",
+    "test/spec/ledger/asset-snapshot/alerts.int.test.ts > [AC-B2-04w#18] 阈值比较保留大整数的一分之差，并只计算 D 日截止的应收",
+    "test/spec/ledger/asset-snapshot/alerts.int.test.ts > [AC-B2-04w#19] 快照写入回滚不能预先发送垫资成功告警，重试成功后再发一次",
+    "test/spec/ledger/asset-snapshot/alerts.int.test.ts > [AC-B2-04w#20] 超时仍读取失败则告警且不伪造完成行，等待者通过只读口获知超时",
+    "test/spec/ledger/asset-snapshot/amounts.int.test.ts > [AC-B2-04w#1] 按账户先净额再分正负，冻结独立；以凭证会计日截断而非缓存或记账时刻",
+    "test/spec/ledger/asset-snapshot/amounts.int.test.ts > [AC-B2-04w#2] 应收按平台取借正贷负净额，回款冲减；现金和其他平台科目不计入",
+    "test/spec/ledger/asset-snapshot/amounts.int.test.ts > [AC-B2-04w#3] 分录、余额、预估与应收都按 app 隔离；同一用户标识不会串账",
+    "test/spec/ledger/asset-snapshot/amounts.int.test.ts > [AC-B2-04w#4] 超过安全整数仍保留一分钱：余额、负余额、冻结、应收与预估全部为精确整数分",
+    "test/spec/ledger/asset-snapshot/amounts.int.test.ts > [AC-B2-04w#5] 空账本仍写快照，预估经 app 端口覆盖尚未开户者，运行时取值不套 D 日截断",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#21] 预估读取悬而未决时不暴露完成行；独立读连接到截止线即可返回超时",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#6] 按名义 D+1 写 D，延迟跨日、跨年与闰日补跑不能改用实际当天",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#7] 同日重跑和新运行器重放返回同一快照，预估变化不改写历史金额与时间",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#8] 独立运行器并发投递只有一个父快照及每平台一条子记录",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#9] 预估读取失败不落半成品，恢复后相同名义任务可重跑",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#10] 子表写入失败回滚父快照；读口不能把半成品判完成，修复后重跑不重复",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#11] 只读角色按 app 和 D 判状态：00:30 前未完成，边界超时且不制造快照或任务记录",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#12] 只依快照行判断完成；无 settle_jobs 与平台子记录亦完成，不可比也不阻塞",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#13] 00:30 首次落快照已超时：告警、不可比；读口仍返回完成并保留标记",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#14] 00:30 前开始但取预估期间跨过截止线，完成时必须标不可比并告警",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#15] 00:29:59.999 写入并另行确认才可比，迟到的重复投递不得污染原记录",
+    "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#22] 写入已提交但确认失败保留不可比，原始错误不被掩盖，截止后读口仍不可比"
+  ],
+  "risk_note": "RV2 ledger (settlement-plan B2-04w; BR-FUND-18, 20; S3, S15; decisions D10-188, D10-191, D10-197). Asset day snapshot: at the nominal D+1 time it writes day D with balances summed from entries with accounting_date <= D and UNION_RECEIVABLE per platform in asset_snapshot_receivables; waiting / estimated come through the PendingEarningsSource port declared here (implemented by settlement, B2-04x). The balance, receivable and estimate reads share one REPEATABLE READ snapshot; one snapshot per (app_id, D) through the PG unique key. Fail-safe deadline (D10-191): the write transaction stores waiting_comparable=false, and a separate confirm transaction reads the Clock and flips it to true only before D+1 00:30; any failure, disconnect or exit leaves it not comparable. Alerts go through an optional AssetSnapshotAlertQueue in the same transaction with an (app_id, day, type) key; making that queue durable and required is B2-04wa (D10-188). Exports the snapshot complete / timed-out read port. Not wired into scheduling (B2-04zb). Only apps/api/src/modules/ledger/** changed.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d66d3ca3719c2ebae0153ac53502b5d28c61fb10",
+      "tree": "fd53ef51703ecdb9ac30c52abe1ffb431a47e32a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T18:45:08Z",
+      "finished_at": "2026-10-22T18:45:16Z",
+      "gate": {
+        "commit": "cf3910f5901d0251efd5444c423d6199119928cb",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/asset-snapshot/alerts.int.test.ts > [AC-B2-04w#16] 垫资告警按平台合计严格大于阈值，每 app 每日一次，并发和新实例重跑不重复",
+        "test/spec/ledger/asset-snapshot/alerts.int.test.ts > [AC-B2-04w#17] 未配置、低于或等于阈值不告警，仍保存资产快照；负平台净额须参与合计",
+        "test/spec/ledger/asset-snapshot/alerts.int.test.ts > [AC-B2-04w#18] 阈值比较保留大整数的一分之差，并只计算 D 日截止的应收",
+        "test/spec/ledger/asset-snapshot/alerts.int.test.ts > [AC-B2-04w#19] 快照写入回滚不能预先发送垫资成功告警，重试成功后再发一次",
+        "test/spec/ledger/asset-snapshot/alerts.int.test.ts > [AC-B2-04w#20] 超时仍读取失败则告警且不伪造完成行，等待者通过只读口获知超时",
+        "test/spec/ledger/asset-snapshot/amounts.int.test.ts > [AC-B2-04w#1] 按账户先净额再分正负，冻结独立；以凭证会计日截断而非缓存或记账时刻",
+        "test/spec/ledger/asset-snapshot/amounts.int.test.ts > [AC-B2-04w#2] 应收按平台取借正贷负净额，回款冲减；现金和其他平台科目不计入",
+        "test/spec/ledger/asset-snapshot/amounts.int.test.ts > [AC-B2-04w#3] 分录、余额、预估与应收都按 app 隔离；同一用户标识不会串账",
+        "test/spec/ledger/asset-snapshot/amounts.int.test.ts > [AC-B2-04w#4] 超过安全整数仍保留一分钱：余额、负余额、冻结、应收与预估全部为精确整数分",
+        "test/spec/ledger/asset-snapshot/amounts.int.test.ts > [AC-B2-04w#5] 空账本仍写快照，预估经 app 端口覆盖尚未开户者，运行时取值不套 D 日截断",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#21] 预估读取悬而未决时不暴露完成行；独立读连接到截止线即可返回超时",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#6] 按名义 D+1 写 D，延迟跨日、跨年与闰日补跑不能改用实际当天",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#7] 同日重跑和新运行器重放返回同一快照，预估变化不改写历史金额与时间",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#8] 独立运行器并发投递只有一个父快照及每平台一条子记录",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#9] 预估读取失败不落半成品，恢复后相同名义任务可重跑",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#10] 子表写入失败回滚父快照；读口不能把半成品判完成，修复后重跑不重复",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#11] 只读角色按 app 和 D 判状态：00:30 前未完成，边界超时且不制造快照或任务记录",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#12] 只依快照行判断完成；无 settle_jobs 与平台子记录亦完成，不可比也不阻塞",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#13] 00:30 首次落快照已超时：告警、不可比；读口仍返回完成并保留标记",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#14] 00:30 前开始但取预估期间跨过截止线，完成时必须标不可比并告警",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#15] 00:29:59.999 写入并另行确认才可比，迟到的重复投递不得污染原记录",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts > [AC-B2-04w#22] 写入已提交但确认失败保留不可比，原始错误不被掩盖，截止后读口仍不可比"
+      ],
+      "expected": [
+        "test/spec/ledger/asset-snapshot/alerts.int.test.ts",
+        "test/spec/ledger/asset-snapshot/amounts.int.test.ts",
+        "test/spec/ledger/asset-snapshot/lifecycle.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ac3fec6da4d9253a0526524ef5ad912f9a866441c9dc48e437e01288ebc56f6e"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 4,
+      "note": "round 1 fail (S0: balance / receivable reads not one consistent view; S1 alert persistence; S1 deadline vs write time); round 2 fail (S0 closed; two S1 open); round 3 fail (post-commit recheck not recoverable); round 4 (orchestrator exception D10-191 ④ / D10-197, attempt counter left at 3 of 3) pass incremental from 95961bb6 after the fail-safe deadline, with alert persistence transferred to B2-04wa per D10-188; one S2 kept as a follow-up",
+      "engine": "codex",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 2 runs; round 1 pass; run 2 (D10-191) changed the [AC-B2-04w#15] / [#7] expectations to the fail-safe deadline and added #22, round 2 pass confirming no weakening",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "9dcbbf9c811cf4495281f3dc6df765df30c113f3",
+    "specs": "8bdd14157b45b1ae9ef002ce4f11cb45e325b0c1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
