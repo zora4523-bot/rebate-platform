@@ -164,6 +164,7 @@ import {
   PayoutModule,
   createDefaultFeeTaxCalculator,
   createWithdrawApply,
+  createWithdrawalInFlightReader,
   createWithdrawHoldsReader,
   createWithdrawRules,
   createWithdrawSwitchCheck,
@@ -448,17 +449,13 @@ const payoutAccountConfig = {
  * The user's withdrawals as identity's deletion flows see them, on the caller's transaction:
  * POST /v1/me/deletion asks hasInFlight (B1-15d, D10-97: 30412), the worker's cooling-period
  * expiry asks hasNonTerminal (B1-15f, BR-ID-27: any non-terminal one, ban-frozen included, defers
- * processing). The payout module does not exist yet, so there is truthfully none; B2-05 replaces
- * both methods together.
+ * processing). Both are payout's reader (B2-05e).
  */
 const deletionWithdrawals = {
-  inject: [],
-  useFactory: (): WithdrawalInFlightReader & WithdrawalNonTerminalReader => ({
-    // TODO(规划/11 §2.3): 在途提现读 payout 模块 — blocked on B2-05
-    hasInFlight: () => Promise.resolve(false),
-    // TODO(规划/11 §2.3): 未到终态的提现（含封禁冻结）读 payout 模块 — blocked on B2-05
-    hasNonTerminal: () => Promise.resolve(false),
-  }),
+  inject: [CLOCK],
+  useFactory: (clock: Clock): WithdrawalInFlightReader & WithdrawalNonTerminalReader =>
+    // B2-05e (D-W04): payout's reader — hasInFlight ignores a member under a manual hold.
+    createWithdrawalInFlightReader({ clock }),
 };
 
 /**
@@ -2559,6 +2556,13 @@ export class AppModule {
               // risk.state_changed → RISK_STATE_CHANGED inbox message (B1-12g, BR-TEXT-23).
               // Its unbanned {need_reauth} reads linking's Taobao binding port (SELECT only).
               NotificationModule.forWorker({ taobaoReauthReader: needsTaobaoReauth }),
+              // account.went_negative → the member's withdrawals re-checked under the locks
+              // (B2-05e, BR-WDR-05 (a)); payout_attempts reads arrive with B2-06.
+              PayoutModule.forWorker({
+                lockUsersForUpdate,
+                // TODO(规划/11 §2.3): payout_attempts 读取（有无转账尝试）— blocked on B2-06
+                attempts: { hasAttempt: () => Promise.resolve(false) },
+              }),
               // Admin data exports (B1-34e, BR-ID-42): the export queue's generate / expire
               // handler over identity's batch users projection (decrypted and masked there) and
               // content's configuration reader (admin.export.* overrides of the code defaults).
