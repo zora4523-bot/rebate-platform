@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Insertable, Kysely } from 'kysely';
 import { afterAll, beforeAll } from 'vitest';
 
@@ -20,8 +19,14 @@ export const orders = (await import(
 export const AT = new Date('2026-10-20T03:04:05.000Z');
 export const LONG_TITLE = '淘宝官方测试商品👨‍👩‍👧‍👦完整标题超过十二个字素，保留空格 与标点';
 
-export function harness() {
-  let database: TestDatabase | undefined;
+// 建库工厂由 *.int.test.ts 传入：依赖规则只允许 int 测试导入 @couli/db/testing。
+export interface TestDatabaseHandle {
+  urlFor(role: string): string;
+  drop(): Promise<void>;
+}
+
+export function harness(createTestDatabase: () => Promise<TestDatabaseHandle>) {
+  let database: TestDatabaseHandle | undefined;
   let db: Kysely<DB>;
   beforeAll(async () => {
     database = await createTestDatabase();

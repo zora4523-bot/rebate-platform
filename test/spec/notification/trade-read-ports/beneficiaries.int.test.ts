@@ -1,9 +1,10 @@
+import { createTestDatabase } from '@couli/db/testing';
 // BR-FUND-03、BR-TEXT-09；本任务只读事实，通知方另行筛选正份额与发送。
 import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { commission, harness, newApp, seedAmounts, seedKey, seedOrder, state } from './kit.ts';
 
-const h = harness();
+const h = harness(createTestDatabase);
 
 it('[AC-B1-12j#18] 当前版本由各订单行决定，首次版本和后续版本均不硬编码', async () => {
   const app_id = newApp();

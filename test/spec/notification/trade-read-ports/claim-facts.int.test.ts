@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import {
@@ -12,7 +13,7 @@ import {
   state,
 } from './kit.ts';
 
-const h = harness();
+const h = harness(createTestDatabase);
 
 it('[AC-B1-12j#12] 返回申请人及全部条目决定，不把审核备注当驳回原因、不丢未决或无订单行的条目', async () => {
   const app_id = newApp();

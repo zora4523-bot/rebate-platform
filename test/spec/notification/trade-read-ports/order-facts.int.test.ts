@@ -1,8 +1,9 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { harness, LONG_TITLE, newApp, orders, seedOrder, seedUser, state } from './kit.ts';
 
-const h = harness();
+const h = harness(createTestDatabase);
 
 it('[AC-B1-12j#7] 返回精确的订单事实投影，长标题、归属、订单键和原始佣金不裁剪不换算', async () => {
   const app_id = newApp();
