@@ -22,22 +22,34 @@ it('[AC-B1-15a#1] columns have the specified types, nullability and defaults', a
     WHERE table_schema = 'app' AND table_name = 'deletion_requests'
     ORDER BY column_name
   `.execute(h.app);
+  // 两态判定，为 B1-15o（D10-137 / D10-153，迁移 0070）让路：只看是否已有 cleaned_at 列——
+  // 有则期望再加注销清理三列，无则保持原 13 列。迁移合并后可收紧为单态。
+  const cleanup = result.rows.some((row) => (row as { name?: unknown }).name === 'cleaned_at');
+  const base: [string, string, boolean, string | null][] = [
+    ['app_id', 'text', false, null],
+    ['apply_at', 'timestamptz', false, null],
+    ['balance_snapshot_fen', 'int8', false, null],
+    ['cancel_reason', 'text', true, null],
+    ['cancelled_at', 'timestamptz', true, null],
+    ['cooling_until', 'timestamptz', false, null],
+    ['created_at', 'timestamptz', false, 'now()'],
+    ['id', 'uuid', false, null],
+    ['processed_at', 'timestamptz', true, null],
+    ['row_version', 'int4', false, '0'],
+    ['status', 'text', false, null],
+    ['updated_at', 'timestamptz', false, 'now()'],
+    ['user_id', 'uuid', false, null],
+  ];
+  const added: [string, string, boolean, string | null][] = [
+    ['apple_revoke_attempts', 'int2', false, '0'],
+    ['apple_revoke_result', 'text', true, null],
+    ['cleaned_at', 'timestamptz', true, null],
+  ];
+  const expected = cleanup
+    ? [...base, ...added].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    : base;
   expect(result.rows).toEqual(
-    [
-      ['app_id', 'text', false, null],
-      ['apply_at', 'timestamptz', false, null],
-      ['balance_snapshot_fen', 'int8', false, null],
-      ['cancel_reason', 'text', true, null],
-      ['cancelled_at', 'timestamptz', true, null],
-      ['cooling_until', 'timestamptz', false, null],
-      ['created_at', 'timestamptz', false, 'now()'],
-      ['id', 'uuid', false, null],
-      ['processed_at', 'timestamptz', true, null],
-      ['row_version', 'int4', false, '0'],
-      ['status', 'text', false, null],
-      ['updated_at', 'timestamptz', false, 'now()'],
-      ['user_id', 'uuid', false, null],
-    ].map(([name, type, nullable, defaultValue]) => ({
+    expected.map(([name, type, nullable, defaultValue]) => ({
       name,
       type,
       nullable,

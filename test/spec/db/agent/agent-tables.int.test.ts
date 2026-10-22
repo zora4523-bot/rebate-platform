@@ -991,19 +991,25 @@ const FACTORIES: Record<Table, (values?: Row) => Promise<Row>> = {
 for (const table of TABLES) {
   it(`[AC-B3-09a#51] couli_app has only prescribed UPDATE columns on ${table}`, async () => {
     await requireTable(table);
+    // 两态判定，为 B1-15o（D10-137 / D10-153，迁移 0070）让路：只看 agent_sessions 是否已有
+    // user_hash 列——有则 user_id 也必须可更新（单向去关联），无则保持原清单。迁移合并后可收紧为单态。
+    const detached = await sql<{ present: boolean }>`SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'app' AND table_name = 'agent_sessions'
+        AND column_name = 'user_hash') AS present`.execute(app);
+    const updatable =
+      table === 'agent_sessions' && detached.rows[0]?.present === true
+        ? [...UPDATABLE[table], 'user_id']
+        : UPDATABLE[table];
     for (const column of Object.keys(SHAPES[table])) {
       const result = await sql<{ allowed: boolean }>`SELECT has_column_privilege(
         'couli_app', ${`app.${table}`}, ${column}, 'UPDATE') AS allowed`.execute(app);
-      expect(result.rows, `${table}.${column}`).toEqual([
-        { allowed: UPDATABLE[table].includes(column) },
-      ]);
+      expect(result.rows, `${table}.${column}`).toEqual([{ allowed: updatable.includes(column) }]);
     }
     const row = await FACTORIES[table]();
     const stored = await read(table, row['id']);
     // No-op assignments isolate privileges from CHECKs and rewrite triggers.
-    for (const column of Object.keys(SHAPES[table]).filter(
-      (name) => !UPDATABLE[table].includes(name),
-    )) {
+    for (const column of Object.keys(SHAPES[table]).filter((name) => !updatable.includes(name))) {
       expect(
         await sqlState(update(table, row['id'], { [column]: stored[column] })),
         `${table}.${column}`,
