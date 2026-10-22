@@ -27,7 +27,7 @@ it('[AC-B3-05j#1][BR-AI-21] 真确定性路径只记录一份无模型 trace，�
   expect(base.deps.prompt.current).not.toHaveBeenCalled();
 });
 
-it('[AC-B3-05j#2][BR-AI-21] URL 顺序与完成状态入 trace，口令不计且序号仍按原链接位置', async () => {
+it('[AC-B3-05j#2][BR-AI-21] URL 顺序与完成状态入 trace，序号仍按原链接位置', async () => {
   const links = [
     { kind: 'tpwd' as const, raw: '￥synthetic-token￥', index: 0 },
     url(9, 20),
@@ -37,13 +37,24 @@ it('[AC-B3-05j#2][BR-AI-21] URL 顺序与完成状态入 trace，口令不计且
     url(1, 260),
   ];
   const base = setup([], { proceed: proceed({ links }) });
-  const runner = quotes([
-    success(9),
-    { kind: 'parse_error', error_code: 30131, cards: [] },
-    { kind: 'price_unavailable', cards: [] },
-    { kind: 'no_card', cards: [] },
-    new Error('synthetic runner failure'),
+  // B3-04j: answers by candidate, so the URL trace is the same whether the token goes to the
+  // runner (B3-04g, it answers 30132) or not; the token's own entry is checked below when present.
+  const byRaw = new Map<string, Awaited<ReturnType<LinkQuoteRunner['run']>> | Error>([
+    [url(9, 20).raw, success(9)],
+    [url(2, 80).raw, { kind: 'parse_error', error_code: 30131, cards: [] }],
+    [url(7, 140).raw, { kind: 'price_unavailable', cards: [] }],
+    [url(3, 200).raw, { kind: 'no_card', cards: [] }],
+    [url(1, 260).raw, new Error('synthetic runner failure')],
   ]);
+  const runner = {
+    run: vi.fn<LinkQuoteRunner['run']>(async (candidate) => {
+      if (candidate.kind !== 'url') return { kind: 'parse_error', error_code: 30132, cards: [] };
+      const outcome = byRaw.get(candidate.raw);
+      if (outcome === undefined) throw new Error('Unexpected quote call');
+      if (outcome instanceof Error) throw outcome;
+      return outcome;
+    }),
+  };
   const deterministic = createDeterministicPath({ quotes: runner, texts: base.deps.texts });
   // §9 默认：确定性报价不占模型工具次数；此处故意低于 URL 数量。
   expect(await base.run({ deterministic, limits: { ...base.deps.limits, toolCalls: 1 } })).toEqual({
@@ -51,14 +62,21 @@ it('[AC-B3-05j#2][BR-AI-21] URL 顺序与完成状态入 trace，口令不计且
     finishReason: 'stop',
   });
   expect(base.traces).toHaveLength(1);
-  expect(base.traces[0]!.tool_calls).toEqual([
+  const calls = base.traces[0]!.tool_calls;
+  const token = { name: 'get_rebate_quote', args: { link_index: 1 }, status: 'failed' };
+  const isToken = (call: unknown) => JSON.stringify(call) === JSON.stringify(token);
+  expect(calls.filter((call) => !isToken(call))).toEqual([
     { name: 'get_rebate_quote', args: { link_index: 2 }, status: 'ok' },
     { name: 'get_rebate_quote', args: { link_index: 3 }, status: 'failed' },
     { name: 'get_rebate_quote', args: { link_index: 4 }, status: 'failed' },
     { name: 'get_rebate_quote', args: { link_index: 5 }, status: 'failed' },
     { name: 'get_rebate_quote', args: { link_index: 6 }, status: 'failed' },
   ]);
-  expect(runner.run.mock.calls.map(([candidate]) => candidate)).toEqual(links.slice(1));
+  // The token's entry, when the path quotes it, comes first and only once.
+  expect(calls.length === 5 || (calls.length === 6 && isToken(calls[0]))).toBe(true);
+  expect(
+    runner.run.mock.calls.map(([candidate]) => candidate).filter((c) => c.kind === 'url'),
+  ).toEqual(links.slice(1));
   expect(base.execute).not.toHaveBeenCalled();
 });
 
