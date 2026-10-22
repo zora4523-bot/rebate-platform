@@ -1,0 +1,24 @@
+id: F1-10fa
+repo: rebate-platform
+title: 后台风控页（一）规则清单子页：/risk 页的「规则清单」页签——列出规则（场景、名称、命中动作、启停状态、关联阈值项、更新时间）；启用 / 停用要动态码并带 expected_version，已是目标状态照常成功，版本冲突提示刷新；阈值项只链到配置中心对应配置项编辑（不另做写入口）；需 config.risk，只读查看不要动态码；空 / 加载 / 出错三态与 10403
+type: impl
+# 2026-10-23 入账（前端线 f1-frontend-7，编排 D10-205 ①：F1-10f 先拆规则清单子页）。05 F1-10f、01 F-ADM-18；契约 CT-24f（adminListRiskRules / adminEnableRiskRule / adminDisableRiskRule，planned，后端未做——按契约用假服务端开发）。
+# 菜单「风控」现按 risk.* 权限点显示，规则清单只要 config.risk，本任务把 config.risk 加进该菜单项的可见条件（resources/index.ts）。命中记录、黑名单导入、申诉等 CT-24r 等契约落地后另拆。
+# 无定稿页面规格，视觉沿用后台通用列表 / 对话框与动态码组件。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+refs: []
+refs_hash: {}
+deps: [CT-24f, F1-06zb]
+paths:
+  - 'apps/admin/src/pages/risk/**'
+  - 'apps/admin/src/texts/risk.ts'
+  - 'apps/admin/src/App.tsx'
+  - 'apps/admin/src/resources/index.ts'
+test_paths:
+  - 'test/spec/frontend/admin-risk-rules/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-risk-rules/**'
+status: todo
+pr: null
