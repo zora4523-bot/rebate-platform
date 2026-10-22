@@ -9,6 +9,7 @@ type: impl
 # 派发前重审（agent2）：仓库无 ACS3 签名实现 → 按阿里云公开文档实现签名器（agent/guard/review/**，真实调用验证 TODO 待 Key）；
 # 凭据变量名声明在 platform/config/credential-env.ts（AGENT_REVIEW_ALIYUN_ACCESS_KEY_ID / _SECRET，本地与测试设了即拒启动，同 SMS_* 做法），
 # 只有 staging / prod 读取；本地、测试用假审核（一律不可用）。endpoint 与超时从配置读。分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 资金类评审（RV2）。
+# 2026-10-23：paths 加 platform/config/{config,agent-review,index}.ts——凭据与 endpoint 照 PDD_*（pdd.ts、B1-04t）经 loadConfig 读进 AppConfig，app.module 不直接读 process.env（第 1 次实现时暴露）。
 refs: [BR-AI-18, BR-AI-01]
 refs_hash:
   BR-AI-18: 01b60e6ca170
@@ -18,6 +19,9 @@ paths:
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/modules/agent/guard/review/**'
   - 'apps/api/src/modules/platform/config/credential-env.ts'
+  - 'apps/api/src/modules/platform/config/config.ts'
+  - 'apps/api/src/modules/platform/config/agent-review.ts'
+  - 'apps/api/src/modules/platform/config/index.ts'
   - 'apps/api/src/modules/agent/agent.module.ts'
   - 'apps/api/src/modules/agent/stream/mount/**'
 test_paths:
