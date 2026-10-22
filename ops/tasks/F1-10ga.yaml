@@ -1,0 +1,22 @@
+id: F1-10ga
+repo: rebate-platform
+title: 后台联盟账号与推广位（一）站长授权：/unions 页（菜单「联盟账号与推广位」，账号与推广位两个页签，本任务做账号页签）——联盟账号列表（平台、账号名、授权状态、到期时间与「估算」标记、最近探测结果、更新人；未配置告警手机号提示）；按 reauth_mode 显示入口：oauth【重新授权】对话框（动态码 → 打开授权地址 → 轮询会话结果，成功后到期时间刷新）与回调页 /unions/oauth-callback（把 state、code 或 error 提交给服务端并显示结果）、manual【录入新凭据】对话框（动态码，凭据只提交不回显）、none 不显示入口；告警手机号增删（只显示脱敏号，动态码，版本冲突提示刷新）；空 / 加载 / 出错三态与 10403
+type: impl
+# 2026-10-23 入账（前端线 f1-frontend-7，编排 03:50 派工）。05 F1-10g、01 F-ADM-16；契约 CT-24h（tag admin-unions，planned，后端 B1-22 在 union 线做——按契约用假服务端开发，联调另开子任务）。
+# 无定稿页面规格，视觉沿用后台通用列表 / 对话框与动态码组件；推广位页签另见 F1-10gb。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+refs: []
+refs_hash: {}
+deps: [CT-24h, F1-06zb]
+paths:
+  - 'apps/admin/src/pages/unions/**'
+  - 'apps/admin/src/texts/unions.ts'
+  - 'apps/admin/src/App.tsx'
+test_paths:
+  - 'test/spec/frontend/admin-unions/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/frontend/admin-unions/**'
+status: todo
+pr: null
