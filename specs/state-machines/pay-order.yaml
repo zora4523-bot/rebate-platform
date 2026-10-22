@@ -1,0 +1,43 @@
+# 支付单状态 pay_orders.status 的状态机（规划/04 §4.9；规划/08 BR-PAY-02 正文，守卫引 BR-PAY-01 / 04 / 05；任务 CT-21d）。
+# 迁移只在 08 维护；本文件按 SPEC_REF 转写，生成 packages/domain/src/state-machines/pay-order.gen.ts
+# （node packages/domain/scripts/state-machines.ts；--verify 只比对）。生成物勿手改，改这里再生成。
+#
+# 写法约定（同 withdrawal.yaml，CT-04a 编排口径 D10-26）：
+# - from 中 null 表示「—」（入库首态，支付单尚未创建）。
+# - guard 是规则文字说明，transition() 不求值；守卫、业务对象锁、CAS、记账、任务入队与副作用由调用方负责。
+# - 事件编码（CREATE / PAY_SUCCESS / CLOSE）是 08 没给、代理补全的默认（CT-21d 编排补充）；测试 ID 为 SM-PAY-PO1…PO3。
+#
+# 原文正文要点（BR-PAY-02 逐字摘录）：
+# 支付单状态只有 3 个：PENDING（待支付）、PAID（已支付）、CLOSED（已关闭）。PAID、CLOSED 为终态。
+# 迁移只有：PO1 创建 → PENDING；PO2 PENDING → PAID（只凭 BR-PAY-04 判定的支付成功）；PO3 PENDING → CLOSED（BR-PAY-05）。
+# 每次迁移用状态 CAS，影响 0 行即并发冲突，不写分录、不触发业务，接口返回 20902（`data.resource=pay_order`）。
+# 创建、换渠道、PO2、PO3 都先取业务对象级的锁（按 app_id、biz_type、biz_ref），拿到锁后重新读取该业务对象的支付单再判断。
+# 退款不改变支付单状态，所以没有「已退款」状态；界面上的「已退款」「部分退款」由 refunded_fen 推导。
+# CLOSED 的单不得再变为 PAID：对 CLOSED 单的收款登记为异常收款（BR-PAY-05 ④），不迁移。
+name: pay-order
+field: status
+states: [PENDING, PAID, CLOSED]
+# CREATE 创建支付单；PAY_SUCCESS 按 BR-PAY-04 判定支付成功；CLOSE 关单流程按 BR-PAY-05 结束为已关闭。
+events: [CREATE, PAY_SUCCESS, CLOSE]
+transitions:
+  # PO1 | — | CREATE | BR-PAY-01 ①②④ 全部通过；同一业务对象无 PENDING / PAID 单（BR-PAY-02 唯一约束） | PENDING
+  - id: PO1
+    from: [null]
+    event: CREATE
+    to: PENDING
+    guard: 'BR-PAY-01 ①②④ 全部通过；同一业务对象无 PENDING / PAID 单（BR-PAY-02 唯一约束）'
+    test_id: SM-PAY-PO1
+  # PO2 | PENDING | PAY_SUCCESS | 只凭 BR-PAY-04 判定的支付成功 | PAID
+  - id: PO2
+    from: [PENDING]
+    event: PAY_SUCCESS
+    to: PAID
+    guard: '只凭 BR-PAY-04 判定的支付成功：验签通过、应用与商户标识是我方、商户单号对应、金额等于 amount_fen、渠道状态 ∈ pay.<pay_channel>.success_states；同一事务写 PAY_RECEIPT 分录与开通任务'
+    test_id: SM-PAY-PO2
+  # PO3 | PENDING | CLOSE | BR-PAY-05 | CLOSED
+  - id: PO3
+    from: [PENDING]
+    event: CLOSE
+    to: CLOSED
+    guard: 'BR-PAY-05：从未下单且未返回调起参数可直接关；否则先查询，渠道明确已关闭才关；不存在须过 expire_at + close_grace_minutes 再查'
+    test_id: SM-PAY-PO3

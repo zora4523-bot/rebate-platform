@@ -1,0 +1,4 @@
+id,from,event,guard_points,to,test_id
+PO1,null,CREATE,BR-PAY-02;同一业务对象;PENDING;PAID;唯一,PENDING,SM-PAY-PO1
+PO2,PENDING,PAY_SUCCESS,BR-PAY-04;验签;应用;商户;单号;金额;amount_fen;success_states;同一事务;PAY_RECEIPT;开通,PAID,SM-PAY-PO2
+PO3,PENDING,CLOSE,BR-PAY-05;从未下单;调起参数;查询;明确;已关闭;不存在;expire_at;close_grace_minutes;再查,CLOSED,SM-PAY-PO3

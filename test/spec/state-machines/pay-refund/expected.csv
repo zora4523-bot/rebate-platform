@@ -1,0 +1,4 @@
+id,from,event,guard_points,to,test_id
+RF1,null,APPLY,BR-PAY-06;②③;幂等;业务对象;锁;额度,PROCESSING,SM-PAY-RF1
+RF2,PROCESSING,REFUND_SUCCESS,④;全部核对;refund_success_states;同一事务;CAS;refunded_fen;PAY_REFUND;回收,SUCCESS,SM-PAY-RF2
+RF3,PROCESSING,REFUND_FAILED,④;全部核对;refund_fail_states;释放;额度,FAILED,SM-PAY-RF3
