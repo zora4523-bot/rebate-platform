@@ -1,0 +1,99 @@
+{
+  "task": "B1-12n",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "spec_commit": "b06c2f4caecac8fc376fa149616dbea24fcc175a",
+  "red_tests": [
+    "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#1] adds only nullable text suppress_reason and keeps existing column shapes",
+    "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#2] couli_app inserts and reads all four statuses; old inserts still default to queued",
+    "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#3] rejects unknown statuses with 23514 on INSERT and UPDATE",
+    "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#4] only push_disabled is accepted as a non-null reason, including updates",
+    "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#5] INSERT enforces the full status/reason/sent_at truth table, including SQL NULL",
+    "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#6] UPDATE applies the same truth table from every valid state and preserves rejected rows",
+    "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#7] changing just status, reason or sent_at cannot leave inconsistent suppression",
+    "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#8] suppressed logs share the existing app/dedupe unique key across statuses",
+    "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#9] existing scan indexes remain valid and nonpartial",
+    "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#10] the new column inherits existing grants without granting readonly writes",
+    "test/spec/db/notification/send-log/send-log.int.test.ts > [AC-B1-12e#2] logs have the agreed types and optional user_id/sent_at; IDs and send moments have no SQL defaults",
+    "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#11] notify_logs and inbox_messages retain their existing column sets"
+  ],
+  "risk_note": "RV2 (db/**). Migration 0069 (number taken under the migration slot, D10-116) lets app.notify_logs record a push the user switched off: status gains 'suppressed', a nullable suppress_reason column accepts only 'push_disabled', and one CHECK ties them (status = suppressed iff suppress_reason is set) and keeps sent_at null on suppressed rows. Additive: existing rows, columns, the (app_id, dedupe_key) unique key, indexes and grants are unchanged; the old status CHECK is dropped and replaced by the wider one in the same migration. Basis: 08 BR-WATCH-15 records suppressed(push_disabled) while 04 §3.2 lists only queued / success / failed; the orchestrator's technical decision fills the gap and is filed for planning write-back. Two frozen DB tests list notify_logs columns exactly (B1-12e send-log [AC-B1-12e#2], B1-12f template-override [AC-B1-12f#11]); orchestrator mechanical test(spec) commits add only the suppress_reason entry to each list (ledger test_paths; class 1, label checked by the orchestrator under approvals #24); no assertion is removed or weakened. No money, no attribution.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b06c2f4caecac8fc376fa149616dbea24fcc175a",
+      "tree": "3029ad664147684f87bd954d95f48763c97de9d6",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T09:04:42Z",
+      "finished_at": "2026-10-22T09:05:16Z",
+      "gate": {
+        "commit": "bfbd2b3cfa8b031a975efbae0f4b90a98c7860ec",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#1] adds only nullable text suppress_reason and keeps existing column shapes",
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#2] couli_app inserts and reads all four statuses; old inserts still default to queued",
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#3] rejects unknown statuses with 23514 on INSERT and UPDATE",
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#4] only push_disabled is accepted as a non-null reason, including updates",
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#5] INSERT enforces the full status/reason/sent_at truth table, including SQL NULL",
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#6] UPDATE applies the same truth table from every valid state and preserves rejected rows",
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#7] changing just status, reason or sent_at cannot leave inconsistent suppression",
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#8] suppressed logs share the existing app/dedupe unique key across statuses",
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#9] existing scan indexes remain valid and nonpartial",
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts > [AC-B1-12n#10] the new column inherits existing grants without granting readonly writes",
+        "test/spec/db/notification/send-log/send-log.int.test.ts > [AC-B1-12e#2] logs have the agreed types and optional user_id/sent_at; IDs and send moments have no SQL defaults",
+        "test/spec/db/notification/template-override/template-override.int.test.ts > [AC-B1-12f#11] notify_logs and inbox_messages retain their existing column sets"
+      ],
+      "expected": [
+        "test/spec/db/notification/send-log-suppressed/send-log-suppressed.int.test.ts",
+        "test/spec/db/notification/send-log/send-log.int.test.ts",
+        "test/spec/db/notification/template-override/template-override.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "718ee8fc72121a5df87f085b1a4e26e0a73e3a657ab64fd007adadc5e8d07764"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings on the migration; later only the slot renumbering 0067 -> 0069 and the regenerated schema.sql / db.gen.ts"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (run 1, 10 tests) reviewed by fresh Claude subagents: round 1 fail with one S1 (the grant check listed a nonexistent role couli_report, so has_table_privilege would raise 42704), fixed by an orchestrator mechanical commit; round 2 pass, confirming the frozen B1-12e list change only adds suppress_reason. The B1-12f list gained the same one entry after the test-machine full run showed it."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "4446c328113b450d91945163f55dd89430cea899",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}

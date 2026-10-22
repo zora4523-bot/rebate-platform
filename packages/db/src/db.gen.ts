@@ -910,6 +910,7 @@ export interface NotifyLogs {
   row_version: Generated<number>;
   sent_at: Timestamp | null;
   status: Generated<string>;
+  suppress_reason: string | null;
   updated_at: Generated<Timestamp>;
   user_id: string | null;
 }

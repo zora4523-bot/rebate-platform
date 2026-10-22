@@ -173,6 +173,7 @@ it('[AC-B1-12e#2] logs have the agreed types and optional user_id/sent_at; IDs a
     ['row_version', 'int4', false],
     ['sent_at', 'timestamptz', true],
     ['status', 'text', false],
+    ['suppress_reason', 'text', true],
     ['updated_at', 'timestamptz', false],
     ['user_id', 'uuid', true],
   ]);

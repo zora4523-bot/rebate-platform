@@ -399,6 +399,7 @@ it('[AC-B1-12f#11] notify_logs and inbox_messages retain their existing column s
     'row_version',
     'sent_at',
     'status',
+    'suppress_reason',
     'updated_at',
     'user_id',
   ]);
