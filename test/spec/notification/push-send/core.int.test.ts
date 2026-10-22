@@ -732,7 +732,11 @@ it.each(['frozen', 'revoked', 'session-revoked', 'refresh-expired'] as const)(
   '[AC-B1-12o#39] record 后令牌变为 %s，dispatch 重读最新状态，不推送并条件解绑',
   async (change) => {
     const f = await fixture(db);
-    const session = await seedSession(db, f);
+    const session = await seedSession(
+      db,
+      f,
+      change === 'refresh-expired' ? { expire_at: new Date(f.clock.now().getTime() + 1) } : {},
+    );
     const row = await f.registration({ device_id: session.device_id, bound_sid: session.sid });
     const core = createPushSendCore({ ...f, sessionValidity: createPushSessionValidity(f.clock) });
     await db.transaction().execute((trx) => core.record(trx, f.input));
@@ -756,12 +760,7 @@ it.each(['frozen', 'revoked', 'session-revoked', 'refresh-expired'] as const)(
         .where('sid', '=', session.sid)
         .execute();
     } else {
-      await db
-        .updateTable('refresh_tokens')
-        .set({ expire_at: f.clock.now() })
-        .where('app_id', '=', f.app_id)
-        .where('sid', '=', session.sid)
-        .execute();
+      f.clock.advanceMs(1);
     }
     expect(await core.dispatch(db, eventOf(f.input))).toBe('failed');
     expect(f.channel.send).not.toHaveBeenCalled();
