@@ -521,6 +521,7 @@ it('[AC-B1-11d#31][AC-B1-11d#32] success: one Clock sample, conditional update, 
     `user:${USER}`,
     null,
     new Date(NOW),
+    new Date(NOW), // created_at = at (B1-11t)
   ]);
 });
 

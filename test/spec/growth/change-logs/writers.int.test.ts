@@ -124,7 +124,8 @@ it('[AC-B1-11b#4] effective_at 与 at 取调用方传入的瞬间（到毫秒）
   expect(level!.effective_at.getTime()).toBe(levelAt.getTime());
   expect(relation!.at.getTime()).toBe(relationAt.getTime());
   expect(level!.created_at.getTime() - levelAt.getTime()).toBeGreaterThan(DAY);
-  expect(relation!.created_at.getTime() - relationAt.getTime()).toBeGreaterThan(DAY);
+  // Relation log writes created_at = at on insert (D10-118); still proves it is not the database now().
+  expect(relation!.created_at.getTime()).toBe(relationAt.getTime());
 });
 
 type LevelCase = { name: string; patch: (input: LevelChangeInput) => unknown };

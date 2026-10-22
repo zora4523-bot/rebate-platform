@@ -143,7 +143,7 @@ it('[AC-B1-11b#4] inserts preserve caller time and omit untrusted extra columns'
     at,
   ]);
   expect(f.queries[1]?.sql).toBe(
-    'insert into "app"."relation_change_logs" ("app_id", "user_id", "from_parent_id", "to_parent_id", "source", "operator", "reason", "at") values ($1, $2, $3, $4, $5, $6, $7, $8)',
+    'insert into "app"."relation_change_logs" ("app_id", "user_id", "from_parent_id", "to_parent_id", "source", "operator", "reason", "at", "created_at") values ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
   );
   expect(f.queries[1]?.parameters).toEqual([
     'couli',
@@ -154,7 +154,51 @@ it('[AC-B1-11b#4] inserts preserve caller time and omit untrusted extra columns'
     `user:${user}`,
     null,
     at,
+    at,
   ]);
+});
+
+it('[AC-B1-11t#7] relation insert binds created_at to the caller instant for bind, rebind and unbind', async () => {
+  const f = await fixture();
+  const past = new FixedClock('2026-10-10T10:00:00.789+08:00').now();
+  const inputs: RelationChangeInput[] = [
+    { ...relation, at: past },
+    {
+      ...relation,
+      from_parent_id: parent,
+      to_parent_id: user.replace(/a$/, 'c'),
+      source: 'admin',
+      operator: 'admin:reviewer',
+      at: past,
+    },
+    {
+      ...relation,
+      from_parent_id: parent,
+      to_parent_id: null,
+      source: 'admin',
+      operator: 'admin:reviewer',
+      at: past,
+    },
+    {
+      ...relation,
+      from_parent_id: parent,
+      to_parent_id: null,
+      source: 'parent_deleted',
+      operator: 'system',
+      at: past,
+    },
+  ];
+  await f.db.transaction().execute(async (trx) => {
+    for (const input of inputs) await appendRelationChange(trx, input);
+    await appendLevelChange(trx, level);
+  });
+  expect(f.queries).toHaveLength(5);
+  for (const query of f.queries.slice(0, 4)) {
+    expect(query.sql).toMatch(/"at", "created_at"\) values \(.*\$8, \$9\)$/);
+    expect(query.parameters.at(-2)).toBe(past);
+    expect(query.parameters.at(-1)).toBe(past);
+  }
+  expect(f.queries[4]?.sql).not.toContain('created_at');
 });
 
 it('[AC-B1-11b#7] a database error escapes unchanged with no retry', async () => {

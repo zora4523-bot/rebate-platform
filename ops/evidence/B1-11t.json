@@ -1,0 +1,89 @@
+{
+  "red_tests": [
+    "test/spec/growth/change-logs/writers.int.test.ts > [AC-B1-11b#4] effective_at 与 at 取调用方传入的瞬间（到毫秒），不取数据库 now()",
+    "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#1] 绑定：提交后 created_at 与注入 Clock 的 at 逐毫秒相等",
+    "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#2] 改绑：提交后 created_at 与注入 Clock 的 at 逐毫秒相等",
+    "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#3] 管理员解除：提交后 created_at 与注入 Clock 的 at 逐毫秒相等",
+    "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#4] 上级注销解除：提交后 created_at 与注入 Clock 的 at 逐毫秒相等",
+    "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#5] 事务开始 < paid_at < at：按 at 与按 created_at 回放均不提前生效",
+    "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#6] 同步关系两列不影响其他 app、用户与等级日志的数据库默认时间"
+  ],
+  "risk_note": "RV2 (growth attribution history). D10-118: appendRelationChange writes created_at = the caller's at (the business instant from the injected Clock), so relation_change_logs.at and created_at no longer differ and replay by at equals the 08 BR-CALC-12 wording (replay by created_at); parentAt / levelAt / appendLevelChange and the three writers are unchanged. The frozen [AC-B1-11b#4] line that pinned created_at to DB now() is changed in this PR to created_at = at (independent Claude test-change author, fresh independent Claude review pass; couli-runs/B1-11u). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (6 tests, red/1), reviewed through claude-run.sh: r1 pass, no findings"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "4914a52e9269753bb7bf6e24462bcf7719d1a339",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "task": "B1-11t",
+  "spec_commit": "f921d8ca3e7ac388197dbf1460c4fa53ccbcd082",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "f921d8ca3e7ac388197dbf1460c4fa53ccbcd082",
+      "tree": "c7eec5220f3d08988839285cadc705b4a261ae94",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T02:25:50Z",
+      "finished_at": "2026-10-22T02:26:43Z",
+      "red_tests": [
+        "test/spec/growth/change-logs/writers.int.test.ts > [AC-B1-11b#4] effective_at 与 at 取调用方传入的瞬间（到毫秒），不取数据库 now()",
+        "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#1] 绑定：提交后 created_at 与注入 Clock 的 at 逐毫秒相等",
+        "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#2] 改绑：提交后 created_at 与注入 Clock 的 at 逐毫秒相等",
+        "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#3] 管理员解除：提交后 created_at 与注入 Clock 的 at 逐毫秒相等",
+        "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#4] 上级注销解除：提交后 created_at 与注入 Clock 的 at 逐毫秒相等",
+        "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#5] 事务开始 < paid_at < at：按 at 与按 created_at 回放均不提前生效",
+        "test/spec/growth/relation-log-instant/created-at.int.test.ts > [AC-B1-11t#6] 同步关系两列不影响其他 app、用户与等级日志的数据库默认时间"
+      ],
+      "expected": [
+        "test/spec/growth/change-logs/writers.int.test.ts",
+        "test/spec/growth/relation-log-instant/created-at.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "6095e382bc3f458a5d28c444a82f88f8443ab13e61e2097ddc1fa07ec5236893"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "8a55137c61f50d9f8f16670ec58b63a93122b6f6",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ]
+}

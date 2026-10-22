@@ -1,6 +1,7 @@
 // growth change-log writers (B1-11b): insert one row into app.level_change_logs /
 // app.relation_change_logs inside the caller's transaction (never opening or committing one),
 // after the input checks; database errors propagate unchanged. users is never written here.
+// Relation rows set created_at = at explicitly (B1-11t); level rows keep the DB default.
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
 import {
@@ -51,6 +52,9 @@ export async function appendRelationChange(
       operator: input.operator,
       reason: input.reason,
       at: input.at,
+      // D10-118 / BR-CALC-12: created_at carries the same injected-Clock instant as at, never
+      // the DB transaction start, so replay by either column gives the same parent.
+      created_at: input.at,
     })
     .execute();
 }
