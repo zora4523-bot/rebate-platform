@@ -1,9 +1,10 @@
 // B3-05e: deterministic link path (BR-AI-01 A-level resolve_link; BR-AI-04; BR-AI-05).
 // The core enters this path whenever input check found links, before any prompt or model read,
 // so it also serves no-model routes and exhausted budgets (BR-AI-14 细则「无模型降级」first step).
-// Links go one by one, in order of appearance, through the B3-04c LinkQuoteRunner (resolve_link →
-// get_rebate_quote → register_links: registration only, never a conversion). Each link's failure
-// is handled on its own; the rest of the material is untrusted text and has no effect here.
+// Links (URLs and tokens alike, B3-04g) go one by one, in order of appearance, through the same
+// LinkQuoteRunner (B3-04c / B3-04f: resolve_link or the official TokenParser → get_rebate_quote →
+// register_links: registration only, never a conversion). Each link's failure is handled on its
+// own; the rest of the material is untrusted text and has no effect here.
 import type { Candidate } from '../../../parsing/index.ts';
 import type { LinkQuoteOutcome, LinkQuoteRunner } from '../../tools/quote/index.ts';
 import type { ToolCallContext } from '../../tools/registry/index.ts';
@@ -38,21 +39,10 @@ function errorKey(code: number): string {
   return `error.${code}`;
 }
 
-/** Default for a token (tpwd): the B3-04c runner handles URLs only; token quoting is a separate
- * task, so the link gets the "token not recognised" notice and the runner is not called. */
-function tokenErrorCode(): 30132 {
-  return 30132;
-}
-
 /** Default for price_unavailable / no_card / a thrown runner: dependency unavailable. No
  * substitute card and no filled-in number (BR-AI-04 required fields). */
 function unavailableCode(): 50301 {
   return 50301;
-}
-
-/** Candidate.kind is a plain union field; narrow without copying (runner gets the same object). */
-function isUrl(link: Candidate): link is Candidate & { readonly kind: 'url' } {
-  return link.kind === 'url';
 }
 
 /** Identity only from the authenticated caller; never from the message text or context. */
@@ -82,9 +72,9 @@ function reportTrace(deps: DeterministicPathDeps, fragment: ToolTraceFragment): 
 
 /**
  * Per link, in proceed.links order (already deduplicated and capped by the input check):
- * - url: tool.status start → runner → end + its cards, or failed + one error notice;
- * - tpwd: one error.30132 notice, runner not called, no tool.status (no tool ran).
- * parse_error uses its own error code; price_unavailable, no_card and any thrown error use 50301.
+ * url and tpwd alike: tool.status start → runner → end + its cards, or failed + one error
+ * notice. The candidate object is handed over unchanged (a token is never rewritten as a URL).
+ * parse_error uses its own error code (e.g. 30131 / 30132 / 30141 for a token); price_unavailable, no_card and any thrown error use 50301.
  * The thrown error's message never reaches a frame. proceed.notices are emitted by the core only
  * and never repeated here. No text.delta is written (no model, no fixed explanation text).
  * The run ends done stop whether some or all links failed; abort is checked after every await
@@ -117,11 +107,7 @@ export function createDeterministicPath(deps: DeterministicPathDeps): Determinis
   }
 
   /** Returns false once the run was aborted. */
-  async function quoteLink(
-    request: PathInput,
-    link: Candidate & { readonly kind: 'url' },
-    ctx: RunContext,
-  ): Promise<boolean> {
+  async function quoteLink(request: PathInput, link: Candidate, ctx: RunContext): Promise<boolean> {
     const appId = request.input.caller.appId;
     if (!(await status(appId, 'start', ctx))) return false;
 
@@ -151,13 +137,9 @@ export function createDeterministicPath(deps: DeterministicPathDeps): Determinis
 
   return {
     async run(request, ctx) {
-      const appId = request.input.caller.appId;
       for (const link of request.proceed.links) {
         if (ctx.signal.aborted) return stopped();
-        const live = isUrl(link)
-          ? await quoteLink(request, link, ctx)
-          : await notice(appId, tokenErrorCode(), ctx);
-        if (!live) return stopped();
+        if (!(await quoteLink(request, link, ctx))) return stopped();
       }
       return stopped();
     },
