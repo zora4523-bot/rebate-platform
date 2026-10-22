@@ -1,6 +1,6 @@
 # 后台权限点（规划/04 §2.5 admin_permission、§11）。超管拥有全部权限点；其他后台账号按权限点逐项勾选。
 # 「后台账号与权限」只限超管、不可授予，不是权限点，不列入。specs/permissions.yaml（B1-18）另记 step-up 与守卫。
-# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）。
+# 另有后台登录与二次验证用的枚举（CT-02f）：admin_step_up_tier、admin_login_step、admin_account_status、admin_auth_level；工作台待办卡 admin_dashboard_todo_key（CT-24a）；顶栏一框搜命中类型 admin_search_hit_type（CT-24b）；导出任务的状态 export_status 与来源 export_resource（CT-24k）；找回审核证据视图的比对字段 admin_claim_match_field（CT-24d）；后台订单的标记 admin_order_flag 与状态历史的字段、来源 admin_order_history_field、admin_order_history_source（CT-24m）；风控规则清单的规则状态 risk_rule_status 与命中动作 risk_action（CT-24f）；站长联盟账号与推广位 union_auth_status、union_reauth_mode、admin_union_auth_session_status、union_pid_status（CT-24h）。
 enums:
   admin_permission:
     source: 规划/04 §11（拍板第二批 §8 ADD-04、ADD-05）
@@ -165,3 +165,32 @@ enums:
       manual_review: 转人工
       block: 拦截
       void_commission: 作废佣金
+  union_auth_status:
+    source: 规划/04 §3.2 union_accounts.auth_status；规划/08 BR-ID-24（CT-24h）
+    description: 站长联盟授权状态；GET /admin/v1/union-accounts 的 auth_status；提醒节点 alert_stage 不对外返回；中文名取 BR-TEXT-25 admin_dict.union_accounts.auth_status
+    values:
+      active: 有效
+      expiring: 即将到期（已到 union.auth_alert_days 的提醒节点）
+      expired: 已过期或探测 / 调用返回授权失效（BR-ID-24 ④）
+  union_reauth_mode:
+    source: 规划/04 §6.6 union-accounts；规划/08 BR-ID-24 细则「后台告警手机号与重新授权会话」（编排裁定 D10-159 及其补充，CT-24h）
+    description: 该联盟账号站长凭据的更新方式，由服务端按平台登记表派生（不入库）；前端据此显示入口
+    values:
+      oauth: 走后台授权会话（POST …/reauthorize，回调后轮询结果）
+      manual: 站长凭据不是 OAuth、可在联盟后台重新取得（如京东推客授权 Key，CAP-JD-12），在后台录入新凭据（PUT …/credential）
+      none: 没有站长凭据可更新（按 规划/09 CAP-*-12 实测登记），不提供更新入口
+  admin_union_auth_session_status:
+    source: 规划/04 §3.2 admin_union_auth_sessions.status；规划/08 BR-ID-24 细则（CT-24h）
+    description: 后台站长重新授权会话的状态；state 单次使用、10 分钟有效
+    values:
+      pending: 已发起、回调未到
+      succeeded: 回调成功，凭据与到期时间已更新
+      failed: 回调失败（原因记在 error）
+      expired: 过期未用
+  union_pid_status:
+    source: 规划/04 §3.2 union_pids.status；规划/08 BR-ATTR-02 细则「后台登记与启停」（CT-24h）
+    description: 推广位状态；只有 pending→active（启用，须花卷云忽略确认与截图）、active→retired（停用）；三种状态都在白名单里，不可删除
+    values:
+      pending: 已登记、未启用（只有本状态可修改）
+      active: 启用中，可用于转链；同一 app × platform × pid_scene 至多一条
+      retired: 已停用，停止新转链，仍留在白名单

@@ -31,9 +31,9 @@ export const SILENT_CODES: readonly number[] = [10002, 10402, 30505, 44003];
  * contracts/README「后台文案不进这里」), so they have no error.<code> key here. CT-02f.
  * 30154 and 44004 appear only in the admin user operations (union binding reset / disable /
  * enable, risk-state), CT-02j. 30417 appears only in the admin export tasks (download, retry),
- * CT-24k.
+ * CT-24k. 30155 appears only in the admin PID activation (union-pids/{pid_id}/activate), CT-24h.
  */
-export const ADMIN_ONLY_CODES: readonly number[] = [10008, 10009, 30154, 30417, 44004];
+export const ADMIN_ONLY_CODES: readonly number[] = [10008, 10009, 30154, 30155, 30417, 44004];
 
 /**
  * BR-TEXT-14 table B 场景子键 (08 BR-TEXT-14 表 B 表头说明, 规划/08 12_TEXT l.835; rows l.853, l.855,

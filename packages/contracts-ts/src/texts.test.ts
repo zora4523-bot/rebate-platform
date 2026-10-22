@@ -32,10 +32,10 @@ const SILENT = [10002, 10402, 30505, 44003];
 
 /**
  * 13 §13.11: returned only by the admin login (CT-02f), the admin user operations (30154,
- * 44004, CT-02j) or the admin export tasks (30417, CT-24k); admin copy stays in apps/admin
- * (03 §9).
+ * 44004, CT-02j), the admin export tasks (30417, CT-24k) or the admin PID activation (30155,
+ * CT-24h); admin copy stays in apps/admin (03 §9).
  */
-const ADMIN_ONLY = [10008, 10009, 30154, 30417, 44004];
+const ADMIN_ONLY = [10008, 10009, 30154, 30155, 30417, 44004];
 
 /**
  * BR-TEXT-14 table B 场景子键 (08 12_TEXT l.835; rows l.853, l.855, l.875): picked by the client on
