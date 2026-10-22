@@ -1,0 +1,88 @@
+{
+  "red_tests": [
+    "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#1] 多个直属下级同步解除关系，每人恰写一条完整日志且 created_at = at",
+    "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#2] 孙辈、注销用户本人、无关用户和另一应用的用户及日志均不变",
+    "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#3] 同一 userId 配其他 appId 返回零，不跨应用解除关系",
+    "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#4] 同事务与提交后均可重入，返回零且不重复改行或写日志",
+    "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#5] 调用方事务提交前对外不可见，回滚撤销全部用户与日志改动",
+    "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#6] parentAt 在解除前仍为原上级，解除时刻及之后为 null",
+    "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#7] 本来无直属下级时返回零，用户和已有日志保持原样",
+    "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#8] 并发清理同一上级时总共只解除一次，每个下级只有一条注销日志"
+  ],
+  "risk_note": "RV2 (growth attribution). D10-137 / BR-ID-28: growth exports detachChildrenOfDeleted(trx, {appId, userId, at}) for the B1-15g cleanup transaction: on the caller's transaction it locks the deleted user's direct children in id order (users first, as every growth write), clears parent_id / parent_bind_source / parent_bound_at (row_version + 1, updated_at = at) and writes one relation_change_logs row per child actually changed (source parent_deleted, operator system, created_at = at per D10-118); re-entrant (0 and no log on a second call), app-scoped. The growth relation advisory lock is not taken (clearing a parent cannot form a cycle; other parent writes are conditional on the old parent), noted for review. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex in 2 attempts (8 tests; red/1 hung in afterAll, fixed in attempt 2, red/2), reviewed through claude-run.sh: r1 pass, 2 S2"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "518f78fe8af398187a8ba8ee03e8c12be09873c4",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "task": "B1-15n",
+  "spec_commit": "6f78e08ab2df76783d570c119ac9c966ca38a3c3",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "6f78e08ab2df76783d570c119ac9c966ca38a3c3",
+      "tree": "36c8abb925ec8f099548d723277f98bdd5b00501",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T10:53:24Z",
+      "finished_at": "2026-10-22T10:53:55Z",
+      "red_tests": [
+        "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#1] 多个直属下级同步解除关系，每人恰写一条完整日志且 created_at = at",
+        "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#2] 孙辈、注销用户本人、无关用户和另一应用的用户及日志均不变",
+        "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#3] 同一 userId 配其他 appId 返回零，不跨应用解除关系",
+        "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#4] 同事务与提交后均可重入，返回零且不重复改行或写日志",
+        "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#5] 调用方事务提交前对外不可见，回滚撤销全部用户与日志改动",
+        "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#6] parentAt 在解除前仍为原上级，解除时刻及之后为 null",
+        "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#7] 本来无直属下级时返回零，用户和已有日志保持原样",
+        "test/spec/growth/detach-children/detach.int.test.ts > [AC-B1-15n#8] 并发清理同一上级时总共只解除一次，每个下级只有一条注销日志"
+      ],
+      "expected": ["test/spec/growth/detach-children/detach.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "8e983b1a1f77f17a932686a51e9ee7d0cbfd62b73a6e4e4716a9f5e3deb269fb"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "ed25ecd7e2935a5240ef8b3ee800e0d41bce5ac2",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ]
+}
