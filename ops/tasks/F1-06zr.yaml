@@ -1,0 +1,25 @@
+id: F1-06zr
+repo: rebate-platform
+title: F1-06zr：AC-F1-06ze-BROWSER / AC-F1-06zd-BROWSER 在弹窗、抽屉入场动画结束后才点里面的按钮（修 06ze #5、06zd #7 偶发点击落空）
+type: test-change
+# 2026-10-22 入账（ops 线）。起因：[AC-F1-06ze-BROWSER#5]（run 39710764813 attempt 1，#1110 verify-int）第 345 行等「清洗后的文件与原文件不同…」
+# 10 秒未出现；失败快照里上传弹窗仍是「上传并预览」可点、data-pending=0，点击没有发出请求。[AC-F1-06zd-BROWSER#7]（run 39610204784
+# attempt 1）第 349 行等「淘宝 已发布版本 1，立即生效」未出现；快照里发布确认弹窗仍开着、data-pending=0，「确认发布」的点击同样落空。
+# 两处都是弹窗刚打开就点按钮：06ze 的 openUpload 只等弹窗可见，choose 直接写 input，随即点「上传并预览」；06zd #7 点「发布」后不等确认弹窗就点「确认发布」。
+# 根因（本机探针，couli-runs/F1-06zr/probe-zoom-geometry.txt）：antd Modal 挂上后的前约 24ms 处于 ant-zoom-appear-start，按钮停在最终位置、
+# 连续几帧不动，Playwright 据此判定稳定并取点击坐标；动画真正开始时弹窗先缩到 0.2 倍，按钮跳到别处（x 926→1287，宽 90→18），点击落空。
+# 做法：06ze 的 openUpload 在弹窗可见后加 await still()；06zd 抽出 still()（settled() 原有的等动画结束部分，settled 改为调用它），openHistory 在抽屉
+# 可见后、#7 / #8 在确认弹窗可见后、#9 在点「确认回滚」前各等 still()。不改断言、不删用例、不动 apps/。
+# 改既有规则测试属第一类保护路径，合并要负责人标签（owner-approved-<头提交前 12 位>，approvals #24），按 approvals 第 12 条走
+# 非 task 分支（chore/test-change-F1-06zr）、不带证据文件（先例 F1-06zj #866）；Claude 实现，Codex（不可用时独立 Claude）只读对抗评审。
+refs: []
+refs_hash: {}
+deps: [F1-06zd, F1-06ze]
+paths:
+  - 'test/spec/frontend/admin-platform-icons-upload/pages.browser.test.ts'
+  - 'test/spec/frontend/admin-platform-icons/pages.browser.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done

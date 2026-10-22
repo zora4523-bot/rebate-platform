@@ -174,6 +174,8 @@ async function openUpload(platform: string) {
   await page.getByRole('button', { name: `上传 ${platform}`, exact: true }).click();
   const modal = dialogWith(new RegExp(`^上传替换图 · ${platform}`));
   await expect.element(modal, FIRST).toBeVisible();
+  // A click while the dialog still zooms in can be lost (#5: 「上传并预览」 clicked, no request).
+  await still();
   return modal;
 }
 
