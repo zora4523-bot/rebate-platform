@@ -24,7 +24,7 @@ export interface SnapshotBeneficiaries {
   readonly warnings: readonly { readonly code: string; readonly userId?: string }[];
 }
 
-// TODO(规划/11 §4.2): 实现 paid_at 历史等级与关系解析器 — blocked on B1-11a
+// 真实实现：infra/beneficiary-resolver.ts（B2-03p，BR-CALC-12 / 13）；内存版只给测试。
 export interface SnapshotBeneficiaryResolver {
   resolve(
     trx: Transaction<DB>,

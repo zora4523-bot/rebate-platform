@@ -1,0 +1,136 @@
+{
+  "task": "B2-03p",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "ea244f631264af50c77e8481ec16b13091caf725",
+  "red_tests": [
+    "test/spec/commission/resolver/relation-at.int.test.ts > [AC-B2-03p#18] BR-CALC-12 解析器只按 at 取关系、与 created_at 无关",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#1] BR-CALC-12 三层等级与关系都取 paidAt，忽略事后改级、改绑及当前用户字段",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#2] BR-CALC-12 恰在 paidAt 的等级和绑定生效，三层都取新值",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#3] BR-CALC-12 任一层 paidAt 尚未绑定即为空，事后关系不补入",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#4] BR-CALC-12 任一层 paidAt 尚未绑定即为空，事后关系不补入",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#5] BR-CALC-12 任一层 paidAt 尚未绑定即为空，事后关系不补入",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#6] BR-CALC-12 任一层 paidAt 尚未绑定即为空，事后关系不补入",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#7] BR-CALC-12 owner 的上级恰在 paidAt 解除，不沿用旧绑定",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#7] BR-CALC-12 direct 的上级恰在 paidAt 解除，不沿用旧绑定",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 owner 缺有效等级日志（只有未来日志=false）取 L1 并保留 growth 告警",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 direct 缺有效等级日志（只有未来日志=false）取 L1 并保留 growth 告警",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 indirect 缺有效等级日志（只有未来日志=false）取 L1 并保留 growth 告警",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 owner 缺有效等级日志（只有未来日志=true）取 L1 并保留 growth 告警",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 direct 缺有效等级日志（只有未来日志=true）取 L1 并保留 growth 告警",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 indirect 缺有效等级日志（只有未来日志=true）取 L1 并保留 growth 告警",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#9] BR-CALC-12 多人缺日志时每个人的告警都保留，不只报告本人",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 owner 注销状态 deleting 只剥夺本人，原因 deleted，不顺延或切断间推",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 direct 注销状态 deleting 只剥夺本人，原因 deleted，不顺延或切断间推",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 indirect 注销状态 deleting 只剥夺本人，原因 deleted，不顺延或切断间推",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 owner 注销状态 deleted 只剥夺本人，原因 deleted，不顺延或切断间推",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 direct 注销状态 deleted 只剥夺本人，原因 deleted，不顺延或切断间推",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 indirect 注销状态 deleted 只剥夺本人，原因 deleted，不顺延或切断间推",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#11] BR-CALC-13 直推与间推均失效时分别 forfeited，不把间推改派给更高祖先",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#12] BR-CALC-13 三层风控状态为 banned 仍 active，不在快照剥夺或暂缓",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#12] BR-CALC-13 三层风控状态为 frozen 仍 active，不在快照剥夺或暂缓",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#12] BR-CALC-13 三层风控状态为 appealing 仍 active，不在快照剥夺或暂缓",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#13] BR-CALC-13 注销冷静期不属于失效，三层仍 active",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#14] BR-CALC-13 用户不存在时保留归属 ID 并 forfeited，不伪造 active 用户",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#15] BR-CALC-12/13 同一用户 ID 换 app 不得读到其他 app 的等级、关系或有效身份",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#16] BR-CALC-12/13 三层读取均使用调用方事务，注销一次批量读，未提交夹具可见",
+    "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#17] BR-CALC-12 同一用户不同 paidAt 分别重放，改绑后沿新直推取间推，旧订单仍取旧链"
+  ],
+  "risk_note": "RV2 commission (BR-CALC-12 / 13 snapshot side; decision D10-118). Adds createSnapshotBeneficiaryResolver in apps/api/src/modules/commission/infra/beneficiary-resolver.ts: self, direct and indirect beneficiaries and their levels as of paidAt, read only through the growth GrowthHistory port (levelAt / parentAt, replaying the relation log by at, which B1-11t #1116 now writes equal to created_at) and the identity UserDeletionStatusReader port inside the caller's transaction; a missing level log falls back to L1 with a warning; deleting / deleted / missing users are forfeited with reason deleted. No money arithmetic, no schema change; commission index exports the factory and the in-memory resolver keeps its shape.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "ea244f631264af50c77e8481ec16b13091caf725",
+      "tree": "b77b055e4b5ba50022b124f6c562856ab4e14165",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T04:46:40Z",
+      "finished_at": "2026-10-22T04:47:14Z",
+      "gate": {
+        "commit": "05876f8e99243507f9040c56ee2b59d6b0715125",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/commission/resolver/relation-at.int.test.ts > [AC-B2-03p#18] BR-CALC-12 解析器只按 at 取关系、与 created_at 无关",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#1] BR-CALC-12 三层等级与关系都取 paidAt，忽略事后改级、改绑及当前用户字段",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#2] BR-CALC-12 恰在 paidAt 的等级和绑定生效，三层都取新值",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#3] BR-CALC-12 任一层 paidAt 尚未绑定即为空，事后关系不补入",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#4] BR-CALC-12 任一层 paidAt 尚未绑定即为空，事后关系不补入",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#5] BR-CALC-12 任一层 paidAt 尚未绑定即为空，事后关系不补入",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#6] BR-CALC-12 任一层 paidAt 尚未绑定即为空，事后关系不补入",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#7] BR-CALC-12 owner 的上级恰在 paidAt 解除，不沿用旧绑定",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#7] BR-CALC-12 direct 的上级恰在 paidAt 解除，不沿用旧绑定",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 owner 缺有效等级日志（只有未来日志=false）取 L1 并保留 growth 告警",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 direct 缺有效等级日志（只有未来日志=false）取 L1 并保留 growth 告警",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 indirect 缺有效等级日志（只有未来日志=false）取 L1 并保留 growth 告警",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 owner 缺有效等级日志（只有未来日志=true）取 L1 并保留 growth 告警",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 direct 缺有效等级日志（只有未来日志=true）取 L1 并保留 growth 告警",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#8] BR-CALC-12 indirect 缺有效等级日志（只有未来日志=true）取 L1 并保留 growth 告警",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#9] BR-CALC-12 多人缺日志时每个人的告警都保留，不只报告本人",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 owner 注销状态 deleting 只剥夺本人，原因 deleted，不顺延或切断间推",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 direct 注销状态 deleting 只剥夺本人，原因 deleted，不顺延或切断间推",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 indirect 注销状态 deleting 只剥夺本人，原因 deleted，不顺延或切断间推",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 owner 注销状态 deleted 只剥夺本人，原因 deleted，不顺延或切断间推",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 direct 注销状态 deleted 只剥夺本人，原因 deleted，不顺延或切断间推",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#10] BR-CALC-13 indirect 注销状态 deleted 只剥夺本人，原因 deleted，不顺延或切断间推",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#11] BR-CALC-13 直推与间推均失效时分别 forfeited，不把间推改派给更高祖先",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#12] BR-CALC-13 三层风控状态为 banned 仍 active，不在快照剥夺或暂缓",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#12] BR-CALC-13 三层风控状态为 frozen 仍 active，不在快照剥夺或暂缓",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#12] BR-CALC-13 三层风控状态为 appealing 仍 active，不在快照剥夺或暂缓",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#13] BR-CALC-13 注销冷静期不属于失效，三层仍 active",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#14] BR-CALC-13 用户不存在时保留归属 ID 并 forfeited，不伪造 active 用户",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#15] BR-CALC-12/13 同一用户 ID 换 app 不得读到其他 app 的等级、关系或有效身份",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#16] BR-CALC-12/13 三层读取均使用调用方事务，注销一次批量读，未提交夹具可见",
+        "test/spec/commission/resolver/resolver.int.test.ts > [AC-B2-03p#17] BR-CALC-12 同一用户不同 paidAt 分别重放，改绑后沿新直推取间推，旧订单仍取旧链"
+      ],
+      "expected": [
+        "test/spec/commission/resolver/relation-at.int.test.ts",
+        "test/spec/commission/resolver/resolver.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "3e9cb1bc75fa428419ec8b86b47756d830a763586ee482c909cc60696dcb9e64"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 3,
+      "note": "round 1 fail (S0: relation replay by at vs BR-CALC-12 created_at; closed by D10-118 with B1-11t writing created_at = at); round 2 fail (same S0, reviewed before the branch was rebased onto #1116); round 3 pass after rebasing onto main with #1116",
+      "engine": "codex",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 2 runs (run 2 adds [AC-B2-03p#18] per D10-118: resolver uses only at); both review rounds pass",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "2041c50ce86f3addf87ed7aff27adf56d32fd0e1",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
