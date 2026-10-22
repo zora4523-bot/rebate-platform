@@ -109,13 +109,22 @@ it(
     // D10-98 1). Its hash is pinned here; once the file is on disk it must match the pin.
     const ct25d = '0057_invite-rewards-eligibility.sql';
     const ct25dHash = '261a84f2a55dc9e8a65866c6767573d5de027c6bbe4cea3aee6ca3045e41ec89';
+    // B1-22e (guard-change): B1-22a's 0071 is the third approved migration (union_accounts
+    // alert_stage CHECK widened to d<N>). Same pinning as 0057.
+    const b122a = '0071_union-alert-stages.sql';
+    const b122aHash = 'b1aafb940438ea1d5a49722e1e759e14beffa9b46a889ca9fda978e790045a22';
     expect(module.APPROVED_GUARD_CHANGES).toEqual({
       [APPROVED_FILE]: createHash('sha256').update(bytes).digest('hex'),
       [ct25d]: ct25dHash,
+      [b122a]: b122aHash,
     });
     const ct25dPath = join(ROOT, 'db/migrations', ct25d);
     if (existsSync(ct25dPath)) {
       expect(createHash('sha256').update(readFileSync(ct25dPath)).digest('hex')).toBe(ct25dHash);
+    }
+    const b122aPath = join(ROOT, 'db/migrations', b122a);
+    if (existsSync(b122aPath)) {
+      expect(createHash('sha256').update(readFileSync(b122aPath)).digest('hex')).toBe(b122aHash);
     }
     const result = run([], { cwd: join(ROOT, 'test') });
     expect(result.status, result.stderr + result.stdout).toBe(0);

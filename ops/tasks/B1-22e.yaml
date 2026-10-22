@@ -1,0 +1,19 @@
+id: B1-22e
+repo: rebate-platform
+title: 迁移门禁 APPROVED_GUARD_CHANGES 登记 B1-22a 的 union_accounts_alert_stage_check 重建迁移 0071_union-alert-stages.sql（内容哈希），[AC-CT-06d#1] 同步接受 0020、0057 与该迁移三条
+type: guard-change
+# 2026-10-23 入账（union 线）。B1-22a 把归属表 union_accounts 的 alert_stage CHECK 按同名 NOT VALID 重建为 none / expired / d<N>（12 §9 T-05：改 union.auth_alert_days 不失效；10 AC-S1-64 的 d14 / d7 / d1 仍可用），定义变化须按 CT-06d 登记审批；验证在下一个迁移 0072（0057 / 0058 先例）。
+# 做法：只加一条 '<文件名>': '<sha256>'，不改判定逻辑；哈希取 B1-22a 经 Codex money 评审 r1 pass 后的文件字节（迁移号按 D10-116 排在 B1-15o 的 0070 之后，若落地时改号须重登）。guard-approvals.test.ts [AC-CT-06d#1] 期望加这一条，文件在 db/migrations 时另断言实际哈希相等，未合并时只比登记值。
+# 先例：F1-02zy（#1002）。门禁放行属第三类保护路径，按 approvals #24 由编排判定后加标签。
+refs: []
+refs_hash: {}
+deps: [B1-19a]
+paths:
+  - 'tools/ci/lint-migrations.ts'
+  - 'test/spec/db/lint-migrations/guard-approvals.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
