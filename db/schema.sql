@@ -580,20 +580,145 @@ $$;
 
 
 --
+-- Name: reject_agent_card_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_card_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - 'data'::text - 'fallback_text'::text)
+      IS DISTINCT FROM (to_jsonb(OLD) - 'data'::text - 'fallback_text'::text)
+    OR (NEW.data IS DISTINCT FROM OLD.data AND NEW.data IS DISTINCT FROM '{}'::jsonb)
+    OR (NEW.fallback_text IS DISTINCT FROM OLD.fallback_text
+        AND NEW.fallback_text IS DISTINCT FROM '内容已删除'::text)
+  THEN
+    RAISE EXCEPTION 'agent_cards only permits clearing data to {} and fallback_text to the placeholder'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: reject_agent_result_chain_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_result_chain_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - 'conditions'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'conditions'::text)
+    OR (NEW.conditions IS DISTINCT FROM OLD.conditions
+        AND NEW.conditions IS DISTINCT FROM jsonb_build_object('chain_id', OLD.chain_id))
+  THEN
+    RAISE EXCEPTION 'agent_result_chains only permits clearing conditions to its chain_id'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: reject_agent_result_delivery_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_result_delivery_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - 'card'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'card'::text)
+    OR (NEW.card IS DISTINCT FROM OLD.card AND NEW.card IS DISTINCT FROM '{}'::jsonb)
+  THEN
+    RAISE EXCEPTION 'agent_result_deliveries only permits clearing card to {}'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: reject_agent_result_set_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_result_set_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - 'conditions'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'conditions'::text)
+    OR (NEW.conditions IS DISTINCT FROM OLD.conditions
+        AND NEW.conditions IS DISTINCT FROM '{}'::jsonb)
+  THEN
+    RAISE EXCEPTION 'agent_result_sets only permits clearing conditions to {}'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: reject_agent_run_rewrite(); Type: FUNCTION; Schema: app; Owner: -
 --
 
 CREATE FUNCTION app.reject_agent_run_rewrite() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$
+    AS $_$
 BEGIN
   IF ROW(NEW.id, NEW.app_id, NEW.session_id, NEW.prompt_version, NEW.accepted_at,
-         NEW.quota_subjects, NEW.created_at, NEW.deadline_at)
+         NEW.created_at, NEW.deadline_at)
       IS DISTINCT FROM
       ROW(OLD.id, OLD.app_id, OLD.session_id, OLD.prompt_version, OLD.accepted_at,
-          OLD.quota_subjects, OLD.created_at, OLD.deadline_at)
-    OR (OLD.final_event IS NOT NULL AND NEW.final_event IS DISTINCT FROM OLD.final_event)
+          OLD.created_at, OLD.deadline_at)
+    OR (NEW.quota_subjects IS DISTINCT FROM OLD.quota_subjects
+        AND NOT COALESCE(
+          array_ndims(NEW.quota_subjects) = 1
+          AND cardinality(NEW.quota_subjects) = cardinality(OLD.quota_subjects)
+          AND array_lower(NEW.quota_subjects, 1) = array_lower(OLD.quota_subjects, 1)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM unnest(OLD.quota_subjects, NEW.quota_subjects) AS s(old_subject, new_subject)
+            WHERE old_subject IS DISTINCT FROM new_subject
+              AND NOT COALESCE(
+                old_subject ~ '^\["member","[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\]$'
+                AND new_subject ~ '^\["member","[0-9a-f]{64}"\]$',
+                false)
+          ),
+          false))
+    OR (OLD.final_event IS NOT NULL
+        AND NEW.final_event IS DISTINCT FROM OLD.final_event
+        AND NOT CASE
+          WHEN jsonb_typeof(OLD.final_event) = 'object'
+            AND jsonb_typeof(NEW.final_event) = 'object'
+            AND jsonb_typeof(OLD.final_event -> 'data') = 'object'
+            AND jsonb_typeof(NEW.final_event -> 'data') = 'object'
+          THEN COALESCE(
+            (NEW.final_event - 'data'::text) = (OLD.final_event - 'data'::text)
+            AND ((NEW.final_event -> 'data') - 'msg'::text - 'fallback_q'::text)
+              = ((OLD.final_event -> 'data') - 'msg'::text - 'fallback_q'::text)
+            AND ((NEW.final_event -> 'data') ? 'msg'::text)
+              = ((OLD.final_event -> 'data') ? 'msg'::text)
+            AND ((NEW.final_event -> 'data') ? 'fallback_q'::text)
+              = ((OLD.final_event -> 'data') ? 'fallback_q'::text)
+            AND COALESCE(
+              (NEW.final_event -> 'data' -> 'msg') = (OLD.final_event -> 'data' -> 'msg')
+              OR (NEW.final_event -> 'data' -> 'msg') = 'null'::jsonb,
+              true)
+            AND COALESCE(
+              (NEW.final_event -> 'data' -> 'fallback_q') = (OLD.final_event -> 'data' -> 'fallback_q')
+              OR (NEW.final_event -> 'data' -> 'fallback_q') = 'null'::jsonb,
+              true),
+            false)
+          ELSE false
+        END)
     OR (OLD.ended_at IS NOT NULL AND NEW.ended_at IS DISTINCT FROM OLD.ended_at)
     OR (OLD.end_reason IS NOT NULL AND NEW.end_reason IS DISTINCT FROM OLD.end_reason)
     OR (OLD.settle_result IS NOT NULL AND NEW.settle_result IS DISTINCT FROM OLD.settle_result)
@@ -601,16 +726,41 @@ BEGIN
     OR (OLD.card_delivered AND NOT NEW.card_delivered)
     OR (OLD.settle_result IS NOT NULL AND NEW.card_delivered IS DISTINCT FROM OLD.card_delivered)
     OR (NEW.user_text IS NOT NULL AND NEW.user_text IS DISTINCT FROM OLD.user_text)
-    OR (OLD.end_draft IS NOT NULL AND NEW.end_draft IS DISTINCT FROM OLD.end_draft)
+    OR (OLD.end_draft IS NOT NULL
+        AND NEW.end_draft IS DISTINCT FROM OLD.end_draft
+        AND NOT CASE
+          WHEN jsonb_typeof(OLD.end_draft) = 'object'
+            AND jsonb_typeof(NEW.end_draft) = 'object'
+            AND jsonb_typeof(OLD.end_draft -> 'data') = 'object'
+            AND jsonb_typeof(NEW.end_draft -> 'data') = 'object'
+          THEN COALESCE(
+            (NEW.end_draft - 'data'::text) = (OLD.end_draft - 'data'::text)
+            AND ((NEW.end_draft -> 'data') - 'msg'::text - 'fallback_q'::text)
+              = ((OLD.end_draft -> 'data') - 'msg'::text - 'fallback_q'::text)
+            AND ((NEW.end_draft -> 'data') ? 'msg'::text)
+              = ((OLD.end_draft -> 'data') ? 'msg'::text)
+            AND ((NEW.end_draft -> 'data') ? 'fallback_q'::text)
+              = ((OLD.end_draft -> 'data') ? 'fallback_q'::text)
+            AND COALESCE(
+              (NEW.end_draft -> 'data' -> 'msg') = (OLD.end_draft -> 'data' -> 'msg')
+              OR (NEW.end_draft -> 'data' -> 'msg') = 'null'::jsonb,
+              true)
+            AND COALESCE(
+              (NEW.end_draft -> 'data' -> 'fallback_q') = (OLD.end_draft -> 'data' -> 'fallback_q')
+              OR (NEW.end_draft -> 'data' -> 'fallback_q') = 'null'::jsonb,
+              true),
+            false)
+          ELSE false
+        END)
     OR (OLD.cancel_requested_at IS NOT NULL
         AND NEW.cancel_requested_at IS DISTINCT FROM OLD.cancel_requested_at)
   THEN
-    RAISE EXCEPTION 'agent_runs ending facts are write-once and user_text may only be cleared'
+    RAISE EXCEPTION 'agent_runs ending facts are write-once except text redaction, user_text may only be cleared and quota_subjects only hash a member'
       USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
 END
-$$;
+$_$;
 
 
 --
@@ -643,6 +793,26 @@ BEGIN
   RETURN NEW;
 END
 $_$;
+
+
+--
+-- Name: reject_agent_tool_call_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.reject_agent_tool_call_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - 'args'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'args'::text)
+    OR NEW.args IS NOT NULL
+  THEN
+    RAISE EXCEPTION 'agent_tool_calls only permits clearing args to NULL'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
 
 
 --
@@ -7493,6 +7663,34 @@ ALTER INDEX pgboss.job_pkey ATTACH PARTITION pgboss.job_common_pkey;
 
 
 --
+-- Name: agent_cards agent_cards_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_cards_no_rewrite BEFORE UPDATE ON app.agent_cards FOR EACH ROW EXECUTE FUNCTION app.reject_agent_card_rewrite();
+
+
+--
+-- Name: agent_result_chains agent_result_chains_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_result_chains_no_rewrite BEFORE UPDATE ON app.agent_result_chains FOR EACH ROW EXECUTE FUNCTION app.reject_agent_result_chain_rewrite();
+
+
+--
+-- Name: agent_result_deliveries agent_result_deliveries_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_result_deliveries_no_rewrite BEFORE UPDATE ON app.agent_result_deliveries FOR EACH ROW EXECUTE FUNCTION app.reject_agent_result_delivery_rewrite();
+
+
+--
+-- Name: agent_result_sets agent_result_sets_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_result_sets_no_rewrite BEFORE UPDATE ON app.agent_result_sets FOR EACH ROW EXECUTE FUNCTION app.reject_agent_result_set_rewrite();
+
+
+--
 -- Name: agent_runs agent_runs_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -7504,6 +7702,13 @@ CREATE TRIGGER agent_runs_no_rewrite BEFORE UPDATE ON app.agent_runs FOR EACH RO
 --
 
 CREATE TRIGGER agent_sessions_no_rewrite BEFORE UPDATE ON app.agent_sessions FOR EACH ROW EXECUTE FUNCTION app.reject_agent_session_rewrite();
+
+
+--
+-- Name: agent_tool_calls agent_tool_calls_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER agent_tool_calls_no_rewrite BEFORE UPDATE ON app.agent_tool_calls FOR EACH ROW EXECUTE FUNCTION app.reject_agent_tool_call_rewrite();
 
 
 --
@@ -8968,6 +9173,34 @@ GRANT ALL ON FUNCTION app.partition_default_rows() TO couli_maint;
 
 
 --
+-- Name: FUNCTION reject_agent_card_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_agent_card_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_agent_result_chain_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_agent_result_chain_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_agent_result_delivery_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_agent_result_delivery_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_agent_result_set_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_agent_result_set_rewrite() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION reject_agent_run_rewrite(); Type: ACL; Schema: app; Owner: -
 --
 
@@ -8979,6 +9212,13 @@ REVOKE ALL ON FUNCTION app.reject_agent_run_rewrite() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.reject_agent_session_rewrite() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION reject_agent_tool_call_rewrite(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.reject_agent_tool_call_rewrite() FROM PUBLIC;
 
 
 --
@@ -9329,6 +9569,20 @@ GRANT SELECT ON TABLE app.agent_cards TO couli_readonly;
 
 
 --
+-- Name: COLUMN agent_cards.data; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(data) ON TABLE app.agent_cards TO couli_app;
+
+
+--
+-- Name: COLUMN agent_cards.fallback_text; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(fallback_text) ON TABLE app.agent_cards TO couli_app;
+
+
+--
 -- Name: TABLE agent_clarify_asks; Type: ACL; Schema: app; Owner: -
 --
 
@@ -9545,6 +9799,13 @@ GRANT SELECT(status) ON TABLE app.agent_result_chains TO couli_readonly;
 
 
 --
+-- Name: COLUMN agent_result_chains.conditions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(conditions) ON TABLE app.agent_result_chains TO couli_app;
+
+
+--
 -- Name: COLUMN agent_result_chains.created_at; Type: ACL; Schema: app; Owner: -
 --
 
@@ -9557,6 +9818,13 @@ GRANT SELECT(created_at) ON TABLE app.agent_result_chains TO couli_readonly;
 
 GRANT SELECT,INSERT ON TABLE app.agent_result_deliveries TO couli_app;
 GRANT SELECT ON TABLE app.agent_result_deliveries TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_deliveries.card; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(card) ON TABLE app.agent_result_deliveries TO couli_app;
 
 
 --
@@ -9585,6 +9853,13 @@ GRANT SELECT(app_id) ON TABLE app.agent_result_sets TO couli_readonly;
 --
 
 GRANT SELECT(run_id) ON TABLE app.agent_result_sets TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_sets.conditions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(conditions) ON TABLE app.agent_result_sets TO couli_app;
 
 
 --
@@ -9792,6 +10067,7 @@ GRANT SELECT(accepted_at) ON TABLE app.agent_runs TO couli_readonly;
 --
 
 GRANT SELECT(quota_subjects) ON TABLE app.agent_runs TO couli_readonly;
+GRANT UPDATE(quota_subjects) ON TABLE app.agent_runs TO couli_app;
 
 
 --
@@ -9999,6 +10275,13 @@ GRANT SELECT(seq) ON TABLE app.agent_tool_calls TO couli_readonly;
 --
 
 GRANT SELECT(name) ON TABLE app.agent_tool_calls TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_tool_calls.args; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(args) ON TABLE app.agent_tool_calls TO couli_app;
 
 
 --
