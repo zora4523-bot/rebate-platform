@@ -1573,6 +1573,36 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminListRiskRules",
+    "method": "GET",
+    "path": "/admin/v1/risk-rules",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminEnableRiskRule",
+    "method": "POST",
+    "path": "/admin/v1/risk-rules/:rule_id/enable",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminDisableRiskRule",
+    "method": "POST",
+    "path": "/admin/v1/risk-rules/:rule_id/disable",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListKillSwitches",
     "method": "GET",
     "path": "/admin/v1/kill-switches",

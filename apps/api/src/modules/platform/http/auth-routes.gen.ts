@@ -778,6 +778,21 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/risk-rules",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/risk-rules/:rule_id/enable",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/risk-rules/:rule_id/disable",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "auth": "admin"
   },
