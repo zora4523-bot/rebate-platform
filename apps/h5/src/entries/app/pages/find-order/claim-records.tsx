@@ -6,10 +6,11 @@ import { RetryPage } from '../../../../components/retry/index.ts';
 import type { H5ApiClient } from '../../../../shared/api/index.ts';
 import { findOrderText, findOrderTexts } from '../../../../texts/find-order.ts';
 import {
+  claimMatches,
+  locateStep,
   recordView,
   stateLabel,
-  type Claim,
-  type ClaimPlatform,
+  type LocateTarget,
   type RecordView,
 } from './model.ts';
 import { CAPTION, CARD, FOCUS, FOOTNOTE, InfoIcon, SearchDocIcon, StatusTag } from './parts.tsx';
@@ -19,14 +20,7 @@ export const RECORDS_KEY = ['orders', 'claims'] as const;
 /** 每页条数（契约上限 50）。 */
 const PAGE_LIMIT = 20;
 
-/** 要定位的申请：提交成功按 claim_id；30205 按平台与订单号。 */
-export type LocateTarget = { claimId: string } | { platform: ClaimPlatform; orderNo: string };
-
-function matches(claim: Claim, target: LocateTarget): boolean {
-  return 'claimId' in target
-    ? claim.claim_id === target.claimId
-    : claim.platform === target.platform && claim.order_no === target.orderNo;
-}
+export type { LocateTarget } from './model.ts';
 
 export interface ClaimRecordsProps {
   api: H5ApiClient;
@@ -74,21 +68,40 @@ export function ClaimRecords({ api, target, notice, onLocated }: ClaimRecordsPro
   const { data, isFetching, hasNextPage, isFetchingNextPage, isFetchNextPageError } = list;
   const claims = data?.pages.flatMap((page) => page.items) ?? [];
 
-  // 定位：数据取完后找到目标申请，滚到可见并聚焦；找不到（例如在更早的页）就只停在记录页签。
+  // 定位：数据取完后找目标申请（按 claim_id，或按规范化后的平台与订单号），滚到可见并聚焦。
+  // 当前已取的页里没有且还有下一页时自动再取（至多 LOCATE_MAX_PAGES 页）；到上限或下一页失败时保留目标，
+  // 用户手动加载到那一页时仍会定位；列表取完仍没有才结束定位。
   const cards = useRef(new Map<string, HTMLElement>());
   const located = useEffectEvent(onLocated);
+  const fetchMore = useEffectEvent(() => {
+    void list.fetchNextPage({ cancelRefetch: false });
+  });
   useEffect(() => {
     if (target === null || data === undefined || isFetching) return;
-    const claim = data.pages.flatMap((page) => page.items).find((item) => matches(item, target));
+    const claim = data.pages
+      .flatMap((page) => page.items)
+      .find((item) => claimMatches(item, target));
     const element = claim === undefined ? undefined : cards.current.get(claim.claim_id);
-    if (element !== undefined) {
-      if (typeof element.scrollIntoView === 'function') {
-        element.scrollIntoView({ block: 'center' });
+    const step = locateStep({
+      found: claim !== undefined,
+      hasNextPage,
+      pagesLoaded: data.pages.length,
+      nextPageFailed: isFetchNextPageError,
+    });
+    if (step === 'found') {
+      if (element !== undefined) {
+        if (typeof element.scrollIntoView === 'function') {
+          element.scrollIntoView({ block: 'center' });
+        }
+        element.focus({ preventScroll: true });
       }
-      element.focus({ preventScroll: true });
+      located();
+    } else if (step === 'load') {
+      fetchMore();
+    } else if (step === 'done') {
+      located();
     }
-    located();
-  }, [target, data, isFetching]);
+  }, [target, data, isFetching, hasNextPage, isFetchNextPageError]);
 
   const banner =
     notice === null ? null : (

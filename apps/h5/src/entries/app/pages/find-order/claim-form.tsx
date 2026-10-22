@@ -1,4 +1,14 @@
-import { useId, useMemo, useRef, useState, type FormEvent, type ReactElement } from 'react';
+import * as bridgeSdk from '@couli/bridge-sdk';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactElement,
+} from 'react';
 import type { AppApiBridge } from '../../../../shared/api/app-api.ts';
 import { t } from '../../../../shared/texts.ts';
 import { getPlatformName } from '../../../../texts/platform.ts';
@@ -6,9 +16,13 @@ import { findOrderTexts } from '../../../../texts/find-order.ts';
 import jdIcon from '../../../../components/platform/assets/jd.png?no-inline';
 import pddIcon from '../../../../components/platform/assets/pinduoduo.png?no-inline';
 import taobaoIcon from '../../../../components/platform/assets/taobao.png?no-inline';
+import { clearDailyBlock, readDailyBlock, writeDailyBlock } from './daily-block.ts';
 import {
+  activeBlockMessage,
+  msUntilNextShanghaiDay,
   outcomeOfResponse,
   shanghaiToday,
+  type DailyBlock,
   type Claim,
   type ClaimConfig,
   type ClaimPlatform,
@@ -78,7 +92,7 @@ function describedBy(...ids: (string | null)[]): string | undefined {
 /**
  * 申请找回表单（编排裁定 2、3）：平台胶囊、订单号、付款日期（日期选择）、按平台的「订单号在哪里找？」入口；
  * 必填在本地校验；提交只经桥 net.signedRequest（签名路径），请求体只含契约三个字段；提交中禁用、只发一次；
- * 错误按码就近显示并与输入框关联；30203、30206 当天置灰（页面内存，不写次数）；网络错误保留输入、不自动重发。
+ * 错误按码就近显示并与输入框关联；30203、30206 按上海日期当天置灰（存壳层缓存，再进页仍在、跨日解除，不写次数）；网络错误保留输入、不自动重发。
  */
 export function ClaimForm({
   bridge,
@@ -92,11 +106,27 @@ export function ClaimForm({
   const [paidDate, setPaidDate] = useState('');
   const [errors, setErrors] = useState<FieldErrors>(NO_ERRORS);
   const [general, setGeneral] = useState<string | null>(null);
-  const [blocked, setBlocked] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
-  // 日期选择的上限：进页时的上海日期。
-  const [today] = useState(() => shanghaiToday(Date.now()));
+  const queryClient = useQueryClient();
+  // 当天置灰：记录带上海日期，存在壳层缓存里（再进页仍在）；是否仍生效按当前时钟算，跨日即解除。
+  const [block, setBlock] = useState<DailyBlock | null>(() => readDailyBlock(queryClient));
+  const [now, setNow] = useState(() => Date.now());
+  const blocked = activeBlockMessage(block, now);
+  // 日期选择的上限：当前的上海日期。
+  const today = shanghaiToday(now);
+
+  // 置灰期间到上海次日 0 点重算一次；WebView 回前台（app.resume）时也重算（后台计时器可能被挂起）。
+  useEffect(() => {
+    if (blocked === null) return;
+    const timer = setTimeout(() => setNow(Date.now()), msUntilNextShanghaiDay(now) + 1000);
+    return () => clearTimeout(timer);
+  }, [blocked, now]);
+  useEffect(() => bridgeSdk.on('app.resume', () => setNow(Date.now())), []);
+  // 记录已过期（跨日）时从缓存删掉；组件里留着的旧记录按日期算出来已不生效。
+  useEffect(() => {
+    if (block !== null && blocked === null) clearDailyBlock(queryClient);
+  }, [block, blocked, queryClient]);
 
   const ids = {
     platform: useId(),
@@ -132,9 +162,13 @@ export function ClaimForm({
       case 'inline':
         setErrors({ order: outcome.order, date: outcome.date });
         return;
-      case 'blocked':
-        setBlocked(outcome.message);
+      case 'blocked': {
+        const next: DailyBlock = { day: shanghaiToday(Date.now()), message: outcome.message };
+        writeDailyBlock(queryClient, next);
+        setBlock(next);
+        setNow(Date.now());
         return;
+      }
       case 'duplicate':
         onDuplicate(submitted, order, outcome.message);
         return;
@@ -146,7 +180,10 @@ export function ClaimForm({
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    if (inFlight.current || blocked !== null || platform === null) return;
+    if (inFlight.current || platform === null) return;
+    const current = Date.now();
+    if (activeBlockMessage(block, current) !== null) return;
+    setNow(current);
     const order = orderNo.trim();
     const local: FieldErrors = {
       order: order === '' ? findOrderTexts.orderRequired : null,

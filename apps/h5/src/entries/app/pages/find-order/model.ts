@@ -298,3 +298,77 @@ export function formatPastTime(value: string, nowMs: number): string {
   if (at.date === yesterday) return `${findOrderTexts.yesterday} ${at.time}`;
   return at.date.slice(0, 4) === today.slice(0, 4) ? at.date.slice(5) : at.date;
 }
+
+/** 上海时间下一个 0 点距 nowMs 的毫秒数（当天置灰到点解除用）。 */
+export function msUntilNextShanghaiDay(nowMs: number): number {
+  const DAY = 24 * 60 * 60 * 1000;
+  const sinceMidnight = (((nowMs + SHANGHAI_OFFSET_MS) % DAY) + DAY) % DAY;
+  return DAY - sinceMidnight;
+}
+
+// ---- 30203 / 30206 当天置灰 ----
+
+/** 当天置灰的记录：上海日期与按钮上方的提示（不含次数）。 */
+export interface DailyBlock {
+  day: string;
+  message: string;
+}
+
+/** 记录仍属今天（上海日期）时返回提示；跨日或没有记录时为 null。 */
+export function activeBlockMessage(
+  block: DailyBlock | null | undefined,
+  nowMs: number,
+): string | null {
+  if (block === null || block === undefined) return null;
+  return block.day === shanghaiToday(nowMs) ? block.message : null;
+}
+
+// ---- 定位（成功与 30205） ----
+
+/** 要定位的申请：提交成功按 claim_id；30205（契约不带 data）按平台与订单号。 */
+export type LocateTarget = { claimId: string } | { platform: ClaimPlatform; orderNo: string };
+
+/**
+ * 订单号的比对值，与服务端 createOrderClaim 一致（契约 CreateOrderClaimRequest.order_no、BR-ATTR-17 ③）：
+ * 先去掉空格；拼多多再去掉全部连字符；其余平台原样精确比对。只用于比对，显示仍用原值。
+ */
+export function claimCompareValue(platform: string, orderNo: string): string {
+  const stripped = orderNo.replaceAll(' ', '');
+  return platform === 'pdd' ? stripped.replaceAll('-', '') : stripped;
+}
+
+/**
+ * 这条申请是不是要定位的那条：有 claim_id 时按 claim_id；否则同平台，且规范化后的订单号等于申请的订单号
+ * 或其中某个子订单号（服务端先按子订单、再按主订单匹配，30205 可能来自子订单号）。
+ */
+export function claimMatches(claim: Claim, target: LocateTarget): boolean {
+  if ('claimId' in target) return claim.claim_id === target.claimId;
+  if (claim.platform !== target.platform) return false;
+  const wanted = claimCompareValue(target.platform, target.orderNo);
+  if (wanted === '') return false;
+  return (
+    claimCompareValue(claim.platform, claim.order_no) === wanted ||
+    claim.items.some((item) => claimCompareValue(claim.platform, item.sub_order_id) === wanted)
+  );
+}
+
+/** 为了定位最多自动加载的页数（含首页）；超过后保留目标，等用户点「加载更多」。 */
+export const LOCATE_MAX_PAGES = 5;
+
+/**
+ * 定位的下一步：found 已找到；load 自动再取下一页；wait 保留目标、等用户手动加载（到上限或下一页失败）；
+ * done 列表已取完仍没有，结束定位（只停在记录页签）。
+ */
+export type LocateStep = 'found' | 'load' | 'wait' | 'done';
+
+export function locateStep(input: {
+  found: boolean;
+  hasNextPage: boolean;
+  pagesLoaded: number;
+  nextPageFailed: boolean;
+}): LocateStep {
+  if (input.found) return 'found';
+  if (!input.hasNextPage) return 'done';
+  if (input.nextPageFailed || input.pagesLoaded >= LOCATE_MAX_PAGES) return 'wait';
+  return 'load';
+}
