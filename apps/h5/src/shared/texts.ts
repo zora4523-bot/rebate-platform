@@ -1,17 +1,21 @@
+// The ambient type of the `?h5-texts&lang.json` import lives in a script .d.ts; projects that only
+// reach this module through imports (test/) need the reference to see it.
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference -- a global .d.ts cannot be imported
+/// <reference path="../texts/contract-dictionary.d.ts" />
+import contractDictionary from '../../../../contracts/texts.default.json?h5-texts&lang.json';
 import { shellTexts } from '../texts/shell.ts';
 
 interface TextDictionary {
-  texts: Record<string, string>;
-  fallbacks: Record<string, string>;
+  texts: Readonly<Record<string, string>>;
+  fallbacks: Readonly<Record<string, string>>;
 }
 
-// The bundled default dictionary (contracts/texts.default.json, BR-TEXT-12). A Vite glob keeps the
-// JSON outside this package's TypeScript project while Vite and Vitest still inline it.
-const loaded = import.meta.glob<TextDictionary>('../../../../contracts/texts.default.json', {
-  eager: true,
-  import: 'default',
-});
-const dictionary: TextDictionary = Object.values(loaded)[0] ?? { texts: {}, fallbacks: {} };
+// The bundled default dictionary (contracts/texts.default.json, BR-TEXT-12). The query keeps the
+// JSON outside this package's TypeScript project; `lang.json` keeps Vite's JSON handling. A
+// production build replaces it with only the keys H5 source references (F1-01t,
+// apps/h5/build/trim-texts-plugin.ts); the dev server and Vitest, which do not load that plugin,
+// read the complete contract dictionary.
+const dictionary: TextDictionary = contractDictionary;
 
 const PLACEHOLDER = /\{([a-z][a-z0-9_]*)\}/g;
 

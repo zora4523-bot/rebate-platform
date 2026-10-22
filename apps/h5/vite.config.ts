@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defaultClientConditions, defineConfig } from 'vite';
+import { trimTextsPlugin } from './build/trim-texts-plugin.ts';
 
 // One build per entry (规划/03 §8.2): `vite build --mode <entry>` builds
 // src/entries/<entry>/index.html into dist/web/<entry>/ (dist/tsc holds the `tsc -b` output).
@@ -38,7 +39,15 @@ export default defineConfig(({ command, mode }) => {
     // Workspace packages resolve to their TypeScript sources through `couli-src` (as in
     // vitest.shared.ts), so build and dev server never need a prior `tsc -b`.
     resolve: { conditions: ['couli-src', ...defaultClientConditions] },
-    plugins: [react(), tailwindcss()],
+    // Builds bundle only the dictionary keys H5 source references (F1-01t); see the plugin.
+    plugins: [
+      trimTextsPlugin({
+        sourceRoot: pkgDir('./src/'),
+        dictionaryFile: pkgDir('../../contracts/texts.default.json'),
+      }),
+      react(),
+      tailwindcss(),
+    ],
     // A build is always a production build, also when the caller runs with another NODE_ENV
     // (Vitest and CI set "test"). Vite reads NODE_ENV after this config function returns, so the
     // assignment above makes isProduction true: production React branches and `jsx` (not
