@@ -1,5 +1,12 @@
 import type { DB } from '@couli/db';
-import type { Kysely, Transaction } from 'kysely';
+import {
+  SETTLE_BATCH_STATES,
+  canScheduleSettlement,
+  transitionSettleBatch,
+  type SettleBatchEvent,
+  type SettleBatchState,
+} from '@couli/domain';
+import type { Kysely, Transaction, Updateable } from 'kysely';
 import type { Clock } from '../../../platform/index.ts';
 
 /** 服务端已鉴权的调用上下文；step-up 与 HTTP 错误映射归 B2-09。 */
@@ -91,7 +98,245 @@ export interface BatchCommandService {
   manualStart(input: BatchCommandInput): Promise<void>;
 }
 
+/** 20902（data.resource=settle_batch）：读版本过期、整轮集合不符或并发输家。HTTP 映射随 B2-09。 */
+export class BatchConflictError extends Error implements BatchConflict {
+  readonly code = 20902 as const;
+  readonly data = { resource: 'settle_batch' } as const;
+  constructor(message = 'settle_batch row_version conflict') {
+    super(message);
+    this.name = 'BatchConflict';
+  }
+}
+
+/** 表外迁移或迁移守卫不成立（BR-FUND-04 结算批次迁移表）。 */
+export class IllegalTransitionError extends Error implements IllegalTransition {
+  override readonly name = 'IllegalTransition' as const;
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+/** 命令前置条件不成立；内部错误，契约码待 B2-09 分配。 */
+export class BatchCommandRejectedError extends Error implements BatchCommandRejected {
+  override readonly name = 'BatchCommandRejected' as const;
+  readonly reason: BatchCommandRejected['reason'];
+  constructor(reason: BatchCommandRejected['reason']) {
+    super(`settle batch command rejected: ${reason}`);
+    this.reason = reason;
+  }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function stateOf(status: string): SettleBatchState {
+  if (!(SETTLE_BATCH_STATES as readonly string[]).includes(status)) {
+    throw new IllegalTransitionError(`unknown settle batch status ${JSON.stringify(status)}`);
+  }
+  return status as SettleBatchState;
+}
+
+/** 只经生成的 transition() 判定表内迁移；表外一律 IllegalTransition。 */
+function nextState(status: string, event: SettleBatchEvent): SettleBatchState {
+  const result = transitionSettleBatch(stateOf(status), event);
+  if (!result.ok || result.noop) {
+    throw new IllegalTransitionError(`settle batch ${status} --${event}--> not allowed`);
+  }
+  return result.to;
+}
+
+/** SB2 结算方式守卫：立即不得带时间；定时须严格晚于确认时刻且不在名义快照时段（BR-FUND-18）。 */
+function settleMode(
+  input: ConfirmBillInput,
+  now: Date,
+): { mode: 'IMMEDIATE' | 'SCHEDULED'; scheduledAt: Date | null } {
+  const mode = input.mode ?? 'IMMEDIATE';
+  if (mode === 'IMMEDIATE') {
+    if (input.scheduledAt !== undefined) throw new BatchCommandRejectedError('invalid_schedule');
+    return { mode, scheduledAt: null };
+  }
+  if (mode !== 'SCHEDULED') throw new BatchCommandRejectedError('invalid_schedule');
+  const at = input.scheduledAt;
+  if (!(at instanceof Date) || !Number.isFinite(at.getTime())) {
+    throw new BatchCommandRejectedError('invalid_schedule');
+  }
+  if (!canScheduleSettlement(now, at)) throw new BatchCommandRejectedError('invalid_schedule');
+  return { mode, scheduledAt: at };
+}
+
 export function createBatchCommandService(deps: BatchCommandDeps): BatchCommandService {
-  void deps;
-  throw new Error('NotImplemented: createBatchCommandService');
+  const { db, clock } = deps;
+
+  /** 单批命令：按 app_id 加行锁读取，先核 CAS 读版本，再判迁移。 */
+  async function lockBatch(trx: Transaction<DB>, input: BatchCommandInput) {
+    if (!UUID.test(input.batchId)) throw new BatchCommandRejectedError('batch_not_found');
+    const row = await trx
+      .selectFrom('settle_batches')
+      .selectAll()
+      .where('app_id', '=', input.appId)
+      .where('batch_id', '=', input.batchId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (row === undefined) throw new BatchCommandRejectedError('batch_not_found');
+    if (row.row_version !== input.expectedRowVersion) throw new BatchConflictError();
+    return row;
+  }
+
+  /** CAS 写：带读版本与源状态，影响行数不为 1 即并发输家（20902）。 */
+  async function casUpdate(
+    trx: Transaction<DB>,
+    input: BatchCommandInput,
+    from: string,
+    set: Updateable<DB['settle_batches']>,
+  ): Promise<void> {
+    const result = await trx
+      .updateTable('settle_batches')
+      .set((eb) => ({ ...set, row_version: eb('row_version', '+', 1) }))
+      .where('app_id', '=', input.appId)
+      .where('batch_id', '=', input.batchId)
+      .where('row_version', '=', input.expectedRowVersion)
+      .where('status', '=', from)
+      .executeTakeFirst();
+    if (result.numUpdatedRows !== 1n) throw new BatchConflictError();
+  }
+
+  return {
+    async confirmBill(input) {
+      const now = clock.now();
+      const { mode, scheduledAt } = settleMode(input, now);
+      await db.transaction().execute(async (trx) => {
+        // 账单行锁串行化同一账单的整轮确认；生成未完成不得确认（防止只确认部分批次）。
+        const bill = await trx
+          .selectFrom('settle_bills')
+          .select(['generated_at'])
+          .where('app_id', '=', input.appId)
+          .where('bill_id', '=', input.billId)
+          .forUpdate()
+          .executeTakeFirst();
+        if (bill === undefined || bill.generated_at === null) {
+          throw new BatchCommandRejectedError('bill_not_ready');
+        }
+        const round = await deps.currentRound(trx, { appId: input.appId, billId: input.billId });
+        if (round === null) throw new BatchCommandRejectedError('round_unavailable');
+        const roundIds = [...new Set(round)];
+        if (roundIds.some((id) => !UUID.test(id))) throw new BatchConflictError();
+        const members =
+          roundIds.length === 0
+            ? []
+            : await trx
+                .selectFrom('settle_batches')
+                .selectAll()
+                .where('app_id', '=', input.appId)
+                .where('batch_id', 'in', roundIds)
+                .orderBy('batch_id')
+                .forUpdate()
+                .execute();
+        // 本轮成员必须全部属于本 app、本账单；否则整轮拒绝，不越 app / 越账单确认。
+        if (members.length !== roundIds.length || members.some((m) => m.bill_id !== input.billId)) {
+          throw new BatchConflictError('settle_batch round membership mismatch');
+        }
+        const drafts = new Map(
+          members.filter((m) => m.status === 'DRAFT').map((m) => [m.batch_id, m]),
+        );
+        if (drafts.size === 0 && input.expectedBatches.length === 0) {
+          throw new IllegalTransitionError('settle bill has no DRAFT batch to confirm');
+        }
+        // 一次确认本轮全部 DRAFT：读版本集合必须与本轮 DRAFT 一一对应，不能挑选、重复或夹带。
+        const seen = new Set<string>();
+        for (const expected of input.expectedBatches) {
+          const draft = drafts.get(expected.batchId);
+          if (
+            seen.has(expected.batchId) ||
+            draft === undefined ||
+            draft.row_version !== expected.expectedRowVersion
+          ) {
+            throw new BatchConflictError();
+          }
+          seen.add(expected.batchId);
+        }
+        if (seen.size !== drafts.size) throw new BatchConflictError();
+        for (const draft of drafts.values()) {
+          const to = nextState(draft.status, 'CONFIRM');
+          await casUpdate(
+            trx,
+            {
+              appId: input.appId,
+              adminId: input.adminId,
+              batchId: draft.batch_id,
+              expectedRowVersion: draft.row_version,
+            },
+            draft.status,
+            {
+              status: to,
+              settle_mode: mode,
+              scheduled_at: scheduledAt,
+              confirmed_by: input.adminId,
+              confirmed_at: now,
+            },
+          );
+        }
+      });
+    },
+
+    async cancelSchedule(input) {
+      await db.transaction().execute(async (trx) => {
+        const row = await lockBatch(trx, input);
+        const to = nextState(row.status, 'CANCEL_SCHEDULE');
+        // SB3 守卫：定时结算且尚未开始执行。
+        if (
+          row.settle_mode !== 'SCHEDULED' ||
+          row.scheduled_at === null ||
+          row.started_at !== null
+        ) {
+          throw new IllegalTransitionError(
+            'only a scheduled batch not yet started can be cancelled',
+          );
+        }
+        // 回到 DRAFT 即未确认：清掉确认信息与定时，须重新确认（SB2）才能执行。
+        await casUpdate(trx, input, row.status, {
+          status: to,
+          settle_mode: 'IMMEDIATE',
+          scheduled_at: null,
+          confirmed_by: null,
+          confirmed_at: null,
+        });
+      });
+    },
+
+    async rejectBatch(input) {
+      if (typeof input.reason !== 'string' || input.reason.trim() === '') {
+        throw new BatchCommandRejectedError('reason_required');
+      }
+      await db.transaction().execute(async (trx) => {
+        const row = await lockBatch(trx, input);
+        const to = nextState(row.status, 'REJECT');
+        // SB4：批内订单保持 WAITING，明细与账务不动。
+        await casUpdate(trx, input, row.status, { status: to, cancelled_reason: input.reason });
+      });
+    },
+
+    async resumeBatch(input) {
+      const now = clock.now();
+      await db.transaction().execute(async (trx) => {
+        const row = await lockBatch(trx, input);
+        const to = nextState(row.status, 'RESUME');
+        const ready = await deps.readiness({ appId: input.appId, platform: row.platform, at: now });
+        // SB8 守卫：两个开关都为 on；当日快照已完成或已超时。
+        if (!ready.autoEnabled || !ready.creditEnabled) {
+          throw new BatchCommandRejectedError('switches_off');
+        }
+        if (!ready.snapshotCompleted && !ready.snapshotTimedOut) {
+          throw new BatchCommandRejectedError('snapshot_pending');
+        }
+        // 只迁移批次；明细由执行器（B2-04p）续跑。
+        await casUpdate(trx, input, row.status, { status: to });
+      });
+    },
+
+    async manualStart(input) {
+      void input;
+      // TODO(规划/11 §4.2): 开放 SB10 手动开始（CONFIRMED + MANUAL_START → EXECUTING） — blocked on 财务确认
+      // 迁移表未加 SB10 行，transition('CONFIRMED', 'MANUAL_START') 按表外事件拒绝；不读不写任何表。
+      throw new IllegalTransitionError('SB10 manual start is not open before finance confirmation');
+    },
+  };
 }
