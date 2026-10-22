@@ -1,0 +1,27 @@
+id: B1-12j
+repo: rebate-platform
+title: 交易类通知只读端口：commission 按订单取分佣快照当前版本各受益人（user_id、role、amount_fen）；orders 按订单取通知所需事实（order_key、buy_type、标题、归属用户、B_est）与找回单结果（claim 的用户、状态、预估返、驳回原因）；只读、不改归属与金额逻辑
+type: impl
+# 2026-10-22 入账（be-codex，编排裁定 D10-142 ②：notification 读 commission / orders 只读端口可以，只读、不碰归属判定；ops 回写 02 §4.1）。供 B1-12q（ORDER_TRACKED）、B1-12r（CLAIM_RESULT）、B1-12s（ORDER_INVALID / CLAWBACK）消费。
+# 依据：BR-FUND-03（各受益人预估返利以分佣快照为准）、BR-TEXT-09 细则（推送对象为份额 > 0 的受益人：归属用户、直推、间推；模板变量 title_short、rebate、reason）。由编排者摘入任务书。
+# 现有 readCommissionSnapshot 只给 ratioBp、须传 commissionVersion，不够用，新增端口不改它；金额只读 commission_split_amounts，不重算。所有查询带 app_id。
+refs: [BR-FUND-03, BR-TEXT-09]
+refs_hash:
+  BR-FUND-03: 4b5c1f1d901b
+  BR-TEXT-09: 79da190ca728
+deps: [B1-08k]
+paths:
+  - 'apps/api/src/modules/commission/index.ts'
+  - 'apps/api/src/modules/commission/ports/notify-beneficiaries.ts'
+  - 'apps/api/src/modules/commission/ports/notify-beneficiaries.test.ts'
+  - 'apps/api/src/modules/orders/index.ts'
+  - 'apps/api/src/modules/orders/ports/notify-order-facts.ts'
+  - 'apps/api/src/modules/orders/ports/notify-order-facts.test.ts'
+test_paths:
+  - 'test/spec/notification/trade-read-ports/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/trade-read-ports/**'
+status: todo
