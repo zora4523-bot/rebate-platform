@@ -1,0 +1,20 @@
+id: B3-04j
+repo: rebate-platform
+title: B3-04j：trace 冻结用例 [AC-B3-05j#2] 不再断言「口令不交 runner、不计入 trace」，改为替身 runner 按候选作答、只核对 URL 的调用与 trace（为 B3-04g 让路）
+type: test-change
+# 2026-10-22 入账（agent2-acct4）。B3-04g 的 Opus 实现让口令按序交 runner（B3-04g 规则测试全绿），但 B3-05j（#1102）冻结用例
+# test/spec/agent/orchestrator-trace/deterministic.test.ts [AC-B3-05j#2] 断言 runner 只收到 links.slice(1)（口令不交 runner、trace 不计口令），与 B3-04g 方向相反。
+# 做法：替身 runner 按候选作答（口令回 parse_error 30132，其余 URL 按原结果）；URL 五条的 trace（link_index 2–6 与状态）与 runner 的 URL 调用顺序原样断言；
+# 口令那条 trace 可有可无，有则必须是 get_rebate_quote、link_index 1、status failed。现行代码与 B3-04g 实现下都绿，可先于 B3-04g 合并（先例 B3-04i #1125）。
+# 不删用例、不动实现。改既有规则测试属第一类保护路径：非 task 分支、不带证据文件，Claude 实现、Codex 只读对抗评审，标签由编排核对后加（D10-110）。
+refs: []
+refs_hash: {}
+deps: [B3-05j]
+paths:
+  - 'test/spec/agent/orchestrator-trace/deterministic.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
