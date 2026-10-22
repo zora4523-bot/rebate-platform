@@ -22,7 +22,23 @@ refs_hash:
   BR-AI-04: a07587a282ba
   BR-AI-05: ee8fd647fd43
   BR-AI-14: e8ed6052e898
-deps: [B3-03f, B3-04a, B3-04b, B3-04c, B3-04d, B3-04e, B3-04f, B3-04h, B3-05e, B3-05f, B3-05g, B3-05i, B3-05j, B3-05k]
+deps:
+  [
+    B3-03f,
+    B3-04a,
+    B3-04b,
+    B3-04c,
+    B3-04d,
+    B3-04e,
+    B3-04f,
+    B3-04h,
+    B3-05e,
+    B3-05f,
+    B3-05g,
+    B3-05i,
+    B3-05j,
+    B3-05k,
+  ]
 paths:
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/modules/agent/agent.module.ts'
