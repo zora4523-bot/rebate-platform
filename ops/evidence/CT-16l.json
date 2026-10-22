@@ -1,0 +1,37 @@
+{
+  "task": "CT-16l",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "b754d95f0ed714b675005c2755faeb19d69a824e",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; D10-115 G-V09 and its correction, D10-121 point 5). texts.default.json gains search.placeholder 搜商品名，或粘贴商品链接 (home) and basic.search.placeholder 搜索商品 (basic-mode home, no paste-link wording per BR-ATTR-29), copied verbatim from 08 BR-TEXT-14 table C l.1113-1114; both added to the ordinary keys of specs/fund-term-keys.yaml and the generated file regenerated. No variables, no fallback. New keys only, not breaking. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "9028d1377c903b5194e8eceb6c13ecc291a5bae3",
+    "specs": "fc7816496ca1a9042a31a472da9113a7f97e4451"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
