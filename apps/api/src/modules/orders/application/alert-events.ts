@@ -9,10 +9,15 @@
 //   与待处理表「同键 open 只更新 detected_at」一致；内容不同或记录处置后再出现，得到新的事件 ID。
 // - 另两个随订单写库发生（首次入库，或 content_hash 变化的更新），重复报文已被 content_hash 短路，
 //   事件 ID 由总线生成。
+// - B1-08u（D10-81、D10-105；02 §11）：快照补偿重试满 24 小时仍失败、转人工时入队 order.snapshot_retry_exhausted，
+//   与转人工标记同一事务（流水线、定时扫描、端口抛错后的另起标记事务三处）。载荷恰为 order_id、pending_id（最早
+//   一条 open 快照类行 id 的十进制串）、platform、reason；事件 ID 同样由（事件名、App、载荷）派生，重发只算重复。
+//   未注入总线（扫描路径的旧用法）直接返回，只留 B1-08t 的 error 日志。
 import { createHash } from 'node:crypto';
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
 import type { EventBus, JobPayload } from '../../platform/index.ts';
+import type { SnapshotRetryAlert } from './snapshot-retry-step.ts';
 
 /** 订单模块注入的事件总线（EventBus 子集）：领域事件与告警事件共用。 */
 type OrderEvents = Pick<EventBus, 'publish'>;
@@ -108,5 +113,30 @@ export async function publishParamChanged(
     appId: alert.appId,
     name: 'order.attr_param_changed',
     payload: { order_id: alert.orderId, platform: alert.platform, changed: [...alert.changed] },
+  });
+}
+
+/**
+ * B1-08u：快照补偿重试满 24 小时仍失败，与转人工标记同事务入队 order.snapshot_retry_exhausted。载荷只放订单 id、
+ * 待处理行 id、平台名与原因枚举（不放子订单号、用户、归因参数、金额与原始状态码）；入队抛错不吞，由调用方回滚。
+ */
+export async function publishSnapshotRetryExhausted(
+  bus: OrderEvents | undefined,
+  trx: Transaction<DB>,
+  alert: SnapshotRetryAlert,
+): Promise<void> {
+  if (bus === undefined) return;
+  const name = alert.event;
+  const payload: JobPayload = {
+    order_id: alert.order_id,
+    pending_id: alert.pending_id,
+    platform: alert.platform,
+    reason: alert.reason,
+  };
+  await bus.publish(trx, {
+    appId: alert.app_id,
+    name,
+    payload,
+    eventId: derivedEventId(name, alert.app_id, payload),
   });
 }

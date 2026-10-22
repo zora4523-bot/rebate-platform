@@ -11,7 +11,8 @@
 //   one more set (entry.ts calls it once).
 // - B1-08t: with the optional commission snapshot port injected, the update step and the pipeline
 //   get it, the order-sync handler routes 'snapshot-retry' jobs to the compensation scan
-//   (jobs/snapshot-retry.ts), and start() also arms the scan's dispatch timer (every 15 minutes);
+//   (jobs/snapshot-retry.ts, with the runtime's events for its B1-08u exhausted alert), and start()
+//   also arms the scan's dispatch timer (every 15 minutes);
 //   stop() stops both and waits for the round in flight. Without it nothing of B1-08t runs: no
 //   routing, no query, no timer. Production does not inject it yet (B1-08w).
 // Other modules' readers come in as ports from app.module (identity users, linking bindings, the
@@ -239,7 +240,9 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
       start: () => sync.start(),
     };
   }
-  const retryDeps = { db, clock, snapshots, logger };
+  // B1-08u: the scan publishes order.snapshot_retry_exhausted on the runtime's EVENT_BUS, in the
+  // transaction of the manual hand-off mark.
+  const retryDeps = { db, clock, snapshots, logger, events };
   queue.register(ORDER_SYNC_QUEUE, (job) =>
     job.name === SNAPSHOT_RETRY_JOB
       ? handleSnapshotRetry(job, retryDeps)

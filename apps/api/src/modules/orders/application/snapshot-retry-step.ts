@@ -3,8 +3,9 @@
 // - skip（入参不可恢复：拼多多服务费、platform_modified 时刻、淘宝推广位场景）→ warn snapshot_retry_skipped，不调端口。
 // - 计划 pending / 端口 pending → 照 B1-08k 写待处理（同键只刷新 detected_at，原因变了插新行）。
 // - 端口 created / existing → 同一事务把该单全部 open 快照类行置为系统处置；快照与处置一起提交或回滚。
-// - 失败（skip / pending）且最早一条 open 快照类行 created_at 满 24 小时 → 同事务记转人工标记，返回告警字段，
-//   由调用方经 logSnapshotRetryExhausted 打一次 error。端口抛错不在这里处理（不吞，整事务回滚）。
+// - 失败（skip / pending）且最早一条 open 快照类行 created_at 满 24 小时 → 同事务记转人工标记，返回告警字段；
+//   调用方在同一事务里经 alert-events.publishSnapshotRetryExhausted 入队 order.snapshot_retry_exhausted（B1-08u），
+//   提交后再经 logSnapshotRetryExhausted 打一次 error。端口抛错不在这里处理（不吞，整事务回滚）。
 // 日志只打平铺字段（platform、app_id、reason、outcome），不打子订单号、用户与买家参数。
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
@@ -25,7 +26,7 @@ import type { SyncLogger } from './sync-ports.ts';
 /** 24 小时仍失败的告警事件名（规划/02 §11 点号形式）。 */
 export const SNAPSHOT_RETRY_EXHAUSTED = 'order.snapshot_retry_exhausted';
 
-/** 告警日志的平铺字段（不含子订单号与用户）。 */
+/** 告警字段（不含子订单号与用户）：日志原样平铺；事件载荷取其中 order_id、pending_id、platform、reason。 */
 export interface SnapshotRetryAlert {
   readonly alert: 'P1';
   readonly event: typeof SNAPSHOT_RETRY_EXHAUSTED;
@@ -61,8 +62,8 @@ export function snapshotRetryAlert(
 }
 
 /**
- * 临时，B1-08u 改为告警事件（经 EventBus 同事务入队 order.snapshot_retry_exhausted）；在 platform/events 登记
- * 事件名之前只打这一条 error 日志。
+ * 与 order.snapshot_retry_exhausted 事件（alert-events.publishSnapshotRetryExhausted，与转人工标记同事务入队）
+ * 并存作运维冗余（B1-08u，D10-105）：字段不变，事务提交后打一条 error；未注入事件总线时它是唯一的告警。
  */
 export function logSnapshotRetryExhausted(
   log: SyncLogger | undefined,
