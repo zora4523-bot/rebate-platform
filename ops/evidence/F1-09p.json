@@ -1,0 +1,148 @@
+{
+  "task": "F1-09p",
+  "spec_ref": "93ac832c03a5570ceb91c427baa4f9e4020b3328",
+  "spec_commit": "b0ae5121f634a04a5c7489a42d6b830731bf211c",
+  "red_tests": [
+    "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#6] 到点前撤销清四列并审计；旧任务重放及过原时刻均不得发布",
+    "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#7] 到点后旧 revision 撤销报 CAS 且惰性物化一起回滚；有效视图仍为新版",
+    "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#8] 到点后回滚先物化定时版，再回到原全量版，定时人与回滚人分开",
+    "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#9] 已有槽位时立即或定时发布均拒绝；CAS 优先且无库或队列副作用",
+    "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#10] 存稿保留未到点槽位，到点存稿按有效 revision 物化后再加一次",
+    "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#11] 到点灰度先物化，调至全量不改原发布时刻及定时人",
+    "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#12] publish 与撤销均要求 content.page，已有权限无需 step-up",
+    "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#13] 撤销后再定时，旧任务只能按最新槽位判定，不得提前发布",
+    "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#32] 到点后立即发布其他草稿先物化原定时版，两个发布戳各自正确",
+    "test/spec/content/pages-schedule/contract.test.ts > [AC-F1-09p#27] 撤销操作正式启用，content.page 不要求二次认证",
+    "test/spec/content/pages-schedule/contract.test.ts > [AC-F1-09p#28] page-schedule 位于 pool-refresh 后且 poster 前，仅 worker 并发 1 消费",
+    "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#1] 定时全量只写槽位与一条审计，同事务入队且草稿及当前指针不变",
+    "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#2] 恰到点且不跑任务：缓存公共读与后台四读立即呈现有效版本，不写库",
+    "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#3] 延迟物化用计划时刻和定时人；重复投递不增 revision、不加审计",
+    "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#4] 提前收到任务按剩余时间向上取整再入队，页行与审计保持原样",
+    "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#5] 同名页面按 app_id 隔离，重复并发消费只物化一次",
+    "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#30] 物化使用 pageVersionChange 的 PUBLISH 迁移，不自行绕过状态机",
+    "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#31] 槽位状态 CAS 失败视为程序错误，不切指针、不清槽位、不写审计",
+    "test/spec/content/pages-schedule/reader.test.ts > [AC-F1-09p#22] 缓存原指针：到点前 1ms 旧版，恰等号新版；不等 60 秒也不等任务",
+    "test/spec/content/pages-schedule/reader.test.ts > [AC-F1-09p#23] 定时灰度 10%：设备桶内新版，桶外及无设备旧版，同一缓存按请求选择",
+    "test/spec/content/pages-schedule/reader.test.ts > [AC-F1-09p#24] 只有到点槽位指向的草稿可出；其他草稿与已回滚版本仍不可出",
+    "test/spec/content/pages-schedule/reader.test.ts > [AC-F1-09p#25] 到点草稿缓存不污染其他页面，同 app 的另一页面不能借槽位放行草稿",
+    "test/spec/content/pages-schedule/reader.test.ts > [AC-F1-09p#26] 撤销后读侧最迟在原行缓存 60 秒到期时回旧版，不永久保留有效结果",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#14] publish_at 偏移 0 ms 拒绝且数据库、审计、队列不变",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#14] publish_at 偏移 -1 ms 拒绝且数据库、审计、队列不变",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#14] publish_at 偏移 2592000001 ms 拒绝且数据库、审计、队列不变",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#14] publish_at 偏移 2592001000 ms 拒绝且数据库、审计、队列不变",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#15] 30 天整可定时，延迟恰 2592000 秒；首次全量也可定时",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#16] 无全量版不能灰度定时；相同草稿全量定时成功",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#17] 有灰度不能定时；停止灰度后可定时，后续回滚全量保留槽位",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#18] 已发布和不存在的版本先报 version，之后才检查时间范围",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#19] 定时提交时重校 sections，生效时不因配置变化再校验",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#20] 入队后故障回滚页面、审计与任务，恢复后同 revision 可再提交",
+    "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#21] 两次同 revision 的定时发布竞争恰一成功，一条审计和一条到期任务",
+    "test/spec/content/pages-schedule/wiring.test.ts > [AC-F1-09p#29] ContentWorkerModule 为 page-schedule 注册一次处理器并转交完整 job",
+    "test/spec/content/pages-schedule/wiring.test.ts > [AC-F1-09p#33] app.module 仅在 worker 入口装配 ContentWorkerModule"
+  ],
+  "risk_note": "RV2 (content pages + platform queue; page scheduled publish, orchestrator D8 / Y-defaults, P5 / P6 / P9 / P12 in 01 F-HOME-07; contract CT-02y #1076, migration F1-09n #1092, queue test-change F1-09q #1082). Publishing with publish_at writes the pending slot (after now, within 30 days; a pending slot rejects another publish), audits page_publish_schedule and enqueues content.page_schedule_due on the page-schedule queue in the same transaction; reads judge the slot by the injected Clock (due at scheduled_at inclusive) so the page switches without waiting for the job; every page write first materialises a due slot under the row lock (transition via pageVersionChange, publisher / publish_at = scheduler / scheduled_at, revision +1, no audit row) before the CAS; the job locks the row and materialises, re-enqueues when early, or does nothing when the slot is gone (idempotent at least once). DELETE /admin/v1/pages/{page_key}/schedule loses its planned mark: materialise, CAS, 30701 without a slot, audit page_schedule_cancel. Code review round 1 found that a draft cached before materialisation could make the public read 404 until the cache expired; fixed by treating a cached draft referenced by the pointer as stale. Test-machine full verify passed. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "b0ae5121f634a04a5c7489a42d6b830731bf211c",
+      "tree": "7407172dafe8bbb7b1821cd3efb6e6abe0376698",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T08:11:25Z",
+      "finished_at": "2026-10-22T08:11:46Z",
+      "red_tests": [
+        "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#6] 到点前撤销清四列并审计；旧任务重放及过原时刻均不得发布",
+        "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#7] 到点后旧 revision 撤销报 CAS 且惰性物化一起回滚；有效视图仍为新版",
+        "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#8] 到点后回滚先物化定时版，再回到原全量版，定时人与回滚人分开",
+        "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#9] 已有槽位时立即或定时发布均拒绝；CAS 优先且无库或队列副作用",
+        "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#10] 存稿保留未到点槽位，到点存稿按有效 revision 物化后再加一次",
+        "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#11] 到点灰度先物化，调至全量不改原发布时刻及定时人",
+        "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#12] publish 与撤销均要求 content.page，已有权限无需 step-up",
+        "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#13] 撤销后再定时，旧任务只能按最新槽位判定，不得提前发布",
+        "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts > [AC-F1-09p#32] 到点后立即发布其他草稿先物化原定时版，两个发布戳各自正确",
+        "test/spec/content/pages-schedule/contract.test.ts > [AC-F1-09p#27] 撤销操作正式启用，content.page 不要求二次认证",
+        "test/spec/content/pages-schedule/contract.test.ts > [AC-F1-09p#28] page-schedule 位于 pool-refresh 后且 poster 前，仅 worker 并发 1 消费",
+        "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#1] 定时全量只写槽位与一条审计，同事务入队且草稿及当前指针不变",
+        "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#2] 恰到点且不跑任务：缓存公共读与后台四读立即呈现有效版本，不写库",
+        "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#3] 延迟物化用计划时刻和定时人；重复投递不增 revision、不加审计",
+        "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#4] 提前收到任务按剩余时间向上取整再入队，页行与审计保持原样",
+        "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#5] 同名页面按 app_id 隔离，重复并发消费只物化一次",
+        "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#30] 物化使用 pageVersionChange 的 PUBLISH 迁移，不自行绕过状态机",
+        "test/spec/content/pages-schedule/lifecycle.int.test.ts > [AC-F1-09p#31] 槽位状态 CAS 失败视为程序错误，不切指针、不清槽位、不写审计",
+        "test/spec/content/pages-schedule/reader.test.ts > [AC-F1-09p#22] 缓存原指针：到点前 1ms 旧版，恰等号新版；不等 60 秒也不等任务",
+        "test/spec/content/pages-schedule/reader.test.ts > [AC-F1-09p#23] 定时灰度 10%：设备桶内新版，桶外及无设备旧版，同一缓存按请求选择",
+        "test/spec/content/pages-schedule/reader.test.ts > [AC-F1-09p#24] 只有到点槽位指向的草稿可出；其他草稿与已回滚版本仍不可出",
+        "test/spec/content/pages-schedule/reader.test.ts > [AC-F1-09p#25] 到点草稿缓存不污染其他页面，同 app 的另一页面不能借槽位放行草稿",
+        "test/spec/content/pages-schedule/reader.test.ts > [AC-F1-09p#26] 撤销后读侧最迟在原行缓存 60 秒到期时回旧版，不永久保留有效结果",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#14] publish_at 偏移 0 ms 拒绝且数据库、审计、队列不变",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#14] publish_at 偏移 -1 ms 拒绝且数据库、审计、队列不变",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#14] publish_at 偏移 2592000001 ms 拒绝且数据库、审计、队列不变",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#14] publish_at 偏移 2592001000 ms 拒绝且数据库、审计、队列不变",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#15] 30 天整可定时，延迟恰 2592000 秒；首次全量也可定时",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#16] 无全量版不能灰度定时；相同草稿全量定时成功",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#17] 有灰度不能定时；停止灰度后可定时，后续回滚全量保留槽位",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#18] 已发布和不存在的版本先报 version，之后才检查时间范围",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#19] 定时提交时重校 sections，生效时不因配置变化再校验",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#20] 入队后故障回滚页面、审计与任务，恢复后同 revision 可再提交",
+        "test/spec/content/pages-schedule/validation.int.test.ts > [AC-F1-09p#21] 两次同 revision 的定时发布竞争恰一成功，一条审计和一条到期任务",
+        "test/spec/content/pages-schedule/wiring.test.ts > [AC-F1-09p#29] ContentWorkerModule 为 page-schedule 注册一次处理器并转交完整 job",
+        "test/spec/content/pages-schedule/wiring.test.ts > [AC-F1-09p#33] app.module 仅在 worker 入口装配 ContentWorkerModule"
+      ],
+      "expected": [
+        "test/spec/content/pages-schedule/cancel-and-writes.int.test.ts",
+        "test/spec/content/pages-schedule/contract.test.ts",
+        "test/spec/content/pages-schedule/lifecycle.int.test.ts",
+        "test/spec/content/pages-schedule/reader.test.ts",
+        "test/spec/content/pages-schedule/validation.int.test.ts",
+        "test/spec/content/pages-schedule/wiring.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "ef26896dd7b2387f1d0b66ae5c29c16f4114c1dabfe43c2ab07cc7d0cd338490"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "5b1d94ac4e70f903727c9840ce1589d44bebe712f8dc7e5583d5a9bfa7ebd423"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1 stale draft version cache after materialisation); fixed with unit tests; round 2 pass"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by fresh Claude subagents: r1 fail (S1 the brief's job name violated the queue name rule; renamed content.page_schedule_due), r2 pass; the test machine showed every red test failing for the right reason"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "ea753628e8789a68096befdf047b7afb70fd5fda",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
