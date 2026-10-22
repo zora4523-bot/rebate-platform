@@ -1,0 +1,26 @@
+id: B1-22a
+repo: rebate-platform
+title: 站长授权到期管理迁移：union_accounts 加 auth_expires_estimated（默认 false）；alert_stage 的 CHECK 放宽为 none / expired / d<N>（N 为 1–999 的提醒节点天数）；新表 admin_union_auth_sessions（后台站长重新授权会话）；授权写在本迁移
+type: impl
+# 2026-10-22 入账（union 线，B1-22 拆分 couli-runs/UNION-lane/plan.md）。依据 08 BR-ID-24 正文与细则「后台联盟账号列表」「后台告警手机号与重新授权会话」（编排裁定 D10-152 / D10-159），04 §3.2 union_accounts、admin_union_auth_sessions。
+# alert_stage：04 §3.2 与 12 §9 T-05 要求改 union.auth_alert_days 不失效，10 AC-S1-64 断言 d14 / d7 / d1，取 d<N> 通配（代理补全的默认）；冻结测试 [AC-B1-19a#6] 钉死五值，测试阶段只把它改为「none、expired 与 d<N>」并补负例，其余断言不动（第一类保护路径，待编排按 #24 加标签）。
+# admin_union_auth_sessions：(app_id, union_account_id) 复合外键指向 union_accounts；state 只存哈希且唯一；status ∈ pending / succeeded / failed / expired；used_at、finished_at 与 status 一致；写者 union。
+# 迁移号按 D10-116 落地时取主干最大 + 1、占迁移槽；schema.sql / db.gen.ts 在测试机快照。RV2（db/**），Codex 测试 + money 评审（不可用按 #36 独立 Claude）。
+refs: [BR-ID-24]
+refs_hash:
+  BR-ID-24: 8b7594031593
+deps: [B1-19a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/union/auth-expiry/**'
+  - 'test/spec/db/union/union-tables.int.test.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/union/auth-expiry/**'
+status: todo
+pr: null

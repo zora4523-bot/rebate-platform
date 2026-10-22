@@ -1,0 +1,30 @@
+id: B1-22b
+repo: rebate-platform
+title: 站长授权每日巡检与提醒（union）：按 union.auth_probe_cron 巡检到期时间并探测 1 次；到期任务按 auth_expires_at 置 expired；非授权类错误 30 分钟后重试 1 次；提醒节点与过期提醒各 1 次（alert_stage 防重复）经 notification 发 UNION_AUTH_EXPIRING / EXPIRED 给全部告警手机号并后台告警；联盟调用返回授权失效即置 expired；失效后探测成功且未到期恢复 active；请求侧补已到 auth_expires_at 即视为失效
+type: impl
+# 2026-10-22 入账（union 线，plan.md B1-22b）。依据 08 BR-ID-24 ①②④（含细则）、BR-TEXT-20 细则 UNION_AUTH_* 文案；12 §7.2；10 AC-S1-64、AC-S1-65 ①；04 §3.2 notify_logs（站长告警短信 user_id 空、dedupe_key = union_account_id + auth_expires_at + 阶段 + 号码 HMAC，号码只记脱敏）。
+# 调度：照 risk-scan（B1-03j / B1-03u）的时隙链 + 自愈，新队列 union-auth（exclusive，只 worker）；队列运行时关了 pg-boss schedule()（platform/queue/runtime.ts），05 B1-22 行「用 schedule()」按现行先例落地，记决定。冻结测试 test/spec/platform/queue/contract.test.ts 只追加 union-auth 一项的位置与取值（待编排加标签）。
+# 探测 / 刷新 / 失效判定按平台登记（各平台接口以 09 CAP-*-12 为准，未实测的做成登记表与假实现，不伪造平台报文）；短信发送经 notification 新端口（非 prod 假实现，prod 未配置时拒发并告警）；后台告警为结构化日志。linking 只改 union-auth-reads 的时间守卫。
+refs: [BR-ID-24, BR-TEXT-20]
+refs_hash:
+  BR-ID-24: 8b7594031593
+  BR-TEXT-20: c2c78e77b790
+deps: [B1-22a]
+paths:
+  - 'apps/api/src/modules/union/**'
+  - 'apps/api/src/modules/notification/site-auth-alert/**'
+  - 'apps/api/src/modules/notification/index.ts'
+  - 'apps/api/src/modules/linking/application/union-auth-reads.ts'
+  - 'apps/api/src/modules/linking/application/union-auth-reads.test.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/union/auth-probe/**'
+  - 'test/spec/platform/queue/contract.test.ts'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/auth-probe/**'
+status: todo
+pr: null
