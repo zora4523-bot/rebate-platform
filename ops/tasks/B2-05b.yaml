@@ -5,6 +5,7 @@ type: migration
 # 2026-10-22 提现线（withdraw-acct4，账号 4，模型 Claude Fable 5.1）。形状只按 04 §3.2 withdrawals / withdraw_holds 行与 §2.4 枚举，取值按 08；按 db/AGENTS.md 分两段：本线先写 SQL，测试机跑迁移、db:snapshot、db.gen.ts 后提交生成物。
 # 迁移号按 D10-116：落地前一刻 grep 主干最大号 + notices 预占，规则测试不写死迁移号；落地时占迁移槽，合并即放。
 # 状态备注：等 B2-05a 合并（risk-map 登记 payout 目录；本任务不建模块代码）。
+# 2026-10-23 补 paths：tools/ci/lint-migrations.test.ts 资金表锁定清单加 withdrawals / withdraw_holds（先例 B2-03o；第三类保护路径，落地按 #24 由编排加标签）。
 # 不变量 06 由规则测试作者（Codex）写在 db/invariants/ledger/06_*.sql（BR-FUND-14：frozen = Σ 非终态单金额），运行器按目录执行（ledger-plan D10）。
 refs: [BR-WDR-07, BR-WDR-08, BR-WDR-05]
 refs_hash:
@@ -16,6 +17,7 @@ paths:
   - 'db/migrations/**'
   - 'db/schema.sql'
   - 'packages/db/src/db.gen.ts'
+  - 'tools/ci/lint-migrations.test.ts'
 test_paths:
   - 'test/spec/db/payout/**'
   - 'db/invariants/ledger/**'
