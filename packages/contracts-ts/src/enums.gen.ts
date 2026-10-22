@@ -1376,6 +1376,74 @@ export const claim_reject_reason = [
 export type ClaimRejectReason = (typeof claim_reject_reason)[number];
 
 /**
+ * 后台手动同步的方式（order_sync_requests.mode）；POST /admin/v1/order-syncs 的请求体二选一
+ * Source: 规划/04 §3.2 order_sync_requests、§6.6 order-syncs；规划/01 F-ORD-10；中文名 BR-TEXT-25 admin_dict.order_sync_requests.mode（CT-24n） (contracts/enums/order.yaml).
+ */
+export const order_sync_mode = [
+  "window", // 按时间窗（platform、from、to，可选 status_filter）
+  "order_nos", // 按订单号（platform、order_nos，1–50 个子订单号）
+] as const;
+export type OrderSyncMode = (typeof order_sync_mode)[number];
+
+/**
+ * 后台手动同步请求的状态（order_sync_requests.status）；同一筛选条件在 queued 或 running 期间再提交返回原请求
+ * Source: 规划/04 §3.2 order_sync_requests、§6.6 order-syncs；中文名 BR-TEXT-25 admin_dict.order_sync_requests.status（CT-24n） (contracts/enums/order.yaml).
+ */
+export const order_sync_status = [
+  "queued", // 排队中
+  "running", // 同步中
+  "done", // 已完成
+  "failed", // 失败
+] as const;
+export type OrderSyncStatus = (typeof order_sync_status)[number];
+
+/**
+ * 后台 Excel 导入的类型（rights_imports.kind）；channel 另需 risk.blocklist 与动态码（BR-ATTR-26 细则「渠道单导入」）
+ * Source: 规划/01 F-ORD-10；规划/04 §3.2 rights_imports、§6.6 rights-imports；中文名 BR-TEXT-25 admin_dict.rights_imports.kind（CT-24n） (contracts/enums/order.yaml).
+ */
+export const rights_import_kind = [
+  "rights", // 维权单（按子订单号）
+  "punish", // 违规单（按子订单号，写 order_rights.type=PUNISH）
+  "channel", // 渠道单（按 relation_id，写黑名单）
+] as const;
+export type RightsImportKind = (typeof rights_import_kind)[number];
+
+/**
+ * 维权 / 违规单导入按哪个时间筛选行（rights_imports.time_basis）；渠道单恒为空
+ * Source: 规划/01 F-ORD-10；BR-FUND-06 细则「维权导入任务」；中文名 BR-TEXT-25 admin_dict.rights_imports.time_basis（CT-24n） (contracts/enums/order.yaml).
+ */
+export const rights_import_time_basis = [
+  "paid", // 付款时间
+  "received", // 收货时间
+] as const;
+export type RightsImportTimeBasis = (typeof rights_import_time_basis)[number];
+
+/**
+ * 后台 Excel 导入任务的状态（rights_imports.status）
+ * Source: 规划/04 §3.2 rights_imports、§6.6 rights-imports；中文名 BR-TEXT-25 admin_dict.rights_imports.status（CT-24n） (contracts/enums/order.yaml).
+ */
+export const rights_import_status = [
+  "queued", // 排队中
+  "running", // 导入中
+  "done", // 已完成
+  "failed", // 失败
+] as const;
+export type RightsImportStatus = (typeof rights_import_status)[number];
+
+/**
+ * 导入逐行失败的原因（rights_import_failures.reason），是行原因枚举，不是错误码
+ * Source: BR-FUND-06 细则「维权导入任务」；规划/04 §3.2 rights_import_failures、§6.6 rights-imports；中文名 BR-TEXT-25 admin_dict.rights_import_failure_reason（CT-24n） (contracts/enums/order.yaml).
+ */
+export const rights_import_failure_reason = [
+  "invalid_row", // 行格式不对
+  "order_not_found", // 订单不在本系统
+  "sub_order_no_missing", // 缺子订单号（只有主订单号的行不展开）
+  "received_at_missing", // 无收货时间
+  "platform_mismatch", // 平台不符
+] as const;
+export type RightsImportFailureReason = (typeof rights_import_failure_reason)[number];
+
+/**
  * pay_orders.pay_channel 等；与 payout_channel 无关
  * Source: 规划/04 §2.4；BR-PAY-01 (contracts/enums/pay.yaml).
  */
@@ -1909,6 +1977,12 @@ export const enums = {
   claim_evidence_level,
   claim_item_decision,
   claim_reject_reason,
+  order_sync_mode,
+  order_sync_status,
+  rights_import_kind,
+  rights_import_time_basis,
+  rights_import_status,
+  rights_import_failure_reason,
   pay_channel,
   pay_order_status,
   pay_refund_status,

@@ -104,6 +104,12 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminUnionAuthSessionStatus: 'admin_union_auth_session_status',
   AdminUnionPidStatus: 'union_pid_status',
   AdminUnionPidScene: 'pid_scene',
+  AdminOrderSyncMode: 'order_sync_mode',
+  AdminOrderSyncStatus: 'order_sync_status',
+  AdminRightsImportKind: 'rights_import_kind',
+  AdminRightsImportTimeBasis: 'rights_import_time_basis',
+  AdminRightsImportStatus: 'rights_import_status',
+  AdminRightsImportFailureReason: 'rights_import_failure_reason',
 };
 
 /**
@@ -220,6 +226,14 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   // A reviewer rejects with the first six codes only; NOT_IN_POOL and ORDER_INVALID are system
   // only (BR-ATTR-18, CT-24l). A subset, not a binding: ENUM_BINDINGS keeps the full enum.
   AdminClaimStaffRejectReason: 'claim_reject_reason',
+  // Operators hold / unhold with RISK or CS only; UNMAPPED_STATUS is set by the system alone
+  // (BR-FUND-02, BR-FUND-06 细则「后台 hold / unhold」, CT-24n).
+  AdminOrderStaffHoldReason: 'order_hold_reason',
+  // One multipart branch per import form (CT-24n): rights / punish by sub-order, channel alone.
+  'AdminRightsImportByOrder/properties/kind': 'rights_import_kind',
+  'AdminRightsImportChannel/properties/kind': 'rights_import_kind',
+  // A new import task is always queued (CT-24n).
+  'AdminRightsImportCreated/properties/status': 'rights_import_status',
 };
 
 function isObj(v: unknown): v is Obj {

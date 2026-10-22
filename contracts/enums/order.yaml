@@ -140,3 +140,47 @@ enums:
       OTHER: 其他
       NOT_IN_POOL: 不在未归因池（系统专用）
       ORDER_INVALID: 订单已失效（系统专用）
+  order_sync_mode:
+    source: 规划/04 §3.2 order_sync_requests、§6.6 order-syncs；规划/01 F-ORD-10；中文名 BR-TEXT-25 admin_dict.order_sync_requests.mode（CT-24n）
+    description: 后台手动同步的方式（order_sync_requests.mode）；POST /admin/v1/order-syncs 的请求体二选一
+    values:
+      window: 按时间窗（platform、from、to，可选 status_filter）
+      order_nos: 按订单号（platform、order_nos，1–50 个子订单号）
+  order_sync_status:
+    source: 规划/04 §3.2 order_sync_requests、§6.6 order-syncs；中文名 BR-TEXT-25 admin_dict.order_sync_requests.status（CT-24n）
+    description: 后台手动同步请求的状态（order_sync_requests.status）；同一筛选条件在 queued 或 running 期间再提交返回原请求
+    values:
+      queued: 排队中
+      running: 同步中
+      done: 已完成
+      failed: 失败
+  rights_import_kind:
+    source: 规划/01 F-ORD-10；规划/04 §3.2 rights_imports、§6.6 rights-imports；中文名 BR-TEXT-25 admin_dict.rights_imports.kind（CT-24n）
+    description: 后台 Excel 导入的类型（rights_imports.kind）；channel 另需 risk.blocklist 与动态码（BR-ATTR-26 细则「渠道单导入」）
+    values:
+      rights: 维权单（按子订单号）
+      punish: 违规单（按子订单号，写 order_rights.type=PUNISH）
+      channel: 渠道单（按 relation_id，写黑名单）
+  rights_import_time_basis:
+    source: 规划/01 F-ORD-10；BR-FUND-06 细则「维权导入任务」；中文名 BR-TEXT-25 admin_dict.rights_imports.time_basis（CT-24n）
+    description: 维权 / 违规单导入按哪个时间筛选行（rights_imports.time_basis）；渠道单恒为空
+    values:
+      paid: 付款时间
+      received: 收货时间
+  rights_import_status:
+    source: 规划/04 §3.2 rights_imports、§6.6 rights-imports；中文名 BR-TEXT-25 admin_dict.rights_imports.status（CT-24n）
+    description: 后台 Excel 导入任务的状态（rights_imports.status）
+    values:
+      queued: 排队中
+      running: 导入中
+      done: 已完成
+      failed: 失败
+  rights_import_failure_reason:
+    source: BR-FUND-06 细则「维权导入任务」；规划/04 §3.2 rights_import_failures、§6.6 rights-imports；中文名 BR-TEXT-25 admin_dict.rights_import_failure_reason（CT-24n）
+    description: 导入逐行失败的原因（rights_import_failures.reason），是行原因枚举，不是错误码
+    values:
+      invalid_row: 行格式不对
+      order_not_found: 订单不在本系统
+      sub_order_no_missing: 缺子订单号（只有主订单号的行不展开）
+      received_at_missing: 无收货时间
+      platform_mismatch: 平台不符
