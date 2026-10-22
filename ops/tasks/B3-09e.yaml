@@ -1,0 +1,24 @@
+id: B3-09e
+repo: rebate-platform
+title: Agent 注销清理端口 purgeAgentDataForUser(trx, {appId, userId, at})：删除该用户的 agent_messages、agent_runs.user_text、模型输出与工具参数自由文本（含 B3-09d 留痕三表中的自由文本），只留网络日志最小字段；agent_sessions 写不可逆用户哈希（HMAC，密钥从环境变量读）并断开 user_id；可重入
+type: impl
+# 2026-10-22 入账（agent-acct4）。编排裁定 D10-137（B1-15g 注销清理分派，方案 couli-runs/B1-15g/plan.md §2 Agent 行）：agent 线提供 purgeAgentDataForUser，
+# 由 identity 的 B1-15g 编排器在清理事务内调用（未合并前 identity 装配「未上线」实现）。依据 BR-AI-22（状态待决策，法务意见前按此执行）。
+# ⑥ HMAC 密钥：独立密钥，从环境变量读（各线不读值），staging 用开发密钥，正式环境由负责人配置；缺失时启动拒绝（不回退明文或固定值）。
+# 依赖 B1-15o（identity 迁移：agent_sessions 加用户哈希列；方案 §2 另写 agent_sessions.user_id 可空——若 B1-15o 不含则须补，否则无法断开 FK）。
+# 分工：Codex 写规则测试，Claude 新子代理过审，Opus 5.5 实现，Codex 评审。风险 RV1（agent/**）。排在 B3-09c、B3-01h、B3-05m 之后（编排顺序）。
+refs: [BR-AI-22]
+refs_hash:
+  BR-AI-22: 366a972d2ad3
+deps: [B1-15o, B3-09d]
+paths:
+  - 'apps/api/src/modules/agent/deletion/**'
+test_paths:
+  - 'test/spec/agent/deletion/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/deletion/**'
+status: todo
+pr: null
