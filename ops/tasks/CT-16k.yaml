@@ -1,0 +1,24 @@
+id: CT-16k
+repo: rebate-platform
+title: 文案（CT-16 续，D10-151）：texts.default.json 补多平台工具状态键 agent.tool_status.search_products.{start,end,failed}.multi（带 {platform_names}），归 ordinary
+type: contract
+# 2026-10-22 入账（content-client；编排 19:3x / 22:2x：B3-03j #1156 只差这三键，优先于其他段）。
+# 依据：08 BR-TEXT-22 tool_status 行（couli #175，D10-151 修正 D10-150）：多平台用 agent.tool_status.search_products.<phase>.multi，
+#   {platform_names} 按淘宝、京东、拼多多固定顺序以「、」连接；默认文案「正在查询{platform_names}商品｜已查询{platform_names}商品｜{platform_names}暂时查不到」。
+#   落在已归普通的 search_products.* 前缀里，资金术语归类不变。原文由编排者摘入任务书，refs 置空。
+# SPEC_REF 须含 couli #175（39ff3de4f9）后再做契约评审；合并后在 notices 告诉 agent2。
+refs: []
+refs_hash: {}
+deps: [CT-16j]
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
