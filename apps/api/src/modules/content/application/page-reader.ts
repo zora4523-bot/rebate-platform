@@ -102,14 +102,21 @@ export class PageReader {
       },
     });
     if (chosen === null) return null;
-    const version = await this.#versions.get(cacheKey(appId, pageKey, chosen), () =>
-      store.version(appId, pageKey, chosen),
-    );
+    const dueVersion = page.applied === null ? null : page.applied.version;
+    const key = cacheKey(appId, pageKey, chosen);
+    const load = () => store.version(appId, pageKey, chosen);
+    let version = await this.#versions.get(key, load);
+    // F1-09p: a draft cached while a due schedule named it (before the job published it) is stale
+    // once the pointer itself names the version: reload it once instead of serving nothing until
+    // the version entry expires. Only a draft is reloaded; what may be served is unchanged.
+    if (version !== null && version.status === DRAFT && dueVersion !== chosen) {
+      this.#versions.forget(key);
+      version = await this.#versions.get(key, load);
+    }
     // Never fall back to another version: a pointer at a draft or rolled-back version serves none,
     // except the draft a due schedule names (published by time, the job may not have run yet).
     if (version === null || !Array.isArray(version.sections)) return null;
-    const dueDraft =
-      version.status === DRAFT && page.applied !== null && page.applied.version === chosen;
+    const dueDraft = version.status === DRAFT && dueVersion === chosen;
     if (version.status !== PUBLISHED && !dueDraft) return null;
     const audience = await this.#audienceOf(appId, userId, viewer, version.sections);
     return {

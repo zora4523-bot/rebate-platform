@@ -29,6 +29,11 @@ export class TtlCache<V> {
     this.ttlMs = ttlMs;
   }
 
+  /** Drops the stored entry of `key` (a load in flight is left alone); the next get loads again. */
+  forget(key: string): void {
+    this.entries.delete(key);
+  }
+
   get(key: string, load: () => Promise<V>): Promise<V> {
     const startedAtMs = this.clock.now().getTime();
     const entry = this.entries.get(key);
