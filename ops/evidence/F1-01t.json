@@ -1,0 +1,101 @@
+{
+  "red_tests": [
+    "test/spec/frontend/h5-texts-trim/bundle.test.ts > [AC-F1-01t-BUNDLE#1] app 保留字面与登记动态键，删除原生专用键和值",
+    "test/spec/frontend/h5-texts-trim/bundle.test.ts > [AC-F1-01t-BUNDLE#2] landing 使用全 src 收集字典，保留引用键并删除原生专用键",
+    "test/spec/frontend/h5-texts-trim/bundle.test.ts > [AC-F1-01t-BUNDLE#3] conformance 共用全 src 收集结果，未使用的字典不进入 JS",
+    "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GROWTH#1] 三入口共用的全 src 裁剪载荷不随 4000 个未引用 texts 与 fallbacks 增长",
+    "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GUARD#1] 保留合法动态调用并拒绝新模块中未登记的模板键",
+    "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GUARD#2] 包装函数的拼接键也不能绕过动态登记",
+    "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GUARD#3] 全 src 新增字面引用与其 fallback 自动进入集合，未引用邻键不进入",
+    "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GUARD#4] 模板键先存入变量再传给 t 也必须有登记覆盖",
+    "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GUARD#5] 拼接键先存入变量再传给包装函数也必须有登记覆盖",
+    "test/spec/frontend/h5-texts-trim/runtime.test.ts > [AC-F1-01t-RUNTIME#1] 实际裁剪构建的 t 保持动态键、fallback、缺变量与壳层兜底语义",
+    "test/spec/frontend/h5-texts-trim/runtime.test.ts > [AC-F1-01t-RUNTIME#2] 不经 H5 构建插件时仍加载完整契约默认字典",
+    "test/spec/frontend/h5-texts-trim/source.test.ts > [AC-F1-01t-SOURCE#1] texts 模块不再顶层无条件 eager glob 整份契约字典"
+  ],
+  "risk_note": "H5 dictionary trimmed by reference (apps/h5 build plugin, shared texts loader and key registry; RV1, ruling D10-124 keeps the bundle budget). A build-time collector scans all of apps/h5/src for literal dictionary keys and for dynamic keys covered by registered prefix patterns (ledger_type.*, claim.records.status.*, claim.records.desc.*, claim_reject_reason.*.title, error.*); any non-literal key passed to t() or a wrapper that no pattern covers fails the build. The Vite plugin swaps the dictionary for that subset only in builds and writes trim-texts.json; without the plugin (Vitest, dev server) the full dictionary still loads. Gzip: largest app route 153219 to 142261 bytes (budget 153600), landing first screen 15610 to 4674. Rule tests by Codex in two calls; Claude spec-test review r2 pass; red on the test machine (red/2: 12 red, 0 problems). Implementation by Opus 5.5; test machine verify-fast and browser green. Review: Codex (approvals id 27 / 34 / 36). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "general",
+      "round": 1,
+      "note": "round 1 pass, one S2 (a star re-export of the translator would bypass the dynamic-key check) tracked in followups"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 fail (S1: the runtime probe rejected a route-split design; resolved by fixing the design to a build-time plugin over all of src with the full dictionary without the plugin; 4 S2), round 2 pass (1 S2: dynamic keys registered as patterns, carried into the implementation constraints)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "F1-01t",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "spec_commit": "507dcaf56cf107eb54fc9b02170c9de32455651f",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "507dcaf56cf107eb54fc9b02170c9de32455651f",
+      "tree": "774f35df95c5f8700e2061fbd64ddbb1b304322a",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T09:28:45Z",
+      "finished_at": "2026-10-22T09:28:50Z",
+      "gate": {
+        "commit": "78912ec4cca7fda89bcabcadc577ac109066918d",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "red_tests": [
+        "test/spec/frontend/h5-texts-trim/bundle.test.ts > [AC-F1-01t-BUNDLE#1] app 保留字面与登记动态键，删除原生专用键和值",
+        "test/spec/frontend/h5-texts-trim/bundle.test.ts > [AC-F1-01t-BUNDLE#2] landing 使用全 src 收集字典，保留引用键并删除原生专用键",
+        "test/spec/frontend/h5-texts-trim/bundle.test.ts > [AC-F1-01t-BUNDLE#3] conformance 共用全 src 收集结果，未使用的字典不进入 JS",
+        "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GROWTH#1] 三入口共用的全 src 裁剪载荷不随 4000 个未引用 texts 与 fallbacks 增长",
+        "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GUARD#1] 保留合法动态调用并拒绝新模块中未登记的模板键",
+        "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GUARD#2] 包装函数的拼接键也不能绕过动态登记",
+        "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GUARD#3] 全 src 新增字面引用与其 fallback 自动进入集合，未引用邻键不进入",
+        "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GUARD#4] 模板键先存入变量再传给 t 也必须有登记覆盖",
+        "test/spec/frontend/h5-texts-trim/collector.test.ts > [AC-F1-01t-GUARD#5] 拼接键先存入变量再传给包装函数也必须有登记覆盖",
+        "test/spec/frontend/h5-texts-trim/runtime.test.ts > [AC-F1-01t-RUNTIME#1] 实际裁剪构建的 t 保持动态键、fallback、缺变量与壳层兜底语义",
+        "test/spec/frontend/h5-texts-trim/runtime.test.ts > [AC-F1-01t-RUNTIME#2] 不经 H5 构建插件时仍加载完整契约默认字典",
+        "test/spec/frontend/h5-texts-trim/source.test.ts > [AC-F1-01t-SOURCE#1] texts 模块不再顶层无条件 eager glob 整份契约字典"
+      ],
+      "expected": [
+        "test/spec/frontend/h5-texts-trim/bundle.test.ts",
+        "test/spec/frontend/h5-texts-trim/collector.test.ts",
+        "test/spec/frontend/h5-texts-trim/runtime.test.ts",
+        "test/spec/frontend/h5-texts-trim/source.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "32323ce5325c41fe307611d50beba7a0391edcca3a80b754e599b0b19efea907"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "118ac617b528c381900b216e27b805aaa56287dc",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  }
+}
