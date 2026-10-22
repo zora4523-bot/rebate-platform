@@ -11,7 +11,15 @@
 // (D10-97: until B2-05 it truthfully answers "none"); modes `no_in_flight` / `no_balance` remove
 // one option to check that a missing port answers 50001 instead of letting the application through.
 // Step-up tokens are signed exactly as POST /v1/auth/step-up issues them (signScopedToken with the
-// application's TOKEN_KEYS, aud=step_up). Only *.int.test.ts files call openFixture; the test
+// application's TOKEN_KEYS, aud=step_up).
+// B1-15l (test-change, ruling D10-120): stage ⑥ (B1-15e, BR-ID-27's 10007 for cooling / processing;
+// POST /v1/me/deletion is not on its whitelist, and ⑥ is judged before ⑫ step-up) is detected, not
+// guessed from responses: `deletionGuard` is true exactly when identity's index exports the
+// DELETION_STAGE_CHECKS token and the assembled application provides its guard and post-miss
+// check. HTTP cases that re-apply while a request is open expect 10007 (with the stage) when it is
+// true and their original answer when it is false; the service-layer cases (`requestDirectly`, the
+// real createDeletionRequestService on the test database, no guard chain) keep the original
+// expectation in both states. Only *.int.test.ts files call openFixture; the test
 // database comes from the global setup's createTestDatabase (through registration/kit.ts).
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -110,6 +118,8 @@ export interface Fixture {
   keys: TokenKeyProvider;
   idempotency: Idempotency;
   risk: RiskStateService;
+  /** Stage ⑥ (identity's DELETION_STAGE_CHECKS) is exported and assembled in this application. */
+  deletionGuard: boolean;
   close(): Promise<void>;
 }
 
@@ -226,6 +236,7 @@ export async function openFixture(mode: PortMode = 'controlled'): Promise<Fixtur
   // identity's public surface (its index also exports the Nest module, outside the test project).
   const identity = (await import(new URL('apps/api/src/modules/identity/index.ts', ROOT).href)) as {
     IdentityModule: { forRoot(options: Record<string, unknown>): unknown };
+    DELETION_STAGE_CHECKS?: unknown;
   };
   const identityTokens = (await import(
     new URL('apps/api/src/modules/identity/application/tokens.ts', ROOT).href
@@ -262,6 +273,7 @@ export async function openFixture(mode: PortMode = 'controlled'): Promise<Fixtur
       keys: running.get<TokenKeyProvider>(identityTokens.TOKEN_KEYS),
       idempotency: running.get<Idempotency>(platform.IDEMPOTENCY),
       risk: running.get<RiskStateService>(riskIndex.riskStateServiceToken()),
+      deletionGuard: deletionGuardAssembled(running, identity.DELETION_STAGE_CHECKS),
       async close() {
         try {
           await running.close();
@@ -284,6 +296,31 @@ export async function openFixture(mode: PortMode = 'controlled'): Promise<Fixtur
   } finally {
     identitySpy.mockRestore();
   }
+}
+
+/**
+ * True when `token` is a symbol (identity exports DELETION_STAGE_CHECKS) and the application
+ * resolves it to checks with a guard object (canActivate) and a post-miss function (B1-15e
+ * assembles both). A token that is exported but not provided is false.
+ */
+function deletionGuardAssembled(app: App, token: unknown): boolean {
+  if (typeof token !== 'symbol') return false;
+  let checks: unknown;
+  try {
+    checks = app.get<unknown>(token);
+  } catch {
+    return false;
+  }
+  if (typeof checks !== 'object' || checks === null) return false;
+  const { guard, postMiss } = checks as { guard?: unknown; postMiss?: unknown };
+  // B1-15e's DeletionStageChecks: guard is a Nest guard object { canActivate(context) }, postMiss
+  // an IdempotencyPostMissCheck (a function).
+  return (
+    typeof guard === 'object' &&
+    guard !== null &&
+    typeof (guard as { canActivate?: unknown }).canActivate === 'function' &&
+    typeof postMiss === 'function'
+  );
 }
 
 export interface CallOptions {
@@ -534,6 +571,15 @@ export async function failed(
   return body;
 }
 
+/** BR-ID-27 / stage ⑥: 10007, HTTP 403, data exactly { stage }. */
+export async function deletionStageRefused(
+  response: WireResponse,
+  stage: 'cooling' | 'processing',
+): Promise<void> {
+  const body = await failed(response, 403, 10007);
+  expect(body['data']).toEqual({ stage });
+}
+
 /** BR-ID-08: 10003, HTTP 403, an ErrorEnvelope without data. */
 export async function stepUpRequired(response: WireResponse): Promise<void> {
   const body = await failed(response, 403, 10003);
@@ -638,4 +684,51 @@ export function gate(): { promise: Promise<void>; open: () => void } {
     open = resolve;
   });
   return { promise, open };
+}
+
+// ---- service layer (B1-15l) ------------------------------------------------------------------
+
+type DeletionRequestApi =
+  typeof import('../../../../apps/api/src/modules/identity/application/deletion-request.ts');
+export type DirectResult = Awaited<
+  ReturnType<ReturnType<DeletionRequestApi['createDeletionRequestService']>['request']>
+>;
+
+/** Test-owned balance port: the user's USER_BALANCE available_fen on `trx`, 0n without one. */
+function directBalance(): DeletionBalanceReader {
+  return {
+    async availableFen(trx, input) {
+      const { rows } = await sql<{ available_fen: string }>`SELECT ab.available_fen::text AS
+        available_fen FROM app.account_balances ab JOIN app.ledger_accounts la
+        ON la.app_id = ab.app_id AND la.id = ab.account_id
+        WHERE la.app_id = ${input.appId} AND la.owner_type = 'user' AND la.owner_id = ${input.userId}
+          AND la.subject = 'USER_BALANCE'`.execute(trx);
+      return rows[0] === undefined ? 0n : BigInt(rows[0].available_fen);
+    },
+  };
+}
+
+/**
+ * The application service called directly, in one transaction of the test database (as the
+ * idempotency claim would hold it), with the controlled in-flight port and a test-owned balance
+ * port: no HTTP, no guard chain, so stage ⑥ never applies here.
+ */
+export async function requestDirectly(
+  f: Fixture,
+  appId: string,
+  userId: string,
+): Promise<DirectResult> {
+  const module = (await import(
+    new URL('apps/api/src/modules/identity/application/deletion-request.ts', ROOT).href
+  )) as DeletionRequestApi;
+  const service = module.createDeletionRequestService({
+    db: f.db,
+    clock: f.clock,
+    withdrawalInFlight: controlledInFlight(f.db),
+    balance: directBalance(),
+  });
+  return f.db
+    .withSchema('app')
+    .transaction()
+    .execute((trx) => service.request(trx, { appId, userId }));
 }

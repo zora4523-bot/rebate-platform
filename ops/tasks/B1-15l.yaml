@@ -1,0 +1,18 @@
+id: B1-15l
+repo: rebate-platform
+title: 测试修改：B1-15d 冻结测试 [AC-B1-15d#4] [#9] [#10] [#13] 的 HTTP 用例在 ⑥ 注销守卫（B1-15e）上线后按 BR-ID-27 应先得 10007（冷静期 / 处理中白名单不含 POST /v1/me/deletion），期望改为 10007（data.stage = cooling / processing）；「已有未结束单再申请返回原单」与「成功后同 token 换新键 10003」保留为直调申请服务层的用例，不删 it
+type: test-change
+# 草稿 2026-10-22（身份与风控线 identity-lane）。编排裁定 D10-120：B1-15e #1087 变基到含 B1-15d #1084 的主干后，这 4 条在 verify 中得 10007。按 08 BR-ID-27 原文，不改规则。
+# 改前（main，无 ⑥）改后（叠 B1-15e）都要绿：HTTP 用例按 ⑥ 是否装配判定期望（照 B1-13j / B1-15j 逐操作判断先例），服务层用例两种状态都按原期望。
+# 原独立 Claude 测试作者改（approvals #36），另一个新鲜上下文独立 Claude 只读复审「不削弱」，非 task 分支 test-change/B1-15l，按 approvals #24 请编排加标签。合并后 B1-15e 变基重落。
+refs: []
+refs_hash: {}
+deps: [B1-15d]
+paths:
+  - 'test/spec/identity/deletion-request/**'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/deletion-request/**'
+status: todo
