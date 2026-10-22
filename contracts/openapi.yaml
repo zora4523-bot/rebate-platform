@@ -9440,6 +9440,157 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/users/{user_id}/profile:
+    patch:
+      operationId: adminEditUserProfile
+      tags:
+        - admin-users
+      summary: Edit a user's phone number and nickname (编辑会员信息)
+      description: |
+        Permission point `user.phone_change` (04 §11.2; since 2026-10-05 it covers the nickname as
+        well, the key is unchanged); lacking it is 10403 with `data.reason=admin_permission_denied`.
+        Step-up: totp tier (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+        `data.tier=totp`). The console's edit of member information after the customer service
+        checked the user's identity in the WeCom conversation (BR-ID-06 细则「客服代办换号」,
+        BR-ID-39 细则「后台改昵称」): only `phone` and `nickname` are edited here, the real-name
+        data goes through `user.realname_fix` (BR-ID-25) and the balance through `fund.adjust`
+        (BR-FUND-24). The save takes effect at once and the new number is not verified: no SMS to
+        it, no confirmation in the app, no code asked of the user.
+        Body checks (20001 with `data.fields` naming the field): `reason` is required (1–200
+        characters; what was checked in the WeCom conversation); at least one of `phone` and
+        `nickname`, neither is 20001 with `data.fields=[phone, nickname]`; `phone` is normalised as
+        in BR-ID-05 细则「手机号规范化」, a result that is not a mainland mobile number is 20001
+        with `data.fields=[phone]` and `data.reason=phone_invalid`; `nickname`, trimmed of leading
+        and trailing white space, must be 1–16 extended grapheme clusters, else 20001 with
+        `data.fields=[nickname]` (BR-ID-39). An unknown `user_id`, or one of another app, is 20001
+        with `data.fields=[user_id]`.
+        Unchanged fields: a field equal to the user's current value is treated as not edited — the
+        phone compared after normalisation with the current number, the nickname after trimming.
+        A field not edited is not written, triggers no session revocation, no blacklist or
+        occupancy check and no content-safety review.
+        Checks of an edited phone, in this order (BR-ID-06): the number is blacklisted → 44001;
+        the number belongs to another account of this app, judged by the normalised phone_hmac
+        and including accounts in the deletion cooling period or processing → 30411 without
+        `data.reason` (never `mergeable`: the console does not merge accounts, a merge only
+        happens with the user's own confirmation). The number of an account whose deletion is
+        complete may be used. An edited nickname then goes through content-safety text review: a
+        hit, or a review that times out (fail-close), is 20001 with
+        `data.reason=nickname_sensitive`. Any of these refuses the whole save; nothing is
+        written.
+        Effects, in one transaction: an edited phone overwrites users.phone_cipher / phone_hmac,
+        the old phone_hmac is written to deleted_identities (reason=phone_changed, retention
+        BR-ID-30), and every session of the user is revoked (each device's refresh-token family
+        and session sid, as in BR-ID-07); the user signs in again with the new number, the
+        revoked devices get 10404. Access tokens already issued expire by their BR-ID-07
+        lifetime. A nickname-only edit revokes nothing. An edited nickname is not counted in the
+        user's 3 changes per natural month (BR-ID-39) and does not use up the user's remaining
+        changes (no 30415 here). Every successful save writes one audit record (action
+        user_profile_edit: admin, reason, the fields actually changed with before and after
+        values, phone numbers masked 3 + 4; with no field changed the changed fields are empty).
+        Retrying a save that already took effect therefore returns the same user and only adds
+        an audit record. The response is the user as GET /admin/v1/users/{user_id} returns it
+        now, phone number masked. No compare-and-set value and no Idempotency-Key (04 §6.6).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 30411
+        - 44001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminUserIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserProfileEditRequest'
+            examples:
+              phone:
+                summary: Change the phone number
+                value:
+                  phone: '13900001234'
+                  reason: 企业微信核对注册时间与最近一笔订单号，旧号已停用，改为新号
+              nickname:
+                summary: Change the nickname
+                value:
+                  nickname: 小狸
+                  reason: 用户在企业微信说明原昵称误填，核对身份后代改
+      responses:
+        '200':
+          description: The user as it is now, after the edit.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserDetailResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                  nickname: 凑狸用户5678
+                  phone_masked: '139****1234'
+                  invite_code: K7QX2M
+                  inviter_user_id: null
+                  level: L1
+                  register_method: sms
+                  registered_channel: appstore
+                  created_at: '2026-10-12T09:00:00+08:00'
+                  risk:
+                    state: normal
+                    reason_category: null
+                    reason: null
+                    frozen_until: null
+                    changed_by: null
+                    changed_at: null
+                    row_version: null
+                  union_bindings: []
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not saved (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                unknownUser:
+                  $ref: '#/components/examples/AdminUnknownUser'
+                reasonMissing:
+                  $ref: '#/components/examples/AdminUserReasonInvalid'
+                nothingToEdit:
+                  $ref: '#/components/examples/AdminUserProfileEmpty'
+                phoneInvalid:
+                  $ref: '#/components/examples/AdminUserLookupPhoneInvalid'
+                nicknameInvalid:
+                  $ref: '#/components/examples/AdminUserProfileNicknameInvalid'
+                nicknameSensitive:
+                  $ref: '#/components/examples/AdminUserProfileNicknameSensitive'
+                phoneBlacklisted:
+                  $ref: '#/components/examples/AdminUserProfilePhoneBlacklisted'
+                phoneTaken:
+                  $ref: '#/components/examples/AdminUserProfilePhoneTaken'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/orders:
     get:
       operationId: adminListOrders
@@ -16364,6 +16515,47 @@ components:
         data:
           fields:
             - reason
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUserProfileEmpty:
+      summary: 20001 neither phone nor nickname given
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - phone
+            - nickname
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUserProfileNicknameInvalid:
+      summary: 20001 the nickname is empty or longer than 16 characters after trimming
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - nickname
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUserProfileNicknameSensitive:
+      summary: 20001 the nickname failed content-safety review (or the review timed out)
+      value:
+        code: 20001
+        msg: 昵称含不允许使用的内容，请修改
+        data:
+          fields:
+            - nickname
+          reason: nickname_sensitive
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUserProfilePhoneBlacklisted:
+      summary: 44001 the new phone number is blacklisted
+      value:
+        code: 44001
+        msg: 操作未通过安全校验
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUserProfilePhoneTaken:
+      summary: 30411 the new phone number belongs to another account of this app (never mergeable here)
+      value:
+        code: 30411
+        msg: 该手机号已被其他账号占用
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminInviterChangeNotAllowed:
       summary: 30409 the user already has a direct invitee, an order or a claim
@@ -27654,6 +27846,31 @@ components:
             - $ref: '#/components/schemas/Id'
             - type: 'null'
           description: user_id of the new inviter; null removes the inviter (BR-INV-10).
+        reason:
+          $ref: '#/components/schemas/AdminUserReason'
+    AdminUserProfileEditRequest:
+      type: object
+      description: |
+        Body of PATCH /admin/v1/users/{user_id}/profile (BR-ID-06 细则「客服代办换号」, BR-ID-39
+        细则「后台改昵称」): `reason` and at least one of `phone` and `nickname`.
+      additionalProperties: false
+      required:
+        - reason
+      minProperties: 2
+      properties:
+        phone:
+          allOf:
+            - $ref: '#/components/schemas/Phone'
+          description: |
+            The new phone number, normalised by the server (BR-ID-05 细则「手机号规范化」); equal to
+            the current number after normalisation means not edited.
+        nickname:
+          type: string
+          description: |
+            The new nickname. The server trims leading and trailing white space and checks the
+            length as 1–16 extended grapheme clusters (BR-ID-39); no minLength / maxLength here
+            because JSON Schema counts code points. Equal to the current nickname after trimming
+            means not edited.
         reason:
           $ref: '#/components/schemas/AdminUserReason'
     AdminOrderPlatformStatus:

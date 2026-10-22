@@ -1163,6 +1163,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminEditUserProfile",
+    "method": "PATCH",
+    "path": "/admin/v1/users/:user_id/profile",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListOrders",
     "method": "GET",
     "path": "/admin/v1/orders",
