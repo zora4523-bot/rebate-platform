@@ -1,0 +1,23 @@
+id: B3-08h
+repo: rebate-platform
+title: B3-08h：冻结用例 [AC-B3-04a#4] 不再写死注册集合 {search_products, get_rebate_quote}，改为「allowlist ⊆ BR-AI-02 工具集合、与测试里传入的 handler 名精确相等、无重复、denylist 不命中」，为 B3-08g / B3-16 往 allowlist 加工具让路
+type: test-change
+# 2026-10-23 编排派工（B3-08 拆分，依据 couli-runs/B3-08/summary.md §4）。test/spec/agent/tools-registry/definitions.test.ts 第 72–87 行把 handlers 写死为两个、并断言 allowlist 文件恰好是这两个；
+#   B3-08g 往 specs/agent-tools.allowlist 加 list_my_orders 等工具时这条必红（B3-16 加 get_my_earnings 同理）。
+# 做法：期望集合改为 BR-AI-02 原文集合的子集，handler 名取自 allowlist 文件本身（构造同名替身 handler）后再比对；denylist 段原样保留。不删用例、不动实现。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件，Claude 实现、Codex 只读对抗评审，标签由编排核对后加（D10-110，B3-04j 先例）。
+refs: [BR-AI-02]
+refs_hash:
+  BR-AI-02: 61014cc4d222
+deps: [B3-04a]
+paths:
+  - 'test/spec/agent/tools-registry/definitions.test.ts'
+test_paths:
+  - 'test/spec/agent/tools-registry/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-registry/**'
+status: todo
+pr: null

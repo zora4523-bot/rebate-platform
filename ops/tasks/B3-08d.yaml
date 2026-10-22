@@ -1,0 +1,28 @@
+id: B3-08d
+repo: rebate-platform
+title: Agent 工具：prefill_claim——只下发给已绑手机主体；platform + order_no（可为 <num_k> 占位符，服务端还原，只做格式校验、不做存在性查询）；只出 claim_draft 卡（回显 platform、order_no 与本人 link_logs 外跳时间，evidence_summary=null）；不写 claims、不查未归因池；导出出卡函数供 explain_order 未命中复用
+type: impl
+# 2026-10-23 编排派工（B3-08 拆分，依据 couli-runs/B3-08/summary.md；main 6556b2e3）。05 B3-08 行（deps B1-10）。
+# 依据：BR-AI-01 A 级表 prefill_claim 行（只生成 claim_draft、不写 claims 表、不查询未归因订单池、不返回订单是否存在、只回显 platform + order_no 与本人 link_logs 点击时间、evidence_summary 置 null）；
+#   B 级表「提交找回」只由用户点卡上按钮经 POST /v1/orders/claims 完成（agent 不得 import orders.createClaim / createOrderClaim，BR-AI-02 ③）；
+#   BR-AI-03 例外：prefill_claim 的 order_no 可来自用户文本，经 BR-AI-14 占位符还原（ToolCallContext.placeholders），只作回显；04 §8.3 claim_draft 不带付款日期（用户在卡上自选）。
+# B1-10 前置：本段只用已合并的 B1-10b（orders 的 stripClaimSpaces / claimCompareValue / claimWindowHours）与 B1-10h（linking createClaimEntryReader：本人 convert/open 外跳日志，COALESCE(opener_user_id,user_id)）。
+#   W1 在做的 B1-10f（后台指派）、B1-10i（后台订单查询）是 /admin/v1 侧，不提供本段要的接口，不列 deps；B1-10k 已 done（后台审核写入），同样无关。
+# 提交按钮文案键 agent.card.claim_draft.submit 字典里还没有，随文案线补（summary.md 待定 4）；本段用键名，不写文案。
+# 不接线、不进 allowlist（B3-08g）。风险 RV1（agent/**）。分工：Codex 先写规则测试，Opus 实现，Codex 评审。
+refs: [BR-AI-01, BR-AI-03]
+refs_hash:
+  BR-AI-01: b624c86b4643
+  BR-AI-03: 2131432de5c6
+deps: [B3-04a, B3-05i, B1-10b, B1-10h]
+paths:
+  - 'apps/api/src/modules/agent/tools/claim/**'
+test_paths:
+  - 'test/spec/agent/tools-claim/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/tools-claim/**'
+status: todo
+pr: null
