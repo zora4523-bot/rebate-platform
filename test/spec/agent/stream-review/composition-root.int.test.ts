@@ -1,4 +1,4 @@
-// Real AppModule + HTTP + PG. The shared kit reads TEST_PG_ADMIN_URL; container execution only.
+// Real AppModule + HTTP + PG through the shared kit; container execution only.
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { createTestDatabase } from '@couli/db/testing';
 import { afterEach, expect, it, vi } from 'vitest';

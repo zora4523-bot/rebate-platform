@@ -1,4 +1,4 @@
-// PG entry is the existing kit (TEST_PG_ADMIN_URL); never executed on the Codex host.
+// PG entry is the shared stream test kit; never executed on the Codex host.
 import { createTestDatabase } from '@couli/db/testing';
 import { afterEach, expect, it, vi } from 'vitest';
 import * as core from '../../../../apps/api/src/modules/agent/orchestrator/index.ts';
