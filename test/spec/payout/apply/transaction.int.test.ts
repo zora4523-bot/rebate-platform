@@ -253,7 +253,9 @@ it('[AC-B2-05d#7] 两条同事务事件的整数金额、状态和租户准确�
     }),
   ]);
   for (const secret of [f.account, f.hmac, '合成姓名', f.cipher.toString()]) {
-    expect(JSON.stringify(events)).not.toContain(secret);
+    expect(
+      JSON.stringify(events, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v)),
+    ).not.toContain(secret);
   }
 });
 
