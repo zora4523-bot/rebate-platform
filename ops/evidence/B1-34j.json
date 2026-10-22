@@ -1,0 +1,82 @@
+{
+  "task": "B1-34j",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "52554949bd7f866fc6a4d03c41ebed84640e8475",
+  "red_tests": [
+    "test/spec/admin/read-hardening/audit-actor.test.ts > [AC-B1-34j#1] actor_id 非 UUID 对有无 audit.view_all 及超级管理员均为空页，合法筛选仍按权限生效",
+    "test/spec/admin/read-hardening/audit-range.test.ts > [AC-B1-34j#2] from/to 比较到微秒，等值、顺序、时区及缺省边界保持正确",
+    "test/spec/admin/read-hardening/audit-range.test.ts > [AC-B1-34j#3] adminListAuditLogs 微秒倒置返回 20001 和精确字段列表，拒绝前不读库",
+    "test/spec/admin/read-hardening/claim-user.test.ts > [AC-B1-34j#4] 详情 user_id 的大小写不影响申请人匹配，其他用户与跨应用仍拒绝",
+    "test/spec/admin/read-hardening/export-bytes.test.ts > [AC-B1-34j#5] put 保存 Buffer 视图的独立字节快照，之后改原 Buffer 或复用输入不污染文件",
+    "test/spec/admin/read-hardening/export-bytes.test.ts > [AC-B1-34j#6] get 每次返回独立字节，修改一次读出的内容不污染存储或另一次读取"
+  ],
+  "risk_note": "RV2 by path (admin, orders, platform modules) but behaviour-only fixes left over from earlier review S2s, no contract or schema change: (1) admin audit-log list returns an empty page for a non-UUID actor_id instead of letting PostgreSQL raise 22P02 (contract: an actor_id naming no account is an empty page), checked before the store; (2) the from / to inversion check compares integer microseconds instead of Date.parse milliseconds, so an inversion inside one millisecond is 20001 [from, to] (also used by the export filters); (3) admin claim detail compares user_id case-insensitively, as the list's uuid comparison does; (4) the in-memory ExportStore copies bytes on put and get (new Uint8Array) so a caller's later Buffer mutation cannot change stored content. No money, attribution or ledger path touched. Rule tests (6, [AC-B1-34j#n]) by Codex in two runs (the second only made two tests fail by assertion instead of the thrown error), red before the implementation; implementation by an Opus 5.5 subagent in one run.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "52554949bd7f866fc6a4d03c41ebed84640e8475",
+      "tree": "226bc8a86fae432ef994af05e5bf172738472d4f",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T21:21:53Z",
+      "finished_at": "2026-10-22T21:22:10Z",
+      "red_tests": [
+        "test/spec/admin/read-hardening/audit-actor.test.ts > [AC-B1-34j#1] actor_id 非 UUID 对有无 audit.view_all 及超级管理员均为空页，合法筛选仍按权限生效",
+        "test/spec/admin/read-hardening/audit-range.test.ts > [AC-B1-34j#2] from/to 比较到微秒，等值、顺序、时区及缺省边界保持正确",
+        "test/spec/admin/read-hardening/audit-range.test.ts > [AC-B1-34j#3] adminListAuditLogs 微秒倒置返回 20001 和精确字段列表，拒绝前不读库",
+        "test/spec/admin/read-hardening/claim-user.test.ts > [AC-B1-34j#4] 详情 user_id 的大小写不影响申请人匹配，其他用户与跨应用仍拒绝",
+        "test/spec/admin/read-hardening/export-bytes.test.ts > [AC-B1-34j#5] put 保存 Buffer 视图的独立字节快照，之后改原 Buffer 或复用输入不污染文件",
+        "test/spec/admin/read-hardening/export-bytes.test.ts > [AC-B1-34j#6] get 每次返回独立字节，修改一次读出的内容不污染存储或另一次读取"
+      ],
+      "expected": [
+        "test/spec/admin/read-hardening/audit-actor.test.ts",
+        "test/spec/admin/read-hardening/audit-range.test.ts",
+        "test/spec/admin/read-hardening/claim-user.test.ts",
+        "test/spec/admin/read-hardening/export-bytes.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "7c5eb3ada29313de8def3e79e16cf7fe5dca05fa2213a49d5ebb98f997912003"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "refs empty (no BR governs these robustness behaviours; checked against the current contract adminListAuditLogs / adminGetClaim and the ExportStore contract): fresh Claude subagent r1 pass, 0 findings; every item of the brief's section 9 covered, failures are assertions, relevant mutations killed"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "3d5048ed94daf3024616711991dccb6f38e00aff",
+    "specs": "7f0df3605fc3664048553d6d5534aca96ca34032"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
