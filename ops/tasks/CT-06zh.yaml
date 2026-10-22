@@ -1,0 +1,22 @@
+id: CT-06zh
+repo: rebate-platform
+title: CT-06zh：CI 检查 compose 编排的资源上限——infra/**/compose.yaml 里长期运行的服务必须写 cpus、mem_limit、pids_limit 与 healthcheck，缺了 check-workflows 一类的静态检查失败
+type: guard-change
+# 2026-10-23 入账（ops 线；架构评估 R-07「CI 检查编排必须有资源上限」，编排 D10-183 ③）。来源：docs/research/20261022-架构评估.md §9
+# 事件触发门禁与 CI 检查。做法：tools/ci 加一个只依赖 Node 内置模块与仓库 yaml-lite 的静态检查（或扩展现有 check-workflows），读
+# infra/staging/compose.yaml（以及以后的 prod compose）：每个带 restart 策略的服务都要有 cpus、mem_limit、pids_limit、healthcheck；
+# 一次性工具类 compose（infra/load、infra/fault）列白名单并写明理由。挂进 verify:fast。排在 B1-01zzj 之后（先有上限，再上检查）。
+# 改 tools/** 与 package.json scripts 属保护路径，按 approvals #24 由编排核对后加标签；非 task 分支 chore/guard-change-CT-06zh。
+refs: []
+refs_hash: {}
+deps: [B1-01zzj]
+paths:
+  - 'tools/ci/check-compose{,.test}.ts'
+  - 'package.json'
+  - 'ops/tasks/CT-06zh.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

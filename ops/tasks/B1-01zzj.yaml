@@ -1,0 +1,32 @@
+id: B1-01zzj
+repo: rebate-platform
+title: staging 五个进程加资源上限与依赖健康检查：compose 给 api / stream / worker / admin / payout 各设 cpus、mem_limit、pids_limit；worker 与 payout 的健康检查改为探依赖（PG，worker 另探 Redis），依赖不通即 unhealthy；deploy.sh 先迁移、再重启全部进程的顺序不变
+type: impl
+# 2026-10-23 入账（ops 线；架构评估 R-07，编排 D10-183 ③：排在 CI verify-int 超时修复 #1214 之后，现已合并）。
+# 来源：docs/research/20261022-架构评估.md（couli f468627）R-07「同机负载下的服务隔离与容量需要验收」——各服务资源配额、依赖健康检查、
+# 重任务并发；pg-boss 升级保留 ADR-0001 §4.2 第 14 项「先迁移、再重启全部进程」。现状（主干 8b04993e）：infra/staging/compose.yaml
+# 五个服务都没有 cpus / mem_limit / pids_limit；健康检查只看启动次数与 30 秒存活（boot.mjs 计数），不探数据库与 Redis。
+# 做法：① 五个服务各写资源上限，数值按同机 staging 节点的容量分配（实现时量出节点核数与内存，写进 README 的取值表与理由；
+# 拆分或加机器的触发指标另由 R-02 定，负责人决定）；② worker、payout 的健康检查在现有「单次启动 + 30 秒」之外，加依赖探测：
+# 数据库连得上（payout 只连自己的库，不连 Redis，ADR-0001 §4.2 第 20 项）、worker 另探 Redis；探测失败标 unhealthy，不重启循环
+# （restart 策略不变）；③ README 补资源上限取值表与「依赖不通时的表现」一节。不改迁移与发布顺序（deploy.sh 先迁移再切换不变）。
+# 受保护夹具：tools/ops 的 current-compose-validation / dirty-recovery 夹具只替换固定节点路径，实现时确认 compose 结构改动不碰它们。
+# 不在本任务：重任务队列并发（B1-01zzk）、Redis 运维准备（B1-01zzl）、CI 检查 compose 必须有资源上限（CT-06zh）、prod 发布链路。
+# 风险：infra/staging 与 platform 健康检查 → RV2。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'infra/staging/compose.yaml'
+  - 'infra/staging/boot.mjs'
+  - 'infra/staging/README.md'
+  - 'apps/api/src/modules/health/**'
+test_paths:
+  - 'test/spec/platform/staging-limits/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/staging-limits/**'
+status: todo
+pr: null
