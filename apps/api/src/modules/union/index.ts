@@ -1,4 +1,12 @@
 // Public surface of the union module (规划/02 §4.1, §6). Other modules import only from this file.
+export { createSiteReauth, SiteReauthError } from './auth-expiry/reauth.ts';
+export type {
+  ReauthMode,
+  SiteOAuthProvider,
+  SiteReauth,
+  SiteReauthErrorCode,
+  SiteReauthOptions,
+} from './auth-expiry/reauth.ts';
 export {
   REGISTERED_PLATFORMS,
   UnionError,
