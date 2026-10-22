@@ -4614,6 +4614,116 @@ CREATE TABLE app.users (
 
 
 --
+-- Name: withdraw_holds; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.withdraw_holds (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    reason text NOT NULL,
+    source_ref text,
+    created_by text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    hold_until timestamp with time zone,
+    released_at timestamp with time zone,
+    released_by text,
+    CONSTRAINT withdraw_holds_created_by_check CHECK ((created_by <> ''::text)),
+    CONSTRAINT withdraw_holds_reason_check CHECK ((reason = ANY (ARRAY['manual'::text, 'recon_diff'::text, 'ledger_mismatch'::text, 'manual_failed_watch'::text]))),
+    CONSTRAINT withdraw_holds_released_check CHECK (((released_at IS NULL) = (released_by IS NULL)))
+);
+
+
+--
+-- Name: withdrawals; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.withdrawals (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    user_id uuid NOT NULL,
+    amount_fen bigint NOT NULL,
+    fee_fen bigint NOT NULL,
+    tax_fen bigint NOT NULL,
+    net_fen bigint NOT NULL,
+    income_type text NOT NULL,
+    fee_rule_id uuid,
+    tax_rule_version text,
+    payout_method text NOT NULL,
+    payee_name text NOT NULL,
+    payee_account_cipher bytea NOT NULL,
+    payee_hmac text NOT NULL,
+    bank_name text,
+    wechat_app_id text,
+    channel_state text,
+    confirm_deadline timestamp with time zone,
+    wechat_launch_cipher bytea,
+    status text NOT NULL,
+    out_biz_no text NOT NULL,
+    review_mode text,
+    auto_decision jsonb,
+    review_deadline timestamp with time zone,
+    reviewer_id uuid,
+    reviewed_at timestamp with time zone,
+    reject_reason_code text,
+    reject_note text,
+    fail_code text,
+    executor_id uuid,
+    executed_at timestamp with time zone,
+    batch_id uuid,
+    execute_seq integer DEFAULT 0 NOT NULL,
+    needs_manual boolean DEFAULT false NOT NULL,
+    manual_resolution text,
+    resolver_ids jsonb,
+    proof_file text,
+    manual_entry_by uuid,
+    manual_confirm_by uuid,
+    hold_reason text,
+    hold_at timestamp with time zone,
+    blocked_reason text,
+    risk_flags jsonb,
+    risk_flags_at timestamp with time zone,
+    payout_channel text NOT NULL,
+    paid_at timestamp with time zone,
+    channel_order_id text,
+    row_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT withdrawals_amount_check CHECK ((amount_fen > 0)),
+    CONSTRAINT withdrawals_auto_decision_check CHECK (((auto_decision IS NULL) OR (jsonb_typeof(auto_decision) = 'object'::text))),
+    CONSTRAINT withdrawals_bank_name_check CHECK (((payout_method = 'bank_card'::text) = (bank_name IS NOT NULL))),
+    CONSTRAINT withdrawals_blocked_reason_check CHECK (((blocked_reason IS NULL) OR (blocked_reason = 'NEGATIVE_BALANCE'::text))),
+    CONSTRAINT withdrawals_channel_order_id_check CHECK (((channel_order_id IS NULL) OR (channel_order_id <> ''::text))),
+    CONSTRAINT withdrawals_channel_state_check CHECK (((channel_state IS NULL) OR (channel_state = ANY (ARRAY['processing'::text, 'wait_user_confirm'::text, 'canceling'::text])))),
+    CONSTRAINT withdrawals_execute_seq_check CHECK ((execute_seq >= 0)),
+    CONSTRAINT withdrawals_fee_check CHECK ((fee_fen >= 0)),
+    CONSTRAINT withdrawals_hold_at_check CHECK (((hold_reason IS NULL) = (hold_at IS NULL))),
+    CONSTRAINT withdrawals_hold_reason_check CHECK (((hold_reason IS NULL) OR (hold_reason = ANY (ARRAY['payout_disabled'::text, 'queue_paused'::text, 'channel_disabled'::text, 'member_blocked'::text, 'single_cap'::text, 'daily_cap'::text, 'payer_side_after_transfer'::text])))),
+    CONSTRAINT withdrawals_income_type_check CHECK ((income_type = 'SERVICE_FEE'::text)),
+    CONSTRAINT withdrawals_manual_resolution_check CHECK (((manual_resolution IS NULL) OR (manual_resolution = ANY (ARRAY['paid'::text, 'failed'::text])))),
+    CONSTRAINT withdrawals_net_check CHECK (((net_fen >= 0) AND (net_fen = ((amount_fen - fee_fen) - tax_fen)))),
+    CONSTRAINT withdrawals_out_biz_no_check CHECK ((out_biz_no ~ '^[A-Za-z0-9]{1,32}$'::text)),
+    CONSTRAINT withdrawals_paid_check CHECK (((status <> ALL (ARRAY['PAID_API'::text, 'PAID_MANUAL'::text])) OR (paid_at IS NOT NULL))),
+    CONSTRAINT withdrawals_paid_manual_check CHECK (((status <> 'PAID_MANUAL'::text) OR ((manual_entry_by IS NOT NULL) AND (manual_confirm_by IS NOT NULL)))),
+    CONSTRAINT withdrawals_payee_hmac_check CHECK ((payee_hmac <> ''::text)),
+    CONSTRAINT withdrawals_payee_name_check CHECK ((payee_name <> ''::text)),
+    CONSTRAINT withdrawals_payout_channel_check CHECK ((payout_channel = ANY (ARRAY['alipay'::text, 'bank_card'::text, 'wechat'::text]))),
+    CONSTRAINT withdrawals_payout_method_check CHECK ((payout_method = ANY (ARRAY['alipay'::text, 'bank_card'::text, 'wechat'::text]))),
+    CONSTRAINT withdrawals_reject_reason_check CHECK (((reject_reason_code IS NULL) OR (reject_reason_code = ANY (ARRAY['RISK_SUSPECT'::text, 'ORDER_ABNORMAL'::text, 'PAYEE_INFO_INVALID'::text, 'USER_REQUEST'::text, 'OTHER'::text, 'NEGATIVE_BALANCE'::text])))),
+    CONSTRAINT withdrawals_rejected_check CHECK (((status <> 'REJECTED'::text) OR (reject_reason_code IS NOT NULL))),
+    CONSTRAINT withdrawals_resolver_ids_check CHECK (((resolver_ids IS NULL) OR (jsonb_typeof(resolver_ids) = 'array'::text))),
+    CONSTRAINT withdrawals_review_mode_check CHECK (((review_mode IS NULL) OR (review_mode = ANY (ARRAY['auto'::text, 'manual'::text])))),
+    CONSTRAINT withdrawals_risk_flags_at_check CHECK (((risk_flags IS NULL) = (risk_flags_at IS NULL))),
+    CONSTRAINT withdrawals_risk_flags_check CHECK (((risk_flags IS NULL) OR (jsonb_typeof(risk_flags) = 'array'::text))),
+    CONSTRAINT withdrawals_row_version_check CHECK ((row_version >= 0)),
+    CONSTRAINT withdrawals_status_check CHECK ((status = ANY (ARRAY['PENDING_REVIEW'::text, 'APPROVED'::text, 'REJECTED'::text, 'PAYING'::text, 'PAID_API'::text, 'PAID_MANUAL'::text, 'FAILED'::text]))),
+    CONSTRAINT withdrawals_tax_check CHECK ((tax_fen >= 0)),
+    CONSTRAINT withdrawals_wechat_app_id_check CHECK (((payout_method = 'wechat'::text) = (wechat_app_id IS NOT NULL))),
+    CONSTRAINT withdrawals_wechat_only_check CHECK (((payout_method = 'wechat'::text) OR ((channel_state IS NULL) AND (confirm_deadline IS NULL) AND (wechat_launch_cipher IS NULL))))
+);
+
+
+--
 -- Name: bam; Type: TABLE; Schema: pgboss; Owner: -
 --
 
@@ -6385,6 +6495,38 @@ ALTER TABLE ONLY app.users
 
 
 --
+-- Name: withdraw_holds withdraw_holds_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.withdraw_holds
+    ADD CONSTRAINT withdraw_holds_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: withdrawals withdrawals_app_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.withdrawals
+    ADD CONSTRAINT withdrawals_app_id_id_key UNIQUE (app_id, id);
+
+
+--
+-- Name: withdrawals withdrawals_out_biz_no_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.withdrawals
+    ADD CONSTRAINT withdrawals_out_biz_no_key UNIQUE (app_id, out_biz_no);
+
+
+--
+-- Name: withdrawals withdrawals_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.withdrawals
+    ADD CONSTRAINT withdrawals_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: bam bam_pkey; Type: CONSTRAINT; Schema: pgboss; Owner: -
 --
 
@@ -7467,6 +7609,41 @@ CREATE UNIQUE INDEX users_phone_hmac_key ON app.users USING btree (app_id, phone
 
 
 --
+-- Name: withdraw_holds_active_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX withdraw_holds_active_idx ON app.withdraw_holds USING btree (app_id, user_id) WHERE (released_at IS NULL);
+
+
+--
+-- Name: withdrawals_channel_order_id_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX withdrawals_channel_order_id_key ON app.withdrawals USING btree (app_id, channel_order_id) WHERE (channel_order_id IS NOT NULL);
+
+
+--
+-- Name: withdrawals_open_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX withdrawals_open_idx ON app.withdrawals USING btree (app_id, user_id) WHERE (status = ANY (ARRAY['PENDING_REVIEW'::text, 'APPROVED'::text, 'PAYING'::text]));
+
+
+--
+-- Name: withdrawals_payee_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX withdrawals_payee_created_idx ON app.withdrawals USING btree (app_id, payee_hmac, created_at);
+
+
+--
+-- Name: withdrawals_user_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX withdrawals_user_created_idx ON app.withdrawals USING btree (app_id, user_id, created_at);
+
+
+--
 -- Name: job_common_i1; Type: INDEX; Schema: pgboss; Owner: -
 --
 
@@ -7919,6 +8096,13 @@ CREATE TRIGGER union_pids_no_delete BEFORE DELETE ON app.union_pids FOR EACH ROW
 --
 
 CREATE TRIGGER union_raw_payloads_append_only BEFORE DELETE OR UPDATE ON app.union_raw_payloads FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: withdrawals withdrawals_out_biz_no_fixed; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER withdrawals_out_biz_no_fixed BEFORE UPDATE OF out_biz_no ON app.withdrawals FOR EACH ROW WHEN ((old.out_biz_no IS DISTINCT FROM new.out_biz_no)) EXECUTE FUNCTION app.reject_update_delete();
 
 
 --
@@ -9071,6 +9255,22 @@ ALTER TABLE ONLY app.user_tip_reads
 
 ALTER TABLE ONLY app.users
     ADD CONSTRAINT users_parent_fkey FOREIGN KEY (app_id, parent_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: withdraw_holds withdraw_holds_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.withdraw_holds
+    ADD CONSTRAINT withdraw_holds_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
+
+
+--
+-- Name: withdrawals withdrawals_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.withdrawals
+    ADD CONSTRAINT withdrawals_user_fkey FOREIGN KEY (app_id, user_id) REFERENCES app.users(app_id, id);
 
 
 --
@@ -13114,6 +13314,272 @@ GRANT SELECT ON TABLE app.user_tip_reads TO couli_readonly;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE app.users TO couli_app;
 GRANT SELECT ON TABLE app.users TO couli_readonly;
+
+
+--
+-- Name: TABLE withdraw_holds; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.withdraw_holds TO couli_app;
+GRANT SELECT ON TABLE app.withdraw_holds TO couli_payout;
+GRANT SELECT ON TABLE app.withdraw_holds TO couli_readonly;
+
+
+--
+-- Name: COLUMN withdraw_holds.released_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(released_at) ON TABLE app.withdraw_holds TO couli_app;
+
+
+--
+-- Name: COLUMN withdraw_holds.released_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(released_by) ON TABLE app.withdraw_holds TO couli_app;
+
+
+--
+-- Name: TABLE withdrawals; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.withdrawals TO couli_app;
+GRANT SELECT ON TABLE app.withdrawals TO couli_payout;
+GRANT SELECT ON TABLE app.withdrawals TO couli_readonly;
+
+
+--
+-- Name: COLUMN withdrawals.channel_state; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(channel_state) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.confirm_deadline; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(confirm_deadline) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.wechat_launch_cipher; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(wechat_launch_cipher) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(status) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(status) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.review_mode; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(review_mode) ON TABLE app.withdrawals TO couli_app;
+
+
+--
+-- Name: COLUMN withdrawals.auto_decision; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(auto_decision) ON TABLE app.withdrawals TO couli_app;
+
+
+--
+-- Name: COLUMN withdrawals.review_deadline; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(review_deadline) ON TABLE app.withdrawals TO couli_app;
+
+
+--
+-- Name: COLUMN withdrawals.reviewer_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reviewer_id) ON TABLE app.withdrawals TO couli_app;
+
+
+--
+-- Name: COLUMN withdrawals.reviewed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reviewed_at) ON TABLE app.withdrawals TO couli_app;
+
+
+--
+-- Name: COLUMN withdrawals.reject_reason_code; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reject_reason_code) ON TABLE app.withdrawals TO couli_app;
+
+
+--
+-- Name: COLUMN withdrawals.reject_note; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(reject_note) ON TABLE app.withdrawals TO couli_app;
+
+
+--
+-- Name: COLUMN withdrawals.fail_code; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(fail_code) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(fail_code) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.executor_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(executor_id) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(executor_id) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.executed_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(executed_at) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(executed_at) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.batch_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(batch_id) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(batch_id) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.execute_seq; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(execute_seq) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(execute_seq) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.needs_manual; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(needs_manual) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.manual_resolution; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(manual_resolution) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(manual_resolution) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.resolver_ids; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(resolver_ids) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(resolver_ids) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.proof_file; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(proof_file) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(proof_file) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.manual_entry_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(manual_entry_by) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(manual_entry_by) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.manual_confirm_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(manual_confirm_by) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(manual_confirm_by) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.hold_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(hold_reason) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(hold_reason) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.hold_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(hold_at) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(hold_at) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.blocked_reason; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(blocked_reason) ON TABLE app.withdrawals TO couli_app;
+
+
+--
+-- Name: COLUMN withdrawals.risk_flags; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(risk_flags) ON TABLE app.withdrawals TO couli_app;
+
+
+--
+-- Name: COLUMN withdrawals.risk_flags_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(risk_flags_at) ON TABLE app.withdrawals TO couli_app;
+
+
+--
+-- Name: COLUMN withdrawals.paid_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(paid_at) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(paid_at) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.channel_order_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(channel_order_id) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(channel_order_id) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.row_version; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(row_version) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(row_version) ON TABLE app.withdrawals TO couli_payout;
+
+
+--
+-- Name: COLUMN withdrawals.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(updated_at) ON TABLE app.withdrawals TO couli_app;
+GRANT UPDATE(updated_at) ON TABLE app.withdrawals TO couli_payout;
 
 
 --

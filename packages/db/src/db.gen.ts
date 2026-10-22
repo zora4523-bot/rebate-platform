@@ -1748,6 +1748,72 @@ export interface UserTipReads {
   user_id: string;
 }
 
+export interface Withdrawals {
+  amount_fen: ColumnType<bigint, bigint, bigint>;
+  app_id: string;
+  auto_decision: Json | null;
+  bank_name: string | null;
+  batch_id: string | null;
+  blocked_reason: string | null;
+  channel_order_id: string | null;
+  channel_state: string | null;
+  confirm_deadline: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  execute_seq: Generated<number>;
+  executed_at: Timestamp | null;
+  executor_id: string | null;
+  fail_code: string | null;
+  fee_fen: ColumnType<bigint, bigint, bigint>;
+  fee_rule_id: string | null;
+  hold_at: Timestamp | null;
+  hold_reason: string | null;
+  id: string;
+  income_type: string;
+  manual_confirm_by: string | null;
+  manual_entry_by: string | null;
+  manual_resolution: string | null;
+  needs_manual: Generated<boolean>;
+  net_fen: ColumnType<bigint, bigint, bigint>;
+  out_biz_no: string;
+  paid_at: Timestamp | null;
+  payee_account_cipher: Buffer;
+  payee_hmac: string;
+  payee_name: string;
+  payout_channel: string;
+  payout_method: string;
+  proof_file: string | null;
+  reject_note: string | null;
+  reject_reason_code: string | null;
+  resolver_ids: Json | null;
+  review_deadline: Timestamp | null;
+  review_mode: string | null;
+  reviewed_at: Timestamp | null;
+  reviewer_id: string | null;
+  risk_flags: Json | null;
+  risk_flags_at: Timestamp | null;
+  row_version: Generated<number>;
+  status: string;
+  tax_fen: ColumnType<bigint, bigint, bigint>;
+  tax_rule_version: string | null;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
+  wechat_app_id: string | null;
+  wechat_launch_cipher: Buffer | null;
+}
+
+export interface WithdrawHolds {
+  app_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string;
+  hold_until: Timestamp | null;
+  id: string;
+  reason: string;
+  released_at: Timestamp | null;
+  released_by: string | null;
+  source_ref: string | null;
+  user_id: string;
+}
+
 export interface DB {
   account_balances: AccountBalances;
   admin_permissions: AdminPermissions;
@@ -1862,4 +1928,6 @@ export interface DB {
   user_risk_state: UserRiskState;
   user_tip_reads: UserTipReads;
   users: Users;
+  withdraw_holds: WithdrawHolds;
+  withdrawals: Withdrawals;
 }
