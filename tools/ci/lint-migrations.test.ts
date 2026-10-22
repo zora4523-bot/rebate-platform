@@ -224,6 +224,9 @@ it('classifies every table of db/schema.sql: the funds and attribution tables an
     'settle_adjust_batches',
     'settle_adjustments',
     'recon_union',
+    // Withdrawal tables (B2-05b): the withdraw* prefix covers both.
+    'withdrawals',
+    'withdraw_holds',
   ]);
   for (const name of funds) expect(tables, name).toContain(name);
   for (const name of tables) expect(isFundsTable(`app.${name}`), name).toBe(funds.has(name));
