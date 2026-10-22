@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
 import { expect, it } from 'vitest';
@@ -9,7 +10,7 @@ import type { CardInput } from '../../../../apps/api/src/modules/agent/stream/wr
 import { connect, newLink } from '../../db/linking-bindings/kit.ts';
 import { APP, OTHER_APP, databaseKit } from './kit.ts';
 
-const h = databaseKit();
+const h = databaseKit(createTestDatabase);
 
 function writer() {
   return createPgAgentTraceWriter({ db: h.db(), newId: randomUUID });

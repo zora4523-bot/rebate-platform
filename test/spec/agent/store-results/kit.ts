@@ -1,7 +1,6 @@
 // B3-09c: real PG, business role only; no DDL/permission assertions in this task.
 import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/index.ts';
@@ -25,17 +24,24 @@ export const CONDITIONS: SearchConditions = {
   chain_id: 'synthetic-chain-z',
 };
 
+/** The one-shot database a test file creates (createTestDatabase from @couli/db/testing, passed in by
+ * each *.int.test.ts: only those may import @couli/db/testing — .dependency-cruiser.cjs). */
+export interface FixtureDatabase {
+  urlFor(role: string): string;
+  drop(): Promise<void>;
+}
+
 export interface Scope {
   appId: string;
   sessionId: string;
   runId: string;
 }
 
-export function databaseKit() {
-  let database: TestDatabase | undefined;
+export function databaseKit(createDatabase: () => Promise<FixtureDatabase>) {
+  let database: FixtureDatabase | undefined;
   let pool: Kysely<DB> | undefined;
   beforeAll(async () => {
-    database = await createTestDatabase();
+    database = await createDatabase();
     pool = createDb({ connectionString: database.urlFor('couli_app'), max: 8 });
   }, 180_000);
   afterAll(async () => {

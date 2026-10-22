@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'kysely';
 import { expect, it } from 'vitest';
@@ -5,7 +6,7 @@ import { FixedClock } from '../../../../apps/api/src/modules/platform/index.ts';
 import type { DeliveredProduct } from '../../../../apps/api/src/modules/agent/orchestrator/results/types.ts';
 import { APP, OTHER_APP, databaseKit, delivered, product, input } from './kit.ts';
 
-const h = databaseKit();
+const h = databaseKit(createTestDatabase);
 
 it('[AC-B3-09c#1][BR-AI-05] save 原样存条件，重复不增行，未投递结果不可见', async () => {
   const store = h.store();

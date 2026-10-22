@@ -1,3 +1,4 @@
+import { createTestDatabase } from '@couli/db/testing';
 import { sql } from 'kysely';
 import { expect, it } from 'vitest';
 import {
@@ -8,7 +9,7 @@ import {
 import { expectChainPort } from '../orchestrator-results-chain/kit.ts';
 import { APP, OTHER_APP, CONDITIONS, databaseKit, delivered, input } from './kit.ts';
 
-const h = databaseKit();
+const h = databaseKit(createTestDatabase);
 // Same six transitions as B3-05k's frozen chain store tests.
 const sequence: readonly SessionChain[] = [
   { chainId: 'synthetic-chain-z', status: 'searching', conditions: null },
