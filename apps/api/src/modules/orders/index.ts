@@ -14,6 +14,14 @@ export type {
   RightsOrderLookupInput,
   RightsOrderLookupResult,
 } from './infra/rights-order-lookup.ts';
+export { readNotifyOrderFacts, readNotifyClaimFacts } from './ports/notify-order-facts.ts';
+export type {
+  ReadNotifyOrderFactsInput,
+  NotifyOrderFacts,
+  ReadNotifyClaimFactsInput,
+  NotifyClaimFacts,
+  NotifyClaimItem,
+} from './ports/notify-order-facts.ts';
 export { claimEntryPinned } from './domain/claim-entry.ts';
 export type { ClaimEntryInput } from './domain/claim-entry.ts';
 export { createInviteRewardOrderFacts } from './ports/invite-reward.ts';

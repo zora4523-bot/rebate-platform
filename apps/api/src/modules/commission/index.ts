@@ -1,3 +1,8 @@
+export { readNotifyBeneficiaries } from './ports/notify-beneficiaries.ts';
+export type {
+  ReadNotifyBeneficiariesInput,
+  NotifyBeneficiary,
+} from './ports/notify-beneficiaries.ts';
 export { createCommissionRebateQuoter } from './application/rebate-quoter.ts';
 export { COMMISSION_QUOTE_CONFIG_KEYS } from './application/types.ts';
 export type { CommissionQuoteContext, CommissionRebateQuoter } from './application/types.ts';
