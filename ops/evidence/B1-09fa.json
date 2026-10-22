@@ -1,0 +1,48 @@
+{
+  "task": "B1-09fa",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "056587db1154c7e1678071196a9237c7c87fc139",
+  "red_tests": [],
+  "risk_note": "RV2 by path (apps/api/package.json dependencies and pnpm-lock.yaml; class-2 protected, exempt for a deps task, label per approvals id 24 after the review and the required checks). Deps task for the admin Excel import (B1-09g): read-excel-file 9.3.12 (2026-10-07) as an exact dependency, chosen by orchestrator ruling D10-178 instead of exceljs 4.4.0, whose transitive buffers@0.1.1 declares no license (approvals id 3 not met; no exception granted). New lock entries: read-excel-file 9.3.12, saxen 11.2.0 (2026-09-21), unzipper-esm 0.13.3 (2026-07-27), worker-f 0.1.20 (2026-08-07), node-int64 0.4.0 (2015-04-04), all MIT per the npm registry and published at least 7 days ago (approvals id 3, checked by the orchestrator against the registry); fflate 0.8.3 and graceful-fs 4.2.11 were already locked. No scripts changed. Lockfile by the orchestrator's pnpm install outside the sandbox. Ledger tester: none, no rule tests, no red run. Reviews: Codex only (approvals id 27). Full verification by the required CI checks (approvals id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 (exceljs 4.4.0) pass with no findings; the dependency was then replaced by D10-178"
+    },
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 2 incremental review of the read-excel-file swap: exact version, five new lock entries with integrity, scripts unchanged; pass with no findings; money checklist n/a"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "b59f86ba9ca0394276c033c239eac9569777dabf",
+    "specs": "8bdd14157b45b1ae9ef002ce4f11cb45e325b0c1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main (the tree of the 1,000,000-run records in ops/evidence/B1-01a.json and others)",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
