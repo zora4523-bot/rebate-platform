@@ -19,6 +19,8 @@ export { createRuleSetReader } from './infra/rule-set-reader.ts';
 export type { RuleSetReaderOptions } from './infra/rule-set-reader.ts';
 export { createCommissionSnapshot } from './application/snapshot.ts';
 export { readCommissionSnapshot } from './application/read-snapshot.ts';
+export { createSelfRebateEstimateReader } from './ports/self-rebate-estimate.ts';
+export type { SelfRebateEstimateReader } from './ports/self-rebate-estimate.ts';
 export type {
   ReadCommissionSnapshotInput,
   ReadCommissionSnapshotResult,

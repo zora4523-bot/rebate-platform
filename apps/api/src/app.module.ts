@@ -1,8 +1,14 @@
 import { type DynamicModule, type Provider, HttpException, Module, Scope } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import type { DB as Database } from '@couli/db';
-import { ProductKeyUnderivable, deriveProductKey, type UnionProductPayload } from '@couli/domain';
-import type { Kysely } from 'kysely';
+import {
+  ProductKeyUnderivable,
+  deriveProductKey,
+  orderKey,
+  type UnionProductPayload,
+} from '@couli/domain';
+import { addFen } from '@couli/money';
+import type { Kysely, Transaction } from 'kysely';
 import {
   ADMIN_CHECK,
   AdminAuthModule,
@@ -41,6 +47,7 @@ import {
   type RegisterLinkInput,
 } from './modules/catalog/index.ts';
 import {
+  createSelfRebateEstimateReader,
   COMMISSION_QUOTE_CONFIG_KEYS,
   createCommissionRebateQuoter,
   createCommissionSnapshot,
@@ -148,7 +155,7 @@ import {
   type MeUnionBindingStatus,
   type PayoutAccountConfigPort,
 } from './modules/identity/index.ts';
-import { LedgerModule, createLedger } from './modules/ledger/index.ts';
+import { LedgerModule, createLedger, getOrderNets } from './modules/ledger/index.ts';
 import {
   PayoutModule,
   createDefaultFeeTaxCalculator,
@@ -156,6 +163,7 @@ import {
   createWithdrawRules,
   createWithdrawUsageReader,
   type ReverifyGatePort,
+  type WithdrawRulesOptions,
   type WithdrawRulesService,
 } from './modules/payout/index.ts';
 import {
@@ -196,6 +204,7 @@ import {
   unbindPushTokensForSession,
 } from './modules/notification/index.ts';
 import {
+  createSelfPurchaseOrderReader,
   OrdersAdminModule,
   OrdersModule,
   type AdminClaimPorts,
@@ -2121,6 +2130,63 @@ function sessionPushTokens(clock: Clock): SessionPushTokens {
  * pending until identity's CT-26c / CT-26e land. Without a database or a keyring the entry gets no
  * use case (the controller answers 50001).
  */
+/**
+ * BR-WDR-03 ⑬ 细则 (B2-05c): the member's self-purchase orders of the last 90 × 24 hours that are
+ * received and still rebate-worthy (orders' port), and the member's own rebate share of them —
+ * the credited net from the ledger once CREDITED (已入账金额), the commission snapshot's amount at the
+ * order's version before (当前预估). Read on the caller's handle; the ledger's order nets want a
+ * transaction, so a pool handle (GET /v1/withdrawals/rules) opens a short read-only one.
+ */
+function selfPurchasePort(): WithdrawRulesOptions['selfPurchase'] {
+  const orders = createSelfPurchaseOrderReader();
+  const estimate = createSelfRebateEstimateReader();
+  async function creditedSelfNet(
+    handle: Kysely<Database>,
+    appId: string,
+    userId: string,
+    platform: string,
+    subOrderId: string,
+  ): Promise<bigint> {
+    const selection = { appId, orderKey: orderKey(platform, subOrderId) };
+    const nets = handle.isTransaction
+      ? await getOrderNets(handle as Transaction<Database>, selection)
+      : await handle.transaction().execute((trx) => getOrderNets(trx, selection));
+    const own = nets.beneficiaries.find(
+      (b) => b.beneficiary_user_id === userId && b.role === 'self',
+    );
+    return own === undefined || own.net_fen < 0n ? 0n : own.net_fen;
+  }
+  return {
+    async read(handle, input) {
+      const rows = await orders.read(handle, {
+        appId: input.appId,
+        userId: input.userId,
+        now: input.now,
+      });
+      let amount = 0n;
+      for (const row of rows) {
+        const share =
+          row.rebate_status === 'CREDITED'
+            ? await creditedSelfNet(
+                handle,
+                input.appId,
+                input.userId,
+                row.platform,
+                row.sub_order_id,
+              )
+            : await estimate.read(handle, {
+                appId: input.appId,
+                orderId: row.order_id,
+                commissionVersion: row.commission_version,
+                userId: input.userId,
+              });
+        amount = addFen(amount, share);
+      }
+      return { count: rows.length, amount_fen: amount };
+    },
+  };
+}
+
 function payoutModule(): DynamicModule {
   return PayoutModule.forRoot({
     rules: {
@@ -2157,8 +2223,7 @@ function payoutModule(): DynamicModule {
           ledger: createLedger({ clock }),
           holds: createWithdrawHoldsReader(),
           usage: createWithdrawUsageReader(),
-          // TODO(规划/11 §2.3): 近 90 天自购门槛读 orders 端口（BR-WDR-03 ⑬，开关默认关；开时按无自购拒绝）— blocked on orders 的只读导出
-          selfPurchase: { read: () => Promise.resolve({ count: 0, amount_fen: 0n }) },
+          selfPurchase: selfPurchasePort(),
           feeTax: createDefaultFeeTaxCalculator(),
         });
       },

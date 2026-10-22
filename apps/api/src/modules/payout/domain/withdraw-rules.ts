@@ -6,7 +6,7 @@
 // BR-WDR-03 细则). Step order and the in-step reason priorities are fixed by 08; the configured
 // values come from BR-WDR-04 / BR-WDR-06 through WithdrawLimits (0 = unlimited for the four
 // counts). No clock, no I/O, no floating point.
-import { subFen } from '@couli/money';
+import { floorToStepFen, subFen } from '@couli/money';
 
 /** BR-WDR-03: normalized input for steps ①–⑬. Money remains bigint fen. */
 export interface WithdrawLimits {
@@ -210,12 +210,6 @@ function remainingCount(cap: number, used: number): number {
   return Math.max(0, cap - used);
 }
 
-/** floor_to_step: the largest multiple of the step (from 0) not above the value; 0 when negative. */
-function floorToStep(value: bigint, step: bigint): bigint {
-  if (value <= 0n) return 0n;
-  return (value / step) * step;
-}
-
 /**
  * BR-WDR-03 细则: max_withdrawable_fen = floor_to_step(min(available, max_amount_fen, the method's
  * cap when set, the minor's remaining allowance)); below min_amount_fen the answer is
@@ -231,7 +225,7 @@ function maximum(input: WithdrawRuleInput): bigint {
     const remaining = minorRemaining(input);
     if (remaining < bound) bound = remaining;
   }
-  return floorToStep(bound, limits.amount_step_fen);
+  return floorToStepFen(bound, limits.amount_step_fen);
 }
 
 /** Read-only projection skips step-up and comparisons against the requested amount. */

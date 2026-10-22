@@ -325,7 +325,10 @@ export function createWithdrawRules(options: WithdrawRulesOptions): WithdrawRule
     const own = balances.find((row) => row.app_id === actor.appId && row.user_id === actor.userId);
     const holds = await options.holds.read(handle, actor);
     const usage = await options.usage.read(handle, { ...actor, now, payeeHmac });
-    const selfPurchase = await options.selfPurchase.read(handle, { ...actor, now });
+    // ⑬ is judged only when the gate is on: the port's order reads are skipped otherwise.
+    const selfPurchase = limits.self_purchase_enabled
+      ? await options.selfPurchase.read(handle, { ...actor, now })
+      : { count: 0, amount_fen: 0n };
     return {
       limits,
       step_up_valid: stepUpValid,
