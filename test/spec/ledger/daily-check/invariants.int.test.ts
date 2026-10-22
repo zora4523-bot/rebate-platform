@@ -117,8 +117,11 @@ it(
       await balance(db, a, 99n, 1n);
       const before = await immutableState(db);
       const result = await runner.runDailyCheck(db, { accountingDate: DAY });
-      expect(result.accountDifferences).toHaveLength(2);
-      expect(result.accountDifferences).toEqual(
+      // B2-05g：不变量 06（frozen = Σ 非终态提现单，B2-05b）对这个 frozen=1、无提现单的夹具另报一条账户级差异；
+      // 本用例只断言不变量 01 的两条，其余断言不变。
+      const differences01 = result.accountDifferences.filter((d) => d.invariant === '01');
+      expect(differences01).toHaveLength(2);
+      expect(differences01).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             invariant: '01',
