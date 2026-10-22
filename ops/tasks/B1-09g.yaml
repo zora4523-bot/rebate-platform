@@ -10,7 +10,7 @@ type: impl
 refs: [BR-FUND-06]
 refs_hash:
   BR-FUND-06: 2076b932478c
-deps: [CT-24n, B1-09e, B1-09f]
+deps: [CT-24n, B1-09e, B1-09fa]
 paths:
   - 'apps/api/src/modules/orders/**'
   - 'apps/api/src/modules/platform/import-store/**'

@@ -1,0 +1,19 @@
+id: B1-09fa
+repo: rebate-platform
+title: 依赖：apps/api 加 Excel 读取库 read-excel-file 9.3.12（精确版本），只改 dependencies 与锁文件
+type: deps
+# 2026-10-23 入账（W1 线；取代 B1-09f）。依赖选择：编排 10-18 原选 exceljs 4.4.0，装后发现传递依赖 buffers@0.1.1 无许可证（approvals #3 不满足），D10-178（2026-10-22）改用 read-excel-file 9.3.12（MIT，2026-10-07 发布；传递依赖 saxen、fflate、worker-f、unzipper-esm、graceful-fs、node-int64 全 MIT），不为 buffers 开例外。
+# 只改 apps/api/package.json 的 dependencies 段与 pnpm-lock.yaml（保护路径第二类，锁文件只有 deps 任务可改）；不改 scripts。由编排者在沙箱外执行 pnpm install。
+# 后台导入（B1-09g）用它读 xlsx（≤1 万行，整份读入内存，只读不写）；@fastify/multipart 10.1.2 主干已有，不再加。
+# 原 task/B1-09f 分支上的 read-excel-file 提交与 Codex money 评审 r1（exceljs）/ r2（换库增量）pass 改挂本任务（D10-178：换库后只补审依赖与读取路径增量）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/package.json'
+  - 'pnpm-lock.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
