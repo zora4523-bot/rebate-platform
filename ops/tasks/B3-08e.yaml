@@ -1,0 +1,28 @@
+id: B3-08e
+repo: rebate-platform
+title: 迁移：规则知识块表 rule_chunks（chunk_id、app_id、article_id、published_version、seq、title、text、status active/retired、created_at、retired_at）——只来自已发布的 help / rule 文章，写者 agent；MVP 不建向量列（D10-194），按 (app_id, status) 建索引；只授 SELECT / INSERT 与 status、retired_at 的 UPDATE
+type: migration
+# 2026-10-23 agent 线入账（D10-194 取 C：MVP 用 PostgreSQL 内检索，不调外部嵌入模型、不加供应商；pgvector 语义检索留作后续，由负责人定嵌入模型后另开扩展迁移加 embedding 列）。拆分依据 couli-runs/B3-08/summary.md。
+# 依据：04 §3.2 rule_chunks 行（chunk_id、article_id、title、text、embedding、published_version、status；只来自已发布文章，写者 agent）——embedding 本段不建（D10-194）；02 §4.1 agent 表清单；BR-AI-04「规则答复：rule_chunks（CMS 已发布版本）」；BR-AI-07 T6（rule_ref 卡 chunk_id / title / excerpt / published_version）。
+# 选型（D10-194 要求写进台账）：不新增扩展。db/bootstrap 只建了 vector；pg_trgm 未建、Pigsty 侧也未核对；PG 内置全文检索的 simple 配置不切中文。文章量小，检索在应用层按字二元组打分（B3-08b），本表只存切好的块与状态，不存检索专用列。
+# 来源：app.articles（每个版本一行，version ≥1，status draft/published/offline，category help/rule/notice/agreement）；块唯一键 (article_id, published_version, seq)；article_id 外键指 app.articles(id)，不级联。下线与旧版本块以 status=retired + retired_at 失效，不物理删，不授 DELETE。
+# 授权：couli_app SELECT、INSERT、UPDATE(status, retired_at)；couli_readonly 只授非自由文本列（不含 title、text），照 04 通则。业务表 app_id NOT NULL。
+# 两段式（db/AGENTS.md）：Opus 只写迁移 SQL，编排者在测试机跑 remote-snapshot 生成 schema.sql 与 db.gen.ts；迁移号落地时取主干最大 +1，按 D10-116 在 notices 占迁移槽；规则测试不写死迁移号。风险 RV2（db/**）。
+refs: [BR-AI-07, BR-AI-04]
+refs_hash:
+  BR-AI-07: edd68aa327e3
+  BR-AI-04: a07587a282ba
+deps: [B3-09a]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/agent-rule-chunks/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/agent-rule-chunks/**'
+status: todo
+pr: null
