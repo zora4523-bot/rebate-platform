@@ -1,0 +1,30 @@
+id: B1-12o
+repo: rebate-platform
+title: notification 推送发送核心：假 MobPush 通道（演示适配器，只回 accepted / rejected）；按 BR-ID-07「发送前校验」选收件人有效令牌；按模板分类读 notification_settings（无行即开），分类关闭则不推、notify_logs 记 channel=push status=suppressed suppress_reason=push_disabled，站内信照写；推送载荷只带 message_id、标题、正文
+type: impl
+# 2026-10-22 入账（be-codex，编排派工①：用户关掉的通知仍推送属隐私 / 体验缺陷，先做）。主干尚无任何推送发送（B1-14c createPushDispatcher 只是未接线的组合），本任务建核心并接上它。
+# 依据：08 BR-WATCH-15（关闭某类推送记 suppressed(push_disabled)、站内信照写）、BR-WATCH-19 ③（按分类关闭）、BR-TEXT-09 例 5（关闭服务类推送只写站内信；WD_FAILED 短信不受开关影响）、BR-ID-07 细则「发送前校验」（令牌属收件人、未作废、不在冻结期、会话未吊销、refresh 未过期，否则不推并按条件解绑）、BR-ID-10 细则「推送点击的落点」（载荷不带 route）。由编排者摘入任务书。
+# 推送行 dedupe_key 用 <事件键>:push（唯一键 (app_id, dedupe_key) 不含 channel）。分类取 notify_templates.category（无模板行时按代码登记表）。供应商 MobPush（CAP-X-05 未验证、无真实录制）→ 只用演示适配器，不伪造平台报文（硬规则 7）。
+# identity 新增只读端口（令牌对应会话是否有效），只加 ports 一个文件与 index 导出（notices 已告知 identity-lane）。不在本任务：免打扰顺延、每日上限与合并、真实 MobPush、具体推送生产方（B1-12j 等）。
+refs: [BR-WATCH-15, BR-WATCH-19, BR-TEXT-09, BR-ID-07, BR-ID-10]
+refs_hash:
+  BR-WATCH-15: f11102d06360
+  BR-WATCH-19: d14905e58b39
+  BR-TEXT-09: 79da190ca728
+  BR-ID-07: 4f2a4bdf0a2a
+  BR-ID-10: c52da301b6b2
+deps: [B1-12n, B1-12m, B1-14c]
+paths:
+  - 'apps/api/src/modules/notification/**'
+  - 'apps/api/src/modules/identity/index.ts'
+  - 'apps/api/src/modules/identity/ports/push-session-validity.ts'
+  - 'apps/api/src/modules/identity/ports/push-session-validity.test.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/notification/push-send/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/notification/push-send/**'
+status: todo
