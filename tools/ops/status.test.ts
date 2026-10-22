@@ -245,3 +245,36 @@ it(
   },
   CLI_TIMEOUT,
 );
+
+it(
+  'a void task (D10-190) is neither done nor dispatched, and a todo task depending on it is flagged',
+  () => {
+    const voidRoot = join(base, 'repo-void');
+    writeFiles(voidRoot, {
+      'README.md': 'fixture\n',
+      'ops/tasks/V1-01.yaml': task('V1-01', { status: 'done', pr: '7' }),
+      'ops/tasks/V1-02.yaml': task('V1-02', {
+        status: 'void',
+        paths: "\n  - 'apps/api/src/modules/v/**'",
+      }),
+      'ops/tasks/V1-03.yaml': task('V1-03', {
+        deps: '[V1-02]',
+        paths: "\n  - 'apps/api/src/modules/w/**'",
+      }),
+    });
+    fixtureGit(voidRoot, ['init', '-q', '-b', 'main']);
+    fixtureGit(voidRoot, ['add', '-A']);
+    fixtureGit(voidRoot, ['commit', '-q', '-m', 'fixture']);
+    const board = collectBoard({ root: voidRoot, now: NOW, risk: fixedRisk('RV1') });
+    expect(board.done_count).toBe(1);
+    expect(board.void_count).toBe(1);
+    expect(board.ready).toEqual([]);
+    expect(board.rows.find((r) => r.id === 'V1-03')?.deps).toEqual([{ id: 'V1-02', done: false }]);
+    expect(board.warnings).toContain('V1-03 依赖的 V1-02 已作废（void），改依赖或作废本任务');
+    const text = renderBoard(board);
+    expect(text).toContain('已作废 1 个（不列出、不派工）。');
+    expect(text).not.toContain('| V1-02 |');
+    expect(text).toContain('| V1-03 |');
+  },
+  CLI_TIMEOUT,
+);

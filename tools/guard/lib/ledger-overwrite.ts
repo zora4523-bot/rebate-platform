@@ -6,7 +6,8 @@
 // of the pull request (the merge base of --base and HEAD, so a branch behind the base is not
 // blamed for what the base changed meanwhile):
 // - `id`, `type` and `title` may not change (a change of scope is a new task with a new id);
-// - `status: done` may not go back to anything else;
+// - `status: done` may not go back to todo (it may become `void`, D10-190), and `status: void`
+//   may not become anything else;
 // - the file may not be deleted or renamed (ops/tasks never lost a file; fail-closed).
 // Everything else is free: status forward, `pr`, `paths`, `test_paths`, `refs`, `refs_hash`,
 // `deps`, `accept`, `mechanical_paths`, `red_exempt` (CT-06r), and the comment lines. A side that cannot be parsed
@@ -52,12 +53,15 @@ export function compareLedger(path: string, before: TaskFile, after: TaskFile): 
       details.push(`${field} 「${clip(before[field])}」→「${clip(after[field])}」`);
     }
   }
-  const reverted = before.status === 'done' && after.status !== 'done';
-  if (reverted) details.push(`status done → ${after.status}`);
+  // D10-190: `void` is terminal like `done`; a done task may still be voided.
+  const reverted =
+    (before.status === 'done' && after.status === 'todo') ||
+    (before.status === 'void' && after.status !== 'void');
+  if (reverted) details.push(`status ${before.status} → ${after.status}`);
   if (details.length === 0) return [];
   const what = details.join('；');
-  if (before.status === 'done') {
-    return [`${path}: ${before.id} 已存在且为 done，新任务请换编号（${what}）`];
+  if (before.status === 'done' || before.status === 'void') {
+    return [`${path}: ${before.id} 已存在且为 ${before.status}，新任务请换编号（${what}）`];
   }
   return [
     `${path}: ${before.id} 已存在（status ${before.status}），不得改 ${FROZEN_FIELDS.join(' / ')}；` +
