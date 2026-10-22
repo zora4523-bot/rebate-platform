@@ -42,7 +42,9 @@
 //   tools and texts, without onTrace (followup 31); no intents, no deterministic; review always
 //   answers timeout (B3-03j: with deps.assembly, its tools / texts / deterministic / intents
 //   replace the minimal ones; seams.tools still wins); the route is fixed to no_model; prompt
-//   always null; limits: orchestratorLimitsDefaults(); traceMask}); labels = createRunLabels over the same route and
+//   always null; limits: orchestratorLimitsDefaults(); traceMask}). B3-03m: an assembly's safety
+//   ports (createStreamReview, ./review.ts) replace the fail-closed input check (seams.inputCheck
+//   still wins) and the always-timeout review; labels = createRunLabels over the same route and
 //   prompt; sessions = createPgAgentSessionStore; ids = new UUIDv7 ids. No model transport is ever
 //   called. seams are test seams only (production passes none).
 //   close(): stops accepting (a message after close() started is refused and opens no run), waits
@@ -115,6 +117,7 @@ import { agentDefaultTexts, agentText } from './texts.ts';
 import type { AgentCallerReaderFactory } from './caller.ts';
 import type { AgentStreamAssemblyFactory, AgentStreamProvidedPorts } from './assembly.ts';
 import { agentStreamPortsToken } from './production.ts';
+import type { StreamReviewOptions } from './review.ts';
 export { createAgentStreamAssembly } from './assembly.ts';
 export type {
   AgentStreamAssembly,
@@ -125,6 +128,8 @@ export type {
   AgentStreamProvidedPorts,
 } from './assembly.ts';
 export { agentStreamPortsToken, createProductionStreamAssembly } from './production.ts';
+export { createStreamReview } from './review.ts';
+export type { StreamReviewOptions, StreamReviewPorts } from './review.ts';
 
 /** identity's createAiConsentReader (B1-02r), handed in by app.module (agent never imports it). */
 export type AgentConsentReaderFactory = (options: {
@@ -166,6 +171,9 @@ export interface AgentStreamModuleOptions {
    * the minimal B3-03f mount. Called once per runtime with {db, clock, logger, scheduler} and the
    * value of agentStreamPortsToken() when one is provided. */
   readonly assembly?: AgentStreamAssemblyFactory;
+  /** B3-03m: the content safety review configuration handed to the assembly as context.safety
+   * (app.module, stream entry). Absent: the assembly's review stays fail-closed. */
+  readonly safety?: StreamReviewOptions;
   readonly consentReader: AgentConsentReaderFactory;
   readonly callerReader: AgentCallerReaderFactory;
 }
@@ -177,7 +185,7 @@ export function agentStreamToken(): symbol {
 }
 
 export function agentStreamProvider(
-  options: Pick<AgentStreamModuleOptions, 'consentReader' | 'assembly'>,
+  options: Pick<AgentStreamModuleOptions, 'consentReader' | 'assembly' | 'safety'>,
 ): FactoryProvider {
   return {
     provide: agentStreamToken(),
@@ -215,10 +223,16 @@ export function agentStreamProvider(
               },
             };
       const factory = options.assembly;
+      const safety = options.safety;
       const assembly: AgentStreamAssemblyFactory | undefined =
         factory === undefined
           ? undefined
-          : (context) => factory(ports == null ? context : { ...context, ports });
+          : (context) =>
+              factory({
+                ...context,
+                ...(ports == null ? {} : { ports }),
+                ...(safety === undefined ? {} : { safety }),
+              });
       return createAgentStreamRuntime({
         db,
         clock,
@@ -301,7 +315,7 @@ export function createAgentStreamRuntime(
     maskForTrace(restorePlaceholders(args, table));
   const body = createAgentRunBody({
     tools,
-    inputCheck: seams?.inputCheck ?? failClosedInputCheck(),
+    inputCheck: seams?.inputCheck ?? business?.safety?.inputCheck ?? failClosedInputCheck(),
     degraded: createDegradedPath({
       tools,
       texts: runTexts,
@@ -317,7 +331,7 @@ export function createAgentStreamRuntime(
       },
     },
     modelClock: () => createRunModelClock(timings.runMaxMs),
-    review: { review: async () => 'timeout' },
+    review: business?.safety?.review ?? { review: async () => 'timeout' },
     texts: runTexts,
     prompt,
     limits: orchestratorLimitsDefaults(),

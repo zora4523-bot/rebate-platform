@@ -3,7 +3,10 @@
 // agentStreamPortsToken() (union / catalog / linking / parsing, assembled there: agent imports
 // none of their providers and never identity). This file adds agent's own parts: the content
 // configuration reader, the prohibited query words, the page_guide route whitelist and the copy.
-// Input check, sentence review (B3-03m) and model routing (B3-03k) are not part of it.
+// B3-03m: the input check and the sentence review come from createStreamReview over
+// context.safety (the composition root's review configuration); without it, or outside staging /
+// prod, or without the AccessKey pair, both stay fail-closed with no network request. Model
+// routing (B3-03k) is not part of it.
 import { bridge } from '@couli/contracts-ts';
 import { createContentReader } from '../../../content/index.ts';
 import { systemScheduler } from '../../../platform/index.ts';
@@ -19,6 +22,7 @@ import {
   type AgentStreamAssemblyContext,
 } from './assembly.ts';
 import { agentDefaultTexts, agentText, agentTextIfPresent, platformDisplayName } from './texts.ts';
+import { createStreamReview } from './review.ts';
 import { createToolStatusDisplay, type ToolStatusTextsDeps } from './tool-status.ts';
 
 const PORTS = Symbol('AGENT_STREAM_PORTS');
@@ -81,13 +85,22 @@ export function createProductionStreamAssembly(
     );
     return ports.platforms.filter((_, index) => flags[index]);
   };
-  return createAgentStreamAssembly({
+  const scheduler = context.scheduler ?? systemScheduler();
+  const texts = productionTexts(searchPlatforms, context.logger);
+  const safety = createStreamReview({
+    ...(context.safety === undefined ? {} : { options: context.safety }),
+    clock: context.clock,
+    scheduler,
+    logger: context.logger,
+    texts,
+  });
+  const assembly = createAgentStreamAssembly({
     db: context.db,
     clock: context.clock,
     logger: context.logger,
     config,
-    scheduler: context.scheduler ?? systemScheduler(),
-    texts: productionTexts(searchPlatforms, context.logger),
+    scheduler,
+    texts,
     routes: {
       // BR-AI-01 页面引导: only the configured whitelist (intersected with the contract's routes by
       // the intent port); unreadable or malformed configuration is no route at all.
@@ -117,4 +130,5 @@ export function createProductionStreamAssembly(
       cards: ports.cards,
     },
   });
+  return { ...assembly, safety };
 }

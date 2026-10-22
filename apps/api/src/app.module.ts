@@ -16,6 +16,7 @@ import {
   agentStreamPortsToken,
   createProductionStreamAssembly,
   type AgentStreamProvidedPorts,
+  type StreamReviewOptions,
 } from './modules/agent/index.ts';
 import {
   CatalogModule,
@@ -226,6 +227,7 @@ import {
   isContractSignedRoute,
   isHttpEntry,
 } from './modules/platform/index.ts';
+import { readAgentReviewCredentials } from './modules/platform/config/credential-env.ts';
 import {
   RiskAdminModule,
   RiskModule,
@@ -1680,6 +1682,30 @@ const AGENT_SEARCH_PAGE_SIZE = 20;
 @Module({})
 class AgentStreamPortsModule {}
 
+/** The Aliyun content safety endpoint of the Agent review (a server setting, not a credential). */
+const AGENT_REVIEW_ENDPOINT_ENV = 'AGENT_REVIEW_ALIYUN_ENDPOINT';
+
+/**
+ * B3-03m (BR-AI-18; owner D10-135 ②): the stream entry's content safety review configuration.
+ * Only staging / prod read the AccessKey pair and the endpoint; local / test hand over the
+ * environment alone, so their review stays fail-closed with no network request (loadConfig already
+ * refuses to start them when either credential name is set). A missing half or endpoint is
+ * fail-closed too (createStreamReview). Values are never logged.
+ * TODO(规划/11 §6): 真实调用验证 — blocked on 负责人在 staging 放入阿里云内容安全 Key
+ * TODO(规划/11 §2.3): 审核凭据与 endpoint 并入 loadConfig（AppConfig 字段 + 配置测试） — blocked on platform/config/config.ts 不在 B3-03m 可改路径，暂由组合根读进程环境
+ */
+function agentStreamSafety(
+  appEnv: PlatformOptions['config']['appEnv'],
+  env: Readonly<Record<string, string | undefined>>,
+): StreamReviewOptions {
+  if (appEnv !== 'staging' && appEnv !== 'prod') return { appEnv };
+  return {
+    appEnv,
+    credentials: readAgentReviewCredentials(appEnv, env),
+    endpoint: env[AGENT_REVIEW_ENDPOINT_ENV],
+  };
+}
+
 function agentStreamPorts(union: DynamicModule): DynamicModule {
   return {
     module: AgentStreamPortsModule,
@@ -2225,8 +2251,9 @@ export class AppModule {
           ? [OrdersModule.forWorker(orderSyncPorts(union))]
           : []),
         // B3-03j: the Agent's business ports (union / catalog / linking / parsing) and its
-        // production assembly; input check, sentence review and model routing stay minimal
-        // (B3-03m, B3-03k).
+        // production assembly; B3-03m: input check and sentence review over the Aliyun content
+        // safety review (fail-closed without its configuration); model routing stays minimal
+        // (B3-03k).
         ...(options.entry === 'stream' && union !== undefined
           ? [
               agentStreamPorts(union),
@@ -2234,6 +2261,7 @@ export class AppModule {
                 consentReader: createAiConsentReader,
                 callerReader: createAgentCallerReader,
                 assembly: createProductionStreamAssembly,
+                safety: agentStreamSafety(options.config.appEnv, process.env),
               }),
             ]
           : []),
