@@ -1,0 +1,37 @@
+{
+  "red_tests": [],
+  "risk_note": "RV1 (contract only). BR-ID-27: a deleting account answers 10007 (data.stage=processing) on every login; the implementation is already on main (B1-02d third-party login, B1-15f SMS login). The x-error-codes of loginBySms, loginByWechat, loginByApple and loginByHuawei gain 10007 (its data.stage is defined once in contracts/error-codes.yaml); no shape change, no new code, generated files unchanged. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "contract review round 1 pass with no findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "db3ac6d9fdc0427f3a39015217c0116eddefcf22",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "CT-02zc",
+  "spec_commit": "ed25ecd7e2935a5240ef8b3ee800e0d41bce5ac2",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "runs": []
+}
