@@ -80,3 +80,19 @@ it('[AC-F1-06z] staging store logs the digest only and checks input before refus
   expect(logs).not.toContain('unit-marker');
   expect(lines).toHaveLength(1);
 });
+
+it('[AC-F1-09r] json and jpg media: content-addressed URLs with their own extension', async () => {
+  const store = new MemoryMediaStore('https://m.example.invalid/');
+  const json = new TextEncoder().encode('{"v":"5"}');
+  const jsonSha = createHash('sha256').update(json).digest('hex');
+  expect(
+    await store.put({ sha256: jsonSha, bytes: json, contentType: 'application/json' }),
+  ).toEqual({ url: `https://m.example.invalid/${jsonSha}.json` });
+  expect(store.get(jsonSha)).toEqual(json);
+  expect(mediaUrlOf('https://m.example.invalid', SHA, 'jpg')).toBe(
+    `https://m.example.invalid/${SHA}.jpg`,
+  );
+  expect(mediaUrlOf('https://m.example.invalid', SHA, 'json')).toBe(
+    `https://m.example.invalid/${SHA}.json`,
+  );
+});

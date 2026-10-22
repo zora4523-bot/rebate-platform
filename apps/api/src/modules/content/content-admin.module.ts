@@ -3,6 +3,8 @@
 // (F1-06x), whose cleaned files go to platform's MEDIA_STORE (provided globally by PlatformModule).
 // F1-09e adds POST /admin/v1/pages/{page_key}/preview-tokens (content.page, audited).
 // Page configuration /admin/v1/pages* (F1-09f): drafts, publish, gray, rollback and their reads.
+// Popup asset upload POST /admin/v1/pages/popup-assets (F1-09r): checked Lottie JSON or picture to
+// MEDIA_STORE under its digest, one audit row on the primary handle; no page is touched.
 // Agreement versions /admin/v1/agreements* (F1-02p): list, one version, publish (totp step-up).
 // Dictionary editing /admin/v1/dict-items* (F1-02t): list, save-and-publish, history, rollback;
 // its keys are the union of contracts/texts.default.json and texts.admin.default.json (F1-02zd).
@@ -79,6 +81,8 @@ import {
 } from './application/page-config-admin.ts';
 import { createPageSectionsCheck } from './application/page-sections-check.ts';
 import { AdminPagesController } from './http/admin/pages.controller.ts';
+import { PopupAssetUploader } from './application/popup-asset-uploader.ts';
+import { AdminPopupAssetsController } from './http/admin/popup-assets.controller.ts';
 import { homeSectionsSchema } from './infra/home-schema.ts';
 import { createKyselyPageConfigStore } from './infra/kysely-page-config-store.ts';
 import { DictItemAdmin, type DictItemStore } from './application/dict-item-admin.ts';
@@ -192,6 +196,10 @@ const NO_DATABASE_APP_VERSIONS: AppVersionAdminStore = {
   transaction: refuseAppVersions,
 };
 
+const NO_DATABASE_AUDIT: AuditPort = {
+  append: () => Promise.reject(new Error('content: popup asset uploads need the database')),
+};
+
 /** Monotonic milliseconds for the SVG conversion budget (not business time). */
 const monotonicMs = (): number => performance.now();
 
@@ -206,6 +214,7 @@ export class ContentAdminModule {
         AdminConfigItemsController,
         AdminPagePreviewTokensController,
         AdminPagesController,
+        AdminPopupAssetsController,
         AdminAgreementsController,
         AdminDictItemsController,
         AdminDictController,
@@ -268,9 +277,10 @@ export class ContentAdminModule {
         {
           // F1-09f /admin/v1/pages*: contracts/home-schema.json is read and compiled on the first
           // save or publish, so a broken contract file answers 50001 rather than stopping the entry.
+          // F1-09r: a popup's props.lottie must name the media address of its sha256 (no fetch).
           provide: PageConfigAdmin,
-          inject: [CLOCK, { token: DB, optional: true }],
-          useFactory: (clock: Clock, db?: Kysely<Database>): PageConfigAdmin => {
+          inject: [APP_CONFIG, CLOCK, { token: DB, optional: true }],
+          useFactory: (config: AppConfig, clock: Clock, db?: Kysely<Database>): PageConfigAdmin => {
             let check: PageSectionsCheck | undefined;
             return new PageConfigAdmin(
               db === undefined
@@ -278,9 +288,29 @@ export class ContentAdminModule {
                 : createKyselyPageConfigStore(db, (trx) => options.auditWriter(trx, clock)),
               clock,
               (sections, unionHostBlock) =>
-                (check ??= createPageSectionsCheck(homeSectionsSchema()))(sections, unionHostBlock),
+                (check ??= createPageSectionsCheck(
+                  homeSectionsSchema(),
+                  config.mediaPublicBaseUrl,
+                ))(sections, unionHostBlock),
             );
           },
+        },
+        {
+          provide: PopupAssetUploader,
+          inject: [APP_CONFIG, CLOCK, MEDIA_STORE, ROOT_LOGGER, { token: DB, optional: true }],
+          useFactory: (
+            config: AppConfig,
+            clock: Clock,
+            media: MediaStore,
+            logger: Logger,
+            db?: Kysely<Database>,
+          ): PopupAssetUploader =>
+            new PopupAssetUploader({
+              media,
+              audit: db === undefined ? NO_DATABASE_AUDIT : options.auditWriter(db, clock),
+              mediaPublicBaseUrl: config.mediaPublicBaseUrl,
+              logger: logger.child({ module: 'content' }),
+            }),
         },
         {
           provide: ConfigItemAdmin,

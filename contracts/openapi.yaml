@@ -11256,7 +11256,6 @@ paths:
         address or a relative path). A request body above the global limit stays 413 with
         `data.fields=[body]`.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
