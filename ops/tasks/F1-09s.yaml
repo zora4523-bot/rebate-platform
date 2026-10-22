@@ -17,5 +17,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/content/popup-assets-overflow/**'
-status: todo
-pr: null
+status: done
+pr: 1275
