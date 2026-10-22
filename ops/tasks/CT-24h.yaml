@@ -1,0 +1,28 @@
+id: CT-24h
+repo: rebate-platform
+title: 契约：后台联盟账号与推广位——联盟账号列表（auth_status、到期与估算、reauth_mode oauth / manual / none）、重新授权会话（发起、结果轮询、OAuth 回调 302）、京东类手工凭据录入、告警手机号增删（phone_id、expected_version CAS）；推广位列表、登记、pending 行修改、启用（随附花卷云忽略确认与截图）、停用；planned
+type: contract
+# 2026-10-22 入账（前端线 f1-frontend-7，编排派工；接手后台线 10-18 对 CT-24h 的预占）。依据规划 04 §3.2 union_accounts / admin_union_auth_sessions / union_pids、§6.6 union-accounts / union-pids、§10.1 union.auth_alert_phones、§11.2 union.account_auth / union.pid，08 BR-ID-24 细则、BR-ATTR-02 细则，编排裁定 D10-152 / D10-159，couli #176（eabcf00）。
+# 已采纳 union 线 21:07 三条：OAuth 回调 GET /admin/v1/union-accounts/oauth/callback?state=&code=（不带 admin_token、凭 state 找会话、302 回联盟账号页带 session_id）；手工凭据 PUT /admin/v1/union-accounts/{id}/credential（step-up + 审计）；契约只暴露 auth_status、不暴露 alert_stage。
+# 新码按 08 §13.11 分配（20902 data.resource 新增 union_pid / union_account，同场景已有 active 的拒绝等）。联盟账号与推广位无页面规格，本契约只出接口形状。
+refs: [BR-ID-24, BR-ATTR-02]
+refs_hash:
+  BR-ID-24: 8b7594031593
+  BR-ATTR-02: 55756dfde266
+contract_sections: ['11.2']
+deps: []
+paths:
+  - 'contracts/openapi.yaml'
+  - 'contracts/enums/admin.yaml'
+  - 'contracts/error-codes.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
