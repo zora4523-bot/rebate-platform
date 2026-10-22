@@ -21,7 +21,9 @@
 //   failure rolls everything back (the session is then marked failed, best effort).
 //
 // expireStale / result never treat a claimed session (used_at set, still pending) as expired:
-// its exchange may still be running and will finish it.
+// its exchange may still be running and will finish it. Every step after the claim fails the
+// session on error (failed, error = category); a claim that still has not finished 30 minutes
+// after used_at (the callback process died) is failed as `stalled` by expireStale and result.
 //
 // Plain tokens, codes, states and authorize URLs never reach the database, audit rows, errors or
 // logs (this module does not log). Time comes only from the injected Clock.
@@ -115,6 +117,15 @@ const REFRESH_CONTEXT = 'union_credentials.refresh';
 const MISSING_CODE = 'missing_code';
 const EXCHANGE_FAILED = 'exchange_failed';
 const FINALIZE_FAILED = 'finalize_failed';
+const CALLBACK_FAILED = 'callback_failed';
+const STALLED = 'stalled';
+/**
+ * A claimed session (used_at set, still pending) whose callback never finished — the process or
+ * the database went away after the claim — is failed once this long has passed since the claim, so
+ * the admin page never polls a session that stays pending for ever. Longer than any exchange plus
+ * the session lifetime (代理补全的默认, Codex money review B1-22c r1).
+ */
+const STALLED_AFTER_MS = 30 * 60 * 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** D10-164: platform registry default (09 CAP-*-12); jd is derived from attr.jd.user_key_mode. */
 const DEFAULT_MODES: Readonly<Record<Exclude<RegisteredPlatform, 'jd'>, ReauthMode>> = {
@@ -184,6 +195,18 @@ export function createSiteReauth(options: SiteReauthOptions): SiteReauth {
       .where('status', '=', 'pending')
       .where('used_at', 'is not', null)
       .execute();
+  }
+
+  /** Claimed sessions pending for STALLED_AFTER_MS since used_at → failed (`stalled`). */
+  async function failStalled(now: Date, id: string | null): Promise<void> {
+    let query = app()
+      .updateTable('admin_union_auth_sessions')
+      .set({ status: 'failed', error: STALLED, finished_at: now, updated_at: now })
+      .where('status', '=', 'pending')
+      .where('used_at', 'is not', null)
+      .where('used_at', '<=', later(now, -STALLED_AFTER_MS));
+    if (id !== null) query = query.where('id', '=', id);
+    await query.execute();
   }
 
   async function finish(
@@ -386,12 +409,19 @@ export function createSiteReauth(options: SiteReauthOptions): SiteReauth {
       const claimed = await claim.set({ used_at: now, updated_at: now }).executeTakeFirst();
       if (claimed.numUpdatedRows === 0n) return invalid;
 
-      const platform = await app()
-        .selectFrom('union_accounts')
-        .select('platform')
-        .where('app_id', '=', session.app_id)
-        .where('id', '=', session.union_account_id)
-        .executeTakeFirstOrThrow();
+      let platform: { platform: string };
+      try {
+        platform = await app()
+          .selectFrom('union_accounts')
+          .select('platform')
+          .where('app_id', '=', session.app_id)
+          .where('id', '=', session.union_account_id)
+          .executeTakeFirstOrThrow();
+      } catch (error) {
+        // The claim is committed: never leave it pending (a retry would only see `invalid`).
+        await failClaimed(session.id, CALLBACK_FAILED).catch(() => undefined);
+        throw error;
+      }
       const provider = isRegisteredPlatform(platform.platform)
         ? options.oauth[platform.platform]
         : undefined;
@@ -435,6 +465,23 @@ export function createSiteReauth(options: SiteReauthOptions): SiteReauth {
       const now = clock.now();
       if (
         row.status === 'pending' &&
+        row.used_at !== null &&
+        now.getTime() - row.used_at.getTime() >= STALLED_AFTER_MS
+      ) {
+        await failStalled(now, row.id);
+        const current = await app()
+          .selectFrom('admin_union_auth_sessions')
+          .select(['status', 'error', 'finished_at'])
+          .where('id', '=', row.id)
+          .executeTakeFirstOrThrow();
+        return {
+          status: current.status as SessionStatus,
+          error: current.error,
+          finishedAt: current.finished_at,
+        };
+      }
+      if (
+        row.status === 'pending' &&
         row.used_at === null &&
         now.getTime() >= row.expires_at.getTime()
       ) {
@@ -458,6 +505,8 @@ export function createSiteReauth(options: SiteReauthOptions): SiteReauth {
 
     async expireStale() {
       const now = clock.now();
+      // Stalled claims are failed, not expired, and are not part of the returned count.
+      await failStalled(now, null);
       const result = await app()
         .updateTable('admin_union_auth_sessions')
         .set({ status: 'expired', finished_at: now, updated_at: now })
