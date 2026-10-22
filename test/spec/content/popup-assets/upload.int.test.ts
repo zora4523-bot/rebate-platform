@@ -59,7 +59,11 @@ it('[AC-F1-09r#11] 180 KiB、2.4 秒的 Lottie 原样寻址；重传同址，上
       });
       expect(row.after).toEqual({ kind: 'lottie', sha256, bytes: input.length });
     }
-    expect(JSON.stringify(audits)).not.toMatch(/private-animation-marker|private-popup|"layers"/);
+    expect(
+      JSON.stringify(audits, (_key, value: unknown) =>
+        typeof value === 'bigint' ? value.toString() : value,
+      ),
+    ).not.toMatch(/private-animation-marker|private-popup|"layers"/);
     expect(f.lines.join('\n')).not.toMatch(/private-animation-marker|private-popup/);
   } finally {
     put.mockRestore();
