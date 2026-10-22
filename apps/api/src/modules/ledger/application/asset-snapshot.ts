@@ -10,19 +10,18 @@ import {
   findSnapshot,
   insertReceivables,
   insertSnapshotIfAbsent,
-  markNotComparable,
+  markComparable,
   sumReceivables,
   sumUserBalances,
 } from '../infra/asset-snapshot-store.ts';
 import { isPastDeadline, snapshotDayOf, snapshotDeadlineMs } from './asset-snapshot-days.ts';
 import {
-  recheckCommittedDay,
+  confirmSnapshotDay,
   writeSnapshotDay,
   type AssetSnapshotAlert,
   type AssetSnapshotAlertQueue,
   type SnapshotReads,
   type SnapshotWriteContext,
-  type SnapshotWriteOutcome,
   type SnapshotWriteStore,
   type Transact,
 } from './asset-snapshot-write.ts';
@@ -114,7 +113,7 @@ export interface AssetSnapshotStatus {
 const STORE: SnapshotWriteStore = {
   insertSnapshotIfAbsent,
   insertReceivables,
-  markNotComparable,
+  markComparable,
   findSnapshot,
 };
 
@@ -158,37 +157,45 @@ export function createAssetSnapshot(dependencies: AssetSnapshotDependencies): As
     }
   }
 
+  /** Confirms an unconfirmed committed day (or alerts its timeout), then logs that alert. */
+  async function confirm(transact: Transact, appId: string, day: string, snapshotId: string) {
+    const confirmed = await confirmSnapshotDay(transact, context, { appId, day, snapshotId });
+    for (const alert of confirmed.alerts) logAlert(logger, alert);
+  }
+
   return {
     async run(db, input) {
       const appId = validAppId(input.appId);
       const day = snapshotDayOf(input.nominalRunAt);
       const result = { accountingDate: day };
       const transact = readCommitted(db);
-      // This delivery's row id, known before the write so an uncertain commit can be recognised.
-      const id = randomUUID();
-      const write: SnapshotWriteContext = { ...context, newId: () => id };
-
-      let outcome: SnapshotWriteOutcome;
-      let writing = false;
       try {
-        // Replay of a completed day: same snapshot, no source read, no alert. Its alerts, if any,
-        // were enqueued on the transaction that committed the row, so none can be missing. A
-        // comparable row is not rechecked here: a late duplicate delivery must leave it as is
-        // (frozen AC-B2-04w#7, #15); the commit boundary is rechecked by the delivery that wrote it.
+        // Replay of a written day: same snapshot, no source read, amounts never rewritten. A
+        // comparable row is left as is. A row still false was written late or never confirmed
+        // (the confirming delivery failed or stopped): confirm it now if still before the
+        // deadline, otherwise it stays false and the day's timeout alert is enqueued again
+        // under its key (at least once; consumers dedup).
         const existing = await findSnapshot(db, appId, day);
-        if (existing !== undefined) return { ...result, snapshotId: existing.id };
+        if (existing !== undefined) {
+          if (!existing.waiting_comparable) await confirm(transact, appId, day, existing.id);
+          return { ...result, snapshotId: existing.id };
+        }
         const threshold = await dependencies.getAdvanceAlertFen(appId);
         const reads = await readDay(db, appId, day);
-        writing = true;
-        outcome = await transact((trx) =>
-          writeSnapshotDay(trx, write, { appId, day, reads, threshold }),
+        const outcome = await transact((trx) =>
+          writeSnapshotDay(trx, context, { appId, day, reads, threshold }),
         );
+        // Log lines after commit, only by the delivery that wrote the day: one per app per D.
+        for (const alert of outcome.alerts) logAlert(logger, alert);
+        // A concurrent winner confirms its own row; a written-late row is never confirmed.
+        if (outcome.inserted && !outcome.late) {
+          await confirm(transact, appId, day, outcome.snapshotId);
+        }
+        return { ...result, snapshotId: outcome.snapshotId };
       } catch (error) {
-        // An error from the write transaction may still have committed (e.g. lost connection on
-        // COMMIT): if this delivery's row is there, recheck it against the deadline now.
-        if (writing) await recheckUncertainCommit(db, transact, appId, day, id);
-        // Still not complete at or after the deadline: waiters learn it from the status read,
-        // finance from this alert. No placeholder row is written.
+        // Not completed, or committed but not confirmed, at or after the deadline: waiters learn
+        // it from the status read (or the false mark), finance from this alert. The original
+        // error is rethrown unchanged; no placeholder row is written.
         if (isPastDeadline(clock.now(), day)) {
           logger.error(
             { event: 'asset_snapshot_timeout', app_id: appId, accounting_date: day, step: 'run' },
@@ -197,53 +204,8 @@ export function createAssetSnapshot(dependencies: AssetSnapshotDependencies): As
         }
         throw error;
       }
-
-      // Log lines after commit, only by the delivery that wrote the day: one per app per D.
-      for (const alert of outcome.alerts) logAlert(logger, alert);
-      // BR-FUND-18 on the commit boundary: waiters see the row only from COMMIT on.
-      if (outcome.inserted) {
-        const late = await recheckCommittedDay(transact, context, {
-          appId,
-          day,
-          snapshotId: outcome.snapshotId,
-          waitingComparable: outcome.waitingComparable,
-        });
-        for (const alert of late) logAlert(logger, alert);
-      }
-      return { ...result, snapshotId: outcome.snapshotId };
     },
   };
-
-  /** Never masks the write error: a failure here is logged and the original error is rethrown. */
-  async function recheckUncertainCommit(
-    db: Kysely<DB>,
-    transact: Transact,
-    appId: string,
-    day: string,
-    id: string,
-  ): Promise<void> {
-    try {
-      const row = await findSnapshot(db, appId, day);
-      if (row?.id !== id) return;
-      const late = await recheckCommittedDay(transact, context, {
-        appId,
-        day,
-        snapshotId: row.id,
-        waitingComparable: row.waiting_comparable,
-      });
-      for (const alert of late) logAlert(logger, alert);
-    } catch (recheckError) {
-      logger.error(
-        {
-          event: 'asset_snapshot_recheck_failed',
-          app_id: appId,
-          accounting_date: day,
-          error: recheckError instanceof Error ? recheckError.message : String(recheckError),
-        },
-        'asset snapshot commit could not be rechecked against its deadline',
-      );
-    }
-  }
 }
 
 /** READ COMMITTED: the platform event bus refuses to publish under a snapshot isolation. */

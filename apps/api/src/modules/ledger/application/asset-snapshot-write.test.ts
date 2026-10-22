@@ -5,7 +5,7 @@ import { FixedClock } from '../../platform/index.ts';
 import type { SnapshotInsert } from '../infra/asset-snapshot-store.ts';
 import {
   alertEventId,
-  recheckCommittedDay,
+  confirmSnapshotDay,
   writeSnapshotDay,
   type AssetSnapshotAlertQueue,
   type SnapshotReads,
@@ -30,7 +30,7 @@ function fixture(now: string, inserted = true) {
     insertReceivables: vi
       .fn<SnapshotWriteStore['insertReceivables']>()
       .mockResolvedValue(undefined),
-    markNotComparable: vi.fn<SnapshotWriteStore['markNotComparable']>().mockResolvedValue(true),
+    markComparable: vi.fn<SnapshotWriteStore['markComparable']>().mockResolvedValue(true),
     findSnapshot: vi
       .fn<SnapshotWriteStore['findSnapshot']>()
       .mockResolvedValue({ id: 'winner', waiting_comparable: true }),
@@ -52,33 +52,27 @@ function fixture(now: string, inserted = true) {
   return { clock, rows, store, enqueue, reads, context };
 }
 
-it('[AC-B2-04w-UNIT#4] 取预估后、写入期间跨过 00:30：同事务标不可比并入队超时告警', async () => {
-  const { clock, rows, store, enqueue, reads, context } = fixture(BEFORE);
-  store.insertReceivables.mockImplementation(() => {
-    clock.set(DEADLINE);
-    return Promise.resolve();
-  });
+it('[AC-B2-04w-UNIT#4] 读完仍在 00:30 前：先写不可比、不更新、不报超时（等提交后确认）', async () => {
+  const { rows, store, enqueue, reads, context } = fixture(BEFORE);
   const outcome = await writeSnapshotDay(TRX, context, {
     appId: 'app-a',
     day: DAY,
     reads,
     threshold: null,
   });
-  expect(rows[0]?.waiting_comparable).toBe(true);
-  expect(store.markNotComparable).toHaveBeenCalledWith(TRX, 'app-a', 'snap-1', clock.now());
-  expect(outcome).toMatchObject({ snapshotId: 'snap-1', inserted: true, waitingComparable: false });
-  expect(outcome.alerts.map((a) => a.kind)).toEqual(['asset_snapshot_timeout']);
-  expect(enqueue).toHaveBeenCalledTimes(1);
-  expect(enqueue.mock.calls[0]?.[0]).toBe(TRX);
-  expect(enqueue.mock.calls[0]?.[1]).toMatchObject({
-    kind: 'asset_snapshot_timeout',
-    appId: 'app-a',
-    accountingDate: DAY,
-    payload: { app_id: 'app-a', accounting_date: DAY, waiting_comparable: false },
+  expect(rows[0]?.waiting_comparable).toBe(false);
+  expect(store.markComparable).not.toHaveBeenCalled();
+  expect(outcome).toEqual({
+    snapshotId: 'snap-1',
+    inserted: true,
+    waitingComparable: false,
+    late: false,
+    alerts: [],
   });
+  expect(enqueue).not.toHaveBeenCalled();
 });
 
-it('[AC-B2-04w-UNIT#5] 写完仍在 00:30 前：可比、不报超时；垫资告警在同事务入队', async () => {
+it('[AC-B2-04w-UNIT#5] 00:30 前写入：不报超时；垫资告警在同事务入队', async () => {
   const { store, enqueue, reads, context } = fixture(BEFORE);
   const outcome = await writeSnapshotDay(TRX, context, {
     appId: 'app-a',
@@ -86,8 +80,9 @@ it('[AC-B2-04w-UNIT#5] 写完仍在 00:30 前：可比、不报超时；垫资�
     reads,
     threshold: 129n,
   });
-  expect(store.markNotComparable).not.toHaveBeenCalled();
-  expect(outcome.waitingComparable).toBe(true);
+  expect(store.markComparable).not.toHaveBeenCalled();
+  expect(outcome).toMatchObject({ waitingComparable: false, late: false });
+  expect(outcome.alerts.map((a) => a.kind)).toEqual(['ledger_advance_exposure']);
   expect(enqueue).toHaveBeenCalledTimes(1);
   expect(enqueue.mock.calls[0]?.[1]).toMatchObject({
     kind: 'ledger_advance_exposure',
@@ -105,9 +100,14 @@ it('[AC-B2-04w-UNIT#6] 读完已超时：首写即不可比，不再更新，入
     threshold: 130n,
   });
   expect(rows[0]?.waiting_comparable).toBe(false);
-  expect(store.markNotComparable).not.toHaveBeenCalled();
+  expect(store.markComparable).not.toHaveBeenCalled();
+  expect(outcome).toMatchObject({ waitingComparable: false, late: true });
   expect(outcome.alerts.map((a) => a.kind)).toEqual(['asset_snapshot_timeout']);
   expect(enqueue).toHaveBeenCalledTimes(1);
+  expect(enqueue.mock.calls[0]?.[1]).toMatchObject({
+    kind: 'asset_snapshot_timeout',
+    payload: { app_id: 'app-a', accounting_date: DAY, waiting_comparable: false },
+  });
 });
 
 it('[AC-B2-04w-UNIT#7] 并发落败者不写子表、不入队、不告警，返回胜者', async () => {
@@ -122,10 +122,11 @@ it('[AC-B2-04w-UNIT#7] 并发落败者不写子表、不入队、不告警，返
     snapshotId: 'winner',
     inserted: false,
     waitingComparable: true,
+    late: true,
     alerts: [],
   });
   expect(store.insertReceivables).not.toHaveBeenCalled();
-  expect(store.markNotComparable).not.toHaveBeenCalled();
+  expect(store.markComparable).not.toHaveBeenCalled();
   expect(enqueue).not.toHaveBeenCalled();
 });
 
@@ -155,29 +156,30 @@ function transaction() {
   return { opened, transact };
 }
 
-it('[AC-B2-04w-UNIT#9] COMMIT 期间跨过 00:30：提交后另起事务改为不可比并按原键入队超时告警', async () => {
-  const { clock, store, enqueue, reads, context } = fixture(BEFORE);
-  const outcome = await writeSnapshotDay(TRX, context, {
-    appId: 'app-a',
-    day: DAY,
-    reads,
-    threshold: null,
-  });
-  expect(outcome.waitingComparable).toBe(true);
-  expect(store.markNotComparable).not.toHaveBeenCalled();
+const DAY_ROW = { appId: 'app-a', day: DAY, snapshotId: 'snap-1' };
+
+it('[AC-B2-04w-UNIT#9] 提交后确认仍在 00:30 前：另起事务改为可比，不告警', async () => {
+  const { clock, store, enqueue, context } = fixture(BEFORE);
+  const { opened, transact } = transaction();
+  const outcome = await confirmSnapshotDay(transact, context, DAY_ROW);
+  expect(opened).toHaveBeenCalledTimes(1);
+  expect(store.markComparable).toHaveBeenCalledWith(TRX, 'app-a', 'snap-1', clock.now());
+  expect(outcome).toEqual({ confirmed: true, alerts: [] });
+  expect(enqueue).not.toHaveBeenCalled();
+});
+
+it('[AC-B2-04w-UNIT#10] 确认时已到 00:30：保持不可比，按日键入队并返回超时告警', async () => {
+  const { clock, store, enqueue, context } = fixture(BEFORE);
   // The write transaction's COMMIT returns only at the deadline.
   clock.set(DEADLINE);
   const { opened, transact } = transaction();
-  const late = await recheckCommittedDay(transact, context, {
-    appId: 'app-a',
-    day: DAY,
-    snapshotId: outcome.snapshotId,
-    waitingComparable: outcome.waitingComparable,
-  });
+  const outcome = await confirmSnapshotDay(transact, context, DAY_ROW);
   expect(opened).toHaveBeenCalledTimes(1);
-  expect(store.markNotComparable).toHaveBeenCalledWith(TRX, 'app-a', 'snap-1', clock.now());
-  expect(late.map((a) => a.kind)).toEqual(['asset_snapshot_timeout']);
+  expect(store.markComparable).not.toHaveBeenCalled();
+  expect(outcome.confirmed).toBe(false);
+  expect(outcome.alerts.map((a) => a.kind)).toEqual(['asset_snapshot_timeout']);
   expect(enqueue).toHaveBeenCalledTimes(1);
+  expect(enqueue.mock.calls[0]?.[0]).toBe(TRX);
   expect(enqueue.mock.calls[0]?.[1]).toMatchObject({
     kind: 'asset_snapshot_timeout',
     appId: 'app-a',
@@ -187,33 +189,21 @@ it('[AC-B2-04w-UNIT#9] COMMIT 期间跨过 00:30：提交后另起事务改为�
   });
 });
 
-it('[AC-B2-04w-UNIT#10] 提交结果不确定后读回本次的可比行复核：已改过则不重复入队', async () => {
-  const { store, enqueue, context } = fixture(DEADLINE);
-  const row = { appId: 'app-a', day: DAY, snapshotId: 'snap-1', waitingComparable: true };
-  const first = await recheckCommittedDay(transaction().transact, context, row);
-  expect(first.map((a) => a.kind)).toEqual(['asset_snapshot_timeout']);
-  // A second recheck finds the row already false: the guarded UPDATE changes nothing.
-  store.markNotComparable.mockResolvedValue(false);
-  const again = await recheckCommittedDay(transaction().transact, context, row);
-  expect(again).toEqual([]);
-  expect(store.markNotComparable).toHaveBeenCalledTimes(2);
-  expect(enqueue).toHaveBeenCalledTimes(1);
+it('[AC-B2-04w-UNIT#11] 确认失败：原错误原样抛出，不告警、不吞错', async () => {
+  const { store, enqueue, context } = fixture(BEFORE);
+  const failure = new Error('confirmation failed');
+  store.markComparable.mockRejectedValue(failure);
+  await expect(confirmSnapshotDay(transaction().transact, context, DAY_ROW)).rejects.toBe(failure);
+  expect(store.markComparable).toHaveBeenCalledTimes(1);
+  expect(enqueue).not.toHaveBeenCalled();
 });
 
-it('[AC-B2-04w-UNIT#11] 提交后仍在 00:30 前或本已不可比：不开事务、不改行、不告警', async () => {
-  const before = fixture(BEFORE);
-  const notLate = transaction();
-  const row = { appId: 'app-a', day: DAY, snapshotId: 'snap-1', waitingComparable: true };
-  expect(await recheckCommittedDay(notLate.transact, before.context, row)).toEqual([]);
-  expect(notLate.opened).not.toHaveBeenCalled();
-  expect(before.store.markNotComparable).not.toHaveBeenCalled();
-  expect(before.enqueue).not.toHaveBeenCalled();
-
-  const after = fixture(DEADLINE);
-  const already = transaction();
-  const late = { ...row, waitingComparable: false };
-  expect(await recheckCommittedDay(already.transact, after.context, late)).toEqual([]);
-  expect(already.opened).not.toHaveBeenCalled();
-  expect(after.store.markNotComparable).not.toHaveBeenCalled();
-  expect(after.enqueue).not.toHaveBeenCalled();
+it('[AC-B2-04w-UNIT#12] 无告警队列：超时告警只返回供记日志，仍不改行', async () => {
+  const { store, context } = fixture(DEADLINE);
+  const { alertQueue: _queue, ...withoutQueue } = context;
+  void _queue;
+  const outcome = await confirmSnapshotDay(transaction().transact, withoutQueue, DAY_ROW);
+  expect(outcome.confirmed).toBe(false);
+  expect(outcome.alerts.map((a) => a.kind)).toEqual(['asset_snapshot_timeout']);
+  expect(store.markComparable).not.toHaveBeenCalled();
 });

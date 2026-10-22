@@ -1,9 +1,10 @@
-// Write phase of the asset daily snapshot (BR-FUND-18, BR-FUND-20). The amounts come from one
-// read-only REPEATABLE READ snapshot taken before; this phase runs in one READ COMMITTED
-// transaction (the platform event bus refuses any other level) and writes, all or nothing: the
-// day's row, its per-platform receivables, the durable alerts of the day, and — when the clock
-// read after every write is at or past D+1 00:30 — waiting_comparable = false. COMMIT itself is
-// covered by recheckCommittedDay, run by the caller after the commit has returned.
+// Write phase of the asset daily snapshot (BR-FUND-18, BR-FUND-20), fail-safe on the 00:30
+// deadline. The amounts come from one read-only REPEATABLE READ snapshot taken before; the write
+// runs in one READ COMMITTED transaction (the platform event bus refuses any other level) and
+// writes, all or nothing: the day's row with waiting_comparable = false, its per-platform
+// receivables and the durable alerts of the day. Only after that commit does confirmSnapshotDay,
+// in a new transaction, turn the row comparable — and only while the clock is before D+1 00:30.
+// Any failure in between leaves the row not comparable.
 import { createHash } from 'node:crypto';
 import type { DB } from '@couli/db';
 import { addFen } from '@couli/money';
@@ -56,8 +57,8 @@ export interface SnapshotWriteStore {
     snapshotId: string,
     rows: readonly PlatformReceivable[],
   ): Promise<void>;
-  /** true → false only; resolves true when this call changed the row. */
-  markNotComparable(
+  /** false → true only; resolves true when this call changed the row. */
+  markComparable(
     trx: Transaction<DB>,
     appId: string,
     snapshotId: string,
@@ -98,7 +99,10 @@ export interface SnapshotWriteOutcome {
   readonly snapshotId: string;
   /** False when another delivery committed the day first (nothing was written by this call). */
   readonly inserted: boolean;
+  /** The row as committed: always false when inserted by this call (confirmation comes later). */
   readonly waitingComparable: boolean;
+  /** True when the reads already ended at or past the deadline: never to be confirmed. */
+  readonly late: boolean;
   /** The alerts written with the day (empty when not inserted), to log after commit. */
   readonly alerts: readonly AssetSnapshotAlert[];
 }
@@ -108,10 +112,10 @@ export async function writeSnapshotDay(
   context: SnapshotWriteContext,
   input: SnapshotWriteInput,
 ): Promise<SnapshotWriteOutcome> {
-  const { store, clock, alertQueue } = context;
+  const { store, alertQueue } = context;
   const { appId, day, reads, threshold } = input;
   const id = context.newId();
-  let waitingComparable = !isPastDeadline(reads.readAt, day);
+  const late = isPastDeadline(reads.readAt, day);
   const inserted = await store.insertSnapshotIfAbsent(trx, {
     id,
     app_id: appId,
@@ -119,7 +123,8 @@ export async function writeSnapshotDay(
     ...reads.balances,
     total_waiting_fen: reads.totalWaitingFen,
     total_estimated_fen: reads.totalEstimatedFen,
-    waiting_comparable: waitingComparable,
+    // Fail-safe: comparable only once confirmed after this commit, before the deadline.
+    waiting_comparable: false,
     at: reads.readAt,
   });
   if (!inserted) {
@@ -132,6 +137,7 @@ export async function writeSnapshotDay(
       snapshotId: winner.id,
       inserted: false,
       waitingComparable: winner.waiting_comparable,
+      late,
       alerts: [],
     };
   }
@@ -143,61 +149,58 @@ export async function writeSnapshotDay(
     if (alertQueue !== undefined) await alertQueue.enqueue(trx, exposure);
     alerts.push(exposure);
   }
-  // BR-FUND-18: lateness covers every write of this transaction; COMMIT is rechecked afterwards.
-  const writtenAt = clock.now();
-  if (waitingComparable && isPastDeadline(writtenAt, day)) {
-    await store.markNotComparable(trx, appId, id, writtenAt);
-    waitingComparable = false;
-  }
-  if (!waitingComparable) {
-    const timeout = timeoutAlert(appId, day, 'completed_late');
+  // Already late when read: no confirmation will follow, so the timeout goes with the row.
+  if (late) {
+    const timeout = timeoutAlert(appId, day, 'written_late');
     if (alertQueue !== undefined) await alertQueue.enqueue(trx, timeout);
     alerts.push(timeout);
   }
-  return { snapshotId: id, inserted: true, waitingComparable, alerts };
+  return { snapshotId: id, inserted: true, waitingComparable: false, late, alerts };
 }
 
 /** Runs `work` in a new READ COMMITTED transaction (the runner's); a pass-through in unit tests. */
 export type Transact = <T>(work: (trx: Transaction<DB>) => Promise<T>) => Promise<T>;
 
-export interface CommittedDay {
+export interface UnconfirmedDay {
   readonly appId: string;
   readonly day: string;
   readonly snapshotId: string;
-  /** The row's waiting_comparable as committed (or as read back after an uncertain commit). */
-  readonly waitingComparable: boolean;
+}
+
+export interface ConfirmOutcome {
+  /** The row is comparable after this call's commit (changed by it or already true). */
+  readonly confirmed: boolean;
+  /** The timeout alert when the deadline was reached, to log after this commit. */
+  readonly alerts: readonly AssetSnapshotAlert[];
 }
 
 /**
- * BR-FUND-18 on the commit boundary: called once COMMIT has returned (or, after an uncertain
- * commit, once the row is read back). The row only became visible to waiters at commit, so a
- * clock read at or past D+1 00:30 now means the day completed late: in a new transaction the row
- * goes true → false (never back) and the timeout alert is enqueued under the same key as before.
- * When another transaction already changed the row, nothing is written or enqueued again.
- * Returns the alerts written, to log after this second commit.
+ * BR-FUND-18 confirmation, on a new transaction after the write has committed: the clock is
+ * read inside it; strictly before D+1 00:30 the row goes false → true (guarded, so a repeat is a
+ * no-op), at or after the deadline the row is left false and the timeout alert is enqueued under
+ * the day's key (consumers dedup). Errors propagate unchanged; the row then stays false.
  */
-export async function recheckCommittedDay(
+export async function confirmSnapshotDay(
   transact: Transact,
   context: Pick<SnapshotWriteContext, 'store' | 'clock' | 'alertQueue'>,
-  committed: CommittedDay,
-): Promise<readonly AssetSnapshotAlert[]> {
-  if (!committed.waitingComparable) return [];
-  const at = context.clock.now();
-  if (!isPastDeadline(at, committed.day)) return [];
-  const { appId, day, snapshotId } = committed;
+  day: UnconfirmedDay,
+): Promise<ConfirmOutcome> {
   return transact(async (trx) => {
-    const changed = await context.store.markNotComparable(trx, appId, snapshotId, at);
-    if (!changed) return [];
-    const timeout = timeoutAlert(appId, day, 'committed_late');
-    if (context.alertQueue !== undefined) await context.alertQueue.enqueue(trx, timeout);
-    return [timeout];
+    const at = context.clock.now();
+    if (isPastDeadline(at, day.day)) {
+      const timeout = timeoutAlert(day.appId, day.day, 'not_confirmed');
+      if (context.alertQueue !== undefined) await context.alertQueue.enqueue(trx, timeout);
+      return { confirmed: false, alerts: [timeout] };
+    }
+    await context.store.markComparable(trx, day.appId, day.snapshotId, at);
+    return { confirmed: true, alerts: [] };
   });
 }
 
 function timeoutAlert(
   appId: string,
   day: string,
-  step: 'completed_late' | 'committed_late',
+  step: 'written_late' | 'not_confirmed',
 ): AssetSnapshotAlert {
   return alert('asset_snapshot_timeout', appId, day, { step, waiting_comparable: false });
 }
