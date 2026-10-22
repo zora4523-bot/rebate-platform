@@ -123,6 +123,7 @@ export const MINIMUM_VERSION_CHECK = Symbol('MINIMUM_VERSION_CHECK');
 const MINIMUM_VERSION_READER = Symbol('MINIMUM_VERSION_READER');
 const MINIMUM_VERSION_HOOK = Symbol('MINIMUM_VERSION_HOOK');
 const BEFORE_RATE_LIMIT = Symbol('BEFORE_RATE_LIMIT');
+const BEFORE_RISK_STATE = Symbol('BEFORE_RISK_STATE');
 const BEFORE_RATE_LIMIT_GUARDS = Symbol('BEFORE_RATE_LIMIT_GUARDS');
 /** Whether stage ④a is in force on this entry: true exactly when a reader is wired. */
 const MINIMUM_VERSION_GATE = Symbol('MINIMUM_VERSION_GATE');
@@ -188,6 +189,17 @@ export interface RiskModuleOptions {
       'inject' | 'useFactory'
     >;
   };
+  /**
+   * Post-miss checks judged after stage ④a and before stage ⑤ (an operation's own kill switch
+   * that 08 orders before the risk state: BR-WDR-03 ① `withdraw.enabled` → 30306, B2-05d), built
+   * by app.module. Registered on IDEMPOTENCY in list order right after ④a's hook (first when ④a
+   * is not installed) and before ⑤'s. Absent or empty: the registrations and their order are
+   * exactly as without this option.
+   */
+  readonly beforeRiskState?: Pick<
+    FactoryProvider<readonly IdempotencyPostMissCheck[]>,
+    'inject' | 'useFactory'
+  >;
   /**
    * Post-miss checks judged after stage ⑤ and before stage ⑬ (BR-ID-01 ⑥–⑫; today identity's ⑫
    * step-up check, B1-02y), built by app.module. Registered on IDEMPOTENCY in list order right
@@ -399,6 +411,9 @@ export class RiskModule {
         options.beforeRateLimit === undefined
           ? { provide: BEFORE_RATE_LIMIT, useValue: [] }
           : { provide: BEFORE_RATE_LIMIT, ...options.beforeRateLimit },
+        options.beforeRiskState === undefined
+          ? { provide: BEFORE_RISK_STATE, useValue: [] }
+          : { provide: BEFORE_RISK_STATE, ...options.beforeRiskState },
         options.beforeRateLimitGuards === undefined
           ? { provide: BEFORE_RATE_LIMIT_GUARDS, useValue: [] }
           : { provide: BEFORE_RATE_LIMIT_GUARDS, ...options.beforeRateLimitGuards },
@@ -594,6 +609,7 @@ export class RiskModule {
             RATE_LIMIT_SERVICE,
             RATE_LIMIT_THRESHOLDS,
             BEFORE_RATE_LIMIT,
+            BEFORE_RISK_STATE,
             { token: IDEMPOTENCY, optional: true },
           ],
           useFactory: (
@@ -604,6 +620,7 @@ export class RiskModule {
             rateLimit: RateLimitService | null,
             limits: RateLimitThresholdReaders | null,
             beforeRateLimit: readonly IdempotencyPostMissCheck[],
+            beforeRiskState: readonly IdempotencyPostMissCheck[],
             idempotency?: Idempotency,
           ) => {
             if (enabled && idempotency !== undefined) {
@@ -612,6 +629,11 @@ export class RiskModule {
                 createMinimumVersionPostMissCheck(check, versions?.on),
               );
               registerIdempotencyEntryObserver(idempotency, createMinimumVersionEntryObserver());
+            }
+            if (idempotency !== undefined) {
+              for (const switchCheck of beforeRiskState) {
+                registerIdempotencyPostMissCheck(idempotency, switchCheck);
+              }
             }
             if (riskState !== null && idempotency !== undefined) {
               registerIdempotencyPostMissCheck(

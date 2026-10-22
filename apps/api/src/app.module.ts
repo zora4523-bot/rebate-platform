@@ -2040,24 +2040,19 @@ function riskModule(identity: DynamicModule, contentReader: SharedContentReader)
     // level guards, in that order, between ⑤ and ⑬ on the non-idempotent path. The list order is
     // the decision order.
     beforeRateLimit: {
-      inject: [
-        DELETION_STAGE_CHECKS,
-        PRIVACY_CONSENT_CHECKS,
-        IDENTITY_LEVEL_CHECKS,
-        STEP_UP_CHECK,
-        CLOCK,
-        ROOT_LOGGER,
-      ],
+      inject: [DELETION_STAGE_CHECKS, PRIVACY_CONSENT_CHECKS, IDENTITY_LEVEL_CHECKS, STEP_UP_CHECK],
       useFactory: (
         deletion: DeletionStageChecks,
         privacy: PrivacyConsentChecks,
         level: IdentityLevelChecks,
         stepUp: IdempotencyPostMissCheck,
-        clock: Clock,
-        logger: RootLogger,
-      ) => [
-        // BR-WDR-03 ① (B2-05d): the withdraw switch answers 30306 (stored) before ⑥–⑫ for
-        // POST /v1/withdrawals; a no-op for every other operation.
+      ) => [deletion.postMiss, privacy.postMiss, level.postMiss, stepUp],
+    },
+    // BR-WDR-03 ① (B2-05d): the withdraw switch answers 30306 (stored with the key) after ④a and
+    // before ⑤ (banned) and everything after, for POST /v1/withdrawals only; a no-op elsewhere.
+    beforeRiskState: {
+      inject: [CLOCK, ROOT_LOGGER],
+      useFactory: (clock: Clock, logger: RootLogger) => [
         createWithdrawSwitchCheck({
           config: {
             configValue: (appId, key, handle) =>
@@ -2065,10 +2060,6 @@ function riskModule(identity: DynamicModule, contentReader: SharedContentReader)
           },
           logger: logger.child({ module: 'payout' }),
         }),
-        deletion.postMiss,
-        privacy.postMiss,
-        level.postMiss,
-        stepUp,
       ],
     },
     beforeRateLimitGuards: {

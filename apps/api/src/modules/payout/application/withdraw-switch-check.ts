@@ -3,7 +3,7 @@
 // persisted, so the same key replays 30306 after the switch is turned back on). The step-up
 // token is judged in the idempotency post-miss phase (identity's stage ⑫), before the application
 // use case runs, so the switch cannot wait for the use case: this check joins the post-miss list
-// ahead of ⑫ (app.module's riskModule order) for POST /v1/withdrawals only, reads the switch on
+// right after ④a and before ⑤ (RiskModule's beforeRiskState hook) for POST /v1/withdrawals only, reads the switch on
 // the claim's transaction and throws StoredRejection. A missing row is "on" (D-W02); an invalid
 // value falls back to the default like readWithdrawLimits does.
 //
