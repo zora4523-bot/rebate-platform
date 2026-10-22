@@ -1,0 +1,27 @@
+id: B1-22g
+repo: rebate-platform
+title: 后台告警手机号接口（union）：adminListUnionAlertPhones（只脱敏号 + phone_id + version）/ adminAddUnionAlertPhone（BR-ID-05 规范化、上限 10、同号不新增、expected_version CAS）/ adminRemoveUnionAlertPhone（query 里 phone_id、expected_version）；step-up 与审计；经 content 专用写入端口写 union.auth_alert_phones，冲突 data.resource=config_item；去掉 planned
+type: impl
+# 入账（union 线）。依据 08 BR-ID-24 ② 与细则「后台告警手机号与重新授权会话」（D10-152 ④、D10-176 ②③）、BR-ID-33（加密存储、脱敏显示）、BR-ID-05（规范化）；04 §6.6、§10.1；02 §4.1（union 不直接写 config_items）。编解码复用 B1-22b encodeAlertPhones / alertPhoneId。前置：content 提供写入端口（notices 已请）。
+refs: [BR-ID-24]
+refs_hash:
+  BR-ID-24: daf1ab27a6cd
+deps: [B1-22b, CT-24h]
+paths:
+  - 'apps/api/src/modules/union/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/union/admin-alert-phones/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/admin-alert-phones/**'
+status: todo
+pr: null

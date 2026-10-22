@@ -1,0 +1,27 @@
+id: B1-22h
+repo: rebate-platform
+title: 后台推广位接口（union）：adminListUnionPids / adminCreateUnionPid（pending 登记）/ adminUpdateUnionPid（只 pending 行可改，其余 20902）/ adminActivateUnionPid（花卷云忽略确认与截图、二次验证，同 app×平台×场景已有 active 返回 30155）/ adminRetireUnionPid；权限点 union.pid；接 B1-19 pid 服务；去掉 planned
+type: impl
+# 入账（union 线；F1-10gb 的后端）。依据 08 BR-ATTR-02 细则（推广位登记启停，D10-152 ⑥⑦、D10-159）、04 §6.6 union-pids、契约 CT-24h（30155、20902 resource union_pid）。复用 union/pids/service.ts（B1-19a–d），不改其已冻结行为。
+refs: [BR-ATTR-02]
+refs_hash:
+  BR-ATTR-02: 55756dfde266
+deps: [B1-19d, CT-24h]
+paths:
+  - 'apps/api/src/modules/union/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/union/admin-pids/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/union/admin-pids/**'
+status: todo
+pr: null
