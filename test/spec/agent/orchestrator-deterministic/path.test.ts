@@ -224,16 +224,28 @@ it('[AC-B3-05e#6] 全部失败逐个提示，结束为 stop 而非 fallback 或�
   );
 });
 
-it('[AC-B3-05e#13] 口令只提示 30132，不调用 URL runner，前后 URL 照常', async () => {
+it('[AC-B3-05e#13] 口令识别不了只提示 30132，前后 URL 照常', async () => {
   const out = context();
-  const runner = quotes([success(1), success(3)]);
+  // B3-04i: answers by candidate, so the frames are the same whether the path hands the token to
+  // the runner (B3-04g, the runner answers 30132) or answers 30132 itself; whether the token goes
+  // to the runner is asserted by B3-04g's rule tests.
+  const runner = {
+    run: vi.fn<LinkQuoteRunner['run']>(async (candidate) => {
+      if (candidate.kind !== 'url') return { kind: 'parse_error', error_code: 30132, cards: [] };
+      if (candidate.raw === url(1).raw) return success(1);
+      if (candidate.raw === url(3).raw) return success(3);
+      throw new Error('Unexpected quote call');
+    }),
+  };
   expect(
     await createDeterministicPath({ quotes: runner, texts: texts() }).run(
       request([url(1), { kind: 'tpwd', raw: '￥synthetic￥', index: 100 }, url(3)]),
       out.ctx,
     ),
   ).toEqual(stopped);
-  expect(runner.run.mock.calls.map((call) => call[0])).toEqual([url(1), url(3)]);
+  expect(
+    runner.run.mock.calls.map((call) => call[0]).filter((candidate) => candidate.kind === 'url'),
+  ).toEqual([url(1), url(3)]);
   expect(out.content()).toEqual([
     { kind: 'card', card: success(1).cards[0] },
     {
