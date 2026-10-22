@@ -17,6 +17,7 @@ import {
   contractRouteSchema,
   tokenPrincipal,
   type TokenPrincipal,
+  type CheckedRequest,
 } from '../../../platform/index.ts';
 import type { WithdrawActor, WithdrawRulesService } from '../../application/withdraw-rules.ts';
 import { WITHDRAW_RULES, WITHDRAW_RULES_HANDLE } from '../../tokens.ts';
@@ -30,6 +31,18 @@ export interface WithdrawRulesHttpRequest {
   readonly principal?: TokenPrincipal;
 }
 
+export interface CreateWithdrawalHttpRequest extends CheckedRequest {
+  readonly id: string;
+  readonly headers: Readonly<Record<string, string | string[] | undefined>>;
+  readonly body: Schema<'CreateWithdrawalRequest'>;
+}
+
+export interface WithdrawalRawReply {
+  code(status: number): WithdrawalRawReply;
+  type(contentType: string): WithdrawalRawReply;
+  send(body: string): unknown;
+}
+
 export class WithdrawalsController {
   readonly #service: WithdrawRulesService | null;
   readonly #handle: Kysely<DB> | null;
@@ -37,6 +50,15 @@ export class WithdrawalsController {
   constructor(service: WithdrawRulesService | null, handle: Kysely<DB> | null) {
     this.#service = service;
     this.#handle = handle;
+  }
+
+  async createWithdrawal(
+    request: CreateWithdrawalHttpRequest,
+    reply: WithdrawalRawReply,
+  ): Promise<void> {
+    void request;
+    void reply;
+    throw new Error('NotImplemented: createWithdrawal');
   }
 
   async getWithdrawRules(

@@ -75,6 +75,8 @@ export interface FeeTaxCalculator {
     fee_fen: bigint;
     tax_fen: bigint;
     net_fen: bigint;
+    fee_rule_id?: string | null;
+    tax_rule_version?: string | null;
   }>;
 }
 
