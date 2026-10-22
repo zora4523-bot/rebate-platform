@@ -24,7 +24,14 @@ export interface AddWithdrawHold {
 }
 export interface WithdrawHolds {
   add(trx: Transaction<DB>, input: AddWithdrawHold): Promise<{ id: string }>;
-  release(trx: Transaction<DB>, input: { holdId: string; releasedBy: string }): Promise<void>;
+  /**
+   * `appId` is the caller's tenant (server-side, BR-AI-03): a hold of another app is treated as
+   * unknown. Callers inside the tenant's own flows may omit it (the row's app is then the scope).
+   */
+  release(
+    trx: Transaction<DB>,
+    input: { holdId: string; releasedBy: string; appId?: string },
+  ): Promise<void>;
 }
 
 export function createWithdrawHolds(options: WithdrawHoldsOptions): WithdrawHolds {
@@ -65,12 +72,13 @@ export function createWithdrawHolds(options: WithdrawHoldsOptions): WithdrawHold
       return { id };
     },
     async release(trx, input) {
-      const hold = await trx
+      let query = trx
         .withSchema('app')
         .selectFrom('withdraw_holds')
         .select(['id', 'app_id', 'user_id', 'reason', 'released_at'])
-        .where('id', '=', input.holdId)
-        .executeTakeFirst();
+        .where('id', '=', input.holdId);
+      if (input.appId !== undefined) query = query.where('app_id', '=', input.appId);
+      const hold = await query.executeTakeFirst();
       if (hold === undefined) throw new Error('payout: withdraw hold not found');
       await options.lockUsersForUpdate(trx, { appId: hold.app_id, userIds: [hold.user_id] });
       if (hold.released_at !== null) return;
@@ -79,6 +87,7 @@ export function createWithdrawHolds(options: WithdrawHoldsOptions): WithdrawHold
         .withSchema('app')
         .updateTable('withdraw_holds')
         .set({ released_at: now, released_by: input.releasedBy })
+        .where('app_id', '=', hold.app_id)
         .where('id', '=', hold.id)
         .where('released_at', 'is', null)
         .execute();
