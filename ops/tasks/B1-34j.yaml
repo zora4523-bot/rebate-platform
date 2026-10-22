@@ -1,0 +1,23 @@
+id: B1-34j
+repo: rebate-platform
+title: admin 读接口健壮性小修（评审遗留 S2 合并）——审计日志 actor_id 非 UUID 返回空页、from / to 倒置按微秒比较；找回详情 user_id 与申请人比较不分大小写；ExportStore 内存替身 put / get 复制字节
+type: impl
+# 2026-10-22 入账（admin-backend followups）。来源：B1-34a Codex money S2×2（audit-log-store.ts:93 非 UUID 让 PG 22P02 变 500；audit-logs-read.ts:85 Date.parse 截到毫秒，同一毫秒内的倒置漏判）、B1-10j Codex r2 S2（orders/application/admin-claims.ts:133 详情 user_id 区分大小写，与列表 PG uuid 比较不一致）、B1-34d Codex money S2（platform/export-store/index.ts:132 / :171 Buffer.slice 共享内存，改 new Uint8Array(bytes)）。
+# 本线技术取舍：只修行为、不改契约形状；非 UUID 的 actor_id 返回空页（契约已写 actor_id 为 uuid 筛选；注意 B1-10j 列表对非 UUID 的 user_id 返回 20001，本任务按审计日志契约取空页，不照搬该先例）；微秒比较用解析后的整数微秒，不经 Date。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/admin/**'
+  - 'apps/api/src/modules/orders/application/admin-claims.ts'
+  - 'apps/api/src/modules/orders/application/admin-claims.test.ts'
+  - 'apps/api/src/modules/platform/export-store/**'
+test_paths:
+  - 'test/spec/admin/read-hardening/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/read-hardening/**'
+status: todo
+pr: null
