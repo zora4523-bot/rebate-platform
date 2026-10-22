@@ -1,0 +1,23 @@
+id: B1-09l
+repo: rebate-platform
+title: 后台 hold / unhold：POST /admin/v1/orders/{order_id}/hold、unhold（order.hold、无二次验证）——锁内重读，R11 起点、同状态、UNMAPPED_STATUS 待处理未关闭与 row_version 不符都 20902 order；原因码按权限推导或必选；说明必填进审计；经返利端口写；按 J-1 不挂载
+type: impl
+# 2026-10-22 入账草稿（W1 线，新编号）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2；依据 08 BR-FUND-06 细则「后台 hold / unhold」（couli #176，编排裁定 D10-152 ①②、D10-155、D10-157），BR-FUND-01 R11 行由编排者补充逐字摘录。
+# 分工：资金类（暂停 / 恢复决定能否入账）→ impl claude、tester codex、Codex money 评审（D10-15）。只转写 08，不改规则；R11 的写与 CAS 在 settlement（资金线 B2-04l），本任务只做 HTTP、判定与审计。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：同一事务 lockOrderKey → FOR UPDATE 重读 → 判定 → 调 B1-09c 的 rebate.adminHold / adminUnhold；「待处理未关闭」= order_sync_pending 有 reason=UNMAPPED_STATUS 且 status=open 的行（方案 K-7）；
+#   risk.* 只认 risk.freeze / ban / blocklist / appeal，config.risk 不算；推得出时 reason_code 可省、传了不符 20001；note 1–200 字；审计 action order_hold / order_unhold（before / after 含 hold、hold_reason、note），审计写入器绑事务；
+#   响应复用 B1-10i 的订单详情读取；端口未注入时路由不挂载、契约 planned 不动（J-1），挂载在 B1-09n。
+refs: [BR-FUND-06]
+refs_hash:
+  BR-FUND-06: 2076b932478c
+deps: [CT-24n, B1-09c, B1-10i]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/admin-hold/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/admin-hold/**'
+status: todo

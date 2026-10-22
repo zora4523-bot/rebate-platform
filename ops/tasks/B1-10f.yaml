@@ -1,0 +1,23 @@
+id: B1-10f
+repo: rebate-platform
+title: 后台未归因订单指派：POST /admin/v1/orders/{order_id}/reassign（order.assign、动态码）——锁内重读只接受 user_id 为空且与期望一致，同事务复查目标封禁 / 注销中 / 已注销；R3 / R3b 经返利端口；写 order_assignments、历史、审计、order.reassigned、来源回填；按 J-1 不挂载
+type: impl
+# 2026-10-22 入账草稿（W1 线；v1 方案 B1-10f 按 #136 收窄后再按 couli #176 定形）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2；依据 08 BR-ATTR-31 细则（含「改归属的目标用户」，编排裁定 D10-152 ③）、BR-ATTR-20 ①③、BR-FUND-01 R3 / R3b 行、04 §6.6 reassign 段。
+# refs 清空：BR-ATTR-31 约 12KB 加 BR-ATTR-20 与契约原文会超任务书 24KB 上限（B1-08s / t 先例），原文由编排者补充逐字摘录。分工：归属类 → impl claude、tester codex、Codex money 评审（D10-15）。只转写 08，不改归属规则。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：lockOrderKey → FOR UPDATE 重读；目标风控状态经 risk createRiskStateBatchReader、注销状态经 identity createUserDeletionStatusReader，同一事务读；拒绝 20001 data.fields=[user_id]、data.reason ∈ target_banned / target_deleting / target_deleted（方案 K-9）并写审计；
+#   orders 声明 rebate.onAdminAssigned（写前快照入参，locked 与 rebate_status 由 settlement 按 R3 / R3b 写，claim-review 先例；settlement 侧尚无任务，方案 K-1）；user_basis=admin；分佣快照经 runCommissionSnapshot（R3b 不生成）；
+#   order.reassigned 按 02 §11 位置补进 EVENT_NAMES、同事务入队；该子订单他人待审找回子项 rejected NOT_IN_POOL；响应复用 B1-10i 详情读取；挂载并入找回通过的挂载任务（K-1）。
+refs: []
+refs_hash: {}
+deps: [CT-24n, B1-09e, B1-10i]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/modules/platform/events/**'
+test_paths:
+  - 'test/spec/orders/admin-assign/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/admin-assign/**'
+status: todo

@@ -1,0 +1,28 @@
+id: B1-09i
+repo: rebate-platform
+title: 手动同步：POST /admin/v1/order-syncs（时间窗或单号二选一，同一筛选在排队或执行期间返回原请求 reused=true，按窗口上限切分投递、不读不推水位；站长授权暂停拒绝）、GET 列表、GET limits；任务回写状态与拉到 / 入库条数；挂载、去 planned
+type: impl
+# 2026-10-22 入账草稿（W1 线）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2（v1 B1-09i 按 couli #176 的 04 §6.6 order-syncs 与 §3.2 order_sync_requests 改）；依据 02 §7.1（窗口上限、回扫范围、manual 去重键）、01 F-ORD-10，由编排者补充摘录。
+# 不写资金：只重拉订单交既有流水线。分工 impl claude、tester codex（orders RV2）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：去重键 `platform:account:kind:scene:manual:<筛选摘要>:window_start`，filter_digest 落 order_sync_requests 部分唯一；status_filter 只收 specs/union/<platform>.md 已登记值（方案 K-6，本任务建空登记处，未登记带了即 20001）；
+#   按单号（≤50）只拼多多经 getPddOrderDetail，淘宝 / 京东 TODO(规划/11 §4.5) blocked on CAP-TB-07 / CAP-JD-07；站长授权可用性复用 union order-sync-ports，暂停时返回 CT-24n 分配的码（K-4）；熔断期间同样不投递；limits 常量登记在 orders。
+refs: []
+refs_hash: {}
+deps: [CT-24n, B1-09e]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/orders/manual-sync/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/manual-sync/**'
+status: todo

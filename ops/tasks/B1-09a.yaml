@@ -1,0 +1,26 @@
+id: B1-09a
+repo: rebate-platform
+title: risk 订单侧名单端口：只读查询（淘宝尾号逐字符、渠道 relation_id + 同 union_account_id + 半开区间）、订单命中写入 risk_hits（BLACKLIST_HIT 规则行惰性登记、部分唯一索引去重）、渠道单批量写入 blocklist（start_at=导入时刻、end_at 可空、重复生效条目返回 duplicate）
+type: impl
+# 2026-10-22 入账草稿（W1 线；编排 10-18 20:1x 同意入账，identity 线只读评审端口形状）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2（v1 的 B1-09a 加渠道单写入端口：02 §4.1 orders 行「渠道单导入写 blocklist 走 risk 提供的名单写入端口」，couli #176）。
+# 分工：资金 / 归属类（命中即作废未入账订单）→ impl claude、tester codex、Codex money 评审（D10-15）。只转写 08，不改规则。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：端口都在调用方事务内执行，从 risk/index.ts 导出；命中写入照 invite-relation-hits（B1-03x）先例惰性插 risk_rules 行 BLACKLIST_HIT，risk_hits 加部分唯一索引 (app_id, rule_id, ref_type, ref_id, value_hmac) WHERE rule_id='BLACKLIST_HIT'（J-16，SAME_DEVICE 先例）；
+#   value_hmac=HMAC(名单值)，ref_type=order；渠道单 violation_type=other（J-17）、created_by=管理员 id；重复口径按方案 K-5（同 app、union_account_id、relation_id 已有 active 且 end_at 为空或晚于导入时刻）；审计由 orders 按整份文件写，本端口不写；不停用、不删除。
+# 迁移号落地时取主干最大号 + 1（notices 登记，现 0069）；与 B1-09e 两个迁移串行。BR-ID-31（名单维护）只作一跳理解。
+# refs 清空：BR-ATTR-26 原文 + risk / db 两处 AGENTS 使任务书超 24KB（25.6KB），所需原文由编排者补充逐字摘录（先例 B1-08t）。
+refs: []
+refs_hash: {}
+deps: [B1-03x]
+paths:
+  - 'apps/api/src/modules/risk/**'
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/risk/order-blocklist/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/risk/order-blocklist/**'
+status: todo

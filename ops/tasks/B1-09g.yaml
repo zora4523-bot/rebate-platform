@@ -1,0 +1,26 @@
+id: B1-09g
+repo: rebate-platform
+title: 后台导入任务骨架：POST /admin/v1/rights-imports（multipart 校验、channel 另验 risk.blocklist 与动态码）、列表、详情（failures[]）；文件存私有导入存储；rights-import 队列异步处理、状态与五项计数；按 kind 分派逐行处理器；按 J-1 不挂载
+type: impl
+# 2026-10-22 入账草稿（W1 线）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2（v1 B1-09g 拆为骨架 g + 维权 / 违规逐行 k，按 couli #176 的 04 §6.6 rights-imports 与 BR-FUND-06 细则「维权导入任务」改）。
+# 依据：CT-24n 已合并契约原文、04 §3.2 rights_imports 行（由编排者补充摘录）。不写资金：逐行处理器接口在此定，维权 / 违规由 B1-09k、渠道单由 B1-09h 实现。分工 impl claude、tester codex（orders RV2）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：每次上传都新建任务（不按文件哈希去重，BR-FUND-06 细则）；文件照 platform/export-store 先例新增私有 import-store 端口（local / test 内存实现，OSS 适配器 TODO blocked on B1-30），日志不打内容；
+#   新队列 rights-import 进 QUEUE_CATALOG（若平台队列冻结测试钉全目录，照 export 队列先例另开 test-change）；列映射读登记表，表头待负责人样例（方案 K-3），测试用合成表头；整份文件写一条审计；
+#   order.claim 全部 kind，channel 另需 risk.blocklist 与 totp 动态码（整份一次，BR-ATTR-26 细则）；按 J-1 / J-22 路由不挂载、契约 planned 不动，挂载另开 B1-09n。
+refs: [BR-FUND-06]
+refs_hash:
+  BR-FUND-06: 2076b932478c
+deps: [CT-24n, B1-09e, B1-09f]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/modules/platform/import-store/**'
+  - 'apps/api/src/modules/platform/index.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+test_paths:
+  - 'test/spec/orders/rights-import-task/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/rights-import-task/**'
+status: todo

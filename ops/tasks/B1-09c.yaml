@@ -1,0 +1,23 @@
+id: B1-09c
+repo: rebate-platform
+title: orders 声明维权与暂停命令端口（rights.record、rebate.adminHold、rebate.adminUnhold，settlement 实现）与「按平台单号定位子订单」：结果区分 applied / duplicate / not_applicable / same_state / cas_conflict；未注入时不写
+type: impl
+# 2026-10-22 入账草稿（W1 线）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2（v1 B1-09c 扩到 R11：02 §4.1「orders 声明返利状态迁移端口（rebate_status 迁移、hold、order_rights 写入的命令接口），settlement 实现」；couli #176 BR-FUND-06 细则「后台 hold / unhold」）。
+# 资金线 B2-04l（rights.record 与 R11 实现）blocked on 本任务与 B1-09e，排第一波。分工：资金类 → impl claude、tester codex、Codex money 评审（D10-15）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：端口只有类型与注入点，入参为锁内重读的写前快照（照 claim-review 的 rebate.onClaimApproved 先例）；rights.record 入参 order_id、source API / IMPORT、type、status、amount_fen、deduction_commission_fen、occurred_at、platform_rights_no，
+#   去重键照 BR-FUND-06（平台 + 子订单 + 平台维权单号，方案 K-2）；adminHold / adminUnhold 入参 expected_row_version、reason_code、actor（admin id），守卫与 CAS 在 settlement 侧；
+#   定位函数只按子订单号匹配（app_id 限定、拼多多去连字符），能识别「只给了主订单号」以便上层记 sub_order_no_missing（D10-152 ⑨），不展开到子订单；调用方先取 order_key advisory 锁（lockOrderKey）。
+refs: [BR-FUND-06]
+refs_hash:
+  BR-FUND-06: 2076b932478c
+deps: [B2-04j]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/rights-port/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/rights-port/**'
+status: todo
