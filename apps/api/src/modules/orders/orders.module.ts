@@ -11,6 +11,8 @@
 // REDIS when the entry has it, content's reader); null without a database (both routes 50001).
 // B1-10c: the claim evidence ports (options.evidence, a factory over the acceptance transaction)
 // join the claim ports, so a submission settles its evidence in the same transaction.
+// B1-10h: linking's claim-entry reader (options.claimEntry, a factory from app.module) joins the
+// shared OrderQueries, so GET /v1/orders?scope=self carries claim_entry_pinned (BR-ATTR-17).
 import { Module, type DynamicModule } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -55,6 +57,10 @@ import {
 } from './worker-runtime.ts';
 
 export interface OrdersModuleOptions {
+  /**
+   * B1-10h: linking's claim-entry reader (link_logs jump-outs, union_bindings) behind listOrders'
+   * claim_entry_pinned. app.module always gives it; without it scope=self pages leave the field out.
+   */
   readonly claimEntry?: (db: Kysely<Database>) => ClaimEntryReader;
   /**
    * B1-10c: the claim evidence ports over the acceptance transaction (linking's raw reads, the
@@ -122,6 +128,9 @@ export class OrdersModule {
                   config: options.config(db, clock),
                   // TODO(规划/11 §4.5): figures 端口接 settlement / ledger / commission 读端口 — blocked on 这些模块尚无可用导出
                   links: options.links(db),
+                  ...(options.claimEntry === undefined
+                    ? {}
+                    : { claimEntry: options.claimEntry(db) }),
                 }),
         },
         {

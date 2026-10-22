@@ -10,6 +10,11 @@
 // last row examined. Every value returned is already the projection of BR-TEXT-02 细则「订单的
 // 检索范围与分享单的投影」: a shared order carries masked_order_no only, and is_other_product=true
 // carries no title, image, or product_key.
+// B1-10h (J-6): with scope=self and linking's claim-entry reader wired, every page (any cursor or
+// filter) also carries claim_entry_pinned (BR-ATTR-17, judged by domain/claim-entry.ts at the one
+// clock reading of the request); scope=share and an assembly without the reader leave it out.
+// The reader's facts cover [now − 72 hours, now], since an older latest jump-out is never pinned;
+// read errors propagate like any other list read (never a silent false, nothing cached).
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
 import { chinaMonthRange } from '@couli/domain';
@@ -18,6 +23,7 @@ import { sql, type Kysely } from 'kysely';
 import type { ContentReader } from '../../content/index.ts';
 import type { ClaimEntryReader } from '../../linking/index.ts';
 import type { Clock } from '../../platform/index.ts';
+import { CLAIM_ENTRY_PIN_UNTIL_MS, claimEntryPinned } from '../domain/claim-entry.ts';
 import {
   buildTimeline,
   deriveDisplayStatus,
@@ -233,6 +239,13 @@ function decodeCursor(cursor: string): Cursor {
   return { at: parsed[0], id: parsed[1] };
 }
 
+/** The instant `deltaMs` from `from`, derived without reading the system clock. */
+function shifted(from: Date, deltaMs: number): Date {
+  const date = structuredClone(from);
+  date.setTime(from.getTime() + deltaMs);
+  return date;
+}
+
 function escapeLike(text: string): string {
   return text.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
@@ -336,7 +349,10 @@ class DbOrderQueries extends OrderQueries {
       throw new OrderQueryError(['paid_month']);
     }
     let after = filter.cursor === undefined ? undefined : decodeCursor(filter.cursor);
-    const earliest = visibleOrderStart(deps.clock, await this.#queryMonths(subject.app_id));
+    // The request's one clock reading: the visible range and the claim-entry pin share it.
+    const now = deps.clock.now();
+    const at: Clock = { now: () => shifted(now, 0) };
+    const earliest = visibleOrderStart(at, await this.#queryMonths(subject.app_id));
     const bounds = this.#bounds(earliest, filter.paid_month);
     const accepts = (view: OrderView) =>
       (filter.status_group === undefined ||
@@ -379,10 +395,12 @@ class DbOrderQueries extends OrderQueries {
       if (last === undefined) break;
       after = { at: cursorInstant(last.pay_key), id: last.order_id };
     }
+    const pinned = filter.scope === 'self' ? await this.#claimEntryPinned(subject, now) : undefined;
     return {
       items,
       next_cursor: exhausted || last === undefined ? null : encodeCursor(last),
       earliest_visible_date: earliest,
+      ...(pinned === undefined ? {} : { claim_entry_pinned: pinned }),
     };
   }
 
@@ -448,6 +466,39 @@ class DbOrderQueries extends OrderQueries {
 
   #required(): OrderQueryDeps {
     return this.#deps;
+  }
+
+  /**
+   * BR-ATTR-17 for the subject at `now`, without any list filter; undefined when no reader is
+   * wired. The orders read runs only when the jump-out facts alone would pin, since an order can
+   * only take the pin away; it is bounded below by the facts' window start, which no jump-out
+   * that counts precedes.
+   */
+  async #claimEntryPinned(subject: OrderSubject, now: Date): Promise<boolean | undefined> {
+    const reader = this.#deps.claimEntry;
+    if (reader === undefined) return undefined;
+    const from = shifted(now, -CLAIM_ENTRY_PIN_UNTIL_MS);
+    const scope = { app_id: subject.app_id, user_id: subject.user_id };
+    const facts = await reader.read({ ...scope, from, to: shifted(now, 0) });
+    const input = {
+      ...scope,
+      now,
+      logs: facts.logs,
+      bindings: facts.bindings,
+      latest_order_attr_at: null,
+    };
+    if (!claimEntryPinned(input)) return false;
+    const latest = await this.#deps.db
+      .withSchema('app')
+      .selectFrom('orders')
+      .select('attr_at')
+      .where('app_id', '=', subject.app_id)
+      .where('user_id', '=', subject.user_id)
+      .where('attr_at', '>=', from)
+      .orderBy('attr_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    return claimEntryPinned({ ...input, latest_order_attr_at: latest?.attr_at ?? null });
   }
 
   /** order.user_query_months (BR-ID-30 ⑰): a non-negative whole number, else 0 (unlimited). */
