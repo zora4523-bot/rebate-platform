@@ -1,0 +1,22 @@
+id: CT-06zg
+repo: rebate-platform
+title: CT-06zg：ci.yml verify-int 的 pnpm test:int 显式设 PROP_RUNS=2000（D10-210）
+type: guard-change
+# 2026-10-23 入账（ops 线，编排裁定 D10-210，04:25 派工）。起因：CT-06ze 查 verify-int 超时时发现
+# test/spec/ledger/posting/properties.int.test.ts [AC-B2-02f#23] 单条 783 秒。原因：verify-int 跑 pnpm test:int 时没设
+# PROP_RUNS，集成测试里的属性用例落到 @couli/testing 的默认值 10000 次；这不是设计，测试注释写的是 PR 200 / 长跑 2000。
+# 做法：test:int 步骤的 env 加 PROP_RUNS='2000'。依据（D10-210）：2000 等于设计的长跑档，比设计的 PR 档高 10 倍，不构成
+# approvals #16 的「削弱资金测试」。verify-props（100000）与 longrun-props 不动；测试文件不改。
+# 改 .github/** 属第三类保护路径，按 approvals #24 由编排核对后加标签；非 task 分支 chore/guard-change-CT-06zg，不带证据文件
+# （先例 CT-06ze #1214）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - 'ops/tasks/CT-06zg.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
