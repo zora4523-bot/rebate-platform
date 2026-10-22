@@ -1,12 +1,16 @@
 // identity's projection of the console users list for admin's export worker (B1-34e; BR-ID-42,
 // BR-ID-33). The rows and columns of GET /admin/v1/users (list view) for one page: app-scoped,
-// optional risk_state filter (no risk row reads as normal), ordered created_at desc, id desc. The
+// optional risk_state filter (no risk row reads as normal), ordered created_at desc, id desc.
+// Paging: page / pageSize (OFFSET) for a single read; a full walk passes back each page's opaque
+// `next` cursor as `after` (keyset on (created_at, id); page is then not used for an offset)
+// and a fixed `createdUpTo` bound, so users registering during the walk neither shift rows into
+// a second page (duplicates) nor push rows out of it (omissions). The
 // phone cipher is decrypted here in one pass over the page (no per-user read) and, unless the
 // caller asks for masked=false, masked at once (BR-ID-33 3+4); a broken cipher fails the whole
 // page closed — no cipher text and no partial plaintext ever leaves identity. No writes, no logs.
 import type { Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import type { FieldCrypto } from '../../platform/index.ts';
 import { maskPhone } from '../domain/mask-phone.ts';
 import { PHONE_CIPHER_CONTEXT } from '../domain/registration.ts';
@@ -26,6 +30,10 @@ export interface ExportUsersQuery {
   readonly page: number;
   readonly pageSize: number;
   readonly riskState?: Schema<'AdminUserRiskStateCode'>;
+  /** Only users created at or before this instant (the export's start, from the injected Clock). */
+  readonly createdUpTo?: Date;
+  /** The previous page's `next`: keyset continuation; when given, `page` does not offset. */
+  readonly after?: string;
   /** Omission means masked. Only an already-authorized persisted task may request false. */
   readonly masked?: boolean;
 }
@@ -34,8 +42,14 @@ export interface ExportUsersReader {
   page(input: ExportUsersQuery): Promise<{
     readonly items: readonly ExportUserRow[];
     readonly total: number;
+    /** Keyset cursor after the last item (null on an empty page); opaque, no personal data. */
+    readonly next?: string | null;
   }>;
 }
+
+/** Cursor: created_at with microseconds (UTC) and id; timestamptz keeps microseconds. */
+const CURSOR =
+  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z)\|([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 /** Batch database projection and decryption stay inside identity. */
 export function createExportUsersReader(options: {
@@ -54,6 +68,11 @@ export function createExportUsersReader(options: {
       if (!Number.isSafeInteger(input.pageSize) || input.pageSize < 1) {
         throw new RangeError('identity: export page size must be a positive integer');
       }
+      if (input.createdUpTo !== undefined && Number.isNaN(input.createdUpTo.getTime())) {
+        throw new RangeError('identity: export upper bound must be a valid instant');
+      }
+      const cursor = input.after === undefined ? undefined : CURSOR.exec(input.after);
+      if (cursor === null) throw new RangeError('identity: export cursor is invalid');
       let query = db
         .selectFrom('users')
         .leftJoin('user_risk_state as risk', (join) =>
@@ -67,10 +86,19 @@ export function createExportUsersReader(options: {
             : eb('risk.state', '=', riskState),
         );
       }
+      if (input.createdUpTo !== undefined) {
+        query = query.where('users.created_at', '<=', input.createdUpTo);
+      }
       const count = await query
         .select((eb) => eb.fn.countAll<bigint>().as('total'))
         .executeTakeFirstOrThrow();
-      const rows = await query
+      let rowsQuery = query;
+      if (cursor !== undefined) {
+        rowsQuery = rowsQuery.where(
+          sql<boolean>`(users.created_at, users.id) < (${cursor[1]}::timestamptz, ${cursor[2]}::uuid)`,
+        );
+      }
+      const rows = await rowsQuery
         .select([
           'users.id',
           'users.nickname',
@@ -78,11 +106,14 @@ export function createExportUsersReader(options: {
           'users.created_at',
           'users.phone_cipher',
           'risk.state as risk_state',
+          sql<string>`to_char(users.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
+            'cursor_at',
+          ),
         ])
         .orderBy('users.created_at', 'desc')
         .orderBy('users.id', 'desc')
         .limit(input.pageSize)
-        .offset((input.page - 1) * input.pageSize)
+        .offset(cursor === undefined ? (input.page - 1) * input.pageSize : 0)
         .execute();
       // Decrypt the whole page before building any row: one failure rejects the page.
       const items = rows.map((row): ExportUserRow => {
@@ -103,7 +134,12 @@ export function createExportUsersReader(options: {
           created_at: row.created_at.toISOString(),
         };
       });
-      return { items, total: Number(count.total) };
+      const last = rows.at(-1);
+      return {
+        items,
+        total: Number(count.total),
+        next: last === undefined ? null : `${last.cursor_at}|${last.id}`,
+      };
     },
   });
 }
