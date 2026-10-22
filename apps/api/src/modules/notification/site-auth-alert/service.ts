@@ -7,19 +7,23 @@
 //   `expired` one more segment, the ISO instant the account entered expired (D10-179: a later
 //   re-entry alerts again, a rerun of the same entry does not). ON CONFLICT (app_id, dedupe_key)
 //   DO NOTHING: a repeat or a concurrent plan adds nothing; the count of new rows is returned.
-// - deliver(appId, unionAccountId, phones): the queued rows of exactly that account and app, one
-//   claim per row (FOR UPDATE SKIP LOCKED, queued → failed with sent_at null, committed before
-//   the send: at most once, never twice). The phone is looked up by its id in the current list
-//   handed in; an id no longer configured stays failed. rejected or a throwing sender → failed;
-//   accepted / unknown → success with sent_at. A failed row is never sent again. Operational
-//   alerts: no user switch, no quiet hours (BR-TEXT-20).
+// - deliver(appId, unionAccountId, phones): the deliverable rows of exactly that account and
+//   app — queued, or claims left unconfirmed for 10 minutes. Per row: claim and commit first
+//   (FOR UPDATE SKIP LOCKED; failed ∧ sent_at null ∧ row_version 1, see V_* below), then send with
+//   the dedupe key as outId. accepted / unknown → success with sent_at; rejected → failed for
+//   good (row_version 2, error line); a throwing sender → back to queued and deliver rejects so
+//   the queue retries; a phone no longer configured → failed for good. A claim left unconfirmed
+//   (process died after claiming) is recovered: sms.query when the sender has it (sent → success,
+//   not_sent → send, unknown → look again later), else sent again (decisions.md: a rare
+//   duplicate rather than a lost alert). Operational alerts: no user switch, no quiet hours
+//   (BR-TEXT-20).
 // - Phones never reach notify_logs or the logs: a failure line carries the masked form only.
 // - createFakeTemplateSmsSender: local / test only; renders the BR-TEXT-20 text strictly.
 //   createTemplateSmsSender: the fake in local / test; elsewhere, until the provider adapter
 //   exists, a sender that rejects every message, announced once with a warn (identity's
 //   createSmsSender pattern).
 import type { DB } from '@couli/db';
-import { sql, type Kysely, type Transaction } from 'kysely';
+import type { ExpressionBuilder, Kysely, Transaction } from 'kysely';
 import { newUuidV7, type Clock, type RootLogger } from '../../platform/index.ts';
 
 export interface SiteAuthAlertPlan {
@@ -40,7 +44,10 @@ export interface SiteAuthAlertPort {
     unionAccountId: string,
     phones: readonly { phoneId: string; phone: string }[],
   ): Promise<void>;
-  /** Accounts with queued alerts (oldest planned_at each), for the chain's self-heal. */
+  /**
+   * Accounts with deliverable alerts (queued, or claims unconfirmed for 10 minutes; oldest
+   * planned_at each), for the chain's self-heal.
+   */
   pending?(): Promise<readonly SiteAuthPendingAlerts[]>;
 }
 export interface SiteAuthPendingAlerts {
@@ -57,8 +64,12 @@ export interface TemplateSmsMessage {
   /** Stable id of this alert (its notify_logs dedupe_key), for a provider's own dedupe. */
   outId?: string;
 }
+/** What a provider knows of an earlier send of `outId`. */
+export type TemplateSmsQueryResult = 'sent' | 'not_sent' | 'unknown';
 export interface TemplateSmsSender {
   send(m: TemplateSmsMessage): Promise<TemplateSmsResult>;
+  /** Optional: look up an earlier send by its outId (used for claims left unconfirmed). */
+  query?(m: { appId: string; outId: string; phone: string }): Promise<TemplateSmsQueryResult>;
 }
 export interface FakeTemplateSmsSender extends TemplateSmsSender {
   outbox(): readonly {
@@ -90,6 +101,16 @@ const TEMPLATES: Readonly<Record<string, string>> = Object.freeze({
   UNION_AUTH_EXPIRED:
     '【凑狸】你的{platform_name}联盟授权已过期或失效，新用户暂时无法下单，请尽快登录后台重新授权。',
 });
+// row_version of a union_auth SMS row tells the states status alone cannot (no new column or
+// status value: the table is not this task's). Set to these values, not incremented:
+// V_OPEN queued (new rows default 0; a row handed back after a throwing send is reset to 0);
+// V_CLAIMED failed ∧ sent_at null — claimed and committed, send attempted or about to be, no
+// outcome yet (recoverable after UNCONFIRMED_MS); V_DONE concluded — success, or failed for good
+// (rejected, phone removed, unrenderable), never sent again.
+const V_OPEN = 0;
+const V_CLAIMED = 1;
+const V_DONE = 2;
+const UNCONFIRMED_MS = 10 * 60_000;
 /** Queued rows read per self-heal pass. */
 const PENDING_LIMIT = 1000;
 const RESULTS: ReadonlySet<unknown> = new Set(['accepted', 'rejected', 'unknown']);
@@ -130,6 +151,13 @@ function beijingMinute(iso: string, like: Date): string {
   return `${text.slice(0, 10)} ${text.slice(11, 16)}`;
 }
 
+/** A Date of the same kind as `like` at `ms` (no wall clock, no `new Date`). */
+function dateAt(like: Date, ms: number): Date {
+  const result = structuredClone(like);
+  result.setTime(ms);
+  return result;
+}
+
 /** 138****0000: the only form of a phone a log line may carry (BR-ID-33). */
 export function maskPhone(phone: string): string {
   return phone.length >= 7 ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : '****';
@@ -143,13 +171,89 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
   const { clock, sms, logger } = o;
   const db = o.db.withSchema('app');
 
+  /** The open rows (queued) or the claims left unconfirmed past UNCONFIRMED_MS. */
+  function deliverable(now: Date) {
+    const cutoff = dateAt(now, now.getTime() - UNCONFIRMED_MS);
+    return (eb: ExpressionBuilder<DB, 'notify_logs'>) =>
+      eb.or([
+        eb('status', '=', 'queued'),
+        eb.and([
+          eb('status', '=', 'failed'),
+          eb('sent_at', 'is', null),
+          eb('row_version', '=', V_CLAIMED),
+          eb('updated_at', '<=', cutoff),
+        ]),
+      ]);
+  }
+
   /**
-   * Claim, then send (at most once): the row is locked and moved queued → failed with sent_at null
-   * ("attempted, outcome unconfirmed", allowed by notify_logs' CHECKs) and that commits first;
-   * only then is the sender called, with the dedupe key as a stable id (outId). accepted / unknown
-   * → success with sent_at; rejected stays failed with an error line; a throwing sender stays
-   * failed with an error line and is not rethrown. A crash after the claim leaves the row failed:
-   * it is never sent again automatically (no duplicate alert); no row is ever sent twice.
+   * Claims one row and commits: queued (or a claim unconfirmed for UNCONFIRMED_MS) → failed with
+   * sent_at null and row_version V_CLAIMED, updated_at now. FOR UPDATE SKIP LOCKED plus the same
+   * conditions on the UPDATE: two deliveries never hold one claim. null when nothing was claimed.
+   */
+  async function claim(
+    appId: string,
+    rowId: string,
+  ): Promise<{ id: string; code: string; dedupe_key: string; recovered: boolean } | null> {
+    return o.db.transaction().execute(async (trx) => {
+      const t = trx.withSchema('app');
+      const now = clock.now();
+      const row = await t
+        .selectFrom('notify_logs')
+        .select(['id', 'code', 'dedupe_key', 'status'])
+        .where('app_id', '=', appId)
+        .where('id', '=', rowId)
+        .where(deliverable(now))
+        .forUpdate()
+        .skipLocked()
+        .executeTakeFirst();
+      if (row === undefined) return null;
+      await t
+        .updateTable('notify_logs')
+        .set({ status: 'failed', sent_at: null, row_version: V_CLAIMED, updated_at: now })
+        .where('app_id', '=', appId)
+        .where('id', '=', row.id)
+        .where(deliverable(now))
+        .execute();
+      return {
+        id: row.id,
+        code: row.code,
+        dedupe_key: row.dedupe_key,
+        recovered: row.status !== 'queued',
+      };
+    });
+  }
+
+  /** Concludes a claim (only while it is still the open claim: failed ∧ sent_at null ∧ V_CLAIMED). */
+  async function settle(
+    appId: string,
+    rowId: string,
+    to: 'success' | 'failed' | 'reopen',
+  ): Promise<void> {
+    const now = clock.now();
+    await db
+      .updateTable('notify_logs')
+      .set(
+        to === 'success'
+          ? { status: 'success', sent_at: now, row_version: V_DONE, updated_at: now }
+          : to === 'failed'
+            ? { row_version: V_DONE, updated_at: now }
+            : { status: 'queued', row_version: V_OPEN, updated_at: now },
+      )
+      .where('app_id', '=', appId)
+      .where('id', '=', rowId)
+      .where('status', '=', 'failed')
+      .where('sent_at', 'is', null)
+      .where('row_version', '=', V_CLAIMED)
+      .execute();
+  }
+
+  /**
+   * One row: claim (committed), then send with the dedupe key as outId. A recovered claim
+   * (unconfirmed for 10 minutes: the process died after claiming, or the outcome was lost) asks
+   * sms.query first when there is one: sent → success, unknown → kept for the next look,
+   * not_sent → sent now; without query it is sent again (a rare duplicate rather than a lost
+   * alert, decisions.md). Returns true when a throwing sender handed the row back to queued.
    */
   async function deliverRow(
     appId: string,
@@ -157,34 +261,9 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
     rowId: string,
     platform: string | null,
     phones: ReadonlyMap<string, string>,
-  ): Promise<void> {
-    const claimed = await o.db.transaction().execute(async (trx) => {
-      const t = trx.withSchema('app');
-      const row = await t
-        .selectFrom('notify_logs')
-        .select(['id', 'code', 'dedupe_key'])
-        .where('app_id', '=', appId)
-        .where('id', '=', rowId)
-        .where('status', '=', 'queued')
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst();
-      if (row === undefined) return null;
-      await t
-        .updateTable('notify_logs')
-        .set({
-          status: 'failed',
-          sent_at: null,
-          updated_at: clock.now(),
-          row_version: sql<number>`row_version + 1`,
-        })
-        .where('app_id', '=', appId)
-        .where('id', '=', row.id)
-        .where('status', '=', 'queued')
-        .execute();
-      return row;
-    });
-    if (claimed === null) return;
+  ): Promise<boolean> {
+    const claimed = await claim(appId, rowId);
+    if (claimed === null) return false;
     const parsed = parseKey(claimed.dedupe_key);
     const phone = parsed === null ? undefined : phones.get(parsed.phoneId);
     const name = platform === null ? undefined : PLATFORM_NAMES[platform];
@@ -196,7 +275,8 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
       stage: parsed?.stage ?? null,
     };
     if (parsed === null || phone === undefined || name === undefined) {
-      // The phone was removed meanwhile (or the row cannot be rendered): failed, never resent.
+      // The phone was removed meanwhile (or the row cannot be rendered): failed for good.
+      await settle(appId, claimed.id, 'failed');
       logger.error(
         {
           ...fields,
@@ -204,7 +284,29 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
         },
         'union_auth_sms_failed',
       );
-      return;
+      return false;
+    }
+    const masked = maskPhone(phone);
+    if (claimed.recovered) {
+      if (sms.query !== undefined) {
+        let state: TemplateSmsQueryResult;
+        try {
+          state = await sms.query({ appId, outId: claimed.dedupe_key, phone });
+        } catch {
+          state = 'unknown';
+        }
+        if (state === 'sent') {
+          await settle(appId, claimed.id, 'success');
+          return false;
+        }
+        if (state === 'unknown') {
+          // Still unconfirmed: the claim stays (updated_at now), looked at again in 10 minutes.
+          logger.warn({ ...fields, phone_masked: masked }, 'union_auth_sms_unconfirmed');
+          return false;
+        }
+      } else {
+        logger.warn({ ...fields, phone_masked: masked }, 'union_auth_sms_resent');
+      }
     }
     const params: Record<string, string> = { platform_name: name };
     if (claimed.code === 'UNION_AUTH_EXPIRING' && parsed.expiresAt !== null) {
@@ -220,38 +322,29 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
         outId: claimed.dedupe_key,
       });
     } catch (error) {
-      logger.error(
+      // Not sent as far as we know (a transient error before the provider answered): back to
+      // queued (row_version V_OPEN), so the job's retry or the next heal sends it.
+      await settle(appId, claimed.id, 'reopen');
+      logger.warn(
         {
           ...fields,
-          phone_masked: maskPhone(phone),
-          reason: 'send_error',
+          phone_masked: masked,
           error_name: error instanceof Error ? error.name : typeof error,
         },
-        'union_auth_sms_failed',
+        'union_auth_sms_retry',
       );
-      return;
+      return true;
     }
     if (result === 'rejected') {
+      await settle(appId, claimed.id, 'failed');
       logger.error(
-        { ...fields, phone_masked: maskPhone(phone), reason: 'rejected' },
+        { ...fields, phone_masked: masked, reason: 'rejected' },
         'union_auth_sms_failed',
       );
-      return;
+      return false;
     }
-    const sentAt = clock.now();
-    await db
-      .updateTable('notify_logs')
-      .set({
-        status: 'success',
-        sent_at: sentAt,
-        updated_at: sentAt,
-        row_version: sql<number>`row_version + 1`,
-      })
-      .where('app_id', '=', appId)
-      .where('id', '=', claimed.id)
-      .where('status', '=', 'failed')
-      .where('sent_at', 'is', null)
-      .execute();
+    await settle(appId, claimed.id, 'success');
+    return false;
   }
 
   return {
@@ -260,7 +353,7 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
         .selectFrom('notify_logs')
         .select(['app_id', 'dedupe_key', 'planned_at'])
         .where('channel', '=', 'sms')
-        .where('status', '=', 'queued')
+        .where(deliverable(clock.now()))
         .where('dedupe_key', 'like', `${KEY_PREFIX}:%`)
         .orderBy('planned_at')
         .limit(PENDING_LIMIT)
@@ -312,7 +405,7 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
         .select('id')
         .where('app_id', '=', appId)
         .where('channel', '=', 'sms')
-        .where('status', '=', 'queued')
+        .where(deliverable(clock.now()))
         .where('dedupe_key', 'like', `${KEY_PREFIX}:${escapeLike(unionAccountId)}:%`)
         .orderBy('planned_at')
         .orderBy('dedupe_key')
@@ -325,8 +418,16 @@ export function createSiteAuthAlertPort(o: SiteAuthAlertOptions): SiteAuthAlertP
         .where('id', '=', unionAccountId)
         .executeTakeFirst();
       const byId = new Map(phones.map((p) => [p.phoneId, p.phone]));
+      let reopened = 0;
       for (const row of rows) {
-        await deliverRow(appId, unionAccountId, row.id, account?.platform ?? null, byId);
+        if (await deliverRow(appId, unionAccountId, row.id, account?.platform ?? null, byId)) {
+          reopened += 1;
+        }
+      }
+      // Rows handed back to queued: reject so the queue retries this job (with its backoff); the
+      // chain's heal (pending()) picks them up as well should the retries run out.
+      if (reopened > 0) {
+        throw new Error(`notification: ${reopened} site auth SMS handed back for retry`);
       }
     },
   };
@@ -355,6 +456,8 @@ export function createFakeTemplateSmsSender(appEnv: string): FakeTemplateSmsSend
   const outcomes: TemplateSmsResult[] = [];
   const sent: { phone: string; template: string; params: Record<string, string>; text: string }[] =
     [];
+  /** outIds of the accepted / unknown sends (what query answers sent for). */
+  const sentIds = new Set<string>();
   return Object.freeze({
     async send(m: TemplateSmsMessage): Promise<TemplateSmsResult> {
       const text = renderSiteAuthSms(m.template, m.params);
@@ -364,8 +467,12 @@ export function createFakeTemplateSmsSender(appEnv: string): FakeTemplateSmsSend
           Object.freeze({ phone: m.phone, template: m.template, params: { ...m.params }, text }),
         );
         if (sent.length > OUTBOX_LIMIT) sent.splice(0, sent.length - OUTBOX_LIMIT);
+        if (m.outId !== undefined) sentIds.add(m.outId);
       }
       return outcome;
+    },
+    async query(m: { appId: string; outId: string; phone: string }) {
+      return sentIds.has(m.outId) ? ('sent' as const) : ('not_sent' as const);
     },
     enqueueResult(r: TemplateSmsResult): void {
       if (!RESULTS.has(r)) throw new TypeError('notification: unknown SMS result');

@@ -13,6 +13,7 @@ export type {
   TemplateSmsSender,
   TemplateSmsMessage,
   TemplateSmsResult,
+  TemplateSmsQueryResult,
   FakeTemplateSmsSender,
   SiteAuthPendingAlerts,
 } from './site-auth-alert/service.ts';
