@@ -6,6 +6,7 @@ type: guard-change
 # 状态备注：可先开（第三类保护路径，只增属收紧：由编排按 approvals #24 核对后加 owner-approved 标签），先于 B2-05b 合并。
 # 规划/02 §4.1 payout 行：提现单、审核、自动到账判定、批量打款、PayoutChannel、结果查询与人工处置；拥有 withdrawals、withdraw_holds、payout_attempts、payout_batches、recon_channel、fee_rules、tax_ytd、fund_ledger；依赖 ledger、identity、risk。
 # lint-migrations 资金表前缀已含 withdraw / payout，本任务不改它；fee_rules / tax_ytd 建表时再登记。
+# 2026-10-22 补 paths：guard-cli.test.ts 用 payout 作「未登记模块」示例，登记后要换成 reconciliation（CI verify-fast 红）。
 refs: []
 refs_hash: {}
 deps: []
@@ -13,6 +14,7 @@ paths:
   - 'ops/risk-map.yaml'
   - 'AGENTS.md'
   - 'tools/guard/lib/risk.test.ts'
+  - 'tools/guard/guard-cli.test.ts'
   - 'apps/api/src/modules/payout/AGENTS.md'
   - 'apps/api/src/modules/payout/CLAUDE.md'
 impl: claude
