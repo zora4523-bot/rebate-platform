@@ -366,6 +366,7 @@ paths:
         - 20003
         - 44001
         - 10405
+        - 10007
       security: []
       parameters:
         - $ref: '#/components/parameters/AppId'
@@ -540,6 +541,7 @@ paths:
         - 44001
         - 50305
         - 10405
+        - 10007
       security: []
       parameters:
         - $ref: '#/components/parameters/AppId'
@@ -622,6 +624,7 @@ paths:
         - 44001
         - 50305
         - 10405
+        - 10007
       security: []
       parameters:
         - $ref: '#/components/parameters/AppId'
@@ -704,6 +707,7 @@ paths:
         - 44001
         - 50305
         - 10405
+        - 10007
       security: []
       parameters:
         - $ref: '#/components/parameters/AppId'
