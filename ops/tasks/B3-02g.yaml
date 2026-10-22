@@ -22,5 +22,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/evals-provenance/**'
-status: todo
+status: done
 pr: 312

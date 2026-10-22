@@ -22,5 +22,5 @@ tester: claude
 accept:
   - 'pnpm verify'
   - 'test/spec/agent/model-sse-metering/**'
-status: todo
+status: done
 pr: 321
