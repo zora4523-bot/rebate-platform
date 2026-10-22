@@ -51,9 +51,9 @@ it('[AC-B3-08d#5][BR-AI-01] 同平台成功 convert/open 才回显时间，按�
   });
   const data = draftOf(await f.execute());
   expect(data['click_times']).toEqual([
-    '2026-10-23T05:00:00.000Z',
-    '2026-10-23T04:00:00.000Z',
-    '2026-10-22T10:00:00.000Z',
+    '2026-10-23T13:00:00.000+08:00',
+    '2026-10-23T12:00:00.000+08:00',
+    '2026-10-22T18:00:00.000+08:00',
   ]);
   expect(data['evidence_summary']).toBeNull();
   expect(data).not.toHaveProperty('relation_id');
@@ -74,8 +74,8 @@ it('[AC-B3-08d#5][BR-AI-01] 配置窗口使用闭区间，刚好落在起止时�
     bindings: [],
   }));
   expect(draftOf(await f.execute())['click_times']).toEqual([
-    '2026-10-23T12:00:00.000Z',
-    '2026-10-22T12:00:00.000Z',
+    '2026-10-23T20:00:00.000+08:00',
+    '2026-10-22T20:00:00.000+08:00',
   ]);
   expect(f.read).toHaveBeenCalledWith({
     app_id: 'synthetic-app',
@@ -137,16 +137,16 @@ it('[AC-B3-08d#5][BR-AI-01] 先筛选并排序再取最近十条，不让别的�
   });
   // 任务书 §9 明确默认最多 10 条；固定期望不用生产代码推导。
   expect(draftOf(await f.execute())['click_times']).toEqual([
-    '2026-10-23T11:00:00.000Z',
-    '2026-10-23T10:00:00.000Z',
-    '2026-10-23T09:00:00.000Z',
-    '2026-10-23T08:00:00.000Z',
-    '2026-10-23T07:00:00.000Z',
-    '2026-10-23T06:00:00.000Z',
-    '2026-10-23T05:00:00.000Z',
-    '2026-10-23T04:00:00.000Z',
-    '2026-10-23T03:00:00.000Z',
-    '2026-10-23T02:00:00.000Z',
+    '2026-10-23T19:00:00.000+08:00',
+    '2026-10-23T18:00:00.000+08:00',
+    '2026-10-23T17:00:00.000+08:00',
+    '2026-10-23T16:00:00.000+08:00',
+    '2026-10-23T15:00:00.000+08:00',
+    '2026-10-23T14:00:00.000+08:00',
+    '2026-10-23T13:00:00.000+08:00',
+    '2026-10-23T12:00:00.000+08:00',
+    '2026-10-23T11:00:00.000+08:00',
+    '2026-10-23T10:00:00.000+08:00',
   ]);
 });
 
@@ -156,7 +156,7 @@ it('[AC-B3-08d#5][BR-AI-01][BR-AI-03] 复用出卡函数也按本人查询，并
   f.read.mockResolvedValue({ logs: [log('2026-10-23T11:00:00.000Z')], bindings: [] });
   const input = { platform: 'jd', orderNo: ORDER_NO };
   const first = await claimDraftCard(f.deps, context(), input);
-  expect(expectCard(first)['click_times']).toEqual(['2026-10-23T11:00:00.000Z']);
+  expect(expectCard(first)['click_times']).toEqual(['2026-10-23T19:00:00.000+08:00']);
   f.clock.set('2026-10-24T12:00:00.000Z');
   f.read.mockResolvedValue({ logs: [], bindings: [] });
   const second = await claimDraftCard(

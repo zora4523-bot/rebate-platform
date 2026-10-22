@@ -120,9 +120,7 @@ it.each([false, true])(
       platform: 'pdd',
       order_no: '231023-123456789012345',
     });
-    expect(outcome.modelView).toEqual(
-      withReference ? { card_id: 'synthetic-card-reference' } : {},
-    );
+    expect(outcome.modelView).toEqual(withReference ? { card_id: 'synthetic-card-reference' } : {});
     expect(JSON.stringify(outcome.modelView)).not.toContain('123456789012345');
     expect(JSON.stringify(outcome.modelView)).not.toContain('231023-123456789012345');
   },
