@@ -1,0 +1,133 @@
+{
+  "task": "B2-04x",
+  "spec_ref": "39ff3de4f9ada9377d64cab45fb07b40216d51f9",
+  "spec_commit": "c6820f1270848cee24b0e0363de7b847e2d7ae34",
+  "red_tests": [
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#1] BR-FUND-18 空用户与空 app 返回零、null、false",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#2] BR-FUND-18 按状态分类，排除定金、未归属、已入账、失效和扣回",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#3] BR-FUND-18 按快照任一角色归属汇总，同用户多角色各计一次，不按购买人过滤",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 无结算时取最新预估并向下取整，用户与 app 都按有效佣金重算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 结算优先于较高的预估，用户与 app 都按有效佣金重算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 结算零不能回退预估，用户与 app 都按有效佣金重算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 结算负数先归零，用户与 app 都按有效佣金重算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 无结算的负预估归零，用户与 app 都按有效佣金重算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 先扣预留再扣淘礼金，用户与 app 都按有效佣金重算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 淘礼金超出基数钳到零，用户与 app 都按有效佣金重算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 全额预留，用户与 app 都按有效佣金重算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 无预留且超过 JS 安全整数，用户与 app 都按有效佣金重算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#5] BR-CALC-02/BR-FUND-18 逐单逐角色取整，不能合并基数或比例后取整",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#6] BR-FUND-18 暂缓是 hold 或维权的并集，关闭平台和逾期不扣除待入账金额",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#7] BR-FUND-18 跨平台取最早合格月份，剔除暂缓、关闭、逾期并保留逾期标识",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#8] BR-FUND-04 ⑪ 联盟结算时刻按北京时间所在月优先，且不受回补收货时间影响",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#9] BR-FUND-04 ⑪ 无联盟时间按固化周期与各平台偏移跨年计算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#10] BR-FUND-04 ⑪ 默认账单日24加10天，当前日期严格晚于才逾期：2026-11-03T15:59:59.999Z",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#10] BR-FUND-04 ⑪ 默认账单日24加10天，当前日期严格晚于才逾期：2026-11-03T16:00:00.000Z",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#11] BR-FUND-04 ⑪ 使用配置的账单日、零宽限与零月偏移",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#12] BR-FUND-04/18 hold 屏蔽预计月份与逾期，金额保留",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#12] BR-FUND-04/18 维权 屏蔽预计月份与逾期，金额保留",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#12] BR-FUND-04/18 开关关闭 屏蔽预计月份与逾期，金额保留",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#12] BR-FUND-04/18 开关未配置默认关闭 屏蔽预计月份与逾期，金额保留",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#13] BR-FUND-18 用户、app、配置隔离，其他人的逾期不得污染当前用户",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#14] BR-CALC-02 当前版本经快照端口读取，但金额以当前有效佣金重算",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#15] BR-FUND-18 两个端口都能在只读角色与 READ ONLY 事务运行",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#16] BR-FUND-18 看见调用方事务内的订单变化，读取不提交调用方事务",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#17] BR-FUND-18 缓存最多60秒，结算到达后不再随预估变化",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#18] BR-FUND-18 快照初始 forfeited 的直推份额不计用户和 app 预估，本人份额保留",
+    "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#19] BR-FUND-18 快照后 forfeited 事件剔除直推的用户和 app 预估，本人份额保留"
+  ],
+  "risk_note": "RV2 settlement (settlement-plan B2-04x; BR-CALC-02, BR-FUND-04 ⑪, BR-FUND-18; S3). Read-only implementation of the PendingEarningsSource port shape (the ledger declaration lands with B2-04w; aligned after it merges): per user the estimated / pending / paused shares, expected credit period and credit_overdue; per app the waiting / estimated totals. Shares come from the effective union commission (settlement first, even zero), minus the snapshot reserve and the tlj deduction clamped at zero, each role rounded down separately with @couli/money; forfeited beneficiaries (in the snapshot or by a later event) get zero. Credit months and overdue use packages/domain. No writes. Only apps/api/src/modules/settlement/reads/** changed.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c6820f1270848cee24b0e0363de7b847e2d7ae34",
+      "tree": "ecaff7bc38a4875ff7b0d655be2a776f3135a00d",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T17:11:38Z",
+      "finished_at": "2026-10-22T17:12:34Z",
+      "gate": {
+        "commit": "5039e54b3c848c72166784ef345d7c081f0beb31",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#1] BR-FUND-18 空用户与空 app 返回零、null、false",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#2] BR-FUND-18 按状态分类，排除定金、未归属、已入账、失效和扣回",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#3] BR-FUND-18 按快照任一角色归属汇总，同用户多角色各计一次，不按购买人过滤",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 无结算时取最新预估并向下取整，用户与 app 都按有效佣金重算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 结算优先于较高的预估，用户与 app 都按有效佣金重算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 结算零不能回退预估，用户与 app 都按有效佣金重算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 结算负数先归零，用户与 app 都按有效佣金重算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 无结算的负预估归零，用户与 app 都按有效佣金重算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 先扣预留再扣淘礼金，用户与 app 都按有效佣金重算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 淘礼金超出基数钳到零，用户与 app 都按有效佣金重算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 全额预留，用户与 app 都按有效佣金重算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#4] BR-CALC-02 无预留且超过 JS 安全整数，用户与 app 都按有效佣金重算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#5] BR-CALC-02/BR-FUND-18 逐单逐角色取整，不能合并基数或比例后取整",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#6] BR-FUND-18 暂缓是 hold 或维权的并集，关闭平台和逾期不扣除待入账金额",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#7] BR-FUND-18 跨平台取最早合格月份，剔除暂缓、关闭、逾期并保留逾期标识",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#8] BR-FUND-04 ⑪ 联盟结算时刻按北京时间所在月优先，且不受回补收货时间影响",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#9] BR-FUND-04 ⑪ 无联盟时间按固化周期与各平台偏移跨年计算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#10] BR-FUND-04 ⑪ 默认账单日24加10天，当前日期严格晚于才逾期：2026-11-03T15:59:59.999Z",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#10] BR-FUND-04 ⑪ 默认账单日24加10天，当前日期严格晚于才逾期：2026-11-03T16:00:00.000Z",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#11] BR-FUND-04 ⑪ 使用配置的账单日、零宽限与零月偏移",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#12] BR-FUND-04/18 hold 屏蔽预计月份与逾期，金额保留",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#12] BR-FUND-04/18 维权 屏蔽预计月份与逾期，金额保留",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#12] BR-FUND-04/18 开关关闭 屏蔽预计月份与逾期，金额保留",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#12] BR-FUND-04/18 开关未配置默认关闭 屏蔽预计月份与逾期，金额保留",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#13] BR-FUND-18 用户、app、配置隔离，其他人的逾期不得污染当前用户",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#14] BR-CALC-02 当前版本经快照端口读取，但金额以当前有效佣金重算",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#15] BR-FUND-18 两个端口都能在只读角色与 READ ONLY 事务运行",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#16] BR-FUND-18 看见调用方事务内的订单变化，读取不提交调用方事务",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#17] BR-FUND-18 缓存最多60秒，结算到达后不再随预估变化",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#18] BR-FUND-18 快照初始 forfeited 的直推份额不计用户和 app 预估，本人份额保留",
+        "test/spec/settlement/pending-earnings/read.int.test.ts > [AC-B2-04x#19] BR-FUND-18 快照后 forfeited 事件剔除直推的用户和 app 预估，本人份额保留"
+      ],
+      "expected": ["test/spec/settlement/pending-earnings/read.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "80f44f9bbebf417fccaa91d005fe74406972975834b9987d8368b09a0f795632"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "one S2 (order and snapshot reads in READ COMMITTED can see different versions and fail the read) recorded as a follow-up",
+      "engine": "codex",
+      "model": "gpt-6-astra"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "database rule tests by Codex in 2 runs; round 1 fail (S1: forfeited beneficiaries' shares were not covered), round 2 pass",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "f1a64dc9089db9a2eae96bf8d8eb793b4f260571",
+    "specs": "8bdd14157b45b1ae9ef002ce4f11cb45e325b0c1"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
