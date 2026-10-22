@@ -13,7 +13,7 @@ it('[AC-B1-09a#21] BLACKLIST_HIT 部分唯一索引由 PG 兜底；五列分别�
     predicate: string;
     columns: string[];
   }>`SELECT i.indisunique AS unique, pg_get_expr(i.indpred, i.indrelid) AS predicate,
-      ARRAY(SELECT a.attname FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, pos)
+      ARRAY(SELECT a.attname::text FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, pos)
         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
         ORDER BY k.pos) AS columns
     FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
