@@ -1,0 +1,19 @@
+id: F1-02zzh
+repo: rebate-platform
+title: 测试改动：dict-admin 规则测试 #1、#8 的前缀列表期望值改为按 texts 默认全集（texts.default.json + texts.admin.default.json）按 key_prefix 计算再叠加本用例覆盖，不再写死前缀下恰好两个默认键
+type: test-change
+# 2026-10-22 入账。原因：dict-items 列表返回默认全集按 key_prefix 过滤的结果（含未覆盖的默认键）；F1-02zzg（#1180）把键对换成 notify_settings.service_push(.desc) 后，#1 按 notify_settings. 前缀、#8 按 notify_settings.service_push 前缀仍断言恰好两行 / total 2，以后往 notify_settings.* 加文案键会再红，属测试与文案文件内容耦合，不是实现缺陷。
+# 做法：#1 的期望由 defaultsWithAdmin() 按前缀过滤、排序，未覆盖键 text / version 为 null，叠加本用例已发布的 changes，取契约默认第 1 页 20 条；#8 的 total 与第 2 页（page_size=1）按已有 expected（默认全集叠加种下覆盖）按 class=general 与前缀过滤后计算；仍是精确相等，不删 it、不改标题、不加 skip / only / retry；kit.ts 只改 KEYS 注释。
+# 改既有规则测试属第一类保护路径：非 task 分支、台账同 PR，按 approvals #24 加 owner-approved 标签。
+refs: []
+refs_hash: {}
+deps: [F1-02zzg]
+paths:
+  - 'test/spec/content/dict-admin/kit.ts'
+  - 'test/spec/content/dict-admin/dict-items.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null

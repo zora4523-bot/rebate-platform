@@ -111,13 +111,20 @@ it('[AC-F1-02t#1] general 首存即发布：整数串版本、拆键、历史、
     changes,
   );
   // F1-02zzg：与 texts 内容解耦（CT-16i 新增 about.* 键）。
+  // F1-02zzh：期望值按 texts 默认全集计算（不再依赖前缀下默认键个数）：与实现同源取
+  // texts.default.json + texts.admin.default.json，按 key_prefix 过滤、按码元排序，未覆盖的键
+  // text / version 为 null，再叠加本用例已发布的 changes；未带 page / page_size 即契约默认第 1 页 20 条。
+  const listPrefix = 'notify_settings.';
+  const saved = new Map(changes.map((x) => [x.key, x.text]));
+  const prefixed = Object.keys(defaultsWithAdmin())
+    .filter((key) => key.startsWith(listPrefix))
+    .sort()
+    .map((key) => (saved.has(key) ? [key, saved.get(key)!, 1] : [key, null, null]));
   const page = success<ItemPage>(
-    await send(f, 'list', undefined, { query: '?key_prefix=notify_settings.' }),
+    await send(f, 'list', undefined, { query: `?key_prefix=${listPrefix}` }),
   );
   expect(page.dict_version).toBe('1');
-  expect(page.items.map((x) => [x.key, x.text, x.version])).toEqual(
-    changes.map((x) => [x.key, x.text, 1]),
-  );
+  expect(page.items.map((x) => [x.key, x.text, x.version])).toEqual(prefixed.slice(0, 20));
   h.fault.audit = true;
   try {
     rejected(await save(f, '1', [change(KEYS.general, '审计失败时不得发布')]), 50001);
@@ -547,13 +554,17 @@ it('[AC-F1-02t#8] 列表按默认全集/类别/前缀分页且只取已发布值
     );
   }
   // F1-02zzg：与 texts 内容解耦（CT-16i 新增 about.* 键）。
+  // F1-02zzh：期望值按 texts 默认全集计算（不再依赖前缀下默认键个数）：expected 已由默认全集
+  // 叠加本用例种下的已发布覆盖得出，这里按 class 与 key_prefix 过滤后比 total 与第 2 页（每页 1 条）。
+  const keyPrefix = KEYS.general;
+  const prefixed = expected.filter((x) => x.class === 'general' && x.key.startsWith(keyPrefix));
   const prefix = success<ItemPage>(
     await send(f, 'list', undefined, {
-      query: '?class=general&key_prefix=notify_settings.service_push&page_size=1&page=2',
+      query: `?class=general&key_prefix=${keyPrefix}&page_size=1&page=2`,
     }),
   );
-  expect(prefix.total).toBe(2);
-  expect(prefix.items).toEqual(expected.filter((x) => x.key === KEYS.second));
+  expect(prefix.total).toBe(prefixed.length);
+  expect(prefix.items).toEqual(prefixed.slice(1, 2));
   const history = success<HistoryPage>(
     await send(f, 'history', undefined, { query: `?key=${KEYS.general}&page_size=2&page=2` }),
   );

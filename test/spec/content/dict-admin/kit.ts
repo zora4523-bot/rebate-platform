@@ -37,7 +37,9 @@ export type Saved = Schema<'AdminDictSaveResult'>;
 export const ROOT = new URL('../../../../', import.meta.url);
 export const KEYS = {
   // F1-02zzg：与 texts 内容解耦（CT-16i 新增 about.* 键）。general/second 须是 texts.default.json 里
-  // 归 general 的一对嵌套键，且整个 dict 只有这两个键（#1 按 dict 前缀、#8 按 general 前缀列默认全集）。
+  // 归 general、无变量的一对嵌套键（second 以 general 为前缀，#8 按 general 前缀分页）。
+  // F1-02zzh：期望值按 texts 默认全集计算（不再依赖前缀下默认键个数）：#1 / #8 的前缀列表期望由
+  // 默认全集按 key_prefix 算出，该 dict 以后加键不再使断言失效。
   general: 'notify_settings.service_push',
   second: 'notify_settings.service_push.desc',
   variable: 'agent.match.title_shows',
