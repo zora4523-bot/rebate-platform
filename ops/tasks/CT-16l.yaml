@@ -1,0 +1,23 @@
+id: CT-16l
+repo: rebate-platform
+title: 文案（CT-16 续，D10-115 G-V09 及更正）：texts.default.json 补首页与基本模式首页搜索框占位 search.placeholder、basic.search.placeholder，归 ordinary
+type: contract
+# 2026-10-23 入账（content-client；编排 D10-121 ⑤：#171 合并、SPEC_REF 提升后随 CT-16 续段建）。
+# 依据（SPEC_REF 17b5fe5）：08 12_TEXT BR-TEXT-14 表 C l.1113「search.placeholder＝搜商品名，或粘贴商品链接」（首页，App 内高保真第 1 批 Main-v3）、
+#   l.1114「basic.search.placeholder＝搜索商品」（基本模式首页，不提粘贴链接，BR-ATTR-29 细则）。原文由编排者摘入任务书，refs 置空。
+# 两键不含资金术语，归 ordinary；无变量、无 fallback。
+refs: []
+refs_hash: {}
+deps: [CT-16k]
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
