@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest';
 import {
+  commissionChangeOf,
+  commissionOutcome,
   isBaseZero,
   isCreditablePlatform,
   periodBasisSupported,
@@ -10,17 +12,15 @@ import {
 } from './rules.ts';
 
 const zero = {
-  settleCommissionFen: null,
   platformStatus: 'PAID',
   fromPlatformStatus: 'PAID',
 } as const;
 
-it('[AC-B2-04j-UNIT#1] 基数只有正数变 0 才归零；null 是未知、结算佣金已到或定金期不触发', () => {
+it('[AC-B2-04j-UNIT#1] 有效基数只有正数变 0 才归零；null 是未知、定金期不触发', () => {
   expect(isBaseZero({ ...zero, before: 1n, after: 0n })).toBe(true);
   expect(isBaseZero({ ...zero, before: 0n, after: 0n })).toBe(false);
   expect(isBaseZero({ ...zero, before: null, after: 0n })).toBe(false);
   expect(isBaseZero({ ...zero, before: 900n, after: null })).toBe(false);
-  expect(isBaseZero({ ...zero, before: 900n, after: 0n, settleCommissionFen: 800n })).toBe(false);
   expect(isBaseZero({ ...zero, before: 900n, after: 0n, platformStatus: 'DEPOSIT_PAID' })).toBe(
     false,
   );
@@ -66,4 +66,88 @@ it('[AC-B2-04j-UNIT#4] 可入账平台、结算周期取法与未映射状态 ho
   expect(unmappedHoldEnabled(undefined)).toBe(true);
   expect(unmappedHoldEnabled(true)).toBe(true);
   expect(unmappedHoldEnabled(false)).toBe(false);
+});
+
+const settled = { platformStatus: 'SETTLED', fromPlatformStatus: 'SETTLED' } as const;
+
+it('[AC-B2-04j-UNIT#5] 首次结算额为 0：WAITING 预估 1000 不变而结算佣金 0 到达 → R6 作废', () => {
+  const change = commissionChangeOf({
+    estBefore: 1000n,
+    estAfter: 1000n,
+    settleCommissionFen: 0n,
+    platformStatus: 'SETTLED',
+    fromPlatformStatus: 'RECEIVED',
+  });
+  expect(change).toBe('settle_arrived');
+  expect(
+    commissionOutcome({
+      change,
+      before: 900n,
+      after: 0n,
+      ...settled,
+      fromPlatformStatus: 'RECEIVED',
+    }),
+  ).toBe('void');
+});
+
+it('[AC-B2-04j-UNIT#6] 已结算订单结算额调减（预估未变）→ R7 重算；调减到 0 → R6；未变 → 不动', () => {
+  const change = commissionChangeOf({
+    estBefore: 1000n,
+    estAfter: 1000n,
+    settleCommissionFen: 600n,
+    ...settled,
+  });
+  expect(change).toBe('settle_recheck');
+  expect(commissionOutcome({ change, before: 720n, after: 540n, ...settled })).toBe('recalc');
+  expect(commissionOutcome({ change, before: 720n, after: 0n, ...settled })).toBe('void');
+  expect(commissionOutcome({ change, before: 720n, after: 720n, ...settled })).toBe('none');
+  // 首次结算额与预估相同、换算基数不变也按结算额到达重算（R7），不漏判。
+  expect(
+    commissionOutcome({
+      change: 'settle_arrived',
+      before: 900n,
+      after: 900n,
+      ...settled,
+      fromPlatformStatus: 'RECEIVED',
+    }),
+  ).toBe('recalc');
+});
+
+it('[AC-B2-04j-UNIT#7] 结算额不变仅预估变化 → 按 BR-FUND-03 / 07 豁免，只存档', () => {
+  const change = commissionChangeOf({
+    estBefore: 1000n,
+    estAfter: 0n,
+    settleCommissionFen: 800n,
+    ...settled,
+  });
+  expect(change).toBe('estimate_archived');
+  expect(commissionOutcome({ change, before: 900n, after: 0n, ...settled })).toBe('none');
+  // 无结算佣金时预估变化照常比较；定金期一律不动。
+  expect(
+    commissionChangeOf({
+      estBefore: 1000n,
+      estAfter: 0n,
+      settleCommissionFen: null,
+      platformStatus: 'PAID',
+      fromPlatformStatus: 'PAID',
+    }),
+  ).toBe('estimate');
+  expect(
+    commissionChangeOf({
+      estBefore: 1000n,
+      estAfter: 0n,
+      settleCommissionFen: null,
+      platformStatus: 'DEPOSIT_PAID',
+      fromPlatformStatus: 'DEPOSIT_PAID',
+    }),
+  ).toBe('none');
+  expect(
+    commissionChangeOf({
+      estBefore: 1000n,
+      estAfter: 1000n,
+      settleCommissionFen: null,
+      platformStatus: 'PAID',
+      fromPlatformStatus: 'PAID',
+    }),
+  ).toBe('none');
 });

@@ -12,6 +12,8 @@ import type {
 } from '../../../orders/index.ts';
 import type { Clock, EventBus, RootLogger } from '../../../platform/index.ts';
 import {
+  commissionChangeOf,
+  commissionOutcome,
   hasEstimate,
   isBaseZero,
   isCreditablePlatform,
@@ -89,6 +91,8 @@ export interface RebateDependencies {
   /**
    * Commission-owned valuation boundary. bases is read-only, uses frozen snapshot terms
    * and effective commission (settlement wins); null means unknown, never zero.
+   * before = the effective base the order's current estimate was last valued on (commission-stored;
+   * the port input carries no previous settle amount), after = the effective base of the current columns.
    * refresh recomputes estimates in the supplied transaction, without touching balances.
    * orders has already updated commission_version: refresh must not increment it again.
    * TODO(规划/11 §7.1): wire the commission estimate writer — blocked on missing public writer port.
@@ -352,11 +356,21 @@ export function createRebatePort(deps: RebateDependencies): RebatePort {
       advance(d, reverse);
       return finish(d, row.rebate_status);
     }
-    if (
-      change.est_before !== change.est_after &&
-      change.settle_commission_fen === null &&
-      row.platform_status !== 'DEPOSIT_PAID'
-    ) {
+    // BR-FUND-03 / 07：有效基数 = 有结算佣金用结算佣金、否则用预估；结算额首次到达或被修正都参与 R6 / R7，
+    // 只有「已有结算佣金、仅预估字段变化」按规则只存档。
+    const commission = commissionChangeOf({
+      estBefore: change.est_before,
+      estAfter: change.est_after,
+      settleCommissionFen: change.settle_commission_fen,
+      platformStatus: row.platform_status,
+      fromPlatformStatus: change.from_status,
+    });
+    if (commission === 'estimate_archived') {
+      logger.info(
+        { ...base, outcome: 'estimate_archived' },
+        'estimate changed after settle commission; archived only',
+      );
+    } else if (commission !== 'none') {
       const bases = await deps.estimates.bases(trx, {
         appId: change.app_id,
         orderId: change.order_id,
@@ -365,19 +379,18 @@ export function createRebatePort(deps: RebateDependencies): RebatePort {
         estAfter: change.est_after,
         settleCommissionFen: change.settle_commission_fen,
       });
-      if (
-        isBaseZero({
-          before: bases.before,
-          after: bases.after,
-          settleCommissionFen: change.settle_commission_fen,
-          platformStatus: row.platform_status,
-          fromPlatformStatus: change.from_status,
-        })
-      ) {
+      const outcome = commissionOutcome({
+        change: commission,
+        before: bases.before,
+        after: bases.after,
+        platformStatus: row.platform_status,
+        fromPlatformStatus: change.from_status,
+      });
+      if (outcome === 'void') {
         advance(d, 'BASE_ZERO');
         return finish(d, row.rebate_status);
       }
-      if (d.state === 'ESTIMATED' || d.state === 'WAITING') {
+      if (outcome === 'recalc' && (d.state === 'ESTIMATED' || d.state === 'WAITING')) {
         advance(d, 'COMMISSION_CHANGED');
         d.refresh = true;
       }
@@ -427,7 +440,6 @@ export function createRebatePort(deps: RebateDependencies): RebatePort {
       isBaseZero({
         before: bases.before,
         after: bases.after,
-        settleCommissionFen: input.settleCommissionFen,
         platformStatus: row.platform_status,
         fromPlatformStatus: null,
       })
