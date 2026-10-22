@@ -1,0 +1,37 @@
+{
+  "task": "CT-26a",
+  "spec_ref": "ae516ded46225d335891e21b74a1bebf03caa758",
+  "spec_commit": "bfbd2b3cfa8b031a975efbae0f4b90a98c7860ec",
+  "red_tests": [],
+  "risk_note": "RV1 (contract only; App hi-fi content gaps CT-26a, orchestrator 17:4x / D10-121 / D10-125, shapes written back to 04 at SPEC_REF ae516de). Optional article summary; optional help-article faq_rank (admin create / draft may carry it, non-help category 20001) and a listArticles faq filter that only filters (order, page size and cursor as 04 6.2; the client reads all pages and sorts by faq_rank); Config.nickname {min_len, max_len, monthly_limit}; help_links keys share_rules and faq.invite_code_bind; GET /v1/me optional invite_blocked_reason (self_minor / unavailable); routes.json Agreement.type collect_list (H5 support is a follow-up fe task per D10-125); markMessagesRead description notes the cooling-off period. Optional fields and enum values only, not breaking. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 5,
+      "note": "r1 / r2 fail (faq ordering vs 04 6.2, aligned to 04); r3 fail (collect_list H5 support, ruled transitional by D10-125); r4 fail (new shapes not yet in 04; written back, SPEC_REF ae516de); r5 pass (rounds 4-5 authorised by D10-125)"
+    }
+  ],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "9227cdda179131de36aa4c3e9a10ebc73d2e2fdf",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
