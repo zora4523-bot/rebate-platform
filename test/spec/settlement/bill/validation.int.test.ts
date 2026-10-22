@@ -258,6 +258,17 @@ it.each(['ESTIMATED', 'VOID', 'CLAWED_BACK', 'CREDITED'] as const)(
     const s = await state(h);
     expect(s.items).toEqual([]);
     expect(s.diffs).toHaveLength(rebateStatus === 'CREDITED' ? 0 : 1);
+    if (rebateStatus !== 'CREDITED') {
+      // BR-FUND-04 ④ 沿用 BR-FUND-09 的「结算有、我方状态异常」联盟差错；
+      // contracts/enums/fund.yaml 对应 union_mismatch。引用本单键，账期为七月账单日的上月六月。
+      expect(s.diffs).toEqual([
+        expect.objectContaining({
+          type: 'union_mismatch',
+          ref_id: o.key,
+          period: '2032-06',
+        }),
+      ]);
+    }
     expect(s.vouchers).toEqual([]);
     expect(s.balances).toEqual([]);
   },

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createTestDatabase } from '@couli/db/testing';
 import type { BillSourceRow } from '../../../../apps/api/src/modules/settlement/bill/job.ts';
 import { expect, it } from 'vitest';
+import { appendVersion, event } from '../../commission/snapshot-read/fixtures.ts';
 import {
   databaseFixture,
   fixture,
@@ -11,11 +12,158 @@ import {
   state,
   validations,
   obligation,
+  BEFORE,
   MONTH,
   TIMEOUT,
 } from './kit.ts';
 
 const database = databaseFixture(createTestDatabase);
+
+it.each(['off', 'on'] as const)(
+  '[AC-B2-04n#31] 同一 app 淘宝开启、京东 %s：普通候选与 open 义务只进所属平台批次',
+  async (jdEnabled) => {
+    const h = fixture(database.db);
+    await snapshot(h);
+    h.values.set('credit.enabled.jd', jdEnabled);
+    const taobaoOrder = await order(h);
+    const jdOrder = await order(h, {}, 'jd');
+    const taobaoCredited = await order(h, { rebateStatus: 'CREDITED' });
+    const jdCredited = await order(h, { rebateStatus: 'CREDITED' }, 'jd');
+    for (const o of [taobaoOrder, jdOrder, taobaoCredited, jdCredited]) await settlement(h, o);
+    const taobaoCredit = await obligation(h, taobaoCredited);
+    const jdCredit = await obligation(h, jdCredited);
+    const before = await state(h);
+
+    await h.run('taobao');
+    const taobaoState = await state(h);
+    expect(taobaoState.batches).toEqual([
+      expect.objectContaining({ platform: 'taobao', status: 'DRAFT' }),
+    ]);
+    expect(taobaoState.items).toHaveLength(2);
+    expect(taobaoState.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ item_type: 'order', order_id: taobaoOrder.id }),
+        expect.objectContaining({
+          item_type: 'beneficiary',
+          order_id: taobaoCredited.id,
+          beneficiary_credit_id: taobaoCredit.beneficiary_credit_id,
+        }),
+      ]),
+    );
+
+    await h.run('jd');
+    const s = await state(h);
+    expect(s.batches.map((b) => b.platform).sort()).toEqual(
+      jdEnabled === 'on' ? ['jd', 'taobao'] : ['taobao'],
+    );
+    expect(s.items).toHaveLength(jdEnabled === 'on' ? 4 : 2);
+    for (const batch of s.batches) {
+      const ordinary = batch.platform === 'jd' ? jdOrder : taobaoOrder;
+      const credited = batch.platform === 'jd' ? jdCredited : taobaoCredited;
+      const credit = batch.platform === 'jd' ? jdCredit : taobaoCredit;
+      const items = s.items.filter((i) => i.batch_id === batch.batch_id);
+      expect(items).toHaveLength(2);
+      expect(items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ item_type: 'order', order_id: ordinary.id }),
+          expect.objectContaining({
+            item_type: 'beneficiary',
+            order_id: credited.id,
+            beneficiary_credit_id: credit.beneficiary_credit_id,
+            user_id: credit.user_id,
+            role: credit.role,
+            amount_fen: null,
+          }),
+        ]),
+      );
+    }
+    expect(await validations(h)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ orderKey: jdOrder.key, result: 'candidate' }),
+        expect.objectContaining({ orderKey: jdCredited.key, result: 'already_credited' }),
+      ]),
+    );
+    expect(s.obligations).toEqual(before.obligations);
+    expect(s.vouchers).toEqual([]);
+    expect(s.balances).toEqual([]);
+    expect((await h.run('taobao')).outcome).toBe('duplicate');
+    expect((await h.run('jd')).outcome).toBe('duplicate');
+    expect(await state(h)).toEqual(s);
+  },
+  TIMEOUT,
+);
+
+it.each([
+  {
+    label: '无淘礼金扣减',
+    pricing: { tlj: 0n, base: 850n, amounts: [425n, 85n, 42n], userTotal: 552n, retain: 298n },
+    forfeitedAmounts: [425n, 0n, 42n],
+    forfeitedUserTotal: 467n,
+    beneficiaryTotal: 1019n,
+    retainedTotal: 681n,
+  },
+  {
+    label: '有淘礼金扣减',
+    pricing: { tlj: 100n, base: 750n, amounts: [375n, 75n, 37n], userTotal: 487n, retain: 263n },
+    forfeitedAmounts: [375n, 0n, 37n],
+    forfeitedUserTotal: 412n,
+    beneficiaryTotal: 899n,
+    retainedTotal: 601n,
+  },
+])(
+  '[AC-B2-04n#32] $label：账单合计按快照份额，被剥夺的直推份额归平台',
+  async ({ pricing, forfeitedAmounts, forfeitedUserTotal, beneficiaryTotal, retainedTotal }) => {
+    const h = fixture(database.db);
+    await snapshot(h);
+    h.readTljDeductFen.mockResolvedValue(pricing.tlj);
+    const normal = await order(h, {}, 'taobao', pricing);
+    const forfeited = await order(h, {}, 'taobao', pricing);
+    await event(h.db, forfeited, forfeited.people[1]!, 'forfeited', 'banned', new Date(BEFORE));
+    await appendVersion(
+      h.db,
+      forfeited,
+      2,
+      pricing.base,
+      1000n,
+      forfeitedAmounts,
+      forfeitedUserTotal,
+      new Date(BEFORE),
+    );
+    forfeited.fact.order.commissionVersion = 2;
+    await settlement(h, normal);
+    await settlement(h, forfeited);
+    await h.run();
+    const s = await state(h);
+    // BR-FUND-04 ⑤ 的份额合计：850 时 552 + (425 + 42) = 1019，平台 298 + 383 = 681；
+    // 扣减后 750 时 487 + (375 + 37) = 899，平台 263 + 338 = 601；剥夺不改变联盟佣金合计。
+    expect(s.bills).toEqual([
+      expect.objectContaining({
+        platform_order_counts: { taobao: 2 },
+        platform_settle_commission_totals: { taobao: '2000' },
+        beneficiary_total_fen: beneficiaryTotal,
+        platform_retained_fen: retainedTotal,
+        error_count: 0,
+        held_count: 0,
+      }),
+    ]);
+    expect(s.items).toHaveLength(2);
+    expect(s.items).toEqual(
+      expect.arrayContaining(
+        [normal, forfeited].map((o) =>
+          expect.objectContaining({
+            order_id: o.id,
+            item_type: 'order',
+            b_settle_fen: pricing.base,
+          }),
+        ),
+      ),
+    );
+    expect(s.diffs).toEqual([]);
+    expect((await h.run()).outcome).toBe('duplicate');
+    expect(await state(h)).toEqual(s);
+  },
+  TIMEOUT,
+);
 
 it('[AC-B2-04n#27] 未配置 max_orders 时 5001 个候选拆为 5000 与 1 两批', async () => {
   const h = fixture(database.db);
