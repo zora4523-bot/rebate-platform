@@ -133,6 +133,10 @@ export const FUNDS_TABLE_PREFIXES: readonly string[] = [
   'balance',
   'union_',
   'link_',
+  // pay_: the payment module's tables (pay_orders, pay_refunds, pay_anomalies, pay_notifications,
+  // pay_query_attempts; 规划/04 §3.2, BR-PAY-02 / 04 / 05 / 06). `payout` above does not match them;
+  // the underscore keeps payout_* on its own prefix (B2-15g).
+  'pay_',
 ];
 // processed_events (consumer dedupe) and idempotency_keys (write idempotency, withdrawals included):
 // 规划/04 §3.2; CT-06c.

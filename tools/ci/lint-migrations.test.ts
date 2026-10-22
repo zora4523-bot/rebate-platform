@@ -98,6 +98,13 @@ it('knows the funds and attribution tables by name, with or without schema and q
     'beneficiary_credits',
     'recon_union',
     'asset_snapshot_receivables',
+    // B2-15g: payment tables by the pay_ prefix (payout_* stays on its own prefix).
+    'pay_orders',
+    'pay_refunds',
+    'pay_anomalies',
+    'pay_notifications',
+    'pay_query_attempts',
+    'app.pay_orders',
   ]) {
     expect(isFundsTable(t), t).toBe(true);
   }
