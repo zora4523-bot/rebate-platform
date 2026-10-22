@@ -488,6 +488,11 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/initial-password",
+    "signed": false
+  },
+  {
+    "method": "POST",
     "path": "/admin/v1/admins/:admin_id/disable",
     "signed": false
   },

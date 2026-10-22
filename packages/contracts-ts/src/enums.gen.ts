@@ -77,7 +77,7 @@ export type AdminStepUpTier = (typeof admin_step_up_tier)[number];
 
 /**
  * 后台登录第一步通过后的下一步，凭中间凭证 login_ticket 完成；两步都完成才签发 admin_token
- * Source: 规划/08 BR-ID-34 细则「首次绑定身份验证器」「首次登录强制改密码」；规划/04 §6.6 auth（CT-02f） (contracts/enums/admin.yaml).
+ * Source: 规划/08 BR-ID-34 细则「首次绑定身份验证器」、BR-ID-43「首次登录强制改密码」；规划/04 §6.6 auth（CT-02f） (contracts/enums/admin.yaml).
  */
 export const admin_login_step = [
   "totp", // 已绑定身份验证器，输入动态码
@@ -88,7 +88,7 @@ export type AdminLoginStep = (typeof admin_login_step)[number];
 
 /**
  * 后台账号状态；停用的账号名仍占用，不再分配给新账号
- * Source: 规划/04 §3.2 admin_users.status；规划/08 BR-ID-34 细则「停用后台账号」（CT-02f） (contracts/enums/admin.yaml).
+ * Source: 规划/04 §3.2 admin_users.status；规划/08 BR-ID-43「停用后台账号」（CT-02f） (contracts/enums/admin.yaml).
  */
 export const admin_account_status = [
   "active", // 正常

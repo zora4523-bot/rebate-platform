@@ -488,6 +488,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/initial-password",
+    "auth": "super"
+  },
+  {
+    "method": "POST",
     "path": "/admin/v1/admins/:admin_id/disable",
     "auth": "super"
   },

@@ -6513,7 +6513,7 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "properties": {
         "username": {
           "type": "string",
-          "description": "Account name (unique; a disabled account keeps its name, BR-ID-34).",
+          "description": "Account name (unique; a disabled account keeps its name, BR-ID-43).",
           "minLength": 1,
           "maxLength": 64
         },

@@ -993,6 +993,16 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminRegenerateAdminInitialPassword",
+    "method": "POST",
+    "path": "/admin/v1/admins/:admin_id/initial-password",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminDisableAdmin",
     "method": "POST",
     "path": "/admin/v1/admins/:admin_id/disable",
