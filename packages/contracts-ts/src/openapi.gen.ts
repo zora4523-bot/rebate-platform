@@ -945,7 +945,9 @@ export interface paths {
          *     empty list, more than 100 ids or `all` other than true is 20001 with data.fields.
          *     Repeating the call is harmless (idempotent by its effect: the second call marks 0), so no
          *     Idempotency-Key is required; not signed, as 04 §6 marks neither S nor I. Version gate:
-         *     applied.
+         *     applied. During the account-deletion cooling-off period this endpoint is not on the 10007
+         *     whitelist (BR-ID-27 细则, W-20): the inbox hides 「全部已读」 and opening a message does not
+         *     mark it read, so the client does not call this endpoint then.
          */
         post: operations["markMessagesRead"];
         delete?: never;
@@ -1156,7 +1158,9 @@ export interface paths {
         };
         /**
          * Current user
-         * @description Nickname and default avatar, invite code, whether an inviter is bound (only yes / no),
+         * @description Nickname and default avatar, invite code (null when the user cannot invite, with
+         *     invite_blocked_reason self_minor or unavailable telling under-18 apart from any other case,
+         *     BR-INV-18 / BR-INV-19; no other reason is revealed), whether an inviter is bound (only yes / no),
          *     invite_backfill (whether the invite code can still be filled in, BR-INV-07), identity level (BR-ID-01), single-balance summary, union authorization states, real-name
          *     state, `need_reconsent` (BR-ID-12) and the risk state for the ban / freeze page. No
          *     user level (拍板第二批 OPS-20).
@@ -4274,9 +4278,10 @@ export interface paths {
          *     link-pattern table while switch `external_page.union_host_block` is on (BR-ATTR-29 ①), or
          *     that carries a personal-data placeholder (BR-ID-33 细则「外链不带个人数据」); a notice
          *     that cannot be closed without notice_end_at (BR-TEXT-13 细则「生效区间」); help_section sent
-         *     with a category other than help (变更记录 20261020-内容线默认回写 §1.6) → 20001.
+         *     with a category other than help (变更记录 20261020-内容线默认回写 §1.6); faq_rank sent with
+         *     a category other than help (W-25, 编排者默认) → 20001.
          *     `data.fields` lists, in this order, the offending field names (title, body,
-         *     notice_end_at, help_section), the forbidden words hit and the JSON paths inside the body
+         *     notice_end_at, help_section, faq_rank), the forbidden words hit and the JSON paths inside the body
          *     written as `body.content[i]…` (编排者默认); no other data key. For categories other than notice the
          *     notice fields are ignored and stored as notice_closable=true, notice_end_at=null
          *     (编排者默认). notice_content_version is maintained by the server on save, never sent by
@@ -4326,10 +4331,10 @@ export interface paths {
         /**
          * Save a new draft version of an article
          * @description Permission point `content.article`. Inserts a new version row (newest version + 1) in
-         *     status draft with the given title, body, notice fields and help_section (omitted = none); a
-         *     saved version's body is never changed in place (编排者默认). Same save checks and
-         *     `data.fields` as POST /admin/v1/articles (help_section with a category other than help →
-         *     20001, listed after notice_end_at and before the forbidden words). An article of category agreement → 20001 `data.fields=[category]`.
+         *     status draft with the given title, body, notice fields, help_section and faq_rank (omitted =
+         *     none); a saved version's body is never changed in place (编排者默认). Same save checks and
+         *     `data.fields` as POST /admin/v1/articles (help_section, then faq_rank, with a category
+         *     other than help → 20001, listed after notice_end_at and before the forbidden words). An article of category agreement → 20001 `data.fields=[category]`.
          *     CAS: `expected_row_version` is the article's `row_version` the console showed; the new
          *     row takes the previous newest row's row_version + 1, and a mismatch → 20902 with
          *     `data.resource=article` (编排者默认). An article_id that is not a lowercase canonical UUID,
@@ -6458,6 +6463,7 @@ export interface components {
             version: number;
             /** Format: date-time */
             published_at: string;
+            summary?: components["schemas"]["ArticleListSummaryText"];
             notice: components["schemas"]["NoticeItem"];
         };
         PlainArticleSummary: {
@@ -6471,7 +6477,26 @@ export interface components {
             published_at: string;
             /** @description Present only when category is help and the current version has one set; absent otherwise (never null). */
             help_section?: components["schemas"]["ArticleHelpSection"];
+            summary?: components["schemas"]["ArticleListSummaryText"];
+            /** @description Present only when category is help and the current version has one set; absent otherwise (never null). */
+            faq_rank?: components["schemas"]["ArticleFaqRank"];
         };
+        /**
+         * @description List summary (W-25, 编排者默认): derived by the server from the current version's body —
+         *     the plain text of its first non-empty paragraph, cut to 80 characters; not entered in the
+         *     admin console. Absent when the body has no text paragraph (never null). Not returned
+         *     until its implementation is merged.
+         */
+        ArticleListSummaryText: string;
+        /**
+         * Format: int32
+         * @description Manual order of a help article in the help home 「常见问题」 list (W-25, 编排者默认): the
+         *     client sorts that list by faq_rank ascending (the server keeps the usual list order of
+         *     04 §6.2); GET /v1/articles?category=help&faq=true lists only articles whose current
+         *     version has it set. Help articles only. Not returned until its
+         *     implementation is merged.
+         */
+        ArticleFaqRank: number;
         ArticleListData: {
             items: components["schemas"]["ArticleSummary"][];
             next_cursor: string | null;
@@ -6493,6 +6518,8 @@ export interface components {
             body: string;
             /** @description Present only when category is help and the returned version has one set; absent otherwise (never null). */
             help_section?: components["schemas"]["ArticleHelpSection"];
+            /** @description Present only when category is help and the returned version has one set; absent otherwise (never null). */
+            faq_rank?: components["schemas"]["ArticleFaqRank"];
         };
         ArticleResponse: {
             code: components["schemas"]["SuccessCode"];
@@ -6537,6 +6564,8 @@ export interface components {
             updated_at: string;
             /** @description Value of the newest version row; present only when category is help and that row has one set; absent otherwise (never null). */
             help_section?: components["schemas"]["ArticleHelpSection"];
+            /** @description Value of the newest version row; present only when category is help and that row has one set; absent otherwise (never null). */
+            faq_rank?: components["schemas"]["ArticleFaqRank"];
         };
         AdminArticleList: {
             /** @description Newest updated_at first. */
@@ -6585,6 +6614,8 @@ export interface components {
             updated_at: string;
             /** @description Value of this version row; present only when category is help and the row has one set; absent otherwise (never null). */
             help_section?: components["schemas"]["ArticleHelpSection"];
+            /** @description Value of this version row; present only when category is help and the row has one set; absent otherwise (never null). */
+            faq_rank?: components["schemas"]["ArticleFaqRank"];
         };
         /** @description An article with every version row. */
         AdminArticle: {
@@ -6635,6 +6666,11 @@ export interface components {
              *     other than help → 20001 `data.fields` containing help_section.
              */
             help_section?: components["schemas"]["ArticleHelpSection"];
+            /**
+             * @description Help articles only; omitted = not in the 「常见问题」 list. Not nullable. Sent with a
+             *     category other than help → 20001 `data.fields` containing faq_rank.
+             */
+            faq_rank?: components["schemas"]["ArticleFaqRank"];
         };
         AdminArticleDraftRequest: {
             title: string;
@@ -6653,6 +6689,12 @@ export interface components {
              *     20001 `data.fields` containing help_section.
              */
             help_section?: components["schemas"]["ArticleHelpSection"];
+            /**
+             * @description Help articles only; omitted = not in the 「常见问题」 list (a draft is a whole new
+             *     version row, so omitting it clears the value). Not nullable. Sent with a category
+             *     other than help → 20001 `data.fields` containing faq_rank.
+             */
+            faq_rank?: components["schemas"]["ArticleFaqRank"];
             /**
              * Format: int32
              * @description The article's `row_version` as the console showed it; a mismatch is 20902.
@@ -7029,8 +7071,18 @@ export interface components {
             nickname: string;
             /** Format: uri */
             avatar_url: string;
-            /** @description Null when the user cannot invite. */
+            /** @description Null when the user cannot invite; invite_blocked_reason then tells the two cases apart. */
             invite_code: string | null;
+            /**
+             * @description Present only when invite_code is null (absent otherwise, never null; N-02, 编排者默认):
+             *     self_minor = the user is identified as under 18 (BR-INV-19: the client hides the invite
+             *     code and the whole 「推广与邀请」 group, including the 分享赚 entry); unavailable = any
+             *     other inviter_unavailable case (BR-INV-18: the invite page still opens and shows
+             *     「暂不可邀请」 without a reason). No other reason is revealed. Not returned until its
+             *     implementation is merged.
+             * @enum {string}
+             */
+            invite_blocked_reason?: "self_minor" | "unavailable";
             /** @description Only whether an inviter is bound, never who. */
             inviter_bound: boolean;
             invite_backfill: components["schemas"]["InviteBackfill"];
@@ -7260,6 +7312,29 @@ export interface components {
                 article_id: string;
             };
         };
+        /**
+         * @description Nickname limits for rendering settings.nickname.hint (BR-TEXT-14 表 C; values from
+         *     BR-ID-39, sent by the server from that rule, not read from config_items). When absent the
+         *     client uses the wording without numbers (to be registered with BR-TEXT-14). Not returned
+         *     until its implementation is merged.
+         */
+        ConfigNickname: {
+            /**
+             * Format: int32
+             * @description Minimum length in characters after trimming leading and trailing blanks.
+             */
+            min_len: number;
+            /**
+             * Format: int32
+             * @description Maximum length in characters after trimming leading and trailing blanks.
+             */
+            max_len: number;
+            /**
+             * Format: int32
+             * @description Successful changes allowed per calendar month (+08:00).
+             */
+            monthly_limit: number;
+        };
         ConfigClaim: {
             /**
              * Format: int32
@@ -7272,7 +7347,7 @@ export interface components {
         /**
          * @description Top-level keys of /v1/config (04 §10.1, excerpt). Keys added after v0.9 (external_page,
          *     link_patterns, external_hosts, app_update, help_links, claim, platform_icons,
-         *     lkg_max_age_sec, config_version, bridge_disabled_methods) are optional, so a client keeps reading an older last-good configuration (04 §5「兼容」); the
+         *     lkg_max_age_sec, config_version, bridge_disabled_methods, nickname) are optional, so a client keeps reading an older last-good configuration (04 §5「兼容」); the
          *     server always sends them, except that platform_icons lists only the marks with a published
          *     replacement image (BR-TEXT-24). jump_tip, bridge_origins, auth_tips, compliance and display are not
          *     shaped by 04 yet and stay free-form; the task that consumes each one types it
@@ -7313,11 +7388,15 @@ export interface components {
              * @description Native entries to help articles: key → jump target; an entry whose key is not
              *     configured is not shown. Keys are defined by the rules that use them: price_compare
              *     (BR-TEXT-03), claim_guide.<platform> (BR-ATTR-17 细则), login_help (BR-ID-02 细则),
-             *     withdraw_rules (BR-WDR-04 细则). Values are operations configuration (article ids).
+             *     withdraw_rules (BR-WDR-04 细则), share_rules (the public share rules article, entered
+             *     from the share page and the 分享赚 entry; W-25), faq.invite_code_bind (the invite-code
+             *     binding FAQ; W-25, where it is shown is left to design). Values are operations
+             *     configuration (article ids).
              */
             help_links?: {
                 [key: string]: components["schemas"]["HelpLinkTarget"];
             };
+            nickname?: components["schemas"]["ConfigNickname"];
             claim?: components["schemas"]["ConfigClaim"];
             platform_icons?: components["schemas"]["ConfigPlatformIcons"];
             /**
@@ -12523,6 +12602,18 @@ export interface operations {
                  *     F1-02zs is merged the server ignores this parameter.
                  */
                 help_section?: components["schemas"]["ArticleHelpSection"];
+                /**
+                 * @description Filter for the help home 「常见问题」 list (W-25, 编排者默认). Only with category=help:
+                 *     with any other category → 20001 `data.fields=[faq]`. faq=true only filters: it returns
+                 *     only help articles whose current version has faq_rank set; order, page size limit and
+                 *     cursor are exactly those of this operation without the filter (published_at DESC, id
+                 *     DESC, 04 §6.2), with no exception. The client reads every page (the largest `limit`,
+                 *     following `next_cursor` until it is null; the list is normally a single page) and only
+                 *     then shows the 「常见问题」 list sorted by faq_rank ascending, so the order never depends
+                 *     on which page an article falls on. faq=false or omitted = no filter. Until
+                 *     its implementation is merged the server ignores this parameter.
+                 */
+                faq?: boolean;
                 /** @description Opaque cursor from `next_cursor`; absent for the first page. */
                 cursor?: components["parameters"]["Cursor"];
                 /** @description Page size, at most 50 (04 §5). */
@@ -15170,6 +15261,11 @@ export interface operations {
                      *         },
                      *         "claim": {
                      *           "window_days": 30
+                     *         },
+                     *         "nickname": {
+                     *           "min_len": 1,
+                     *           "max_len": 16,
+                     *           "monthly_limit": 3
                      *         },
                      *         "platform_icons": {
                      *           "alipay": {

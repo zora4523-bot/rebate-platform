@@ -925,7 +925,7 @@
       "entry": ["in_app", "push", "deeplink"]
     },
     "Agreement": {
-      "page": "用户协议、隐私政策、SDK 清单（游客与基本模式可达）",
+      "page": "用户协议、隐私政策、SDK 清单、个人信息收集清单（游客与基本模式可达）",
       "kind": "h5",
       "h5_path": "/agreement",
       "auth": "none",
@@ -941,7 +941,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["agreement", "privacy", "sdk_list", "labor_agreement"]
+            "enum": ["agreement", "privacy", "sdk_list", "labor_agreement", "collect_list"]
           },
           "version": {
             "type": "integer",

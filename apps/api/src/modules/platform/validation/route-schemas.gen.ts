@@ -2581,6 +2581,9 @@ export const CONTRACT_ROUTE_SCHEMAS = {
             "account_privacy"
           ]
         },
+        "faq": {
+          "type": "boolean"
+        },
         "cursor": {
           "type": "string",
           "maxLength": 512
@@ -8952,6 +8955,13 @@ export const CONTRACT_ROUTE_SCHEMAS = {
             "invite",
             "account_privacy"
           ]
+        },
+        "faq_rank": {
+          "description": "Help articles only; omitted = not in the 「常见问题」 list. Not nullable. Sent with a\ncategory other than help → 20001 `data.fields` containing faq_rank.\n",
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 999
         }
       }
     }
@@ -9056,6 +9066,13 @@ export const CONTRACT_ROUTE_SCHEMAS = {
             "invite",
             "account_privacy"
           ]
+        },
+        "faq_rank": {
+          "description": "Help articles only; omitted = not in the 「常见问题」 list (a draft is a whole new\nversion row, so omitting it clears the value). Not nullable. Sent with a category\nother than help → 20001 `data.fields` containing faq_rank.\n",
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 999
         },
         "expected_row_version": {
           "type": "integer",
