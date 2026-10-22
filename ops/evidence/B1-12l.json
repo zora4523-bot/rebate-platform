@@ -1,0 +1,93 @@
+{
+  "task": "B1-12l",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "543f64132424e7ae93a83dcead8ebd5f5315fccf",
+  "red_tests": [
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#1] settings have exactly the agreed non-null columns and types",
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#2] switches have no defaults and a newly created user has no settings row",
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#3] all eight independent switch combinations persist as booleans",
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#4] every required column rejects explicit NULL; switches also reject NULL updates",
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#5] version defaults to zero and audit timestamps default to transaction time",
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#6] primary key is (app_id, user_id); duplicate settings fail but other users and apps work",
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#7] concurrent inserts for the same account persist exactly one row",
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#8] users foreign key includes app_id, rejects missing/cross-app users and forbids cascading",
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#9] app has SELECT/INSERT and UPDATE only on switches, version and updated_at",
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#10] app can change each switch and perform versioned updates without changing other accounts",
+    "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#11] app cannot update identity/creation columns or delete/truncate settings"
+  ],
+  "risk_note": "RV2 (db/**). Adds migration 0065 app.notification_settings, one row per (app_id, user_id) with a composite foreign key to app.users (no cascade), three boolean NOT NULL switches without defaults (service_push, subscription_push, marketing_push; an account without a row reads all three as true in the reader, B1-12m, per the contract), row_version and timestamps. Grants in the same migration: couli_app SELECT, INSERT and column-level UPDATE on the three switches, row_version and updated_at only, no DELETE; couli_readonly SELECT. Additive only; no existing table changes. Storage decision (own table, writer notification, not columns on users whose writer is identity) is the orchestrator's technical decision, recorded for planning write-back (04 §3.2). Migration number taken under the migration slot (D10-116) as main max + 1; schema.sql and db.gen.ts regenerated with pnpm db:snapshot on the test machine. No money, no attribution.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "543f64132424e7ae93a83dcead8ebd5f5315fccf",
+      "tree": "99a4606b2055b6bd2bcf7baff990e64e46f7dc28",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T01:28:03Z",
+      "finished_at": "2026-10-22T01:28:54Z",
+      "gate": {
+        "commit": "e2ddbdb8712e824cfd6a00c650e9faef5243b5c2",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#1] settings have exactly the agreed non-null columns and types",
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#2] switches have no defaults and a newly created user has no settings row",
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#3] all eight independent switch combinations persist as booleans",
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#4] every required column rejects explicit NULL; switches also reject NULL updates",
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#5] version defaults to zero and audit timestamps default to transaction time",
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#6] primary key is (app_id, user_id); duplicate settings fail but other users and apps work",
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#7] concurrent inserts for the same account persist exactly one row",
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#8] users foreign key includes app_id, rejects missing/cross-app users and forbids cascading",
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#9] app has SELECT/INSERT and UPDATE only on switches, version and updated_at",
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#10] app can change each switch and perform versioned updates without changing other accounts",
+        "test/spec/db/notification/settings/settings.int.test.ts > [AC-B1-12l#11] app cannot update identity/creation columns or delete/truncate settings"
+      ],
+      "expected": ["test/spec/db/notification/settings/settings.int.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "2197981b9d89d97fbaef8e70cc35e2ebc3520c2c25a0a095453d14299aab1ffd"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass with no findings on the migration; the later commits only rebase onto main and add the generated schema.sql / db.gen.ts from pnpm db:snapshot"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (run 1, 11 tests in 1 file red for the right reason on the test machine) reviewed by a fresh Claude subagent: pass with no findings."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "295056ef31f0451d68bece99a0e2994df8d89fa6",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
