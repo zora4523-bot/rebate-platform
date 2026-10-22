@@ -19,6 +19,10 @@ test_paths:
   - 'test/spec/db/union/union-tables.int.test.ts'
 impl: claude
 tester: codex
+red_exempt:
+  - file: test/spec/db/union/union-tables.int.test.ts
+    test: '[AC-B1-19a#5] auth_status accepts exactly the specified CHECK domain'
+    reason: 冻结 B1-19a 用例，auth_status 的执行路径与断言未改，只因同一 for 循环里 #6 的 alert_stage 分支改动入列（B1-22a）
 accept:
   - 'pnpm verify'
   - 'test/spec/db/union/auth-expiry/**'
