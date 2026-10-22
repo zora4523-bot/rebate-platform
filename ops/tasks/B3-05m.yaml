@@ -6,6 +6,7 @@ type: impl
 # 没有把私有冒烟集、录制与 AgentUnderTest 串起来产出 report 的本机入口（smoke-gate 只判现成 report）。
 # 依赖 B3-01h（录制写入 / 回放 CLI）与 B3-03f（流式入口挂载后的生产装配）。私有内容只在本机，公开 CI 不读私有存储。
 # 分工：Codex 写规则测试，Claude 新子代理过审，Opus 5.5 实现，Codex 评审。风险 RV1。排在 B3-09c、B3-01h 之后。
+# 2026-10-22 agent-acct4：paths 加 stream/mount/**——生产 body 装配写死在 createAgentStreamRuntime 内且未导出；本任务把它抽成共享工厂，生产与评测调同一份（行为不变，stream 冻结测试保持绿），不在 eval/** 复制装配。
 refs: [BR-AI-21, BR-AI-14]
 refs_hash:
   BR-AI-21: 7e5eb4e48745
@@ -13,6 +14,7 @@ refs_hash:
 deps: [B3-01h, B3-03f]
 paths:
   - 'apps/api/src/modules/agent/orchestrator/eval/**'
+  - 'apps/api/src/modules/agent/stream/mount/**'
 test_paths:
   - 'test/spec/agent/orchestrator-eval-local/**'
 impl: claude
