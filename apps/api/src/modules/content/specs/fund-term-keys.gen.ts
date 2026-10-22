@@ -27,6 +27,7 @@ export const FUND_TERM_KEYS = {
       "jump_tip.",
       "agent.earnings.",
       "inbox.title.",
+      "agent.tool_status.get_rebate_quote.",
       "admin_dict.admin_adjustments.status.",
       "admin_dict.bad_debt_writeoff.status.",
       "admin_dict.recon_diff_status.",
@@ -126,7 +127,10 @@ export const FUND_TERM_KEYS = {
       "amount_mask.",
       "auth_manage.",
       "privacy.",
-      "perm."
+      "perm.",
+      "agent.suggest.clarify.",
+      "agent.tool_status.search_products.",
+      "agent.tool_status.default."
     ],
     "keys": [
       "about.copy_diagnostics",
@@ -204,6 +208,7 @@ export const FUND_TERM_KEYS = {
       "agent.notice.no_cheaper",
       "agent.notice.no_result",
       "agent.notice.ordinal_default",
+      "agent.notice.platform_unrecognized",
       "agent.notice.price_unrecognized",
       "agent.notice.relaxed_price",
       "agent.notice.relaxed_spec",
