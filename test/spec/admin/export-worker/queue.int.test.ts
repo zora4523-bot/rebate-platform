@@ -16,12 +16,12 @@ it('[AC-B1-34e#26] export exists once after risk-scan in the catalog with B1-34c
       expireInSeconds: 900,
       retentionSeconds: 1_209_600,
       deleteAfterSeconds: 604_800,
-      deadLetter: 'dead-letter',
+      deadLetter: 'export.dead',
     },
   ]);
   const index = QUEUE_CATALOG.findIndex((queue) => queue.name === 'export');
   expect(QUEUE_CATALOG[index - 1]?.name).toBe('risk-scan');
-  expect(QUEUE_CATALOG[index + 1]?.name).toBe('dead-letter');
+  expect(QUEUE_CATALOG[index + 1]?.name).toBe('order-sync.dead');
 });
 
 it('[AC-B1-34e#27] only worker consumes export, between agent-trace and risk-scan, concurrency one', () => {

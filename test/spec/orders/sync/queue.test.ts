@@ -19,13 +19,13 @@ it('[AC-B1-08g#22] order-sync 紧邻 order-rescan 之前，exclusive、默认重
       expireInSeconds: 900,
       retentionSeconds: 1_209_600,
       deleteAfterSeconds: 604_800,
-      deadLetter: 'dead-letter',
+      deadLetter: 'order-sync.dead',
     },
   ]);
   const names = QUEUE_CATALOG.map((q) => q.name);
   expect(names.indexOf('order-rescan')).toBe(names.indexOf('order-sync') + 1);
   expect(
-    QUEUE_CATALOG.filter((q) => q.name === 'dead-letter').map((q) => ({
+    QUEUE_CATALOG.filter((q) => q.name === 'order-sync.dead').map((q) => ({
       retryLimit: q.retryLimit,
       deadLetter: q.deadLetter,
     })),
