@@ -43,3 +43,18 @@ export type {
 } from './application/notification-settings.ts';
 export { NotificationSettingsController } from './http/public/notification-settings.controller.ts';
 export type { NotificationSettingsHttpRequest } from './http/public/notification-settings.controller.ts';
+// B1-12o: the push sending core (inbox always, push per category switch and BR-ID-07 pre-send
+// check) and the demonstration MobPush channel. Not wired to an event consumer yet: a consumer
+// calls record() in its transaction and, after the commit, dispatch(db, event) — the only path
+// to the push channel.
+export { createPushSendCore } from './application/push-send.ts';
+export type {
+  PushCategory,
+  PushDispatchOutcome,
+  PushEvent,
+  PushSendCore,
+  PushSendInput,
+  PushSendOptions,
+} from './application/push-send.ts';
+export type { PushDeliveryChannel, PushPayload, PushTarget } from './ports/push-delivery.ts';
+export { createDemoMobPush } from './infra/demo-mobpush.ts';

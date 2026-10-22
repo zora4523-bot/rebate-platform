@@ -1,4 +1,6 @@
 // Public surface of the identity module. Other modules import only from this file.
+export { createPushSessionValidity } from './ports/push-session-validity.ts';
+export type { PushSessionQuery, PushSessionValidity } from './ports/push-session-validity.ts';
 export { createExportUsersReader } from './application/export-users.ts';
 export type {
   ExportUsersReader,
