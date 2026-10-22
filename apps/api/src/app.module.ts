@@ -325,6 +325,9 @@ function streamIdentityModule(): DynamicModule {
  * Stream shares api's minimum-version / restricted-session and ban guards, without risk's
  * appeals routes. Agent owns admission and rate limits (BR-AI-23); no api rate-limit mapping or
  * identity level / step-up checks are supplied to this entry.
+ * Stage ⑥ (deletion cooling / processing, B1-15m) is the only check in both lists: after ⑤, it
+ * refuses /v1/agent/ writes carrying a verified token with 10007 (BR-ID-01, BR-ID-27); ⑦ ⑧ ⑨ and
+ * step-up stay off this entry.
  */
 function streamRiskModule(
   identity: DynamicModule,
@@ -337,6 +340,14 @@ function streamRiskModule(
   return {
     ...RiskModule.forRoot({
       imports: [identity],
+      beforeRateLimit: {
+        inject: [DELETION_STAGE_CHECKS],
+        useFactory: (deletion: DeletionStageChecks) => [deletion.postMiss],
+      },
+      beforeRateLimitGuards: {
+        inject: [DELETION_STAGE_CHECKS],
+        useFactory: (deletion: DeletionStageChecks) => [deletion.guard],
+      },
       minimumVersions: {
         inject: [CLOCK, { token: DB, optional: true }],
         useFactory: (clock: Clock, db?: Kysely<Database>): MinimumVersionReaders | null =>
@@ -1804,7 +1815,7 @@ export class AppModule {
           : riskModule(identity, contentReader);
     // Stage ⑦ (B1-02zh) is not assembled on stream: it judges only x-auth login / phone / realname
     // routes, and every /v1/agent/ route is optional.
-    // TODO(规划/11 §4.5): stream 入口装 ⑥（B1-15e 只装 api 入口的检查列表） — blocked on 另开任务把 ⑥ 接进 stream 的检查列表
+    // Stage ⑥ (B1-15m) is assembled on stream alone, in streamRiskModule's two lists.
     // One module object per import: Nest builds union and linking once.
     const union =
       options.entry === 'api' || options.entry === 'worker' ? UnionModule.forRoot() : undefined;

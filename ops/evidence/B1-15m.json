@@ -1,0 +1,95 @@
+{
+  "red_tests": [
+    "test/spec/identity/deletion-guard-stream/assembly.test.ts > [AC-B1-15m#1] stream 的两份列表只装 ⑥：注入 DELETION_STAGE_CHECKS，不夹带 ⑦⑧⑨ 或 step-up",
+    "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#2] cooling 用户经真实验签令牌调 Agent 写接口 → 10007 stage=cooling",
+    "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#3] users.status=deleting（无注销单）→ stage=processing，同用户 GET 放行",
+    "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#4] cooling 用户同令牌 GET 放行，Agent 非 GET 仍拦截",
+    "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#5] 无注销单与 cancelled 单均放行，新增 cooling 后拦截",
+    "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#6] ⑤封禁先于⑥冷静期；相同冷静期的未封禁用户返回 10007",
+    "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#7] 同应用同令牌逐请求查库：插单立即拦截，撤回后下一次写请求立即放行",
+    "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#8] stream 实际供给的⑥守卫对注销白名单逐项放行"
+  ],
+  "risk_note": "RV2 (app.module wiring). BR-ID-01 ⑥ / BR-ID-27 on the stream entry: streamRiskModule passes beforeRateLimit = [deletion.postMiss] and beforeRateLimitGuards = [deletion.guard] (DELETION_STAGE_CHECKS from B1-15e), nothing else (no ⑦ ⑧ ⑨ or step-up on stream, as before); a cooling / processing user's /v1/agent/* writes with a verified token answer 10007, GET and the whitelist pass. identity / risk modules unchanged. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (8 tests, red/1), reviewed through claude-run.sh: r1 pass, no findings"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "a010356013765a55fcebeba2c5e40be4206d1276",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
+  },
+  "task": "B1-15m",
+  "spec_commit": "d5410bc4ccb942aa28f72569c8294f428eadb343",
+  "spec_ref": "93ac832c03a5570ceb91c427baa4f9e4020b3328",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "d5410bc4ccb942aa28f72569c8294f428eadb343",
+      "tree": "53aa3d60e639b343ce3832a85f319e2f26b0bbdc",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T07:36:03Z",
+      "finished_at": "2026-10-22T07:36:48Z",
+      "red_tests": [
+        "test/spec/identity/deletion-guard-stream/assembly.test.ts > [AC-B1-15m#1] stream 的两份列表只装 ⑥：注入 DELETION_STAGE_CHECKS，不夹带 ⑦⑧⑨ 或 step-up",
+        "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#2] cooling 用户经真实验签令牌调 Agent 写接口 → 10007 stage=cooling",
+        "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#3] users.status=deleting（无注销单）→ stage=processing，同用户 GET 放行",
+        "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#4] cooling 用户同令牌 GET 放行，Agent 非 GET 仍拦截",
+        "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#5] 无注销单与 cancelled 单均放行，新增 cooling 后拦截",
+        "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#6] ⑤封禁先于⑥冷静期；相同冷静期的未封禁用户返回 10007",
+        "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#7] 同应用同令牌逐请求查库：插单立即拦截，撤回后下一次写请求立即放行",
+        "test/spec/identity/deletion-guard-stream/stream.int.test.ts > [AC-B1-15m#8] stream 实际供给的⑥守卫对注销白名单逐项放行"
+      ],
+      "expected": [
+        "test/spec/identity/deletion-guard-stream/assembly.test.ts",
+        "test/spec/identity/deletion-guard-stream/stream.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "f155cb31b17b276651d1276fc5238de21cd8ceef0acb2e9a23f485a435c0fd88"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "95f413127cb2d4f68f0c7470d43b91aa77f9d449931e24cdbe9d2d2703344e10"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "a3e800477d83b01d875fa58c7a40ab59e310022d",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ]
+}
