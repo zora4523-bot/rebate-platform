@@ -112,6 +112,14 @@ import {
 import { createAgentSwitchReader } from './config.ts';
 import { agentDefaultTexts, agentText } from './texts.ts';
 import type { AgentCallerReaderFactory } from './caller.ts';
+import type { AgentStreamAssemblyFactory } from './assembly.ts';
+export { createAgentStreamAssembly } from './assembly.ts';
+export type {
+  AgentStreamAssembly,
+  AgentStreamAssemblyFactory,
+  AgentStreamAssemblyDeps,
+  AgentStreamBusinessPorts,
+} from './assembly.ts';
 
 /** identity's createAiConsentReader (B1-02r), handed in by app.module (agent never imports it). */
 export type AgentConsentReaderFactory = (options: {
@@ -120,6 +128,7 @@ export type AgentConsentReaderFactory = (options: {
 }) => AgentConsentReader;
 
 export interface AgentStreamRuntimeDeps {
+  readonly assembly?: AgentStreamAssemblyFactory;
   readonly db: Kysely<Database>;
   readonly clock: Clock;
   readonly logger: RootLogger;
@@ -148,6 +157,7 @@ export interface AgentStreamRuntime {
 }
 
 export interface AgentStreamModuleOptions {
+  readonly assembly?: AgentStreamAssemblyFactory;
   readonly consentReader: AgentConsentReaderFactory;
   readonly callerReader: AgentCallerReaderFactory;
 }
@@ -159,7 +169,7 @@ export function agentStreamToken(): symbol {
 }
 
 export function agentStreamProvider(
-  options: Pick<AgentStreamModuleOptions, 'consentReader'>,
+  options: Pick<AgentStreamModuleOptions, 'consentReader' | 'assembly'>,
 ): FactoryProvider {
   return {
     provide: agentStreamToken(),
