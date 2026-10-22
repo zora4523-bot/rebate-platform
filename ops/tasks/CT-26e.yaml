@@ -3,6 +3,7 @@ repo: rebate-platform
 title: 契约（App 高保真定稿缺口，identity）：RiskInfo 加 prev_risk_state（申诉中带原处罚）；Appeal 加 attempt_no / can_resubmit，第 4 次申诉被拒新码 30418；features 下发换手机号开关 account.phone_change_enabled，发码（step_up / phone_change）与二次验证时提前返回 30414
 type: contract
 # 草稿 2026-10-23（身份与风控线 identity-lane）。编排 17:4x 分派、13:3x 派工 ①；形状经 couli #174 回写 04（SPEC_REF 39ff3de4）。形状稿 couli-runs/CT-26e/shape.md；摘录以 SPEC_REF 的 04 为准。占契约槽后做；评审 Codex contract（不可用按 #36 独立 Claude）。error.30418 文案键归 content（BR-TEXT-14 表 A）。
+# 2026-10-23 补 paths：codegen 的文案校验要求新码 30418 在 texts.default.json 有 error.30418（句子照 08 BR-TEXT-14 表 A，若 08 未给则用不写数字的兜底句并在输出里标「待规划补」）；新增必返字段（RiskInfo.prev_risk_state、Appeal.attempt_no / can_resubmit）要让 me.ts / appeals.ts 返回值补上，否则 apps/api 编译失败——本任务只补最小取值（prev_risk_state 由风控状态推出、attempt_no / can_resubmit 按 BR-ID-36 计），完整计次口径若需新表列另开任务。
 refs: []
 refs_hash: {}
 contract_sections: ['5']
@@ -11,6 +12,11 @@ paths:
   - 'contracts/openapi.yaml'
   - 'contracts/error-codes.yaml'
   - 'contracts/enums/**'
+  - 'contracts/texts.default.json'
+  - 'apps/api/src/modules/risk/application/appeals.ts'
+  - 'apps/api/src/modules/risk/application/appeals.test.ts'
+  - 'apps/api/src/modules/identity/application/me.ts'
+  - 'apps/api/src/modules/identity/application/me.test.ts'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
