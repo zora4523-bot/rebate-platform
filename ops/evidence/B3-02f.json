@@ -1,7 +1,7 @@
 {
   "task": "B3-02f",
-  "spec_ref": "4070ad5c32fd39816636742a83e01b1476637454",
-  "spec_commit": "00ce6c3068536888a74f5598538fedcbc65a8d60",
+  "spec_ref": "8209d6e31bf5e4eb336421f51aa5354eb6b539c2",
+  "spec_commit": "b960f3a60030bf0ec5110599b003b7c4afe84ed5",
   "risk_note": "RV2 from added frozen rule tests; implementation paths are RV1. Codex-first B3-02 exception: Claude authored tests, isolated container confirmed target assertion failures, independent Codex spec-test review passed, Codex implemented through the trusted wrapper, then fresh Claude and independent Codex money reviews passed. Evidence assembled from recorded outputs under the documented pre-generator exception.",
   "red_tests": [
     "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#1] 线上：回放内层（billable=false）带 usage 失败，经计费转调传到外层网关——内外层计量合计零条，错误对象原样抛出、usage 不变",
@@ -15,11 +15,11 @@
       "mode": "container",
       "script": "red",
       "exit_code": 0,
-      "commit": "00ce6c3068536888a74f5598538fedcbc65a8d60",
-      "tree": "372ce0e925b19989945752502237de270e276e5f",
+      "commit": "b960f3a60030bf0ec5110599b003b7c4afe84ed5",
+      "tree": "118f6c2f3e88da5b1aaa3fbee8d4c2cf33ba04e2",
       "prop_seed": 20261001,
-      "started_at": "2026-10-08T10:37:50Z",
-      "finished_at": "2026-10-08T10:43:31Z",
+      "started_at": "2026-10-22T02:35:54Z",
+      "finished_at": "2026-10-22T02:35:59Z",
       "red_tests": [
         "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#1] 线上：回放内层（billable=false）带 usage 失败，经计费转调传到外层网关——内外层计量合计零条，错误对象原样抛出、usage 不变",
         "test/spec/agent/model-relay-metering/relay.test.ts > [AC-B3-02f#2] 离线评测：回放内层（billable=false）带 usage 失败，经计费转调传到外层网关——离线、线上计量都零条，错误对象原样抛出、usage 不变",
@@ -33,7 +33,12 @@
           "path": "out/spec-unit.json",
           "sha256": "617d7d9f4856903c8dfc3f21b2d58f7947abeebf0ccafc0fb0dbde9ee30f13f2"
         }
-      ]
+      ],
+      "gate": {
+        "commit": "8a55137c61f50d9f8f16670ec58b63a93122b6f6",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
     }
   ],
   "reviews": [
@@ -49,7 +54,9 @@
       "diff_base": "00ce6c3068536888a74f5598538fedcbc65a8d60",
       "diff_sha256": "eda9a05db2ccc207b36cdef1cddf8f64f01235d381a066987b00105c2b17698c",
       "note": "Fresh read-only session; reviewed the implementation diff before commit. The committed diff hash was verified identical. Ledger-only main rebase preserved this diff exactly.",
-      "original_reviewed_head": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7"
+      "original_implementation_commit": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7",
+      "review_workspace_head": "ea42f2c583452aa32319e8dd6c316ce669e6818e",
+      "engine": "claude"
     },
     {
       "reviewer": "codex",
@@ -63,23 +70,27 @@
       "diff_base": "00ce6c3068536888a74f5598538fedcbc65a8d60",
       "diff_sha256": "eda9a05db2ccc207b36cdef1cddf8f64f01235d381a066987b00105c2b17698c",
       "note": "Fresh read-only session; reviewed the implementation diff before commit. The committed diff hash was verified identical. Ledger-only main rebase preserved this diff exactly.",
-      "original_reviewed_head": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7"
+      "original_implementation_commit": "e6306d14ff1ed9763b0ae9b0c6f61c045f4f1cf7",
+      "review_workspace_head": "ea42f2c583452aa32319e8dd6c316ce669e6818e",
+      "engine": "codex",
+      "model": "gpt-6-astra"
     }
   ],
   "spec_test_review": {
     "reviewer": "codex",
     "rounds": 1,
     "last_verdict": "pass",
-    "spec_commit": "00ce6c3068536888a74f5598538fedcbc65a8d60",
-    "note": "Frozen test tree unchanged after ledger-only main rebase."
+    "spec_commit": "384ad40c404ed1ecf6bc967f6181f3c9141eab12",
+    "note": "Frozen test tree unchanged after ledger-only main rebase.",
+    "engine": "codex"
   },
   "trees": {
-    "packages/money": "5e127a1e5c375383ecaa0d43beee61c8ac13d87f",
-    "packages/domain": "fcf75ffd40487a451249f66b40049c7cf7c72cdf",
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "8103962272f733a8248550430b7c2d275f88c9f0",
     "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
-    "test/properties": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
-    "test/spec": "f9929296d42e21a733a9cbc4733db1eb803d4595",
-    "specs": "0a064fb95e70ecf72b8d952bbea4db6854fa61dd"
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "30d1da6064c6d3799844619977e76156d082e313",
+    "specs": "10ef548427c8d213ff00c46225a027efe14fcb03"
   },
   "agent_smoke": {
     "executed": false,
@@ -90,7 +101,7 @@
     "runs": 1000000,
     "seed": 20261001,
     "passed": true,
-    "tree": "fcc1221f65afba6e29b167a5c9f4f5d41f922348",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466",
     "mode": "github-actions",
     "run_id": 37764360284,
     "run_attempt": 1,
