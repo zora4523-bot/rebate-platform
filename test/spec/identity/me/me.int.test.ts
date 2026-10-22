@@ -50,6 +50,19 @@ const UNBOUND = [
 ];
 const NORMAL = { state: 'normal', reason_category: null, frozen_until: null };
 
+/**
+ * Expected `risk` for an exact comparison. 为 CT-26e 让路：响应的 risk 带 prev_risk_state 键时，
+ * 期望为原对象加上按 BR-ID-36 细则（04 §6.1）推出的具体值，否则与原期望完全相同；
+ * CT-26e 合并后收紧为单态（只留带 prev_risk_state 的写法）。
+ */
+function riskExpected(
+  actual: object,
+  base: Record<string, unknown>,
+  prev: 'frozen' | 'banned' | null,
+): Record<string, unknown> {
+  return 'prev_risk_state' in actual ? { ...base, prev_risk_state: prev } : base;
+}
+
 it('[AC-B1-02z#1] 新微信号：member、未绑手机、默认昵称头像、可补填且截止为建号 +168h、余额 0、两平台未授权、实名 none', async () => {
   const f = await fixture(kit);
   await consentAll(kit, f);
@@ -71,7 +84,8 @@ it('[AC-B1-02z#1] 新微信号：member、未绑手机、默认昵称头像、�
     union_bindings: UNBOUND,
     realname_status: 'none',
     need_reconsent: false,
-    risk: NORMAL,
+    // Not appealing → prev_risk_state null (04 §6.1).
+    risk: riskExpected(data.risk, NORMAL, null),
   });
   at(data.invite_backfill.deadline_at, instant(BACKFILL_MS));
   // OPS-20: no user level (L1–L3) in the response.
@@ -201,11 +215,14 @@ it('[AC-B1-02z#12] 封禁用户不被 10006 拦：invite_code=null，risk 为 ba
   await riskState(kit, f, 'banned', 'fraud_invite');
   const data = me(kit, await f.get());
   expect(data.invite_code).toBeNull();
-  expect(data.risk).toEqual({
-    state: 'banned',
-    reason_category: 'fraud_invite',
-    frozen_until: null,
-  });
+  // Banned, not appealing → prev_risk_state null (04 §6.1).
+  expect(data.risk).toEqual(
+    riskExpected(
+      data.risk,
+      { state: 'banned', reason_category: 'fraud_invite', frozen_until: null },
+      null,
+    ),
+  );
   expect(data.user_id).toBe(f.uid);
 });
 
@@ -215,7 +232,14 @@ it('[AC-B1-02z#13] 申诉中且处理中的账号申诉 prev_risk_state=banned �
   await appeal(kit, f, 'banned');
   const data = me(kit, await f.get());
   expect(data.invite_code).toBeNull();
-  expect(data.risk).toEqual({ state: 'appealing', reason_category: 'other', frozen_until: null });
+  // Appealing → prev_risk_state is the processing account appeal's original penalty (BR-ID-36 细则).
+  expect(data.risk).toEqual(
+    riskExpected(
+      data.risk,
+      { state: 'appealing', reason_category: 'other', frozen_until: null },
+      'banned',
+    ),
+  );
 });
 
 it('[AC-B1-02z#14] 申诉中但申诉前为 frozen → invite_code 照常返回，risk 带 frozen_until', async () => {
@@ -400,7 +424,7 @@ it('[AC-B1-02z#30] 只读令牌对应的 app 与用户：别的用户、别的 a
   expect(same.identity_level).toBe('member');
   expect(same.union_bindings).toEqual(UNBOUND);
   expect(same.need_reconsent).toBe(true);
-  expect(same.risk).toEqual(NORMAL);
+  expect(same.risk).toEqual(riskExpected(same.risk, NORMAL, null));
   // App-level settings of that app still apply: switch off → not eligible.
   expect(same.invite_backfill).toEqual({ eligible: false, deadline_at: null });
 
@@ -411,7 +435,7 @@ it('[AC-B1-02z#30] 只读令牌对应的 app 与用户：别的用户、别的 a
   at(data.invite_backfill.deadline_at, instant(BACKFILL_MS));
   expect(data.union_bindings).toEqual(UNBOUND);
   expect(data.need_reconsent).toBe(true);
-  expect(data.risk).toEqual(NORMAL);
+  expect(data.risk).toEqual(riskExpected(data.risk, NORMAL, null));
 
   // The other user's own view is unchanged by these reads.
   const own = me(kit, await other.get());

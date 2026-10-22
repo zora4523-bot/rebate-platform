@@ -25,6 +25,19 @@ import {
   type Kit,
 } from './kit.ts';
 
+/**
+ * Expected `risk` for an exact comparison. 为 CT-26e 让路：响应的 risk 带 prev_risk_state 键时，
+ * 期望为原对象加上按 BR-ID-36 细则（04 §6.1）推出的具体值，否则与原期望完全相同；
+ * CT-26e 合并后收紧为单态（只留带 prev_risk_state 的写法）。
+ */
+function riskExpected(
+  actual: object,
+  base: Record<string, unknown>,
+  prev: 'frozen' | 'banned' | null,
+): Record<string, unknown> {
+  return 'prev_risk_state' in actual ? { ...base, prev_risk_state: prev } : base;
+}
+
 let database: TestDatabase;
 let server: TestRedis;
 let kit: Kit;
@@ -87,11 +100,17 @@ it('[AC-B1-11k#2] 风险矩阵：banned、frozen、appealing 均隐藏，申诉�
     results.push({ code: data.invite_code, risk: data.risk, backfill: data.invite_backfill });
     expected.push({
       code: item.state === 'normal' ? f.inviteCode : null,
-      risk: {
-        state: item.state,
-        reason_category: item.state === 'normal' ? null : 'other',
-        frozen_until: item.state === 'frozen' ? '2035-01-01T00:00:00.000Z' : null,
-      },
+      // prev_risk_state: appealing → the processing account appeal's original penalty (fixture
+      // `previous`; no appeal row → null), any other state → null (BR-ID-36 细则, 04 §6.1).
+      risk: riskExpected(
+        data.risk,
+        {
+          state: item.state,
+          reason_category: item.state === 'normal' ? null : 'other',
+          frozen_until: item.state === 'frozen' ? '2035-01-01T00:00:00.000Z' : null,
+        },
+        item.state === 'appealing' ? item.previous : null,
+      ),
       backfill: { eligible: true, deadline_at: '2026-10-08T02:00:00.000Z' },
     });
   }
@@ -302,7 +321,12 @@ it('[AC-B1-11k#12] 本人未成年隐藏本人码但保留已绑定状态，其�
     ],
     realname_status: 'verified',
     need_reconsent: true,
-    risk: { state: 'normal', reason_category: null, frozen_until: null },
+    // Normal → prev_risk_state null (04 §6.1).
+    risk: riskExpected(
+      data.risk,
+      { state: 'normal', reason_category: null, frozen_until: null },
+      null,
+    ),
   });
   const response = JSON.stringify(data);
   for (const value of [parent.uid, parent.inviteCode, '私有邀请人昵称', NAME, '2010-05-20']) {
