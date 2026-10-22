@@ -28,6 +28,7 @@ export type {
   InviteRewardTrigger,
 } from './application/invite-reward.ts';
 export { appendLevelChange, appendRelationChange } from './infra/change-logs.ts';
+export { detachChildrenOfDeleted } from './application/detach-children-of-deleted.ts';
 export { createGrowthHistory } from './infra/history.ts';
 // B1-11d: every write that changes users.parent_id takes this app-level lock first.
 export {
