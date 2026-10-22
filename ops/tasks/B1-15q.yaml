@@ -1,0 +1,18 @@
+id: B1-15q
+repo: rebate-platform
+title: 测试修改（收紧）：B1-15o（迁移 0070）已合并，把 B1-15p 的两态判定收紧为单态——[AC-B3-09a#51] agent_sessions 期望可更新列固定含 user_id；[AC-B1-15a#1] deletion_requests 期望固定为 16 列；去掉按列是否存在的判定与说明注释
+type: test-change
+# 草稿 2026-10-23（身份与风控线 identity-lane）。B1-15p #1194 两态写法为 B1-15o 让路，注释写明「迁移合并后可收紧为单态」；B1-15o #1192 已合并，按编排 23:44 要求收紧。只增强断言，不削弱。独立 Claude 改，新鲜独立 Claude 只读复审，非 task 分支，按 approvals #24 请编排加标签。
+refs: []
+refs_hash: {}
+deps: [B1-15o, B1-15p]
+paths:
+  - 'test/spec/db/agent/agent-tables.int.test.ts'
+  - 'test/spec/db/deletion-requests/schema.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/agent/**'
+  - 'test/spec/db/deletion-requests/**'
+status: todo
