@@ -1,0 +1,18 @@
+id: B1-15s
+repo: rebate-platform
+title: 测试修改：两份冻结实名测试按迁移状态两态判定，为 B1-15r（注销匿名化迁移，D10-186）让路——[AC-B1-13b#1]（test/spec/db/realname/schema.int.test.ts）realname 已有 tax_retained 列时期望列集追加 tax_retained，否则保持原列集；test/spec/db/realname/access.int.test.ts 的 couli_app UPDATE 列集在已有 tax_retained 列时追加 tax_retained，否则保持原样；其余断言不变
+type: test-change
+# 草稿 2026-10-23（身份与风控线 identity-lane）。B1-15r 实现方读代码判断这两处精确比对会红；照 B1-15p 先例拆非任务分支 test-change 先合，主干现状与叠 B1-15r 都绿。完整验证若另红在 payout_accounts 冻结测试上，补进本任务。
+# 独立 Claude 改（approvals #36），新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。B1-15r 合并后另开收紧任务改成单态。
+refs: []
+refs_hash: {}
+deps: [B1-13b]
+paths:
+  - 'test/spec/db/realname/schema.int.test.ts'
+  - 'test/spec/db/realname/access.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/realname/**'
+status: todo

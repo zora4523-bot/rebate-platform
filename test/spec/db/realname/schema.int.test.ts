@@ -43,6 +43,25 @@ it('[AC-B1-13b#1] realname has exactly the specified types, nullability and defa
     default: defaultValue,
     identity: null,
   }));
+  // Two-state check to make way for B1-15r (D10-186); tighten to a single state once it merges.
+  const taxRetained = await sql<{ found: number }>`SELECT 1 AS found FROM information_schema.columns
+    WHERE table_schema = 'app' AND table_name = 'realname' AND column_name = 'tax_retained'`.execute(
+    h.app,
+  );
+  if (taxRetained.rows.length > 0) {
+    // Name order: between status and updated_at.
+    expected.splice(
+      expected.findIndex((column) => column.name === 'updated_at'),
+      0,
+      {
+        name: 'tax_retained',
+        type: 'bool',
+        nullable: false,
+        default: 'false',
+        identity: null,
+      },
+    );
+  }
   // Exact set also excludes adult_at, birth_year and plaintext personal information.
   expect(await columns(h.app, 'realname')).toEqual(expected);
 });
