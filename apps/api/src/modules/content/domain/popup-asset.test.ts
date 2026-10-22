@@ -36,6 +36,25 @@ it('[AC-F1-09r] fractional frame rates use the exact duration', () => {
   });
 });
 
+it('[AC-F1-09s] huge or tiny finite numbers never yield a non-finite duration', () => {
+  expect(inspectPopupAsset('lottie', lottie({ fr: 1e308, ip: 0, op: 1e308 }))).toMatchObject({
+    ok: true,
+    durationMs: 1000,
+  });
+  expect(inspectPopupAsset('lottie', lottie({ fr: 1e-308, ip: 0, op: 2e-308 }))).toMatchObject({
+    ok: true,
+    durationMs: 2000,
+  });
+  for (const patch of [
+    { fr: 1e308, ip: -1e308, op: 1e308 },
+    { fr: 1e308, ip: 1e308, op: -1e308 },
+    { fr: 1e-308, ip: 0, op: 10 },
+    { fr: 1, ip: 0, op: 1e308 },
+  ]) {
+    expect(inspectPopupAsset('lottie', lottie(patch))).toEqual({ ok: false, reason: 'too_long' });
+  }
+});
+
 it('[AC-F1-09r] shape failures are format: v not a string, w / h not positive int32, bad assets', () => {
   for (const patch of [
     { v: 5 },
