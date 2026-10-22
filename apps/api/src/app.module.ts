@@ -85,6 +85,8 @@ import {
   type InviteRewardScanner,
 } from './modules/growth/index.ts';
 import {
+  createWithdrawSubjectReader,
+  laborAgreementSigned,
   IdentityAdminModule,
   IdentityModule,
   createExportUsersReader,
@@ -147,6 +149,15 @@ import {
   type PayoutAccountConfigPort,
 } from './modules/identity/index.ts';
 import { LedgerModule, createLedger } from './modules/ledger/index.ts';
+import {
+  PayoutModule,
+  createDefaultFeeTaxCalculator,
+  createWithdrawHoldsReader,
+  createWithdrawRules,
+  createWithdrawUsageReader,
+  type ReverifyGatePort,
+  type WithdrawRulesService,
+} from './modules/payout/index.ts';
 import {
   LINK_LANDING_PORTS,
   LINK_OPEN_PORTS,
@@ -231,6 +242,9 @@ import {
   isHttpEntry,
 } from './modules/platform/index.ts';
 import {
+  createBlocklistMatchReader,
+  createAppealPrevStateReader,
+  createRiskStateBatchReader,
   RiskAdminModule,
   RiskModule,
   RiskScanModule,
@@ -2097,6 +2111,61 @@ function sessionPushTokens(clock: Clock): SessionPushTokens {
   };
 }
 
+/**
+ * B2-05c: the withdrawal rules use case of the api entry (GET /v1/withdrawals/rules; the same
+ * validator POST /v1/withdrawals runs, B2-05d). Every port reads on the caller's handle: content's
+ * configuration reader (withdraw.*; a plain read each time, as payoutAccountConfig), risk's state
+ * and appeal readers, the read-only blocklist match, identity's real-name, payout-account and
+ * labor-agreement ports, ledger's getBalances, the module's own usage / holds readers, the default
+ * fee / tax calculator (0 / 0, BR-WDR-19 / 20) and a re-verification gate that reports nothing
+ * pending until identity's CT-26c / CT-26e land. Without a database or a keyring the entry gets no
+ * use case (the controller answers 50001).
+ */
+function payoutModule(): DynamicModule {
+  return PayoutModule.forRoot({
+    rules: {
+      inject: [
+        CLOCK,
+        ROOT_LOGGER,
+        { token: DB, optional: true },
+        { token: FIELD_CRYPTO, optional: true },
+      ],
+      useFactory: (
+        clock: Clock,
+        logger: RootLogger,
+        db?: Kysely<Database>,
+        crypto?: FieldCrypto,
+      ): WithdrawRulesService | null => {
+        if (db === undefined || crypto === undefined) return null;
+        // TODO(规划/11 §2.3): 待加验判定（BR-WDR-03 ③b）接 identity 的加验端口 — blocked on CT-26c
+        const reverify: ReverifyGatePort = { check: () => Promise.resolve(null) };
+        const realname = createRealnameReader(crypto);
+        return createWithdrawRules({
+          clock,
+          logger: logger.child({ module: 'payout' }),
+          config: {
+            configValue: (appId, key, handle) =>
+              createContentReader({ db: handle, clock }).configValue(appId, key),
+          },
+          risk: createRiskStateBatchReader({ db }),
+          appeal: createAppealPrevStateReader(),
+          blocklist: createBlocklistMatchReader(),
+          reverify,
+          realname: { read: realname.read, verified: realname.verified },
+          subject: createWithdrawSubjectReader(),
+          laborAgreementSigned,
+          ledger: createLedger({ clock }),
+          holds: createWithdrawHoldsReader(),
+          usage: createWithdrawUsageReader(),
+          // TODO(规划/11 §2.3): 近 90 天自购门槛读 orders 端口（BR-WDR-03 ⑬，开关默认关；开时按无自购拒绝）— blocked on orders 的只读导出
+          selfPurchase: { read: () => Promise.resolve({ count: 0, amount_fen: 0n }) },
+          feeTax: createDefaultFeeTaxCalculator(),
+        });
+      },
+    },
+  });
+}
+
 @Module({})
 export class AppModule {
   static forEntry(options: PlatformOptions): DynamicModule {
@@ -2246,6 +2315,8 @@ export class AppModule {
         // growth's POST /v1/me/inviter (B1-11e): on the api entry, beside identity and risk, whose
         // global guard and idempotency post-miss hooks run stages ①–⑧ before it.
         ...(options.entry === 'api' ? [growthModule()] : []),
+        // payout's GET /v1/withdrawals/rules (B2-05c): on the api entry, beside identity and risk.
+        ...(options.entry === 'api' ? [payoutModule()] : []),
         ...(union === undefined ? [] : [union]),
         // The ledger posting port (B2-02f) on every entry that books money: settlement (worker),
         // withdrawals (api, payout) and adjustments (admin); the stream entry books nothing.
