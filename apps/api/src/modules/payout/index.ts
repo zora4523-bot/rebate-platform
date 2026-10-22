@@ -12,6 +12,7 @@ export {
   createWithdrawRules,
   readWithdrawInput,
   readWithdrawLimits,
+  readWithdrawEnabled,
   createDefaultFeeTaxCalculator,
 } from './application/withdraw-rules.ts';
 export type {
@@ -43,3 +44,8 @@ export { PayoutModule } from './payout.module.ts';
 export type { PayoutModuleOptions } from './payout.module.ts';
 export { WITHDRAW_RULES, WITHDRAW_APPLY, WITHDRAW_STEP_UP } from './tokens.ts';
 export type { WithdrawStepUp } from './http/public/withdrawals.controller.ts';
+export {
+  createWithdrawSwitchCheck,
+  isWithdrawalApplication,
+} from './application/withdraw-switch-check.ts';
+export type { WithdrawSwitchCheckOptions } from './application/withdraw-switch-check.ts';

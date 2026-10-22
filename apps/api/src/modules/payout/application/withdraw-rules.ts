@@ -267,6 +267,26 @@ export async function readWithdrawLimits(
   };
 }
 
+/** BR-WDR-03 ① alone (the post-miss switch check): missing row = on, invalid value = default. */
+export async function readWithdrawEnabled(
+  handle: Kysely<DB>,
+  appId: string,
+  options: {
+    config: PayoutConfigPort;
+    logger: { warn(fields: Record<string, unknown>, message: string): void };
+  },
+): Promise<boolean> {
+  const row = await options.config.configValue(appId, WITHDRAW_CONFIG_KEYS.enabled, handle);
+  if (row === null) return DEFAULT_WITHDRAW_LIMITS.enabled;
+  const parsed = parseSwitch(row.value);
+  if (parsed.ok) return parsed.value;
+  options.logger.warn(
+    { app_id: appId, config_key: WITHDRAW_CONFIG_KEYS.enabled },
+    'withdraw_config_default',
+  );
+  return DEFAULT_WITHDRAW_LIMITS.enabled;
+}
+
 /** A hold is in effect while not released and either open-ended or not yet due (BR-WDR-05). */
 export function holdActive(hold: WithdrawHold, now: Date): boolean {
   if (hold.released_at !== null) return false;
