@@ -1,0 +1,111 @@
+{
+  "task": "B1-12j",
+  "spec_ref": "17b5fe5cf052e9e93d0be356a7fcc1b3390be4b5",
+  "spec_commit": "e237daa1e976b4f15af776876a329a65914a5eed",
+  "red_tests": [
+    "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#18] 当前版本由各订单行决定，首次版本和后续版本均不硬编码",
+    "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#1] 只读 orders 当前版本，保留全部角色和零份额，按 role、user_id 稳定排序",
+    "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#2] 金额原样保留 bigint 精度，同一用户不同角色不合并、不按订单佣金重算",
+    "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#3] 当前版本无快照或版本为零都返回空数组，不回退历史版本",
+    "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#4] 订单不存在返回空数组，即使 order_keys 下已有金额行也不返回",
+    "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#5] app_id 隔离：以另一应用查询同一个真实 order_id 不得泄露受益人",
+    "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#6] couli_app 只读事务内可读，重复读取不生成快照、不改归属或金额",
+    "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#12] 返回申请人及全部条目决定，不把审核备注当驳回原因、不丢未决或无订单行的条目",
+    "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#13] 申请人始终来自 claims.user_id，即使关联订单归属于其他用户",
+    "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#14] 无条目的找回单也返回申请人和原状态，支持全部找回状态",
+    "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#15] 所有已存驳回原因码原样返回，不生成用户文案、不按找回单备注覆盖",
+    "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#16] 按 app_id 和 claim_id 双重隔离，同应用另一找回单的条目也不能混入",
+    "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#17] 只读事务中重复读取找回结果，不审核、不改归属、不生成金额",
+    "test/spec/notification/trade-read-ports/order-facts.int.test.ts > [AC-B1-12j#7] 返回精确的订单事实投影，长标题、归属、订单键和原始佣金不裁剪不换算",
+    "test/spec/notification/trade-read-ports/order-facts.int.test.ts > [AC-B1-12j#8] null 与零各自原样保留，不填默认标题、归属、buy_type 或金额",
+    "test/spec/notification/trade-read-ports/order-facts.int.test.ts > [AC-B1-12j#9] 不按通知资格过滤订单，各平台状态与自购事实均可读取",
+    "test/spec/notification/trade-read-ports/order-facts.int.test.ts > [AC-B1-12j#10] 不存在或他应用的订单返回 null，不因本应用有其他订单而错配",
+    "test/spec/notification/trade-read-ports/order-facts.int.test.ts > [AC-B1-12j#11] 只读事务中连续读取订单和缺失订单，不修改任何事实"
+  ],
+  "risk_note": "RV2 (commission and orders modules). Adds read-only ports for trade notifications (orchestrator ruling D10-142 ②: notification may read commission / orders read-only ports, no attribution logic): commission readNotifyBeneficiaries returns the commission_split_amounts rows of the order's current commission_version (user_id, role, amount_fen as stored, bigint, no recomputation, zero shares kept, older versions excluded); orders readNotifyOrderFacts returns nine order fields and readNotifyClaimFacts the claim and its items. SELECT only, every query filtered by app_id, existing commission / orders behaviour unchanged; no caller yet (B1-12q / B1-12r will consume). Two orchestrator mechanical test(spec) commits: the kit takes the test-database factory from the int tests (depcruise rule), and the LONG_TITLE emoji joiners are written as \\u200D escapes (guard hidden-unicode); no assertion changes. No money movement, no attribution change.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "e237daa1e976b4f15af776876a329a65914a5eed",
+      "tree": "14883a82a19557e241885917d59fa11fb639e808",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-22T21:07:29Z",
+      "finished_at": "2026-10-22T21:07:41Z",
+      "gate": {
+        "commit": "8b04993e5d3d3f280c5a19838f9a7c8d43928337",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#18] 当前版本由各订单行决定，首次版本和后续版本均不硬编码",
+        "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#1] 只读 orders 当前版本，保留全部角色和零份额，按 role、user_id 稳定排序",
+        "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#2] 金额原样保留 bigint 精度，同一用户不同角色不合并、不按订单佣金重算",
+        "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#3] 当前版本无快照或版本为零都返回空数组，不回退历史版本",
+        "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#4] 订单不存在返回空数组，即使 order_keys 下已有金额行也不返回",
+        "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#5] app_id 隔离：以另一应用查询同一个真实 order_id 不得泄露受益人",
+        "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts > [AC-B1-12j#6] couli_app 只读事务内可读，重复读取不生成快照、不改归属或金额",
+        "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#12] 返回申请人及全部条目决定，不把审核备注当驳回原因、不丢未决或无订单行的条目",
+        "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#13] 申请人始终来自 claims.user_id，即使关联订单归属于其他用户",
+        "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#14] 无条目的找回单也返回申请人和原状态，支持全部找回状态",
+        "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#15] 所有已存驳回原因码原样返回，不生成用户文案、不按找回单备注覆盖",
+        "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#16] 按 app_id 和 claim_id 双重隔离，同应用另一找回单的条目也不能混入",
+        "test/spec/notification/trade-read-ports/claim-facts.int.test.ts > [AC-B1-12j#17] 只读事务中重复读取找回结果，不审核、不改归属、不生成金额",
+        "test/spec/notification/trade-read-ports/order-facts.int.test.ts > [AC-B1-12j#7] 返回精确的订单事实投影，长标题、归属、订单键和原始佣金不裁剪不换算",
+        "test/spec/notification/trade-read-ports/order-facts.int.test.ts > [AC-B1-12j#8] null 与零各自原样保留，不填默认标题、归属、buy_type 或金额",
+        "test/spec/notification/trade-read-ports/order-facts.int.test.ts > [AC-B1-12j#9] 不按通知资格过滤订单，各平台状态与自购事实均可读取",
+        "test/spec/notification/trade-read-ports/order-facts.int.test.ts > [AC-B1-12j#10] 不存在或他应用的订单返回 null，不因本应用有其他订单而错配",
+        "test/spec/notification/trade-read-ports/order-facts.int.test.ts > [AC-B1-12j#11] 只读事务中连续读取订单和缺失订单，不修改任何事实"
+      ],
+      "expected": [
+        "test/spec/notification/trade-read-ports/beneficiaries.int.test.ts",
+        "test/spec/notification/trade-read-ports/claim-facts.int.test.ts",
+        "test/spec/notification/trade-read-ports/order-facts.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "a1e41a3b78f7b2b0a7a5ae13a026c28d33f8db565e736639291dda2e92a3afa7"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; one S2 (readNotifyClaimFacts reads claim and items in two statements, not one snapshot; no production caller yet) recorded as a follow-up for B1-12r"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex (run 1, 18 tests in 3 files red for the right reason on the test machine) reviewed by a fresh Claude subagent: pass with one S2 (order facts lack user_basis; B1-12q will add a separate read function with its own tests)."
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "7213d313ee281317983c7c51ab756250a2f464d5",
+    "specs": "7f0df3605fc3664048553d6d5534aca96ca34032"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
