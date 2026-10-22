@@ -27,6 +27,15 @@ const DEFAULT_BRIDGE: AppApiBridge = {
 
 type NativeEnv = BridgeMethods['app.getEnv']['result'];
 
+/** The shell's App API client: the H5 API client plus the account-switch hook the shell calls. */
+export interface AppApiClient extends H5ApiClient {
+  /**
+   * Account switch or logout (bridge auth.changed, subscribed by the shell): drops the H5 token
+   * and detaches any acquisition in flight, so every later request asks native for a new token.
+   */
+  invalidateToken(): void;
+}
+
 /** Contract trace id: 1–64 characters of [A-Za-z0-9_-], new for every request. */
 function newTraceId(): string {
   const uuid = globalThis.crypto?.randomUUID?.();
@@ -40,7 +49,7 @@ function requiredText(value: unknown): value is string {
 }
 
 /** Missing bridge, app.getEnv capability, base URL or brand yields null. */
-export function createAppApi(options: AppApiOptions = {}): H5ApiClient | null {
+export function createAppApi(options: AppApiOptions = {}): AppApiClient | null {
   const env = options.env ?? readAppApiEnv();
   const { apiBaseUrl, appId } = env;
   // No same-origin fallback and no guessed brand: without both the client stays off.
@@ -86,10 +95,8 @@ export function createAppApi(options: AppApiOptions = {}): H5ApiClient | null {
     fetch: options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
   } satisfies Parameters<typeof createApiClient>[0];
   // h5_token lives only in this manager's memory (renewed once on 10002 and replayed once).
-  const authenticated = createApiClient({
-    ...transport,
-    tokenManager: bridge.createH5TokenManager(),
-  });
+  const tokenManager = bridge.createH5TokenManager();
+  const authenticated = createApiClient({ ...transport, tokenManager });
   // Operations without required auth (security [] or optional): no token, no Authorization.
   const anonymous = createApiClient(transport);
 
@@ -102,6 +109,9 @@ export function createAppApi(options: AppApiOptions = {}): H5ApiClient | null {
       }
       const client = isAnonymousOperation(method, path) ? anonymous : authenticated;
       return client.request(method, path, init);
+    },
+    invalidateToken() {
+      tokenManager.invalidate();
     },
   };
 }

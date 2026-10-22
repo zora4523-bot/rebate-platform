@@ -17,3 +17,12 @@ export function createQueryClient(): QueryClient {
 export function createQueryProvider(children: ReactNode, client: QueryClient): ReactElement {
   return createElement(QueryClientProvider, { client }, children);
 }
+
+/**
+ * Account switch or logout: cancel every query first (a response that arrives later is dropped
+ * by its cancelled fetch), then clear all queries and mutations, active or not.
+ */
+export function clearAccountData(client: QueryClient): void {
+  void client.cancelQueries();
+  client.clear();
+}
