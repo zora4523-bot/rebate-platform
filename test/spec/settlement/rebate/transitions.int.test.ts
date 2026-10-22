@@ -409,7 +409,8 @@ it('[AC-B2-04j#19] 已有结算佣金时预估单独归零只存档，不重算�
     settle_commission_fen: 800n,
     est_commission_fen: 0n,
   });
-  f.bases.mockResolvedValue({ before: 900n, after: 0n });
+  // 结算优先，结算额未变则有效基数不变。
+  f.bases.mockResolvedValue({ before: 800n, after: 800n });
   await f.update(
     { est_before: 1000n, est_after: 0n },
     { event: 'PLATFORM_SETTLED', raw_status: 'synthetic' },
@@ -748,3 +749,75 @@ it.each([
     await noMoney(db, f);
   },
 );
+
+it('[AC-B2-04j#47] 同报文预估与结算佣金同时归零，有效基数 800→0 按 R6 作废', async () => {
+  const f = await fixture(db, {
+    rebate_status: 'WAITING',
+    platform_status: 'SETTLED',
+    est_commission_fen: 0n,
+    settle_commission_fen: 0n,
+  });
+  // orders 已写入本次佣金；估值端口按结算优先返回结算佣金 800→0 的有效基数。
+  f.bases.mockResolvedValue({ before: 800n, after: 0n });
+  await f.update(
+    { est_before: 1000n, est_after: 0n },
+    { event: 'PLATFORM_SETTLED', raw_status: 'synthetic' },
+  );
+  expect(await f.read()).toMatchObject({ rebate_status: 'VOID', reason: 'COMMISSION_ZERO' });
+  expect(f.bases).toHaveBeenCalledWith(f.transactions[0], {
+    ...f.ref,
+    estBefore: 1000n,
+    estAfter: 0n,
+    settleCommissionFen: 0n,
+  });
+  expect(await f.history()).toEqual([
+    expect.objectContaining({
+      field: 'rebate',
+      from_status: 'WAITING',
+      event: 'BASE_ZERO',
+      to_status: 'VOID',
+    }),
+  ]);
+  expect(f.publish).toHaveBeenCalledExactlyOnceWith(
+    f.transactions[0],
+    expect.objectContaining({
+      appId: f.appId,
+      name: 'order.invalidated',
+      payload: expect.objectContaining({ order_id: f.orderId }),
+    }),
+  );
+  expect(await f.events()).toEqual([expect.objectContaining({ name: 'order.invalidated' })]);
+  expectCas(f);
+  await noMoney(db, f);
+});
+
+it('[AC-B2-04j#48] 同报文预估与结算佣金同时调减，有效基数 800→500 按 R7 重算一次', async () => {
+  const f = await fixture(db, {
+    rebate_status: 'WAITING',
+    platform_status: 'SETTLED',
+    est_commission_fen: 600n,
+    settle_commission_fen: 500n,
+  });
+  // 预估佣金 1000→600、结算佣金 800→500；有效基数按结算佣金取值。
+  f.bases.mockResolvedValue({ before: 800n, after: 500n });
+  await f.update(
+    { est_before: 1000n, est_after: 600n },
+    { event: 'PLATFORM_SETTLED', raw_status: 'synthetic' },
+  );
+  expect(await f.read()).toMatchObject({
+    rebate_status: 'WAITING',
+    reason: null,
+    est_commission_fen: 600n,
+    settle_commission_fen: 500n,
+  });
+  expect(f.bases).toHaveBeenCalledWith(f.transactions[0], {
+    ...f.ref,
+    estBefore: 1000n,
+    estAfter: 600n,
+    settleCommissionFen: 500n,
+  });
+  expect(f.refresh).toHaveBeenCalledExactlyOnceWith(f.transactions[0], f.ref);
+  expect(f.publish).not.toHaveBeenCalled();
+  expect(await f.events()).toEqual([]);
+  await noMoney(db, f);
+});
