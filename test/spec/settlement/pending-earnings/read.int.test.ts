@@ -50,6 +50,8 @@ it('[AC-B2-04x#2] BR-FUND-18 按状态分类，排除定金、未归属、已入
     ['UNATTRIBUTED', 'PAID'],
     ['UNATTRIBUTED', 'DEPOSIT_PAID'],
     ['ESTIMATED', 'DEPOSIT_PAID'],
+    // BR-FUND-18 前后句对 ESTIMATED + RECEIVED 有歧义；本例取后半句
+    // “= estimated_fen + pending_credit_fen”：estimated_fen 限 PAID，以保持汇总与分项一致。
     ['ESTIMATED', 'RECEIVED'],
     ['CREDITED', 'SETTLED'],
     ['VOID', 'INVALID'],
@@ -625,4 +627,66 @@ it('[AC-B2-04x#17] BR-FUND-18 缓存最多60秒，结算到达后不再随预估
   expect((await db.transaction().execute((trx) => source.forUser(trx, f))).estimated_fen).toBe(
     850n,
   );
+});
+
+it('[AC-B2-04x#18] BR-FUND-18 快照初始 forfeited 的直推份额不计用户和 app 预估，本人份额保留', async () => {
+  const f = await scope(db);
+  const direct = randomUUID();
+  await seed(db, f, {
+    people: [
+      { userId: f.userId, role: 'self', ratioBp: 5000 },
+      {
+        userId: direct,
+        role: 'direct',
+        ratioBp: 1000,
+        initialStatus: 'forfeited',
+        forfeitReason: 'deleted',
+      },
+    ],
+  });
+  // 手算：N=1000，预留1500bp，B=850；本人425，直推原份额85被剥夺归平台。
+  const source = harness().source();
+  await db.transaction().execute(async (trx) => {
+    expect(await source.forUser(trx, { ...f, userId: direct })).toEqual(emptyUser);
+    expect(await source.forUser(trx, f)).toEqual({
+      ...emptyUser,
+      estimated_total_fen: 425n,
+      estimated_fen: 425n,
+    });
+    expect(await source.forApp(trx, f)).toEqual({
+      total_waiting_fen: 0n,
+      total_estimated_fen: 425n,
+    });
+  });
+});
+
+it('[AC-B2-04x#19] BR-FUND-18 快照后 forfeited 事件剔除直推的用户和 app 预估，本人份额保留', async () => {
+  const f = await scope(db);
+  const direct = randomUUID();
+  await seed(db, f, {
+    people: [
+      { userId: f.userId, role: 'self', ratioBp: 5000 },
+      {
+        userId: direct,
+        role: 'direct',
+        ratioBp: 1000,
+        initialStatus: 'active',
+        forfeitedEvent: { reason: 'banned', at: new Date('2026-10-21T01:00:00Z') },
+      },
+    ],
+  });
+  // 手算：B=850，本人425；快照原存直推85，后续 forfeited 事件令其当前份额为0。
+  const source = harness().source();
+  await db.transaction().execute(async (trx) => {
+    expect(await source.forUser(trx, { ...f, userId: direct })).toEqual(emptyUser);
+    expect(await source.forUser(trx, f)).toEqual({
+      ...emptyUser,
+      estimated_total_fen: 425n,
+      estimated_fen: 425n,
+    });
+    expect(await source.forApp(trx, f)).toEqual({
+      total_waiting_fen: 0n,
+      total_estimated_fen: 425n,
+    });
+  });
 });

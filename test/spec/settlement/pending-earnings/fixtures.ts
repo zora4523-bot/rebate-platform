@@ -16,6 +16,9 @@ export interface Person {
   userId: string;
   role: 'self' | 'share' | 'direct' | 'indirect';
   ratioBp: number;
+  initialStatus?: 'active' | 'forfeited';
+  forfeitReason?: string;
+  forfeitedEvent?: { reason: string; at: Date };
 }
 
 export interface Scope {
@@ -64,7 +67,7 @@ export async function seed(db: Kysely<DB>, f: Scope, options: OrderOptions = {})
   const base = afterDeduct > 0n ? afterDeduct : 0n;
   const allocation = splitByBp(
     base,
-    people.map((p) => BigInt(p.ratioBp)),
+    people.map((p) => (p.initialStatus === 'forfeited' ? 0n : BigInt(p.ratioBp))),
   );
   const total = allocation.shares.reduce((sum, share) => addFen(sum, share), 0n);
   const order = {
@@ -136,8 +139,8 @@ export async function seed(db: Kysely<DB>, f: Scope, options: OrderOptions = {})
           role: p.role,
           ratio_bp: p.ratioBp,
           level: 'L1',
-          initial_status: 'active',
-          forfeit_reason: null,
+          initial_status: p.initialStatus ?? 'active',
+          forfeit_reason: p.initialStatus === 'forfeited' ? (p.forfeitReason ?? 'deleted') : null,
         })),
       ),
       created_at: AT,
@@ -173,6 +176,21 @@ export async function seed(db: Kysely<DB>, f: Scope, options: OrderOptions = {})
       })),
     )
     .execute();
+  for (const p of people) {
+    if (!p.forfeitedEvent) continue;
+    await app
+      .insertInto('commission_split_beneficiary_events')
+      .values({
+        app_id: f.appId,
+        order_id: order.order_id,
+        user_id: p.userId,
+        role: p.role,
+        status: 'forfeited',
+        reason: p.forfeitedEvent.reason,
+        created_at: p.forfeitedEvent.at,
+      })
+      .execute();
+  }
   return order.order_id;
 }
 
