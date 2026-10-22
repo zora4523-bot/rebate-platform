@@ -29,6 +29,11 @@
 # appeal.progress.scope.order / .frozen、labor_agreement.resign_hint，找回结果 claim.records.status.approved / .rejected / .auto_tracked，
 # 与 appeal.progress.result_pending.order 归 fund_terms（拿不准按资金术语）；reverify.、payout_account.、agent.card.、
 # appeal. 其余键、claim.records. 其余键、order_list.claim_entry 逐键归 ordinary（编排者默认，待规划回写）。
+# CT-16h：站内信标题 inbox.title. 整组归 fund_terms（对应通知模板 08 l.670 全部归资金术语）；08 未写归类的第 3 批键按认定规则
+# 归类：说提现暂停、恢复或进行中提现的 risk_notice.frozen.*、risk_notice.withdrawal_label、appeal.result.lifted_frozen.title /
+# .go_wallet、appeal.result.next.frozen_others，说推广收益与邀请奖励的 invite.share.promo_label / .promo_where / .reward_title /
+# .reward_rules / .rule.no_reward 归 fund_terms（拿不准按资金术语）；risk_notice.、appeal.result.、me.、invite.share. 其余键、
+# invite.poster.、favorites.、messages.、settings. 逐键归 ordinary（编排者默认，待规划回写）。
 fund_terms:
   prefixes:
     - order_status.
@@ -54,6 +59,7 @@ fund_terms:
     - order_status_group.
     - jump_tip.
     - agent.earnings.
+    - inbox.title.
     # BR-TEXT-25 后台字典（admin_dict.*，默认文案在 contracts/texts.admin.default.json）：提现、打款、调账、核销、
     # 差错单、月结类枚举整组归资金术语；其余枚举的键逐键列在 ordinary.keys。
     - admin_dict.admin_adjustments.status.
@@ -76,6 +82,9 @@ fund_terms:
     - appeal.progress.result_pending.order
     - appeal.progress.scope.frozen
     - appeal.progress.scope.order
+    - appeal.result.lifted_frozen.go_wallet
+    - appeal.result.lifted_frozen.title
+    - appeal.result.next.frozen_others
     - btn.buy.no_rebate
     - btn.buy.rebate_suffix
     - claim.records.status.approved
@@ -95,6 +104,11 @@ fund_terms:
     - invite.notice_inviter
     - invite.reward.tip
     - invite.reward.tip_inviter
+    - invite.share.promo_label
+    - invite.share.promo_where
+    - invite.share.reward_rules
+    - invite.share.reward_title
+    - invite.share.rule.no_reward
     - jump_tip
     - labor_agreement.resign_hint
     - link_landing.owner_hint
@@ -109,6 +123,13 @@ fund_terms:
     - rebate_compare
     - rebate_estimate
     - rebate_login_to_view
+    - risk_notice.frozen.appealing
+    - risk_notice.frozen.desc
+    - risk_notice.frozen.hint
+    - risk_notice.frozen.hint_no_until
+    - risk_notice.frozen.title
+    - risk_notice.frozen.until_label
+    - risk_notice.withdrawal_label
     - share.est_promo
     - share_hub.rule_note
     - tag.rebate
@@ -264,6 +285,24 @@ ordinary:
     - appeal.progress.step.result
     - appeal.progress.step.submitted
     - appeal.progress.title
+    - appeal.resubmit
+    - appeal.result.conclusion
+    - appeal.result.handled
+    - appeal.result.handled_at
+    - appeal.result.lifted.hint
+    - appeal.result.lifted.start
+    - appeal.result.lifted.title
+    - appeal.result.lifted.view_messages
+    - appeal.result.lifted_frozen.hint
+    - appeal.result.next.ask_cs
+    - appeal.result.next.leave
+    - appeal.result.next.leave_beta
+    - appeal.result.next.resubmit
+    - appeal.result.next.title
+    - appeal.result.passed
+    - appeal.result.upheld
+    - appeal.submit_entry
+    - appeal.view_progress
     - btn.buy
     - btn.buy.coupon
     - btn.search_similar
@@ -379,11 +418,20 @@ ordinary:
     - favorite.add
     - favorite.added
     - favorite.invalid
+    - favorite.invalid_desc
     - favorite.removed
+    - favorites.delete
+    - favorites.delete_n
+    - favorites.done
     - favorites.empty
+    - favorites.empty_hint
+    - favorites.go_home
+    - favorites.manage
+    - favorites.select_all
     - h5.load_failed
     - home.guest_value.desc
     - invite.auto_bind_failed
+    - invite.backfill.placeholder
     - invite.before_buy_tip
     - invite.bind_phone_guide.benefit
     - invite.bind_phone_guide.body
@@ -393,9 +441,25 @@ ordinary:
     - invite.bound_toast
     - invite.copy_code.done
     - invite.copy_link.done
+    - invite.paste_not_found
     - invite.post_login.optional_hint
     - invite.post_login.skip
     - invite.post_login.title
+    - invite.poster.bind_note
+    - invite.poster.code_label
+    - invite.poster.from
+    - invite.poster.headline
+    - invite.poster.scan_hint
+    - invite.poster.slogan
+    - invite.share.copy_code
+    - invite.share.copy_link
+    - invite.share.invited_count
+    - invite.share.invited_unit
+    - invite.share.rules_full
+    - invite.share.rules_title
+    - invite.share.save_poster
+    - invite.share.unavailable
+    - invite.share.unavailable_hint
     - invite_landing.open_in_app
     - jump.taobao_sdk_unavailable
     - link_landing.invalid
@@ -419,9 +483,38 @@ ordinary:
     - login.risk_blocked.desc
     - login.risk_blocked.desc_send
     - login.wechat_unavailable
+    - me.backfill.go
+    - me.backfill.hint
+    - me.grid.cs
+    - me.grid.favorites
+    - me.grid.find_order
+    - me.grid.help
+    - me.grid.invite
+    - me.grid.ledger
+    - me.grid.orders
+    - me.grid.settings
+    - me.grid.wallet
+    - me.group.more
+    - me.group.orders_wallet
+    - me.group.promo
+    - me.guest.desc
+    - me.guest.login
+    - me.guest.title
+    - me.invite_code.label
+    - me.inviter.bound
+    - me.inviter.label
+    - me.inviter.unbound
+    - messages.empty
+    - messages.empty_hint
+    - messages.load_more
+    - messages.read_all
+    - messages.unread
     - net.stale_data
     - no_rebate.price_compare.help
     - no_rebate.price_compare.similar
+    - notice.no_more
+    - notify_settings.service_push
+    - notify_settings.service_push.desc
     - order_detail.copy.done
     - order_detail.view_product
     - order_list.claim_entry
@@ -475,6 +568,22 @@ ordinary:
     - reverify.oauth.desc
     - reverify.oauth.title
     - reverify.title
+    - risk_notice.appeal_label
+    - risk_notice.appeal_last_label
+    - risk_notice.appeal_processing
+    - risk_notice.banned.appeal_hint
+    - risk_notice.banned.appealing
+    - risk_notice.banned.desc
+    - risk_notice.banned.desc_beta
+    - risk_notice.banned.upheld
+    - risk_notice.banned.upheld_final
+    - risk_notice.period_label
+    - risk_notice.period_none
+    - risk_notice.reason_label
+    - risk_notice.title
+    - settings.about
+    - settings.agreements
+    - settings.agreements.sheet_title
     - settings.clear_cache
     - settings.clear_cache.confirm
     - settings.clear_cache.confirm_cancel
@@ -483,10 +592,26 @@ ordinary:
     - settings.clear_cache.size
     - settings.clipboard_auto
     - settings.clipboard_auto.desc
+    - settings.delete_account
+    - settings.group.account
+    - settings.group.general
+    - settings.group.privacy
+    - settings.guest_hint
+    - settings.guest_login
+    - settings.help
     - settings.logout
     - settings.logout.confirm
     - settings.logout.confirm_cancel
     - settings.logout.confirm_ok
+    - settings.nickname
+    - settings.nickname.hint
+    - settings.nickname.saved
+    - settings.notify
+    - settings.phone
+    - settings.phone.unbound
+    - settings.privacy_center
+    - settings.reshow_jump_tip
+    - settings.reshow_jump_tip.done
     - share.copied
     - share.copy_full
     - share.copy_link_only
@@ -567,3 +692,17 @@ exempt:
     reason: 首启隐私摘要，说明收集信息的用途含发放返利，不说金额、状态或有没有返利（表 D 隐私文案，另归 content.agreement）
   - key: privacy.second_notice.body
     reason: 不同意隐私政策时的说明，只说基本模式下不能登录、拿不到返利，不说金额或某笔返利的状态（表 D 隐私文案，另归 content.agreement）
+  - key: risk_notice.banned.appeal_hint
+    reason: 只说进行中提现的处理结果在本页查看，不说金额，也不说提现处在什么状态
+  - key: me.guest.desc
+    reason: 游客卡的登录引导，只列登录后能用的功能（查看返利、提现），不说金额、状态或有没有返利
+  - key: me.grid.ledger
+    reason: 「我的」宫格的入口名，只是进余额流水页，不说金额或余额状态
+  - key: invite.poster.slogan
+    reason: 海报标语只是请好友购物前来查优惠券和返利，不说金额、状态或有没有返利（同 clipboard.prompt）
+  - key: favorite.invalid_desc
+    reason: 「已失效」说的是收藏的商品，不说订单、金额或有没有返利（同 favorite.invalid）
+  - key: messages.empty_hint
+    reason: 消息中心空态说明，只列会收到哪类通知，不说金额、状态或有没有返利
+  - key: notify_settings.service_push.desc
+    reason: 通知开关的用途说明，只列推送哪类消息，不说金额、状态或有没有返利（同 perm.push.card_hint）
