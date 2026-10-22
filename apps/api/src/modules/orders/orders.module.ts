@@ -13,6 +13,10 @@
 // join the claim ports, so a submission settles its evidence in the same transaction.
 // B1-10h: linking's claim-entry reader (options.claimEntry, a factory from app.module) joins the
 // shared OrderQueries, so GET /v1/orders?scope=self carries claim_entry_pinned (BR-ATTR-17).
+// B1-08w: forWorker also takes commission's snapshot port (options.snapshots, a factory from
+// app.module over the worker's DB, CLOCK and ROOT_LOGGER), built once when the runtime is and
+// passed as the runtime's own snapshots dependency (not among the read ports): step ⑥ and the
+// B1-08t compensation retry then run in production. Not built when the runtime is disabled.
 import { Module, type DynamicModule } from '@nestjs/common';
 import type { DB as Database } from '@couli/db';
 import type { Kysely } from 'kysely';
@@ -46,6 +50,7 @@ import type { OrderClaimDeps } from './application/order-claims.ts';
 import type { ClaimEvidenceFactory } from './application/claim-evidence.ts';
 import { PendingTracks, createPendingTracks } from './application/pending-tracks.ts';
 import { ORDER_SYNC_QUEUE } from './application/sync-scheduler.ts';
+import type { CommissionSnapshotPort } from './application/commission-snapshot-step.ts';
 import { ORDER_CLAIM_DEPS, OrderClaimsController } from './http/public/order-claims.controller.ts';
 import { OrdersController } from './http/public/orders.controller.ts';
 import { PendingTracksController } from './http/public/pending-tracks.controller.ts';
@@ -80,6 +85,17 @@ export interface OrdersModuleOptions {
 export interface OrdersWorkerOptions extends OrderSyncReadPorts {
   /** union's module instance of this entry (UNION_ENDPOINTS, UNION_REGISTRY). */
   readonly union: DynamicModule;
+  /**
+   * B1-08w: commission's snapshot port (createCommissionSnapshot over the B2-03p beneficiary
+   * resolver), assembled by app.module. Called once per runtime, only when the runtime is built
+   * (database, job queue and event bus present); building it reads nothing. The same object goes
+   * to the attribution pipeline, the update step and the compensation retry scan.
+   */
+  readonly snapshots: (
+    db: Kysely<Database>,
+    clock: Clock,
+    logger: RootLogger,
+  ) => CommissionSnapshotPort;
 }
 
 export class OrdersModule {
@@ -156,10 +172,11 @@ export class OrdersModule {
    * createOrderSyncRuntime (handler registered on `order-sync`, scheduler built but not started);
    * entry.ts starts it after the queue runs. Without a database handle, the job queue or the
    * event bus the token provides null and one info line `order_sync_disabled` is logged; nothing
-   * is registered. Assembly runs no query, sends no job and arms no timer.
+   * is registered and the snapshot port is not built. Assembly runs no query, sends no job and
+   * arms no timer. B1-08w: with the snapshot port, start() also arms the compensation scan.
    */
   static forWorker(options: OrdersWorkerOptions): DynamicModule {
-    const { union, ...ports } = options;
+    const { union, snapshots, ...ports } = options;
     return {
       module: OrdersModule,
       imports: [union],
@@ -197,6 +214,7 @@ export class OrdersModule {
               endpoints,
               registry,
               ports,
+              snapshots: snapshots(db, clock, logger),
             });
           },
         },
