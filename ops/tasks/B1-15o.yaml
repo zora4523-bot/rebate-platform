@@ -4,6 +4,7 @@ title: 注销清理迁移（B1-15g 前置）：login_logs.user_id 改可空（�
 type: impl
 # 草稿 2026-10-22（身份与风控线 identity-lane）。编排裁定 D10-137（B1-15g 分派，方案 couli-runs/B1-15g/plan.md §2）。迁移号落地时按 D10-116 占迁移槽、取主干最大 +1；schema.sql / db.gen.ts 在测试机快照。依据 BR-ID-28、BR-AI-22、BR-ID-27（Apple 撤销 3 次后告警）。RV2（db/**），Codex 测试优先（不可用按 #36 独立 Claude）+ money 评审。
 # 2026-10-22 补 test_paths：冻结测试 [AC-B1-15a#1] 把 deletion_requests 钉为 13 列，本任务加三列，期望清单按字母序追加三列（独立 Claude 改、新鲜独立 Claude 复审 pass，couli-runs/B1-15o/review-claude-testchange.md），随本任务同 PR 落，保护路径第一类改已有文件，需编排按 #24 加标签。
+# 2026-10-22 再补 test_paths（D10-153）：冻结测试 [AC-B3-09a#51] 钉死 agent_sessions 可更新列，迁移按 D10-153 授 UPDATE (user_id, user_hash)，UPDATABLE.agent_sessions 追加 user_id（独立 Claude 改、新鲜独立 Claude 复审 pass，couli-runs/B1-15o/review-claude-testchange2.md），随本任务同 PR 落，需编排按 #24 加标签。
 refs: []
 refs_hash: {}
 deps: [B1-15a]
@@ -14,6 +15,7 @@ paths:
 test_paths:
   - 'test/spec/db/deletion-cleanup/**'
   - 'test/spec/db/deletion-requests/schema.int.test.ts'
+  - 'test/spec/db/agent/agent-tables.int.test.ts'
 impl: claude
 tester: codex
 accept:
