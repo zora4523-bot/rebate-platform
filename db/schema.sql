@@ -1131,6 +1131,30 @@ ALTER TABLE app.admin_permissions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTI
 
 
 --
+-- Name: admin_union_auth_sessions; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.admin_union_auth_sessions (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    union_account_id uuid NOT NULL,
+    state_hash bytea NOT NULL,
+    created_by uuid NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    used_at timestamp with time zone,
+    status text DEFAULT 'pending'::text NOT NULL,
+    error text,
+    created_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone,
+    updated_at timestamp with time zone NOT NULL,
+    CONSTRAINT admin_union_auth_sessions_expiry_check CHECK ((expires_at > created_at)),
+    CONSTRAINT admin_union_auth_sessions_lifecycle_check CHECK ((((status = 'pending'::text) AND (finished_at IS NULL) AND (error IS NULL)) OR ((status = 'succeeded'::text) AND (used_at IS NOT NULL) AND (finished_at IS NOT NULL) AND (error IS NULL)) OR ((status = 'failed'::text) AND (used_at IS NOT NULL) AND (finished_at IS NOT NULL) AND (error IS NOT NULL)) OR ((status = 'expired'::text) AND (used_at IS NULL) AND (finished_at IS NOT NULL)))),
+    CONSTRAINT admin_union_auth_sessions_state_hash_check CHECK ((octet_length(state_hash) = 32)),
+    CONSTRAINT admin_union_auth_sessions_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'succeeded'::text, 'failed'::text, 'expired'::text])))
+);
+
+
+--
 -- Name: admin_users; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -4135,7 +4159,8 @@ CREATE TABLE app.union_accounts (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT union_accounts_alert_stage_check CHECK ((alert_stage = ANY (ARRAY['none'::text, 'd14'::text, 'd7'::text, 'd1'::text, 'expired'::text]))),
+    auth_expires_estimated boolean DEFAULT false NOT NULL,
+    CONSTRAINT union_accounts_alert_stage_check CHECK (((alert_stage = ANY (ARRAY['none'::text, 'expired'::text])) OR (alert_stage ~ '^d[1-9][0-9]{0,2}$'::text))),
     CONSTRAINT union_accounts_auth_status_check CHECK ((auth_status = ANY (ARRAY['active'::text, 'expiring'::text, 'expired'::text])))
 );
 
@@ -4755,6 +4780,22 @@ ALTER TABLE ONLY app.admin_permissions
 
 ALTER TABLE ONLY app.admin_permissions
     ADD CONSTRAINT admin_permissions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: admin_union_auth_sessions admin_union_auth_sessions_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_union_auth_sessions
+    ADD CONSTRAINT admin_union_auth_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: admin_union_auth_sessions admin_union_auth_sessions_state_hash_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_union_auth_sessions
+    ADD CONSTRAINT admin_union_auth_sessions_state_hash_key UNIQUE (state_hash);
 
 
 --
@@ -6269,6 +6310,27 @@ CREATE INDEX admin_permissions_granted_by_idx ON app.admin_permissions USING btr
 
 
 --
+-- Name: admin_union_auth_sessions_account_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX admin_union_auth_sessions_account_idx ON app.admin_union_auth_sessions USING btree (app_id, union_account_id);
+
+
+--
+-- Name: admin_union_auth_sessions_created_by_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX admin_union_auth_sessions_created_by_idx ON app.admin_union_auth_sessions USING btree (app_id, created_by);
+
+
+--
+-- Name: admin_union_auth_sessions_pending_expiry_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX admin_union_auth_sessions_pending_expiry_idx ON app.admin_union_auth_sessions USING btree (expires_at) WHERE (status = 'pending'::text);
+
+
+--
 -- Name: agent_cards_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -7672,6 +7734,22 @@ ALTER TABLE ONLY app.admin_permissions
 
 
 --
+-- Name: admin_union_auth_sessions admin_union_auth_sessions_account_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_union_auth_sessions
+    ADD CONSTRAINT admin_union_auth_sessions_account_fkey FOREIGN KEY (app_id, union_account_id) REFERENCES app.union_accounts(app_id, id);
+
+
+--
+-- Name: admin_union_auth_sessions admin_union_auth_sessions_created_by_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.admin_union_auth_sessions
+    ADD CONSTRAINT admin_union_auth_sessions_created_by_fkey FOREIGN KEY (app_id, created_by) REFERENCES app.admin_users(app_id, id);
+
+
+--
 -- Name: agent_cards agent_cards_link_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9008,6 +9086,90 @@ GRANT UPDATE(version) ON TABLE app.account_balances TO couli_app;
 
 GRANT SELECT,INSERT,DELETE ON TABLE app.admin_permissions TO couli_app;
 GRANT SELECT ON TABLE app.admin_permissions TO couli_readonly;
+
+
+--
+-- Name: TABLE admin_union_auth_sessions; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE app.admin_union_auth_sessions TO couli_app;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(id) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.union_account_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(union_account_id) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.created_by; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_by) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.expires_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(expires_at) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.used_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(used_at) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(status) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.error; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(error) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.finished_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(finished_at) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
+
+
+--
+-- Name: COLUMN admin_union_auth_sessions.updated_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(updated_at) ON TABLE app.admin_union_auth_sessions TO couli_readonly;
 
 
 --
