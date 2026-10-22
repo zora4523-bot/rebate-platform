@@ -1,0 +1,25 @@
+id: CT-06ze
+repo: rebate-platform
+title: CT-06ze：ci.yml verify-int 把 Chromium 与 CJK 字体安装挪到测试之前、缓存 playwright 浏览器，timeout 45 → 60
+type: guard-change
+# 2026-10-22 入账（ops 线，编排派工 resume-ops-2325）。起因：#1173、#1190、#1167 的 verify-int 都跑满 45 分钟被截断，
+# 日志里 test:int 已全部通过（#1190：707 个文件 8706 条全过），之后在「apt-get fonts-noto-cjk + playwright install
+# --with-deps chromium」这一步撞了时限，每次都要整作业重跑。做法：① 安装挪到 pnpm build 之后、test:int 之前，慢了
+# 就早失败；② 先读出锁文件固定的 playwright 版本，用 actions/cache（v6.1.0，按提交 SHA 固定）缓存
+# ~/.cache/ms-playwright，键为 ms-playwright-<os>-<版本>-chromium；命中时只跑 playwright install-deps chromium 装系统
+# 依赖，不再下载浏览器；字体照旧每次 apt 安装；③ timeout-minutes 45 → 60 作余量。测试命令、测试内容都不改。
+# 后续（不在本任务）：test/spec/ledger/posting/properties.int.test.ts [AC-B2-02f#23] 单条 783 秒，按 CI 档位降样本数
+# 属 test-change，另开任务、照规矩走。
+# 改 .github/** 属第三类保护路径，按 approvals #24 由编排核对后加 owner-approved 标签；非 task 分支
+# chore/guard-change-CT-06ze，不带证据文件（先例 CT-06zc #1046）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - 'ops/tasks/CT-06ze.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
