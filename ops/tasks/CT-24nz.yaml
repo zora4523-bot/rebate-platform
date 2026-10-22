@@ -1,0 +1,18 @@
+id: CT-24nz
+repo: rebate-platform
+title: test-change：后台订单详情夹具 detail() 补 CT-24n 新增必填字段（unmapped_pending_open 默认 false、last_hold_by / last_hold_by_name / last_hold_note / last_hold_at 默认 null），为 CT-24n 让路
+type: test-change
+# 2026-10-23 入账（W1）。起因：CT-24n 契约测试 [AC-CT-24n#17] 要求 AdminOrderDetail 把 unmapped_pending_open 与四个 last_hold_* 设为必填（04 §6.6：adminGetOrder 另返回派生字段 unmapped_pending_open 与最近一次暂停的 last_hold_*，没暂停过为 null），
+#   而 F1-07e（#1066）冻结的前端夹具 test/spec/frontend/admin-orders/orders-fixtures.ts 的 detail() 没有这五个字段，契约生成类型后 typecheck 报 TS2322，CT-24n 的验证进不去。
+# 做法：只在 detail() 返回对象里加这五个字段（默认 unmapped_pending_open: false，四个 last_hold_* 为 null；调用方的 patch 仍可覆盖）；其余字段、rows()、断言一律不动，不削弱任何测试。
+#   由独立 Claude 子代理改（claude-run.sh，approvals #36），Codex 只读评审「不削弱」；按 approvals #24 由编排核对加标签；先于 CT-24n 合并。fe 线知会。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/frontend/admin-orders/orders-fixtures.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
