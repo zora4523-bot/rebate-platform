@@ -1180,6 +1180,21 @@ END),
 
 
 --
+-- Name: agent_clarify_asks; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agent_clarify_asks (
+    app_id text NOT NULL,
+    session_id uuid NOT NULL,
+    chain_id text NOT NULL,
+    slot text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_clarify_asks_chain_id_check CHECK ((chain_id <> ''::text)),
+    CONSTRAINT agent_clarify_asks_slot_check CHECK ((slot = ANY (ARRAY['reference'::text, 'price'::text, 'platform'::text])))
+);
+
+
+--
 -- Name: agent_messages; Type: TABLE; Schema: app; Owner: -
 --
 
@@ -1226,6 +1241,55 @@ END),
     CONSTRAINT agent_messages_role_check CHECK ((role = ANY (ARRAY['user'::text, 'assistant'::text]))),
     CONSTRAINT agent_messages_user_keys_check CHECK (((role <> 'user'::text) OR ((client_msg_id IS NOT NULL) AND (run_id IS NOT NULL)))),
     CONSTRAINT agent_messages_user_no_feedback_check CHECK (((role <> 'user'::text) OR ((feedback IS NULL) AND (feedback_at IS NULL) AND (NOT reported))))
+);
+
+
+--
+-- Name: agent_result_chains; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agent_result_chains (
+    app_id text NOT NULL,
+    session_id uuid NOT NULL,
+    seq integer NOT NULL,
+    chain_id text NOT NULL,
+    status text NOT NULL,
+    conditions jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_result_chains_chain_id_check CHECK ((chain_id <> ''::text)),
+    CONSTRAINT agent_result_chains_conditions_check CHECK (((conditions IS NULL) OR COALESCE(
+CASE
+    WHEN (jsonb_typeof(conditions) = 'object'::text) THEN ((jsonb_typeof((conditions -> 'chain_id'::text)) = 'string'::text) AND ((conditions ->> 'chain_id'::text) = chain_id))
+    ELSE false
+END, false))),
+    CONSTRAINT agent_result_chains_has_products_check CHECK (((status <> 'has_products'::text) OR (conditions IS NOT NULL))),
+    CONSTRAINT agent_result_chains_seq_check CHECK ((seq >= 1)),
+    CONSTRAINT agent_result_chains_status_check CHECK ((status = ANY (ARRAY['searching'::text, 'awaiting_price'::text, 'has_products'::text])))
+);
+
+
+--
+-- Name: agent_result_deliveries; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.agent_result_deliveries (
+    app_id text NOT NULL,
+    session_id uuid NOT NULL,
+    run_id uuid NOT NULL,
+    result_set_id uuid NOT NULL,
+    "position" integer NOT NULL,
+    card_id text NOT NULL,
+    product_key text NOT NULL,
+    platform text NOT NULL,
+    final_price_fen bigint NOT NULL,
+    card jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_result_deliveries_card_check CHECK ((jsonb_typeof(card) = 'object'::text)),
+    CONSTRAINT agent_result_deliveries_card_id_check CHECK ((card_id ~ '^c[1-9][0-9]*$'::text)),
+    CONSTRAINT agent_result_deliveries_final_price_fen_check CHECK ((final_price_fen >= 0)),
+    CONSTRAINT agent_result_deliveries_platform_check CHECK ((platform = ANY (ARRAY['taobao'::text, 'jd'::text, 'pdd'::text, 'meituan'::text, 'vip'::text, 'douyin'::text, 'eleme'::text, 'kuaishou'::text, 'suning'::text]))),
+    CONSTRAINT agent_result_deliveries_position_check CHECK (("position" >= 1)),
+    CONSTRAINT agent_result_deliveries_product_key_check CHECK ((product_key <> ''::text))
 );
 
 
@@ -4714,6 +4778,14 @@ ALTER TABLE ONLY app.agent_cards
 
 
 --
+-- Name: agent_clarify_asks agent_clarify_asks_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_clarify_asks
+    ADD CONSTRAINT agent_clarify_asks_pkey PRIMARY KEY (app_id, session_id, chain_id, slot);
+
+
+--
 -- Name: agent_messages agent_messages_client_msg_key; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -4727,6 +4799,30 @@ ALTER TABLE ONLY app.agent_messages
 
 ALTER TABLE ONLY app.agent_messages
     ADD CONSTRAINT agent_messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_result_chains agent_result_chains_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_result_chains
+    ADD CONSTRAINT agent_result_chains_pkey PRIMARY KEY (app_id, session_id, seq);
+
+
+--
+-- Name: agent_result_deliveries agent_result_deliveries_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_result_deliveries
+    ADD CONSTRAINT agent_result_deliveries_pkey PRIMARY KEY (app_id, session_id, card_id);
+
+
+--
+-- Name: agent_result_sets agent_result_sets_app_id_run_id_id_key; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_result_sets
+    ADD CONSTRAINT agent_result_sets_app_id_run_id_id_key UNIQUE (app_id, run_id, id);
 
 
 --
@@ -6167,6 +6263,13 @@ CREATE INDEX agent_cards_run_idx ON app.agent_cards USING btree (app_id, run_id)
 
 
 --
+-- Name: agent_clarify_asks_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_clarify_asks_created_idx ON app.agent_clarify_asks USING btree (app_id, created_at);
+
+
+--
 -- Name: agent_messages_created_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -6192,6 +6295,27 @@ CREATE UNIQUE INDEX agent_messages_run_role_key ON app.agent_messages USING btre
 --
 
 CREATE INDEX agent_messages_session_created_idx ON app.agent_messages USING btree (app_id, session_id, created_at);
+
+
+--
+-- Name: agent_result_chains_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_result_chains_created_idx ON app.agent_result_chains USING btree (app_id, created_at);
+
+
+--
+-- Name: agent_result_deliveries_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_result_deliveries_created_idx ON app.agent_result_deliveries USING btree (app_id, created_at);
+
+
+--
+-- Name: agent_result_deliveries_result_set_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX agent_result_deliveries_result_set_idx ON app.agent_result_deliveries USING btree (app_id, run_id, result_set_id);
 
 
 --
@@ -7544,6 +7668,14 @@ ALTER TABLE ONLY app.agent_cards
 
 
 --
+-- Name: agent_clarify_asks agent_clarify_asks_session_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_clarify_asks
+    ADD CONSTRAINT agent_clarify_asks_session_fkey FOREIGN KEY (app_id, session_id) REFERENCES app.agent_sessions(app_id, id);
+
+
+--
 -- Name: agent_messages agent_messages_report_handler_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -7565,6 +7697,30 @@ ALTER TABLE ONLY app.agent_messages
 
 ALTER TABLE ONLY app.agent_messages
     ADD CONSTRAINT agent_messages_session_fkey FOREIGN KEY (app_id, session_id) REFERENCES app.agent_sessions(app_id, id);
+
+
+--
+-- Name: agent_result_chains agent_result_chains_session_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_result_chains
+    ADD CONSTRAINT agent_result_chains_session_fkey FOREIGN KEY (app_id, session_id) REFERENCES app.agent_sessions(app_id, id);
+
+
+--
+-- Name: agent_result_deliveries agent_result_deliveries_result_set_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_result_deliveries
+    ADD CONSTRAINT agent_result_deliveries_result_set_fkey FOREIGN KEY (app_id, run_id, result_set_id) REFERENCES app.agent_result_sets(app_id, run_id, id);
+
+
+--
+-- Name: agent_result_deliveries agent_result_deliveries_run_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.agent_result_deliveries
+    ADD CONSTRAINT agent_result_deliveries_run_fkey FOREIGN KEY (app_id, session_id, run_id) REFERENCES app.agent_runs(app_id, session_id, id);
 
 
 --
@@ -8991,6 +9147,14 @@ GRANT SELECT ON TABLE app.agent_cards TO couli_readonly;
 
 
 --
+-- Name: TABLE agent_clarify_asks; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agent_clarify_asks TO couli_app;
+GRANT SELECT ON TABLE app.agent_clarify_asks TO couli_readonly;
+
+
+--
 -- Name: TABLE agent_messages; Type: ACL; Schema: app; Owner: -
 --
 
@@ -9154,6 +9318,63 @@ GRANT SELECT(created_at) ON TABLE app.agent_messages TO couli_readonly;
 
 GRANT UPDATE(updated_at) ON TABLE app.agent_messages TO couli_app;
 GRANT SELECT(updated_at) ON TABLE app.agent_messages TO couli_readonly;
+
+
+--
+-- Name: TABLE agent_result_chains; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agent_result_chains TO couli_app;
+
+
+--
+-- Name: COLUMN agent_result_chains.app_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(app_id) ON TABLE app.agent_result_chains TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_chains.session_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(session_id) ON TABLE app.agent_result_chains TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_chains.seq; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(seq) ON TABLE app.agent_result_chains TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_chains.chain_id; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(chain_id) ON TABLE app.agent_result_chains TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_chains.status; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(status) ON TABLE app.agent_result_chains TO couli_readonly;
+
+
+--
+-- Name: COLUMN agent_result_chains.created_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT(created_at) ON TABLE app.agent_result_chains TO couli_readonly;
+
+
+--
+-- Name: TABLE agent_result_deliveries; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.agent_result_deliveries TO couli_app;
+GRANT SELECT ON TABLE app.agent_result_deliveries TO couli_readonly;
 
 
 --

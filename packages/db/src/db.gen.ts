@@ -87,6 +87,14 @@ export interface AgentCards {
   type: string;
 }
 
+export interface AgentClarifyAsks {
+  app_id: string;
+  chain_id: string;
+  created_at: Generated<Timestamp>;
+  session_id: string;
+  slot: string;
+}
+
 export interface AgentMessages {
   app_id: string;
   badcase: Generated<boolean>;
@@ -109,6 +117,30 @@ export interface AgentMessages {
   session_id: string;
   text: string | null;
   updated_at: Generated<Timestamp>;
+}
+
+export interface AgentResultChains {
+  app_id: string;
+  chain_id: string;
+  conditions: Json | null;
+  created_at: Generated<Timestamp>;
+  seq: number;
+  session_id: string;
+  status: string;
+}
+
+export interface AgentResultDeliveries {
+  app_id: string;
+  card: Json;
+  card_id: string;
+  created_at: Generated<Timestamp>;
+  final_price_fen: ColumnType<bigint, bigint, bigint>;
+  platform: string;
+  position: number;
+  product_key: string;
+  result_set_id: string;
+  run_id: string;
+  session_id: string;
 }
 
 export interface AgentResultSets {
@@ -1700,7 +1732,10 @@ export interface DB {
   admin_permissions: AdminPermissions;
   admin_users: AdminUsers;
   agent_cards: AgentCards;
+  agent_clarify_asks: AgentClarifyAsks;
   agent_messages: AgentMessages;
+  agent_result_chains: AgentResultChains;
+  agent_result_deliveries: AgentResultDeliveries;
   agent_result_sets: AgentResultSets;
   agent_runs: AgentRuns;
   agent_sessions: AgentSessions;
