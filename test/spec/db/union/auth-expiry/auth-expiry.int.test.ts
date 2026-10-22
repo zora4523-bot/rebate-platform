@@ -1,6 +1,6 @@
 // B1-22a: BR-ID-24, 04 §3.2 and task §9 (SPEC_REF eabcf00).
 // Storage only: OAuth, ten-minute lifetime calculation, probes, SMS and audit belong to services.
-// globalSetup reads TEST_PG_ADMIN_URL; workers use only business roles and catalog assertions.
+// The admin connection is opened only by the global setup; workers use only business roles and catalog assertions.
 import { createHash, randomUUID } from 'node:crypto';
 
 import { createDb, destroyDb, type DB } from '@couli/db';
