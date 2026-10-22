@@ -1,0 +1,19 @@
+id: B3-03k
+repo: rebate-platform
+title: 模型路由与提示词装配（里程碑 3，暂不开工）：stream 装配接路由文件、模型网关与私有提示词，替换固定 no_model
+type: impl
+# 2026-10-22 入账（agent2-acct4，D10-134：只登记不开工）。依赖 B3-11 私有提示词、路由文件、百炼 Key（Q-C21）与快照签字；届时编排再问负责人（花钱与外部供应商），
+# 开工前按当时的装配重写 refs / paths / test_paths。
+refs: []
+refs_hash: {}
+deps: [B3-03j, B3-03m]
+paths:
+  - 'apps/api/src/modules/agent/stream/mount/**'
+test_paths:
+  - 'test/spec/agent/stream-model/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

@@ -1,0 +1,27 @@
+id: B3-03m
+repo: rebate-platform
+title: stream 装配接真实输入检查与按句审核（B3-05d createInputCheck + B3-06b 阿里云内容安全适配器），无 Key 时保持 fail-close
+type: impl
+# 2026-10-22 入账（agent2-acct4，D10-134 拆出）。mount 现为 failClosedInputCheck 与一律 timeout 的按句审核。换成 createInputCheck({review, scheduler, timeoutMs, texts}) 与
+# createAliyunInputReview / OutputReview。真实调用需阿里云内容安全 Key、ACS3 签名实现与凭据声明（platform/config/credential-env.ts 现只有 SMS_*）；
+# 非生产环境外部适配器只能是假实现（AGENTS.md 安全禁区）。没有 Key 时行为与现状相同（审核在最前，全部按审核不可用拒绝），所以 /v1/agent 在 Key 开通前不可用；
+# staging 是否允许「全部放行」的假审核属放宽安全门禁，须负责人决定（notices 2026-10-22 已请编排转问），决定前本任务不派发。
+# 分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 资金类评审（RV2）。派发前按负责人决定与 Key 状况重审 paths（凭据声明文件可能加入）。
+refs: [BR-AI-18, BR-AI-01]
+refs_hash:
+  BR-AI-18: 01b60e6ca170
+  BR-AI-01: b624c86b4643
+deps: [B3-03j, B3-05d, B3-06b]
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/agent/agent.module.ts'
+  - 'apps/api/src/modules/agent/stream/mount/**'
+test_paths:
+  - 'test/spec/agent/stream-review/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-review/**'
+status: todo
+pr: null

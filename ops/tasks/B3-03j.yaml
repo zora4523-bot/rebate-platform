@@ -1,0 +1,33 @@
+id: B3-03j
+repo: rebate-platform
+title: stream 装配换真实实现（里程碑 2）：工具注册表与 search / quote / match、确定性路径（含 parsing.parseToken 作 TokenParser）、意图、结果集；stream 入口组装 union / catalog / linking / parsing 端口
+type: impl
+# 2026-10-22 入账（agent2-acct4，D10-134）。B3-03f 按最小可挂载合并（空工具、无确定性 / 意图、no_model）；本任务把已合并实现换进生产装配：
+# 注册表 + search / quote（tokens = parsing.parseToken）/ match 外包结果集（内存版，PG 版 B3-09c 前 TODO），确定性路径、意图（previousIntent 先 null），
+# stream 入口复用 api 入口的联盟、报价、ParsingOptions、item_ref，linking 登记按调用现建，catalog 补导出候选检索出口；带上 followups 第 30、38 条。
+# 新端口可选、缺省回落（B3-03f 冻结测试只传四项 deps）。不含输入检查 / 按句审核（B3-03m）、模型路由（B3-03k）。构造函数与端口清单见 couli-runs/B3-03j/survey.md。
+# 文案缺键由 content 的 CT-16 续段补（D10-135），本任务规则测试用替身文案，合并前须已补齐。分工：Codex 写规则测试，Opus 5.5 实现（高推理），Codex 资金类评审（RV2）。
+refs: [BR-AI-01, BR-AI-02, BR-AI-03, BR-AI-04, BR-AI-05, BR-AI-14]
+refs_hash:
+  BR-AI-01: b624c86b4643
+  BR-AI-02: 61014cc4d222
+  BR-AI-03: 2131432de5c6
+  BR-AI-04: a07587a282ba
+  BR-AI-05: ee8fd647fd43
+  BR-AI-14: e8ed6052e898
+deps: [B3-03f, B3-04d, B3-04e, B3-04h, B3-05e, B3-05f, B3-05k]
+paths:
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/agent/agent.module.ts'
+  - 'apps/api/src/modules/agent/index.ts'
+  - 'apps/api/src/modules/agent/stream/mount/**'
+  - 'apps/api/src/modules/catalog/index.ts'
+test_paths:
+  - 'test/spec/agent/stream-assembly/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-assembly/**'
+status: todo
+pr: null
