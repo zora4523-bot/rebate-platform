@@ -1,0 +1,44 @@
+# 退款单状态 pay_refunds.status 的状态机（规划/04 §2.4 pay_refunds.status；规划/08 BR-PAY-06 ①④⑤；任务 CT-21d）。
+# 迁移只在 08 维护；本文件按 SPEC_REF 转写，生成 packages/domain/src/state-machines/pay-refund.gen.ts
+# （node packages/domain/scripts/state-machines.ts；--verify 只比对）。生成物勿手改，改这里再生成。
+#
+# 写法约定（同 withdrawal.yaml，CT-04a 编排口径 D10-26）：
+# - from 中 null 表示「—」（入库首态，退款单尚未创建）。
+# - guard 是规则文字说明，transition() 不求值；幂等、业务对象锁、额度占用、CAS、记账、任务入队由调用方负责。
+# - 事件编码（APPLY / REFUND_SUCCESS / REFUND_FAILED）与迁移编号 RF1…RF3 是 08 没给、代理补全的默认（CT-21d 编排补充）；
+#   测试 ID 为 SM-PAY-RF1…RF3。
+#
+# 原文正文要点（BR-PAY-06 逐字摘录）：
+# ① 退款对象是一张 PAID 的支付单，或一条异常收款（BR-PAY-05 ④）。每次退款一张退款单，状态 PROCESSING、SUCCESS、FAILED；
+#   退款金额为正整数（分）。
+# ④ 任一项不符或状态不在清单内 → 不迁移、继续占用额度、记录并告警。
+# ⑤ 结果未知时只查询；是否可以用同一退款单号重新提交，在 BR-PAY-09 验证之前不允许。
+# 细则：refund_fail_states 验证前为空（退款失败在实测留样前按未知处理、继续占额）。
+# 支付单状态不因退款改变，另记 refunded_fen。
+name: pay-refund
+field: status
+states: [PROCESSING, SUCCESS, FAILED]
+# APPLY 后台发起原路退款；REFUND_SUCCESS 退款结果判定为成功；REFUND_FAILED 退款结果判定为失败。
+events: [APPLY, REFUND_SUCCESS, REFUND_FAILED]
+transitions:
+  # RF1 | — | APPLY | BR-PAY-06 ②③ | PROCESSING
+  - id: RF1
+    from: [null]
+    event: APPLY
+    to: PROCESSING
+    guard: 'BR-PAY-06 ②③：幂等键、业务对象锁后额度校验通过'
+    test_id: SM-PAY-RF1
+  # RF2 | PROCESSING | REFUND_SUCCESS | BR-PAY-06 ④⑤ | SUCCESS
+  - id: RF2
+    from: [PROCESSING]
+    event: REFUND_SUCCESS
+    to: SUCCESS
+    guard: '④ 全部核对通过且状态 ∈ refund_success_states；同一事务 CAS + refunded_fen + PAY_REFUND 分录 + 回收任务'
+    test_id: SM-PAY-RF2
+  # RF3 | PROCESSING | REFUND_FAILED | BR-PAY-06 ④⑤ | FAILED
+  - id: RF3
+    from: [PROCESSING]
+    event: REFUND_FAILED
+    to: FAILED
+    guard: '④ 全部核对通过且状态 ∈ refund_fail_states；释放占用额度'
+    test_id: SM-PAY-RF3
