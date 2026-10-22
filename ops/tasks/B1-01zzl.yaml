@@ -1,0 +1,23 @@
+id: B1-01zzl
+repo: rebate-platform
+title: Redis 按关键依赖准备（R-04 裁定前）：staging Redis 的持久化与内存策略核对、重启与重建 runbook、防重放键不被淘汰的检查项写进 docs/runbooks/redis.md；告警规则并入 B1-01zzh
+type: impl
+# 2026-10-23 入账（ops 线；架构评估 R-04 / R-07，编排 D10-183 ⑥：R-04 不改代码，裁定前 ops 把 Redis 按关键依赖准备——告警、持久化、
+# 重启 runbook——并入 R-07）。来源：docs/research/20261022-架构评估.md R-04、T-07（防重放键不得被静默淘汰，ADR-0001 §4.2 第 17 项）。
+# 现状：staging 的 Redis 不在 compose 里，走节点内网地址（infra/staging/README.md 第 29 行）；本地与 CI 的一次性 Redis 用
+# noeviction、无 RDB、无 AOF（infra/local/compose.yaml、ci.yml）。
+# 做法：新建 docs/runbooks/redis.md（docs 为 RV0，由 ops 线写；infra/staging/README.md 的指针随 B1-01zzj 加）：① 节点 Redis 应有的设置（maxmemory-policy noeviction、maxmemory 显式值、持久化方式）
+# 与核对命令；② 重启与重建 runbook（Redis 重启或数据丢失后：防重放窗口、限流计数、缓存各自会怎样，要不要清理、谁来做、先做什么）；
+# ③ 依赖失效时的现行表现只引用 02 §14 与 ADR，不在这里定新策略（R-04 由架构评估会话出影响评估、编排裁定）。告警规则（Redis 不可达、
+# 内存接近上限、拒绝写入）交 B1-01zzh 一起做，本任务只列清单。不改代码与配置文件。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'docs/runbooks/redis.md'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

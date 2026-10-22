@@ -1,0 +1,27 @@
+id: B1-01zzk
+repo: rebate-platform
+title: 重任务队列限并发：worker 里耗时或占连接多的队列（订单同步回扫、月结批次执行、导出、通知扇出等，以实现时清点为准）各设显式的并发上限与数据库连接预算，上限写成配置并有默认值，超出时排队而不是同时占满连接池
+type: impl
+# 2026-10-23 入账（ops 线；架构评估 R-07，编排 D10-183 ③）。来源：docs/research/20261022-架构评估.md R-07「重任务并发」、QS-11 / QS-15
+# 同机负载场景。现状（主干 8b04993e）：apps/api/src/modules/platform/queue/attempt.ts 每次 fetch batchSize 1，但各队列可并行取多少、
+# 合计会用掉多少数据库连接没有统一上限，重任务叠加时可能占满连接池拖慢 api。
+# 做法：① 清点 worker 订阅的队列与各自的单次耗时、连接占用（实现时列表写进台账注释或 README）；② platform/queue 提供按队列的并发
+# 上限（配置键，默认值保守），重任务队列同时在跑的任务数不超过上限；③ 所有队列合计的连接占用不超过 worker 连接池的一个固定比例，
+# 给 supervision 与健康检查留出连接。不改各队列的业务语义、重试与幂等；不改投递方。
+# 不在本任务：compose 资源上限（B1-01zzj）、压测验证（QA-06 加同机组合场景，另开）。风险：platform/queue → RV2。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/queue/**'
+  - 'apps/api/src/modules/platform/config/**'
+  - 'apps/api/src/main.worker.ts'
+test_paths:
+  - 'test/spec/platform/queue-concurrency/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/queue-concurrency/**'
+status: todo
+pr: null
