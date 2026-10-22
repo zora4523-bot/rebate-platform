@@ -1,0 +1,22 @@
+id: B1-09h
+repo: rebate-platform
+title: 渠道单逐行处理：kind=channel 的行（relation_id、可选 end_at）经 risk 渠道单写入端口写 blocklist（start_at=导入时刻），重复生效条目计 duplicate_rows，格式错 invalid_row、账号平台不符 platform_mismatch；不回扫存量订单
+type: impl
+# 2026-10-22 入账草稿（W1 线）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2；依据 08 BR-ATTR-26 ② 与细则「渠道单导入」（couli #176，编排裁定 D10-152 ⑩）、02 §4.1（orders 不直接写 risk 的表）。
+# 分工：归属 / 资金类（名单让之后的订单作废）→ impl claude、tester codex、Codex money 评审（D10-15）。只转写 08，不改规则。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：权限与整份一次动态码在 B1-09g 入口已验；union_account_id 取请求那一个（每行不带）；导入时刻取任务受理时刻 rights_imports.created_at（方案 K-5，待编排确认）；
+#   重复口径同 B1-09a 端口（K-5）；每行一事务；之后改 end_at 或停用在黑名单管理做（BR-ID-31），本任务不提供；名单只让订单失效，处理在 B1-09b 的流水线步骤。
+refs: [BR-ATTR-26]
+refs_hash:
+  BR-ATTR-26: 7070dbe36696
+deps: [B1-09g, B1-09a]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/channel-import/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/channel-import/**'
+status: todo

@@ -1,0 +1,24 @@
+id: B1-09b
+repo: rebate-platform
+title: 流水线黑名单步骤：首次入库或 content_hash 变化时查两类名单；尾号维度开关关闭只记 manual_review；命中未入账经返利端口 BLACKLIST_HIT（R6）、已入账入队 order.blacklist_hit_after_credit 进人工复核、VOID / CLAWED_BACK 不处理；不改 user_id、buy_type、不回扫
+type: impl
+# 2026-10-22 入账草稿（W1 线）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2（v1 B1-09b 不变，依赖更新：B1-08i / j / k 已合并；settlement B2-04j 已实现 apply(trx, order, 'BLACKLIST_HIT')）。
+# 分工：资金 / 归属类 → impl claude、tester codex、Codex money 评审（D10-15）。只转写 08，不改规则；BR-ATTR-01 ③ 位置与 BR-FUND-01 R6 行由编排者补充逐字摘录。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：orders 声明返利端口 rebate.onBlacklistHit（与 settlement apply 的 BLACKLIST_HIT 对接，接线在资金线 B2-04zb）；未注入时只写 risk_hits manual_review 并告警、不改订单列（J-1，免得半成品状态）；
+#   渠道比对的 union_account_id 取 pid 行的账号；登记配置 attr.blacklist.order_suffix_void_enabled（默认 false）；order.blacklist_hit_after_credit 按 02 §11 位置补进 EVENT_NAMES（同事务入队），若冻结测试钉全表照 #707 先例另开 test-change。
+refs: [BR-ATTR-26]
+refs_hash:
+  BR-ATTR-26: 7070dbe36696
+deps: [B1-09a]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/modules/platform/events/**'
+test_paths:
+  - 'test/spec/orders/blacklist/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/blacklist/**'
+status: todo

@@ -1,0 +1,25 @@
+id: B1-09e
+repo: rebate-platform
+title: 迁移：订单第二段表——order_sync_requests（筛选摘要在排队或执行期间部分唯一）、rights_imports、rights_import_failures（只插入）、order_assignments（只插入）；order_rights 加幂等唯一键
+type: migration
+# 2026-10-22 入账草稿（W1 线）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2（v1 B1-09e 按 couli #176 的 04 §3.2 改：rights_import_rows 改为 rights_import_failures，新增 order_sync_requests；order_assignments 按编排 10-18 20:1x J-8 修正版并入本迁移）。
+# 依据（SPEC_REF eabcf00，04 §3.2 四行与 order_rights 行、BR-FUND-06 去重句由编排者补充逐字摘录，refs 清空免超 24KB）。资金线 B2-04l blocked on 本任务。分工：资金 / 归属类 → impl claude、tester codex（D10-15）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：order_sync_requests 加 filter_digest 列与 (app_id, filter_digest) WHERE status IN ('queued','running') 部分唯一；rights_imports.time_basis 可空、kind=channel 时 union_account_id 必填且三项时间窗为空（CHECK）；
+#   rights_import_failures (import_id, row_no) 唯一、reason 命名 CHECK 照 CT-24n 枚举；order_assignments（id、app_id、order_id → order_keys、to_user_id、source claim / admin、reason、admin_id、created_at）；
+#   order_rights 唯一 (app_id, order_id, type, platform_rights_no) NULLS NOT DISTINCT（方案 K-2，表归 settlement、迁移由本线出，J-12 已裁定）；只给 SELECT / INSERT / 需要的 UPDATE，不给 DELETE；授权写在本迁移。
+# 迁移号落地时取主干最大号 + 1（notices 登记，现 0069），排在 B1-09a 之后；两段式由编排者跑 remote-snapshot 提交生成物；lint-migrations 资金 / 归属表名单如需加行，按 D10-19 先例由编排处理。
+refs: []
+refs_hash: {}
+deps: [B1-10a, CT-24n]
+paths:
+  - 'db/migrations/**'
+  - 'db/schema.sql'
+  - 'packages/db/src/db.gen.ts'
+test_paths:
+  - 'test/spec/db/orders-ops/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/db/orders-ops/**'
+status: todo

@@ -1,0 +1,31 @@
+id: B1-10i
+repo: rebate-platform
+title: 后台订单查询 / 详情后端：GET /admin/v1/orders（筛选、页码分页）与 GET /admin/v1/orders/{order_id}（状态历史、分佣快照、link_log 关联、标记、原始报文按权限、unmapped_pending_open、最近一次暂停的操作人与说明）；挂载、去 planned
+type: impl
+# 2026-10-22 入账草稿（W1 线；编号 10-18 20:1x 编排同意预占，J-20）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2；依据已合并契约 CT-24m（adminListOrders / adminGetOrder）与 CT-24n 加的派生字段原文、04 §6.6 orders 段（由编排者补充摘录）。
+# 只读、不写资金；B1-09l、B1-10f 的响应复用本任务的详情读取。分工 impl claude、tester codex（orders RV2）。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：控制器放 orders/http/admin（OrdersAdminModule.forAdmin，B1-10j 先例）；手机号脱敏经 identity 只读端口、管理员名字经 admin 只读端口（B1-10j 先例）；
+#   unmapped_pending_open = hold_reason=UNMAPPED_STATUS 且 order_sync_pending 有同子订单 reason=UNMAPPED_STATUS、status=open 的行；last_hold_* 取最近一次后台人工 hold 审计（action order_hold），当前为系统 UNMAPPED hold 时四项 null（方案 K-7）；带 user_id 时 user.lookup 亦可读（04 §11.2）。
+refs: []
+refs_hash: {}
+deps: [CT-24m, CT-24n]
+paths:
+  - 'apps/api/src/modules/orders/**'
+  - 'apps/api/src/modules/identity/**'
+  - 'apps/api/src/modules/admin/index.ts'
+  - 'apps/api/src/modules/admin/application/**'
+  - 'apps/api/src/app.module.ts'
+  - 'contracts/openapi.yaml'
+  - 'packages/contracts-ts/src/openapi.gen.ts'
+  - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
+  - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
+  - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
+  - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+test_paths:
+  - 'test/spec/orders/admin-orders-read/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/admin-orders-read/**'
+status: todo

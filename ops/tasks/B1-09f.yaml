@@ -1,0 +1,18 @@
+id: B1-09f
+repo: rebate-platform
+title: 依赖：apps/api 加 Excel 解析库 exceljs 4.4.0（精确版本），只改 dependencies 与锁文件
+type: deps
+# 2026-10-22 入账草稿（W1 线；编排 10-18 20:1x 裁定选 exceljs 4.4.0，依赖选择、非新供应商；05 B1-09 行两选一之一，MIT）。
+# 只改 apps/api/package.json 的 dependencies 段与 pnpm-lock.yaml（保护路径第二类，锁文件只有 deps 任务可改）；不改 scripts。由编排者在沙箱外执行 pnpm install。
+# 后台导入（B1-09g）用它流式读 xlsx（≤1 万行）；@fastify/multipart 10.1.2 主干已有，不再加。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/package.json'
+  - 'pnpm-lock.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo

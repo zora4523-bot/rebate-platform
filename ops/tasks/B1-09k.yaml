@@ -1,0 +1,22 @@
+id: B1-09k
+repo: rebate-platform
+title: 维权单 / 违规单逐行处理：子订单定位与五类逐行失败、time_basis 时间窗筛行（窗外计 skipped_rows）、维权单 → RIGHTS、违规单 → PUNISH 经 rights.record 写入、已导入的行计 duplicate_rows；每行一事务、order_key 锁内
+type: impl
+# 2026-10-22 入账草稿（W1 线，新编号）。方案 couli-runs/W1-search-linking/orders-plan-b109-v2.md §2；依据 08 BR-FUND-06 细则「维权导入任务」（couli #176，编排裁定 D10-152 ⑨）、01 F-ORD-10（逐子订单列明）。
+# 分工：资金类（导入结果驱动作废 / 扣回）→ impl claude、tester codex、Codex money 评审（D10-15）。只转写 08，不改规则；BR-FUND-02 的 PUNISH、BR-FUND-07 由编排者补充摘录。
+# 本线技术取舍（由编排者摘进任务书第 9 节）：判定顺序 缺列 invalid_row → 平台不符 platform_mismatch → 只有主订单号 sub_order_no_missing（不展开）→ 子订单不在本系统 order_not_found → 带时间窗时按付款时间 / 收货时间筛 [from, to)（窗外 skipped，收货口径无 received_at → received_at_missing）；
+#   违规单 status=SUCCEEDED、维权单状态按表头映射（J-13；表头待验证，方案 K-3）；端口返回 duplicate 计 duplicate_rows、不报错；失败明细只插入；端口未注入时任务记 failed 并告警、不写 order_rights（J-22）。
+refs: [BR-FUND-06]
+refs_hash:
+  BR-FUND-06: 2076b932478c
+deps: [B1-09g, B1-09c]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/rights-import-rows/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/rights-import-rows/**'
+status: todo
