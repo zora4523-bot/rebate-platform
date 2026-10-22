@@ -1,0 +1,23 @@
+id: B2-04wa
+repo: rebate-platform
+title: 资产快照告警持久化：platform/events 登记 asset_snapshot.timed_out、union_receivable.exposure_exceeded，经 EVENT_BUS 实现 ledger 的 AssetSnapshotAlertQueue（同事务入队、幂等键 app_id + 会计日 + 类型），组装时设为必需
+type: impl
+# 2026-10-23 资金线（编排 D10-188 ①A：B2-04w money r2 S1「告警持久化」转为本任务验收）。分工：Codex / Opus。
+# 状态备注：排在 B2-04x 之后的下一项，须在任何真实资金流转（staging 接真实联盟结算 / 打款）之前落地；R-03 启动自检把该端口列入生产必需清单。events 套件清单的 test-change 另开、照规矩请编排标签。
+refs: [BR-FUND-18, BR-FUND-20]
+refs_hash:
+  BR-FUND-18: c7ebd23ee75e
+  BR-FUND-20: 01dc2440638f
+deps: [B2-04w]
+paths:
+  - 'apps/api/src/modules/platform/events/**'
+  - 'apps/api/src/modules/ledger/**'
+test_paths:
+  - 'test/spec/ledger/asset-snapshot-alerts/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/asset-snapshot-alerts/**'
+status: todo
+pr: null
