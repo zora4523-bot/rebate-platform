@@ -42,6 +42,11 @@ export type {
   CatalogProductSummary,
 } from './application/product-reader.ts';
 export { createDbCatalogProductReader } from './infra/product-reader-wiring.ts';
+// B3-03j: the uncached union search and detail sides, for the stream entry's Agent tools (app.module
+// wires them; the Agent reads fresh, outside the HTTP search session and the detail cache).
+export { createUnionSearchUpstream } from './infra/search-wiring.ts';
+export type { UnionSearchUpstreamOptions } from './infra/search-wiring.ts';
+export { createUnionDetailUpstream } from './infra/detail-wiring.ts';
 export { PRODUCT_CACHE_NAMESPACE } from './infra/product-cache.ts';
 export { createCatalog } from './application/catalog.ts';
 export { SEARCH_SEEN_LIMIT, SEARCH_SESSION_TTL_SECONDS, searchProducts } from './search.ts';

@@ -11,7 +11,12 @@ import {
   createAdminDisplayNameReader,
   createAuditWriter,
 } from './modules/admin/index.ts';
-import { AgentModule } from './modules/agent/index.ts';
+import {
+  AgentModule,
+  agentStreamPortsToken,
+  createProductionStreamAssembly,
+  type AgentStreamProvidedPorts,
+} from './modules/agent/index.ts';
 import {
   CatalogModule,
   GovernedUnion,
@@ -19,7 +24,10 @@ import {
   LinkRegistrar,
   RebateQuoter,
   createCatalog,
+  createCatalogCardEntry,
   createDbCatalogProductReader,
+  createUnionDetailUpstream,
+  createUnionSearchUpstream,
   createDemoRebateQuoter,
   createItemRefService,
   processItemRefCipher,
@@ -153,6 +161,8 @@ import {
   createUnionAuthReads,
   type UnionAuthReads,
   createUnavailableAttrCodeReader,
+  createLinkRegistration,
+  createSourceLinkReader,
   inOpenReads,
   loadLinkOpenApps,
   openScopedConfig,
@@ -187,6 +197,7 @@ import {
   createParsing,
   parseUrl,
   type ParseScene,
+  type ParsingOptions,
 } from './modules/parsing/index.ts';
 import {
   APP_CONFIG,
@@ -243,6 +254,8 @@ import {
   UNION_REGISTRY,
   UnionModule,
   createGovernedAdapter,
+  createUnionPidService,
+  isRegisteredPlatform,
   type RegisteredPlatform,
   type UnionAdapter,
   type UnionEndpoint,
@@ -1646,6 +1659,189 @@ function parsingPorts(): DynamicModule {
   };
 }
 
+/** Agent search pages: the tool's page size when it gives none (the tool always gives one). */
+const AGENT_SEARCH_PAGE_SIZE = 20;
+
+/**
+ * B3-03j: the stream entry's Agent business ports (agentStreamPortsToken()), assembled here so
+ * agent imports neither union, catalog, linking, parsing nor identity, over the same building
+ * blocks as the api entry: the process's governed union adapters (governedUnion), the process
+ * quoter (assembleQuoter: demo outside prod / live, commission's otherwise), the item_ref keyring
+ * rule of LINK_OPEN_PORTS, and parsing's parseUrl / parseToken options (no card assembly there).
+ * - searchProducts: one uncached union page per platform (the Agent re-reads every call; no HTTP
+ *   search session, no detail cache). The union DTO has no category or sales yet.
+ * - readProduct: a fresh union detail by the app's stored product reference (product_refs), never
+ *   a displayed price; no reference → the lookup fails and the tool answers tool_failed.
+ * - cards(context, registration): built per tool call from that call's server-side identity,
+ *   linking's registration in scene agent with the call's agent session (register only, never a
+ *   conversion: TRADE-03); attr_code through identity's reader, pids through union's pid service.
+ * Without a database handle the value is null (the stream runtime is null then as well).
+ */
+@Module({})
+class AgentStreamPortsModule {}
+
+function agentStreamPorts(union: DynamicModule): DynamicModule {
+  return {
+    module: AgentStreamPortsModule,
+    global: true,
+    imports: [union],
+    providers: [
+      {
+        provide: agentStreamPortsToken(),
+        inject: [
+          APP_CONFIG,
+          UNION_REGISTRY,
+          UNION_ENDPOINTS,
+          CLOCK,
+          ROOT_LOGGER,
+          { token: FIELD_CRYPTO, optional: true },
+          { token: DB, optional: true },
+        ],
+        useFactory: (
+          appConfig: AppConfig,
+          registry: UnionRegistry,
+          endpoints: readonly UnionEndpoint[],
+          clock: Clock,
+          logger: RootLogger,
+          crypto?: FieldCrypto,
+          db?: Kysely<Database>,
+        ): AgentStreamProvidedPorts | null => {
+          if (db === undefined) return null;
+          if (crypto === undefined && appConfig.appEnv !== 'local' && appConfig.appEnv !== 'test') {
+            throw new Error('agent: item_ref needs the field keyring outside local / test');
+          }
+          const union = governedUnion(registry, endpoints);
+          const config = createContentReader({ db, clock });
+          const catalog = createCatalog({
+            db,
+            clock,
+            warn: (event: CatalogWarning) => {
+              logger.warn(
+                { event: `catalog_${event.kind}`, product_key: event.key },
+                'product_key alias chain not resolved',
+              );
+            },
+          });
+          const { quoter } = assembleQuoter(appConfig, endpoints, config, clock, db);
+          const itemRefs = createItemRefService({ crypto: crypto ?? processItemRefCipher() });
+          const attrCodes = createIdentityAttrCodeReader(db);
+          const pidService = createUnionPidService({
+            db,
+            clock,
+            superVerifier: { verify: () => Promise.resolve(null) },
+            auditWriter: () => ({
+              append: () =>
+                Promise.reject(new Error('agent: union pid writes are not served here')),
+            }),
+          });
+          const pids = { getActivePid: pidService.getActivePid.bind(pidService) };
+          const sourceLinks = createSourceLinkReader(db);
+          const search = createUnionSearchUpstream({ union, catalog, config, clock, ledger: null });
+          const detail = createUnionDetailUpstream({ union });
+          const parsing: ParsingOptions = {
+            config,
+            catalog,
+            cards: NO_PARSE_CARDS,
+            clock,
+            getGovernedAdapter: (platform) => union.adapter(platform),
+            logger,
+          };
+          return {
+            platforms: REGISTERED_PLATFORMS,
+            async searchProducts(query, context, page) {
+              const result = await search.search({
+                appId: context.appId,
+                platform: query.platform,
+                keyword: query.q,
+                pageNo: page,
+                pageSize: query.limit ?? AGENT_SEARCH_PAGE_SIZE,
+                sort: query.sort === 'sales_desc' ? 'sales_desc' : 'relevance',
+                ...(query.price_min_fen === undefined ? {} : { priceMinFen: query.price_min_fen }),
+                // The uncached union side reads no promotion slot (search-wiring.ts).
+                promotionSlot: '',
+              });
+              // TODO(规划/11 §4.5): 候选的类目 ID 与销量 — blocked on 联盟 DTO 增加类目与销量字段（UnionItem 目前没有）
+              return result.items.map((candidate) => ({
+                ...candidate,
+                categoryId: '',
+                sales: null,
+              }));
+            },
+            async readProduct(productKey, context) {
+              const key = await catalog.resolveProductKey(productKey);
+              const prefix = key.slice(0, key.indexOf(':'));
+              const platform = (await catalog.listPlatforms()).find(
+                (row) => row.key_prefix === prefix,
+              )?.code;
+              if (platform === undefined || !isRegisteredPlatform(platform)) {
+                throw new Error('agent: product platform has no union adapter');
+              }
+              const ref = await catalog.readProductRef({
+                appId: context.appId,
+                platform,
+                productKey: key,
+              });
+              if (ref === null) throw new Error('agent: product has no stored reference');
+              const jdMode =
+                platform === 'jd'
+                  ? ((await config.configValue(context.appId, 'product_key.jd.mode'))?.value ??
+                    'item')
+                  : undefined;
+              const item = await detail.detail({
+                appId: context.appId,
+                productKey: key,
+                platform,
+                rawItemId: ref.rawItemId,
+                ...(jdMode === undefined ? {} : { jdMode: String(jdMode) }),
+              });
+              if (item.platform !== platform)
+                throw new Error('agent: union detail platform differs');
+              // One fresh snapshot: the card's quote and the link's snapshot come from this read.
+              return {
+                item,
+                ref: {
+                  ...ref,
+                  rawFetchedAt: item.quoted_at,
+                  receivedAt: clock.now().toISOString(),
+                },
+              };
+            },
+            parsing,
+            cards(context, registration) {
+              const caller = {
+                appId: context.appId,
+                userId: context.userId,
+                deviceId: context.deviceId,
+              };
+              const current = () => Promise.resolve(caller);
+              const registrar = createLinkRegistration({
+                db,
+                clock,
+                callerContext: { current },
+                attrCodes,
+                config,
+                pids,
+                context: registration,
+                logger,
+              });
+              return createCatalogCardEntry({
+                clock,
+                logger,
+                viewerContext: { current },
+                quoter,
+                registrar,
+                sourceLinks,
+                itemRefs,
+              });
+            },
+          };
+        },
+      },
+    ],
+    exports: [agentStreamPortsToken()],
+  };
+}
+
 /**
  * The risk module of the `api` entry: stage ① (device signing keys from identity) and stage ④a,
  * whose minimum supported version port is content's reader of app_versions (same assembly as
@@ -1845,7 +2041,9 @@ export class AppModule {
     // Stage ⑥ (B1-15m) is assembled on stream alone, in streamRiskModule's two lists.
     // One module object per import: Nest builds union and linking once.
     const union =
-      options.entry === 'api' || options.entry === 'worker' ? UnionModule.forRoot() : undefined;
+      options.entry === 'api' || options.entry === 'worker' || options.entry === 'stream'
+        ? UnionModule.forRoot()
+        : undefined;
     const linking =
       options.entry === 'api'
         ? LinkingModule.forRoot((db, clock) => createContentReader({ db, clock }), {
@@ -2026,11 +2224,16 @@ export class AppModule {
         ...(options.entry === 'worker' && union !== undefined
           ? [OrdersModule.forWorker(orderSyncPorts(union))]
           : []),
-        ...(options.entry === 'stream'
+        // B3-03j: the Agent's business ports (union / catalog / linking / parsing) and its
+        // production assembly; input check, sentence review and model routing stay minimal
+        // (B3-03m, B3-03k).
+        ...(options.entry === 'stream' && union !== undefined
           ? [
+              agentStreamPorts(union),
               AgentModule.forStream({
                 consentReader: createAiConsentReader,
                 callerReader: createAgentCallerReader,
+                assembly: createProductionStreamAssembly,
               }),
             ]
           : []),
