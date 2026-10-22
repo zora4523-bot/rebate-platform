@@ -3320,6 +3320,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/users/{user_id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit a user's phone number and nickname (编辑会员信息)
+         * @description Permission point `user.phone_change` (04 §11.2; since 2026-10-05 it covers the nickname as
+         *     well, the key is unchanged); lacking it is 10403 with `data.reason=admin_permission_denied`.
+         *     Step-up: totp tier (without a valid totp-tier `X-Step-Up-Token` → 10003 with
+         *     `data.tier=totp`). The console's edit of member information after the customer service
+         *     checked the user's identity in the WeCom conversation (BR-ID-06 细则「客服代办换号」,
+         *     BR-ID-39 细则「后台改昵称」): only `phone` and `nickname` are edited here, the real-name
+         *     data goes through `user.realname_fix` (BR-ID-25) and the balance through `fund.adjust`
+         *     (BR-FUND-24). The save takes effect at once and the new number is not verified: no SMS to
+         *     it, no confirmation in the app, no code asked of the user.
+         *     Body checks (20001 with `data.fields` naming the field): `reason` is required (1–200
+         *     characters; what was checked in the WeCom conversation); at least one of `phone` and
+         *     `nickname`, neither is 20001 with `data.fields=[phone, nickname]`; `phone` is normalised as
+         *     in BR-ID-05 细则「手机号规范化」, a result that is not a mainland mobile number is 20001
+         *     with `data.fields=[phone]` and `data.reason=phone_invalid`; `nickname`, trimmed of leading
+         *     and trailing white space, must be 1–16 extended grapheme clusters, else 20001 with
+         *     `data.fields=[nickname]` (BR-ID-39). An unknown `user_id`, or one of another app, is 20001
+         *     with `data.fields=[user_id]`.
+         *     Unchanged fields: a field equal to the user's current value is treated as not edited — the
+         *     phone compared after normalisation with the current number, the nickname after trimming.
+         *     A field not edited is not written, triggers no session revocation, no blacklist or
+         *     occupancy check and no content-safety review.
+         *     Checks of an edited phone, in this order (BR-ID-06): the number is blacklisted → 44001;
+         *     the number belongs to another account of this app, judged by the normalised phone_hmac
+         *     and including accounts in the deletion cooling period or processing → 30411 without
+         *     `data.reason` (never `mergeable`: the console does not merge accounts, a merge only
+         *     happens with the user's own confirmation). The number of an account whose deletion is
+         *     complete may be used. An edited nickname then goes through content-safety text review: a
+         *     hit, or a review that times out (fail-close), is 20001 with
+         *     `data.reason=nickname_sensitive`. Any of these refuses the whole save; nothing is
+         *     written.
+         *     Effects, in one transaction: an edited phone overwrites users.phone_cipher / phone_hmac,
+         *     the old phone_hmac is written to deleted_identities (reason=phone_changed, retention
+         *     BR-ID-30), and every session of the user is revoked (each device's refresh-token family
+         *     and session sid, as in BR-ID-07); the user signs in again with the new number, the
+         *     revoked devices get 10404. Access tokens already issued expire by their BR-ID-07
+         *     lifetime. A nickname-only edit revokes nothing. An edited nickname is not counted in the
+         *     user's 3 changes per natural month (BR-ID-39) and does not use up the user's remaining
+         *     changes (no 30415 here). Every successful save writes one audit record (action
+         *     user_profile_edit: admin, reason, the fields actually changed with before and after
+         *     values, phone numbers masked 3 + 4; with no field changed the changed fields are empty).
+         *     Retrying a save that already took effect therefore returns the same user and only adds
+         *     an audit record. The response is the user as GET /admin/v1/users/{user_id} returns it
+         *     now, phone number masked. No compare-and-set value and no Idempotency-Key (04 §6.6).
+         */
+        patch: operations["adminEditUserProfile"];
+        trace?: never;
+    };
     "/admin/v1/orders": {
         parameters: {
             query?: never;
@@ -10090,6 +10152,25 @@ export interface components {
         AdminUserInviterChangeRequest: {
             /** @description user_id of the new inviter; null removes the inviter (BR-INV-10). */
             inviter_user_id: components["schemas"]["Id"] | null;
+            reason: components["schemas"]["AdminUserReason"];
+        };
+        /**
+         * @description Body of PATCH /admin/v1/users/{user_id}/profile (BR-ID-06 细则「客服代办换号」, BR-ID-39
+         *     细则「后台改昵称」): `reason` and at least one of `phone` and `nickname`.
+         */
+        AdminUserProfileEditRequest: {
+            /**
+             * @description The new phone number, normalised by the server (BR-ID-05 细则「手机号规范化」); equal to
+             *     the current number after normalisation means not edited.
+             */
+            phone?: components["schemas"]["Phone"];
+            /**
+             * @description The new nickname. The server trims leading and trailing white space and checks the
+             *     length as 1–16 extended grapheme clusters (BR-ID-39); no minLength / maxLength here
+             *     because JSON Schema counts code points. Equal to the current nickname after trimming
+             *     means not edited.
+             */
+            nickname?: string;
             reason: components["schemas"]["AdminUserReason"];
         };
         /**
@@ -18719,6 +18800,84 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminEditUserProfile: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+                /**
+                 * @description step_up_token from POST /admin/v1/auth/step-up, whose tier the operation checks (BR-ID-34;
+                 *     tier per permission point in GET /admin/v1/me/permissions). Missing, expired or of a lower
+                 *     tier than the operation needs → 10003 with data.tier (not 20001; that is why the header is
+                 *     optional). Only on admin console operations; app operations use StepUpToken.
+                 */
+                "X-Step-Up-Token"?: components["parameters"]["AdminStepUpToken"];
+            };
+            path: {
+                /** @description user_id of an app user of the console's app; unknown → 20001 with data.fields=[user_id]. */
+                user_id: components["parameters"]["AdminUserIdPath"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserProfileEditRequest"];
+            };
+        };
+        responses: {
+            /** @description The user as it is now, after the edit. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "user_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01",
+                     *         "nickname": "凑狸用户5678",
+                     *         "phone_masked": "139****1234",
+                     *         "invite_code": "K7QX2M",
+                     *         "inviter_user_id": null,
+                     *         "level": "L1",
+                     *         "register_method": "sms",
+                     *         "registered_channel": "appstore",
+                     *         "created_at": "2026-10-12T09:00:00+08:00",
+                     *         "risk": {
+                     *           "state": "normal",
+                     *           "reason_category": null,
+                     *           "reason": null,
+                     *           "frozen_until": null,
+                     *           "changed_by": null,
+                     *           "changed_at": null,
+                     *           "row_version": null
+                     *         },
+                     *         "union_bindings": []
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUserDetailResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not saved (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

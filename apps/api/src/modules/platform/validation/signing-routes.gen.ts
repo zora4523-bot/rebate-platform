@@ -572,6 +572,11 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "PATCH",
+    "path": "/admin/v1/users/:user_id/profile",
+    "signed": false
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/orders",
     "signed": false

@@ -572,6 +572,11 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "admin"
   },
   {
+    "method": "PATCH",
+    "path": "/admin/v1/users/:user_id/profile",
+    "auth": "admin"
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/orders",
     "auth": "admin"
