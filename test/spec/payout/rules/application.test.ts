@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest';
+import { createValidatorCompiler } from '../../../../apps/api/src/modules/platform/validation/index.ts';
 import {
   createDefaultFeeTaxCalculator,
   createWithdrawRules,
@@ -6,6 +7,7 @@ import {
   type WithdrawHold,
 } from '../../../../apps/api/src/modules/payout/application/withdraw-rules.ts';
 import { actor, applicationFixture, input, limits } from './fixtures.ts';
+import { contract } from './http-kit.ts';
 
 it('[AC-B2-05c#30] 配置缺失使用全部默认值，并带 app_id 与调用方句柄', async () => {
   const f = applicationFixture();
@@ -314,8 +316,8 @@ it('[AC-B2-05c#42] 黑名单端口附加文案码透传，接收当前收款账�
 });
 
 it.each([
-  ['2026-10-01T15:59:59.999Z', false],
-  ['2026-10-01T16:00:00.000Z', true],
+  ['2026-10-02T15:59:59.999Z', false],
+  ['2026-10-02T16:00:00.000Z', true],
 ] as const)('[AC-B2-05c#43] 18 岁 +08:00 生日边界 %s 自动失效 cap=0', async (now, adult) => {
   const f = applicationFixture();
   f.clock.set(now);
@@ -404,4 +406,19 @@ it('[AC-B2-05c#46] 全部读取在调用方句柄，身份、app_id、时钟由�
     payeeHmac: 'a'.repeat(64),
   });
   expect(f.options.holds.read).toHaveBeenCalledWith(f.handle, actor);
+});
+
+it('[AC-B2-05c#47] getRules 真实输出在可提现与劳务协议阻断时均符合契约', async () => {
+  const schema = (await contract()).components.schemas['WithdrawRules'];
+  expect(schema).toBeDefined();
+  const validate = createValidatorCompiler()({ schema: schema!, httpPart: 'body' });
+  const f = applicationFixture();
+  const service = createWithdrawRules(f.options);
+  const allowed = await service.getRules(f.handle, actor);
+  expect(allowed).toMatchObject({ can_withdraw: true, block_code: null });
+  expect(validate(allowed), JSON.stringify(validate.errors)).toBe(true);
+  vi.mocked(f.options.laborAgreementSigned).mockResolvedValue(false);
+  const blocked = await service.getRules(f.handle, actor);
+  expect(blocked).toMatchObject({ can_withdraw: false, block_code: 10004 });
+  expect(validate(blocked), JSON.stringify(validate.errors)).toBe(true);
 });

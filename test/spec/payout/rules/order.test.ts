@@ -105,6 +105,25 @@ const steps: readonly {
     rules: true,
   },
   {
+    name: '⑦ frozen',
+    mutate: (v) => {
+      v.risk_state = 'frozen';
+    },
+    code: 30303,
+    data: { reason: 'account_frozen' },
+    rules: true,
+  },
+  {
+    name: '⑦ appealing-frozen',
+    mutate: (v) => {
+      v.risk_state = 'appealing';
+      v.prev_risk_state = 'frozen';
+    },
+    code: 30303,
+    data: { reason: 'account_frozen' },
+    rules: true,
+  },
+  {
     name: '⑧ negative',
     mutate: (v) => {
       v.available_fen = -1n;
@@ -335,6 +354,14 @@ it('[AC-B2-05c#17] 未成年自定义月额度即时生效，不硬编码默认 
     data: { remaining_fen: 300n },
   });
   expect(withdrawalRules(value)).toMatchObject({ can_withdraw: true, max_withdrawable_fen: 300n });
+});
+
+it('[AC-B2-05c#18] 余额等于申请金额可过，少 1 分返回余额不足', () => {
+  const value = input();
+  value.available_fen = 10000n;
+  expect(validateWithdrawal(value, 10000n, 10000n)).toBeNull();
+  value.available_fen = 9999n;
+  expect(validateWithdrawal(value, 10000n, 10000n)).toEqual({ code: 30301, data: {} });
 });
 
 it.each([

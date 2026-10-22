@@ -6,6 +6,8 @@ import { createTestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { createWithdrawUsageReader } from '../../../../apps/api/src/modules/payout/infra/withdraw-usage.ts';
+import { createWithdrawHoldsReader } from '../../../../apps/api/src/modules/payout/infra/withdraw-holds.ts';
+import type { WithdrawHold } from '../../../../apps/api/src/modules/payout/application/withdraw-rules.ts';
 import { createWithdrawSubjectReader } from '../../../../apps/api/src/modules/identity/ports/withdraw-subject.ts';
 import { createAppealPrevStateReader } from '../../../../apps/api/src/modules/risk/ports/appeal-prev-state.ts';
 import { createBlocklistMatchReader } from '../../../../apps/api/src/modules/risk/ports/blocklist-match.ts';
@@ -272,3 +274,34 @@ it.each(['phone', 'id_no', 'device', 'alipay', 'bank_card', 'wechat_openid'] as 
     });
   },
 );
+
+it('[AC-B2-05c#68] holds 原样读取本 app 本用户全部记录，并看到调用方事务未提交行', async () => {
+  const reader = createWithdrawHoldsReader();
+  const f = await fixture();
+  const foreignApp = `other_${randomUUID()}`;
+  const foreignUid = await user(db, foreignApp);
+  const expected: WithdrawHold[] = [
+    { reason: 'ledger_mismatch', released_at: null, hold_until: null },
+    { reason: 'manual', released_at: new Date('2026-09-30T00:00:00Z'), hold_until: null },
+    { reason: 'recon_diff', released_at: null, hold_until: new Date('2026-09-30T00:00:00Z') },
+  ];
+  await sql`INSERT INTO app.withdraw_holds (id, app_id, user_id, reason, created_by)
+    VALUES (${randomUUID()}, ${foreignApp}, ${foreignUid}, 'manual_failed_watch', 'synthetic')`.execute(
+    db,
+  );
+  await db.transaction().execute(async (trx) => {
+    for (const row of expected) {
+      await sql`INSERT INTO app.withdraw_holds
+        (id, app_id, user_id, reason, created_by, hold_until, released_at, released_by)
+        VALUES (${randomUUID()}, ${f.app}, ${f.uid}, ${row.reason}, 'synthetic',
+          ${row.hold_until}, ${row.released_at}, ${row.released_at === null ? null : 'synthetic'})`.execute(
+        trx,
+      );
+    }
+    const rows = await reader.read(trx, f.query);
+    expect(rows).toHaveLength(3);
+    expect(rows).toEqual(expect.arrayContaining(expected));
+    expect(await reader.read(trx, { ...f.query, appId: foreignApp })).toEqual([]);
+    expect(await reader.read(trx, { ...f.query, userId: foreignUid })).toEqual([]);
+  });
+});

@@ -22,4 +22,5 @@ export type {
   WithdrawHold,
 } from './application/withdraw-rules.ts';
 export { createWithdrawUsageReader } from './infra/withdraw-usage.ts';
+export { createWithdrawHoldsReader } from './infra/withdraw-holds.ts';
 export { PayoutModule } from './payout.module.ts';
