@@ -18,6 +18,7 @@ import {
   createRedisGenerationGate,
   createRedisGenerationRenewal,
   isRedisGenerationArmed,
+  processRedisGenerationGate,
   startRedisGenerationRenewal,
   type RedisGenerationSchedule,
 } from './redis-generation.ts';
@@ -43,14 +44,64 @@ it('[R-04] the generation TTL is 30 renewal intervals of 60 seconds', () => {
   expect(REDIS_GENERATION_TTL_SECONDS).toBe(1_800);
 });
 
-it('[R-04] armRedisGeneration switches the process on for staging / prod only', () => {
-  expect(armRedisGeneration('prod')).toBe(true);
-  expect(isRedisGenerationArmed()).toBe(true);
-  expect(armRedisGeneration('local')).toBe(false);
+it('[R-04] armRedisGeneration switches the process on for staging / prod only (with the entry logger)', () => {
+  const logger = createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' });
+  const clock = new FixedClock(T0);
+  try {
+    expect(armRedisGeneration('prod', logger)).toBe(true);
+    expect(isRedisGenerationArmed()).toBe(true);
+    expect(processRedisGenerationGate(undefined, clock)?.reserveNonce).toEqual(
+      expect.any(Function),
+    );
+    expect(armRedisGeneration('local', logger)).toBe(false);
+    expect(isRedisGenerationArmed()).toBe(false);
+    expect(processRedisGenerationGate(undefined, clock)).toBeUndefined();
+    expect(armRedisGeneration('staging', logger)).toBe(true);
+    expect(armRedisGeneration('prod')).toBe(false);
+    expect(armRedisGeneration('test', logger)).toBe(false);
+  } finally {
+    armRedisGeneration('test');
+  }
   expect(isRedisGenerationArmed()).toBe(false);
-  expect(armRedisGeneration('staging')).toBe(true);
-  expect(armRedisGeneration('test')).toBe(false);
-  expect(isRedisGenerationArmed()).toBe(false);
+});
+
+it('[R-04] reserveNonce: one script with both keys; refused in the period (warn on creation, no nonce), reserved or replay after it', async () => {
+  const created = Date.parse(T0);
+  let reply: unknown = [1, String(created), 0];
+  const h = harness(() => reply);
+  const gate = createRedisGenerationGate({
+    redis: h.redis,
+    clock: h.clock,
+    logger: h.logger,
+    enabled: true,
+  });
+  await expect(gate.reserveNonce!('nonce:couli:d:n')).rejects.toBeInstanceOf(
+    RedisGenerationRefusalError,
+  );
+  expect(h.evalFn).toHaveBeenCalledTimes(1);
+  expect(h.evalFn.mock.calls[0]![1]).toEqual({
+    keys: ['generation', 'nonce:couli:d:n'],
+    args: [String(created), String(REDIS_GENERATION_TTL_SECONDS), String(NONCE_TTL_SECONDS * 1000)],
+    ttlSeconds: NONCE_TTL_SECONDS,
+  });
+  expect(h.logs().filter((line) => line['level'] === 40)).toHaveLength(1);
+  reply = [0, String(created), 0];
+  await expect(gate.reserveNonce!('nonce:couli:d:n')).rejects.toBeInstanceOf(
+    RedisGenerationRefusalError,
+  );
+  expect(h.logs().filter((line) => line['level'] === 40)).toHaveLength(1);
+  h.clock.advanceMs(NONCE_TTL_SECONDS * 1000);
+  reply = [0, String(created), 1];
+  await expect(gate.reserveNonce!('nonce:couli:d:n')).resolves.toBe(true);
+  reply = [0, String(created), 2];
+  await expect(gate.reserveNonce!('nonce:couli:d:n')).resolves.toBe(false);
+  // Redis and the process must agree on the period; anything else fails closed.
+  for (const bad of [[0, String(created), 0], [0, String(created), 3], [0, 'x', 1], null, 'OK']) {
+    reply = bad;
+    await expect(gate.reserveNonce!('nonce:couli:d:n')).rejects.toBeInstanceOf(
+      RedisUnavailableError,
+    );
+  }
 });
 
 it('[R-04] the gate creating the key sends now and the TTL, refuses, and logs one flat warn line', async () => {

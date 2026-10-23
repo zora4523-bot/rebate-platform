@@ -215,7 +215,7 @@ async function start(
 ): Promise<void> {
   // R-04 (B1-02zi, 9.2 #5): the entry injects the Redis generation switch by APP_ENV (staging /
   // prod on, local / test off) before the application is built.
-  armRedisGeneration(config.appEnv);
+  armRedisGeneration(config.appEnv, logger);
   if (isHttpEntry(entry)) {
     // startQueue: false — this runner starts JOB_QUEUE itself below, after init and its exit /
     // signal checks and before listen, so the production start order stays as it was (B1-12g).

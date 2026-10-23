@@ -49,6 +49,14 @@ export interface RedisGenerationOptions {
 export interface RedisGenerationGate {
   /** Resolves: the request may reserve its nonce. Rejects: refuse it (answered 50001). */
   admit(): Promise<void>;
+  /**
+   * Present on an enabled gate (createRedisGenerationGate): the generation check, the refusal
+   * period and the nonce SET NX in ONE atomic script (one round trip, one Redis state). Resolves
+   * true (nonce reserved) or false (nonce already reserved: a replay); rejects in the refusal
+   * period (RedisGenerationRefusalError, no nonce reserved) or on a failing Redis. Stage ① uses it
+   * instead of admit() followed by a separate reservation.
+   */
+  readonly reserveNonce?: (nonceKey: string) => Promise<boolean>;
 }
 
 export interface RedisGenerationRenewalOptions {
@@ -124,6 +132,32 @@ const RENEW_SCRIPT = [
   'return 2',
 ].join('\n');
 
+/**
+ * The gate and the nonce reservation in one atomic script (S2 of review r1).
+ * KEYS[1] generation key, KEYS[2] nonce key; ARGV[1] the nonce TTL (platform/redis's TTL slot),
+ * ARGV[2] now (epoch ms), ARGV[3] the generation TTL, ARGV[4] the refusal period (ms).
+ * Missing generation → SET NX now. Reply {created, value, status}: status 0 refused (no nonce
+ * written), 1 nonce reserved, 2 nonce already reserved (replay), 3 the value is no instant.
+ * The comparison runs on the shared value inside Redis, never on a process's own instant.
+ */
+const RESERVE_SCRIPT = [
+  'local created = 0',
+  "local value = redis.call('GET', KEYS[1])",
+  'if not value then',
+  "  redis.call('SET', KEYS[1], ARGV[2], 'NX', 'EX', ARGV[3])",
+  '  value = ARGV[2]',
+  '  created = 1',
+  'end',
+  "if not string.match(value, '^[0-9]+$') then return {created, value, 3} end",
+  'if tonumber(ARGV[2]) < tonumber(value) + tonumber(ARGV[4]) then',
+  '  return {created, value, 0}',
+  'end',
+  "if redis.call('SET', KEYS[2], '1', 'NX', 'EX', ARGV[1]) then",
+  '  return {created, value, 1}',
+  'end',
+  'return {created, value, 2}',
+].join('\n');
+
 /** Decimal epoch milliseconds, as this module writes them. */
 const INSTANT = /^[0-9]{1,16}$/;
 
@@ -158,11 +192,32 @@ export function isRedisGenerationEnabled(appEnv: AppEnv): boolean {
  * build the gate and the renewal.
  */
 let armed = false;
+/** The entry's root logger, for the gate a verifier builds itself (processRedisGenerationGate). */
+let armedLogger: RootLogger | undefined;
 
 /** entry.ts only, before the application is built: on for APP_ENV staging / prod, else off. */
-export function armRedisGeneration(appEnv: AppEnv): boolean {
-  armed = isRedisGenerationEnabled(appEnv);
+export function armRedisGeneration(appEnv: AppEnv, logger?: RootLogger): boolean {
+  armed = isRedisGenerationEnabled(appEnv) && logger !== undefined;
+  armedLogger = armed ? logger : undefined;
   return armed;
+}
+
+/**
+ * The gate of a signature verifier built without an explicit `generation` (S1 of review r1:
+ * identity's recordConsent clipboard check): the armed process gate over the verifier's own Redis
+ * and clock, or undefined when the entry did not arm it (behaviour unchanged).
+ */
+export function processRedisGenerationGate(
+  redis: Pick<RedisHandle, 'namespace'> | undefined,
+  clock: Clock,
+): RedisGenerationGate | undefined {
+  if (!armed || armedLogger === undefined) return undefined;
+  return createRedisGenerationGate({
+    clock,
+    logger: armedLogger,
+    enabled: true,
+    ...(redis === undefined ? {} : { redis }),
+  });
 }
 
 /** Whether this process's entry armed the generation gate and renewal. */
@@ -193,7 +248,42 @@ export function createRedisGenerationGate(options: RedisGenerationOptions): Redi
   }
   if (enabled !== true) return Object.freeze({ admit: () => Promise.resolve() });
   const store: RedisNamespace | undefined = options.redis?.namespace(NAMESPACE);
+  const refuse = (created: boolean, createdAt: number): never => {
+    if (created) {
+      // 9.2 #6: one warn line when this process entered the period (it created the key).
+      logger.warn(
+        { generation_created_at: createdAt, refusal_ends_at: createdAt + REFUSAL_MS },
+        'redis_generation_refusal_started',
+      );
+    }
+    throw new RedisGenerationRefusalError();
+  };
   return Object.freeze({
+    async reserveNonce(nonceKey: string): Promise<boolean> {
+      if (store === undefined) {
+        throw new Error('risk: no Redis in this process; signed requests are refused');
+      }
+      const now = nowMs(clock);
+      const reply = await store.eval(RESERVE_SCRIPT, {
+        keys: [GENERATION_KEY, nonceKey],
+        args: [String(now), String(REDIS_GENERATION_TTL_SECONDS), String(REFUSAL_MS)],
+        ttlSeconds: NONCE_TTL_SECONDS,
+      });
+      if (
+        !Array.isArray(reply) ||
+        reply.length !== 3 ||
+        (reply[0] !== 0 && reply[0] !== 1) ||
+        ![0, 1, 2].includes(reply[2] as number)
+      ) {
+        throw new RedisUnavailableError('unexpected_reply');
+      }
+      const createdAt = instantOf(reply[1]);
+      const inPeriod = now < createdAt + REFUSAL_MS;
+      // Redis judged with the same instants; a disagreement is an unexpected reply.
+      if (inPeriod !== (reply[2] === 0)) throw new RedisUnavailableError('unexpected_reply');
+      if (inPeriod) return refuse(reply[0] === 1, createdAt);
+      return reply[2] === 1;
+    },
     async admit(): Promise<void> {
       if (store === undefined) {
         throw new Error('risk: no Redis in this process; signed requests are refused');
@@ -208,16 +298,8 @@ export function createRedisGenerationGate(options: RedisGenerationOptions): Redi
         throw new RedisUnavailableError('unexpected_reply');
       }
       const createdAt = instantOf(reply[1]);
-      const refusalEndsAt = createdAt + REFUSAL_MS;
-      if (now >= refusalEndsAt) return;
-      if (reply[0] === 1) {
-        // 9.2 #6: one warn line when this process entered the period (it created the key).
-        logger.warn(
-          { generation_created_at: createdAt, refusal_ends_at: refusalEndsAt },
-          'redis_generation_refusal_started',
-        );
-      }
-      throw new RedisGenerationRefusalError();
+      if (now >= createdAt + REFUSAL_MS) return;
+      refuse(reply[0] === 1, createdAt);
     },
   });
 }
