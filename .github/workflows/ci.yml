@@ -250,7 +250,7 @@ jobs:
       # with the same glyphs as in tools/ops/verify-container.sh. Installed before test:int
       # (CT-06ze, 2026-10-22) so a slow install fails fast instead of after the integration
       # tests; the browser download is cached per playwright version, the system libraries and
-      # fonts come from apt, their .deb files cached per runner image (CT-06zx3).
+      # fonts come from apt, their .deb files cached per runner image (CT-06zxb).
       - name: Read the pinned playwright version
         id: playwright
         run: |
@@ -266,7 +266,7 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
-      # D10-308 (CT-06zx3): the apt downloads of the next step are cached as .deb files. Two
+      # D10-308 (CT-06zxb): the apt downloads of the next step are cached as .deb files. Two
       # verify-int runs (#1451, #1452, 2026-10-23) were cut at 60 minutes after this step took
       # 34–37 minutes: the Azure Ubuntu mirror fell to ~40 kB/s and fonts-noto-cjk (61 MB) stalled
       # for 23 minutes before a retry. The key is the runner image (ImageOS / ImageVersion) and a

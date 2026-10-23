@@ -1,6 +1,6 @@
-id: CT-06zx3
+id: CT-06zxb
 repo: rebate-platform
-title: CT-06zx3：verify-int 的浏览器依赖安装步骤缓存 apt .deb、加下载超时与重试、单步 10 分钟上限（D10-308）
+title: CT-06zxb：verify-int 的浏览器依赖安装步骤缓存 apt .deb、加下载超时与重试、单步 10 分钟上限（D10-308）
 type: guard-change
 # 2026-10-24 入账（ops 线，编排裁定 D10-308）。起因：最近 120 轮 ci.yml 里 verify-int 在 60 分钟被取消的两轮（#1451 run
 # 40012028986、#1452 run 40013000324）都卡在「Install Chromium and the CJK fonts for the browser tests」：azure Ubuntu 镜像掉到
@@ -14,7 +14,7 @@ refs_hash: {}
 deps: []
 paths:
   - '.github/workflows/ci.yml'
-  - 'ops/tasks/CT-06zx3.yaml'
+  - 'ops/tasks/CT-06zxb.yaml'
 impl: claude
 tester: none
 accept:
