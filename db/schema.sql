@@ -580,6 +580,7 @@ $$;
 
 
 --
+<<<<<<< HEAD
 -- Name: pay_orders_reject_immutable_update(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -630,121 +631,32 @@ $$;
 
 
 --
--- Name: payout_accounts_reject_identifier_update(); Type: FUNCTION; Schema: app; Owner: -
---
-
-CREATE FUNCTION app.payout_accounts_reject_identifier_update() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$
-BEGIN
-  IF OLD.anonymized_at IS NOT NULL
-    AND NEW.anonymized_at IS DISTINCT FROM OLD.anonymized_at
-  THEN
-    RAISE EXCEPTION 'payout_accounts anonymized_at cannot be changed once set'
-      USING ERRCODE = 'restrict_violation';
-  END IF;
-  IF NOT (OLD.anonymized_at IS NULL AND NEW.anonymized_at IS NOT NULL)
-    AND (
-      NEW.alipay_logon_id_cipher IS DISTINCT FROM OLD.alipay_logon_id_cipher
-      OR NEW.alipay_hmac IS DISTINCT FROM OLD.alipay_hmac
-      OR NEW.bank_card_no_cipher IS DISTINCT FROM OLD.bank_card_no_cipher
-      OR NEW.bank_card_hmac IS DISTINCT FROM OLD.bank_card_hmac
-      OR NEW.bank_name IS DISTINCT FROM OLD.bank_name
-      OR NEW.card_bin IS DISTINCT FROM OLD.card_bin
-      OR NEW.payee_name IS DISTINCT FROM OLD.payee_name
-    )
-  THEN
-    RAISE EXCEPTION 'payout_accounts account columns can only change in the anonymizing update'
-      USING ERRCODE = 'restrict_violation';
-  END IF;
-  RETURN NEW;
-END
-$$;
-
-
---
 -- Name: reject_agent_card_rewrite(); Type: FUNCTION; Schema: app; Owner: -
+=======
+-- Name: payout_attempts_complete_once(); Type: FUNCTION; Schema: app; Owner: -
+>>>>>>> fa9bc592 (B2-06a: schema.sql / db.gen.ts 随迁移重生成（测试机 db:snapshot）)
 --
 
-CREATE FUNCTION app.reject_agent_card_rewrite() RETURNS trigger
+CREATE FUNCTION app.payout_attempts_complete_once() RETURNS trigger
     LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'pg_temp'
     AS $$
 BEGIN
-  IF (to_jsonb(NEW) - 'data'::text - 'fallback_text'::text)
-      IS DISTINCT FROM (to_jsonb(OLD) - 'data'::text - 'fallback_text'::text)
-    OR (NEW.data IS DISTINCT FROM OLD.data AND NEW.data IS DISTINCT FROM '{}'::jsonb)
-    OR (NEW.fallback_text IS DISTINCT FROM OLD.fallback_text
-        AND NEW.fallback_text IS DISTINCT FROM '内容已删除'::text)
-  THEN
-    RAISE EXCEPTION 'agent_cards only permits clearing data to {} and fallback_text to the placeholder'
-      USING ERRCODE = 'restrict_violation';
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'payout_attempts rows are never deleted' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF OLD.result <> 'pending' THEN
+    RAISE EXCEPTION 'payout_attempts: a settled attempt never changes' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.result = 'pending' THEN
+    RAISE EXCEPTION 'payout_attempts: completing an attempt needs a settled result' USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NEW.id IS DISTINCT FROM OLD.id OR NEW.app_id IS DISTINCT FROM OLD.app_id
+     OR NEW.withdrawal_id IS DISTINCT FROM OLD.withdrawal_id OR NEW.kind IS DISTINCT FROM OLD.kind
+     OR NEW.request IS DISTINCT FROM OLD.request OR NEW.at IS DISTINCT FROM OLD.at THEN
+    RAISE EXCEPTION 'payout_attempts: only the completion columns may change' USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
-END
-$$;
-
-
---
--- Name: reject_agent_result_chain_rewrite(); Type: FUNCTION; Schema: app; Owner: -
---
-
-CREATE FUNCTION app.reject_agent_result_chain_rewrite() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$
-BEGIN
-  IF (to_jsonb(NEW) - 'conditions'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'conditions'::text)
-    OR (NEW.conditions IS DISTINCT FROM OLD.conditions
-        AND NEW.conditions IS DISTINCT FROM jsonb_build_object('chain_id', OLD.chain_id))
-  THEN
-    RAISE EXCEPTION 'agent_result_chains only permits clearing conditions to its chain_id'
-      USING ERRCODE = 'restrict_violation';
-  END IF;
-  RETURN NEW;
-END
-$$;
-
-
---
--- Name: reject_agent_result_delivery_rewrite(); Type: FUNCTION; Schema: app; Owner: -
---
-
-CREATE FUNCTION app.reject_agent_result_delivery_rewrite() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$
-BEGIN
-  IF (to_jsonb(NEW) - 'card'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'card'::text)
-    OR (NEW.card IS DISTINCT FROM OLD.card AND NEW.card IS DISTINCT FROM '{}'::jsonb)
-  THEN
-    RAISE EXCEPTION 'agent_result_deliveries only permits clearing card to {}'
-      USING ERRCODE = 'restrict_violation';
-  END IF;
-  RETURN NEW;
-END
-$$;
-
-
---
--- Name: reject_agent_result_set_rewrite(); Type: FUNCTION; Schema: app; Owner: -
---
-
-CREATE FUNCTION app.reject_agent_result_set_rewrite() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$
-BEGIN
-  IF (to_jsonb(NEW) - 'conditions'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'conditions'::text)
-    OR (NEW.conditions IS DISTINCT FROM OLD.conditions
-        AND NEW.conditions IS DISTINCT FROM '{}'::jsonb)
-  THEN
-    RAISE EXCEPTION 'agent_result_sets only permits clearing conditions to {}'
-      USING ERRCODE = 'restrict_violation';
-  END IF;
-  RETURN NEW;
-END
+END;
 $$;
 
 
@@ -755,54 +667,14 @@ $$;
 CREATE FUNCTION app.reject_agent_run_rewrite() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $_$
+    AS $$
 BEGIN
   IF ROW(NEW.id, NEW.app_id, NEW.session_id, NEW.prompt_version, NEW.accepted_at,
-         NEW.created_at, NEW.deadline_at)
+         NEW.quota_subjects, NEW.created_at, NEW.deadline_at)
       IS DISTINCT FROM
       ROW(OLD.id, OLD.app_id, OLD.session_id, OLD.prompt_version, OLD.accepted_at,
-          OLD.created_at, OLD.deadline_at)
-    OR (NEW.quota_subjects IS DISTINCT FROM OLD.quota_subjects
-        AND NOT COALESCE(
-          array_ndims(NEW.quota_subjects) = 1
-          AND cardinality(NEW.quota_subjects) = cardinality(OLD.quota_subjects)
-          AND array_lower(NEW.quota_subjects, 1) = array_lower(OLD.quota_subjects, 1)
-          AND NOT EXISTS (
-            SELECT 1
-            FROM unnest(OLD.quota_subjects, NEW.quota_subjects) AS s(old_subject, new_subject)
-            WHERE old_subject IS DISTINCT FROM new_subject
-              AND NOT COALESCE(
-                old_subject ~ '^\["member","[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"\]$'
-                AND new_subject ~ '^\["member","[0-9a-f]{64}"\]$',
-                false)
-          ),
-          false))
-    OR (OLD.final_event IS NOT NULL
-        AND NEW.final_event IS DISTINCT FROM OLD.final_event
-        AND NOT CASE
-          WHEN jsonb_typeof(OLD.final_event) = 'object'
-            AND jsonb_typeof(NEW.final_event) = 'object'
-            AND jsonb_typeof(OLD.final_event -> 'data') = 'object'
-            AND jsonb_typeof(NEW.final_event -> 'data') = 'object'
-          THEN COALESCE(
-            (NEW.final_event - 'data'::text) = (OLD.final_event - 'data'::text)
-            AND ((NEW.final_event -> 'data') - 'msg'::text - 'fallback_q'::text)
-              = ((OLD.final_event -> 'data') - 'msg'::text - 'fallback_q'::text)
-            AND ((NEW.final_event -> 'data') ? 'msg'::text)
-              = ((OLD.final_event -> 'data') ? 'msg'::text)
-            AND ((NEW.final_event -> 'data') ? 'fallback_q'::text)
-              = ((OLD.final_event -> 'data') ? 'fallback_q'::text)
-            AND COALESCE(
-              (NEW.final_event -> 'data' -> 'msg') = (OLD.final_event -> 'data' -> 'msg')
-              OR (NEW.final_event -> 'data' -> 'msg') = 'null'::jsonb,
-              true)
-            AND COALESCE(
-              (NEW.final_event -> 'data' -> 'fallback_q') = (OLD.final_event -> 'data' -> 'fallback_q')
-              OR (NEW.final_event -> 'data' -> 'fallback_q') = 'null'::jsonb,
-              true),
-            false)
-          ELSE false
-        END)
+          OLD.quota_subjects, OLD.created_at, OLD.deadline_at)
+    OR (OLD.final_event IS NOT NULL AND NEW.final_event IS DISTINCT FROM OLD.final_event)
     OR (OLD.ended_at IS NOT NULL AND NEW.ended_at IS DISTINCT FROM OLD.ended_at)
     OR (OLD.end_reason IS NOT NULL AND NEW.end_reason IS DISTINCT FROM OLD.end_reason)
     OR (OLD.settle_result IS NOT NULL AND NEW.settle_result IS DISTINCT FROM OLD.settle_result)
@@ -810,41 +682,16 @@ BEGIN
     OR (OLD.card_delivered AND NOT NEW.card_delivered)
     OR (OLD.settle_result IS NOT NULL AND NEW.card_delivered IS DISTINCT FROM OLD.card_delivered)
     OR (NEW.user_text IS NOT NULL AND NEW.user_text IS DISTINCT FROM OLD.user_text)
-    OR (OLD.end_draft IS NOT NULL
-        AND NEW.end_draft IS DISTINCT FROM OLD.end_draft
-        AND NOT CASE
-          WHEN jsonb_typeof(OLD.end_draft) = 'object'
-            AND jsonb_typeof(NEW.end_draft) = 'object'
-            AND jsonb_typeof(OLD.end_draft -> 'data') = 'object'
-            AND jsonb_typeof(NEW.end_draft -> 'data') = 'object'
-          THEN COALESCE(
-            (NEW.end_draft - 'data'::text) = (OLD.end_draft - 'data'::text)
-            AND ((NEW.end_draft -> 'data') - 'msg'::text - 'fallback_q'::text)
-              = ((OLD.end_draft -> 'data') - 'msg'::text - 'fallback_q'::text)
-            AND ((NEW.end_draft -> 'data') ? 'msg'::text)
-              = ((OLD.end_draft -> 'data') ? 'msg'::text)
-            AND ((NEW.end_draft -> 'data') ? 'fallback_q'::text)
-              = ((OLD.end_draft -> 'data') ? 'fallback_q'::text)
-            AND COALESCE(
-              (NEW.end_draft -> 'data' -> 'msg') = (OLD.end_draft -> 'data' -> 'msg')
-              OR (NEW.end_draft -> 'data' -> 'msg') = 'null'::jsonb,
-              true)
-            AND COALESCE(
-              (NEW.end_draft -> 'data' -> 'fallback_q') = (OLD.end_draft -> 'data' -> 'fallback_q')
-              OR (NEW.end_draft -> 'data' -> 'fallback_q') = 'null'::jsonb,
-              true),
-            false)
-          ELSE false
-        END)
+    OR (OLD.end_draft IS NOT NULL AND NEW.end_draft IS DISTINCT FROM OLD.end_draft)
     OR (OLD.cancel_requested_at IS NOT NULL
         AND NEW.cancel_requested_at IS DISTINCT FROM OLD.cancel_requested_at)
   THEN
-    RAISE EXCEPTION 'agent_runs ending facts are write-once except text redaction, user_text may only be cleared and quota_subjects only hash a member'
+    RAISE EXCEPTION 'agent_runs ending facts are write-once and user_text may only be cleared'
       USING ERRCODE = 'restrict_violation';
   END IF;
   RETURN NEW;
 END
-$_$;
+$$;
 
 
 --
@@ -877,26 +724,6 @@ BEGIN
   RETURN NEW;
 END
 $_$;
-
-
---
--- Name: reject_agent_tool_call_rewrite(); Type: FUNCTION; Schema: app; Owner: -
---
-
-CREATE FUNCTION app.reject_agent_tool_call_rewrite() RETURNS trigger
-    LANGUAGE plpgsql
-    SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$
-BEGIN
-  IF (to_jsonb(NEW) - 'args'::text) IS DISTINCT FROM (to_jsonb(OLD) - 'args'::text)
-    OR NEW.args IS NOT NULL
-  THEN
-    RAISE EXCEPTION 'agent_tool_calls only permits clearing args to NULL'
-      USING ERRCODE = 'restrict_violation';
-  END IF;
-  RETURN NEW;
-END
-$$;
 
 
 --
@@ -3829,9 +3656,81 @@ CREATE TABLE app.payout_accounts (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    anonymized_at timestamp with time zone,
-    CONSTRAINT payout_accounts_details_check CHECK ((((anonymized_at IS NULL) AND (((payout_method = 'alipay'::text) AND (alipay_logon_id_cipher IS NOT NULL) AND (alipay_hmac IS NOT NULL) AND (bank_card_no_cipher IS NULL) AND (bank_card_hmac IS NULL) AND (bank_name IS NULL) AND (card_bin IS NULL)) OR ((payout_method = 'bank_card'::text) AND (bank_card_no_cipher IS NOT NULL) AND (bank_card_hmac IS NOT NULL) AND (bank_name IS NOT NULL) AND (card_bin IS NOT NULL) AND (alipay_logon_id_cipher IS NULL) AND (alipay_hmac IS NULL)))) OR ((anonymized_at IS NOT NULL) AND (alipay_logon_id_cipher IS NULL) AND (alipay_hmac IS NULL) AND (bank_card_no_cipher IS NULL) AND (bank_card_hmac IS NULL) AND (card_bin IS NULL) AND (NOT is_current)))),
+    CONSTRAINT payout_accounts_details_check CHECK ((((payout_method = 'alipay'::text) AND (alipay_logon_id_cipher IS NOT NULL) AND (alipay_hmac IS NOT NULL) AND (bank_card_no_cipher IS NULL) AND (bank_card_hmac IS NULL) AND (bank_name IS NULL) AND (card_bin IS NULL)) OR ((payout_method = 'bank_card'::text) AND (bank_card_no_cipher IS NOT NULL) AND (bank_card_hmac IS NOT NULL) AND (bank_name IS NOT NULL) AND (card_bin IS NOT NULL) AND (alipay_logon_id_cipher IS NULL) AND (alipay_hmac IS NULL)))),
     CONSTRAINT payout_accounts_method_check CHECK ((payout_method = ANY (ARRAY['alipay'::text, 'bank_card'::text])))
+);
+
+
+--
+-- Name: payout_attempts; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_attempts (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    withdrawal_id uuid NOT NULL,
+    kind text NOT NULL,
+    request jsonb NOT NULL,
+    response jsonb,
+    resp_code text,
+    resp_sub_code text,
+    result text NOT NULL,
+    latency_ms integer,
+    at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_attempts_kind_check CHECK ((kind = ANY (ARRAY['transfer'::text, 'query'::text, 'cancel'::text]))),
+    CONSTRAINT payout_attempts_latency_check CHECK (((latency_ms IS NULL) OR (latency_ms >= 0))),
+    CONSTRAINT payout_attempts_result_check CHECK ((result = ANY (ARRAY['pending'::text, 'success'::text, 'fail'::text, 'unknown'::text])))
+);
+
+
+--
+-- Name: payout_batch_items; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_batch_items (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    batch_id uuid NOT NULL,
+    withdrawal_id uuid NOT NULL,
+    result text NOT NULL,
+    reason text,
+    moved_to_batch_id uuid,
+    at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_batch_items_reason_check CHECK ((((result = ANY (ARRAY['skipped'::text, 'blocked'::text])) AND (reason IS NOT NULL) AND (reason <> ''::text) AND (moved_to_batch_id IS NULL)) OR ((result = 'moved_out'::text) AND (moved_to_batch_id IS NOT NULL) AND (moved_to_batch_id <> batch_id) AND (reason IS NULL)) OR ((result = 'paying'::text) AND (reason IS NULL) AND (moved_to_batch_id IS NULL)))),
+    CONSTRAINT payout_batch_items_result_check CHECK ((result = ANY (ARRAY['paying'::text, 'skipped'::text, 'blocked'::text, 'moved_out'::text])))
+);
+
+
+--
+-- Name: payout_batches; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_batches (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    kind text NOT NULL,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_batches_created_by_check CHECK ((((kind = 'manual'::text) = (created_by IS NOT NULL)) AND ((created_by IS NULL) OR (created_by <> ''::text)))),
+    CONSTRAINT payout_batches_kind_check CHECK ((kind = ANY (ARRAY['manual'::text, 'auto'::text])))
+);
+
+
+--
+-- Name: payout_watermarks; Type: TABLE; Schema: app; Owner: -
+--
+
+CREATE TABLE app.payout_watermarks (
+    id uuid NOT NULL,
+    app_id text NOT NULL,
+    channel text NOT NULL,
+    available_fen bigint NOT NULL,
+    measured_at timestamp with time zone NOT NULL,
+    entered_by text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT payout_watermarks_available_check CHECK ((available_fen >= 0)),
+    CONSTRAINT payout_watermarks_channel_check CHECK ((channel = ANY (ARRAY['alipay'::text, 'bank_card'::text, 'wechat'::text]))),
+    CONSTRAINT payout_watermarks_entered_by_check CHECK ((entered_by <> ''::text))
 );
 
 
@@ -4092,11 +3991,10 @@ CREATE TABLE app.realname (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    tax_retained boolean DEFAULT false NOT NULL,
     CONSTRAINT realname_id_no_hmac_check CHECK (((id_no_hmac IS NULL) OR (id_no_hmac ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT realname_provider_check CHECK (((provider IS NULL) OR (provider ~ '[^[:space:]]'::text))),
     CONSTRAINT realname_status_check CHECK ((status = ANY (ARRAY['none'::text, 'verified'::text, 'failed'::text]))),
-    CONSTRAINT realname_unverified_cleared_check CHECK (((status = 'verified'::text) OR ((status = 'none'::text) AND tax_retained) OR ((name_cipher IS NULL) AND (id_no_cipher IS NULL) AND (id_no_hmac IS NULL) AND (birth_date_cipher IS NULL)))),
+    CONSTRAINT realname_unverified_cleared_check CHECK (((status = 'verified'::text) OR ((name_cipher IS NULL) AND (id_no_cipher IS NULL) AND (id_no_hmac IS NULL) AND (birth_date_cipher IS NULL)))),
     CONSTRAINT realname_verified_check CHECK (((status <> 'verified'::text) OR ((name_cipher IS NOT NULL) AND (id_no_cipher IS NOT NULL) AND (id_no_hmac IS NOT NULL) AND (birth_date_cipher IS NOT NULL) AND (provider IS NOT NULL) AND (verified_at IS NOT NULL))))
 );
 
@@ -6346,6 +6244,38 @@ ALTER TABLE ONLY app.payout_accounts
 
 
 --
+-- Name: payout_attempts payout_attempts_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_attempts
+    ADD CONSTRAINT payout_attempts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payout_batch_items payout_batch_items_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_batch_items
+    ADD CONSTRAINT payout_batch_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payout_batches payout_batches_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_batches
+    ADD CONSTRAINT payout_batches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payout_watermarks payout_watermarks_pkey; Type: CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_watermarks
+    ADD CONSTRAINT payout_watermarks_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: platform_icon_uploads platform_icon_uploads_pkey; Type: CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -7741,6 +7671,48 @@ CREATE UNIQUE INDEX payout_accounts_current_user_key ON app.payout_accounts USIN
 
 
 --
+-- Name: payout_attempts_transfer_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_attempts_transfer_at_idx ON app.payout_attempts USING btree (app_id, at) WHERE (kind = 'transfer'::text);
+
+
+--
+-- Name: payout_attempts_withdrawal_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_attempts_withdrawal_at_idx ON app.payout_attempts USING btree (withdrawal_id, at);
+
+
+--
+-- Name: payout_batch_items_batch_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_batch_items_batch_at_idx ON app.payout_batch_items USING btree (batch_id, at);
+
+
+--
+-- Name: payout_batch_items_withdrawal_at_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_batch_items_withdrawal_at_idx ON app.payout_batch_items USING btree (withdrawal_id, at);
+
+
+--
+-- Name: payout_batches_app_created_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_batches_app_created_idx ON app.payout_batches USING btree (app_id, created_at);
+
+
+--
+-- Name: payout_watermarks_latest_idx; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE INDEX payout_watermarks_latest_idx ON app.payout_watermarks USING btree (app_id, channel, measured_at DESC);
+
+
+--
 -- Name: price_snapshot_latest_idx; Type: INDEX; Schema: app; Owner: -
 --
 
@@ -8266,34 +8238,6 @@ ALTER INDEX pgboss.job_pkey ATTACH PARTITION pgboss.job_common_pkey;
 
 
 --
--- Name: agent_cards agent_cards_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
---
-
-CREATE TRIGGER agent_cards_no_rewrite BEFORE UPDATE ON app.agent_cards FOR EACH ROW EXECUTE FUNCTION app.reject_agent_card_rewrite();
-
-
---
--- Name: agent_result_chains agent_result_chains_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
---
-
-CREATE TRIGGER agent_result_chains_no_rewrite BEFORE UPDATE ON app.agent_result_chains FOR EACH ROW EXECUTE FUNCTION app.reject_agent_result_chain_rewrite();
-
-
---
--- Name: agent_result_deliveries agent_result_deliveries_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
---
-
-CREATE TRIGGER agent_result_deliveries_no_rewrite BEFORE UPDATE ON app.agent_result_deliveries FOR EACH ROW EXECUTE FUNCTION app.reject_agent_result_delivery_rewrite();
-
-
---
--- Name: agent_result_sets agent_result_sets_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
---
-
-CREATE TRIGGER agent_result_sets_no_rewrite BEFORE UPDATE ON app.agent_result_sets FOR EACH ROW EXECUTE FUNCTION app.reject_agent_result_set_rewrite();
-
-
---
 -- Name: agent_runs agent_runs_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -8305,13 +8249,6 @@ CREATE TRIGGER agent_runs_no_rewrite BEFORE UPDATE ON app.agent_runs FOR EACH RO
 --
 
 CREATE TRIGGER agent_sessions_no_rewrite BEFORE UPDATE ON app.agent_sessions FOR EACH ROW EXECUTE FUNCTION app.reject_agent_session_rewrite();
-
-
---
--- Name: agent_tool_calls agent_tool_calls_no_rewrite; Type: TRIGGER; Schema: app; Owner: -
---
-
-CREATE TRIGGER agent_tool_calls_no_rewrite BEFORE UPDATE ON app.agent_tool_calls FOR EACH ROW EXECUTE FUNCTION app.reject_agent_tool_call_rewrite();
 
 
 --
@@ -8490,10 +8427,24 @@ CREATE TRIGGER payout_account_changes_append_only BEFORE DELETE OR UPDATE ON app
 
 
 --
--- Name: payout_accounts payout_accounts_anonymize_only; Type: TRIGGER; Schema: app; Owner: -
+-- Name: payout_attempts payout_attempts_complete_once; Type: TRIGGER; Schema: app; Owner: -
 --
 
-CREATE TRIGGER payout_accounts_anonymize_only BEFORE UPDATE ON app.payout_accounts FOR EACH ROW EXECUTE FUNCTION app.payout_accounts_reject_identifier_update();
+CREATE TRIGGER payout_attempts_complete_once BEFORE DELETE OR UPDATE ON app.payout_attempts FOR EACH ROW EXECUTE FUNCTION app.payout_attempts_complete_once();
+
+
+--
+-- Name: payout_batch_items payout_batch_items_insert_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER payout_batch_items_insert_only BEFORE DELETE OR UPDATE ON app.payout_batch_items FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
+
+
+--
+-- Name: payout_watermarks payout_watermarks_insert_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER payout_watermarks_insert_only BEFORE DELETE OR UPDATE ON app.payout_watermarks FOR EACH ROW EXECUTE FUNCTION app.reject_update_delete();
 
 
 --
@@ -9376,6 +9327,38 @@ ALTER TABLE ONLY app.payout_accounts
 
 
 --
+-- Name: payout_attempts payout_attempts_withdrawal_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_attempts
+    ADD CONSTRAINT payout_attempts_withdrawal_fkey FOREIGN KEY (withdrawal_id) REFERENCES app.withdrawals(id);
+
+
+--
+-- Name: payout_batch_items payout_batch_items_batch_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_batch_items
+    ADD CONSTRAINT payout_batch_items_batch_fkey FOREIGN KEY (batch_id) REFERENCES app.payout_batches(id);
+
+
+--
+-- Name: payout_batch_items payout_batch_items_moved_to_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_batch_items
+    ADD CONSTRAINT payout_batch_items_moved_to_fkey FOREIGN KEY (moved_to_batch_id) REFERENCES app.payout_batches(id);
+
+
+--
+-- Name: payout_batch_items payout_batch_items_withdrawal_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.payout_batch_items
+    ADD CONSTRAINT payout_batch_items_withdrawal_fkey FOREIGN KEY (withdrawal_id) REFERENCES app.withdrawals(id);
+
+
+--
 -- Name: platform_icon_uploads platform_icon_uploads_created_by_admin_id_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9760,6 +9743,14 @@ ALTER TABLE ONLY app.withdraw_holds
 
 
 --
+-- Name: withdrawals withdrawals_batch_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
+--
+
+ALTER TABLE ONLY app.withdrawals
+    ADD CONSTRAINT withdrawals_batch_fkey FOREIGN KEY (batch_id) REFERENCES app.payout_batches(id);
+
+
+--
 -- Name: withdrawals withdrawals_user_fkey; Type: FK CONSTRAINT; Schema: app; Owner: -
 --
 
@@ -9874,6 +9865,7 @@ GRANT ALL ON FUNCTION app.partition_default_rows() TO couli_maint;
 
 
 --
+<<<<<<< HEAD
 -- Name: FUNCTION pay_orders_reject_immutable_update(); Type: ACL; Schema: app; Owner: -
 --
 
@@ -9885,13 +9877,6 @@ REVOKE ALL ON FUNCTION app.pay_orders_reject_immutable_update() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.pay_refunds_reject_immutable_update() FROM PUBLIC;
-
-
---
--- Name: FUNCTION payout_accounts_reject_identifier_update(); Type: ACL; Schema: app; Owner: -
---
-
-REVOKE ALL ON FUNCTION app.payout_accounts_reject_identifier_update() FROM PUBLIC;
 
 
 --
@@ -9923,6 +9908,8 @@ REVOKE ALL ON FUNCTION app.reject_agent_result_set_rewrite() FROM PUBLIC;
 
 
 --
+=======
+>>>>>>> fa9bc592 (B2-06a: schema.sql / db.gen.ts 随迁移重生成（测试机 db:snapshot）)
 -- Name: FUNCTION reject_agent_run_rewrite(); Type: ACL; Schema: app; Owner: -
 --
 
@@ -9934,13 +9921,6 @@ REVOKE ALL ON FUNCTION app.reject_agent_run_rewrite() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.reject_agent_session_rewrite() FROM PUBLIC;
-
-
---
--- Name: FUNCTION reject_agent_tool_call_rewrite(); Type: ACL; Schema: app; Owner: -
---
-
-REVOKE ALL ON FUNCTION app.reject_agent_tool_call_rewrite() FROM PUBLIC;
 
 
 --
@@ -10291,20 +10271,6 @@ GRANT SELECT ON TABLE app.agent_cards TO couli_readonly;
 
 
 --
--- Name: COLUMN agent_cards.data; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(data) ON TABLE app.agent_cards TO couli_app;
-
-
---
--- Name: COLUMN agent_cards.fallback_text; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(fallback_text) ON TABLE app.agent_cards TO couli_app;
-
-
---
 -- Name: TABLE agent_clarify_asks; Type: ACL; Schema: app; Owner: -
 --
 
@@ -10521,13 +10487,6 @@ GRANT SELECT(status) ON TABLE app.agent_result_chains TO couli_readonly;
 
 
 --
--- Name: COLUMN agent_result_chains.conditions; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(conditions) ON TABLE app.agent_result_chains TO couli_app;
-
-
---
 -- Name: COLUMN agent_result_chains.created_at; Type: ACL; Schema: app; Owner: -
 --
 
@@ -10540,13 +10499,6 @@ GRANT SELECT(created_at) ON TABLE app.agent_result_chains TO couli_readonly;
 
 GRANT SELECT,INSERT ON TABLE app.agent_result_deliveries TO couli_app;
 GRANT SELECT ON TABLE app.agent_result_deliveries TO couli_readonly;
-
-
---
--- Name: COLUMN agent_result_deliveries.card; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(card) ON TABLE app.agent_result_deliveries TO couli_app;
 
 
 --
@@ -10575,13 +10527,6 @@ GRANT SELECT(app_id) ON TABLE app.agent_result_sets TO couli_readonly;
 --
 
 GRANT SELECT(run_id) ON TABLE app.agent_result_sets TO couli_readonly;
-
-
---
--- Name: COLUMN agent_result_sets.conditions; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(conditions) ON TABLE app.agent_result_sets TO couli_app;
 
 
 --
@@ -10789,7 +10734,6 @@ GRANT SELECT(accepted_at) ON TABLE app.agent_runs TO couli_readonly;
 --
 
 GRANT SELECT(quota_subjects) ON TABLE app.agent_runs TO couli_readonly;
-GRANT UPDATE(quota_subjects) ON TABLE app.agent_runs TO couli_app;
 
 
 --
@@ -10997,13 +10941,6 @@ GRANT SELECT(seq) ON TABLE app.agent_tool_calls TO couli_readonly;
 --
 
 GRANT SELECT(name) ON TABLE app.agent_tool_calls TO couli_readonly;
-
-
---
--- Name: COLUMN agent_tool_calls.args; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(args) ON TABLE app.agent_tool_calls TO couli_app;
 
 
 --
@@ -12737,55 +12674,6 @@ GRANT SELECT ON TABLE app.payout_accounts TO couli_readonly;
 
 
 --
--- Name: COLUMN payout_accounts.alipay_logon_id_cipher; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(alipay_logon_id_cipher) ON TABLE app.payout_accounts TO couli_app;
-
-
---
--- Name: COLUMN payout_accounts.alipay_hmac; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(alipay_hmac) ON TABLE app.payout_accounts TO couli_app;
-
-
---
--- Name: COLUMN payout_accounts.bank_card_no_cipher; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(bank_card_no_cipher) ON TABLE app.payout_accounts TO couli_app;
-
-
---
--- Name: COLUMN payout_accounts.bank_card_hmac; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(bank_card_hmac) ON TABLE app.payout_accounts TO couli_app;
-
-
---
--- Name: COLUMN payout_accounts.bank_name; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(bank_name) ON TABLE app.payout_accounts TO couli_app;
-
-
---
--- Name: COLUMN payout_accounts.card_bin; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(card_bin) ON TABLE app.payout_accounts TO couli_app;
-
-
---
--- Name: COLUMN payout_accounts.payee_name; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(payee_name) ON TABLE app.payout_accounts TO couli_app;
-
-
---
 -- Name: COLUMN payout_accounts.is_current; Type: ACL; Schema: app; Owner: -
 --
 
@@ -12807,10 +12695,74 @@ GRANT UPDATE(updated_at) ON TABLE app.payout_accounts TO couli_app;
 
 
 --
--- Name: COLUMN payout_accounts.anonymized_at; Type: ACL; Schema: app; Owner: -
+-- Name: TABLE payout_attempts; Type: ACL; Schema: app; Owner: -
 --
 
-GRANT UPDATE(anonymized_at) ON TABLE app.payout_accounts TO couli_app;
+GRANT SELECT ON TABLE app.payout_attempts TO couli_app;
+GRANT SELECT,INSERT ON TABLE app.payout_attempts TO couli_payout;
+GRANT SELECT ON TABLE app.payout_attempts TO couli_readonly;
+
+
+--
+-- Name: COLUMN payout_attempts.response; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(response) ON TABLE app.payout_attempts TO couli_payout;
+
+
+--
+-- Name: COLUMN payout_attempts.resp_code; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(resp_code) ON TABLE app.payout_attempts TO couli_payout;
+
+
+--
+-- Name: COLUMN payout_attempts.resp_sub_code; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(resp_sub_code) ON TABLE app.payout_attempts TO couli_payout;
+
+
+--
+-- Name: COLUMN payout_attempts.result; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(result) ON TABLE app.payout_attempts TO couli_payout;
+
+
+--
+-- Name: COLUMN payout_attempts.latency_ms; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(latency_ms) ON TABLE app.payout_attempts TO couli_payout;
+
+
+--
+-- Name: TABLE payout_batch_items; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.payout_batch_items TO couli_app;
+GRANT SELECT ON TABLE app.payout_batch_items TO couli_payout;
+GRANT SELECT ON TABLE app.payout_batch_items TO couli_readonly;
+
+
+--
+-- Name: TABLE payout_batches; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.payout_batches TO couli_app;
+GRANT SELECT ON TABLE app.payout_batches TO couli_payout;
+GRANT SELECT ON TABLE app.payout_batches TO couli_readonly;
+
+
+--
+-- Name: TABLE payout_watermarks; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE app.payout_watermarks TO couli_app;
+GRANT SELECT ON TABLE app.payout_watermarks TO couli_payout;
+GRANT SELECT ON TABLE app.payout_watermarks TO couli_readonly;
 
 
 --
@@ -13197,13 +13149,6 @@ GRANT SELECT(created_at) ON TABLE app.realname TO couli_readonly;
 
 GRANT UPDATE(updated_at) ON TABLE app.realname TO couli_app;
 GRANT SELECT(updated_at) ON TABLE app.realname TO couli_readonly;
-
-
---
--- Name: COLUMN realname.tax_retained; Type: ACL; Schema: app; Owner: -
---
-
-GRANT UPDATE(tax_retained) ON TABLE app.realname TO couli_app;
 
 
 --
