@@ -56,8 +56,10 @@ const OPERATIONS = [
   ['post', '/v1/withdrawals'],
   ['get', '/v1/withdrawals/{withdrawal_id}'],
 ] as const;
-// BR-WDR-25 细则 table, top to bottom (the first and the APPROVED rows share processing; the
-// PAID_API / PAID_MANUAL row splits by status, BR-TEXT-06).
+// The distinct values of the BR-WDR-25 细则 table's sub_text_branch column, in the order they
+// first appear top to bottom (a value shared by several rows is listed once; the PAID_API /
+// PAID_MANUAL row gives paid_api and paid_manual; rejected_offset precedes rejected, D10-233 ②;
+// both W10 rows give failed_manual, D10-228).
 const BRANCHES = [
   'processing',
   'wechat_wait_confirm',
@@ -71,6 +73,7 @@ const BRANCHES = [
   'paying_delayed',
   'paid_api',
   'paid_manual',
+  'rejected_offset',
   'rejected',
   'failed_account',
   'failed_other',
@@ -133,13 +136,30 @@ it.each(SCHEMAS)(
   },
 );
 
-it('[CT-20b] the sub-text branch enum has one key per BR-WDR-25 row in table order', () => {
+it('[CT-20b] the sub-text branch enum equals the BR-WDR-25 sub_text_branch column in table order', () => {
   expect([...enums.withdrawal_sub_text_branch]).toEqual(BRANCHES);
   expect(schema('WithdrawalSubTextBranch').enum).toEqual(BRANCHES);
   const described = flat(schema('WithdrawalSubTextBranch').description);
   expect(described).toContain('BR-WDR-25');
   expect(described).toContain('first matching row');
 });
+
+it('[CT-20b] rejected_offset is a branch of its own, ahead of rejected (D10-233 ②)', () => {
+  const values = [...enums.withdrawal_sub_text_branch];
+  expect(values).toContain('rejected_offset');
+  expect(values.indexOf('rejected_offset')).toBe(values.indexOf('rejected') - 1);
+  expect(values).toHaveLength(new Set(values).size);
+});
+
+it.each(SCHEMAS)(
+  '[CT-20b] %s hold_days tells the two failed_manual (W10) rows apart (D10-228)',
+  (name) => {
+    const text = flat(schema(name).properties!['hold_days']!.description);
+    expect(text).toContain('failed_manual');
+    expect(text).toMatch(/non-null when the hold was added/);
+    expect(text).toMatch(/null when it was not/);
+  },
+);
 
 it.each(SCHEMAS)(
   '[CT-20b] %s payout_channel lists every payout_method, wechat included',

@@ -8134,12 +8134,15 @@ export interface components {
         /**
          * @description contracts/enums/fund.yaml withdrawal_sub_text_branch: the sub-text branch of the
          *     withdrawal, computed by the server from the BR-WDR-25 细则 table (first matching row from
-         *     the top, at response time). The branch conditions and the wording live only in BR-WDR-25
-         *     and /v1/dict; the status title stays with status (BR-TEXT-06). A client meeting an unknown
-         *     value shows the processing sub-text.
+         *     the top, at response time): the value is that row's sub_text_branch column, and the values
+         *     here are exactly the values of that column. Several rows may share one value (the W10
+         *     failure rows share failed_manual and are told apart by hold_days); the PAID_API /
+         *     PAID_MANUAL row gives paid_api or paid_manual by status. The branch conditions and the
+         *     wording live only in BR-WDR-25 and /v1/dict; the status title stays with status
+         *     (BR-TEXT-06). A client meeting an unknown value shows the processing sub-text.
          * @enum {string}
          */
-        WithdrawalSubTextBranch: "processing" | "wechat_wait_confirm" | "wechat_confirm_expired" | "wechat_canceling" | "wechat_processing" | "auto_expected_soon" | "manual_review_pending" | "manual_review_overdue" | "channel_processing" | "paying_delayed" | "paid_api" | "paid_manual" | "rejected" | "failed_account" | "failed_other" | "failed_manual";
+        WithdrawalSubTextBranch: "processing" | "wechat_wait_confirm" | "wechat_confirm_expired" | "wechat_canceling" | "wechat_processing" | "auto_expected_soon" | "manual_review_pending" | "manual_review_overdue" | "channel_processing" | "paying_delayed" | "paid_api" | "paid_manual" | "rejected_offset" | "rejected" | "failed_account" | "failed_other" | "failed_manual";
         WalletSummary: {
             available_fen: components["schemas"]["Fen"];
             withdrawable_fen: components["schemas"]["Fen"];
@@ -8311,9 +8314,11 @@ export interface components {
              * Format: int32
              * @description Days of the manual_failed_watch hold added with a W10 failure (BR-WDR-15; the hold
              *     period of withdraw.manual_failed_hold_days at the time of the decision), interpolated by
-             *     the failed_manual sub-text (BR-WDR-25). Null on every other withdrawal and on a W10
-             *     failure without that hold (a wechat withdrawal proven cancelled, BR-WDR-33 ⑧): the
-             *     sub-text then leaves out the hold sentence.
+             *     the failed_manual sub-text (BR-WDR-25). Both W10 rows of the BR-WDR-25 table have
+             *     sub_text_branch failed_manual; hold_days alone tells them apart: non-null when the hold
+             *     was added (the sub-text with the hold sentence), null when it was not (a wechat
+             *     withdrawal proven cancelled, BR-WDR-33 ⑧; the sub-text without the hold sentence). Null
+             *     on every other withdrawal.
              */
             hold_days: number | null;
         };
@@ -8387,9 +8392,11 @@ export interface components {
              * Format: int32
              * @description Days of the manual_failed_watch hold added with a W10 failure (BR-WDR-15; the hold
              *     period of withdraw.manual_failed_hold_days at the time of the decision), interpolated by
-             *     the failed_manual sub-text (BR-WDR-25). Null on every other withdrawal and on a W10
-             *     failure without that hold (a wechat withdrawal proven cancelled, BR-WDR-33 ⑧): the
-             *     sub-text then leaves out the hold sentence.
+             *     the failed_manual sub-text (BR-WDR-25). Both W10 rows of the BR-WDR-25 table have
+             *     sub_text_branch failed_manual; hold_days alone tells them apart: non-null when the hold
+             *     was added (the sub-text with the hold sentence), null when it was not (a wechat
+             *     withdrawal proven cancelled, BR-WDR-33 ⑧; the sub-text without the hold sentence). Null
+             *     on every other withdrawal.
              */
             hold_days: number | null;
             /** @description Channel serial number, only in PAID_API / PAID_MANUAL when recorded (BR-WDR-25 细则). */

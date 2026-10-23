@@ -499,26 +499,27 @@ export const withdrawal_channel_state = [
 export type WithdrawalChannelState = (typeof withdrawal_channel_state)[number];
 
 /**
- * 提现单副文案分支 key，由服务端按 BR-WDR-25 分支表自上而下取第一条匹配的行算出；分支条件与措辞只在 BR-WDR-25 与 /v1/dict 维护，这里只列 key；客户端遇未知值按 processing 显示
- * Source: 规划/08 BR-WDR-25 细则「用户侧状态文案」分支表；CT-20b (contracts/enums/fund.yaml).
+ * 提现单副文案分支 key，由服务端按 BR-WDR-25 分支表自上而下取第一条匹配的行算出，取该行 sub_text_branch 列的值；本枚举与该列的取值逐一对应，分支条件与措辞只在 BR-WDR-25 与 /v1/dict 维护，这里只列 key、不按行号引用；客户端遇未知值按 processing 显示
+ * Source: 规划/08 BR-WDR-25 细则「用户侧状态文案」分支表的 sub_text_branch 列；CT-20b（rejected_offset：编排裁定 D10-233 ②） (contracts/enums/fund.yaml).
  */
 export const withdrawal_sub_text_branch = [
-  "processing", // 分支表「PENDING_REVIEW 且自动判定尚未完成」行与「APPROVED（含 W9 退回）」行（两行副文案相同），也是没有命中任何行时的兜底
-  "wechat_wait_confirm", // 分支表微信零钱「等用户确认且未过确认截止时间」行（唯一显示去微信确认收款入口的行）
-  "wechat_confirm_expired", // 分支表微信零钱「等用户确认且已过确认截止时间」行
-  "wechat_canceling", // 分支表微信零钱「撤销中」行
-  "wechat_processing", // 分支表微信零钱「其余情况」行
-  "auto_expected_soon", // 分支表非微信零钱「自动到账路径」行
-  "manual_review_pending", // 分支表「PENDING_REVIEW（人工）且未到审核期限」行
-  "manual_review_overdue", // 分支表「PENDING_REVIEW（人工）且已过审核期限」行
-  "channel_processing", // 分支表「PAYING（未到延迟时点）」行，通道名按该单收款通道
-  "paying_delayed", // 分支表「PAYING（已到延迟时点或 needs_manual）」行
-  "paid_api", // 分支表 PAID_API / PAID_MANUAL 行中的 PAID_API（副文案按 BR-TEXT-06 分句）
-  "paid_manual", // 分支表 PAID_API / PAID_MANUAL 行中的 PAID_MANUAL（副文案按 BR-TEXT-06 分句）
-  "rejected", // 分支表 REJECTED 行
-  "failed_account", // 分支表「FAILED（W6，账号类失败码）」行
-  "failed_other", // 分支表「FAILED（W6，其他失败码）」行
-  "failed_manual", // 分支表「FAILED（W10）」行
+  "processing", // 分支表 sub_text_branch 列为 processing 的各行（自动判定尚未完成的 PENDING_REVIEW、APPROVED 通用行），也是没有命中任何行时的兜底
+  "wechat_wait_confirm", // 分支表 sub_text_branch 列为 wechat_wait_confirm 的行（微信零钱等用户确认且未过确认截止时间；唯一显示去微信确认收款入口的行）
+  "wechat_confirm_expired", // 分支表 sub_text_branch 列为 wechat_confirm_expired 的行（微信零钱等用户确认且已过确认截止时间）
+  "wechat_canceling", // 分支表 sub_text_branch 列为 wechat_canceling 的行（微信零钱撤销中）
+  "wechat_processing", // 分支表 sub_text_branch 列为 wechat_processing 的行（微信零钱其余情况）
+  "auto_expected_soon", // 分支表 sub_text_branch 列为 auto_expected_soon 的各行（非微信零钱单在自动到账路径上，PENDING_REVIEW 已判自动到账与 APPROVED / PAYING 两种情形）
+  "manual_review_pending", // 分支表 sub_text_branch 列为 manual_review_pending 的行（人工审核且未到审核期限）
+  "manual_review_overdue", // 分支表 sub_text_branch 列为 manual_review_overdue 的行（人工审核且已过审核期限）
+  "channel_processing", // 分支表 sub_text_branch 列为 channel_processing 的行（PAYING 未到延迟时点；通道名取该单收款渠道）
+  "paying_delayed", // 分支表 sub_text_branch 列为 paying_delayed 的行（PAYING 已到延迟时点或 needs_manual）
+  "paid_api", // 分支表 PAID_API / PAID_MANUAL 行按状态分开后的 PAID_API（副文案按 BR-TEXT-06 分句）
+  "paid_manual", // 分支表 PAID_API / PAID_MANUAL 行按状态分开后的 PAID_MANUAL（副文案按 BR-TEXT-06 分句）
+  "rejected_offset", // 分支表 sub_text_branch 列为 rejected_offset 的行（REJECTED 且驳回原因码为 NEGATIVE_BALANCE；先于 rejected 行判定，编排裁定 D10-233 ②）
+  "rejected", // 分支表 sub_text_branch 列为 rejected 的行（REJECTED，驳回原因码为 NEGATIVE_BALANCE 的不在此列）
+  "failed_account", // 分支表 sub_text_branch 列为 failed_account 的行（FAILED，W6 账号类失败码）
+  "failed_other", // 分支表 sub_text_branch 列为 failed_other 的行（FAILED，W6 其他失败码）
+  "failed_manual", // 分支表 sub_text_branch 列为 failed_manual 的两行（FAILED，W10，有冻结与无冻结）；两行共用此值，按响应的 hold_days 是否为空选文案（编排裁定 D10-228）
 ] as const;
 export type WithdrawalSubTextBranch = (typeof withdrawal_sub_text_branch)[number];
 
