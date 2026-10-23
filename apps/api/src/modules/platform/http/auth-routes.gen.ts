@@ -657,6 +657,51 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "admin"
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/orders/:order_id/hold",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/orders/:order_id/unhold",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/orders/:order_id/reassign",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/order-syncs",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/order-syncs",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/order-syncs/limits",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/rights-imports",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/rights-imports",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/rights-imports/:import_id",
+    "auth": "admin"
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/claims",
     "auth": "admin"

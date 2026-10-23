@@ -1333,6 +1333,96 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "adminHoldOrder",
+    "method": "POST",
+    "path": "/admin/v1/orders/:order_id/hold",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminUnholdOrder",
+    "method": "POST",
+    "path": "/admin/v1/orders/:order_id/unhold",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminReassignOrder",
+    "method": "POST",
+    "path": "/admin/v1/orders/:order_id/reassign",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListOrderSyncs",
+    "method": "GET",
+    "path": "/admin/v1/order-syncs",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreateOrderSync",
+    "method": "POST",
+    "path": "/admin/v1/order-syncs",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetOrderSyncLimits",
+    "method": "GET",
+    "path": "/admin/v1/order-syncs/limits",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListRightsImports",
+    "method": "GET",
+    "path": "/admin/v1/rights-imports",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreateRightsImport",
+    "method": "POST",
+    "path": "/admin/v1/rights-imports",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminGetRightsImport",
+    "method": "GET",
+    "path": "/admin/v1/rights-imports/:import_id",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "adminListClaims",
     "method": "GET",
     "path": "/admin/v1/claims",

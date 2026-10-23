@@ -85,7 +85,7 @@ tags:
   - name: admin-search
     description: Admin console top-bar search — one box for an order number, withdrawal number, full phone number or UID, trimmed to the account's permission points (order.view, user.lookup, fund.view; 01 F-ADM-04, 04 §6.6 search, BR-ID-34).
   - name: admin-orders
-    description: Admin order console, read side — the sub-order list with filters and one sub-order with its status history, commission snapshot and link records (permission point order.view, or user.lookup together with user_id; 01 F-ADM-05, 04 §6.6 orders, §11). Manual sync, rights import, hold / unhold and assigning an unattributed order follow in a later contract task.
+    description: Admin order console — the sub-order list with filters and one sub-order with its status history, commission snapshot and link records (permission point order.view, or user.lookup together with user_id; 01 F-ADM-05, 04 §6.6 orders, §11); the writes of CT-24n are manual sync and its records (order.view), Excel import of rights / punish / channel orders (order.claim), hold / unhold (order.hold) and assigning an unattributed order (order.assign).
   - name: admin-claims
     description: Admin order claim review — the list with filters and per-status counts and one claim with its child orders and evidence view, read only (permission point order.claim, or user.lookup together with user_id; 01 F-ADM-06, 04 §6.6 claims, §11, BR-ATTR-18). Approve and reject follow in CT-24l.
   - name: admin-content
@@ -11025,8 +11025,9 @@ paths:
         of a user it looks up) may read the list only together with `user_id`, the user detail
         page's orders tab (design/specs/admin-user-detail.md); without `user_id` that account gets
         10403 with `data.reason=admin_permission_denied`, the same as an account holding neither
-        point. A super admin holds every point. Writes (manual sync, rights import, hold / unhold,
-        assigning an unattributed order) come with a later contract task.
+        point. A super admin holds every point. Writes: manual sync (/admin/v1/order-syncs), Excel
+        import (/admin/v1/rights-imports), hold / unhold and assigning an unattributed order
+        (/admin/v1/orders/{order_id}/hold, unhold, reassign; CT-24n).
 
         One row per sub-order (04 §3.2 orders), with its `order_id` for the detail route. Filters combine
         with AND: `platform`, `platform_status`, `rebate_status`, `flag` (enum admin_order_flag:
@@ -11176,7 +11177,11 @@ paths:
 
         Same fields as a list row plus the product, quantity and attribution fields of 04 §3.2
         orders, `display_status` (what the user sees, derived by BR-FUND-17, not stored), `reason`,
-        `row_version`, `status_history`, `commission_split` and `link_logs`. Flags: `locked` is the
+        `row_version`, `unmapped_pending_open` (derived, not stored: hold_reason UNMAPPED_STATUS
+        with the BR-FUND-02 pending record still open), the latest manual hold `last_hold_by`,
+        `last_hold_by_name`, `last_hold_note` and `last_hold_at` (from its audit record, null when
+        never held by hand; a system hold does not count), `status_history`, `commission_split`
+        and `link_logs`. Flags: `locked` is the
         attribution lock orders.locked (BR-ATTR-20; the console calls it 「归属已锁定」);
         `status_locked` is derived, not stored: true when rebate_status is VOID, CREDITED or
         CLAWED_BACK (BR-FUND-01 细则「订单锁定（展示标记）」; the console calls it 「已锁定」). The
@@ -11261,6 +11266,11 @@ paths:
                   settle_period: null
                   commission_rate_bp: 1000
                   row_version: 3
+                  unmapped_pending_open: false
+                  last_hold_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                  last_hold_by_name: 客服小林
+                  last_hold_note: 用户反映订单异常，先暂停核实
+                  last_hold_at: '2026-10-08T10:00:00+08:00'
                   status_history:
                     - field: platform
                       from: null
@@ -11322,6 +11332,917 @@ paths:
               examples:
                 unknownOrder:
                   $ref: '#/components/examples/AdminUnknownOrder'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/orders/{order_id}/hold:
+    post:
+      operationId: adminHoldOrder
+      tags:
+        - admin-orders
+      summary: Pause the rebate of one sub-order (hold)
+      description: |
+        The 【暂停结算】 action of the order detail page (01 F-ADM-05; 04 §6.6 `orders/{id}/hold`;
+        BR-FUND-06 细则「后台 hold / unhold」). Permission point `order.hold` (04 §11.2); lacking it
+        is 10403 with `data.reason=admin_permission_denied`. No step-up, no Idempotency-Key.
+        Sets orders.hold=true and orders.hold_reason; rebate_status is not changed (BR-FUND-06).
+
+        `reason_code` (enum order_hold_reason, only RISK or CS: UNMAPPED_STATUS is set by the
+        system alone, BR-FUND-02) is derived from the permission points the operator holds
+        (BR-FUND-06 细则「后台 hold / unhold」): when it can be derived it may be left out; a value
+        that differs from the derived one, or no value when nothing can be derived (the operator
+        picks one), is 20001 with `data.fields=[reason_code]`, and so is a value outside RISK and
+        CS. `note` is required (1–200 characters, else 20001 with `data.fields=[note]`) and goes
+        into the audit record. An unknown `order_id` or an order of another app is 20001 with
+        `data.fields=[order_id]` (no 404, as GET /admin/v1/orders/{order_id}).
+
+        CAS: `expected_row_version` is the `row_version` GET /admin/v1/orders/{order_id} returned;
+        a mismatch is 20902 with `data.resource=order`. A hold the order does not accept is the
+        same 20902 with `data.resource=order`: the start state of R11 does not match (BR-FUND-01
+        R11) or the order is already held (BR-FUND-06 细则). Writes an audit record (action hold,
+        reason_code, note), which the detail returns as `last_hold_by`, `last_hold_by_name`,
+        `last_hold_note` and `last_hold_at`. The response is the order detail as it is now (same
+        shape as GET /admin/v1/orders/{order_id}).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminOrderIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminOrderHoldRequest'
+            example:
+              reason_code: CS
+              note: 用户反映订单异常，先暂停核实
+              expected_row_version: 3
+      responses:
+        '200':
+          description: The order detail as it is now (held).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrderDetailResponse'
+              examples:
+                held:
+                  $ref: '#/components/examples/AdminOrderDetailHeld'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unknownOrder:
+                  $ref: '#/components/examples/AdminUnknownOrder'
+                noteInvalid:
+                  $ref: '#/components/examples/AdminOrderHoldNoteInvalid'
+                reasonCodeInvalid:
+                  $ref: '#/components/examples/AdminOrderHoldReasonCodeInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminOrderConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/orders/{order_id}/unhold:
+    post:
+      operationId: adminUnholdOrder
+      tags:
+        - admin-orders
+      summary: Resume the rebate of one held sub-order (unhold)
+      description: |
+        The 【恢复结算】 action of the order detail page (01 F-ADM-05; 04 §6.6 `orders/{id}/unhold`;
+        BR-FUND-06 细则「后台 hold / unhold」). Permission point `order.hold` (04 §11.2); lacking it
+        is 10403 with `data.reason=admin_permission_denied`. No step-up, no Idempotency-Key.
+        Sets orders.hold=false and clears orders.hold_reason; rebate_status is not changed.
+
+        `reason_code` is required (enum order_hold_reason, only RISK or CS; missing or another
+        value is 20001 with `data.fields=[reason_code]`). `note` is required (1–200 characters,
+        else 20001 with `data.fields=[note]`) and goes into the audit record. An unknown
+        `order_id` or an order of another app is 20001 with `data.fields=[order_id]`.
+
+        CAS: `expected_row_version` is the `row_version` GET /admin/v1/orders/{order_id} returned;
+        a mismatch is 20902 with `data.resource=order`. An unhold the order does not accept is the
+        same 20902 with `data.resource=order`: the start state of R11 does not match (BR-FUND-01
+        R11), the order is not held, or it is held with UNMAPPED_STATUS while the pending record
+        of BR-FUND-02 is still open (未关闭; the detail's `unmapped_pending_open` is then true and
+        the console greys out 【恢复结算】; BR-FUND-06 细则). Writes an audit record (action unhold,
+        reason_code, note). The response is the order detail as it is now (same shape as GET
+        /admin/v1/orders/{order_id}).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminOrderIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminOrderUnholdRequest'
+            example:
+              reason_code: CS
+              note: 核实无异常，恢复结算
+              expected_row_version: 4
+      responses:
+        '200':
+          description: The order detail as it is now (no longer held).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrderDetailResponse'
+              examples:
+                unheld:
+                  $ref: '#/components/examples/AdminOrderDetailUnheld'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unknownOrder:
+                  $ref: '#/components/examples/AdminUnknownOrder'
+                noteInvalid:
+                  $ref: '#/components/examples/AdminOrderHoldNoteInvalid'
+                reasonCodeInvalid:
+                  $ref: '#/components/examples/AdminOrderHoldReasonCodeInvalid'
+                conflict:
+                  $ref: '#/components/examples/AdminOrderConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/orders/{order_id}/reassign:
+    post:
+      operationId: adminReassignOrder
+      tags:
+        - admin-orders
+      summary: Assign an unattributed sub-order to a user
+      description: |
+        Unattributed order assignment (01 F-ADM-05; 04 §6.6 `orders/{id}/reassign`; BR-ATTR-31).
+        Permission point `order.assign` (04 §11.2); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Step-up: totp tier (动态码; without a valid
+        totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`). One admin completes it alone
+        (ADD-05). No Idempotency-Key: only an order whose user_id is null is accepted, so a repeated
+        submit gets 20902.
+
+        Only an unattributed order (user_id null) is assigned; moving an already attributed order
+        to another user is not offered (负责人 2026-10-18; the console's 「改归属」 is editing the
+        member and manual adjustment). The request carries what the operator saw:
+        `expected_user_id` (only null) and `expected_locked` (the detail's `flags.locked`). The
+        server reads the order again; when its user_id is non-null (already attributed: by a sync,
+        a claim or another assignment before this submit) or `locked` differs from
+        `expected_locked`, the answer is 20902 with `data.resource=order_attribution` and nothing
+        is changed.
+
+        `user_id` is the target user. An unknown `order_id` or an order of another app is 20001
+        with `data.fields=[order_id]`; an unknown `user_id` (or a user of another app) is 20001
+        with `data.fields=[user_id]` (no 404, as GET /admin/v1/orders/{order_id}). A target user
+        who cannot be the attribution target (BR-ATTR-31 细则「改归属的目标用户」) is 20001 with
+        `data.fields=[user_id]` and `data.reason`: target_banned (risk state banned),
+        target_deleting (deletion in progress) or target_deleted (deleted). A frozen user (冻结)
+        is accepted. `reason` is required (5–200 characters, BR-ATTR-20 ③; else 20001 with
+        `data.fields=[reason]`) and goes into the audit record. The response is the order detail
+        as it is now (same shape as GET /admin/v1/orders/{order_id}).
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+        - 20902
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminOrderIdPath'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminOrderReassignRequest'
+            example:
+              user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+              expected_user_id: null
+              expected_locked: false
+              reason: 用户提供购买截图，核实后指派
+      responses:
+        '200':
+          description: The order detail as it is now (attributed to the target user).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrderDetailResponse'
+              examples:
+                assigned:
+                  $ref: '#/components/examples/AdminOrderDetailAssigned'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not changed (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                unknownOrder:
+                  $ref: '#/components/examples/AdminUnknownOrder'
+                unknownUser:
+                  $ref: '#/components/examples/AdminUnknownUser'
+                reasonInvalid:
+                  $ref: '#/components/examples/AdminOrderReassignReasonInvalid'
+                targetBanned:
+                  $ref: '#/components/examples/AdminOrderReassignTargetBanned'
+                targetDeleting:
+                  $ref: '#/components/examples/AdminOrderReassignTargetDeleting'
+                targetDeleted:
+                  $ref: '#/components/examples/AdminOrderReassignTargetDeleted'
+                conflict:
+                  $ref: '#/components/examples/AdminOrderAttributionConflict'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/order-syncs:
+    post:
+      operationId: adminCreateOrderSync
+      tags:
+        - admin-orders
+      summary: Request a manual order sync (by time window or by order numbers)
+      description: |
+        Manual sync of the order console (01 F-ORD-10; 04 §6.6 `order-syncs`). Permission point
+        `order.view` (04 §11.2); lacking it is 10403 with `data.reason=admin_permission_denied`.
+        No step-up, no Idempotency-Key. The body takes exactly one of two forms:
+
+        - by time window: `platform`, `from`, `to` (ISO 8601 with offset) and an optional
+          `status_filter`, the order status filter the platform's order query supports, only a
+          value registered for that platform in `specs/union/<platform>.md` (an unregistered value
+          is 20001 with `data.fields=[status_filter]`). The window is cut into deliveries of the
+          window limit of 02 §7.1; `from` may not be earlier than the farthest look-back
+          (回扫) range of that platform (02 §7.1 table), which GET /admin/v1/order-syncs/limits
+          returns as `earliest_from`. `from` not before `to`, or a `from` earlier than
+          `earliest_from`, is 20001 with `data.fields=[from, to]` or `[from]`.
+        - by order numbers: `platform` and `order_nos` (sub-order numbers, 1–50, 01 F-ORD-10;
+          `max_order_nos` of the limits); 【同步此单】 of the order detail sends just one.
+
+        Mixing the two forms, a value outside an enum, or more than 50 order numbers is 20001 with
+        `data.fields` naming the field. Identity (app, requesting admin) comes from the admin token,
+        never from the body.
+
+        The request is recorded in order_sync_requests and runs asynchronously: `status` is queued
+        (排队) until a worker takes it, then running (执行), done or failed. While a request with
+        the same filter (the deduplication key of 02 §7.1, which carries a digest of the filter)
+        is queued or running, submitting it again creates nothing new and returns the original
+        request with `reused=true` (复用). When the sync stream of the chosen platform depends on
+        the site owner's (站长) authorization and that stream is paused (BR-ID-24 ④), the request is
+        refused with 30156 and `data.platform`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+        - 30156
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminOrderSyncCreateRequest'
+            examples:
+              window:
+                summary: By time window
+                value:
+                  platform: pdd
+                  from: '2026-10-21T00:00:00+08:00'
+                  to: '2026-10-22T00:00:00+08:00'
+              orderNos:
+                summary: One order from the order detail (【同步此单】)
+                value:
+                  platform: pdd
+                  order_nos:
+                    - 231006-1234567891
+      responses:
+        '200':
+          description: The sync request, new or the one already queued or running with the same filter.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrderSyncCreateResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  sync_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6b01
+                  status: queued
+                  reused: false
+                  created_at: '2026-10-22T10:00:00+08:00'
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not created (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                statusFilterInvalid:
+                  summary: 20001 status_filter not registered for the platform
+                  value:
+                    code: 20001
+                    msg: 参数错误
+                    data:
+                      fields:
+                        - status_filter
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                rangeInvalid:
+                  summary: 20001 from not before to
+                  value:
+                    code: 20001
+                    msg: 参数错误
+                    data:
+                      fields:
+                        - from
+                        - to
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                tooEarly:
+                  summary: 20001 from earlier than the platform's earliest_from
+                  value:
+                    code: 20001
+                    msg: 参数错误
+                    data:
+                      fields:
+                        - from
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                tooManyOrderNos:
+                  summary: 20001 more than 50 order numbers
+                  value:
+                    code: 20001
+                    msg: 参数错误
+                    data:
+                      fields:
+                        - order_nos
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                streamPaused:
+                  summary: 30156 the platform's sync stream is paused while the site owner's authorization is suspended
+                  value:
+                    code: 30156
+                    msg: 该平台的站长授权已暂停，暂不能手动同步
+                    data:
+                      platform: taobao
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    get:
+      operationId: adminListOrderSyncs
+      tags:
+        - admin-orders
+      summary: Manual sync requests, newest first
+      description: |
+        The sync records of the order console (01 F-ORD-10; 04 §6.6 `order-syncs`; 04 §3.2
+        order_sync_requests). Read only. Permission point `order.view` (04 §11.2); lacking it is
+        10403 with `data.reason=admin_permission_denied`. Rows of the console's app, `created_at`
+        descending, then the server's internal order for the same time. Pages with `page` (a page
+        past the last one is `items=[]`) and `page_size` ≤ 200 (above 200 is 20001, as
+        AdminPageSize); `total` counts all rows. The requesting admin is flat as `requested_by` and
+        `requested_by_name` (written as `decided_by_name`: display_name, else the username; null
+        when the account is deleted). Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of sync requests, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrderSyncPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - sync_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6b02
+                      platform: pdd
+                      mode: order_nos
+                      from: null
+                      to: null
+                      status_filter: null
+                      order_nos:
+                        - 231006-1234567891
+                      status: done
+                      requested_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      requested_by_name: 客服小林
+                      fetched_count: 1
+                      stored_count: 1
+                      created_at: '2026-10-22T10:05:00+08:00'
+                      finished_at: '2026-10-22T10:05:09+08:00'
+                    - sync_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6b01
+                      platform: pdd
+                      mode: window
+                      from: '2026-10-21T00:00:00+08:00'
+                      to: '2026-10-22T00:00:00+08:00'
+                      status_filter: null
+                      order_nos: null
+                      status: running
+                      requested_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      requested_by_name: 客服小林
+                      fetched_count: 120
+                      stored_count: 118
+                      created_at: '2026-10-22T10:00:00+08:00'
+                      finished_at: null
+                  page: 1
+                  page_size: 20
+                  total: 2
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/order-syncs/limits:
+    get:
+      operationId: adminGetOrderSyncLimits
+      tags:
+        - admin-orders
+      summary: Per-platform input limits of a manual sync
+      description: |
+        What the manual sync form may send, per platform (01 F-ORD-10; 04 §6.6 `order-syncs`).
+        Permission point `order.view` (04 §11.2); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. One item per platform the console can sync:
+        `earliest_from` is the earliest window start the platform's look-back range allows now
+        (computed from the farthest look-back range of 02 §7.1, so it moves with the clock; not a
+        fixed date), `max_order_nos` the most order numbers one request may carry (01 F-ORD-10).
+        The values are registered as constants of the orders module from 02 §7.1 and 01 F-ORD-10;
+        the console limits its inputs with them and POST /admin/v1/order-syncs checks the same
+        values. Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: The limits of each platform.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrderSyncLimitsResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - platform: pdd
+                      earliest_from: '2026-07-24T00:00:00+08:00'
+                      max_order_nos: 50
+                    - platform: taobao
+                      earliest_from: '2026-07-24T00:00:00+08:00'
+                      max_order_nos: 50
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/rights-imports:
+    post:
+      operationId: adminCreateRightsImport
+      tags:
+        - admin-orders
+      summary: Import a rights, punishment or channel order Excel file
+      description: |
+        Excel import of the order console (01 F-ORD-10; 04 §6.6 `rights-imports`; 04 §3.2
+        rights_imports). Permission point `order.claim` (04 §11.2); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Only `kind=channel` (渠道单) writes the blocklist
+        and therefore also needs permission point `risk.blocklist` and step-up of the totp tier
+        (动态码; without a valid totp-tier `X-Step-Up-Token` → 10003 with `data.tier=totp`;
+        BR-ATTR-26 细则「渠道单导入」); rights and punish need neither. The handler checks this
+        condition, so the operation carries no operation-level step-up marker. No Idempotency-Key.
+
+        `multipart/form-data` with the parts:
+        - `kind` (enum rights_import_kind): rights (维权单, by sub-order number: every row must
+          have one, a row with only the parent order number is not expanded and is a row failure
+          sub_order_no_missing), punish (违规单, by sub-order number, written as
+          `order_rights.type=PUNISH`) or channel (渠道单, by relation_id, with `union_account_id`
+          required);
+        - `platform` (enum platform);
+        - for rights and punish only: optional `time_basis` (paid or received, the payment or
+          receipt time of 01 F-ORD-10) with optional `from` and `to` (ISO 8601 with offset). A
+          window needs both ends and `time_basis`: `from` or `to` without `time_basis` is 20001
+          with `data.fields=[time_basis]`, and one end without the other names the missing `from`
+          or `to`. Without a window no row is filtered and `time_basis` may be omitted; sent alone
+          it is accepted and ignored (04 §6.6; 08 BR-FUND-06). Rows outside the window are
+          skipped (`skipped_rows`; row rules in BR-FUND-06 细则「维权导入任务」). With
+          `kind=channel` any of the three is 20001 with `data.fields` naming it;
+        - `file`: the xlsx file, at most 10,000 rows (1 万行).
+
+        A file that is not xlsx or cannot be read is 20001 with `data.fields=[file]`, and so is a
+        file over 10,000 rows; a `kind` outside the enum is 20001 with `data.fields=[kind]`; a
+        request body above the global limit is HTTP 413 with 20001 and `data.fields=[body]`. The
+        columns of each Excel type follow the union's official export template (registered by
+        the contract line from docs-mirror, marked 待验证 until tested).
+
+        The import runs asynchronously: the response carries `import_id` and `status` (queued).
+        Rows go one by one through the settlement command into order_rights (BR-FUND-01), channel
+        rows through the risk port into the blocklist (BR-ATTR-26 ②). A row error is a row failure
+        in the result (GET /admin/v1/rights-imports/{import_id}), never an error of this request.
+        Rows already imported under the deduplication key of BR-FUND-06 count as
+        `duplicate_rows`; uploading the same file again creates a new import task (新任务), whose
+        already imported rows count as `duplicate_rows`.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10003
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminStepUpToken'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminRightsImportCreateRequest'
+      responses:
+        '200':
+          description: The import task, queued.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRightsImportCreateResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  import_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6c01
+                  status: queued
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '413':
+          description: Request body above the global limit (20001 with data.fields=[body]).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                code: 20001
+                msg: 参数错误
+                data:
+                  fields:
+                    - body
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not created (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                stepUpRequired:
+                  $ref: '#/components/examples/AdminStepUpRequiredTotp'
+                fileInvalid:
+                  summary: 20001 not an xlsx file, unreadable, or over 10,000 rows
+                  value:
+                    code: 20001
+                    msg: 参数错误
+                    data:
+                      fields:
+                        - file
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                kindInvalid:
+                  summary: 20001 kind outside rights_import_kind
+                  value:
+                    code: 20001
+                    msg: 参数错误
+                    data:
+                      fields:
+                        - kind
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                timeBasisMissing:
+                  summary: 20001 from / to without time_basis, or time_basis with kind=channel
+                  value:
+                    code: 20001
+                    msg: 参数错误
+                    data:
+                      fields:
+                        - time_basis
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                fromInvalid:
+                  summary: 20001 from missing while to is sent, not a time, or sent with kind=channel
+                  value:
+                    code: 20001
+                    msg: 参数错误
+                    data:
+                      fields:
+                        - from
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                toInvalid:
+                  summary: 20001 to missing while from is sent, not a time, or sent with kind=channel
+                  value:
+                    code: 20001
+                    msg: 参数错误
+                    data:
+                      fields:
+                        - to
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+    get:
+      operationId: adminListRightsImports
+      tags:
+        - admin-orders
+      summary: Excel import tasks, newest first
+      description: |
+        The import records of the order console (01 F-ORD-10; 04 §6.6 `rights-imports`). Read only.
+        Permission point `order.claim` (04 §11.2); lacking it is 10403 with
+        `data.reason=admin_permission_denied`. Rows of the console's app, `created_at` descending,
+        then the server's internal order for the same time. Pages with `page` (a page past the last
+        one is `items=[]`) and `page_size` ≤ 200 (above 200 is 20001, as AdminPageSize). A row has
+        the counts but no `failures`; the row failures are in GET
+        /admin/v1/rights-imports/{import_id}. The importing admin is flat as `created_by` and
+        `created_by_name` (display_name, else the username; null when the account is deleted).
+        Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminPage'
+        - $ref: '#/components/parameters/AdminPageSize'
+      responses:
+        '200':
+          description: One page of import tasks, newest first.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRightsImportPageResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - import_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6c01
+                      kind: rights
+                      platform: pdd
+                      status: done
+                      total_rows: 120
+                      succeeded_rows: 110
+                      failed_rows: 3
+                      skipped_rows: 5
+                      duplicate_rows: 2
+                      created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                      created_by_name: 客服小林
+                      created_at: '2026-10-22T10:00:00+08:00'
+                      finished_at: '2026-10-22T10:01:30+08:00'
+                  page: 1
+                  page_size: 20
+                  total: 1
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                pageSizeTooLarge:
+                  $ref: '#/components/examples/AdminPageSizeInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
+  /admin/v1/rights-imports/{import_id}:
+    get:
+      operationId: adminGetRightsImport
+      tags:
+        - admin-orders
+      summary: One Excel import task with all its row failures
+      description: |
+        One import task (01 F-ORD-10; 04 §6.6 `rights-imports`). Read only. Permission point
+        `order.claim` (04 §11.2); lacking it is 10403 with `data.reason=admin_permission_denied`.
+        The fields of a list row plus `failures`: every row failure of the task (row number and
+        reason, enum rights_import_failure_reason; a row reason, not an error code), ordered by
+        `row_no`; empty while nothing failed. The importing admin is flat as `created_by` and
+        `created_by_name` (display_name, else the username; null when the account is deleted). An
+        unknown `import_id` or a task of another app is 20001 with `data.fields=[import_id]` (no
+        404). Reading does not write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminRightsImportIdPath'
+      responses:
+        '200':
+          description: The import task with its row failures.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRightsImportDetailResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  import_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6c01
+                  kind: rights
+                  platform: pdd
+                  status: done
+                  total_rows: 120
+                  succeeded_rows: 110
+                  failed_rows: 3
+                  skipped_rows: 5
+                  duplicate_rows: 2
+                  created_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+                  created_by_name: 客服小林
+                  created_at: '2026-10-22T10:00:00+08:00'
+                  finished_at: '2026-10-22T10:01:30+08:00'
+                  failures:
+                    - row_no: 7
+                      reason: sub_order_no_missing
+                    - row_no: 18
+                      reason: order_not_found
+                    - row_no: 64
+                      reason: received_at_missing
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                unknownImport:
+                  summary: 20001 unknown import_id, or a task of another app
+                  value:
+                    code: 20001
+                    msg: 参数错误
+                    data:
+                      fields:
+                        - import_id
+                    trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
                 noPermission:
                   $ref: '#/components/examples/AdminPermissionDenied'
                 tokenExpired:
@@ -18474,6 +19395,13 @@ components:
       schema:
         type: string
         format: date-time
+    AdminRightsImportIdPath:
+      name: import_id
+      in: path
+      required: true
+      description: import_id of an Excel import task; unknown or of another app → 20001 with data.fields=[import_id].
+      schema:
+        $ref: '#/components/schemas/Id'
     AdminClaimIdPath:
       name: claim_id
       in: path
@@ -19207,6 +20135,367 @@ components:
         data:
           fields:
             - order_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderDetailHeld:
+      summary: The order detail after a hold (CS, manual)
+      value:
+        code: 0
+        msg: ''
+        data:
+          order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01
+          sub_order_id: 231006-1234567891
+          parent_order_id: 231006-1234567890
+          platform: pdd
+          title: 抽纸 3 层 120 抽 24 包
+          image_url: https://img.example.com/p/a1.jpg
+          user:
+            user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+            phone_masked: '138****5678'
+          paid_at: '2026-10-06T10:58:40+08:00'
+          pay_amount_fen: 3990
+          est_commission_fen: 500
+          settle_commission_fen: null
+          platform_status: PAID
+          rebate_status: ESTIMATED
+          hold_reason: CS
+          flags:
+            locked: true
+            status_locked: false
+            rights_pending: false
+            hold: true
+          raw_item_id: '61234'
+          product_key: null
+          quantity: 1
+          refunded_quantity: 0
+          display_status: REVIEWING
+          reason: null
+          buy_type: self
+          scene_basis: param
+          user_basis: claim
+          is_presale: false
+          deposit_paid_at: null
+          received_at: null
+          settled_at: null
+          credited_at: null
+          settle_period: null
+          commission_rate_bp: 1000
+          row_version: 4
+          unmapped_pending_open: false
+          last_hold_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+          last_hold_by_name: 客服小林
+          last_hold_note: 用户反映订单异常，先暂停核实
+          last_hold_at: '2026-10-08T10:00:00+08:00'
+          status_history:
+            - field: platform
+              from: null
+              to: PAID
+              event: P2
+              source: sync
+              at: '2026-10-06T11:05:12+08:00'
+            - field: rebate
+              from: null
+              to: UNATTRIBUTED
+              event: R1
+              source: sync
+              at: '2026-10-06T11:05:12+08:00'
+            - field: rebate
+              from: UNATTRIBUTED
+              to: ESTIMATED
+              event: R3
+              source: claim
+              at: '2026-10-08T09:30:00+08:00'
+          commission_split:
+            rule_version_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+            order_type: self
+            raw_n_fen: 500
+            subsidy_commission_fen: 0
+            reserve_bp: 1000
+            reserve_fen: 50
+            tlj_deduct_fen: 0
+            base_fen: 450
+            platform_retain_fen: 135
+            beneficiaries:
+              - user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                role: self
+                ratio_bp: 6000
+                forfeit_reason: null
+              - user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c09
+                role: direct
+                ratio_bp: 1000
+                forfeit_reason: null
+            created_at: '2026-10-08T09:30:00+08:00'
+          link_logs:
+            - at: '2026-10-06T10:57:02+08:00'
+              event: open
+              scene: detail
+            - at: '2026-10-06T10:56:48+08:00'
+              event: convert
+              scene: detail
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderDetailUnheld:
+      summary: The order detail of an attributed order that is not held; last_hold_* still show the latest manual hold
+      value:
+        code: 0
+        msg: ''
+        data:
+          order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01
+          sub_order_id: 231006-1234567891
+          parent_order_id: 231006-1234567890
+          platform: pdd
+          title: 抽纸 3 层 120 抽 24 包
+          image_url: https://img.example.com/p/a1.jpg
+          user:
+            user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+            phone_masked: '138****5678'
+          paid_at: '2026-10-06T10:58:40+08:00'
+          pay_amount_fen: 3990
+          est_commission_fen: 500
+          settle_commission_fen: null
+          platform_status: PAID
+          rebate_status: ESTIMATED
+          hold_reason: null
+          flags:
+            locked: true
+            status_locked: false
+            rights_pending: false
+            hold: false
+          raw_item_id: '61234'
+          product_key: null
+          quantity: 1
+          refunded_quantity: 0
+          display_status: REVIEWING
+          reason: null
+          buy_type: self
+          scene_basis: param
+          user_basis: claim
+          is_presale: false
+          deposit_paid_at: null
+          received_at: null
+          settled_at: null
+          credited_at: null
+          settle_period: null
+          commission_rate_bp: 1000
+          row_version: 5
+          unmapped_pending_open: false
+          last_hold_by: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01
+          last_hold_by_name: 客服小林
+          last_hold_note: 用户反映订单异常，先暂停核实
+          last_hold_at: '2026-10-08T10:00:00+08:00'
+          status_history:
+            - field: platform
+              from: null
+              to: PAID
+              event: P2
+              source: sync
+              at: '2026-10-06T11:05:12+08:00'
+            - field: rebate
+              from: null
+              to: UNATTRIBUTED
+              event: R1
+              source: sync
+              at: '2026-10-06T11:05:12+08:00'
+            - field: rebate
+              from: UNATTRIBUTED
+              to: ESTIMATED
+              event: R3
+              source: claim
+              at: '2026-10-08T09:30:00+08:00'
+          commission_split:
+            rule_version_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+            order_type: self
+            raw_n_fen: 500
+            subsidy_commission_fen: 0
+            reserve_bp: 1000
+            reserve_fen: 50
+            tlj_deduct_fen: 0
+            base_fen: 450
+            platform_retain_fen: 135
+            beneficiaries:
+              - user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                role: self
+                ratio_bp: 6000
+                forfeit_reason: null
+              - user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c09
+                role: direct
+                ratio_bp: 1000
+                forfeit_reason: null
+            created_at: '2026-10-08T09:30:00+08:00'
+          link_logs:
+            - at: '2026-10-06T10:57:02+08:00'
+              event: open
+              scene: detail
+            - at: '2026-10-06T10:56:48+08:00'
+              event: convert
+              scene: detail
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderDetailAssigned:
+      summary: The order detail right after an admin assigned an unattributed order (R3 ADMIN_REASSIGN, user_basis admin, locked); never held, so last_hold_* are null
+      value:
+        code: 0
+        msg: ''
+        data:
+          order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01
+          sub_order_id: 231006-1234567891
+          parent_order_id: 231006-1234567890
+          platform: pdd
+          title: 抽纸 3 层 120 抽 24 包
+          image_url: https://img.example.com/p/a1.jpg
+          user:
+            user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+            phone_masked: '138****5678'
+          paid_at: '2026-10-06T10:58:40+08:00'
+          pay_amount_fen: 3990
+          est_commission_fen: 500
+          settle_commission_fen: null
+          platform_status: PAID
+          rebate_status: ESTIMATED
+          hold_reason: null
+          flags:
+            locked: true
+            status_locked: false
+            rights_pending: false
+            hold: false
+          raw_item_id: '61234'
+          product_key: null
+          quantity: 1
+          refunded_quantity: 0
+          display_status: REVIEWING
+          reason: null
+          buy_type: self
+          scene_basis: param
+          user_basis: admin
+          is_presale: false
+          deposit_paid_at: null
+          received_at: null
+          settled_at: null
+          credited_at: null
+          settle_period: null
+          commission_rate_bp: 1000
+          row_version: 3
+          unmapped_pending_open: false
+          last_hold_by: null
+          last_hold_by_name: null
+          last_hold_note: null
+          last_hold_at: null
+          status_history:
+            - field: platform
+              from: null
+              to: PAID
+              event: P2
+              source: sync
+              at: '2026-10-06T11:05:12+08:00'
+            - field: rebate
+              from: null
+              to: UNATTRIBUTED
+              event: R1
+              source: sync
+              at: '2026-10-06T11:05:12+08:00'
+            - field: rebate
+              from: UNATTRIBUTED
+              to: ESTIMATED
+              event: R3
+              source: admin
+              at: '2026-10-08T09:30:00+08:00'
+          commission_split:
+            rule_version_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+            order_type: self
+            raw_n_fen: 500
+            subsidy_commission_fen: 0
+            reserve_bp: 1000
+            reserve_fen: 50
+            tlj_deduct_fen: 0
+            base_fen: 450
+            platform_retain_fen: 135
+            beneficiaries:
+              - user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                role: self
+                ratio_bp: 6000
+                forfeit_reason: null
+              - user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c09
+                role: direct
+                ratio_bp: 1000
+                forfeit_reason: null
+            created_at: '2026-10-08T09:30:00+08:00'
+          link_logs:
+            - at: '2026-10-06T10:57:02+08:00'
+              event: open
+              scene: detail
+            - at: '2026-10-06T10:56:48+08:00'
+              event: convert
+              scene: detail
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderHoldNoteInvalid:
+      summary: 20001 hold / unhold note missing or over 200 characters
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - note
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderHoldReasonCodeInvalid:
+      summary: 20001 reason_code not RISK or CS, differs from the derived one, or missing where it is required
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - reason_code
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderConflict:
+      summary: 20902 row_version moved on, or the order does not accept the hold / unhold now (R11 start state, same state, UNMAPPED_STATUS pending record open)
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: order
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderAttributionConflict:
+      summary: 20902 the order is already attributed (user_id non-null) or locked differs from expected_locked
+      value:
+        code: 20902
+        msg: 状态已变化，请刷新后重试
+        data:
+          resource: order_attribution
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderReassignReasonInvalid:
+      summary: 20001 assignment reason missing, under 5 characters or over 200
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - reason
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderReassignTargetBanned:
+      summary: 20001 the target user is banned and cannot be the attribution target
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - user_id
+          reason: target_banned
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderReassignTargetDeleting:
+      summary: 20001 the target user is in deletion and cannot be the attribution target
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - user_id
+          reason: target_deleting
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderReassignTargetDeleted:
+      summary: 20001 the target user is deleted and cannot be the attribution target
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - user_id
+          reason: target_deleted
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminClaimQueryInvalid:
       summary: 20001 claim list q empty or over 64 characters after trimming
@@ -31852,6 +33141,11 @@ components:
         - settle_period
         - commission_rate_bp
         - row_version
+        - unmapped_pending_open
+        - last_hold_by
+        - last_hold_by_name
+        - last_hold_note
+        - last_hold_at
         - status_history
         - commission_split
         - link_logs
@@ -31994,7 +33288,41 @@ components:
           type: integer
           format: int32
           minimum: 0
-          description: CAS value of the order row (orders.row_version), for the write operations of a later contract task.
+          description: CAS value of the order row (orders.row_version); the expected_row_version of hold and unhold.
+        unmapped_pending_open:
+          type: boolean
+          description: |
+            Derived, not stored (派生): true when hold_reason is UNMAPPED_STATUS (set by the system,
+            BR-FUND-02) and the pending record of BR-FUND-02 for it is still open; only status open
+            counts as not closed. While true, unhold answers 20902 and the console greys out
+            【恢复结算】 with the reason.
+        last_hold_by:
+          description: |
+            admin_id of the latest manual hold (人工 hold through POST
+            /admin/v1/orders/{order_id}/hold), taken from its audit record (审计), not a column of
+            orders; null when the order was never held by hand. A system hold (UNMAPPED_STATUS)
+            does not count.
+          anyOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
+        last_hold_by_name:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: The display name of last_hold_by (admin_users.display_name, else the username); null when last_hold_by is null or the account is deleted.
+        last_hold_note:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+          description: The note of the latest manual hold, from its audit record; null when never held by hand.
+        last_hold_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the latest manual hold was made, from its audit record; null when never held by hand.
         status_history:
           type: array
           description: Oldest first.
@@ -32026,6 +33354,675 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminOrderDetail'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminOrderStaffHoldReason:
+      type: string
+      description: |
+        The hold reason an operator may send to hold / unhold (subset of enum order_hold_reason):
+        RISK or CS. UNMAPPED_STATUS is set by the system alone (BR-FUND-02, BR-FUND-06 细则「后台
+        hold / unhold」).
+      enum:
+        - RISK
+        - CS
+    AdminOrderHoldNote:
+      type: string
+      minLength: 1
+      maxLength: 200
+      description: The operator's note (说明), required, 1–200 characters; written into the audit record.
+    AdminOrderHoldRequest:
+      type: object
+      description: |
+        Body of POST /admin/v1/orders/{order_id}/hold. `reason_code` may be left out when it can be
+        derived from the operator's permission points (BR-FUND-06 细则「后台 hold / unhold」).
+      additionalProperties: false
+      required:
+        - note
+        - expected_row_version
+      properties:
+        reason_code:
+          $ref: '#/components/schemas/AdminOrderStaffHoldReason'
+        note:
+          $ref: '#/components/schemas/AdminOrderHoldNote'
+        expected_row_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The order's row_version from GET /admin/v1/orders/{order_id}.
+    AdminOrderUnholdRequest:
+      type: object
+      description: Body of POST /admin/v1/orders/{order_id}/unhold; `reason_code` is required.
+      additionalProperties: false
+      required:
+        - reason_code
+        - note
+        - expected_row_version
+      properties:
+        reason_code:
+          $ref: '#/components/schemas/AdminOrderStaffHoldReason'
+        note:
+          $ref: '#/components/schemas/AdminOrderHoldNote'
+        expected_row_version:
+          type: integer
+          format: int32
+          minimum: 0
+          description: The order's row_version from GET /admin/v1/orders/{order_id}.
+    AdminOrderReassignRequest:
+      type: object
+      description: Body of POST /admin/v1/orders/{order_id}/reassign (BR-ATTR-31).
+      additionalProperties: false
+      required:
+        - user_id
+        - expected_user_id
+        - expected_locked
+        - reason
+      properties:
+        user_id:
+          $ref: '#/components/schemas/Id'
+        expected_user_id:
+          type: 'null'
+          description: The order's user_id as the operator saw it; only null (an unattributed order).
+        expected_locked:
+          type: boolean
+          description: The order's flags.locked as the operator saw it.
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 200
+          description: Why the order is assigned (5–200 characters, BR-ATTR-20 ③); written into the audit record.
+    AdminOrderSyncMode:
+      type: string
+      description: How a manual sync names its orders (enum order_sync_mode).
+      enum:
+        - window
+        - order_nos
+    AdminOrderSyncStatus:
+      type: string
+      description: Status of a manual sync request (enum order_sync_status).
+      enum:
+        - queued
+        - running
+        - done
+        - failed
+    AdminOrderSyncOrderNos:
+      type: array
+      description: Sub-order numbers, 1–50 (01 F-ORD-10).
+      minItems: 1
+      maxItems: 50
+      items:
+        type: string
+        minLength: 1
+        maxLength: 64
+    AdminOrderSyncStatusFilter:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: |
+        The order status filter of the platform's order query (status_filter), only a value
+        registered for that platform in specs/union/<platform>.md; an unregistered value is 20001
+        with data.fields=[status_filter]. Not the status of the sync request.
+    AdminOrderSyncByWindow:
+      type: object
+      description: |
+        Manual sync by time window. `from` must be before `to` and not earlier than the platform's
+        earliest_from (the look-back range of 02 §7.1; GET /admin/v1/order-syncs/limits), checked
+        by the handler (20001).
+      additionalProperties: false
+      required:
+        - platform
+        - from
+        - to
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        from:
+          type: string
+          format: date-time
+          description: Window start, inclusive (ISO 8601 with offset).
+        to:
+          type: string
+          format: date-time
+          description: Window end, exclusive (ISO 8601 with offset).
+        status_filter:
+          $ref: '#/components/schemas/AdminOrderSyncStatusFilter'
+    AdminOrderSyncByOrderNos:
+      type: object
+      description: Manual sync by sub-order numbers (the 【同步此单】 of the order detail sends one).
+      additionalProperties: false
+      required:
+        - platform
+        - order_nos
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        order_nos:
+          $ref: '#/components/schemas/AdminOrderSyncOrderNos'
+    AdminOrderSyncCreateRequest:
+      description: Body of POST /admin/v1/order-syncs; exactly one of the two forms.
+      oneOf:
+        - $ref: '#/components/schemas/AdminOrderSyncByWindow'
+        - $ref: '#/components/schemas/AdminOrderSyncByOrderNos'
+    AdminOrderSyncCreated:
+      type: object
+      description: The sync request; `reused=true` when an equal request was already queued or running and is returned instead.
+      additionalProperties: false
+      required:
+        - sync_id
+        - status
+        - reused
+        - created_at
+      properties:
+        sync_id:
+          $ref: '#/components/schemas/Id'
+        status:
+          $ref: '#/components/schemas/AdminOrderSyncStatus'
+        reused:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    AdminOrderSyncCreateResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminOrderSyncCreated'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminOrderSyncListItem:
+      type: object
+      description: One manual sync request (04 §3.2 order_sync_requests).
+      additionalProperties: false
+      required:
+        - sync_id
+        - platform
+        - mode
+        - from
+        - to
+        - status_filter
+        - order_nos
+        - status
+        - requested_by
+        - requested_by_name
+        - fetched_count
+        - stored_count
+        - created_at
+        - finished_at
+      properties:
+        sync_id:
+          $ref: '#/components/schemas/Id'
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        mode:
+          $ref: '#/components/schemas/AdminOrderSyncMode'
+        from:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Window start; null for mode order_nos.
+        to:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Window end; null for mode order_nos.
+        status_filter:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: The platform order status filter of a window request; null when none was given or for mode order_nos.
+        order_nos:
+          description: The sub-order numbers; null for mode window.
+          anyOf:
+            - $ref: '#/components/schemas/AdminOrderSyncOrderNos'
+            - type: 'null'
+        status:
+          $ref: '#/components/schemas/AdminOrderSyncStatus'
+        requested_by:
+          $ref: '#/components/schemas/Id'
+        requested_by_name:
+          type:
+            - string
+            - 'null'
+          maxLength: 64
+          description: The requesting admin's display name (admin_users.display_name, else the username); null when the account is deleted.
+        fetched_count:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Orders fetched from the union so far.
+        stored_count:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Orders stored (inserted or updated) so far.
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the request became done or failed; null before.
+    AdminOrderSyncPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminOrderSyncListItem'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminOrderSyncPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminOrderSyncPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminOrderSyncPlatformLimit:
+      type: object
+      description: The manual sync limits of one platform (02 §7.1, 01 F-ORD-10).
+      additionalProperties: false
+      required:
+        - platform
+        - earliest_from
+        - max_order_nos
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        earliest_from:
+          type: string
+          format: date-time
+          description: The earliest window start the platform's look-back range allows now; moves with the clock.
+        max_order_nos:
+          type: integer
+          format: int32
+          minimum: 1
+          description: The most sub-order numbers one request may carry.
+    AdminOrderSyncLimits:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminOrderSyncPlatformLimit'
+    AdminOrderSyncLimitsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminOrderSyncLimits'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminRightsImportKind:
+      type: string
+      description: What an Excel import holds (enum rights_import_kind).
+      enum:
+        - rights
+        - punish
+        - channel
+    AdminRightsImportTimeBasis:
+      type: string
+      description: Which time the import window filters rows by (enum rights_import_time_basis).
+      enum:
+        - paid
+        - received
+    AdminRightsImportStatus:
+      type: string
+      description: Status of an import task (enum rights_import_status).
+      enum:
+        - queued
+        - running
+        - done
+        - failed
+    AdminRightsImportFailureReason:
+      type: string
+      description: Why one row failed (enum rights_import_failure_reason); a row reason, not an error code.
+      enum:
+        - invalid_row
+        - order_not_found
+        - sub_order_no_missing
+        - received_at_missing
+        - platform_mismatch
+    AdminRightsImportFile:
+      type: string
+      format: binary
+      description: The xlsx file, at most 10,000 rows.
+    AdminRightsImportByOrder:
+      type: object
+      description: |
+        multipart parts of a rights (维权单) or punish (违规单) import. A window (`from` or `to`)
+        needs both ends and `time_basis`; without a window no row is filtered and `time_basis`
+        is optional (sent alone it is accepted and ignored; 04 §6.6, BR-FUND-06 维权导入任务).
+      additionalProperties: false
+      required:
+        - kind
+        - platform
+        - file
+      properties:
+        kind:
+          type: string
+          enum:
+            - rights
+            - punish
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        time_basis:
+          $ref: '#/components/schemas/AdminRightsImportTimeBasis'
+        from:
+          type: string
+          format: date-time
+          description: Window start, inclusive (ISO 8601 with offset).
+        to:
+          type: string
+          format: date-time
+          description: Window end, exclusive (ISO 8601 with offset).
+        file:
+          $ref: '#/components/schemas/AdminRightsImportFile'
+      dependentRequired:
+        from:
+          - time_basis
+          - to
+        to:
+          - time_basis
+          - from
+    AdminRightsImportChannel:
+      type: object
+      description: multipart parts of a channel (渠道单) import, by relation_id; no time window.
+      additionalProperties: false
+      required:
+        - kind
+        - platform
+        - union_account_id
+        - file
+      properties:
+        kind:
+          type: string
+          enum:
+            - channel
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        union_account_id:
+          $ref: '#/components/schemas/Id'
+        file:
+          $ref: '#/components/schemas/AdminRightsImportFile'
+    AdminRightsImportCreateRequest:
+      description: multipart/form-data body of POST /admin/v1/rights-imports; one form per kind.
+      oneOf:
+        - $ref: '#/components/schemas/AdminRightsImportByOrder'
+        - $ref: '#/components/schemas/AdminRightsImportChannel'
+    AdminRightsImportCreated:
+      type: object
+      additionalProperties: false
+      required:
+        - import_id
+        - status
+      properties:
+        import_id:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          enum:
+            - queued
+          description: A new task is always queued.
+    AdminRightsImportCreateResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminRightsImportCreated'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminRightsImportRowCount:
+      type: integer
+      format: int32
+      minimum: 0
+    AdminRightsImportCreatedByName:
+      type:
+        - string
+        - 'null'
+      maxLength: 64
+      description: The importing admin's display name (admin_users.display_name, else the username); null when the account is deleted.
+    AdminRightsImportSummary:
+      type: object
+      description: One import task without its row failures (04 §3.2 rights_imports).
+      additionalProperties: false
+      required:
+        - import_id
+        - kind
+        - platform
+        - status
+        - total_rows
+        - succeeded_rows
+        - failed_rows
+        - skipped_rows
+        - duplicate_rows
+        - created_by
+        - created_by_name
+        - created_at
+        - finished_at
+      properties:
+        import_id:
+          $ref: '#/components/schemas/Id'
+        kind:
+          $ref: '#/components/schemas/AdminRightsImportKind'
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        status:
+          $ref: '#/components/schemas/AdminRightsImportStatus'
+        total_rows:
+          $ref: '#/components/schemas/AdminRightsImportRowCount'
+        succeeded_rows:
+          $ref: '#/components/schemas/AdminRightsImportRowCount'
+        failed_rows:
+          $ref: '#/components/schemas/AdminRightsImportRowCount'
+        skipped_rows:
+          $ref: '#/components/schemas/AdminRightsImportRowCount'
+        duplicate_rows:
+          $ref: '#/components/schemas/AdminRightsImportRowCount'
+        created_by:
+          $ref: '#/components/schemas/Id'
+        created_by_name:
+          $ref: '#/components/schemas/AdminRightsImportCreatedByName'
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the task became done or failed; null before.
+    AdminRightsImportFailure:
+      type: object
+      additionalProperties: false
+      required:
+        - row_no
+        - reason
+      properties:
+        row_no:
+          type: integer
+          format: int32
+          minimum: 1
+          description: The row number in the file.
+        reason:
+          $ref: '#/components/schemas/AdminRightsImportFailureReason'
+    AdminRightsImportDetail:
+      type: object
+      description: One import task with all its row failures (04 §3.2 rights_imports / rights_import_failures).
+      additionalProperties: false
+      required:
+        - import_id
+        - kind
+        - platform
+        - status
+        - total_rows
+        - succeeded_rows
+        - failed_rows
+        - skipped_rows
+        - duplicate_rows
+        - created_by
+        - created_by_name
+        - created_at
+        - finished_at
+        - failures
+      properties:
+        import_id:
+          $ref: '#/components/schemas/Id'
+        kind:
+          $ref: '#/components/schemas/AdminRightsImportKind'
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        status:
+          $ref: '#/components/schemas/AdminRightsImportStatus'
+        total_rows:
+          $ref: '#/components/schemas/AdminRightsImportRowCount'
+        succeeded_rows:
+          $ref: '#/components/schemas/AdminRightsImportRowCount'
+        failed_rows:
+          $ref: '#/components/schemas/AdminRightsImportRowCount'
+        skipped_rows:
+          $ref: '#/components/schemas/AdminRightsImportRowCount'
+        duplicate_rows:
+          $ref: '#/components/schemas/AdminRightsImportRowCount'
+        created_by:
+          $ref: '#/components/schemas/Id'
+        created_by_name:
+          $ref: '#/components/schemas/AdminRightsImportCreatedByName'
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the task became done or failed; null before.
+        failures:
+          type: array
+          maxItems: 10000
+          description: Every row failure of the task, by row_no; empty while nothing failed.
+          items:
+            $ref: '#/components/schemas/AdminRightsImportFailure'
+    AdminRightsImportPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - page_size
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminRightsImportSummary'
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+        page_size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+        total:
+          type: integer
+          format: int32
+          minimum: 0
+    AdminRightsImportPageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminRightsImportPage'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminRightsImportDetailResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminRightsImportDetail'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     AdminClaimEvidenceLevel:

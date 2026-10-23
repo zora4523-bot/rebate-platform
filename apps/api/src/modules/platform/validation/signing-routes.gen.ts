@@ -657,6 +657,51 @@ export const CONTRACT_SIGNING_ROUTES = [
     "signed": false
   },
   {
+    "method": "POST",
+    "path": "/admin/v1/orders/:order_id/hold",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/orders/:order_id/unhold",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/orders/:order_id/reassign",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/order-syncs",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/order-syncs",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/order-syncs/limits",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/rights-imports",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/rights-imports",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/rights-imports/:import_id",
+    "signed": false
+  },
+  {
     "method": "GET",
     "path": "/admin/v1/claims",
     "signed": false
