@@ -3730,8 +3730,7 @@ CREATE TABLE app.payout_watermarks (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT payout_watermarks_available_check CHECK ((available_fen >= 0)),
     CONSTRAINT payout_watermarks_channel_check CHECK ((channel = ANY (ARRAY['alipay'::text, 'bank_card'::text, 'wechat'::text]))),
-    CONSTRAINT payout_watermarks_entered_by_check CHECK ((entered_by <> ''::text)),
-    CONSTRAINT payout_watermarks_measured_at_check CHECK ((measured_at <= (created_at + '00:05:00'::interval)))
+    CONSTRAINT payout_watermarks_entered_by_check CHECK ((entered_by <> ''::text))
 );
 
 
