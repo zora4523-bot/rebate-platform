@@ -5,22 +5,30 @@
 // signature or payload is
 // 10002 as before; previous kids of JWT_VERIFY_KEYS_JSON verify too; the verifier never signs and
 // holds no private key; staging / prod without keys refuse, naming JWT_PUBLIC_KEY_PEM.
+// Time and claims are judged as the signing process's own verifier (createTokenService) judges
+// them, on the same moving Clock: expired from the second exp names, iat and exp required, an
+// access token older than its 2-hour lifetime or issued in the future refused, issuer / audience /
+// typ checked; every refusal is 10002.
 // Keys are generated in the test (node:crypto); no .env file is read.
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { expect, it } from 'vitest';
 import {
+  ACCESS_TOKEN_TTL_SECONDS,
   H5_AUDIENCE,
   TokenRejection,
   createTokenKeyProvider,
+  createTokenService,
   createTokenVerifyKeyProvider,
   createTokenVerifyService,
   signScopedToken,
   type TokenService,
   type TokenVerifyKeyProvider,
 } from '../../../../apps/api/src/modules/identity/application/access-tokens.ts';
+import type { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import { readJwtVerifyKeyConfig } from '../../../../apps/api/src/modules/platform/config/jwt.ts';
 import {
   CLOUD_ENVS,
+  INSTANT,
   ISSUED_AT,
   KID,
   OTHER_KID,
@@ -54,11 +62,71 @@ function privateEnv(pair: PemPair): Record<string, string> {
 async function verifier(
   appEnv: CloudEnv,
   env: Readonly<Record<string, string>>,
+  at: FixedClock = clock(),
 ): Promise<{ readonly keys: TokenVerifyKeyProvider; readonly tokens: TokenService }> {
   const read = readJwtVerifyKeyConfig(appEnv, env);
   expect(read.problems).toEqual([]);
   const keys = await createTokenVerifyKeyProvider(appEnv, read.jwt);
-  return { keys, tokens: createTokenVerifyService({ clock: clock(), keys }) };
+  return { keys, tokens: createTokenVerifyService({ clock: at, keys }) };
+}
+
+/** The lifetime of the h5_token signed below (the issuer passes its own, B1-02f). */
+const H5_TTL_SECONDS = 600;
+
+type Claims = Readonly<Record<string, unknown>>;
+
+/** The header and the claims of a compact token (read, not verified). */
+function partsOf(token: string): { readonly header: Claims; readonly claims: Claims } {
+  const [header, payload] = token.split('.');
+  const read = (part: string | undefined): Claims =>
+    JSON.parse(Buffer.from(part ?? '', 'base64url').toString()) as Claims;
+  return { header: read(header), claims: read(payload) };
+}
+
+/** A compact ES256 token over `header` and `claims`, signed with the private key of `pair`. */
+function signedWith(pair: PemPair, header: Claims, claims: Claims): string {
+  const encode = (value: Claims): string =>
+    Buffer.from(JSON.stringify(value)).toString('base64url');
+  const input = `${encode(header)}.${encode(claims)}`;
+  const signature = sign('sha256', Buffer.from(input), {
+    key: pair.privateKey,
+    dsaEncoding: 'ieee-p1363',
+  });
+  return `${input}.${signature.toString('base64url')}`;
+}
+
+/** `claims` without the claim `name`. */
+function without(claims: Claims, name: string): Claims {
+  return Object.fromEntries(Object.entries(claims).filter(([key]) => key !== name));
+}
+
+interface TimedCase {
+  /** Which verification of the token service judges the token. */
+  readonly as: 'access' | 'h5';
+  readonly token: string;
+  /** Seconds the Clock stands after the issue instant (negative: before it). */
+  readonly after: number;
+}
+
+function verifyAs(tokens: TokenService, as: TimedCase['as'], token: string): Promise<unknown> {
+  if (as === 'access') return tokens.verifyAccess(token);
+  if (tokens.verifyH5 === undefined) return Promise.reject(new Error('verifyH5 is missing'));
+  return tokens.verifyH5(token);
+}
+
+/** The verdict of every case, the Clock set to the case's instant first. */
+async function judged(
+  tokens: TokenService,
+  at: FixedClock,
+  cases: Readonly<Record<string, TimedCase>>,
+): Promise<Record<string, unknown>> {
+  const seen: Record<string, unknown> = {};
+  for (const [label, item] of Object.entries(cases)) {
+    at.set(INSTANT);
+    at.advanceMs(item.after * 1000);
+    seen[label] = verdict(await settle(() => verifyAs(tokens, item.as, item.token)));
+  }
+  return seen;
 }
 
 /** The token answer of a verification: accepted, the rejection code, or another error. */
@@ -129,6 +197,110 @@ for (const appEnv of CLOUD_ENVS) {
     });
     // The genuine token still verifies on the same verifier.
     expect(await verify.tokens.verifyAccess(genuine)).toEqual(PRINCIPAL);
+  });
+
+  it(`[D10-255][BR-ID-01][BR-ID-07] ${appEnv}：Clock 推到 exp 及之后、缺 iat / exp、iat 超过 2 小时或在未来、iss / aud / typ 不符的令牌，只验签进程与签发方验签器同口径回 10002`, async () => {
+    const pair = p256();
+    const signing = await signer(KID, pair);
+    const access = await signing.tokens.issueAccess(PRINCIPAL);
+    const h5 = await signScopedToken(signing.keys, {
+      audience: H5_AUDIENCE,
+      claims: {
+        uid: PRINCIPAL.uid,
+        app_id: PRINCIPAL.app_id,
+        sid: PRINCIPAL.sid,
+        device_id: PRINCIPAL.device_id,
+        scp: 'standard',
+      },
+      issuedAt: ISSUED_AT,
+      ttlSeconds: H5_TTL_SECONDS,
+    });
+    // Same key, kid, header and claims as the issued tokens, one thing changed per case.
+    const issued = partsOf(access);
+    const issuedH5 = partsOf(h5);
+    const changed = (changes: Claims): string =>
+      signedWith(pair, issued.header, { ...issued.claims, ...changes });
+    const ttl = ACCESS_TOKEN_TTL_SECONDS;
+    const cases: Record<string, TimedCase> = {
+      'access at issue': { as: 'access', token: access, after: 0 },
+      'access 1 s before exp': { as: 'access', token: access, after: ttl - 1 },
+      'access at exp': { as: 'access', token: access, after: ttl },
+      'access 1 h after exp': { as: 'access', token: access, after: ttl + 3600 },
+      'access, Clock 60 s before iat': { as: 'access', token: access, after: -60 },
+      'access without exp': {
+        as: 'access',
+        token: signedWith(pair, issued.header, without(issued.claims, 'exp')),
+        after: 0,
+      },
+      'access without iat': {
+        as: 'access',
+        token: signedWith(pair, issued.header, without(issued.claims, 'iat')),
+        after: 0,
+      },
+      'access iat older than 2 h, exp still ahead': {
+        as: 'access',
+        token: changed({ iat: ISSUED_AT - ttl - 1, exp: ISSUED_AT + 3600 }),
+        after: 0,
+      },
+      'access with a 30-day exp, 2 h 1 s after iat': {
+        as: 'access',
+        token: changed({ exp: ISSUED_AT + 30 * 24 * 3600 }),
+        after: ttl + 1,
+      },
+      'access of another issuer': {
+        as: 'access',
+        token: changed({ iss: 'b1-02zj-other' }),
+        after: 0,
+      },
+      'access of the h5 audience': {
+        as: 'access',
+        token: changed({ aud: H5_AUDIENCE }),
+        after: 0,
+      },
+      'access with another typ': {
+        as: 'access',
+        token: signedWith(pair, { ...issued.header, typ: 'at+jwt' }, issued.claims),
+        after: 0,
+      },
+      'h5 1 s before exp': { as: 'h5', token: h5, after: H5_TTL_SECONDS - 1 },
+      'h5 at exp': { as: 'h5', token: h5, after: H5_TTL_SECONDS },
+      'h5 without exp': {
+        as: 'h5',
+        token: signedWith(pair, issuedH5.header, without(issuedH5.claims, 'exp')),
+        after: 0,
+      },
+      'h5 without iat': {
+        as: 'h5',
+        token: signedWith(pair, issuedH5.header, without(issuedH5.claims, 'iat')),
+        after: 0,
+      },
+    };
+    const expected = {
+      'access at issue': 'accepted',
+      'access 1 s before exp': 'accepted',
+      'access at exp': 10002,
+      'access 1 h after exp': 10002,
+      'access, Clock 60 s before iat': 10002,
+      'access without exp': 10002,
+      'access without iat': 10002,
+      'access iat older than 2 h, exp still ahead': 10002,
+      'access with a 30-day exp, 2 h 1 s after iat': 10002,
+      'access of another issuer': 10002,
+      'access of the h5 audience': 10002,
+      'access with another typ': 10002,
+      'h5 1 s before exp': 'accepted',
+      'h5 at exp': 10002,
+      'h5 without exp': 10002,
+      'h5 without iat': 10002,
+    };
+
+    // The signing process's verifier (B1-02h) on a moving Clock answers this table ...
+    const at = clock();
+    const reference = createTokenService({ clock: at, keys: signing.keys });
+    expect(await judged(reference, at, cases)).toEqual(expected);
+    // ... and the verify-only process answers exactly the same, on the same Clock.
+    const verify = await verifier(appEnv, publicEnv(pair), at);
+    expect(await judged(verify.tokens, at, cases)).toEqual(expected);
   });
 
   it(`[D10-255][BR-ID-07] ${appEnv}：JWT_VERIFY_KEYS_JSON 中旧 kid 签的令牌在只验签进程同样验过；不配旧 kid 则 10002`, async () => {

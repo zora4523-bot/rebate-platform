@@ -1,24 +1,37 @@
 // B1-02zj (D10-255 ①) entry layer: the real stream and api entries built by bootstrap's
 // createHttpApp from loadConfig's staging configuration (the assembly of
 // test/spec/agent/stream-review/composition-root.int.test.ts, without a database: the kms keyring
-// is replaced by null, nothing listens, HTTP goes through Fastify inject only).
+// is replaced by null and an in-memory field keyring is provided as FIELD_CRYPTO instead, as that
+// test does; nothing listens, HTTP goes through Fastify inject only).
 // - stream (verify-only) starts with JWT_PUBLIC_KEY_PEM + JWT_KEY_ID only, verifies tokens the
 //   private key signed at stage ② (JWT_VERIFY_KEYS_JSON's previous kids too), answers 10002 for an
-//   unknown kid, another key or a changed signature, and cannot sign (its token service refuses,
-//   its key port holds no private key), also when given the private key of an existing deployment.
+//   unknown kid, another key, a changed signature or once the Clock reaches exp, and cannot sign
+//   (its token service refuses, its key port holds no private key), also when given the private
+//   key of an existing deployment.
 // - stream without either key refuses to start, naming JWT_PUBLIC_KEY_PEM.
-// - api (signing) given only the public key still refuses to start, naming JWT_PRIVATE_KEY_PEM.
+// - api (signing) given only the public key still refuses to start, naming JWT_PRIVATE_KEY_PEM;
+//   the same fixture with the private key starts, so the missing private key is the only cause.
 // Keys are generated in the test (node:crypto); no .env file is read.
-import { afterEach, expect, it } from 'vitest';
-import type { TokenService } from '../../../../apps/api/src/modules/identity/application/access-tokens.ts';
+import { randomBytes } from 'node:crypto';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  type TokenService,
+} from '../../../../apps/api/src/modules/identity/application/access-tokens.ts';
 import {
   TOKEN_KEYS,
   TOKEN_SERVICE,
 } from '../../../../apps/api/src/modules/identity/application/tokens.ts';
+import type { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import {
   loadConfig,
   type AppConfig,
 } from '../../../../apps/api/src/modules/platform/config/config.ts';
+import {
+  LocalKeyProvider,
+  createWrappedKeyring,
+  openFieldCrypto,
+} from '../../../../apps/api/src/modules/platform/crypto/index.ts';
 import {
   createRootLogger,
   type RootLogger,
@@ -61,15 +74,54 @@ interface Bootstrap {
   createHttpApp(entry: HttpEntry, overrides: object): Promise<App>;
 }
 
+interface PlatformExports {
+  readonly FIELD_CRYPTO: symbol;
+  readonly PlatformModule: {
+    forRoot(options: object): { providers?: unknown[]; exports?: unknown[] };
+  };
+}
+
+/** An apps/api/src module by URL (Nest sources use api's decorator-enabled compilation). */
+function apiSource(path: string): string {
+  return new URL(`../../../../apps/api/src/${path}`, import.meta.url).href;
+}
+
 /** Loaded by URL (as the stream module tests do): bootstrap pulls in the Nest controllers. */
 async function bootstrap(): Promise<Bootstrap> {
-  const url = new URL('../../../../apps/api/src/bootstrap.ts', import.meta.url).href;
-  return (await import(url)) as Bootstrap;
+  return (await import(apiSource('bootstrap.ts'))) as Bootstrap;
 }
+
+/**
+ * Every entry started here gets an in-memory field keyring as FIELD_CRYPTO (the kms keyring of
+ * the staging configuration is replaced by null and never opened). Staging refuses to build
+ * item_ref, search cursors and SMS codes without one, so with it a refusal to start can only come
+ * from the JWT_* keys. Same seam as test/spec/agent/stream-review/composition-root.int.test.ts.
+ */
+beforeEach(async () => {
+  const platform = (await import(apiSource('modules/platform/index.ts'))) as PlatformExports;
+  const provider = new LocalKeyProvider(randomBytes(32), 'synthetic-jwt-verify-only');
+  const fieldCrypto = await openFieldCrypto(await createWrappedKeyring(provider), provider);
+  const original = platform.PlatformModule.forRoot.bind(platform.PlatformModule);
+  vi.spyOn(platform.PlatformModule, 'forRoot').mockImplementation((options) => {
+    const module = original(options);
+    return {
+      ...module,
+      providers: [
+        ...(module.providers ?? []),
+        { provide: platform.FIELD_CRYPTO, useValue: fieldCrypto },
+      ],
+      exports: [...(module.exports ?? []), platform.FIELD_CRYPTO],
+    };
+  });
+}, NEST_TIMEOUT_MS);
 
 const opened: App[] = [];
 afterEach(async () => {
-  await Promise.all(opened.splice(0).map((app) => app.close()));
+  try {
+    await Promise.all(opened.splice(0).map((app) => app.close()));
+  } finally {
+    vi.restoreAllMocks();
+  }
 });
 
 function memoryLogger(entry: HttpEntry): { logger: RootLogger; lines: string[] } {
@@ -93,9 +145,10 @@ async function start(
   entry: HttpEntry,
   config: AppConfig,
   logger: RootLogger,
+  at: FixedClock = clock(),
 ): Promise<Settled<App>> {
   const boot = await bootstrap();
-  const overrides = { config, clock: clock(), logger };
+  const overrides = { config, clock: at, logger };
   const outcome = await settle(() => boot.createHttpApp(entry, overrides));
   if ('value' in outcome) opened.push(outcome.value);
   return outcome;
@@ -181,7 +234,7 @@ it(
 );
 
 it(
-  '[D10-255][BR-ID-01][BR-ID-07] staging：只配公钥的 stream 入口在 ② 验过私钥签发的令牌（含 JWT_VERIFY_KEYS_JSON 旧 kid），未知 kid、换钥、改签名回 10002',
+  '[D10-255][BR-ID-01][BR-ID-07] staging：只配公钥的 stream 入口在 ② 验过私钥签发的令牌（含 JWT_VERIFY_KEYS_JSON 旧 kid），未知 kid、换钥、改签名、Clock 到 exp 后回 10002',
   async () => {
     const pair = p256();
     const previous = p256();
@@ -192,7 +245,8 @@ it(
     });
     expect(reached(loaded, 'loaded')).toBe('loaded');
     if (!('value' in loaded)) return;
-    const started = await start('stream', loaded.value, memoryLogger('stream').logger);
+    const at = clock();
+    const started = await start('stream', loaded.value, memoryLogger('stream').logger, at);
     expect(reached(started, 'started')).toBe('started');
     if (!('value' in started)) return;
     const app = started.value;
@@ -216,6 +270,20 @@ it(
       'unknown kid': 'refused 10002',
       'other key': 'refused 10002',
       'signature changed': 'refused 10002',
+    });
+
+    // The entry's Clock moves on: one second before exp the token passes, from exp it is 10002
+    // (zero tolerance, as the api's verifier answers an App sending an access token after 2 h).
+    at.advanceMs((ACCESS_TOKEN_TTL_SECONDS - 1) * 1000);
+    const beforeExp = await stageTwo(app, genuine);
+    at.advanceMs(1000);
+    const atExp = await stageTwo(app, genuine);
+    at.advanceMs(60 * 60 * 1000);
+    const hourLater = await stageTwo(app, genuine);
+    expect({ beforeExp, atExp, hourLater }).toEqual({
+      beforeExp: 'passed ②',
+      atExp: 'refused 10002',
+      hourLater: 'refused 10002',
     });
   },
   NEST_TIMEOUT_MS,
@@ -271,16 +339,11 @@ it(
 );
 
 it(
-  '[D10-255][BR-ID-07] staging：api 入口只给 JWT_PUBLIC_KEY_PEM + JWT_KEY_ID 仍拒绝启动并点名 JWT_PRIVATE_KEY_PEM；给私钥照常启动',
+  '[D10-255][BR-ID-07] staging：api 入口给私钥照常启动；同一夹具只给 JWT_PUBLIC_KEY_PEM + JWT_KEY_ID 仍拒绝启动并点名 JWT_PRIVATE_KEY_PEM',
   async () => {
     const pair = p256();
-    // The configuration itself is valid (the stream entry starts from it): the api refuses it.
-    const publicOnly = stagingConfig({ JWT_KEY_ID: KID, JWT_PUBLIC_KEY_PEM: pair.publicPem });
-    expect(reached(publicOnly, 'loaded')).toBe('loaded');
-    if (!('value' in publicOnly)) return;
-    const refused = await start('api', publicOnly.value, memoryLogger('api').logger);
-    expect(refusal(refused)).toMatch(/JWT_PRIVATE_KEY_PEM/);
-
+    // Control: the api entry of this fixture (field keyring provided, no database) starts in
+    // staging with the private key, so the refusal below has no cause but the missing private key.
     const signing = stagingConfig({
       JWT_KEY_ID: KID,
       JWT_PRIVATE_KEY_PEM: pair.privatePem,
@@ -290,6 +353,17 @@ it(
     if (!('value' in signing)) return;
     const started = await start('api', signing.value, memoryLogger('api').logger);
     expect(reached(started, 'started')).toBe('started');
+    if (!('value' in started)) return;
+    expect((await signingAbility(started.value)).tokenService).toBe('signs');
+
+    // The configuration itself is valid (the stream entry starts from it): the api refuses it.
+    const publicOnly = stagingConfig({ JWT_KEY_ID: KID, JWT_PUBLIC_KEY_PEM: pair.publicPem });
+    expect(reached(publicOnly, 'loaded')).toBe('loaded');
+    if (!('value' in publicOnly)) return;
+    const refused = await start('api', publicOnly.value, memoryLogger('api').logger);
+    const said = refusal(refused);
+    expect(said).not.toBe('started');
+    expect(said).toMatch(/JWT_PRIVATE_KEY_PEM/);
   },
   NEST_TIMEOUT_MS,
 );
