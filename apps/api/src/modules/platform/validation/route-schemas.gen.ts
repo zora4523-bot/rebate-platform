@@ -8154,6 +8154,71 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminEditUserProfile": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-step-up-token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "user_id"
+      ],
+      "additionalProperties": false
+    },
+    "body": {
+      "type": "object",
+      "description": "Body of PATCH /admin/v1/users/{user_id}/profile (BR-ID-06 细则「客服代办换号」, BR-ID-39\n细则「后台改昵称」): `reason` and at least one of `phone` and `nickname`.\n",
+      "additionalProperties": false,
+      "required": [
+        "reason"
+      ],
+      "minProperties": 2,
+      "properties": {
+        "phone": {
+          "allOf": [
+            {
+              "type": "string",
+              "description": "Phone number as typed or pasted; it may carry spaces, hyphens and +86 / 0086 / 86. The\nserver normalises it (BR-ID-05 细则「手机号规范化」); a result that is not a mainland mobile\nnumber is 20001 with `data.fields=[phone]` and `data.reason=phone_invalid` (an empty\nstring included). No length bound in the schema: any spacing of a valid number must reach\nthe normaliser, and adding a bound to a request property is a breaking change (oasdiff).\n"
+            }
+          ],
+          "description": "The new phone number, normalised by the server (BR-ID-05 细则「手机号规范化」); equal to\nthe current number after normalisation means not edited.\n"
+        },
+        "nickname": {
+          "type": "string",
+          "description": "The new nickname. The server trims leading and trailing white space and checks the\nlength as 1–16 extended grapheme clusters (BR-ID-39); no minLength / maxLength here\nbecause JSON Schema counts code points. Equal to the current nickname after trimming\nmeans not edited.\n"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Required free-text reason, kept in the audit record."
+        }
+      }
+    }
+  },
   "adminListClaims": {
     "headers": {
       "type": "object",
