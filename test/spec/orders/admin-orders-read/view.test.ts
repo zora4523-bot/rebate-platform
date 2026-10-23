@@ -63,10 +63,7 @@ const open = { reason: 'UNMAPPED_STATUS', status: 'open' };
 
 it.each<[string, AdminOrderPendingRecord[]]>([
   ['只有一条 open', [open]],
-  [
-    '已关闭与 open 并存',
-    [{ ...open, status: 'resolved' }, { ...open, status: 'dismissed' }, open],
-  ],
+  ['已关闭与 open 并存', [{ ...open, status: 'resolved' }, { ...open, status: 'dismissed' }, open]],
   ['夹着别的原因', [{ reason: 'ILLEGAL_TRANSITION', status: 'open' }, open]],
 ])('[AC-B1-10i#6] UNMAPPED_STATUS 暂停且待处理记录 open：%s → true', (_label, records) => {
   expect(unmappedPendingOpen('UNMAPPED_STATUS', records)).toBe(true);

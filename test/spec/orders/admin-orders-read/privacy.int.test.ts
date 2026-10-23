@@ -7,6 +7,7 @@ import {
   audit,
   detail,
   history,
+  link,
   linkLogs,
   order,
   page,
@@ -49,7 +50,7 @@ it('[AC-B1-10i#43] 列表与详情手机号只下发 3+4 脱敏串，没有手�
 
 it('[AC-B1-10i#44] 不下发原始报文与归因内部字段（pid、relation_id、custom_params、商品与店铺明细）', async () => {
   const s = await setup(h);
-  const linkId = randomUUID();
+  const linkId = await link(s);
   const secrets = {
     pid: `pid-secret-${randomUUID()}`,
     relation_id: `relation-secret-${randomUUID()}`,
@@ -67,9 +68,7 @@ it('[AC-B1-10i#44] 不下发原始报文与归因内部字段（pid、relation_i
   await linkLogs(s, linkId, [linked]);
   const p = await page(await s.get());
   const d = await detail(await s.get({}, o.order_id));
-  expect(d.link_logs).toEqual([
-    { at: '2026-10-05T01:00:00.000Z', event: 'open', scene: 'detail' },
-  ]);
+  expect(d.link_logs).toEqual([{ at: '2026-10-05T01:00:00.000Z', event: 'open', scene: 'detail' }]);
   const exposed = JSON.stringify([p, d, s.f.lines]);
   for (const value of [...Object.values(secrets), ...Object.values(linked)]) {
     expect(exposed.includes(value), value).toBe(false);

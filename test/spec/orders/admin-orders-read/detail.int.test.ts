@@ -9,6 +9,7 @@ import {
   UNATTRIBUTED,
   detail,
   history,
+  link,
   linkLogs,
   order,
   setup,
@@ -269,7 +270,7 @@ it('[AC-B1-10i#34] commission_split 照快照输出金额（分）与比例（�
 
 it('[AC-B1-10i#35] link_logs 取本订单 link_id 的最新 50 条，新的在前，只含时间、事件、场景', async () => {
   const s = await setup(h);
-  const linkId = randomUUID();
+  const linkId = await link(s);
   const o = await order(s, { link_id: linkId });
   const bare = await order(s, { link_id: null });
   const events = ['convert', 'precompute', 'register', 'open'] as const;

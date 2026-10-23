@@ -217,6 +217,26 @@ export async function split(
   return ruleVersionId;
 }
 
+/** A links row of the scenario's user; orders.link_id must reference one (orders_link_fkey). */
+export async function link(s: Scenario) {
+  const linkId = randomUUID();
+  await s.h.db
+    .insertInto('links')
+    .values({
+      app_id: s.appId,
+      link_id: linkId,
+      user_id: s.userId,
+      platform: 'jd',
+      scene: 'detail',
+      product_key: 'jd:secret-product',
+      expire_at: '2026-11-01T00:00:00.000Z',
+      created_at: '2026-10-05T00:00:00.000Z',
+      updated_at: '2026-10-05T00:00:00.000Z',
+    })
+    .execute();
+  return linkId;
+}
+
 export async function linkLogs(
   s: Scenario,
   linkId: string,

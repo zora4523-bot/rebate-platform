@@ -2,17 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { fixture, useHarness } from '../../admin/auth/kit.ts';
 import { seedUser } from '../../identity/registration/kit.ts';
-import {
-  PATH,
-  UNATTRIBUTED,
-  detail,
-  ids,
-  mounted,
-  order,
-  page,
-  rejected,
-  setup,
-} from './kit.ts';
+import { PATH, UNATTRIBUTED, detail, ids, mounted, order, page, rejected, setup } from './kit.ts';
 
 const h = useHarness();
 const DENIED = { reason: 'admin_permission_denied' };

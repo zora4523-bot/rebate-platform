@@ -209,11 +209,14 @@ it('[AC-B1-10i#25] q 精确匹配子订单号或父订单号（父单号列出�
   }
 });
 
-it.each(['', '   ', 'x'.repeat(65)])('[AC-B1-10i#26] q 规范化后长度不合法 %j 报 20001 q', async (q) => {
-  const s = await setup(h);
-  await order(s);
-  await rejected(await s.get({ q }), 20001, { fields: ['q'] });
-});
+it.each(['', '   ', 'x'.repeat(65)])(
+  '[AC-B1-10i#26] q 规范化后长度不合法 %j 报 20001 q',
+  async (q) => {
+    const s = await setup(h);
+    await order(s);
+    await rejected(await s.get({ q }), 20001, { fields: ['q'] });
+  },
+);
 
 it.each([1, 64])('[AC-B1-10i#27] q 长度边界 %s 在去空格之后判断', async (length) => {
   const s = await setup(h);
