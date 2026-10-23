@@ -79,26 +79,22 @@ it('[AC-B1-03i#22] 仅本人本 app 的 account/order；混合状态、同刻 id
   expect(second.items.map((row) => row.appeal_id)).toEqual(rows.slice(2).map((row) => row.id));
   expect(second.next_cursor).toBeNull();
   const combined = [...first.items, ...second.items];
-  // 为 CT-26e 让路：首条带 attempt_no 键时，每条都须同时带 attempt_no 与 can_resubmit 且取下面的
-  // 具体值，否则与原期望完全相同；CT-26e 合并后收紧为单态（只留带两字段的写法）。
-  const extended = 'attempt_no' in combined[0]!;
   for (const item of combined) publicAppeal(item);
   expect(combined).toEqual(
-    rows.map((row) => {
-      const base = {
-        appeal_id: row.id,
-        target_type: row.target_type,
-        target_id: row.target_id,
-        status: row.status,
-        content: row.content,
-        created_at: expect.any(String),
-        closed_at: row.closed_at === null ? null : expect.any(String),
-      };
+    rows.map((row) => ({
+      appeal_id: row.id,
+      target_type: row.target_type,
+      target_id: row.target_id,
+      status: row.status,
+      content: row.content,
+      created_at: expect.any(String),
+      closed_at: row.closed_at === null ? null : expect.any(String),
       // BR-ID-36 细则: every seeded row is the only appeal on its target (account = own uid; each
       // order a fresh uuid) → attempt_no 1. can_resubmit false: the account appeal is processing,
       // the revoked one is not upheld, and the upheld order appeals target no voided order.
-      return extended ? { ...base, attempt_no: 1, can_resubmit: false } : base;
-    }),
+      attempt_no: 1,
+      can_resubmit: false,
+    })),
   );
   for (const [index, item] of combined.entries()) {
     expect(new Date(item.created_at)).toEqual(rows[index]!.created_at);

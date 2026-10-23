@@ -38,6 +38,9 @@ for (const state of ['banned', 'frozen'] as const) {
       content,
       status: 'processing',
       closed_at: null,
+      // BR-ID-36 细则: the first appeal on the account → attempt_no 1; processing → no resubmit.
+      attempt_no: 1,
+      can_resubmit: false,
     });
     const rows = await f.appeals();
     expect(rows).toHaveLength(1);
@@ -86,6 +89,8 @@ it('[AC-B1-03i#8][AC-S1-60 ⑤] 处理中再次提交保留原内容、原截止
   const f = await fixture(kit);
   const service = await f.service();
   const first = success(await f.submit(service));
+  // BR-ID-36 细则: the first appeal on the account → attempt_no 1; processing → no resubmit.
+  expect(first).toMatchObject({ attempt_no: 1, can_resubmit: false });
   const appeals = await f.appeals();
   const states = await f.rows();
   const events = await f.eventRows();
@@ -265,7 +270,10 @@ for (const failedConfig of [false, true]) {
       f.values.set('calendar.cn_makeup_workdays.2026', ['2026-11-07']);
     }
     const service = await f.service();
-    publicAppeal(success(await f.submit(service)));
+    const submitted = success(await f.submit(service));
+    publicAppeal(submitted);
+    // BR-ID-36 细则: the first appeal on the account → attempt_no 1; processing → no resubmit.
+    expect(submitted).toMatchObject({ attempt_no: 1, can_resubmit: false });
     const row = (await f.appeals())[0]!;
     expect(row.created_at).toEqual(f.clock.now());
     expect(row.deadline_at.toISOString()).toBe(
@@ -307,6 +315,8 @@ it('[AC-B1-03i#29] 已结案历史单不被当作处理中单；新单记当前 
   const service = await f.service();
   const result = success(await f.submit(service));
   expect(result.appeal_id).not.toBe(id);
+  // A processing appeal never offers a resubmission (BR-ID-36 细则 能否再次申诉).
+  expect(result.can_resubmit).toBe(false);
   const rows = await f.appeals();
   expect(rows).toHaveLength(2);
   expect(rows.find((row) => row.id === id)).toEqual(before);
