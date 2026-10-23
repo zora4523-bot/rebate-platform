@@ -723,6 +723,24 @@
       },
       "entry": ["in_app", "push"]
     },
+    "DataCopy": {
+      "page": "个人信息副本（本人可下载的副本列表；点下载时才现签短时链接，提取码只经短信发到绑定手机号，BR-ID-40 细则「在 App 内下载」）",
+      "kind": "native",
+      "auth": "login",
+      "since": {
+        "ios": null,
+        "android": null,
+        "harmony": null
+      },
+      "phase": "M-内测",
+      "params": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "entry": ["in_app", "push"]
+    },
     "ForceUpdate": {
       "page": "强制更新拦截页",
       "kind": "native",

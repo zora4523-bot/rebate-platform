@@ -710,6 +710,28 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "idempotent": false
   },
   {
+    "operationId": "listMyDataCopies",
+    "method": "GET",
+    "path": "/v1/me/data-copies",
+    "gate": null,
+    "sessionScopes": [
+      "full",
+      "deletion_only"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "getMyDataCopyDownload",
+    "method": "GET",
+    "path": "/v1/me/data-copies/:id/download",
+    "gate": null,
+    "sessionScopes": [
+      "full",
+      "deletion_only"
+    ],
+    "idempotent": false
+  },
+  {
     "operationId": "listAppeals",
     "method": "GET",
     "path": "/v1/me/appeals",
@@ -1346,6 +1368,46 @@ export const CONTRACT_MIN_VERSION_ROUTES = [
     "operationId": "adminEditUserProfile",
     "method": "PATCH",
     "path": "/admin/v1/users/:user_id/profile",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCorrectUserRealname",
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/realname-correction",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminListUserDataExports",
+    "method": "GET",
+    "path": "/admin/v1/users/:user_id/data-exports",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminCreateUserDataExport",
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/data-exports",
+    "gate": null,
+    "sessionScopes": [
+      "full"
+    ],
+    "idempotent": false
+  },
+  {
+    "operationId": "adminDownloadUserDataExport",
+    "method": "POST",
+    "path": "/admin/v1/users/:user_id/data-exports/:export_id/download",
     "gate": null,
     "sessionScopes": [
       "full"
