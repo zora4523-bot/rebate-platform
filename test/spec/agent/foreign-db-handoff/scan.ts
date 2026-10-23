@@ -18,10 +18,22 @@
 //   `.withSchema(...)` result; any expression whose type is Kysely / Transaction /
 //   ControlledTransaction (inferred or annotated, `| undefined` included).
 // - Carried handle: an argument is checked as written — object and array literals property by
-//   property (shorthand `{ db }`, nested literals, spreads), conditional and logical branches; any
-//   other argument, spread or spread property (`deps`, `...deps`, `{ ...deps }`, a variable
-//   holding `{ db, clock }`) by its type: a handle, or an object with a field that is a handle or
-//   carries one (two levels down), or a field named db / trx / tx whose type is any or unknown.
+//   property (shorthand `{ db }`, nested literals, spreads, a get accessor by what it returns:
+//   `{ get db() { return db; } }`), conditional and logical branches; any other argument, spread
+//   or spread property (`deps`, `...deps`, `{ ...deps }`, a variable holding `{ db, clock }`) by
+//   its type: a handle, or an object with a field that is a handle or carries one (two levels
+//   down), or a field named db / trx / tx whose type is any or unknown.
+// - The business assembly (spec-test review r2, D10-305): the composition root (app.module) hands
+//   agent its assembly factory as an `assembly` option (`AgentModule.forStream({ assembly: X })`
+//   or any object literal whose contextual type's `assembly` property is declared in agent). When
+//   every such X resolves — through imports and re-exports — to a function, method or class with
+//   a body declared under apps/api/src/modules/agent/, the option's type alias is a proven slot:
+//   a property or parameter declared in agent with that type and no value of its own (the
+//   runtime's `deps.assembly`, the provider's `options.assembly` and a local alias of it) is an own
+//   callee, so `deps.assembly?.({ db, … })` and `factory({ ...context })` may pass the handle. A
+//   variable of that type holding another value is judged by that value; any other function value
+//   handed in (the caller / consent readers among them) stays external. assemblyHandoffs reports
+//   each X and whether it is proven.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,8 +61,18 @@ export interface SourceText {
 const HANDLE_NAMES = new Set(['db', 'trx', 'tx']);
 const HANDLE_TYPES = new Set(['Kysely', 'Transaction', 'ControlledTransaction']);
 const HANDLE_ANNOTATION = /^(?:Kysely|Transaction|ControlledTransaction)\s*</u;
+/** What counts as an own callee (see the header). */
+interface Ownership {
+  /** Module directories whose functions with a body are own. */
+  readonly modules: ReadonlySet<string>;
+  /** Type aliases of agent's proven `assembly` slots. */
+  readonly slots: ReadonlySet<ts.Symbol>;
+}
+
 /** Modules whose functions with a body may take agent's handle: agent itself and platform. */
-const OWN_MODULES = new Set(['agent', 'platform']);
+const OWN_MODULES: ReadonlySet<string> = new Set(['agent', 'platform']);
+/** Where the business assembly handed to agent must be declared: agent only. */
+const AGENT_ONLY: Ownership = { modules: new Set(['agent']), slots: new Set() };
 const BOUND_CALLS = new Set(['call', 'apply', 'bind']);
 const LOGICAL = new Set<ts.SyntaxKind>([
   ts.SyntaxKind.QuestionQuestionToken,
@@ -247,22 +269,46 @@ function propertyHandles(
     return handlesIn(checker, property.name, source);
   }
   if (ts.isPropertyAssignment(property)) {
-    const found = handlesIn(checker, property.initializer, source);
-    if (
-      found.length === 0 &&
-      HANDLE_NAMES.has(propertyKey(property.name)) &&
-      anyType(checker.getTypeAtLocation(property.initializer))
-    ) {
-      found.push(property.initializer.getText(source));
-    }
     const key = property.name.getText(source);
-    return found.map((handle) => `${key}: ${handle}`);
+    return valueHandles(checker, property.name, property.initializer, source).map(
+      (handle) => `${key}: ${handle}`,
+    );
+  }
+  if (ts.isGetAccessorDeclaration(property)) {
+    // A getter hands over what it returns (review r2): judged by every return expression.
+    const key = property.name.getText(source);
+    const returned = property.body === undefined ? [] : returnsOf(property.body);
+    return returned.flatMap((statement) =>
+      statement.expression === undefined
+        ? []
+        : valueHandles(checker, property.name, statement.expression, source).map(
+            (handle) => `get ${key}: ${handle}`,
+          ),
+    );
   }
   if (ts.isSpreadAssignment(property)) {
     return handlesIn(checker, property.expression, source).map((handle) => `...${handle}`);
   }
-  // Methods and accessors written in place hand nothing over.
+  // Methods and setters written in place hand nothing over.
   return [];
+}
+
+/** The handles of one property's value; a value typed any under a handle's name counts. */
+function valueHandles(
+  checker: ts.TypeChecker,
+  name: ts.PropertyName,
+  value: ts.Expression,
+  source: ts.SourceFile,
+): string[] {
+  const found = handlesIn(checker, value, source);
+  if (
+    found.length === 0 &&
+    HANDLE_NAMES.has(propertyKey(name)) &&
+    anyType(checker.getTypeAtLocation(value))
+  ) {
+    found.push(value.getText(source));
+  }
+  return found;
 }
 
 /** Source text of every database handle `node` passes, itself or carried (see the header). */
@@ -332,10 +378,41 @@ function referenced(checker: ts.TypeChecker, node: ts.Expression | undefined) {
   return undefined;
 }
 
-/** Whether `start` is a function / method / class with a body of agent or platform. */
+/** The type alias of a type with null and undefined removed (`F | undefined` → F's alias). */
+function aliasOf(checker: ts.TypeChecker, type: ts.Type): ts.Symbol | undefined {
+  return checker.getNonNullableType(type).aliasSymbol;
+}
+
+/**
+ * A slot of agent typed with a proven assembly alias: a property signature, a property without an
+ * initializer or a parameter without a default, annotated with that alias (`| undefined` allowed).
+ */
+function provenSlot(
+  checker: ts.TypeChecker,
+  declaration: ts.Declaration,
+  slots: ReadonlySet<ts.Symbol>,
+): boolean {
+  if (slots.size === 0) return false;
+  if (moduleOf(declaration.getSourceFile().fileName) !== 'agent') return false;
+  let annotation: ts.TypeNode | undefined;
+  if (ts.isPropertySignature(declaration)) {
+    annotation = declaration.type;
+  } else if (
+    (ts.isPropertyDeclaration(declaration) || ts.isParameter(declaration)) &&
+    declaration.initializer === undefined
+  ) {
+    annotation = declaration.type;
+  }
+  if (annotation === undefined) return false;
+  const alias = aliasOf(checker, checker.getTypeFromTypeNode(annotation));
+  return alias !== undefined && slots.has(alias);
+}
+
+/** Whether `start` is a function / method / class with a body of `own.modules`, or a proven slot. */
 function ownFunction(
   checker: ts.TypeChecker,
   start: ts.Symbol,
+  own: Ownership,
   seen: Set<ts.Symbol> = new Set(),
 ): boolean {
   const symbol = start.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(start) : start;
@@ -343,13 +420,14 @@ function ownFunction(
   seen.add(symbol);
   for (const declaration of symbol.declarations ?? []) {
     const owner = moduleOf(declaration.getSourceFile().fileName);
-    if (owner === null || !OWN_MODULES.has(owner)) continue;
+    if (owner === null || !own.modules.has(owner)) continue;
     if (bodyDeclaration(declaration)) return true;
+    if (provenSlot(checker, declaration, own.slots)) return true;
     // A local alias or an object property naming a function: follow it.
     const next = ts.isShorthandPropertyAssignment(declaration)
       ? checker.getShorthandAssignmentValueSymbol(declaration)
       : referenced(checker, initializerOf(declaration));
-    if (next !== undefined && ownFunction(checker, next, seen)) return true;
+    if (next !== undefined && ownFunction(checker, next, own, seen)) return true;
   }
   return false;
 }
@@ -365,7 +443,11 @@ function calleeOf(checker: ts.TypeChecker, node: ts.CallExpression | ts.NewExpre
 }
 
 /** Whether a call to `callee` may not receive agent's handle (see the header). */
-function externalCallee(checker: ts.TypeChecker, callee: ts.Expression): boolean {
+function externalCallee(
+  checker: ts.TypeChecker,
+  callee: ts.Expression,
+  slots: ReadonlySet<ts.Symbol>,
+): boolean {
   if (functionValue(callee)) return false;
   const at = ts.isPropertyAccessExpression(callee) ? callee.name : callee;
   const found = checker.getSymbolAtLocation(at);
@@ -373,16 +455,116 @@ function externalCallee(checker: ts.TypeChecker, callee: ts.Expression): boolean
   const symbol = found.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(found) : found;
   const files = (symbol.declarations ?? []).map((d) => d.getSourceFile().fileName);
   if (files.some(databasePackage)) return false;
-  return !ownFunction(checker, symbol);
+  return !ownFunction(checker, symbol, { modules: OWN_MODULES, slots });
+}
+
+export interface AssemblyHandoff {
+  /** `<repository path>:<line>` of the `assembly` option. */
+  readonly at: string;
+  /** Source text of the value handed in. */
+  readonly value: string;
+  /** Why it is not proven agent's own; null when it resolves to agent's function with a body. */
+  readonly problem: string | null;
+}
+
+interface AssemblyOption extends AssemblyHandoff {
+  /** The type alias of agent's option (the slot), when it has one. */
+  readonly alias: ts.Symbol | undefined;
+}
+
+function assemblyOption(
+  checker: ts.TypeChecker,
+  literal: ts.ObjectLiteralExpression,
+  property: ts.ObjectLiteralElementLike,
+  source: ts.SourceFile,
+): AssemblyOption | null {
+  if (!ts.isPropertyAssignment(property) && !ts.isShorthandPropertyAssignment(property)) {
+    return null;
+  }
+  if (propertyKey(property.name) !== 'assembly') return null;
+  const contextual = checker.getContextualType(literal);
+  if (contextual === undefined) return null;
+  const slot = checker.getPropertyOfType(checker.getNonNullableType(contextual), 'assembly');
+  const inAgent = (slot?.declarations ?? []).some(
+    (declaration) => moduleOf(declaration.getSourceFile().fileName) === 'agent',
+  );
+  if (slot === undefined || !inAgent) return null;
+  const value = ts.isPropertyAssignment(property) ? property.initializer : property.name;
+  const target = ts.isPropertyAssignment(property)
+    ? referenced(checker, property.initializer)
+    : checker.getShorthandAssignmentValueSymbol(property);
+  let problem: string | null = null;
+  if (target === undefined) {
+    problem = 'not a name: written in place or computed outside agent';
+  } else if (!ownFunction(checker, target, AGENT_ONLY)) {
+    problem = 'not a function, method or class with a body under apps/api/src/modules/agent/';
+  }
+  const { line } = source.getLineAndCharacterOfPosition(property.getStart(source));
+  return {
+    at: `${relative(ROOT, source.fileName)}:${String(line + 1)}`,
+    value: value.getText(source),
+    problem,
+    alias: aliasOf(checker, checker.getTypeOfSymbol(slot)),
+  };
+}
+
+function assemblyOptions(program: ts.Program, paths: readonly string[]): AssemblyOption[] {
+  const checker = program.getTypeChecker();
+  const out: AssemblyOption[] = [];
+  for (const path of paths) {
+    const source = program.getSourceFile(path);
+    if (source === undefined) {
+      const at = relative(ROOT, path);
+      out.push({ at, value: '', problem: 'not in the scanned program', alias: undefined });
+      continue;
+    }
+    const visit = (node: ts.Node): void => {
+      if (ts.isObjectLiteralExpression(node)) {
+        for (const property of node.properties) {
+          const option = assemblyOption(checker, node, property, source);
+          if (option !== null) out.push(option);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return out;
+}
+
+/**
+ * Every business assembly the composition files `paths` hand agent (see the header), in source
+ * order, each with what keeps it from being proven agent's own (null when it is).
+ */
+export function assemblyHandoffs(program: ts.Program, paths: readonly string[]): AssemblyHandoff[] {
+  return assemblyOptions(program, paths).map(({ at, value, problem }) => ({ at, value, problem }));
+}
+
+/** The option aliases every one of whose values (in `paths`) is proven agent's own. */
+function provenSlots(program: ts.Program, paths: readonly string[]): Set<ts.Symbol> {
+  const own = new Set<ts.Symbol>();
+  const unproven = new Set<ts.Symbol>();
+  for (const option of assemblyOptions(program, paths)) {
+    if (option.alias === undefined) continue;
+    (option.problem === null ? own : unproven).add(option.alias);
+  }
+  for (const alias of unproven) own.delete(alias);
+  return own;
 }
 
 /**
  * Every violation in the files `paths` of `program`, one line each:
  * `<repository path>:<line> <callee>(<handle>)`. A file missing from the program is reported too
- * (it was not scanned).
+ * (it was not scanned). `compositions`: the composition files whose `assembly` options may prove
+ * agent's assembly slots (app.module for agent's code; see the header).
  */
-export function foreignDbHandoffs(program: ts.Program, paths: readonly string[]): string[] {
+export function foreignDbHandoffs(
+  program: ts.Program,
+  paths: readonly string[],
+  compositions: readonly string[] = [],
+): string[] {
   const checker = program.getTypeChecker();
+  const slots = provenSlots(program, compositions);
   const out: string[] = [];
   for (const path of paths) {
     const source = program.getSourceFile(path);
@@ -395,7 +577,7 @@ export function foreignDbHandoffs(program: ts.Program, paths: readonly string[])
         const callee = calleeOf(checker, node);
         const keyword =
           callee.kind === ts.SyntaxKind.ImportKeyword || callee.kind === ts.SyntaxKind.SuperKeyword;
-        if (!keyword && externalCallee(checker, callee)) {
+        if (!keyword && externalCallee(checker, callee, slots)) {
           const handles = (node.arguments ?? []).flatMap((arg) => handlesIn(checker, arg, source));
           const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
           const at = `${relative(ROOT, path)}:${String(line + 1)}`;

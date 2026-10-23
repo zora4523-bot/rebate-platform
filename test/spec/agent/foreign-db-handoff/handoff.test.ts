@@ -1,22 +1,28 @@
-// B3-08k · BR-AI-02 ③ (D10-294; spec-test review r1 S1-1, S1-2, S2): agent never takes its
-// database handle to a function it does not own. Static scan over a TypeScript program of
-// apps/api/src/modules/agent/** (test files excluded; rules in ./scan.ts): no database handle, as
-// written or carried by an argument, reaches an external callee — another module's function or
-// class, or any function value handed in from outside (a parameter, an options / deps property,
-// an injected token value), whatever agent type it is declared with; kysely / @couli/db API and
-// agent's or platform's own functions with a body may take it. The scan proves itself first on
-// in-memory samples (violating and allowed: the old caller.ts readerFactory({db}) and index.ts
-// consentReader({db}) shapes among them), then runs on the code. The composition root (app.module)
-// assembles agent's readers and provides them by token; the reads afresh it hands agent
-// (freshConfigValue) build a content reader per call.
-import { join } from 'node:path';
+// B3-08k · BR-AI-02 ③ (D10-294; spec-test review r1 S1-1, S1-2, S2; r2 S1, S2, D10-305): agent
+// never takes its database handle to a function it does not own. Static scan over a TypeScript
+// program of apps/api/src/modules/agent/** (test files excluded; rules in ./scan.ts): no database
+// handle, as written or carried by an argument (a get accessor included), reaches an external
+// callee — another module's function or class, or any function value handed in from outside (a
+// parameter, an options / deps property, an injected token value), whatever agent type it is
+// declared with; kysely / @couli/db API and agent's or platform's own functions with a body may
+// take it. One narrow exception: the business assembly app.module hands agent as its `assembly`
+// option, when the scan proves it resolves to agent's own function with a body — then the slots of
+// that option's type (`deps.assembly`, the provider's `options.assembly`) count as agent's own.
+// The scan proves itself first on in-memory samples (violating and allowed: the old caller.ts
+// readerFactory({db}) and index.ts consentReader({db}) shapes, own and foreign assemblies among
+// them), then runs on the code. The composition root (app.module) assembles agent's readers and
+// provides them by token, hands agent an assembly declared in agent, and the reads afresh it hands
+// agent (freshConfigValue) build a content reader per call.
+import { dirname, join, relative, sep } from 'node:path';
 import { expect, it } from 'vitest';
 import {
   AGENT,
   APP_MODULE,
   MODULES,
+  ROOT,
   TASK_FILES,
   agentSourcePaths,
+  assemblyHandoffs,
   calledNames,
   foreignDbHandoffs,
   forStreamOptionNames,
@@ -53,6 +59,9 @@ const FOREIGN: SourceText = {
     'export function sampleRead(options: { readonly clock: unknown; readonly logger: unknown }) {',
     '  void options;',
     '}',
+    'export function sampleForeignAssembly(context: { readonly db: Kysely<DB> }): unknown {',
+    '  return context.db;',
+    '}',
   ].join('\n'),
 };
 
@@ -65,6 +74,9 @@ const PLATFORM: SourceText = {
     'export function sampleAppSchema(db: Kysely<DB>): Kysely<DB> {',
     "  return db.withSchema('app');",
     '}',
+    'export function sampleAssembly(context: { readonly db: Kysely<DB> }): unknown {',
+    '  return context.db;',
+    '}',
   ].join('\n'),
 };
 
@@ -74,10 +86,73 @@ const HEAD = [
   "import type { Clock, RootLogger } from '../../../platform/index.ts';",
 ].join('\n');
 
+/** The import specifier of an agent sample from another agent sample. */
+function local(file: SourceText): string {
+  return `./${file.path.slice(SAMPLE_DIR.length + 1)}`;
+}
+
 /** A sample re-exporting content's factory under another name, imported by a later sample. */
 const RELAY = sample(
   "export { createContentReader as makeReader } from '../../../content/index.ts';",
 );
+
+/**
+ * Review r2 (D10-305): two assembly options of agent with their own type aliases, as
+ * AgentModule.forStream's `assembly`. The composition sample below hands the "own" option only
+ * agent's function with a body (so its alias is proven) and the "foreign" option other values.
+ */
+const SLOTS = sample(
+  `${HEAD}
+export interface SampleContext {
+  readonly db: Kysely<DB>;
+  readonly clock: Clock;
+}
+export type SampleOwnAssemblyFactory = (context: SampleContext) => unknown;
+export type SampleForeignAssemblyFactory = (context: SampleContext) => unknown;
+export interface SampleOwnOptions {
+  readonly assembly?: SampleOwnAssemblyFactory;
+  readonly safety?: string;
+}
+export interface SampleForeignOptions {
+  readonly assembly?: SampleForeignAssemblyFactory;
+}
+export function sampleOwnForStream(options: SampleOwnOptions): SampleOwnOptions {
+  return options;
+}
+export function sampleForeignForStream(options: SampleForeignOptions): SampleForeignOptions {
+  return options;
+}
+export function sampleOwnAssembly(context: SampleContext): unknown {
+  return context.clock;
+}
+export declare function sampleDeclaredAssembly(context: SampleContext): unknown;`,
+);
+
+/** agent's assembly re-exported under another name, as agent/index.ts re-exports production's. */
+const RELAY_OWN = sample(`export { sampleOwnAssembly as ownAssembly } from '${local(SLOTS)}';`);
+
+/** The composition root of the samples (outside every module, as app.module), in memory only. */
+const COMPOSITION_PATH = join(ROOT, 'apps/api/src/__b3_08k_sample_root__.ts');
+const fromRoot = (file: SourceText): string =>
+  `./${relative(dirname(COMPOSITION_PATH), file.path).split(sep).join('/')}`;
+const COMPOSITION: SourceText = {
+  path: COMPOSITION_PATH,
+  text: `import { sampleForeignAssembly } from './modules/identity/__b3_08k_sample__.ts';
+import { sampleAssembly } from './modules/platform/__b3_08k_sample__.ts';
+import {
+  sampleDeclaredAssembly,
+  sampleForeignForStream,
+  sampleOwnForStream,
+} from '${fromRoot(SLOTS)}';
+import { ownAssembly } from '${fromRoot(RELAY_OWN)}';
+export const modules = [
+  sampleOwnForStream({ assembly: ownAssembly, safety: 'on' }),
+  sampleForeignForStream({ assembly: sampleForeignAssembly }),
+  sampleForeignForStream({ assembly: sampleAssembly }),
+  sampleForeignForStream({ assembly: sampleDeclaredAssembly }),
+  sampleForeignForStream({ assembly: (context) => sampleForeignAssembly(context) }),
+];`,
+};
 
 const VIOLATING: SourceText[] = [
   sample(
@@ -242,6 +317,66 @@ export function f(db: Kysely<DB>) {
   sampleWrite(...args);
 }`,
   ),
+  // Review r2 S2: a get accessor hands over what it returns.
+  sample(
+    `${HEAD}
+import { createContentReader } from '../../../content/index.ts';
+export function f(db: Kysely<DB>, clock: Clock) {
+  return createContentReader({
+    get db() {
+      return db.withSchema('app');
+    },
+    clock,
+  });
+}`,
+  ),
+  // Review r2 S1: the runtime / provider shape over an assembly option that is not proven agent's
+  // own (the composition hands it another module's, platform's, a declared-only or an in-place
+  // function).
+  sample(
+    `${HEAD}
+import type {
+  SampleContext,
+  SampleForeignAssemblyFactory,
+  SampleForeignOptions,
+} from '${local(SLOTS)}';
+export function runtime(deps: {
+  readonly assembly?: SampleForeignAssemblyFactory;
+  readonly db: Kysely<DB>;
+  readonly clock: Clock;
+}) {
+  return deps.assembly?.({ db: deps.db, clock: deps.clock });
+}
+export function provider(options: Pick<SampleForeignOptions, 'assembly'>) {
+  const factory = options.assembly;
+  return factory === undefined ? undefined : (context: SampleContext) => factory({ ...context });
+}`,
+  ),
+  // Review r2 S1: a proven assembly slot excuses nothing else — the caller / consent reader shape
+  // beside it is still external.
+  sample(
+    `${HEAD}
+import type { SampleOwnAssemblyFactory } from '${local(SLOTS)}';
+export function runtime(deps: {
+  readonly assembly?: SampleOwnAssemblyFactory;
+  readonly consentReader: (options: { readonly db: Kysely<DB> }) => unknown;
+  readonly db: Kysely<DB>;
+  readonly clock: Clock;
+}) {
+  deps.assembly?.({ db: deps.db, clock: deps.clock });
+  return deps.consentReader({ db: deps.db });
+}`,
+  ),
+  // Review r2 S1: a variable typed with the proven alias is judged by the value it holds.
+  sample(
+    `${HEAD}
+import { sampleForeignAssembly } from '../../../identity/__b3_08k_sample__.ts';
+import type { SampleOwnAssemblyFactory } from '${local(SLOTS)}';
+export function f(db: Kysely<DB>, clock: Clock) {
+  const build: SampleOwnAssemblyFactory = sampleForeignAssembly;
+  return build({ db, clock });
+}`,
+  ),
 ];
 
 const ALLOWED: SourceText[] = [
@@ -265,6 +400,12 @@ import { newUuidV7 } from '../../../platform/index.ts';
 import { sampleRead } from '../../../identity/__b3_08k_sample__.ts';
 export function f(clock: Clock, logger: RootLogger, key: string) {
   sampleRead({ clock, logger });
+  sampleRead({
+    get clock() {
+      return clock;
+    },
+    logger,
+  });
   switchSpecOf(key);
   return newUuidV7(clock.now());
 }`,
@@ -337,28 +478,80 @@ export function f(deps: { readonly db: Kysely<DB>; readonly clock: Clock; readon
   return createPgResultSetStore({ db });
 }`,
   ),
+  SLOTS,
+  RELAY_OWN,
+  // Review r2 S1 (D10-305): the runtime / provider shape over the assembly option the composition
+  // proves agent's own: the context may carry the handle, as a field or spread.
+  sample(
+    `${HEAD}
+import type { SampleContext, SampleOwnAssemblyFactory, SampleOwnOptions } from '${local(SLOTS)}';
+export function runtime(deps: {
+  readonly assembly?: SampleOwnAssemblyFactory;
+  readonly db: Kysely<DB>;
+  readonly clock: Clock;
+}) {
+  return deps.assembly?.({ db: deps.db, clock: deps.clock });
+}
+export function provider(options: Pick<SampleOwnOptions, 'assembly' | 'safety'>) {
+  const factory = options.assembly;
+  return factory === undefined ? undefined : (context: SampleContext) => factory({ ...context });
+}`,
+  ),
 ];
 
-it('[AC-B3-08k#1][BR-AI-02] agent/** 不把数据库句柄（db / trx / tx、.withSchema(…)、Kysely / Transaction 类型；照写或由实参、展开、变量对象携带）交给外部被调用者（别模块的函数或类、参数 / 选项属性 / 注入令牌值等外部交入的函数值；kysely、@couli/db 与 agent / platform 自有带函数体的函数除外）；扫描先用内存样例自证（违规与合法各一组，含改前 caller.ts 与 index.ts 两处写法），主干零违规', () => {
+const MEMORY = [...VIOLATING, ...ALLOWED, FOREIGN, PLATFORM, COMPOSITION];
+let built: ReturnType<typeof scanProgram> | undefined;
+
+/**
+ * One program for this file: agent's files and app.module (with everything they import) from the
+ * disk, the samples from memory (never written to disk).
+ */
+function program(): ReturnType<typeof scanProgram> {
+  built ??= scanProgram(
+    [...agentSourcePaths(), APP_MODULE, ...MEMORY.map((file) => file.path)],
+    MEMORY,
+  );
+  return built;
+}
+
+it('[AC-B3-08k#1][BR-AI-02] agent/** 不把数据库句柄（db / trx / tx、.withSchema(…)、Kysely / Transaction 类型；照写或由实参、展开、变量对象、get 访问器携带）交给外部被调用者（别模块的函数或类、参数 / 选项属性 / 注入令牌值等外部交入的函数值；kysely、@couli/db 与 agent / platform 自有带函数体的函数除外；app.module 交入且经 AST 证明解析到 agent 内带函数体声明的 assembly，其选项类型的槽位视为 agent 自有）；扫描先用内存样例自证（违规与合法各一组，含改前 caller.ts 与 index.ts 两处写法、自有与外来 assembly），主干零违规', () => {
   const paths = agentSourcePaths();
   expect(paths).toEqual(expect.arrayContaining(TASK_FILES));
-  // One program: agent's files from the disk, the samples from memory (never written to disk).
-  const memory = [...VIOLATING, ...ALLOWED, FOREIGN, PLATFORM];
-  const program = scanProgram([...paths, ...memory.map((file) => file.path)], memory);
+  const scan = program();
 
-  // The scan itself, on the in-memory samples (the foreign and platform files are never scanned).
+  // Which assembly the sample composition proves agent's own: only agent's function with a body,
+  // reached through a re-export under another name.
+  const proven = assemblyHandoffs(scan, [COMPOSITION.path]).map((handoff) => [
+    handoff.value,
+    handoff.problem === null,
+  ]);
+  expect(proven).toEqual([
+    ['ownAssembly', true],
+    ['sampleForeignAssembly', false],
+    ['sampleAssembly', false],
+    ['sampleDeclaredAssembly', false],
+    ['(context) => sampleForeignAssembly(context)', false],
+  ]);
+
+  // The scan itself, on the in-memory samples (the foreign, platform and composition files are
+  // never scanned), with the sample composition as the one proving the assembly slots.
+  const compositions = [COMPOSITION.path];
   for (const file of VIOLATING) {
-    expect(foreignDbHandoffs(program, [file.path]).length, file.text).toBeGreaterThan(0);
+    expect(foreignDbHandoffs(scan, [file.path], compositions).length, file.text).toBeGreaterThan(0);
   }
   for (const file of ALLOWED) {
-    expect(foreignDbHandoffs(program, [file.path]), file.text).toEqual([]);
+    expect(foreignDbHandoffs(scan, [file.path], compositions), file.text).toEqual([]);
   }
 
-  // agent's code.
-  expect(foreignDbHandoffs(program, paths)).toEqual([]);
+  // agent's code, with app.module as the composition root.
+  expect(foreignDbHandoffs(scan, paths, [APP_MODULE])).toEqual([]);
 }, 180_000);
 
-it('[AC-B3-08k#1][AC-B3-08k#5][BR-AI-02] 组装根 app.module 组装 agent 要的读取器并按令牌提供：调用 agentContentReaderToken()、agentCallerReaderToken() 与 agentConsentReaderToken()，自己调用 createContentReader、identity 的 createAgentCallerReader 与 createAiConsentReader；AgentModule.forStream 的选项不再带 callerReader、consentReader', () => {
+it('[AC-B3-08k#1][AC-B3-08k#5][BR-AI-02] 组装根 app.module 交给 agent 的 assembly 经 import / 再导出解析到 apps/api/src/modules/agent/ 内带函数体的声明；app.module 组装 agent 要的读取器并按令牌提供：调用 agentContentReaderToken()、agentCallerReaderToken() 与 agentConsentReaderToken()，自己调用 createContentReader、identity 的 createAgentCallerReader 与 createAiConsentReader；AgentModule.forStream 的选项不再带 callerReader、consentReader', () => {
+  const assemblies = assemblyHandoffs(program(), [APP_MODULE]);
+  expect(assemblies.length, 'assembly options app.module hands agent').toBeGreaterThan(0);
+  expect(assemblies.filter((handoff) => handoff.problem !== null)).toEqual([]);
+
   const called = calledNames(APP_MODULE);
   expect(called.has('agentContentReaderToken'), 'app.module provides the content reads').toBe(true);
   expect(called.has('agentCallerReaderToken'), 'app.module provides the caller reader').toBe(true);
@@ -374,7 +567,7 @@ it('[AC-B3-08k#1][AC-B3-08k#5][BR-AI-02] 组装根 app.module 组装 agent 要�
     expect(names).not.toContain('callerReader');
     expect(names).not.toContain('consentReader');
   }
-});
+}, 180_000);
 
 it('[AC-B3-08k#4][BR-AI-02] app.module 交给 agent 的 freshConfigValue 不经缓存：每个都是就地写的函数，答案是每次新建的 createContentReader(…).configValue(…)（与改前 createAgentSwitchReader 每次新建读取器同一读法），不指向共享读取器、外部变量或缓存', () => {
   const members = freshConfigValueMembers(APP_MODULE);

@@ -2,9 +2,10 @@
 // the daily limits only through the injected content reader (deps.contentReader, app.module's),
 // with the same results as before: switches through freshConfigValue behind agent's 1 s cache
 // (createAgentConfigReader), the version and the limits through configValue. The runtime hands the
-// business assembly that very reader (context.contentReader) and no database handle, and calls
-// identity's consent reader factory (deps.consentReader, a function value handed in) with the
-// version source only. agentStreamProvider injects the content reader by agentContentReaderToken()
+// business assembly that very reader (context.contentReader; the context may keep the handle for
+// agent's own stores — the assembly app.module hands in is proven agent's own, handoff.test.ts,
+// review r2 / D10-305), and calls identity's consent reader factory (deps.consentReader, a
+// function value handed in) with the version source only. agentStreamProvider injects the content reader by agentContentReaderToken()
 // and the consent reader factory by agentConsentReaderToken() (app.module builds it over its own
 // handle; forStream takes no consentReader option). Compile-only database: a config_items query
 // means agent built a content reader over its own handle. Nothing reaches a model or the network.
@@ -148,7 +149,7 @@ it('[AC-B3-08k#3] 配额上限 runtime.limits.current(appId) 经注入 content �
   expect(configQueries(queries)).toEqual([]);
 });
 
-it('[AC-B3-08k#2][AC-B3-08k#3][BR-AI-02] 运行体把注入的 deps.contentReader 原样交给业务装配：装配工厂收到的 context.contentReader 就是注入的那个对象，入参不带数据库句柄', () => {
+it('[AC-B3-08k#2][AC-B3-08k#3][BR-AI-02] 运行体把注入的 deps.contentReader 原样交给业务装配：装配工厂收到的 context.contentReader 就是注入的那个对象', () => {
   const reader = new FakeContentReader();
   const contexts: AgentStreamAssemblyContext[] = [];
   const captured = new Error('fixture: assembly context captured');
@@ -168,7 +169,6 @@ it('[AC-B3-08k#2][AC-B3-08k#3][BR-AI-02] 运行体把注入的 deps.contentReade
   expect(build).toThrow(captured);
   expect(contexts, 'assembly factory calls').toHaveLength(1);
   expect(contexts[0]!.contentReader, 'the injected reader itself').toBe(reader);
-  expect(contexts[0], 'no database handle for a function value handed in').not.toHaveProperty('db');
 });
 
 it('[AC-B3-08k#3][BR-AI-02] agentStreamProvider：注入 agentContentReaderToken() 与 agentConsentReaderToken()（app.module 组装的 content 读取器与同意读取器工厂）并交给运行体；有库时运行体的配额上限经该读取器读取、同意读取器工厂被调用一次', async () => {

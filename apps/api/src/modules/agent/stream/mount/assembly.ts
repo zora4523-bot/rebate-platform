@@ -94,10 +94,9 @@ export interface AgentStreamAssemblyContext {
    * B3-08k (D10-294): content's configuration reader (the runtime's deps.contentReader, assembled
    * by app.module). createProductionStreamAssembly reads every configuration value through it and
    * builds no content reader from context.db. Optional only until B3-08k is implemented.
-   * Review r1: the factory is a function value handed in (options.assembly), so the runtime calls
-   * it with no database handle (rule tests: foreign-db-handoff/handoff.test.ts, runtime.test.ts):
-   * `db` leaves this context, and agent's PG parts built over the runtime's handle
-   * (createPgResultSetStore, createOrderCardRefs) come in it instead.
+   * Review r2 (D10-305): `db` stays in this context for agent's own stores
+   * (createPgResultSetStore, createOrderCardRefs); app.module's assembly must resolve to agent's
+   * own function with a body (rule test: foreign-db-handoff/handoff.test.ts).
    */
   readonly contentReader?: Pick<ContentReader, 'configValue'>;
 }

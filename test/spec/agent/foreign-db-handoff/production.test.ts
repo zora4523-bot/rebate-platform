@@ -60,8 +60,8 @@ function productionContext(reader: FakeContentReader) {
     parsing: {} as AgentStreamProvidedPorts['parsing'],
     cards: vi.fn<AgentStreamProvidedPorts['cards']>(),
   };
-  // The compile-only handle stays in for the assembly as it is today; B3-08k's runtime hands the
-  // factory value no handle (handoff.test.ts), so the cast keeps this valid if db leaves the type.
+  // The compile-only handle stays in for agent's own stores (createPgResultSetStore,
+  // createOrderCardRefs); content's reads come only through contentReader.
   const context = {
     db: compileOnlyDb(queries),
     clock: fixedClock(),
