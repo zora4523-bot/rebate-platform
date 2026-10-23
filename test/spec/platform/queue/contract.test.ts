@@ -171,7 +171,7 @@ it('[规划/02 §11 队列拆分; ADR-0001 §4.2 #19] 生产队列目录逐项�
   if (payAt !== -1) {
     expect(QUEUE_CATALOG.filter((queue) => queue.name === 'pay')).toHaveLength(1);
     expect(QUEUE_CATALOG[payAt]).toStrictEqual({ name: 'pay', ...DEFAULT, policy: 'exclusive' });
-    expect(QUEUE_CATALOG[payAt - 1]?.name).toBe('evt.notification-claim-result');
+    expect(QUEUE_CATALOG[payAt - 1]?.name).toBe('evt.payout-went-negative');
     expect(QUEUE_CATALOG[payAt + 1]?.name).toBe('pool-refresh');
   }
   expect(
@@ -281,7 +281,7 @@ it('[规划/02 §3.1 转账队列 concurrency=1; ADR-0001 §3 海报轮询 0.5 �
   if (pays.length > 0) {
     expect(pays).toStrictEqual([w('pay', 4)]);
     const payAt = ENTRY_PLAN.worker.findIndex((work) => work.queue === 'pay');
-    expect(ENTRY_PLAN.worker[payAt - 1]).toStrictEqual(w('evt.notification-claim-result', 5));
+    expect(ENTRY_PLAN.worker[payAt - 1]).toStrictEqual(w('evt.payout-went-negative', 1));
     expect(ENTRY_PLAN.worker[payAt + 1]).toStrictEqual(w('pool-refresh', 1));
   }
   expect(
