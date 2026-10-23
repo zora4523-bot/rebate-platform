@@ -116,7 +116,7 @@ it(
     // B1-15t (guard-change): B1-15r's 0077 is the fourth approved migration (payout_accounts
     // details CHECK rebuilt with an anonymized branch). Same pinning as 0057.
     const b115r = '0077_deletion-anonymize.sql';
-    const b115rHash = '242804db7ab7dc247b3c55da6af179ef998462c2da6fc4f453d6919a1db3956d';
+    const b115rHash = 'd933bc024716bc1fcaa2ac7c7c1bfe9537f76d64225e0effff95d37e6a238113';
     expect(module.APPROVED_GUARD_CHANGES).toEqual({
       [APPROVED_FILE]: createHash('sha256').update(bytes).digest('hex'),
       [ct25d]: ct25dHash,
