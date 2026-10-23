@@ -149,6 +149,36 @@ it('[AC-B3-08a#9][BR-AI-07][BR-AI-14] order_no 的占位符按本 run 还原后�
   });
 });
 
+it.each([
+  {
+    label: '占位符不在本次还原表里',
+    orderNo: '<num_2>',
+    placeholders: { '<num_1>': '990000000001' },
+  },
+  {
+    label: '嵌在文本里的占位符不在还原表里',
+    orderNo: 'JD<num_3>',
+    placeholders: { '<num_1>': '990000000001' },
+  },
+  { label: '占位符还原后为空', orderNo: '<num_1>', placeholders: { '<num_1>': '' } },
+  { label: '占位符还原后全是空白', orderNo: '<num_1>', placeholders: { '<num_1>': '   ' } },
+  { label: '单号本身全是空白', orderNo: '   ', placeholders: { '<num_1>': '990000000001' } },
+])(
+  '[AC-B3-08a#9][BR-AI-03][BR-AI-14] order_no $label → invalid_args，先拒再扣次数：不扣次数、不查单号、不读点击',
+  async ({ orderNo, placeholders }) => {
+    const f = setup();
+    const ctx = context({ placeholders });
+    const outcome = await f.execute(EXPLAIN, { order_no: orderNo, platform: 'jd' }, ctx);
+    expect(outcome).toEqual(rejected);
+    expect(f.take).not.toHaveBeenCalled();
+    expect(f.findOwnByNumber).not.toHaveBeenCalled();
+    expect(f.read).not.toHaveBeenCalled();
+    expect(f.get).not.toHaveBeenCalled();
+    expect(f.resolve).not.toHaveBeenCalled();
+    expect(f.cardReference).not.toHaveBeenCalled();
+  },
+);
+
 it('[AC-B3-08a#9][BR-AI-07 判定 3] 按单号查不到：出 claim_draft 卡（共享出卡函数），模型只拿 card_id', async () => {
   const f = setup();
   const ctx = context({ placeholders: { '<num_1>': '990000000001' } });
@@ -224,6 +254,74 @@ it('[AC-B3-08a#9][BR-AI-07] 父单号命中多个子单：每个子单 1 张卡�
     total: 2,
     truncated: false,
   });
+});
+
+// 单号取无法按格式推断平台的合成值：08 原文 platform 缺省且推断不出时查当前用户名下全部平台。
+const UNINFERABLE_ORDER_NO = 'SYNTHETIC-ORDER-ABC';
+
+it('[AC-B3-08a#9][BR-AI-07 判定 2] 只给 order_no 不给 platform 命中 1 条：查询不带 platform，1 张卡，模型视图平台取自订单', async () => {
+  const f = setup();
+  const hit = item({
+    order_id: '0192f3a1-7c00-7000-8000-00000000a901',
+    platform: 'taobao',
+    title: '合成燕麦奶',
+    display_status: 'CREDITING',
+    reason: null,
+  });
+  f.findOwnByNumber.mockResolvedValue([hit]);
+  const ctx = context();
+  const outcome = await f.execute(EXPLAIN, { order_no: UNINFERABLE_ORDER_NO }, ctx);
+  expect(f.findOwnByNumber).toHaveBeenCalledTimes(1);
+  expect(f.findOwnByNumber.mock.calls[0]?.[0]).toEqual({
+    app_id: ctx.appId,
+    user_id: ctx.userId,
+  });
+  const query = f.findOwnByNumber.mock.calls[0]?.[1];
+  expect(query).toEqual({ order_no: UNINFERABLE_ORDER_NO });
+  expect(query).not.toHaveProperty('platform');
+  const cards = okCards(outcome);
+  expect(cards.map((card) => card.type)).toEqual(['order_status']);
+  expect(cards[0]?.data).toEqual(hit);
+  expect(outcome.modelView).toEqual({
+    card_id: reference(0),
+    platform: 'taobao',
+    title: wrapUntrusted('合成燕麦奶'),
+  });
+  expectHidden(outcome, [hit.order_id, UNINFERABLE_ORDER_NO, 'CREDITING']);
+  expect(f.take).toHaveBeenCalledTimes(1);
+  expect(f.read).not.toHaveBeenCalled();
+});
+
+it('[AC-B3-08a#9][BR-AI-07] 只给 order_no 不给 platform 命中 2 条（不同平台）：每条 1 张卡，模型视图用列表形状', async () => {
+  const f = setup();
+  const first = item({
+    order_id: '0192f3a1-7c00-7000-8000-00000000a911',
+    platform: 'jd',
+    title: '合成丙',
+  });
+  const second = item({
+    order_id: '0192f3a1-7c00-7000-8000-00000000a912',
+    platform: 'pdd',
+    title: '合成丁',
+  });
+  f.findOwnByNumber.mockResolvedValue([first, second]);
+  const outcome = await f.execute(EXPLAIN, { order_no: UNINFERABLE_ORDER_NO });
+  const query = f.findOwnByNumber.mock.calls[0]?.[1];
+  expect(query).toEqual({ order_no: UNINFERABLE_ORDER_NO });
+  expect(query).not.toHaveProperty('platform');
+  const cards = okCards(outcome);
+  expect(cards.map((card) => card.type)).toEqual(['order_status', 'order_status']);
+  expect(cards.map((card) => card.data)).toEqual([first, second]);
+  expect(outcome.modelView).toEqual({
+    orders: [
+      { card_id: reference(0), platform: 'jd', title: wrapUntrusted('合成丙') },
+      { card_id: reference(1), platform: 'pdd', title: wrapUntrusted('合成丁') },
+    ],
+    total: 2,
+    truncated: false,
+  });
+  expectHidden(outcome, [first.order_id, second.order_id, UNINFERABLE_ORDER_NO]);
+  expect(f.read).not.toHaveBeenCalled();
 });
 
 it('[AC-B3-08a#9][BR-AI-07] 无 platform 且按单号查不到：{error:platform_required}，不出卡', async () => {

@@ -67,6 +67,22 @@ it.each([
   },
 );
 
+// 格式像 YYYY-MM-DD 但日历上不存在：schema 或 handler 拒绝都行，只要求 rejected 且不查订单。
+it.each([
+  { label: 'date_from 为 2026-02-30', args: { date_from: '2026-02-30', date_to: '2026-10-23' } },
+  { label: 'date_from 为 2026-13-01', args: { date_from: '2026-13-01', date_to: '2026-10-23' } },
+  { label: 'date_to 为 2026-02-30', args: { date_from: '2026-02-01', date_to: '2026-02-30' } },
+  { label: 'date_to 为 2026-13-01', args: { date_from: '2026-10-01', date_to: '2026-13-01' } },
+])(
+  '[AC-B3-08a#1][BR-AI-07] list_my_orders 不存在的日期（$label）→ invalid_args，不查订单',
+  async ({ args }) => {
+    const f = setup();
+    expect(await f.execute(LIST, args)).toEqual(rejected);
+    expect(f.searchForAgent).not.toHaveBeenCalled();
+    expect(f.warn).not.toHaveBeenCalled();
+  },
+);
+
 it.each([
   { label: '只给必填', args: { ...DATES } },
   { label: 'keyword 20 字', args: { ...DATES, keyword: '奶'.repeat(20) } },
