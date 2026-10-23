@@ -358,6 +358,32 @@ export interface PostingCoreOptions {
    * database, where nothing can be posted); without it no event is published.
    */
   readonly eventBus?: EventBus;
+  /**
+   * BR-WDR-05 (a) / BR-FUND-12: called on the posting transaction, inside its savepoint, for every
+   * user account whose available goes from < 0 to >= 0 by this voucher (payout clears the
+   * NEGATIVE_BALANCE block there). Optional; without it nothing is called.
+   */
+  readonly balanceRecoveredHook?: BalanceRecoveredPort;
+}
+
+/** What the recovery port receives for one user account (amounts in fen). */
+export interface BalanceRecoveredInput {
+  readonly appId: string;
+  readonly userId: string;
+  readonly accountId: string;
+  readonly availableBefore: bigint;
+  readonly availableAfter: bigint;
+  readonly voucherId: string;
+}
+
+/** The synchronous transactional recovery port, implemented outside ledger (payout). */
+export interface BalanceRecoveredPort {
+  onRecovered(trx: Transaction<DB>, input: BalanceRecoveredInput): Promise<void>;
+}
+
+/** True when a user account's available goes from < 0 to >= 0 by this voucher's net change. */
+function recovered(change: AccountWrite): boolean {
+  return change.before.available_fen < 0n && change.after.available_fen >= 0n;
 }
 
 /** True when a user account's available goes from >= 0 to < 0 by this voucher's net change. */
@@ -366,7 +392,7 @@ function wentNegative(change: AccountWrite): boolean {
 }
 
 export function createPostingCore(input: PostingCoreOptions): PostingCore {
-  const { clock, eventBus } = input;
+  const { clock, eventBus, balanceRecoveredHook } = input;
   /** D2: the Clock is read once per transaction; its vouchers share booked_at and the day. */
   const instants = new WeakMap<Transaction<DB>, Date>();
 
@@ -481,15 +507,32 @@ export function createPostingCore(input: PostingCoreOptions): PostingCore {
     // S21 / BR-WDR-05 (a): inside this savepoint, so a failed publish undoes the whole voucher
     // (balances, entries and any event already published for another account) and the caller's
     // transaction stays usable. Accounts in ascending account_id order; frozen never counts.
+    const ordered = [...writes.values()].sort((a, b) =>
+      a.before.account_id < b.before.account_id ? -1 : 1,
+    );
     if (eventBus !== undefined) {
-      for (const change of [...writes.values()].sort((a, b) =>
-        a.before.account_id < b.before.account_id ? -1 : 1,
-      )) {
+      for (const change of ordered) {
         if (!wentNegative(change)) continue;
         await eventBus.publish(trx, {
           appId,
           name: 'account.went_negative',
           payload: { user_id: change.before.user_id },
+        });
+      }
+    }
+    // BR-WDR-05 (a): the same savepoint again, so a failing port (a thrown error or an aborted
+    // SQL statement) undoes the voucher, its events and earlier cleanups; the caller's transaction
+    // stays usable. A replayed uniq_key returned 'duplicate' above and never gets here.
+    if (balanceRecoveredHook !== undefined) {
+      for (const change of ordered) {
+        if (!recovered(change)) continue;
+        await balanceRecoveredHook.onRecovered(trx, {
+          appId,
+          userId: change.before.user_id,
+          accountId: change.before.account_id,
+          availableBefore: change.before.available_fen,
+          availableAfter: change.after.available_fen,
+          voucherId,
         });
       }
     }

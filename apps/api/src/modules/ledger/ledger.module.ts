@@ -1,9 +1,9 @@
 import type { DynamicModule } from '@nestjs/common';
 import { CLOCK, EVENT_BUS, type Clock, type EventBus } from '../platform/index.ts';
-import { createLedger } from './application/event-ledger.ts';
+import { BalanceRecoveredHook, createLedger } from './application/recovered-ledger.ts';
 import type { Ledger } from './application/reverse.ts';
 
-/** Nest injection token for the process ledger (the Clock-backed posting port, with the event bus). */
+/** Nest injection token for the process ledger (the Clock-backed posting port, with the optional event bus and recovery port). */
 export const LEDGER = Symbol('LEDGER');
 
 /**
@@ -19,9 +19,23 @@ export class LedgerModule {
           provide: LEDGER,
           // EVENT_BUS exists only where the entry has a database (PlatformModule); entries
           // without one cannot post, so the bus is optional here like DB elsewhere.
-          inject: [CLOCK, { token: EVENT_BUS, optional: true }],
-          useFactory: (clock: Clock, eventBus: EventBus | undefined): Ledger =>
-            createLedger(eventBus === undefined ? { clock } : { clock, eventBus }),
+          // BALANCE_RECOVERED_HOOK is provided by payout where it runs (BR-WDR-05 (a));
+          // elsewhere it is absent and recovery calls nothing.
+          inject: [
+            CLOCK,
+            { token: EVENT_BUS, optional: true },
+            { token: BalanceRecoveredHook, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            eventBus: EventBus | undefined,
+            balanceRecoveredHook: BalanceRecoveredHook | undefined,
+          ): Ledger =>
+            createLedger({
+              clock,
+              ...(eventBus === undefined ? {} : { eventBus }),
+              ...(balanceRecoveredHook === undefined ? {} : { balanceRecoveredHook }),
+            }),
         },
       ],
       exports: [LEDGER],
