@@ -60,6 +60,16 @@
 //   configValue, the switches over createAgentConfigReader({clock, content: deps.contentReader}),
 //   and the assembly's context.contentReader. agentStreamProvider also injects
 //   agentContentReaderToken() and passes its value on as deps.contentReader.
+//   Review r1 (the sixth place, D10-287): agent hands no database handle to any function value it
+//   is handed (a deps / options property, a parameter, an injected token value), whatever agent
+//   type it carries. deps.consentReader is called with {currentVersion: version} only (identity's
+//   createAiConsentReader over app.module's handle; AgentConsentReaderFactory loses its db), and
+//   agentStreamProvider injects it by agentConsentReaderToken() (app.module provides it on the
+//   stream entry, null without a database handle) instead of options.consentReader: forStream's
+//   options keep assembly and safety only. deps.assembly (and the provider's wrapper of
+//   options.assembly) is called with no handle either, neither as a field nor spread from a
+//   context holding one: agent builds its own PG parts (createPgResultSetStore,
+//   createOrderCardRefs) over its handle and hands those in the context instead.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`, no process.env, no import of identity.
@@ -146,11 +156,23 @@ export type { AgentBodyAssembly, AgentBodyAssemblyDeps } from './body.ts';
 export { agentContentReaderToken, createAgentConfigReader } from './config.ts';
 export type { AgentConfigReaderDeps, AgentContentReader } from './config.ts';
 
-/** identity's createAiConsentReader (B1-02r), handed in by app.module (agent never imports it). */
+/**
+ * identity's createAiConsentReader (B1-02r), handed in by app.module (agent never imports it).
+ * B3-08k: the options lose `db` (app.module binds its own handle); agent passes currentVersion.
+ */
 export type AgentConsentReaderFactory = (options: {
   readonly db: Kysely<Database>;
   readonly currentVersion: (appId: string) => Promise<number>;
 }) => AgentConsentReader;
+
+/**
+ * B3-08k (review r1, D10-287): DI token of the AgentConsentReaderFactory app.module provides on
+ * the stream entry (identity's createAiConsentReader bound to its handle; null without one);
+ * agentStreamProvider injects it. The same symbol on every call.
+ */
+export function agentConsentReaderToken(): symbol {
+  throw new Error('NotImplemented: agentConsentReaderToken');
+}
 
 export interface AgentStreamRuntimeDeps {
   readonly assembly?: AgentStreamAssemblyFactory;
@@ -197,7 +219,9 @@ export interface AgentStreamModuleOptions {
   /** B3-03m: the content safety review configuration handed to the assembly as context.safety
    * (app.module, stream entry). Absent: the assembly's review stays fail-closed. */
   readonly safety?: StreamReviewOptions;
+  /** B3-08k: goes away; agentConsentReaderToken() carries it (app.module binds the handle). */
   readonly consentReader: AgentConsentReaderFactory;
+  /** B3-08k: goes away; agentCallerReaderToken() carries the built reader (./caller.ts). */
   readonly callerReader: AgentCallerReaderFactory;
 }
 

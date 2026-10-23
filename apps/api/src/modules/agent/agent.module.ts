@@ -45,7 +45,9 @@
 //   agentContentReaderToken() (app.module provides content's reads, assembled there) and passes it
 //   as deps.contentReader. Without a DB handle the provider stays null with one
 //   'agent_sweeper_disabled' line, as before. forStream: the AGENT_CALLER provider injects
-//   agentCallerReaderToken() (./stream/mount/caller.ts) instead of options.callerReader.
+//   agentCallerReaderToken() (./stream/mount/caller.ts) instead of options.callerReader, and the
+//   stream runtime's provider injects agentConsentReaderToken() instead of options.consentReader
+//   (review r1); forStream's options keep assembly and safety only.
 //
 // Also compiled by the `test` project: a class decorator only (no parameter decorators or
 // parameter properties; dependencies are injected through factories); erasable syntax only,

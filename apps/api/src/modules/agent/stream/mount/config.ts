@@ -21,7 +21,9 @@ import type { Clock } from '../../../platform/index.ts';
  *   budget, order budget).
  * freshConfigValue: the config_items value and version of (appId, key) read anew on every call
  *   (no cache of its own; as createAgentSwitchReader's per-call createContentReader did); only
- *   createAgentConfigReader uses it, for agent.* keys (followup 23).
+ *   createAgentConfigReader uses it, for agent.* keys (followup 23). Review r1 S1-2: app.module
+ *   writes it in place as `(appId, key) => createContentReader({...}).configValue(appId, key)`
+ *   (a reader built per call; rule test foreign-db-handoff/handoff.test.ts reads that form).
  */
 export interface AgentContentReader {
   configValue(appId: string, key: string): Promise<ContentConfig | null>;
