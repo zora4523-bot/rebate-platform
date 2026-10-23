@@ -8,7 +8,7 @@ type: test-change
 # 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件，Claude 实现、Codex 只读对抗评审，标签由编排核对后加（D10-110，B3-04j 先例）。
 refs: [BR-AI-02]
 refs_hash:
-  BR-AI-02: 61014cc4d222
+  BR-AI-02: d14ca044d0e7
 deps: [B3-04a]
 paths:
   - 'test/spec/agent/tools-registry/definitions.test.ts'

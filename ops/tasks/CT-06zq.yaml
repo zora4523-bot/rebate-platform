@@ -14,7 +14,7 @@ type: guard-change
 # 改 .dependency-cruiser.cjs 属第二类保护路径、tools/ci/depcruise-rules.test.ts 属第三类保护路径（tools/**）；收紧改动由编排按 approvals #24 核对后加标签（D10-266 / D10-273）。非 task 分支，不带证据文件。
 refs: [BR-AI-02]
 refs_hash:
-  BR-AI-02: 61014cc4d222
+  BR-AI-02: d14ca044d0e7
 deps: [CT-06zo]
 paths:
   - '.dependency-cruiser.cjs'
