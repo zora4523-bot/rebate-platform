@@ -140,3 +140,62 @@ export function openAuthWindow(authUrl: string): boolean {
   popup.location.href = url;
   return true;
 }
+
+// —— 推广位（F1-10gb；契约 adminListUnionPids 等，CT-24h）——
+
+export type UnionPid = Schema<'AdminUnionPid'>;
+export type PidPlatform = UnionPid['platform'];
+export type PidScene = UnionPid['pid_scene'];
+export type PidStatus = UnionPid['status'];
+export type PidCreateRequest = Schema<'AdminUnionPidCreateRequest'>;
+export type PidUpdateRequest = Schema<'AdminUnionPidUpdateRequest'>;
+export type PidRetireRequest = Schema<'AdminUnionPidRetireRequest'>;
+
+export const PIDS_URL = '/admin/v1/union-pids';
+export const PID_PERMISSION = 'union.pid';
+export const pidUrl = (pidId: string): string => `${PIDS_URL}/${encodeURIComponent(pidId)}`;
+export const activateUrl = (pidId: string): string => `${pidUrl(pidId)}/activate`;
+export const retireUrl = (pidId: string): string => `${pidUrl(pidId)}/retire`;
+
+// 枚举取值同契约 AdminUnionPid（platform、AdminUnionPidScene、AdminUnionPidStatus）。
+export const PID_PLATFORMS: readonly PidPlatform[] = ['taobao', 'jd', 'pdd'];
+export const PID_SCENES: readonly PidScene[] = [
+  'self_buy',
+  'agent',
+  'share',
+  'taolijin',
+  'fallback',
+  'query',
+];
+/** AdminUnionPidCode：PID 与 site_id 的写法。 */
+export const PID_CODE = /^[0-9A-Za-z_-]{1,64}$/;
+/** 花卷云忽略截图：PNG / JPEG，不超过 5 MB（等于 5 MB 可以）。 */
+export const EVIDENCE_TYPES: readonly string[] = ['image/png', 'image/jpeg'];
+export const EVIDENCE_MAX_BYTES = 5 * 1024 * 1024;
+
+function dictionaryValue(keys: readonly string[], code: string): string {
+  for (const key of keys) if (Object.hasOwn(dictionary, key)) return dictionary[key]!;
+  return code;
+}
+
+/** 推广位状态名（admin_dict.union_pids.status.<code>），缺键显示编码。 */
+export function pidStatusLabel(code: string): string {
+  return dictionaryValue([`admin_dict.union_pids.status.${code}`], code);
+}
+
+/**
+ * 推广位场景名：BR-TEXT-25 的 admin_dict.<enum>.<code> 可用表列名或枚举名两种写法，先表列名
+ * （admin_dict.union_pids.pid_scene.<code>）再枚举名（admin_dict.pid_scene.<code>）；都缺时显示编码。
+ */
+export function sceneLabel(code: string): string {
+  return dictionaryValue(
+    [`admin_dict.union_pids.pid_scene.${code}`, `admin_dict.pid_scene.${code}`],
+    code,
+  );
+}
+
+/** 下拉选项里的场景：字典有名字时带上编码，便于核对。 */
+export function sceneOption(code: string): string {
+  const name = sceneLabel(code);
+  return name === code ? code : t.pids.sceneOption(name, code);
+}

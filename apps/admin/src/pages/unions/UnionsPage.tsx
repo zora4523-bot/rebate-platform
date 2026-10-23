@@ -1,6 +1,7 @@
 // 联盟账号与推广位（/unions；契约 tag admin-unions，CT-24h；01 F-ADM-16，BR-ID-24）。页内两个页签：
-// 「联盟账号」（本页：全量只读列表、按 reauth_mode 的更新入口、告警手机号）与「推广位」（F1-10gb）。
-// 列表读取不要动态码；每一次写都先 totp 动态码。缺 union.account_auth 时不发任何请求。
+// 「联盟账号」（本页：全量只读列表、按 reauth_mode 的更新入口、告警手机号）与「推广位」（PidsTab.tsx，
+// F1-10gb）。列表读取不要动态码；每一次写都先 totp 动态码。缺 union.account_auth 时联盟账号页签不发
+// 任何请求；缺 union.pid 时推广位页签显示无权限、不发任何 union-pids 请求。
 import { useDataProvider } from '@refinedev/core';
 import {
   Alert,
@@ -24,6 +25,7 @@ import { AlertPhonesBlock } from './AlertPhones.tsx';
 import { CredentialDialog } from './CredentialDialog.tsx';
 import {
   ACCOUNTS_URL,
+  PID_PERMISSION,
   beijingTime,
   codeOf,
   dictLabel,
@@ -33,6 +35,7 @@ import {
   type UnionAccount,
   customOf,
 } from './model.ts';
+import { PidForbidden, PidsTab } from './PidsTab.tsx';
 import { ReauthDialog } from './ReauthDialog.tsx';
 import { useStepUp } from './useStepUp.tsx';
 
@@ -57,6 +60,8 @@ interface Notice {
 
 export function UnionsPage({ access, clock }: UnionsPageProps): ReactElement {
   const permitted = access.can(UNION_PERMISSION);
+  const pidPermitted = access.can(PID_PERMISSION);
+  const now = clock ?? SYSTEM_CLOCK;
   return (
     <Flex vertical gap={16}>
       <Typography.Title level={4} style={{ margin: 0 }}>
@@ -68,15 +73,15 @@ export function UnionsPage({ access, clock }: UnionsPageProps): ReactElement {
           {
             key: 'accounts',
             label: t.tabs.accounts,
-            children: permitted ? <AccountsTab clock={clock ?? SYSTEM_CLOCK} /> : <Forbidden />,
+            children: permitted ? <AccountsTab clock={now} /> : <Forbidden />,
           },
           {
             key: 'pids',
             label: t.tabs.pids,
-            children: (
-              <Card>
-                <Empty description={t.pidsPending} />
-              </Card>
+            children: pidPermitted ? (
+              <PidsTab clock={now} canReadAccounts={permitted} />
+            ) : (
+              <PidForbidden />
             ),
           },
         ]}
