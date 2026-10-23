@@ -1,0 +1,23 @@
+id: B2-05l
+repo: rebate-platform
+title: payout 只读端口（payout/read.ts 登记）：按 (app_id, withdrawal_id) 取提现单的通知所需字段（status、reject_reason_code、amount_fen、net_fen、fail_code、payout_channel、created_at、paid_at），供 notification 消费 wallet.withdrawal_changed 时选 WD_REJECTED 文案分支（D10-260：事件载荷不改）；只读、不改分录、不加写入
+type: impl
+# 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。规则测试与评审由独立 Claude（claude-run.sh，engine claude-independent；Codex 至 10-30 不可用）。
+# 来源：D10-257 → D10-260：wallet.withdrawal_changed 载荷保持 {withdrawal_id, user_id, status}；be 的 B1-12u 经本端口取单据（BR-AI-02 ④ 的只读入口文件 read.ts 先例，只导出登记的查询函数）。
+# 状态备注：等 B2-05e 合并（驳回原因码写法在它里面）；be B1-12u 入账后在 deps 对齐。
+refs: [BR-WDR-10, BR-TEXT-09]
+refs_hash:
+  BR-WDR-10: 1db6b508e224
+  BR-TEXT-09: 647f0845e2e1
+deps: [B2-05e]
+paths:
+  - 'apps/api/src/modules/payout/**'
+test_paths:
+  - 'test/spec/payout/read-port/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/read-port/**'
+status: todo
+pr: null
