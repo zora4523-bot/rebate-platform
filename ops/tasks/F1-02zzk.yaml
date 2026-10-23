@@ -1,0 +1,21 @@
+id: F1-02zzk
+repo: rebate-platform
+title: notification 注销清理端口（identity DeletionCleanupPorts.notification）：按 BR-ID-28 删除或匿名化该用户的推送令牌、站内信、通知设置与发送记录，app.module 装配接上
+type: impl
+# 2026-10-24 入账（content-client；编排 05:33 派工：identity B1-15g #1464 已合并，notification 端口未接上前注销单停在 processing、每日 cleanup_blocked）。
+# 依据：08 BR-ID-28（注销删除与保留范围，推送 token 等）、D10-186；identity 端口 apps/api/src/modules/identity/ports/deletion-cleanup.ts（DeletionCleanupStep：调用方事务、可重入、{ appId, userId, at }）。原文由编排者摘入任务书，refs 置空。
+# notification 模块以往由 be-codex 线实现；本任务照编排 05:33 归 content。catalog（收藏）不在本任务。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/notification/**'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/notification/deletion-cleanup/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
