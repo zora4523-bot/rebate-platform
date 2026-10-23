@@ -115,6 +115,62 @@ module.exports = {
       from: { path: '^apps/api/src/modules/agent/' },
       to: { path: '^apps/api/src/modules/(linking|orders)/', dependencyTypesNot: ['type-only'] },
     },
+    // CT-06zq (D10-273 ②): BR-AI-02 ③ is an allow-list. The agent module may depend only on the
+    // listed modules (plus platform, the shared infrastructure kernel, and union types, both in
+    // use before this rule and reported to the orchestrator), and no file outside the modules may
+    // relay another module's values to it.
+    {
+      name: 'agent-modules-allow-list',
+      comment:
+        'BR-AI-02 ③: apps/api/src/modules/agent/** may depend only on parsing, catalog, linking, ' +
+        'orders, content, taolijin and identity (their index.ts; linking / orders / identity ' +
+        'types only, see the rules above), ledger/read.ts and payout/read.ts, plus platform ' +
+        '(infrastructure) and union (types only, below) (CT-06zq).',
+      severity: 'error',
+      from: { path: '^apps/api/src/modules/agent/' },
+      to: {
+        path: '^apps/api/src/modules/',
+        pathNot: [
+          '^apps/api/src/modules/(agent|parsing|catalog|linking|orders|content|taolijin|identity|platform|union)/',
+          '^apps/api/src/modules/(ledger|payout)/read\\.ts$',
+        ],
+      },
+    },
+    {
+      name: 'agent-union-types-only',
+      comment:
+        'The agent module uses union only for types (the quote tool); union adapters reach it ' +
+        'through injected ports, never as values (CT-06zq).',
+      severity: 'error',
+      from: { path: '^apps/api/src/modules/agent/' },
+      to: { path: '^apps/api/src/modules/union/', dependencyTypesNot: ['type-only'] },
+    },
+    {
+      name: 'agent-no-relay-outside-modules',
+      comment:
+        'No relay: the agent module must not depend on apps/api/src files outside the modules ' +
+        '(a non-module file could re-export a forbidden value, CT-06zo review) (CT-06zq).',
+      severity: 'error',
+      from: { path: '^apps/api/src/modules/agent/' },
+      to: { path: '^apps/api/src/', pathNot: '^apps/api/src/modules/' },
+    },
+    {
+      name: 'agent-allowed-indexes-no-value-relay',
+      comment:
+        'No relay: the index.ts of a module the agent may import must not re-export values of ' +
+        'another module (export … from / export * from), or the agent could reach linking / ' +
+        'orders / identity values or a forbidden module through it (CT-06zq).',
+      severity: 'error',
+      from: {
+        path: '^apps/api/src/modules/(parsing|catalog|linking|orders|content|taolijin|identity|platform|union)/index\\.ts$',
+      },
+      to: {
+        path: '^apps/api/src/modules/',
+        pathNot: '^apps/api/src/modules/$1/',
+        dependencyTypes: ['export'],
+        dependencyTypesNot: ['type-only'],
+      },
+    },
     {
       name: 'pg-boss-only-behind-job-queue',
       comment:

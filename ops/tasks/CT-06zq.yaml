@@ -1,0 +1,24 @@
+id: CT-06zq
+repo: rebate-platform
+title: CT-06zq：.dependency-cruiser.cjs 把 agent 依赖改为白名单（BR-AI-02 ③）并加再导出中转检查——agent 只许 parsing / catalog / linking / orders / content / taolijin / identity、ledger|payout read.ts，外加 platform 与 union（类型）；不得依赖 modules 以外的 apps/api/src 文件；白名单模块的 index.ts 不得再导出别的模块的值（D10-273 ②）
+type: guard-change
+# 2026-10-23 入账（agent 线，编排裁定 D10-273 ②）。承接 CT-06zo（#1397）独立评审 S2：BR-AI-02 ③ 是白名单而 CT-06zo 是黑名单（agent 值导入
+# admin / risk / notification 不受限），且可经非模块文件或别的模块 index 再导出中转。做法：加四条只收紧的规则（白名单、union 只许类型、
+# 禁非模块文件、白名单模块 index 不得再导出别模块的值）。白名单在 BR 原文之外多两项：platform（基础设施内核，agent 现有 39 处引用）与
+# union（tools/quote 1 处类型引用）——均为现状，报编排决定是否回写 BR-AI-02 ③。主干全仓 depcruise 0 违规；违规样例 6 种全被拦、合法样例
+# 3 种不误伤（PR 说明列出）。未覆盖：`import Def, { type T }` 被判 type-only（依赖检查局限，需 eslint 规则，eslint 配置属第二类保护另议）。
+# 改 .dependency-cruiser.cjs 属第二类保护路径；收紧改动由编排按 approvals #24 核对后加标签（D10-266 / D10-273）。非 task 分支，不带证据文件。
+refs: [BR-AI-02]
+refs_hash:
+  BR-AI-02: 61014cc4d222
+deps: [CT-06zo]
+paths:
+  - '.dependency-cruiser.cjs'
+  - 'ops/tasks/CT-06zq.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm depcruise'
+  - 'pnpm verify'
+status: todo
+pr: null
