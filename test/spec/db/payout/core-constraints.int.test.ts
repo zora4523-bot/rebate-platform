@@ -112,7 +112,9 @@ it('[AC-B2-06a#9] 三类调用与四种结果均可记录，超时响应可空�
   const f = await fixture(h);
   for (const kind of ['transfer', 'query', 'cancel']) {
     for (const result of ['pending', 'success', 'fail', 'unknown']) {
-      const row = attempt(f, {
+      // BR-WDR-12 ② / BR-WDR-13 ②: at most one kind=transfer attempt per withdrawal.
+      const owner = kind === 'transfer' ? await fixture(h) : f;
+      const row = attempt(owner, {
         kind,
         result,
         response: result === 'pending' || result === 'unknown' ? null : '{"fixture":true}',
@@ -145,6 +147,24 @@ it('[AC-B2-06a#9] 三类调用与四种结果均可记录，超时响应可空�
     expect(
       await sqlState(insert(h.roles.couli_payout, 'payout_attempts', attempt(f, values))),
     ).toBe('23514');
+});
+
+it('[AC-B2-06a#40] 同一提现单第二条 kind=transfer 尝试被唯一索引拒绝（23505），query / cancel 不受限', async () => {
+  await ready(h.app);
+  const f = await fixture(h);
+  const other = await fixture(h);
+  const db = h.roles.couli_payout;
+  expect(await sqlState(insert(db, 'payout_attempts', attempt(f, { kind: 'transfer' })))).toBe(
+    'ok',
+  );
+  expect(await sqlState(insert(db, 'payout_attempts', attempt(f, { kind: 'transfer' })))).toBe(
+    '23505',
+  );
+  for (const kind of ['query', 'cancel'])
+    expect(await sqlState(insert(db, 'payout_attempts', attempt(f, { kind }))), kind).toBe('ok');
+  expect(await sqlState(insert(db, 'payout_attempts', attempt(other, { kind: 'transfer' })))).toBe(
+    'ok',
+  );
 });
 
 it('[AC-B2-06a#10] 各通道水位保留每次录入，按取数时刻取最新值，金额整数精度不丢失', async () => {

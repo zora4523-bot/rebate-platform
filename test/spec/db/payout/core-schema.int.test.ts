@@ -55,13 +55,14 @@ for (const table of TABLES) {
         expect(await sqlState(insert(db, table, { ...row, [name]: null })), name).toBe('23502');
     }
     expect(await sqlState(insert(db, table, row))).toBe('ok');
-    expect(await sqlState(insert(db, table, { ...row, app_id: `other-${randomUUID()}` }))).toBe(
-      '23505',
-    );
+    const query: Row = table === 'payout_attempts' ? { kind: 'query' } : {};
+    expect(
+      await sqlState(insert(db, table, { ...row, ...query, app_id: `other-${randomUUID()}` })),
+    ).toBe('23505');
     const clockColumn =
       table === 'payout_batches' || table === 'payout_watermarks' ? 'created_at' : 'at';
     expect((await stored(h.app, table, row['id']))[0]).toMatchObject({ [clockColumn]: AT });
-    const withoutDefault: Row = { ...row, id: randomUUID() };
+    const withoutDefault: Row = { ...row, ...query, id: randomUUID() };
     delete withoutDefault[clockColumn];
     await insert(db, table, withoutDefault);
     expect((await stored(h.app, table, withoutDefault['id']))[0]?.[clockColumn]).toBeInstanceOf(
