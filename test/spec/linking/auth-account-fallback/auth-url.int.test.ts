@@ -10,7 +10,12 @@ import {
 } from '../../../../apps/api/src/modules/linking/application/union-auth-url.ts';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/index.ts';
 import { TRACE, validate } from '../auth-url/kit.ts';
-import { databaseFixture, driftedAccounts, type AuthPlatform } from './kit.ts';
+import {
+  databaseFixture,
+  driftedAccounts,
+  interleavedAccounts,
+  type AuthPlatform,
+} from './kit.ts';
 
 // B1-22l (D10-239 ①; BR-ID-24 ④): the auth-url judges the site authorization of the account
 // this authorization uses; with no unreleased binding and no active self_buy slot that is the
@@ -156,6 +161,55 @@ it.each([
       later: 'expired',
     });
     if (binding === 'released') await f.release(later, platform);
+    const result = await issue(f, platform);
+    expect(result).toMatchObject({
+      status: 200,
+      envelope: { code: 0, data: { auth_url: expect.any(String), state: expect.any(String) } },
+    });
+    await validate(result.envelope, 'UnionAuthUrlResponse');
+    const data = result.envelope.data as { state: string };
+    expect(await f.sessions()).toEqual([
+      expect.objectContaining({
+        state: data.state,
+        app_id: f.appId,
+        user_id: f.userId,
+        device_id: f.deviceId,
+        platform,
+        mode: 'bind',
+        link_id: null,
+        used_at: null,
+      }),
+    ]);
+  },
+  60_000,
+);
+
+// Update order not the reverse of registration order: the most recently re-authorized account
+// and the earliest-updated one both carry the other site authorization.
+it.each(['taobao', 'pdd'] as const)(
+  '[B1-22l] %s 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号 expired 即拒绝，最近重新授权或最早更新的有效账号都不能替代',
+  async (platform) => {
+    const db = database();
+    const f = await seed(db);
+    await interleavedAccounts(db, f.appId, platform, { first: 'expired', others: 'active' });
+    const result = await issue(f, platform);
+    const [code, status, reason] = refusal[platform];
+    expect(result).toMatchObject({ status, envelope: { code, data: { reason } } });
+    await validate(result.envelope, 'ErrorEnvelope');
+    for (const field of ['auth_url', 'state', 'auth_jump', 'auth_methods']) {
+      expect(result.envelope.data ?? {}).not.toHaveProperty(field);
+    }
+    expect(await f.sessions()).toEqual([]);
+  },
+  60_000,
+);
+
+it.each(['taobao', 'pdd'] as const)(
+  '[B1-22l] %s 无绑定、无 self_buy 位、三个账号更新先后与登记先后交错：最早登记的账号有效即签发，最近重新授权或最早更新的账号 expired 不影响',
+  async (platform) => {
+    const db = database();
+    const f = await seed(db);
+    await interleavedAccounts(db, f.appId, platform, { first: 'active', others: 'expired' });
     const result = await issue(f, platform);
     expect(result).toMatchObject({
       status: 200,
