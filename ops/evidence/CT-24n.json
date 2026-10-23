@@ -1,0 +1,148 @@
+{
+  "task": "CT-24n",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "spec_commit": "a037139e496294e60ead49ebbfb6db9f82c4adf4",
+  "red_tests": [
+    "test/spec/contracts/admin-order-actions/actions.test.ts > [AC-CT-24n#14] hold 必填说明与版本，原因码只收 RISK、CS",
+    "test/spec/contracts/admin-order-actions/actions.test.ts > [AC-CT-24n#14] unhold 必填说明与版本，原因码只收 RISK、CS",
+    "test/spec/contracts/admin-order-actions/actions.test.ts > [AC-CT-24n#15] 指派只收 expected_user_id=null，锁定期望为布尔，原因 5–200 字",
+    "test/spec/contracts/admin-order-actions/actions.test.ts > [AC-CT-24n#16] 指派并发与已归属返回 order_attribution 冲突，不合格目标沿用 20001",
+    "test/spec/contracts/admin-order-actions/actions.test.ts > [AC-CT-24n#17] 详情增加派生未映射标记和四个可空人工暂停审计字段",
+    "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] order_sync_mode 的取值全集和 order_sync_requests.mode 默认中文名",
+    "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] order_sync_status 的取值全集和 order_sync_requests.status 默认中文名",
+    "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] rights_import_kind 的取值全集和 rights_imports.kind 默认中文名",
+    "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] rights_import_time_basis 的取值全集和 rights_imports.time_basis 默认中文名",
+    "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] rights_import_status 的取值全集和 rights_imports.status 默认中文名",
+    "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] rights_import_failure_reason 的取值全集和 rights_import_failure_reason 默认中文名",
+    "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#19] 30156 独立登记为 HTTP 422，data.platform 标识暂停的平台",
+    "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#20] 20001 登记三个指派目标拒绝原因，冲突复用现有 resource",
+    "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#9] Excel 仅走 multipart，三种 kind 与渠道账号条件必填",
+    "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#10] rights/punish 可按付款或收货筛选，channel 禁止三个时间字段",
+    "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#11] 上传限制 xlsx / 万行，过大 HTTP 413 + 20001，重复文件仍建新任务",
+    "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#12] 导入 list 返回状态、五类行数、操作者与时间",
+    "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#12] 导入 detail 返回状态、五类行数、操作者与时间",
+    "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#13] 列表不带失败明细，详情返回全部逐行失败且原因是独立枚举",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] post /admin/v1/order-syncs 登记 adminCreateOrderSync、后台权限和 planned",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] get /admin/v1/order-syncs 登记 adminListOrderSyncs、后台权限和 planned",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] get /admin/v1/order-syncs/limits 登记 adminGetOrderSyncLimits、后台权限和 planned",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] post /admin/v1/rights-imports 登记 adminCreateRightsImport、后台权限和 planned",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] get /admin/v1/rights-imports 登记 adminListRightsImports、后台权限和 planned",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] get /admin/v1/rights-imports/{import_id} 登记 adminGetRightsImport、后台权限和 planned",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] post /admin/v1/orders/{order_id}/hold 登记 adminHoldOrder、后台权限和 planned",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] post /admin/v1/orders/{order_id}/unhold 登记 adminUnholdOrder、后台权限和 planned",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] post /admin/v1/orders/{order_id}/reassign 登记 adminReassignOrder、后台权限和 planned",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#2] /admin/v1/order-syncs 使用后台页码分页",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#2] /admin/v1/rights-imports 使用后台页码分页",
+    "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#3] channel 导入的额外权限和动态码仅条件适用",
+    "test/spec/contracts/admin-order-actions/syncs.test.ts > [AC-CT-24n#4] 手动同步请求二选一，子单号数量 1–50，禁止混合模式和身份注入",
+    "test/spec/contracts/admin-order-actions/syncs.test.ts > [AC-CT-24n#5] 创建同步返回任务身份、状态、复用标记与创建时间",
+    "test/spec/contracts/admin-order-actions/syncs.test.ts > [AC-CT-24n#6] 同步记录包含筛选、计数、操作者和可空完成时间",
+    "test/spec/contracts/admin-order-actions/syncs.test.ts > [AC-CT-24n#7] limits 按平台给最早起点与最多单号数，不把回扫日期写死",
+    "test/spec/contracts/admin-order-actions/syncs.test.ts > [AC-CT-24n#8] 站长授权暂停拒绝 30156，HTTP 422 并给出平台"
+  ],
+  "risk_note": "RV1 by path (contracts/**, packages/contracts-ts/**, four route .gen.ts). Admin order write contract, all x-implementation planned: POST/GET order-syncs and GET order-syncs/limits, POST (multipart) / GET list / GET detail rights-imports, POST orders/{order_id}/hold, unhold, reassign; adminGetOrder gains unmapped_pending_open and last_hold_* (04 §6.6). New error 30156 (manual sync refused while the platform's site authorization is paused, HTTP 422, data.platform; D10-176, admin-only), 20001 data.reason target_banned / target_deleting / target_deleted (D10-169 K-9), six enums with admin_dict default names (BR-TEXT-25); hold / unhold reason_code RISK or CS only (BR-FUND-06); no Idempotency-Key, no operation-level x-step-up (reassign and kind=channel imports carry X-Step-Up-Token and 10003 in the description; the handler decides). The 20 new admin_dict keys are classified ordinary in specs/fund-term-keys.yaml (CT-21b precedent). The frozen admin order detail fixture was made compatible first by test-change CT-24nz (#1346). Codex was unavailable until 10-30 (orchestrator 10:27), so the contract review ran on a fresh independent Claude (approvals id 36).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a037139e496294e60ead49ebbfb6db9f82c4adf4",
+      "tree": "7a940db59f1cce3c8ca77b6d54504f419952f3b6",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T14:04:10Z",
+      "finished_at": "2026-10-23T14:04:18Z",
+      "gate": {
+        "commit": "030933ef8d2f1da7d1600eebf3ce7111f7f02742",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "red_tests": [
+        "test/spec/contracts/admin-order-actions/actions.test.ts > [AC-CT-24n#14] hold 必填说明与版本，原因码只收 RISK、CS",
+        "test/spec/contracts/admin-order-actions/actions.test.ts > [AC-CT-24n#14] unhold 必填说明与版本，原因码只收 RISK、CS",
+        "test/spec/contracts/admin-order-actions/actions.test.ts > [AC-CT-24n#15] 指派只收 expected_user_id=null，锁定期望为布尔，原因 5–200 字",
+        "test/spec/contracts/admin-order-actions/actions.test.ts > [AC-CT-24n#16] 指派并发与已归属返回 order_attribution 冲突，不合格目标沿用 20001",
+        "test/spec/contracts/admin-order-actions/actions.test.ts > [AC-CT-24n#17] 详情增加派生未映射标记和四个可空人工暂停审计字段",
+        "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] order_sync_mode 的取值全集和 order_sync_requests.mode 默认中文名",
+        "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] order_sync_status 的取值全集和 order_sync_requests.status 默认中文名",
+        "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] rights_import_kind 的取值全集和 rights_imports.kind 默认中文名",
+        "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] rights_import_time_basis 的取值全集和 rights_imports.time_basis 默认中文名",
+        "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] rights_import_status 的取值全集和 rights_imports.status 默认中文名",
+        "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#18] rights_import_failure_reason 的取值全集和 rights_import_failure_reason 默认中文名",
+        "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#19] 30156 独立登记为 HTTP 422，data.platform 标识暂停的平台",
+        "test/spec/contracts/admin-order-actions/catalogs.test.ts > [AC-CT-24n#20] 20001 登记三个指派目标拒绝原因，冲突复用现有 resource",
+        "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#9] Excel 仅走 multipart，三种 kind 与渠道账号条件必填",
+        "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#10] rights/punish 可按付款或收货筛选，channel 禁止三个时间字段",
+        "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#11] 上传限制 xlsx / 万行，过大 HTTP 413 + 20001，重复文件仍建新任务",
+        "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#12] 导入 list 返回状态、五类行数、操作者与时间",
+        "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#12] 导入 detail 返回状态、五类行数、操作者与时间",
+        "test/spec/contracts/admin-order-actions/imports.test.ts > [AC-CT-24n#13] 列表不带失败明细，详情返回全部逐行失败且原因是独立枚举",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] post /admin/v1/order-syncs 登记 adminCreateOrderSync、后台权限和 planned",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] get /admin/v1/order-syncs 登记 adminListOrderSyncs、后台权限和 planned",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] get /admin/v1/order-syncs/limits 登记 adminGetOrderSyncLimits、后台权限和 planned",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] post /admin/v1/rights-imports 登记 adminCreateRightsImport、后台权限和 planned",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] get /admin/v1/rights-imports 登记 adminListRightsImports、后台权限和 planned",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] get /admin/v1/rights-imports/{import_id} 登记 adminGetRightsImport、后台权限和 planned",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] post /admin/v1/orders/{order_id}/hold 登记 adminHoldOrder、后台权限和 planned",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] post /admin/v1/orders/{order_id}/unhold 登记 adminUnholdOrder、后台权限和 planned",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#1] post /admin/v1/orders/{order_id}/reassign 登记 adminReassignOrder、后台权限和 planned",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#2] /admin/v1/order-syncs 使用后台页码分页",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#2] /admin/v1/rights-imports 使用后台页码分页",
+        "test/spec/contracts/admin-order-actions/operations.test.ts > [AC-CT-24n#3] channel 导入的额外权限和动态码仅条件适用",
+        "test/spec/contracts/admin-order-actions/syncs.test.ts > [AC-CT-24n#4] 手动同步请求二选一，子单号数量 1–50，禁止混合模式和身份注入",
+        "test/spec/contracts/admin-order-actions/syncs.test.ts > [AC-CT-24n#5] 创建同步返回任务身份、状态、复用标记与创建时间",
+        "test/spec/contracts/admin-order-actions/syncs.test.ts > [AC-CT-24n#6] 同步记录包含筛选、计数、操作者和可空完成时间",
+        "test/spec/contracts/admin-order-actions/syncs.test.ts > [AC-CT-24n#7] limits 按平台给最早起点与最多单号数，不把回扫日期写死",
+        "test/spec/contracts/admin-order-actions/syncs.test.ts > [AC-CT-24n#8] 站长授权暂停拒绝 30156，HTTP 422 并给出平台"
+      ],
+      "expected": [
+        "test/spec/contracts/admin-order-actions/actions.test.ts",
+        "test/spec/contracts/admin-order-actions/catalogs.test.ts",
+        "test/spec/contracts/admin-order-actions/imports.test.ts",
+        "test/spec/contracts/admin-order-actions/operations.test.ts",
+        "test/spec/contracts/admin-order-actions/syncs.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "bb20bd24567c04fc3e7ea45f40eab051448cff0aab3efc7b7a41ccd584c98411"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 3,
+      "note": "r1 pass with four S2 (contracts-ts unit tests behind the new 20001 reasons and admin-only code 30156; the reassign example looked like a claim; dependentRequired made time_basis demand a window), fixed in the second implementation; r2 against the merge base pass with no findings; r3 (incremental: the rebase merge with CT-24h and the payment contracts kept both sides, prettier formatting, the 20 new admin_dict keys classified ordinary in specs/fund-term-keys.yaml) pass with no findings.",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "contract tests by Codex (3 runs; run 1 timed out). Round 1 fail with two S1 (hold / unhold accepted UNMAPPED_STATUS, contrary to BR-FUND-06; the 413 example pinned data.fields [file] while the platform upload handler returns [body]) and two S2; run 3 fixed all four; round 2 pass."
+  },
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "524a8357ffd71404da104611e4dd1ca10b5727cd",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing; the test/properties tree equals main's (the tree of the 1,000,000-run record in ops/evidence/B2-01b.json)",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
