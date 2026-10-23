@@ -17,7 +17,7 @@ paths:
 test_paths:
   - 'test/spec/payout/entry/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/payout/entry/**'
