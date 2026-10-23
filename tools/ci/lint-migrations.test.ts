@@ -291,7 +291,8 @@ it('checkMigration: money columns in CHECK, trigger expressions and COMMENT are 
 // CT-06zz: this case lints every migration of the real repository in a child process, so it grows
 // with db/migrations. Green on main in CI it took 5.3–12.4 s (2026-10-22) and on the loaded test
 // machine it hit the 30 s tools timeout (withdraw verify/6, W1 2026-10-24; the whole file ~39 s there).
-// The limit is about three times that whole-file time; the assertions are unchanged.
+// The limit is about three times that whole-file time; the assertions are unchanged. It does not
+// bound a hang: run() waits on spawnSync with no timeout, so a stuck child is left to the job limit.
 it('passes the real repository: every migration is either frozen or accepted', () => {
   const res = run(REPO);
   expect(res.stderr).toBe('');
