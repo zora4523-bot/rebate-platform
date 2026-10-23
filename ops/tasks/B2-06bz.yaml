@@ -4,7 +4,7 @@ title: 测试修改（D10-296）：content 四个冻结注册表测试按 D10-24
 type: test-change
 # 草稿 2026-10-24（提现线 withdraw-acct4，模型 Claude Fable 5.1）。编排 01:33 D10-296 取 A：test-change 由 withdraw 起草，先合再落 B2-06b / B2-06c。
 # 为了「先合」时主干不红：登记（config-registry.ts 八键，原 B2-06b 3080d383）、config-registry.test.ts 三处位置断言与 config-item-admin.test.ts 总数（D10-244 ②）、db/seeds/0001_config-defaults.sql 八行种子（D10-296 ②）随本 PR 一起进主干，B2-06b 合并前变基去掉自己的同名提交。
-# 四个冻结文件由新鲜独立 Claude 改（approvals #36），另一新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。
+# 另有三处同类断言（seeds.test.ts [AC-F1-02zn#6]、read.int.test.ts [AC-F1-10e#10]、writes.int.test.ts [AC-F1-02zj#13]）一并改。七个冻结文件由新鲜独立 Claude 改（approvals #36），另一新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。
 refs: []
 refs_hash: {}
 deps: [F1-10e, F1-02zj, F1-02zn, F1-02zx]
@@ -13,6 +13,9 @@ paths:
   - 'test/spec/content/config-settle/registry.test.ts'
   - 'test/spec/content/invite-reward-config/registry.test.ts'
   - 'test/spec/content/invite-reward-eligibility/registry.test.ts'
+  - 'test/spec/content/invite-reward-config/seeds.test.ts'
+  - 'test/spec/content/config-items/read.int.test.ts'
+  - 'test/spec/content/config-settle/writes.int.test.ts'
   - 'apps/api/src/modules/content/domain/config-registry.ts'
   - 'apps/api/src/modules/content/domain/config-registry.test.ts'
   - 'apps/api/src/modules/content/application/config-item-admin.test.ts'
