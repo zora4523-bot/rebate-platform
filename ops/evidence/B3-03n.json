@@ -1,0 +1,125 @@
+{
+  "task": "B3-03n",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "spec_commit": "99d3558522f851b1d7c5b8f5f5abb6dc894b2831",
+  "red_tests": [
+    "test/spec/agent/stream-model-prereq/product-refs.int.test.ts > [AC-B3-03n#5][BR-AI-04][BR-AI-05] 生产搜索出卡经 catalog.registerProductRef 写 product_refs；随后以该商品的 context.product_key 报价能读到并现查新价",
+    "test/spec/agent/stream-model-prereq/product-refs.int.test.ts > [AC-B3-03n#6][BR-AI-04][BR-AI-05] 生产 search_products 模型工具出卡同样经 catalog 写 product_refs；随后 context.product_key 报价不再 tool_failed",
+    "test/spec/agent/stream-model-prereq/receipts.int.test.ts > [AC-B3-03n#2][BR-AI-05] stream 运行时把业务装配的结果集接成 core 出卡回执：模型路径出的商品卡随后按 card_id / 第 N 个报价都解析到该商品",
+    "test/spec/agent/stream-model-prereq/receipts.int.test.ts > [AC-B3-03n#2][BR-AI-04][BR-AI-05] 生产 stream 入口：模型路径出商品卡后回执按下发顺序写进 PG 结果集，随后 card_id / 第 N 个报价解析到该商品并现查",
+    "test/spec/agent/stream-model-prereq/receipts.test.ts > [AC-B3-03n#1][BR-AI-05] core 下发商品卡后按下发顺序经结果集端口 recordDelivered 记下实际 card_id；notice 与列表容器不记",
+    "test/spec/agent/stream-model-prereq/receipts.test.ts > [AC-B3-03n#1][BR-AI-05] 被卡片上限截掉的商品列表不记；已写出的照记",
+    "test/spec/agent/stream-model-prereq/receipts.test.ts > [AC-B3-03n#1][BR-AI-05] 取消后未写出的商品列表不记；取消前已写出的照记",
+    "test/spec/agent/stream-model-prereq/receipts.test.ts > [AC-B3-03n#1][BR-AI-05] 回执写进共享结果集后，同会话按 card_id（含更早轮次）与「第 N 个」解析到对应商品；notice / 列表容器 / 越界序号不解析",
+    "test/spec/agent/stream-model-prereq/results-store.int.test.ts > [AC-B3-03n#3][BR-AI-05] 生产装配的结果集是 PG 版：两个 stream runtime 实例之间读到同一结果集与出卡回执，报价引用跨实例解析",
+    "test/spec/agent/stream-model-prereq/results-store.int.test.ts > [AC-B3-03n#4][BR-AI-05] createAgentStreamAssembly 使用注入的结果集（PG 版跨装配共享）；只传原有 deps 时回落内存版且照常可用",
+    "test/spec/agent/stream-model-prereq/safety-timeout.int.test.ts > [AC-B3-03n#11][BR-AI-18] 生产装配经 content 配置读取口按 app 读 agent.safety.timeout_ms：两个 app 各自生效，未配置与非法值取 1000ms，每次请求按当前 app",
+    "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#7][BR-AI-18] 输入审核时限按请求的 app 读 agent.safety.timeout_ms：两个 app 配不同值各自生效，交替请求互不串用",
+    "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#8][BR-AI-18] 未配置 agent.safety.timeout_ms 的 app 用 BR-AI-18 默认 1000ms，与已配置的 app 互不影响",
+    "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 0 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+    "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 -100 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+    "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 \"1500\" 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+    "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 null 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+    "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 false 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+    "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 [1500] 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+    "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 {\"ms\":1500} 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+    "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#10][BR-AI-18] 每次请求按当前 app 现读：同一 app 改值、删除后，下一次请求即按新值或默认值"
+  ],
+  "risk_note": "RV2 (app.module.ts): production wiring before the model path (B3-03k) — delivered product cards are recorded through the result-set port recordDelivered after the core writes a product_list (cards cut by the limit or not written on cancel are not recorded; a failed record only logs); the production result-set store is the PG one (createPgResultSetStore, B3-09c), the in-memory store stays the fallback when the new port is absent; search cards write product_refs through catalog.registerProductRef after their link registration; the input review budget reads agent.safety.timeout_ms per app per request (read failure fails closed). Rule tests by an independent Claude (Codex unavailable until 10-30, orchestrator 10:27; an earlier Codex attempt cut off by its usage limit was discarded); spec-test review pass. Opus implementation 1 attempt. Full pnpm verify on the AWS test machine at ec1cf46f (verify/1) exit 0. Independent Claude money review r1 pass (S2 x3 in followups 51-53, all unreachable while production routing is no_model). Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "99d3558522f851b1d7c5b8f5f5abb6dc894b2831",
+      "tree": "c5bc43da597e9047633d2d3b17198e0dfad65e08",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T10:44:42Z",
+      "finished_at": "2026-10-23T10:45:01Z",
+      "red_tests": [
+        "test/spec/agent/stream-model-prereq/product-refs.int.test.ts > [AC-B3-03n#5][BR-AI-04][BR-AI-05] 生产搜索出卡经 catalog.registerProductRef 写 product_refs；随后以该商品的 context.product_key 报价能读到并现查新价",
+        "test/spec/agent/stream-model-prereq/product-refs.int.test.ts > [AC-B3-03n#6][BR-AI-04][BR-AI-05] 生产 search_products 模型工具出卡同样经 catalog 写 product_refs；随后 context.product_key 报价不再 tool_failed",
+        "test/spec/agent/stream-model-prereq/receipts.int.test.ts > [AC-B3-03n#2][BR-AI-05] stream 运行时把业务装配的结果集接成 core 出卡回执：模型路径出的商品卡随后按 card_id / 第 N 个报价都解析到该商品",
+        "test/spec/agent/stream-model-prereq/receipts.int.test.ts > [AC-B3-03n#2][BR-AI-04][BR-AI-05] 生产 stream 入口：模型路径出商品卡后回执按下发顺序写进 PG 结果集，随后 card_id / 第 N 个报价解析到该商品并现查",
+        "test/spec/agent/stream-model-prereq/receipts.test.ts > [AC-B3-03n#1][BR-AI-05] core 下发商品卡后按下发顺序经结果集端口 recordDelivered 记下实际 card_id；notice 与列表容器不记",
+        "test/spec/agent/stream-model-prereq/receipts.test.ts > [AC-B3-03n#1][BR-AI-05] 被卡片上限截掉的商品列表不记；已写出的照记",
+        "test/spec/agent/stream-model-prereq/receipts.test.ts > [AC-B3-03n#1][BR-AI-05] 取消后未写出的商品列表不记；取消前已写出的照记",
+        "test/spec/agent/stream-model-prereq/receipts.test.ts > [AC-B3-03n#1][BR-AI-05] 回执写进共享结果集后，同会话按 card_id（含更早轮次）与「第 N 个」解析到对应商品；notice / 列表容器 / 越界序号不解析",
+        "test/spec/agent/stream-model-prereq/results-store.int.test.ts > [AC-B3-03n#3][BR-AI-05] 生产装配的结果集是 PG 版：两个 stream runtime 实例之间读到同一结果集与出卡回执，报价引用跨实例解析",
+        "test/spec/agent/stream-model-prereq/results-store.int.test.ts > [AC-B3-03n#4][BR-AI-05] createAgentStreamAssembly 使用注入的结果集（PG 版跨装配共享）；只传原有 deps 时回落内存版且照常可用",
+        "test/spec/agent/stream-model-prereq/safety-timeout.int.test.ts > [AC-B3-03n#11][BR-AI-18] 生产装配经 content 配置读取口按 app 读 agent.safety.timeout_ms：两个 app 各自生效，未配置与非法值取 1000ms，每次请求按当前 app",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#7][BR-AI-18] 输入审核时限按请求的 app 读 agent.safety.timeout_ms：两个 app 配不同值各自生效，交替请求互不串用",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#8][BR-AI-18] 未配置 agent.safety.timeout_ms 的 app 用 BR-AI-18 默认 1000ms，与已配置的 app 互不影响",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 0 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 -100 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 \"1500\" 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 null 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 false 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 [1500] 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#9][BR-AI-18] 非法值 {\"ms\":1500} 按配置层既有口径取默认 1000ms，不放宽为无限等待；另一 app 的合法值照常生效",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts > [AC-B3-03n#10][BR-AI-18] 每次请求按当前 app 现读：同一 app 改值、删除后，下一次请求即按新值或默认值"
+      ],
+      "expected": [
+        "test/spec/agent/stream-model-prereq/product-refs.int.test.ts",
+        "test/spec/agent/stream-model-prereq/receipts.int.test.ts",
+        "test/spec/agent/stream-model-prereq/receipts.test.ts",
+        "test/spec/agent/stream-model-prereq/results-store.int.test.ts",
+        "test/spec/agent/stream-model-prereq/safety-timeout.int.test.ts",
+        "test/spec/agent/stream-model-prereq/safety-timeout.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "5b259af01a888daf6a127417476e8177aae475ab1d39a897fdf660dc93ae656f"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "ade62abaca0e389e44d843282b3c26f1c8686d2670a4cb8bf1cd990fabcf762d"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "b01c771301eb0a186a637f23de77682726c6e4c4",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "money",
+      "checklist_complete": true,
+      "note": "independent Claude (claude-run.sh; Codex unavailable until 10-30) round 1 pass, S2 x3 recorded in followups (couli-runs/B3-03n/review-claude-independent-money-r1.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "a fresh independent Claude reviewed the tests written by another independent Claude call: pass (S2: configuration read failure untested, covered in the implementation notes). 编排认定 D10-258：spec-test 第 1 轮评的是已丢弃的 Codex 半截产出，不计 (couli-runs/B3-03n/review-claude-independent-spec-test-r2.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "d23f1432a55aea203f786d8790c233c16d3f3c96",
+    "specs": "d7811035a75370ee35f2ae060353af8353377700"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
