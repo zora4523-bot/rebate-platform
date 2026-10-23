@@ -1,0 +1,18 @@
+id: B1-34m
+repo: rebate-platform
+title: F1-06m 规则测试同步（读接口输出 row_version）——test/spec/admin/accounts/kit.ts expectView 若读接口结果带 row_version 先断言为非负整数，再去掉它比较其余字段；其余断言、用例名、条数不变
+type: test-change
+# 2026-10-24 入账（admin-backend，编排裁定 D10-295）。B1-34k 按台账让 adminGetAdmin / adminListAdmins 输出契约 AdminAccount 已有的可选字段 row_version（契约写「B1-34h 上线后返回」，B1-34k 保存权限点从读接口取它），冻结的 F1-06m 读接口测试经 expectView 对读结果做 toEqual，读接口加字段即红。
+# 改法：expectView 解构出 row_version；字段存在时断言为非负整数，再以其余字段与 expected 做原样 toEqual（时区归一不变）。用「有则必须合法」而非「必须存在」：当前主干读接口尚不返回该字段，本任务须先于 B1-34k 合并且在主干保持绿；「读接口必须返回 row_version」由 B1-34k 的规则测试断言。排查 test/spec 下其余对读接口结果的整对象比较：均为 toMatchObject、两次读结果互比或只用于写接口响应，不需改。
+# 改既有规则测试属第一类保护路径：非 task 分支、不带证据文件（approvals 第 12 条）；改动由新鲜独立 Claude 做，第二家评审为另一新鲜独立 Claude 只读复审，合并需 #24 标签；须在 B1-34k 落地前合并。
+refs: []
+refs_hash: {}
+deps: [F1-06m, B1-34h]
+paths:
+  - 'test/spec/admin/accounts/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null
