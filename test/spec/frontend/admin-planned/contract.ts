@@ -1,6 +1,7 @@
 // Node-side helpers: the planned operationIds read straight from contracts/openapi.yaml (never a
 // hand-written list) and the exports of a generated file evaluated from its source text.
 import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
@@ -17,8 +18,12 @@ function isObj(value: unknown): value is Obj {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// Resolved from the module's own directory, not `new URL(…, import.meta.url)`: under jsdom Vite
+// rewrites that form into an http://localhost URL.
+const HERE = dirname(fileURLToPath(import.meta.url));
+
 export function repoPath(path: string): string {
-  return fileURLToPath(new URL(`../../../../${path}`, import.meta.url));
+  return resolve(HERE, '../../../..', path);
 }
 
 /** A missing asset is an assertion failure, never an ENOENT. */
