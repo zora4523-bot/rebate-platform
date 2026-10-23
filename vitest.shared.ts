@@ -52,24 +52,35 @@ type BrowserOptions = NonNullable<NonNullable<ViteUserConfig['test']>['browser']
  * with `Sec-Fetch-Dest: script`) that does not end in a success. A test file that fails with
  * "Failed to fetch dynamically imported module" names only the root of its import graph; this
  * line names the request that failed and how: an error status (Vite answers an outdated
- * pre-bundled dependency with a bare 504 and logs nothing) or a connection closed before the
- * response was complete. It only observes: no request or response is changed.
+ * pre-bundled dependency with a bare 504 and logs nothing), a success that is not JavaScript
+ * (the browser refuses such a module), or a connection closed before the response was complete.
+ * The first module request of a run also logs one line, so a run without failure lines shows
+ * that the log was on. It only observes: no request or response is changed.
  */
 function moduleRequestLog(): Plugin {
+  let seen = false;
   return {
     name: 'couli:browser-module-request-log',
     configureServer(server) {
+      const warn = (message: string): void => {
+        server.config.logger.warn(`[browser tests] ${message}`, { timestamp: true });
+      };
       server.middlewares.use((req, res, next) => {
         if (req.headers['sec-fetch-dest'] === 'script') {
+          if (!seen) {
+            seen = true;
+            const pw = process.env['VITEST_PW_DEBUG'] ?? '';
+            warn(`module request log on (VITEST_PW_DEBUG=${pw}), first module request: ${req.url}`);
+          }
           res.once('close', () => {
+            const type = String(res.getHeader('content-type') ?? '');
             let outcome: string | undefined;
             if (!res.writableFinished) outcome = 'closed before the response was complete';
             else if (res.statusCode >= 400) outcome = `${res.statusCode} ${res.statusMessage}`;
-            if (outcome !== undefined) {
-              server.config.logger.warn(`[browser tests] module request ${outcome}: ${req.url}`, {
-                timestamp: true,
-              });
+            else if (res.statusCode < 300 && !type.includes('javascript')) {
+              outcome = `${res.statusCode} with content type "${type}"`;
             }
+            if (outcome !== undefined) warn(`module request ${outcome}: ${req.url}`);
           });
         }
         next();
@@ -85,6 +96,13 @@ function moduleRequestLog(): Plugin {
  * `page.screenshot()` (and of failures) go to `screenshotDirectory`; `fsAllow` lists extra
  * directories the page may read back through `commands.readFile` (an export directory outside
  * the repository).
+ *
+ * CT-06zi, the browser side of that log: VITEST_PW_DEBUG makes @vitest/browser-playwright print
+ * every request the page itself reports as failed ("[PW Error] <type> request failed for <url>
+ * url: <net error>"), including ones that never reached the server. The provider reads the
+ * variable when it opens a page, after this config is loaded; a value set by the caller is kept.
+ * Requests to the fixtures' unreachable hosts (images of *.example.test and the like) show up
+ * there too.
  */
 export function browserConfig(opts: {
   include: string[];
@@ -93,6 +111,7 @@ export function browserConfig(opts: {
   screenshotDirectory: string;
   fsAllow?: string[];
 }): ViteUserConfig {
+  process.env['VITEST_PW_DEBUG'] ??= '1';
   return {
     resolve: { conditions: [...BROWSER_CONDITIONS] },
     plugins: [...opts.plugins, moduleRequestLog()],

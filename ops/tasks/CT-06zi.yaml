@@ -13,6 +13,10 @@ type: guard-change
 # 做法：vitest.shared.ts 的 browserConfig 加一个只观察的 Vite 插件，对 Sec-Fetch-Dest: script 的请求，响应状态 ≥ 400 或连接
 # 在响应完成前关闭时经 Vite logger 打一行 warn（状态、URL、时间）。不改请求与响应，不改测试、断言与 STRICT；不加重试——
 # 重试会把失败藏起来，原因仍未知。下一次复现即可按这一行定位（504 Outdated Optimize Dep 即预构建；无此行即浏览器侧）。
+# 第 2 轮（编排续派）：本 PR 自己的标签轮复现一次（作业 120191988078，admin-shell，同样紧接 h5-dark），日志里没有插件的行，
+# 且无从确认插件是否生效。补：① 每次运行第一个模块请求打一行「module request log on」作开着的证明；② 2xx 而 content-type
+# 不是 JavaScript 也打（浏览器会拒收这种模块）；③ browserConfig 设 VITEST_PW_DEBUG（未设时为 1），让
+# @vitest/browser-playwright 自带的 page.on('requestfailed') 打出浏览器侧失败的请求与 net 错误（含没到服务端的）。
 # 改 vitest.shared.ts 属第二类保护路径，按 approvals #16 / #24 由编排核对后加标签；非 task 分支 chore/guard-change-CT-06zi，
 # 不带证据文件（先例 CT-06zg #1258）。
 refs: []
