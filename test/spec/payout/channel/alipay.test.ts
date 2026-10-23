@@ -649,7 +649,7 @@ it.each(['transfer', 'query'] as const)(
       const { options, send } = fixture();
       options.credentials = { appId: '', privateKey: '', alipayPublicKey: '', gatewayUrl: '' };
       await expect(
-        Promise.resolve().then(() => {
+        Promise.resolve().then<unknown>(() => {
           const channel = new AlipayChannel(options);
           return method === 'transfer'
             ? channel.transfer(REQUEST)
