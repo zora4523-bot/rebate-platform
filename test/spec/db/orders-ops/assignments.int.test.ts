@@ -74,9 +74,10 @@ it('[B1-09e] source 的 CHECK 只收 claim / admin：两值都能写，其他值
   await expectCheckLists(TABLE, 'source', ASSIGNMENT_SOURCE);
   expect(await add({ source: 'admin' })).toBe('no error');
   // Whether a claim-sourced row keeps the deciding admin is not fixed by J-8: either shape may pass.
-  expect([await add({ source: 'claim' }), await add({ source: 'claim', admin_id: null })]).toContain(
-    'no error',
-  );
+  expect([
+    await add({ source: 'claim' }),
+    await add({ source: 'claim', admin_id: null }),
+  ]).toContain('no error');
   for (const source of ['sync', 'ADMIN', 'manual']) {
     expect(await add({ source }), source).toBe('23514');
   }

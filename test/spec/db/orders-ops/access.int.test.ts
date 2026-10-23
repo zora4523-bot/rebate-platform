@@ -126,24 +126,19 @@ it.each([...NEW_TABLES])(
       expect(await sqlState(sql`DELETE FROM ${sql.table(`app.${table}`)}`.execute(db))).toBe(
         '42501',
       );
-      expect(await sqlState(sql`TRUNCATE ${sql.table(`app.${table}`)}`.execute(db))).toBe(
-        '42501',
-      );
+      expect(await sqlState(sql`TRUNCATE ${sql.table(`app.${table}`)}`.execute(db))).toBe('42501');
     }
     expect((await read(app)).rows).toEqual(before);
   },
 );
 
-it.each([...APPEND_ONLY])(
-  '[B1-09e] 只插入的 %s：app 的 UPDATE 也 42501，行不变',
-  async (table) => {
-    await requireTable(app, table);
-    expect(await sqlState(insert(app, table, await fixture(table)))).toBe('no error');
-    const read = () => sql`SELECT * FROM ${sql.table(`app.${table}`)}`.execute(app);
-    const before = (await read()).rows;
-    expect(
-      await sqlState(sql`UPDATE ${sql.table(`app.${table}`)} SET app_id = 'rewrite'`.execute(app)),
-    ).toBe('42501');
-    expect((await read()).rows).toEqual(before);
-  },
-);
+it.each([...APPEND_ONLY])('[B1-09e] 只插入的 %s：app 的 UPDATE 也 42501，行不变', async (table) => {
+  await requireTable(app, table);
+  expect(await sqlState(insert(app, table, await fixture(table)))).toBe('no error');
+  const read = () => sql`SELECT * FROM ${sql.table(`app.${table}`)}`.execute(app);
+  const before = (await read()).rows;
+  expect(
+    await sqlState(sql`UPDATE ${sql.table(`app.${table}`)} SET app_id = 'rewrite'`.execute(app)),
+  ).toBe('42501');
+  expect((await read()).rows).toEqual(before);
+});
