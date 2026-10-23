@@ -13,7 +13,7 @@ type: guard-change
 # 故本步内临时放一个 /usr/local/sbin/apt-get 包装（sudo 的 secure_path 优先，playwright 的 sudo apt-get 也经过它）：install 时先用
 # curl 按 apt 给的 URI 预取 .deb，某镜像 15 秒内低于 300 kB/s 就换下一个 Ubuntu 镜像；apt 对归档目录里已有的文件只比大小，所以包装
 # 自己按签名索引核大小（--print-uris）与 SHA256（apt-cache show 同一 Filename），不符即删、换镜像，查不到 SHA256 的留给 apt；再交给真
-# apt-get；trap（写包装前设）删包装。测试机 ubuntu:24.04 容器以带 sudo 普通用户实测：正常预取 11 个；镜像返回同大小篡改文件时两次拒收、
+# apt-get；trap（写包装前设）删包装。测试机 ubuntu:24.04 容器以带 sudo 普通用户实测：正常预取含 fonts-noto-cjk 在内全部包、两次 apt 均需下载 0 B（URI 的 %%-转义先还原再比 Filename）；镜像返回同大小篡改文件时两次拒收、
 # 改从下一个镜像取到正确文件。
 refs: []
 refs_hash: {}
