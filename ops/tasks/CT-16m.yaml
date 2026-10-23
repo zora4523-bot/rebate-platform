@@ -1,0 +1,23 @@
+id: CT-16m
+repo: rebate-platform
+title: 文案（CT-16 续，D10-207 ②）：提现副文案字典键 withdraw_detail.sub_text.<sub_text_branch>（先建 08 已有措辞的 12 个分支与已代扣个税半句 tax_withheld；rejected / failed_account / failed_other / failed_manual 待 08 回写后补）
+type: contract
+# 2026-10-23 入账（content-client；编排 08:55 派工 D10-207 ②，配合 fe CT-20b #1263 的 sub_text_branch 16 值与 withdraw B2-05f display.ts）。
+# 依据（SPEC_REF 17b5fe5）：08 BR-WDR-25 细则「用户侧状态文案」分支表、BR-TEXT-06 / 07 / 10；逐字照抄，含变量按 BR-TEXT-10。对照稿 couli-runs/CONTENT-client/phase6-drafts/CT-16m-mapping.md。
+# 前缀 withdraw_detail. 已整体归资金术语（不新开前缀）；键名 withdraw_detail.sub_text.<分支值>，客户端按 sub_text_branch 直接拼键。
+# 依赖 CT-20b 的枚举（契约槽排在 CT-20b 之后落地）。缺措辞的分支列在 notices 请编排回写 08，回写进 SPEC_REF 后另段补。
+refs: []
+refs_hash: {}
+deps: [CT-20b]
+paths:
+  - 'contracts/texts.default.json'
+  - 'specs/fund-term-keys.yaml'
+  - 'packages/contracts-ts/**'
+  - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'pnpm contracts:check'
+status: todo
+pr: null
