@@ -20,7 +20,8 @@
 --   skipped / blocked (left in APPROVED, reason required), moved_out (re-attached to
 --   moved_to_batch_id by a later manual batch; the original row stays). The batch a withdrawal is
 --   currently on is withdrawals.batch_id (BR-WDR-11).
--- payout_attempts: one row per channel call (transfer / query / cancel). The transfer row is
+-- payout_attempts: one row per channel call (transfer / query / cancel); at most one transfer row
+--   per withdrawal (partial unique index, BR-WDR-12 ② / BR-WDR-13 ②). The transfer row is
 --   inserted with result = pending inside the daily advisory lock and committed before the request
 --   is sent (BR-WDR-13 ④); the only allowed update completes that pending row once with the
 --   response (response, resp_code, resp_sub_code, result, latency_ms). Rows are never deleted and a
@@ -109,6 +110,11 @@ CREATE TABLE app.payout_attempts (
 
 CREATE INDEX payout_attempts_withdrawal_at_idx ON app.payout_attempts (withdrawal_id, at);
 CREATE INDEX payout_attempts_transfer_at_idx ON app.payout_attempts (app_id, at) WHERE kind = 'transfer';
+-- BR-WDR-12 ② / BR-WDR-13 ②: a withdrawal has at most one transfer attempt, enforced here and not
+-- only by the read before the advisory lock (D10-237; a re-submission under BR-WDR-22 ④ would need
+-- its own migration and money review).
+CREATE UNIQUE INDEX payout_attempts_transfer_once_key ON app.payout_attempts (withdrawal_id)
+  WHERE kind = 'transfer';
 
 -- A pending attempt may be completed once; nothing else changes and nothing is deleted.
 CREATE FUNCTION app.payout_attempts_complete_once() RETURNS trigger
@@ -147,7 +153,10 @@ CREATE TABLE app.payout_watermarks (
   CONSTRAINT payout_watermarks_pkey PRIMARY KEY (id),
   CONSTRAINT payout_watermarks_channel_check CHECK (channel IN ('alipay', 'bank_card', 'wechat')),
   CONSTRAINT payout_watermarks_available_check CHECK (available_fen >= 0),
-  CONSTRAINT payout_watermarks_entered_by_check CHECK (entered_by <> '')
+  CONSTRAINT payout_watermarks_entered_by_check CHECK (entered_by <> ''),
+  -- A measurement time in the future would keep a stale W looking fresh (BR-WDR-18 ②, D10-237);
+  -- five minutes of tolerance between the injected Clock and the database clock.
+  CONSTRAINT payout_watermarks_measured_at_check CHECK (measured_at <= created_at + interval '5 minutes')
 );
 
 CREATE INDEX payout_watermarks_latest_idx ON app.payout_watermarks (app_id, channel, measured_at DESC);
