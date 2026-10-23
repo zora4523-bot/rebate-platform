@@ -4252,7 +4252,7 @@ export interface paths {
          *     `data.reason=account_deleting` and `data.stage`, or `data.reason=delivery_undecided`);
          *     until it is registered the code is not in x-error-codes or contracts/error-codes.yaml.
          *     A new request starts in pending (`reused=false`). `due_at` is the end (24:00 +08:00) of
-         *     the 15th working day from now (working days as in BR-ID-27); when the user's latest
+         *     the 15th working day after the registration day (the registration day itself not counted; working days as in BR-ID-27); when the user's latest
          *     request is failed, or a `wecom_session` one that expired without being delivered, the
          *     new request records it in `retry_of` and keeps its `due_at` (the time limit counts from
          *     the first registration). The copy is generated asynchronously (scope in BR-ID-40 细则
@@ -24642,7 +24642,7 @@ export interface operations {
                      *             "requested_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b02",
                      *             "requested_by_name": "cs02",
                      *             "created_at": "2026-11-05T15:00:00+08:00",
-                     *             "due_at": "2026-11-21T00:00:00+08:00",
+                     *             "due_at": "2026-11-24T00:00:00+08:00",
                      *             "retry_of": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01",
                      *             "generated_at": "2026-11-05T15:03:00+08:00",
                      *             "delivered_at": null,
@@ -24657,7 +24657,7 @@ export interface operations {
                      *             "requested_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
                      *             "requested_by_name": "cs01",
                      *             "created_at": "2026-11-02T10:00:00+08:00",
-                     *             "due_at": "2026-11-21T00:00:00+08:00",
+                     *             "due_at": "2026-11-24T00:00:00+08:00",
                      *             "retry_of": null,
                      *             "generated_at": "2026-11-02T10:04:00+08:00",
                      *             "delivered_at": null,
@@ -24734,7 +24734,7 @@ export interface operations {
                      *         "requested_by": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5b01",
                      *         "requested_by_name": "cs01",
                      *         "created_at": "2026-11-02T10:00:00+08:00",
-                     *         "due_at": "2026-11-21T00:00:00+08:00",
+                     *         "due_at": "2026-11-24T00:00:00+08:00",
                      *         "retry_of": null,
                      *         "generated_at": null,
                      *         "delivered_at": null,
