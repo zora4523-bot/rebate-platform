@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { createTestDatabase } from '@couli/db/testing';
 import { SiteReauthError } from '../../../../apps/api/src/modules/union/index.ts';
 import {
   ACCESS,
@@ -20,7 +21,7 @@ import {
   startInput,
 } from './kit.ts';
 
-const db = databaseFixture();
+const db = databaseFixture(createTestDatabase);
 
 it('[AC-B1-22c#20] 换码中的已用会话跨过到期时间，巡检与结果读取不将它过期，换码仍能成功', async () => {
   const h = await harness(db());

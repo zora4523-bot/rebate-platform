@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   CODE,
@@ -13,7 +14,7 @@ import {
   start,
 } from './kit.ts';
 
-const db = databaseFixture();
+const db = databaseFixture(createTestDatabase);
 
 it('[AC-B1-22c#17] result 同时约束 app、联盟账号和会话 id，越权读取不触发过期写入', async () => {
   const h = await harness(db());

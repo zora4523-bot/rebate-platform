@@ -4,7 +4,6 @@
 // with NotImplemented even before B1-22a is merged. The container runner owns DB setup.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
-import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import { sql, type Generated, type Insertable, type Kysely } from 'kysely';
 import { afterAll, beforeAll, expect, vi } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/clock.ts';
@@ -47,12 +46,19 @@ type ReauthDB = Omit<DB, 'union_accounts' | 'admin_union_auth_sessions'> & {
   admin_union_auth_sessions: Session;
 };
 
-export function databaseFixture() {
+/** The one-shot database a test file creates (createTestDatabase from @couli/db/testing). */
+export interface TestDatabase {
+  urlFor(role: string): string;
+  drop(): Promise<void>;
+}
+
+/** The int test passes createTestDatabase (testcontainers stay in *.int.test.ts, depcruise). */
+export function databaseFixture(create: () => Promise<TestDatabase>) {
   let database: TestDatabase | undefined;
   let db: Kysely<DB>;
   beforeAll(async () => {
     // createTestDatabase reads TEST_PG_ADMIN_URL; business operations use couli_app.
-    database = await createTestDatabase();
+    database = await create();
     db = createDb({ connectionString: database.urlFor('couli_app'), max: 6 });
   });
   afterAll(async () => {

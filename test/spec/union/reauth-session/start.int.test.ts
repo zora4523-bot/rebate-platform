@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
 import {
   createSiteReauth,
@@ -22,7 +23,7 @@ import {
   startInput,
 } from './kit.ts';
 
-const db = databaseFixture();
+const db = databaseFixture(createTestDatabase);
 
 it('[AC-B1-22c#1] 默认平台登记：淘宝 OAuth、拼多多 none；读取 mode 不落库', async () => {
   const h = await harness(db());

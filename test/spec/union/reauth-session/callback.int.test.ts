@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { createTestDatabase } from '@couli/db/testing';
 import { createSiteReauth } from '../../../../apps/api/src/modules/union/index.ts';
 import {
   ACCESS,
@@ -19,7 +20,7 @@ import {
   start,
 } from './kit.ts';
 
-const db = databaseFixture();
+const db = databaseFixture(createTestDatabase);
 
 for (const estimated of [false, true]) {
   for (const refreshToken of [REFRESH, null]) {
