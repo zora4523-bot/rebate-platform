@@ -3730,7 +3730,8 @@ CREATE TABLE app.payout_watermarks (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT payout_watermarks_available_check CHECK ((available_fen >= 0)),
     CONSTRAINT payout_watermarks_channel_check CHECK ((channel = ANY (ARRAY['alipay'::text, 'bank_card'::text, 'wechat'::text]))),
-    CONSTRAINT payout_watermarks_entered_by_check CHECK ((entered_by <> ''::text))
+    CONSTRAINT payout_watermarks_entered_by_check CHECK ((entered_by <> ''::text)),
+    CONSTRAINT payout_watermarks_measured_at_check CHECK ((measured_at <= (created_at + '00:05:00'::interval)))
 );
 
 
@@ -7675,6 +7676,13 @@ CREATE UNIQUE INDEX payout_accounts_current_user_key ON app.payout_accounts USIN
 --
 
 CREATE INDEX payout_attempts_transfer_at_idx ON app.payout_attempts USING btree (app_id, at) WHERE (kind = 'transfer'::text);
+
+
+--
+-- Name: payout_attempts_transfer_once_key; Type: INDEX; Schema: app; Owner: -
+--
+
+CREATE UNIQUE INDEX payout_attempts_transfer_once_key ON app.payout_attempts USING btree (withdrawal_id) WHERE (kind = 'transfer'::text);
 
 
 --
