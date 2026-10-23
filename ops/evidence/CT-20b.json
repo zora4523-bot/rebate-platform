@@ -1,0 +1,49 @@
+{
+  "legacy_no_red": true,
+  "red_tests": [],
+  "risk_note": "Contract task (contracts/openapi.yaml, enums/fund.yaml, contracts-ts conformance and the regenerated contracts-ts): WithdrawalSummary and Withdrawal each gain eight required nullable fields — review_deadline, executed_at, first_attempt_at (T of BR-WDR-25), paid_at, channel_state, confirm_deadline (null outside WeChat 零钱), hold_days (W10 row) and sub_text_branch (server-computed, first matching row of the BR-WDR-25 细则 table) — per rulings D10-201 / 203 / 207; values and branch conditions only reference BR-WDR-25, no numbers or copy restated. New enum fund.yaml withdrawal_sub_text_branch (17 values after SPEC_REF be49fe9b added rejected_offset for a NEGATIVE_BALANCE rejection, D10-233 ②; word for word with the sub_text_branch column of the BR-WDR-25 table and the withdraw lane's B2-05f display.ts; both FAILED (W10) rows share failed_manual and are told apart by hold_days, D10-228); new schemas WithdrawalChannelState and WithdrawalSubTextBranch bound in conformance; payout_channel gains wechat (04 §2.4); fail_action is null for a W10 manual failure (D10-201 ③ transitional). The three withdrawal operations stay planned; merge order A (D10-207): this contract first, B2-05d / f output the fields when they rebase. Write-backs (04 §6.4, BR-TEXT-08 / BR-WDR-25 fail_action) left to the orchestrator after review; sub-text dictionary keys belong to content. New unit test withdrawal-display.test.ts. tester none; implementation by an Opus 5.5 subagent (one run). Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass at SPEC_REF 17b5fe5, no findings; the 16 values then were checked against B2-05f display.ts"
+    },
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 2,
+      "note": "round 2 (incremental after SPEC_REF be49fe9b: rejected_offset added, descriptions keyed to the table's sub_text_branch column) pass, no findings; independent Claude because Codex hit its usage limit until 2026-10-30"
+    }
+  ],
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "CT-20b",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "spec_commit": "f90e826d41ada25165916777c85f7c0bfe9a275f",
+  "runs": [],
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "a8cef73fc26392fc471fc954309b29a9243157ae",
+    "specs": "b9b8c7957aa786feb1b71c8ccc35e6fd7341add0"
+  }
+}
