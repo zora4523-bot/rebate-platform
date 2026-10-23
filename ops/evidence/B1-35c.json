@@ -1,0 +1,79 @@
+{
+  "red_tests": [
+    "test/spec/growth/invite-reward-expiry-retry/scanner.test.ts > [AC-B1-35c#1] 首次过期查询失败后同日重试，成功后同日不重扫，跨 +08 会计日再扫",
+    "test/spec/growth/invite-reward-expiry-retry/scanner.test.ts > [AC-B1-35c#2] 连续查询失败仍可同日重试，空扫描成功也记当天已扫",
+    "test/spec/growth/invite-reward-expiry-retry/scanner.test.ts > [AC-B1-35c#3] 已处理一整页后下一页查询失败，同日重试仍处理剩余过期资格",
+    "test/spec/growth/invite-reward-expiry-retry/scanner.test.ts > [AC-B1-35c#4] 过期查询与逐行发放同时失败，各记错误且 tick 正常返回，同日仍可重试"
+  ],
+  "risk_note": "RV2 (growth). B1-35 Codex money r1 S2: createInviteRewardScanner.tick marked the accounting day before the expiry scan ran, so a scan that threw (for example a short database outage) was not retried that day and qualification budget that should be released waited until the next day. Now the day is marked only after a full expiry scan succeeds; a failed scan is logged (invite_reward_expiry_scan_failed, error class only), retried on the next tick of the same day, and the payout pass still runs. No change to scan or payout logic. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass, no findings (couli-runs/B1-35c/review-codex.json)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex in 4 attempts (attempt 4 is the orchestrator exception D10-226: only the four tick outcome assertions rewritten, attempt count unchanged; red/2 PASS, 4 tests red for the right reason); e35a1d4c is prettier line wrapping of those four lines only; reviewed through claude-run.sh r1 pass (couli-runs/B1-35c/review-claude-independent.json)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "5f40bc24fe8af06476b61034b4a65d7eda51c5e3",
+    "specs": "b9b8c7957aa786feb1b71c8ccc35e6fd7341add0"
+  },
+  "task": "B1-35c",
+  "spec_commit": "0930cd2e5cbfb2aa4ffcb1b08cda2651b064833e",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "0930cd2e5cbfb2aa4ffcb1b08cda2651b064833e",
+      "tree": "7f7fd0d3e997ab2e3fa080c8b4c3c0a0bf044523",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T12:24:59Z",
+      "finished_at": "2026-10-23T12:25:03Z",
+      "red_tests": [
+        "test/spec/growth/invite-reward-expiry-retry/scanner.test.ts > [AC-B1-35c#1] 首次过期查询失败后同日重试，成功后同日不重扫，跨 +08 会计日再扫",
+        "test/spec/growth/invite-reward-expiry-retry/scanner.test.ts > [AC-B1-35c#2] 连续查询失败仍可同日重试，空扫描成功也记当天已扫",
+        "test/spec/growth/invite-reward-expiry-retry/scanner.test.ts > [AC-B1-35c#3] 已处理一整页后下一页查询失败，同日重试仍处理剩余过期资格",
+        "test/spec/growth/invite-reward-expiry-retry/scanner.test.ts > [AC-B1-35c#4] 过期查询与逐行发放同时失败，各记错误且 tick 正常返回，同日仍可重试"
+      ],
+      "expected": ["test/spec/growth/invite-reward-expiry-retry/scanner.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "e451cdf57af6166d76c33710e272d266d4b372d02c02e4d857c77ed9e6aba7c1"
+        }
+      ],
+      "gate": {
+        "commit": "30c83d9ffc8883dc851efb953468b0a364acfa40",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ]
+}
