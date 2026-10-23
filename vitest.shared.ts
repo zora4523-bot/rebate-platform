@@ -145,13 +145,15 @@ function browserProject(
  * the repository).
  *
  * CT-06zl: the files run in two browser projects, `name` (all of `include` but the `apart` files)
- * and then `apart.name` (`sequence.groupOrder` 0 and 1: one after the other, so no more pages run
- * at once than with a single project). Each project has its own Vite server, dependency
- * optimizer and browser pages, so a page that ran a file of one project never loads a file of
- * the other. Together they run exactly the files one project with `include` and BASE_EXCLUDE
- * would run; `apart.include` must lie inside `include`. This is a stopgap based on correlation (the five verify-int failures seen so far were
- * each the first admin file a page loaded right after an H5 file there); CT-06zi's logs stay on
- * to find the cause.
+ * and `apart.name`. Their `sequence.groupOrder` (0 and 1) makes them run one after the other, so
+ * no more pages run tests at once than with a single project (the first project's idle pages
+ * and browser stay open until the end; with a single worker per project Vitest may run the
+ * first project last). Each project has its own Vite server, dependency optimizer and browser
+ * pages, so a page that ran a file of one project never loads a file of the other. Together they
+ * run exactly the files one project with `include` and BASE_EXCLUDE would run, provided
+ * `apart.include` lies inside `include`. This is a stopgap based on correlation (the five
+ * verify-int failures seen so far were each the first admin file a page loaded right after an
+ * H5 file there); CT-06zi's logs stay on to find the cause.
  *
  * CT-06zi, the browser side of that log: VITEST_PW_DEBUG makes @vitest/browser-playwright print
  * every request the page itself reports as failed ("[PW Error] <type> request failed for <url>
