@@ -1,0 +1,25 @@
+id: CT-06zx
+repo: rebate-platform
+title: CT-06zx：verify-fast 拆为 verify-static / verify-unit / verify-spec-1 / verify-spec-2 四个并行作业 + pnpm store 缓存（D10-298）
+type: guard-change
+# 2026-10-24 入账（ops 线，编排裁定 D10-298，取方案 A「先拆一半」+ 安装缓存）。起因：主干最近 10 次绿的 verify-fast 中
+# `pnpm verify:fast` 一步 849–1475 秒（p90 约 23–25 分钟）；其中 typecheck / lint / format 串行约 4 分钟，`turbo run test`
+# 12 个包同一台 4 核 runner 并发约 20 分钟，关键路径 spec-tests（1186 s）。做法：ci.yml 的 verify-fast 换成四个并行作业——
+# verify-static（typecheck、lint、format:check、depcruise、lint:migrations、contracts:check、guard:static）、verify-unit
+# （先 pnpm build 供 smoke:entries 用；turbo test 去掉 @couli/spec-tests，含 @couli/tools；smoke:entries）、verify-spec-1 / 2
+# （spec-tests `--shard=i/2`，vitest 按路径哈希切成不重叠的两段，并集等于全集）；每个 timeout 30、setup-node `cache: pnpm`、
+# 通过后上传 verified-<作业>-<树> 产物。verify-reuse（CT-06zm）与 ci-gate 改认新作业名，复用条件不变。check-workflows.test 的
+# 变异夹具随 ci-gate 的 needs 改成逐行写法同步改字面量。verify:fast 脚本本身不动（本地与测试机照旧整跑）。合并后统计一天再看是否继续拆。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - 'tools/ci/check-workflows.test.ts'
+  - 'ops/tasks/CT-06zx.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 1444

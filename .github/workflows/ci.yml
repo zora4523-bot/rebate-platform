@@ -29,9 +29,10 @@ concurrency:
 jobs:
   verify-reuse:
     # D10-242 (CT-06zm): an owner-approval label added or removed changes no code, so on a
-    # labeled / unlabeled event the three verify jobs reuse what already passed instead of running
-    # a second time. Reuse holds only when, for EACH of verify-fast, verify-props and verify-int,
-    # an earlier run of this workflow file (ci.yml) for the same PR head SHA has that job's latest
+    # labeled / unlabeled event the verify jobs reuse what already passed instead of running a
+    # second time. Reuse holds only when, for EACH of verify-static, verify-unit, verify-spec-1,
+    # verify-spec-2 (the four jobs that replaced verify-fast, CT-06zx), verify-props and
+    # verify-int, an earlier run of this workflow file (ci.yml) for the same PR head SHA has that job's latest
     # attempt concluded `success` AND carries the artifact `verified-<job>-<tree>` that the job
     # uploads only after all of its steps passed, <tree> being the tree it tested. The tree of
     # this event's checkout (the PR merge commit as of now) must equal it, so a base branch that
@@ -60,7 +61,7 @@ jobs:
           runs=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$HEAD_SHA&per_page=100" \
             --jq ".workflow_runs[] | select(.id != $RUN_ID) | .id")
           reuse=true
-          for job in verify-fast verify-props verify-int; do
+          for job in verify-static verify-unit verify-spec-1 verify-spec-2 verify-props verify-int; do
             found=''
             for run in $runs; do
               ok=$(gh api "repos/$REPO/actions/runs/$run/jobs?filter=latest&per_page=100" \
@@ -86,25 +87,31 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           RUN_ID: ${{ github.run_id }}
 
-  verify-fast:
-    # D10-242 (CT-06zm): skipped only when verify-reuse found a success of this very job on the
-    # same tested tree (see verify-reuse); every other event, and any failure of verify-reuse,
-    # runs it in full.
+  # D10-298 (CT-06zx): the former verify-fast job ran `pnpm verify:fast` on one runner, 849–1475 s
+  # (p90 about 23–25 minutes), most of it `turbo run test` with 12 packages competing for 4 cores.
+  # It is split into the four parallel jobs below, which together run every command of the
+  # verify:fast script (package.json; the script itself is unchanged and still runs whole locally
+  # and in tools/ops/verify-container.sh):
+  #   verify-static  typecheck, lint, format:check, depcruise, lint:migrations, contracts:check,
+  #                  guard:static
+  #   verify-unit    `turbo run test` without @couli/spec-tests (so with @couli/tools), then
+  #                  `pnpm --filter @couli/api run smoke:entries`
+  #   verify-spec-1  @couli/spec-tests `test` with --shard=1/2
+  #   verify-spec-2  @couli/spec-tests `test` with --shard=2/2
+  # Vitest shards by file: it sorts the test files by the SHA-1 of their path and cuts the list
+  # into contiguous ranges, so the two shards are disjoint and their union is the whole set
+  # (vitest BaseSequencer.shard). Each job installs from the setup-node pnpm store cache (keyed
+  # by pnpm-lock.yaml; `pnpm install --frozen-lockfile` still checks every package against the
+  # lockfile's integrity hashes). Each job is skipped only when verify-reuse found a success of
+  # that very job on the same tested tree (D10-242, CT-06zm); every other event, and any failure
+  # of verify-reuse, runs it in full. timeout-minutes 30 each (D10-298); after a day of runs:
+  # if the p90 is still above 20 minutes or verify-unit becomes the critical path, tools and the
+  # spec tests are split further.
+  verify-static:
     needs: [verify-reuse]
     if: ${{ !cancelled() && needs.verify-reuse.outputs.reuse != 'true' }}
     runs-on: ubuntu-latest
-    # 20 → 35 (2026-10-14): main's verify-fast reached 19m50s on 2026-10-10 and PRs are being
-    # cancelled at the cap (two 100k-run property passes plus pnpm verify:fast).
-    # 35 → 20 (2026-10-17): the two 100k-run property passes moved to verify-props (#658, #664
-    # and #665 hit the 35-minute cap on them). What is left here took 8–13 minutes in the last
-    # seven green runs of 2026-10-17; 20 is that with a 1.5× margin.
-    # 20 → 30 (2026-10-19, CT-06z): green in the 30 latest ci runs 11m21s–19m10s, p90 19m00s
-    # (95% of the cap); 30 is the maximum with a 1.5× margin, rounded up to a multiple of 5.
-    # 30 → 45 (2026-10-24, CT-06zw): green in the 29 latest completed runs 16.5–29.9 min, p50 27.0,
-    # p90 29.3 (98% of the cap), and #1407 was cancelled at the cap twice; 45 is the maximum with a
-    # 1.5× margin, rounded up to a multiple of 5 (as CT-06z). The samples are capped at 30, so this is
-    # a stopgap; speeding the job up is task CT-06zx.
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -120,10 +127,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
-          package-manager-cache: false
-      # The spec-ref and banned-terms guards and the tools/ops ledger tests read planning text
-      # with `git show <SPEC_REF>:<path>`, so the public planning repository is checked out with
-      # full history into the git-ignored .tmp/ directory (规划/11 §5.3).
+          cache: pnpm
+      # The spec-ref and banned-terms guards (guard:static) read planning text with
+      # `git show <SPEC_REF>:<path>`, so the public planning repository is checked out with full
+      # history into the git-ignored .tmp/ directory (规划/11 §5.3).
       - name: Check out the planning repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -132,12 +139,143 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: pnpm install --frozen-lockfile
-      - run: pnpm verify:fast
+      # The verify:fast commands of this job, in the script's order.
+      - run: pnpm run typecheck
+      - run: pnpm run lint
+      - run: pnpm run format:check
+      - run: pnpm run depcruise
+      - run: pnpm run lint:migrations
+      - run: pnpm run contracts:check
+      - run: pnpm run guard:static
         env:
           COULI_SPEC_REPO: ${{ github.workspace }}/.tmp/spec-repo
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: verified-verify-fast-${{ steps.tested.outputs.tree }}
+          name: verified-verify-static-${{ steps.tested.outputs.tree }}
+          # The artifact name is the record (job and tested tree); the file only holds the tree id,
+          # written by the `tested` step (upload-artifact skips dot-files such as .nvmrc by default).
+          path: ${{ runner.temp }}/verified-tree.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  verify-unit:
+    needs: [verify-reuse]
+    if: ${{ !cancelled() && needs.verify-reuse.outputs.reuse != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The tree this job tests (the PR merge commit, or the pushed commit): recorded before
+      # anything runs, uploaded under that name only when every step passed (D10-242).
+      - id: tested
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "$tree" > "$RUNNER_TEMP/verified-tree.txt"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # The tools/ops ledger tests (and the guard tests of @couli/tools) read planning text with
+      # `git show <SPEC_REF>:<path>`, so the public planning repository is checked out with full
+      # history into the git-ignored .tmp/ directory (规划/11 §5.3).
+      - name: Check out the planning repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zora4523-bot/couli
+          path: .tmp/spec-repo
+          fetch-depth: 0
+          persist-credentials: false
+      - run: pnpm install --frozen-lockfile
+      # `tsc -b` (the same command as typecheck): smoke:entries runs the built entries in
+      # apps/api/dist, and in verify:fast every test ran after typecheck had built dist/, so the
+      # tests here run under the same precondition.
+      - run: pnpm build
+      # The verify:fast `pnpm run test` (turbo run test --env-mode=loose) minus @couli/spec-tests,
+      # which verify-spec-1 / verify-spec-2 run.
+      - run: pnpm exec turbo run test --env-mode=loose --filter='!@couli/spec-tests'
+        env:
+          COULI_SPEC_REPO: ${{ github.workspace }}/.tmp/spec-repo
+      - run: pnpm --filter @couli/api run smoke:entries
+        env:
+          COULI_SPEC_REPO: ${{ github.workspace }}/.tmp/spec-repo
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-verify-unit-${{ steps.tested.outputs.tree }}
+          # The artifact name is the record (job and tested tree); the file only holds the tree id,
+          # written by the `tested` step (upload-artifact skips dot-files such as .nvmrc by default).
+          path: ${{ runner.temp }}/verified-tree.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  verify-spec-1:
+    # The spec tests resolve workspace packages from source (vitest.shared.ts `couli-src`) and
+    # read no planning text (verify-props runs the same suite the same way), so neither a build
+    # nor the planning repository is needed here. PROP_RUNS / PROP_SEED stay unset, as in
+    # verify:fast.
+    needs: [verify-reuse]
+    if: ${{ !cancelled() && needs.verify-reuse.outputs.reuse != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The tree this job tests (the PR merge commit, or the pushed commit): recorded before
+      # anything runs, uploaded under that name only when every step passed (D10-242).
+      - id: tested
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "$tree" > "$RUNNER_TEMP/verified-tree.txt"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The package's own `test` script (vitest run), with the shard appended by pnpm.
+      - run: pnpm --filter @couli/spec-tests run test --shard=1/2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-verify-spec-1-${{ steps.tested.outputs.tree }}
+          # The artifact name is the record (job and tested tree); the file only holds the tree id,
+          # written by the `tested` step (upload-artifact skips dot-files such as .nvmrc by default).
+          path: ${{ runner.temp }}/verified-tree.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  verify-spec-2:
+    # Same as verify-spec-1, other shard.
+    needs: [verify-reuse]
+    if: ${{ !cancelled() && needs.verify-reuse.outputs.reuse != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The tree this job tests (the PR merge commit, or the pushed commit): recorded before
+      # anything runs, uploaded under that name only when every step passed (D10-242).
+      - id: tested
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "$tree" > "$RUNNER_TEMP/verified-tree.txt"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The package's own `test` script (vitest run), with the shard appended by pnpm.
+      - run: pnpm --filter @couli/spec-tests run test --shard=2/2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-verify-spec-2-${{ steps.tested.outputs.tree }}
           # The artifact name is the record (job and tested tree); the file only holds the tree id,
           # written by the `tested` step (upload-artifact skips dot-files such as .nvmrc by default).
           path: ${{ runner.temp }}/verified-tree.txt
@@ -426,18 +564,31 @@ jobs:
 
   ci-gate:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).
+    # CT-06zx: verify-static, verify-unit, verify-spec-1 and verify-spec-2 replace verify-fast;
+    # each must pass (or be reused) on its own.
     if: always()
-    needs: [verify-fast, verify-props, verify-int, guard-git, verify-reuse]
+    needs:
+      - verify-static
+      - verify-unit
+      - verify-spec-1
+      - verify-spec-2
+      - verify-props
+      - verify-int
+      - guard-git
+      - verify-reuse
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Summarise
         run: |
-          echo "verify-fast=${FAST} verify-props=${PROPS} verify-int=${INT} guard-git=${GUARD} event=${EVENT} reuse=${REUSE_RESULT}/${REUSE}"
+          echo "verify-static=${STATIC} verify-unit=${UNIT} verify-spec-1=${SPEC1} verify-spec-2=${SPEC2} verify-props=${PROPS} verify-int=${INT} guard-git=${GUARD} event=${EVENT} reuse=${REUSE_RESULT}/${REUSE}"
           # A verify job passes when it succeeded, or (label event, D10-242) when verify-reuse
           # itself succeeded and found its success on the same tested tree, so it was skipped.
           reused() { [ "$REUSE_RESULT" = success ] && [ "$REUSE" = true ] && [ "$1" = skipped ]; }
-          [ "$FAST" = success ] || reused "$FAST" || exit 1
+          [ "$STATIC" = success ] || reused "$STATIC" || exit 1
+          [ "$UNIT" = success ] || reused "$UNIT" || exit 1
+          [ "$SPEC1" = success ] || reused "$SPEC1" || exit 1
+          [ "$SPEC2" = success ] || reused "$SPEC2" || exit 1
           [ "$PROPS" = success ] || reused "$PROPS" || exit 1
           [ "$INT" = success ] || reused "$INT" || exit 1
           if [ "$EVENT" = pull_request ]; then
@@ -446,7 +597,10 @@ jobs:
             [ "$GUARD" = skipped ] || [ "$GUARD" = success ] || exit 1
           fi
         env:
-          FAST: ${{ needs.verify-fast.result }}
+          STATIC: ${{ needs.verify-static.result }}
+          UNIT: ${{ needs.verify-unit.result }}
+          SPEC1: ${{ needs.verify-spec-1.result }}
+          SPEC2: ${{ needs.verify-spec-2.result }}
           PROPS: ${{ needs.verify-props.result }}
           INT: ${{ needs.verify-int.result }}
           GUARD: ${{ needs.guard-git.result }}
