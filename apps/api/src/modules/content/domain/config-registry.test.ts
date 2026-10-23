@@ -28,7 +28,7 @@ function spec(key: string) {
 
 it('[AC-F1-02zj#2] settle.* items are appended after the 29 earlier items, editable config.business', () => {
   const registry = configRegistry();
-  expect(registry).toHaveLength(51);
+  expect(registry).toHaveLength(59);
   expect(registry[28]!.key).toBe('external_hosts');
   expect(registry.slice(29, 45).map((entry) => entry.key)).toStrictEqual(SETTLE_KEYS);
   for (const entry of registry.slice(29, 45)) {
@@ -93,7 +93,7 @@ it('[AC-F1-02zj#2] number items without a range keep the finite-number check', (
 it('[AC-F1-02zn#2] growth.invite_reward.* items follow SETTLE as editable integers', () => {
   expect(
     configRegistry()
-      .slice(45)
+      .slice(45, 51)
       .map((entry) => [entry.key, entry.permission, entry.range?.min, entry.adminEditable]),
   ).toStrictEqual([
     ['growth.invite_reward.amount_fen', 'config.business', 0, true],
@@ -111,8 +111,9 @@ it('[AC-F1-02zn#2] growth.invite_reward.* items follow SETTLE as editable intege
 
 it('[AC-F1-02zx#1] growth.invite_reward.eligibility_days is the last item, whole days 1 to 3650', () => {
   const registry = configRegistry();
-  expect(registry.at(-1)!.key).toBe('growth.invite_reward.eligibility_days');
-  expect(registry.at(-2)!.key).toBe('growth.invite_reward.ip_window_hours');
+  // B2-06b (D10-244 ②): the eight payout.* keys follow growth.*; the growth group ends at index 50.
+  expect(registry[50]!.key).toBe('growth.invite_reward.eligibility_days');
+  expect(registry[49]!.key).toBe('growth.invite_reward.ip_window_hours');
   const days = spec('growth.invite_reward.eligibility_days');
   expect(days).toStrictEqual({
     key: 'growth.invite_reward.eligibility_days',

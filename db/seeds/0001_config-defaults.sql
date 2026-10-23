@@ -63,5 +63,14 @@ INSERT INTO app.config_items (app_id, key, value, updated_by) VALUES
   ('couli', 'growth.invite_reward.min_paid_fen', '0'::jsonb, 'seed'), -- BR-INV-24
   ('couli', 'growth.invite_reward.ip_window_hours', '24'::jsonb, 'seed'), -- BR-INV-24
   -- 第 7 批：BR-INV-24 细则资格有效期默认值（SPEC_REF ac4d993）
-  ('couli', 'growth.invite_reward.eligibility_days', '30'::jsonb, 'seed') -- BR-INV-24
+  ('couli', 'growth.invite_reward.eligibility_days', '30'::jsonb, 'seed'), -- BR-INV-24
+  -- 第 8 批：BR-WDR-18 / 22 / 28 / 32 的 payout 进程参数默认值（B2-06b，D10-223 / D10-244 / D10-296；代理补全的默认，biz_scene 空串即未配置、fail-close）
+  ('couli', 'payout.single_cap_fen', '500000'::jsonb, 'seed'), -- BR-WDR-18
+  ('couli', 'payout.daily_cap_fen', '5000000'::jsonb, 'seed'), -- BR-WDR-18
+  ('couli', 'payout.watermark_usable_bp', '9000'::jsonb, 'seed'), -- BR-WDR-18
+  ('couli', 'payout.biz_scene', '""'::jsonb, 'seed'), -- BR-WDR-22
+  ('couli', 'payout.query_schedule', '{"points_min": [1, 5, 30, 120], "interval_min": 120, "manual_after_min": 1440}'::jsonb, 'seed'), -- BR-WDR-28
+  ('couli', 'payout.definite_fail_codes', '[]'::jsonb, 'seed'), -- BR-WDR-28
+  ('couli', 'payout.payer_side_codes', '[]'::jsonb, 'seed'), -- BR-WDR-28
+  ('couli', 'payout.query_status_map', '{"SUCCESS": "success"}'::jsonb, 'seed') -- BR-WDR-28
 ON CONFLICT (app_id, key) DO NOTHING;
