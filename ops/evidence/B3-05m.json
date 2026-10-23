@@ -1,0 +1,159 @@
+{
+  "task": "B3-05m",
+  "spec_ref": "bafa96ce58669cc77a7e0e1f19b0046f53075ce6",
+  "spec_commit": "79b79de551eb9b84100d233496c31f45a3fdab04",
+  "red_tests": [
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#2][BR-AI-21] 输入审核只收到脱敏文本，链接不进入审核也不进入模型",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#2][BR-AI-21] 输入审核 block 走生产安全拒答",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#2][BR-AI-21] 输入审核 throw 走生产安全拒答",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#2][BR-AI-21] 默认审核替身放行不绕过真实禁询词检查",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 工具参数原样发送一次，录制状态携带 turn 与完整工具集",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 相同定义跨实例指纹稳定，描述或参数结构变化改变指纹",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 null",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 undefined",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 {\"kind\":\"other\",\"modelView\":{}}",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 {\"kind\":\"ok\"}",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 {\"kind\":\"ok\",\"modelView\":{},\"cards\":[{}]}",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 {\"kind\":\"ok\",\"modelView\":{},\"trace\":{\"card_sources\":\"bad\"}}",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 {\"kind\":\"rejected\",\"modelView\":{\"error\":\"other\"}}",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 合法工具结果无损解码 {\"kind\":\"ok\",\"modelView\":{\"synthetic\":\"合成工具响应\"},\"cards\":[]}",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 合法工具结果无损解码 {\"kind\":\"failed\",\"modelView\":{\"reason\":\"synthetic\"}}",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 合法工具结果无损解码 {\"kind\":\"rejected\",\"modelView\":{\"error\":\"invalid_args\"}}",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] ok 录制省略 cards 时解码为空列表",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 模型实际调用一次工具，解码失败记 failed 且仍有终帧",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 工具 RecordingMiss 经整个生产工具循环仍原样逃出",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 工具录制的卡片与评测证据穿过生产装配，不能只留下 modelView",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 降级关键词搜索经保留端口名，证据通过 onTrace 汇入且不计模型工具调用",
+    "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 降级关键词搜索的 RecordingMiss 也原样逃出",
+    "test/spec/agent/orchestrator-eval-local/assembly.int.test.ts > [AC-B3-05m#1][BR-AI-21] 本机与 stream 共用生产装配，默认 no_model/null prompt 的完整帧序列一致",
+    "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#5][AC-B3-05m#6][BR-AI-21] 公开合成冒烟集通过本机装配 record/replay，报告合规且逐题结果一致，只输出摘要",
+    "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#6][BR-AI-21] replay 缺 --cases 返回 2，不初始化被测 Agent 或 live 工厂，不寻找默认私有目录",
+    "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#6][BR-AI-21] replay 缺 --manifest 返回 2，不初始化被测 Agent 或 live 工厂，不寻找默认私有目录",
+    "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#6][BR-AI-21] replay 缺 --recordings 返回 2，不初始化被测 Agent 或 live 工厂，不寻找默认私有目录",
+    "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#7][BR-AI-14] 装配和回放不读取 process.env，也不触碰 live 工厂",
+    "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#3][BR-AI-21] 工具录制缺失在本机报告中为 recording_miss，不伪装为成功降级",
+    "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#8][BR-AI-21] 默认空提示词与无模型路由录制零模型行，逐题如实判分，保留调用方 meta",
+    "test/spec/agent/orchestrator-eval-local/replay.test.ts > [AC-B3-05m#4][BR-AI-21] 新 fixedClock 与 sequentialIds 两次运行的逐条模型/工具 key 与帧完全一致，回放全部命中",
+    "test/spec/agent/orchestrator-eval-local/replay.test.ts > [AC-B3-05m#4][BR-AI-21] 同一 case 保持 session_id 与卡片递增，另一 case 隔离",
+    "test/spec/agent/orchestrator-eval-local/replay.test.ts > [AC-B3-05m#8][BR-AI-21] null_prompt 不访问模型，产出真实无模型降级帧与空模型工具轨迹",
+    "test/spec/agent/orchestrator-eval-local/replay.test.ts > [AC-B3-05m#8][BR-AI-21] no_model_route 不访问模型，产出真实无模型降级帧与空模型工具轨迹"
+  ],
+  "risk_note": "RV1 by its paths (apps/api/src/modules/agent/orchestrator/eval/**, stream/mount/**); rule tests under test/** make the PR RV2. Codex wrote test/spec/agent/orchestrator-eval-local/** (34 tests, container red); Claude spec-test review round 1 pass. Opus implemented twice (the first passed full verify and Codex review but conflicted with B3-03j #1156 on the production assembly; the branch was rebuilt on main and the assembly re-extracted); Codex general review round 1 pass. Full verification is the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "79b79de551eb9b84100d233496c31f45a3fdab04",
+      "tree": "3d6c2c78598389bd430b4d202d3a343cd459697e",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T04:57:32Z",
+      "finished_at": "2026-10-23T04:57:44Z",
+      "red_tests": [
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#2][BR-AI-21] 输入审核只收到脱敏文本，链接不进入审核也不进入模型",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#2][BR-AI-21] 输入审核 block 走生产安全拒答",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#2][BR-AI-21] 输入审核 throw 走生产安全拒答",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#2][BR-AI-21] 默认审核替身放行不绕过真实禁询词检查",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 工具参数原样发送一次，录制状态携带 turn 与完整工具集",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 相同定义跨实例指纹稳定，描述或参数结构变化改变指纹",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 null",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 undefined",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 {\"kind\":\"other\",\"modelView\":{}}",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 {\"kind\":\"ok\"}",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 {\"kind\":\"ok\",\"modelView\":{},\"cards\":[{}]}",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 {\"kind\":\"ok\",\"modelView\":{},\"trace\":{\"card_sources\":\"bad\"}}",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 非法工具录制拒绝解码 {\"kind\":\"rejected\",\"modelView\":{\"error\":\"other\"}}",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 合法工具结果无损解码 {\"kind\":\"ok\",\"modelView\":{\"synthetic\":\"合成工具响应\"},\"cards\":[]}",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 合法工具结果无损解码 {\"kind\":\"failed\",\"modelView\":{\"reason\":\"synthetic\"}}",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 合法工具结果无损解码 {\"kind\":\"rejected\",\"modelView\":{\"error\":\"invalid_args\"}}",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] ok 录制省略 cards 时解码为空列表",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 模型实际调用一次工具，解码失败记 failed 且仍有终帧",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 工具 RecordingMiss 经整个生产工具循环仍原样逃出",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 工具录制的卡片与评测证据穿过生产装配，不能只留下 modelView",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 降级关键词搜索经保留端口名，证据通过 onTrace 汇入且不计模型工具调用",
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts > [AC-B3-05m#3][BR-AI-21] 降级关键词搜索的 RecordingMiss 也原样逃出",
+        "test/spec/agent/orchestrator-eval-local/assembly.int.test.ts > [AC-B3-05m#1][BR-AI-21] 本机与 stream 共用生产装配，默认 no_model/null prompt 的完整帧序列一致",
+        "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#5][AC-B3-05m#6][BR-AI-21] 公开合成冒烟集通过本机装配 record/replay，报告合规且逐题结果一致，只输出摘要",
+        "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#6][BR-AI-21] replay 缺 --cases 返回 2，不初始化被测 Agent 或 live 工厂，不寻找默认私有目录",
+        "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#6][BR-AI-21] replay 缺 --manifest 返回 2，不初始化被测 Agent 或 live 工厂，不寻找默认私有目录",
+        "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#6][BR-AI-21] replay 缺 --recordings 返回 2，不初始化被测 Agent 或 live 工厂，不寻找默认私有目录",
+        "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#7][BR-AI-14] 装配和回放不读取 process.env，也不触碰 live 工厂",
+        "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#3][BR-AI-21] 工具录制缺失在本机报告中为 recording_miss，不伪装为成功降级",
+        "test/spec/agent/orchestrator-eval-local/cli.test.ts > [AC-B3-05m#8][BR-AI-21] 默认空提示词与无模型路由录制零模型行，逐题如实判分，保留调用方 meta",
+        "test/spec/agent/orchestrator-eval-local/replay.test.ts > [AC-B3-05m#4][BR-AI-21] 新 fixedClock 与 sequentialIds 两次运行的逐条模型/工具 key 与帧完全一致，回放全部命中",
+        "test/spec/agent/orchestrator-eval-local/replay.test.ts > [AC-B3-05m#4][BR-AI-21] 同一 case 保持 session_id 与卡片递增，另一 case 隔离",
+        "test/spec/agent/orchestrator-eval-local/replay.test.ts > [AC-B3-05m#8][BR-AI-21] null_prompt 不访问模型，产出真实无模型降级帧与空模型工具轨迹",
+        "test/spec/agent/orchestrator-eval-local/replay.test.ts > [AC-B3-05m#8][BR-AI-21] no_model_route 不访问模型，产出真实无模型降级帧与空模型工具轨迹"
+      ],
+      "expected": [
+        "test/spec/agent/orchestrator-eval-local/adapter.test.ts",
+        "test/spec/agent/orchestrator-eval-local/assembly.int.test.ts",
+        "test/spec/agent/orchestrator-eval-local/cli.test.ts",
+        "test/spec/agent/orchestrator-eval-local/replay.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "6ed34ebfa7133839b5eccc8c339c40f2b18e94600e410a62483a8fddc0b595b1"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "8fd8eda029b74f9741afbee01435742cc03fca010fbd3f970bca30a24f515ab4"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "6a8dcaaaca221b93c0e2cd38b8c5bb0b66091aa7",
+        "clean": true,
+        "script_sha256": "627fd8bfaee714c78328e09372531611d953f76a5f53d0390b62b1ee5f06d968"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 2,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "round 1 pass on the first implementation (S2 recorded); after the rebase conflict with B3-03j (#1156) the branch was rebuilt and Opus implemented again; round 2 pass on the second implementation (couli-runs/B3-05m/review-codex-r1.json, review-codex-r2.json)"
+    },
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "general",
+      "checklist_complete": true,
+      "note": "incremental review of the rebase conflict resolution against B3-03m (20fe8b91) in stream/mount index.ts / production.ts: B3-03m behaviour kept verbatim, 0 findings (couli-runs/B3-05m/review-claude-conflict.json); Codex unavailable until 10-30, approvals #36"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "round 1 pass, two S2 folded into the implementation notes (couli-runs/B3-05m/review-claude-spec-test.json)"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "2d2f225a24118b7c6c8567691edeaa36c7f8abbe",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "a7fc155f2b806f29412bc22baacebdda02f5a4db",
+    "specs": "72dde67eefff9307ad4dfab3f98c70a071cc017a"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
