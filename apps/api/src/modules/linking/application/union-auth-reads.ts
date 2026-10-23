@@ -160,7 +160,8 @@ export function createUnionAuthReads(options: UnionAuthReadsOptions): UnionAuthR
       // B1-22b (BR-ID-24 ④, 12 §7.2): from the instant auth_expires_at is reached the site
       // authorization counts as expired, before the expiry job writes the status column.
       if (row === undefined || row.auth_status === 'expired') return false;
-      return row.auth_expires_at === null || row.auth_expires_at > clock.now();
+      // A row without an expiry instant (null) has no time guard.
+      return row.auth_expires_at == null || row.auth_expires_at > clock.now();
     },
 
     async configuredMethods(appId, client) {
