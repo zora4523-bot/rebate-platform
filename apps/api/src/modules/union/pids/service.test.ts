@@ -1,7 +1,21 @@
 import type { DB } from '@couli/db';
-import type { Kysely } from 'kysely';
+import {
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  type CompiledQuery,
+  type DatabaseConnection,
+  type Driver,
+  type QueryResult,
+} from 'kysely';
 import { expect, it, vi } from 'vitest';
-import { UnionPidError, createUnionPidService, type PidServiceDeps } from './service.ts';
+import {
+  UnionPidError,
+  createUnionPidService,
+  type PidRow,
+  type PidServiceDeps,
+} from './service.ts';
 
 // Local unit-test identifiers; DB behaviour is covered by test/spec/union/pids (integration).
 const APP = 'app-unit';
@@ -237,4 +251,158 @@ it('[AC-B1-19d-UNIT#1] 指定的联盟账号不是 UUID 时直接返回 null，�
   expect(results).toEqual([null, null, null]);
   expect(verify).not.toHaveBeenCalled();
   expect(append).not.toHaveBeenCalled();
+});
+
+// B1-22i: a scripted driver over an in-memory union_pids. Every WHERE clause the service sends is
+// a conjunction of `"column" = $n` / `"column" <> $n`, evaluated here on the rows; the UPDATE
+// applies its status. The real index and race behaviour is covered by
+// test/spec/db/union/pids-active-unique (integration).
+const ACCOUNT_A = '00000000-0000-4000-8000-0000000000a1';
+const ACCOUNT_B = '00000000-0000-4000-8000-0000000000b1';
+
+function pidRow(id: string, values: Partial<PidRow>): PidRow {
+  return {
+    id,
+    app_id: APP,
+    platform: 'jd',
+    union_account_id: ACCOUNT_A,
+    site_id: null,
+    pid: `pid-${id.slice(-4)}`,
+    pid_scene: 'share',
+    status: 'pending',
+    hjy_ignore_confirmed_at: new Date('2030-01-01T00:00:00Z'),
+    hjy_ignore_evidence_path: 'x.png',
+    row_version: 0,
+    created_at: new Date('2030-01-01T00:00:00Z'),
+    updated_at: new Date('2030-01-01T00:00:00Z'),
+    ...values,
+  } as PidRow;
+}
+
+function matches(where: string, params: readonly unknown[], row: PidRow): boolean {
+  for (const [, column, op, n] of where.matchAll(/"(\w+)" (=|<>) \$(\d+)/g)) {
+    const value = (row as unknown as Record<string, unknown>)[column!];
+    const param = params[Number(n) - 1];
+    if (op === '=' ? value !== param : value === param) return false;
+  }
+  return true;
+}
+
+function scriptedDb(rows: PidRow[], options: { updateFails?: unknown } = {}) {
+  const statements: { sql: string; parameters: readonly unknown[] }[] = [];
+  const result = <R>(out: R[]): QueryResult<R> => ({ rows: out });
+  const connection: DatabaseConnection = {
+    executeQuery<R>(query: CompiledQuery): Promise<QueryResult<R>> {
+      const text = query.sql;
+      const params = query.parameters;
+      statements.push({ sql: text, parameters: params });
+      const where = text.split(' where ')[1] ?? '';
+      if (text.startsWith('select') && text.includes('from "union_pids"')) {
+        return Promise.resolve(result(rows.filter((r) => matches(where, params, r)) as R[]));
+      }
+      if (text.startsWith('update "union_pids"')) {
+        if (options.updateFails !== undefined) return Promise.reject(options.updateFails);
+        const status = params[0] as PidRow['status'];
+        const hit = rows.filter((r) => matches(where, params, r));
+        for (const r of hit) Object.assign(r, { status, row_version: r.row_version + 1 });
+        return Promise.resolve(result(hit.map((r) => ({ ...r })) as R[]));
+      }
+      return Promise.reject(new Error(`unscripted statement: ${text}`));
+    },
+    async *streamQuery() {
+      throw new Error('not used');
+    },
+  };
+  const driver: Driver = {
+    init: async () => undefined,
+    acquireConnection: async () => connection,
+    beginTransaction: async () => undefined,
+    commitTransaction: async () => undefined,
+    rollbackTransaction: async () => undefined,
+    releaseConnection: async () => undefined,
+    destroy: async () => undefined,
+  };
+  const db = new Kysely<DB>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => driver,
+      createIntrospector: (kysely) => new PostgresIntrospector(kysely),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+  });
+  const append = vi.fn(async () => undefined);
+  const warn = vi.fn();
+  const service = createUnionPidService({
+    db,
+    clock: { now: () => new Date('2031-01-01T00:00:00Z') },
+    superVerifier: { verify: async () => ({ appId: APP, adminId: ADMIN }) },
+    auditWriter: () => ({ append }),
+    logger: { warn },
+  });
+  const updates = () => statements.filter((st) => st.sql.startsWith('update'));
+  return { service, append, warn, statements, updates };
+}
+
+const TARGET = '00000000-0000-4000-8000-00000000c001';
+const OTHER = '00000000-0000-4000-8000-00000000c002';
+
+it('[AC-B1-22i-UNIT#1] 同账号同场景已有 active 时拒绝（conflict），不写状态、不写审计、不告警', async () => {
+  const rows = [pidRow(OTHER, { status: 'active' }), pidRow(TARGET, {})];
+  const { service, append, warn, updates } = scriptedDb(rows);
+  await expect(
+    service.setPidStatus({ ...ctx, pidId: TARGET, status: 'active' }),
+  ).rejects.toMatchObject({ name: 'UnionPidError', code: 'conflict' });
+  expect(updates()).toEqual([]);
+  expect(rows[1]!.status).toBe('pending');
+  expect(append).not.toHaveBeenCalled();
+  expect(warn).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-22i-UNIT#2] 预检带场景与账号条件：同账号其他场景、其他账号同场景的 active 都不挡启用', async () => {
+  for (const other of [
+    pidRow(OTHER, { status: 'active', pid_scene: 'self_buy' }),
+    pidRow(OTHER, { status: 'active', union_account_id: ACCOUNT_B }),
+    pidRow(OTHER, { status: 'active', platform: 'pdd' }),
+    pidRow(OTHER, { status: 'retired' }),
+  ]) {
+    const rows = [other, pidRow(TARGET, {})];
+    const { service, append, warn, statements } = scriptedDb(rows);
+    await expect(
+      service.setPidStatus({ ...ctx, pidId: TARGET, status: 'active' }),
+    ).resolves.toMatchObject({ id: TARGET, status: 'active' });
+    expect(append).toHaveBeenCalledTimes(1);
+    // Only the other account's active row in the same scene is reported (B1-19d).
+    expect(warn).toHaveBeenCalledTimes(other.union_account_id === ACCOUNT_B ? 1 : 0);
+    const check = statements.find(
+      (st) => st.sql.startsWith('select "id" from') && st.sql.includes('"id" <> $'),
+    );
+    expect(check?.sql).toMatch(/"union_account_id" = \$\d+/);
+    expect(check?.sql).toMatch(/"pid_scene" = \$\d+/);
+    expect(check?.parameters).toEqual(expect.arrayContaining([ACCOUNT_A, 'share', 'jd', TARGET]));
+  }
+});
+
+it('[AC-B1-22i-UNIT#3] 并发撞部分唯一索引的 23505 映射为 UnionPidError conflict，不写审计', async () => {
+  const rows = [pidRow(TARGET, {})];
+  const violation = Object.assign(new Error('duplicate key value'), {
+    code: '23505',
+    constraint: 'union_pids_active_account_scene_key',
+  });
+  const { service, append, warn } = scriptedDb(rows, { updateFails: violation });
+  const error: unknown = await service
+    .setPidStatus({ ...ctx, pidId: TARGET, status: 'active' })
+    .catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(UnionPidError);
+  expect(error).toMatchObject({ code: 'conflict' });
+  expect(append).not.toHaveBeenCalled();
+  expect(warn).not.toHaveBeenCalled();
+});
+
+it('[AC-B1-22i-UNIT#4] 退役不做场景预检', async () => {
+  const rows = [pidRow(OTHER, { status: 'active' }), pidRow(TARGET, { status: 'active' })];
+  const { service, statements } = scriptedDb(rows);
+  await expect(
+    service.setPidStatus({ ...ctx, pidId: TARGET, status: 'retired' }),
+  ).resolves.toMatchObject({ id: TARGET, status: 'retired' });
+  expect(statements.some((st) => st.sql.includes('"id" <> $'))).toBe(false);
 });

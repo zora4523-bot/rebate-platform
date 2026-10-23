@@ -25,6 +25,11 @@
 // B1-19d (BR-ATTR-02, BR-ATTR-07, BR-ATTR-08, BR-ID-17): getActivePid takes an optional union
 // account filter; activating a PID while another union account already has an active PID in the
 // same app × platform × scene only warns through the optional logger (never refuses).
+// B1-22i (BR-ATTR-02; rulings D10-221 A / D10-231): at most one active PID per app × platform ×
+// union account × pid_scene. Activating a second one of the same account and scene is refused
+// with 'conflict' before any write (no audit, no warning); the partial unique index
+// union_pids_active_account_scene_key is the last line, and its 23505 under a race maps to the
+// same 'conflict'.
 //
 // Pure module (no decorators, erasable syntax, no Nest injection). Its runtime platform helpers
 // (newUuidV7, createIdempotency) come through platform/index.ts as the module boundary requires
@@ -406,6 +411,13 @@ export function createUnionPidService(deps: PidServiceDeps): UnionPidService {
     throw new UnionPidError('conflict', 'row changed concurrently (row_version)');
   }
 
+  function sceneTaken(): never {
+    throw new UnionPidError(
+      'conflict',
+      'another PID of this union account is already active in this scene; retire it first',
+    );
+  }
+
   return {
     async registerAccount(input) {
       checkContext(input);
@@ -632,21 +644,44 @@ export function createUnionPidService(deps: PidServiceDeps): UnionPidService {
         ) {
           throw new UnionPidError('evidence_missing', 'HJY ignore confirmation missing');
         }
+        // B1-22i: one active PID per app × platform × union account × scene. Another account's
+        // active row in the same scene is allowed (only warned below, B1-19d).
+        if (target === 'active') {
+          const sibling = await trx
+            .selectFrom('union_pids')
+            .select('id')
+            .where('app_id', '=', actor.appId)
+            .where('platform', '=', before.platform)
+            .where('union_account_id', '=', before.union_account_id)
+            .where('pid_scene', '=', before.pid_scene)
+            .where('status', '=', 'active')
+            .where('id', '<>', before.id)
+            .executeTakeFirst();
+          if (sibling !== undefined) sceneTaken();
+        }
         const now = clock.now();
         const next: PidStatus = target;
-        const row = await trx
-          .updateTable('union_pids')
-          .set((eb) => ({
-            status: next,
-            updated_at: now,
-            row_version: eb('row_version', '+', 1),
-          }))
-          .where('app_id', '=', actor.appId)
-          .where('id', '=', before.id)
-          .where('status', '=', before.status)
-          .where('row_version', '=', before.row_version)
-          .returningAll()
-          .executeTakeFirst();
+        let row: PidRow | undefined;
+        try {
+          row = await trx
+            .updateTable('union_pids')
+            .set((eb) => ({
+              status: next,
+              updated_at: now,
+              row_version: eb('row_version', '+', 1),
+            }))
+            .where('app_id', '=', actor.appId)
+            .where('id', '=', before.id)
+            .where('status', '=', before.status)
+            .where('row_version', '=', before.row_version)
+            .returningAll()
+            .executeTakeFirst();
+        } catch (error) {
+          // A status-only update can break no unique key but the active-scene index: a concurrent
+          // activation of the same account and scene committed first.
+          if (isUniqueViolation(error)) sceneTaken();
+          throw error;
+        }
         if (row === undefined) casFailed();
         // B1-19d: other accounts' active rows in the same app × platform × scene are only
         // reported (never refused, never added to the audit row); read in this transaction.
