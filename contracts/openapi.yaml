@@ -12842,7 +12842,6 @@ paths:
         object path of the 花卷云 ignore screenshot (BR-ATTR-28), null until activation; viewing
         the screenshot is not part of this contract.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -12926,7 +12925,6 @@ paths:
         record (action union_pid_create, the new row, reason). The response is the new row. No
         Idempotency-Key and no DELETE (BR-ATTR-02).
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -13035,7 +13033,6 @@ paths:
         union_pid_update, before and after values, reason). The response is the row as it is
         now. No Idempotency-Key.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -13140,7 +13137,6 @@ paths:
         activation, which also answers 30155. Writes an audit record (action union_pid_activate,
         reason). The response is the row as it is now. No Idempotency-Key.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
@@ -13255,7 +13251,6 @@ paths:
         row_version goes up by 1. Writes an audit record (action union_pid_retire, reason). The
         response is the row as it is now. No Idempotency-Key.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10003
