@@ -86,7 +86,7 @@ it('[AC-B1-22i#1] 恰有一个有效的 active 部分唯一索引，键为 app_i
   const matching = indexes.rows.filter(
     (index) =>
       index.unique &&
-      JSON.stringify([...index.keys].sort()) === JSON.stringify(KEY) &&
+      JSON.stringify([...index.keys].sort()) === JSON.stringify([...KEY].sort()) &&
       index.predicate?.replaceAll(/::text|[()\s"]/g, '') === "status='active'",
   );
   expect(matching).toHaveLength(1);

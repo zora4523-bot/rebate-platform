@@ -35,7 +35,10 @@ function activeIndex(body: string): { at: number } | null {
       .map((column) => column.replaceAll(/["\s]/g, ''))
       .sort();
     const predicate = match[3]!.replaceAll(/::text|[()\s"]/g, '');
-    if (JSON.stringify(columns) === JSON.stringify(KEY) && predicate === "status='active'") {
+    if (
+      JSON.stringify(columns) === JSON.stringify([...KEY].sort()) &&
+      predicate === "status='active'"
+    ) {
       return { at: match.index ?? 0 };
     }
   }
