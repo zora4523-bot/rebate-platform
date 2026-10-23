@@ -1,0 +1,86 @@
+{
+  "task": "F1-02zzi",
+  "spec_ref": "f3fea9b041e41bc0d398380f6ad09555d1d6ba32",
+  "spec_commit": "c954724c9fc1b3d87215bd2d7eb3b13f8957fa44",
+  "red_tests": [
+    "test/spec/content/dict-agreement-real-name/classification.test.ts > [AC-F1-02zzi#1] D10-204：仅 ordinary 的实名同意书归 agreement，精确前缀且资金判定优先",
+    "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#2] 仅 config.general 保存 real_name.consent.title 被拒，不能靠填法务确认人或二次验证越权",
+    "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#2] 仅 config.general 保存 real_name.consent.point.1 被拒，不能靠填法务确认人或二次验证越权",
+    "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#2] 仅 config.general 保存 real_name.consent.agree 被拒，不能靠填法务确认人或二次验证越权",
+    "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#2] 仅 config.general 保存 real_name.consent.body 被拒，不能靠填法务确认人或二次验证越权",
+    "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#3] 同时有普通与协议权限仍须法务确认，缺失时原子拒绝且不写成功审计",
+    "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#4] 仅协议权限经 totp 和法务确认可保存实名同意书，发布与审计同事务落库"
+  ],
+  "risk_note": "RV2 (content text-guard). classifyTextKey now treats keys starting with `real_name.consent.` as agreement, like `privacy.` and `perm.` (08 BR-TEXT-14 table D note, D10-204; SPEC_REF bafa96ce+). The fund-term check still runs first, so keys in both or neither fund-term segment stay fund_terms; near prefixes such as `real_name.consentx` stay general. The admin dict save therefore needs content.agreement and a legal confirmer for these keys; no text keys are created here (CT-16 continuation). Rule tests by Codex with one format-only test commit (prettier). Test-machine full verify passed. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "c954724c9fc1b3d87215bd2d7eb3b13f8957fa44",
+      "tree": "0666583e1e6e158b6710179d68ee14065a12bae5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T07:03:06Z",
+      "finished_at": "2026-10-23T07:03:34Z",
+      "red_tests": [
+        "test/spec/content/dict-agreement-real-name/classification.test.ts > [AC-F1-02zzi#1] D10-204：仅 ordinary 的实名同意书归 agreement，精确前缀且资金判定优先",
+        "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#2] 仅 config.general 保存 real_name.consent.title 被拒，不能靠填法务确认人或二次验证越权",
+        "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#2] 仅 config.general 保存 real_name.consent.point.1 被拒，不能靠填法务确认人或二次验证越权",
+        "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#2] 仅 config.general 保存 real_name.consent.agree 被拒，不能靠填法务确认人或二次验证越权",
+        "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#2] 仅 config.general 保存 real_name.consent.body 被拒，不能靠填法务确认人或二次验证越权",
+        "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#3] 同时有普通与协议权限仍须法务确认，缺失时原子拒绝且不写成功审计",
+        "test/spec/content/dict-agreement-real-name/save.int.test.ts > [AC-F1-02zzi#4] 仅协议权限经 totp 和法务确认可保存实名同意书，发布与审计同事务落库"
+      ],
+      "expected": [
+        "test/spec/content/dict-agreement-real-name/classification.test.ts",
+        "test/spec/content/dict-agreement-real-name/save.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "0ac925a53bc576dcb27c92b76c9e3d8db847d3ad0cb33b2e51f801e87646f3d6"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "94c10ee345b7b67bcf82bdbfd47e3d719786abfbd65438e914c7a973187076ee"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota until 2026-10-30 (orchestrator 10:27, approvals 36): money review by a fresh independent Claude via claude-run.sh; pass, two out-of-scope S2 recorded as follow-ups. Earlier attempts had no usable output (validator key format, fixed by CT-06zk / D10-234)."
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by Codex reviewed by a fresh Claude subagent: r1 pass (one S2: a hard-coded key list would also pass); the test machine showed every red test failing for the right reason"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "933d4f6bf0a0cb2f33fe91bd47d1c34f0354dc1a",
+    "specs": "d7811035a75370ee35f2ae060353af8353377700"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
