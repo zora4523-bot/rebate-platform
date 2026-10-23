@@ -20,6 +20,8 @@
 | 持久化 | 开 AOF：`appendonly yes`、`appendfsync always`（先试，实测写延迟）、`no-appendfsync-on-rewrite no`（为 yes 时重写期间跳过 fsync，always 等于失效）；RDB 可以保留 | R-04 记录 §7；ADR-0002 §10 第 7 项（staging 核对后回写） | `CONFIG GET appendonly`、`CONFIG GET appendfsync`、`CONFIG GET no-appendfsync-on-rewrite`、`INFO persistence` |
 | 危险命令 | 应用用的账号不能执行 FLUSHALL、FLUSHDB、DEBUG（改名为空或 ACL 禁用）；CONFIG 改随机名，只放节点 root 可读处 | R-04 记录 §7 | `ACL GETUSER <用户>` 或配置里的 `rename-command` |
 
+**CONFIG 已改名的实例**（staging 已改）：上表和下文里的 `CONFIG GET` / `CONFIG SET` / `CONFIG REWRITE`，都要把 `CONFIG` 换成改名后的命令名，否则会报 `unknown command`。改名后的命令名存在节点上只有 root 可读的文件里，位置见私有仓库 `rebate-private/ops/pigsty/staging/README.md`。脚本里用 `N="$(cat <该文件>)"` 读出后执行 `redis-cli … "$N" GET <项>`。这个名字按口令对待，不要打印，也不要写进日志、文档或仓库。
+
 **在已有 RDB 的实例上打开 AOF，不能直接改配置重启**——那样 Redis 会按空 AOF 起成空库，等于丢一次数据。要先在运行时 `CONFIG SET appendonly yes`，等 `INFO persistence` 显示重写完成（`aof_rewrite_in_progress:0`、`aof_last_bgrewrite_status:ok`），再把配置文件改成一致（Pigsty：`redis_aof_enabled: true`，只渲染不重启）。
 
 为什么必须是 noeviction：下面这些键被静默淘汰时，安全或计费性质会变（不只是缓存未命中）——防重放 nonce、各类配额 / 频控计数、`refresh_grace`（ADR 点名）；按代码同样不能被淘汰的还有用户 step-up 令牌的已用标记、验证码、后台会话。内存满时 noeviction 让写入报错（调用方按第 3 节处理），而不是悄悄丢键。
