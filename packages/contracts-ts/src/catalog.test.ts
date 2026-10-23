@@ -148,6 +148,10 @@ it('identity codes of 08 §13.11 (功能对照补缺 1–3 批) carry their data
     'favorites_full',
     // CT-24h: admin-only, a reauth_mode=manual union account cannot start OAuth (D10-176).
     'manual_mode',
+    // CT-24n: admin order reassign target cannot own orders (D10-169 K-9, BR-ATTR-31).
+    'target_banned',
+    'target_deleting',
+    'target_deleted',
   ]);
   expect(errorCodes[30701].sources).toEqual(['规划/04 §7', 'BR-ID-10']);
 });

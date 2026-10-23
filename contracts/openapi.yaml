@@ -11582,7 +11582,7 @@ paths:
                 $ref: '#/components/schemas/AdminOrderDetailResponse'
               examples:
                 assigned:
-                  $ref: '#/components/examples/AdminOrderDetailUnheld'
+                  $ref: '#/components/examples/AdminOrderDetailAssigned'
         '429':
           $ref: '#/components/responses/TooManyRequests'
         4XX:
@@ -11944,10 +11944,12 @@ paths:
           required);
         - `platform` (enum platform);
         - for rights and punish only: optional `time_basis` (paid or received, the payment or
-          receipt time of 01 F-ORD-10) with `from` and `to` (ISO 8601 with offset). The three come
-          together: `from` or `to` without `time_basis` is 20001 with `data.fields=[time_basis]`,
-          `time_basis` without the window names the missing `from` or `to`. Rows outside the
-          window are skipped (`skipped_rows`; row rules in BR-FUND-06 细则「维权导入任务」). With
+          receipt time of 01 F-ORD-10) with optional `from` and `to` (ISO 8601 with offset). A
+          window needs both ends and `time_basis`: `from` or `to` without `time_basis` is 20001
+          with `data.fields=[time_basis]`, and one end without the other names the missing `from`
+          or `to`. Without a window no row is filtered and `time_basis` may be omitted; sent alone
+          it is accepted and ignored (04 §6.6; 08 BR-FUND-06). Rows outside the window are
+          skipped (`skipped_rows`; row rules in BR-FUND-06 细则「维权导入任务」). With
           `kind=channel` any of the three is 20001 with `data.fields` naming it;
         - `file`: the xlsx file, at most 10,000 rows (1 万行).
 
@@ -12057,7 +12059,7 @@ paths:
                         - time_basis
                     trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
                 fromInvalid:
-                  summary: 20001 from missing with time_basis, not a time, or sent with kind=channel
+                  summary: 20001 from missing while to is sent, not a time, or sent with kind=channel
                   value:
                     code: 20001
                     msg: 参数错误
@@ -12066,7 +12068,7 @@ paths:
                         - from
                     trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
                 toInvalid:
-                  summary: 20001 to missing with time_basis, not a time, or sent with kind=channel
+                  summary: 20001 to missing while from is sent, not a time, or sent with kind=channel
                   value:
                     code: 20001
                     msg: 参数错误
@@ -20297,6 +20299,102 @@ components:
               to: ESTIMATED
               event: R3
               source: claim
+              at: '2026-10-08T09:30:00+08:00'
+          commission_split:
+            rule_version_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
+            order_type: self
+            raw_n_fen: 500
+            subsidy_commission_fen: 0
+            reserve_bp: 1000
+            reserve_fen: 50
+            tlj_deduct_fen: 0
+            base_fen: 450
+            platform_retain_fen: 135
+            beneficiaries:
+              - user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+                role: self
+                ratio_bp: 6000
+                forfeit_reason: null
+              - user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c09
+                role: direct
+                ratio_bp: 1000
+                forfeit_reason: null
+            created_at: '2026-10-08T09:30:00+08:00'
+          link_logs:
+            - at: '2026-10-06T10:57:02+08:00'
+              event: open
+              scene: detail
+            - at: '2026-10-06T10:56:48+08:00'
+              event: convert
+              scene: detail
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminOrderDetailAssigned:
+      summary: The order detail right after an admin assigned an unattributed order (R3 ADMIN_REASSIGN, user_basis admin, locked); never held, so last_hold_* are null
+      value:
+        code: 0
+        msg: ''
+        data:
+          order_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01
+          sub_order_id: 231006-1234567891
+          parent_order_id: 231006-1234567890
+          platform: pdd
+          title: 抽纸 3 层 120 抽 24 包
+          image_url: https://img.example.com/p/a1.jpg
+          user:
+            user_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5c01
+            phone_masked: '138****5678'
+          paid_at: '2026-10-06T10:58:40+08:00'
+          pay_amount_fen: 3990
+          est_commission_fen: 500
+          settle_commission_fen: null
+          platform_status: PAID
+          rebate_status: ESTIMATED
+          hold_reason: null
+          flags:
+            locked: true
+            status_locked: false
+            rights_pending: false
+            hold: false
+          raw_item_id: '61234'
+          product_key: null
+          quantity: 1
+          refunded_quantity: 0
+          display_status: REVIEWING
+          reason: null
+          buy_type: self
+          scene_basis: param
+          user_basis: admin
+          is_presale: false
+          deposit_paid_at: null
+          received_at: null
+          settled_at: null
+          credited_at: null
+          settle_period: null
+          commission_rate_bp: 1000
+          row_version: 3
+          unmapped_pending_open: false
+          last_hold_by: null
+          last_hold_by_name: null
+          last_hold_note: null
+          last_hold_at: null
+          status_history:
+            - field: platform
+              from: null
+              to: PAID
+              event: P2
+              source: sync
+              at: '2026-10-06T11:05:12+08:00'
+            - field: rebate
+              from: null
+              to: UNATTRIBUTED
+              event: R1
+              source: sync
+              at: '2026-10-06T11:05:12+08:00'
+            - field: rebate
+              from: UNATTRIBUTED
+              to: ESTIMATED
+              event: R3
+              source: admin
               at: '2026-10-08T09:30:00+08:00'
           commission_split:
             rule_version_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5d01
@@ -33645,8 +33743,9 @@ components:
     AdminRightsImportByOrder:
       type: object
       description: |
-        multipart parts of a rights (维权单) or punish (违规单) import. `time_basis`, `from` and
-        `to` come together or not at all.
+        multipart parts of a rights (维权单) or punish (违规单) import. A window (`from` or `to`)
+        needs both ends and `time_basis`; without a window no row is filtered and `time_basis`
+        is optional (sent alone it is accepted and ignored; 04 §6.6, BR-FUND-06 维权导入任务).
       additionalProperties: false
       required:
         - kind
@@ -33673,9 +33772,6 @@ components:
         file:
           $ref: '#/components/schemas/AdminRightsImportFile'
       dependentRequired:
-        time_basis:
-          - from
-          - to
         from:
           - time_basis
           - to

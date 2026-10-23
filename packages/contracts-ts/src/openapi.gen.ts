@@ -4291,10 +4291,12 @@ export interface paths {
          *       required);
          *     - `platform` (enum platform);
          *     - for rights and punish only: optional `time_basis` (paid or received, the payment or
-         *       receipt time of 01 F-ORD-10) with `from` and `to` (ISO 8601 with offset). The three come
-         *       together: `from` or `to` without `time_basis` is 20001 with `data.fields=[time_basis]`,
-         *       `time_basis` without the window names the missing `from` or `to`. Rows outside the
-         *       window are skipped (`skipped_rows`; row rules in BR-FUND-06 细则「维权导入任务」). With
+         *       receipt time of 01 F-ORD-10) with optional `from` and `to` (ISO 8601 with offset). A
+         *       window needs both ends and `time_basis`: `from` or `to` without `time_basis` is 20001
+         *       with `data.fields=[time_basis]`, and one end without the other names the missing `from`
+         *       or `to`. Without a window no row is filtered and `time_basis` may be omitted; sent alone
+         *       it is accepted and ignored (04 §6.6; 08 BR-FUND-06). Rows outside the window are
+         *       skipped (`skipped_rows`; row rules in BR-FUND-06 细则「维权导入任务」). With
          *       `kind=channel` any of the three is 20001 with `data.fields` naming it;
          *     - `file`: the xlsx file, at most 10,000 rows (1 万行).
          *
@@ -12256,8 +12258,9 @@ export interface components {
          */
         AdminRightsImportFile: string;
         /**
-         * @description multipart parts of a rights (维权单) or punish (违规单) import. `time_basis`, `from` and
-         *     `to` come together or not at all.
+         * @description multipart parts of a rights (维权单) or punish (违规单) import. A window (`from` or `to`)
+         *     needs both ends and `time_basis`; without a window no row is filtered and `time_basis`
+         *     is optional (sent alone it is accepted and ignored; 04 §6.6, BR-FUND-06 维权导入任务).
          */
         AdminRightsImportByOrder: {
             /** @enum {string} */
