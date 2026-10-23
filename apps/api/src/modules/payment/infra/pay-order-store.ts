@@ -141,11 +141,16 @@ export async function markLaunchIssued(
     .where('id', '=', payOrderId)
     .where('status', '=', 'PENDING')
     .where('closing', '=', false)
+    .where('expire_at', '>', now)
     .returningAll()
     .executeTakeFirst();
 }
 
-/** The user's cancel: a CAS on «PENDING and not closing» → closing with close_reason user_cancel. */
+/**
+ * The user's cancel: a CAS on «PENDING and not closing» → closing with close_reason user_cancel.
+ * expire_at is not a condition: an expired PENDING order can still be cancelled (the close job
+ * then confirms the state with the channel, B2-15d).
+ */
 export async function markClosing(
   trx: Transaction<DB>,
   appId: string,
@@ -160,7 +165,6 @@ export async function markClosing(
     .where('id', '=', payOrderId)
     .where('status', '=', 'PENDING')
     .where('closing', '=', false)
-    .where('expire_at', '>', now)
     .returningAll()
     .executeTakeFirst();
 }

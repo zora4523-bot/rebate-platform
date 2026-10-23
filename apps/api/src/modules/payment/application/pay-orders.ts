@@ -18,9 +18,12 @@
 //   the channel call, outside any transaction (ok / unknown only; a throwing adapter is unknown);
 //   transaction ②: the same lock, one pay_query_attempts row (kind 'query', result 'prepay' /
 //   'unknown'); unknown → 50306 data.pay_channel, the order stays PENDING; ok → launch_issued_at
-//   = now by a CAS on «PENDING, closing=false and expire_at > now»: 0 rows (cancel won the race,
-//   or the order expired meanwhile) → 20902 and the launch parameters are dropped, so once
-//   closing or expired no launch is ever returned (BR-PAY-03, §12.2).
+//   = now by a CAS on «PENDING, closing=false and expire_at > now» (markLaunchIssued): 0 rows
+//   (cancel won the race, or the order expired during the channel call) → 20902 and the launch
+//   parameters are dropped, so once closing or expired no launch is ever returned (BR-PAY-03,
+//   §12.2). cancelPayOrder's CAS (markClosing) checks only «PENDING and closing=false»: an
+//   expired PENDING order can still be cancelled, which is how a user frees the business object
+//   for another channel before B2-15d's expiry job runs.
 // Launch parameters never reach a log line or a row of payment's tables (pay_query_attempts keeps
 // summaries only); they are part of the response, which platform idempotency's standard mode
 // stores in idempotency_keys with the first answer and replays byte for byte to the same
