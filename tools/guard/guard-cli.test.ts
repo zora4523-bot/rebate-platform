@@ -907,7 +907,10 @@ describe('run.ts static and the single-purpose guards', () => {
   });
 
   it('the remaining single-purpose guards report through their own exit code', () => {
-    const root = staticTree({ 'apps/api/src/modules/payout/index.ts': 'export {};\n' });
+    // 故意不登记的示例模块，勿用真实模块名（payout 已登记，B2-05a；对账等模块以后也会登记）。
+    const root = staticTree({
+      'apps/api/src/modules/zz-unregistered-example/index.ts': 'export {};\n',
+    });
     expect(guard('agents-pair.ts', ['--cwd', root]).stdout).toBe('PASS agents-pair\n');
     expect(guard('risk-map-coverage.ts', ['--cwd', root]).status).toBe(1);
     expect(guard('protected-sync.ts', ['--cwd', root]).status).toBe(0);
