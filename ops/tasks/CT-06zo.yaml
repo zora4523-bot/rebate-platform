@@ -11,7 +11,7 @@ type: guard-change
 # chore/guard-change-CT-06zo，不带证据文件（先例 CT-06zg #1258）。
 refs: [BR-AI-02]
 refs_hash:
-  BR-AI-02: 61014cc4d222
+  BR-AI-02: d14ca044d0e7
 deps: []
 paths:
   - '.dependency-cruiser.cjs'

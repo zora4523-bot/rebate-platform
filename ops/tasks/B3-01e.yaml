@@ -23,7 +23,7 @@ type: impl
 # 分工按规划/11 §1.1：Codex 先写规则测试（test/spec/evals-forbid/**，先红），Claude 新子代理过审，Opus 5.5 实现，Codex 评审。风险 RV1。
 refs: [BR-AI-02]
 refs_hash:
-  BR-AI-02: 61014cc4d222
+  BR-AI-02: d14ca044d0e7
 deps: [B3-01b, B3-01c, B3-01d, B3-01f]
 paths:
   - 'packages/evals/src/grade.ts'
