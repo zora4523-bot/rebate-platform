@@ -26,7 +26,11 @@ const INPUT: UnionAlertPhonesInput = {
   reason: 'add_phone',
 };
 
-function fixture(options: { lock?: number; insert?: number; update?: number }) {
+function fixture(options: {
+  lock?: number | undefined;
+  insert?: number | undefined;
+  update?: number | undefined;
+}) {
   const calls: string[] = [];
   const writes: UnionAlertPhonesWrite[] = [];
   const tx: UnionAlertPhonesTx = {
