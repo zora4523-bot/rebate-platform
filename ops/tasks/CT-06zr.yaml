@@ -1,0 +1,21 @@
+id: CT-06zr
+repo: rebate-platform
+title: CT-06zr：redaction-regression.test 的 [AC-B1-01c#5] 一条 it 加显式超时（CI 偶发撞 5 秒默认超时）
+type: guard-change
+# 2026-10-23 入账（ops 线，编排 22:19 派工，照 CT-06zp）。起因：apps/api/src/modules/platform/logging/redaction-regression.test.ts
+# 「[AC-B1-01c#5] Fastify inject keeps access-log request and response fields without listening」在 CI verify-fast 偶发撞 5 秒默认超时
+# （10-23 #1320、#1381）。这条 it 建 api 的 Nest 应用（createHttpApp + init）再 inject 一次请求；主干最近 12 次绿的 verify-fast 里耗时
+# 2.0–3.5 s。做法：只给这一条 it 加显式超时 INJECT_CASE_TIMEOUT = 15_000（失败时已过 5 s × 3）与注释，断言不动；prettier 因三参数调用
+# 重排了用例体缩进与一处 expect 的折行（空白与折行，含义不变，`git diff -w` 可见）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/src/modules/platform/logging/redaction-regression.test.ts'
+  - 'ops/tasks/CT-06zr.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: null

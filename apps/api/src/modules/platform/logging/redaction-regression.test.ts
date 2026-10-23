@@ -101,64 +101,72 @@ it('[AC-B1-01c#4] free-text context follows arrays and objects and nonprimitive 
   expect(values[0]).toBe('手机号13987654321');
 });
 
-it('[AC-B1-01c#5] Fastify inject keeps access-log request and response fields without listening', async () => {
-  const { logger, records, lines } = capture();
-  const app = await createHttpApp('api', { logger, config: loadConfig({ APP_ENV: 'test' }) });
-  try {
-    await app.init();
-    const response = await app.inject({
-      method: 'GET',
-      url: '/healthz?phone=13987654321&alipay_logon_id=zhangsan%40example.com',
-      remoteAddress: '127.0.0.2',
-    });
-    expect(response.statusCode).toBe(200);
-    expect(app.getHttpServer().listening).toBe(false);
-    expect(records().find((record) => record['msg'] === 'incoming request')?.['req']).toMatchObject(
-      {
+// CT-06zr: builds the api Nest app (createHttpApp + init) and injects one request; on main in CI it
+// took 2.0–3.5 s (12 green verify-fast runs, 2026-10-22/23) and passed the 5 s default now and then
+// (#1320, #1381). 15 s is the 5 s seen when it failed × 3; assertions are unchanged.
+const INJECT_CASE_TIMEOUT = 15_000;
+it(
+  '[AC-B1-01c#5] Fastify inject keeps access-log request and response fields without listening',
+  async () => {
+    const { logger, records, lines } = capture();
+    const app = await createHttpApp('api', { logger, config: loadConfig({ APP_ENV: 'test' }) });
+    try {
+      await app.init();
+      const response = await app.inject({
+        method: 'GET',
+        url: '/healthz?phone=13987654321&alipay_logon_id=zhangsan%40example.com',
+        remoteAddress: '127.0.0.2',
+      });
+      expect(response.statusCode).toBe(200);
+      expect(app.getHttpServer().listening).toBe(false);
+      expect(
+        records().find((record) => record['msg'] === 'incoming request')?.['req'],
+      ).toMatchObject({
         method: 'GET',
         url: '/healthz',
         hostname: 'localhost',
         remoteAddress: '127.0.0.2',
-      },
-    );
-    expect(
-      records().find((record) => record['msg'] === 'request completed')?.['res'],
-    ).toMatchObject({ statusCode: 200 });
-  } finally {
-    await app.close();
-  }
-  // inject has no TCP remotePort. Verify it separately with prototype getters like Request's.
-  class Request {
-    raw = {};
-    get method() {
-      return 'GET';
+      });
+      expect(
+        records().find((record) => record['msg'] === 'request completed')?.['res'],
+      ).toMatchObject({ statusCode: 200 });
+    } finally {
+      await app.close();
     }
-    get url() {
-      return '/healthz#access_token=t-1?phone=13987654321';
+    // inject has no TCP remotePort. Verify it separately with prototype getters like Request's.
+    class Request {
+      raw = {};
+      get method() {
+        return 'GET';
+      }
+      get url() {
+        return '/healthz#access_token=t-1?phone=13987654321';
+      }
+      get routeOptions() {
+        return { url: '/healthz' };
+      }
+      get hostname() {
+        return 'localhost';
+      }
+      get ip() {
+        return '127.0.0.2';
+      }
+      get socket() {
+        return { remotePort: 43210 };
+      }
     }
-    get routeOptions() {
-      return { url: '/healthz' };
-    }
-    get hostname() {
-      return 'localhost';
-    }
-    get ip() {
-      return '127.0.0.2';
-    }
-    get socket() {
-      return { remotePort: 43210 };
-    }
-  }
-  logger.info({ req: new Request() }, 'socket fields');
-  expect(records().at(-1)?.['req']).toEqual({
-    method: 'GET',
-    url: '/healthz',
-    hostname: 'localhost',
-    remoteAddress: '127.0.0.2',
-    remotePort: 43210,
-  });
-  expect(lines.join('')).not.toMatch(/13987654321|zhangsan|access_token|t-1/);
-});
+    logger.info({ req: new Request() }, 'socket fields');
+    expect(records().at(-1)?.['req']).toEqual({
+      method: 'GET',
+      url: '/healthz',
+      hostname: 'localhost',
+      remoteAddress: '127.0.0.2',
+      remotePort: 43210,
+    });
+    expect(lines.join('')).not.toMatch(/13987654321|zhangsan|access_token|t-1/);
+  },
+  INJECT_CASE_TIMEOUT,
+);
 
 it('[AC-B1-01c#6] logs an 80000-character non-email in less than one second', () => {
   const { logger, records } = capture();
