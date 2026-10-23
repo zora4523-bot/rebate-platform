@@ -61,3 +61,11 @@ export class PayoutPayeeNameRequiredError extends Error {
     this.name = 'PayoutPayeeNameRequiredError';
   }
 }
+
+/** A transfer amount that is not a positive fen amount never reaches the gateway (money r1 S1). */
+export class PayoutAmountInvalidError extends Error {
+  constructor() {
+    super('PAYOUT_AMOUNT_INVALID');
+    this.name = 'PayoutAmountInvalidError';
+  }
+}

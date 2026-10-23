@@ -8,11 +8,13 @@
 // timeout, HTTP error, unparsable or unverified body) are unknown without pausing the queue, a
 // non-success business code is unknown and pauses it. Logs carry out_biz_no, code, sub_code and
 // latency_ms with the logon id masked (first 3 and last 2 kept), never the payee name or the key.
+import { formatFen } from '@couli/money';
 import type { Logger } from 'pino';
 
 import type { Clock } from '../../../platform/index.ts';
 import { judgeQuery, judgeTransfer, type JudgementLists } from '../../application/judgement.ts';
 import {
+  PayoutAmountInvalidError,
   PayoutChannelNotConfiguredError,
   PayoutPayeeNameRequiredError,
   type ChannelRaw,
@@ -71,13 +73,6 @@ const TIMEOUT_MS = 10_000;
 const CHINA_OFFSET_MS = 8 * 3_600_000;
 
 type Method = 'transfer' | 'query';
-
-/** Fen (bigint, ≥ 0) as the gateway's yuan string with exactly two decimals. */
-export function fenToYuanString(fen: bigint): string {
-  const whole = fen / 100n;
-  const cents = fen % 100n;
-  return `${whole}.${cents.toString().padStart(2, '0')}`;
-}
 
 /** The logon id with the first 3 and last 2 characters kept; shorter ids are fully masked. */
 export function maskLogonId(identity: string): string {
@@ -187,10 +182,12 @@ export class AlipayChannel implements PayoutChannel {
 
   async transfer(request: TransferRequest): Promise<TransferResult> {
     if (request.payee.name.replace(/\s/g, '') === '') throw new PayoutPayeeNameRequiredError();
+    // Money arithmetic and formatting only through @couli/money; a non-positive amount never leaves.
+    if (typeof request.netFen !== 'bigint' || request.netFen <= 0n) throw new PayoutAmountInvalidError();
     const started = this.options.clock.now();
     const bizContent = {
       out_biz_no: request.outBizNo,
-      trans_amount: fenToYuanString(request.netFen),
+      trans_amount: formatFen(request.netFen),
       product_code: PRODUCT_CODE,
       biz_scene: BIZ_SCENE,
       order_title: ORDER_TITLE,
@@ -201,7 +198,7 @@ export class AlipayChannel implements PayoutChannel {
         name: request.payee.name,
       },
     };
-    const outcome = await this.call('transfer', TRANSFER_METHOD, bizContent, started);
+    const outcome = await this.call('transfer', TRANSFER_METHOD, bizContent, started, request.outBizNo);
     const latencyMs = Math.max(0, this.options.clock.now().getTime() - started.getTime());
     const masked = maskLogonId(request.payee.identity);
     if (outcome.kind === 'transport') {
@@ -237,7 +234,7 @@ export class AlipayChannel implements PayoutChannel {
   async query(outBizNo: string): Promise<QueryResult> {
     const started = this.options.clock.now();
     const bizContent = { out_biz_no: outBizNo, product_code: PRODUCT_CODE, biz_scene: BIZ_SCENE };
-    const outcome = await this.call('query', QUERY_METHOD, bizContent, started);
+    const outcome = await this.call('query', QUERY_METHOD, bizContent, started, outBizNo);
     const latencyMs = Math.max(0, this.options.clock.now().getTime() - started.getTime());
     if (outcome.kind === 'transport') {
       this.options.logger.warn(
@@ -272,6 +269,7 @@ export class AlipayChannel implements PayoutChannel {
     apiMethod: string,
     bizContent: Record<string, unknown>,
     started: Date,
+    outBizNo: string,
   ): Promise<Transport> {
     const c = this.options.credentials;
     const params: Record<string, string> = {
@@ -304,10 +302,10 @@ export class AlipayChannel implements PayoutChannel {
     if (response.status < 200 || response.status >= 300) {
       return { kind: 'transport', code: `HTTP_${response.status}` };
     }
-    return this.verify(method, response.body);
+    return this.verify(method, response.body, outBizNo);
   }
 
-  private verify(method: Method, body: string): Transport {
+  private verify(method: Method, body: string, outBizNo: string): Transport {
     const name = method === 'transfer' ? TRANSFER_NODE : QUERY_NODE;
     let envelope: unknown;
     try {
@@ -319,16 +317,29 @@ export class AlipayChannel implements PayoutChannel {
       return { kind: 'transport', code: 'UNPARSEABLE_RESPONSE' };
     }
     const sign = (envelope as Record<string, unknown>)['sign'];
-    const node = (envelope as Record<string, unknown>)[name];
     const text = rawNode(body, name);
-    if (typeof sign !== 'string' || typeof node !== 'object' || node === null || text === null) {
+    if (typeof sign !== 'string' || text === null) {
       return { kind: 'transport', code: 'UNSIGNED_RESPONSE' };
     }
     if (!verifyAlipayResponse(text, sign, this.options.credentials.alipayPublicKey)) {
       return { kind: 'transport', code: 'SIGNATURE_INVALID' };
     }
+    // The result is read from the very text the signature covered (money r1 S2): a second,
+    // unsigned node with the same name elsewhere in the envelope cannot replace it.
+    let node: unknown;
+    try {
+      node = JSON.parse(text);
+    } catch {
+      return { kind: 'transport', code: 'UNPARSEABLE_RESPONSE' };
+    }
+    if (typeof node !== 'object' || node === null) {
+      return { kind: 'transport', code: 'UNPARSEABLE_RESPONSE' };
+    }
     const n = node as Record<string, unknown>;
     if (typeof n['code'] !== 'string') return { kind: 'transport', code: 'UNPARSEABLE_RESPONSE' };
+    if (typeof n['out_biz_no'] === 'string' && n['out_biz_no'] !== outBizNo) {
+      return { kind: 'transport', code: 'RESPONSE_MISMATCH' };
+    }
     const raw: ChannelRaw = { code: n['code'] };
     if (typeof n['sub_code'] === 'string') raw.subCode = n['sub_code'];
     if (typeof n['msg'] === 'string') raw.msg = n['msg'];
