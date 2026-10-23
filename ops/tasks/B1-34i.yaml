@@ -22,7 +22,7 @@ paths:
 test_paths:
   - 'test/spec/admin/admins-verify-phone/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/admin/admins-verify-phone/**'

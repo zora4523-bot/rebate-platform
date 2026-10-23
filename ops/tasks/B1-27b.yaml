@@ -27,7 +27,7 @@ paths:
 test_paths:
   - 'test/spec/identity/admin-profile/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/identity/admin-profile/**'
