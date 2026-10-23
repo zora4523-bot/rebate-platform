@@ -134,8 +134,8 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verified-verify-fast-${{ steps.tested.outputs.tree }}
-          # The artifact name is the record (job and tested tree); the file only holds the tree id
-          # (written by the `tested` step; the repository has no fixed placeholder file).
+          # The artifact name is the record (job and tested tree); the file only holds the tree id,
+          # written by the `tested` step (upload-artifact skips dot-files such as .nvmrc by default).
           path: ${{ runner.temp }}/verified-tree.txt
           retention-days: 7
           if-no-files-found: error
@@ -190,8 +190,8 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verified-verify-props-${{ steps.tested.outputs.tree }}
-          # The artifact name is the record (job and tested tree); the file only holds the tree id
-          # (written by the `tested` step; the repository has no fixed placeholder file).
+          # The artifact name is the record (job and tested tree); the file only holds the tree id,
+          # written by the `tested` step (upload-artifact skips dot-files such as .nvmrc by default).
           path: ${{ runner.temp }}/verified-tree.txt
           retention-days: 7
           if-no-files-found: error
@@ -316,8 +316,8 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verified-verify-int-${{ steps.tested.outputs.tree }}
-          # The artifact name is the record (job and tested tree); the file only holds the tree id
-          # (written by the `tested` step; the repository has no fixed placeholder file).
+          # The artifact name is the record (job and tested tree); the file only holds the tree id,
+          # written by the `tested` step (upload-artifact skips dot-files such as .nvmrc by default).
           path: ${{ runner.temp }}/verified-tree.txt
           retention-days: 7
           if-no-files-found: error
