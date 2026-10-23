@@ -630,6 +630,40 @@ $$;
 
 
 --
+-- Name: payout_accounts_reject_identifier_update(); Type: FUNCTION; Schema: app; Owner: -
+--
+
+CREATE FUNCTION app.payout_accounts_reject_identifier_update() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF OLD.anonymized_at IS NOT NULL
+    AND NEW.anonymized_at IS DISTINCT FROM OLD.anonymized_at
+  THEN
+    RAISE EXCEPTION 'payout_accounts anonymized_at cannot be changed once set'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  IF NOT (OLD.anonymized_at IS NULL AND NEW.anonymized_at IS NOT NULL)
+    AND (
+      NEW.alipay_logon_id_cipher IS DISTINCT FROM OLD.alipay_logon_id_cipher
+      OR NEW.alipay_hmac IS DISTINCT FROM OLD.alipay_hmac
+      OR NEW.bank_card_no_cipher IS DISTINCT FROM OLD.bank_card_no_cipher
+      OR NEW.bank_card_hmac IS DISTINCT FROM OLD.bank_card_hmac
+      OR NEW.bank_name IS DISTINCT FROM OLD.bank_name
+      OR NEW.card_bin IS DISTINCT FROM OLD.card_bin
+      OR NEW.payee_name IS DISTINCT FROM OLD.payee_name
+    )
+  THEN
+    RAISE EXCEPTION 'payout_accounts account columns can only change in the anonymizing update'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: payout_attempts_complete_once(); Type: FUNCTION; Schema: app; Owner: -
 --
 
@@ -3822,7 +3856,8 @@ CREATE TABLE app.payout_accounts (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT payout_accounts_details_check CHECK ((((payout_method = 'alipay'::text) AND (alipay_logon_id_cipher IS NOT NULL) AND (alipay_hmac IS NOT NULL) AND (bank_card_no_cipher IS NULL) AND (bank_card_hmac IS NULL) AND (bank_name IS NULL) AND (card_bin IS NULL)) OR ((payout_method = 'bank_card'::text) AND (bank_card_no_cipher IS NOT NULL) AND (bank_card_hmac IS NOT NULL) AND (bank_name IS NOT NULL) AND (card_bin IS NOT NULL) AND (alipay_logon_id_cipher IS NULL) AND (alipay_hmac IS NULL)))),
+    anonymized_at timestamp with time zone,
+    CONSTRAINT payout_accounts_details_check CHECK ((((anonymized_at IS NULL) AND (((payout_method = 'alipay'::text) AND (alipay_logon_id_cipher IS NOT NULL) AND (alipay_hmac IS NOT NULL) AND (bank_card_no_cipher IS NULL) AND (bank_card_hmac IS NULL) AND (bank_name IS NULL) AND (card_bin IS NULL)) OR ((payout_method = 'bank_card'::text) AND (bank_card_no_cipher IS NOT NULL) AND (bank_card_hmac IS NOT NULL) AND (bank_name IS NOT NULL) AND (card_bin IS NOT NULL) AND (alipay_logon_id_cipher IS NULL) AND (alipay_hmac IS NULL)))) OR ((anonymized_at IS NOT NULL) AND (alipay_logon_id_cipher IS NULL) AND (alipay_hmac IS NULL) AND (bank_card_no_cipher IS NULL) AND (bank_card_hmac IS NULL) AND (card_bin IS NULL) AND (NOT is_current)))),
     CONSTRAINT payout_accounts_method_check CHECK ((payout_method = ANY (ARRAY['alipay'::text, 'bank_card'::text])))
 );
 
@@ -4157,10 +4192,11 @@ CREATE TABLE app.realname (
     row_version integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    tax_retained boolean DEFAULT false NOT NULL,
     CONSTRAINT realname_id_no_hmac_check CHECK (((id_no_hmac IS NULL) OR (id_no_hmac ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT realname_provider_check CHECK (((provider IS NULL) OR (provider ~ '[^[:space:]]'::text))),
     CONSTRAINT realname_status_check CHECK ((status = ANY (ARRAY['none'::text, 'verified'::text, 'failed'::text]))),
-    CONSTRAINT realname_unverified_cleared_check CHECK (((status = 'verified'::text) OR ((name_cipher IS NULL) AND (id_no_cipher IS NULL) AND (id_no_hmac IS NULL) AND (birth_date_cipher IS NULL)))),
+    CONSTRAINT realname_unverified_cleared_check CHECK (((status = 'verified'::text) OR ((status = 'none'::text) AND tax_retained) OR ((name_cipher IS NULL) AND (id_no_cipher IS NULL) AND (id_no_hmac IS NULL) AND (birth_date_cipher IS NULL)))),
     CONSTRAINT realname_verified_check CHECK (((status <> 'verified'::text) OR ((name_cipher IS NOT NULL) AND (id_no_cipher IS NOT NULL) AND (id_no_hmac IS NOT NULL) AND (birth_date_cipher IS NOT NULL) AND (provider IS NOT NULL) AND (verified_at IS NOT NULL))))
 );
 
@@ -8635,6 +8671,13 @@ CREATE TRIGGER payout_account_changes_append_only BEFORE DELETE OR UPDATE ON app
 
 
 --
+-- Name: payout_accounts payout_accounts_anonymize_only; Type: TRIGGER; Schema: app; Owner: -
+--
+
+CREATE TRIGGER payout_accounts_anonymize_only BEFORE UPDATE ON app.payout_accounts FOR EACH ROW EXECUTE FUNCTION app.payout_accounts_reject_identifier_update();
+
+
+--
 -- Name: payout_attempts payout_attempts_complete_once; Type: TRIGGER; Schema: app; Owner: -
 --
 
@@ -10084,6 +10127,13 @@ REVOKE ALL ON FUNCTION app.pay_orders_reject_immutable_update() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION app.pay_refunds_reject_immutable_update() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION payout_accounts_reject_identifier_update(); Type: ACL; Schema: app; Owner: -
+--
+
+REVOKE ALL ON FUNCTION app.payout_accounts_reject_identifier_update() FROM PUBLIC;
 
 
 --
@@ -12929,6 +12979,55 @@ GRANT SELECT ON TABLE app.payout_accounts TO couli_readonly;
 
 
 --
+-- Name: COLUMN payout_accounts.alipay_logon_id_cipher; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(alipay_logon_id_cipher) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_accounts.alipay_hmac; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(alipay_hmac) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_accounts.bank_card_no_cipher; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(bank_card_no_cipher) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_accounts.bank_card_hmac; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(bank_card_hmac) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_accounts.bank_name; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(bank_name) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_accounts.card_bin; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(card_bin) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_accounts.payee_name; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(payee_name) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
 -- Name: COLUMN payout_accounts.is_current; Type: ACL; Schema: app; Owner: -
 --
 
@@ -12947,6 +13046,13 @@ GRANT UPDATE(row_version) ON TABLE app.payout_accounts TO couli_app;
 --
 
 GRANT UPDATE(updated_at) ON TABLE app.payout_accounts TO couli_app;
+
+
+--
+-- Name: COLUMN payout_accounts.anonymized_at; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(anonymized_at) ON TABLE app.payout_accounts TO couli_app;
 
 
 --
@@ -13404,6 +13510,13 @@ GRANT SELECT(created_at) ON TABLE app.realname TO couli_readonly;
 
 GRANT UPDATE(updated_at) ON TABLE app.realname TO couli_app;
 GRANT SELECT(updated_at) ON TABLE app.realname TO couli_readonly;
+
+
+--
+-- Name: COLUMN realname.tax_retained; Type: ACL; Schema: app; Owner: -
+--
+
+GRANT UPDATE(tax_retained) ON TABLE app.realname TO couli_app;
 
 
 --
