@@ -274,7 +274,6 @@ import {
   createInviteRelationHitWriter,
   createSameDeviceAccountsCheck,
   createRiskStateService,
-  createRiskStateBatchReader,
   createDeviceRegistrationRisk,
   createSmsRisk,
   riskStateServiceToken,
