@@ -5,6 +5,7 @@
 //   items      paying (no reason); skipped / blocked with a reason (not_approved, member_blocked,
 //              has_transfer_attempt, channel_disabled); moved_out on the old batch with
 //              moved_to_batch_id = the new batch (no reason).
+import { randomUUID } from 'node:crypto';
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
 
@@ -35,5 +36,38 @@ export interface PayoutBatchesStore {
 }
 
 export function createPayoutBatchesStore(): PayoutBatchesStore {
-  throw new Error('NotImplemented: createPayoutBatchesStore');
+  return {
+    async insertBatch(trx, batch) {
+      await trx
+        .withSchema('app')
+        .insertInto('payout_batches')
+        .values({
+          id: batch.id,
+          app_id: batch.appId,
+          kind: batch.kind,
+          created_by: batch.createdBy,
+          created_at: batch.createdAt,
+        })
+        .execute();
+    },
+    async insertItems(trx, items) {
+      if (items.length === 0) return;
+      await trx
+        .withSchema('app')
+        .insertInto('payout_batch_items')
+        .values(
+          items.map((item) => ({
+            id: randomUUID(),
+            app_id: item.appId,
+            batch_id: item.batchId,
+            withdrawal_id: item.withdrawalId,
+            result: item.result,
+            reason: item.reason,
+            moved_to_batch_id: item.movedToBatchId,
+            at: item.at,
+          })),
+        )
+        .execute();
+    },
+  };
 }

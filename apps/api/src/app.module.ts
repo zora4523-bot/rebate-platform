@@ -211,6 +211,7 @@ import {
   createWithdrawApply,
   createBalanceRecoveredHook,
   createPersonalDataCopyWithdrawalsReader,
+  createPayoutAttemptsStore,
   createWithdrawalInFlightReader,
   createWithdrawHoldsReader,
   createWithdrawRules,
@@ -3248,11 +3249,10 @@ export class AppModule {
               // Its unbanned {need_reauth} reads linking's Taobao binding port (SELECT only).
               NotificationModule.forWorker({ taobaoReauthReader: needsTaobaoReauth }),
               // account.went_negative → the member's withdrawals re-checked under the locks
-              // (B2-05e, BR-WDR-05 (a)); payout_attempts reads arrive with B2-06.
+              // (B2-05e, BR-WDR-05 (a)); payout_attempts read through payout's own store (B2-06c).
               PayoutModule.forWorker({
                 lockUsersForUpdate,
-                // TODO(规划/11 §2.3): payout_attempts 读取（有无转账尝试）— blocked on B2-06
-                attempts: { hasAttempt: () => Promise.resolve(false) },
+                attempts: createPayoutAttemptsStore(),
               }),
               // Admin data exports (B1-34e, BR-ID-42): the export queue's generate / expire
               // handler over identity's batch users projection (decrypted and masked there) and

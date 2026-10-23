@@ -6,9 +6,12 @@
 //              `now`, REJECTED excluded, through forecastWindow / forecastFen.
 //   committed  Σ net_fen of status = PAYING, and Σ net_fen of PAID_API / PAID_MANUAL with
 //              paid_at after `since` (t_W).
+// Per channel (the withdrawal's payout_channel), as the watermark rows are kept per channel
+// (D10-223); whether several channels share one W is pending the orchestrator's ruling.
 import type { DB } from '@couli/db';
-import type { Transaction } from 'kysely';
-import type { WatermarkReading } from '../domain/watermark.ts';
+import { parseFen } from '@couli/money';
+import { sql, type Transaction } from 'kysely';
+import { forecastFen, forecastWindow, type WatermarkReading } from '../domain/watermark.ts';
 
 export type PayoutChannelName = 'alipay' | 'bank_card' | 'wechat';
 
@@ -32,6 +35,65 @@ export interface WatermarkReader {
   ): Promise<WatermarkCommitted>;
 }
 
+/** PostgreSQL sums bigint into numeric (text on the wire); an empty set sums to 0. */
+function sumFen(value: string | number | bigint | null): bigint {
+  return value === null ? 0n : parseFen(typeof value === 'bigint' ? value : String(value));
+}
+
 export function createWatermarkReader(): WatermarkReader {
-  throw new Error('NotImplemented: createWatermarkReader');
+  return {
+    async latest(trx, input) {
+      const row = await trx
+        .withSchema('app')
+        .selectFrom('payout_watermarks')
+        .select(['available_fen', 'measured_at'])
+        .where('app_id', '=', input.appId)
+        .where('channel', '=', input.channel)
+        .orderBy('measured_at', 'desc')
+        .orderBy('created_at', 'desc')
+        .orderBy('id', 'desc')
+        .limit(1)
+        .executeTakeFirst();
+      return row === undefined
+        ? null
+        : { availableFen: row.available_fen, measuredAt: row.measured_at };
+    },
+    async forecast(trx, input) {
+      const window = forecastWindow(input.now);
+      const row = await trx
+        .withSchema('app')
+        .selectFrom('withdrawals')
+        .select(sql<string | null>`sum(amount_fen)::text`.as('total'))
+        .where('app_id', '=', input.appId)
+        .where('payout_channel', '=', input.channel)
+        .where('status', '<>', 'REJECTED')
+        .where('created_at', '>=', window.from)
+        .where('created_at', '<', window.to)
+        .executeTakeFirst();
+      return forecastFen(sumFen(row?.total ?? null));
+    },
+    async committed(trx, input) {
+      const paying = await trx
+        .withSchema('app')
+        .selectFrom('withdrawals')
+        .select(sql<string | null>`sum(net_fen)::text`.as('total'))
+        .where('app_id', '=', input.appId)
+        .where('payout_channel', '=', input.channel)
+        .where('status', '=', 'PAYING')
+        .executeTakeFirst();
+      const paid = await trx
+        .withSchema('app')
+        .selectFrom('withdrawals')
+        .select(sql<string | null>`sum(net_fen)::text`.as('total'))
+        .where('app_id', '=', input.appId)
+        .where('payout_channel', '=', input.channel)
+        .where('status', 'in', ['PAID_API', 'PAID_MANUAL'])
+        .where('paid_at', '>', input.since)
+        .executeTakeFirst();
+      return {
+        payingNetFen: sumFen(paying?.total ?? null),
+        paidSinceNetFen: sumFen(paid?.total ?? null),
+      };
+    },
+  };
 }

@@ -16,5 +16,30 @@ export interface PayoutAttemptsStore extends WithdrawalAttemptsPort {
 }
 
 export function createPayoutAttemptsStore(): PayoutAttemptsStore {
-  throw new Error('NotImplemented: createPayoutAttemptsStore');
+  return {
+    async hasAttempt(trx, withdrawalId, kinds, results) {
+      if (kinds.length === 0 || results?.length === 0) return false;
+      let query = trx
+        .withSchema('app')
+        .selectFrom('payout_attempts')
+        .select('id')
+        .where('withdrawal_id', '=', withdrawalId)
+        .where('kind', 'in', [...kinds]);
+      if (results !== undefined) query = query.where('result', 'in', [...results]);
+      const row = await query.limit(1).executeTakeFirst();
+      return row !== undefined;
+    },
+    async hasTransfer(trx, input) {
+      const row = await trx
+        .withSchema('app')
+        .selectFrom('payout_attempts')
+        .select('id')
+        .where('app_id', '=', input.appId)
+        .where('withdrawal_id', '=', input.withdrawalId)
+        .where('kind', '=', 'transfer')
+        .limit(1)
+        .executeTakeFirst();
+      return row !== undefined;
+    },
+  };
 }

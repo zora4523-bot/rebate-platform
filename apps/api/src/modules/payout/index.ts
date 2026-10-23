@@ -105,3 +105,43 @@ export type {
 // B1-01zzi: the worker's fund metric (PAYING withdrawals that need a person; read only).
 export { readPayoutFundMetrics } from './application/metrics-read.ts';
 export type { PayoutFundMetrics } from './application/metrics-read.ts';
+// B2-06c: EXECUTE (BR-WDR-12), the watermark check (BR-WDR-18) and the batch / attempts stores.
+export {
+  createPayoutExecute,
+  PAYOUT_EXECUTE_CONFIG_KEYS,
+  PAYOUT_EXECUTE_DEFAULTS,
+  SYSTEM_AUTO_PAYOUT,
+} from './application/payout-execute.ts';
+export type {
+  ExecuteBatchInput,
+  ExecuteBatchResult,
+  PayoutBatchRejectReason,
+  PayoutExecute,
+  PayoutExecuteOptions,
+  PayoutLeftReason,
+  SystemAutoPayoutExecutor,
+} from './application/payout-execute.ts';
+export { forecastFen, forecastWindow, judgeWatermark } from './domain/watermark.ts';
+export type {
+  ForecastWindow,
+  WatermarkCheckInput,
+  WatermarkReading,
+  WatermarkRejectReason,
+  WatermarkVerdict,
+} from './domain/watermark.ts';
+export { createWatermarkReader } from './application/watermark.ts';
+export type {
+  PayoutChannelName,
+  WatermarkCommitted,
+  WatermarkReader,
+} from './application/watermark.ts';
+export { createPayoutBatchesStore } from './infra/payout-batches-store.ts';
+export type {
+  NewPayoutBatch,
+  NewPayoutBatchItem,
+  PayoutBatchItemResult,
+  PayoutBatchKind,
+  PayoutBatchesStore,
+} from './infra/payout-batches-store.ts';
+export { createPayoutAttemptsStore } from './infra/payout-attempts-store.ts';
+export type { PayoutAttemptsStore } from './infra/payout-attempts-store.ts';
