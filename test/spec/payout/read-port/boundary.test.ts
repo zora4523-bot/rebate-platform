@@ -103,9 +103,9 @@ it('[AC-B2-05l#8] 端口源码只读：不写表、不解密、不记日志、�
   for (const key of PRIVATE_KEYS) {
     expect(literals.some((text) => text.split(/[\s.,]+/).includes(key))).toBe(false);
   }
-  expect(literals.filter((text) => /\b(insert|update|delete|merge|truncate)\b/i.test(text))).toEqual(
-    [],
-  );
+  expect(
+    literals.filter((text) => /\b(insert|update|delete|merge|truncate)\b/i.test(text)),
+  ).toEqual([]);
   expect(specifiers.filter((s) => /logging|pino|crypto|identity/.test(s))).toEqual([]);
   expect(tables.every((table) => table === 'withdrawals' || table === 'app.withdrawals')).toBe(
     true,
