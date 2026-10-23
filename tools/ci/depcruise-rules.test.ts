@@ -40,6 +40,26 @@ const FILES: Record<string, string> = {
   'apps/api/src/modules/b/bad.ts': imp('../a/internal.ts'),
   'apps/api/src/modules/b/queue.ts': imp('pg-boss'),
   'apps/api/src/modules/platform/queue.ts': imp('pg-boss'),
+  // agent dependency rules (CT-06zo, CT-06zq; BR-AI-02 ③): one offending file per rule
+  'apps/api/src/modules/growth/index.ts': 'export const growth = 1;\n',
+  'apps/api/src/modules/ledger/index.ts': 'export const ledger = 1;\n',
+  'apps/api/src/modules/identity/index.ts':
+    'export const identity = 1;\nexport type Who = string;\n',
+  'apps/api/src/modules/orders/index.ts': 'export const orders = 1;\n',
+  'apps/api/src/modules/admin/index.ts': 'export const admin = 1;\n',
+  'apps/api/src/modules/union/index.ts': 'export const union = 1;\n',
+  'apps/api/src/relay.ts': 'export const relay = 1;\n',
+  'apps/api/src/modules/agent/bad-growth.ts': imp('../growth/index.ts'),
+  'apps/api/src/modules/agent/bad-ledger.ts': imp('../ledger/index.ts'),
+  'apps/api/src/modules/agent/bad-identity.ts': imp('../identity/index.ts'),
+  'apps/api/src/modules/agent/ok-identity-type.ts':
+    "import type { Who } from '../identity/index.ts';\nexport type Me = Who;\n",
+  'apps/api/src/modules/agent/bad-orders.ts': imp('../orders/index.ts'),
+  'apps/api/src/modules/agent/bad-admin.ts': imp('../admin/index.ts'),
+  'apps/api/src/modules/agent/bad-union.ts': imp('../union/index.ts'),
+  'apps/api/src/modules/agent/bad-relay.ts': imp('../../relay.ts'),
+  'apps/api/src/modules/parsing/index.ts': imp('../growth/index.ts'),
+  'apps/api/src/modules/catalog/inner.ts': reexport('../growth/index.ts'),
   // testcontainers and @couli/db/testing
   'packages/x/src/unit.test.ts': imp('testcontainers'),
   'packages/x/src/db.int.test.ts': imp('testcontainers', '../../db/src/testing/index.ts'),
@@ -54,6 +74,17 @@ const FILES: Record<string, string> = {
 };
 
 const EXPECTED = [
+  'agent-allowed-indexes-no-value-relay apps/api/src/modules/parsing/index.ts',
+  'agent-allowed-modules-no-value-reexport apps/api/src/modules/catalog/inner.ts',
+  'agent-b-level-modules-types-only apps/api/src/modules/agent/bad-orders.ts',
+  'agent-identity-types-only apps/api/src/modules/agent/bad-identity.ts',
+  'agent-ledger-payout-read-entry-only apps/api/src/modules/agent/bad-ledger.ts',
+  'agent-modules-allow-list apps/api/src/modules/agent/bad-admin.ts',
+  'agent-modules-allow-list apps/api/src/modules/agent/bad-growth.ts',
+  'agent-modules-allow-list apps/api/src/modules/agent/bad-ledger.ts',
+  'agent-no-growth-commission-settlement apps/api/src/modules/agent/bad-growth.ts',
+  'agent-no-relay-outside-modules apps/api/src/modules/agent/bad-relay.ts',
+  'agent-union-types-only apps/api/src/modules/agent/bad-union.ts',
   'funds-packages-stay-pure packages/domain/src/bad-app.ts',
   'funds-packages-stay-pure packages/domain/src/bad-db.ts',
   'funds-packages-stay-pure packages/domain/src/bad-pino.ts',
@@ -63,6 +94,7 @@ const EXPECTED = [
   'modules-only-via-index apps/api/src/modules/b/bad.ts',
   'no-circular packages/x/src/cycle-*.ts',
   'no-import-from-research packages/x/src/research.ts',
+  'packages-not-on-apps packages/domain/src/bad-app.ts',
   'pg-boss-only-behind-job-queue apps/api/src/modules/b/queue.ts',
   'pg-boss-only-behind-job-queue packages/y/src/resolved.test.ts',
   'testcontainers-only-in-int-tests packages/x/src/unit.test.ts',
