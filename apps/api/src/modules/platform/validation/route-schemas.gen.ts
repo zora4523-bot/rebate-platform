@@ -8641,6 +8641,149 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       }
     }
   },
+  "adminListOrders": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "default": 1
+        },
+        "page_size": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 20
+        },
+        "platform": {
+          "type": "string",
+          "description": "Platform (contracts/enums/platform.yaml platform).",
+          "enum": [
+            "taobao",
+            "jd",
+            "pdd",
+            "meituan",
+            "vip",
+            "douyin",
+            "eleme",
+            "kuaishou",
+            "suning"
+          ]
+        },
+        "platform_status": {
+          "type": "string",
+          "description": "Union order status (contracts/enums/order.yaml platform_status; BR-FUND-01, BR-FUND-02).",
+          "enum": [
+            "DEPOSIT_PAID",
+            "PAID",
+            "RECEIVED",
+            "SETTLED",
+            "INVALID"
+          ]
+        },
+        "rebate_status": {
+          "type": "string",
+          "description": "Rebate status (contracts/enums/order.yaml rebate_status; BR-FUND-01).",
+          "enum": [
+            "UNATTRIBUTED",
+            "ESTIMATED",
+            "WAITING",
+            "CREDITED",
+            "VOID",
+            "CLAWED_BACK"
+          ]
+        },
+        "flag": {
+          "type": "string",
+          "description": "A flag of an admin order row (enum admin_order_flag); the keys of AdminOrderFlags.",
+          "enum": [
+            "locked",
+            "status_locked",
+            "rights_pending",
+            "hold"
+          ]
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "q": {
+          "type": "string"
+        },
+        "paid_from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "paid_to": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "adminGetOrder": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": []
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "order_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "order_id"
+      ],
+      "additionalProperties": false
+    },
+    "querystring": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
   "adminListClaims": {
     "headers": {
       "type": "object",

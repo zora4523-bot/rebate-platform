@@ -11378,7 +11378,6 @@ paths:
         and flags come from the console dictionary (BR-TEXT-25 admin_dict), not from this
         contract. Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
@@ -11527,7 +11526,6 @@ paths:
         returned: 04 §11 defines no permission point for it, so it stays out of this contract
         until one is decided (pending). Reading does not write an audit record.
       x-auth: admin
-      x-implementation: planned
       x-error-codes:
         - 10001
         - 10403
