@@ -25,6 +25,9 @@ paths:
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  # 2026-10-24 去 planned 与新队列必然触动的两份冻结测试（只收紧：四接口转为已实现并进运行时 schema；pay 队列有则钉死），改动由新鲜独立 Claude 做、编排核对加标签。
+  - 'test/spec/contracts/pay-http/http.test.ts'
+  - 'test/spec/platform/queue/contract.test.ts'
 test_paths:
   - 'test/spec/payment/orders/**'
 impl: claude
