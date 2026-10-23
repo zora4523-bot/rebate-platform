@@ -30,6 +30,9 @@ function fixture(now: string, inserted = true) {
     insertReceivables: vi
       .fn<SnapshotWriteStore['insertReceivables']>()
       .mockResolvedValue(undefined),
+    lockSnapshot: vi
+      .fn<SnapshotWriteStore['lockSnapshot']>()
+      .mockResolvedValue({ id: 'snap-1', waiting_comparable: false }),
     markComparable: vi.fn<SnapshotWriteStore['markComparable']>().mockResolvedValue(true),
     findSnapshot: vi
       .fn<SnapshotWriteStore['findSnapshot']>()
@@ -206,4 +209,39 @@ it('[AC-B2-04w-UNIT#12] 无告警队列：超时告警只返回供记日志，�
   expect(outcome.confirmed).toBe(false);
   expect(outcome.alerts.map((a) => a.kind)).toEqual(['asset_snapshot_timeout']);
   expect(store.markComparable).not.toHaveBeenCalled();
+});
+
+it('[AC-B2-04wa-UNIT#1] 确认先锁行重读：另一投递已改为可比即直接返回，不读时钟、不改行、不告警', async () => {
+  const { clock, store, enqueue, context } = fixture(DEADLINE);
+  store.lockSnapshot.mockResolvedValue({ id: 'snap-1', waiting_comparable: true });
+  const now = vi.spyOn(clock, 'now');
+  const outcome = await confirmSnapshotDay(transaction().transact, context, DAY_ROW);
+  expect(outcome).toEqual({ confirmed: true, alerts: [] });
+  expect(store.lockSnapshot).toHaveBeenCalledWith(TRX, 'app-a', 'snap-1');
+  expect(now).not.toHaveBeenCalled();
+  expect(store.markComparable).not.toHaveBeenCalled();
+  expect(enqueue).not.toHaveBeenCalled();
+});
+
+it('[AC-B2-04wa-UNIT#2] 取得锁之后才读时钟：等锁期间跨过截止线即保持不可比并入队超时', async () => {
+  const { clock, store, enqueue, context } = fixture(BEFORE);
+  store.lockSnapshot.mockImplementation(() => {
+    clock.set(DEADLINE);
+    return Promise.resolve({ id: 'snap-1', waiting_comparable: false });
+  });
+  const outcome = await confirmSnapshotDay(transaction().transact, context, DAY_ROW);
+  expect(outcome.confirmed).toBe(false);
+  expect(store.markComparable).not.toHaveBeenCalled();
+  expect(enqueue.mock.calls.map((call) => call[1].kind)).toEqual(['asset_snapshot_timeout']);
+});
+
+it('[AC-B2-04wa-UNIT#3] 锁行读不到快照：抛错，不读时钟、不告警', async () => {
+  const { clock, store, enqueue, context } = fixture(BEFORE);
+  store.lockSnapshot.mockResolvedValue(undefined);
+  const now = vi.spyOn(clock, 'now');
+  await expect(confirmSnapshotDay(transaction().transact, context, DAY_ROW)).rejects.toThrow(
+    'not visible',
+  );
+  expect(now).not.toHaveBeenCalled();
+  expect(enqueue).not.toHaveBeenCalled();
 });

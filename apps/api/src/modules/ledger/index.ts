@@ -23,6 +23,9 @@ export type {
   AssetSnapshotSelection,
   AssetSnapshotStatus,
 } from './application/asset-snapshot.ts';
+export { assembleAssetSnapshot } from './application/asset-snapshot-assembly.ts';
+export type { AssetSnapshotAssembly } from './application/asset-snapshot-assembly.ts';
+export { createAssetSnapshotAlertQueue } from './infra/asset-snapshot-alert-queue.ts';
 export { registerReconDiff, getReconDiffs } from './application/recon-diffs.ts';
 export type {
   RegisterReconDiffInput,
