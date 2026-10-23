@@ -1,6 +1,6 @@
 // Shared Vitest configuration for every workspace package (conventions C5).
 // Protected path, class 2 (verify config): changing it needs owner approval (规划/11 §4.4).
-import { defaultClientConditions, defaultServerConditions } from 'vite';
+import { defaultClientConditions, defaultServerConditions, type Plugin } from 'vite';
 import { configDefaults, type ViteUserConfig } from 'vitest/config';
 
 // Workspace packages expose their TypeScript sources through the custom export condition
@@ -48,11 +48,43 @@ export function unitConfig(
 type BrowserOptions = NonNullable<NonNullable<ViteUserConfig['test']>['browser']>;
 
 /**
+ * Browser tests only (CT-06zi): a warning for every module request of the test pages (requests
+ * with `Sec-Fetch-Dest: script`) that does not end in a success. A test file that fails with
+ * "Failed to fetch dynamically imported module" names only the root of its import graph; this
+ * line names the request that failed and how: an error status (Vite answers an outdated
+ * pre-bundled dependency with a bare 504 and logs nothing) or a connection closed before the
+ * response was complete. It only observes: no request or response is changed.
+ */
+function moduleRequestLog(): Plugin {
+  return {
+    name: 'couli:browser-module-request-log',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.headers['sec-fetch-dest'] === 'script') {
+          res.once('close', () => {
+            let outcome: string | undefined;
+            if (!res.writableFinished) outcome = 'closed before the response was complete';
+            else if (res.statusCode >= 400) outcome = `${res.statusCode} ${res.statusMessage}`;
+            if (outcome !== undefined) {
+              server.config.logger.warn(`[browser tests] module request ${outcome}: ${req.url}`, {
+                timestamp: true,
+              });
+            }
+          });
+        }
+        next();
+      });
+    },
+  };
+}
+
+/**
  * Browser tests (`*.browser.test.{ts,tsx}`): Vitest browser mode in a real headless Chromium. The
  * provider and the Vite plugins come from the caller (test/vitest.browser.config.ts), whose
- * package depends on them. Screenshots of `page.screenshot()` (and of failures) go to
- * `screenshotDirectory`; `fsAllow` lists extra directories the page may read back through
- * `commands.readFile` (an export directory outside the repository).
+ * package depends on them; the module request log above is added after them. Screenshots of
+ * `page.screenshot()` (and of failures) go to `screenshotDirectory`; `fsAllow` lists extra
+ * directories the page may read back through `commands.readFile` (an export directory outside
+ * the repository).
  */
 export function browserConfig(opts: {
   include: string[];
@@ -63,7 +95,7 @@ export function browserConfig(opts: {
 }): ViteUserConfig {
   return {
     resolve: { conditions: [...BROWSER_CONDITIONS] },
-    plugins: opts.plugins,
+    plugins: [...opts.plugins, moduleRequestLog()],
     ...(opts.fsAllow === undefined ? {} : { server: { fs: { allow: [...opts.fsAllow] } } }),
     test: {
       ...STRICT,

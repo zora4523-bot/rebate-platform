@@ -1,0 +1,28 @@
+id: CT-06zi
+repo: rebate-platform
+title: CT-06zi：浏览器测试记下失败的模块请求（查 verify-int test:browser 偶发「Failed to fetch dynamically imported module」）
+type: guard-change
+# 2026-10-23 入账（ops 线，编排派工）。起因：#1214 / #1258 之后 verify-int 能跑到 test:browser，最近约 18 次跑完的作业里 4 次各红
+# 1 个文件（作业 120093634363、120128079809、120140807108、120149222363），都是 admin-shell 或 admin-dark 在导入阶段报
+# Failed to fetch dynamically imported module，其余 25 个文件全过。
+# 查证：原先推测是 Vite 运行中发现新依赖、重新预构建并刷新页面。四次失败与两次通过的日志里都没有 Vite 的
+# 「dependency/dependencies optimized」「optimized dependencies changed. reloading」——vitest 5.0.1 浏览器模式把这几条从 info
+# 提到 warn 专门打印——也没有 iframe「was reloaded」警告；对照 vite 8.3.0 源码，首轮提交之后的任何重新预构建都会打出前两条。
+# 这个推测与日志不符，原因未确认。按报告顺序推断，失败的文件都紧接在同一串文件里的一个 h5 文件之后、加载该串尚未取过的
+# admin 模块图，前一文件结束后 0.2–0.7 秒即失败；Chromium 只报导入图的根，看不出是哪个请求、什么状态。
+# 做法：vitest.shared.ts 的 browserConfig 加一个只观察的 Vite 插件，对 Sec-Fetch-Dest: script 的请求，响应状态 ≥ 400 或连接
+# 在响应完成前关闭时经 Vite logger 打一行 warn（状态、URL、时间）。不改请求与响应，不改测试、断言与 STRICT；不加重试——
+# 重试会把失败藏起来，原因仍未知。下一次复现即可按这一行定位（504 Outdated Optimize Dep 即预构建；无此行即浏览器侧）。
+# 改 vitest.shared.ts 属第二类保护路径，按 approvals #16 / #24 由编排核对后加标签；非 task 分支 chore/guard-change-CT-06zi，
+# 不带证据文件（先例 CT-06zg #1258）。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'vitest.shared.ts'
+  - 'ops/tasks/CT-06zi.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
