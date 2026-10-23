@@ -11,6 +11,11 @@ import {
   GlobalErrorFilter,
   PlatformFastifyAdapter,
 } from './modules/platform/http/global-errors.ts';
+import {
+  ADMIN_MULTIPART_LIMITS,
+  ADMIN_MULTIPART_ROUTES,
+  installMultipartRouteLimits,
+} from './modules/platform/http/multipart-limits.ts';
 import { createValidatorCompiler } from './modules/platform/validation/index.ts';
 import {
   type AppConfig,
@@ -133,7 +138,7 @@ function platformOptions(entry: EntryName, overrides: BootstrapOverrides): Platf
  * route at an admin level (x-auth admin / super) on an entry whose plan has no admin check (api
  * and stream), cannot be registered (the entry does not start). The admin entry also answers the
  * console's CORS requests (exact origin only, F1-06k) and accepts multipart/form-data bodies
- * (F1-06s): see `installAdminMultipart`; api and stream keep refusing them (415 / 20001).
+ * (F1-06s; limits by route, F1-09t): see `installAdminMultipart`; api and stream keep refusing them (415 / 20001).
  */
 export async function createHttpApp(
   entry: HttpEntry,
@@ -264,18 +269,23 @@ export async function createHttpApp(
 /**
  * The admin entry's multipart/form-data support (F1-06s): @fastify/multipart only marks the request
  * as multipart while the body is "parsed" (nothing is read, `request.body` stays undefined), so the
- * route's guards run before any upload byte is consumed; the handler then reads the one file with
- * platform `readSingleUpload`, which also enforces the whole-body limit. Limits: one file, no
- * ordinary field, one part, and a file no larger than Fastify's bodyLimit (the default 1 MiB,
- * unchanged), set explicitly.
+ * route's guards run before any upload byte is consumed; the handler then reads the parts itself
+ * (platform `readSingleUpload` for one file), which also enforces the whole-body limit. Limits by
+ * route (F1-09t, platform/http/multipart-limits.ts): every route registers under
+ * ADMIN_MULTIPART_LIMITS (one file, no ordinary field, one part) and a file no larger than
+ * Fastify's bodyLimit (the default 1 MiB, unchanged), set explicitly; a route listed in
+ * ADMIN_MULTIPART_ROUTES (POST /admin/v1/pages/popup-assets: one file, one field, two parts) reads
+ * under its own counts through the plugin's public per-request `limits` option, fileSize unchanged.
  */
 async function installAdminMultipart(app: NestFastifyApplication): Promise<void> {
-  const bodyLimit = app.getHttpAdapter().getInstance().initialConfig.bodyLimit;
+  const server = app.getHttpAdapter().getInstance();
+  const bodyLimit = server.initialConfig.bodyLimit;
   if (bodyLimit === undefined) throw new Error('Fastify reports no bodyLimit');
   await app.register(fastifyMultipart, {
     attachFieldsToBody: false,
-    limits: { files: 1, fields: 0, parts: 1, fileSize: bodyLimit },
+    limits: { ...ADMIN_MULTIPART_LIMITS, fileSize: bodyLimit },
   });
+  installMultipartRouteLimits(server, ADMIN_MULTIPART_ROUTES);
 }
 
 /**

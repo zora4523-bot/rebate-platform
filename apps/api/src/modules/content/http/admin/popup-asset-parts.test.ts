@@ -12,6 +12,7 @@ import {
 import { PopupAssetPartsRejection, readPopupAssetParts } from './popup-asset-parts.ts';
 
 const BOUNDARY = 'popup-unit-boundary';
+const POPUP_ROUTE_LIMITS = { files: 1, fields: 1, parts: 2 };
 
 class PartsProbe {
   async read(request: SingleUploadRequest): Promise<object> {
@@ -47,8 +48,15 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-/** The admin entry (real multipart limits), with `parts` wrapped without its arguments. */
-async function start(): Promise<NestFastifyApplication> {
+/**
+ * The admin entry (real multipart registration). The probe route is not the contract route, so
+ * bootstrap's per-route counts (platform/http/multipart-limits.ts) do not reach it: `parts` is
+ * wrapped here to pass the counts bootstrap gives POST /admin/v1/pages/popup-assets (1 file,
+ * 1 field, 2 parts), or nothing (the admin default: 1 file, 0 fields, 1 part).
+ */
+async function start(
+  limits: { files: number; fields: number; parts: number } | null = POPUP_ROUTE_LIMITS,
+): Promise<NestFastifyApplication> {
   const original = AppModule.forEntry.bind(AppModule);
   vi.spyOn(AppModule, 'forEntry').mockImplementationOnce((options) => {
     const module = original(options);
@@ -60,11 +68,14 @@ async function start(): Promise<NestFastifyApplication> {
     logger: createRootLogger({ level: 'silent', entry: 'admin', appEnv: 'test' }),
   });
   const server = app.getHttpAdapter().getInstance() as unknown as {
-    addHook(name: 'onRequest', hook: (request: { parts: () => unknown }) => Promise<void>): void;
+    addHook(
+      name: 'onRequest',
+      hook: (request: { parts: (options?: object) => unknown }) => Promise<void>,
+    ): void;
   };
   server.addHook('onRequest', async (request) => {
     const parts = request.parts.bind(request);
-    request.parts = () => parts();
+    request.parts = () => parts(limits === null ? undefined : { limits });
   });
   await app.init();
   return app;
@@ -137,4 +148,10 @@ it('[AC-F1-09r] extra, repeated or foreign parts are a bad upload, never a serve
       label,
     ).toContainEqual(answer);
   }
+});
+
+it('[AC-F1-09t] without the route counts the admin default refuses kind + file in the plugin', async () => {
+  const target = await start(null);
+  expect(await post(target, body([file()]))).toEqual({ kind: null, size: 9 });
+  expect(await post(target, body([kind(), file()]))).toEqual({ plugin: 'FST_FIELDS_LIMIT' });
 });

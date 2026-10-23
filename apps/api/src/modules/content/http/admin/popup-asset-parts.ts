@@ -10,14 +10,10 @@
 //     them with the same envelopes).
 // `kind` is returned as sent (undefined when absent); the caller decides 20001 [kind].
 //
-// Limits: the admin entry registers @fastify/multipart with one part and no ordinary field
-// (bootstrap.ts, for the platform icon upload). This route needs two parts, so for this request
-// only the plugin's per-request parser factory (Symbol('multipartHandler'), which `parts()` calls)
-// is wrapped to merge files 1 / fields 1 / parts 2 over the global limits (fileSize stays the
-// global one). Wrapping the factory rather than passing options to `parts()` keeps the limits
-// whatever wraps `parts`. A plugin without that factory is a server error (50001), never a looser
-// parse. TODO(规划/11 §3.2): per-route multipart limits in bootstrap — blocked on a task outside
-// content's paths.
+// Limits: bootstrap.ts parses this route (POST /admin/v1/pages/popup-assets) under one file, one
+// field and two parts (platform/http/multipart-limits.ts, F1-09t); every other admin multipart
+// route keeps one file, no field and one part. A part beyond those counts is the plugin's own
+// client error, rethrown here unchanged.
 // Erasable syntax only; no NestJS import.
 import type { SingleUploadRequest } from '../../../platform/index.ts';
 import type { PopupAssetParts } from '../../application/popup-asset-uploader.ts';
@@ -33,37 +29,6 @@ export class PopupAssetPartsRejection extends Error {
     this.statusCode = statusCode;
     this.field = field;
   }
-}
-
-/** The limits of this route's multipart body: one field `kind` and one file `file`. */
-const POPUP_LIMITS = Object.freeze({ files: 1, fields: 1, parts: 2 });
-const HANDLER = 'multipartHandler';
-
-type Handler = (this: unknown, options?: { readonly limits?: object }) => unknown;
-
-/** Makes `request.parts()` parse this request under POPUP_LIMITS (see the header). */
-function widenLimits(request: object): void {
-  for (let owner: object | null = request; owner !== null; owner = Object.getPrototypeOf(owner)) {
-    const key = Object.getOwnPropertySymbols(owner).find(
-      (symbol) => symbol.description === HANDLER,
-    );
-    if (key === undefined) continue;
-    const handler: unknown = Reflect.get(request, key);
-    if (typeof handler !== 'function') break;
-    const factory = handler as Handler;
-    Object.defineProperty(request, key, {
-      configurable: true,
-      writable: true,
-      value: function (this: unknown, options?: { readonly limits?: object }): unknown {
-        return factory.call(this, {
-          ...options,
-          limits: { ...options?.limits, ...POPUP_LIMITS },
-        });
-      },
-    });
-    return;
-  }
-  throw new Error('content: the multipart plugin exposes no per-request parser');
 }
 
 const tooLarge = (): PopupAssetPartsRejection => new PopupAssetPartsRejection(413, 'body');
@@ -84,7 +49,6 @@ export async function readPopupAssetParts(request: SingleUploadRequest): Promise
   if (declared !== undefined && /^\d+$/.test(declared) && Number(declared) > limit) {
     throw tooLarge();
   }
-  widenLimits(request);
 
   // Count the raw bytes (a chunked body has no Content-Length); on overflow stop feeding the
   // parser and reject whatever step is pending.
