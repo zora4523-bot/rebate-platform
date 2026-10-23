@@ -65,6 +65,8 @@ export { createWithdrawHolds } from './application/withdraw-holds.ts';
 export { createWithdrawalInFlightReader } from './application/withdrawal-in-flight.ts';
 export { createWentNegativeConsumer, WENT_NEGATIVE_CONSUMER } from './application/went-negative.ts';
 export type { WentNegativeConsumer, WentNegativeOptions } from './application/went-negative.ts';
+export { createBalanceRecoveredHook } from './application/balance-recovered.ts';
+export type { BalanceRecoveredHookOptions } from './application/balance-recovered.ts';
 export type {
   WithdrawHolds,
   WithdrawHoldsOptions,
