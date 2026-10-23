@@ -540,18 +540,31 @@ it.each(['agent', 'watch_alert', 'search', 'detail', 'clipboard', 'home_card', '
 it('[AC-B1-06c#21] 通过 union 公共查询取最早 active 推广位，忽略其他场景和非 active', async () => {
   const f = fixture(db);
   const accountId = '0199a3b4-5c6d-7000-8000-000000000020';
+  const otherAccountId = '0199a3b4-5c6d-7000-8000-000000000021';
   await db
     .insertInto('union_accounts')
-    .values({
-      id: accountId,
-      app_id: 'register-app',
-      platform: 'jd',
-      account_name: 'synthetic-account',
-      status: 'active',
-      auth_status: 'active',
-      created_at: RAW_AT,
-      updated_at: RAW_AT,
-    })
+    .values([
+      {
+        id: accountId,
+        app_id: 'register-app',
+        platform: 'jd',
+        account_name: 'synthetic-account',
+        status: 'active',
+        auth_status: 'active',
+        created_at: RAW_AT,
+        updated_at: RAW_AT,
+      },
+      {
+        id: otherAccountId,
+        app_id: 'register-app',
+        platform: 'jd',
+        account_name: 'synthetic-other-account',
+        status: 'active',
+        auth_status: 'active',
+        created_at: RAW_AT,
+        updated_at: RAW_AT,
+      },
+    ])
     .execute();
   const candidates = [
     {
@@ -618,7 +631,7 @@ it('[AC-B1-06c#21] 通过 union 公共查询取最早 active 推广位，忽略�
         id: `0199a3b4-5c6d-7000-8000-${String(30 + index).padStart(12, '0')}`,
         app_id: candidate.app,
         platform: candidate.platform,
-        union_account_id: accountId,
+        union_account_id: candidate.name === 'newer' ? otherAccountId : accountId,
         pid: `synthetic-${candidate.name}`,
         pid_scene: candidate.scene,
         status: candidate.status,
