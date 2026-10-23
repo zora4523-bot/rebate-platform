@@ -1,0 +1,31 @@
+id: B2-11c
+repo: rebate-platform
+title: payout worker：withdrawal.created 消费者（每单判定一次；review_mode 已非空的单直接结束）：锁 users 行 → 余额行 → pg_advisory_xact_lock('auto_payout_daily') 内算 ⑦ 次数（review_mode=auto、status ∉ {REJECTED, FAILED}、reviewed_at 当日 / 当月 +08:00，收款账号按 payee_hmac 跨会员、会员按 user_id）与 ⑨ 全平台日累计（含本单）；⑤ 冻结（生效 holds 或 risk_state ∈ {frozen, appealing} 或 frozen_fen > 本单 amount）、⑥ 当日入账（当日 REBATE / SHARE / REFERRAL_CREDIT 分录）、⑩ 成年、⑪ 快照通道开关、⑫ risk_flags ∩ risk_block_flags 与实时 blacklist_hit、⑬ W2 守卫；写 auto_decision {result, failed_conditions, warn_values, rule_version, decided_at} 与 review_mode；manual → 按 BR-WDR-26 算 review_deadline；auto → CAS(status=PENDING_REVIEW) 系统 W2（reviewer_id 空、executor 记 system:auto_payout，经 B2-05e 命令）→ 建 kind=auto 单单批次 → 调 B2-06c executeBatch；EXECUTE 未通过 → 留 APPROVED、auto_decision 追加 execute_blocked 与原因；当日自动合计达 platform_daily_max_fen 的 80% 发告警事件；EVENT_SUBSCRIPTIONS / QUEUE_CATALOG 登记消费者队列（冻结契约两态 test-change 先行，先例 B2-05h）
+type: impl
+# 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（含并发：人工先 W2 / W3 后消费者 CAS 影响 0 行即结束、只写 auto_decision；属性测试：任意事件顺序下每单至多一次系统 W2）、Codex money 评审（资金类：系统 W2 守卫与 EXECUTE 调用）。
+# 先例 payout-went-negative 消费者（B2-05e forWorker + registerEventConsumer）。总开关默认 off 时建单即 manual（B2-05d D-W03），消费者对这类单直接结束。
+# 用户侧文案「预计几分钟到账」分支已在 B2-05f display.ts；本任务不改展示。
+# 状态备注：等 B2-11a、B2-11b、B2-06c 合并。
+refs: [BR-WDR-30, BR-WDR-26, BR-WDR-05, BR-WDR-24]
+refs_hash:
+  BR-WDR-30: 9ce8ae5c92d4
+  BR-WDR-26: 63beed185a7e
+  BR-WDR-05: cd7130978c70
+  BR-WDR-24: 1e9585c4b8bf
+deps: [B2-11a, B2-11b, B2-06c]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/platform/queue/catalog.ts'
+  - 'apps/api/src/modules/platform/events/types.ts'
+test_paths:
+  - 'test/spec/payout/auto-payout/**'
+  - 'test/properties/domain/payout/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/auto-payout/**'
+  - 'test/properties/domain/payout/**'
+status: todo
+pr: null

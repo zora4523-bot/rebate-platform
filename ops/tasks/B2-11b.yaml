@@ -1,0 +1,27 @@
+id: B2-11b
+repo: rebate-platform
+title: payout 模块：自动到账判定引擎——withdraw.auto_payout.* 配置组登记（enabled off、max_amount_fen 30000、window_start 09:00:00、window_end 22:59:59、window_limit_enabled off、first_withdrawal_limit_enabled off、frozen_balance_policy no_auto、same_day_policy no_auto、payee_daily/monthly_max_count 1/2、user_daily/monthly_max_count 1/1、warn.high_commission_rate_bp / high_commission_order_ratio_bp / invalid_ratio_bp 10000、warn.withdraw_received_ratio_bp 0、platform_daily_max_fen 200000、risk_block_flags 默认五项）；纯函数 decideAutoPayout(input) → {result, failed_conditions[], warn_values}：①–⑬ 全部检查不短路，code 按 BR-WDR-30 细则（disabled / max_amount / outside_window / first_withdrawal / frozen_balance / same_day / payee_daily_count / payee_monthly_count / user_daily_count / user_monthly_count / warn_high_commission / warn_invalid_ratio / warn_withdraw_received / platform_daily_max / minor / channel_disabled / risk_flag:<code> / w2_guard），① 为 off 只记 disabled；② 含等号、⑦⑨ 0 表示不限、⑧ 阈值 0 不启用与分母 0 规则、③ 闭区间按 +08:00 时分秒
+type: impl
+# 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（含属性测试：failed_conditions 为空 ⇔ result=auto；任意输入下 ① off 时只有 disabled）、Codex 评审。
+# 引擎是纯函数，输入由 B2-11c 的读取器喂（次数、全平台累计、冻结、当日入账、成年、通道开关、risk_flags、W2 守卫结果）；⑧ 三项实际值复用 B2-11a 导出的 ④⑤⑥ 计算函数（阈值取本组 warn.*，比较一律「>」、不用最少单数）。
+# rule_version 取配置组 config_item_versions 的最大版本（代理补全的默认）。
+# 状态备注：等 B2-05c 合并（payout 配置读取先例）。
+refs: [BR-WDR-30, BR-WDR-29]
+refs_hash:
+  BR-WDR-30: 9ce8ae5c92d4
+  BR-WDR-29: 6d588cc80722
+deps: [B2-05c]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/modules/content/domain/config-registry.ts'
+test_paths:
+  - 'test/spec/payout/auto-decision/**'
+  - 'test/properties/domain/payout/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/auto-decision/**'
+  - 'test/properties/domain/payout/**'
+status: todo
+pr: null

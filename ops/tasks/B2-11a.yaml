@@ -1,0 +1,29 @@
+id: B2-11a
+repo: rebate-platform
+title: payout 模块：BR-WDR-29 审核风险标签快照——W1 建单事务内、加锁前（BR-WDR-03 ⑭）按申请时刻 t 计算 ① first_withdrawal、② credited_today、④ invalid_ratio_60d、⑤ high_commission_ratio_60d、⑥ withdraw_vs_received、⑦ had_negative、⑧ recon_diff、⑩ payee_prev_other_user，③ same_device_multi_account 经 risk 对外端口调用 BR-ID-37 判定（B1-03k / B1-03n，不直接读 login_logs）；任一项调用失败写 risk_calc_failed、不阻断申请；写 withdrawals.risk_flags [{code, value, threshold}] 与 risk_flags_at；登记 risk.withdraw.invalid_ratio_bp(3000) / invalid_min_count(3) / high_commission_rate_bp(5000) / high_commission_ratio_bp(5000) / min_orders(5) / withdraw_received_ratio_bp(10000)；④⑤⑥ 计算函数以阈值为参数导出供 B2-11b 复用
+type: impl
+# 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（边界：④⑤⑥ 用「>」、⑤ 单笔佣金率与最少单数用「≥」、分母 0 规则；标签是申请时刻快照，之后不重算）、Codex money 评审。
+# B2-05d 建单没有写 risk_flags，本任务补上；④⑤ 只看自购单（buy_type=self），⑥ 分母含自购 / 分享 / 直推三类受益份额（WAITING 取当前预估、CREDITED 取已入账净额，复用 B2-05c 的 orders / commission / ledger 只读端口并按需扩展）。
+# D10-224 ②：③ 经 risk 的 createSameDeviceAccountsCheck 端口（B1-03n 的调用约束：首次判定结果落库去重、重试重放），调用失败才写 risk_calc_failed（保守转人工）。
+# 状态备注：等 B2-05d 合并；与 B2-05 / B2-06 同改 payout/**，串行。
+refs: [BR-WDR-29, BR-WDR-03, BR-WDR-02]
+refs_hash:
+  BR-WDR-29: 6d588cc80722
+  BR-WDR-03: 8510b65bb400
+  BR-WDR-02: 5c792350e175
+deps: [B2-05d, B1-03k, B1-03n]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/modules/{orders,commission,ledger,identity,risk}/ports/**'
+  - 'apps/api/src/modules/{orders,commission,ledger,identity,risk}/index.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/app.module.ts'
+test_paths:
+  - 'test/spec/payout/risk-flags/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/risk-flags/**'
+status: todo
+pr: null
