@@ -9,7 +9,7 @@ refs_hash:
   BR-FUND-10: 5dbb4715dec2
   BR-FUND-19: 8d592a87d85c
   BR-FUND-22: 022deb8da97d
-  BR-WDR-05: cd7130978c70
+  BR-WDR-05: 99e2e2654ce0
 deps: [B2-04b, B2-04h]
 paths:
   - 'apps/api/src/modules/ledger/**'

@@ -6,7 +6,7 @@ type: contract
 # 任务书只收 04 §6.4（带 §2.4 超 24KB 上限；§2.4 的 channel_state 等枚举已在 contracts/enums/fund.yaml）。字段清单与 BR-WDR-25 各分支对照由 withdraw 线在 notices 给出，起草时对齐；channel_state、confirm_deadline 的含义见 04 §2.4 与 BR-WDR-33（一跳引用，只作理解）。W10 人工判失败的 fail_action 过渡口径（null，D10-201 ③）本契约一并定。
 refs: [BR-WDR-25]
 refs_hash:
-  BR-WDR-25: 3e5c675cef00
+  BR-WDR-25: 7e1d047a6c2a
 contract_sections: ['6.4']
 deps: []
 paths:

@@ -7,7 +7,7 @@ type: impl
 # 状态备注：等 B2-11b 合并。
 refs: [BR-WDR-30, BR-WDR-17, BR-WDR-22]
 refs_hash:
-  BR-WDR-30: 9ce8ae5c92d4
+  BR-WDR-30: 1b1ddd9942cf
   BR-WDR-17: f6119a685e00
   BR-WDR-22: 3fc7a8bd4852
 deps: [B2-11b]

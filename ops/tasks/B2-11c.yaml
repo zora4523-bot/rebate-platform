@@ -8,9 +8,9 @@ type: impl
 # 状态备注：等 B2-11a、B2-11b、B2-06c 合并。
 refs: [BR-WDR-30, BR-WDR-26, BR-WDR-05, BR-WDR-24]
 refs_hash:
-  BR-WDR-30: 9ce8ae5c92d4
-  BR-WDR-26: 63beed185a7e
-  BR-WDR-05: cd7130978c70
+  BR-WDR-30: 1b1ddd9942cf
+  BR-WDR-26: 158db40de631
+  BR-WDR-05: 99e2e2654ce0
   BR-WDR-24: 1e9585c4b8bf
 deps: [B2-11a, B2-11b, B2-06c]
 paths:

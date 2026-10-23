@@ -7,8 +7,8 @@ type: impl
 # 展示判定是纯函数（domain/display.ts）：状态标题 BR-TEXT-06 映射、副文案分支按 BR-WDR-25 表自上而下取第一条；不新增状态；未知编码按「处理中」；响应字段形状只按契约 WithdrawalSummary / Withdrawal。
 refs: [BR-TEXT-06, BR-WDR-25, BR-WDR-08]
 refs_hash:
-  BR-TEXT-06: 983bc8aeccd8
-  BR-WDR-25: 3e5c675cef00
+  BR-TEXT-06: e03024b45543
+  BR-WDR-25: 7e1d047a6c2a
   BR-WDR-08: 8c55a3ce6b57
 deps: [B2-05b]
 paths:

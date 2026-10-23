@@ -6,7 +6,7 @@ type: impl
 # 冻结测试 test/spec/union/pids-by-account/activation.int.test.ts [AC-B1-19d#4] 只把「告警不拒绝」改为「拒绝、不改行」（第一类保护路径，独立 Claude 改 + 新鲜独立 Claude 复审，编排加标签）。
 refs: [BR-ATTR-02]
 refs_hash:
-  BR-ATTR-02: 383185d2ddf7
+  BR-ATTR-02: f8cda78b8778
 deps: [B1-19d]
 paths:
   - 'db/migrations/**'
