@@ -23,6 +23,7 @@ import {
   sessions,
   setJdMode,
   setup,
+  signIn,
   snapshot,
   type Scenario,
   type UnionAccount,
@@ -220,7 +221,9 @@ it('[B1-22d][D10-196] 再次录入照常轮换：始终只有一条当前凭据�
   const second = secretKey();
   await accepted(await s.put(row.id, { credential: first }), 'credential');
   s.f.clock.advanceMs(DAY_MS);
-  await accepted(await s.put(row.id, { credential: second }), 'credential');
+  // A day exceeds the console idle timeout, so the second entry comes from a fresh sign-in.
+  const again = await signIn(h, s.f, s.appId);
+  await accepted(await again.put(row.id, { credential: second }), 'credential');
   const rows = await credentials(s, row.id);
   expect(rows).toHaveLength(3);
   const current = rows.filter((r) => r.is_current);
