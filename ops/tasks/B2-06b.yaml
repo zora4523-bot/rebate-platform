@@ -6,6 +6,7 @@ type: impl
 # 签名实现选型（D-W11）：先比较 alipay-sdk 4.x 与自写 RSA2（约 200 行，node:crypto），倾向自写（payout 进程出站只允许通道网关，不要 SDK 自带的 HTTP 客户端与多余依赖）；定下来写进任务书并报 notices。
 # 沙箱 / 商户凭据由负责人放到 staging 配置，代码只读环境变量名；live 模式缺密钥即启动失败。不读 .env*。
 # 状态备注：等 B2-05a 合并（payout 目录门禁）；与 B2-05c–f 同改 payout/**，串行。
+# 2026-10-23 D10-244：paths 补 content 的 config-registry.test.ts（位置钉死的实现者单测，每加一组键须改三处下标断言，先例 F1-02zj/zn/zx）。
 refs: [BR-WDR-13, BR-WDR-22, BR-WDR-28, BR-WDR-32]
 refs_hash:
   BR-WDR-13: 11b5c3e1a9b3
@@ -16,6 +17,7 @@ deps: [B2-05a]
 paths:
   - 'apps/api/src/modules/payout/**'
   - 'apps/api/src/modules/content/domain/config-registry.ts'
+  - 'apps/api/src/modules/content/domain/config-registry.test.ts'
 test_paths:
   - 'test/spec/payout/channel/**'
 impl: claude
