@@ -462,6 +462,22 @@ ordinary:
     - error.30901
     - error.30902
     - error.50306
+    # CT-21b 收款后台字典（BR-TEXT-25 admin_dict.pay_*：渠道、支付单 / 退款单状态、退款对象与原因）：收款是平台自己的钱，不是用户返利 / 提现术语，归普通。
+    - admin_dict.pay_channel.alipay
+    - admin_dict.pay_channel.wechat_pay
+    - admin_dict.pay_order_status.CLOSED
+    - admin_dict.pay_order_status.PAID
+    - admin_dict.pay_order_status.PENDING
+    - admin_dict.pay_refund_reason.ANOMALY_RECEIPT
+    - admin_dict.pay_refund_reason.DUPLICATE_PAYMENT
+    - admin_dict.pay_refund_reason.OTHER
+    - admin_dict.pay_refund_reason.RECON_DIFF
+    - admin_dict.pay_refund_reason.USER_REQUEST
+    - admin_dict.pay_refund_status.FAILED
+    - admin_dict.pay_refund_status.PROCESSING
+    - admin_dict.pay_refund_status.SUCCESS
+    - admin_dict.pay_refund_target_type.pay_anomaly
+    - admin_dict.pay_refund_target_type.pay_order
     - error.30805
     - error.30806
     - error.40901

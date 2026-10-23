@@ -233,6 +233,9 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     'union_pid',
     // CT-24o: admin account disable / enable / permission save CAS (04 §6.6 admins, BR-ID-34).
     'admin_account',
+    // CT-21b: pay order state CAS and refund CAS (04 §4.9, BR-PAY-02, BR-PAY-06).
+    'pay_order',
+    'pay_refund',
   ]);
 });
 
