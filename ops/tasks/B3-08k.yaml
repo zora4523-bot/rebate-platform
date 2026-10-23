@@ -11,6 +11,8 @@ type: impl
 # 规则测试（新鲜独立 Claude，Codex 至 10-30 不可用）：① AST 扫描 apps/api/src/modules/agent/**（排除 *.test.ts）——不得以数据库句柄
 # （Kysely / Transaction / DB 令牌注入值或其 withSchema 结果）作实参或对象属性传给从别模块导入的函数；② 装配后 content 配置读取、配额上限、
 # 同意版本、开关、调用方身份的行为与改前一致（以注入替身断言调用发生在注入的读取器上）。风险 RV2（app.module）。
+# D10-297：同 PR 单列一个提交，由新鲜独立 Claude 改上列 7 个冻结测试 / kit 的装配入参（像 app.module 一样自建读取器传入，断言、用例名与条数零改动），
+# 另一新鲜独立 Claude 只读复审「不削弱」；落地时编排按 #24 核对加标签。
 refs: [BR-AI-02]
 refs_hash:
   BR-AI-02: 61014cc4d222
@@ -23,6 +25,13 @@ paths:
   - 'apps/api/src/modules/agent/stream/mount/caller.ts'
   - 'apps/api/src/modules/agent/stream/mount/assembly.ts'
   - 'apps/api/src/app.module.ts'
+  - 'test/spec/agent/stream-mount/kit.ts'
+  - 'test/spec/agent/stream-mount/mount.int.test.ts'
+  - 'test/spec/agent/stream-assembly/kit.ts'
+  - 'test/spec/agent/stream-assembly-orders/kit.ts'
+  - 'test/spec/agent/stream-review/mount.int.test.ts'
+  - 'test/spec/agent/stream-model-prereq/results-store.int.test.ts'
+  - 'test/spec/agent/stream-model-prereq/safety-timeout.int.test.ts'
 test_paths:
   - 'test/spec/agent/foreign-db-handoff/**'
 impl: claude
