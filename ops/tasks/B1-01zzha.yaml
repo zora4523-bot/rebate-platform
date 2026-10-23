@@ -1,0 +1,18 @@
+id: B1-01zzha
+repo: rebate-platform
+title: 依赖：apps/api 加 Prometheus 指标库 prom-client 15.1.3（精确版本），只改 dependencies 与锁文件
+type: deps
+# 2026-10-23 入账（be-codex；编排 D10-193 ③：应用内网 /metrics 由 be 做，prom-client 走 deps 任务，属依赖选择、非新供应商；规划/05 B1-01 行已点名 prom-client）。
+# 许可证（approvals #3）：prom-client Apache-2.0；传递依赖 tdigest MIT、bintrees MIT、@opentelemetry/api Apache-2.0（peer/optional）——装后由编排者以锁文件核对全部传递依赖许可证，有不合规即停。
+# 只改 apps/api/package.json 的 dependencies 段与 pnpm-lock.yaml（保护路径第二类，锁文件只有 deps 任务可改）；不改 scripts。由编排者在沙箱外执行 pnpm install。供 B1-01zzh 使用。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'apps/api/package.json'
+  - 'pnpm-lock.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo

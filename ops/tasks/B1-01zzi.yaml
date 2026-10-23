@@ -1,0 +1,21 @@
+id: B1-01zzi
+repo: rebate-platform
+title: 资金类业务指标与告警规则：映射表外平台状态码、月结批次失败 / PARTIAL、受益人份额 held 满 30 天无结论、打款结果 24 小时未知、接口打款失败、企业支付宝水位（指标经各模块只读端口按 SQL 采集，由 worker 导出；规则带 fund=true 标签供夜间路由）
+type: impl
+# 2026-10-23 入账（be-codex；编排 D10-183 ② R-01、D10-193 ③）。依据：规划 02 §13 告警表与夜间只推资金类的规定；BR-FUND-02、BR-FUND-04、BR-CALC-13、BR-WDR-14、BR-WDR-18、BR-WDR-24 的告警条目。
+# 日终分录差异引用 R-03（funds，每日不变量）的结果，不重做；夜间路由与 @ 值班人由 ops 在 Alertmanager 做（B1-25）。打款 / 提现相关几项依赖提现线（B2-05 起）的表落地，未落地的写 TODO 标 blocked。
+# 开工前补 refs 与 refs_hash（task.ts check 计算），paths 随各模块只读端口确定；排在 B1-01zzh 之后。
+refs: []
+refs_hash: {}
+deps: [B1-01zzh]
+paths:
+  - 'apps/api/src/modules/platform/metrics/**'
+  - 'infra/monitoring/rules/**'
+test_paths:
+  - 'test/spec/platform/fund-metrics/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/platform/fund-metrics/**'
+status: todo
