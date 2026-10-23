@@ -5,8 +5,7 @@
 // SMS: the names the SMS adapter declares (orchestrator ruling B1-02e §9.3 #8, §9.5 #4). Every SMS
 // variable starts with SMS_; the real provider adapter (a later task, in notification) reads its
 // credentials from these names only and adds any new one here. The list lives in platform because
-// loadConfig runs before any module and platform imports no module; identity's
-// smsCredentialEnvNames() returns this list.
+// loadConfig runs before any module and platform imports no module.
 //
 // Pinduoduo: PDD_CLIENT_ID and PDD_CLIENT_SECRET_FILE, declared by the live adapter wiring (B1-04t).
 //

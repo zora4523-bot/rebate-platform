@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { createFakeSmsSender, createSmsSender, smsCredentialEnvNames } from './fake-sms.ts';
+import { createFakeSmsSender, createSmsSender } from './fake-sms.ts';
 import { SMS_HMAC_CONTEXT, createSmsHmac } from './sms-hmac.ts';
 
 const message = {
@@ -59,11 +59,4 @@ it('[BR-ID-05] the fake keeps queued outcomes in order, copies messages and refu
   expect(sender.outbox()).toEqual([message, message]);
   expect(Object.isFrozen(sender.outbox())).toBe(true);
   expect(() => sender.enqueueResult('lost' as never)).toThrow(TypeError);
-});
-
-it('[BR-ID-05] the SMS credential names are the SMS_-prefixed names loadConfig refuses', () => {
-  expect(smsCredentialEnvNames()).toEqual([
-    'SMS_ALIYUN_ACCESS_KEY_ID',
-    'SMS_ALIYUN_ACCESS_KEY_SECRET',
-  ]);
 });
