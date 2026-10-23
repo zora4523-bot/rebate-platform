@@ -155,19 +155,30 @@ export function agentsFilesFor(paths: readonly string[], root: string): string[]
   });
 }
 
+/**
+ * Where a task branch forks from main: `origin/main` first, the local `main` only when there is no
+ * remote-tracking ref (D10-222: the lane clones keep their local main untouched and detach at
+ * origin/main, so a stale local main would list every rule test merged since as this task's).
+ */
+const MAIN_REFS = ['origin/main', 'main'] as const;
+
 /** Files of protected class 1 that the rule-test commits added or changed. */
 export function ruleTestFiles(
   specCommit: string,
   gitRoot: string,
   class1: readonly string[],
 ): string[] {
-  let base: string;
-  try {
-    base = git(['merge-base', 'main', specCommit], { cwd: gitRoot });
-  } catch {
-    // No main yet, or unrelated histories: fall back to the commit itself.
-    base = `${specCommit}^`;
+  let base = '';
+  for (const ref of MAIN_REFS) {
+    try {
+      base = git(['merge-base', ref, specCommit], { cwd: gitRoot });
+      break;
+    } catch {
+      // This ref does not exist here, or shares no history with the spec commit.
+    }
   }
+  // No main at all, or unrelated histories: fall back to the commit itself.
+  if (base === '') base = `${specCommit}^`;
   const out = git(
     [
       '-c',

@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  findRunsDir,
   isTaskWorktree,
   layoutFor,
   repoRoot,
@@ -40,22 +41,56 @@ describe('paths', () => {
     expect(root).toBe(resolve(import.meta.dirname, '..', '..'));
   });
 
-  it('defaults to sibling directories of the checkout', () => {
+  /** A run-state directory with its marker under `scratch`, plus the given checkout dirs. */
+  function layout(...dirs: string[]): { p: string; runs: string } {
+    const p = join(scratch, 'p');
+    const runs = join(p, 'couli-runs');
+    mkdirSync(runs, { recursive: true });
+    writeFileSync(join(runs, 'HANDOFF.md'), '# handoff\n');
+    for (const dir of dirs) mkdirSync(join(p, dir), { recursive: true });
+    return { p, runs };
+  }
+
+  it('without COULI_RUNS uses the run-state directory found above the checkout, or fails', () => {
     const root = repoRoot();
-    expect(runsDir()).toBe(resolve(root, '..', 'couli-runs'));
-    expect(specRepo()).toBe(resolve(root, '..', 'couli'));
+    const found = findRunsDir(root);
+    if (found === null) {
+      expect(() => runsDir()).toThrow(/no run-state directory .*COULI_RUNS/);
+      expect(specRepo()).toBe(resolve(root, '..', 'couli'));
+    } else {
+      expect(runsDir()).toBe(found);
+      expect(specRepo()).toBe(join(dirname(found), 'couli'));
+    }
   });
 
-  it('derives the layout of worktrees and of the trusted copy from the runs directory', () => {
-    expect(layoutFor('/p/rebate-platform')).toEqual({ runs: '/p/couli-runs', projects: '/p' });
-    expect(layoutFor('/p/couli-runs/worktrees/B2-03a')).toEqual({
-      runs: '/p/couli-runs',
-      projects: '/p',
-    });
-    expect(layoutFor('/p/couli-runs/trusted/rebate-platform')).toEqual({
-      runs: '/p/couli-runs',
-      projects: '/p',
-    });
+  it('finds the run-state directory of a sibling checkout, a worktree, the trusted copy and a lane clone (D10-222)', () => {
+    const { p, runs } = layout(
+      'rebate-platform',
+      'couli-runs/worktrees/B2-03a',
+      'couli-runs/trusted/rebate-platform',
+      'couli-runs/clones/rebate-platform-ops',
+      // A directory left behind by the old guess, without the marker: never taken.
+      'couli-runs/clones/couli-runs/state',
+    );
+    expect(findRunsDir(join(p, 'rebate-platform'))).toBe(runs);
+    expect(findRunsDir(join(runs, 'worktrees', 'B2-03a'))).toBe(runs);
+    expect(findRunsDir(join(runs, 'trusted', 'rebate-platform'))).toBe(runs);
+    expect(findRunsDir(join(runs, 'clones', 'rebate-platform-ops'))).toBe(runs);
+    expect(layoutFor(join(runs, 'clones', 'rebate-platform-ops'))).toEqual({ runs, projects: p });
+    expect(layoutFor(join(p, 'rebate-platform'))).toEqual({ runs, projects: p });
+  });
+
+  it('finds nothing without the marker, and then guesses no path', () => {
+    const lone = join(scratch, 'q', 'rebate-platform');
+    mkdirSync(join(scratch, 'q', 'couli-runs'), { recursive: true });
+    mkdirSync(lone, { recursive: true });
+    expect(findRunsDir(lone)).toBeNull();
+    expect(layoutFor(lone)).toEqual({ runs: null, projects: join(scratch, 'q') });
+  });
+
+  it('judges a task worktree by the shape of its path when there is no run-state directory', () => {
+    expect(isTaskWorktree('/x/couli-runs/worktrees/B2-03a', null)).toBe(true);
+    expect(isTaskWorktree('/x/couli-runs/clones/rebate-platform-ops', null)).toBe(false);
   });
 
   it('honours COULI_RUNS and COULI_SPEC_REPO, resolving relative values', () => {
@@ -67,7 +102,9 @@ describe('paths', () => {
 
   it('treats empty variables as unset', () => {
     process.env['COULI_RUNS'] = '';
-    expect(runsDir()).toBe(resolve(repoRoot(), '..', 'couli-runs'));
+    const found = findRunsDir(repoRoot());
+    if (found === null) expect(() => runsDir()).toThrow(/COULI_RUNS/);
+    else expect(runsDir()).toBe(found);
   });
 
   it('uses this checkout as trusted root until the trusted copy exists', () => {

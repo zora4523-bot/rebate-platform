@@ -8,20 +8,36 @@ function envPath(name: string): string | null {
   return value === undefined || value === '' ? null : resolve(value);
 }
 
+/** Marker file at the top of the run-state directory (written by the orchestrator, never in a repo). */
+export const RUNS_MARKER = 'HANDOFF.md';
+
 /**
- * Default sibling layout for a checkout at `root`.
- * A normal checkout `<projects>/rebate-platform` has its run state in `<projects>/couli-runs`.
- * A task worktree `<runs>/worktrees/<id>` or the trusted copy `<runs>/trusted/<name>` lives
- * inside the run-state directory, so the defaults are derived from that directory instead.
+ * The run-state directory that holds the checkout at `root`, found on disk (D10-222): walking up
+ * from the checkout's parent, the first directory named `couli-runs` that contains RUNS_MARKER,
+ * or the first one with a `couli-runs/RUNS_MARKER` child. This covers `<projects>/rebate-platform`
+ * (sibling), `<runs>/worktrees/<id>`, `<runs>/trusted/<name>` and the lane clones in
+ * `<runs>/clones/<name>`. null when there is none (a CI runner, a fresh machine).
  */
-export function layoutFor(root: string): { runs: string; projects: string } {
-  const parent = dirname(root);
-  const kind = basename(parent);
-  if (kind === 'worktrees' || kind === 'trusted') {
-    const runs = dirname(parent);
-    return { runs, projects: dirname(runs) };
+export function findRunsDir(root: string): string | null {
+  for (let dir = dirname(resolve(root)); ;) {
+    if (basename(dir) === 'couli-runs' && existsSync(join(dir, RUNS_MARKER))) return dir;
+    if (existsSync(join(dir, 'couli-runs', RUNS_MARKER))) return join(dir, 'couli-runs');
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
   }
-  return { runs: join(parent, 'couli-runs'), projects: parent };
+}
+
+/**
+ * Default layout for a checkout at `root`: the run-state directory found by findRunsDir and the
+ * projects directory that holds it (the planning repository is `<projects>/couli`). With no
+ * run-state directory on disk, `runs` is null and `projects` is the checkout's parent.
+ */
+export function layoutFor(root: string): { runs: string | null; projects: string } {
+  const runs = findRunsDir(root);
+  return runs === null
+    ? { runs, projects: dirname(resolve(root)) }
+    : { runs, projects: dirname(runs) };
 }
 
 /** The checkout this script was loaded from (the directory that contains `tools/`). */
@@ -29,9 +45,25 @@ export function repoRoot(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 }
 
-/** Run-state directory outside any repository: `COULI_RUNS`, default `<REPO>/../couli-runs`. */
-export function runsDir(): string {
+/** `COULI_RUNS`, else the run-state directory found on disk, else null (no error). */
+function runsDirOrNull(): string | null {
   return envPath('COULI_RUNS') ?? layoutFor(repoRoot()).runs;
+}
+
+/**
+ * Run-state directory outside any repository: `COULI_RUNS`, else the `couli-runs` directory
+ * found above this checkout (findRunsDir). With neither it is an error, never a guessed path:
+ * a guess such as `<clones>/couli-runs` silently splits the in-flight state (D10-222).
+ */
+export function runsDir(): string {
+  const runs = runsDirOrNull();
+  if (runs === null) {
+    throw new Error(
+      `no run-state directory for ${repoRoot()}: set COULI_RUNS, or keep the checkout under a ` +
+        `couli-runs directory (or next to one) that contains ${RUNS_MARKER}`,
+    );
+  }
+  return runs;
 }
 
 /** Planning repository: `COULI_SPEC_REPO`, default `<REPO>/../couli`. */
@@ -60,9 +92,11 @@ function isUnder(path: string, root: string): boolean {
  * and by the layout of the path itself, so a worktree is recognised even when COULI_RUNS points
  * elsewhere). A worktree is the Codex sandbox's writable root and can never hold gates.
  */
-export function isTaskWorktree(dir: string, runs: string = runsDir()): boolean {
+export function isTaskWorktree(dir: string, runs: string | null = runsDirOrNull()): boolean {
   const path = resolve(dir);
-  if (isUnder(path, join(runs, 'worktrees')) && path !== join(runs, 'worktrees')) return true;
+  if (runs !== null && isUnder(path, join(runs, 'worktrees')) && path !== join(runs, 'worktrees')) {
+    return true;
+  }
   // Any ancestor of the shape .../couli-runs/worktrees/<id>.
   for (let p = path; ;) {
     const parent = dirname(p);
@@ -90,8 +124,10 @@ export function trustedRoot(): string {
     }
     return fromEnv;
   }
-  const copy = join(runsDir(), 'trusted', 'rebate-platform');
-  if (existsSync(join(copy, 'tools', 'guard'))) return copy;
+  // No run-state directory (a CI runner): there is no trusted copy either, this checkout is used.
+  const runs = runsDirOrNull();
+  const copy = runs === null ? null : join(runs, 'trusted', 'rebate-platform');
+  if (copy !== null && existsSync(join(copy, 'tools', 'guard'))) return copy;
   const self = repoRoot();
   if (isTaskWorktree(self)) {
     throw new Error(

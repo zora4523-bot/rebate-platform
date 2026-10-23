@@ -215,21 +215,25 @@ if ! [[ "$ID" =~ ^[A-Z][A-Z0-9]*-[0-9]+[a-z]*$ ]]; then die "invalid task id: $I
 if [ -n "$BASE_ARG" ] && [ "$SCRIPT" != red ]; then die "--base applies to --red only"; fi
 if [ -n "$BASE_ARG" ] && ! [[ "$BASE_ARG" =~ ^[A-Za-z0-9][A-Za-z0-9._/@^~-]*$ ]]; then die "invalid --base: $BASE_ARG"; fi
 
-# Same layout rule as tools/lib/paths.ts.
-parent="$(dirname "$SELF_ROOT")"
-case "$(basename "$parent")" in
-  worktrees | trusted)
-    RUNS="$(dirname "$parent")"
-    PROJECTS="$(dirname "$RUNS")"
-    ;;
-  *)
-    RUNS="$parent/couli-runs"
-    PROJECTS="$parent"
-    ;;
-esac
+# Same layout rule as tools/lib/paths.ts (findRunsDir, D10-222): the couli-runs directory that
+# contains HANDOFF.md, found walking up from the checkout's parent (a couli-runs directory itself,
+# or a couli-runs child); COULI_RUNS overrides it; neither is an error, never a guessed path.
+FOUND_RUNS=''
+dir="$(dirname "$SELF_ROOT")"
+while :; do
+  if [ "$(basename "$dir")" = couli-runs ] && [ -f "$dir/HANDOFF.md" ]; then FOUND_RUNS="$dir"; break; fi
+  if [ -f "$dir/couli-runs/HANDOFF.md" ]; then FOUND_RUNS="$dir/couli-runs"; break; fi
+  [ "$(dirname "$dir")" = "$dir" ] && break
+  dir="$(dirname "$dir")"
+done
+if [ -n "$FOUND_RUNS" ]; then PROJECTS="$(dirname "$FOUND_RUNS")"; else PROJECTS="$(dirname "$SELF_ROOT")"; fi
 if [ -n "${COULI_RUNS:-}" ]; then
   mkdir -p "$COULI_RUNS"
   RUNS="$(cd "$COULI_RUNS" && pwd -P)"
+elif [ -n "$FOUND_RUNS" ]; then
+  RUNS="$FOUND_RUNS"
+else
+  die "no run-state directory for $SELF_ROOT: set COULI_RUNS, or keep the checkout under a couli-runs directory (or next to one) that contains HANDOFF.md"
 fi
 
 if [ -n "${COULI_TRUSTED_ROOT:-}" ]; then

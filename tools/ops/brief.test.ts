@@ -133,6 +133,40 @@ it(
   CLI_TIMEOUT,
 );
 
+it(
+  'measures the rule-test files from origin/main, not from a stale local main (D10-222)',
+  () => {
+    const repo = join(base, 'stale-main');
+    writeFiles(repo, { 'README.md': 'fixture\n' });
+    fixtureGit(repo, ['init', '-q', '-b', 'main']);
+    fixtureGit(repo, ['add', '-A']);
+    fixtureGit(repo, ['commit', '-q', '-m', 'old main']);
+    const oldMain = fixtureGit(repo, ['rev-parse', 'HEAD']);
+    // Another task's rule test merged after this clone's local main was last moved.
+    writeFiles(repo, { 'test/spec/other/merged.spec.test.ts': '// merged elsewhere\n' });
+    fixtureGit(repo, ['add', '-A']);
+    fixtureGit(repo, ['commit', '-q', '-m', 'test(spec): other task']);
+    const newMain = fixtureGit(repo, ['rev-parse', 'HEAD']);
+    fixtureGit(repo, ['update-ref', 'refs/remotes/origin/main', newMain]);
+    fixtureGit(repo, ['checkout', '-q', '-b', 'task/X1-03']);
+    fixtureGit(repo, ['branch', '-f', 'main', oldMain]);
+    writeFiles(repo, { 'test/spec/demo/own.spec.test.ts': '// red test\n' });
+    fixtureGit(repo, ['add', '-A']);
+    fixtureGit(repo, ['commit', '-q', '-m', 'test(spec): own']);
+    const spec = fixtureGit(repo, ['rev-parse', 'HEAD']);
+    expect(ruleTestFiles(spec, repo, ['test/spec/**'])).toEqual([
+      'test/spec/demo/own.spec.test.ts',
+    ]);
+    // Without the remote-tracking ref the local main is still used.
+    fixtureGit(repo, ['update-ref', '-d', 'refs/remotes/origin/main']);
+    expect(ruleTestFiles(spec, repo, ['test/spec/**'])).toEqual([
+      'test/spec/demo/own.spec.test.ts',
+      'test/spec/other/merged.spec.test.ts',
+    ]);
+  },
+  CLI_TIMEOUT,
+);
+
 it('writes the eight sections of the template in order', () => {
   const out = generateBrief('X1-01', opts());
   expect(out).toBe(join(base, 'runs', 'X1-01', 'brief.md'));
