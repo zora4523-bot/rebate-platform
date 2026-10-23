@@ -176,9 +176,16 @@ export async function rejected(
 }
 
 export function expectView(actual: View, expected: View) {
+  // row_version (B1-34k) is optional here: when present it must be a non-negative integer;
+  // its value is checked by the B1-34k rules, the rest of the view is still compared exactly.
+  const { row_version: rowVersion, ...rest } = actual;
+  if ('row_version' in actual) {
+    expect(Number.isInteger(rowVersion)).toBe(true);
+    expect(rowVersion).toBeGreaterThanOrEqual(0);
+  }
   // Accept any contract-valid timezone spelling of the same timestamp.
   expect({
-    ...actual,
+    ...rest,
     created_at: new Date(actual.created_at).toISOString(),
     locked_until: actual.locked_until === null ? null : new Date(actual.locked_until).toISOString(),
   }).toEqual(expected);
