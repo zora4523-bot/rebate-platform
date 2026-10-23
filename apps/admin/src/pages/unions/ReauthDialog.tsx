@@ -13,6 +13,7 @@ import {
   codeOf,
   fieldsOf,
   pollUrl,
+  openAuthWindow,
   safeAuthUrl,
   startUrl,
   type ReauthResult,
@@ -145,9 +146,9 @@ export function ReauthDialog({
       return;
     }
     if (gen !== generation.current) return;
-    // 拿到响应的同一轮里打开授权页面并开始查询结果（不等管理员点链接）。
+    // 拿到响应的同一轮里打开授权页面并开始查询结果（不等管理员点按钮）。
     const url = safeAuthUrl(session.auth_url);
-    if (url !== undefined) window.open(url, '_blank', 'noopener,noreferrer');
+    if (url !== undefined) openAuthWindow(url);
     setPhase(url === undefined ? { kind: 'waiting', session } : { kind: 'waiting', session, url });
     const expires = Date.parse(session.expires_at);
     const deadline =
@@ -206,16 +207,23 @@ export function ReauthDialog({
       </Flex>
     );
   } else if (phase.kind === 'waiting') {
+    const url = phase.url;
     body = (
       <Flex vertical gap={12}>
         <Flex align="center" gap={8} role="status">
           <Spin size="small" />
           <Typography.Text>{t.reauth.waiting}</Typography.Text>
         </Flex>
-        {phase.url === undefined ? null : (
-          <Typography.Link href={phase.url} target="_blank" rel="noopener noreferrer">
+        {url === undefined ? null : (
+          // 不用 target=_blank 链接：同样要经 openAuthWindow 带上登录态并切断 opener。
+          <Button
+            type="link"
+            size="small"
+            style={{ paddingInline: 0, alignSelf: 'flex-start' }}
+            onClick={() => openAuthWindow(url)}
+          >
             {t.reauth.openAgain}
-          </Typography.Link>
+          </Button>
         )}
         <Typography.Text type="secondary">
           {t.reauth.expiresAt(beijingTime(phase.session.expires_at))}

@@ -1,7 +1,7 @@
 // 联盟 OAuth 回调页（/unions/oauth-callback，后台路由，不在侧栏）：从地址栏读 state 与 code（或联盟的
 // error），带登录态 POST /admin/v1/union-accounts/oauth/callback（不要动态码），显示返回的会话结果。
 // code 是一次性的：只提交一次（StrictMode 下也一样）、失败不自动重发，不显示、不记日志，读到后
-// 立即从地址栏去掉查询串。
+// 立即从地址栏去掉查询串。未登录的窗口见 UnionOAuthCallbackSignedOut。
 import type { Schema } from '@couli/contracts-ts';
 import { useDataProvider } from '@refinedev/core';
 import { Button, Card, Flex, Result, Spin, Typography } from 'antd';
@@ -128,6 +128,37 @@ export function UnionOAuthCallbackPage({ access }: UnionsPageProps): ReactElemen
         {t.callback.title}
       </Typography.Title>
       {content}
+    </Flex>
+  );
+}
+
+/**
+ * 未登录时打开的回调地址（F1-10ga r1 S1 裁定 2，选「明确提示重新发起」）：不提交、不保存
+ * state 与 code（code 一次性，且回调必须由发起授权的管理员带登录态提交），立即从地址栏去掉
+ * 查询串，提示回到后台窗口查看或登录后重新发起授权。
+ */
+export function UnionOAuthCallbackSignedOut(): ReactElement {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const search = location.search;
+  const pathname = location.pathname;
+  useEffect(() => {
+    if (search !== '') void navigate(pathname, { replace: true });
+  }, [search, pathname, navigate]);
+  return (
+    <Flex justify="center" style={{ padding: '48px 16px' }}>
+      <Card style={{ maxWidth: 560, width: '100%' }}>
+        <Result
+          status="warning"
+          title={t.callback.signedOutTitle}
+          subTitle={t.callback.signedOut}
+          extra={
+            <Button type="primary" onClick={() => void navigate('/login', { replace: true })}>
+              {t.callback.signIn}
+            </Button>
+          }
+        />
+      </Card>
     </Flex>
   );
 }

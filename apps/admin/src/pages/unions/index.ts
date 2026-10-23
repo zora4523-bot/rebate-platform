@@ -1,2 +1,2 @@
 export { UnionsPage, type UnionsPageProps } from './UnionsPage.tsx';
-export { UnionOAuthCallbackPage } from './OAuthCallbackPage.tsx';
+export { UnionOAuthCallbackPage, UnionOAuthCallbackSignedOut } from './OAuthCallbackPage.tsx';

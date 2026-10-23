@@ -124,5 +124,9 @@ export const unionsTexts = {
     unknown: '提交失败，请回到联盟账号页查看结果或重新发起授权',
     back: '返回联盟账号',
     crumb: '授权回调',
+    signedOutTitle: '这个窗口没有登录后台，授权结果未提交',
+    signedOut:
+      '为保护一次性授权码，本页不会保存它。请回到发起授权的后台窗口查看结果；如未完成，请登录后在联盟账号页重新发起授权。',
+    signIn: '去登录',
   },
 } as const;

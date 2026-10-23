@@ -45,7 +45,11 @@ import { HomeConfigPage } from './pages/home-config/index.ts';
 import { KillSwitchesPage } from './pages/kill-switches/index.ts';
 import { OrderDetailPage, OrdersPage } from './pages/orders/index.ts';
 import { PlatformIconsPage } from './pages/platform-icons/index.ts';
-import { UnionOAuthCallbackPage, UnionsPage } from './pages/unions/index.ts';
+import {
+  UnionOAuthCallbackPage,
+  UnionOAuthCallbackSignedOut,
+  UnionsPage,
+} from './pages/unions/index.ts';
 import { UsersPage } from './pages/users/index.ts';
 import { UserDetailView } from './pages/users/UserDetailView.tsx';
 import { LoginPage } from './pages/login/index.ts';
@@ -208,6 +212,9 @@ function LoginRoute({
   readonly onComplete: () => void;
 }) {
   const location = useLocation();
+  // The union's OAuth redirect in a window without the console session: say so instead of
+  // silently dropping state and code on the way to /login (F1-10ga r1 S1).
+  if (location.pathname === `/${UNION_CALLBACK_ROUTE}`) return <UnionOAuthCallbackSignedOut />;
   return (
     <>
       {location.pathname === '/login' ? null : <Navigate to="/login" replace />}

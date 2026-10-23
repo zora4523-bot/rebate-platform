@@ -119,3 +119,24 @@ export function customOf(provider: DataProvider): NonNullable<DataProvider['cust
   if (call === undefined) throw new Error('Missing custom data provider');
   return call;
 }
+
+/**
+ * 在新窗口打开联盟授权页面（F1-10ga r1 S1）。后台登录态只在本窗口的 sessionStorage 里：用
+ * noopener 打开的窗口拿不到副本，联盟跳回 /unions/oauth-callback 时就成了未登录。所以先开一个
+ * 保留 opener 的同源空白页（浏览器在建窗时把本页的 sessionStorage 复制过去），立即切断
+ * 它的 opener（第三方页面加载之前），再把它导航到授权地址。地址只取自发起授权的响应，并且
+ * 只接受 http(s)（safeAuthUrl）。窗口被拦截时返回 false，由对话框里的按钮在点击时重试。
+ */
+export function openAuthWindow(authUrl: string): boolean {
+  const url = safeAuthUrl(authUrl);
+  if (url === undefined) return false;
+  const popup = window.open('', '_blank');
+  if (popup === null) return false;
+  try {
+    popup.opener = null;
+  } catch {
+    // 个别浏览器不允许改写；空白页本身不加载任何内容，下面的跳转照常进行。
+  }
+  popup.location.href = url;
+  return true;
+}
