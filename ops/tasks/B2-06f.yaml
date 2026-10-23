@@ -1,0 +1,25 @@
+id: B2-06f
+repo: rebate-platform
+title: payout 入口装配：PayoutModule.forPayout（注册 payout 队列的转账 / 查询 handler、通道按 PAYOUT_MODE 选 FakeChannel 或 AlipayChannel、注入 Clock 与开关直读 PG 的配置读取器）；entry.ts 的 payout 分支经可选 token 解析并启动（同 orderSync 先例）；PAYOUT_MODE 默认 dry_run、live 只在 prod 且密钥环境变量齐全时启动，否则启动失败；启动日志不含密钥；B2-05e 留的 attempts 端口桩改为真实读取并删 TODO
+type: impl
+# 2026-10-23 提现线（withdraw-acct4，账号 4）。模型：Claude Fable 5.1。Codex 写规则测试（入口以 COULI_EXIT_AFTER_INIT 起停；dry_run / live 守卫）、Codex 评审。
+# 不改安全组 / RAM / KMS（ops）；出站白名单与密钥存放按 02 §12.6 由 ops 任务做。
+# 状态备注：等 B2-06d、B2-06e 合并。
+refs: [BR-WDR-13, BR-WDR-17]
+refs_hash:
+  BR-WDR-13: 11b5c3e1a9b3
+  BR-WDR-17: f6119a685e00
+deps: [B2-06d, B2-06e]
+paths:
+  - 'apps/api/src/modules/payout/**'
+  - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/entry.ts'
+test_paths:
+  - 'test/spec/payout/entry/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/payout/entry/**'
+status: todo
+pr: null
