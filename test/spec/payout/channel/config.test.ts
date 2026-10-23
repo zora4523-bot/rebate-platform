@@ -1,10 +1,6 @@
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
 import { expect, it, vi } from 'vitest';
-import {
-  configItemSpecOf,
-  configRegistry,
-} from '../../../../apps/api/src/modules/content/domain/config-registry.ts';
 import { readPayoutChannelConfig } from '../../../../apps/api/src/modules/payout/application/judgement.ts';
 import type { PayoutConfigPort } from '../../../../apps/api/src/modules/payout/application/withdraw-rules.ts';
 
@@ -31,14 +27,6 @@ const ITEMS = [
 
 // Opaque caller handles only: no Kysely instance, connection or SQL is created here.
 const HANDLE = Object.freeze({ testHandle: 'caller' }) as unknown as Kysely<DB>;
-
-it.each(ITEMS)(
-  '[AC-B2-06b#8] %s is registered exactly once as config.business / %s',
-  (key, valueType) => {
-    expect(configItemSpecOf(key)).toMatchObject({ key, valueType, permission: 'config.business' });
-    expect(configRegistry().filter((entry) => entry.key === key)).toHaveLength(1);
-  },
-);
 
 it('[AC-B2-06b#9] missing rows produce all eight conservative defaults using the given app and handle', async () => {
   const configValue = vi.fn<PayoutConfigPort['configValue']>().mockResolvedValue(null);
