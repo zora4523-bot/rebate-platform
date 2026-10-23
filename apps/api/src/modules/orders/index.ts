@@ -194,5 +194,25 @@ export type {
 export type { PlatformStatusEvent } from './domain/status-map.ts';
 // B1-08i（D10-47 / D10-48）：order.attr_param_changed 载荷 changed 里的列名（告警事件与领域事件同经 events 总线）。
 export type { OrderAttrParamColumn } from './application/alert-events.ts';
+// B1-09b：第 ③ 步黑名单的纯判定与端口形状（BR-ATTR-26；返利端口 onBlacklistHit 的接线在资金线）。
+export { planBlacklistHit } from './domain/blacklist.ts';
+export type {
+  BlacklistDimension,
+  BlacklistDisposition,
+  BlacklistHitPlan,
+  BlacklistMatchInput,
+  BlacklistPlan,
+  BlacklistRiskAction,
+  PlanBlacklistInput,
+} from './domain/blacklist.ts';
+export type {
+  OrderBlacklistDeps,
+  OrderBlacklistHit,
+  OrderBlacklistHitRecord,
+  OrderBlacklistMatch,
+  OrderBlacklistPorts,
+  OrderBlacklistQuery,
+  OrderBlacklistRebatePort,
+} from './application/blacklist-step.ts';
 export { planOrderUpdate, planOrderSyncColumns } from './domain/update-plan.ts';
 export type { OrderUpdatePlan, OrderSyncColumns, UpdateStateInput } from './domain/update-plan.ts';

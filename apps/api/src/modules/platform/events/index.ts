@@ -28,12 +28,13 @@
 //    withdrawal.created, account.went_negative, settle.batch_done, risk.state_changed,
 //    appeal.resolved, agent.run_finished, order.attr_param_changed, order.illegal_transition,
 //    order.attr_binding_conflict (the last three: alert events of the order sync, B1-08i, D10-48),
+//    order.blacklist_hit_after_credit (credited order on the blacklist, manual review, B1-09b),
 //    order.snapshot_retry_exhausted (alert of the commission snapshot retry, B1-08u),
 //    asset_snapshot.timed_out, union_receivable.exposure_exceeded (finance alerts of the ledger's
 //    asset daily snapshot, B2-04wa, D10-188; last in 02 §11).
 //    A frozen array. Publishing any other name is refused ('unknown_event'): a new event is added
-//    here, at its 02 §11 position, by the task that needs it (02 §11 also lists order.reassigned and
-//    order.blacklist_hit_after_credit, not registered until a task publishes them).
+//    here, at its 02 §11 position, by the task that needs it (02 §11 also lists order.reassigned, not
+//    registered until a task publishes it).
 //    Every name is `<entity>.<past-tense verb>` in snake_case, i.e. matches
 //    /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/ (also a valid job name of the queue contract 3b).
 //

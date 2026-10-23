@@ -22,6 +22,12 @@
 // - B1-08q: when ports.sources is given, one OrderSourcePorts object is built at assembly (no read)
 //   and the same object goes to the pipeline and the update step; the update step also gets the
 //   pipeline's pids reader so its backfill knows the order's pid_scene (D10-60).
+// - B1-09b: when ports.blocklist is given (risk's order-side blocklist ports, from app.module), one
+//   OrderBlacklistDeps object is built at assembly (no read) and goes to the pipeline and the update
+//   step: step ③ (BR-ATTR-26) runs. The Taobao suffix switch is read through
+//   ports.suffixVoidEnabled; absent → false, the 08 default (suffix hits only recorded for review).
+//   Until settlement wires rebate.onBlacklistHit, an uncredited hit is recorded as manual_review
+//   with a P1 warning and the order is left unchanged.
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports.
 import { readFileSync } from 'node:fs';
 import type { DB } from '@couli/db';
@@ -48,6 +54,7 @@ import {
 import { createOrderPipeline } from './application/pipeline-port.ts';
 import type { OrderPipelineDeps, OrderPipelinePort } from './application/pipeline-types.ts';
 import type { OrderSourcePorts } from './application/source-backfill.ts';
+import type { OrderBlacklistDeps, OrderBlacklistPorts } from './application/blacklist-step.ts';
 import type {
   SyncAccessPort,
   SyncCursorStore,
@@ -97,6 +104,19 @@ export interface OrderSyncReadPorts {
    * runtime built without them) → no source backfill: the four source columns stay NULL.
    */
   readonly sources?: (db: Kysely<DB>, clock: Clock, logger: RootLogger) => OrderSourcePorts;
+  /**
+   * B1-09b: risk's order-side blocklist ports (match / recordHit, B1-09a), called once at assembly
+   * and reading nothing until used. Absent → step ③ (BR-ATTR-26) is skipped.
+   */
+  readonly blocklist?: (db: Kysely<DB>, clock: Clock) => OrderBlacklistPorts;
+  /**
+   * B1-09b: attr.blacklist.order_suffix_void_enabled of one App. Absent → always false (08 default:
+   * suffix hits are only recorded for manual review).
+   */
+  readonly suffixVoidEnabled?: (
+    db: Kysely<DB>,
+    clock: Clock,
+  ) => (appId: string) => Promise<boolean>;
 }
 
 export interface OrderSyncRuntimeDeps {
@@ -196,6 +216,15 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
   // B1-08q: one sources object for both steps (built here, read on use).
   const sources = deps.ports.sources?.(db, clock, logger);
   const snapshots = deps.snapshots;
+  // B1-09b: one blacklist object for both steps (built here, read on use).
+  const blocklist = deps.ports.blocklist?.(db, clock);
+  const blacklist: OrderBlacklistDeps | undefined =
+    blocklist === undefined
+      ? undefined
+      : {
+          blocklist,
+          suffixVoidEnabled: deps.ports.suffixVoidEnabled?.(db, clock) ?? (async () => false),
+        };
   const updateStep = createOrderUpdateStep({
     clock,
     users,
@@ -207,6 +236,7 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
     events,
     ...(sources === undefined ? {} : { sources }),
     ...(snapshots === undefined ? {} : { snapshots }),
+    ...(blacklist === undefined ? {} : { blacklist }),
   });
   const pipeline = createOrderPipeline({
     db,
@@ -222,6 +252,7 @@ export function createOrderSyncRuntime(deps: OrderSyncRuntimeDeps): OrderSyncRun
     logger,
     ...(sources === undefined ? {} : { sources }),
     ...(snapshots === undefined ? {} : { snapshots }),
+    ...(blacklist === undefined ? {} : { blacklist }),
   });
 
   const handler = { access, cursors, registry, pipeline, logger };

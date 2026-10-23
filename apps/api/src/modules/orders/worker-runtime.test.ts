@@ -62,7 +62,10 @@ function rawAdapter(platform: RegisteredPlatform): UnionAdapter {
   };
 }
 
-function setup(sources?: OrderSyncReadPorts['sources']) {
+function setup(
+  sources?: OrderSyncReadPorts['sources'],
+  extra: Pick<OrderSyncReadPorts, 'blocklist' | 'suffixVoidEnabled'> = {},
+) {
   const queries: string[] = [];
   const lines: { msg: string }[] = [];
   const logger = createRootLogger(
@@ -102,6 +105,7 @@ function setup(sources?: OrderSyncReadPorts['sources']) {
       tryAcquire: () => true,
     })),
     ...(sources === undefined ? {} : { sources }),
+    ...extra,
   };
   const db = compileOnly(queries);
   const clock = new FixedClock('2026-10-17T17:30:00.000Z');
@@ -224,4 +228,41 @@ it('[AC-B1-08q#u9] 未注入 sources：归因与更新都不带 sources（来源
   setup();
   expect('sources' in makePipeline.mock.calls[0]![0]).toBe(false);
   expect('sources' in makeUpdate.mock.calls[0]![0]).toBe(false);
+});
+
+it('[AC-B1-09b#u1] 注入 blocklist：工厂在装配时调一次（db、clock），同一黑名单对象交给归因和更新，装配不查库；尾号开关未注入取 false', async () => {
+  const makePipeline = vi.spyOn(pipelinePort, 'createOrderPipeline');
+  const makeUpdate = vi.spyOn(updateStep, 'createOrderUpdateStep');
+  const blocklist = { match: vi.fn(), recordHit: vi.fn() };
+  const factory = vi.fn(() => blocklist);
+  const s = setup(undefined, { blocklist: factory });
+  expect(factory.mock.calls).toEqual([[s.db, s.clock]]);
+  expect(s.queries).toEqual([]);
+  expect(blocklist.match).not.toHaveBeenCalled();
+  const deps = makePipeline.mock.calls[0]![0];
+  const updateDeps = makeUpdate.mock.calls[0]![0];
+  expect(deps.blacklist).toBeDefined();
+  expect(updateDeps.blacklist).toBe(deps.blacklist);
+  expect(deps.blacklist?.blocklist).toBe(blocklist);
+  expect(await deps.blacklist?.suffixVoidEnabled('unit')).toBe(false);
+});
+
+it('[AC-B1-09b#u2] 注入尾号开关读法：按 App 读；未注入 blocklist 时整步不装配', async () => {
+  const makePipeline = vi.spyOn(pipelinePort, 'createOrderPipeline');
+  const makeUpdate = vi.spyOn(updateStep, 'createOrderUpdateStep');
+  const read = vi.fn(async (appId: string) => appId === 'on');
+  const suffix = vi.fn(() => read);
+  setup(undefined, {
+    blocklist: () => ({ match: vi.fn(), recordHit: vi.fn() }),
+    suffixVoidEnabled: suffix,
+  });
+  const deps = makePipeline.mock.calls[0]![0];
+  expect(await deps.blacklist?.suffixVoidEnabled('on')).toBe(true);
+  expect(await deps.blacklist?.suffixVoidEnabled('off')).toBe(false);
+  expect(suffix).toHaveBeenCalledTimes(1);
+  makePipeline.mockClear();
+  makeUpdate.mockClear();
+  setup(undefined, { suffixVoidEnabled: suffix });
+  expect('blacklist' in makePipeline.mock.calls[0]![0]).toBe(false);
+  expect('blacklist' in makeUpdate.mock.calls[0]![0]).toBe(false);
 });
