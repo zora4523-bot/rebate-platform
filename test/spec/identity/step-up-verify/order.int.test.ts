@@ -3,9 +3,21 @@
 // step-up check only runs after an idempotency miss; ruling §9.3 #1 #4 #7). An earlier stage that
 // refuses leaves the token unreserved (the same token passes afterwards and is consumed once);
 // a full rate limit bucket does not answer before 10003.
+// B1-02zk (编排裁定 D10-265): POST /v1/withdrawals has its own order (08 BR-WDR-03 细则「提交接口的
+// 检查顺序」: ⓪a 10405 → ① 30306 → ② 10003 → ③ 10006), so "⑤ before ⑫" for a request without a
+// token is shown on POST /v1/me/phone (BR-ID-01 global order; POST /v1/me/deletion is on the
+// BR-ID-31 10006 whitelist); the withdrawal case is tested with the withdraw lane (B2-05d).
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { failed, openFixture, stepUpRequired, succeeded, user, type Fixture } from './kit.ts';
+import {
+  failed,
+  openFixture,
+  sendPhone,
+  stepUpRequired,
+  succeeded,
+  user,
+  type Fixture,
+} from './kit.ts';
 
 let f: Fixture;
 beforeAll(async () => {
@@ -48,9 +60,12 @@ it('[AC-B1-02y#19] 封禁（⑤ 10006）先命中时不占用 token；解封后�
   const token = await u.mint('withdraw');
   const key = randomUUID();
   failed(await u.send('withdraw', { stepUp: token, key }), 403, 10006);
-  failed(await u.send('withdraw', { stepUp: null }), 403, 10006);
+  // Without a token: on a BR-ID-01 global-order operation ⑤ answers before ⑫ (B1-02zk, D10-265).
+  failed(await sendPhone(f, u, { stepUp: null }), 403, 10006);
   expect(u.handled()).toBe(0);
   await set('normal');
+  // The same request once unbanned reaches ⑫: 10003 was really behind 10006.
+  failed(await sendPhone(f, u, { stepUp: null }), 403, 10003);
   succeeded(await u.send('withdraw', { stepUp: token, key }));
   expect(u.handled()).toBe(1);
   await stepUpRequired(await u.send('withdraw', { stepUp: token }));

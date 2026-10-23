@@ -129,6 +129,8 @@ export interface Fixture {
 /** Calls of the stub handler and planned outcomes, per user id. */
 const handled = new Map<string, number>();
 const plans = new Map<string, Outcome[]>();
+/** B1-02zk: each fixture user's install_secret, for sendPhone (signs like User.send). */
+const installSecrets = new Map<string, string>();
 let fault: RedisFault = 'none';
 
 export async function openFixture(): Promise<Fixture> {
@@ -532,6 +534,7 @@ export async function user(
     );
   handled.set(uid, 0);
   plans.set(uid, []);
+  installSecrets.set(uid, device.install_secret);
   return {
     appId,
     uid,
@@ -589,6 +592,44 @@ export async function user(
     },
     handled: () => handled.get(uid) ?? 0,
   };
+}
+
+/**
+ * B1-02zk (D10-265): POST /v1/me/phone, the real bindPhone route (x-step-up phone_change for a
+ * change; every fixture user already has a phone, so it is a change), signed like User.send. It
+ * is outside the BR-ID-31 10006 whitelist and keeps the BR-ID-01 global order (⑤ before ⑫),
+ * unlike POST /v1/me/deletion (whitelisted) and POST /v1/withdrawals (BR-WDR-03's own order). The
+ * body is contract-valid (BindPhoneRequest); its handler is not the stub, so handled() is not
+ * counted.
+ */
+export function sendPhone(f: Fixture, u: User, options: SendOptions): Promise<WireResponse> {
+  const path = '/v1/me/phone';
+  const secret = installSecrets.get(u.uid);
+  if (secret === undefined) throw new Error('sendPhone: not a user() of this fixture');
+  const raw = JSON.stringify(options.body ?? { phone: '13800138000', code: '123456' });
+  const timestamp = String(Math.floor(f.clock.now().getTime() / 1000));
+  const nonce = randomBytes(16).toString('hex');
+  const key = options.key === undefined ? randomUUID() : options.key;
+  return f.app.inject({
+    method: 'POST',
+    url: path,
+    payload: raw,
+    headers: {
+      'content-type': 'application/json',
+      'x-app-id': u.appId,
+      'x-platform': 'ios',
+      'x-channel': 'appstore',
+      'x-app-version': options.version ?? '2.0.0',
+      'x-device-id': u.deviceId,
+      'x-timestamp': timestamp,
+      'x-nonce': nonce,
+      'x-sign': sign('POST', path, Buffer.from(raw), timestamp, nonce, secret),
+      'x-trace-id': randomUUID(),
+      authorization: `Bearer ${u.session.access_token}`,
+      ...(key === null ? {} : { 'idempotency-key': key }),
+      ...(options.stepUp === null ? {} : { 'x-step-up-token': options.stepUp }),
+    },
+  });
 }
 
 /** BR-ID-08: 10003, HTTP 403, an ErrorEnvelope without data (the user side has no tier). */
