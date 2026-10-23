@@ -66,10 +66,10 @@
 //   createAiConsentReader over app.module's handle; AgentConsentReaderFactory loses its db), and
 //   agentStreamProvider injects it by agentConsentReaderToken() (app.module provides it on the
 //   stream entry, null without a database handle) instead of options.consentReader: forStream's
-//   options keep assembly and safety only. deps.assembly (and the provider's wrapper of
-//   options.assembly) is called with no handle either, neither as a field nor spread from a
-//   context holding one: agent builds its own PG parts (createPgResultSetStore,
-//   createOrderCardRefs) over its handle and hands those in the context instead.
+//   options keep assembly and safety only. Review r2 (D10-305): deps.assembly (and the provider's
+//   wrapper of options.assembly) may keep receiving the context with db, for agent's own stores:
+//   the assembly app.module hands in must resolve to agent's own function with a body
+//   (createProductionStreamAssembly), which the rule test proves from app.module's source.
 //
 // Also compiled by the `test` project: erasable syntax only, `import type` for type-only imports,
 // relative imports with `.ts`, no process.env, no import of identity.
