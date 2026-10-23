@@ -36,7 +36,7 @@ it(
     const first = await start('disable', '复查后暂停观察');
     expect(server.requests('POST', VERIFY)).toEqual([]);
     expect(server.writes()).toEqual([]);
-    enabled(true);
+    enabled(true, TARGET, true);
     await verify(first);
     await waitFor(() => expect(row().textContent).toContain('服务端返回的新规则名'));
     enabled(false);
@@ -150,7 +150,7 @@ it(
   async () => {
     const { server } = await mount();
     const modal = await start();
-    await click(button(modal, /取消|关闭/));
+    await click(button(modal, '取消'));
     await settled(server);
     enabled(true);
     expect(server.writes()).toEqual([]);

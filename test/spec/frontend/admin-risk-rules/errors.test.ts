@@ -106,7 +106,7 @@ it.each(['enable', 'disable'] as const)(
     await verify(await start(operation, '保留本次原因'));
     await waitFor(() => expect(server.requests('POST', path)).toHaveLength(1));
     await settled(server);
-    enabled(operation === 'disable');
+    enabled(operation === 'disable', TARGET, true);
     const modal = await dialog('二次验证 · 动态码');
     expect(server.requests('POST', VERIFY)).toHaveLength(1);
     expect(server.writes()).toHaveLength(1);
@@ -154,7 +154,7 @@ it(
     await verify(await start());
     await waitFor(() => expect(screen.queryByText('验证码错误，请重新输入')).not.toBeNull());
     expect(await dialog('二次验证 · 动态码')).toBeDefined();
-    enabled(true);
+    enabled(true, TARGET, true);
     expect(server.writes()).toEqual([]);
   },
   FLOW_TIMEOUT,

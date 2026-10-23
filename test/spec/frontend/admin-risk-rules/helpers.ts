@@ -98,9 +98,9 @@ export async function loaded(id = TARGET) {
     expect(within(mainElement()).queryByText(id, { exact: true })).not.toBeNull(),
   );
 }
-export function row(id = TARGET): HTMLElement {
+export function row(id = TARGET, hidden = false): HTMLElement {
   const found = within(mainElement())
-    .queryAllByRole('row')
+    .queryAllByRole('row', { hidden })
     .filter((entry) => within(entry).queryByText(id, { exact: true }) !== null);
   expect(found, `rule row ${id}`).toHaveLength(1);
   return found[0]!;
@@ -112,23 +112,31 @@ export function action(target: 'enable' | 'disable', id = TARGET): HTMLElement {
   expect(result, `accessible ${target} action`).not.toBeNull();
   return result!;
 }
-export function enabled(value: boolean, id = TARGET) {
-  const current = row(id);
+export function enabled(value: boolean, id = TARGET, hidden = false) {
+  const current = row(id, hidden);
   const scope = within(current);
   const table = current.closest('table, [role="table"]');
   expect(table).not.toBeNull();
   const index = within(table as HTMLElement)
-    .getAllByRole('columnheader')
+    .getAllByRole('columnheader', { hidden })
     .findIndex((header) => /状态/.test(header.textContent ?? ''));
   expect(index, 'status column').toBeGreaterThanOrEqual(0);
-  const cells = scope.getAllByRole('cell');
+  const cells = scope.getAllByRole('cell', { hidden });
   const code = value ? 'enabled' : 'disabled';
   expect(cells[index]!.textContent).toContain(
     dictionary[`admin_dict.risk_rule_status.${code}`] ?? code,
   );
-  const toggle = scope.queryByRole('switch');
+  const toggle = scope.queryByRole('switch', { hidden });
   if (toggle !== null) expect(toggle.getAttribute('aria-checked')).toBe(String(value));
-  else expect(scope.queryByRole('button', { name: value ? /停用/ : /启用/ })).not.toBeNull();
+  else if (hidden) {
+    // StepUpModal hides the table from accessibility; hidden buttons have no accessible name.
+    const label = value ? /停用/ : /启用/;
+    expect(
+      scope
+        .queryAllByRole('button', { hidden })
+        .filter((node) => label.test(node.textContent ?? '')),
+    ).toHaveLength(1);
+  } else expect(scope.queryByRole('button', { name: value ? /停用/ : /启用/ })).not.toBeNull();
 }
 export async function settled(server: Server) {
   await waitFor(() => expect(server.pending).toBe(0));
