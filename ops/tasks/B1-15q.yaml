@@ -15,4 +15,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/db/agent/**'
   - 'test/spec/db/deletion-requests/**'
-status: todo
+status: done
+pr: 1224

@@ -17,4 +17,5 @@ tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/growth/invite-reward-expiry-retry/**'
-status: todo
+status: done
+pr: 1314

@@ -17,4 +17,5 @@ accept:
   - 'pnpm verify'
   - 'test/spec/identity/payout-account/**'
   - 'test/spec/identity/payout-bank-card/**'
-status: todo
+status: done
+pr: 1294
