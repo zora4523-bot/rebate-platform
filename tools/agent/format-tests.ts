@@ -106,7 +106,7 @@ export function canonNumber(raw: string): string {
 
 /** Splits source text into code, string, template text, regular expression and comment parts. */
 export function segments(source: string): Segment[] {
-  const src = source.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const src = source.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
   const out: Segment[] = [];
   let code = '';
   let lastWord = '';
