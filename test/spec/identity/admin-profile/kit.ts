@@ -203,7 +203,7 @@ export async function user(h: Harness, appId: string, options: UserOptions = {})
       phone_hmac: hmac,
       nickname_change_month: options.month ?? null,
       nickname_change_count: options.count ?? 0,
-      invite_code: `i-${id}`,
+      invite_code: id.replaceAll('-', ''),
       attr_code: `a-${id}`,
       level: 'L1',
       status,
