@@ -1,0 +1,22 @@
+id: B1-34l
+repo: rebate-platform
+title: admin：后台 TOTP 校验在 ±1 步窗口内跳过已用过的步——按步从小到大逐个尝试匹配步，占用成功即通过，窗口内所有匹配步都已用过才按重放拒（编排裁定 D10-238）
+type: impl
+# 2026-10-23 入账（admin-backend，编排裁定 D10-238：[AC-F1-02zza#4] stepUp 偶发 400，相邻两步码相同时窗口取到刚用过的上一步被防重放拒；不改冻结 kit，改服务端）。依据：08 BR-ID-34（后台登录与动态码档 step-up）、RFC 6238 按步计。
+# 本线技术取舍：只改 admin/domain/totp.ts 的 createTotpVerifier——收集窗口内全部匹配步，按步升序逐个 replay.consume，第一个成功即通过；全部失败才返回 false（重放）。replay 存储（totp_last_step 单调）不改：每步仍只能用一次、已接受步之前的步一律视为已用，防重放强度不变。登录、首次绑定、step-up 共用同一校验器，一并生效。规则测试两条（D10-238）：相邻两步码相同且上一步已用 → 本步通过；两步都已用 → 拒；另保留原有窗口外拒、格式拒。Codex 额度用尽（至 10-30），按 approvals #36 规则测试由独立 Claude 写（tester claude-independent）。
+refs: [BR-ID-34]
+refs_hash:
+  BR-ID-34: 5ec74e78c860
+deps: []
+paths:
+  - 'apps/api/src/modules/admin/domain/totp.ts'
+  - 'apps/api/src/modules/admin/domain/totp.test.ts'
+test_paths:
+  - 'test/spec/admin/totp-window/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/admin/totp-window/**'
+status: todo
+pr: null
