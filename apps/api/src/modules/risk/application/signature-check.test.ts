@@ -2,7 +2,7 @@
 // generated @couli/contracts-ts), and the brand bootstrap reads to tell a signature check apart.
 import { errorCodes } from '@couli/contracts-ts';
 import { expect, it } from 'vitest';
-import { FixedClock, RequestRejection } from '../../platform/index.ts';
+import { FixedClock, RequestRejection, createRootLogger } from '../../platform/index.ts';
 import {
   SIGNATURE_REJECTIONS,
   SignatureError,
@@ -10,6 +10,7 @@ import {
   createSignatureCheck,
   isSignatureCheck,
 } from './signature-check.ts';
+import { RedisGenerationRefusalError, armRedisGeneration } from './redis-generation.ts';
 import { expectedSignature } from '../domain/request-signature.ts';
 
 it('[BR-ID-09] 10401 and 10402 carry the http status and meaning of contracts/error-codes.yaml', () => {
@@ -140,4 +141,71 @@ it('[BR-ID-09] the stage ① check still skips a route that is not x-signed, so 
   await expect(check(request)).resolves.toBeUndefined();
   expect(asked).toEqual([]);
   expect(request).not.toHaveProperty('verifiedDevice');
+});
+
+it('[R-04] the generation gate is asked after the HMAC and before the nonce reservation; its refusal reserves no nonce', async () => {
+  const store = nonceStore();
+  const order: string[] = [];
+  let refuse = true;
+  const verify = createRequestSignatureVerifier({
+    devices: { findActive: async (id) => (id === DEVICE.deviceId ? DEVICE : null) },
+    clock: AT,
+    redis: store.handle,
+    generation: {
+      admit: async () => {
+        order.push('admit');
+        if (refuse) throw new Error('refusal period');
+      },
+    },
+  });
+  await expect(verify(signed('{}', { 'x-sign': '0'.repeat(64) }))).rejects.toMatchObject({
+    code: 10401,
+  });
+  expect(order).toEqual([]);
+  await expect(verify(signed('{}'))).rejects.toThrow('refusal period');
+  expect(order).toEqual(['admit']);
+  expect(store.keys).toEqual([]);
+  refuse = false;
+  await expect(verify(signed('{}'))).resolves.toEqual({
+    deviceId: DEVICE.deviceId,
+    appId: 'couli',
+  });
+  expect(store.keys).toHaveLength(1);
+});
+
+it('[R-04] a verifier built without `generation` uses the armed process gate (recordConsent clipboard path): refused, no nonce; unarmed: unchanged', async () => {
+  const scripts: { keys: readonly string[] }[] = [];
+  const nonces: string[] = [];
+  const handle = {
+    namespace: () => ({
+      eval: async (_script: string, options: { keys: readonly string[]; args: string[] }) => {
+        scripts.push(options);
+        // The combined script: the key was just created at now, so the period is running.
+        if (options.keys.length === 2) return [1, options.args[0], 0];
+        nonces.push(options.keys[0]!);
+        return 'OK';
+      },
+    }),
+  } as unknown as NonNullable<Parameters<typeof createRequestSignatureVerifier>[0]['redis']>;
+  const devices = { findActive: async (id: string) => (id === DEVICE.deviceId ? DEVICE : null) };
+  const logger = createRootLogger({ level: 'silent', entry: 'api', appEnv: 'test' });
+  try {
+    armRedisGeneration('prod', logger);
+    const armed = createRequestSignatureVerifier({ devices, clock: AT, redis: handle });
+    await expect(armed(signed('{"type":"clipboard_auto_import"}'))).rejects.toBeInstanceOf(
+      RedisGenerationRefusalError,
+    );
+    expect(scripts.map((options) => options.keys)).toEqual([
+      ['generation', `nonce:couli:${DEVICE.deviceId}:${'a'.repeat(32)}`],
+    ]);
+    expect(nonces).toEqual([]);
+  } finally {
+    armRedisGeneration('test');
+  }
+  const unarmed = createRequestSignatureVerifier({ devices, clock: AT, redis: handle });
+  await expect(unarmed(signed('{"type":"clipboard_auto_import"}'))).resolves.toEqual({
+    deviceId: DEVICE.deviceId,
+    appId: 'couli',
+  });
+  expect(nonces).toHaveLength(1);
 });
