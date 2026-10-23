@@ -1,0 +1,26 @@
+id: B3-03q
+repo: rebate-platform
+title: 启用模型路径前的结果集补漏：PG 结果库实现报价卡内商品回执 recordQuoted；降级搜索在卡片确认写出后才切为会话当前链
+type: impl
+# 2026-10-24 入账（agent2-acct4）。B3-03p（#1407）的实现回报与独立 Claude 评审 S2（couli-runs/followups/staging-b1-01zc-zd.md 第 54–56 条）：
+# ① PG 结果库（agent/store/results，B3-09c）没有 recordQuoted，生产不记确定性路径报价卡内的商品，模型路径启用后按其 card_id 报价得 invalid_args；
+#    按 B3-03p 冻结测试对 BR-AI-05 的认定（可按 card_id 引用、不进「第 N 个」的结果集）在 PG 实现；若现有 agent_result_deliveries 表放不下，派发前另开迁移任务（迁移号落地时定）。
+# ② saveKeywordResults 在写卡前把降级结果集设为当前链（orchestrator/results/keyword.ts）；该批卡因取消 / 上限未写出时，「换一批」会续翻用户没见过的批次——改为写出确认后再切当前链。
+# 当前生产固定 no_model，均不可达；B3-03k 启用模型前须合并。分工：独立 Claude 写规则测试（Codex 至 10-30 不可用，approvals #36；恢复后可改回 codex），Claude Opus 5.5 实现，独立 Claude / Codex 评审。风险 RV1。
+refs: [BR-AI-05]
+refs_hash:
+  BR-AI-05: ee8fd647fd43
+deps: [B3-03p]
+paths:
+  - 'apps/api/src/modules/agent/store/results/**'
+  - 'apps/api/src/modules/agent/orchestrator/results/**'
+  - 'apps/api/src/modules/agent/stream/mount/**'
+test_paths:
+  - 'test/spec/agent/stream-model-prereq-3/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/agent/stream-model-prereq-3/**'
+status: todo
+pr: null
