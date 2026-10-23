@@ -1196,8 +1196,14 @@ export function createInviteRewardScanner(
       const at = deps.clock.now();
       const day = accountingDate(at);
       if (expiredDay !== day) {
-        expiredDay = day;
-        await expiryPass(at);
+        // Mark the day only after a whole successful pass: a failed page query is retried
+        // on the next tick of the same accounting day, and this round still pays out.
+        try {
+          await expiryPass(at);
+          expiredDay = day;
+        } catch (error) {
+          logger.error({ error_class: errorClass(error) }, 'invite_reward_expiry_scan_failed');
+        }
       }
       await payoutPass();
     },
