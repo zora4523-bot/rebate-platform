@@ -1,7 +1,7 @@
 // B1-22d: the admin entry gets the fake site OAuth only in local / test; elsewhere no provider,
 // announced once without any secret. The session audit rows take the contract's action names.
 import { expect, it } from 'vitest';
-import { FixedClock } from '../../platform/clock/index.ts';
+import { FixedClock } from '../../platform/index.ts';
 import { reauthAuditWriter } from '../application/admin-accounts.ts';
 import type { UnionAuditInput } from '../pids/service.ts';
 import { createSiteOAuthProviders } from './fake-site-oauth.ts';
