@@ -42,6 +42,9 @@ for (const state of ['banned', 'frozen'] as const) {
       target_type: 'account',
       status: 'processing',
       closed_at: null,
+      // BR-ID-36 细则: the first appeal on the account → attempt_no 1; processing → no resubmit.
+      attempt_no: 1,
+      can_resubmit: false,
     });
     expect(
       await accepted(await c.send('POST', PATH, { target_type: 'account', content: '再次申请' })),

@@ -1,0 +1,24 @@
+id: CT-26h
+repo: rebate-platform
+title: 测试修改（收紧）：CT-26e 已合并，把 CT-26f 的两态判定收紧为单态——me.int / me-invite.int 的 risk 必带 prev_risk_state，appeals list.int 与 service-kit.ts publicAppeal 必带 attempt_no / can_resubmit；并补 CT-26f 复审 S2：http.int / service.int 断言新字段取值，me.int [AC-B1-02z#15] 断言 prev_risk_state 为 frozen
+type: test-change
+# 草稿 2026-10-23（身份与风控线 identity-lane）。CT-26e #1272 合并后收紧 CT-26f（#1251）的过渡写法（先例 B1-15q 收紧 B1-15p）。取值按 CT-26e 实现推算（couli-runs/CT-26e/impl-opus-3.json notes：service.int 与 http.int 各提交情形 attempt_no=1、can_resubmit=false；service.int #29 新单 attempt_no=2）。
+# 独立 Claude 改（approvals #36），新鲜独立 Claude 只读复审「不削弱」，按 approvals #24 请编排加标签。
+refs: []
+refs_hash: {}
+deps: [CT-26e, CT-26f]
+paths:
+  - 'test/spec/identity/me/me.int.test.ts'
+  - 'test/spec/identity/me-invite/me-invite.int.test.ts'
+  - 'test/spec/risk/appeals/list.int.test.ts'
+  - 'test/spec/risk/appeals/service-kit.ts'
+  - 'test/spec/risk/appeals/http.int.test.ts'
+  - 'test/spec/risk/appeals/service.int.test.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+  - 'test/spec/identity/me/**'
+  - 'test/spec/identity/me-invite/**'
+  - 'test/spec/risk/appeals/**'
+status: todo
