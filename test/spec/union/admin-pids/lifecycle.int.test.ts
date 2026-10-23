@@ -321,7 +321,7 @@ for (const [action, states] of [
 }
 
 it.each([false, true])(
-  '[AC-B1-22h#10] 同场景已有 active 拒绝启用，跨联盟账号=%s；先停旧才可启新',
+  '[AC-B1-22h#10] 同联盟账号同场景已有 active 拒绝启用、跨联盟账号可并存（跨账号=%s）；同账号先停旧才可启新',
   async (differentAccount) => {
     const s = await setup(h);
     const old = await seedPid(s, { status: 'active' });
@@ -329,6 +329,30 @@ it.each([false, true])(
       s,
       differentAccount ? {} : { union_account_id: old.union_account_id },
     );
+    if (differentAccount) {
+      // D10-231: uniqueness is app × platform × union_account_id × pid_scene.
+      expect(pending.union_account_id).not.toBe(old.union_account_id);
+      const active = await accepted(
+        await s.write('activate', pending.id, bodyFor('activate', pending)),
+      );
+      expect(active).toMatchObject({
+        pid_id: pending.id,
+        union_account_id: pending.union_account_id,
+        pid_scene: old.pid_scene,
+        status: 'active',
+        row_version: pending.row_version + 1,
+      });
+      expect(await current(s, old.id)).toEqual(old);
+      expect(
+        (await s.rows())
+          .filter((p) => p.status === 'active')
+          .map((p) => p.id)
+          .sort(),
+      ).toEqual([old.id, pending.id].sort());
+      await audit(s, 'activate', pending.id);
+      expect(await s.audits()).toHaveLength(1);
+      return;
+    }
     const before = await snapshot(s);
     const token = await s.issue();
     await rejected(

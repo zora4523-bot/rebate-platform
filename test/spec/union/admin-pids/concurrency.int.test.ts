@@ -47,9 +47,13 @@ for (const action of ['update', 'activate', 'retire'] as const) {
   });
 }
 
-it('[AC-B1-22h#37] 不同账号同场景并发启用只能一个成功，败者 30155 且保留原 pending 行', async () => {
+it('[AC-B1-22h#37] 同一联盟账号同场景并发启用只能一个成功，败者 30155 且保留原 pending 行', async () => {
   const s = await setup(h);
-  const rows = [await seedPid(s), await seedPid(s)];
+  const account = await seedAccount(s);
+  const rows = [
+    await seedPid(s, { union_account_id: account.id }),
+    await seedPid(s, { union_account_id: account.id }),
+  ];
   const tokens = [await s.issue(), await s.issue()];
   const results = await Promise.all(
     rows.map((row, i) =>
@@ -64,6 +68,36 @@ it('[AC-B1-22h#37] 不同账号同场景并发启用只能一个成功，败者 
   expect(await current(s, rows[loser]!.id)).toEqual(rows[loser]);
   expect((await s.rows()).filter((row) => row.status === 'active')).toHaveLength(1);
   expect(await s.audits()).toHaveLength(1);
+});
+
+it('[AC-B1-22h#37] 不同联盟账号同场景并发启用两条都成功，各一条审计', async () => {
+  const s = await setup(h);
+  const rows = [await seedPid(s), await seedPid(s)];
+  expect(rows[0]!.union_account_id).not.toBe(rows[1]!.union_account_id);
+  const tokens = [await s.issue(), await s.issue()];
+  const results = await Promise.all(
+    rows.map((row, i) =>
+      s.write('activate', row.id, bodyFor('activate', row), { token: tokens[i]! }),
+    ),
+  );
+  for (const [i, result] of results.entries()) {
+    expect(await accepted(result)).toMatchObject({
+      pid_id: rows[i]!.id,
+      status: 'active',
+      row_version: rows[i]!.row_version + 1,
+    });
+  }
+  expect(
+    (await s.rows())
+      .filter((row) => row.status === 'active')
+      .map((row) => row.id)
+      .sort(),
+  ).toEqual(rows.map((row) => row.id).sort());
+  const audits = await s.audits();
+  expect(audits.map((row) => row.action)).toEqual(['union_pid_activate', 'union_pid_activate']);
+  for (const row of rows) {
+    expect(audits.filter((a) => a.target?.includes(row.id))).toHaveLength(1);
+  }
 });
 
 it('[AC-B1-22h#38] 并发重复登记只插入一行，败者 20001 pid，不重写同步起点', async () => {
