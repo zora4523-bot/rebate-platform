@@ -14,10 +14,10 @@
 //     is checked as a new one; moving to an account without sync_start_at writes it at the time
 //     of the change; hjy confirmation fields are left as they are;
 //   - activate: the screenshot is checked from its bytes and stored before the transaction (a
-//     failing store changes no row); the transaction locks every row of the app × platform ×
-//     pid_scene in id order (FOR UPDATE), so concurrent activations in one scene serialize, and an
-//     active row there, of any union account, refuses with 30155 without changing anything
-//     (D10-221 A);
+//     failing store changes no row); the transaction first takes a scene-level advisory lock
+//     (app × platform × pid_scene), then locks every row of that scene in id order (FOR UPDATE),
+//     so concurrent activations in one scene serialize without a phantom, and an active row
+//     there, of any union account, refuses with 30155 without changing anything (D10-221 A);
 //   - retire: active → retired only.
 // The frozen B1-19 service (../pids/service.ts) keeps its command-line semantics (super account,
 // taobao mm_ PID form, warn-only cross-account activation); this console path follows the contract
@@ -26,7 +26,7 @@
 // Pure module (no decorators, erasable syntax).
 import { pid_scene, type PidScene, type Schema } from '@couli/contracts-ts';
 import type { DB } from '@couli/db';
-import type { Kysely, Selectable } from 'kysely';
+import { sql, type Kysely, type Selectable } from 'kysely';
 import { newUuidV7, type AuditPort, type Clock } from '../../platform/index.ts';
 import { inspectHjyIgnoreEvidence } from '../domain/hjy-ignore-evidence.ts';
 import { canTransitionPid } from '../domain/pid-status.ts';
@@ -479,8 +479,22 @@ export class AdminUnionPids {
     await this.#options.evidence.put({ key, bytes: evidence, contentType: inspected.contentType });
 
     const row = await db.transaction().execute(async (trx) => {
-      // Every row of the scene, in id order: concurrent activations in one scene serialize here,
-      // and the active check below reads committed state (D10-221 A).
+      // Scene mutex first (review r1 S1): a transaction-level advisory lock keyed by app ×
+      // platform × pid_scene. Row locks alone miss a phantom: the scene SELECT's snapshot is
+      // taken before it waits on a row lock, so a same-scene row inserted (or moved here) and
+      // activated by another transaction meanwhile would stay invisible to it. Every activation
+      // takes this lock before its SELECT, so that SELECT starts (READ COMMITTED: a new statement
+      // snapshot) only after any earlier activation of the scene committed or rolled back.
+      // Registration and PATCH need not take it: they only ever write pending rows, and a pending
+      // row becomes active only through this path. Lock order is always advisory → row locks;
+      // PATCH and retire take row locks only, so no cycle.
+      await sql`select pg_advisory_xact_lock(hashtextextended(${sceneLockKey(
+        actor.appId,
+        current.platform,
+        current.pid_scene,
+      )}, 0))`.execute(trx);
+      // Every row of the scene, in id order, locked (D10-221 A): the active check below reads
+      // committed state, and a concurrent PATCH or retire of these rows waits for this commit.
       const scene = await trx
         .selectFrom('union_pids')
         .selectAll()
@@ -646,6 +660,11 @@ export class AdminUnionPids {
       .executeTakeFirst();
     if (updated.numUpdatedRows !== 1n) throw new Error('union: account changed under its lock');
   }
+}
+
+/** Advisory-lock key text of one app × platform × pid_scene (hashed in SQL to a bigint). */
+function sceneLockKey(appId: string, platform: string, scene: string): string {
+  return `union_pid_scene:${appId}:${platform}:${scene}`;
 }
 
 /** The five editable fields of a row (the update audit's before / after). */
