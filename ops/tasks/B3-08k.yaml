@@ -5,8 +5,7 @@ type: impl
 # 2026-10-24 agent 线入账（编排 D10-294，Jev B 0.88：同 B3-03j / B3-08g，agent 只拿端口，规则不加例外；D10-297 同 PR 改冻结测试）。
 # 主干 5 处：agent.module.ts:129、stream/mount/{index:291,config:25,production:115} 用 createContentReader({db})，caller.ts:52 readerFactory({db})；
 # 改为 app.module 组装读取器经令牌 / 端口注入，agent 只依赖读取器接口类型。规则测试（新鲜独立 Claude）：AST 扫描 agent 不得把 db 句柄传给
-# 别模块函数；装配后各读取行为不变。下列 7 个冻结测试 / kit 由新鲜独立 Claude 单列一个提交只改装配入参（断言、用例名与条数零改动），
-# 另一新鲜独立 Claude 复审「不削弱」，落地时编排按 #24 加标签。D10-305：第 6 处 consentReader 纳入；module.test.ts / mount.int 两文件只改 db 交接断言；D10-306 扫尾器读取器必填，stream-recovery 两文件只改装配入参。风险 RV2。
+# 别模块函数；装配后各读取行为不变。下列 7 个冻结测试 / kit 由新鲜独立 Claude 单列一个提交只改装配入参（断言、用例名与条数零改动）， 另一新鲜独立 Claude 复审「不削弱」，落地时编排按 #24 加标签。D10-305：第 6 处 consentReader 纳入；module.test.ts / mount.int 两文件只改 db 交接断言；D10-306 扫尾器读取器必填，stream-recovery 两文件只改装配入参。风险 RV2。
 refs: [BR-AI-02]
 refs_hash:
   BR-AI-02: d14ca044d0e7
