@@ -4,7 +4,7 @@
 // - CREDITED → after_credit（order.blacklist_hit_after_credit，不自动扣回）；
 // - VOID / CLAWED_BACK → 不处理；
 // - 尾号维度开关关闭：命中只写 risk_hits（manual_review），不改 rebate_status，用户侧无变化。
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import {
   planBlacklistHit,
   type BlacklistMatchInput,
@@ -17,15 +17,17 @@ const FLAGS = [false, true] as const;
 const grid = <T>(states: readonly T[]) =>
   states.flatMap((state) => FLAGS.map((flag) => [state, flag] as const));
 
-describe('[AC-B1-09b#1] 未命中', () => {
-  it.each(grid(REBATE_STATES))('%s（尾号开关 %s）：不处置、不写命中', (state, flag) => {
+it.each(grid(REBATE_STATES))(
+  '[AC-B1-09b#1] 未命中：%s（尾号开关 %s）：不处置、不写命中',
+  (state, flag) => {
     const plan = planBlacklistHit({ matches: [], rebate_status: state, suffix_void_enabled: flag });
     expect(plan).toEqual({ disposition: 'none', hits: [] });
-  });
-});
+  },
+);
 
-describe('[AC-B1-09b#2] 渠道命中未入账订单 → VOID（R6），risk_action=void_commission', () => {
-  it.each(grid(PRECREDIT))('%s（尾号开关 %s）', (state, flag) => {
+it.each(grid(PRECREDIT))(
+  '[AC-B1-09b#2] 渠道命中未入账订单 → VOID（R6），risk_action=void_commission：%s（尾号开关 %s）',
+  (state, flag) => {
     const plan = planBlacklistHit({
       matches: [channel],
       rebate_status: state,
@@ -35,11 +37,12 @@ describe('[AC-B1-09b#2] 渠道命中未入账订单 → VOID（R6），risk_acti
       disposition: 'void',
       hits: [{ dimension: 'channel', value: CHANNEL, risk_action: 'void_commission' }],
     });
-  });
-});
+  },
+);
 
-describe('[AC-B1-09b#3] 尾号维度开关打开后按命中处理', () => {
-  it.each(PRECREDIT)('%s → VOID，risk_action=void_commission', (state) => {
+it.each(PRECREDIT)(
+  '[AC-B1-09b#3] 尾号维度开关打开后按命中处理：%s → VOID，risk_action=void_commission',
+  (state) => {
     const plan = planBlacklistHit({
       matches: [suffix],
       rebate_status: state,
@@ -49,21 +52,22 @@ describe('[AC-B1-09b#3] 尾号维度开关打开后按命中处理', () => {
       disposition: 'void',
       hits: [{ dimension: 'order_no_suffix', value: SUFFIX, risk_action: 'void_commission' }],
     });
-  });
+  },
+);
 
-  it('CREDITED → 进人工复核，不自动扣回', () => {
-    const plan = planBlacklistHit({
-      matches: [suffix],
-      rebate_status: 'CREDITED',
-      suffix_void_enabled: true,
-    });
-    expect(plan.disposition).toBe('after_credit');
-    expect(plan.hits.some((hit) => hit.risk_action === 'void_commission')).toBe(false);
+it('[AC-B1-09b#3] 尾号维度开关打开后按命中处理：CREDITED → 进人工复核，不自动扣回', () => {
+  const plan = planBlacklistHit({
+    matches: [suffix],
+    rebate_status: 'CREDITED',
+    suffix_void_enabled: true,
   });
+  expect(plan.disposition).toBe('after_credit');
+  expect(plan.hits.some((hit) => hit.risk_action === 'void_commission')).toBe(false);
 });
 
-describe('[AC-B1-09b#4] 尾号维度开关关闭：只写 risk_hits（manual_review），不改 rebate_status', () => {
-  it.each([...PRECREDIT, 'CREDITED'])('%s', (state) => {
+it.each([...PRECREDIT, 'CREDITED'])(
+  '[AC-B1-09b#4] 尾号维度开关关闭：只写 risk_hits（manual_review），不改 rebate_status：%s',
+  (state) => {
     const plan = planBlacklistHit({
       matches: [suffix],
       rebate_status: state,
@@ -73,15 +77,16 @@ describe('[AC-B1-09b#4] 尾号维度开关关闭：只写 risk_hits（manual_rev
       disposition: 'none',
       hits: [{ dimension: 'order_no_suffix', value: SUFFIX, risk_action: 'manual_review' }],
     });
-  });
-});
+  },
+);
 
-describe('[AC-B1-09b#5] 已入账命中 → after_credit（order.blacklist_hit_after_credit），不自动扣回', () => {
-  it.each([
-    ['渠道', [channel], false],
-    ['渠道 + 尾号（开关关）', [channel, suffix], false],
-    ['渠道 + 尾号（开关开）', [channel, suffix], true],
-  ] as const)('%s', (_label, matches, flag) => {
+it.each([
+  ['渠道', [channel], false],
+  ['渠道 + 尾号（开关关）', [channel, suffix], false],
+  ['渠道 + 尾号（开关开）', [channel, suffix], true],
+] as const)(
+  '[AC-B1-09b#5] 已入账命中 → after_credit（order.blacklist_hit_after_credit），不自动扣回：%s',
+  (_label, matches, flag) => {
     const plan = planBlacklistHit({
       matches,
       rebate_status: 'CREDITED',
@@ -89,23 +94,25 @@ describe('[AC-B1-09b#5] 已入账命中 → after_credit（order.blacklist_hit_a
     });
     expect(plan.disposition).toBe('after_credit');
     expect(plan.hits.some((hit) => hit.risk_action === 'void_commission')).toBe(false);
-  });
-});
+  },
+);
 
-describe('[AC-B1-09b#6] VOID / CLAWED_BACK 不处理：不处置，也不写任何 risk_hits（含 manual_review）', () => {
-  const combos = [[channel], [suffix], [channel, suffix]];
-  it.each(
-    grid(['VOID', 'CLAWED_BACK']).flatMap(([state, flag]) =>
-      combos.map((matches) => [state, flag, matches] as const),
-    ),
-  )('%s（尾号开关 %s）：%j', (state, flag, matches) => {
+const combos = [[channel], [suffix], [channel, suffix]];
+it.each(
+  grid(['VOID', 'CLAWED_BACK']).flatMap(([state, flag]) =>
+    combos.map((matches) => [state, flag, matches] as const),
+  ),
+)(
+  '[AC-B1-09b#6] VOID / CLAWED_BACK 不处理：不处置，也不写任何 risk_hits（含 manual_review）：%s（尾号开关 %s）：%j',
+  (state, flag, matches) => {
     const plan = planBlacklistHit({ matches, rebate_status: state, suffix_void_enabled: flag });
     expect(plan).toEqual({ disposition: 'none', hits: [] });
-  });
-});
+  },
+);
 
-describe('[AC-B1-09b#7] 两类名单同时命中：渠道命中即作废；未启用的尾号维度仍只记 manual_review', () => {
-  it.each(grid(PRECREDIT))('%s（尾号开关 %s）', (state, flag) => {
+it.each(grid(PRECREDIT))(
+  '[AC-B1-09b#7] 两类名单同时命中：渠道命中即作废；未启用的尾号维度仍只记 manual_review：%s（尾号开关 %s）',
+  (state, flag) => {
     const plan = planBlacklistHit({
       matches: [suffix, channel],
       rebate_status: state,
@@ -123,5 +130,5 @@ describe('[AC-B1-09b#7] 两类名单同时命中：渠道命中即作废；未�
         },
       ]),
     );
-  });
-});
+  },
+);

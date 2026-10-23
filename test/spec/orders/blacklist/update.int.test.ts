@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it } from 'vitest';
 import { existing, hitView, ownership, seedChannel, seedSuffix } from './kit.ts';
 import { AFTER_CREDIT, CHANNEL, PARENT_HIT, PARENT_MISS, PRECREDIT } from './plan-kit.ts';
 
@@ -54,8 +54,9 @@ it('[AC-B1-09b#19] 名单新增后 content_hash 未变的同步不查名单（�
   expect((await f.read()).hits).toHaveLength(1);
 });
 
-describe('[AC-B1-09b#20] 存量未入账订单在下一次同步更新时命中：BLACKLIST_HIT 先于本次状态迁移，同一事务', () => {
-  it.each(PRECREDIT)('%s', async (status) => {
+it.each(PRECREDIT)(
+  '[AC-B1-09b#20] 存量未入账订单在下一次同步更新时命中：BLACKLIST_HIT 先于本次状态迁移，同一事务：%s',
+  async (status) => {
     const f = await existing(db, status);
     await seedChannel(db, f);
     expect(await f.update()).toMatchObject({ ok: true, value: { kind: 'updated' } });
@@ -95,8 +96,8 @@ describe('[AC-B1-09b#20] 存量未入账订单在下一次同步更新时命中�
     ]);
     expect(afterCredit(f)).toHaveLength(0);
     await expectOwnershipKept(f);
-  });
-});
+  },
+);
 
 it('[AC-B1-09b#21] 已入账订单命中（例 S6，退款触发更新）：不自动扣回，同事务入队 order.blacklist_hit_after_credit，退款照常交 settlement', async () => {
   const f = await existing(db, 'CREDITED');
@@ -132,13 +133,14 @@ it('[AC-B1-09b#21] 已入账订单命中（例 S6，退款触发更新）：不�
   await expectOwnershipKept(f);
 });
 
-describe('[AC-B1-09b#22] rebate_status 已为 VOID 或 CLAWED_BACK：不处理，不写任何 risk_hits（含 manual_review）', () => {
-  it.each([
-    ['VOID', '渠道'],
-    ['CLAWED_BACK', '渠道'],
-    ['VOID', '渠道 + 尾号（开关关）'],
-    ['CLAWED_BACK', '渠道 + 尾号（开关关）'],
-  ] as const)('%s：%s命中', async (status, label) => {
+it.each([
+  ['VOID', '渠道'],
+  ['CLAWED_BACK', '渠道'],
+  ['VOID', '渠道 + 尾号（开关关）'],
+  ['CLAWED_BACK', '渠道 + 尾号（开关关）'],
+] as const)(
+  '[AC-B1-09b#22] rebate_status 已为 VOID 或 CLAWED_BACK：不处理，不写任何 risk_hits（含 manual_review）：%s：%s命中',
+  async (status, label) => {
     const withSuffix = label !== '渠道';
     const f = await existing(db, status, withSuffix ? { parent_order_id: PARENT_HIT } : {});
     await seedChannel(db, f);
@@ -151,8 +153,8 @@ describe('[AC-B1-09b#22] rebate_status 已为 VOID 或 CLAWED_BACK：不处理�
     expect(f.recordHit).not.toHaveBeenCalled();
     expect((await f.read()).hits).toHaveLength(0);
     await expectOwnershipKept(f);
-  });
-});
+  },
+);
 
 it('[AC-B1-09b#23] 尾号维度未启用时已入账订单命中：只写 manual_review，不入队复核事件', async () => {
   const f = await existing(db, 'CREDITED', { parent_order_id: PARENT_HIT }, { suffixOn: false });
@@ -189,11 +191,12 @@ it('[AC-B1-09b#25] 返利端口未接线：存量未入账订单命中只记 man
   await expectOwnershipKept(f);
 });
 
-describe('[AC-B1-09b#26] 与本次更新同一事务：复核事件入队或返利端口失败，整条回滚', () => {
-  it.each([
-    ['CREDITED', 'order.blacklist_hit_after_credit 入队'],
-    ['ESTIMATED', 'onBlacklistHit'],
-  ] as const)('%s：%s 抛错', async (...[status]) => {
+it.each([
+  ['CREDITED', 'order.blacklist_hit_after_credit 入队'],
+  ['ESTIMATED', 'onBlacklistHit'],
+] as const)(
+  '[AC-B1-09b#26] 与本次更新同一事务：复核事件入队或返利端口失败，整条回滚：%s：%s 抛错',
+  async (...[status]) => {
     const f = await existing(db, status);
     await seedChannel(db, f);
     const prior = await f.read();
@@ -211,8 +214,8 @@ describe('[AC-B1-09b#26] 与本次更新同一事务：复核事件入队或返�
     expect(after.orders).toEqual(prior.orders);
     expect(after.history).toEqual(prior.history);
     expect(after.hits).toHaveLength(0);
-  });
-});
+  },
+);
 
 it('[AC-B1-09b#28] 存量未归因订单（user_id 为空）的下一次同步更新照样执行第 ③ 步：渠道命中经 BLACKLIST_HIT，同一事务', async () => {
   const f = await existing(db, 'UNATTRIBUTED', {}, { unattributed: true });

@@ -4,7 +4,7 @@
 import { createDb, destroyDb, type DB } from '@couli/db';
 import { createTestDatabase, type TestDatabase } from '@couli/db/testing';
 import type { Kysely } from 'kysely';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it } from 'vitest';
 import { FixedClock } from '../../../../apps/api/src/modules/platform/clock/index.ts';
 import { createOrderPipeline } from '../../../../apps/api/src/modules/orders/index.ts';
 import {
@@ -100,17 +100,18 @@ it('[AC-B1-09b#9] 渠道命中的新订单：同一事务内入库后经返利�
   expect(publishedOf(f, AFTER_CREDIT)).toHaveLength(0);
 });
 
-describe('[AC-B1-09b#10] 渠道名单：同 union_account_id、active、start_at ≤ attr_at < end_at（半开区间）', () => {
-  it.each([
-    ['start_at 晚于 attr_at 1 秒 → 不命中', { start_at: plusMs(ATTR_AT, 1000) }, false],
-    ['start_at = attr_at → 命中（含等号）', { start_at: ATTR_AT }, true],
-    ['end_at = attr_at → 不命中', { end_at: ATTR_AT }, false],
-    ['end_at 晚于 attr_at 1 毫秒 → 命中', { end_at: plusMs(ATTR_AT, 1) }, true],
-    ['end_at 为空 → 持续生效', { end_at: null }, true],
-    ['已停用 → 不命中', { status: 'inactive' }, false],
-    ['别的联盟账号 → 不命中', { union_account_id: '00000000-0000-4000-8000-0000000000aa' }, false],
-    ['relation_id 不同 → 不命中', { value: 'R9' }, false],
-  ] as const)('%s', async (_label, overrides, hits) => {
+it.each([
+  ['start_at 晚于 attr_at 1 秒 → 不命中', { start_at: plusMs(ATTR_AT, 1000) }, false],
+  ['start_at = attr_at → 命中（含等号）', { start_at: ATTR_AT }, true],
+  ['end_at = attr_at → 不命中', { end_at: ATTR_AT }, false],
+  ['end_at 晚于 attr_at 1 毫秒 → 命中', { end_at: plusMs(ATTR_AT, 1) }, true],
+  ['end_at 为空 → 持续生效', { end_at: null }, true],
+  ['已停用 → 不命中', { status: 'inactive' }, false],
+  ['别的联盟账号 → 不命中', { union_account_id: '00000000-0000-4000-8000-0000000000aa' }, false],
+  ['relation_id 不同 → 不命中', { value: 'R9' }, false],
+] as const)(
+  '[AC-B1-09b#10] 渠道名单：同 union_account_id、active、start_at ≤ attr_at < end_at（半开区间）：%s',
+  async (_label, overrides, hits) => {
     const f = await setup(db);
     await seedChannel(db, f, overrides);
     expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
@@ -120,8 +121,8 @@ describe('[AC-B1-09b#10] 渠道名单：同 union_account_id、active、start_at
     expect(f.onBlacklistHit).toHaveBeenCalledTimes(hits ? 1 : 0);
     expect(after.hits).toHaveLength(hits ? 1 : 0);
     expectOwnershipKept(after.orders[0]!, f);
-  });
-});
+  },
+);
 
 it('[AC-B1-09b#11] 渠道比对用归因时点 attr_at（定金优先），不用付款时间或同步时刻', async () => {
   const deposit = plusMs(ATTR_AT, -1000);
@@ -137,38 +138,36 @@ it('[AC-B1-09b#11] 渠道比对用归因时点 attr_at（定金优先），不�
   expect(after.hits).toHaveLength(0);
 });
 
-describe('[AC-B1-09b#12] 尾号维度未启用（attr.blacklist.order_suffix_void_enabled=false）：只写 manual_review，返利状态与用户侧不变', () => {
-  it('父单号末 6 位 123456 命中', async () => {
-    const f = await setup(db, { parent_order_id: PARENT_HIT }, { suffixOn: false });
-    await seedSuffix(db, f);
-    expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
-    const after = await f.read();
-    const row = after.orders[0]!;
-    expect(after.hits.map(hitView)).toEqual([
-      {
-        user_id: f.userId,
-        rule_id: 'BLACKLIST_HIT',
-        risk_action: 'manual_review',
-        dimension: 'order_no_suffix',
-        value_hmac: f.hmac('order_no_suffix', SUFFIX),
-        ref_type: 'order',
-        ref_id: row.order_id,
-      },
-    ]);
-    expect(f.onBlacklistHit).not.toHaveBeenCalled();
-    expect(publishedOf(f, AFTER_CREDIT)).toHaveLength(0);
-    expectOwnershipKept(row, f);
-  });
+it('[AC-B1-09b#12] 尾号维度未启用（attr.blacklist.order_suffix_void_enabled=false）：只写 manual_review，返利状态与用户侧不变：父单号末 6 位 123456 命中', async () => {
+  const f = await setup(db, { parent_order_id: PARENT_HIT }, { suffixOn: false });
+  await seedSuffix(db, f);
+  expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
+  const after = await f.read();
+  const row = after.orders[0]!;
+  expect(after.hits.map(hitView)).toEqual([
+    {
+      user_id: f.userId,
+      rule_id: 'BLACKLIST_HIT',
+      risk_action: 'manual_review',
+      dimension: 'order_no_suffix',
+      value_hmac: f.hmac('order_no_suffix', SUFFIX),
+      ref_type: 'order',
+      ref_id: row.order_id,
+    },
+  ]);
+  expect(f.onBlacklistHit).not.toHaveBeenCalled();
+  expect(publishedOf(f, AFTER_CREDIT)).toHaveLength(0);
+  expectOwnershipKept(row, f);
+});
 
-  it('父单号 3301987654012345 不命中', async () => {
-    const f = await setup(db, { parent_order_id: PARENT_MISS }, { suffixOn: false });
-    await seedSuffix(db, f);
-    expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
-    expect(f.match).toHaveBeenCalledTimes(1);
-    expect(f.match.mock.calls[0]?.[1]).toMatchObject({ trade_parent_id: PARENT_MISS });
-    expect((await f.read()).hits).toHaveLength(0);
-    expect(f.onBlacklistHit).not.toHaveBeenCalled();
-  });
+it('[AC-B1-09b#12] 尾号维度未启用（attr.blacklist.order_suffix_void_enabled=false）：只写 manual_review，返利状态与用户侧不变：父单号 3301987654012345 不命中', async () => {
+  const f = await setup(db, { parent_order_id: PARENT_MISS }, { suffixOn: false });
+  await seedSuffix(db, f);
+  expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
+  expect(f.match).toHaveBeenCalledTimes(1);
+  expect(f.match.mock.calls[0]?.[1]).toMatchObject({ trade_parent_id: PARENT_MISS });
+  expect((await f.read()).hits).toHaveLength(0);
+  expect(f.onBlacklistHit).not.toHaveBeenCalled();
 });
 
 it('[AC-B1-09b#13] 尾号维度启用后按命中处理：经返利端口 BLACKLIST_HIT，记 void_commission', async () => {
@@ -288,75 +287,74 @@ async function unattributedOwnership() {
   return ownership(row);
 }
 
-describe('[AC-B1-09b#27] 未归因订单（② 失败、user_id 为空）照样执行第 ③ 步（BR-ATTR-01：② 失败继续 ③④⑦）', () => {
-  it('渠道命中 → 同一事务经返利端口 BLACKLIST_HIT（R6），记 void_commission，user_id 仍为空', async () => {
-    const expected = await unattributedOwnership();
-    const f = await setup(db, {}, { unattributed: true });
-    await seedChannel(db, f);
-    expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
-    const after = await f.read();
-    expect(after.orders).toHaveLength(1);
-    const row = after.orders[0]!;
+it('[AC-B1-09b#27] 未归因订单（② 失败、user_id 为空）照样执行第 ③ 步（BR-ATTR-01：② 失败继续 ③④⑦）：渠道命中 → 同一事务经返利端口 BLACKLIST_HIT（R6），记 void_commission，user_id 仍为空', async () => {
+  const expected = await unattributedOwnership();
+  const f = await setup(db, {}, { unattributed: true });
+  await seedChannel(db, f);
+  expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
+  const after = await f.read();
+  expect(after.orders).toHaveLength(1);
+  const row = after.orders[0]!;
 
-    expect(f.match).toHaveBeenCalledTimes(1);
-    expect(f.match.mock.calls[0]?.[1]).toMatchObject({
-      app_id: f.ctx.app_id,
-      platform: 'taobao',
-      relation_id: CHANNEL,
-      union_account_id: f.ctx.union_account_id,
-      attr_at: ATTR_AT,
-    });
-    expect(f.onBlacklistHit).toHaveBeenCalledTimes(1);
-    const [hitTrx, hit] = f.onBlacklistHit.mock.calls[0]!;
-    expect(hitTrx).toBe(f.onImported.mock.calls[0]?.[0]);
-    expect(hit).toMatchObject({ app_id: f.ctx.app_id, order_id: row.order_id, attr_at: ATTR_AT });
-    expect(after.hits.map(hitView)).toEqual([
-      {
-        user_id: null,
-        rule_id: 'BLACKLIST_HIT',
-        risk_action: 'void_commission',
-        dimension: 'channel',
-        value_hmac: f.hmac('channel', CHANNEL),
-        ref_type: 'order',
-        ref_id: row.order_id,
-      },
-    ]);
-    expect(ownership(row)).toEqual(expected);
-    expect(publishedOf(f, AFTER_CREDIT)).toHaveLength(0);
+  expect(f.match).toHaveBeenCalledTimes(1);
+  expect(f.match.mock.calls[0]?.[1]).toMatchObject({
+    app_id: f.ctx.app_id,
+    platform: 'taobao',
+    relation_id: CHANNEL,
+    union_account_id: f.ctx.union_account_id,
+    attr_at: ATTR_AT,
   });
-
-  it('尾号命中（开关关）→ 只记 manual_review，不经返利端口，user_id 仍为空', async () => {
-    const expected = await unattributedOwnership();
-    const f = await setup(
-      db,
-      { parent_order_id: PARENT_HIT },
-      { unattributed: true, suffixOn: false },
-    );
-    await seedSuffix(db, f);
-    expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
-    const after = await f.read();
-    const row = after.orders[0]!;
-    expect(f.match).toHaveBeenCalledTimes(1);
-    expect(f.match.mock.calls[0]?.[1]).toMatchObject({ trade_parent_id: PARENT_HIT });
-    expect(after.hits.map(hitView)).toEqual([
-      {
-        user_id: null,
-        rule_id: 'BLACKLIST_HIT',
-        risk_action: 'manual_review',
-        dimension: 'order_no_suffix',
-        value_hmac: f.hmac('order_no_suffix', SUFFIX),
-        ref_type: 'order',
-        ref_id: row.order_id,
-      },
-    ]);
-    expect(f.onBlacklistHit).not.toHaveBeenCalled();
-    expect(publishedOf(f, AFTER_CREDIT)).toHaveLength(0);
-    expect(ownership(row)).toEqual(expected);
-  });
+  expect(f.onBlacklistHit).toHaveBeenCalledTimes(1);
+  const [hitTrx, hit] = f.onBlacklistHit.mock.calls[0]!;
+  expect(hitTrx).toBe(f.onImported.mock.calls[0]?.[0]);
+  expect(hit).toMatchObject({ app_id: f.ctx.app_id, order_id: row.order_id, attr_at: ATTR_AT });
+  expect(after.hits.map(hitView)).toEqual([
+    {
+      user_id: null,
+      rule_id: 'BLACKLIST_HIT',
+      risk_action: 'void_commission',
+      dimension: 'channel',
+      value_hmac: f.hmac('channel', CHANNEL),
+      ref_type: 'order',
+      ref_id: row.order_id,
+    },
+  ]);
+  expect(ownership(row)).toEqual(expected);
+  expect(publishedOf(f, AFTER_CREDIT)).toHaveLength(0);
 });
 
-describe('[AC-B1-09b#18] 与入库同一事务：命中写入或返利端口失败，整条回滚', () => {
-  it.each(['recordHit', 'onBlacklistHit'] as const)('%s 抛错', async (which) => {
+it('[AC-B1-09b#27] 未归因订单（② 失败、user_id 为空）照样执行第 ③ 步（BR-ATTR-01：② 失败继续 ③④⑦）：尾号命中（开关关）→ 只记 manual_review，不经返利端口，user_id 仍为空', async () => {
+  const expected = await unattributedOwnership();
+  const f = await setup(
+    db,
+    { parent_order_id: PARENT_HIT },
+    { unattributed: true, suffixOn: false },
+  );
+  await seedSuffix(db, f);
+  expect(await f.run()).toMatchObject({ ok: true, value: { kind: 'inserted' } });
+  const after = await f.read();
+  const row = after.orders[0]!;
+  expect(f.match).toHaveBeenCalledTimes(1);
+  expect(f.match.mock.calls[0]?.[1]).toMatchObject({ trade_parent_id: PARENT_HIT });
+  expect(after.hits.map(hitView)).toEqual([
+    {
+      user_id: null,
+      rule_id: 'BLACKLIST_HIT',
+      risk_action: 'manual_review',
+      dimension: 'order_no_suffix',
+      value_hmac: f.hmac('order_no_suffix', SUFFIX),
+      ref_type: 'order',
+      ref_id: row.order_id,
+    },
+  ]);
+  expect(f.onBlacklistHit).not.toHaveBeenCalled();
+  expect(publishedOf(f, AFTER_CREDIT)).toHaveLength(0);
+  expect(ownership(row)).toEqual(expected);
+});
+
+it.each(['recordHit', 'onBlacklistHit'] as const)(
+  '[AC-B1-09b#18] 与入库同一事务：命中写入或返利端口失败，整条回滚：%s 抛错',
+  async (which) => {
     const f = await setup(db);
     await seedChannel(db, f);
     const boom = new Error(`synthetic ${which} failure`);
@@ -368,5 +366,5 @@ describe('[AC-B1-09b#18] 与入库同一事务：命中写入或返利端口失�
     expect(after.orders).toHaveLength(0);
     expect(after.history).toHaveLength(0);
     expect(after.hits).toHaveLength(0);
-  });
-});
+  },
+);
