@@ -3326,10 +3326,18 @@ paths:
         (X-Platform) not in pay.biz.<biz_type>.platforms → 30901 reason=platform_not_allowed; the
         business type or object cannot be sold → 30901 reason=biz_not_sellable. The business
         object already has a PAID order → 30902 with data.pay_order_id (BR-PAY-02). It already
-        has a PENDING order on the same channel → that existing (original) order is returned with
-        launch parameters instead of a new one. On another channel the request puts the original
-        order into the closing flow (BR-PAY-05) and a new order is created only after the original
-        one is CLOSED; which code answers the request meanwhile is not yet fixed in 08. A state
+        has a PENDING order on the same channel: if that order is not in the closing flow
+        (closing=false), the existing (original) order is returned with freshly issued launch
+        parameters instead of a new one; if it is in the closing flow (closing=true: the user
+        cancelled it, or it passed expire_at), no launch parameters are returned any more
+        (BR-PAY-03: once closing, launch parameters are never issued again) and the request gets
+        20902 with data.resource=pay_order; the client waits for the close to finish and then
+        orders again. Switching to another channel: the original PENDING order must first be
+        cancelled and closed (BR-PAY-02, BR-PAY-05); a new order is created only after the
+        original one is CLOSED. While the original order's close has not finished, or the
+        channel's result is unknown, the request gets 20902 with data.resource=pay_order
+        (orchestrator ruling D10-236 ④); if the close finds the original order already paid, it
+        goes PO2 and the request gets 30902 with data.pay_order_id = the original order. A state
         CAS that affects no row → 20902 with data.resource=pay_order. Placing the order with the
         channel fails or times out → 50306 with data.pay_channel; the order stays PENDING and a
         retry with the same business object gets launch parameters for it (BR-PAY-03).
