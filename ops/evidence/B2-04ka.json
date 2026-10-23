@@ -1,0 +1,122 @@
+{
+  "task": "B2-04ka",
+  "spec_ref": "f3fea9b041e41bc0d398380f6ad09555d1d6ba32",
+  "spec_commit": "71c86fbeb181cfd164474a3f4fb168fb61102d1d",
+  "red_tests": [
+    "test/spec/ledger/back-to-nonnegative/event-bus.int.test.ts > [AC-B2-04ka#15] 生产装配同时注入事件总线与回正端口：扣负同事务发布 account.went_negative，回正同事务调用端口",
+    "test/spec/ledger/back-to-nonnegative/event-bus.int.test.ts > [AC-B2-04ka#16] 同一凭证一个账户扣负一个账户回正时事件与端口都生效，端口抛错连同事件整体回滚后可重试",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#1] REBATE_CREDIT 借方 -300n 使负余额回到 0n，同事务调用并随凭证提交",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#1] REBATE_CREDIT 借方 -500n 使负余额回到 200n，同事务调用并随凭证提交",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#1] WITHDRAW_RETURN 借方 -300n 使负余额回到 0n，同事务调用并随凭证提交",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#1] BAD_DEBT_WRITEOFF 借方 -300n 使负余额回到 0n，同事务调用并随凭证提交",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#1] ADMIN_ADJUST 借方 -500n 使负余额回到 200n，同事务调用并随凭证提交",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#2] 未跨越负到非负边界不调用，包含部分抵扣、冻结余额变化和分录中间穿零",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#3] 多账户各按凭证前后净余额判定，同账户多分录只清理一次",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#4] 同事务与提交后重放都不清理，后来再扣负也不能让旧凭证重放触发清理",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#5] 同用户与同凭证键在不同 app 独立回正，端口收到正确 app 与账户",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#6] 不提供回正端口时使用缺省空实现，余额照常回零",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#7] LEDGER 装配支持可选端口，提供端口=true 时连库验证回正",
+    "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#7] LEDGER 装配支持可选端口，提供端口=false 时连库验证回正",
+    "test/spec/ledger/back-to-nonnegative/reverse.int.test.ts > [AC-B2-04ka#13] reverse 红冲扣回使负余额回到 0 时同事务调用一次，未回正的红冲与重放不调用",
+    "test/spec/ledger/back-to-nonnegative/reverse.int.test.ts > [AC-B2-04ka#14] 多账户红冲各自判定：负转正调用，仍为负与非负间变化不调用",
+    "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#8] 调用方回滚同时撤销凭证、余额回正与清理，重试完整提交",
+    "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#9] 第二个账户清理发生 throw，整张凭证与先前清理回滚，外层事务仍能重试",
+    "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#9] 第二个账户清理发生 sql-error，整张凭证与先前清理回滚，外层事务仍能重试",
+    "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#10] post 必须等待异步清理完成才返回，不能提交后另行处理",
+    "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#11] 并发 same-voucher 在余额锁后判定，只清理首次回正",
+    "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#11] 并发 different-voucher 在余额锁后判定，只清理首次回正",
+    "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#12] 同凭证另一账户发生禁止扣负时不留下回正清理"
+  ],
+  "risk_note": "RV2 ledger (D10-220 ①; BR-WDR-05 (a), BR-FUND-10). The posting step shared by post and reverse() compares each user account's available balance before and after in the same transaction and calls an injected BalanceRecoveredHook only when it goes from < 0 to >= 0 (zero counts as non-negative; accounts judged separately; a replayed uniq_key returns duplicate and does not call again). The hook is declared by ledger, has an empty default, and is implemented and injected by payout (dependency payout -> ledger); ledger never writes withdrawals and uses no async event for this. It coexists with account.went_negative from B2-04k: EVENT_BUS and the hook are both optional injections active on the same instance, and a hook error rolls the whole voucher back together with the event. Only apps/api/src/modules/ledger/** changed.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "71c86fbeb181cfd164474a3f4fb168fb61102d1d",
+      "tree": "9ac52d01880ef0e5821dd68fa4ce0c4d5a84e895",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T07:04:53Z",
+      "finished_at": "2026-10-23T07:05:02Z",
+      "gate": {
+        "commit": "9826d15042ed9cd764bba60530bfdc69b5868adb",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "services": "host-ephemeral",
+      "red_tests": [
+        "test/spec/ledger/back-to-nonnegative/event-bus.int.test.ts > [AC-B2-04ka#15] 生产装配同时注入事件总线与回正端口：扣负同事务发布 account.went_negative，回正同事务调用端口",
+        "test/spec/ledger/back-to-nonnegative/event-bus.int.test.ts > [AC-B2-04ka#16] 同一凭证一个账户扣负一个账户回正时事件与端口都生效，端口抛错连同事件整体回滚后可重试",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#1] REBATE_CREDIT 借方 -300n 使负余额回到 0n，同事务调用并随凭证提交",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#1] REBATE_CREDIT 借方 -500n 使负余额回到 200n，同事务调用并随凭证提交",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#1] WITHDRAW_RETURN 借方 -300n 使负余额回到 0n，同事务调用并随凭证提交",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#1] BAD_DEBT_WRITEOFF 借方 -300n 使负余额回到 0n，同事务调用并随凭证提交",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#1] ADMIN_ADJUST 借方 -500n 使负余额回到 200n，同事务调用并随凭证提交",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#2] 未跨越负到非负边界不调用，包含部分抵扣、冻结余额变化和分录中间穿零",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#3] 多账户各按凭证前后净余额判定，同账户多分录只清理一次",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#4] 同事务与提交后重放都不清理，后来再扣负也不能让旧凭证重放触发清理",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#5] 同用户与同凭证键在不同 app 独立回正，端口收到正确 app 与账户",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#6] 不提供回正端口时使用缺省空实现，余额照常回零",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#7] LEDGER 装配支持可选端口，提供端口=true 时连库验证回正",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts > [AC-B2-04ka#7] LEDGER 装配支持可选端口，提供端口=false 时连库验证回正",
+        "test/spec/ledger/back-to-nonnegative/reverse.int.test.ts > [AC-B2-04ka#13] reverse 红冲扣回使负余额回到 0 时同事务调用一次，未回正的红冲与重放不调用",
+        "test/spec/ledger/back-to-nonnegative/reverse.int.test.ts > [AC-B2-04ka#14] 多账户红冲各自判定：负转正调用，仍为负与非负间变化不调用",
+        "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#8] 调用方回滚同时撤销凭证、余额回正与清理，重试完整提交",
+        "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#9] 第二个账户清理发生 throw，整张凭证与先前清理回滚，外层事务仍能重试",
+        "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#9] 第二个账户清理发生 sql-error，整张凭证与先前清理回滚，外层事务仍能重试",
+        "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#10] post 必须等待异步清理完成才返回，不能提交后另行处理",
+        "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#11] 并发 same-voucher 在余额锁后判定，只清理首次回正",
+        "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#11] 并发 different-voucher 在余额锁后判定，只清理首次回正",
+        "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts > [AC-B2-04ka#12] 同凭证另一账户发生禁止扣负时不留下回正清理"
+      ],
+      "expected": [
+        "test/spec/ledger/back-to-nonnegative/event-bus.int.test.ts",
+        "test/spec/ledger/back-to-nonnegative/recovery.int.test.ts",
+        "test/spec/ledger/back-to-nonnegative/reverse.int.test.ts",
+        "test/spec/ledger/back-to-nonnegative/transactions.int.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "99c601c4f417c08865129f9931497138e268f9e8767712994f162baaa3915af3"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota until 10-30 (orchestrator 10-23 10:27); adversarial money review by a fresh independent Claude via claude-run.sh (approvals #36); round 1 pass",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "rule tests: run 1 by Codex, run 2 by an independent Claude via claude-run.sh after Codex hit its usage limit (the failed Codex run produced nothing and was not counted, D10-225); review round 1 fail (2 S1: reverse() recovery, went_negative with both injections), round 2 pass; one mechanical test(spec) commit reformatted reverse.int.test.ts with prettier only (orchestrator-approved mechanical fix D10-206)",
+    "engine": "claude"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "518b52b5b54fb15b855035e5936f10a911d04631",
+    "specs": "d7811035a75370ee35f2ae060353af8353377700"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
