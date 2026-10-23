@@ -7,10 +7,14 @@
 // context.safety (the composition root's review configuration); without it, or outside staging /
 // prod, or without the AccessKey pair, both stay fail-closed with no network request. Model
 // routing (B3-03k) is not part of it.
+// B3-03n: the input review budget is agent.safety.timeout_ms of each request's app through the same
+// content reader (createStreamReview's config), and the one result store is the PG version
+// (agent/store/results createPgResultSetStore over context.db), shared by every runtime instance.
 import { bridge } from '@couli/contracts-ts';
 import { createContentReader } from '../../../content/index.ts';
 import { systemScheduler } from '../../../platform/index.ts';
 import type { AgentRunTexts } from '../../orchestrator/index.ts';
+import { createPgResultSetStore } from '../../store/results/index.ts';
 import {
   createKeywordMatcher,
   inputKeywordLists,
@@ -94,8 +98,10 @@ export function createProductionStreamAssembly(
     scheduler,
     logger: context.logger,
     texts,
+    config,
   });
   const assembly = createAgentStreamAssembly({
+    results: createPgResultSetStore({ db: context.db }),
     db: context.db,
     clock: context.clock,
     logger: context.logger,

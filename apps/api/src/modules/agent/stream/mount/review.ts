@@ -7,7 +7,8 @@
 // review answers timeout, with no network request at all (non-production external adapters are
 // fakes only, AGENTS.md §6). Building performs no external work. Credentials are never logged.
 // TODO(规划/11 §6): 真实调用验证 — blocked on 负责人在 staging 放入阿里云内容安全 Key
-// TODO(规划/11 §2.3): agent.safety.timeout_ms 按 app 从内容配置读取 — blocked on 组合根尚无按 app 的配置读取端口（现用 options.timeoutMs，缺省 1000ms）
+// B3-03n: with deps.config, the input review budget is agent.safety.timeout_ms of each request's
+// app, read per request (createStreamReview below); the sentence review keeps options.timeoutMs.
 import { randomUUID } from 'node:crypto';
 import type { AppEnv, Clock, RootLogger, Scheduler } from '../../../platform/index.ts';
 import type { SentenceReviewPort } from '../../guard/index.ts';
@@ -42,6 +43,29 @@ export interface StreamReviewOptions {
 export interface StreamReviewPorts {
   readonly inputCheck: InputCheckPort;
   readonly review: SentenceReviewPort;
+}
+
+/** B3-03n: content's configuration read port (createContentReader's configValue). */
+export interface StreamReviewConfigReader {
+  configValue(appId: string, key: string): Promise<{ readonly value: unknown } | null>;
+}
+
+/**
+ * B3-03n · BR-AI-18: createStreamReview's dependencies. With `config`, every input check reads
+ * agent.safety.timeout_ms for that request's app (input.caller.appId) through it and uses that
+ * value as the whole input review budget; a missing key is the BR-AI-18 default 1000 ms, a value
+ * that is not a finite positive number takes the same default (the configuration layer's
+ * existing rule; never an unlimited wait). options.timeoutMs, when the composition root sets
+ * one, stands in for that default. A read that fails or hangs is fail-close (review unavailable,
+ * refunded). createProductionStreamAssembly passes its content reader.
+ */
+export interface StreamReviewDeps {
+  readonly options?: StreamReviewOptions;
+  readonly clock: Clock;
+  readonly scheduler: Scheduler;
+  readonly logger: RootLogger;
+  readonly texts: Pick<AgentRunTexts, 'text'>;
+  readonly config?: StreamReviewConfigReader;
 }
 
 /** BR-AI-18 default of agent.safety.timeout_ms. */
@@ -88,9 +112,56 @@ function liveSettings(options: StreamReviewOptions | undefined): LiveSettings | 
   return { credentials: frozen, endpoint };
 }
 
+/** The configuration layer's rule for a budget: a finite positive number, else `fallback`. */
+function validBudget(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 function budgetOf(options: StreamReviewOptions | undefined): number {
-  const value = options?.timeoutMs;
-  return value !== undefined && Number.isFinite(value) && value > 0 ? value : DEFAULT_TIMEOUT_MS;
+  return validBudget(options?.timeoutMs, DEFAULT_TIMEOUT_MS);
+}
+
+const TIMEOUT_KEY = 'agent.safety.timeout_ms';
+/** Distinct budgets kept with their built input check; beyond it the cache starts over. */
+const CHECK_CACHE_LIMIT = 16;
+
+const UNREADABLE: unique symbol = Symbol('unreadable');
+
+/**
+ * agent.safety.timeout_ms of one app, read now; a missing key or an invalid value is `fallback`
+ * (options.timeoutMs when set, else the BR-AI-18 default). A read that fails, does not settle
+ * within the default budget or outlives the run is UNREADABLE (fail-close: review unavailable).
+ */
+async function readBudget(
+  config: StreamReviewConfigReader,
+  scheduler: Scheduler,
+  appId: string,
+  signal: AbortSignal,
+  fallback: number,
+): Promise<number | typeof UNREADABLE> {
+  if (signal.aborted) return UNREADABLE;
+  const timer = new AbortController();
+  const stop = (): void => {
+    timer.abort();
+  };
+  signal.addEventListener('abort', stop, { once: true });
+  try {
+    const read = Promise.resolve()
+      .then(() => config.configValue(appId, TIMEOUT_KEY))
+      .then(
+        (entry): number => validBudget(entry?.value, fallback),
+        (): typeof UNREADABLE => UNREADABLE,
+      );
+    const deadline = scheduler.sleep(DEFAULT_TIMEOUT_MS, timer.signal).then(
+      (): typeof UNREADABLE => UNREADABLE,
+      (): typeof UNREADABLE => UNREADABLE,
+    );
+    const budget = await Promise.race([read, deadline]);
+    return signal.aborted ? UNREADABLE : budget;
+  } finally {
+    timer.abort();
+    signal.removeEventListener('abort', stop);
+  }
 }
 
 /** Production transport: the platform fetch, called lazily (never captured at build). */
@@ -104,20 +175,13 @@ function failClosed(): StreamReviewPorts {
 }
 
 /** Connects B3-05d input checking and B3-06b sentence review, with real ACS3 signing.
- * Default safety budget is 1000ms. Construction performs no external work.
+ * Default safety budget is 1000ms. Construction performs no external work (no configuration read).
  */
-export function createStreamReview(deps: {
-  readonly options?: StreamReviewOptions;
-  readonly clock: Clock;
-  readonly scheduler: Scheduler;
-  readonly logger: RootLogger;
-  readonly texts: Pick<AgentRunTexts, 'text'>;
-}): StreamReviewPorts {
+export function createStreamReview(deps: StreamReviewDeps): StreamReviewPorts {
   const live = liveSettings(deps.options);
   if (live === undefined) return failClosed();
   const options = deps.options;
-  const budget = budgetOf(options);
-  const aliyun: AliyunReviewDeps = {
+  const aliyunFor = (budget: number): AliyunReviewDeps => ({
     fetch: options?.fetch ?? platformFetch,
     scheduler: deps.scheduler,
     timeoutMs: () => budget,
@@ -125,14 +189,43 @@ export function createStreamReview(deps: {
     sign: createAliyunAcs3Signer({ clock: deps.clock, nonce: options?.nonce ?? randomUUID }),
     endpoint: live.endpoint,
     logger: deps.logger,
-  };
-  return {
-    inputCheck: createInputCheck({
-      review: createAliyunInputReview(aliyun),
+  });
+  const inputFor = (budget: number): InputCheckPort =>
+    createInputCheck({
+      review: createAliyunInputReview(aliyunFor(budget)),
       scheduler: deps.scheduler,
       timeoutMs: () => budget,
       texts: deps.texts,
-    }),
-    review: createAliyunOutputReview(aliyun),
+    });
+  const fixed = budgetOf(options);
+  const review = createAliyunOutputReview(aliyunFor(fixed));
+  const config = deps.config;
+  if (config === undefined) return { inputCheck: inputFor(fixed), review };
+
+  // One input check per budget value: the budget of a request is bound when its check is built,
+  // so concurrent requests of apps with different budgets never share one.
+  const checks = new Map<number, InputCheckPort>();
+  const checkFor = (budget: number): InputCheckPort => {
+    const known = checks.get(budget);
+    if (known !== undefined) return known;
+    if (checks.size >= CHECK_CACHE_LIMIT) checks.clear();
+    const built = inputFor(budget);
+    checks.set(budget, built);
+    return built;
+  };
+  const unavailable = failClosedInputCheck();
+  return {
+    inputCheck: {
+      async check(input, signal) {
+        const budget = await readBudget(config, deps.scheduler, input.caller.appId, signal, fixed);
+        if (budget === UNREADABLE) {
+          if (signal.aborted) return unavailable.check(input, signal);
+          deps.logger.warn({ app_id: input.caller.appId }, 'agent_safety_timeout_unreadable');
+          return unavailable.check(input, signal);
+        }
+        return checkFor(budget).check(input, signal);
+      },
+    },
+    review,
   };
 }

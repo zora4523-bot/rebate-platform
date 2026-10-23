@@ -95,6 +95,10 @@ export interface AgentStreamAssemblyDeps extends Omit<
   readonly scheduler: Scheduler;
   readonly texts: AgentRunTexts;
   readonly routes: IntentDeps['routes'];
+  /** B3-03n: the one result store shared by search, references, clarification, refinement and
+   * the core's delivery receipts (production: agent/store/results createPgResultSetStore over
+   * context.db). Absent: createMemoryResultSetStore(), as before (B3-03f / B3-03j / B3-03m). */
+  readonly results?: ResultSetStore;
 }
 
 export interface AgentStreamAssembly {
@@ -165,8 +169,9 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
   const cardsFor = (ctx: ToolCallContext): CatalogCardEntry =>
     ports.cards(ctx, { scene: 'agent', agentSessionId: ctx.sessionId });
 
-  // TODO(规划/11 §2.3): 结果集换 PG 版（多实例共享、重启不丢） — blocked on B3-09c PG ResultSetStore；内存版只适合单实例 staging
-  const store = createMemoryResultSetStore();
+  // B3-03n: the injected store (production: PG, shared by every instance); else one in-memory
+  // store per assembly (single instance only), as before.
+  const store = deps.results ?? createMemoryResultSetStore();
   const limits = orchestratorLimitsDefaults();
   const switches: ToolSwitches = {
     async get(appId, key) {
@@ -238,7 +243,7 @@ export function createAgentStreamAssembly(deps: AgentStreamAssemblyDeps): AgentS
     },
   });
 
-  // TODO(规划/11 §2.3): 出卡回执写结果集（recordDelivered） — blocked on followups 第 44 条（core 投递回执接线）
+  // B3-03n: `results` is also the core's delivery receipt port (createAgentStreamRuntime).
   return {
     tools: productView(results),
     deterministic: linkPath(createLinkQuoteRunner(runnerDeps), texts),

@@ -193,6 +193,28 @@ export interface RunTraceSink {
   record(runId: string, trace: OrchestratorTrace): void;
 }
 
+/**
+ * B3-03n · BR-AI-05 (followup 44): the result set's trusted delivery hook (ResultSetStore's
+ * recordDelivered). After a successful tool call's product_list card was written, the core records
+ * that list's embedded product cards under its data.result_set_id: each product's own delivered
+ * card_id (the session sequence, frame first, then its items), in delivery order. A card cut by
+ * the output limits, or never written because the run was cancelled or the context gave no
+ * receipt, is not recorded; notices and other card types are never product cards.
+ */
+export interface DeliveryReceiptPort {
+  recordDelivered(resultSetId: string, items: readonly DeliveredProductReceipt[]): Promise<void>;
+}
+
+/** One delivered product (the shape of results' DeliveredProduct, declared here so the core does
+ * not import results, which imports the core's types). `card`: a one-product copy of its list. */
+export interface DeliveredProductReceipt {
+  readonly card_id: string;
+  readonly product_key: string;
+  readonly platform: Platform;
+  readonly final_price_fen: number;
+  readonly card: UnnumberedCard;
+}
+
 export interface AgentRunBodyDeps {
   readonly model: Pick<ModelRouter, 'complete'>;
   /** Fresh per run, shared by every complete call in that run. */
@@ -212,6 +234,8 @@ export interface AgentRunBodyDeps {
    * the placeholder table or raw values. Must not mutate the args or table. */
   readonly traceMask: (args: unknown, placeholders: Readonly<Record<string, string>>) => unknown;
   readonly trace?: RunTraceSink;
+  /** B3-03n: delivery receipts of product cards; absent, nothing is recorded (B3-05b runs). */
+  readonly results?: DeliveryReceiptPort;
 }
 
 export interface RunLabelsDeps {
