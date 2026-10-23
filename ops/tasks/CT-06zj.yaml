@@ -1,0 +1,31 @@
+id: CT-06zj
+repo: rebate-platform
+title: CT-06zj：brief.ts 规则测试清单以 origin/main 为基线；runs 目录不再猜成 <上一级>/couli-runs，改为向上找含 HANDOFF.md 的 couli-runs，找不到就报错
+type: guard-change
+# 2026-10-23 入账（ops 线，编排裁定 D10-222，08:04）。起因（B1-01zzj，ops 线）：① tools/ops/brief.ts 的 ruleTestFiles
+# 用 `git merge-base main <spec_commit>` 算基线，读的是本地 main；各线克隆按规矩不动本地 main（分离在 origin/main），本地
+# main 越旧，任务书第 4 节「已有规则测试」就把这期间主干新增的全部规则测试列进来，B1-01zzj 的实现任务书因此 28KB 超限。
+# ② 克隆放在 couli-runs/clones/<名> 时，tools/lib/paths.ts、tools/agent/common.sh、tools/ops/verify-container.sh 默认把 runs
+# 推成 clones/couli-runs：不设 COULI_RUNS 跑 state.ts 写错状态目录，codex-run 找不到 worktree。
+# 做法：① ruleTestFiles 先用 origin/main，没有远端跟踪分支才用本地 main，再没有退回 <spec_commit>^。② 三处同一规则：先认
+# COULI_RUNS；否则从检出的上一级往上找，第一个「本身叫 couli-runs 且含 HANDOFF.md」或「含 couli-runs/HANDOFF.md」的目录；
+# 都没有就报错退出，不猜路径。CI 上没有 couli-runs：trustedRoot() 与 isTaskWorktree() 改用不报错的查找（没有就用本检出、
+# 按路径形状判 worktree），只有真正要 runs 目录的 runsDir() 报错。规划仓库默认位置跟随找到的 couli-runs（旁边的 couli），
+# 没找到时同原来（检出旁边的 couli），与 COULI_RUNS 无关。D10-226 的「bump 失败即退出、不调 Codex」：仓库里的 dispatch.sh
+# 本来就会停；漏拦的是运行目录里的编排辅助脚本 couli-runs/scripts/codex-test-retry.sh（不在仓库），已直接改好，不在本 PR。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/ops/brief{,.test}.ts'
+  - 'tools/lib/paths{,.test}.ts'
+  - 'tools/agent/common.sh'
+  - 'tools/ops/verify-container.sh'
+  - 'tools/README.md'
+  - 'ops/tasks/CT-06zj.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null

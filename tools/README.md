@@ -10,7 +10,7 @@
 - 两个根目录（11 §2.4）：
   - **被检查的目录**：`--cwd <目录>`；不给时取当前目录所在 git 仓库的根，不在仓库里就取当前目录。
   - **可信根** `trustedRoot()`：门禁用的数据从这里读（任务的 `paths`、保护路径清单、风险表、禁用词、批准记录），被测分支削弱不了卡它自己的关口。取值顺序：环境变量 `COULI_TRUSTED_ROOT`，`couli-runs/trusted/rebate-platform`（存在时），当前检出——但当前检出是任务 worktree（`couli-runs/worktrees/<编号>`）时直接报错，`COULI_TRUSTED_ROOT` 指到 worktree 也报错；没有静默回退。
-- 环境变量：`COULI_RUNS`（默认 `<仓库>/../couli-runs`）、`COULI_SPEC_REPO`（默认 `<仓库>/../couli`）、`COULI_TRUSTED_ROOT`。脚本位于 `couli-runs/worktrees/<编号>` 或 `couli-runs/trusted/<名称>` 下时，默认值按所在的 `couli-runs` 推算。
+- 环境变量：`COULI_RUNS`、`COULI_SPEC_REPO`、`COULI_TRUSTED_ROOT`。不设 `COULI_RUNS` 时，从检出所在位置往上找含 `HANDOFF.md` 的 `couli-runs` 目录（检出在它下面，如 `worktrees/<编号>`、`trusted/<名称>`、`clones/<名称>`，或与它同级）；找不到就报错退出，不猜路径（D10-222）。`COULI_SPEC_REPO` 默认是找到的 `couli-runs` 旁边的 `couli`，没找到时是检出旁边的 `couli`。
 - 测试：`pnpm --filter @couli/tools exec vitest run <子目录>`。用到 git 的夹具仓库建在 `<仓库>/.tmp/` 下，不放系统临时目录（那里是 Codex 沙箱的可写根，11 §0）。
 
 ## 目录

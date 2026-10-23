@@ -16,25 +16,49 @@ agent_valid_task_id() {
 
 agent_now_utc() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 
+# Prints the run-state directory that holds the checkout $1 (findRunsDir in tools/lib/paths.ts,
+# D10-222): walking up from its parent, the first directory named couli-runs that contains
+# HANDOFF.md, or the first one with a couli-runs/HANDOFF.md child. Status 1 when there is none.
+agent_find_runs_dir() {
+  local dir
+  dir="$(dirname "$1")"
+  while :; do
+    if [ "$(basename "$dir")" = couli-runs ] && [ -f "$dir/HANDOFF.md" ]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    if [ -f "$dir/couli-runs/HANDOFF.md" ]; then
+      printf '%s\n' "$dir/couli-runs"
+      return 0
+    fi
+    [ "$(dirname "$dir")" = "$dir" ] && return 1
+    dir="$(dirname "$dir")"
+  done
+}
+
 # Sets RUNS, SPEC_REPO and TRUSTED (conventions C7; same rules as tools/lib/paths.ts):
-#   RUNS      COULI_RUNS, default <REPO>/../couli-runs; a checkout that itself lives in
-#             <runs>/trusted/ or <runs>/worktrees/ uses that <runs>.
-#   SPEC_REPO COULI_SPEC_REPO, default the sibling `couli` checkout.
+#   RUNS      COULI_RUNS, else the couli-runs directory found above REPO (agent_find_runs_dir);
+#             neither is an error, never a guessed path (D10-222).
+#   SPEC_REPO COULI_SPEC_REPO, default <projects>/couli: <projects> holds the couli-runs directory
+#             found above REPO, or is REPO's parent when there is none.
 #   TRUSTED   COULI_TRUSTED_ROOT, else <runs>/trusted/rebate-platform once it exists, else REPO.
 agent_resolve_roots() {
-  local parent projects
-  parent="$(dirname "$SELF_REPO")"
-  case "$(basename "$parent")" in
-    trusted | worktrees)
-      RUNS="$(dirname "$parent")"
-      projects="$(dirname "$RUNS")"
-      ;;
-    *)
-      RUNS="$parent/couli-runs"
-      projects="$parent"
-      ;;
-  esac
-  if [ -n "${COULI_RUNS:-}" ]; then RUNS="$COULI_RUNS"; fi
+  local found projects
+  # <projects> follows the checkout's own location (layoutFor), whatever COULI_RUNS says.
+  if found="$(agent_find_runs_dir "$SELF_REPO")"; then
+    projects="$(dirname "$found")"
+  else
+    found=''
+    projects="$(dirname "$SELF_REPO")"
+  fi
+  if [ -n "${COULI_RUNS:-}" ]; then
+    RUNS="$COULI_RUNS"
+  elif [ -n "$found" ]; then
+    RUNS="$found"
+  else
+    printf 'no run-state directory for %s: set COULI_RUNS, or keep the checkout under a couli-runs directory (or next to one) that contains HANDOFF.md\n' "$SELF_REPO" >&2
+    return 1
+  fi
   case "$RUNS" in
     /*) ;;
     *) RUNS="$PWD/$RUNS" ;;
