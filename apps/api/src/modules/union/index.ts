@@ -7,6 +7,28 @@ export type {
   SiteReauthErrorCode,
   SiteReauthOptions,
 } from './auth-expiry/reauth.ts';
+// B1-22b: the site authorization check, its union-auth job chain and the alert phone codec.
+export {
+  UNION_AUTH_QUEUE,
+  createSiteAuthMonitor,
+  encodeAlertPhones,
+  decodeAlertPhones,
+  alertPhoneId,
+} from './auth-expiry/service.ts';
+export type {
+  SiteAuthAccount,
+  SiteAuthAlertPlanInput,
+  SiteAuthAlerts,
+  SiteAuthProbeResult,
+  SiteAuthProbe,
+  SiteAuthRefresher,
+  SiteAuthMonitorOptions,
+  SiteAuthMonitor,
+  SiteAuthReauthMode,
+  UnionAuthQueue,
+} from './auth-expiry/service.ts';
+export { UnionAuthModule, unionAuthMonitorToken } from './auth-expiry/union-auth.module.ts';
+export type { UnionAuthModuleOptions } from './auth-expiry/union-auth.module.ts';
 export {
   REGISTERED_PLATFORMS,
   UnionError,

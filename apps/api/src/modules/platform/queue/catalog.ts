@@ -19,6 +19,9 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
     'settle',
     'payout',
     'notify',
+    // Site union authorization check chain, its probe retry, expiry and alert delivery jobs
+    // (B1-22b): union's UnionAuthModule, worker only; one queued or active job per singletonKey.
+    'union-auth',
     // Event queue of notification's risk.state_changed consumer (B1-12g); events/types.ts.
     'evt.notification-risk-state',
     // Event queue of notification's appeal.resolved consumer (B1-12p); events/types.ts.
@@ -40,7 +43,11 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
       // risk-scan (B1-03j): at most one queued or active job per time-slot singletonKey.
       // order-sync (B1-08g): one queued or active job per window singletonKey (02 §7.1).
       policy:
-        name === 'order-sync' || name === 'settle' || name === 'payout' || name === 'risk-scan'
+        name === 'order-sync' ||
+        name === 'settle' ||
+        name === 'payout' ||
+        name === 'risk-scan' ||
+        name === 'union-auth'
           ? 'exclusive'
           : 'standard',
     }),
@@ -71,6 +78,7 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
     work('order-rescan', 1),
     work('settle', 1),
     work('notify', 5),
+    work('union-auth', 1),
     work('evt.notification-risk-state', 5),
     work('evt.notification-appeal-result', 5),
     work('evt.notification-claim-result', 5),

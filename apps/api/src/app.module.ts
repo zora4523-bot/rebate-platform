@@ -201,6 +201,8 @@ import {
 import {
   NotificationModule,
   bindPushTokensForSession,
+  createSiteAuthAlertPort,
+  createTemplateSmsSender,
   unbindPushTokensForSession,
 } from './modules/notification/index.ts';
 import {
@@ -281,6 +283,7 @@ import {
   UNION_ENDPOINTS,
   UNION_REGISTRY,
   UnionAdminModule,
+  UnionAuthModule,
   UnionModule,
   createGovernedAdapter,
   createUnionPidService,
@@ -1085,12 +1088,14 @@ function pageAudienceReads(
   db: Kysely<Database>,
   config: ContentReader,
   appConfig: AppConfig,
+  clock: Clock,
 ): PageAudienceReads {
   // Built on first use: entries and tests that never serve a page need no query builder here.
   let unionReads: UnionAuthReads | undefined;
   const reads = (): UnionAuthReads =>
     (unionReads ??= createUnionAuthReads({
       db: db.withSchema('app'),
+      clock,
       config,
       appEnv: appConfig.appEnv,
       // binding() has no PID dependency. Refuse accidental use of an auth command here.
@@ -1137,6 +1142,7 @@ function identityMePorts(risk: DynamicModule): DynamicModule {
           if (db === undefined || riskState === null) return null;
           const reads = createUnionAuthReads({
             db: db.withSchema('app'),
+            clock,
             config: createContentReader({ db, clock }),
             appEnv: appConfig.appEnv,
             // binding() has no PID dependency. Refuse accidental use of an auth command here.
@@ -2416,7 +2422,7 @@ export class AppModule {
                   ): PageAudienceReads | null =>
                     db === undefined
                       ? null
-                      : pageAudienceReads(db, contentReader(db, clock), appConfig),
+                      : pageAudienceReads(db, contentReader(db, clock), appConfig, clock),
                 },
                 // F1-02zp / B1-35: GET /v1/config's invite.reward_enabled reads growth's available
                 // total budget (total − reserved − granted), config_items on its own read transaction.
@@ -2475,6 +2481,20 @@ export class AppModule {
                 configPermissions: new Map(
                   configRegistry().map((item) => [item.key, item.permission]),
                 ),
+              }),
+              // The site union authorization check (B1-22b, BR-ID-24): the union-auth queue's
+              // handler, its chain seed and self-heal timer; alerts through notification's port
+              // and the entry's template SMS sender (the fake in local / test, a rejecting sender
+              // announced once elsewhere until the Aliyun adapter exists).
+              UnionAuthModule.forWorker({
+                config: (db, clock) => createContentReader({ db, clock }),
+                alerts: ({ db, clock, logger, appEnv }) =>
+                  createSiteAuthAlertPort({
+                    db,
+                    clock,
+                    logger,
+                    sms: createTemplateSmsSender(appEnv, logger),
+                  }),
               }),
             ]
           : []),

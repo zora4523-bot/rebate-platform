@@ -4,7 +4,8 @@
 // - createUnionSyncAccess: the scheduler / handler SyncAccessPort. listEnabledAccounts enumerates
 //   union_accounts of every App on a registered platform (status has no on/off meaning yet, so it
 //   is not filtered; 待裁定 2). siteAuthAvailable is linking's rule: the row of exactly
-//   (app_id, platform, id) exists and auth_status ≠ 'expired' (BR-ID-24 ④). offlineCircuitOpen
+//   (app_id, platform, id) exists, auth_status ≠ 'expired' and auth_expires_at (when set) is after
+//   the injected Clock (BR-ID-24 ④; B1-22b). offlineCircuitOpen
 //   reads the worker's own offline governor of that platform (never the online one).
 //   queryableAccount (D10-36, 待裁定 1): the adapter holds one credential set per platform and
 //   union_accounts has no column tying it to a row, so only a live endpoint with exactly one
@@ -17,7 +18,7 @@
 // Logs carry flat fields only (platform, reason, rows); never credentials or order data.
 import type { DB } from '@couli/db';
 import type { Kysely } from 'kysely';
-import type { RootLogger } from '../../platform/index.ts';
+import { SystemClock, type Clock, type RootLogger } from '../../platform/index.ts';
 import {
   REGISTERED_PLATFORMS,
   isRegisteredPlatform,
@@ -44,6 +45,7 @@ export interface UnionSyncAccess {
 }
 
 export interface UnionSyncAccessOptions {
+  readonly clock?: Clock;
   readonly db: Kysely<DB>;
   readonly endpoints: readonly UnionEndpoint[];
   readonly breaker: (platform: RegisteredPlatform) => 'closed' | 'open';
@@ -54,6 +56,8 @@ const PLATFORMS: RegisteredPlatform[] = [...REGISTERED_PLATFORMS];
 
 export function createUnionSyncAccess(options: UnionSyncAccessOptions): UnionSyncAccess {
   const { db, endpoints, breaker, logger } = options;
+  // B1-22b: the request-side time guard reads the injected Clock (app.module always passes it).
+  const clock = options.clock ?? new SystemClock();
   /** Platforms whose unresolved credential owner was already logged by this instance. */
   const reported = new Set<RegisteredPlatform>();
   return {
@@ -84,12 +88,14 @@ export function createUnionSyncAccess(options: UnionSyncAccessOptions): UnionSyn
       const row = await db
         .withSchema('app')
         .selectFrom('union_accounts')
-        .select('auth_status')
+        .select(['auth_status', 'auth_expires_at'])
         .where('app_id', '=', account.app_id)
         .where('platform', '=', account.platform)
         .where('id', '=', account.union_account_id)
         .executeTakeFirst();
-      return row !== undefined && row.auth_status !== 'expired';
+      // B1-22b (BR-ID-24 ④, 12 §7.2): auth_expires_at reached counts as expired at once.
+      if (row === undefined || row.auth_status === 'expired') return false;
+      return row.auth_expires_at === null || row.auth_expires_at > clock.now();
     },
 
     async offlineCircuitOpen(platform) {
