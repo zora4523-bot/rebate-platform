@@ -6,9 +6,10 @@ type: impl
 # 开工前按当时的装配重写 refs / paths / test_paths。
 # 2026-10-23：deps 加 B3-03n（启用模型路径前的接线补齐，followups 第 46–48 条）。
 # 2026-10-23：deps 加 B3-03p（启用模型路径前的收尾接线，followups 第 49、51–53 条）。
+# 2026-10-24：deps 加 B3-03q（PG recordQuoted、降级当前链时机，followups 第 54–56 条）。
 refs: []
 refs_hash: {}
-deps: [B3-03j, B3-03m, B3-03n, B3-03p]
+deps: [B3-03j, B3-03m, B3-03n, B3-03p, B3-03q]
 paths:
   - 'apps/api/src/modules/agent/stream/mount/**'
 test_paths:
