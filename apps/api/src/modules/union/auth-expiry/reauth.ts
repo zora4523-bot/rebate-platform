@@ -237,7 +237,7 @@ export function createSiteReauth(options: SiteReauthOptions): SiteReauth {
       await tx
         .insertInto('union_credentials')
         .values({
-          id: newUuidV7(),
+          id: newUuidV7(now),
           app_id: session.app_id,
           union_account_id: session.union_account_id,
           access_token_cipher: Buffer.from(crypto.encrypt(token.accessToken, ACCESS_CONTEXT)),
@@ -325,7 +325,7 @@ export function createSiteReauth(options: SiteReauthOptions): SiteReauth {
       const now = clock.now();
       const expiresAt = later(now, SESSION_TTL_MS);
       const state = entropy(STATE_BYTES).toString('base64url');
-      const sessionId = newUuidV7();
+      const sessionId = newUuidV7(now);
       // The provider only builds a URL; it runs before the transaction so no lock waits on it.
       const authUrl = await provider.authorizeUrl({
         appId: input.appId,
