@@ -72,7 +72,7 @@ chmod 500 /etc/couli-keys
 
 容器以 `node` 用户（uid 1000）运行，所以目录和文件属主是 1000，目录 500、文件 400。主密钥丢失后已加密的字段无法解开，生成后另行离线备份。
 
-### 1.4 访问令牌签名私钥（api 专用）
+### 1.4 访问令牌密钥（api 签名私钥、stream 验签公钥）
 
 api 在 staging 必须有 ES256 签名私钥（P-256，PKCS#8 PEM）和 kid，否则启动即退出。私钥不放环境文件（`format: raw` 的环境文件放不了多行值，规则测试也只允许每个服务一个环境文件），而是放在节点目录 `/etc/couli-jwt`，只读挂给 api（容器内 `/run/couli-jwt`）。api 启动时由 `boot.mjs` 把两个文件读进本进程的环境变量 JWT_PRIVATE_KEY_PEM 与 JWT_KEY_ID：私钥不进命令行、不进 `docker inspect`、不打印；读不到就报错（只报路径与错误码）并退出。
 
@@ -93,6 +93,36 @@ chmod 500 /etc/couli-jwt
 ```
 
 `openssl pkcs8 -topk8` 对 SEC1 与 PKCS#8 输入都输出 PKCS#8。核对曲线用 `openssl pkey -in /etc/couli-jwt/es256.pem -noout -text_pub`（只打印公钥，应看到 `prime256v1` 或 `P-256`），不要用会打印私钥的 `-text`。
+
+stream 只验访问令牌、不签发，所以只拿公钥：节点目录 `/etc/couli-jwt-pub` 只读挂给 stream（容器内 `/run/couli-jwt-pub`，compose 里没有 `create_host_path`，目录缺失时部署直接失败，不会让 stream 带着空目录起来）。stream 启动时由 `boot.mjs` 把两个文件读进本进程的环境变量 JWT_PUBLIC_KEY_PEM 与 JWT_KEY_ID，不给 JWT_PRIVATE_KEY_PEM（目录里误放了私钥也不读）；读不到就报错（只报路径与错误码）并退出。私钥目录 `/etc/couli-jwt` 仍只挂给 api，worker / admin / payout 两个目录都不挂。
+
+| 文件 | 内容 |
+| --- | --- |
+| `/etc/couli-jwt-pub/es256.pub.pem` | 由 `/etc/couli-jwt/es256.pem` 导出的 P-256 公钥，SPKI 格式（首行标签是 `BEGIN PUBLIC KEY`） |
+| `/etc/couli-jwt-pub/key-id` | `/etc/couli-jwt/key-id` 的原样副本（两份 kid 必须一致） |
+
+在上面的私钥目录建好之后生成（以 root 执行；只读私钥、只写公钥，私钥不经过终端）：
+
+```sh
+install -d -m 700 /etc/couli-jwt-pub
+(umask 022 && openssl pkey -in /etc/couli-jwt/es256.pem -pubout -out /etc/couli-jwt-pub/es256.pub.pem)
+cp /etc/couli-jwt/key-id /etc/couli-jwt-pub/key-id
+chown -R 1000:1000 /etc/couli-jwt-pub
+chmod 400 /etc/couli-jwt-pub/es256.pub.pem /etc/couli-jwt-pub/key-id
+chmod 500 /etc/couli-jwt-pub
+```
+
+属主必须是 1000（容器内进程的用户）。上面写的是最小权限（目录 500、文件 400）；公钥与 kid 不是机密，节点上已经按目录 555、文件 444 导出的现有目录同样可用，不必重做。
+
+核对（三条都应成功；任何一条都不打印私钥）：
+
+```sh
+openssl pkey -in /etc/couli-jwt/es256.pem -pubout | cmp - /etc/couli-jwt-pub/es256.pub.pem && echo public-key-matches
+cmp /etc/couli-jwt/key-id /etc/couli-jwt-pub/key-id && echo key-id-matches
+openssl pkey -pubin -in /etc/couli-jwt-pub/es256.pub.pem -noout -text
+```
+
+第一条确认公钥与现有私钥是一对，第二条确认两份 kid 一致，第三条按公钥解析公钥文件（应看到 `prime256v1` 或 `P-256`；它只含公钥，`-text` 在这里不会打印私钥）。换私钥（换 kid）时，公钥目录要按同样步骤重新导出并核对，再部署。
 
 ### 1.5 拼多多（准备，不切 live）
 

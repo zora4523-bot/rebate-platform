@@ -1,0 +1,89 @@
+{
+  "risk_note": "RV2 by path (infra/staging is not on the RV whitelist). No money, attribution, ledger, migration or contract path touched: staging compose gives stream a read-only bind of the access-token public-key directory, boot.mjs loads JWT_PUBLIC_KEY_PEM / JWT_KEY_ID for stream (never the private key), README §1.4 documents exporting and checking the public key (D10-255 ① staging side; identity B1-02zj made stream verify-only). deploy.sh unchanged on purpose: adding the two files to its node-file check would turn the frozen dirty-recovery / current-compose-validation rule tests red. Rule tests by an independent Claude (Codex unavailable until 10-30, D10-264), red before the implementation; one test(spec) commit only re-wraps one line of stream-jwt-compose.test.ts as prettier requires (mechanical, assertions unchanged, reported as D10-206). Implementation by an Opus 5.5 subagent in one run (verify:fast exit 0 in the test-machine container).",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "review_type": "money",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "round": 1,
+      "note": "round 1 pass; one S2 (deploy.sh preflight does not check /etc/couli-jwt-pub) deferred: it needs a test-change of the frozen dirty-recovery / current-compose-validation fixtures; the staging node already has the directory (D10-264)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "refs empty (task from D10-255 ①): fresh independent Claude spec-test r1 pass, 0 findings; the later test(spec) commit is a prettier-only re-wrap of one expect call (D10-206)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "B1-01zzm",
+  "spec_commit": "a082b38a8145747684114150bce746063a270169",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "red_tests": [
+    "test/spec/infra/staging/stream-jwt-boot.test.ts > [AC-B1-01zzm-BOOT#1] COULI_JWT_PUB_DIR 给出时把公钥与 kid 读进本进程、不读私钥；api 分支与不挂目录的进程照旧，两个分支互斥",
+    "test/spec/infra/staging/stream-jwt-boot.test.ts > [AC-B1-01zzm-BOOT#2] 公钥目录缺 es256.pub.pem 时只报路径与错误码并非零退出，不进入口、不打印内容",
+    "test/spec/infra/staging/stream-jwt-boot.test.ts > [AC-B1-01zzm-BOOT#2] 公钥目录缺 key-id 时只报路径与错误码并非零退出，不进入口、不打印内容",
+    "test/spec/infra/staging/stream-jwt-compose.test.ts > [AC-B1-01zzm-COMPOSE#1] stream 只读挂节点公钥目录，COULI_JWT_PUB_DIR 指向挂载点，不挂私钥目录",
+    "test/spec/infra/staging/stream-jwt-compose.test.ts > [AC-B1-01zzm-COMPOSE#2] 公钥目录只给 stream、私钥目录仍只给 api，worker / admin / payout 两个都不挂",
+    "test/spec/infra/staging/stream-jwt-readme.test.ts > [AC-B1-01zzm-README#1] 1.4 写明由现有私钥导出公钥文件、复制 kid 到 /etc/couli-jwt-pub，属主 1000、目录 500、文件 400",
+    "test/spec/infra/staging/stream-jwt-readme.test.ts > [AC-B1-01zzm-README#2] 1.4 写明核对：公钥与现有私钥对应、两份 kid 一致、公钥文件按公钥解析；任何命令都不打印私钥"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "a082b38a8145747684114150bce746063a270169",
+      "tree": "ad6406da0be57b9d519d3a0ac2b6ebdfa2db0960",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T14:51:30Z",
+      "finished_at": "2026-10-23T14:51:38Z",
+      "red_tests": [
+        "test/spec/infra/staging/stream-jwt-boot.test.ts > [AC-B1-01zzm-BOOT#1] COULI_JWT_PUB_DIR 给出时把公钥与 kid 读进本进程、不读私钥；api 分支与不挂目录的进程照旧，两个分支互斥",
+        "test/spec/infra/staging/stream-jwt-boot.test.ts > [AC-B1-01zzm-BOOT#2] 公钥目录缺 es256.pub.pem 时只报路径与错误码并非零退出，不进入口、不打印内容",
+        "test/spec/infra/staging/stream-jwt-boot.test.ts > [AC-B1-01zzm-BOOT#2] 公钥目录缺 key-id 时只报路径与错误码并非零退出，不进入口、不打印内容",
+        "test/spec/infra/staging/stream-jwt-compose.test.ts > [AC-B1-01zzm-COMPOSE#1] stream 只读挂节点公钥目录，COULI_JWT_PUB_DIR 指向挂载点，不挂私钥目录",
+        "test/spec/infra/staging/stream-jwt-compose.test.ts > [AC-B1-01zzm-COMPOSE#2] 公钥目录只给 stream、私钥目录仍只给 api，worker / admin / payout 两个都不挂",
+        "test/spec/infra/staging/stream-jwt-readme.test.ts > [AC-B1-01zzm-README#1] 1.4 写明由现有私钥导出公钥文件、复制 kid 到 /etc/couli-jwt-pub，属主 1000、目录 500、文件 400",
+        "test/spec/infra/staging/stream-jwt-readme.test.ts > [AC-B1-01zzm-README#2] 1.4 写明核对：公钥与现有私钥对应、两份 kid 一致、公钥文件按公钥解析；任何命令都不打印私钥"
+      ],
+      "expected": [
+        "test/spec/infra/staging/stream-jwt-boot.test.ts",
+        "test/spec/infra/staging/stream-jwt-compose.test.ts",
+        "test/spec/infra/staging/stream-jwt-readme.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "056b9728fafed0fec3d58c134ee82e79b8ee0274624d72a44ee182508406e07c"
+        }
+      ],
+      "gate": {
+        "commit": "2466051efb3482a0fbe53c5c2edee7969cd099d9",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "a2959921eaaacff7a571eb9c2c80ff2a1c54c9de",
+    "specs": "fb771e7b7c4e7828631d04d2cb611997a2b00a55"
+  }
+}
