@@ -3,6 +3,7 @@ repo: rebate-platform
 title: 钱包汇总：ledger/read.ts 只导出 getWalletSummary 一个函数；ledger 控制器 GET /v1/wallet/summary（响应与函数逐字段一致的单测）；契约 x-implementation 改 implemented
 type: impl
 # 2026-10-23 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.2 / §2.3）。分工：Codex / Opus。
+# 2026-10-23 paths 加 settlement/index.ts（导出 B2-04x 的 createPendingEarningsSource）与 commission 只读端口文件（淘礼金扣减额），替代实现第 1 轮的深导入与 app.module 跨模块直读表。
 # 状态备注：可开（B2-04w、B2-04x 已合并）；开工前在 notices 占契约槽。AC-S2-33；通过即 B3-16 启动条件之一。PendingEarningsSource 由 settlement 实现、app.module 组装注入。
 refs: [BR-AI-02, BR-FUND-10, BR-FUND-13, BR-FUND-18]
 refs_hash:
@@ -14,6 +15,9 @@ deps: [B2-04w, B2-04x]
 paths:
   - 'apps/api/src/modules/ledger/**'
   - 'apps/api/src/app.module.ts'
+  - 'apps/api/src/modules/settlement/index.ts'
+  - 'apps/api/src/modules/commission/index.ts'
+  - 'apps/api/src/modules/commission/infra/tlj-deduction-reader.ts'
   - 'contracts/openapi.yaml'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
