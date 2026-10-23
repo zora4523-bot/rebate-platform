@@ -17,6 +17,8 @@ import {
   type ReactElement,
 } from 'react';
 import { AdminApiError } from '../../providers/data/index.ts';
+import { plannedTexts } from '../../texts/shell.ts';
+import { usePlanned } from '../planned/index.ts';
 import { searchTexts as t } from '../../texts/search.ts';
 import './search.css';
 
@@ -44,7 +46,36 @@ export interface AdminSearchProps {
   readonly onOpenUser: (userId: string) => void;
 }
 
-export function AdminSearch({ onOpenUser }: AdminSearchProps): ReactElement {
+export function AdminSearch(props: AdminSearchProps): ReactElement {
+  // GET /admin/v1/search not live yet (planned, D10-284): the box stays in the top bar, greyed
+  // and marked 「功能开发中」; Enter and the magnifier send nothing.
+  const planned = usePlanned('adminSearch');
+  return planned ? <PlannedSearch /> : <LiveSearch {...props} />;
+}
+
+function PlannedSearch(): ReactElement {
+  const { token } = theme.useToken();
+  return (
+    <Flex
+      role="search"
+      aria-label={t.regionLabel}
+      align="center"
+      gap={token.marginXS}
+      className="admin-search"
+      title={plannedTexts.title}
+    >
+      <Input.Search
+        className="admin-search-input"
+        role="textbox"
+        disabled
+        placeholder={plannedTexts.title}
+        aria-description={plannedTexts.title}
+      />
+    </Flex>
+  );
+}
+
+function LiveSearch({ onOpenUser }: AdminSearchProps): ReactElement {
   const getProvider = useDataProvider();
   const { token } = theme.useToken();
   const [notice, contextHolder] = message.useMessage();

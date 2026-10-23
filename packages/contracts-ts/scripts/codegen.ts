@@ -3,6 +3,8 @@
 //   src/enums.gen.ts         from contracts/enums/*.yaml
 //   src/error-codes.gen.ts   from contracts/error-codes.yaml
 //   src/bridge.gen.ts        from contracts/bridge.schema.json, routes.json, apps.json
+//   src/planned-operations.gen.ts  operationIds marked `x-implementation: planned` in
+//                            contracts/openapi.yaml (admin placeholders, D10-284)
 //   node scripts/codegen.ts           write the generated files
 //   node scripts/codegen.ts --check   exit 1 when a committed file differs from a fresh run
 // Both modes first run the cross-file conformance checks (conformance.ts) and the link pattern
@@ -17,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import openapiTS, { astToString } from 'openapi-typescript';
+import { parseYamlLite } from '../../../tools/lib/yaml-lite.ts';
 import { loadEnums, loadErrorCodes, renderEnums, renderErrorCodes } from './catalog.ts';
 import { checkAppStores } from './app-stores.ts';
 import { loadBridgeCatalog, renderBridge } from './bridge.ts';
@@ -31,8 +34,51 @@ import {
   errorCodesGeneratedFile,
   generatedFile,
   openapiFile,
+  packageDir,
   repoRoot,
 } from './paths.ts';
+
+const plannedGeneratedFile = join(packageDir, 'src', 'planned-operations.gen.ts');
+const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Sorted operationIds of the operations under `paths` marked `x-implementation: planned` (declared
+ * ahead of their route). The admin console shows a placeholder for pages that read one of them
+ * and disables buttons that would call one (D10-284); the list shrinks as routes ship.
+ */
+function plannedOperationIds(): string[] {
+  const doc = parseYamlLite(readFileSync(openapiFile, 'utf8'));
+  const paths = isRecord(doc) ? doc['paths'] : undefined;
+  if (!isRecord(paths)) throw new Error('contracts/openapi.yaml: `paths` is not a mapping');
+  const ids = new Set<string>();
+  for (const [route, item] of Object.entries(paths)) {
+    if (!isRecord(item)) continue;
+    for (const method of HTTP_METHODS) {
+      const operation = item[method];
+      if (!isRecord(operation) || operation['x-implementation'] !== 'planned') continue;
+      const id = operation['operationId'];
+      if (typeof id !== 'string' || id === '')
+        throw new Error(`contracts/openapi.yaml: planned ${method} ${route} has no operationId`);
+      ids.add(id);
+    }
+  }
+  return [...ids].sort();
+}
+
+function renderPlannedOperations(ids: readonly string[]): string {
+  const lines = ids.map((id) => `  ${JSON.stringify(id)},`);
+  return [
+    '/** operationIds still marked `x-implementation: planned` (no route yet), sorted. */',
+    'export const plannedOperations: ReadonlySet<string> = new Set([',
+    ...lines,
+    ']);',
+    '',
+  ].join('\n');
+}
 
 function header(source: string): string {
   return [
@@ -93,6 +139,10 @@ try {
       content:
         header('contracts/bridge.schema.json, contracts/routes.json, contracts/apps.json') +
         (await renderBridge(loadBridgeCatalog(enumDefs, errors.ranges))),
+    },
+    {
+      file: plannedGeneratedFile,
+      content: header('contracts/openapi.yaml') + renderPlannedOperations(plannedOperationIds()),
     },
   ];
 } catch (err) {

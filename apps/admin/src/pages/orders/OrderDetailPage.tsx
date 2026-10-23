@@ -26,6 +26,7 @@ import {
 import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import type { AccessControl } from '../../providers/access-control/index.ts';
+import { PlannedPage, usePlanned } from '../../components/planned/index.ts';
 import { ordersTexts } from '../../texts/orders.ts';
 import { FlagTags, StatusTag } from './parts.tsx';
 import {
@@ -53,7 +54,13 @@ export interface OrderDetailPageProps {
   readonly orderId: string;
 }
 
-export function OrderDetailPage({ access, orderId }: OrderDetailPageProps): ReactElement {
+/** GET /admin/v1/orders/{order_id} not live yet (planned): the placeholder, no read (D10-284). */
+export function OrderDetailPage(props: OrderDetailPageProps): ReactElement {
+  const planned = usePlanned('adminGetOrder');
+  return planned ? <PlannedPage title={t.title} /> : <OrderDetailContent {...props} />;
+}
+
+function OrderDetailContent({ access, orderId }: OrderDetailPageProps): ReactElement {
   const getProvider = useDataProvider();
   const navigate = useNavigate();
   const location = useLocation();

@@ -39,6 +39,7 @@ import {
   type UserDetail,
 } from './model.ts';
 import { ReasonModal } from './ReasonModal.tsx';
+import { plannedButtonProps, usePlanned } from '../../components/planned/index.ts';
 import { LevelChangeDialog, UserRelationsCard } from './relations.ts';
 import { RiskTag } from './RiskTag.tsx';
 
@@ -328,6 +329,8 @@ function DetailBody({
   const f = t.fields;
   const { token } = theme.useToken();
   const canChangeLevel = access.can('user.level');
+  // 调等级接口还没上线（planned，D10-284）：入口置灰并标「功能开发中」，不开对话框。
+  const levelPlanned = usePlanned('adminChangeUserLevel');
   const [levelOpen, setLevelOpen] = useState(false);
   const levelTrigger = useRef<HTMLButtonElement>(null);
   const code = { fontFamily: token.fontFamilyCode } as const;
@@ -406,6 +409,7 @@ function DetailBody({
             icon={<SafetyOutlined aria-hidden />}
             style={{ paddingInline: 0 }}
             onClick={() => setLevelOpen(true)}
+            {...plannedButtonProps(levelPlanned)}
           >
             {usersTexts.relations.changeLevel}
           </Button>
@@ -513,7 +517,7 @@ function DetailBody({
         onOpenUser={onOpenUser}
         onUserChange={onUserChange}
       />
-      {canChangeLevel ? (
+      {canChangeLevel && !levelPlanned ? (
         <LevelChangeDialog
           user={user}
           open={levelOpen}

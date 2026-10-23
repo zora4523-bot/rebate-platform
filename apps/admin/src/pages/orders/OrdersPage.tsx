@@ -39,6 +39,7 @@ import dayjs from 'dayjs';
 import { useEffect, useId, useState, type CSSProperties, type ReactElement } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import type { AccessControl } from '../../providers/access-control/index.ts';
+import { PlannedPage, usePlanned } from '../../components/planned/index.ts';
 import { ordersTexts as t } from '../../texts/orders.ts';
 import { FlagTags, StatusTag } from './parts.tsx';
 import {
@@ -133,6 +134,9 @@ function blank(value: string): string | undefined {
 }
 
 export function OrdersPage({ access }: OrdersPageProps): ReactElement {
+  // GET /admin/v1/orders not live yet (planned): the placeholder, no read (D10-284).
+  const planned = usePlanned('adminListOrders');
+  if (planned) return <PlannedPage title={t.title} />;
   if (!access.can('order.view')) {
     return (
       <Flex vertical gap={16}>

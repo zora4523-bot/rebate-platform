@@ -37,6 +37,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { plannedButtonProps, usePlanned } from '../../components/planned/index.ts';
 import type { AccessControl } from '../../providers/access-control/index.ts';
 import { claimsTexts as t } from '../../texts/claims.ts';
 import type { ClaimsBackState } from './ClaimsPage.tsx';
@@ -579,6 +580,9 @@ interface ItemCardProps {
 
 function ItemCard({ item, draft, busy, outcome, onChange, onSubmit }: ItemCardProps): ReactElement {
   const { token } = theme.useToken();
+  // 子项通过 / 驳回接口还没上线（planned，D10-284）：两个按钮各自置灰并标「功能开发中」，不发请求。
+  const approvePlanned = usePlanned('adminApproveClaimItem');
+  const rejectPlanned = usePlanned('adminRejectClaimItem');
   const noteId = useId();
   const reasonId = useId();
   const code: CSSProperties = { fontFamily: token.fontFamilyCode, wordBreak: 'break-all' };
@@ -700,7 +704,13 @@ function ItemCard({ item, draft, busy, outcome, onChange, onSubmit }: ItemCardPr
               >
                 {t.review.cancel}
               </Button>
-              <Button type="primary" danger disabled={busy} onClick={() => onSubmit('reject')}>
+              <Button
+                type="primary"
+                danger
+                disabled={busy}
+                onClick={() => onSubmit('reject')}
+                {...plannedButtonProps(rejectPlanned)}
+              >
                 {t.review.confirmReject}
               </Button>
             </Flex>
@@ -710,10 +720,16 @@ function ItemCard({ item, draft, busy, outcome, onChange, onSubmit }: ItemCardPr
                 danger
                 disabled={busy}
                 onClick={() => onChange({ mode: 'reject', error: undefined })}
+                {...plannedButtonProps(rejectPlanned)}
               >
                 {t.review.reject}
               </Button>
-              <Button type="primary" disabled={busy} onClick={() => onSubmit('approve')}>
+              <Button
+                type="primary"
+                disabled={busy}
+                onClick={() => onSubmit('approve')}
+                {...plannedButtonProps(approvePlanned)}
+              >
                 {t.review.approve}
               </Button>
             </Flex>
