@@ -132,6 +132,14 @@ case "$SCENARIO" in
     echo 'rogue' >rogue-review.txt
     finish_events
     ;;
+  write-tests)
+    # A test phase that hands back an unformatted rule test and a skeleton (D10-292).
+    start_events
+    mkdir -p test/spec/t1
+    printf '%s\n' 'it("formats", () => expect(oldName).toBe(1))' >test/spec/t1/a.test.ts
+    printf '%s\n' 'export const a = "skeleton"' >src/a.ts
+    finish_events
+    ;;
   rewrite-modified)
     # A second edit of a file that was already modified: `git status` looks the same.
     start_events

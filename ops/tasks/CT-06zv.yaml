@@ -1,0 +1,27 @@
+id: CT-06zv
+repo: rebate-platform
+title: CT-06zv：claude-run.sh 写测试阶段交回后自动 eslint --fix（layout）与 prettier --write，并核只改了格式（D10-292）
+type: guard-change
+# 2026-10-24 入账（ops 线，编排裁定 D10-292）。起因：独立 Claude 写规则测试时没有 shell、跑不了格式化，交回的测试文件常让 verify:fast
+# 的 format:check 红，编排逐次按 D10-206 人工核「纯格式修正」。做法：tools/agent/codex-run.sh 在 AGENT_ENGINE=claude-independent、
+# impl --phase test、产出校验与位置断言通过后，对本次新增 / 改动、落在台账 test_paths 内的脚本文件调新的 tools/agent/format-tests.ts：
+# 用可信根的 eslint（--fix --fix-type layout）与 prettier（--write）格式化，前后两版按「去掉字符串 / 模板 / 注释外的空白、分号、逗号、
+# 圆括号，引号统一」规范化后须逐字相等，摘要写进 meta 的 test_format；不相等或工具出错则全部恢复原文、这次调用按无可用产出（退出 10）。
+# 判定的局限写在 format-tests.ts 文件头，它是安全网，主要依靠只跑 layout 修正与 prettier。Codex 引擎与 review 模式不受影响。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'tools/agent/format-tests{,.test}.ts'
+  - 'tools/agent/codex-run.sh'
+  - 'tools/agent/claude-run.test.ts'
+  - 'tools/agent/testing/fixture.ts'
+  - 'tools/agent/testing/couli-fake-claude.sh'
+  - 'tools/agent/README.md'
+  - 'ops/tasks/CT-06zv.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: done
+pr: 1436

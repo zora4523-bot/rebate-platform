@@ -23,6 +23,7 @@ import {
   runScript,
   stubCalls,
   TASK,
+  writeFakeFormatters,
   writeStub,
 } from './testing/fixture.ts';
 
@@ -248,6 +249,8 @@ it(
       exit_code: 0,
       validation: 'ok',
     });
+    // Only the test phase formats files (D10-292).
+    expect(readJson(join(fx.run, 'meta.review.json'))).not.toHaveProperty('test_format');
   },
 );
 
@@ -498,3 +501,71 @@ it('[approvals 36] selfcheck reads claude --help and starts no Claude turn', LON
   expect(missing.status).toBe(1);
   expect(missing.stdout).toContain('FAIL  claude --help does not list --json-schema');
 });
+
+it(
+  '[D10-292] test phase: the handed-back test files are formatted and summarized in meta.json',
+  LONG,
+  () => {
+    const fx = fixture('format');
+    ledger(fx, {});
+    writeFakeFormatters(fx.trusted);
+    // Already there before the call: not this call's change, so not formatted.
+    mkdirSync(join(fx.worktree, 'test', 'spec', 't1'), { recursive: true });
+    const old = 'it("old", () => 1)\n';
+    writeFileSync(join(fx.worktree, 'test', 'spec', 't1', 'old.test.ts'), old);
+    const res = claudeRun(fx, ['impl', TASK], { FAKE_CLAUDE_SCENARIO: 'write-tests' });
+    expect(res.status, res.stderr).toBe(0);
+    const read = (rel: string) => readFileSync(join(fx.worktree, rel), 'utf8');
+    expect(read('test/spec/t1/a.test.ts')).toBe("it('formats', () => expect(oldName).toBe(1));\n");
+    expect(read('test/spec/t1/old.test.ts')).toBe(old);
+    // The skeleton is in paths, not test_paths: left as written.
+    expect(read('src/a.ts')).toBe('export const a = "skeleton"\n');
+    const meta = readJson(join(fx.run, 'meta.impl.json'));
+    expect(meta).toMatchObject({ exit_code: 0, has_output: true, validation: 'ok' });
+    // Formatting by the wrapper is not a position change of the model.
+    expect(meta['position_changed']).toEqual([]);
+    expect(meta['test_format']).toEqual({
+      ok: true,
+      files: [
+        {
+          path: 'test/spec/t1/a.test.ts',
+          changed: true,
+          lines_before: 1,
+          lines_after: 1,
+          lines_added: 1,
+          lines_removed: 1,
+          format_only: true,
+          eslint_fatal: null,
+        },
+      ],
+      skipped: [{ path: 'src/a.ts', reason: 'outside the globs' }],
+      restored: false,
+      error: null,
+    });
+    expect(existsSync(join(fx.run, 'impl.json'))).toBe(true);
+  },
+);
+
+it(
+  '[D10-292] test phase: a change beyond formatting is no usable output and the files are restored',
+  LONG,
+  () => {
+    const fx = fixture('format-bad');
+    ledger(fx, {});
+    writeFakeFormatters(fx.trusted);
+    const res = claudeRun(fx, ['impl', TASK], {
+      FAKE_CLAUDE_SCENARIO: 'write-tests',
+      FAKE_PRETTIER: 'rename',
+    });
+    expect(res.status).toBe(10);
+    expect(readFileSync(join(fx.worktree, 'test/spec/t1/a.test.ts'), 'utf8')).toBe(
+      'it("formats", () => expect(oldName).toBe(1))\n',
+    );
+    const meta = readJson(join(fx.run, 'meta.impl.json'));
+    expect(meta).toMatchObject({ exit_code: 10, has_output: false, validation: 'failed' });
+    expect(meta['test_format']).toMatchObject({ ok: false, restored: true });
+    expect((meta['validation_messages'] as string[]).join('\n')).toContain('test_format');
+    expect(existsSync(join(fx.run, 'impl.json'))).toBe(false);
+    expect(existsSync(join(fx.run, 'impl.json.rejected'))).toBe(true);
+  },
+);
