@@ -79,7 +79,10 @@ it('[AC-B1-01zzm-COMPOSE#2] 公钥目录只给 stream、私钥目录仍只给 ap
     if (env['COULI_JWT_PUB_DIR'] !== undefined) publicEnv.push(name);
     if (env['COULI_JWT_DIR'] !== undefined) privateEnv.push(name);
     // Key material reaches a process only through boot.mjs, never through `docker inspect`.
-    expect(Object.keys(env).filter((key) => key.startsWith('JWT_')), name).toEqual([]);
+    expect(
+      Object.keys(env).filter((key) => key.startsWith('JWT_')),
+      name,
+    ).toEqual([]);
   }
   expect(publicMounts).toEqual(['stream']);
   expect(publicEnv).toEqual(['stream']);
