@@ -1,14 +1,15 @@
-id: B1-29c
+id: B1-28f
 repo: rebate-platform
 title: catalog 注销清理端口 deleteFavoritesForUser：在 identity 注销清理事务里（调用方事务、users 行已锁）删除该用户全部收藏（app.favorites，带 app_id），可重入；app.module 的 deletionCleanupPorts.catalog 由 unavailable 标记换成本端口
 type: impl
-# 2026-10-24 入账（be-codex；编排裁定 D10-311 ②：catalog 注销清理端口派 be，catalog 历来 be 做，B1-29b）。依据：08 BR-ID-28「收藏全部删除」（D10-186 ⑤）；端口签名照 identity/ports/deletion-cleanup.ts 的 DeletionCleanupStep（trx, { appId, userId, at }），结果被忽略。
+# 2026-10-24 入账（be-codex；编排裁定 D10-311 ②：catalog 注销清理端口派 be，catalog 历来 be 做）。依据：08 BR-ID-28「收藏全部删除」（D10-186 ⑤）；端口签名照 identity/ports/deletion-cleanup.ts 的 DeletionCleanupStep（trx, { appId, userId, at }），结果被忽略。
+# 复用优先：B1-28b 已有 FavoritesService.deleteAllFavoritesOfUser（自开事务、按用户 advisory lock 删 app_id + user_id 的收藏，[AC-B1-28b#34]）；把删除逻辑抽成接收调用方事务的核心（同一用户锁在调用方事务内取），原方法与本端口共用，不另写一份。编号属规划/05 B1-28 行（收藏与热销榜，「注销完成时删除该用户收藏」）。
 # couli_app 对 app.favorites 已有 DELETE 授权，不需迁移、不占迁移槽。重复调用（清理重试）不报错、不多删他人行；不改收藏的其他读写逻辑。
 # Codex 额度至 10-30，规则测试按 approvals #36 由独立 Claude（claude-run.sh）写。
 refs: [BR-ID-28]
 refs_hash:
   BR-ID-28: f6b22fd0bba1
-deps: [B1-29b, B1-15g]
+deps: [B1-28b, B1-15g]
 paths:
   - 'apps/api/src/modules/catalog/favorites/**'
   - 'apps/api/src/modules/catalog/index.ts'
