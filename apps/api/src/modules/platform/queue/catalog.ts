@@ -23,6 +23,8 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
     'evt.notification-risk-state',
     // Event queue of notification's appeal.resolved consumer (B1-12p); events/types.ts.
     'evt.notification-appeal-result',
+    // Event queue of notification's claim.resolved consumer (B1-12r); events/types.ts.
+    'evt.notification-claim-result',
     'pool-refresh',
     // Scheduled page publish due jobs (F1-09p): content's ContentWorkerModule, worker only.
     'page-schedule',
@@ -71,6 +73,7 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
     work('notify', 5),
     work('evt.notification-risk-state', 5),
     work('evt.notification-appeal-result', 5),
+    work('evt.notification-claim-result', 5),
     work('pool-refresh', 1),
     work('page-schedule', 1),
     work('poster', 2, 0.5),

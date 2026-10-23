@@ -78,21 +78,23 @@ it('[AC-B1-12j-UNIT#4] 订单事实原样投影九列，多余列不外泄，nul
   expect(await readNotifyOrderFacts(db, { app_id: 'app-a', order_id: ORDER })).toEqual(facts);
 });
 
-it('[AC-B1-12j-UNIT#5] 找回单不存在返回 null，且不再查条目', async () => {
+it('[AC-B1-12j-UNIT#5] 找回单不存在返回 null：一条按 app_id 与 claim id 过滤、无锁的 SELECT', async () => {
   const { db, statements } = setup([[]]);
   expect(await readNotifyClaimFacts(db, { app_id: 'app-a', claim_id: CLAIM })).toBeNull();
   expect(statements).toHaveLength(1);
-  expect(statements[0]?.sql).toContain('from "app"."claims"');
-  expect(statements[0]?.sql).toContain('"app_id" = $1 and "id" = $2');
+  const sql = statements[0]?.sql ?? '';
+  expect(sql).toContain('from "app"."claims" as "c"');
+  expect(sql).toContain('"c"."app_id" = $1 and "c"."id" = $2');
+  expect(sql).not.toMatch(/for (update|share)/i);
   expect(statements[0]?.parameters).toEqual(['app-a', CLAIM]);
 });
 
-it('[AC-B1-12j-UNIT#6] 找回单：申请人取 claims.user_id，条目按 app_id 与 claim_id 读并原样投影', async () => {
+it('[AC-B1-12j-UNIT#6] 找回单：申请人取 claims.user_id，条目同一条 LEFT JOIN 读出并原样投影', async () => {
+  const claim = { claim_id: CLAIM, applicant_user_id: 'applicant', status: 'rejected' };
   const { db, statements } = setup([
-    [{ id: CLAIM, user_id: 'applicant', status: 'rejected', reason: 'note' }],
     [
-      { id: 'i1', order_id: ORDER, decision: 'rejected', reject_reason: 'FRAUD', row_version: 1 },
-      { id: 'i2', order_id: ORDER, decision: null, reject_reason: null, row_version: 1 },
+      { ...claim, item_id: 'i1', order_id: ORDER, decision: 'rejected', reject_reason: 'FRAUD' },
+      { ...claim, item_id: 'i2', order_id: ORDER, decision: null, reject_reason: null },
     ],
   ]);
   expect(await readNotifyClaimFacts(db, { app_id: 'app-a', claim_id: CLAIM })).toEqual({
@@ -104,10 +106,34 @@ it('[AC-B1-12j-UNIT#6] 找回单：申请人取 claims.user_id，条目按 app_i
       { item_id: 'i2', order_id: ORDER, decision: null, reject_reason: null },
     ],
   });
-  expect(statements).toHaveLength(2);
-  const sql = statements[1]?.sql ?? '';
-  expect(sql).toContain('from "app"."claim_items"');
-  expect(sql).toContain('"app_id" = $1 and "claim_id" = $2');
-  expect(sql).not.toContain('join');
-  expect(statements[1]?.parameters).toEqual(['app-a', CLAIM]);
+  // One statement: the claim and its items share a snapshot (B1-12j review S2, B1-12r).
+  expect(statements).toHaveLength(1);
+  const sql = statements[0]?.sql ?? '';
+  expect(sql).toContain(
+    'left join "app"."claim_items" as "i" on "i"."app_id" = "c"."app_id" and "i"."claim_id" = "c"."id"',
+  );
+  expect(sql).toContain('order by "i"."created_at", "i"."id"');
+  expect(statements[0]?.parameters).toEqual(['app-a', CLAIM]);
+});
+
+it('[AC-B1-12j-UNIT#7] 找回单尚无条目：LEFT JOIN 的空条目行不成为条目，返回 items: []', async () => {
+  const { db } = setup([
+    [
+      {
+        claim_id: CLAIM,
+        applicant_user_id: 'applicant',
+        status: 'submitted',
+        item_id: null,
+        order_id: null,
+        decision: null,
+        reject_reason: null,
+      },
+    ],
+  ]);
+  expect(await readNotifyClaimFacts(db, { app_id: 'app-a', claim_id: CLAIM })).toEqual({
+    claim_id: CLAIM,
+    applicant_user_id: 'applicant',
+    status: 'submitted',
+    items: [],
+  });
 });

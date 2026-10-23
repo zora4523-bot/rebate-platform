@@ -41,12 +41,19 @@ import {
   APPEAL_RESULT_MESSAGE_CONSUMER,
   createAppealResultMessageHandler,
 } from './application/appeal-result-message.ts';
+import {
+  CLAIM_RESULT_MESSAGE_CONSUMER,
+  createClaimResultMessageHandler,
+} from './application/claim-result-message.ts';
 
 /** Nest token of the worker's registration of the risk state message consumer (B1-12g). */
 export const RISK_STATE_MESSAGE_CONSUMER_TOKEN = Symbol('RISK_STATE_MESSAGE_CONSUMER');
 
 /** Nest token of the worker's registration of the appeal result message consumer (B1-12p). */
 export const APPEAL_RESULT_MESSAGE_CONSUMER_TOKEN = Symbol('APPEAL_RESULT_MESSAGE_CONSUMER');
+
+/** Nest token of the worker's registration of the claim result message consumer (B1-12r). */
+export const CLAIM_RESULT_MESSAGE_CONSUMER_TOKEN = Symbol('CLAIM_RESULT_MESSAGE_CONSUMER');
 
 /** Build on first read so module startup never touches the database handle. */
 function lazyMessageReader(db: Kysely<Database>): MessageReader {
@@ -152,6 +159,8 @@ export class NotificationModule {
    * is registered and one info line `risk_state_message_disabled` is logged.
    * B1-12p: likewise the appeal.resolved consumer on queue `evt.notification-appeal-result`
    * (APPEAL_RESULT, BR-ID-36); disabled line `appeal_result_message_disabled`.
+   * B1-12r: likewise the claim.resolved consumer on queue `evt.notification-claim-result`
+   * (CLAIM_RESULT, BR-TEXT-09); disabled line `claim_result_message_disabled`.
    */
   static forWorker(ports: {
     /** linking's read-only Taobao binding port, assembled by app.module (dependency inversion). */
@@ -216,6 +225,36 @@ export class NotificationModule {
               db,
               logger,
               handler: createAppealResultMessageHandler({ clock }),
+            });
+            return true;
+          },
+        },
+        {
+          provide: CLAIM_RESULT_MESSAGE_CONSUMER_TOKEN,
+          inject: [
+            CLOCK,
+            ROOT_LOGGER,
+            { token: DB, optional: true },
+            { token: JOB_QUEUE, optional: true },
+          ],
+          useFactory: (
+            clock: Clock,
+            logger: RootLogger,
+            db?: Kysely<Database>,
+            queue?: QueueRuntime,
+          ): boolean => {
+            if (db === undefined || queue === undefined) {
+              logger.info(
+                { consumer: CLAIM_RESULT_MESSAGE_CONSUMER },
+                'claim_result_message_disabled',
+              );
+              return false;
+            }
+            registerEventConsumer(queue, {
+              consumer: CLAIM_RESULT_MESSAGE_CONSUMER,
+              db,
+              logger,
+              handler: createClaimResultMessageHandler({ clock }),
             });
             return true;
           },

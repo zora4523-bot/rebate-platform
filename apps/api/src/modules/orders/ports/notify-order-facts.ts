@@ -76,36 +76,51 @@ export async function readNotifyOrderFacts(
   };
 }
 
-/** 只读找回单和条目；不存在返回 null，尚无条目返回 items: []。 */
+/**
+ * 只读找回单和条目；不存在返回 null，尚无条目返回 items: []。B1-12r：找回单与条目由同一条
+ * LEFT JOIN 读出，同属一个语句快照（READ COMMITTED 下两条 SELECT 可能跨过一次审核提交）。
+ */
 export async function readNotifyClaimFacts(
   db: Kysely<DB>,
   input: ReadNotifyClaimFactsInput,
 ): Promise<NotifyClaimFacts | null> {
-  const app = db.withSchema('app');
-  const claim = await app
-    .selectFrom('claims')
-    .select(['id', 'user_id', 'status'])
-    .where('app_id', '=', input.app_id)
-    .where('id', '=', input.claim_id)
-    .executeTakeFirst();
-  if (claim === undefined) return null;
-  const items = await app
-    .selectFrom('claim_items')
-    .select(['id', 'order_id', 'decision', 'reject_reason'])
-    .where('app_id', '=', input.app_id)
-    .where('claim_id', '=', claim.id)
-    .orderBy('created_at')
-    .orderBy('id')
+  const rows = await db
+    .withSchema('app')
+    .selectFrom('claims as c')
+    .leftJoin('claim_items as i', (join) =>
+      join.onRef('i.app_id', '=', 'c.app_id').onRef('i.claim_id', '=', 'c.id'),
+    )
+    .select([
+      'c.id as claim_id',
+      'c.user_id as applicant_user_id',
+      'c.status as status',
+      'i.id as item_id',
+      'i.order_id as order_id',
+      'i.decision as decision',
+      'i.reject_reason as reject_reason',
+    ])
+    .where('c.app_id', '=', input.app_id)
+    .where('c.id', '=', input.claim_id)
+    .orderBy('i.created_at')
+    .orderBy('i.id')
     .execute();
+  const head = rows[0];
+  if (head === undefined) return null;
+  const items: NotifyClaimItem[] = [];
+  for (const row of rows) {
+    // The LEFT JOIN's single all-null item row of a claim without items.
+    if (row.item_id === null || row.order_id === null) continue;
+    items.push({
+      item_id: row.item_id,
+      order_id: row.order_id,
+      decision: row.decision,
+      reject_reason: row.reject_reason,
+    });
+  }
   return {
-    claim_id: claim.id,
-    applicant_user_id: claim.user_id,
-    status: claim.status,
-    items: items.map((item) => ({
-      item_id: item.id,
-      order_id: item.order_id,
-      decision: item.decision,
-      reject_reason: item.reject_reason,
-    })),
+    claim_id: head.claim_id,
+    applicant_user_id: head.applicant_user_id,
+    status: head.status,
+    items,
   };
 }
