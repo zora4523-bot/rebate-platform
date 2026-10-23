@@ -8,11 +8,22 @@ const database = databaseFixture(createTestDatabase);
 
 for (const platform of ['taobao', 'pdd', 'jd'] as const) {
   for (const pidScene of ['self_buy', 'share', 'agent', 'taolijin', 'query'] as const) {
-    it(`[AC-B1-19d#1] ${platform}/${pidScene}: 按账号筛选后取最早 active，不带账号保留旧行为`, async () => {
+    // B1-22i / D10-231：同账号同场景至多一条 active（第二条在库层 23505）；跨账号各一条 active 时，
+    // 按账号筛选取本账号那条，不带账号取全局最早启用（updated_at），不按 created_at 或随机 id 抢占。
+    it(`[AC-B1-19d#1] ${platform}/${pidScene}: 同账号第二条 active 被拒；跨账号各一条时按账号取本账号那条，不带账号取最早启用`, async () => {
       const h = harness(database());
       const b = await seedAccount(h, { platform });
       h.clock.advanceMs(1_000);
       const a = await seedAccount(h, { platform });
+      h.clock.advanceMs(1_000);
+      // 账号 a 的推广位创建较早但启用较晚。
+      const chosen = await seedPid(h, {
+        platform,
+        union_account_id: a.id,
+        pid_scene: pidScene,
+        status: 'active',
+        updated_at: new Date(h.clock.now().getTime() + 5_000),
+      });
       h.clock.advanceMs(1_000);
       const earliest = await seedPid(h, {
         platform,
@@ -21,31 +32,25 @@ for (const platform of ['taobao', 'pdd', 'jd'] as const) {
         status: 'active',
       });
       h.clock.advanceMs(1_000);
-      // 创建较早但激活较晚，不能按 created_at 或随机 id 抢占。
-      const later = await seedPid(h, {
-        platform,
-        union_account_id: a.id,
-        pid_scene: pidScene,
-        status: 'active',
-        updated_at: new Date(h.clock.now().getTime() + 5_000),
-      });
-      h.clock.advanceMs(1_000);
-      const chosen = await seedPid(h, {
-        platform,
-        union_account_id: a.id,
-        pid_scene: pidScene,
-        status: 'active',
-      });
+      // 同账号同场景的 pending / retired 不受限，也不参与选取。
+      for (const status of ['pending', 'retired'] as const) {
+        await seedPid(h, { platform, union_account_id: a.id, pid_scene: pidScene, status });
+        h.clock.advanceMs(1_000);
+      }
+      const duplicate = await outcome(() =>
+        seedPid(h, { platform, union_account_id: a.id, pid_scene: pidScene, status: 'active' }),
+      );
+      expect(duplicate).toMatchObject({ thrown: { code: '23505' } });
       const query = {
         appId: h.appId,
         platform,
         pidScene,
         purpose: pidScene === 'query' ? ('query' as const) : ('convert' as const),
       };
-      const scoped = { ...query, unionAccountId: a.id };
-      const result = await outcome(() => h.service.getActivePid(scoped));
-      expect(result).toEqual(chosen);
-      expect(result).not.toEqual(later);
+      const scoped = (unionAccountId: string) =>
+        outcome(() => h.service.getActivePid({ ...query, unionAccountId }));
+      expect(await scoped(a.id)).toEqual(chosen);
+      expect(await scoped(b.id)).toEqual(earliest);
       expect(await outcome(() => h.service.getActivePid(query))).toEqual(earliest);
       expect(h.verify).not.toHaveBeenCalled();
       expect(h.append).not.toHaveBeenCalled();
