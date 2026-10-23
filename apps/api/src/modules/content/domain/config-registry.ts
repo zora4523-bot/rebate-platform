@@ -2,6 +2,9 @@
 // (规划/04 §10, §11.2; orchestrator ruling 14), as pure data plus lookups. Disjoint from the
 // emergency switch registry (./switch-registry.ts): a switch key is never a configuration item.
 // Every key is literal (no patterns); lookups never infer an item from a prefix.
+// F1-02zzj: a dedicated-port key (./dedicated-config-keys.ts) is never an item, even if listed.
+
+import { isDedicatedConfigKey } from './dedicated-config-keys.ts';
 
 /** Admin permission points that guard changing a configuration item (规划/04 §11.2). */
 export type ConfigPermission = 'config.general' | 'config.risk' | 'config.business';
@@ -143,15 +146,19 @@ const REGISTRY: readonly ConfigItemSpec[] = Object.freeze([
   businessInteger('growth.invite_reward.eligibility_days', 1, 3650),
 ]);
 
-const BY_KEY = new Map(REGISTRY.map((entry) => [entry.key, entry]));
+const VISIBLE: readonly ConfigItemSpec[] = Object.freeze(
+  REGISTRY.filter((entry) => !isDedicatedConfigKey(entry.key)),
+);
+const BY_KEY = new Map(VISIBLE.map((entry) => [entry.key, entry]));
 
 /** Every registered configuration item, in registry (list) order. */
 export function configRegistry(): readonly ConfigItemSpec[] {
-  return REGISTRY;
+  return VISIBLE;
 }
 
 /** The registered item `key` names, or null when it is not a configuration item. */
 export function configItemSpecOf(key: string): ConfigItemSpec | null {
+  if (isDedicatedConfigKey(key)) return null;
   return BY_KEY.get(key) ?? null;
 }
 

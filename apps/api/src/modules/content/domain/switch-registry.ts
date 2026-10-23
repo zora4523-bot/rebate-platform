@@ -6,7 +6,10 @@
 //
 // Key patterns: a placeholder `<platform>`, `<channel>`, `<pay_channel>` or `<name>` stands for
 // exactly one segment of lowercase letters, digits and underscores; every other segment matches
-// literally. Lookups never infer a switch from a prefix.
+// literally. Lookups never infer a switch from a prefix. F1-02zzj: a dedicated-port key
+// (./dedicated-config-keys.ts) is never a switch.
+
+import { isDedicatedConfigKey } from './dedicated-config-keys.ts';
 
 /** Admin permission points that may change an emergency switch (规划/04 §11.2). */
 export type SwitchPermission = 'switch.all' | 'switch.payout' | 'switch.pay';
@@ -134,6 +137,7 @@ export function switchRegistry(): readonly SwitchSpec[] {
 
 /** The registered switch `key` belongs to, or null when `key` is not an emergency switch. */
 export function switchSpecOf(key: string): SwitchSpec | null {
+  if (isDedicatedConfigKey(key)) return null;
   const parts = key.split('.');
   for (const { entry, segments } of PATTERNS) {
     if (

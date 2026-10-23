@@ -314,3 +314,14 @@ it('[AC-F1-02e#7] without the row port minimum reads work but full-row reads rej
   expect(await reader.minSupportedVersion('app', 'android', 'official')).toBe('1.0.0');
   expect(f.calls).toEqual(['versions app android']);
 });
+
+it('[AC-F1-02zzj-unit#12] 专用端口键 union.auth_alert_phones 对共享读路径照常可读', async () => {
+  const f = fakeStore();
+  f.configs.set('app union.auth_alert_phones', { value: { cipher: 'v1.c' }, version: 2 });
+  const reader = new CachedContentReader(f.store, new FixedClock(START));
+  expect(await reader.configValue('app', 'union.auth_alert_phones')).toStrictEqual({
+    value: { cipher: 'v1.c' },
+    version: 2,
+  });
+  expect(f.calls).toEqual(['config app union.auth_alert_phones']);
+});
