@@ -1,0 +1,25 @@
+id: B3-09i
+repo: rebate-platform
+title: agent 的 index 导出注销清理端口——createAgentDataPurge、readAgentUserHashKey 与相关类型，使 purgeAgentDataForUser（B3-09e 已合并）可被组合根装进 identity 的注销清理端口（DeletionCleanupStep）
+type: impl
+# 2026-10-24 agent 线入账（编排裁定 D10-311 ③）。B3-09e（#1379）已实现 apps/api/src/modules/agent/deletion/**，但 agent/index.ts 未导出，
+# app.module 的 deletionCleanupPorts 仍是 agent: { unavailable: 'B3-09f' }。本段只做导出：createAgentDataPurge、readAgentUserHashKey、
+# agentUserHash、purgedCardText 与 PurgeAgentDataInput / PurgeAgentDataResult / AgentDataPurge 类型，并保证
+# purgeAgentDataForUser 与 identity ports/deletion-cleanup.ts 的 DeletionCleanupStep 签名相容（类型层断言）。
+# 不在本段：AGENT_USER_HASH_KEY 进 platform/config 与 app.module 把 agent 端口从 unavailable 换成真实端口（缺密钥时启动拒绝会影响各环境
+# 部署，另开任务并报编排）。新鲜独立 Claude 写规则测试（Codex 不可用，approvals #36）。风险 RV1（agent/**）。
+refs: [BR-AI-22]
+refs_hash:
+  BR-AI-22: d412bc8a631a
+deps: [B3-09e]
+paths:
+  - 'apps/api/src/modules/agent/index.ts'
+test_paths:
+  - 'test/spec/agent/deletion-export/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify:fast'
+  - 'test/spec/agent/deletion-export/**'
+status: todo
+pr: null
