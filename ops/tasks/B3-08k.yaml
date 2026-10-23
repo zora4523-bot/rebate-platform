@@ -9,7 +9,7 @@ type: impl
 # 另一新鲜独立 Claude 复审「不削弱」，落地时编排按 #24 加标签。风险 RV2（app.module）。
 refs: [BR-AI-02]
 refs_hash:
-  BR-AI-02: 61014cc4d222
+  BR-AI-02: d14ca044d0e7
 deps: []
 paths:
   - 'apps/api/src/modules/agent/agent.module.ts'
