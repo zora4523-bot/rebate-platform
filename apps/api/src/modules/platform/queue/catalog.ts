@@ -30,6 +30,11 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
     'evt.notification-claim-result',
     // Event queue of payout's account.went_negative consumer (B2-05e, BR-WDR-05 (a)); events/types.ts.
     'evt.payout-went-negative',
+    // Payment jobs (B2-15b; handlers B2-15c / B2-15d): order.query, order.close of payment's
+    // PaymentModule, worker only. Exclusive: one queued or active job per singletonKey
+    // (`order.query:<pay_order_id>:returned`, `order.close:<pay_order_id>`), which is how a
+    // repeated client return or cancel enqueues nothing more (task §9.8 / §9.9).
+    'pay',
     'pool-refresh',
     // Scheduled page publish due jobs (F1-09p): content's ContentWorkerModule, worker only.
     'page-schedule',
@@ -49,7 +54,8 @@ export const QUEUE_CATALOG: readonly QueueSpec[] = Object.freeze([
         name === 'settle' ||
         name === 'payout' ||
         name === 'risk-scan' ||
-        name === 'union-auth'
+        name === 'union-auth' ||
+        name === 'pay'
           ? 'exclusive'
           : 'standard',
     }),
@@ -86,6 +92,8 @@ export const ENTRY_PLAN: EntryPlan = Object.freeze({
     work('evt.notification-claim-result', 5),
     // One worker: the member's withdrawals are re-checked under the users lock, serially.
     work('evt.payout-went-negative', 1),
+    // B2-15b: payment's queue, worker only, four slots (task §9.10).
+    work('pay', 4),
     work('pool-refresh', 1),
     work('page-schedule', 1),
     work('poster', 2, 0.5),

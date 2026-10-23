@@ -4,7 +4,7 @@
 // query and close are used by this task; the rest is typed here for B2-15c / B2-15f / B2-15k.
 // Field names of the launch parameters follow the official SDK documentation and are 待实测
 // (WeChat Pay CAP-X-16, Alipay CAP-X-17; contracts/openapi.yaml PayLaunch).
-// NotImplemented skeleton (rule-test phase).
+// Also compiled by the `test` project: erasable syntax only (no parameter properties).
 import type { PayChannelCode } from '../domain/types.ts';
 
 /** WeChat Pay APP payment: the SDK's PayReq fields, signed by the server (contract PayLaunchWechatPay). */
@@ -66,8 +66,7 @@ export interface PayRefundInput {
 }
 
 export type PayRefundResult =
-  | { readonly kind: 'ok' }
-  | { readonly kind: 'unknown'; readonly reason: string };
+  { readonly kind: 'ok' } | { readonly kind: 'unknown'; readonly reason: string };
 
 export type PayRefundQueryResult =
   | {
@@ -108,14 +107,34 @@ export interface PayChannel {
   downloadBill(date: string): Promise<PayBillResult>;
 }
 
+/** Thrown by PayChannelSet.of for a channel the process has no adapter for (fail closed). */
+export class PayChannelUnavailable extends Error {
+  readonly channel: PayChannelCode;
+
+  constructor(channel: PayChannelCode) {
+    super(`payment: no ${channel} channel adapter in this process`);
+    this.name = 'PayChannelUnavailable';
+    this.channel = channel;
+  }
+}
+
 /**
  * The channels of the process, and the Nest injection token of them (a class token, so that the
  * rule tests can override it: `overrideProvider(PayChannelSet).useValue({ of })`). The payment
- * module provides it (`provide: PayChannelSet`); prod without channel keys fails closed (B2-15k).
+ * module provides it (`provide: PayChannelSet`): FakePayChannel instances outside prod; in prod an
+ * empty set until the real adapters land (B2-15k), so every channel call fails closed
+ * (payment/AGENTS.md rule 6) — unreachable anyway while prod registers no business type.
  */
 export class PayChannelSet {
+  readonly #channels: ReadonlyMap<PayChannelCode, PayChannel>;
+
+  constructor(channels: readonly PayChannel[] = []) {
+    this.#channels = new Map(channels.map((channel) => [channel.channel, channel]));
+  }
+
   of(channel: PayChannelCode): PayChannel {
-    void channel;
-    throw new Error('NotImplemented: PayChannelSet.of');
+    const found = this.#channels.get(channel);
+    if (found === undefined) throw new PayChannelUnavailable(channel);
+    return found;
   }
 }

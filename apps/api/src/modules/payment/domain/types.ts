@@ -15,10 +15,7 @@ export type PayPlatform = 'ios' | 'android' | 'harmony';
  * pay_disabled → channel_disabled → platform_not_allowed → biz_not_sellable (task B2-15b §9.3).
  */
 export type PayUnavailableReason =
-  | 'pay_disabled'
-  | 'channel_disabled'
-  | 'platform_not_allowed'
-  | 'biz_not_sellable';
+  'pay_disabled' | 'channel_disabled' | 'platform_not_allowed' | 'biz_not_sellable';
 
 /** pay_orders.status (enum pay_order_status, BR-PAY-02; specs/state-machines/pay-order.yaml). */
 export type PayOrderStatus = 'PENDING' | 'PAID' | 'CLOSED';

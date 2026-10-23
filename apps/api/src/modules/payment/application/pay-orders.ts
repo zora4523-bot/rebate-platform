@@ -1,30 +1,60 @@
 // B2-15b: the four user-side pay order use cases (contract createPayOrder, getPayOrder,
 // payOrderReturned, cancelPayOrder; 08 BR-PAY-01 ～ 05; task §9.4 ～ §9.9; rulings D10-236 ④,
-// D10-245). The controllers (http/public/) only authenticate, take the parameters and call these;
-// request-level idempotency (x-idempotent, subject u:<user_id>) is platform's.
+// D10-245; review §12.1 / §12.2). The controllers (http/public/) only authenticate, take the
+// parameters and call these; request-level idempotency (x-idempotent, subject u:<user_id>) is
+// platform's and wraps createPayOrder in the controller.
 //
 // createPayOrder, in order:
-//   switches and sellability (domain/sellability.ts) → 30901 data.reason;
-//   one transaction: pg_advisory_xact_lock(hashtextextended('payment.biz:' || app_id || ':' ||
+//   switches and sellability (domain/sellability.ts) → 30901 data.reason; nothing is written;
+//   transaction ①: pg_advisory_xact_lock(hashtextextended('payment.biz:' || app_id || ':' ||
 //   biz_type || ':' || biz_ref, 0)), then re-read the object's PENDING / PAID orders:
-//     PAID → 30902 data.pay_order_id; PENDING on another channel, or PENDING with closing=true →
-//     20902 data.resource=pay_order; PENDING on the same channel → that order again (fresh launch
-//     parameters, launch_issued_at = now); none → INSERT PENDING (out_trade_no from
+//     a PAID or PENDING order of another user → 20902 data.resource=pay_order, nothing of that
+//     order is returned, no channel call (§12.1); the caller's PAID → 30902 data.pay_order_id;
+//     the caller's PENDING on another channel, or with closing=true → 20902; the caller's PENDING
+//     on the same channel → that order again; none → INSERT PENDING (out_trade_no from
 //     domain/out-trade-no.ts, amount and title from the registry, expire_at = now + ttl) and
-//     commit before the channel is called;
-//   every channel call writes a pay_query_attempts row (kind 'query', result 'prepay' / 'unknown');
-//   unknown → 50306 data.pay_channel, the order stays PENDING; ok → launch_issued_at = now.
-// Launch parameters never reach a log line; the order never carries a channel-side user id; no
-// ledger posting happens here (payment/AGENTS.md rules 1, 6).
-// NotImplemented skeleton (rule-test phase).
+//     commit: the row exists before the channel is called (外部写先落单);
+//   the channel call, outside any transaction (ok / unknown only; a throwing adapter is unknown);
+//   transaction ②: the same lock, one pay_query_attempts row (kind 'query', result 'prepay' /
+//   'unknown'); unknown → 50306 data.pay_channel, the order stays PENDING; ok → launch_issued_at
+//   = now by a CAS on «PENDING and closing=false»: 0 rows (cancel won the race) → 20902 and the
+//   launch parameters are dropped, so once closing no launch is ever returned (BR-PAY-03, §12.2).
+// Launch parameters never reach a log line or a database row; the order never carries a
+// channel-side user id; no ledger posting happens here (payment/AGENTS.md rules 1, 6).
 import type { DB } from '@couli/db';
 import type { Schema } from '@couli/contracts-ts';
+import { fenToJsonNumber } from '@couli/money';
 import type { Kysely } from 'kysely';
 import type { ContentReader } from '../../content/index.ts';
-import type { Clock, JobQueue, RootLogger } from '../../platform/index.ts';
-import type { PayChannelCode, PayUnavailableReason } from '../domain/types.ts';
+import { newUuidV7, type Clock, type JobQueue, type RootLogger } from '../../platform/index.ts';
+import { orderTtlMinutes, payOrderExpireAt } from '../domain/order-ttl.ts';
+import { generateOutTradeNo } from '../domain/out-trade-no.ts';
+import { payUnavailableReason, platformsOverrideOf } from '../domain/sellability.ts';
+import type { PayChannelCode, PayOrderStatus, PayUnavailableReason } from '../domain/types.ts';
+import {
+  bizObjectLockKey,
+  findOpenOrders,
+  findOrderById,
+  findOwnOrder,
+  insertPendingOrder,
+  insertQueryAttempt,
+  lockBizObject,
+  markClosing,
+  markLaunchIssued,
+  type BizObjectKey,
+  type PayOrderRow,
+} from '../infra/pay-order-store.ts';
+import {
+  ORDER_CLOSE_JOB,
+  ORDER_QUERY_JOB,
+  PAY_QUEUE,
+  orderCloseKey,
+  orderQueryReturnedKey,
+  type OrderClosePayload,
+  type OrderQueryPayload,
+} from '../jobs/names.ts';
 import type { BizTypeRegistry } from './biz-registry.ts';
-import type { PayChannelSet } from './pay-channel.ts';
+import type { PayChannelSet, PayCreateOrderInput, PayCreateOrderResult } from './pay-channel.ts';
 
 /** The caller: from the access token, and the request's X-Platform. */
 export interface PaySubject {
@@ -38,7 +68,7 @@ export interface PayOrderDeps {
   readonly clock: Clock;
   readonly config: Pick<ContentReader, 'configValue'>;
   readonly queue: JobQueue;
-  readonly channels: PayChannelSet;
+  readonly channels: Pick<PayChannelSet, 'of'>;
   readonly registry: BizTypeRegistry;
   readonly logger: RootLogger;
 }
@@ -52,59 +82,298 @@ export type PayFailure =
 
 export type PayResult<T> = { readonly code: 0; readonly data: T } | PayFailure;
 
+/** Config keys of BR-PAY-01 ④ and BR-PAY-03 (content's config_items, read through ContentReader). */
+export const PAY_ENABLED_KEY = 'pay.enabled';
+export const ORDER_TTL_KEY = 'pay.order_ttl_minutes';
+export function channelEnabledKey(channel: PayChannelCode): string {
+  return `pay.channel_enabled.${channel}`;
+}
+export function bizPlatformsKey(bizType: string): string {
+  return `pay.biz.${bizType}.platforms`;
+}
+
+/** The notification path of a channel (specs/pay-notify.md); the public base URL joins in B2-15k. */
+export function notifyPathOf(channel: PayChannelCode): string {
+  return `/notify/pay/${channel}`;
+}
+
+const CONFLICT: PayFailure = Object.freeze({
+  code: 20902,
+  data: Object.freeze({ resource: 'pay_order' as const }),
+});
+const NOT_FOUND: PayFailure = Object.freeze({ code: 30701 });
+
+/** The contract PayOrder of a row: instants as ISO strings, fen as JSON integers, no channel-side ids. */
+export function payOrderView(row: PayOrderRow): Schema<'PayOrder'> {
+  return {
+    pay_order_id: row.id,
+    biz_type: row.biz_type,
+    biz_ref: row.biz_ref,
+    pay_channel: row.pay_channel as PayChannelCode,
+    amount_fen: fenToJsonNumber(row.amount_fen),
+    refunded_fen: fenToJsonNumber(row.refunded_fen),
+    status: row.status as PayOrderStatus,
+    expire_at: row.expire_at.toISOString(),
+    paid_at: row.paid_at === null ? null : row.paid_at.toISOString(),
+    closed_at: row.closed_at === null ? null : row.closed_at.toISOString(),
+    created_at: row.created_at.toISOString(),
+  };
+}
+
+function bizKeyOf(row: Pick<PayOrderRow, 'app_id' | 'biz_type' | 'biz_ref'>): BizObjectKey {
+  return { appId: row.app_id, bizType: row.biz_type, bizRef: row.biz_ref };
+}
+
+/** The raw config_items value of a key; null when the key does not exist. */
+async function rawConfig(deps: PayOrderDeps, appId: string, key: string): Promise<unknown> {
+  const config = await deps.config.configValue(appId, key);
+  return config === null ? null : config.value;
+}
+
+type Placement =
+  | { readonly kind: 'failed'; readonly failure: PayFailure }
+  | { readonly kind: 'placed'; readonly order: PayOrderRow; readonly created: boolean };
+
 /** POST /v1/pay/orders. */
-export function createPayOrder(
+export async function createPayOrder(
   deps: PayOrderDeps,
   subject: PaySubject,
   input: Schema<'CreatePayOrderRequest'>,
 ): Promise<PayResult<Schema<'CreatePayOrderData'>>> {
-  void deps;
-  void subject;
-  void input;
-  throw new Error('NotImplemented: createPayOrder');
+  const appId = subject.app_id;
+  const userId = subject.user_id;
+  const channel = input.pay_channel;
+  const bizType = input.biz_type;
+  const entry = deps.registry.get(bizType);
+  const [payEnabled, channelEnabled, platformsRaw] = await Promise.all([
+    rawConfig(deps, appId, PAY_ENABLED_KEY),
+    rawConfig(deps, appId, channelEnabledKey(channel)),
+    entry === undefined ? Promise.resolve(null) : rawConfig(deps, appId, bizPlatformsKey(bizType)),
+  ]);
+  if (entry !== undefined && platformsOverrideOf(platformsRaw).fallback) {
+    // §12.5: a bad `pay.biz.<biz_type>.platforms` falls back to the registered platforms, once alerted.
+    deps.logger.warn(
+      { app_id: appId, biz_type: bizType, key: bizPlatformsKey(bizType) },
+      'pay_biz_platforms_invalid',
+    );
+  }
+  const reason = payUnavailableReason({
+    payEnabled,
+    channelEnabled,
+    platform: subject.platform,
+    registeredPlatforms: entry === undefined ? null : entry.platforms,
+    platformsOverride: platformsRaw,
+  });
+  if (reason !== null || entry === undefined) {
+    return { code: 30901, data: { reason: reason ?? 'biz_not_sellable' } };
+  }
+  // The adapter of the channel: resolved before anything is written, so a process without it
+  // fails closed without an order (payment/AGENTS.md rule 6).
+  const payChannel = deps.channels.of(channel);
+  const price = await entry.price({ appId, userId, bizRef: input.biz_ref });
+  const ttl = orderTtlMinutes(await rawConfig(deps, appId, ORDER_TTL_KEY));
+  if (ttl.fallback)
+    deps.logger.warn({ app_id: appId, key: ORDER_TTL_KEY }, 'pay_order_ttl_invalid');
+  const key: BizObjectKey = { appId, bizType, bizRef: input.biz_ref };
+
+  const placement = await deps.db.transaction().execute(async (trx): Promise<Placement> => {
+    await lockBizObject(trx, key);
+    const open = await findOpenOrders(trx, key);
+    const paid = open.find((row) => row.status === 'PAID');
+    if (paid !== undefined) {
+      // Another user's order is never described to the caller (§12.1: 20902, no field of it).
+      if (paid.user_id !== userId) return { kind: 'failed', failure: CONFLICT };
+      return { kind: 'failed', failure: { code: 30902, data: { pay_order_id: paid.id } } };
+    }
+    const pending = open.find((row) => row.status === 'PENDING');
+    if (pending !== undefined) {
+      if (pending.user_id !== userId || pending.closing || pending.pay_channel !== channel) {
+        // Someone else's order; the close flow (BR-PAY-03: no launch once closing); another
+        // channel (BR-PAY-02 细则: cancel and close the original first; D10-236 ④).
+        return { kind: 'failed', failure: CONFLICT };
+      }
+      return { kind: 'placed', order: pending, created: false };
+    }
+    const now = deps.clock.now();
+    const order = await insertPendingOrder(trx, {
+      id: newUuidV7(now),
+      appId,
+      userId,
+      bizType,
+      bizRef: input.biz_ref,
+      payChannel: channel,
+      amountFen: price.amountFen,
+      outTradeNo: generateOutTradeNo(),
+      expireAt: payOrderExpireAt(now, ttl.minutes),
+      now,
+    });
+    return { kind: 'placed', order, created: true };
+  });
+  if (placement.kind === 'failed') return placement.failure;
+  const order = placement.order;
+  deps.logger.info(
+    {
+      app_id: appId,
+      pay_order_id: order.id,
+      biz_type: bizType,
+      pay_channel: channel,
+      created: placement.created,
+    },
+    'pay_order_placed',
+  );
+
+  // The channel is asked for this order's launch parameters: fresh ones on every call (WeChat
+  // prepay_id and the Alipay order string are per request). The deadline given is the order's
+  // expire_at itself, never later (BR-PAY-03). The amount is the stored one (server priced).
+  const request: PayCreateOrderInput = {
+    outTradeNo: order.out_trade_no,
+    amountFen: order.amount_fen,
+    description: price.title,
+    expireAt: order.expire_at,
+    notifyUrl: notifyPathOf(channel),
+  };
+  let result: PayCreateOrderResult;
+  try {
+    result = await payChannel.createOrder(request);
+  } catch (error: unknown) {
+    // A throwing adapter is an unknown answer (payment/AGENTS.md rule 7): only the class is logged.
+    deps.logger.warn(
+      {
+        app_id: appId,
+        pay_order_id: order.id,
+        pay_channel: channel,
+        error_class: error instanceof Error ? error.name : typeof error,
+      },
+      'pay_channel_create_threw',
+    );
+    result = { kind: 'unknown', reason: 'adapter_error' };
+  }
+
+  const now = deps.clock.now();
+  const issued = await deps.db
+    .transaction()
+    .execute(
+      async (
+        trx,
+      ): Promise<
+        { kind: 'unknown' } | { kind: 'closing' } | { kind: 'issued'; order: PayOrderRow }
+      > => {
+        await lockBizObject(trx, key);
+        await insertQueryAttempt(trx, {
+          id: newUuidV7(now),
+          appId,
+          payOrderId: order.id,
+          kind: 'query',
+          // Summaries only: the launch parameters stay out of the row (BR-PAY-08 ④, rule 6).
+          request: {
+            op: 'create_order',
+            pay_channel: channel,
+            out_trade_no: request.outTradeNo,
+            amount_fen: request.amountFen.toString(),
+            expire_at: request.expireAt.toISOString(),
+            notify_url: request.notifyUrl,
+          },
+          response:
+            result.kind === 'ok'
+              ? { kind: 'ok', channel_ref: result.channelRef }
+              : { kind: 'unknown', reason: result.reason },
+          result: result.kind === 'ok' ? 'prepay' : 'unknown',
+          at: now,
+        });
+        if (result.kind !== 'ok') return { kind: 'unknown' };
+        const updated = await markLaunchIssued(trx, appId, order.id, now);
+        return updated === undefined ? { kind: 'closing' } : { kind: 'issued', order: updated };
+      },
+    );
+  if (issued.kind === 'unknown') {
+    deps.logger.warn(
+      { app_id: appId, pay_order_id: order.id, pay_channel: channel },
+      'pay_channel_create_unknown',
+    );
+    return { code: 50306, data: { pay_channel: channel } };
+  }
+  if (issued.kind === 'closing' || result.kind !== 'ok') return CONFLICT;
+  return { code: 0, data: { ...payOrderView(issued.order), launch: result.launch } };
 }
 
-/** GET /v1/pay/orders/{pay_order_id}: the owner's order only, else 30701. */
-export function getPayOrder(
+/** GET /v1/pay/orders/{pay_order_id}: the owner's order only, else 30701 (unknown and foreign alike). */
+export async function getPayOrder(
   deps: PayOrderDeps,
   subject: PaySubject,
   payOrderId: string,
 ): Promise<PayResult<Schema<'PayOrder'>>> {
-  void deps;
-  void subject;
-  void payOrderId;
-  throw new Error('NotImplemented: getPayOrder');
+  const order = await findOwnOrder(deps.db, subject.app_id, subject.user_id, payOrderId);
+  if (order === undefined) return NOT_FOUND;
+  return { code: 0, data: payOrderView(order) };
 }
 
 /**
  * POST …/returned: a PENDING order gets one immediate query job (queue pay, name order.query,
- * singletonKey order.query:<pay_order_id>:returned, same transaction); any other status answers
- * success without a job. Data {}.
+ * singletonKey order.query:<pay_order_id>:returned, same transaction; a second call while that
+ * job is queued or active inserts nothing); any other status answers success without a job.
+ * The SDK's result is never read (BR-PAY-04). Data {}.
  */
-export function payOrderReturned(
+export async function payOrderReturned(
   deps: PayOrderDeps,
   subject: PaySubject,
   payOrderId: string,
 ): Promise<PayResult<Record<string, never>>> {
-  void deps;
-  void subject;
-  void payOrderId;
-  throw new Error('NotImplemented: payOrderReturned');
+  return deps.db.transaction().execute(async (trx): Promise<PayResult<Record<string, never>>> => {
+    const order = await findOwnOrder(trx, subject.app_id, subject.user_id, payOrderId);
+    if (order === undefined) return NOT_FOUND;
+    if (order.status === 'PENDING') {
+      const payload: OrderQueryPayload = {
+        app_id: order.app_id,
+        pay_order_id: order.id,
+        trigger: 'returned',
+      };
+      const jobId = await deps.queue.send(PAY_QUEUE, ORDER_QUERY_JOB, payload, {
+        trx,
+        singletonKey: orderQueryReturnedKey(order.id),
+      });
+      deps.logger.info(
+        { app_id: order.app_id, pay_order_id: order.id, queued: jobId !== null },
+        'pay_order_returned',
+      );
+    }
+    return { code: 0, data: {} };
+  });
 }
 
 /**
  * POST …/cancel: under the business object lock, a PENDING order with closing=false gets
  * closing=true, close_reason='user_cancel' and one close job (queue pay, name order.close,
- * singletonKey order.close:<pay_order_id>); not PENDING → 20902 resource pay_order. The channel
- * query and close are the job's (B2-15d).
+ * singletonKey order.close:<pay_order_id>); not PENDING, or already closing → 20902 resource
+ * pay_order. The channel query and close are the job's (B2-15d); the switches do not apply
+ * (BR-PAY-01 ④: 开关关闭只影响新下单).
  */
-export function cancelPayOrder(
+export async function cancelPayOrder(
   deps: PayOrderDeps,
   subject: PaySubject,
   payOrderId: string,
 ): Promise<PayResult<Schema<'PayOrder'>>> {
-  void deps;
-  void subject;
-  void payOrderId;
-  throw new Error('NotImplemented: cancelPayOrder');
+  return deps.db.transaction().execute(async (trx): Promise<PayResult<Schema<'PayOrder'>>> => {
+    const own = await findOwnOrder(trx, subject.app_id, subject.user_id, payOrderId);
+    if (own === undefined) return NOT_FOUND;
+    await lockBizObject(trx, bizKeyOf(own));
+    const order = await findOrderById(trx, subject.app_id, payOrderId);
+    if (order === undefined || order.status !== 'PENDING' || order.closing) return CONFLICT;
+    const now = deps.clock.now();
+    const updated = await markClosing(trx, subject.app_id, order.id, 'user_cancel', now);
+    if (updated === undefined) return CONFLICT;
+    const payload: OrderClosePayload = {
+      app_id: order.app_id,
+      pay_order_id: order.id,
+      close_reason: 'user_cancel',
+    };
+    await deps.queue.send(PAY_QUEUE, ORDER_CLOSE_JOB, payload, {
+      trx,
+      singletonKey: orderCloseKey(order.id),
+    });
+    deps.logger.info(
+      { app_id: order.app_id, pay_order_id: order.id, lock_key: bizObjectLockKey(bizKeyOf(order)) },
+      'pay_order_cancel_requested',
+    );
+    return { code: 0, data: payOrderView(updated) };
+  });
 }

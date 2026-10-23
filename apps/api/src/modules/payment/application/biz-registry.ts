@@ -2,10 +2,11 @@
 // §9.2). Registration is code: a new type needs its own BR entry, not just configuration. prod
 // registers nothing; local / test / staging register only the test type `test_item` (1 fen,
 // title 测试商品, sellable on the three apps, no user-side refund), used for 联调与验收 only.
-// NotImplemented skeleton (rule-test phase).
+// Also compiled by the `test` project: erasable syntax only, `import type` for types.
 import type { DB } from '@couli/db';
 import type { Transaction } from 'kysely';
 import type { AppEnv } from '../../platform/index.ts';
+import { PAY_PLATFORMS } from '../domain/sellability.ts';
 import type { PayPlatform } from '../domain/types.ts';
 
 /** The server-side price of one business object (BR-PAY-01 ①: the client never sends an amount). */
@@ -60,8 +61,44 @@ export interface BizTypeRegistry {
   list(): readonly BizTypeEntry[];
 }
 
+/** The non-production test business type (BR-PAY-01 细则「非生产环境有一个测试业务类型」). */
+export const TEST_ITEM_BIZ_TYPE = 'test_item';
+const TEST_ITEM_AMOUNT_FEN = 1n;
+const TEST_ITEM_TITLE = '测试商品';
+
+/**
+ * The test type grants no entitlement: its reconcile recomputes nothing and writes nothing (it
+ * exists so that 联调与验收 can exercise the order, notification, query, close and refund flows).
+ */
+const testItemFulfillment: BizFulfillmentHandler = {
+  reconcile(): Promise<void> {
+    return Promise.resolve();
+  },
+};
+
+const testItem: BizTypeEntry = Object.freeze({
+  code: TEST_ITEM_BIZ_TYPE,
+  price(): Promise<BizPrice> {
+    return Promise.resolve({ amountFen: TEST_ITEM_AMOUNT_FEN, title: TEST_ITEM_TITLE });
+  },
+  platforms: PAY_PLATFORMS,
+  fulfillment: testItemFulfillment,
+  userRefundAllowed: false,
+});
+
+function registryOf(entries: readonly BizTypeEntry[]): BizTypeRegistry {
+  const byCode = new Map(entries.map((entry) => [entry.code, entry]));
+  return {
+    get(code) {
+      return typeof code === 'string' ? byCode.get(code) : undefined;
+    },
+    list() {
+      return [...entries];
+    },
+  };
+}
+
 /** The registry of an APP_ENV: empty in prod; `test_item` only in local / test / staging. */
 export function createBizRegistry(appEnv: AppEnv): BizTypeRegistry {
-  void appEnv;
-  throw new Error('NotImplemented: createBizRegistry');
+  return registryOf(appEnv === 'prod' ? [] : [testItem]);
 }

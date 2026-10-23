@@ -178,6 +178,7 @@ import {
   getOrderNets,
   type WalletSummaryDependencies,
 } from './modules/ledger/index.ts';
+import { PaymentModule } from './modules/payment/index.ts';
 import {
   PayoutModule,
   createDefaultFeeTaxCalculator,
@@ -2795,6 +2796,12 @@ export class AppModule {
         // GET /v1/wallet/summary (B2-04y): ledger's read.ts query over the owners' ports.
         ...(options.entry === 'api'
           ? [WalletSummaryModule.forApi({ dependencies: walletSummaryDependencies })]
+          : []),
+        // payment's /v1/pay/orders routes (B2-15b): on the api entry, over content's shared
+        // configuration reader (pay.enabled, pay.channel_enabled.*, pay.biz.*.platforms,
+        // pay.order_ttl_minutes). Its jobs are worked by the worker entry from B2-15c / B2-15d on.
+        ...(options.entry === 'api'
+          ? [PaymentModule.forApi({ config: (db, clock) => contentReader(db, clock) })]
           : []),
         ...(union === undefined ? [] : [union]),
         // The ledger posting port (B2-02f) on every entry that books money: settlement (worker),
