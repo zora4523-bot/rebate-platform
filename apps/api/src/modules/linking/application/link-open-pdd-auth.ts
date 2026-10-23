@@ -19,7 +19,7 @@
 //   and active go on; any other status (unbound, pending_auth, invalid, released, no row) asks the
 //   union authority port (UnionAdapter.queryPddAuthority, an idempotent governed read) with the
 //   same server-built identity the conversion uses (custom_parameters {app, uid=attr_code, sc},
-//   never a user_id; no attr_code or no active slot → 50301; B1-22n: any scene's slot, below):
+//   never a user_id; no attr_code → 50301; no active slot of the scene → 30111, B1-22n below):
 //   authorized → the binding is written active (below) and the open goes on; not authorized →
 //   30111 with data.auth_jump only, a one-time state bound to uid + device record + the link this
 //   open serves (BR-ID-22 细则, the auth-url jump construction); the port missing or failing →
@@ -49,10 +49,11 @@
 //   (a blocked user's no_rebate keeps no_rebate_reason=binding_blocked) before any cache, price or
 //   union call. Jd has no ⑥: it is checked here too, so every composition routing jd through this
 //   hook (createPddAuthLinkOpen, link-open-taobao.ts) gets it. Cache reads and keys unchanged (R-12).
-// - ⑥ before ⑦: the filing query of a binding not active no longer needs the scene's slot — it
-//   uses the account in use's slot of the scene, else of self_buy, agent, share (the filing is
-//   judged at (user, platform) granularity, above); only an account with no active slot at all
-//   stops it (50301). Not filed → 30111 even when the scene has no slot; filed → ⑦ as above.
+// - ⑥ before ⑦ (D10-262 / D10-263): a binding not active whose account in use has no active slot
+//   of the link's scene is not queried (local configuration before external calls) and never
+//   activated, nor is another scene's slot used for the query: locally it counts as not filed →
+//   30111 with an auth_jump as above, no union call at all. With the slot: one filing query, then
+//   ⑦ as above. An active binding goes straight to ⑦ (no slot → 50301).
 import type { UnionPidRow } from '../../union/index.ts';
 import { createConversionPrecheck, effectiveNoRebate } from './link-open-conversion.ts';
 import type { LinkOpenService } from './link-open.ts';
@@ -110,8 +111,6 @@ const MAINTENANCE: LinkOpenAuthorization = {
 const QUERY_FAILED: LinkOpenAuthorization = { kind: 'refused', code: 50303 };
 /** ⑦: no usable slot (or identity) for the conversion; no data, as the conversion's own 50301. */
 const NO_SLOT: LinkOpenAuthorization = { kind: 'refused', code: 50301 };
-/** B1-22n: the scenes whose slot may carry the filing query, after the link's own scene. */
-const FILING_SCENES = ['self_buy', 'agent', 'share'] as const;
 
 function paused(message: string): Error & { readonly code: 50301 } {
   return Object.assign(new Error(message), { code: 50301 as const });
@@ -179,8 +178,7 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
    */
   async function prepare(plan: LinkOpenReadPlan): Promise<void> {
     if (plan.platform !== PLATFORM) return;
-    // B1-22n: every scene the filing query may fall back to.
-    const scenes = new Set<string>(FILING_SCENES);
+    const scenes = new Set<string>(['self_buy']);
     for (const identity of plan.identities) {
       scenes.add(identity.noRebate ? 'self_buy' : identity.pidScene);
     }
@@ -209,18 +207,6 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
     } catch {
       return null;
     }
-  }
-
-  /**
-   * B1-22n (⑥ before ⑦): the scene whose slot of the account carries the filing query — the
-   * link's own, else the first of FILING_SCENES with one; the link's own when the account has none
-   * (pddAuthorityIdentity then logs and answers no_pid).
-   */
-  async function filingScene(appId: string, pidScene: string, accountId: string) {
-    for (const scene of new Set<string>([pidScene, ...FILING_SCENES])) {
-      if ((await slotOf(appId, scene, accountId)) !== null) return scene;
-    }
-    return pidScene;
   }
 
   async function allow(
@@ -341,13 +327,14 @@ export function createPddAuthorization(options: PddAuthLinkOpenOptions) {
       {
         appId,
         userId: subject,
-        pidScene: await filingScene(appId, snapshot.pid_scene, accountId),
+        pidScene: snapshot.pid_scene,
         unionAccountId: accountId,
         traceId: input.traceId,
         events: 'linking.open',
       },
     );
-    if (identity === 'no_pid') throw paused('linking: no active promotion slot');
+    // B1-22n (D10-262 / D10-263): no active slot of the scene → not queried, not filed (⑥).
+    if (identity === 'no_pid') return issue(input, subject);
     if (identity === 'no_attr_code') throw paused('linking: attr_code unavailable');
     const authorized = await queryPddAuthority(
       { registry, logger },
