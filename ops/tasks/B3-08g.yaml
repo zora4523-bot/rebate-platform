@@ -6,6 +6,7 @@ type: impl
 # 依据：BR-AI-02（注册表 = 已开启 ∩ 主体允许；allowlist 集合相等；denylist 两处扫描；③ 依赖规则：agent 只 import orders / linking index 的只读查询，不得 import createOrderClaim / openLink）；BR-AI-07 防试探计数（按 +08:00 自然日，默认 20）。
 # 计数存储（Redis INCR+到次日 0 点过期，或 PG）由实现定并写进 PR 说明；agent_cards 只读（agent 是写者，读本会话卡片无越权）。
 # 前置：B3-08h 先合（否则 [AC-B3-04a#4] 必红）。search_rules 等 B3-08b 合并后另开小段或在本段追加。风险 RV2（app.module、specs/**）。
+# 2026-10-23 agent 线补：search_rules 已由 B3-08b 实现（#1305），但生产数据源 rule_chunks 待 B3-08e / B3-08i，本段仍不注册 search_rules；card_id 解析与按单号每日计数放新文件 stream/mount/orders.ts（不放 tools/registry/**，免进 denylist 源码扫描）；计数用 Redis INCR、到次日 +08:00 零点过期，无 Redis 时工具失败不放行。
 refs: [BR-AI-02]
 refs_hash:
   BR-AI-02: 61014cc4d222
@@ -13,6 +14,7 @@ deps: [B3-08a, B3-08c, B3-08d, B3-08h, B3-03j]
 paths:
   - 'apps/api/src/modules/agent/stream/mount/assembly.ts'
   - 'apps/api/src/modules/agent/stream/mount/production.ts'
+  - 'apps/api/src/modules/agent/stream/mount/orders.ts'
   - 'apps/api/src/modules/agent/tools/registry/**'
   - 'apps/api/src/app.module.ts'
   - 'specs/agent-tools.allowlist'
