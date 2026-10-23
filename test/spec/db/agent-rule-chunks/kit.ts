@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { createDb, destroyDb, type DB } from '@couli/db';
-import type { TestDatabase } from '@couli/db/testing';
 import { sql, type Kysely } from 'kysely';
 import { expect } from 'vitest';
 
@@ -11,7 +10,13 @@ export const AT = new Date('2026-10-23T08:00:00Z');
 export const LATER = new Date('2026-10-23T09:00:00Z');
 
 // Only the integration entry imports the database factory as a value.
-export async function createKit(factory: () => Promise<TestDatabase>) {
+/** The slice of @couli/db/testing's TestDatabase this kit uses (no import: dependency rule). */
+export interface FixtureDatabase {
+  urlFor(role: string): string;
+  drop(): Promise<void>;
+}
+
+export async function createKit(factory: () => Promise<FixtureDatabase>) {
   const database = await factory();
   const app = createDb({ connectionString: database.urlFor('couli_app') });
   const readonly = createDb({ connectionString: database.urlFor('couli_readonly') });
