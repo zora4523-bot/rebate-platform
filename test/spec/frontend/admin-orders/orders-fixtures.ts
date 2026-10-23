@@ -71,9 +71,21 @@ export function rows(): Row[] {
     },
   ];
 }
+/**
+ * Detail fields added by CT-24n (unmapped hold still pending, latest manual hold). Kept in a
+ * constant and spread so the fixture type-checks both before and after those fields exist.
+ */
+const ORDER_HOLD_DEFAULTS = {
+  unmapped_pending_open: false,
+  last_hold_by: null,
+  last_hold_by_name: null,
+  last_hold_note: null,
+  last_hold_at: null,
+};
 export function detail(patch: Partial<Detail> = {}): Detail {
   return {
     ...rows()[0]!,
+    ...ORDER_HOLD_DEFAULTS,
     raw_item_id: '61234',
     product_key: null,
     quantity: 3,
