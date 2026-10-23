@@ -1,6 +1,6 @@
-id: CT-06zx2
+id: CT-06zxa
 repo: rebate-platform
-title: CT-06zx2：verify-props 按 spec-tests 文件 --shard=i/2 拆为 verify-props-1 / verify-props-2 两个并行作业 + pnpm store 缓存（D10-304）
+title: CT-06zxa：verify-props 按 spec-tests 文件 --shard=i/2 拆为 verify-props-1 / verify-props-2 两个并行作业 + pnpm store 缓存（D10-304）
 type: guard-change
 # 2026-10-24 入账（ops 线，编排裁定 D10-304，接 CT-06zx #1444）。起因：verify-props 最近 12 次成功 27–53 分钟、p50 40、
 # p90 52.5，上限 60；#1442（纯台账）在 60 分钟被取消。做法：ci.yml 的 verify-props 换成两个并行作业，各自跑原来两轮
@@ -13,7 +13,7 @@ refs_hash: {}
 deps: []
 paths:
   - '.github/workflows/ci.yml'
-  - 'ops/tasks/CT-06zx2.yaml'
+  - 'ops/tasks/CT-06zxa.yaml'
 impl: claude
 tester: none
 accept:

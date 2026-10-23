@@ -32,7 +32,7 @@ jobs:
     # labeled / unlabeled event the verify jobs reuse what already passed instead of running a
     # second time. Reuse holds only when, for EACH of verify-static, verify-unit, verify-spec-1,
     # verify-spec-2 (the four jobs that replaced verify-fast, CT-06zx), verify-props-1,
-    # verify-props-2 (the two shards that replaced verify-props, CT-06zx2) and verify-int, an
+    # verify-props-2 (the two shards that replaced verify-props, CT-06zxa) and verify-int, an
     # earlier run of this workflow file (ci.yml) for the same PR head SHA has that job's latest
     # attempt concluded `success` AND carries the artifact `verified-<job>-<tree>` that the job
     # uploads only after all of its steps passed, <tree> being the tree it tested. The tree of
@@ -293,7 +293,7 @@ jobs:
     # D10-242 (CT-06zm): skipped only when verify-reuse found a success of this very job on the
     # same tested tree (see verify-reuse); every other event, and any failure of verify-reuse,
     # runs it in full.
-    # D10-304 (CT-06zx2): split into verify-props-1 / verify-props-2, each running both passes on
+    # D10-304 (CT-06zxa): split into verify-props-1 / verify-props-2, each running both passes on
     # half of the spec-test files (vitest --shard=i/2, as verify-spec-1 / -2); runs, seeds and
     # steps unchanged. The 12 latest green runs of the single job took 27–53 min (p50 40, p90
     # 52.5) against its 60-minute cap; each shard keeps the 60-minute cap. pnpm store cached.
@@ -618,7 +618,7 @@ jobs:
   ci-gate:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).
     # CT-06zx: verify-static, verify-unit, verify-spec-1 and verify-spec-2 replace verify-fast;
-    # each must pass (or be reused) on its own; so must verify-props-1 and verify-props-2 (CT-06zx2).
+    # each must pass (or be reused) on its own; so must verify-props-1 and verify-props-2 (CT-06zxa).
     if: always()
     needs:
       - verify-static
