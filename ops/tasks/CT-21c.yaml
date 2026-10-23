@@ -5,6 +5,7 @@ type: contract
 # 2026-10-22 收款线入账（contract-delta p-25、p-26；04 §6.4 两行；BR-PAY-01 ② 入口只限原生 App）。接口全部 x-implementation: planned，由 B2-15b 实现时去 planned。
 # 调起参数字段按官方文档写并标「待实测」（规划/09 §5.7、CAP-X-16 / CAP-X-17；P-S4）：微信 appid / partnerid / prepayid / package / noncestr / timestamp / sign；支付宝 order_str。
 # 契约槽：排在 CT-21b 之后。
+# 2026-10-23 paths 补 apps/h5/src/shared/api/signed.ts：H5 app-api 的 x-signed 操作清单手工维护，冻结测试 [AC-F1-01q-SIGNED#1] 逐条对照契约，新增签名接口须同 PR 登记（先例 CT-04f #756）。
 refs: [BR-PAY-01, BR-PAY-02, BR-PAY-03, BR-PAY-04, BR-PAY-05]
 refs_hash:
   BR-PAY-01: 15ea5ac62c34
@@ -22,6 +23,7 @@ paths:
   - 'apps/api/src/modules/platform/validation/signing-routes.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
+  - 'apps/h5/src/shared/api/signed.ts'
 test_paths:
   - 'test/spec/contracts/pay-http/**'
 impl: claude
