@@ -12,6 +12,7 @@ import {
   openWith,
   outcome,
   slotSceneOf,
+  withSetting,
 } from './kit.ts';
 
 const database = databaseFixture(createTestDatabase);
@@ -63,3 +64,25 @@ it('[AC-B1-22n#2] 京东 no_rebate 改用 self_buy 位：self_buy 无 active 推
     30141,
   );
 }, TIMEOUT);
+
+// BR-ATTR-05 ⑦ / BR-ATTR-06: in the private-position downgrade the slot is the identity owner's
+// active private position (user_union_positions, taken as self_buy); this fixture seeds none, while
+// every union_pids slot stays active. Serving the mode is CAP-JD-05's (TODO), so there is no
+// "with the slot" half here: only the stop before the re-check.
+for (const { scene, opener } of CASES) {
+  for (const { recheck } of RECHECKS) {
+    it(`[AC-B1-22n#7] 京东 ${scene}/${opener} attr.jd.user_key_mode=private_position 且身份主人无 active 私域推广位：先回 50301、不做价格复核（复核注入 ${recheck}）`, async () => {
+      const db = database();
+      const f = await fixture(db, { binding: 'absent', query: false, platform: 'jd', scene });
+      f.opener(opener);
+      await injectRecheck(f, recheck);
+      const stopped = openWith(
+        f,
+        f.options.pids,
+        withSetting(f, 'attr.jd.user_key_mode', 'private_position'),
+      );
+      await expectStoppedBeforeRecheck(f, await outcome(() => stopped.service.open(f.request())));
+      expect(stopped.external).toEqual([]);
+    }, TIMEOUT);
+  }
+}

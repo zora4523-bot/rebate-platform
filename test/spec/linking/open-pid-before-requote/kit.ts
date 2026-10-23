@@ -109,11 +109,26 @@ export async function pddSlots(
   return slots;
 }
 
+type ConfigReader = PddAuthLinkOpenOptions['config'];
+type SettingValue = NonNullable<Awaited<ReturnType<ConfigReader['configValue']>>>['value'];
+
+/** The fixture's settings with `key` set to `value` (a value the fixture's own map cannot hold). */
+export function withSetting(f: Fixture, key: string, value: SettingValue): ConfigReader {
+  return {
+    configValue: async (appId: string, name: string) =>
+      name === key ? { value, version: 1 } : f.options.config.configValue(appId, name),
+  };
+}
+
 /**
- * The open of this fixture with the given slots; every union adapter call is recorded by method
- * name (the external interfaces a test can observe).
+ * The open of this fixture with the given slots (and settings, when given); every union adapter
+ * call is recorded by method name (the external interfaces a test can observe).
  */
-export function openWith(f: Fixture, pids: PddAuthLinkOpenOptions['pids']) {
+export function openWith(
+  f: Fixture,
+  pids: PddAuthLinkOpenOptions['pids'],
+  config: ConfigReader = f.options.config,
+) {
   const inner = f.options.registry.get(f.row.platform as 'jd' | 'pdd');
   const external: string[] = [];
   const watched = Object.fromEntries(
@@ -127,7 +142,12 @@ export function openWith(f: Fixture, pids: PddAuthLinkOpenOptions['pids']) {
         : value,
     ]),
   ) as typeof inner;
-  const service = createPddAuthLinkOpen({ ...f.options, pids, registry: { get: () => watched } });
+  const service = createPddAuthLinkOpen({
+    ...f.options,
+    pids,
+    config,
+    registry: { get: () => watched },
+  });
   return { service, external };
 }
 
