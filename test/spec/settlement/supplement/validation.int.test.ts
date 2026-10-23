@@ -1,5 +1,6 @@
 import { createTestDatabase } from '@couli/db/testing';
 import { expect, it } from 'vitest';
+import { currentVersion } from '../bill/kit.ts';
 import {
   databaseFixture,
   fixture,
@@ -11,6 +12,7 @@ import {
   state,
   supplements,
   validations,
+  BEFORE,
   LATER,
   LAUNCH,
   MONTH,
@@ -150,6 +152,8 @@ it(
         actual_fen: 7650n,
       }),
     );
+    // 差额口径同 B2-04n：diff_fen = actual_fen − expected_fen，联盟多结为正。
+    expect(s.diffs.find((d) => d.ref_id === fresh.key)?.diff_fen).toBe(6900n);
     expect(h.registerDiff).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ appId: h.appId, type: 'settle_amount_mismatch', refId: fresh.key }),
@@ -361,6 +365,181 @@ it(
     }
     expect((await validations(h)).map((v) => v.orderKey)).toEqual([taobao.key]);
     expect(await state(other)).toEqual(untouched);
+  },
+  TIMEOUT,
+);
+
+it.each([
+  { label: 'ESTIMATED', rebateStatus: 'ESTIMATED' },
+  { label: 'VOID', rebateStatus: 'VOID' },
+  { label: 'CLAWED_BACK', rebateStatus: 'CLAWED_BACK' },
+  { label: '我方无单', rebateStatus: null },
+] as const)(
+  '[AC-B2-04r#26] 补充校验遇联盟后到结算而我方 $label：登记 union_mismatch，不入批',
+  async ({ rebateStatus }) => {
+    const h = fixture(database.db);
+    const released = await order(h, { hold: true });
+    await settlement(h, released);
+    let key = 'taobao:synthetic-orphan-late';
+    if (rebateStatus === null) {
+      h.orphans.push({
+        orderKey: key,
+        order: null,
+        settlements: [
+          {
+            seq: 1,
+            source: 'STATEMENT',
+            createdAt: new Date(LATER),
+            settledAt: new Date(BEFORE),
+            commissionFen: 1000n,
+          },
+        ],
+      });
+    } else {
+      const o = await order(h, { rebateStatus });
+      await settlement(h, o, { created_at: new Date(LATER) });
+      key = o.key;
+    }
+    // 联盟结算数据晚于账单日截点取得：账单日任务看不到它，不登记差错。
+    await main(h);
+    const before = await state(h);
+    expect(before.diffs).toEqual([]);
+    released.fact.order.hold = false;
+
+    await h.launch();
+    const s = await state(h);
+    // BR-FUND-04 ④ 沿用 BR-FUND-09 R1：联盟有结算、我方状态异常或无单，登记 union_mismatch，
+    // 账期为目标账单月（断言口径同 [AC-B2-04n#13]、[AC-B2-04n#14]）。
+    expect(s.diffs).toEqual([
+      expect.objectContaining({ type: 'union_mismatch', ref_id: key, period: MONTH }),
+    ]);
+    expect(h.registerDiff).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ appId: h.appId, type: 'union_mismatch', refId: key }),
+      expect.objectContaining({ clock: h.clock }),
+    );
+    expect(itemsOf(s, supplements(s))).toEqual([
+      expect.objectContaining({ item_type: 'order', order_id: released.id }),
+    ]);
+    expect(await validations(h)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ orderKey: key, result: 'unexpected_settlement', settleSeq: 1 }),
+        expect.objectContaining({ orderKey: released.key, result: 'candidate' }),
+      ]),
+    );
+    expect(s.vouchers).toEqual(before.vouchers);
+    expect(s.balances).toEqual(before.balances);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04r#27] 补充前已追加分佣快照 v2：按当前最大版本比对，联盟按 v2 结算的入批、不误报不一致',
+  async () => {
+    const h = fixture(database.db);
+    const o = await order(h, { hold: true });
+    await settlement(h, o, { settle_commission_fen: 2000n });
+    await main(h);
+    expect((await state(h)).diffs).toEqual([]);
+    // 价保改价：v2 基数 1700（联盟佣金 2000，预留 1500bp）；v1 基数 850 已不是当前版本。
+    await currentVersion(h, o);
+    o.fact.order.hold = false;
+
+    await h.launch();
+    expect(h.readSnapshot).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ appId: h.appId, orderId: o.id, commissionVersion: 2 }),
+    );
+    const s = await state(h);
+    expect(itemsOf(s, supplements(s))).toEqual([
+      expect.objectContaining({ item_type: 'order', order_id: o.id, b_settle_fen: 1700n }),
+    ]);
+    expect(s.diffs).toEqual([]);
+    expect(h.registerDiff).not.toHaveBeenCalled();
+    expect(await validations(h)).toEqual([
+      expect.objectContaining({ orderKey: o.key, result: 'candidate', settleSeq: 1 }),
+    ]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04r#28] 补充前已追加分佣快照 v2：联盟仍按 v1 结算的按当前版本判不一致，不入批',
+  async () => {
+    const h = fixture(database.db);
+    const o = await order(h, { hold: true });
+    await settlement(h, o);
+    await main(h);
+    expect((await state(h)).diffs).toEqual([]);
+    // 联盟结算佣金 1000 → B_settle 850，只与已被取代的 v1 基数一致；当前 v2 基数 1700。
+    await currentVersion(h, o);
+    o.fact.order.hold = false;
+
+    await h.launch();
+    const s = await state(h);
+    expect(supplements(s)).toEqual([]);
+    expect(s.items).toEqual([]);
+    expect(s.diffs).toEqual([
+      expect.objectContaining({
+        type: 'settle_amount_mismatch',
+        ref_id: o.key,
+        period: MONTH,
+        expected_fen: 1700n,
+        actual_fen: 850n,
+        diff_fen: -850n,
+      }),
+    ]);
+    expect(await validations(h)).toEqual([
+      expect.objectContaining({ orderKey: o.key, result: 'amount_mismatch', settleSeq: 1 }),
+    ]);
+  },
+  TIMEOUT,
+);
+
+it(
+  '[AC-B2-04r#29] B_settle 按 BR-CALC-02 向下取整并扣淘礼金：联盟佣金 1001 不整除时仍与快照基数一致',
+  async () => {
+    const h = fixture(database.db);
+    const plain = await order(h, { hold: true });
+    const tlj = await order(h, { hold: true }, 'taobao', {
+      tlj: 100n,
+      base: 750n,
+      amounts: [375n, 75n, 37n],
+      userTotal: 487n,
+      retain: 263n,
+    });
+    for (const o of [plain, tlj]) await settlement(h, o, { settle_commission_fen: 1001n });
+    await main(h);
+    expect((await state(h)).diffs).toEqual([]);
+    h.readTljDeductFen.mockImplementation(async (_trx, input) => {
+      return input.orderId === tlj.id ? 100n : 0n;
+    });
+    plain.fact.order.hold = false;
+    tlj.fact.order.hold = false;
+
+    await h.launch();
+    // floor(1001 × 8500 / 10000) = floor(850.85) = 850；四舍五入得 851，与基数 850 不一致。
+    // 淘礼金单：850 − 100 = 750，等于快照基数 750；漏减得 850、先减后乘得 765，都不一致。
+    expect(h.readTljDeductFen).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ appId: h.appId, orderId: tlj.id, commissionVersion: 1 }),
+    );
+    const s = await state(h);
+    const items = itemsOf(s, supplements(s));
+    expect(items).toHaveLength(2);
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ item_type: 'order', order_id: plain.id, b_settle_fen: 850n }),
+        expect.objectContaining({ item_type: 'order', order_id: tlj.id, b_settle_fen: 750n }),
+      ]),
+    );
+    expect(s.diffs).toEqual([]);
+    expect(h.registerDiff).not.toHaveBeenCalled();
+    expect(await validations(h)).toEqual(
+      expect.arrayContaining(
+        [plain, tlj].map((o) => expect.objectContaining({ orderKey: o.key, result: 'candidate' })),
+      ),
+    );
   },
   TIMEOUT,
 );
