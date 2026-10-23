@@ -998,6 +998,51 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/pay-orders",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pay-orders/:pay_order_id",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pay-orders/:pay_order_id/resolve",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pay-orders/:pay_order_id/refunds",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pay-refunds",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pay-refunds/:pay_refund_id",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pay-anomalies",
+    "auth": "admin"
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pay-anomalies/:pay_anomaly_id/refunds",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pay-recon-diffs",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "auth": "admin"
   },

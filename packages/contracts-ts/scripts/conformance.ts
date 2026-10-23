@@ -112,6 +112,13 @@ export const ENUM_BINDINGS: Readonly<Record<string, string>> = {
   AdminRightsImportTimeBasis: 'rights_import_time_basis',
   AdminRightsImportStatus: 'rights_import_status',
   AdminRightsImportFailureReason: 'rights_import_failure_reason',
+  AdminPayChannel: 'pay_channel',
+  AdminPayOrderStatus: 'pay_order_status',
+  AdminPayRefundStatus: 'pay_refund_status',
+  AdminPayRefundTargetType: 'pay_refund_target_type',
+  AdminPayRefundReason: 'pay_refund_reason',
+  AdminPayQueryAttemptKind: 'pay_query_attempt_kind',
+  AdminReconDiffStatus: 'recon_diff_status',
 };
 
 /**
@@ -236,6 +243,10 @@ export const ENUM_SUBSETS: Readonly<Record<string, string>> = {
   'AdminRightsImportChannel/properties/kind': 'rights_import_kind',
   // A new import task is always queued (CT-24n).
   'AdminRightsImportCreated/properties/status': 'rights_import_status',
+  // The R4 (收款对账) types only (BR-PAY-07, CT-21e); R1–R3 differences are not listed there.
+  AdminPayReconDiffType: 'recon_diff_type',
+  // Manual settlement only starts from PENDING (BR-PAY-05 ③, CT-21e).
+  'AdminPayOrderResolveRequest/properties/expected_status': 'pay_order_status',
 };
 
 function isObj(v: unknown): v is Obj {

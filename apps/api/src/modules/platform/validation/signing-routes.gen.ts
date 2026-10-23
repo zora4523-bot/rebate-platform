@@ -998,6 +998,51 @@ export const CONTRACT_SIGNING_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/pay-orders",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pay-orders/:pay_order_id",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pay-orders/:pay_order_id/resolve",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pay-orders/:pay_order_id/refunds",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pay-refunds",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pay-refunds/:pay_refund_id",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pay-anomalies",
+    "signed": false
+  },
+  {
+    "method": "POST",
+    "path": "/admin/v1/pay-anomalies/:pay_anomaly_id/refunds",
+    "signed": false
+  },
+  {
+    "method": "GET",
+    "path": "/admin/v1/pay-recon-diffs",
+    "signed": false
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/kill-switches",
     "signed": false
   },
