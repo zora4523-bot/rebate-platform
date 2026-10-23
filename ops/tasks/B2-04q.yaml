@@ -1,0 +1,24 @@
+id: B2-04q
+repo: rebate-platform
+title: 受益人补记项执行（R5a）：锁内重验（CREDITED、rights_pending、seq、归属快照、义务 open、⑤ 等式），按义务类别写 CREDIT / ADJ:DEFERRED / FORFEIT / FORFEIT:DEFERRED，义务与凭证同事务关闭；仍暂缓记 deferred
+type: impl
+# 2026-10-24 资金线（编排 D10-93 裁定 S1–S21 按推荐默认；方案 couli-runs/FUNDS-quote/settlement-plan.md §2.2）。分工：独立 Claude 写规则测试（Codex 额度至 10-30，approvals #36）/ Opus 实现。
+# 状态备注：可开（B2-04m 已合并，锁流程复用 m 的 BeneficiaryGate）。
+refs: [BR-CALC-13, BR-FUND-01, BR-FUND-04, BR-FUND-19]
+refs_hash:
+  BR-CALC-13: 54c06125032c
+  BR-FUND-01: b541996f8582
+  BR-FUND-04: f4b8b2be46ea
+  BR-FUND-19: e6205ee4fcc1
+deps: [B2-04m]
+paths:
+  - 'apps/api/src/modules/settlement/credit/beneficiary/**'
+test_paths:
+  - 'test/spec/settlement/beneficiary-credit/**'
+impl: claude
+tester: claude-independent
+accept:
+  - 'pnpm verify'
+  - 'test/spec/settlement/beneficiary-credit/**'
+status: todo
+pr: null
