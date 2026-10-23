@@ -14062,6 +14062,82 @@ paths:
                   $ref: '#/components/examples/AdminTokenExpired'
         5XX:
           $ref: '#/components/responses/ServerError'
+  /admin/v1/union/account-options:
+    get:
+      operationId: adminListUnionAccountOptions
+      tags:
+        - admin-unions
+      summary: Union account choices for the PID registration form (not paged)
+      description: |
+        Permission point `union.pid` or `union.account_auth` (either is enough; 04 §11.2; read
+        only, no step-up); lacking both is 10403 with `data.reason=admin_permission_denied`. The
+        least-privilege read behind the union account dropdown of the PID (推广位) registration
+        form (POST /admin/v1/union-pids, 04 §6.6 union-pids; BR-ATTR-02 细则「后台登记与启停」):
+        an account holding only `union.pid` reads the choices here, while GET
+        /admin/v1/union-accounts keeps `union.account_auth` alone (orchestrator ruling D10-243;
+        04 §6.6 union-accounts). Every union account of the console's app, or with `platform`
+        only those of that platform (a value outside enum platform is 20001 with
+        `data.fields=[platform]`); not paged, the same as GET /admin/v1/union-accounts; ordered by
+        platform, then account_name, then union_account_id. Each row carries only
+        `union_account_id`, `platform` and `account_name`, the same values as the row of GET
+        /admin/v1/union-accounts: no status, authorization or expiry fields, no probe results,
+        no alert or re-authorization fields, and never the reminder stage or any credential. An
+        account is listed whatever its status or authorization state; whether a PID may be
+        registered under it is decided by POST /admin/v1/union-pids alone. Reading does not
+        write an audit record.
+      x-auth: admin
+      x-implementation: planned
+      x-error-codes:
+        - 10001
+        - 10403
+        - 20001
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/AdminUnionAccountPlatformFilter'
+      responses:
+        '200':
+          description: The union account choices of the app.
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUnionAccountOptionListResponse'
+              example:
+                code: 0
+                msg: ''
+                data:
+                  items:
+                    - union_account_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01
+                      platform: taobao
+                      account_name: 凑狸淘宝联盟
+                    - union_account_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a02
+                      platform: jd
+                      account_name: 凑狸京东联盟
+                trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        4XX:
+          description: Not available (codes in contracts/error-codes.yaml).
+          headers:
+            X-Trace-Id:
+              $ref: '#/components/headers/TraceId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                platformInvalid:
+                  $ref: '#/components/examples/AdminUnionAccountOptionsPlatformInvalid'
+                noPermission:
+                  $ref: '#/components/examples/AdminPermissionDenied'
+                tokenExpired:
+                  $ref: '#/components/examples/AdminTokenExpired'
+        5XX:
+          $ref: '#/components/responses/ServerError'
   /admin/v1/union-pids:
     get:
       operationId: adminListUnionPids
@@ -21706,6 +21782,13 @@ components:
       description: pid_id from GET /admin/v1/union-pids; unknown or of another app → 20001 with data.fields=[pid_id].
       schema:
         $ref: '#/components/schemas/Id'
+    AdminUnionAccountPlatformFilter:
+      name: platform
+      in: query
+      required: false
+      description: Only union accounts of this platform (enum platform); absent = all.
+      schema:
+        $ref: '#/components/schemas/PlatformCode'
     AdminPayOrderIdPath:
       name: pay_order_id
       in: path
@@ -23799,6 +23882,15 @@ components:
         data:
           fields:
             - site_id
+        trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+    AdminUnionAccountOptionsPlatformInvalid:
+      summary: 20001 platform outside enum platform
+      value:
+        code: 20001
+        msg: 参数错误
+        data:
+          fields:
+            - platform
         trace_id: 0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b
     AdminUnionPidDuplicate:
       summary: 20001 the same (app, platform, pid) is already registered
@@ -38044,6 +38136,11 @@ components:
       minLength: 1
       maxLength: 200
       description: Optional free-text reason, kept in the audit record (BR-ID-24 细则, BR-ATTR-02 细则).
+    AdminUnionAccountName:
+      type: string
+      minLength: 1
+      maxLength: 100
+      description: Display name of a station-owner union account (union_accounts.account_name).
     AdminUnionAccount:
       type: object
       description: |
@@ -38072,9 +38169,7 @@ components:
         platform:
           $ref: '#/components/schemas/PlatformCode'
         account_name:
-          type: string
-          minLength: 1
-          maxLength: 100
+          $ref: '#/components/schemas/AdminUnionAccountName'
         status:
           type: string
           minLength: 1
@@ -38152,6 +38247,52 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminUnionAccountList'
+        trace_id:
+          $ref: '#/components/schemas/TraceId'
+    AdminUnionAccountOption:
+      type: object
+      description: |
+        One choice of the union account dropdown of the PID registration form (GET
+        /admin/v1/union/account-options, D10-243): only the identifier, the platform and the
+        display name of a union_accounts row; no status, authorization, probe, alert or
+        credential field.
+      additionalProperties: false
+      required:
+        - union_account_id
+        - platform
+        - account_name
+      properties:
+        union_account_id:
+          $ref: '#/components/schemas/Id'
+        platform:
+          $ref: '#/components/schemas/PlatformCode'
+        account_name:
+          $ref: '#/components/schemas/AdminUnionAccountName'
+    AdminUnionAccountOptionList:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUnionAccountOption'
+    AdminUnionAccountOptionListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - msg
+        - data
+        - trace_id
+      properties:
+        code:
+          $ref: '#/components/schemas/SuccessCode'
+        msg:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminUnionAccountOptionList'
         trace_id:
           $ref: '#/components/schemas/TraceId'
     AdminUnionAccountResponse:

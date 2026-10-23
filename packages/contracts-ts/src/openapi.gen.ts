@@ -4969,6 +4969,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/v1/union/account-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Union account choices for the PID registration form (not paged)
+         * @description Permission point `union.pid` or `union.account_auth` (either is enough; 04 §11.2; read
+         *     only, no step-up); lacking both is 10403 with `data.reason=admin_permission_denied`. The
+         *     least-privilege read behind the union account dropdown of the PID (推广位) registration
+         *     form (POST /admin/v1/union-pids, 04 §6.6 union-pids; BR-ATTR-02 细则「后台登记与启停」):
+         *     an account holding only `union.pid` reads the choices here, while GET
+         *     /admin/v1/union-accounts keeps `union.account_auth` alone (orchestrator ruling D10-243;
+         *     04 §6.6 union-accounts). Every union account of the console's app, or with `platform`
+         *     only those of that platform (a value outside enum platform is 20001 with
+         *     `data.fields=[platform]`); not paged, the same as GET /admin/v1/union-accounts; ordered by
+         *     platform, then account_name, then union_account_id. Each row carries only
+         *     `union_account_id`, `platform` and `account_name`, the same values as the row of GET
+         *     /admin/v1/union-accounts: no status, authorization or expiry fields, no probe results,
+         *     no alert or re-authorization fields, and never the reminder stage or any credential. An
+         *     account is listed whatever its status or authorization state; whether a PID may be
+         *     registered under it is decided by POST /admin/v1/union-pids alone. Reading does not
+         *     write an audit record.
+         */
+        get: operations["adminListUnionAccountOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/v1/union-pids": {
         parameters: {
             query?: never;
@@ -13887,6 +13922,8 @@ export interface components {
         AdminUnionPidScene: "self_buy" | "agent" | "share" | "taolijin" | "fallback" | "query";
         /** @description Optional free-text reason, kept in the audit record (BR-ID-24 细则, BR-ATTR-02 细则). */
         AdminUnionOptionalReason: string;
+        /** @description Display name of a station-owner union account (union_accounts.account_name). */
+        AdminUnionAccountName: string;
         /**
          * @description A station-owner union account (04 §3.2 union_accounts, §6.6 union-accounts). Never
          *     carries alert_stage or any credential.
@@ -13894,7 +13931,7 @@ export interface components {
         AdminUnionAccount: {
             union_account_id: components["schemas"]["Id"];
             platform: components["schemas"]["PlatformCode"];
-            account_name: string;
+            account_name: components["schemas"]["AdminUnionAccountName"];
             /** @description union_accounts.status as stored; values registered with B1-22 (not an enum yet). */
             status: string;
             /**
@@ -13930,6 +13967,26 @@ export interface components {
             code: components["schemas"]["SuccessCode"];
             msg: string;
             data: components["schemas"]["AdminUnionAccountList"];
+            trace_id: components["schemas"]["TraceId"];
+        };
+        /**
+         * @description One choice of the union account dropdown of the PID registration form (GET
+         *     /admin/v1/union/account-options, D10-243): only the identifier, the platform and the
+         *     display name of a union_accounts row; no status, authorization, probe, alert or
+         *     credential field.
+         */
+        AdminUnionAccountOption: {
+            union_account_id: components["schemas"]["Id"];
+            platform: components["schemas"]["PlatformCode"];
+            account_name: components["schemas"]["AdminUnionAccountName"];
+        };
+        AdminUnionAccountOptionList: {
+            items: components["schemas"]["AdminUnionAccountOption"][];
+        };
+        AdminUnionAccountOptionListResponse: {
+            code: components["schemas"]["SuccessCode"];
+            msg: string;
+            data: components["schemas"]["AdminUnionAccountOptionList"];
             trace_id: components["schemas"]["TraceId"];
         };
         AdminUnionAccountResponse: {
@@ -14718,6 +14775,8 @@ export interface components {
         AdminUnionSessionIdPath: components["schemas"]["Id"];
         /** @description pid_id from GET /admin/v1/union-pids; unknown or of another app → 20001 with data.fields=[pid_id]. */
         AdminUnionPidIdPath: components["schemas"]["Id"];
+        /** @description Only union accounts of this platform (enum platform); absent = all. */
+        AdminUnionAccountPlatformFilter: components["schemas"]["PlatformCode"];
         /** @description The pay order (pay_orders.id) as a list row carries it; unknown or of another app → 20001 with data.fields=[pay_order_id]. */
         AdminPayOrderIdPath: components["schemas"]["Id"];
         /** @description The refund (pay_refunds.id); unknown or of another app → 20001 with data.fields=[pay_refund_id]. */
@@ -25565,6 +25624,66 @@ export interface operations {
             };
             429: components["responses"]["TooManyRequests"];
             /** @description Not changed (codes in contracts/error-codes.yaml). */
+            "4XX": {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            "5XX": components["responses"]["ServerError"];
+        };
+    };
+    adminListUnionAccountOptions: {
+        parameters: {
+            query?: {
+                /** @description Only union accounts of this platform (enum platform); absent = all. */
+                platform?: components["parameters"]["AdminUnionAccountPlatformFilter"];
+            };
+            header?: {
+                /** @description Client-generated trace id, echoed as `trace_id` when well-formed. */
+                "X-Trace-Id"?: components["parameters"]["TraceId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The union account choices of the app. */
+            200: {
+                headers: {
+                    "X-Trace-Id": components["headers"]["TraceId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": 0,
+                     *       "msg": "",
+                     *       "data": {
+                     *         "items": [
+                     *           {
+                     *             "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a01",
+                     *             "platform": "taobao",
+                     *             "account_name": "凑狸淘宝联盟"
+                     *           },
+                     *           {
+                     *             "union_account_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f6a02",
+                     *             "platform": "jd",
+                     *             "account_name": "凑狸京东联盟"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "trace_id": "0199a3b4-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AdminUnionAccountOptionListResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description Not available (codes in contracts/error-codes.yaml). */
             "4XX": {
                 headers: {
                     "X-Trace-Id": components["headers"]["TraceId"];

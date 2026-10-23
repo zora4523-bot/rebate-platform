@@ -783,6 +783,11 @@ export const CONTRACT_AUTH_ROUTES = [
   },
   {
     "method": "GET",
+    "path": "/admin/v1/union/account-options",
+    "auth": "admin"
+  },
+  {
+    "method": "GET",
     "path": "/admin/v1/union-pids",
     "auth": "admin"
   },
