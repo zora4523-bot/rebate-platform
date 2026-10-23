@@ -68,9 +68,7 @@ async function consistent(
       rows.find((row) => row.id === each)?.execute_seq === seq &&
       keys.length === want.length &&
       keys.every((key, i) => key === want[i]) &&
-      own.every(
-        (job) => job.singleton_key === `${each}:${String(job.data.payload['execute_seq'])}`,
-      )
+      own.every((job) => job.singleton_key === `${each}:${String(job.data.payload['execute_seq'])}`)
     );
   });
 }

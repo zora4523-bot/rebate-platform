@@ -36,7 +36,9 @@ export const SYSTEM = 'system:auto_payout';
 export type Channel = 'alipay' | 'bank_card';
 
 /** The production `payout` queue spec (exclusive: singletonKey required) and its dead letter queue. */
-const CATALOG = QUEUE_CATALOG.filter((spec) => spec.name === 'payout' || spec.name === 'dead-letter');
+const CATALOG = QUEUE_CATALOG.filter(
+  (spec) => spec.name === 'payout' || spec.name === 'dead-letter',
+);
 
 interface Database {
   urlFor(role: 'couli_app' | 'couli_payout'): string;

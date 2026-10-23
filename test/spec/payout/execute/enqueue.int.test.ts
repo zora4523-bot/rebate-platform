@@ -43,7 +43,9 @@ it('[AC-B2-06c#4] 任务与迁移同一事务：提交前别的连接看不到�
       now: f.clock.now(),
     });
     const inside = await jobs(f, trx);
-    expect(sorted(inside.map((job) => job.singleton_key ?? ''))).toEqual(sorted([`${a}:1`, `${b}:1`]));
+    expect(sorted(inside.map((job) => job.singleton_key ?? ''))).toEqual(
+      sorted([`${a}:1`, `${b}:1`]),
+    );
     expect(await jobs(f, h.observer)).toEqual([]);
     expect((await withdrawal(f, a, h.observer)).status).toBe('APPROVED');
     for (const call of f.send.mock.calls) {

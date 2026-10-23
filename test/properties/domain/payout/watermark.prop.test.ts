@@ -123,9 +123,9 @@ it('[AC-B2-06c#3] judgeWatermark 例：规则示例、2 小时边界恰好等于
     ok: false,
     reason: 'watermark_usable_exceeded',
   });
-  expect(
-    judgeWatermark({ ...base, batchNetFen: 2_600_000n, reading: fresh(4_000_000n) }),
-  ).toEqual({ ok: true });
+  expect(judgeWatermark({ ...base, batchNetFen: 2_600_000n, reading: fresh(4_000_000n) })).toEqual({
+    ok: true,
+  });
   // 例：W=¥20,000 < P → 拒绝。
   expect(judgeWatermark({ ...base, reading: fresh(2_000_000n) })).toEqual({
     ok: false,

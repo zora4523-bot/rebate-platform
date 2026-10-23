@@ -239,34 +239,38 @@ const NOT_BLOCKING: [string, MemberState][] = [
   ['available_fen = 0', async () => undefined],
 ];
 
-it('[AC-B2-06c#2] ② BR-WDR-05 (a) 负余额守卫与锁余额行同一事务：另一事务已锁余额并扣回 0 → −1 未提交时，EXECUTE 等它提交后读到 −1 → blocked / member_blocked', async () => {
-  const f = await setup(h);
-  const service = f.execute();
-  const owner = await f.newUser(0n);
-  const id = await f.seedWithdrawal({ userId: owner });
-  // B (h.db) locks users → balances and posts −1, then stays open; A (h.observer) runs EXECUTE; B
-  // commits only once A waits on a lock B holds (a guard read outside that lock never waits).
-  const { second } = await fenced(
-    h,
-    { db: h.db, body: (trx) => f.postNegative(trx, owner) },
-    { db: h.observer, body: f.body(service, [id]) },
-  );
-  const answer = executed(second);
-  expect(answer.paying).toEqual([]);
-  expect(answer.left).toEqual([{ id, reason: 'member_blocked' }]);
-  await expectUntouched(f, id, 'APPROVED');
-  expect((await items(f)).filter((item) => item.batch_id === answer.batchId)).toEqual([
-    {
-      batch_id: answer.batchId,
-      withdrawal_id: id,
-      result: 'blocked',
-      reason: 'member_blocked',
-      moved_to_batch_id: null,
-    },
-  ]);
-  expect(await jobs(f)).toEqual([]);
-  expect(f.send).not.toHaveBeenCalled();
-}, TIMEOUT);
+it(
+  '[AC-B2-06c#2] ② BR-WDR-05 (a) 负余额守卫与锁余额行同一事务：另一事务已锁余额并扣回 0 → −1 未提交时，EXECUTE 等它提交后读到 −1 → blocked / member_blocked',
+  async () => {
+    const f = await setup(h);
+    const service = f.execute();
+    const owner = await f.newUser(0n);
+    const id = await f.seedWithdrawal({ userId: owner });
+    // B (h.db) locks users → balances and posts −1, then stays open; A (h.observer) runs EXECUTE; B
+    // commits only once A waits on a lock B holds (a guard read outside that lock never waits).
+    const { second } = await fenced(
+      h,
+      { db: h.db, body: (trx) => f.postNegative(trx, owner) },
+      { db: h.observer, body: f.body(service, [id]) },
+    );
+    const answer = executed(second);
+    expect(answer.paying).toEqual([]);
+    expect(answer.left).toEqual([{ id, reason: 'member_blocked' }]);
+    await expectUntouched(f, id, 'APPROVED');
+    expect((await items(f)).filter((item) => item.batch_id === answer.batchId)).toEqual([
+      {
+        batch_id: answer.batchId,
+        withdrawal_id: id,
+        result: 'blocked',
+        reason: 'member_blocked',
+        moved_to_batch_id: null,
+      },
+    ]);
+    expect(await jobs(f)).toEqual([]);
+    expect(f.send).not.toHaveBeenCalled();
+  },
+  TIMEOUT,
+);
 
 it('[AC-B2-06c#2] BR-WDR-11 不设人员互斥：reviewer_id 就是执行管理员的单照常进入 PAYING', async () => {
   const f = await setup(h);

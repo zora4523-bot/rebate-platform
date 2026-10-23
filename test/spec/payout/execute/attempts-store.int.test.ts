@@ -40,15 +40,17 @@ it('[AC-B2-06c#2] hasAttempt（WithdrawalAttemptsPort）：按 kinds 与 results
   await f.seedAttempt(pending, 'transfer', 'pending');
   await f.seedAttempt(queried, 'query', 'success');
   const live = ['pending', 'success', 'unknown'] as const;
-  const answers = await h.db.transaction().execute(async (trx) => [
-    await store.hasAttempt(trx, failed, ['transfer']),
-    await store.hasAttempt(trx, failed, ['transfer'], live),
-    await store.hasAttempt(trx, failed, ['query']),
-    await store.hasAttempt(trx, pending, ['transfer'], live),
-    await store.hasAttempt(trx, queried, ['transfer']),
-    await store.hasAttempt(trx, queried, ['query']),
-    await store.hasAttempt(trx, queried, ['transfer', 'query'], ['success']),
-    await store.hasAttempt(trx, queried, ['query'], ['fail']),
-  ]);
+  const answers = await h.db
+    .transaction()
+    .execute(async (trx) => [
+      await store.hasAttempt(trx, failed, ['transfer']),
+      await store.hasAttempt(trx, failed, ['transfer'], live),
+      await store.hasAttempt(trx, failed, ['query']),
+      await store.hasAttempt(trx, pending, ['transfer'], live),
+      await store.hasAttempt(trx, queried, ['transfer']),
+      await store.hasAttempt(trx, queried, ['query']),
+      await store.hasAttempt(trx, queried, ['transfer', 'query'], ['success']),
+      await store.hasAttempt(trx, queried, ['query'], ['fail']),
+    ]);
   expect(answers).toEqual([true, false, false, true, false, true, true, false]);
 });
