@@ -153,12 +153,12 @@ it('[AC-F1-10fa-BROWSER#2] 浏览器连续停用和启用都弹动态码，确�
     });
     const toggle = currentRow().getByRole('switch');
     // Both a labelled button and an accessible switch are valid controls. Wait until the row
-    // shows one of them (it can be re-rendering after the previous write) before choosing.
+    // shows one of them (it can be re-rendering after the previous write), then click through
+    // one combined locator so a re-render after the wait cannot pick a control that is absent.
     await expect
       .poll(() => named.elements().length + toggle.elements().length, FIRST)
       .toBeGreaterThan(0);
-    const control = named.elements().length > 0 ? named : toggle;
-    await control.click();
+    await named.or(toggle).click();
     let modal = page.getByRole('dialog');
     await expect.element(modal, FIRST).toBeVisible();
     if (modal.getByLabelText('动态码', { exact: true }).elements().length === 0) {
