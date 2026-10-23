@@ -211,6 +211,48 @@ describe('loadConfig', () => {
   });
 });
 
+describe('loadConfig JWT verify-only reading (B1-02zj)', () => {
+  it('[D10-255] JWT_KEY_ID + JWT_PUBLIC_KEY_PEM loads: no signing key, the verification keys in jwtVerify', () => {
+    const publicPem = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+      .publicKey.export({ type: 'spki', format: 'pem' })
+      .toString();
+    const config = loadConfig({
+      APP_ENV: 'prod',
+      FIELD_KEY_PROVIDER: 'kms',
+      FIELD_KEYRING_FILE: '/k.json',
+      JWT_KEY_ID: 'k1',
+      JWT_PUBLIC_KEY_PEM: publicPem,
+    });
+    expect(config.jwt).toBeNull();
+    expect(config.jwtVerify).toEqual({ kid: 'k1', publicKeyPem: publicPem, verificationKeys: {} });
+  });
+
+  it('[D10-255] with the private key both readings are present; without JWT_* jwtVerify is absent', () => {
+    const pem = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+      .privateKey.export({ type: 'pkcs8', format: 'pem' })
+      .toString();
+    const config = loadConfig({ APP_ENV: 'local', JWT_KEY_ID: 'k1', JWT_PRIVATE_KEY_PEM: pem });
+    expect(config.jwt?.kid).toBe('k1');
+    expect(config.jwtVerify?.kid).toBe('k1');
+    expect(config.jwtVerify?.publicKeyPem).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+    expect(loadConfig({ APP_ENV: 'local' })).not.toHaveProperty('jwtVerify');
+  });
+
+  it("[D10-255] a JWT_PUBLIC_KEY_PEM that is not the private key's pair is refused", () => {
+    const one = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const two = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const problems = problemsOf({
+      APP_ENV: 'test',
+      JWT_KEY_ID: 'k1',
+      JWT_PRIVATE_KEY_PEM: one.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+      JWT_PUBLIC_KEY_PEM: two.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    });
+    expect(problems).toEqual([
+      expect.stringMatching(/^JWT_PUBLIC_KEY_PEM: must be the public key/),
+    ]);
+  });
+});
+
 describe('readTrustedProxies', () => {
   it('[AC-B1-03m#6] rejects hop counts, catch-all ranges and netmasks without echoing values', () => {
     for (const value of ['2', '0.0.0.0/0', '::/0', '10.0.0.0/255.0.0.0', 'fe80::1%eth0', 'a,,b']) {

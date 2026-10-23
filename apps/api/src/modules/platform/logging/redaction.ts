@@ -49,6 +49,10 @@ export const SENSITIVE_KEYS = Object.freeze([
   // privateKeyPem (keys are compared after normalizedKey, so private_key_pem covers both cases).
   'private_key_pem',
   'jwt_private_key_pem',
+  // B1-02zj (D10-255 ①): the verify-only key JWT_PUBLIC_KEY_PEM and the parsed configuration's
+  // publicKeyPem, handled like the other JWT_* key material (never logged, only the variable name).
+  'public_key_pem',
+  'jwt_public_key_pem',
 ] as const);
 
 function normalizedKey(key: string): string {

@@ -5,7 +5,13 @@ import { APP_ENVS, type AppEnv } from './app-env.ts';
 import { readAdminAuthConfig, type AdminAuthConfig } from './admin-auth.ts';
 import { readAgentReviewConfig, type AgentReviewConfig } from './agent-review.ts';
 import { findCredentialLikeEnvNames } from './credential-env.ts';
-import { JWT_ENV_NAMES, readJwtKeyConfig, type JwtKeyConfig } from './jwt.ts';
+import {
+  JWT_ENV_NAMES,
+  readJwtKeyConfig,
+  readJwtVerifyKeyConfig,
+  type JwtKeyConfig,
+  type JwtVerifyKeyConfig,
+} from './jwt.ts';
 import { readKeyringConfig, type KeyringConfig } from './keyring.ts';
 import { readExportStoreConfig } from './export-store.ts';
 import { readMediaConfig } from './media.ts';
@@ -73,6 +79,14 @@ export interface AppConfig {
    * when identity's key provider is created. A hand-built config without it counts as null.
    */
   readonly jwt: JwtKeyConfig | null;
+  /**
+   * The verify-only reading of the same JWT_* variables (./jwt.ts, B1-02zj, D10-255 ①): JWT_KEY_ID,
+   * its public key (JWT_PUBLIC_KEY_PEM, or derived from JWT_PRIVATE_KEY_PEM) and
+   * JWT_VERIFY_KEYS_JSON, used by entries that only verify access tokens (stream). Present only
+   * when it is complete; absent (or null) otherwise, and a hand-built config without it falls back
+   * to the public half of `jwt`.
+   */
+  readonly jwtVerify?: JwtVerifyKeyConfig | null;
   /**
    * TRUSTED_PROXIES (./trusted-proxies.ts, B1-03m): addresses / ranges of the gateways whose
    * X-Forwarded-For entries every HTTP entry believes when deriving `request.ip`. Empty (unset)
@@ -149,17 +163,28 @@ export function startupViolations(
 }
 
 /**
- * The JWT signing key part of loadConfig: its problems are merged only when at least one JWT_*
- * variable is set, so an environment without them keeps exactly its other problems; a missing
- * cloud key is refused at startup by identity's key provider (contract in ./jwt.ts).
+ * The JWT key part of loadConfig: its problems are merged only when at least one JWT_* variable is
+ * set, so an environment without them keeps exactly its other problems; a missing cloud key is
+ * refused at startup by identity's key providers (contract in ./jwt.ts).
+ * B1-02zj (D10-255 ①): every entry loads the same configuration, so the problems are those of the
+ * verify-only reading (format, key pair, kid, previous keys). JWT_KEY_ID + JWT_PUBLIC_KEY_PEM alone
+ * is valid configuration: `jwt` (the signing key) is then null and the signing entry (api) refuses
+ * to start when identity creates its key provider; `jwtVerify` carries the verification keys.
  */
 function readJwt(
   appEnv: AppEnv,
   env: Readonly<Record<string, string | undefined>>,
-): { readonly jwt: JwtKeyConfig | null; readonly problems: readonly string[] } {
-  const result = readJwtKeyConfig(appEnv, env);
+): {
+  readonly jwt: JwtKeyConfig | null;
+  readonly jwtVerify: JwtVerifyKeyConfig | null;
+  readonly problems: readonly string[];
+} {
   const set = JWT_ENV_NAMES.some((name) => (env[name] ?? '') !== '');
-  return set ? result : { jwt: null, problems: [] };
+  if (!set) return { jwt: null, jwtVerify: null, problems: [] };
+  const verify = readJwtVerifyKeyConfig(appEnv, env);
+  if (verify.problems.length > 0) return { jwt: null, jwtVerify: null, problems: verify.problems };
+  // Valid for verification; signing additionally needs the private key (null when it is absent).
+  return { jwt: readJwtKeyConfig(appEnv, env).jwt, jwtVerify: verify.jwt, problems: [] };
 }
 
 /**
@@ -200,7 +225,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
   const violations = startupViolations(values.APP_ENV, env);
   const { keyring, problems } = readKeyringConfig(values.APP_ENV, env);
   violations.push(...problems);
-  const { jwt, problems: jwtProblems } = readJwt(values.APP_ENV, env);
+  const { jwt, jwtVerify, problems: jwtProblems } = readJwt(values.APP_ENV, env);
   violations.push(...jwtProblems);
   const { trustedProxies, problems: proxyProblems } = readTrustedProxies(env);
   violations.push(...proxyProblems);
@@ -238,6 +263,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     adminPort: values.ADMIN_PORT,
     keyring,
     jwt,
+    // Only present when configured, so the documented shape of an unconfigured result is unchanged.
+    ...(jwtVerify === null ? {} : { jwtVerify }),
     trustedProxies,
     adminAuth,
     mediaPublicBaseUrl,
