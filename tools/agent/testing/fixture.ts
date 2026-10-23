@@ -5,6 +5,7 @@
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -179,6 +180,50 @@ export function makeFixture(name: string): Fixture {
     env,
     cleanup: () => rmSync(real, { recursive: true, force: true }),
   };
+}
+
+/**
+ * Fake eslint and prettier in `<trusted>/node_modules/.bin/` with the two trusted config files,
+ * for tools/agent/format-tests.ts (D10-292). eslint logs its argv and cwd to $FAKE_LOG (when
+ * set) and prints an empty JSON report; prettier rewrites every `./…` file it is given with perl
+ * (double quotes to single, `;` added after a line-final `)`), and with FAKE_PRETTIER=rename also
+ * renames `oldName` to `newName` (a change that is not formatting). FAKE_ESLINT_EXIT and
+ * FAKE_PRETTIER_EXIT set the exit codes (defaults 1 = rule problems left, and 0).
+ */
+export function writeFakeFormatters(trusted: string): void {
+  const bin = join(trusted, 'node_modules', '.bin');
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(trusted, 'eslint.config.js'), 'export default [];\n');
+  writeFileSync(join(trusted, '.prettierrc.json'), '{}\n');
+  writeFileSync(
+    join(bin, 'eslint'),
+    [
+      '#!/usr/bin/env bash',
+      'if [ -n "${FAKE_LOG:-}" ]; then',
+      '  printf "%s\\n" "$@" >"$FAKE_LOG/eslint.argv"',
+      '  pwd -P >"$FAKE_LOG/eslint.cwd"',
+      'fi',
+      "echo '[]'",
+      'exit "${FAKE_ESLINT_EXIT:-1}"',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(
+    join(bin, 'prettier'),
+    [
+      '#!/usr/bin/env bash',
+      'if [ -n "${FAKE_LOG:-}" ]; then printf "%s\\n" "$@" >"$FAKE_LOG/prettier.argv"; fi',
+      'for f in "$@"; do',
+      '  case "$f" in ./*) ;; *) continue ;; esac',
+      '  perl -0pi -e \'s/"/\\x27/g; s/\\)\\n/);\\n/g\' "$f"',
+      '  if [ "${FAKE_PRETTIER:-}" = rename ]; then perl -0pi -e "s/oldName/newName/g" "$f"; fi',
+      'done',
+      'exit "${FAKE_PRETTIER_EXIT:-0}"',
+      '',
+    ].join('\n'),
+  );
+  chmodSync(join(bin, 'eslint'), 0o755);
+  chmodSync(join(bin, 'prettier'), 0o755);
 }
 
 export type RunResult = { status: number | null; stdout: string; stderr: string };

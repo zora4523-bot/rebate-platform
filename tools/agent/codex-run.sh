@@ -41,6 +41,9 @@
 # AGENT_ENGINE=claude-independent; executed directly, this file always runs Codex. The engine is
 # recorded as `engine` in meta.json, and the binary always follows the engine, so a run can never
 # be recorded as the other engine's. Differences of that engine are marked "claude-independent".
+# Its test phase also formats the test files it handed back (tools/agent/format-tests.ts,
+# D10-292) and records the summary as `test_format` in meta.json; a change that is not
+# format-only makes the call "no usable output" (exit 10).
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -649,6 +652,62 @@ worktree_content() {
   done
 }
 
+# claude-independent test phase (D10-292): one line `<blob hash><TAB><path>` per file that
+# differs from HEAD or is untracked (not ignored), taken before and after the call, so that the
+# files this call added or changed are told apart from what was already in the worktree.
+dirty_listing() {
+  local file
+  {
+    git -C "$WT_REAL" diff HEAD --name-only --no-renames -z
+    git -C "$WT_REAL" ls-files --others --exclude-standard -z
+  } | while IFS= read -r -d '' file; do
+    [ -f "$WT_REAL/$file" ] || continue
+    printf '%s\t%s\n' "$(git -C "$WT_REAL" hash-object --no-filters -- "$file")" "$file"
+  done
+}
+
+# claude-independent test phase (D10-292): the model has no shell and cannot run prettier, so
+# the wrapper formats the files this call added or changed (tools/agent/format-tests.ts from the
+# trusted root: the trusted eslint with layout fixes only, then the trusted prettier; that script
+# keeps only test_paths and script files). The summary goes to $WORK/test-format.json. Returns 1,
+# with the reason appended to validate.txt, when a change was not format-only or formatting
+# failed; format-tests.ts has restored every file then.
+format_test_files() {
+  local rc=0 summary="$WORK/test-format.json"
+  if ! dirty_listing >"$WORK/dirty.after"; then
+    printf '%s\n' 'test_format: cannot list the changed files of the worktree' >>"$WORK/validate.txt"
+    printf '%s\n' '{"ok":false,"files":[],"skipped":[],"restored":false,"error":"cannot list the changed files"}' >"$summary"
+    return 1
+  fi
+  perl -e '
+    my ($before, $after) = @ARGV;
+    my %seen;
+    open(my $fb, "<", $before) or exit 1;
+    while (my $line = <$fb>) { chomp $line; $seen{$line} = 1; }
+    open(my $fa, "<", $after) or exit 1;
+    while (my $line = <$fa>) {
+      chomp $line;
+      next if $seen{$line};
+      my (undef, $path) = split /\t/, $line, 2;
+      print "$path\n" if defined $path;
+    }
+  ' "$WORK/dirty.before" "$WORK/dirty.after" >"$WORK/format-files.txt" || rc=$?
+  if [ "$rc" = 0 ]; then
+    node "$TRUSTED/tools/agent/format-tests.ts" --trusted "$TRUSTED" --worktree "$WT_REAL" \
+      --globs "$TASK_TEST_PATHS" --files-from "$WORK/format-files.txt" \
+      >"$summary" 2>"$WORK/format-tests.err" || rc=$?
+  fi
+  if [ ! -s "$summary" ]; then
+    printf '%s\n' '{"ok":false,"files":[],"skipped":[],"restored":false,"error":"format-tests.ts wrote no summary"}' >"$summary"
+  fi
+  [ "$rc" = 0 ] && return 0
+  {
+    printf 'test_format: the test files were not accepted as formatted (exit %s); they are restored to what the model wrote\n' "$rc"
+    if [ -f "$WORK/format-tests.err" ]; then cat "$WORK/format-tests.err"; fi
+  } >>"$WORK/validate.txt"
+  return 1
+}
+
 # branch_lines keep|other <symbolic HEAD> <listing>: splits a `refname objectname` listing into
 # the branches that must not change (keep) and the branches of other tasks (other).
 branch_lines() {
@@ -1186,6 +1245,12 @@ run_task() {
   started_at="$(agent_now_utc)"
   position_snapshot "$WORK/position.before" || position_fail "cannot read the git state of $WT_REAL"
   head_before="$(snapshot_value "$WORK/position.before" head)"
+  # claude-independent test phase (D10-292): which files were already changed before the call.
+  local format_phase=0
+  if [ "$AGENT_ENGINE" = claude-independent ] && [ "$MODE" = impl ] && [ "$PHASE" = test ]; then
+    format_phase=1
+    dirty_listing >"$WORK/dirty.before" || position_fail "cannot list the changed files of $WT_REAL"
+  fi
 
   local meta_args=(--str "mode=$MODE" --str "task=$TASK" --str "worktree=$WT_REAL"
     --str "run=$RUN" --str "started_at=$started_at" --null finished_at --null exit_code
@@ -1316,6 +1381,25 @@ run_task() {
     fi
   fi
 
+  # claude-independent test phase (D10-292): format the handed-back test files, only once the
+  # answer passed the trusted validator and the position assertion (part 2 above) found nothing,
+  # and before the result is decided, so that a failure is an ordinary "no usable output" (exit
+  # 10, validation failed). The position snapshot was taken before this step and does not cover
+  # the content of the working tree in impl mode, and nothing is staged, so the wrapper's own
+  # formatting is never counted as a change by the model. path-guard (post-run.sh) runs later on
+  # the formatted tree; formatting touches only files of test_paths this call already changed.
+  local format_meta=()
+  if [ "$format_phase" = 1 ]; then
+    format_meta=(--null test_format)
+    if [ "$has_output" = 1 ] && [ -z "$changed" ]; then
+      if ! format_test_files; then
+        has_output=0
+        validated=failed
+      fi
+      format_meta=(--json "test_format=$(cat "$WORK/test-format.json")")
+    fi
+  fi
+
   if [ "$timed_out" = 1 ] || [ "$idle_killed" = 1 ]; then
     final=124
   elif [ "$has_output" = 1 ]; then
@@ -1345,7 +1429,8 @@ run_task() {
     --num "pgid=$pgid" --bool "group_gone=$group_gone" --bool "stragglers_killed=$stragglers" \
     --num "escaped_killed=$escaped" --num "descendants_left=$descendants_left" \
     --str "validation=$validated" --lines "validation_messages=$WORK/validate.txt" \
-    --list "position_changed=$changed" --bool "other_task_branches_changed=$other_tasks"
+    --list "position_changed=$changed" --bool "other_task_branches_changed=$other_tasks" \
+    ${format_meta[@]+"${format_meta[@]}"}
 
   # Token accounting only (规划/11 §1.3): the Codex quota is unlimited and nothing is gated on
   # this ledger, so a failure here is a warning and never changes the exit code. The ledger reads
