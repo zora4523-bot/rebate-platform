@@ -31,8 +31,9 @@ jobs:
     # D10-242 (CT-06zm): an owner-approval label added or removed changes no code, so on a
     # labeled / unlabeled event the verify jobs reuse what already passed instead of running a
     # second time. Reuse holds only when, for EACH of verify-static, verify-unit, verify-spec-1,
-    # verify-spec-2 (the four jobs that replaced verify-fast, CT-06zx), verify-props and
-    # verify-int, an earlier run of this workflow file (ci.yml) for the same PR head SHA has that job's latest
+    # verify-spec-2 (the four jobs that replaced verify-fast, CT-06zx), verify-props-1,
+    # verify-props-2 (the two shards that replaced verify-props, CT-06zx2) and verify-int, an
+    # earlier run of this workflow file (ci.yml) for the same PR head SHA has that job's latest
     # attempt concluded `success` AND carries the artifact `verified-<job>-<tree>` that the job
     # uploads only after all of its steps passed, <tree> being the tree it tested. The tree of
     # this event's checkout (the PR merge commit as of now) must equal it, so a base branch that
@@ -61,7 +62,7 @@ jobs:
           runs=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$HEAD_SHA&per_page=100" \
             --jq ".workflow_runs[] | select(.id != $RUN_ID) | .id")
           reuse=true
-          for job in verify-static verify-unit verify-spec-1 verify-spec-2 verify-props verify-int; do
+          for job in verify-static verify-unit verify-spec-1 verify-spec-2 verify-props-1 verify-props-2 verify-int; do
             found=''
             for run in $runs; do
               ok=$(gh api "repos/$REPO/actions/runs/$run/jobs?filter=latest&per_page=100" \
@@ -282,7 +283,7 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  verify-props:
+  verify-props-1:
     # PR property tier (规划/11 §4.2): 100k runs with the fixed seed, then 100k runs with a seed
     # derived from the first 8 hex digits of the commit SHA. Split out of verify-fast on
     # 2026-10-17 so the two passes (6–11 minutes each, growing with every task) run in parallel
@@ -292,6 +293,10 @@ jobs:
     # D10-242 (CT-06zm): skipped only when verify-reuse found a success of this very job on the
     # same tested tree (see verify-reuse); every other event, and any failure of verify-reuse,
     # runs it in full.
+    # D10-304 (CT-06zx2): split into verify-props-1 / verify-props-2, each running both passes on
+    # half of the spec-test files (vitest --shard=i/2, as verify-spec-1 / -2); runs, seeds and
+    # steps unchanged. The 12 latest green runs of the single job took 27–53 min (p50 40, p90
+    # 52.5) against its 60-minute cap; each shard keeps the 60-minute cap. pnpm store cached.
     needs: [verify-reuse]
     if: ${{ !cancelled() && needs.verify-reuse.outputs.reuse != 'true' }}
     runs-on: ubuntu-latest
@@ -314,10 +319,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
-          package-manager-cache: false
+          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Property tests, 100k runs, fixed seed
-        run: pnpm --filter @couli/spec-tests test
+        run: pnpm --filter @couli/spec-tests run test --shard=1/2
         env:
           PROP_RUNS: '100000'
       - name: Property tests, 100k runs, seed from commit SHA
@@ -325,13 +330,61 @@ jobs:
           PROP_SEED="$((16#${COMMIT_SHA:0:8}))"
           export PROP_SEED
           echo "PROP_SEED=${PROP_SEED}"
-          pnpm --filter @couli/spec-tests test
+          pnpm --filter @couli/spec-tests run test --shard=1/2
         env:
           PROP_RUNS: '100000'
           COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: verified-verify-props-${{ steps.tested.outputs.tree }}
+          name: verified-verify-props-1-${{ steps.tested.outputs.tree }}
+          # The artifact name is the record (job and tested tree); the file only holds the tree id,
+          # written by the `tested` step (upload-artifact skips dot-files such as .nvmrc by default).
+          path: ${{ runner.temp }}/verified-tree.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  verify-props-2:
+    # Same as verify-props-1, other shard.
+    needs: [verify-reuse]
+    if: ${{ !cancelled() && needs.verify-reuse.outputs.reuse != 'true' }}
+    runs-on: ubuntu-latest
+    # 35 → 60 (2026-10-19, CT-06z): green in the 30 latest ci runs 16m40s–32m13s, p90 31m30s
+    # (90% of the cap); the maximum with a 1.5× margin, rounded up to a multiple of 5, is 50,
+    # plus 10 for the [AC-B2-01j#20] property test of B2-01l (#812), which makes this job longer.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The tree this job tests (the PR merge commit, or the pushed commit): recorded before
+      # anything runs, uploaded under that name only when every step passed (D10-242).
+      - id: tested
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "$tree" > "$RUNNER_TEMP/verified-tree.txt"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Property tests, 100k runs, fixed seed
+        run: pnpm --filter @couli/spec-tests run test --shard=2/2
+        env:
+          PROP_RUNS: '100000'
+      - name: Property tests, 100k runs, seed from commit SHA
+        run: |
+          PROP_SEED="$((16#${COMMIT_SHA:0:8}))"
+          export PROP_SEED
+          echo "PROP_SEED=${PROP_SEED}"
+          pnpm --filter @couli/spec-tests run test --shard=2/2
+        env:
+          PROP_RUNS: '100000'
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-verify-props-2-${{ steps.tested.outputs.tree }}
           # The artifact name is the record (job and tested tree); the file only holds the tree id,
           # written by the `tested` step (upload-artifact skips dot-files such as .nvmrc by default).
           path: ${{ runner.temp }}/verified-tree.txt
@@ -565,14 +618,15 @@ jobs:
   ci-gate:
     # Summary job: the only required check of this workflow (ops/branch-protection.json).
     # CT-06zx: verify-static, verify-unit, verify-spec-1 and verify-spec-2 replace verify-fast;
-    # each must pass (or be reused) on its own.
+    # each must pass (or be reused) on its own; so must verify-props-1 and verify-props-2 (CT-06zx2).
     if: always()
     needs:
       - verify-static
       - verify-unit
       - verify-spec-1
       - verify-spec-2
-      - verify-props
+      - verify-props-1
+      - verify-props-2
       - verify-int
       - guard-git
       - verify-reuse
@@ -581,7 +635,7 @@ jobs:
     steps:
       - name: Summarise
         run: |
-          echo "verify-static=${STATIC} verify-unit=${UNIT} verify-spec-1=${SPEC1} verify-spec-2=${SPEC2} verify-props=${PROPS} verify-int=${INT} guard-git=${GUARD} event=${EVENT} reuse=${REUSE_RESULT}/${REUSE}"
+          echo "verify-static=${STATIC} verify-unit=${UNIT} verify-spec-1=${SPEC1} verify-spec-2=${SPEC2} verify-props-1=${PROPS1} verify-props-2=${PROPS2} verify-int=${INT} guard-git=${GUARD} event=${EVENT} reuse=${REUSE_RESULT}/${REUSE}"
           # A verify job passes when it succeeded, or (label event, D10-242) when verify-reuse
           # itself succeeded and found its success on the same tested tree, so it was skipped.
           reused() { [ "$REUSE_RESULT" = success ] && [ "$REUSE" = true ] && [ "$1" = skipped ]; }
@@ -589,7 +643,8 @@ jobs:
           [ "$UNIT" = success ] || reused "$UNIT" || exit 1
           [ "$SPEC1" = success ] || reused "$SPEC1" || exit 1
           [ "$SPEC2" = success ] || reused "$SPEC2" || exit 1
-          [ "$PROPS" = success ] || reused "$PROPS" || exit 1
+          [ "$PROPS1" = success ] || reused "$PROPS1" || exit 1
+          [ "$PROPS2" = success ] || reused "$PROPS2" || exit 1
           [ "$INT" = success ] || reused "$INT" || exit 1
           if [ "$EVENT" = pull_request ]; then
             [ "$GUARD" = success ] || exit 1
@@ -601,7 +656,8 @@ jobs:
           UNIT: ${{ needs.verify-unit.result }}
           SPEC1: ${{ needs.verify-spec-1.result }}
           SPEC2: ${{ needs.verify-spec-2.result }}
-          PROPS: ${{ needs.verify-props.result }}
+          PROPS1: ${{ needs.verify-props-1.result }}
+          PROPS2: ${{ needs.verify-props-2.result }}
           INT: ${{ needs.verify-int.result }}
           GUARD: ${{ needs.guard-git.result }}
           REUSE_RESULT: ${{ needs.verify-reuse.result }}

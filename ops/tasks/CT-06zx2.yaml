@@ -1,0 +1,22 @@
+id: CT-06zx2
+repo: rebate-platform
+title: CT-06zx2：verify-props 按 spec-tests 文件 --shard=i/2 拆为 verify-props-1 / verify-props-2 两个并行作业 + pnpm store 缓存（D10-304）
+type: guard-change
+# 2026-10-24 入账（ops 线，编排裁定 D10-304，接 CT-06zx #1444）。起因：verify-props 最近 12 次成功 27–53 分钟、p50 40、
+# p90 52.5，上限 60；#1442（纯台账）在 60 分钟被取消。做法：ci.yml 的 verify-props 换成两个并行作业，各自跑原来两轮
+# （PROP_RUNS=100000 固定种子、再一轮由提交 SHA 前 8 位派生的种子），每轮 `pnpm --filter @couli/spec-tests run test --shard=i/2`
+# （同 verify-spec-1 / -2 的写法）；setup-node 改 `cache: pnpm`；各 timeout 60；上传 verified-verify-props-<i>-<tree>。
+# verify-reuse 的作业清单与 ci-gate 的 needs / 判定 / 摘要改认两个新名，复用条件不变。PROP_SEED / PROP_RUNS 照旧。
+# 分支基于 CT-06zx（#1444）头，#1444 合并后变基到主干再开 PR。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - '.github/workflows/ci.yml'
+  - 'ops/tasks/CT-06zx2.yaml'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
