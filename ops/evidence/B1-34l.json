@@ -1,0 +1,120 @@
+{
+  "task": "B1-34l",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "spec_commit": "cfee6a49aadaef6ee12b9f0cdffd4db1e42a3246",
+  "red_tests": [
+    "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: step N-1 already used, the same code is accepted for step N (first millisecond of step N)",
+    "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: step N-1 already used, the same code is accepted for step N (last millisecond of step N)",
+    "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: step N-1 already used, the same code is accepted for step N (middle of step N-1)",
+    "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: steps N-1 and N both used, the code is refused (first millisecond of step N)",
+    "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: steps N-1 and N both used, the code is refused (last millisecond of step N)",
+    "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: steps N-1 and N both used, the code is refused (middle of step N-1)",
+    "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: a colliding code is accepted for N-1, then for N, then refused",
+    "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: once step N is accepted, a code of step N-1 is refused",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#1] previous matched step already used: the same code is accepted for step N (first millisecond of step N)",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#1] previous matched step already used: the same code is accepted for step N (last millisecond of step N)",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#1] previous matched step already used: the same code is accepted for step N (middle of step N-1)",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#1] a code accepted in step N-1 is accepted once more in step N (login, then step-up)",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#2] both matched steps already used: the code is refused as a replay (first millisecond of step N)",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#2] both matched steps already used: the code is refused as a replay (last millisecond of step N)",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#2] both matched steps already used: the code is refused as a replay (middle of step N-1)",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#2] a colliding code serves at most its two steps: the third use is refused",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] with nothing used, only the lower matched step is consumed (first millisecond of step N)",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] with nothing used, only the lower matched step is consumed (last millisecond of step N)",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] with nothing used, only the lower matched step is consumed (middle of step N-1)",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] consume answers true: steps are tried in ascending order, none after the first success",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] consume answers false, true: steps are tried in ascending order, none after the first success",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] consume answers false, false: steps are tried in ascending order, none after the first success",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#4] consume throwing on the first matched step fails the verification; step N is not claimed",
+    "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#4] consume throwing on step N after N-1 was refused fails the verification"
+  ],
+  "risk_note": "RV2 by path (admin module): orchestrator ruling D10-238. The admin TOTP verifier (admin/domain/totp.ts createTotpVerifier) now collects every matching step in the ±1 window and calls replay.consume in ascending step order; the first true accepts, only a false moves on, a thrown error propagates at once (fail closed); all refused means replay. Format check, decryption, constant-time comparison of every window step and zeroing the key are unchanged; the replay store (totp_last_step, monotonic) is unchanged, so each step is still used once and steps before an accepted one count as used. When adjacent steps share a code (about one in a million), the same code string can be accepted once per step (per-step replay protection, the trade-off D10-238 accepted). Login, first binding, step-up and verify-super share the verifier. No contract, schema or money path. Rule tests (24, [AC-B1-34l#n]) by an independent Claude (approvals #36, Codex out of quota), collision fixture computed offline by the orchestrator and re-checked in the tests with an independent HMAC; red before the implementation; implementation by an Opus 5.5 subagent in one run.",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "cfee6a49aadaef6ee12b9f0cdffd4db1e42a3246",
+      "tree": "5e4d330a5fbd18467b3405af88bc9cd21a8da0d5",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T10:15:29Z",
+      "finished_at": "2026-10-23T10:15:38Z",
+      "red_tests": [
+        "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: step N-1 already used, the same code is accepted for step N (first millisecond of step N)",
+        "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: step N-1 already used, the same code is accepted for step N (last millisecond of step N)",
+        "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: step N-1 already used, the same code is accepted for step N (middle of step N-1)",
+        "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: steps N-1 and N both used, the code is refused (first millisecond of step N)",
+        "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: steps N-1 and N both used, the code is refused (last millisecond of step N)",
+        "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: steps N-1 and N both used, the code is refused (middle of step N-1)",
+        "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: a colliding code is accepted for N-1, then for N, then refused",
+        "test/spec/admin/totp-window/pg-window.int.test.ts > [AC-B1-34l#5] PG store: once step N is accepted, a code of step N-1 is refused",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#1] previous matched step already used: the same code is accepted for step N (first millisecond of step N)",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#1] previous matched step already used: the same code is accepted for step N (last millisecond of step N)",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#1] previous matched step already used: the same code is accepted for step N (middle of step N-1)",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#1] a code accepted in step N-1 is accepted once more in step N (login, then step-up)",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#2] both matched steps already used: the code is refused as a replay (first millisecond of step N)",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#2] both matched steps already used: the code is refused as a replay (last millisecond of step N)",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#2] both matched steps already used: the code is refused as a replay (middle of step N-1)",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#2] a colliding code serves at most its two steps: the third use is refused",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] with nothing used, only the lower matched step is consumed (first millisecond of step N)",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] with nothing used, only the lower matched step is consumed (last millisecond of step N)",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] with nothing used, only the lower matched step is consumed (middle of step N-1)",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] consume answers true: steps are tried in ascending order, none after the first success",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] consume answers false, true: steps are tried in ascending order, none after the first success",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#3] consume answers false, false: steps are tried in ascending order, none after the first success",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#4] consume throwing on the first matched step fails the verification; step N is not claimed",
+        "test/spec/admin/totp-window/window.test.ts > [AC-B1-34l#4] consume throwing on step N after N-1 was refused fails the verification"
+      ],
+      "expected": [
+        "test/spec/admin/totp-window/pg-window.int.test.ts",
+        "test/spec/admin/totp-window/window.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "b8baec80e0594c52eab9921acf6beb6dc086ef353813688367a5a3c57454d8e3"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "c4e4c8a9ee7bda2797325d123512fcece23c45690ff67c7e1f794718f4b83ffc"
+        }
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "Codex out of quota (usage limit until 10-30); independent Claude via tools/agent/claude-run.sh per approvals #36; round 1 pass, 0 findings"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests by claude-independent reviewed by a fresh Claude subagent against BR-ID-34 and ruling D10-238: pass, 0 findings; ascending order, stop after first success, no further consume after a thrown error and the PG store integration all asserted; collision fixture re-checked with an independent HMAC; 2026-10-23 gitleaks (generic-api-key, kit.ts) fix by the same independent Claude test author (claude-run.sh test round 2): the Base32 seed literal is now derived from SEED_ASCII by an independent RFC 4648 encoder, representation only, assertions unchanged (编排同意机械修正 D10-206, notice 2026-10-23 15:57); re-checked by a fresh Claude subagent: pass, 0 findings; red re-run 24/24 red"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "4961f1028469ffa955603cc638639cc34e3d6904",
+    "specs": "d7811035a75370ee35f2ae060353af8353377700"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: test/properties is unchanged from main",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  }
+}
