@@ -1,0 +1,22 @@
+id: B2-04ka
+repo: rebate-platform
+title: ledger 回正挂点：账户可用余额由负转为非负的那笔 post 在同一事务内同步调用注入的回正清理端口（缺省空实现），供 payout 清理提现阻断（BR-WDR-05 (a)）
+type: impl
+# 2026-10-23 资金线（编排 D10-220 ①：先 B 后 A）。分工：Codex 写规则测试 / Opus 实现，RV2 资金评审。
+# 状态备注：可开。端口由 ledger 声明、payout 实现并在组装时注入（依赖方向 payout → ledger）；ledger 不直接写 withdrawals；不用异步事件（BR-WDR-05 (a) 要求同一记账事务内清理）。挂点合并后 withdraw 线另开小任务把清理接到端口并补端到端规则测试。与 B2-04k 的 account.went_negative（≥0 → <0）对称。
+refs: [BR-WDR-05, BR-FUND-10]
+refs_hash:
+  BR-WDR-05: cd7130978c70
+  BR-FUND-10: 5dbb4715dec2
+deps: [B2-04k]
+paths:
+  - 'apps/api/src/modules/ledger/**'
+test_paths:
+  - 'test/spec/ledger/back-to-nonnegative/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/ledger/back-to-nonnegative/**'
+status: todo
+pr: null
