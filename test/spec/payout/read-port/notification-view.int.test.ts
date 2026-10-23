@@ -21,7 +21,7 @@ import {
   type Harness,
 } from './kit.ts';
 
-// Real PG (TEST_PG_ADMIN_URL / testcontainers), run only in the orchestrator's isolated container.
+// Real PostgreSQL (the global setup provisions it), run only in the orchestrator's isolated container.
 // The reader is created inside each test, so a skeleton fails per test with NotImplemented.
 let h: Harness;
 beforeAll(async () => {
