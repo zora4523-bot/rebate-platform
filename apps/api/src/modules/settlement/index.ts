@@ -10,3 +10,12 @@ export type {
   RebateHoldAudit,
   PrecreditEvent,
 } from './rebate/application/rebate.ts';
+export { createPendingEarningsSource } from './reads/pending-earnings.ts';
+export type {
+  PendingEarningsSource,
+  PendingEarningsDependencies,
+  PendingSnapshot,
+  PendingSnapshotInput,
+  UserPendingEarnings,
+  AppPendingEarnings,
+} from './reads/pending-earnings.ts';

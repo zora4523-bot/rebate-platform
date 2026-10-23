@@ -63,3 +63,5 @@ export type {
   RuleTrialTotals,
   RulePublicationErrorCode,
 } from './application/rule-publication.ts';
+export { readTljDeductFen, TljDeductionMissing } from './infra/tlj-deduction-reader.ts';
+export type { TljDeductionInput } from './infra/tlj-deduction-reader.ts';

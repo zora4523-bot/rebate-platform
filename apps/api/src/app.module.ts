@@ -54,6 +54,7 @@ import {
   createRuleSetReader,
   createSnapshotBeneficiaryResolver,
   readCommissionSnapshot,
+  readTljDeductFen,
   type RuleSetReader,
 } from './modules/commission/index.ts';
 import {
@@ -70,10 +71,6 @@ import {
 // TODO(规划/11 §2.3): 配置注册表改从 content 的 index.ts 导入 — blocked on content 任务补该导出（不在 B1-34a 路径内）
 import { configRegistry } from './modules/content/domain/config-registry.ts';
 import { HealthModule } from './modules/health/index.ts';
-// The wallet summary's estimates (B2-04y, S3): settlement's PendingEarningsSource implementation,
-// which settlement's index.ts does not export yet.
-// TODO(规划/11 §2.3): createPendingEarningsSource 改从 settlement 的 index.ts 导入 — blocked on settlement 任务补该导出（不在 B2-04y 路径内）
-import { createPendingEarningsSource } from './modules/settlement/reads/pending-earnings.ts';
 import {
   GrowthModule,
   appendLevelChange,
@@ -291,6 +288,7 @@ import {
   type BlocklistService,
   type RiskStateService,
 } from './modules/risk/index.ts';
+import { createPendingEarningsSource } from './modules/settlement/index.ts';
 import {
   REGISTERED_PLATFORMS,
   UNION_ENDPOINTS,
@@ -501,8 +499,7 @@ function onReadTransaction<T>(
 /**
  * GET /v1/wallet/summary's owner-module ports (B2-04y; BR-FUND-18), on the entry's database:
  * - estimates: settlement's PendingEarningsSource (S3), built per read over the read transaction
- *   with content's configuration reader, commission's snapshot read port and the snapshot's
- *   tlj_deduct_fen;
+ *   with content's configuration reader and commission's snapshot and tlj_deduct_fen read ports;
  * - risk_paused_reason: risk's batch state reader; a stored frozen state answers account_frozen;
  * - withdraw_enabled: withdraw.enabled through content's reader, the registry default when unset.
  */
@@ -515,19 +512,9 @@ function walletSummaryDependencies(db: Kysely<Database>, clock: Clock): WalletSu
           (await createContentReader({ db: trx, clock }).configValue(appId, key))?.value,
       },
       readSnapshot: readCommissionSnapshot,
-      // The immutable commission_splits.tlj_deduct_fen of the sub-order, on the same transaction
+      // commission's read port: the sub-order's immutable tlj_deduct_fen on the same transaction
       // (an absent split throws: never a default 0, BR-CALC-02).
-      // TODO(规划/11 §2.3): 改由 commission 公开端口提供淘礼金扣减额 — blocked on commission 任务补该端口（B2-04i 未暴露，不在 B2-04y 路径内）
-      readTljDeductFen: async (handle, input) => {
-        const row = await handle
-          .withSchema('app')
-          .selectFrom('commission_splits')
-          .select('tlj_deduct_fen')
-          .where('app_id', '=', input.appId)
-          .where('order_id', '=', input.orderId)
-          .executeTakeFirstOrThrow();
-        return row.tlj_deduct_fen;
-      },
+      readTljDeductFen,
     });
   const riskStates = createRiskStateBatchReader({ db });
   const withdrawDefault = switchSpecOf('withdraw.enabled')?.defaultValue;
