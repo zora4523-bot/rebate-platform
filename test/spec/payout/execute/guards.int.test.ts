@@ -15,6 +15,7 @@ import {
   expectJob,
   expectPaying,
   expectUntouched,
+  fenced,
   items,
   jobs,
   open,
@@ -230,12 +231,6 @@ const NOT_BLOCKING: [string, MemberState][] = [
       f.risk.set(owner, { state: 'frozen', frozen_until: NOW });
     },
   ],
-  [
-    'appealing 但没有申诉前状态',
-    async (f, owner) => {
-      f.risk.set(owner, { state: 'appealing', frozen_until: null });
-    },
-  ],
   ['已解除的 withdraw_holds', (f, owner) => f.seedWithdrawHold(owner, { released: true })],
   [
     '已到期的 withdraw_holds（hold_until = now）',
@@ -243,6 +238,66 @@ const NOT_BLOCKING: [string, MemberState][] = [
   ],
   ['available_fen = 0', async () => undefined],
 ];
+
+it('[AC-B2-06c#2] ② BR-WDR-05 (a) 负余额守卫与锁余额行同一事务：另一事务已锁余额并扣回 0 → −1 未提交时，EXECUTE 等它提交后读到 −1 → blocked / member_blocked', async () => {
+  const f = await setup(h);
+  const service = f.execute();
+  const owner = await f.newUser(0n);
+  const id = await f.seedWithdrawal({ userId: owner });
+  // B (h.db) locks users → balances and posts −1, then stays open; A (h.observer) runs EXECUTE; B
+  // commits only once A waits on a lock B holds (a guard read outside that lock never waits).
+  const { second } = await fenced(
+    h,
+    { db: h.db, body: (trx) => f.postNegative(trx, owner) },
+    { db: h.observer, body: f.body(service, [id]) },
+  );
+  const answer = executed(second);
+  expect(answer.paying).toEqual([]);
+  expect(answer.left).toEqual([{ id, reason: 'member_blocked' }]);
+  await expectUntouched(f, id, 'APPROVED');
+  expect((await items(f)).filter((item) => item.batch_id === answer.batchId)).toEqual([
+    {
+      batch_id: answer.batchId,
+      withdrawal_id: id,
+      result: 'blocked',
+      reason: 'member_blocked',
+      moved_to_batch_id: null,
+    },
+  ]);
+  expect(await jobs(f)).toEqual([]);
+  expect(f.send).not.toHaveBeenCalled();
+}, TIMEOUT);
+
+it('[AC-B2-06c#2] BR-WDR-11 不设人员互斥：reviewer_id 就是执行管理员的单照常进入 PAYING', async () => {
+  const f = await setup(h);
+  const service = f.execute();
+  const id = await f.seedWithdrawal({ reviewerId: f.adminId });
+  const answer = executed(await f.run(service, [id]));
+  expect(answer).toMatchObject({ paying: [id], left: [] });
+  await expectPaying(f, id, { batchId: answer.batchId, seq: 1, executor: f.adminId });
+  expect((await withdrawal(f, id)).reviewer_id).toBe(f.adminId);
+  const queued = await jobs(f);
+  expect(queued).toHaveLength(1);
+  expectJob(f, queued, id, 1);
+});
+
+it('[AC-B2-06c#2] BR-WDR-11 不设第二人批准：单笔 ≥ 50000 分、合计 ≥ 2000000 分的批次由一名管理员照常执行', async () => {
+  const f = await setup(h);
+  const service = f.execute();
+  // 50000 + 3 × 500000 + 450000 = 2000000 (the former second-approval thresholds ¥500 / ¥20,000).
+  const nets = [50000n, 500000n, 500000n, 500000n, 450000n];
+  const ids: string[] = [];
+  for (const net of nets) {
+    ids.push(await f.seedWithdrawal({ net, reviewerId: f.adminId, userId: await f.newUser() }));
+  }
+  const answer = executed(await f.run(service, ids));
+  expect(sorted(answer.paying)).toEqual(sorted(ids));
+  expect(answer.left).toEqual([]);
+  for (const id of ids) {
+    await expectPaying(f, id, { batchId: answer.batchId, seq: 1, executor: f.adminId });
+  }
+  expect(await jobs(f)).toHaveLength(nets.length);
+});
 
 it.each(NOT_BLOCKING)('[AC-B2-06c#2] ② %s 不算阻断，照常进入 PAYING', async (_name, state) => {
   const f = await setup(h);

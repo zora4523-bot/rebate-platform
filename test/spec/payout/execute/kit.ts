@@ -5,9 +5,10 @@
 // watermark rows are seeded by INSERT: states outside this task are not produced by a fake command.
 // Only *.int.test.ts files import this kit (they create the database).
 import { randomBytes, randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createDb, destroyDb, type DB } from '@couli/db';
 import type { WithdrawalState } from '@couli/domain';
-import { sql, type Kysely } from 'kysely';
+import { sql, type Kysely, type Transaction } from 'kysely';
 import { expect, vi } from 'vitest';
 import { createLedger } from '../../../../apps/api/src/modules/ledger/index.ts';
 import { lockUsersForUpdate } from '../../../../apps/api/src/modules/identity/ports/lock-users.ts';
@@ -77,6 +78,12 @@ export interface SeedWithdrawal {
   paidAt?: Date;
   batchId?: string | null;
   appId?: string;
+  /** amount_fen = net + fee (amount_fen > 0 even for a net of 0). Default 0. */
+  fee?: bigint;
+  /** Review mode of a reviewed withdrawal (default 'manual'); 'auto' has no reviewer (system W2). */
+  reviewMode?: 'auto' | 'manual';
+  /** reviewer_id of a manually reviewed withdrawal (default a fresh id). */
+  reviewerId?: string;
 }
 
 export async function setup(h: Harness, input: { watermarks?: boolean } = {}) {
@@ -146,17 +153,20 @@ export async function setup(h: Harness, input: { watermarks?: boolean } = {}) {
     const channel = values.channel ?? 'alipay';
     const status = values.status ?? 'APPROVED';
     const createdAt = values.createdAt ?? NOW;
+    const fee = values.fee ?? 0n;
     const paid = status === 'PAID_API' || status === 'PAID_MANUAL';
     const reviewed = status !== 'PENDING_REVIEW';
+    const mode = reviewed ? (values.reviewMode ?? 'manual') : null;
+    const reviewer = mode === 'manual' ? (values.reviewerId ?? randomUUID()) : null;
     await sql`INSERT INTO app.withdrawals
       (id, app_id, user_id, amount_fen, fee_fen, tax_fen, net_fen, income_type, payout_method,
        payee_name, payee_account_cipher, payee_hmac, bank_name, status, out_biz_no, payout_channel,
        review_mode, reviewer_id, reviewed_at, reject_reason_code, paid_at, manual_entry_by,
        manual_confirm_by, batch_id, created_at, updated_at)
-      VALUES (${id}, ${app}, ${owner}, ${net}, ${0n}, ${0n}, ${net}, 'SERVICE_FEE', ${channel},
+      VALUES (${id}, ${app}, ${owner}, ${net + fee}, ${fee}, ${0n}, ${net}, 'SERVICE_FEE', ${channel},
        '合成姓名', ${Buffer.from('synthetic-encrypted-account')}, ${randomBytes(32).toString('hex')},
        ${channel === 'bank_card' ? '合成银行' : null}, ${status}, ${randomBytes(16).toString('hex')},
-       ${channel}, ${reviewed ? 'manual' : null}, ${reviewed ? randomUUID() : null},
+       ${channel}, ${mode}, ${reviewer},
        ${reviewed ? createdAt : null}, ${status === 'REJECTED' ? 'OTHER' : null},
        ${paid ? (values.paidAt ?? createdAt) : null},
        ${status === 'PAID_MANUAL' ? randomUUID() : null},
@@ -212,17 +222,33 @@ export async function setup(h: Harness, input: { watermarks?: boolean } = {}) {
         ${values.released === true ? 'admin:synthetic' : null})`.execute(h.db);
   }
 
-  /** available_fen of a member funded with 0 drops to −1 (ADMIN_ADJUST debit). */
-  async function makeNegative(owner: string) {
-    await h.db.transaction().execute(async (trx) => {
-      await lockUsersForUpdate(trx, { appId, userIds: [owner] });
-      const [balance] = await ledger.lockBalances(trx, { appId, userIds: [owner] });
-      const v = voucher(appId, balance!.account_id, 1n);
-      await ledger.post(trx, {
-        ...v,
-        entries: v.entries.map((e) => ({ ...e, ledger_type: 'ADMIN_ADJUST' })),
-      });
+  /**
+   * On `trx`: users row lock → lockBalances → a 1-fen ADMIN_ADJUST debit (a member funded with 0
+   * drops to available −1). The locks stay held until `trx` ends.
+   */
+  async function postNegative(trx: Transaction<DB>, owner: string) {
+    await lockUsersForUpdate(trx, { appId, userIds: [owner] });
+    const [balance] = await ledger.lockBalances(trx, { appId, userIds: [owner] });
+    const v = voucher(appId, balance!.account_id, 1n);
+    await ledger.post(trx, {
+      ...v,
+      entries: v.entries.map((e) => ({ ...e, ledger_type: 'ADMIN_ADJUST' })),
     });
+  }
+
+  /** available_fen of a member funded with 0 drops to −1 (committed). */
+  async function makeNegative(owner: string) {
+    await h.db.transaction().execute((trx) => postNegative(trx, owner));
+  }
+
+  /** EXECUTE as a transaction body (for `fenced`). */
+  function body(
+    service: PayoutExecute,
+    members: readonly string[],
+    extra: Partial<ExecuteBatchInput> = {},
+  ) {
+    return (trx: Transaction<DB>) =>
+      service.executeBatch(trx, { appId, members, executorId: adminId, now: NOW, ...extra });
   }
 
   /** The factory, called inside each test (red is the skeleton's NotImplemented, never setup). */
@@ -236,11 +262,7 @@ export async function setup(h: Harness, input: { watermarks?: boolean } = {}) {
     extra: Partial<ExecuteBatchInput> = {},
     db: Kysely<DB> = h.db,
   ): Promise<ExecuteBatchResult> {
-    return db
-      .transaction()
-      .execute((trx) =>
-        service.executeBatch(trx, { appId, members, executorId: adminId, now: NOW, ...extra }),
-      );
+    return db.transaction().execute(body(service, members, extra));
   }
 
   const userId = await newUser();
@@ -274,8 +296,10 @@ export async function setup(h: Harness, input: { watermarks?: boolean } = {}) {
     seedHold,
     seedAttempt,
     seedWithdrawHold,
+    postNegative,
     makeNegative,
     execute,
+    body,
     run,
   };
 }
@@ -351,21 +375,102 @@ export async function events(f: ExecuteFixture, db: Kysely<DB> = f.h.db) {
     .execute();
 }
 
-/** What EXECUTE may change: states and execution columns, items, jobs, events. */
+/** What EXECUTE may change: states, execution and batch columns, batches, items, jobs, events. */
 export async function snapshot(f: ExecuteFixture, db: Kysely<DB> = f.h.db) {
   const rows = await db
     .withSchema('app')
     .selectFrom('withdrawals')
-    .select(['id', 'status', 'execute_seq', 'executor_id', 'executed_at', 'hold_reason'])
+    .select([
+      'id',
+      'status',
+      'execute_seq',
+      'executor_id',
+      'executed_at',
+      'batch_id',
+      'review_mode',
+      'hold_reason',
+    ])
     .where('app_id', '=', f.appId)
     .orderBy('id')
     .execute();
   return {
     withdrawals: rows,
+    batches: await batches(f, db),
     items: await items(f, db),
     jobs: await jobs(f, db),
     events: await events(f, db),
   };
+}
+
+/** True once some backend waits on a lock held by backend `holder`. */
+async function blockedBy(db: Kysely<DB>, holder: number): Promise<boolean> {
+  const result = await sql<{ blocked: boolean }>`
+    SELECT EXISTS (
+      SELECT 1 FROM pg_stat_activity WHERE ${holder}::integer = ANY (pg_blocking_pids(pid))
+    ) AS blocked`.execute(db);
+  return result.rows[0]?.blocked === true;
+}
+
+interface Leg<T> {
+  db: Kysely<DB>;
+  body: (trx: Transaction<DB>) => Promise<T>;
+}
+
+/**
+ * A lock fence, no timing: `first` runs its body on its own transaction and keeps it open; `second`
+ * then starts on another pool; `first` commits only once a backend waits on a lock `first` holds
+ * (or `second` has already finished without waiting). Returns both bodies' results.
+ */
+export async function fenced<A, B>(
+  h: Harness,
+  first: Leg<A>,
+  second: Leg<B>,
+): Promise<{ first: A; second: B }> {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reached!: (value: { pid: number; value: A }) => void;
+  const ready = new Promise<{ pid: number; value: A }>((resolve) => {
+    reached = resolve;
+  });
+  const holder = first.db.transaction().execute(async (trx) => {
+    const value = await first.body(trx);
+    const result = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx);
+    reached({ pid: result.rows[0]!.pid, value });
+    await gate;
+    return value;
+  });
+  const held = await Promise.race([
+    ready,
+    holder.then((): never => {
+      throw new Error('fenced: the first transaction ended before the fence');
+    }),
+  ]);
+  let settled = false;
+  const outcome = second.db
+    .transaction()
+    .execute(second.body)
+    .then(
+      (value) => {
+        settled = true;
+        return { ok: true as const, value };
+      },
+      (error: unknown) => {
+        settled = true;
+        return { ok: false as const, error };
+      },
+    );
+  let waited = false;
+  for (let attempt = 0; attempt < 4000 && !settled && !waited; attempt += 1) {
+    waited = await blockedBy(h.db, held.pid);
+    if (!waited) await delay(5);
+  }
+  release();
+  await holder;
+  const done = await outcome;
+  if (!done.ok) throw done.error;
+  return { first: held.value, second: done.value };
 }
 
 /** The one payout job of (id, seq): key, name and payload exactly as BR-WDR-12 writes them. */

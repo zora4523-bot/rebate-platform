@@ -208,6 +208,32 @@ it.each([
   },
 );
 
+it.each([
+  [1n, 1n, 'watermark_usable_exceeded'],
+  [10001n, 9001n, 'watermark_usable_exceeded'],
+  [10001n, 9000n, 'executed'],
+] as const)(
+  '[AC-B2-06c#3] ③ 可用上限按 Σ×10000 与 W×bp 精确比较、不取整：W=%s、bp=9000、Σ 本批=%s → %s',
+  async (w, net, outcome) => {
+    const f = await setup(h, { watermarks: false });
+    const service = f.execute();
+    await f.set('payout.watermark_usable_bp', 9000);
+    // No history: P = 0 ≤ W. 1 × 9000 / 10000 = 0.9; 10001 × 9000 / 10000 = 9000.9.
+    await f.watermark(w, ago(10 * MINUTE), 'alipay');
+    const id = await f.seedWithdrawal({ net });
+    const before = await snapshot(f);
+    const result = await f.run(service, [id]);
+    if (outcome === 'executed') {
+      const answer = executed(result);
+      expect(answer.paying).toEqual([id]);
+      await expectPaying(f, id, { batchId: answer.batchId, seq: 1, executor: f.adminId });
+    } else {
+      expect(result).toEqual({ kind: 'rejected', reason: outcome, channel: 'alipay' });
+      expect(await snapshot(f)).toEqual(before);
+    }
+  },
+);
+
 it('[AC-B2-06c#3] ③ 只对可执行集合求和：② 留下的单不计入本批合计', async () => {
   const f = await setup(h, { watermarks: false });
   const service = f.execute();
@@ -221,7 +247,7 @@ it('[AC-B2-06c#3] ③ 只对可执行集合求和：② 留下的单不计入本
   expect(answer.left).toEqual([{ id: blocked, reason: 'member_blocked' }]);
 });
 
-it('[AC-B2-06c#3] ③ 按通道分别计算：两个通道各自 W=100、各一单 100 都通过', async () => {
+it('[AC-B2-06c#3] ③ 按通道分别计算（取值待编排裁定）：两个通道各自 W=100、各一单 100 都通过', async () => {
   const f = await setup(h, { watermarks: false });
   const service = f.execute();
   await f.watermark(100n, ago(10 * MINUTE), 'alipay');
@@ -234,7 +260,7 @@ it('[AC-B2-06c#3] ③ 按通道分别计算：两个通道各自 W=100、各一�
   await expectPaying(f, b, { batchId: answer.batchId, seq: 1, executor: f.adminId });
 });
 
-it('[AC-B2-06c#3] ③ 任一通道不满足即整批拒绝并指明通道，另一通道的单也不迁移、② 的原因也不写明细', async () => {
+it('[AC-B2-06c#3] ③ 任一通道不满足即整批拒绝并指明通道（取值待编排裁定），另一通道的单也不迁移、② 的原因也不写明细', async () => {
   const f = await setup(h, { watermarks: false });
   const service = f.execute();
   await f.watermark(1_000_000_000n, ago(10 * MINUTE), 'alipay');
