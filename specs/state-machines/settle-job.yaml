@@ -1,0 +1,52 @@
+# 定时任务运行记录状态 settle_jobs.status 的状态机（任务 B2-04dc；编排 D10-93 S7 选 A）。
+# 代理自定，待 04 §4 回写：08 / 04 没有这张迁移表，按 S7「取最少三态、代理自定」；
+# 生成 packages/domain/src/state-machines/settle-job.gen.ts
+# （node packages/domain/scripts/state-machines.ts；--verify 只比对）。生成物勿手改，改这里再生成。
+#
+# 写法约定（同 settle-batch.yaml）：
+# - from 中 null 表示「—」（入库首态：任务开始运行时插入 settle_jobs 行，首态 running）。
+# - guard 只作说明，transition() 不求值；守卫、CAS、审计与副作用由调用方负责。
+# - 事件名是本任务的技术命名；测试 ID 为 SM-SJ-<n>。
+# - 状态值与 db/schema.sql 的 settle_jobs_status_check 一致。
+#
+# failed → running（RETRY）依据 decision 46：settle_jobs 有唯一约束 settle_jobs_run_key
+# (app_id, job, platform, run_at)，补跑沿用同一 run_at（04 §3.2），所以失败后在同一行重跑，不新起一行。
+# done 是终态；failed 之后只接受 RETRY。
+name: settle-job
+field: status
+states: [running, done, failed]
+# START 入库（开始运行）；COMPLETE 任务完成；FAIL 任务失败；RETRY 失败后同一行重跑。
+events:
+  - START
+  - COMPLETE
+  - FAIL
+  - RETRY
+transitions:
+  # SJ1 | — | 开始运行 | — | running | 插入 settle_jobs 行
+  - id: SJ1
+    from: [null]
+    event: START
+    to: running
+    guard: '—（入库首态：任务开始运行时插入该行）'
+    test_id: SM-SJ-1
+  # SJ2 | running | 任务完成 | — | done（终态）
+  - id: SJ2
+    from: [running]
+    event: COMPLETE
+    to: done
+    guard: '—（任务全部处理完）'
+    test_id: SM-SJ-2
+  # SJ3 | running | 任务失败 | — | failed
+  - id: SJ3
+    from: [running]
+    event: FAIL
+    to: failed
+    guard: '—（任务失败，记原因）'
+    test_id: SM-SJ-3
+  # SJ4 | failed | 同一行重跑 | 补跑沿用同一 run_at（decision 46） | running
+  - id: SJ4
+    from: [failed]
+    event: RETRY
+    to: running
+    guard: '补跑沿用同一 run_at，在同一行重跑（decision 46）'
+    test_id: SM-SJ-4
