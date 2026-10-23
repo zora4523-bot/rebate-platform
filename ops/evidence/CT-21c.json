@@ -1,0 +1,118 @@
+{
+  "risk_note": "RV1 (contracts/** and packages/contracts-ts/**; regenerated route tables under apps/api are generated files). Contract-only: POST /v1/pay/orders, GET /v1/pay/orders/{id}, returned, cancel, all x-implementation: planned; PayOrder schema; launch parameters per channel marked pending CAP-X-16 / CAP-X-17; ENUM_BINDINGS. GET detail stays unsigned per orchestrator ruling D10-245 (04 §6.4 row to be rewritten; frozen tests unchanged). Rule tests by Codex (24 cases), red on the AWS test machine; spec-test review by a fresh Claude subagent (pass); implementation by a Claude Opus 5.5 subagent in two rounds (round 2: description of the closing / channel-switch cases per D10-236 ④); contract review by an independent Claude (claude-run.sh, Codex unavailable until 2026-10-30, approvals #36): round 1 fail (2 S1 / 1 S2), round 2 fail (rulings not visible to the reviewer), round 3 pass after the rulings were added to the brief. Orchestrated by pay-acct4 (Claude Fable 5.1). Ledger PR #1187.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 3,
+      "note": "round 3 pass (couli-runs/CT-21c/review-claude-independent.json); rounds 1–2 in review-claude-independent.r1/.r2.json; D10-245 / D10-236 ④"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagent, round 1 pass; 1 S2 (createPayOrder data closure), 8 out-of-scope entries"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "task": "CT-21c",
+  "spec_commit": "2fb202b8db9d8b4953e842d20600f29e954f52c3",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "red_tests": [
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#1] post /v1/pay/orders（createPayOrder）为 planned，鉴权、签名、幂等和版本门禁明确",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#1] get /v1/pay/orders/{pay_order_id}（getPayOrder）为 planned，鉴权、签名、幂等和版本门禁明确",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#1] post /v1/pay/orders/{pay_order_id}/returned（payOrderReturned）为 planned，鉴权、签名、幂等和版本门禁明确",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#1] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）为 planned，鉴权、签名、幂等和版本门禁明确",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#2] post /v1/pay/orders（createPayOrder）复用公共头；只有创建需要 Idempotency-Key",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#2] get /v1/pay/orders/{pay_order_id}（getPayOrder）复用公共头；只有创建需要 Idempotency-Key",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#2] post /v1/pay/orders/{pay_order_id}/returned（payOrderReturned）复用公共头；只有创建需要 Idempotency-Key",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#2] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）复用公共头；只有创建需要 Idempotency-Key",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#3] 创建只收业务类型、业务对象和渠道，拒绝金额、身份与任意额外字段",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#4] 支付单公开字段完整，金额为整数分，终态时间可空且不暴露渠道用户",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#5] PayOrder 的状态与渠道绑定 CT-21b 枚举，创建渠道沿用同一取值",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#6] 调起参数 oneOf 分微信与支付宝，必填 SDK 字段，标待实测且禁止日志",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#7] get /v1/pay/orders/{pay_order_id}（getPayOrder）只返回支付单，不重新泄露调起参数",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#7] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）只返回支付单，不重新泄露调起参数",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#8] returned 无请求体和 SDK 结果，只触发一次立即查询，data 为空对象",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#9] 查询限本人，取消先查后关且异步，非 PENDING 为 20902/pay_order",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#10] 创建仅限原生本人，支持同渠道待支付原单复用，调起不下发私钥",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#11] post /v1/pay/orders（createPayOrder）错误码已登记且不误列二次验证 20903",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#11] get /v1/pay/orders/{pay_order_id}（getPayOrder）错误码已登记且不误列二次验证 20903",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#11] post /v1/pay/orders/{pay_order_id}/returned（payOrderReturned）错误码已登记且不误列二次验证 20903",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#11] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）错误码已登记且不误列二次验证 20903",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#12] 四个原生支付接口存在时，Bridge 全文与 Agent 白名单均无支付入口",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#13] planned 支付接口同步鉴权、签名、版本表，尚不进入运行时请求 schema",
+    "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#14] 支付契约存在且 contracts:check 核对生成类型无漂移"
+  ],
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "2fb202b8db9d8b4953e842d20600f29e954f52c3",
+      "tree": "b26ccddfebfe9db17cb5933d2462cdb8435a88b1",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T15:24:56Z",
+      "finished_at": "2026-10-23T15:25:04Z",
+      "red_tests": [
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#1] post /v1/pay/orders（createPayOrder）为 planned，鉴权、签名、幂等和版本门禁明确",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#1] get /v1/pay/orders/{pay_order_id}（getPayOrder）为 planned，鉴权、签名、幂等和版本门禁明确",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#1] post /v1/pay/orders/{pay_order_id}/returned（payOrderReturned）为 planned，鉴权、签名、幂等和版本门禁明确",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#1] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）为 planned，鉴权、签名、幂等和版本门禁明确",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#2] post /v1/pay/orders（createPayOrder）复用公共头；只有创建需要 Idempotency-Key",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#2] get /v1/pay/orders/{pay_order_id}（getPayOrder）复用公共头；只有创建需要 Idempotency-Key",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#2] post /v1/pay/orders/{pay_order_id}/returned（payOrderReturned）复用公共头；只有创建需要 Idempotency-Key",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#2] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）复用公共头；只有创建需要 Idempotency-Key",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#3] 创建只收业务类型、业务对象和渠道，拒绝金额、身份与任意额外字段",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#4] 支付单公开字段完整，金额为整数分，终态时间可空且不暴露渠道用户",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#5] PayOrder 的状态与渠道绑定 CT-21b 枚举，创建渠道沿用同一取值",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#6] 调起参数 oneOf 分微信与支付宝，必填 SDK 字段，标待实测且禁止日志",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#7] get /v1/pay/orders/{pay_order_id}（getPayOrder）只返回支付单，不重新泄露调起参数",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#7] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）只返回支付单，不重新泄露调起参数",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#8] returned 无请求体和 SDK 结果，只触发一次立即查询，data 为空对象",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#9] 查询限本人，取消先查后关且异步，非 PENDING 为 20902/pay_order",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#10] 创建仅限原生本人，支持同渠道待支付原单复用，调起不下发私钥",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#11] post /v1/pay/orders（createPayOrder）错误码已登记且不误列二次验证 20903",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#11] get /v1/pay/orders/{pay_order_id}（getPayOrder）错误码已登记且不误列二次验证 20903",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#11] post /v1/pay/orders/{pay_order_id}/returned（payOrderReturned）错误码已登记且不误列二次验证 20903",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#11] post /v1/pay/orders/{pay_order_id}/cancel（cancelPayOrder）错误码已登记且不误列二次验证 20903",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#12] 四个原生支付接口存在时，Bridge 全文与 Agent 白名单均无支付入口",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#13] planned 支付接口同步鉴权、签名、版本表，尚不进入运行时请求 schema",
+        "test/spec/contracts/pay-http/http.test.ts > [AC-CT-21c#14] 支付契约存在且 contracts:check 核对生成类型无漂移"
+      ],
+      "expected": ["test/spec/contracts/pay-http/http.test.ts"],
+      "reports": [
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "6552d27ba31325c9b074f63d659d3eb695e7494d328fa1dab62281645d7409c5"
+        }
+      ],
+      "gate": {
+        "commit": "391b96cb2cc2a97b415fa00aa46f3afa974b12c2",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "548fa3cbeef356c663a739af8139d79f891eda2e",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  }
+}

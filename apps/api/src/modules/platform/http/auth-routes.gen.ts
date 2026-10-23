@@ -212,6 +212,26 @@ export const CONTRACT_AUTH_ROUTES = [
     "auth": "login"
   },
   {
+    "method": "POST",
+    "path": "/v1/pay/orders",
+    "auth": "login"
+  },
+  {
+    "method": "GET",
+    "path": "/v1/pay/orders/:pay_order_id",
+    "auth": "login"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/pay/orders/:pay_order_id/returned",
+    "auth": "login"
+  },
+  {
+    "method": "POST",
+    "path": "/v1/pay/orders/:pay_order_id/cancel",
+    "auth": "login"
+  },
+  {
     "method": "GET",
     "path": "/v1/me",
     "auth": "login"

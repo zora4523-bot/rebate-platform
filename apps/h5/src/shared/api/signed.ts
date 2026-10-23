@@ -28,6 +28,10 @@ const SIGNED_OPERATIONS: readonly (readonly [method: string, path: string])[] = 
   ['POST', '/v1/links/{link_id}/open'],
   ['POST', '/v1/links/convert'],
   ['POST', '/v1/orders/claims'],
+  // CT-21c: pay order creation, return and cancel are native-only (BR-PAY-01 ②).
+  ['POST', '/v1/pay/orders'],
+  ['POST', '/v1/pay/orders/{pay_order_id}/returned'],
+  ['POST', '/v1/pay/orders/{pay_order_id}/cancel'],
 ];
 
 const SIGNED = new Set(SIGNED_OPERATIONS.map(([method, path]) => `${method} ${path}`));
