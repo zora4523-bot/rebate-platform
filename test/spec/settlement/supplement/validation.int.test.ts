@@ -153,7 +153,9 @@ it(
       }),
     );
     // 差额口径同 B2-04n：diff_fen = actual_fen − expected_fen，联盟多结为正。
-    expect(s.diffs.find((d) => d.ref_id === fresh.key)?.diff_fen).toBe(6800n);
+    expect(
+      s.diffs.find((d) => d.ref_id === fresh.key && d.type === 'settle_amount_mismatch')?.diff_fen,
+    ).toBe(6800n);
     expect(h.registerDiff).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ appId: h.appId, type: 'settle_amount_mismatch', refId: fresh.key }),
