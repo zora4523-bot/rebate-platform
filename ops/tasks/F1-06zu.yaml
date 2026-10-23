@@ -34,5 +34,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/admin-planned/**'
-status: todo
-pr: null
+status: done
+pr: 1445

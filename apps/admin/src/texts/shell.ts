@@ -17,6 +17,12 @@ export const shellTexts = {
   pagePendingDescription: '该页面尚未接入，接入后在这里显示。',
 } as const;
 
+// 契约里仍标 planned 的接口（D10-284）：页面 / 页签占位与置灰按钮的标记。
+export const plannedTexts = {
+  title: '功能开发中',
+  description: '这项功能的接口还在开发，上线后这里会自动恢复。',
+} as const;
+
 export const noPermissionTexts = {
   title: '还没有分配权限',
   description: (username: string): string =>

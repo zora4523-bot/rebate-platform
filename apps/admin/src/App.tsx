@@ -32,6 +32,7 @@ import {
   useNavigate,
   type InitialEntry,
 } from 'react-router';
+import { PlannedOperationsContext } from './components/planned/index.ts';
 import { LoadFailedPage, NoPermissionPage, PagePending, WelcomePage } from './layout/pages.tsx';
 import { Sidebar } from './layout/Sidebar.tsx';
 import { TopBar } from './layout/TopBar.tsx';
@@ -87,6 +88,8 @@ type PermissionState =
   | { readonly status: 'failed' };
 
 const NO_GROUPS: readonly AdminMenuGroup[] = [];
+/** Without `plannedOperations` (tests, embedding) nothing is blocked. */
+const NO_PLANNED: ReadonlySet<string> = new Set();
 const USERS_MENU_ID = 'users';
 const CLAIMS_MENU_ID = 'claims';
 
@@ -385,17 +388,19 @@ function AdminApp({ options }: { readonly options: AdminAppOptions }) {
           options={{ disableTelemetry: true }}
         >
           {signedIn || auth === undefined ? (
-            <ShellFrame
-              options={options}
-              account={account}
-              state={state}
-              access={access}
-              groups={groups}
-              landing={landing}
-              onLanded={() => setLanding(false)}
-              onRefresh={loadPermissions}
-              onLogout={onLogout}
-            />
+            <PlannedOperationsContext value={options.plannedOperations ?? NO_PLANNED}>
+              <ShellFrame
+                options={options}
+                account={account}
+                state={state}
+                access={access}
+                groups={groups}
+                landing={landing}
+                onLanded={() => setLanding(false)}
+                onRefresh={loadPermissions}
+                onLogout={onLogout}
+              />
+            </PlannedOperationsContext>
           ) : (
             <LoginRoute
               auth={auth}

@@ -17,6 +17,7 @@ import { useDataProvider, type DataProvider } from '@refinedev/core';
 import { Alert, Button, Card, Flex, Result, Skeleton, Statistic, Tag, Typography } from 'antd';
 import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { PlannedPage, usePlanned } from '../../components/planned/index.ts';
 import type { AccessControl } from '../../providers/access-control/index.ts';
 import { AdminApiError } from '../../providers/data/index.ts';
 import { dashboardTexts as t } from '../../texts/dashboard.ts';
@@ -326,7 +327,13 @@ async function fetchDashboard(provider: DataProvider): Promise<DashboardView> {
   return toView(response.data);
 }
 
-export function DashboardPage({ access, fallback = '/' }: DashboardPageProps): ReactElement {
+/** GET /admin/v1/dashboard not live yet (planned): the placeholder, no read (D10-284). */
+export function DashboardPage(props: DashboardPageProps): ReactElement {
+  const planned = usePlanned('adminGetDashboard');
+  return planned ? <PlannedPage title={t.title} /> : <DashboardContent {...props} />;
+}
+
+function DashboardContent({ access, fallback = '/' }: DashboardPageProps): ReactElement {
   void access;
   const getProvider = useDataProvider();
   const navigate = useNavigate();

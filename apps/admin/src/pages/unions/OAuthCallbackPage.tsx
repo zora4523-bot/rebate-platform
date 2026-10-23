@@ -7,6 +7,7 @@ import { useDataProvider } from '@refinedev/core';
 import { Button, Card, Flex, Result, Spin, Typography } from 'antd';
 import { useEffect, useEffectEvent, useRef, useState, type ReactElement } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { PlannedPage, usePlanned } from '../../components/planned/index.ts';
 import { unionsTexts as t } from '../../texts/unions.ts';
 import { CALLBACK_URL, codeOf, customOf, fieldsOf, isNetwork, type ReauthResult } from './model.ts';
 import { Forbidden, UNION_PERMISSION, type UnionsPageProps } from './UnionsPage.tsx';
@@ -31,7 +32,13 @@ function bodyOf(search: string): CallbackBody | undefined {
   return undefined;
 }
 
-export function UnionOAuthCallbackPage({ access }: UnionsPageProps): ReactElement {
+/** 回调接口还没上线（planned，D10-284）：显示占位，不提交 state 与 code。 */
+export function UnionOAuthCallbackPage(props: UnionsPageProps): ReactElement {
+  const planned = usePlanned('adminCompleteUnionReauthorization');
+  return planned ? <PlannedPage title={t.title} /> : <OAuthCallbackContent {...props} />;
+}
+
+function OAuthCallbackContent({ access }: UnionsPageProps): ReactElement {
   const permitted = access.can(UNION_PERMISSION);
   const location = useLocation();
   const navigate = useNavigate();

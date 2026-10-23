@@ -4,7 +4,10 @@
 // fixed accounts instead (`?preview=none` shows an account without permission keys).
 // antd v5 officially supports React 16-18; this patch (F1-06t) must load before antd renders so
 // that Modal / message / notification work under React 19.
+// Every mode passes the generated list of operations still marked `x-implementation: planned`
+// (D10-284): their pages show 「功能开发中」 and their buttons are disabled until the route ships.
 import '@ant-design/v5-patch-for-react-19';
+import { plannedOperations } from '@couli/contracts-ts';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { PermissionSnapshot } from './providers/access-control/index.ts';
@@ -29,6 +32,7 @@ function previewOptions(): AdminShellOptions {
     environment: 'development',
     router: 'browser',
     onLogout: () => window.location.reload(),
+    plannedOperations,
   };
 }
 
@@ -44,6 +48,7 @@ function liveOptions(environment: AdminEnvironment): AdminShellOptions {
     environment,
     router: 'browser',
     onLogout: () => undefined,
+    plannedOperations,
   };
 }
 

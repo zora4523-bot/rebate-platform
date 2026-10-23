@@ -23,6 +23,7 @@ import {
 } from 'antd';
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { Link } from 'react-router';
+import { plannedButtonProps, usePlanned } from '../../components/planned/index.ts';
 import { StepUpModal, type StepUpResult } from '../../components/step-up/index.ts';
 import { AdminApiError } from '../../providers/data/index.ts';
 import { riskTexts } from '../../texts/risk.ts';
@@ -80,6 +81,9 @@ async function readRules(
 export function RulesTab(): ReactElement {
   const getProvider = useDataProvider();
   const { token } = theme.useToken();
+  // 启用 / 停用接口还没上线（planned，D10-284）时该行按钮置灰并标「功能开发中」。
+  const enablePlanned = usePlanned('adminEnableRiskRule');
+  const disablePlanned = usePlanned('adminDisableRiskRule');
   const [rules, setRules] = useState<RiskRule[]>([]);
   const [status, setStatus] = useState<LoadStatus>('loading');
   const [refreshing, setRefreshing] = useState(false);
@@ -331,6 +335,7 @@ export function RulesTab(): ReactElement {
       width: 100,
       render: (_, rule) => {
         const change = changeOf(rule);
+        const planned = change === 'enable' ? enablePlanned : disablePlanned;
         return (
           <Button
             type="link"
@@ -341,6 +346,7 @@ export function RulesTab(): ReactElement {
             disabled={locked}
             aria-busy={writingId === rule.rule_id ? true : undefined}
             onClick={() => openConfirm(rule)}
+            {...plannedButtonProps(planned)}
           >
             {verbOf(change)}
           </Button>

@@ -1,0 +1,134 @@
+{
+  "red_tests": [
+    "test/spec/frontend/admin-planned/buttons.test.ts > [AC-F1-06zu-BTN#1] 用户详情的调等级、改上级、查看直推名单依赖 planned 时置灰并标「功能开发中」，点了不开对话框、不发请求、不弹动态码",
+    "test/spec/frontend/admin-planned/buttons.test.ts > [AC-F1-06zu-BTN#2] 只有 adminListInvitees 为 planned：只有查看直推名单置灰，调等级与改上级照常并能打开对话框",
+    "test/spec/frontend/admin-planned/buttons.test.ts > [AC-F1-06zu-BTN#3] 用户写接口去掉 planned 后（清单不含它们）三个入口自动恢复，查看直推名单照常请求并打开抽屉",
+    "test/spec/frontend/admin-planned/buttons.test.ts > [AC-F1-06zu-BTN#4] 找回审核子项的通过与驳回依赖 planned 时置灰并标「功能开发中」，点了不发请求、不出驳回表单",
+    "test/spec/frontend/admin-planned/buttons.test.ts > [AC-F1-06zu-BTN#5] 子项审核接口去掉 planned 后（清单不含它们）通过与驳回自动恢复，通过照常提交",
+    "test/spec/frontend/admin-planned/entry.test.ts > [AC-F1-06zu-ENTRY#1] 正式构建入口把生成的 planned 清单经 plannedOperations 传给 createAdminShell",
+    "test/spec/frontend/admin-planned/generated.test.ts > [AC-F1-06zu-GEN#1] 生成文件导出的清单与 openapi.yaml 当前 planned 标记逐个一致，且带生成文件头",
+    "test/spec/frontend/admin-planned/generated.test.ts > [AC-F1-06zu-GEN#2] 临时副本里去掉一个 planned 标记：--check 报清单漂移，重新生成后该操作不在清单、其余照旧",
+    "test/spec/frontend/admin-planned/pages.browser.test.ts > [AC-F1-06zu-BROWSER#1] 1440 订单查询依赖 planned：侧栏菜单可见可点，内容区「功能开发中」，不发订单请求",
+    "test/spec/frontend/admin-planned/pages.browser.test.ts > [AC-F1-06zu-BROWSER#2] 1440 联盟账号页签依赖 planned 时显示占位且不请求，切到推广位照常请求 union-pids",
+    "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#1] 工作台依赖 adminGetDashboard 为 planned：菜单照常并选中，内容区「功能开发中」，不请求、不报错",
+    "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#2] 从侧栏点订单查询（adminListOrders 为 planned）照常进入 /orders，显示占位、不请求订单列表",
+    "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#3] 订单详情直达地址依赖 adminGetOrder 为 planned：订单查询菜单照常，显示占位、不请求该单",
+    "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#4] 联盟账号页签依赖的 adminListUnionAccounts 为 planned：页签照常、显示占位、不请求联盟账号与告警手机号；推广位页签照常请求 union-pids",
+    "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#4] 联盟账号页签依赖的 adminListUnionAlertPhones 为 planned：页签照常、显示占位、不请求联盟账号与告警手机号；推广位页签照常请求 union-pids",
+    "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#5] 风控规则清单页签依赖 adminListRiskRules 为 planned：菜单与页签照常，显示占位、不请求",
+    "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#6] 顶栏一框搜依赖 adminSearch 为 planned：输入框仍在顶栏，置灰或点开即「功能开发中」，回车与放大镜都不请求",
+    "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-DEFAULT#1] 不传 plannedOperations 时 /orders 照常请求 GET /admin/v1/orders 并显示列表；传入含 adminListOrders 的清单才显示占位",
+    "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#1] 工作台：依赖仍在清单里时占位不请求；清单去掉其依赖（接口已上线重新生成）后自动恢复并照常请求",
+    "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#1] 订单查询：依赖仍在清单里时占位不请求；清单去掉其依赖（接口已上线重新生成）后自动恢复并照常请求",
+    "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#1] 订单详情：依赖仍在清单里时占位不请求；清单去掉其依赖（接口已上线重新生成）后自动恢复并照常请求",
+    "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#1] 联盟账号页签：依赖仍在清单里时占位不请求；清单去掉其依赖（接口已上线重新生成）后自动恢复并照常请求",
+    "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#1] 风控规则清单：依赖仍在清单里时占位不请求；清单去掉其依赖（接口已上线重新生成）后自动恢复并照常请求",
+    "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#2] 顶栏一框搜：adminSearch 在清单里时不请求；清单去掉 adminSearch 后回车照常请求 GET /admin/v1/search",
+    "test/spec/frontend/admin-planned/texts.test.ts > [AC-F1-06zu-TEXT#1] 「功能开发中」文案登记在 apps/admin/src/texts/shell.ts"
+  ],
+  "risk_note": "Admin console placeholders for operations still marked x-implementation planned (orchestrator ruling D10-284; staging 404s on those endpoints). contracts-ts codegen adds packages/contracts-ts/src/planned-operations.gen.ts exporting the operation-level planned operationIds from contracts/openapi.yaml (generated, checked by codegen:check). createAdminShell gets an optional plannedOperations (default empty, nothing gated) that only main.tsx passes, so the frozen page tests are unchanged. With the list: dashboard, orders list / detail, the union accounts tab, the risk rules tab and the OAuth callback page show 功能开发中 without requests or error toasts; the top search is disabled; user detail level / inviter / invitees, claim item approve / reject and risk rule enable / disable buttons are disabled and each marked; the PIDs tab works but does not read the planned account list. Removing an id and regenerating restores the page. No money logic; RV2 because App.tsx is touched, so the review ran on the money track. Gate gap reported to ops: tools/ops/task.ts CONTRACT_GENERATED needs the new generated file. Rule tests written by an independent Claude in two calls (Codex out of quota until 2026-10-30; ledger tester claude-independent, approvals id 36); Claude spec-test review r2 pass; red on the test machine (red/2: 25 red, 0 problems). Implementation by Opus 5.5; test machine verify-fast/2 and browser/2 green. Adversarial review by a fresh independent Claude (tools/agent/claude-run.sh, money track). Written by hand.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 1,
+      "note": "round 1 pass; independent Claude because Codex hit its usage limit until 2026-10-30"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude",
+    "engine": "claude",
+    "rounds": 2,
+    "last_verdict": "pass",
+    "note": "fresh Claude subagents: round 1 pass with 4 S2 carried into the implementation constraints; round 2 (only the jsdom path fix in contract.ts after ENTRY#1 failed for that reason) pass; tests written by an independent Claude"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "tests": 33,
+    "files": 7,
+    "note": "PROP_RUNS=1000000 PROP_SEED=20261001; packages/money and test/properties are unchanged from main",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  },
+  "task": "F1-06zu",
+  "spec_ref": "3a301d14f0f566e8f0bc689aa8cfc177175dae20",
+  "spec_commit": "22b53eb600a11d324c58ad5d0f72a67a4350a8e7",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "22b53eb600a11d324c58ad5d0f72a67a4350a8e7",
+      "tree": "9ca426a046bc76081b490bea563040e4051301a4",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T20:54:19Z",
+      "finished_at": "2026-10-23T20:55:58Z",
+      "gate": {
+        "commit": "7c15387f92782acb114a9b6e296f11418080df80",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      },
+      "red_tests": [
+        "test/spec/frontend/admin-planned/buttons.test.ts > [AC-F1-06zu-BTN#1] 用户详情的调等级、改上级、查看直推名单依赖 planned 时置灰并标「功能开发中」，点了不开对话框、不发请求、不弹动态码",
+        "test/spec/frontend/admin-planned/buttons.test.ts > [AC-F1-06zu-BTN#2] 只有 adminListInvitees 为 planned：只有查看直推名单置灰，调等级与改上级照常并能打开对话框",
+        "test/spec/frontend/admin-planned/buttons.test.ts > [AC-F1-06zu-BTN#3] 用户写接口去掉 planned 后（清单不含它们）三个入口自动恢复，查看直推名单照常请求并打开抽屉",
+        "test/spec/frontend/admin-planned/buttons.test.ts > [AC-F1-06zu-BTN#4] 找回审核子项的通过与驳回依赖 planned 时置灰并标「功能开发中」，点了不发请求、不出驳回表单",
+        "test/spec/frontend/admin-planned/buttons.test.ts > [AC-F1-06zu-BTN#5] 子项审核接口去掉 planned 后（清单不含它们）通过与驳回自动恢复，通过照常提交",
+        "test/spec/frontend/admin-planned/entry.test.ts > [AC-F1-06zu-ENTRY#1] 正式构建入口把生成的 planned 清单经 plannedOperations 传给 createAdminShell",
+        "test/spec/frontend/admin-planned/generated.test.ts > [AC-F1-06zu-GEN#1] 生成文件导出的清单与 openapi.yaml 当前 planned 标记逐个一致，且带生成文件头",
+        "test/spec/frontend/admin-planned/generated.test.ts > [AC-F1-06zu-GEN#2] 临时副本里去掉一个 planned 标记：--check 报清单漂移，重新生成后该操作不在清单、其余照旧",
+        "test/spec/frontend/admin-planned/pages.browser.test.ts > [AC-F1-06zu-BROWSER#1] 1440 订单查询依赖 planned：侧栏菜单可见可点，内容区「功能开发中」，不发订单请求",
+        "test/spec/frontend/admin-planned/pages.browser.test.ts > [AC-F1-06zu-BROWSER#2] 1440 联盟账号页签依赖 planned 时显示占位且不请求，切到推广位照常请求 union-pids",
+        "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#1] 工作台依赖 adminGetDashboard 为 planned：菜单照常并选中，内容区「功能开发中」，不请求、不报错",
+        "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#2] 从侧栏点订单查询（adminListOrders 为 planned）照常进入 /orders，显示占位、不请求订单列表",
+        "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#3] 订单详情直达地址依赖 adminGetOrder 为 planned：订单查询菜单照常，显示占位、不请求该单",
+        "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#4] 联盟账号页签依赖的 adminListUnionAccounts 为 planned：页签照常、显示占位、不请求联盟账号与告警手机号；推广位页签照常请求 union-pids",
+        "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#4] 联盟账号页签依赖的 adminListUnionAlertPhones 为 planned：页签照常、显示占位、不请求联盟账号与告警手机号；推广位页签照常请求 union-pids",
+        "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#5] 风控规则清单页签依赖 adminListRiskRules 为 planned：菜单与页签照常，显示占位、不请求",
+        "test/spec/frontend/admin-planned/pages.test.ts > [AC-F1-06zu-PAGE#6] 顶栏一框搜依赖 adminSearch 为 planned：输入框仍在顶栏，置灰或点开即「功能开发中」，回车与放大镜都不请求",
+        "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-DEFAULT#1] 不传 plannedOperations 时 /orders 照常请求 GET /admin/v1/orders 并显示列表；传入含 adminListOrders 的清单才显示占位",
+        "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#1] 工作台：依赖仍在清单里时占位不请求；清单去掉其依赖（接口已上线重新生成）后自动恢复并照常请求",
+        "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#1] 订单查询：依赖仍在清单里时占位不请求；清单去掉其依赖（接口已上线重新生成）后自动恢复并照常请求",
+        "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#1] 订单详情：依赖仍在清单里时占位不请求；清单去掉其依赖（接口已上线重新生成）后自动恢复并照常请求",
+        "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#1] 联盟账号页签：依赖仍在清单里时占位不请求；清单去掉其依赖（接口已上线重新生成）后自动恢复并照常请求",
+        "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#1] 风控规则清单：依赖仍在清单里时占位不请求；清单去掉其依赖（接口已上线重新生成）后自动恢复并照常请求",
+        "test/spec/frontend/admin-planned/recover.test.ts > [AC-F1-06zu-RECOVER#2] 顶栏一框搜：adminSearch 在清单里时不请求；清单去掉 adminSearch 后回车照常请求 GET /admin/v1/search",
+        "test/spec/frontend/admin-planned/texts.test.ts > [AC-F1-06zu-TEXT#1] 「功能开发中」文案登记在 apps/admin/src/texts/shell.ts"
+      ],
+      "expected": [
+        "test/spec/frontend/admin-planned/buttons.test.ts",
+        "test/spec/frontend/admin-planned/entry.test.ts",
+        "test/spec/frontend/admin-planned/generated.test.ts",
+        "test/spec/frontend/admin-planned/pages.browser.test.ts",
+        "test/spec/frontend/admin-planned/pages.test.ts",
+        "test/spec/frontend/admin-planned/recover.test.ts",
+        "test/spec/frontend/admin-planned/texts.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-browser.json",
+          "sha256": "7c8df258b5bd763a6c385ba7e14c3fa020519f6480a443ec4a1587ddde5e0647"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "3721c721844e5b27f4910b80fd9d938d80fecd36c1f0c97e9ca56b1eb03d5e82"
+        }
+      ]
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "0069385f1c1557ab01a6d4db3f3e4ac3e4b260e8",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  }
+}

@@ -8,6 +8,8 @@ export * from './enums.gen.ts';
 export * from './error-codes.gen.ts';
 /** JSBridge methods, routes and target apps (contracts/bridge.schema.json, routes.json, apps.json). */
 export * as bridge from './bridge.gen.ts';
+/** operationIds still marked `x-implementation: planned` (no route yet; admin placeholders, D10-284). */
+export { plannedOperations } from './planned-operations.gen.ts';
 
 /** Named schema from `components.schemas`, e.g. `Schema<'HealthzResponse'>`. */
 export type Schema<Name extends keyof components['schemas']> = components['schemas'][Name];

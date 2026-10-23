@@ -5,6 +5,7 @@
 import { SafetyOutlined } from '@ant-design/icons';
 import { Button, Card, Descriptions, Flex, theme } from 'antd';
 import { useRef, useState, type ReactElement } from 'react';
+import { plannedButtonProps, usePlanned } from '../../../components/planned/index.ts';
 import { usersTexts } from '../../../texts/users.ts';
 import { InviteesDrawer } from './InviteesDrawer.tsx';
 import { InviterChangeDialog } from './InviterChangeDialog.tsx';
@@ -21,6 +22,9 @@ export function UserRelationsCard({
   const { token } = theme.useToken();
   const canChange = access.can('user.inviter');
   const canList = access.can('user.lookup') || access.can('user.list');
+  // 改上级 / 直推名单接口还没上线（planned，D10-284）：入口置灰并标「功能开发中」，不开对话框与抽屉。
+  const changePlanned = usePlanned('adminChangeInviter');
+  const listPlanned = usePlanned('adminListInvitees');
   const [changing, setChanging] = useState(false);
   const [listing, setListing] = useState(false);
   const changeTrigger = useRef<HTMLButtonElement>(null);
@@ -39,6 +43,7 @@ export function UserRelationsCard({
             icon={<SafetyOutlined aria-hidden />}
             style={{ paddingInline: 0 }}
             onClick={() => setChanging(true)}
+            {...plannedButtonProps(changePlanned)}
           >
             {t.changeInviter}
           </Button>
@@ -50,6 +55,7 @@ export function UserRelationsCard({
             size="small"
             style={{ paddingInline: 0 }}
             onClick={() => setListing(true)}
+            {...plannedButtonProps(listPlanned)}
           >
             {t.viewInvitees}
           </Button>
@@ -91,7 +97,7 @@ export function UserRelationsCard({
           },
         ]}
       />
-      {canChange ? (
+      {canChange && !changePlanned ? (
         <InviterChangeDialog
           user={user}
           open={changing}
@@ -100,7 +106,7 @@ export function UserRelationsCard({
           afterClose={() => changeTrigger.current?.focus()}
         />
       ) : null}
-      {canList ? (
+      {canList && !listPlanned ? (
         <InviteesDrawer
           userId={user.user_id}
           open={listing}
