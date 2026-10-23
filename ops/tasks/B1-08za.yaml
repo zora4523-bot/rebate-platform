@@ -1,0 +1,20 @@
+id: B1-08za
+repo: rebate-platform
+title: orders 平台差异收拢为每平台一份规则表（行为不变）：归因参数解析、来源短码、购买场景回退、服务费入基数、淘礼金推广位场景、单号规范化、找回授权平台、商品键推送、同步窗口上限、商品 ID 字段名改为查 orders/domain/platform-rules/<platform>.ts；领域代码不再直接比较平台名
+type: impl
+# 2026-10-23 入账（be-codex；架构评估 R-09，编排 D10-183 ⑤、D10-254：解析留在 orders 改查表，不动 D10-20、不改 UnionOrder 形状；packages/domain product-key 不纳入）。现状约 17 文件 30 处按平台分支（单号去连字符三份、找回授权平台两份等）；状态映射 csv 不动。
+# 行为不变的重构：现有 test/spec/orders/** 等规则测试全绿即验收；冻结测试直接导入的 parseAttrCode / classifyBuyType / parseLinkCode / SERVICE_FEE_PLATFORM / PID_SCENE_PLATFORM / scheduledPlatforms 等导出名与签名保留。另加规则表完整性测试（每个已登记平台一份、键齐全，新增平台不填表即失败）。
+# 排期：W1 的 B1-09b / B1-09i / B1-09k 合并后再开（避开 pipeline-port、update-step、attribute-user、sync-window、rights-order-lookup）。资金评审逐项查服务费与淘礼金分支。
+refs: []
+refs_hash: {}
+deps: [B1-09b, B1-09i, B1-09k]
+paths:
+  - 'apps/api/src/modules/orders/**'
+test_paths:
+  - 'test/spec/orders/platform-rules/**'
+impl: claude
+tester: codex
+accept:
+  - 'pnpm verify'
+  - 'test/spec/orders/platform-rules/**'
+status: todo

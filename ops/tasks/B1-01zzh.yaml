@@ -4,7 +4,7 @@ title: 指标导出与告警规则：worker 在内网端口暴露 Prometheus /me
 type: impl
 # 2026-10-23 入账（be-codex；编排 D10-183 ② R-01、D10-193 ③：/metrics 与告警规则 YAML 由 be 做，采集、Alertmanager 路由、pg_exporter 归 ops B1-25）。依据：规划 02 §11（任一队列 failed>0、最老事件任务、积压）、§13 告警表（最老未取走 evt.* 只计 created 且已到期 >60 秒、同步水位延迟 >30 分钟；Prometheus 格式；通用 5 分钟粒度）；ADR-0001 §4.2 第 14、22 项（不开 persistQueueStats；积压只计 created 且已到期）。
 # 指标按 SQL 采集（pgboss.job、app.sync_cursors），只读；全库级指标只由 worker 一个进程导出（避免多进程重复序列；payout 以 couli_payout 连库无业务表读权限）；内网端口与开关走 platform/config；告警规则打 severity 标签。
-# Redis 告警（B1-01zzl 交来：不可达、内存使用率 >70% 即 02 §13 / ADR-0001 §4.2 第 17 项、拒绝写入）写进规则文件，采集指标由 ops 的 redis_exporter 提供（B1-25）。资金类指标与规则在 B1-01zzi。死信计数复用 B1-01zzg 的 <queue>.dead 口径。依赖 prom-client 由 B1-01zzha 加。
+# Redis 告警（B1-01zzl 交来：不可达、内存使用率 >70% 即 02 §13 / ADR-0001 §4.2 第 17 项、拒绝写入）写进规则文件，采集指标由 ops 的 redis_exporter 提供（B1-25）。资金类指标与规则在 B1-01zzi。死信计数复用 B1-01zzg 的 <queue>.dead 口径。依赖 @prometheus-io/client（D10-249 替代 D10-193 的 prom-client）由 B1-01zzha 加。
 refs: []
 refs_hash: {}
 deps: [B1-01zzg, B1-01zzha]
