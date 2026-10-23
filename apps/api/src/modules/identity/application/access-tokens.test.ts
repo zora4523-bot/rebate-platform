@@ -15,7 +15,11 @@ import {
   createTokenCheck,
   createTokenKeyProvider,
   createTokenService,
+  createTokenVerifyKeyProvider,
+  createTokenVerifyService,
+  isSigningKeyProvider,
   isTokenCheck,
+  verifyKeyConfigOf,
 } from './access-tokens.ts';
 
 const PRINCIPAL: TokenPrincipal = {
@@ -116,6 +120,61 @@ it('[BR-ID-07] the signing key id must have its public key among the verificatio
       },
     }),
   ).not.toThrow();
+});
+
+it('[D10-255] the verify-only service verifies what the signer issued and refuses to issue anything', async () => {
+  const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const clock = new FixedClock('2026-10-06T04:00:00.000Z');
+  const signer = createTokenService({
+    clock,
+    keys: {
+      kid: 'unit',
+      privateKey: pair.privateKey,
+      publicKeys: new Map([['unit', pair.publicKey]]),
+    },
+  });
+  const keys = await createTokenVerifyKeyProvider('prod', {
+    kid: 'unit',
+    publicKeyPem: pair.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    verificationKeys: {},
+  });
+  expect(isSigningKeyProvider(keys)).toBe(false);
+  const verifier = createTokenVerifyService({ clock, keys });
+  expect(await verifier.verifyAccess(await signer.issueAccess(PRINCIPAL))).toEqual(PRINCIPAL);
+  await expect(verifier.issueAccess(PRINCIPAL)).rejects.toThrow(/only verifies/);
+  expect(() => verifier.issueRefresh()).toThrow(/only verifies/);
+});
+
+it('[D10-255] verify-only keys: staging / prod without a configuration name JWT_PUBLIC_KEY_PEM; local is ephemeral and public only', async () => {
+  for (const appEnv of ['staging', 'prod'] as const) {
+    await expect(createTokenVerifyKeyProvider(appEnv, null)).rejects.toThrow(/JWT_PUBLIC_KEY_PEM/);
+  }
+  const local = await createTokenVerifyKeyProvider('local', null);
+  expect([...local.publicKeys.keys()]).toEqual([local.kid]);
+  expect('privateKey' in local).toBe(false);
+  expect(isSigningKeyProvider(local)).toBe(false);
+  // The verify service refuses keys that do not include their own kid.
+  expect(() =>
+    createTokenVerifyService({
+      clock: new FixedClock('2026-10-06T04:00:00.000Z'),
+      keys: { kid: 'missing', publicKeys: local.publicKeys },
+    }),
+  ).toThrow(TypeError);
+});
+
+it('[D10-255] verifyKeyConfigOf keeps the kid and previous keys and derives the public key only', () => {
+  const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const privateKeyPem = pair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  const derived = verifyKeyConfigOf({ kid: 'k', privateKeyPem, verificationKeys: {} });
+  expect(derived.kid).toBe('k');
+  expect(derived.verificationKeys).toEqual({});
+  expect(derived.publicKeyPem).toBe(
+    pair.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+  );
+  expect(JSON.stringify(derived)).not.toContain('PRIVATE KEY');
+  expect(() =>
+    verifyKeyConfigOf({ kid: 'k', privateKeyPem: 'unit-bad-key', verificationKeys: {} }),
+  ).toThrow(/JWT_PRIVATE_KEY_PEM/);
 });
 
 it('[BR-ID-01] isTokenCheck recognises only the checks createTokenCheck built', () => {

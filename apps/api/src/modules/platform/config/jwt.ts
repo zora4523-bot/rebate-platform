@@ -8,6 +8,7 @@ import type { AppEnv } from './app-env.ts';
 // JWT_VERIFY_KEYS_JSON must not contain JWT_KEY_ID; a duplicate is a configuration problem.
 // Empty strings count as unset. Local/test with all three unset -> jwt=null; the process creates
 // one ephemeral key pair at startup. Staging/prod require explicit signing configuration.
+// B1-02zj: JWT_PUBLIC_KEY_PEM (SPKI, P-256) may accompany the private key; it must then be its pair.
 // readJwtKeyConfig reports missing cloud configuration, but loadConfig only aggregates format
 // problems when JWT variables are set; missing cloud keys are rejected by createTokenKeyProvider
 // at startup, preserving existing loadConfig validation. No error contains configuration values.
@@ -24,9 +25,10 @@ import type { AppEnv } from './app-env.ts';
 // - The values are kept exactly as given (the key provider of identity parses them again).
 // Erasable syntax only (this directory is also compiled by the `test` project).
 
-/** The three variables of this contract (loadConfig merges their problems only when one is set). */
+/** The variables of this contract (loadConfig merges their problems only when one is set). */
 export const JWT_ENV_NAMES = Object.freeze([
   'JWT_PRIVATE_KEY_PEM',
+  'JWT_PUBLIC_KEY_PEM',
   'JWT_KEY_ID',
   'JWT_VERIFY_KEYS_JSON',
 ] as const);
@@ -110,11 +112,31 @@ function readVerificationKeys(
     return {
       keys: null,
       problems: [
-        'JWT_VERIFY_KEYS_JSON: must not contain JWT_KEY_ID (the current verification key comes from JWT_PRIVATE_KEY_PEM)',
+        'JWT_VERIFY_KEYS_JSON: must not contain JWT_KEY_ID (the current verification key comes from JWT_PUBLIC_KEY_PEM or JWT_PRIVATE_KEY_PEM)',
       ],
     };
   }
   return { keys: Object.freeze(Object.fromEntries(entries as [string, string][])), problems: [] };
+}
+
+const PRIVATE_KEY_SHAPE =
+  'JWT_PRIVATE_KEY_PEM: must be one unencrypted P-256 (prime256v1) private key in PKCS#8 PEM';
+const PUBLIC_KEY_SHAPE =
+  'JWT_PUBLIC_KEY_PEM: must be one P-256 (prime256v1) public key in SPKI PEM (label PUBLIC KEY)';
+const KEY_ID_SHAPE = 'JWT_KEY_ID: must be 1 to 64 characters of A-Z a-z 0-9 . _ ~ -';
+
+/**
+ * The problems of JWT_PUBLIC_KEY_PEM (unset: none): not one P-256 SPKI block, or not the public
+ * key of `privateKey` when that one was given and parsed. Never quotes either key.
+ */
+function publicKeyProblems(publicKeyPem: string, privateKey: KeyObject | null): string[] {
+  if (publicKeyPem === '') return [];
+  const publicKey = parseP256PublicKeyPem(publicKeyPem);
+  if (publicKey === null) return [PUBLIC_KEY_SHAPE];
+  if (privateKey !== null && !createPublicKey(privateKey).equals(publicKey)) {
+    return ['JWT_PUBLIC_KEY_PEM: must be the public key of JWT_PRIVATE_KEY_PEM (one key pair)'];
+  }
+  return [];
 }
 
 export function readJwtKeyConfig(
@@ -122,12 +144,13 @@ export function readJwtKeyConfig(
   env: Readonly<Record<string, string | undefined>>,
 ): { readonly jwt: JwtKeyConfig | null; readonly problems: readonly string[] } {
   const privateKeyPem = variable(env, 'JWT_PRIVATE_KEY_PEM');
+  const publicKeyPem = variable(env, 'JWT_PUBLIC_KEY_PEM');
   const kid = variable(env, 'JWT_KEY_ID');
   const verifyKeys = variable(env, 'JWT_VERIFY_KEYS_JSON');
   const cloud = appEnv === 'staging' || appEnv === 'prod';
   const problems: string[] = [];
 
-  if (privateKeyPem === '' && kid === '' && verifyKeys === '') {
+  if (privateKeyPem === '' && publicKeyPem === '' && kid === '' && verifyKeys === '') {
     if (cloud) {
       problems.push(
         `JWT_PRIVATE_KEY_PEM: must be set when APP_ENV=${appEnv}`,
@@ -136,17 +159,19 @@ export function readJwtKeyConfig(
     }
     return { jwt: null, problems };
   }
+  let privateKey: KeyObject | null = null;
   if (privateKeyPem === '') {
     problems.push('JWT_PRIVATE_KEY_PEM: must be set together with JWT_KEY_ID');
-  } else if (parseP256PrivateKeyPem(privateKeyPem) === null) {
-    problems.push(
-      'JWT_PRIVATE_KEY_PEM: must be one unencrypted P-256 (prime256v1) private key in PKCS#8 PEM',
-    );
+  } else {
+    privateKey = parseP256PrivateKeyPem(privateKeyPem);
+    if (privateKey === null) problems.push(PRIVATE_KEY_SHAPE);
   }
+  // B1-02zj: a JWT_PUBLIC_KEY_PEM given next to the private key must be well formed and match it.
+  problems.push(...publicKeyProblems(publicKeyPem, privateKey));
   if (kid === '') {
     problems.push('JWT_KEY_ID: must be set together with JWT_PRIVATE_KEY_PEM');
   } else if (!isJwtKeyId(kid)) {
-    problems.push('JWT_KEY_ID: must be 1 to 64 characters of A-Z a-z 0-9 . _ ~ -');
+    problems.push(KEY_ID_SHAPE);
   }
   let verificationKeys: Readonly<Record<string, string>> = Object.freeze({});
   if (verifyKeys !== '') {
@@ -182,7 +207,56 @@ export function readJwtVerifyKeyConfig(
   appEnv: AppEnv,
   env: Readonly<Record<string, string | undefined>>,
 ): { readonly jwt: JwtVerifyKeyConfig | null; readonly problems: readonly string[] } {
-  void appEnv;
-  void env;
-  throw new Error('NotImplemented: readJwtVerifyKeyConfig');
+  const privateKeyPem = variable(env, 'JWT_PRIVATE_KEY_PEM');
+  const publicKeyPem = variable(env, 'JWT_PUBLIC_KEY_PEM');
+  const kid = variable(env, 'JWT_KEY_ID');
+  const verifyKeys = variable(env, 'JWT_VERIFY_KEYS_JSON');
+  const cloud = appEnv === 'staging' || appEnv === 'prod';
+  const problems: string[] = [];
+
+  if (privateKeyPem === '' && publicKeyPem === '' && kid === '' && verifyKeys === '') {
+    if (cloud) {
+      problems.push(
+        `JWT_PUBLIC_KEY_PEM: must be set when APP_ENV=${appEnv} (or JWT_PRIVATE_KEY_PEM, from which the public key is derived)`,
+        `JWT_KEY_ID: must be set when APP_ENV=${appEnv}`,
+      );
+    }
+    return { jwt: null, problems };
+  }
+  let privateKey: KeyObject | null = null;
+  if (privateKeyPem !== '') {
+    privateKey = parseP256PrivateKeyPem(privateKeyPem);
+    if (privateKey === null) problems.push(PRIVATE_KEY_SHAPE);
+  }
+  if (publicKeyPem === '' && privateKeyPem === '') {
+    problems.push(
+      'JWT_PUBLIC_KEY_PEM: must be set together with JWT_KEY_ID (or JWT_PRIVATE_KEY_PEM, from which the public key is derived)',
+    );
+  }
+  problems.push(...publicKeyProblems(publicKeyPem, privateKey));
+  if (kid === '') {
+    const partner =
+      publicKeyPem === '' && privateKeyPem !== '' ? 'JWT_PRIVATE_KEY_PEM' : 'JWT_PUBLIC_KEY_PEM';
+    problems.push(`JWT_KEY_ID: must be set together with ${partner}`);
+  } else if (!isJwtKeyId(kid)) {
+    problems.push(KEY_ID_SHAPE);
+  }
+  let verificationKeys: Readonly<Record<string, string>> = Object.freeze({});
+  if (verifyKeys !== '') {
+    const read = readVerificationKeys(verifyKeys, kid);
+    problems.push(...read.problems);
+    if (read.keys !== null) verificationKeys = read.keys;
+  }
+  if (problems.length > 0) return { jwt: null, problems };
+  // Least privilege: only the public half travels on, the private key object is dropped here.
+  const currentPem =
+    publicKeyPem !== ''
+      ? publicKeyPem
+      : privateKey === null
+        ? ''
+        : createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
+  return {
+    jwt: Object.freeze({ kid, publicKeyPem: currentPem, verificationKeys }),
+    problems,
+  };
 }

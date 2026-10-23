@@ -332,6 +332,8 @@ function requestChecks(options: PlatformOptions): Provider {
 function streamIdentityModule(): DynamicModule {
   return {
     ...IdentityModule.forRoot({
+      // B1-02zj (D10-255 ①): stream only verifies access tokens (public key + kid, never signs).
+      tokens: 'verify',
       config: {
         inject: [CLOCK, { token: DB, optional: true }],
         useFactory: (clock: Clock, db?: Kysely<Database>): IdentityConfigReader | null =>

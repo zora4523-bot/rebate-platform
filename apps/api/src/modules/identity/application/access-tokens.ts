@@ -15,6 +15,9 @@
 // local / test without them, generates one ephemeral key pair per process; staging / prod without
 // them refuse to start. KMS signing (`sign(bytes)` returning DER, converted to R‖S) is a later
 // task (§9.5 #3).
+// B1-02zj (D10-255 ①): a process that only verifies (stream) builds createTokenVerifyKeyProvider
+// (JWT_KEY_ID + public keys, never a private key) and createTokenVerifyService, which verifies
+// exactly like createTokenService (shared createTokenVerifiers) and refuses to sign.
 //
 // createTokenCheck is the RequestCheck app.module places right after the signature check (①) at
 // the platform's pre-parsing registration point, so it answers before any body is read or
@@ -206,7 +209,10 @@ export interface StepUpClaims {
 }
 
 /** Same local keys / issuer as access tokens, but a separate audience and rejection code. */
-export function createStepUpTokenVerifier(keys: TokenKeyProvider, clock: Clock) {
+export function createStepUpTokenVerifier(
+  keys: Pick<TokenKeyProvider, 'publicKeys'>,
+  clock: Clock,
+) {
   const publicKeys = new Map(keys.publicKeys);
   return async (token: string): Promise<StepUpClaims> => {
     const reject = () => new RequestRejection(10003, 403, '需要二次验证');
@@ -336,46 +342,26 @@ function later(instant: Date, ms: number): Date {
   return result;
 }
 
-export function createTokenService(deps: { clock: Clock; keys: TokenKeyProvider }): TokenService {
-  const { clock, keys } = deps;
-  if (typeof clock?.now !== 'function') throw new TypeError('createTokenService needs the clock');
-  if (
-    typeof keys?.kid !== 'string' ||
-    !isJwtKeyId(keys.kid) ||
-    !isP256PrivateKey(keys.privateKey) ||
-    !(keys.publicKeys instanceof Map)
-  ) {
-    throw new TypeError('createTokenService needs a key id, a P-256 private key and public keys');
-  }
-  // A token signed under a kid missing from the verification keys would fail its own check.
-  if (!keys.publicKeys.has(keys.kid)) {
-    throw new TypeError(
-      'createTokenService needs the public key of the signing key id among the verification keys',
-    );
-  }
-  const { kid, privateKey } = keys;
-  // A snapshot: changing the provider's map later cannot add a verification key.
-  const publicKeys: ReadonlyMap<string, KeyObject> = new Map(keys.publicKeys);
+/**
+ * verifyAccess / verifyH5 over a snapshot of `source` (changing the provider's map later cannot
+ * add a verification key): shared by the signing service and the verify-only one (B1-02zj), so
+ * both judge every token alike.
+ */
+function createTokenVerifiers(
+  clock: Clock,
+  source: ReadonlyMap<string, KeyObject>,
+): {
+  access(token: string): Promise<TokenPrincipal>;
+  h5(token: string): Promise<H5Claims>;
+} {
+  const publicKeys: ReadonlyMap<string, KeyObject> = new Map(source);
   const resolveKey = (header: { kid?: unknown }): KeyObject => {
     const key = typeof header.kid === 'string' ? publicKeys.get(header.kid) : undefined;
     if (key === undefined) throw new errors.JWKSNoMatchingKey();
     return key;
   };
   return {
-    async issueAccess(principal) {
-      const claims = principalOf({ ...principal });
-      if (claims === null)
-        throw new TypeError('issueAccess needs uid, app_id, sid, device_id, scp');
-      const issuedAt = Math.floor(clock.now().getTime() / 1000);
-      return new SignJWT({ ...claims })
-        .setProtectedHeader({ alg: 'ES256', kid, typ: 'JWT' })
-        .setIssuer(ISSUER)
-        .setAudience(AUDIENCE)
-        .setIssuedAt(issuedAt)
-        .setExpirationTime(issuedAt + ACCESS_TOKEN_TTL_SECONDS)
-        .sign(privateKey);
-    },
-    async verifyAccess(token) {
+    async access(token) {
       let payload: JWTPayload;
       try {
         ({ payload } = await jwtVerify(token, resolveKey, {
@@ -397,15 +383,7 @@ export function createTokenService(deps: { clock: Clock; keys: TokenKeyProvider 
       if (principal === null) throw new TokenRejection(10002);
       return principal;
     },
-    issueRefresh() {
-      const token = randomBytes(REFRESH_TOKEN_BYTES).toString('base64url');
-      return {
-        token,
-        hash: createHash('sha256').update(token).digest('hex'),
-        expireAt: later(clock.now(), REFRESH_TOKEN_TTL_MS),
-      };
-    },
-    async verifyH5(token) {
+    async h5(token) {
       let payload: JWTPayload;
       try {
         ({ payload } = await jwtVerify(token, resolveKey, {
@@ -428,6 +406,52 @@ export function createTokenService(deps: { clock: Clock; keys: TokenKeyProvider 
   };
 }
 
+export function createTokenService(deps: { clock: Clock; keys: TokenKeyProvider }): TokenService {
+  const { clock, keys } = deps;
+  if (typeof clock?.now !== 'function') throw new TypeError('createTokenService needs the clock');
+  if (
+    typeof keys?.kid !== 'string' ||
+    !isJwtKeyId(keys.kid) ||
+    !isP256PrivateKey(keys.privateKey) ||
+    !(keys.publicKeys instanceof Map)
+  ) {
+    throw new TypeError('createTokenService needs a key id, a P-256 private key and public keys');
+  }
+  // A token signed under a kid missing from the verification keys would fail its own check.
+  if (!keys.publicKeys.has(keys.kid)) {
+    throw new TypeError(
+      'createTokenService needs the public key of the signing key id among the verification keys',
+    );
+  }
+  const { kid, privateKey } = keys;
+  const verify = createTokenVerifiers(clock, keys.publicKeys);
+  return {
+    async issueAccess(principal) {
+      const claims = principalOf({ ...principal });
+      if (claims === null)
+        throw new TypeError('issueAccess needs uid, app_id, sid, device_id, scp');
+      const issuedAt = Math.floor(clock.now().getTime() / 1000);
+      return new SignJWT({ ...claims })
+        .setProtectedHeader({ alg: 'ES256', kid, typ: 'JWT' })
+        .setIssuer(ISSUER)
+        .setAudience(AUDIENCE)
+        .setIssuedAt(issuedAt)
+        .setExpirationTime(issuedAt + ACCESS_TOKEN_TTL_SECONDS)
+        .sign(privateKey);
+    },
+    verifyAccess: verify.access,
+    issueRefresh() {
+      const token = randomBytes(REFRESH_TOKEN_BYTES).toString('base64url');
+      return {
+        token,
+        hash: createHash('sha256').update(token).digest('hex'),
+        expireAt: later(clock.now(), REFRESH_TOKEN_TTL_MS),
+      };
+    },
+    verifyH5: verify.h5,
+  };
+}
+
 /**
  * The verification keys of a verify-only process (B1-02zj, D10-255 ①): the shape of platform's
  * JwtVerifyKeyConfig (JWT_KEY_ID, its SPKI public key, JWT_VERIFY_KEYS_JSON). No private key.
@@ -445,17 +469,76 @@ export interface TokenVerifyKeyProvider {
 }
 
 /**
+ * The verification half of a signing configuration (a hand-built AppConfig with `jwt` but without
+ * `jwtVerify`): JWT_KEY_ID, the public key derived from the private key, JWT_VERIFY_KEYS_JSON.
+ * The private key never leaves this function. A private key that does not parse is refused.
+ */
+export function verifyKeyConfigOf(config: JwtKeyConfig): TokenVerifyKeyConfig {
+  const privateKey = parseP256PrivateKeyPem(config.privateKeyPem);
+  if (privateKey === null) {
+    throw new Error('JWT_PRIVATE_KEY_PEM: a P-256 PKCS#8 private key is required');
+  }
+  return Object.freeze({
+    kid: config.kid,
+    publicKeyPem: createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString(),
+    verificationKeys: config.verificationKeys,
+  });
+}
+
+/**
  * The verify-only keys of a process that never signs (stream, ...). Staging / prod without a
  * configuration refuse to start, naming JWT_PUBLIC_KEY_PEM; a hand-built configuration is checked
  * again (P-256 SPKI, well-formed kids, previous kids distinct from the current one).
+ * Local / test without one: an ephemeral public key whose private half is discarded at once, so
+ * nothing verifies (the process has no signer to trust); the module wiring keeps its existing
+ * ephemeral signer for that case instead (identity.module.ts).
  */
-export function createTokenVerifyKeyProvider(
+export async function createTokenVerifyKeyProvider(
   appEnv: AppEnv,
   config: TokenVerifyKeyConfig | null,
 ): Promise<TokenVerifyKeyProvider> {
-  void appEnv;
-  void config;
-  throw new Error('NotImplemented: createTokenVerifyKeyProvider');
+  if (config === null) {
+    if (appEnv !== 'local' && appEnv !== 'test') {
+      throw new Error(
+        `JWT_PUBLIC_KEY_PEM (or JWT_PRIVATE_KEY_PEM) and JWT_KEY_ID must be set when APP_ENV=${appEnv}: access tokens are verified with a configured key outside local and test`,
+      );
+    }
+    const pair = await generateEcKeyPair('ec', { namedCurve: 'prime256v1' });
+    const kid = `ephemeral-${randomBytes(8).toString('hex')}`;
+    return Object.freeze({ kid, publicKeys: new Map([[kid, pair.publicKey]]) });
+  }
+  const current = parseP256PublicKeyPem(config.publicKeyPem);
+  if (current === null || !isJwtKeyId(config.kid)) {
+    throw new Error(
+      'JWT_PUBLIC_KEY_PEM / JWT_KEY_ID: a P-256 SPKI public key and a well-formed key id are required',
+    );
+  }
+  const publicKeys = new Map<string, KeyObject>([[config.kid, current]]);
+  for (const [kid, pem] of Object.entries(config.verificationKeys)) {
+    const key = parseP256PublicKeyPem(pem);
+    if (kid === config.kid || !isJwtKeyId(kid) || key === null) {
+      throw new Error(
+        'JWT_VERIFY_KEYS_JSON: every previous key needs its own well-formed key id and a P-256 SPKI public key',
+      );
+    }
+    publicKeys.set(kid, key);
+  }
+  return Object.freeze({ kid: config.kid, publicKeys });
+}
+
+/** True for a key port that can sign (a P-256 private key next to the public keys). */
+export function isSigningKeyProvider(
+  keys: TokenKeyProvider | TokenVerifyKeyProvider,
+): keys is TokenKeyProvider {
+  return isP256PrivateKey((keys as Partial<TokenKeyProvider>).privateKey);
+}
+
+/** Thrown by a verify-only token service asked to sign (never a fallback key). */
+export class TokenSigningUnavailable extends Error {
+  constructor() {
+    super('this process only verifies access tokens: it holds no signing key (D10-255)');
+    this.name = 'TokenSigningUnavailable';
+  }
 }
 
 /**
@@ -466,8 +549,31 @@ export function createTokenVerifyService(deps: {
   clock: Clock;
   keys: TokenVerifyKeyProvider;
 }): TokenService {
-  void deps;
-  throw new Error('NotImplemented: createTokenVerifyService');
+  const { clock, keys } = deps;
+  if (typeof clock?.now !== 'function') {
+    throw new TypeError('createTokenVerifyService needs the clock');
+  }
+  if (
+    typeof keys?.kid !== 'string' ||
+    !isJwtKeyId(keys.kid) ||
+    !(keys.publicKeys instanceof Map) ||
+    !keys.publicKeys.has(keys.kid)
+  ) {
+    throw new TypeError(
+      'createTokenVerifyService needs a key id and public keys that include its key',
+    );
+  }
+  const verify = createTokenVerifiers(clock, keys.publicKeys);
+  return {
+    issueAccess() {
+      return Promise.reject(new TokenSigningUnavailable());
+    },
+    verifyAccess: verify.access,
+    issueRefresh() {
+      throw new TokenSigningUnavailable();
+    },
+    verifyH5: verify.h5,
+  };
 }
 
 export interface SessionLookup {

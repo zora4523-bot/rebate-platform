@@ -13,6 +13,7 @@ import {
   type Clock,
   type FieldCrypto,
   type Idempotency,
+  type IdempotencyPostMissCheck,
   type RedisHandle,
   type RequestCheck,
   type RequestCheckInput,
@@ -29,8 +30,14 @@ import {
   createTokenCheck,
   createTokenKeyProvider,
   createTokenService,
+  createTokenVerifyKeyProvider,
+  createTokenVerifyService,
+  isSigningKeyProvider,
+  verifyKeyConfigOf,
   type TokenKeyProvider,
   type TokenService,
+  type TokenVerifyKeyConfig,
+  type TokenVerifyKeyProvider,
 } from './application/access-tokens.ts';
 import { createConsentSignatureCheck } from './application/consent-signature.ts';
 import { createConsentService, type ConsentService } from './application/consents.ts';
@@ -214,6 +221,13 @@ export type IdentityConfigReader = SmsConfigReader & MinimumVersionReader;
  * POST /v1/me/deletion, assembled by app.module (D10-97); missing → the application answers 50001.
  */
 export interface IdentityModuleOptions extends DeletionRequestModuleOptions {
+  /**
+   * B1-02zj (D10-255 ①): 'verify' for an entry that only verifies access tokens (stream): its
+   * TOKEN_KEYS hold JWT_KEY_ID and public keys only (JWT_PUBLIC_KEY_PEM, or derived from
+   * JWT_PRIVATE_KEY_PEM) and its TOKEN_SERVICE refuses to sign; the step-up and h5_token issuers
+   * are null. Absent: 'sign' (the api entry; JWT_PRIVATE_KEY_PEM + JWT_KEY_ID as before).
+   */
+  readonly tokens?: 'sign' | 'verify';
   readonly accountAssets?: Omit<FactoryProvider<AccountAssetsPort>, 'provide'>;
   readonly accountRisk?: Omit<FactoryProvider<AccountRiskPort | null>, 'provide'>;
   /**
@@ -394,6 +408,9 @@ function h5ReadOnlyRejection(request: RequestCheckInput): HttpException {
  * process in local / test; staging / prod without a key refuse to start. Its factory waits for
  * FIELD_CRYPTO (injected only for that), so a keyring that fails to open is the startup error an
  * entry reports, not the missing JWT key of the same environment.
+ * B1-02zj (D10-255 ①): with options.tokens 'verify' (stream) TOKEN_KEYS hold public keys only and
+ * TOKEN_SERVICE never signs (verifyOnlyKeys below); staging / prod then need JWT_KEY_ID and
+ * JWT_PUBLIC_KEY_PEM (or the private key it is derived from), never the private key itself.
  */
 /** The invite-code sensitive-word filter of the registration core (createDefaultInviteCodeFilter). */
 const INVITE_CODE_WORDS = Symbol('INVITE_CODE_WORDS');
@@ -423,6 +440,49 @@ const DELETION_BALANCE = Symbol('IDENTITY_DELETION_BALANCE');
 const LANDING_INVITE = Symbol('IDENTITY_LANDING_INVITE');
 /** The landing configuration reader (IdentityModuleOptions.landingConfig), or null. */
 const LANDING_CONFIG = Symbol('IDENTITY_LANDING_CONFIG');
+
+/**
+ * The signing key of the api entry (B1-02h): JWT_PRIVATE_KEY_PEM + JWT_KEY_ID, an ephemeral pair in
+ * local / test without any JWT_* variable. B1-02zj: a configuration that only verifies
+ * (JWT_PUBLIC_KEY_PEM without the private key: `jwt` null, `jwtVerify` set) is refused in every
+ * environment, never replaced by an ephemeral key.
+ */
+function signingKeys(config: AppConfig): Promise<TokenKeyProvider> {
+  if ((config.jwt ?? null) === null && (config.jwtVerify ?? null) !== null) {
+    return Promise.reject(
+      new Error(
+        `JWT_PRIVATE_KEY_PEM must be set for an entry that signs access tokens (APP_ENV=${config.appEnv}); JWT_PUBLIC_KEY_PEM only verifies`,
+      ),
+    );
+  }
+  return createTokenKeyProvider(config.appEnv, config.jwt ?? null);
+}
+
+/**
+ * The keys of an entry that only verifies (B1-02zj, D10-255 ①): `jwtVerify` (loadConfig), or the
+ * public half of a hand-built `jwt`. Local / test without any JWT_* configuration keep the existing
+ * per-process ephemeral key pair (no configured key exists to protect, and in-process fixtures
+ * sign through this entry's TOKEN_SERVICE); staging / prod without one refuse to start, naming
+ * JWT_PUBLIC_KEY_PEM.
+ */
+async function verifyOnlyKeys(
+  config: AppConfig,
+): Promise<TokenKeyProvider | TokenVerifyKeyProvider> {
+  const signing = config.jwt ?? null;
+  const verifying: TokenVerifyKeyConfig | null =
+    config.jwtVerify ?? (signing === null ? null : verifyKeyConfigOf(signing));
+  if (verifying === null && (config.appEnv === 'local' || config.appEnv === 'test')) {
+    return createTokenKeyProvider(config.appEnv, null);
+  }
+  return createTokenVerifyKeyProvider(config.appEnv, verifying);
+}
+
+/**
+ * Stage ⑫ on a verify-only entry: never assembled there (step-up stays off stream); if it ever
+ * were, it fails closed instead of judging step-up tokens without the api's wiring.
+ */
+const verifyOnlyStepUpCheck: IdempotencyPostMissCheck = () =>
+  Promise.reject(new Error('STEP_UP_CHECK is not available on an entry that only verifies tokens'));
 
 @Module({})
 export class IdentityModule {
@@ -653,14 +713,19 @@ export class IdentityModule {
           // FIELD_CRYPTO is resolved first (and unused): Nest creates providers concurrently, and
           // a staging / prod entry whose keyring cannot open must fail with that error.
           inject: [APP_CONFIG, { token: FIELD_CRYPTO, optional: true }],
-          useFactory: (config: AppConfig): Promise<TokenKeyProvider> =>
-            createTokenKeyProvider(config.appEnv, config.jwt ?? null),
+          useFactory: (config: AppConfig): Promise<TokenKeyProvider | TokenVerifyKeyProvider> =>
+            options.tokens === 'verify' ? verifyOnlyKeys(config) : signingKeys(config),
         },
         {
           provide: TOKEN_SERVICE,
           inject: [CLOCK, TOKEN_KEYS],
-          useFactory: (clock: Clock, keys: TokenKeyProvider): TokenService =>
-            createTokenService({ clock, keys }),
+          useFactory: (
+            clock: Clock,
+            keys: TokenKeyProvider | TokenVerifyKeyProvider,
+          ): TokenService =>
+            isSigningKeyProvider(keys)
+              ? createTokenService({ clock, keys })
+              : createTokenVerifyService({ clock, keys }),
         },
         options.realnameStatus === undefined
           ? { provide: REALNAME_STATUS_READER, useFactory: createDefaultRealnameStatusReader }
@@ -699,11 +764,14 @@ export class IdentityModule {
           provide: STEP_UP_CHECK,
           inject: [TOKEN_KEYS, CLOCK, ROOT_LOGGER, { token: REDIS, optional: true }],
           useFactory: (
-            keys: TokenKeyProvider,
+            keys: TokenKeyProvider | TokenVerifyKeyProvider,
             clock: Clock,
             logger: RootLogger,
             redis?: RedisHandle,
-          ) => createStepUpCheck({ keys, clock, logger, redis: redis ?? null }),
+          ) =>
+            isSigningKeyProvider(keys)
+              ? createStepUpCheck({ keys, clock, logger, redis: redis ?? null })
+              : verifyOnlyStepUpCheck,
         },
         {
           provide: TOKEN_CHECK,
@@ -989,13 +1057,15 @@ export class IdentityModule {
           useFactory: (
             clock: Clock,
             reader: IdentityConfigReader | null,
-            keys: TokenKeyProvider,
+            keys: TokenKeyProvider | TokenVerifyKeyProvider,
             sms: SmsCodeService | null,
             attempts: OauthAttemptService | null,
             thirdPartyIdentity: ThirdPartyIdentityPort | null,
             db?: Kysely<Database>,
             fieldCrypto?: FieldCrypto,
           ): StepUpService | null =>
+            // A verify-only entry signs no step_up_token (B1-02zj).
+            !isSigningKeyProvider(keys) ||
             db === undefined ||
             fieldCrypto === undefined ||
             reader === null ||
@@ -1019,10 +1089,11 @@ export class IdentityModule {
           useFactory: (
             clock: Clock,
             reader: IdentityConfigReader | null,
-            keys: TokenKeyProvider,
+            keys: TokenKeyProvider | TokenVerifyKeyProvider,
             db?: Kysely<Database>,
           ): H5TokenService | null =>
-            db === undefined || reader === null
+            // A verify-only entry signs no h5_token (B1-02zj).
+            !isSigningKeyProvider(keys) || db === undefined || reader === null
               ? null
               : createH5TokenService({
                   clock,
