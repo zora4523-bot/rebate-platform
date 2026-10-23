@@ -4,21 +4,23 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { expect, it } from 'vitest';
-import { InvitePage } from '../../../../apps/h5/src/entries/app/pages/invite/index.ts';
-import { createAppRoutes } from '../../../../apps/h5/src/entries/app/routes.ts';
 
-const root = fileURLToPath(new URL('../../../../', import.meta.url));
+// Nothing is imported from the page or read from disk while the file loads: every module and file
+// is resolved inside its test, so a missing piece shows up as that test's assertion failure.
+// A string (not a jsdom URL object) goes to Node's fileURLToPath.
+const moduleUrl = import.meta.url;
+const root = fileURLToPath(new URL('../../../../', moduleUrl).href);
 const directory = join(root, 'apps/h5/src/entries/app/pages/invite');
 const textPath = join(root, 'apps/h5/src/texts/invite.ts');
-const schemaMethods = new Set(
-  Object.keys(
-    (
-      JSON.parse(readFileSync(join(root, 'contracts/bridge.schema.json'), 'utf8')) as {
-        methods: Record<string, unknown>;
-      }
-    ).methods,
-  ),
-);
+
+/** Method names registered in contracts/bridge.schema.json. */
+function schemaMethods(): Set<string> {
+  const schema = JSON.parse(readFileSync(join(root, 'contracts/bridge.schema.json'), 'utf8')) as {
+    methods?: Record<string, unknown>;
+  };
+  expect(schema.methods, 'bridge.schema.json methods').toBeDefined();
+  return new Set(Object.keys(schema.methods ?? {}));
+}
 
 function sources() {
   return readdirSync(directory, { recursive: true, encoding: 'utf8' })
@@ -36,12 +38,17 @@ function tree(name: string, source: string): ts.SourceFile {
 }
 
 it('[AC-F1-05a-ROUTE#1] InviteShare 路由 /invite 懒加载邀请好友页面', async () => {
+  const [{ createAppRoutes }, { InvitePage }] = await Promise.all([
+    import('../../../../apps/h5/src/entries/app/routes.ts'),
+    import('../../../../apps/h5/src/entries/app/pages/invite/index.ts'),
+  ]);
   const route = createAppRoutes().find((item) => item.path === '/invite');
   expect(route).toBeDefined();
   expect((await route!.lazy()).Component).toBe(InvitePage);
 });
 
 it('[AC-F1-05a-SOURCE#1] 经应用级 API 与 @couli/money 格式化，桥能力只用登记的方法，不绕过客户端', () => {
+  const registered = schemaMethods();
   const used = new Set<string>();
   const violations: string[] = [];
   const bridgeMethods = new Set<string>();
@@ -85,8 +92,7 @@ it('[AC-F1-05a-SOURCE#1] 经应用级 API 与 @couli/money 格式化，桥能力
       // 页面不在本地画海报（海报只用服务端出图 poster_url）。
       if (ts.isStringLiteralLike(node) && /^(?:canvas|2d)$/.test(node.text))
         violations.push(`${name}: local drawing ${node.text}`);
-      if (ts.isStringLiteralLike(node) && schemaMethods.has(node.text))
-        bridgeMethods.add(node.text);
+      if (ts.isStringLiteralLike(node) && registered.has(node.text)) bridgeMethods.add(node.text);
     });
     walk(file, (node) => {
       if (!ts.isCallExpression(node)) return;
@@ -104,8 +110,11 @@ it('[AC-F1-05a-SOURCE#1] 经应用级 API 与 @couli/money 格式化，桥能力
     });
   }
   expect([...used]).toEqual(expect.arrayContaining(['api', 'money']));
-  // 桥能力只用 bridge.schema.json 已有、本任务登记的几项（名字以字符串出现时核对）。
+  // 桥能力只用 bridge.schema.json 已有、本任务登记的几项（名字以字符串出现时核对）：
+  // 配置经桥读取（app.getConfig，规格 §4），暂不可邀请态的【联系客服】（cs.open）。
   const allowed = new Set([
+    'app.getConfig',
+    'cs.open',
     'clipboard.write',
     'media.saveImage',
     'media.previewImage',

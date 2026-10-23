@@ -11,7 +11,7 @@ import { createQueryClient, createQueryProvider } from '../../../../apps/h5/src/
 import '../../../../apps/h5/src/shared/styles/index.css';
 import tokens from '../../../../contracts/design-tokens.json' with { type: 'json' };
 import {
-  config,
+  configAnswer,
   copy,
   inviteCode,
   inviteConfig,
@@ -53,7 +53,7 @@ afterEach(async () => {
 });
 
 const rewardOn: InviteServerOptions = {
-  config: () => reply(config(inviteConfig({ enabled: true, amount_fen: 1000 }))),
+  config: () => configAnswer(inviteConfig({ enabled: true, amount_fen: 1000 })),
 };
 
 function mount(options: InviteServerOptions = {}): HTMLElement {
@@ -160,6 +160,8 @@ it('[AC-F1-05a-BROWSER#3] h5-invite-unavailable', async () => {
   await expect.element(page.getByText(copy.unavailable, { exact: false }).first()).toBeVisible();
   await expect.element(container).toMatchTextContent(copy.unavailableHint);
   await expect.element(container).toMatchTextContent(copy.invitedUnit.replace('{n}', '4'));
+  await expect.element(page.getByRole('button', { name: /^\s*联系客服\s*$/ })).toBeVisible();
+  await expect.element(container).toMatchTextContent(copy.rulesTitle);
   await expect.element(page.getByRole('button', { name: /复制邀请码/ })).not.toBeInTheDocument();
   await expect.element(page.getByText(copy.rewardTitle, { exact: false })).not.toBeInTheDocument();
   await screenshot(container, 'h5-invite-unavailable');

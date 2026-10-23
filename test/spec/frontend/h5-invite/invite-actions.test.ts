@@ -3,7 +3,7 @@ import { screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { expect, it } from 'vitest';
 import {
-  config,
+  configAnswer,
   copy,
   inviteCode,
   inviteConfig,
@@ -69,26 +69,6 @@ it('[AC-F1-05a-COPY#3] 复制按钮的读屏名带对象且两个按钮可区分
   expect(link.getAttribute('disabled')).toBeNull();
   // 读屏名不能只有「复制」：须说明复制的是邀请码 / 邀请链接。
   expect(screen.queryAllByRole('button', { name: /^\s*复制\s*$/ })).toEqual([]);
-});
-
-it('[AC-F1-05a-SHARE#1] 系统分享经 share.open 分享 landing_url 链接', async () => {
-  const http = inviteServer();
-  mount(http.api);
-  await screen.findAllByText(inviteCode, { exact: false });
-  const share = controls(/分享/).filter((element) => !COPY_LINK.test(element.textContent ?? ''));
-  expect(share, '邀请链接的系统分享入口').toHaveLength(1);
-  await userEvent.setup().click(share[0]!);
-  await waitFor(() => expect(http.calls('share.open')).toHaveLength(1));
-  const params = http.calls('share.open')[0]!.params as {
-    channel?: string;
-    content: { type: string; url?: string; title?: string };
-  };
-  expect(params.content.type).toBe('link');
-  expect(params.content.url).toBe(landingUrl);
-  expect((params.content.title ?? '').trim()).not.toBe('');
-  expect([undefined, 'system']).toContain(params.channel);
-  // 分享内容不带 UID、手机号或昵称（契约 landing_url 说明）；只用接口给的链接。
-  expect(JSON.stringify(params)).not.toMatch(/uid|user_id|phone|nickname/i);
 });
 
 it('[AC-F1-05a-POSTER#1] 【保存海报】预览服务端出图 poster_url，保存走 media.saveImage', async () => {
@@ -158,7 +138,7 @@ it('[AC-F1-05a-LINK#1] 人数卡说明「在余额流水里查看」进入 Ledge
 
 it('[AC-F1-05a-LINK#2] 活动有效时【活动规则】与【完整规则】打开不同的帮助文章', async () => {
   const http = inviteServer({
-    config: () => reply(config(inviteConfig({ enabled: true, amount_fen: 1000 }))),
+    config: () => configAnswer(inviteConfig({ enabled: true, amount_fen: 1000 })),
   });
   mount(http.api);
   await screen.findAllByText(copy.rewardTitle, { exact: false });

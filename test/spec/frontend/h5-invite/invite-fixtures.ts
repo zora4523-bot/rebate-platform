@@ -1,4 +1,9 @@
-import type { BridgeMethods, BridgeRequest, BridgeResponse } from '@couli/bridge-sdk';
+import type {
+  BridgeErrorCode,
+  BridgeMethods,
+  BridgeRequest,
+  BridgeResponse,
+} from '@couli/bridge-sdk';
 import { createAppApi } from '../../../../apps/h5/src/shared/api/app-api.ts';
 import type { components } from '../../../../packages/contracts-ts/src/index.ts';
 import dictionary from '../../../../contracts/texts.default.json' with { type: 'json' };
@@ -43,7 +48,6 @@ export const inviteCode = 'K7M2QX';
 export const landingUrl = `https://share.example.invalid/i/${inviteCode}?ch=app`;
 export const posterUrl = 'https://media.example.invalid/posters/invite-K7M2QX-v3.png';
 export const INVITE_PATH = '/v1/invites/me';
-export const CONFIG_PATH = '/v1/config';
 
 export function myInvite(overrides: Partial<MyInvite> = {}): MyInvite {
   return {
@@ -91,6 +95,19 @@ export function config(invite: ConfigInvite = inviteConfig()): Record<string, un
   };
 }
 
+/**
+ * Native answer to app.getConfig (规格 §4：getConfig 经桥读取，照 find-order 先例): either the
+ * config values (native hands back only the keys the page asked for) or a bridge error code.
+ */
+export type ConfigAnswer = { values: Record<string, unknown> } | { failCode: BridgeErrorCode };
+
+export function configAnswer(invite: ConfigInvite = inviteConfig()): ConfigAnswer {
+  return { values: config(invite) };
+}
+
+/** app.getConfig failed on the native side. */
+export const configFailure: ConfigAnswer = { failCode: 90500 };
+
 // Browser-safe data, same as the ledger fixture.
 const nativeEnv: BridgeMethods['app.getEnv']['result'] = {
   platform: 'android',
@@ -104,32 +121,55 @@ const nativeEnv: BridgeMethods['app.getEnv']['result'] = {
 
 export const bridgeMethods = [
   'app.getEnv',
+  'app.getConfig',
   'auth.getH5Token',
   'nav.open',
   'clipboard.write',
   'media.saveImage',
   'media.previewImage',
   'share.open',
+  'cs.open',
   'ui.toast',
 ] as const;
 
 export interface InviteServerOptions {
   invite?: (count: number) => Response | Promise<Response>;
-  config?: (count: number) => Response | Promise<Response>;
+  /** Native answer for app.getConfig; default: values with the reward campaign off (missing). */
+  config?: (count: number) => ConfigAnswer | Promise<ConfigAnswer>;
   /** Native answer for media.saveImage; default saved=true. */
   saveImage?: (request: BridgeRequest) => BridgeResponse;
 }
 
-/** Real app API + SDK token manager; only the native bridge and the HTTP boundary are fake. */
+function requestedKeys(request: BridgeRequest): unknown[] {
+  const keys = (request.params as { keys?: unknown } | undefined)?.keys;
+  return Array.isArray(keys) ? keys : [];
+}
+
+/**
+ * Real app API + SDK token manager; only the native bridge and the HTTP boundary are fake. The
+ * config comes only through app.getConfig; any other HTTP path (including /v1/config) is 30001.
+ */
 export function inviteServer(options: InviteServerOptions = {}) {
   let tokens = 0;
   let invites = 0;
   let configs = 0;
-  const native = installBridge(bridgeMethods, (request) => {
+  const native = installBridge(bridgeMethods, async (request) => {
     const ok = (data: unknown): BridgeResponse => ({ id: request.id, code: 0, msg: '', data });
     switch (request.method) {
       case 'app.getEnv':
         return ok(nativeEnv);
+      case 'app.getConfig': {
+        configs += 1;
+        const answer = await (options.config?.(configs) ?? configAnswer());
+        if ('failCode' in answer)
+          return { id: request.id, code: answer.failCode, msg: 'config unavailable', data: null };
+        const keys = requestedKeys(request);
+        return ok({
+          values: Object.fromEntries(
+            Object.entries(answer.values).filter(([key]) => keys.includes(key)),
+          ),
+        });
+      }
       case 'auth.getH5Token':
         tokens += 1;
         return ok({
@@ -143,6 +183,8 @@ export function inviteServer(options: InviteServerOptions = {}) {
         return options.saveImage?.(request) ?? ok({ saved: true });
       case 'share.open':
         return ok({ shared: true });
+      case 'cs.open':
+        return ok({ opened: true });
       default:
         return ok({});
     }
@@ -151,10 +193,6 @@ export function inviteServer(options: InviteServerOptions = {}) {
     if (url.pathname === INVITE_PATH) {
       invites += 1;
       return options.invite?.(invites) ?? reply(myInvite());
-    }
-    if (url.pathname === CONFIG_PATH) {
-      configs += 1;
-      return options.config?.(configs) ?? reply(config());
     }
     return reply(null, 30001, 404);
   });

@@ -123,6 +123,37 @@ export function openedHelpArticles(http: InviteServer): string[] {
   return [...viaBridge, ...viaRouter];
 }
 
+/**
+ * The 邀请规则 card: the smallest element holding both the card title (an element whose whole
+ * text is the title) and its 【完整规则】 entry.
+ */
+export function ruleCard(title: string, fullEntry: RegExp): HTMLElement {
+  const full = entry(fullEntry);
+  const heading = screen
+    .getAllByText(title)
+    .find((element) => !element.contains(full) && element !== full);
+  expect(heading, `规则卡标题「${title}」`).toBeDefined();
+  let card: HTMLElement | null = heading!.parentElement;
+  while (card !== null && !card.contains(full)) card = card.parentElement;
+  expect(card, '规则卡同时含标题与完整规则入口').not.toBeNull();
+  return card!;
+}
+
+/**
+ * Text of the card's last rule: its last list item when the rules are a list, otherwise the card
+ * text after the 【完整规则】 entry's text is taken out (whitespace removed either way).
+ */
+export function lastRule(card: HTMLElement, fullEntry: RegExp): string {
+  const items = within(card).queryAllByRole('listitem');
+  if (items.length > 0) return squash(items.at(-1)!.textContent);
+  const full = within(card)
+    .queryAllByRole('link', { name: fullEntry })
+    .concat(within(card).queryAllByRole('button', { name: fullEntry }));
+  let text = squash(card.textContent);
+  for (const element of full) text = text.replace(squash(element.textContent), '');
+  return text;
+}
+
 type User = ReturnType<typeof userEvent.setup>;
 
 /**

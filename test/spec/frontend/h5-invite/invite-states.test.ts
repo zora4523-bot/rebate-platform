@@ -3,7 +3,7 @@ import { act, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import {
-  config,
+  configAnswer,
   copy,
   inviteCode,
   inviteConfig,
@@ -12,13 +12,15 @@ import {
   reply,
   unavailable,
 } from './invite-fixtures.ts';
-import { LOADING, controls, mount, pageText, squash } from './invite-helpers.ts';
+import { LOADING, controls, entry, mount, pageText, squash } from './invite-helpers.ts';
 
 const COPY_CODE = /复制邀请码/;
 const COPY_LINK = /复制邀请链接/;
 const SAVE_POSTER = /保存海报/;
 const SHARE = /分享/;
 const RETRY = /重试|重新加载/;
+// 画板 InviteShareUnavailable-v2 的按钮（08 无键，画板文案）。
+const CONTACT_SUPPORT = /^\s*联系客服\s*$/;
 
 function expectNoInviteEntries(): void {
   for (const name of [COPY_CODE, COPY_LINK, SAVE_POSTER, SHARE]) {
@@ -82,7 +84,7 @@ it('[AC-F1-05a-STATES#4] 直邀人数按 direct_count 显示，0 人也照常显
   expect(text).not.toContain(squash(copy.invitedUnit.replace('{n}', '7')));
 });
 
-it('[AC-F1-05a-STATES#5] can_invite=false：暂不可邀请说明不给原因，人数卡照常，无邀请码卡与按钮', async () => {
+it('[AC-F1-05a-STATES#5] can_invite=false：暂不可邀请说明不给原因，人数卡与邀请规则卡照常，无邀请码卡与按钮', async () => {
   const http = inviteServer({ invite: () => reply(unavailable) });
   const view = mount(http.api);
   await screen.findAllByText(copy.unavailable, { exact: false });
@@ -90,6 +92,10 @@ it('[AC-F1-05a-STATES#5] can_invite=false：暂不可邀请说明不给原因，
   expect(text).toContain(squash(copy.unavailableHint));
   expect(text).toContain(squash(copy.invitedCount));
   expect(text).toContain(squash(copy.invitedUnit.replace('{n}', '4')));
+  // 画板 InviteShareUnavailable-v2：邀请规则卡照常（活动无效时末条是「不发放」一句）。
+  expect(text).toContain(squash(copy.rulesTitle));
+  expect(text).toContain(squash(copy.noReward));
+  expect(controls(new RegExp(copy.rulesFull))).toHaveLength(1);
   expectNoInviteEntries();
   // 不展示原因（BR-INV-18 细则：其他不可用情形不展示原因）。
   expect(text).not.toContain(squash(copy.minor));
@@ -97,10 +103,25 @@ it('[AC-F1-05a-STATES#5] can_invite=false：暂不可邀请说明不给原因，
   expect(screen.queryByRole('alert')).toBeNull();
 });
 
+it('[AC-F1-05a-STATES#11] can_invite=false：【联系客服】经 cs.open 打开客服，一次点击一次调用、不带用户标识', async () => {
+  const http = inviteServer({ invite: () => reply(unavailable) });
+  mount(http.api);
+  await screen.findAllByText(copy.unavailable, { exact: false });
+  expect(http.calls('cs.open')).toEqual([]);
+  await userEvent.setup().click(entry(CONTACT_SUPPORT));
+  await waitFor(() => expect(http.calls('cs.open')).toHaveLength(1));
+  const params = http.calls('cs.open')[0]!.params as { entry?: unknown };
+  expect(typeof params.entry).toBe('string');
+  expect(String(params.entry).trim()).not.toBe('');
+  // BR-ID-33 细则：不带 uid、手机号或任何账号标识。
+  expect(JSON.stringify(params)).not.toMatch(/uid|user_id|phone|invite-token|K7M2QX/i);
+  expect(http.calls('nav.open')).toEqual([]);
+});
+
 it('[AC-F1-05a-STATES#6] 30413：显示 error.30413，隐藏邀请与分享入口，不重试', async () => {
   const http = inviteServer({
     invite: () => reply({ reason: 'self_minor' }, 30413, 403),
-    config: () => reply(config(inviteConfig({ enabled: true, amount_fen: 1000 }))),
+    config: () => configAnswer(inviteConfig({ enabled: true, amount_fen: 1000 })),
   });
   const view = mount(http.api);
   await screen.findAllByText(copy.minor, { exact: false });
