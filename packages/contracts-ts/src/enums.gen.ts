@@ -982,6 +982,56 @@ export const blocked_request_type = [
 export type BlockedRequestType = (typeof blocked_request_type)[number];
 
 /**
+ * 申诉的来源，后台申诉详情（GET /admin/v1/appeals/{appeal_id}）的 source；编码由契约线定（代理补全的默认），列名由 db / risk 任务定
+ * Source: 规划/04 §3.2 appeals「来源（App 内提交 / 后台代为登记）与登记人」、§6.6 appeals；BR-ID-36（CT-24r） (contracts/enums/identity.yaml).
+ */
+export const appeal_source = [
+  "app", // App 内由本人提交（POST /v1/me/appeals），登记人为空
+  "admin", // 后台客服代为登记（POST /admin/v1/appeals），登记人为该后台账号
+] as const;
+export type AppealSource = (typeof appeal_source)[number];
+
+/**
+ * 被拦请求的拦截原因类别，后台被拦请求查找与申诉详情的 cause；决定撤销时是移出名单条目（另需 risk.blocklist 与动态码）还是一次性放行（只需 risk.appeal）；编码由契约线定（代理补全的默认）
+ * Source: 规划/04 §6.6 appeals「原因类别」、§11.2 risk.appeal；BR-ID-36 细则「被拦截请求申诉」结案；编排裁定 D10-154（CT-24r） (contracts/enums/identity.yaml).
+ */
+export const blocked_request_cause = [
+  "blocklist", // 名单：命中 BR-ID-31 黑名单条目（维度见 blocklist_dimension），撤销时在结案同一操作里移出造成拦截的名单条目
+  "rule", // 其他拦截规则：同设备注册上限、落地页同 IP 注册上限等 risk_action=block 的规则（BR-ID-05、BR-ID-32），撤销时一次性放行
+] as const;
+export type BlockedRequestCause = (typeof blocked_request_cause)[number];
+
+/**
+ * blocklist.dimension，取值与 blocklist 表的 CHECK 约束一致；后台被拦请求查找与申诉详情用它显示「黑名单 · 维度」；order_no_suffix、channel 是订单侧维度，不会造成 44001 拦截
+ * Source: 规划/04 §3.2 blocklist 维度；BR-ID-31、BR-ATTR-26（CT-24r） (contracts/enums/identity.yaml).
+ */
+export const blocklist_dimension = [
+  "phone", // 手机号（HMAC）
+  "id_no", // 身份证号（HMAC）
+  "alipay", // 支付宝收款账号（HMAC）
+  "bank_card", // 银行卡收款账号（HMAC）
+  "wechat_openid", // 微信零钱收款 openid（HMAC）
+  "device", // 设备哈希
+  "relation_id", // 联盟 relation_id
+  "order_no_suffix", // 淘宝订单号后 6 位（订单侧，BR-ATTR-26）
+  "channel", // 渠道（订单侧，BR-ATTR-26）
+] as const;
+export type BlocklistDimension = (typeof blocklist_dimension)[number];
+
+/**
+ * risk_hits.ref_type，命中记录关联对象的类型；取值与 risk_hits 表的 CHECK 约束一致；后台申诉详情的命中记录 ref_type
+ * Source: 规划/04 §3.2 risk_hits.ref_type；BR-ID-36（CT-24r） (contracts/enums/identity.yaml).
+ */
+export const risk_hit_ref_type = [
+  "order", // 订单
+  "withdrawal", // 提现单
+  "blocked_request", // 被拦截的请求（返回 44001 的那一次写请求，ref_id 即拦截请求编号）
+  "invite_relation", // 邀请关系
+  "invite_reward", // 邀请奖励
+] as const;
+export type RiskHitRefType = (typeof risk_hit_ref_type)[number];
+
+/**
  * invite_rewards.status，邀请奖励活动资格与发放记录的状态；编码由契约线定，含义只在 BR-INV-24；不发与作废的原因只在后台可查，用户端不展示；budget_exhausted 2026-10-20 取消（无路径，BR-INV-24 有效期）
  * Source: 规划/04 §3.2 invite_rewards；BR-INV-24 细则「资格记录与状态」「有效期」 (contracts/enums/identity.yaml).
  */
@@ -1949,6 +1999,10 @@ export const enums = {
   appeal_status,
   appeal_target_type,
   blocked_request_type,
+  appeal_source,
+  blocked_request_cause,
+  blocklist_dimension,
+  risk_hit_ref_type,
   invite_reward_status,
   invite_reward_party_result,
   invite_reward_skip_reason,

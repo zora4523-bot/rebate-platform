@@ -176,6 +176,40 @@ enums:
       withdraw: 提现提交：POST /v1/withdrawals 被拦、没有建单（BR-WDR-03 ③a、BR-ID-31），另记申请金额（整数分）
       phone_change: 换手机号：绑定或更换手机号时新号码被拦（BR-ID-06）
       payout_account: 收款账号：绑定或更换收款账号时被拦（支付宝、银行卡、微信零钱，BR-WDR-02 ⓪、BR-WDR-33）
+  appeal_source:
+    source: 规划/04 §3.2 appeals「来源（App 内提交 / 后台代为登记）与登记人」、§6.6 appeals；BR-ID-36（CT-24r）
+    description: 申诉的来源，后台申诉详情（GET /admin/v1/appeals/{appeal_id}）的 source；编码由契约线定（代理补全的默认），列名由 db / risk 任务定
+    values:
+      app: App 内由本人提交（POST /v1/me/appeals），登记人为空
+      admin: 后台客服代为登记（POST /admin/v1/appeals），登记人为该后台账号
+  blocked_request_cause:
+    source: 规划/04 §6.6 appeals「原因类别」、§11.2 risk.appeal；BR-ID-36 细则「被拦截请求申诉」结案；编排裁定 D10-154（CT-24r）
+    description: 被拦请求的拦截原因类别，后台被拦请求查找与申诉详情的 cause；决定撤销时是移出名单条目（另需 risk.blocklist 与动态码）还是一次性放行（只需 risk.appeal）；编码由契约线定（代理补全的默认）
+    values:
+      blocklist: 名单：命中 BR-ID-31 黑名单条目（维度见 blocklist_dimension），撤销时在结案同一操作里移出造成拦截的名单条目
+      rule: 其他拦截规则：同设备注册上限、落地页同 IP 注册上限等 risk_action=block 的规则（BR-ID-05、BR-ID-32），撤销时一次性放行
+  blocklist_dimension:
+    source: 规划/04 §3.2 blocklist 维度；BR-ID-31、BR-ATTR-26（CT-24r）
+    description: blocklist.dimension，取值与 blocklist 表的 CHECK 约束一致；后台被拦请求查找与申诉详情用它显示「黑名单 · 维度」；order_no_suffix、channel 是订单侧维度，不会造成 44001 拦截
+    values:
+      phone: 手机号（HMAC）
+      id_no: 身份证号（HMAC）
+      alipay: 支付宝收款账号（HMAC）
+      bank_card: 银行卡收款账号（HMAC）
+      wechat_openid: 微信零钱收款 openid（HMAC）
+      device: 设备哈希
+      relation_id: 联盟 relation_id
+      order_no_suffix: 淘宝订单号后 6 位（订单侧，BR-ATTR-26）
+      channel: 渠道（订单侧，BR-ATTR-26）
+  risk_hit_ref_type:
+    source: 规划/04 §3.2 risk_hits.ref_type；BR-ID-36（CT-24r）
+    description: risk_hits.ref_type，命中记录关联对象的类型；取值与 risk_hits 表的 CHECK 约束一致；后台申诉详情的命中记录 ref_type
+    values:
+      order: 订单
+      withdrawal: 提现单
+      blocked_request: 被拦截的请求（返回 44001 的那一次写请求，ref_id 即拦截请求编号）
+      invite_relation: 邀请关系
+      invite_reward: 邀请奖励
   invite_reward_status:
     source: 规划/04 §3.2 invite_rewards；BR-INV-24 细则「资格记录与状态」「有效期」
     description: invite_rewards.status，邀请奖励活动资格与发放记录的状态；编码由契约线定，含义只在 BR-INV-24；不发与作废的原因只在后台可查，用户端不展示；budget_exhausted 2026-10-20 取消（无路径，BR-INV-24 有效期）

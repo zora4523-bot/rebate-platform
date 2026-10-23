@@ -267,6 +267,7 @@ codes:
         - admin_account
         - pay_order
         - pay_refund
+        - appeal
     sources:
       - BR-FUND-01
       - BR-FUND-04

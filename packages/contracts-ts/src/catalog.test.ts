@@ -240,6 +240,8 @@ it('[AC-CT-01c#3] limits 20902 resources to active contracts (04 §7)', () => {
     // CT-21b: pay order state CAS and refund CAS (04 §4.9, BR-PAY-02, BR-PAY-06).
     'pay_order',
     'pay_refund',
+    // CT-24r: admin appeal claim / resolve CAS (04 §6.6 appeals, BR-ID-36).
+    'appeal',
   ]);
 });
 
