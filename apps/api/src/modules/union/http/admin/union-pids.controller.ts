@@ -145,6 +145,19 @@ function refusal(error: unknown, traceId: string): unknown {
   return error;
 }
 
+/**
+ * The contract schema of adminUpdateUnionPid without the body's `minProperties`: with ajv's
+ * allErrors a body lacking `expected_row_version` would also be reported as [body], while the
+ * contract answers 20001 [expected_row_version] for it. The empty patch (no editable field) is
+ * still refused with 20001 [body], by AdminUnionPids.update (application/admin-pids.ts).
+ */
+function updateRouteSchema(): ReturnType<typeof contractRouteSchema<'adminUpdateUnionPid'>> {
+  const schema = structuredClone(contractRouteSchema('adminUpdateUnionPid'));
+  const body = (schema as { body?: Record<string, unknown> }).body;
+  if (body !== undefined) delete body['minProperties'];
+  return schema;
+}
+
 // Plain decorator calls, as linking's and content's admin controllers (no parameter decorators).
 {
   const prototype = AdminUnionPidsController.prototype;
@@ -172,7 +185,7 @@ function refusal(error: unknown, traceId: string): unknown {
   Body()(prototype, 'update', 2);
   Patch(':pid_id')(prototype, 'update', update);
   HttpCode(200)(prototype, 'update', update);
-  RouteSchema(contractRouteSchema('adminUpdateUnionPid'))(prototype, 'update', update);
+  RouteSchema(updateRouteSchema())(prototype, 'update', update);
 
   const activate = descriptor('activate');
   Req()(prototype, 'activate', 0);
