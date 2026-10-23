@@ -4,6 +4,7 @@ title: H5 邀请好友页 /invite（InviteShare）：取 H5 令牌后读 getMyIn
 type: impl
 # 2026-10-23 入账（前端线 f1-frontend-7，编排 D10-205 ②：F1-05 排，先核对定稿画板）。05 F1-05 的「邀请好友」部分；邀请落地页 InviteLanding 在 design-hifi 有画板但 design/ 与 docs/changes 无定稿记录，按 D10-205 先不做，另报编排排设计。
 # 契约 getMyInvite（/v1/invites/me，已实现）与 getConfig 的 invite.* 项；路由 InviteShare（h5 /invite）已在 routes.json。approvals 第 34 条：Claude 实现，Codex 写测试与评审。
+# 2026-10-23 tester 改 claude-independent：Codex 用量上限至 10-30 01:09，编排 10:27 统一改用独立 Claude（approvals #36，tools/agent/claude-run.sh）。
 refs: []
 refs_hash: {}
 deps: [F1-01q]
@@ -14,7 +15,7 @@ paths:
 test_paths:
   - 'test/spec/frontend/h5-invite/**'
 impl: claude
-tester: codex
+tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/frontend/h5-invite/**'
