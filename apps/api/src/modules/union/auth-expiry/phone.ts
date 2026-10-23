@@ -7,7 +7,7 @@
 // U+2010–U+2015; ③ drop one country code: a leading '+86', or '0086' / '86' only when exactly 11
 // digits follow; ④ the rest must match ^1[3-9][0-9]{9}$, otherwise null (mainland mobiles only).
 
-const REMOVED = /[\s​-‍﻿\-‐-―]/gu;
+const REMOVED = /[\s\u200B-\u200D\uFEFF\-\u2010-\u2015]/gu;
 const MAINLAND_MOBILE = /^1[3-9][0-9]{9}$/;
 const ZERO_ZERO_86 = /^0086[0-9]{11}$/;
 const EIGHTY_SIX = /^86[0-9]{11}$/;
