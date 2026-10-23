@@ -6,6 +6,7 @@ type: impl
 # 状态备注：等 B2-05c 合并（复用校验器）。
 # 建单只调 ledger.lockBalances / post（凭证模板 WITHDRAW:FREEZE，buildVouchers），不自写分录；分录与状态迁移同一事务；幂等记录 expire_at 由幂等模块按 POST /v1/withdrawals 置 infinity。
 # review_mode：withdraw.auto_payout.enabled（默认关，BR-WDR-30）关闭时建单即 manual 并按 BR-WDR-26 工作日 24 小时算 review_deadline（复用 risk 的工作日日历函数）；开启时留空由 B2-11 判定（契约「Null until decided」）。
+# 2026-10-23 编排裁定 D10-265：identity 的 test-change B1-02zk（#1393）把 [AC-B1-02y#19] 的封禁无令牌断言换到 POST /v1/me/phone；提现专用用例（封禁无令牌 → 10003、带有效令牌 → 10006 且不占用）由 identity 写成新文件 test/spec/identity/step-up-verify/withdraw-order.int.test.ts，作为本任务的规则测试落地，test_paths / accept 加这一文件。
 # 已知偏离（已报编排）：全局检查阶段把 step-up（10003）与实名（30304）排在处理器之前，与 BR-WDR-03 ①（30306 先于 ②）字面顺序不同；rules 接口内按原文顺序。
 refs: [BR-WDR-07, BR-WDR-09, BR-WDR-03]
 refs_hash:
@@ -25,10 +26,12 @@ paths:
   - 'apps/api/src/modules/risk/application/min-version-routes.gen.ts'
 test_paths:
   - 'test/spec/payout/apply/**'
+  - 'test/spec/identity/step-up-verify/withdraw-order.int.test.ts'
 impl: claude
 tester: codex
 accept:
   - 'pnpm verify'
   - 'test/spec/payout/apply/**'
+  - 'test/spec/identity/step-up-verify/withdraw-order.int.test.ts'
 status: todo
 pr: null
