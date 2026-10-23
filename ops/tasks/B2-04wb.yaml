@@ -1,0 +1,18 @@
+id: B2-04wb
+repo: rebate-platform
+title: test-change：事件契约测试的 02 §11 名单（test/spec/platform/events/kit.ts 的 PLAN_02_EVENTS / PLAN_02_PENDING）末尾按 SPEC_REF bafa96ce 顺序加 order.snapshot_created、user.realname_corrected、asset_snapshot.timed_out、union_receivable.exposure_exceeded，只增不改，为 B2-04wa 登记两个快照告警事件让路
+type: test-change
+# 2026-10-23 入账（funds）。依据：编排 D10-188 ①、09:58 公告（#1240 合并，SPEC_REF = bafa96ce，规划 02 §11 已含这四个名字）。先例 B1-08y。
+# kit 照 02 §11 全表手抄，另两个名字（D10-142、D10-181 / D10-192，别线登记）一并加入并列为 PENDING，免得名单与 02 §11 脱节；PENDING 允许 EVENT_NAMES 暂缺，登记后须在 02 §11 的位置。
+# 只增四行名单、四行 PENDING 与注释，其余不动。按 approvals #24 由编排核对加标签；先于 B2-04wa 合并。Codex 额度至 10-30 不可用，「不削弱」评审由新鲜独立 Claude 做。
+refs: []
+refs_hash: {}
+deps: []
+paths:
+  - 'test/spec/platform/events/kit.ts'
+impl: claude
+tester: none
+accept:
+  - 'pnpm verify'
+status: todo
+pr: null
