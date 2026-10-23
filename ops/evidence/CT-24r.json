@@ -1,0 +1,37 @@
+{
+  "task": "CT-24r",
+  "spec_ref": "3a301d14f0f566e8f0bc689aa8cfc177175dae20",
+  "spec_commit": "7c15387f92782acb114a9b6e296f11418080df80",
+  "red_tests": [],
+  "risk_note": "RV1 contract task (contracts/openapi.yaml, enums/identity.yaml, error-codes.yaml, contracts-ts conformance / catalog / new admin-appeals test and the regenerated contracts-ts and route tables): adds six planned admin appeal operations — list (four counts not affected by status / overdue filters), detail (risk hits, blocked request), claim (marker only, D10-158, expected row_version), resolve (decision + internal note + expected row_version; revoking a ban / freeze / blocklist-caused blocked request needs risk.ban / risk.freeze / risk.blocklist with TOTP step-up, D10-154), register on behalf (applicant derived from the target, open appeal returned, 30418 when attempts are used up) and blocked-request lookup by full phone / UID / blocked-request id (phone hits audited). risk.appeal throughout; phones always masked. 20902 gains data.resource=appeal; new enums appeal_source, blocked_request_cause, blocklist_dimension, risk_hit_ref_type in identity.yaml. Transcribes 04 §6.6 / §3.2 appeals and §11.2 risk.appeal (couli #177) with 08 BR-ID-36 / BR-ID-31; agent-chosen values listed in notices for planning write-back. tester none; implementation by an Opus 5.5 subagent in one run. Full verification by the required CI checks (ops/approvals.yaml id 21).",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "codex",
+      "engine": "codex",
+      "model": "gpt-6-astra",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "contract",
+      "round": 1,
+      "note": "round 1 pass, 0 findings"
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "bbdd56957b706ceea1d9f0b7f54c8baad2778099",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: packages/money and test/properties are unchanged from main",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}
