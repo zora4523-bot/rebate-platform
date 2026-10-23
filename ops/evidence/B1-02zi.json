@@ -1,0 +1,107 @@
+{
+  "red_tests": [
+    "test/spec/risk/redis-generation/generation.int.test.ts > [R-04][BR-ID-09] 启用时代次键缺失：签名请求被拒、nonce 未登记，代次键建立（值为当前时刻，TTL 30×60 秒）；拒绝期内仍拒；过了创建时刻 + NONCE_TTL_SECONDS 放行并登记 nonce，重放仍 10401",
+    "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] 拒绝期内的签名请求经全局错误过滤器答 50001：处理器不执行、nonce 不登记",
+    "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] 代次键存在且创建已早于拒绝期：照常验签并登记 nonce，重放仍 10401，代次值不变、不记 warn",
+    "test/spec/risk/redis-generation/generation.int.test.ts > [R-04][BR-ID-09] FLUSHDB 清空 Redis 后：下一次签名请求进入拒绝期，清空前登记过的 nonce 重放也不放行（重放窗口被关上）",
+    "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] worker 停摆超过 TTL、代次键过期：按数据丢失处理，下一次签名请求重建代次键并进入拒绝期",
+    "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] 并发：两个进程同时建键，只有一个值生效，两边都按共享值推出同一拒绝期",
+    "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] worker 续期：键缺失则建键（值为现在，TTL 30×60 秒）；键在则只刷新 TTL、值不变；续期建的键同样让签名请求进入拒绝期",
+    "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] 关闭时（local / test 默认）：代次键缺失也不拒绝，不建代次键，nonce 照常登记，重放仍 10401",
+    "test/spec/risk/redis-generation/generation.int.test.ts > [R-04][ADR-0001 §4.2 第17项] 启用时 Redis 不可用（句柄已关闭）：RedisUnavailableError（50001），不放行，不登记 nonce",
+    "test/spec/risk/redis-generation/policy.test.ts > [R-04] 代次识别只在 APP_ENV 为 staging / prod 时启用，local / test 关闭",
+    "test/spec/risk/redis-generation/policy.test.ts > [R-04][BR-ID-09][ADR-0001 §4.2 第17项] 启用时代次键读写失败（nonce 存储仍可用）：签名请求以 RedisUnavailableError 拒绝（50001），nonce 不登记、不放行；坏签名与未知设备仍是 10401 / 10402",
+    "test/spec/risk/redis-generation/policy.test.ts > [R-04][BR-ID-09][ADR-0001 §4.2 第17项] 启用时整个 Redis 不可用：签名请求以 RedisUnavailableError 拒绝（50001），nonce 不登记、不放行；坏签名与未知设备仍是 10401 / 10402",
+    "test/spec/risk/redis-generation/policy.test.ts > [R-04] 关闭时（local / test 默认）：不读写代次键，代次存储坏了也照常验签、登记 nonce、放行，重放仍 10401",
+    "test/spec/risk/redis-generation/policy.test.ts > [R-04] worker 每 60 秒续期一次：一次续期失败不让定时回调拒绝、下一次照常续期；stop 后取消定时器、已排队的回调不再续期"
+  ],
+  "risk_note": "RV2 (risk + entry.ts). R-04 option A (owner 2026-10-23) / orchestrator 13:31 ②: Redis generation detection. Signed requests run one atomic Lua script after the HMAC check: read or create risk:generation (value = creation time from the injected Clock), refuse with 50001 within NONCE_TTL_SECONDS (BR-ID-09) of the shared creation time without reserving the nonce, otherwise SET NX the nonce. Verifiers built without an explicit gate (recordConsent clipboard signature) use the process-level gate. The worker renews the key every 60 seconds (TTL 1800 s; recreates it when missing). Armed only for APP_ENV staging / prod by entry.ts; local / test unchanged. Redis unavailable stays fail-closed (50001). Fast and full verification passed on the AWS test machine (rule tests 14/14); required CI checks run on the PR head. Runbook (delete the key before reopening after a restore) is ops' part.",
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "checklist_complete": true,
+      "review_type": "money",
+      "round": 2,
+      "note": "round 1 fail (S1 recordConsent clipboard signature not gated; S2 gate and nonce reservation not atomic), both fixed in round 2; round 2 pass (couli-runs/B1-02zi/review-money-r1.json, review-money-r2.json); Codex unavailable until 10-30 (approvals #36)"
+    }
+  ],
+  "spec_test_review": {
+    "reviewer": "claude-independent",
+    "engine": "claude-independent",
+    "model": "claude-opus-5-5",
+    "rounds": 1,
+    "last_verdict": "pass",
+    "note": "rule tests written by an independent Claude through claude-run.sh impl --phase test (Codex unavailable, approvals #36; orchestrator ran prettier only); red/1 PASS (14 tests); reviewed by another fresh claude-run.sh session r1 pass (couli-runs/B1-02zi/review-spec-r1.json)"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "ci",
+    "note": "no change under test/properties, packages/money, packages/domain or packages/testing; the required longrun-props check runs on the PR head",
+    "tree": "011b02eafe502da81a1ada4de62dc350ec157466"
+  },
+  "trees": {
+    "packages/money": "5c94e1f60e005507b02a92b260e2720f2602abb3",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "011b02eafe502da81a1ada4de62dc350ec157466",
+    "test/spec": "33e8fca11de507b489ffa19a7f9bbaedd1694886",
+    "specs": "b9b8c7957aa786feb1b71c8ccc35e6fd7341add0"
+  },
+  "task": "B1-02zi",
+  "spec_commit": "eb4c6f0b9e8c1ffaeb376db524d00bc7e0d848e6",
+  "spec_ref": "be49fe9b54beaa6d8e552f6766e9ae2d4d513705",
+  "runs": [
+    {
+      "mode": "container",
+      "script": "red",
+      "exit_code": 0,
+      "commit": "eb4c6f0b9e8c1ffaeb376db524d00bc7e0d848e6",
+      "tree": "6512d5a79bf0211e0b4e442c2a21bf29e019a777",
+      "prop_seed": 20261001,
+      "started_at": "2026-10-23T12:58:29Z",
+      "finished_at": "2026-10-23T12:58:41Z",
+      "red_tests": [
+        "test/spec/risk/redis-generation/generation.int.test.ts > [R-04][BR-ID-09] 启用时代次键缺失：签名请求被拒、nonce 未登记，代次键建立（值为当前时刻，TTL 30×60 秒）；拒绝期内仍拒；过了创建时刻 + NONCE_TTL_SECONDS 放行并登记 nonce，重放仍 10401",
+        "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] 拒绝期内的签名请求经全局错误过滤器答 50001：处理器不执行、nonce 不登记",
+        "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] 代次键存在且创建已早于拒绝期：照常验签并登记 nonce，重放仍 10401，代次值不变、不记 warn",
+        "test/spec/risk/redis-generation/generation.int.test.ts > [R-04][BR-ID-09] FLUSHDB 清空 Redis 后：下一次签名请求进入拒绝期，清空前登记过的 nonce 重放也不放行（重放窗口被关上）",
+        "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] worker 停摆超过 TTL、代次键过期：按数据丢失处理，下一次签名请求重建代次键并进入拒绝期",
+        "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] 并发：两个进程同时建键，只有一个值生效，两边都按共享值推出同一拒绝期",
+        "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] worker 续期：键缺失则建键（值为现在，TTL 30×60 秒）；键在则只刷新 TTL、值不变；续期建的键同样让签名请求进入拒绝期",
+        "test/spec/risk/redis-generation/generation.int.test.ts > [R-04] 关闭时（local / test 默认）：代次键缺失也不拒绝，不建代次键，nonce 照常登记，重放仍 10401",
+        "test/spec/risk/redis-generation/generation.int.test.ts > [R-04][ADR-0001 §4.2 第17项] 启用时 Redis 不可用（句柄已关闭）：RedisUnavailableError（50001），不放行，不登记 nonce",
+        "test/spec/risk/redis-generation/policy.test.ts > [R-04] 代次识别只在 APP_ENV 为 staging / prod 时启用，local / test 关闭",
+        "test/spec/risk/redis-generation/policy.test.ts > [R-04][BR-ID-09][ADR-0001 §4.2 第17项] 启用时代次键读写失败（nonce 存储仍可用）：签名请求以 RedisUnavailableError 拒绝（50001），nonce 不登记、不放行；坏签名与未知设备仍是 10401 / 10402",
+        "test/spec/risk/redis-generation/policy.test.ts > [R-04][BR-ID-09][ADR-0001 §4.2 第17项] 启用时整个 Redis 不可用：签名请求以 RedisUnavailableError 拒绝（50001），nonce 不登记、不放行；坏签名与未知设备仍是 10401 / 10402",
+        "test/spec/risk/redis-generation/policy.test.ts > [R-04] 关闭时（local / test 默认）：不读写代次键，代次存储坏了也照常验签、登记 nonce、放行，重放仍 10401",
+        "test/spec/risk/redis-generation/policy.test.ts > [R-04] worker 每 60 秒续期一次：一次续期失败不让定时回调拒绝、下一次照常续期；stop 后取消定时器、已排队的回调不再续期"
+      ],
+      "expected": [
+        "test/spec/risk/redis-generation/generation.int.test.ts",
+        "test/spec/risk/redis-generation/policy.test.ts"
+      ],
+      "reports": [
+        {
+          "path": "out/spec-int.json",
+          "sha256": "cd3077f40e1eec022965d823c3a78786534191c7efdd8ed4cddb0b7400244d82"
+        },
+        {
+          "path": "out/spec-unit.json",
+          "sha256": "fc593e9462d9cdf5579a76d855d793fa0b285fd60bc45ac1c7b084c4dcfd1c54"
+        }
+      ],
+      "services": "host-ephemeral",
+      "gate": {
+        "commit": "7c2bccec5e78ffc4fcba5bb86952a5ad1b810a14",
+        "clean": true,
+        "script_sha256": "c4da15145d02cbffa6cfbeedcf954db88743beb83cfd46e61320ad8ea69b0838"
+      }
+    }
+  ]
+}
