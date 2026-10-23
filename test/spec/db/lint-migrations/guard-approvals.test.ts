@@ -117,11 +117,17 @@ it(
     // details CHECK rebuilt with an anonymized branch). Same pinning as 0057.
     const b115r = '0077_deletion-anonymize.sql';
     const b115rHash = 'd933bc024716bc1fcaa2ac7c7c1bfe9537f76d64225e0effff95d37e6a238113';
+    // B2-15h (guard-change): B2-15i's 0081 (ledger_entries ledger_type CHECK + pay_ledger_type,
+    // recon_diffs type CHECK + pay_mismatch / pay_anomaly; orchestrator ruling D10-168 ①). Same
+    // pinning as 0057.
+    const b215i = '0081_ledger-type-pay.sql';
+    const b215iHash = 'affc680c363578c9cfe9f9388bb4db9f32ff574c2ff73a382e90724d14822ab5';
     expect(module.APPROVED_GUARD_CHANGES).toEqual({
       [APPROVED_FILE]: createHash('sha256').update(bytes).digest('hex'),
       [ct25d]: ct25dHash,
       [b122a]: b122aHash,
       [b115r]: b115rHash,
+      [b215i]: b215iHash,
     });
     const ct25dPath = join(ROOT, 'db/migrations', ct25d);
     if (existsSync(ct25dPath)) {
