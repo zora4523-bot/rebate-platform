@@ -7,7 +7,8 @@
 // - stored active or blocked → never queried (the registry is not even asked for the adapter);
 // - otherwise (no row, unbound, pending_auth, invalid, released): the site authorization of the
 //   account this authorization uses (reads.authAccountId: the unreleased binding's, else the
-//   self_buy slot's) must be usable (BR-ID-24 ④: the query depending on it is not made), then the
+//   self_buy slot's, else the platform's earliest registered account by created_at, id) must be
+//   usable (BR-ID-24 ④: the query depending on it is not made), then the
 //   self_buy identity (custom_parameters {app:'n', uid=attr_code, sc:'self_buy'}, never a user_id)
 //   is sent to UnionAdapter.queryPddAuthority. Authorized → one short transaction, opened only after
 //   the query returned (the query never holds a connection), writes the binding active through

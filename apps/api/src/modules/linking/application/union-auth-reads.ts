@@ -115,7 +115,8 @@ export function createUnionAuthReads(options: UnionAuthReadsOptions): UnionAuthR
     /**
      * The union account this authorization uses: the unreleased binding's; otherwise the account
      * of the platform's active self_buy pid (union's own selection of the current pid, purpose
-     * convert); otherwise the platform's first account in that same order. null: no account.
+     * convert); otherwise the platform's earliest registered account (union_accounts created_at, id
+     * ascending — re-authorizing or registering a pid never moves it; D10-239). null: no account.
      */
     async authAccountId(appId, platform, bound) {
       if (bound !== null) return bound;
@@ -133,7 +134,6 @@ export function createUnionAuthReads(options: UnionAuthReadsOptions): UnionAuthR
         .select('id')
         .where('app_id', '=', appId)
         .where('platform', '=', platform)
-        .orderBy('updated_at', 'asc')
         .orderBy('created_at', 'asc')
         .orderBy('id', 'asc')
         .limit(1)
