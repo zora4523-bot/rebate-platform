@@ -135,22 +135,30 @@ it('[AC-F1-02zzj#3] 值与当前相同也照写新版本：连续三次同值写
 it.each([
   ['不传 reason', {}],
   ['reason=null', { reason: null }],
-] as const)('[AC-F1-02zzj#4] 原因可空（%s）：历史 reason 为 null，照常写入', async (_label, patch) => {
-  const f = fixture();
-  const input = {
-    appId: f.input.appId,
-    value: f.input.value,
-    expectedVersion: 0,
-    adminId: f.adminId,
-    ...patch,
-  };
-  const result = await h.db.transaction().execute((trx) => f.writer.write(trx, input));
-  expect(result).toEqual({ version: 1 });
-  const after = await snapshot(h.db, f.input.appId);
-  expect(after.versions).toEqual([
-    expect.objectContaining({ key: KEY, version: 1, reason: null, updated_by_admin_id: f.adminId }),
-  ]);
-});
+] as const)(
+  '[AC-F1-02zzj#4] 原因可空（%s）：历史 reason 为 null，照常写入',
+  async (_label, patch) => {
+    const f = fixture();
+    const input = {
+      appId: f.input.appId,
+      value: f.input.value,
+      expectedVersion: 0,
+      adminId: f.adminId,
+      ...patch,
+    };
+    const result = await h.db.transaction().execute((trx) => f.writer.write(trx, input));
+    expect(result).toEqual({ version: 1 });
+    const after = await snapshot(h.db, f.input.appId);
+    expect(after.versions).toEqual([
+      expect.objectContaining({
+        key: KEY,
+        version: 1,
+        reason: null,
+        updated_by_admin_id: f.adminId,
+      }),
+    ]);
+  },
+);
 
 it.each([false, true])(
   '[AC-F1-02zzj#5] 用调用方事务（已有行=%s）：事务内可见、提交前别的连接看不到，调用方回滚后两表都不变',

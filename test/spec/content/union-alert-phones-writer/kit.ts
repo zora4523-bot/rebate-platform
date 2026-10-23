@@ -71,13 +71,7 @@ export function fixture(id = appId()) {
 /** Log lines that carry any part of a stored value. */
 export const leaked = (lines: readonly string[]) => lines.filter((line) => line.includes(MARK));
 
-export async function seedRow(
-  db: Kysely<DB>,
-  id: string,
-  value: unknown,
-  version = 3,
-  key = KEY,
-) {
+export async function seedRow(db: Kysely<DB>, id: string, value: unknown, version = 3, key = KEY) {
   await db
     .withSchema('app')
     .insertInto('config_items')

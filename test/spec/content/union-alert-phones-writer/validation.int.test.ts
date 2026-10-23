@@ -26,22 +26,19 @@ it.each([
   ['不传事务（undefined）', undefined],
   ['null', null],
   ['普通对象', {}],
-] as const)(
-  '[AC-F1-02zzj#9] 事务参数为%s：输入错误，两表都不变',
-  async (_label, kind) => {
-    const f = fixture();
-    const id = f.input.appId;
-    await seedWritten(h.db, id, 1);
-    const before = await snapshot(h.db, id);
-    const trx = (kind === 'root' ? h.db : kind) as unknown as Transaction<DB>;
-    // A root handle would autocommit every statement, so any write shows up below.
-    await expect(async () =>
-      f.writer.write(trx, { ...f.input, expectedVersion: 1, value: cipherValue('root') }),
-    ).rejects.toBeInstanceOf(UnionAlertPhonesInputError);
-    expect(await snapshot(h.db, id)).toEqual(before);
-    expect(leaked(f.lines)).toEqual([]);
-  },
-);
+] as const)('[AC-F1-02zzj#9] 事务参数为%s：输入错误，两表都不变', async (_label, kind) => {
+  const f = fixture();
+  const id = f.input.appId;
+  await seedWritten(h.db, id, 1);
+  const before = await snapshot(h.db, id);
+  const trx = (kind === 'root' ? h.db : kind) as unknown as Transaction<DB>;
+  // A root handle would autocommit every statement, so any write shows up below.
+  await expect(async () =>
+    f.writer.write(trx, { ...f.input, expectedVersion: 1, value: cipherValue('root') }),
+  ).rejects.toBeInstanceOf(UnionAlertPhonesInputError);
+  expect(await snapshot(h.db, id)).toEqual(before);
+  expect(leaked(f.lines)).toEqual([]);
+});
 
 const INVALID: readonly [string, Record<string, unknown>][] = [
   ['多余字段 key（即使就是该键）', { key: 'union.auth_alert_phones' }],
@@ -66,22 +63,25 @@ const INVALID: readonly [string, Record<string, unknown>][] = [
   ['reason 非字符串', { reason: 5 }],
 ];
 
-it.each(INVALID)('[AC-F1-02zzj#10] 入参%s：输入错误，事务内与提交后两表都不变', async (_label, patch) => {
-  const f = fixture();
-  const id = f.input.appId;
-  await seedWritten(h.db, id, 1);
-  const before = await snapshot(h.db, id);
-  // Otherwise valid for the seeded row (expectedVersion 1), so a lenient port would write.
-  const input = { ...f.input, expectedVersion: 1, value: cipherValue('next'), ...patch };
-  await h.db.transaction().execute(async (trx) => {
-    await expect(async () =>
-      f.writer.write(trx, input as unknown as UnionAlertPhonesInput),
-    ).rejects.toBeInstanceOf(UnionAlertPhonesInputError);
-    expect(await snapshot(trx, id)).toEqual(before);
-  });
-  expect(await snapshot(h.db, id)).toEqual(before);
-  expect(leaked(f.lines)).toEqual([]);
-});
+it.each(INVALID)(
+  '[AC-F1-02zzj#10] 入参%s：输入错误，事务内与提交后两表都不变',
+  async (_label, patch) => {
+    const f = fixture();
+    const id = f.input.appId;
+    await seedWritten(h.db, id, 1);
+    const before = await snapshot(h.db, id);
+    // Otherwise valid for the seeded row (expectedVersion 1), so a lenient port would write.
+    const input = { ...f.input, expectedVersion: 1, value: cipherValue('next'), ...patch };
+    await h.db.transaction().execute(async (trx) => {
+      await expect(async () =>
+        f.writer.write(trx, input as unknown as UnionAlertPhonesInput),
+      ).rejects.toBeInstanceOf(UnionAlertPhonesInputError);
+      expect(await snapshot(trx, id)).toEqual(before);
+    });
+    expect(await snapshot(h.db, id)).toEqual(before);
+    expect(leaked(f.lines)).toEqual([]);
+  },
+);
 
 it.each(['appId', 'value', 'expectedVersion', 'adminId'] as const)(
   '[AC-F1-02zzj#11] 缺必填字段 %s：输入错误，两表都不变',
