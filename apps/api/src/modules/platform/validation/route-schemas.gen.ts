@@ -4023,6 +4023,379 @@ export const CONTRACT_ROUTE_SCHEMAS = {
       "additionalProperties": false
     }
   },
+  "createPayOrder": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "idempotency-key": {
+          "type": "string",
+          "description": "Value of the Idempotency-Key header (04 §5「幂等」).",
+          "minLength": 8,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign",
+        "idempotency-key"
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "No amount, title or identity field; the server prices the order (BR-PAY-01 ①).",
+      "required": [
+        "biz_type",
+        "biz_ref",
+        "pay_channel"
+      ],
+      "properties": {
+        "biz_type": {
+          "type": "string",
+          "description": "A business type registered for payment (BR-PAY-01 ①); none is registered yet, so the\nserver refuses every value with 30901 reason=biz_not_sellable until one is.\n",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "biz_ref": {
+          "type": "string",
+          "description": "The business object of biz_type the order pays for (one purchase per object, BR-PAY-02).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "pay_channel": {
+          "type": "string",
+          "description": "Collection channel (enum pay_channel, BR-PAY-01); unrelated to payout_channel.",
+          "enum": [
+            "wechat_pay",
+            "alipay"
+          ]
+        }
+      }
+    }
+  },
+  "getPayOrder": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pay_order_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "required": [
+        "pay_order_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "payOrderReturned": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pay_order_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "required": [
+        "pay_order_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "cancelPayOrder": {
+    "headers": {
+      "type": "object",
+      "properties": {
+        "x-app-id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "x-platform": {
+          "type": "string",
+          "description": "Client platform (contracts/enums/platform.yaml client_platform).",
+          "enum": [
+            "ios",
+            "android",
+            "harmony",
+            "h5",
+            "admin"
+          ]
+        },
+        "x-app-version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "x-build": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "x-channel": {
+          "type": "string",
+          "description": "Install channel (contracts/enums/platform.yaml install_channel).",
+          "enum": [
+            "appstore",
+            "official",
+            "huawei",
+            "agc"
+          ]
+        },
+        "x-trace-id": {
+          "type": "string",
+          "description": "Echo of a well-formed X-Trace-Id request header, otherwise a generated UUID.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "x-device-id": {
+          "type": "string",
+          "description": "Entity id, a UUIDv7 string (04 §5).",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x-timestamp": {
+          "type": "string",
+          "pattern": "^[0-9]{10}$"
+        },
+        "x-nonce": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "x-sign": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "x-app-id",
+        "x-platform",
+        "x-app-version",
+        "x-device-id",
+        "x-timestamp",
+        "x-nonce",
+        "x-sign"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "pay_order_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "required": [
+        "pay_order_id"
+      ],
+      "additionalProperties": false
+    }
+  },
   "getMe": {
     "headers": {
       "type": "object",
