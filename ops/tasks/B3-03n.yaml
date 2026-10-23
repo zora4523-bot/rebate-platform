@@ -7,6 +7,7 @@ type: impl
 # ② 生产 search_products 出卡时写商品引用（product_refs，与 B1-06i / parsing 同一写入口），否则之后以 context.product_key 报价 readProduct 抛错；
 # ③ 输入审核时限按 app 读 agent.safety.timeout_ms（content 配置读取口，缺省 1000ms；非法值按配置层既有口径）。
 # 分工：Codex 写规则测试，Claude Opus 5.5 实现，Codex 资金类评审（RV2：app.module.ts）。派发前按 B3-09c 与配置注册表现状重审 paths。
+# 2026-10-23 派发前重审（agent2）：B3-09c（#1170）已合并 → ④ 生产结果集由内存版换成 agent/store/results 的 createPgResultSetStore（assembly.ts 的 TODO）；recordDelivered 经 core 下发回调，paths 加 orchestrator/core/ports.ts。product_refs 经 catalog 的 registerProductRef 写入。可派发。
 refs: [BR-AI-05, BR-AI-04, BR-AI-18]
 refs_hash:
   BR-AI-05: ee8fd647fd43
@@ -17,6 +18,7 @@ paths:
   - 'apps/api/src/app.module.ts'
   - 'apps/api/src/modules/agent/stream/mount/**'
   - 'apps/api/src/modules/agent/orchestrator/core/run.ts'
+  - 'apps/api/src/modules/agent/orchestrator/core/ports.ts'
 test_paths:
   - 'test/spec/agent/stream-model-prereq/**'
 impl: claude
