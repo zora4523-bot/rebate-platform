@@ -249,8 +249,8 @@ export async function payJobs(f: Fixture, payOrderId: string): Promise<JobRow[]>
 /** Ledger rows of the app: payment never posts in these flows (payment/AGENTS.md rule 1). */
 export async function ledgerRows(f: Fixture) {
   const result = await sql<{ vouchers: number; entries: number }>`
-    SELECT (SELECT count(*)::int FROM ledger_vouchers WHERE app_id = ${f.subject.app_id}) AS vouchers,
-      (SELECT count(*)::int FROM ledger_entries WHERE app_id = ${f.subject.app_id}) AS entries`.execute(
+    SELECT (SELECT count(*)::int FROM app.ledger_vouchers WHERE app_id = ${f.subject.app_id}) AS vouchers,
+      (SELECT count(*)::int FROM app.ledger_entries WHERE app_id = ${f.subject.app_id}) AS entries`.execute(
     f.db,
   );
   return result.rows[0];
