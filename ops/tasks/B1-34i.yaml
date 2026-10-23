@@ -26,5 +26,5 @@ tester: claude-independent
 accept:
   - 'pnpm verify'
   - 'test/spec/admin/admins-verify-phone/**'
-status: todo
-pr: null
+status: done
+pr: 1447
