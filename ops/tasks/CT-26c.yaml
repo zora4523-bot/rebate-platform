@@ -4,10 +4,11 @@ title: 契约（App 高保真定稿缺口，identity 主写、funds 评审）：
 type: contract
 # 草稿 2026-10-23（身份与风控线 identity-lane）。编排 17:4x 分派、13:3x 派工 ②；形状经 couli #174 回写 04（SPEC_REF 39ff3de4，含 D10-148 / D10-149 裁定）。形状稿 couli-runs/CT-26c/shape.md；摘录以 SPEC_REF 的 04 / 08 BR-WDR-01 / BR-ID-08 为准。占契约槽后做；评审 Codex contract（不可用按 #36 独立 Claude），funds 评审资金接口部分。
 # 2026-10-23 补 paths（照 CT-26e 经验）：codegen 要求新码 10010 / 20005 在 texts.default.json 有 error.<码>（句子照 08 BR-TEXT-14 表 A 第 755 / 765 行）并在 specs/fund-term-keys.yaml 归类、重生成 fund-term-keys.gen.ts；PayoutAccount 加必返 payout_account_id，payout-account.ts 的响应构造要填值。reverify.* 页面文案仍归 content。叠本任务会红的冻结测试另拆 test-change。
+# 2026-10-23 再补：payout-bank-card.test.ts 两处假数据补 payout_account_id（否则类型检查红）；H5 签名接口清单 signed.ts 加两个新签名接口（冻结测试 test/spec/frontend/h5-app-api/signed.test.ts 逐条对照契约）。三份冻结集成测试的精确比对拆 test-change CT-26g 先合。
 refs: []
 refs_hash: {}
 contract_sections: ['5']
-deps: []
+deps: [CT-26g]
 paths:
   - 'contracts/openapi.yaml'
   - 'contracts/error-codes.yaml'
@@ -18,6 +19,8 @@ paths:
   - 'apps/api/src/modules/content/specs/fund-term-keys.gen.ts'
   - 'apps/api/src/modules/identity/application/payout-account.ts'
   - 'apps/api/src/modules/identity/application/payout-account.test.ts'
+  - 'apps/api/src/modules/identity/application/payout-bank-card.test.ts'
+  - 'apps/h5/src/shared/api/signed.ts'
   - 'packages/contracts-ts/**'
   - 'apps/api/src/modules/platform/validation/route-schemas.gen.ts'
   - 'apps/api/src/modules/platform/http/auth-routes.gen.ts'
