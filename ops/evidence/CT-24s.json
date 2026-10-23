@@ -1,0 +1,37 @@
+{
+  "task": "CT-24s",
+  "spec_ref": "3a301d14f0f566e8f0bc689aa8cfc177175dae20",
+  "spec_commit": "a3b419aa91db81c8439d4020c0f265b4e4dc01a9",
+  "red_tests": [],
+  "risk_note": "RV1 contract (contracts/openapi.yaml adminListUnionAccountOptions, planned; generated files). No rule tests (tester none). Implementation model: Claude Opus 5.5. contracts:check and verify:fast on the AWS runner exit 0.",
+  "runs": [],
+  "reviews": [
+    {
+      "reviewer": "claude-independent",
+      "engine": "claude-independent",
+      "model": "claude-opus-5-5",
+      "verdict": "pass",
+      "open_s0_s1": 0,
+      "round": 1,
+      "review_type": "contract",
+      "checklist_complete": true,
+      "note": "contract r1 pass, no findings (couli-runs/CT-24s/review-contract-r1.json); Codex unavailable until 10-30 (approvals #36)"
+    }
+  ],
+  "trees": {
+    "packages/money": "48413cff9f96320c7c7d179c3d65713ab84227dd",
+    "packages/domain": "26c53bdb114f148c8c7c8ab5abf93e6da6de422f",
+    "packages/testing": "a6df4094106120352a912260383f3bfbccdf4f4f",
+    "test/properties": "d90700e912746f66ace08909b984ffda74c469e1",
+    "test/spec": "f4ed8bfd9ac0ef2c01b9688c33a11a978319acc2",
+    "specs": "5780d831694d2b4ceb199fcfeb9429d06dcb1629"
+  },
+  "longrun": {
+    "runs": 1000000,
+    "seed": 20261001,
+    "passed": true,
+    "mode": "local",
+    "note": "not re-run for this task: it changes nothing under test/properties, packages/money, packages/domain or packages/testing",
+    "tree": "d90700e912746f66ace08909b984ffda74c469e1"
+  }
+}
