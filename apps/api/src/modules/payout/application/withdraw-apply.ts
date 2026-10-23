@@ -347,6 +347,17 @@ export function createWithdrawApply(options: WithdrawApplyOptions): WithdrawAppl
           reason_code: null,
           fail_action: null,
           created_at: now.toISOString(),
+          // CT-20b (D10-207): a fresh PENDING_REVIEW has no time points yet; the automatic
+          // judgement (BR-WDR-30) has not run, so the BR-WDR-25 branch is「处理中」(processing).
+          review_deadline:
+            review.review_deadline === null ? null : review.review_deadline.toISOString(),
+          executed_at: null,
+          first_attempt_at: null,
+          paid_at: null,
+          channel_state: null,
+          confirm_deadline: null,
+          sub_text_branch: 'processing',
+          hold_days: null,
           channel_order_id: null,
         },
       };
