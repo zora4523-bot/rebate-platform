@@ -57,8 +57,16 @@ const CHANNEL_NAMES: Readonly<Record<'alipay' | 'bank_card' | 'wechat', string>>
 
 /** BR-WDR-25: the「预计几分钟内到账」promise ends two hours after the transfer started (T + 2h). */
 const DELAY_AFTER_MS = 2 * 3_600_000;
-/** An account-type failure code (04 §2.4 PAYEE_*): the user can change the payout account. */
-const ACCOUNT_FAILURE = /^PAYEE_/;
+/**
+ * BR-TEXT-08: the account-type failure codes that offer「修改收款账号」, code by code (D10-228 ②,
+ * not a PAYEE_ prefix). The 08 sample codes until the sandbox run (BR-WDR-22 ⑤) fills the
+ * definite-failure list; extending it is a code change under review (BR-TEXT-08 细则 边界).
+ */
+const ACCOUNT_FAILURE_CODES: ReadonlySet<string> = new Set([
+  'PAYEE_NOT_EXIST',
+  'PAYEE_USER_INFO_ERROR',
+  'PAYEE_ACCOUNT_STATUS_ERROR',
+]);
 
 export function statusTitle(status: string): string {
   return Object.hasOwn(STATUS_TITLES, status) ? STATUS_TITLES[status]! : UNKNOWN_TITLE;
@@ -70,7 +78,7 @@ export function payoutChannelName(channel: 'alipay' | 'bank_card' | 'wechat'): s
 
 /** BR-WDR-25 fail_action: only an account-type failure offers「修改收款账号」. */
 export function isAccountFailure(failCode: string | null): boolean {
-  return failCode !== null && ACCOUNT_FAILURE.test(failCode);
+  return failCode !== null && ACCOUNT_FAILURE_CODES.has(failCode);
 }
 
 /**

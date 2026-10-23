@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { statusTitle, subTextBranch, type WithdrawalDisplayRow } from './display.ts';
+import {
+  isAccountFailure,
+  statusTitle,
+  subTextBranch,
+  type WithdrawalDisplayRow,
+} from './display.ts';
 
 const base: WithdrawalDisplayRow = {
   status: 'APPROVED',
@@ -55,5 +60,18 @@ describe('display (D10-228 ②: 以 08 为准)', () => {
     expect(statusTitle('FUTURE_STATUS')).toBe('处理中');
     expect(subTextBranch({ ...base, status: 'FUTURE_STATUS' }, now)).toBeNull();
     expect(subTextBranch({ ...base, status: 'constructor' }, now)).toBeNull();
+  });
+});
+
+describe('display (D10-228 ② (b): account failures code by code, BR-TEXT-08)', () => {
+  it('offers the payout-account change only for the listed codes', () => {
+    expect(isAccountFailure('PAYEE_NOT_EXIST')).toBe(true);
+    expect(isAccountFailure('PAYEE_USER_INFO_ERROR')).toBe(true);
+    expect(isAccountFailure('PAYEE_ACCOUNT_STATUS_ERROR')).toBe(true);
+    expect(isAccountFailure('PAYEE_ACCOUNT_FROZEN')).toBe(false);
+    expect(isAccountFailure('PAYEE_FUTURE_CODE')).toBe(false);
+    expect(isAccountFailure('payee_not_exist')).toBe(false);
+    expect(isAccountFailure('PAYER_BALANCE_NOT_ENOUGH')).toBe(false);
+    expect(isAccountFailure(null)).toBe(false);
   });
 });
