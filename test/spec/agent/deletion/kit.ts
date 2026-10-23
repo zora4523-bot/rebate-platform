@@ -233,7 +233,11 @@ export function databaseKit(createDatabase: () => Promise<FixtureDatabase>) {
     const guest = deviceSubject(deviceId);
     const subjects = owner
       ? [[memberSubject(owner)], [guest, memberSubject(owner)], [guest, IP]]
-      : [[guest, IP], [guest, IP], [guest, IP]];
+      : [
+          [guest, IP],
+          [guest, IP],
+          [guest, IP],
+        ];
     const runBase = {
       app_id: appId,
       session_id: sessionId,
