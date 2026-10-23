@@ -109,6 +109,11 @@ export const APPROVED_GUARD_CHANGES: Readonly<Record<string, string>> = {
   // none / expired / d<N> (N 1–999) in place of the five fixed stages (validated in 0072); Codex money
   // review passed. B1-22e.
   '0071_union-alert-stages.sql': 'b1aafb940438ea1d5a49722e1e759e14beffa9b46a889ca9fda978e790045a22',
+  // B1-15r (D10-186 deletion anonymization): rebuilds payout_accounts_details_check on the funds table
+  // payout_accounts NOT VALID under the same name with two branches (not anonymized: the original
+  // condition; anonymized: identifying columns all null and is_current = false), validated in 0078;
+  // money review (independent Claude / Codex r1) passed. B1-15t.
+  '0077_deletion-anonymize.sql': '242804db7ab7dc247b3c55da6af179ef998462c2da6fc4f453d6919a1db3956d',
 };
 /** Extensions node-pg-migrate would run from db/migrations besides SQL. */
 const SCRIPT_MIGRATION = /\.(?:js|cjs|mjs|ts|cts|mts|jsx|tsx)$/;

@@ -113,10 +113,15 @@ it(
     // alert_stage CHECK widened to d<N>). Same pinning as 0057.
     const b122a = '0071_union-alert-stages.sql';
     const b122aHash = 'b1aafb940438ea1d5a49722e1e759e14beffa9b46a889ca9fda978e790045a22';
+    // B1-15t (guard-change): B1-15r's 0077 is the fourth approved migration (payout_accounts
+    // details CHECK rebuilt with an anonymized branch). Same pinning as 0057.
+    const b115r = '0077_deletion-anonymize.sql';
+    const b115rHash = '242804db7ab7dc247b3c55da6af179ef998462c2da6fc4f453d6919a1db3956d';
     expect(module.APPROVED_GUARD_CHANGES).toEqual({
       [APPROVED_FILE]: createHash('sha256').update(bytes).digest('hex'),
       [ct25d]: ct25dHash,
       [b122a]: b122aHash,
+      [b115r]: b115rHash,
     });
     const ct25dPath = join(ROOT, 'db/migrations', ct25d);
     if (existsSync(ct25dPath)) {
@@ -125,6 +130,10 @@ it(
     const b122aPath = join(ROOT, 'db/migrations', b122a);
     if (existsSync(b122aPath)) {
       expect(createHash('sha256').update(readFileSync(b122aPath)).digest('hex')).toBe(b122aHash);
+    }
+    const b115rPath = join(ROOT, 'db/migrations', b115r);
+    if (existsSync(b115rPath)) {
+      expect(createHash('sha256').update(readFileSync(b115rPath)).digest('hex')).toBe(b115rHash);
     }
     const result = run([], { cwd: join(ROOT, 'test') });
     expect(result.status, result.stderr + result.stdout).toBe(0);
