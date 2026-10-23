@@ -12,7 +12,7 @@ type: impl
 # refs 连一跳引用超 24KB，编排者手工生成任务书。
 refs: [BR-AI-01, BR-AI-07, BR-AI-18]
 refs_hash:
-  BR-AI-01: b624c86b4643
+  BR-AI-01: 502e051e2593
   BR-AI-07: 0da3ace82049
   BR-AI-18: 01b60e6ca170
 deps: [B3-05b, B3-05d]
